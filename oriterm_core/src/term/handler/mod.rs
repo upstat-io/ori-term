@@ -9,8 +9,8 @@ use std::cmp;
 use log::debug;
 use unicode_width::UnicodeWidthChar;
 use vte::ansi::{
-    CharsetIndex, ClearMode, Handler, LineClearMode, Mode, NamedMode, NamedPrivateMode,
-    PrivateMode, TabulationClearMode,
+    Attr, CharsetIndex, ClearMode, Handler, LineClearMode, Mode, NamedMode, PrivateMode,
+    TabulationClearMode,
 };
 
 use crate::event::{Event, EventListener};
@@ -21,6 +21,8 @@ use crate::index::Column;
 use super::{Term, TermMode};
 
 mod helpers;
+mod modes;
+mod sgr;
 
 use helpers::{crate_version_number, mode_report_value, named_private_mode_flag,
     named_private_mode_number};
@@ -307,103 +309,17 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// DECSET: set DEC private mode.
     fn set_private_mode(&mut self, mode: PrivateMode) {
-        let named = match mode {
-            PrivateMode::Named(m) => m,
-            PrivateMode::Unknown(n) => {
-                debug!("Ignoring unknown private mode {n} in DECSET");
-                return;
-            }
-        };
-        match named {
-            NamedPrivateMode::CursorKeys => self.mode.insert(TermMode::APP_CURSOR),
-            NamedPrivateMode::Origin => {
-                self.mode.insert(TermMode::ORIGIN);
-                self.goto(0, 0);
-            }
-            NamedPrivateMode::LineWrap => self.mode.insert(TermMode::LINE_WRAP),
-            NamedPrivateMode::BlinkingCursor => {
-                self.mode.insert(TermMode::CURSOR_BLINKING);
-                self.event_listener.send_event(Event::CursorBlinkingChange);
-            }
-            NamedPrivateMode::ShowCursor => self.mode.insert(TermMode::SHOW_CURSOR),
-            NamedPrivateMode::ReportMouseClicks => {
-                self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
-                self.event_listener.send_event(Event::MouseCursorDirty);
-            }
-            NamedPrivateMode::ReportCellMouseMotion => {
-                self.mode.insert(TermMode::MOUSE_DRAG);
-                self.event_listener.send_event(Event::MouseCursorDirty);
-            }
-            NamedPrivateMode::ReportAllMouseMotion => {
-                self.mode.insert(TermMode::MOUSE_MOTION);
-                self.event_listener.send_event(Event::MouseCursorDirty);
-            }
-            NamedPrivateMode::ReportFocusInOut => self.mode.insert(TermMode::FOCUS_IN_OUT),
-            NamedPrivateMode::Utf8Mouse => self.mode.insert(TermMode::MOUSE_UTF8),
-            NamedPrivateMode::SgrMouse => self.mode.insert(TermMode::MOUSE_SGR),
-            NamedPrivateMode::UrgencyHints => self.mode.insert(TermMode::URGENCY_HINTS),
-            NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
-                if !self.mode.contains(TermMode::ALT_SCREEN) {
-                    self.swap_alt();
-                }
-                self.mode.insert(TermMode::ALT_SCREEN);
-            }
-            NamedPrivateMode::BracketedPaste => self.mode.insert(TermMode::BRACKETED_PASTE),
-            NamedPrivateMode::SyncUpdate => self.mode.insert(TermMode::SYNC_UPDATE),
-            NamedPrivateMode::ColumnMode | NamedPrivateMode::AlternateScroll => {
-                debug!("Ignoring DECSET for unimplemented mode {named:?}");
-            }
+        match mode {
+            PrivateMode::Named(m) => self.apply_decset(m),
+            PrivateMode::Unknown(n) => debug!("Ignoring unknown private mode {n} in DECSET"),
         }
     }
 
     /// DECRST: reset DEC private mode.
     fn unset_private_mode(&mut self, mode: PrivateMode) {
-        let named = match mode {
-            PrivateMode::Named(m) => m,
-            PrivateMode::Unknown(n) => {
-                debug!("Ignoring unknown private mode {n} in DECRST");
-                return;
-            }
-        };
-        match named {
-            NamedPrivateMode::CursorKeys => self.mode.remove(TermMode::APP_CURSOR),
-            NamedPrivateMode::Origin => {
-                self.mode.remove(TermMode::ORIGIN);
-                self.goto(0, 0);
-            }
-            NamedPrivateMode::LineWrap => self.mode.remove(TermMode::LINE_WRAP),
-            NamedPrivateMode::BlinkingCursor => {
-                self.mode.remove(TermMode::CURSOR_BLINKING);
-                self.event_listener.send_event(Event::CursorBlinkingChange);
-            }
-            NamedPrivateMode::ShowCursor => self.mode.remove(TermMode::SHOW_CURSOR),
-            NamedPrivateMode::ReportMouseClicks => {
-                self.mode.remove(TermMode::MOUSE_REPORT_CLICK);
-                self.event_listener.send_event(Event::MouseCursorDirty);
-            }
-            NamedPrivateMode::ReportCellMouseMotion => {
-                self.mode.remove(TermMode::MOUSE_DRAG);
-                self.event_listener.send_event(Event::MouseCursorDirty);
-            }
-            NamedPrivateMode::ReportAllMouseMotion => {
-                self.mode.remove(TermMode::MOUSE_MOTION);
-                self.event_listener.send_event(Event::MouseCursorDirty);
-            }
-            NamedPrivateMode::ReportFocusInOut => self.mode.remove(TermMode::FOCUS_IN_OUT),
-            NamedPrivateMode::Utf8Mouse => self.mode.remove(TermMode::MOUSE_UTF8),
-            NamedPrivateMode::SgrMouse => self.mode.remove(TermMode::MOUSE_SGR),
-            NamedPrivateMode::UrgencyHints => self.mode.remove(TermMode::URGENCY_HINTS),
-            NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
-                if self.mode.contains(TermMode::ALT_SCREEN) {
-                    self.swap_alt();
-                }
-                self.mode.remove(TermMode::ALT_SCREEN);
-            }
-            NamedPrivateMode::BracketedPaste => self.mode.remove(TermMode::BRACKETED_PASTE),
-            NamedPrivateMode::SyncUpdate => self.mode.remove(TermMode::SYNC_UPDATE),
-            NamedPrivateMode::ColumnMode | NamedPrivateMode::AlternateScroll => {
-                debug!("Ignoring DECRST for unimplemented mode {named:?}");
-            }
+        match mode {
+            PrivateMode::Named(m) => self.apply_decrst(m),
+            PrivateMode::Unknown(n) => debug!("Ignoring unknown private mode {n} in DECRST"),
         }
     }
 
@@ -494,6 +410,19 @@ impl<T: EventListener> Handler for Term<T> {
     /// DECKPNM: reset application keypad mode.
     fn unset_keypad_application_mode(&mut self) {
         self.mode.remove(TermMode::APP_KEYPAD);
+    }
+
+    // --- SGR (Select Graphic Rendition) ---
+
+    /// Set a terminal attribute (bold, italic, colors, etc.).
+    ///
+    /// The VTE parser decodes `CSI n m` parameters into high-level `Attr`
+    /// variants. Delegates to [`sgr::apply`] which modifies the cursor
+    /// template cell so subsequent characters inherit the attribute.
+    #[inline]
+    fn terminal_attribute(&mut self, attr: Attr) {
+        let template = &mut self.grid_mut().cursor_mut().template;
+        sgr::apply(template, &attr);
     }
 }
 

@@ -28,7 +28,7 @@ sections:
     status: complete
   - id: "2.8"
     title: "VTE Handler — SGR (Select Graphic Rendition)"
-    status: not-started
+    status: complete
   - id: "2.9"
     title: "VTE Handler — OSC Sequences"
     status: not-started
@@ -333,46 +333,46 @@ Cursor movement, erase, scroll, insert/delete, device status, mode setting.
 
 Cell attribute setting: bold, italic, underline, colors. The most complex CSI.
 
-**File:** `oriterm_core/src/term/handler.rs` (continued)
+**File:** `oriterm_core/src/term/handler/sgr.rs`
 
-- [ ] `CSI n m` — SGR dispatch
-  - [ ] `0` — reset all attributes (clear template flags and colors)
-  - [ ] `1` — bold
-  - [ ] `2` — dim
-  - [ ] `3` — italic
-  - [ ] `4` — underline (with sub-params: `4:0` none, `4:1` single, `4:3` curly, `4:4` dotted, `4:5` dashed)
-  - [ ] `5` — blink
-  - [ ] `7` — inverse
-  - [ ] `8` — hidden
-  - [ ] `9` — strikethrough
-  - [ ] `21` — double underline
-  - [ ] `22` — neither bold nor dim
-  - [ ] `23` — not italic
-  - [ ] `24` — not underline
-  - [ ] `25` — not blink
-  - [ ] `27` — not inverse
-  - [ ] `28` — not hidden
-  - [ ] `29` — not strikethrough
-  - [ ] `30..=37` — set foreground (ANSI 0–7)
-  - [ ] `38` — set foreground (extended): `38;5;n` (256-color) or `38;2;r;g;b` (truecolor)
-  - [ ] `39` — default foreground
-  - [ ] `40..=47` — set background (ANSI 0–7)
-  - [ ] `48` — set background (extended)
-  - [ ] `49` — default background
-  - [ ] `58` — set underline color (extended): `58;5;n` or `58;2;r;g;b`
-  - [ ] `59` — default underline color
-  - [ ] `90..=97` — set bright foreground (ANSI 8–15)
-  - [ ] `100..=107` — set bright background (ANSI 8–15)
-- [ ] **Tests**:
-  - [ ] `ESC[1m` sets bold on cursor template
-  - [ ] `ESC[31m` sets fg to red (ANSI 1)
-  - [ ] `ESC[38;5;196m` sets fg to 256-color index 196
-  - [ ] `ESC[38;2;255;128;0m` sets fg to RGB(255, 128, 0)
-  - [ ] `ESC[0m` resets all attributes
-  - [ ] `ESC[1;31;42m` sets bold + red fg + green bg (compound)
-  - [ ] `ESC[4:3m` sets curly underline
-  - [ ] `ESC[58;2;255;0;0m` sets underline color to red (CellExtra)
-  - [ ] `ESC[59m` clears underline color
+- [x] `CSI n m` — SGR dispatch
+  - [x] `0` — reset all attributes (clear template flags and colors)
+  - [x] `1` — bold
+  - [x] `2` — dim
+  - [x] `3` — italic
+  - [x] `4` — underline (with sub-params: `4:0` none, `4:1` single, `4:3` curly, `4:4` dotted, `4:5` dashed)
+  - [x] `5` — blink
+  - [x] `7` — inverse
+  - [x] `8` — hidden
+  - [x] `9` — strikethrough
+  - [x] `21` — double underline
+  - [x] `22` — neither bold nor dim
+  - [x] `23` — not italic
+  - [x] `24` — not underline
+  - [x] `25` — not blink
+  - [x] `27` — not inverse
+  - [x] `28` — not hidden
+  - [x] `29` — not strikethrough
+  - [x] `30..=37` — set foreground (ANSI 0–7)
+  - [x] `38` — set foreground (extended): `38;5;n` (256-color) or `38;2;r;g;b` (truecolor)
+  - [x] `39` — default foreground
+  - [x] `40..=47` — set background (ANSI 0–7)
+  - [x] `48` — set background (extended)
+  - [x] `49` — default background
+  - [x] `58` — set underline color (extended): `58;5;n` or `58;2;r;g;b`
+  - [x] `59` — default underline color
+  - [x] `90..=97` — set bright foreground (ANSI 8–15)
+  - [x] `100..=107` — set bright background (ANSI 8–15)
+- [x] **Tests**:
+  - [x] `ESC[1m` sets bold on cursor template
+  - [x] `ESC[31m` sets fg to red (ANSI 1)
+  - [x] `ESC[38;5;196m` sets fg to 256-color index 196
+  - [x] `ESC[38;2;255;128;0m` sets fg to RGB(255, 128, 0)
+  - [x] `ESC[0m` resets all attributes
+  - [x] `ESC[1;31;42m` sets bold + red fg + green bg (compound)
+  - [x] `ESC[4:3m` sets curly underline
+  - [x] `ESC[58;2;255;0;0m` sets underline color to red (CellExtra)
+  - [x] `ESC[59m` clears underline color
 
 ---
 
