@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "2.6"
     title: "VTE Handler — Print + Execute"
-    status: in-progress
+    status: complete
   - id: "2.7"
     title: "VTE Handler — CSI Sequences"
     status: complete
@@ -242,7 +242,7 @@ The terminal state machine. Owns two grids (primary + alternate), mode flags, pa
 - [x] `fn input(&mut self, ch: char)`
   - [x] Translate through charset (`self.charset.translate(ch)`)
   - [x] If auto-wrap pending (cursor at last col with WRAP): advance to next line, scroll if needed
-  - [ ] If `UnicodeWidthChar::width(ch) == Some(0)`: append to previous cell's zerowidth list via `push_zerowidth()` instead of `put_char()` (combining marks, variation selectors)
+  - [x] If `UnicodeWidthChar::width(ch) == Some(0)`: append to previous cell's zerowidth list via `push_zerowidth()` instead of `put_char()` (combining marks, variation selectors)
   - [x] Call `self.grid_mut().put_char(translated_ch)`
 - [x] Control characters (dispatched by `fn execute`):
   - [x] `\x07` BEL — `self.event_listener.send_event(Event::Bell)`
@@ -261,9 +261,9 @@ The terminal state machine. Owns two grids (primary + alternate), mode flags, pa
   - [x] `"\t"` → cursor advances to column 8
   - [x] `"\x08"` → cursor moves left
   - [x] BEL triggers Event::Bell on a recording listener
-  - [ ] `"e\u{0301}"` → cell 0 has `ch='e'`, `zerowidth=['\u{0301}']`, cursor at col 1
-  - [ ] Multiple combining marks append to same cell's zerowidth list
-  - [ ] Zero-width char at column 0 (no previous cell) is discarded gracefully
+  - [x] `"e\u{0301}"` → cell 0 has `ch='e'`, `zerowidth=['\u{0301}']`, cursor at col 1
+  - [x] Multiple combining marks append to same cell's zerowidth list
+  - [x] Zero-width char at column 0 (no previous cell) is discarded gracefully
 
 ---
 
