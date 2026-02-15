@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "2.12"
     title: RenderableContent Snapshot
-    status: not-started
+    status: complete
   - id: "2.13"
     title: FairMutex
     status: not-started
@@ -475,34 +475,33 @@ Device Control Strings and remaining handler methods.
 
 A lightweight struct that captures everything the renderer needs from `Term`, extracted under lock and used without lock.
 
-**File:** `oriterm_core/src/term/mod.rs` (additional types)
+**File:** `oriterm_core/src/term/renderable.rs` + `oriterm_core/src/term/mod.rs`
 
-- [ ] `RenderableContent` struct
-  - [ ] Fields:
-    - `cells: Vec<RenderableCell>` — flattened visible cells (or row-by-row)
+- [x] `RenderableContent` struct
+  - [x] Fields:
+    - `cells: Vec<RenderableCell>` — flattened visible cells (row-by-row)
     - `cursor: RenderableCursor` — cursor position, shape, visibility
-    - `selection: Option<SelectionRange>` — current selection (if any)
     - `display_offset: usize` — scrollback offset
     - `mode: TermMode` — terminal mode flags
-    - `palette: Palette` — snapshot of color palette
+    - `all_dirty: bool` — full redraw signal
     - `damage: Vec<DamageLine>` — which lines changed
-  - [ ] `Term::renderable_content(&self) -> RenderableContent`
-    - [ ] Iterate visible rows (accounting for display_offset + scrollback)
-    - [ ] Include cursor info
-    - [ ] Include damage info
-    - [ ] This is called under lock, so it must be fast (copy, don't clone strings)
-- [ ] `RenderableCell` struct
-  - [ ] `ch: char`, `fg: Rgb`, `bg: Rgb`, `flags: CellFlags`, `underline_color: Option<Rgb>`
-  - [ ] Colors are **resolved** (palette lookup done here, not in renderer)
-  - [ ] Bold-as-bright applied here if enabled
-- [ ] `RenderableCursor` struct
-  - [ ] `point: Point`, `shape: CursorShape`, `visible: bool`
-- [ ] `DamageLine` struct
-  - [ ] `line: usize`, `left: Column`, `right: Column`
-- [ ] **Tests**:
-  - [ ] Create term, write some chars, extract RenderableContent, verify cells match
-  - [ ] Cursor position in RenderableContent matches term cursor
-  - [ ] Colors are resolved from palette (not raw Color enum)
+  - [x] `Term::renderable_content(&self) -> RenderableContent`
+    - [x] Iterate visible rows (accounting for display_offset + scrollback)
+    - [x] Include cursor info
+    - [x] Include damage info
+    - [x] This is called under lock, so it must be fast (copy, don't clone strings)
+- [x] `RenderableCell` struct
+  - [x] `ch: char`, `fg: Rgb`, `bg: Rgb`, `flags: CellFlags`, `underline_color: Option<Rgb>`
+  - [x] Colors are **resolved** (palette lookup done here, not in renderer)
+  - [x] Bold-as-bright applied here if enabled
+- [x] `RenderableCursor` struct
+  - [x] `line: usize`, `column: Column`, `shape: CursorShape`, `visible: bool`
+- [x] `DamageLine` struct
+  - [x] `line: usize`, `left: Column`, `right: Column`
+- [x] **Tests**:
+  - [x] Create term, write some chars, extract RenderableContent, verify cells match
+  - [x] Cursor position in RenderableContent matches term cursor
+  - [x] Colors are resolved from palette (not raw Color enum)
 
 ---
 

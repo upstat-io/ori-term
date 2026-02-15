@@ -8,9 +8,11 @@
 pub mod charset;
 mod handler;
 pub mod mode;
+pub mod renderable;
 
 pub use charset::CharsetState;
 pub use mode::TermMode;
+pub use renderable::{DamageLine, RenderableCell, RenderableContent, RenderableCursor};
 
 use std::collections::VecDeque;
 
@@ -19,6 +21,7 @@ use vte::ansi::KeyboardModes;
 use crate::color::Palette;
 use crate::event::EventListener;
 use crate::grid::{CursorShape, Grid};
+use crate::index::{Column, Line};
 
 /// Maximum depth for title stack (xterm push/pop title).
 ///
@@ -137,6 +140,126 @@ impl<T: EventListener> Term<T> {
     #[cfg(test)]
     pub(crate) fn keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
         &self.keyboard_mode_stack
+    }
+
+    /// Extract a complete rendering snapshot.
+    ///
+    /// Iterates visible rows (accounting for `display_offset` into scrollback),
+    /// resolves all cell colors via the palette, and captures cursor + damage
+    /// info. Designed to be called under lock — copies data so the renderer
+    /// can work without holding the lock.
+    pub fn renderable_content(&self) -> RenderableContent {
+        let grid = self.grid();
+        let offset = grid.display_offset();
+        let lines = grid.lines();
+        let cols = grid.cols();
+        let palette = &self.palette;
+
+        let mut cells = Vec::with_capacity(lines * cols);
+
+        for vis_line in 0..lines {
+            let row = if offset > 0 && vis_line < offset {
+                // This visible line maps into scrollback.
+                let sb_idx = offset - 1 - vis_line;
+                grid.scrollback().get(sb_idx)
+            } else {
+                None
+            };
+
+            // If display_offset > 0, the top `offset` lines come from scrollback
+            // and the remaining come from the grid shifted down.
+            let row = if let Some(sb_row) = row {
+                sb_row
+            } else {
+                let grid_line = vis_line - offset;
+                &grid[Line(grid_line as i32)]
+            };
+
+            for col_idx in 0..cols {
+                let col = Column(col_idx);
+                let cell = &row[col];
+
+                let fg = renderable::resolve_fg(cell.fg, cell.flags, palette);
+                let bg = renderable::resolve_bg(cell.bg, palette);
+                let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
+
+                let underline_color = cell
+                    .extra
+                    .as_ref()
+                    .and_then(|e| e.underline_color)
+                    .map(|c| palette.resolve(c));
+
+                let zerowidth = cell
+                    .extra
+                    .as_ref()
+                    .map(|e| e.zerowidth.clone())
+                    .unwrap_or_default();
+
+                cells.push(RenderableCell {
+                    line: vis_line,
+                    column: col,
+                    ch: cell.ch,
+                    fg,
+                    bg,
+                    flags: cell.flags,
+                    underline_color,
+                    zerowidth,
+                });
+            }
+        }
+
+        // Cursor is visible when SHOW_CURSOR is set and we're at the live view.
+        let cursor_visible = self.mode.contains(TermMode::SHOW_CURSOR)
+            && offset == 0
+            && self.cursor_shape != CursorShape::Hidden;
+
+        let cursor = RenderableCursor {
+            line: grid.cursor().line(),
+            column: grid.cursor().col(),
+            shape: self.cursor_shape,
+            visible: cursor_visible,
+        };
+
+        let (all_dirty, damage) = self.collect_damage(grid, lines, cols);
+
+        RenderableContent {
+            cells,
+            cursor,
+            display_offset: offset,
+            mode: self.mode,
+            all_dirty,
+            damage,
+        }
+    }
+
+    /// Collect damage information from the grid's dirty tracker.
+    fn collect_damage(&self, grid: &Grid, lines: usize, cols: usize) -> (bool, Vec<DamageLine>) {
+        let dirty = grid.dirty();
+
+        // Check for all-dirty fast path.
+        let mut all_dirty = true;
+        let mut any_dirty = false;
+        let mut damage = Vec::new();
+
+        for line in 0..lines {
+            if dirty.is_dirty(line) {
+                any_dirty = true;
+                damage.push(DamageLine {
+                    line,
+                    left: Column(0),
+                    right: Column(cols.saturating_sub(1)),
+                });
+            } else {
+                all_dirty = false;
+            }
+        }
+
+        if all_dirty && any_dirty {
+            // All lines dirty — signal full redraw, empty damage list.
+            (true, Vec::new())
+        } else {
+            (false, damage)
+        }
     }
 
     /// Switch between primary and alternate screen.
