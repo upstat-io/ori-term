@@ -18,7 +18,7 @@ use crate::index::Line;
 
 pub use cursor::{Cursor, CursorShape};
 pub use dirty::DirtyTracker;
-pub use editing::EraseMode;
+pub use editing::{DisplayEraseMode, LineEraseMode};
 pub use navigation::TabClearMode;
 pub use ring::ScrollbackBuffer;
 pub use row::Row;
@@ -154,8 +154,9 @@ impl Grid {
     /// Reset the grid to initial state.
     ///
     /// Clears all rows, resets cursor to (0,0) with default template,
-    /// clears saved cursor, resets tab stops and scroll region, and
-    /// marks everything dirty. Does not affect scrollback capacity.
+    /// clears saved cursor, resets tab stops and scroll region, clears
+    /// scrollback history, and marks everything dirty. Does not affect
+    /// scrollback capacity.
     pub fn reset(&mut self) {
         for row in &mut self.rows {
             row.reset(self.cols, &crate::cell::Cell::default());
@@ -164,6 +165,7 @@ impl Grid {
         self.saved_cursor = None;
         self.tab_stops = Self::init_tab_stops(self.cols);
         self.scroll_region = 0..self.lines;
+        self.scrollback.clear();
         self.display_offset = 0;
         self.dirty.mark_all();
     }

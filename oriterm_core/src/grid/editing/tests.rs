@@ -1,4 +1,4 @@
-use super::EraseMode;
+use super::{DisplayEraseMode, LineEraseMode};
 use crate::grid::Grid;
 use crate::index::Column;
 
@@ -122,7 +122,7 @@ fn erase_display_below() {
     // Position cursor at line 1, col 5 and erase below.
     grid.cursor_mut().set_line(1);
     grid.cursor_mut().set_col(Column(5));
-    grid.erase_display(EraseMode::Below);
+    grid.erase_display(DisplayEraseMode::Below);
     let line0 = crate::index::Line(0);
     let line1 = crate::index::Line(1);
     let line2 = crate::index::Line(2);
@@ -147,7 +147,7 @@ fn erase_display_above() {
     }
     grid.cursor_mut().set_line(1);
     grid.cursor_mut().set_col(Column(5));
-    grid.erase_display(EraseMode::Above);
+    grid.erase_display(DisplayEraseMode::Above);
     let line0 = crate::index::Line(0);
     let line1 = crate::index::Line(1);
     let line2 = crate::index::Line(2);
@@ -163,7 +163,7 @@ fn erase_display_above() {
 #[test]
 fn erase_display_all() {
     let mut grid = grid_with_text(3, 10, "AAAAAAAAAA");
-    grid.erase_display(EraseMode::All);
+    grid.erase_display(DisplayEraseMode::All);
     for line in 0..3 {
         for col in 0..10 {
             assert!(
@@ -179,7 +179,7 @@ fn erase_line_below() {
     let mut grid = grid_with_text(24, 10, "ABCDEFGHIJ");
     grid.cursor_mut().set_line(0);
     grid.cursor_mut().set_col(Column(5));
-    grid.erase_line(EraseMode::Below);
+    grid.erase_line(LineEraseMode::Right);
     let line = crate::index::Line(0);
     assert_eq!(grid[line][Column(4)].ch, 'E');
     assert!(grid[line][Column(5)].is_empty());
@@ -191,7 +191,7 @@ fn erase_line_all() {
     let mut grid = grid_with_text(24, 10, "ABCDEFGHIJ");
     grid.cursor_mut().set_line(0);
     grid.cursor_mut().set_col(Column(5));
-    grid.erase_line(EraseMode::All);
+    grid.erase_line(LineEraseMode::All);
     let line = crate::index::Line(0);
     for col in 0..10 {
         assert!(grid[line][Column(col)].is_empty());
@@ -383,7 +383,7 @@ fn erase_line_above() {
     let mut grid = grid_with_text(24, 10, "ABCDEFGHIJ");
     grid.cursor_mut().set_line(0);
     grid.cursor_mut().set_col(Column(5));
-    grid.erase_line(EraseMode::Above);
+    grid.erase_line(LineEraseMode::Left);
     let line = crate::index::Line(0);
     // Cols 0..=5 should be erased.
     for col in 0..=5 {
@@ -420,7 +420,7 @@ fn erase_display_with_bce_background() {
     grid.cursor_mut().set_line(0);
     grid.cursor_mut().set_col(Column(0));
     grid.cursor_mut().template.bg = Color::Indexed(6);
-    grid.erase_display(EraseMode::All);
+    grid.erase_display(DisplayEraseMode::All);
     // All cells should have the BCE background.
     for line in 0..3 {
         for col in 0..10 {
@@ -438,7 +438,7 @@ fn erase_display_below_at_last_line() {
     let mut grid = grid_with_text(3, 10, "AAAAAAAAAA");
     grid.cursor_mut().set_line(2);
     grid.cursor_mut().set_col(Column(5));
-    grid.erase_display(EraseMode::Below);
+    grid.erase_display(DisplayEraseMode::Below);
     // Only line 2 from col 5 should be erased (line 2 was empty anyway).
     let line2 = crate::index::Line(2);
     assert!(grid[line2][Column(5)].is_empty());
@@ -451,7 +451,7 @@ fn erase_display_above_at_first_line() {
     let mut grid = grid_with_text(3, 10, "ABCDEFGHIJ");
     grid.cursor_mut().set_line(0);
     grid.cursor_mut().set_col(Column(5));
-    grid.erase_display(EraseMode::Above);
+    grid.erase_display(DisplayEraseMode::Above);
     let line0 = crate::index::Line(0);
     // Cols 0..=5 erased on line 0.
     assert!(grid[line0][Column(0)].is_empty());
@@ -511,7 +511,7 @@ fn erase_line_below_with_bce() {
     grid.cursor_mut().set_line(0);
     grid.cursor_mut().set_col(Column(5));
     grid.cursor_mut().template.bg = Color::Indexed(2);
-    grid.erase_line(EraseMode::Below);
+    grid.erase_line(LineEraseMode::Right);
     let line = crate::index::Line(0);
     for col in 5..10 {
         assert_eq!(grid[line][Column(col)].bg, Color::Indexed(2));
@@ -600,7 +600,7 @@ fn erase_line_below_marks_cursor_line_dirty() {
     let mut grid = clean_grid(5, 10);
     grid.cursor_mut().set_line(2);
     grid.cursor_mut().set_col(Column(3));
-    grid.erase_line(EraseMode::Below);
+    grid.erase_line(LineEraseMode::Right);
 
     let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
     assert_eq!(dirty, vec![2]);
@@ -611,7 +611,7 @@ fn erase_line_above_marks_cursor_line_dirty() {
     let mut grid = clean_grid(5, 10);
     grid.cursor_mut().set_line(2);
     grid.cursor_mut().set_col(Column(3));
-    grid.erase_line(EraseMode::Above);
+    grid.erase_line(LineEraseMode::Left);
 
     let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
     assert_eq!(dirty, vec![2]);
@@ -621,7 +621,7 @@ fn erase_line_above_marks_cursor_line_dirty() {
 fn erase_line_all_marks_cursor_line_dirty() {
     let mut grid = clean_grid(5, 10);
     grid.cursor_mut().set_line(2);
-    grid.erase_line(EraseMode::All);
+    grid.erase_line(LineEraseMode::All);
 
     let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
     assert_eq!(dirty, vec![2]);
@@ -632,7 +632,7 @@ fn erase_display_below_marks_cursor_and_below_dirty() {
     let mut grid = clean_grid(5, 10);
     grid.cursor_mut().set_line(2);
     grid.cursor_mut().set_col(Column(3));
-    grid.erase_display(EraseMode::Below);
+    grid.erase_display(DisplayEraseMode::Below);
 
     let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
     // Cursor line (2) + lines below (3, 4).
@@ -644,7 +644,7 @@ fn erase_display_above_marks_above_and_cursor_dirty() {
     let mut grid = clean_grid(5, 10);
     grid.cursor_mut().set_line(2);
     grid.cursor_mut().set_col(Column(3));
-    grid.erase_display(EraseMode::Above);
+    grid.erase_display(DisplayEraseMode::Above);
 
     let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
     // Lines above (0, 1) + cursor line (2).
@@ -654,7 +654,7 @@ fn erase_display_above_marks_above_and_cursor_dirty() {
 #[test]
 fn erase_display_all_marks_all_dirty() {
     let mut grid = clean_grid(5, 10);
-    grid.erase_display(EraseMode::All);
+    grid.erase_display(DisplayEraseMode::All);
 
     let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
     assert_eq!(dirty, vec![0, 1, 2, 3, 4]);
@@ -665,7 +665,7 @@ fn erase_display_below_does_not_dirty_lines_above() {
     let mut grid = clean_grid(5, 10);
     grid.cursor_mut().set_line(3);
     grid.cursor_mut().set_col(Column(0));
-    grid.erase_display(EraseMode::Below);
+    grid.erase_display(DisplayEraseMode::Below);
 
     let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
     // Only lines 3 and 4.
@@ -677,7 +677,7 @@ fn erase_display_above_does_not_dirty_lines_below() {
     let mut grid = clean_grid(5, 10);
     grid.cursor_mut().set_line(1);
     grid.cursor_mut().set_col(Column(5));
-    grid.erase_display(EraseMode::Above);
+    grid.erase_display(DisplayEraseMode::Above);
 
     let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
     // Only lines 0 and 1.

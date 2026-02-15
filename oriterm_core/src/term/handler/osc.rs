@@ -36,14 +36,14 @@ impl<T: EventListener> Term<T> {
     pub(super) fn osc_push_title(&mut self) {
         debug!("Pushing title '{}'", self.title);
         if self.title_stack.len() >= TITLE_STACK_MAX_DEPTH {
-            self.title_stack.remove(0);
+            self.title_stack.pop_front();
         }
-        self.title_stack.push(self.title.clone());
+        self.title_stack.push_back(self.title.clone());
     }
 
     /// Pop title from the stack and set it (xterm extension).
     pub(super) fn osc_pop_title(&mut self) {
-        if let Some(title) = self.title_stack.pop() {
+        if let Some(title) = self.title_stack.pop_back() {
             debug!("Popped title '{title}'");
             self.osc_set_title(Some(title));
         }
@@ -157,7 +157,9 @@ impl<T: EventListener> Term<T> {
     /// OSC 8: set or clear hyperlink on cursor template.
     pub(super) fn osc_set_hyperlink(&mut self, hyperlink: Option<VteHyperlink>) {
         debug!("Setting hyperlink: {hyperlink:?}");
-        let link = hyperlink.map(|h| Hyperlink { id: h.id, uri: h.uri });
-        self.grid_mut().cursor_mut().template.set_hyperlink(link);
+        self.grid_mut()
+            .cursor_mut()
+            .template
+            .set_hyperlink(hyperlink.map(Hyperlink::from));
     }
 }

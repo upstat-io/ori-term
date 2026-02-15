@@ -11,17 +11,28 @@ use crate::index::Column;
 
 use super::Grid;
 
-/// Erase mode for display and line erase operations.
+/// Erase mode for display erase operations (ED / CSI Ps J).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EraseMode {
-    /// Erase from cursor to end (of display or line).
+pub enum DisplayEraseMode {
+    /// Erase from cursor to end of display.
     Below,
-    /// Erase from start (of display or line) to cursor.
+    /// Erase from start of display to cursor.
     Above,
-    /// Erase entire (display or line).
+    /// Erase entire display.
     All,
-    /// Erase scrollback buffer only (display erase only).
+    /// Erase scrollback buffer only (CSI 3 J).
     Scrollback,
+}
+
+/// Erase mode for line erase operations (EL / CSI Ps K).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineEraseMode {
+    /// Erase from cursor to end of line.
+    Right,
+    /// Erase from start of line to cursor.
+    Left,
+    /// Erase entire line.
+    All,
 }
 
 impl Grid {
@@ -190,7 +201,7 @@ impl Grid {
     }
 
     /// Erase part or all of the display.
-    pub fn erase_display(&mut self, mode: EraseMode) {
+    pub fn erase_display(&mut self, mode: DisplayEraseMode) {
         debug_assert!(
             self.cursor.line() < self.lines,
             "cursor line {} out of bounds (lines={})",
@@ -200,36 +211,36 @@ impl Grid {
         // BCE: erased cells get only the current background color.
         let template = Cell::from(self.cursor.template.bg);
         match mode {
-            EraseMode::Below => {
-                self.erase_line_with_template(EraseMode::Below, &template);
+            DisplayEraseMode::Below => {
+                self.erase_line_with_template(LineEraseMode::Right, &template);
                 let cursor_line = self.cursor.line();
                 for line in cursor_line + 1..self.lines {
                     self.rows[line].reset(self.cols, &template);
                     self.dirty.mark(line);
                 }
             }
-            EraseMode::Above => {
-                self.erase_line_with_template(EraseMode::Above, &template);
+            DisplayEraseMode::Above => {
+                self.erase_line_with_template(LineEraseMode::Left, &template);
                 let cursor_line = self.cursor.line();
                 for line in 0..cursor_line {
                     self.rows[line].reset(self.cols, &template);
                     self.dirty.mark(line);
                 }
             }
-            EraseMode::All => {
+            DisplayEraseMode::All => {
                 for line in 0..self.lines {
                     self.rows[line].reset(self.cols, &template);
                 }
                 self.dirty.mark_all();
             }
-            EraseMode::Scrollback => {
+            DisplayEraseMode::Scrollback => {
                 // Scrollback clearing will be implemented in 1.10.
             }
         }
     }
 
     /// Erase part or all of the current line.
-    pub fn erase_line(&mut self, mode: EraseMode) {
+    pub fn erase_line(&mut self, mode: LineEraseMode) {
         debug_assert!(
             self.cursor.line() < self.lines,
             "cursor line {} out of bounds (lines={})",
@@ -241,18 +252,13 @@ impl Grid {
     }
 
     /// Erase part or all of the current line using a pre-built BCE template.
-    fn erase_line_with_template(&mut self, mode: EraseMode, template: &Cell) {
+    fn erase_line_with_template(&mut self, mode: LineEraseMode, template: &Cell) {
         let line = self.cursor.line();
         let col = self.cursor.col().0;
         let cols = self.cols;
 
-        debug_assert!(
-            mode != EraseMode::Scrollback,
-            "Scrollback mode not applicable to erase_line"
-        );
-
         match mode {
-            EraseMode::Below => {
+            LineEraseMode::Right => {
                 let row = &mut self.rows[line];
                 let cells = row.as_mut_slice();
                 for cell in &mut cells[col..cols] {
@@ -264,7 +270,7 @@ impl Grid {
                     row.set_occ(cols);
                 }
             }
-            EraseMode::Above => {
+            LineEraseMode::Left => {
                 let end = col.min(cols - 1) + 1;
                 let row = &mut self.rows[line];
                 let cells = row.as_mut_slice();
@@ -282,17 +288,12 @@ impl Grid {
                     row.set_occ(row.occ().max(end));
                 }
             }
-            EraseMode::All => {
+            LineEraseMode::All => {
                 self.rows[line].reset(cols, template);
             }
-            // Scrollback clearing has no meaning at the line level (CSI 3 K
-            // doesn't exist in xterm/ECMA-48). Treat as no-op in release builds.
-            EraseMode::Scrollback => {}
         }
 
-        if mode != EraseMode::Scrollback {
-            self.dirty.mark(line);
-        }
+        self.dirty.mark(line);
     }
 
     /// Erase `count` cells starting at cursor (replace with template, don't shift).

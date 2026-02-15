@@ -14,7 +14,7 @@ use vte::ansi::{
 };
 
 use crate::event::{Event, EventListener};
-use crate::grid::editing::EraseMode;
+use crate::grid::editing::{DisplayEraseMode, LineEraseMode};
 use crate::grid::navigation::TabClearMode;
 use crate::index::Column;
 
@@ -179,10 +179,10 @@ impl<T: EventListener> Handler for Term<T> {
     /// ED: erase in display.
     fn clear_screen(&mut self, mode: ClearMode) {
         let erase = match mode {
-            ClearMode::Below => EraseMode::Below,
-            ClearMode::Above => EraseMode::Above,
-            ClearMode::All => EraseMode::All,
-            ClearMode::Saved => EraseMode::Scrollback,
+            ClearMode::Below => DisplayEraseMode::Below,
+            ClearMode::Above => DisplayEraseMode::Above,
+            ClearMode::All => DisplayEraseMode::All,
+            ClearMode::Saved => DisplayEraseMode::Scrollback,
         };
         self.grid_mut().erase_display(erase);
     }
@@ -190,9 +190,9 @@ impl<T: EventListener> Handler for Term<T> {
     /// EL: erase in line.
     fn clear_line(&mut self, mode: LineClearMode) {
         let erase = match mode {
-            LineClearMode::Right => EraseMode::Below,
-            LineClearMode::Left => EraseMode::Above,
-            LineClearMode::All => EraseMode::All,
+            LineClearMode::Right => LineEraseMode::Right,
+            LineClearMode::Left => LineEraseMode::Left,
+            LineClearMode::All => LineEraseMode::All,
         };
         self.grid_mut().erase_line(erase);
     }

@@ -12,6 +12,8 @@ pub mod mode;
 pub use charset::CharsetState;
 pub use mode::TermMode;
 
+use std::collections::VecDeque;
+
 use crate::color::Palette;
 use crate::event::EventListener;
 use crate::grid::{CursorShape, Grid};
@@ -52,7 +54,7 @@ pub struct Term<T: EventListener> {
     /// Current working directory (set by OSC 7 shell integration).
     cwd: Option<String>,
     /// Pushed title stack (xterm extension). Capped at [`TITLE_STACK_MAX_DEPTH`].
-    title_stack: Vec<String>,
+    title_stack: VecDeque<String>,
     /// Cursor shape for rendering.
     cursor_shape: CursorShape,
     /// Kitty keyboard enhancement mode stack (active screen).
@@ -76,7 +78,7 @@ impl<T: EventListener> Term<T> {
             charset: CharsetState::default(),
             title: String::new(),
             cwd: None,
-            title_stack: Vec::new(),
+            title_stack: VecDeque::new(),
             cursor_shape: CursorShape::default(),
             keyboard_mode_stack: Vec::new(),
             inactive_keyboard_mode_stack: Vec::new(),
@@ -125,7 +127,7 @@ impl<T: EventListener> Term<T> {
     }
 
     /// The title stack (xterm push/pop title).
-    pub fn title_stack(&self) -> &[String] {
+    pub fn title_stack(&self) -> &VecDeque<String> {
         &self.title_stack
     }
 
