@@ -76,6 +76,24 @@ impl Grid {
         self.cursor.set_col(Column(0));
     }
 
+    /// BS: move cursor left by one column.
+    ///
+    /// If the cursor is in wrap-pending state (col >= cols), snaps to the
+    /// last column. Otherwise moves left by one, clamped at column 0.
+    pub fn backspace(&mut self) {
+        let col = self.cursor.col().0;
+        let cols = self.cols;
+
+        if col >= cols {
+            // Wrap-pending: snap to last column.
+            self.cursor.set_col(Column(cols - 1));
+        } else if col > 0 {
+            self.cursor.set_col(Column(col - 1));
+        } else {
+            // Already at column 0: no-op.
+        }
+    }
+
     /// LF: move cursor down one line. If at the bottom of the scroll
     /// region, scroll the region up instead of moving.
     pub fn linefeed(&mut self) {

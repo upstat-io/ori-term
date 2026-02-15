@@ -7,7 +7,6 @@
 use vte::ansi::{CharsetIndex, Handler};
 
 use crate::event::{Event, EventListener};
-use crate::index::Column;
 
 use super::Term;
 
@@ -22,23 +21,8 @@ impl<T: EventListener> Handler for Term<T> {
     }
 
     /// Move cursor left by one column, clearing the wrap-pending state.
-    ///
-    /// The wrap-pending state is when the cursor has advanced past the last
-    /// column (`col == cols`) after a character write. Backspace resets
-    /// this to the last column position.
     fn backspace(&mut self) {
-        let grid = self.grid_mut();
-        let col = grid.cursor().col().0;
-        let cols = grid.cols();
-
-        if col >= cols {
-            // Wrap-pending: snap to last column.
-            grid.cursor_mut().set_col(Column(cols - 1));
-        } else if col > 0 {
-            grid.cursor_mut().set_col(Column(col - 1));
-        } else {
-            // Already at column 0: no-op.
-        }
+        self.grid_mut().backspace();
     }
 
     /// Advance cursor to the next tab stop (or end of line).

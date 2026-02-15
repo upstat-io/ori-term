@@ -180,6 +180,32 @@ fn save_and_restore_cursor_round_trip() {
     assert_eq!(grid.cursor().col(), Column(42));
 }
 
+// --- Backspace ---
+
+#[test]
+fn backspace_from_mid_line_moves_left() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_col(Column(10));
+    grid.backspace();
+    assert_eq!(grid.cursor().col(), Column(9));
+}
+
+#[test]
+fn backspace_at_col_zero_is_noop() {
+    let mut grid = Grid::new(24, 80);
+    grid.backspace();
+    assert_eq!(grid.cursor().col(), Column(0));
+}
+
+#[test]
+fn backspace_from_wrap_pending_snaps_to_last_column() {
+    let mut grid = Grid::new(24, 80);
+    // Simulate wrap-pending: col == cols.
+    grid.cursor_mut().set_col(Column(80));
+    grid.backspace();
+    assert_eq!(grid.cursor().col(), Column(79));
+}
+
 // --- Additional tests from reference repo gap analysis ---
 
 #[test]
@@ -406,6 +432,7 @@ fn cursor_only_movement_does_not_dirty() {
     grid.move_to_column(Column(20));
     grid.move_to_line(5);
     grid.carriage_return();
+    grid.backspace();
     grid.tab();
     grid.tab_backward();
     grid.save_cursor();
@@ -437,4 +464,112 @@ fn save_cursor_preserves_template() {
     assert_eq!(grid.cursor().col(), Column(7));
     assert_eq!(grid.cursor().template.fg, Color::Indexed(1));
     assert!(grid.cursor().template.flags.contains(crate::cell::CellFlags::BOLD));
+}
+
+// --- Reference repo gap analysis: additional edge cases ---
+
+#[test]
+fn backspace_consecutive_moves_left_each_time() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_col(Column(5));
+    grid.backspace();
+    grid.backspace();
+    grid.backspace();
+    assert_eq!(grid.cursor().col(), Column(2));
+}
+
+#[test]
+fn carriage_return_from_wrap_pending() {
+    let mut grid = Grid::new(24, 80);
+    // Wrap-pending: col == cols.
+    grid.cursor_mut().set_col(Column(80));
+    grid.carriage_return();
+    assert_eq!(grid.cursor().col(), Column(0));
+}
+
+#[test]
+fn linefeed_preserves_column() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(5);
+    grid.cursor_mut().set_col(Column(42));
+    grid.linefeed();
+    assert_eq!(grid.cursor().line(), 6);
+    assert_eq!(grid.cursor().col(), Column(42));
+}
+
+#[test]
+fn reverse_index_preserves_column() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(5);
+    grid.cursor_mut().set_col(Column(42));
+    grid.reverse_index();
+    assert_eq!(grid.cursor().line(), 4);
+    assert_eq!(grid.cursor().col(), Column(42));
+}
+
+#[test]
+fn tab_from_wrap_pending_snaps_to_last_column() {
+    let mut grid = Grid::new(24, 80);
+    // Wrap-pending: col == cols.
+    grid.cursor_mut().set_col(Column(80));
+    grid.tab();
+    // col+1 = 81 >= 80, so no stop found; snaps to last column.
+    assert_eq!(grid.cursor().col(), Column(79));
+}
+
+#[test]
+fn next_line_at_bottom_of_scroll_region_scrolls() {
+    let mut grid = Grid::new(5, 10);
+    for line in 0..5 {
+        grid.cursor_mut().set_line(line);
+        grid.cursor_mut().set_col(Column(0));
+        grid.put_char((b'A' + line as u8) as char);
+    }
+    grid.scroll_region = 1..4;
+    grid.cursor_mut().set_line(3);
+    grid.cursor_mut().set_col(Column(5));
+    // NEL at bottom of scroll region: CR + LF (scroll).
+    grid.next_line();
+    assert_eq!(grid.cursor().line(), 3);
+    assert_eq!(grid.cursor().col(), Column(0));
+    // Region scrolled: line 1 now has what was line 2 ('C').
+    assert_eq!(grid[Line(1)][Column(0)].ch, 'C');
+    // Line 3 is the new blank row.
+    assert!(grid[Line(3)][Column(0)].is_empty());
+    // Lines outside region untouched.
+    assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid[Line(4)][Column(0)].ch, 'E');
+}
+
+#[test]
+fn multiple_saves_overwrite_not_stack() {
+    let mut grid = Grid::new(24, 80);
+    // First save at (3, 10).
+    grid.cursor_mut().set_line(3);
+    grid.cursor_mut().set_col(Column(10));
+    grid.save_cursor();
+
+    // Second save at (7, 50) overwrites the first.
+    grid.cursor_mut().set_line(7);
+    grid.cursor_mut().set_col(Column(50));
+    grid.save_cursor();
+
+    // Move elsewhere.
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+
+    // Restore should return to the second save, not the first.
+    grid.restore_cursor();
+    assert_eq!(grid.cursor().line(), 7);
+    assert_eq!(grid.cursor().col(), Column(50));
+}
+
+#[test]
+fn tab_backward_from_wrap_pending_snaps_to_last_stop() {
+    let mut grid = Grid::new(24, 80);
+    // Wrap-pending: col == cols.
+    grid.cursor_mut().set_col(Column(80));
+    grid.tab_backward();
+    // Search backward from col 80: first stop at 72.
+    assert_eq!(grid.cursor().col(), Column(72));
 }
