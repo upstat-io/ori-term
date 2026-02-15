@@ -150,7 +150,7 @@ impl<T: EventListener> Term<T> {
     /// can work without holding the lock.
     pub fn renderable_content(&self) -> RenderableContent {
         let grid = self.grid();
-        let offset = grid.display_offset();
+        let offset = grid.display_offset().min(grid.scrollback().len());
         let lines = grid.lines();
         let cols = grid.cols();
         let palette = &self.palette;
@@ -167,9 +167,10 @@ impl<T: EventListener> Term<T> {
             // Top `offset` lines come from scrollback; the rest from the grid.
             let row = if vis_line < offset {
                 let sb_idx = offset - 1 - vis_line;
-                grid.scrollback()
-                    .get(sb_idx)
-                    .expect("display_offset must be <= scrollback.len()")
+                match grid.scrollback().get(sb_idx) {
+                    Some(row) => row,
+                    None => continue,
+                }
             } else {
                 let grid_line = vis_line - offset;
                 &grid[Line(grid_line as i32)]
