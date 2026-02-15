@@ -64,3 +64,6 @@ too_many_lines = "allow"
 uninlined_format_args = "allow"
 unreadable_literal = "allow"
 unused_self = "allow"
+
+[patch.crates-io]
+vte = { path = "crates/vte" }

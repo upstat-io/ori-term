@@ -10,7 +10,7 @@ use log::debug;
 use unicode_width::UnicodeWidthChar;
 use vte::ansi::{
     Attr, CharsetIndex, ClearMode, Handler, Hyperlink as VteHyperlink, LineClearMode, Mode,
-    NamedMode, PrivateMode, Rgb, TabulationClearMode,
+    NamedMode, PrivateMode, Rgb, StandardCharset, TabulationClearMode,
 };
 
 use crate::event::{Event, EventListener};
@@ -20,6 +20,7 @@ use crate::index::Column;
 
 use super::{Term, TermMode};
 
+mod esc;
 mod helpers;
 mod modes;
 mod osc;
@@ -92,6 +93,18 @@ impl<T: EventListener> Handler for Term<T> {
     #[inline]
     fn set_active_charset(&mut self, index: CharsetIndex) {
         self.charset.set_active(index);
+    }
+
+    /// ESC (, ESC ), ESC *, ESC +: designate G0–G3 charset.
+    #[inline]
+    fn configure_charset(&mut self, index: CharsetIndex, charset: StandardCharset) {
+        self.charset.set_charset(index, charset);
+    }
+
+    /// ESC N / ESC O: single shift (SS2/SS3).
+    #[inline]
+    fn set_single_shift(&mut self, index: CharsetIndex) {
+        self.charset.set_single_shift(index);
     }
 
     // --- CSI cursor movement ---
@@ -212,7 +225,6 @@ impl<T: EventListener> Handler for Term<T> {
     }
 
     // --- CSI scroll ---
-
     /// SU: scroll up (content moves up, blank lines at bottom).
     fn scroll_up(&mut self, count: usize) {
         self.grid_mut().scroll_up(count);
@@ -401,7 +413,7 @@ impl<T: EventListener> Handler for Term<T> {
         self.event_listener.send_event(Event::PtyWrite(response));
     }
 
-    // --- Keypad mode ---
+    // --- ESC sequences (keypad mode, reset) ---
 
     /// DECKPAM: set application keypad mode.
     fn set_keypad_application_mode(&mut self) {
@@ -411,6 +423,11 @@ impl<T: EventListener> Handler for Term<T> {
     /// DECKPNM: reset application keypad mode.
     fn unset_keypad_application_mode(&mut self) {
         self.mode.remove(TermMode::APP_KEYPAD);
+    }
+
+    /// RIS (ESC c): full terminal reset.
+    fn reset_state(&mut self) {
+        self.esc_reset_state();
     }
 
     // --- SGR (Select Graphic Rendition) ---
@@ -466,6 +483,11 @@ impl<T: EventListener> Handler for Term<T> {
     /// OSC 52: request clipboard content.
     fn clipboard_load(&mut self, clipboard: u8, terminator: &str) {
         self.osc_clipboard_load(clipboard, terminator);
+    }
+
+    /// OSC 7: set working directory (shell integration).
+    fn set_working_directory(&mut self, uri: Option<String>) {
+        self.osc_set_working_directory(uri);
     }
 
     /// OSC 8: set or clear hyperlink.
