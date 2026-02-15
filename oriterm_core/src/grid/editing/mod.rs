@@ -123,6 +123,12 @@ impl Grid {
     /// is silently discarded. Handles wrap-pending state and wide-char
     /// spacers.
     pub fn push_zerowidth(&mut self, ch: char) {
+        debug_assert!(
+            self.cursor.line() < self.lines,
+            "cursor line {} out of bounds (lines={})",
+            self.cursor.line(),
+            self.lines,
+        );
         let col = self.cursor.col().0;
         let cols = self.cols;
 
@@ -152,6 +158,7 @@ impl Grid {
         }
 
         self.rows[line][Column(prev_col)].push_zerowidth(ch);
+        self.dirty.mark(line);
     }
 
     /// Insert `count` blank cells at the cursor, shifting existing cells right.
