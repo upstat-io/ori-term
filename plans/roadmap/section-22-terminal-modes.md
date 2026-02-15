@@ -220,7 +220,7 @@ Complete reference of every DECSET/DECRST private mode and standard mode that or
 
 **Files:** `oriterm_core/src/term_mode.rs`
 
-**Reference:** `_old/src/term_mode.rs`, xterm ctlseqs, Ghostty `modes.zig`
+**Reference:** `_old/src/term_mode.rs`, xterm ctlseqs, Ghostty `src/terminal/modes.zig` (comptime-generated, 8-byte ModePacked with save/restore), Alacritty `alacritty_terminal/src/term/mod.rs` (TermMode bitflags)
 
 ### Private Modes (DECSET/DECRST — `CSI ? Pm h` / `CSI ? Pm l`)
 
@@ -300,7 +300,7 @@ Display images inline in the terminal. This is a deferred feature — document t
 
 **Files:** (to be determined — likely `oriterm_core/src/image.rs`, `oriterm/src/gpu/render_image.rs`)
 
-**Reference:** Kitty image protocol spec, Ghostty image support, WezTerm image protocols
+**Reference:** Kitty image protocol spec, Ghostty `src/terminal/kitty/graphics*.zig` (image storage + rendering), WezTerm image protocol crates
 
 - [ ] Kitty image protocol (preferred):
   - [ ] Image transmission via APC sequences (`ESC_P ... ESC\`)

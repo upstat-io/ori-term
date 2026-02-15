@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "2.6"
     title: "VTE Handler — Print + Execute"
-    status: complete
+    status: in-progress
   - id: "2.7"
     title: "VTE Handler — CSI Sequences"
     status: complete
@@ -59,7 +59,7 @@ sections:
 
 **Crate:** `oriterm_core`
 **Dependencies:** All from Section 01, plus `base64`, `parking_lot`
-**Reference:** Alacritty `alacritty_terminal/src/term/mod.rs` for `Term<T>` pattern; old `_old/src/term_handler/` for VTE method implementations.
+**Reference:** Alacritty `alacritty_terminal/src/term/mod.rs` for `Term<T>` pattern; Ghostty `src/terminal/Terminal.zig` for terminal state + stream handler; old `_old/src/term_handler/` for VTE method implementations.
 
 ---
 
@@ -242,6 +242,7 @@ The terminal state machine. Owns two grids (primary + alternate), mode flags, pa
 - [x] `fn input(&mut self, ch: char)`
   - [x] Translate through charset (`self.charset.translate(ch)`)
   - [x] If auto-wrap pending (cursor at last col with WRAP): advance to next line, scroll if needed
+  - [ ] If `UnicodeWidthChar::width(ch) == Some(0)`: append to previous cell's zerowidth list via `push_zerowidth()` instead of `put_char()` (combining marks, variation selectors)
   - [x] Call `self.grid_mut().put_char(translated_ch)`
 - [x] Control characters (dispatched by `fn execute`):
   - [x] `\x07` BEL — `self.event_listener.send_event(Event::Bell)`
@@ -260,6 +261,9 @@ The terminal state machine. Owns two grids (primary + alternate), mode flags, pa
   - [x] `"\t"` → cursor advances to column 8
   - [x] `"\x08"` → cursor moves left
   - [x] BEL triggers Event::Bell on a recording listener
+  - [ ] `"e\u{0301}"` → cell 0 has `ch='e'`, `zerowidth=['\u{0301}']`, cursor at col 1
+  - [ ] Multiple combining marks append to same cell's zerowidth list
+  - [ ] Zero-width char at column 0 (no previous cell) is discarded gracefully
 
 ---
 
@@ -511,7 +515,7 @@ Prevents starvation between PTY reader thread and render thread. Ported from Ala
 
 **File:** `oriterm_core/src/sync.rs`
 
-**Reference:** `~/projects/reference_repos/console_repos/alacritty/alacritty_terminal/src/sync.rs`
+**Reference:** Alacritty `alacritty_terminal/src/sync.rs` (FairMutex); Ghostty `src/Surface.zig` (3-thread model with mailboxes — different approach worth studying)
 
 - [ ] `FairMutex<T>` struct
   - [ ] Fields:

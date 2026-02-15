@@ -93,7 +93,7 @@ Font discovery and loading using platform-native mechanisms. Current approach sc
 
 **Files:** `oriterm/src/render/font_discovery.rs`, `oriterm/src/font/collection.rs`
 
-**Reference:** `_old/src/render/font_discovery.rs`, `_old/src/font/collection.rs`, Alacritty `crossfont`, Ghostty `font/discovery.zig`
+**Reference:** `_old/src/render/font_discovery.rs`, `_old/src/font/collection.rs`, Alacritty `crossfont` crate, Ghostty `src/font/discovery.zig` + `src/font/face.zig`
 
 ### Windows Font Discovery
 
@@ -310,7 +310,7 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 
 **Files:** `oriterm/src/config/mod.rs`, `oriterm/src/platform.rs` (new platform abstraction module)
 
-**Reference:** Ghostty platform layers, WezTerm appearance detection
+**Reference:** Ghostty `src/apprt/` (per-platform surface backends), WezTerm appearance detection
 
 - [ ] Windows:
   - [ ] Read `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`

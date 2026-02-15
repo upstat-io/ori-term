@@ -31,7 +31,7 @@ sections:
 **Goal:** When the window resizes, the terminal grid resizes to match and the PTY is notified of the new dimensions. Text reflows intelligently on column changes, preserving wrapped line continuity and cursor position.
 
 **Crate:** `oriterm_core` (Grid::resize, reflow), `oriterm` (window resize handler, PTY notification)
-**Reference:** `_old/src/grid/reflow.rs`, `_old/plans/terminal-core/section-04-resize.md`, Alacritty `grid/resize.rs`, Ghostty's cell-by-cell reflow
+**Reference:** `_old/src/grid/reflow.rs`, `_old/plans/terminal-core/section-04-resize.md`, Alacritty `grid/resize.rs`, Ghostty `src/terminal/PageList.zig` (resize within page structure), Ghostty `src/terminal/Screen.zig` (cell-by-cell reflow)
 
 **Prerequisite:** Section 01 (Grid with rows, scrollback, dirty tracking), Section 03 (PTY handle for resize notification)
 
@@ -121,7 +121,7 @@ When columns change, reflow wrapped lines to fit the new width. Uses Ghostty-sty
 
 **File:** `oriterm_core/src/grid/reflow.rs`
 
-**Reference:** `_old/src/grid/reflow.rs` (reflow_cols), Alacritty `grid/resize.rs`
+**Reference:** `_old/src/grid/reflow.rs` (reflow_cols), Alacritty `grid/resize.rs`, Ghostty `src/terminal/PageList.zig`
 
 - [ ] `Grid::resize(&mut self, new_cols: usize, new_lines: usize, reflow: bool)`
   - [ ] Guards: early return if 0x0 or dimensions unchanged

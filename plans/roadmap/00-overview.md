@@ -163,12 +163,51 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 
 ## Key References
 
+All paths relative to `~/projects/reference_repos/console_repos/`.
+
+### Terminal Core & State Machine
+| What | Alacritty | Ghostty |
+|------|-----------|---------|
+| Terminal state (Term<T>) | `alacritty/alacritty_terminal/src/term/mod.rs` | `ghostty/src/terminal/Terminal.zig` |
+| Event/callback system | `alacritty/alacritty_terminal/src/event.rs` | `ghostty/src/termio/message.zig` |
+| Threading/synchronization | `alacritty/alacritty_terminal/src/sync.rs` (FairMutex) | `ghostty/src/Surface.zig` (3-thread model + mailboxes) |
+| PTY event loop | `alacritty/alacritty_terminal/src/event_loop.rs` | `ghostty/src/termio/Termio.zig`, `ghostty/src/termio/Exec.zig` |
+
+### Grid, Memory & Storage
+| What | Alacritty | Ghostty |
+|------|-----------|---------|
+| Screen/grid | `alacritty/alacritty_terminal/src/grid/mod.rs` | `ghostty/src/terminal/Screen.zig` |
+| Storage backend | `alacritty/alacritty_terminal/src/grid/storage.rs` (ring buffer) | `ghostty/src/terminal/PageList.zig` (page linked list + memory pools) |
+| Page-based memory | — | `ghostty/src/terminal/page.zig` (contiguous page layout, offset pointers) |
+| Resize/reflow | `alacritty/alacritty_terminal/src/grid/resize.rs` | `ghostty/src/terminal/PageList.zig` (resize within page structure) |
+
+### Parsing & Performance
+| What | Alacritty | Ghostty |
+|------|-----------|---------|
+| VTE parser | `alacritty/alacritty_terminal/src/vte/` (crate) | `ghostty/src/terminal/Parser.zig` |
+| Stream processing | — | `ghostty/src/terminal/stream.zig` (SIMD-optimized) |
+| SIMD acceleration | — | `ghostty/src/simd/vt.zig`, `ghostty/src/simd/codepoint_width.zig` |
+| Damage tracking | `alacritty/alacritty_terminal/src/term/mod.rs` (dirty state) | `ghostty/src/terminal/page.zig` (Row.dirty), `ghostty/src/terminal/render.zig` |
+
+### Terminal Features
+| What | Alacritty | Ghostty |
+|------|-----------|---------|
+| Modes (DECSET/DECRST) | `alacritty/alacritty_terminal/src/term/mod.rs` | `ghostty/src/terminal/modes.zig` (comptime-generated, 8-byte packed) |
+| Color/palette | `alacritty/alacritty_terminal/src/term/color.rs` | `ghostty/src/terminal/color.zig` (DynamicPalette with mask) |
+| SGR attributes | `alacritty/alacritty_terminal/src/vte/ansi.rs` | `ghostty/src/terminal/sgr.zig` |
+| Selection | `alacritty/alacritty_terminal/src/selection.rs` | `ghostty/src/terminal/Selection.zig` (3-point, tracked/untracked) |
+| Key encoding | `alacritty/alacritty_terminal/src/term/mod.rs` | `ghostty/src/input/key_encode.zig` (Kitty + legacy) |
+| OSC/DCS/CSI | `alacritty/alacritty_terminal/src/vte/ansi.rs` | `ghostty/src/terminal/osc.zig`, `ghostty/src/terminal/dcs.zig` |
+
+### Rendering & Threading
+| What | Alacritty | Ghostty |
+|------|-----------|---------|
+| Renderer thread | `alacritty/alacritty/src/renderer/mod.rs` | `ghostty/src/renderer/Thread.zig` (120 FPS timer, cursor blink) |
+| Platform abstractions | `alacritty/alacritty/src/platform/` | `ghostty/src/apprt/` (macOS/Linux/Windows backends) |
+
+### Old Prototype
 | What | Where |
 |------|-------|
-| Alacritty Term<T> pattern | `~/projects/reference_repos/console_repos/alacritty/alacritty_terminal/src/term/mod.rs` |
-| Alacritty EventListener | `~/projects/reference_repos/console_repos/alacritty/alacritty_terminal/src/event.rs` |
-| Alacritty FairMutex | `~/projects/reference_repos/console_repos/alacritty/alacritty_terminal/src/sync.rs` |
-| Alacritty PTY event loop | `~/projects/reference_repos/console_repos/alacritty/alacritty_terminal/src/event_loop.rs` |
 | Old Cell/CellFlags | `_old/src/cell.rs` |
 | Old GPU renderer | `_old/src/gpu/renderer.rs` |
 | Old Grid | `_old/src/grid/mod.rs` |
