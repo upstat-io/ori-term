@@ -93,6 +93,12 @@ impl fmt::Display for Hyperlink {
     }
 }
 
+impl From<vte::ansi::Hyperlink> for Hyperlink {
+    fn from(h: vte::ansi::Hyperlink) -> Self {
+        Self { id: h.id, uri: h.uri }
+    }
+}
+
 /// One character position in the terminal grid.
 ///
 /// Target size: 24 bytes. Fields are ordered to minimize padding:

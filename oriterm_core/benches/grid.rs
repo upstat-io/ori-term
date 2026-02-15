@@ -12,7 +12,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 
 use oriterm_core::grid::Grid;
 use oriterm_core::index::Column;
-use oriterm_core::{EraseMode, Cell};
+use oriterm_core::{Cell, DisplayEraseMode, LineEraseMode};
 
 /// Terminal sizes that represent real usage.
 const SIZES: [(usize, usize); 3] = [
@@ -300,7 +300,7 @@ fn bench_erase_display_all(c: &mut Criterion) {
             |b, &(cols, lines)| {
                 let mut grid = filled_grid(lines, cols);
                 b.iter(|| {
-                    grid.erase_display(EraseMode::All);
+                    grid.erase_display(DisplayEraseMode::All);
                     black_box(&grid);
                 });
             },
@@ -324,7 +324,7 @@ fn bench_erase_line_below(c: &mut Criterion) {
                 grid.cursor_mut().set_line(lines / 2);
                 grid.cursor_mut().set_col(Column(cols / 3));
                 b.iter(|| {
-                    grid.erase_line(EraseMode::Below);
+                    grid.erase_line(LineEraseMode::Right);
                     black_box(&grid);
                 });
             },
@@ -481,7 +481,7 @@ fn bench_realistic_tui_redraw(c: &mut Criterion) {
                         grid.cursor_mut().set_line(line);
                         grid.cursor_mut().set_col(Column(0));
                         // Erase to end of line, then rewrite.
-                        grid.erase_line(EraseMode::Below);
+                        grid.erase_line(LineEraseMode::Right);
                         for &ch in black_box(chars) {
                             grid.put_char(ch);
                         }
