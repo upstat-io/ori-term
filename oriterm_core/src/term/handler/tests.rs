@@ -2671,3 +2671,105 @@ fn ris_clears_cursor_blinking() {
         "RIS should clear cursor blinking flag"
     );
 }
+
+// --- Zero-width / combining mark tests ---
+
+#[test]
+fn combining_mark_appends_to_previous_cell() {
+    let mut t = term();
+    // 'e' followed by U+0301 (combining acute accent).
+    feed(&mut t, "e\u{0301}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'e');
+    let zw = cell.extra.as_ref().expect("should have extra").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0301}']);
+    // Cursor stays at col 1 (zero-width doesn't advance).
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn multiple_combining_marks_append_to_same_cell() {
+    let mut t = term();
+    // 'a' + U+0300 (grave) + U+0301 (acute) + U+0302 (circumflex).
+    feed(&mut t, "a\u{0300}\u{0301}\u{0302}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'a');
+    let zw = cell.extra.as_ref().expect("should have extra").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0300}', '\u{0301}', '\u{0302}']);
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn zerowidth_at_col_zero_discarded() {
+    let mut t = term();
+    // Feed a combining mark at column 0 with no previous cell.
+    feed(&mut t, "\u{0301}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    // Cell should remain the default space — combining mark was discarded.
+    assert_eq!(cell.ch, ' ');
+    assert!(cell.extra.is_none());
+    assert_eq!(grid.cursor().col(), Column(0));
+}
+
+#[test]
+fn combining_mark_on_wide_char() {
+    use crate::cell::CellFlags;
+
+    let mut t = term();
+    // CJK ideograph '漢' (width 2) + combining acute accent.
+    feed(&mut t, "漢\u{0301}".as_bytes());
+
+    let grid = t.grid();
+    let base = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(base.ch, '漢');
+    assert!(base.flags.contains(CellFlags::WIDE_CHAR));
+    let zw = base.extra.as_ref().expect("combining mark on base cell").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0301}']);
+
+    // Spacer at col 1 must NOT have the combining mark.
+    let spacer = &grid[crate::index::Line(0)][Column(1)];
+    assert!(spacer.flags.contains(CellFlags::WIDE_CHAR_SPACER));
+    assert!(spacer.extra.is_none());
+
+    // Cursor at col 2 (wide char width), unaffected by combining mark.
+    assert_eq!(grid.cursor().col(), Column(2));
+}
+
+#[test]
+fn combining_mark_at_wrap_pending() {
+    // 5-column terminal: write "abcde" to fill the line.
+    // After 'e', cursor is at col 5 (== cols), i.e. wrap-pending.
+    // A combining mark should attach to 'e' at col 4, not trigger a wrap.
+    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    feed(&mut t, "abcde\u{0300}".as_bytes());
+
+    let grid = t.grid();
+    let cell_e = &grid[crate::index::Line(0)][Column(4)];
+    assert_eq!(cell_e.ch, 'e');
+    let zw = cell_e.extra.as_ref().expect("combining mark on wrap-pending cell").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0300}']);
+
+    // Cursor stays wrap-pending at col 5 — combining mark didn't advance it.
+    assert_eq!(grid.cursor().col(), Column(5));
+    // Still on line 0 — no wrap occurred.
+    assert_eq!(grid.cursor().line(), 0);
+}
+
+#[test]
+fn zerowidth_joiner_at_col_zero_discarded() {
+    let mut t = term();
+    // U+200D (zero-width joiner) at column 0 with no previous cell.
+    feed(&mut t, "\u{200D}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, ' ');
+    assert!(cell.extra.is_none());
+    assert_eq!(grid.cursor().col(), Column(0));
+}

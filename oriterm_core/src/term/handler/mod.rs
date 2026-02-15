@@ -36,10 +36,21 @@ impl<T: EventListener> Handler for Term<T> {
     #[inline]
     fn input(&mut self, c: char) {
         let c = self.charset.translate(c);
+        let width = match UnicodeWidthChar::width(c) {
+            Some(width) => width,
+            // Control chars with no width — ignore.
+            None => return,
+        };
+
+        // Zero-width: append as combining mark to previous cell.
+        if width == 0 {
+            self.grid_mut().push_zerowidth(c);
+            return;
+        }
+
         let insert = self.mode.contains(TermMode::INSERT);
         let grid = self.grid_mut();
         if insert {
-            let width = UnicodeWidthChar::width(c).unwrap_or(1);
             grid.insert_blank(width);
         }
         grid.put_char(c);

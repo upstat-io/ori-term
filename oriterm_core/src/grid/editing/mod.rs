@@ -116,6 +116,44 @@ impl Grid {
         }
     }
 
+    /// Append a zero-width character (combining mark) to the previous cell.
+    ///
+    /// Backtracks from the cursor to find the cell that was just written.
+    /// If the cursor is at column 0 with no previous cell, the character
+    /// is silently discarded. Handles wrap-pending state and wide-char
+    /// spacers.
+    pub fn push_zerowidth(&mut self, ch: char) {
+        let col = self.cursor.col().0;
+        let cols = self.cols;
+
+        // Determine the column of the previous cell.
+        let prev_col = if col < cols {
+            // Normal: cursor hasn't wrapped yet.
+            col.checked_sub(1)
+        } else {
+            // Wrap pending: cursor is past last column; previous cell is
+            // the last column.
+            Some(cols.saturating_sub(1))
+        };
+
+        let Some(mut prev_col) = prev_col else {
+            // Column 0 with no previous cell — discard.
+            return;
+        };
+
+        let line = self.cursor.line();
+
+        // If on a wide-char spacer, step back to the base cell.
+        if self.rows[line][Column(prev_col)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+        {
+            prev_col = prev_col.saturating_sub(1);
+        }
+
+        self.rows[line][Column(prev_col)].push_zerowidth(ch);
+    }
+
     /// Insert `count` blank cells at the cursor, shifting existing cells right.
     ///
     /// Cells that shift past the right edge are lost.
