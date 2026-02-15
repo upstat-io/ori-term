@@ -31,6 +31,13 @@ bitflags! {
         const DOTTED_UNDERLINE  = 1 << 12;
         const DASHED_UNDERLINE  = 1 << 13;
         const DOUBLE_UNDERLINE  = 1 << 14;
+
+        /// Union of all underline variants for mutual exclusion.
+        const ALL_UNDERLINES = Self::UNDERLINE.bits()
+            | Self::DOUBLE_UNDERLINE.bits()
+            | Self::CURLY_UNDERLINE.bits()
+            | Self::DOTTED_UNDERLINE.bits()
+            | Self::DASHED_UNDERLINE.bits();
     }
 }
 
@@ -159,6 +166,27 @@ impl Cell {
             return 0;
         }
         UnicodeWidthChar::width(self.ch).unwrap_or(1)
+    }
+
+    /// Set or clear the underline color (SGR 58/59).
+    ///
+    /// `Some(color)` allocates `CellExtra` if needed. `None` clears the
+    /// underline color and drops `CellExtra` if it becomes empty.
+    pub fn set_underline_color(&mut self, color: Option<Color>) {
+        match color {
+            Some(c) => {
+                let extra = self.extra.get_or_insert_with(Default::default);
+                Arc::make_mut(extra).underline_color = Some(c);
+            }
+            None => {
+                if let Some(extra) = &mut self.extra {
+                    Arc::make_mut(extra).underline_color = None;
+                    if extra.zerowidth.is_empty() && extra.hyperlink.is_none() {
+                        self.extra = None;
+                    }
+                }
+            }
+        }
     }
 
     /// Append a combining mark (zero-width character) to this cell.
