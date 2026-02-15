@@ -110,7 +110,7 @@ Progressive enhancement keyboard protocol for modern terminal applications. Enco
 
 **File:** `oriterm/src/key_encoding/kitty.rs`
 
-**Reference:** `_old/src/key_encoding/kitty.rs`, Kitty keyboard protocol specification (https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
+**Reference:** `_old/src/key_encoding/kitty.rs`, Kitty keyboard protocol specification (https://sw.kovidgoyal.net/kitty/keyboard-protocol/), Ghostty `src/input/key_encode.zig` (Kitty + legacy encoding), Alacritty `alacritty_terminal/src/term/mod.rs` (key input handling)
 
 - [ ] `encode_kitty(key: &KeyEvent, mode_flags: u8, term_mode: TermMode) -> Option<Vec<u8>>`
   - [ ] Main entry point: encodes key events using CSI u format

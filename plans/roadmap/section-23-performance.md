@@ -48,7 +48,7 @@ Only redraw cells that changed since last frame. Currently `build_grid_instances
 
 **Files:** `oriterm_core/src/grid/dirty.rs`, `oriterm_core/src/grid/row.rs`, `oriterm/src/gpu/renderer.rs`
 
-**Reference:** `_old/src/grid/dirty.rs`, `_old/src/grid/row.rs`, `_old/src/gpu/renderer.rs`, Ghostty damage tracking, Alacritty dirty state tracking
+**Reference:** `_old/src/grid/dirty.rs`, `_old/src/grid/row.rs`, `_old/src/gpu/renderer.rs`, Ghostty `src/terminal/page.zig` (Row.dirty) + `src/terminal/render.zig` (RenderState), Alacritty `alacritty_terminal/src/term/mod.rs` (dirty state)
 
 ### Per-Row Dirty Flag
 
@@ -112,7 +112,7 @@ Optimize VTE sequence parsing throughput for high-volume output.
 
 **Files:** `oriterm/src/tab/mod.rs` (PTY processing), `oriterm_core/src/term_handler/mod.rs` (VTE handler)
 
-**Reference:** `_old/src/tab/mod.rs`, `_old/src/term_handler/mod.rs`, Alacritty parsing optimization, vte crate performance
+**Reference:** `_old/src/tab/mod.rs`, `_old/src/term_handler/mod.rs`, Alacritty `alacritty_terminal/src/vte/` (parser crate), Ghostty `src/terminal/stream.zig` (SIMD-optimized stream processing) + `src/simd/vt.zig`
 
 ### Batch Processing (already done in old codebase)
 
@@ -169,7 +169,7 @@ Control memory usage, especially for scrollback. The primary target is replacing
 
 **Files:** `oriterm_core/src/grid/ring.rs`, `oriterm_core/src/grid/row.rs`, `oriterm_core/src/grid/mod.rs`
 
-**Reference:** `_old/src/grid/ring.rs`, `_old/src/grid/row.rs`, Alacritty `grid/storage.rs` ring buffer, Ghostty `PageList` paging
+**Reference:** `_old/src/grid/ring.rs`, `_old/src/grid/row.rs`, Alacritty `alacritty_terminal/src/grid/storage.rs` (ring buffer), Ghostty `src/terminal/PageList.zig` (page linked list + memory pools) + `src/terminal/page.zig` (contiguous page layout)
 
 ### Ring Buffer for Scrollback
 
@@ -238,7 +238,7 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 
 **Files:** `oriterm/src/gpu/renderer.rs`, `oriterm/src/gpu/instance_writer.rs`, `oriterm/src/gpu/atlas.rs`, `oriterm/src/gpu/state.rs`
 
-**Reference:** `_old/src/gpu/renderer.rs`, `_old/src/gpu/instance_writer.rs`, `_old/src/gpu/atlas.rs`, Ghostty renderer optimizations, Alacritty performance design
+**Reference:** `_old/src/gpu/renderer.rs`, `_old/src/gpu/instance_writer.rs`, `_old/src/gpu/atlas.rs`, Ghostty `src/renderer/Thread.zig` (120 FPS timer, coalescing), Alacritty `alacritty/src/renderer/mod.rs`
 
 ### Instance Buffer Partial Updates
 
@@ -300,7 +300,7 @@ Establish performance baselines and regression testing. Every optimization in th
 
 **Files:** `oriterm_core/benches/grid.rs`, `oriterm/benches/rendering.rs` (new benchmark crates)
 
-**Reference:** Alacritty benchmark suite, Ghostty performance testing, `criterion` crate
+**Reference:** Alacritty `alacritty/benches/`, Ghostty `src/terminal/bench/` (parsing + grid benchmarks), `criterion` crate
 
 ### Throughput Benchmark
 
