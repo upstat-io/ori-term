@@ -151,6 +151,23 @@ impl Grid {
         }
     }
 
+    /// Reset the grid to initial state.
+    ///
+    /// Clears all rows, resets cursor to (0,0) with default template,
+    /// clears saved cursor, resets tab stops and scroll region, and
+    /// marks everything dirty. Does not affect scrollback capacity.
+    pub fn reset(&mut self) {
+        for row in &mut self.rows {
+            row.reset(self.cols, &crate::cell::Cell::default());
+        }
+        self.cursor = Cursor::new();
+        self.saved_cursor = None;
+        self.tab_stops = Self::init_tab_stops(self.cols);
+        self.scroll_region = 0..self.lines;
+        self.display_offset = 0;
+        self.dirty.mark_all();
+    }
+
     /// Initialize tab stops every 8 columns.
     fn init_tab_stops(cols: usize) -> Vec<bool> {
         (0..cols).map(|c| c % 8 == 0).collect()

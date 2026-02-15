@@ -145,6 +145,15 @@ impl<T: EventListener> Term<T> {
         ));
     }
 
+    /// OSC 7: set working directory (shell integration).
+    ///
+    /// The payload is typically a `file://hostname/path` URI. We store it
+    /// as-is and let the consumer parse it.
+    pub(super) fn osc_set_working_directory(&mut self, uri: Option<String>) {
+        debug!("Setting working directory: {uri:?}");
+        self.cwd = uri;
+    }
+
     /// OSC 8: set or clear hyperlink on cursor template.
     pub(super) fn osc_set_hyperlink(&mut self, hyperlink: Option<VteHyperlink>) {
         debug!("Setting hyperlink: {hyperlink:?}");

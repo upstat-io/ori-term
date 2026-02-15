@@ -31,10 +31,10 @@ sections:
     status: complete
   - id: "2.9"
     title: "VTE Handler — OSC Sequences"
-    status: in-progress
+    status: complete
   - id: "2.10"
     title: "VTE Handler — ESC Sequences"
-    status: not-started
+    status: complete
   - id: "2.11"
     title: "VTE Handler — DCS + Misc"
     status: not-started
@@ -385,13 +385,13 @@ Operating System Commands: title, palette, clipboard.
 - [x] `OSC 0` — set icon name + window title
   - [x] `self.title = payload.to_string()`
   - [x] `self.event_listener.send_event(Event::Title(...))`
-- [ ] `OSC 1` — set icon name (ignored, just update title) <!-- blocked: VTE 0.15 osc_dispatch does not match b"1"; needs VTE extension -->
+- [x] `OSC 1` — set icon name (routes through set_title via VTE fork)
 - [x] `OSC 2` — set window title
 - [x] `OSC 4` — set/query indexed color
   - [x] `OSC 4;index;rgb` → `palette.set_indexed(index, parse_rgb(rgb))`
   - [x] `OSC 4;index;?` → query: respond with current color
-- [ ] `OSC 7` — set working directory (shell integration) <!-- blocked: VTE 0.15 osc_dispatch does not match b"7"; needs VTE extension -->
-  - [ ] Store as `Term.cwd: Option<String>`
+- [x] `OSC 7` — set working directory (shell integration, via VTE fork)
+  - [x] Store as `Term.cwd: Option<String>`
 - [x] `OSC 8` — hyperlink
   - [x] `OSC 8;;url` → set hyperlink on cursor template (CellExtra)
   - [x] `OSC 8;;` → clear hyperlink
@@ -419,26 +419,26 @@ Escape sequences (non-CSI): charset, cursor save/restore, alt screen, index.
 
 **File:** `oriterm_core/src/term/handler.rs` (continued)
 
-- [ ] `ESC 7` / `DECSC` — save cursor position + attributes
-- [ ] `ESC 8` / `DECRC` — restore cursor position + attributes
-- [ ] `ESC D` / `IND` — index (linefeed without CR)
-- [ ] `ESC E` / `NEL` — next line (CR + LF)
-- [ ] `ESC H` / `HTS` — horizontal tab set
-- [ ] `ESC M` / `RI` — reverse index
-- [ ] `ESC c` / `RIS` — full reset (reset all state to initial)
-- [ ] `ESC (` / `ESC )` / `ESC *` / `ESC +` — designate G0/G1/G2/G3 charset
-  - [ ] `B` → ASCII, `0` → DEC Special Graphics
-- [ ] `ESC =` / `DECKPAM` — application keypad mode
-- [ ] `ESC >` / `DECKPNM` — normal keypad mode
-- [ ] `ESC N` / `SS2` — single shift G2
-- [ ] `ESC O` / `SS3` — single shift G3
-- [ ] **Tests**:
-  - [ ] `ESC7` + move cursor + `ESC8` restores original position
-  - [ ] `ESCD` at bottom line scrolls up
-  - [ ] `ESCM` at top line scrolls down
-  - [ ] `ESCc` resets all state
-  - [ ] `ESC(0` + `'q'` → box drawing char `'─'`
-  - [ ] `ESC(B` → back to ASCII
+- [x] `ESC 7` / `DECSC` — save cursor position + attributes
+- [x] `ESC 8` / `DECRC` — restore cursor position + attributes
+- [x] `ESC D` / `IND` — index (linefeed without CR)
+- [x] `ESC E` / `NEL` — next line (CR + LF)
+- [x] `ESC H` / `HTS` — horizontal tab set
+- [x] `ESC M` / `RI` — reverse index
+- [x] `ESC c` / `RIS` — full reset (reset all state to initial)
+- [x] `ESC (` / `ESC )` / `ESC *` / `ESC +` — designate G0/G1/G2/G3 charset
+  - [x] `B` → ASCII, `0` → DEC Special Graphics
+- [x] `ESC =` / `DECKPAM` — application keypad mode
+- [x] `ESC >` / `DECKPNM` — normal keypad mode
+- [x] `ESC N` / `SS2` — single shift G2
+- [x] `ESC O` / `SS3` — single shift G3
+- [x] **Tests**:
+  - [x] `ESC7` + move cursor + `ESC8` restores original position
+  - [x] `ESCD` at bottom line scrolls up
+  - [x] `ESCM` at top line scrolls down
+  - [x] `ESCc` resets all state
+  - [x] `ESC(0` + `'q'` → box drawing char `'─'`
+  - [x] `ESC(B` → back to ASCII
 
 ---
 
