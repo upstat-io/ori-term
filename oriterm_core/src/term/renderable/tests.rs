@@ -1181,3 +1181,222 @@ fn empty_cells_have_default_everything() {
         assert!(cell.zerowidth.is_empty());
     }
 }
+
+// --- Extended zero-width / combining mark renderable tests ---
+
+#[test]
+fn combining_mark_via_vte_propagates_to_renderable() {
+    let mut t = term();
+    // Full VTE pipeline: 'e' + U+0301 (combining acute accent).
+    feed(&mut t, "e\u{0301}".as_bytes());
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'e');
+    assert_eq!(cell.zerowidth, vec!['\u{0301}']);
+}
+
+#[test]
+fn zerowidth_space_propagates_to_renderable() {
+    let mut t = term();
+    // 'a' + U+200B (zero-width space).
+    feed(&mut t, "a\u{200B}".as_bytes());
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'a');
+    assert_eq!(cell.zerowidth, vec!['\u{200B}']);
+}
+
+#[test]
+fn variation_selector_propagates_to_renderable() {
+    let mut t = term();
+    // '❤' (U+2764) + VS16 (U+FE0F).
+    feed(&mut t, "\u{2764}\u{FE0F}".as_bytes());
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, '\u{2764}');
+    assert_eq!(cell.zerowidth, vec!['\u{FE0F}']);
+}
+
+#[test]
+fn zjw_emoji_sequence_renderable_cells() {
+    let mut t = Term::new(4, 20, 100, VoidListener);
+    // 👨‍👩‍👧 = U+1F468 + ZWJ + U+1F469 + ZWJ + U+1F467
+    // Without mode 2027: each emoji is a separate wide char, ZWJs stored.
+    feed(
+        &mut t,
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}".as_bytes(),
+    );
+
+    let content = t.renderable_content();
+
+    // 👨 at col 0 (wide) with ZWJ.
+    let man = &content.cells[0];
+    assert_eq!(man.ch, '\u{1F468}');
+    assert!(man.flags.contains(CellFlags::WIDE_CHAR));
+    assert_eq!(man.zerowidth, vec!['\u{200D}']);
+
+    // Spacer at col 1.
+    let spacer1 = &content.cells[1];
+    assert!(spacer1.flags.contains(CellFlags::WIDE_CHAR_SPACER));
+    assert!(spacer1.zerowidth.is_empty());
+
+    // 👩 at col 2 (wide) with ZWJ.
+    let woman = &content.cells[2];
+    assert_eq!(woman.ch, '\u{1F469}');
+    assert!(woman.flags.contains(CellFlags::WIDE_CHAR));
+    assert_eq!(woman.zerowidth, vec!['\u{200D}']);
+
+    // 👧 at col 4 (wide) — no zerowidth.
+    let girl = &content.cells[4];
+    assert_eq!(girl.ch, '\u{1F467}');
+    assert!(girl.flags.contains(CellFlags::WIDE_CHAR));
+    assert!(girl.zerowidth.is_empty());
+}
+
+#[test]
+fn wide_char_combining_mark_propagates_to_renderable() {
+    let mut t = term();
+    // CJK '世' + combining acute. Mark should be on the base cell, not spacer.
+    feed(&mut t, "世\u{0301}".as_bytes());
+
+    let content = t.renderable_content();
+
+    let base = &content.cells[0];
+    assert_eq!(base.ch, '世');
+    assert!(base.flags.contains(CellFlags::WIDE_CHAR));
+    assert_eq!(base.zerowidth, vec!['\u{0301}']);
+
+    let spacer = &content.cells[1];
+    assert!(spacer.flags.contains(CellFlags::WIDE_CHAR_SPACER));
+    assert!(spacer.zerowidth.is_empty());
+}
+
+#[test]
+fn multiple_zerowidth_types_propagate_to_renderable() {
+    let mut t = term();
+    // 'a' + combining acute + ZWJ + VS16 — all three in renderable.
+    feed(&mut t, "a\u{0301}\u{200D}\u{FE0F}".as_bytes());
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'a');
+    assert_eq!(cell.zerowidth, vec!['\u{0301}', '\u{200D}', '\u{FE0F}']);
+}
+
+#[test]
+fn four_combining_marks_propagate_to_renderable() {
+    let mut t = term();
+    // 'o' + 4 combining marks.
+    feed(
+        &mut t,
+        "o\u{0300}\u{0301}\u{0302}\u{0303}".as_bytes(),
+    );
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'o');
+    assert_eq!(
+        cell.zerowidth,
+        vec!['\u{0300}', '\u{0301}', '\u{0302}', '\u{0303}'],
+    );
+}
+
+#[test]
+fn scrollback_preserves_combining_marks() {
+    let mut t = Term::new(4, 10, 100, VoidListener);
+
+    // Write 'é' (e + combining acute) that will scroll into scrollback.
+    feed(&mut t, "e\u{0301}".as_bytes());
+    feed(&mut t, b"AAAAAAAAA\r\n"); // Fill rest of line 0.
+    feed(&mut t, b"line2\r\nline3\r\nline4\r\nline5");
+
+    t.grid_mut().scroll_display(1);
+
+    let content = t.renderable_content();
+
+    // First visible cell from scrollback should have combining mark.
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'e');
+    assert_eq!(cell.zerowidth, vec!['\u{0301}']);
+}
+
+#[test]
+fn alt_screen_preserves_combining_marks() {
+    let mut t = term();
+    // Enter alt screen, write char with combining mark.
+    feed(&mut t, b"\x1b[?1049h");
+    feed(&mut t, "n\u{0303}".as_bytes());
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'n');
+    assert_eq!(cell.zerowidth, vec!['\u{0303}']);
+    assert!(content.mode.contains(TermMode::ALT_SCREEN));
+}
+
+#[test]
+fn combining_mark_with_color_resolves_correctly() {
+    let mut t = term();
+    let palette = Palette::default();
+
+    // Red 'e' + combining acute.
+    feed(&mut t, b"\x1b[31m");
+    feed(&mut t, "e\u{0301}".as_bytes());
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'e');
+    assert_eq!(cell.zerowidth, vec!['\u{0301}']);
+    assert_eq!(cell.fg, palette.resolve(vte::ansi::Color::Named(vte::ansi::NamedColor::Red)));
+}
+
+#[test]
+fn damage_tracked_for_combining_mark_write() {
+    let mut t = term();
+    // Write 'a', drain dirty.
+    feed(&mut t, b"a");
+    let _ = t.renderable_content();
+    t.grid_mut().dirty_mut().drain().for_each(drop);
+
+    // Combining mark should appear in damage.
+    feed(&mut t, "\u{0301}".as_bytes());
+
+    let content = t.renderable_content();
+    assert!(
+        content.damage.iter().any(|d| d.line == 0),
+        "combining mark write should mark line 0 as damaged",
+    );
+}
+
+#[test]
+fn zerowidth_at_col_zero_produces_empty_renderable() {
+    let mut t = term();
+    // Combining mark at col 0 — discarded by push_zerowidth.
+    feed(&mut t, "\u{0301}".as_bytes());
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, ' ');
+    assert!(cell.zerowidth.is_empty());
+}
+
+#[test]
+fn combining_mark_at_wrap_pending_propagates_to_renderable() {
+    // 10-column terminal. Fill line with "ABCDEFGHIJ" (wrap pending).
+    // Combining mark should attach to 'J' at col 9.
+    let mut t = term();
+    feed(&mut t, b"ABCDEFGHIJ");
+    feed(&mut t, "\u{0300}".as_bytes());
+
+    let content = t.renderable_content();
+
+    let last = &content.cells[9];
+    assert_eq!(last.ch, 'J');
+    assert_eq!(last.zerowidth, vec!['\u{0300}']);
+    // Cursor still wrap-pending — combining mark didn't advance it.
+    assert_eq!(content.cursor.column, Column(10));
+    assert_eq!(content.cursor.line, 0);
+}

@@ -2773,3 +2773,331 @@ fn zerowidth_joiner_at_col_zero_discarded() {
     assert!(cell.extra.is_none());
     assert_eq!(grid.cursor().col(), Column(0));
 }
+
+// --- Extended zero-width character tests (from Ghostty/Alacritty reference patterns) ---
+
+#[test]
+fn zerowidth_space_appends_to_previous_cell() {
+    let mut t = term();
+    // 'a' + U+200B (zero-width space).
+    feed(&mut t, "a\u{200B}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'a');
+    let zw = cell.extra.as_ref().expect("should have extra").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{200B}']);
+    // Cursor stays at col 1.
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn word_joiner_appends_to_previous_cell() {
+    let mut t = term();
+    // 'b' + U+2060 (word joiner).
+    feed(&mut t, "b\u{2060}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'b');
+    let zw = cell.extra.as_ref().expect("should have extra").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{2060}']);
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn variation_selector_15_appends_to_previous_cell() {
+    let mut t = term();
+    // '☔' (U+2614, umbrella with rain, width 2) + U+FE0E (VS15).
+    // VS15 is zero-width; without mode 2027 it's stored as a combining mark.
+    feed(&mut t, "\u{2614}\u{FE0E}".as_bytes());
+
+    let grid = t.grid();
+    let base = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(base.ch, '\u{2614}');
+    let zw = base.extra.as_ref().expect("VS15 stored").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{FE0E}']);
+    // Without mode 2027, width stays at 2.
+    assert_eq!(grid.cursor().col(), Column(2));
+}
+
+#[test]
+fn variation_selector_16_appends_to_previous_cell() {
+    let mut t = term();
+    // '❤' (U+2764, heavy black heart) + U+FE0F (VS16).
+    // VS16 is zero-width; stored as combining mark without mode 2027.
+    feed(&mut t, "\u{2764}\u{FE0F}".as_bytes());
+
+    let grid = t.grid();
+    let base = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(base.ch, '\u{2764}');
+    let zw = base.extra.as_ref().expect("VS16 stored").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{FE0F}']);
+}
+
+#[test]
+fn vs16_on_ascii_stored_as_zerowidth() {
+    let mut t = term();
+    // 'x' + U+FE0F (VS16, invalid for ASCII — silently stored as zerowidth).
+    feed(&mut t, "x\u{FE0F}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'x');
+    let zw = cell.extra.as_ref().expect("VS16 stored on ASCII").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{FE0F}']);
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn zjw_appends_to_previous_cell() {
+    let mut t = term();
+    // 'a' + U+200D (ZWJ).
+    feed(&mut t, "a\u{200D}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'a');
+    let zw = cell.extra.as_ref().expect("ZWJ stored").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{200D}']);
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn zjw_emoji_sequence_stores_each_emoji_separately() {
+    use crate::cell::CellFlags;
+
+    let mut t = term();
+    // 👨‍👩‍👧 = U+1F468 + U+200D + U+1F469 + U+200D + U+1F467
+    // Without mode 2027, each emoji is placed as a separate wide char.
+    // ZWJ chars get appended as zerowidth to the preceding emoji.
+    feed(&mut t, "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}".as_bytes());
+
+    let grid = t.grid();
+    // 👨 at col 0-1 (wide).
+    let man = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(man.ch, '\u{1F468}');
+    assert!(man.flags.contains(CellFlags::WIDE_CHAR));
+    // ZWJ appended to 👨.
+    let zw = man.extra.as_ref().expect("ZWJ on man").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{200D}']);
+
+    // Spacer at col 1.
+    assert!(grid[crate::index::Line(0)][Column(1)]
+        .flags
+        .contains(CellFlags::WIDE_CHAR_SPACER));
+
+    // 👩 at col 2-3 (wide).
+    let woman = &grid[crate::index::Line(0)][Column(2)];
+    assert_eq!(woman.ch, '\u{1F469}');
+    assert!(woman.flags.contains(CellFlags::WIDE_CHAR));
+    // ZWJ appended to 👩.
+    let zw = woman.extra.as_ref().expect("ZWJ on woman").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{200D}']);
+
+    // 👧 at col 4-5 (wide).
+    let girl = &grid[crate::index::Line(0)][Column(4)];
+    assert_eq!(girl.ch, '\u{1F467}');
+    assert!(girl.flags.contains(CellFlags::WIDE_CHAR));
+
+    // Cursor at col 6 (3 wide chars * 2).
+    assert_eq!(grid.cursor().col(), Column(6));
+}
+
+#[test]
+fn vs16_then_combining_mark_both_stored() {
+    let mut t = term();
+    // 'n' + U+FE0F (VS16) + U+0303 (combining tilde).
+    // Both are zero-width and should be stored on 'n'.
+    feed(&mut t, "n\u{FE0F}\u{0303}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'n');
+    let zw = cell.extra.as_ref().expect("both stored").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{FE0F}', '\u{0303}']);
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn four_combining_marks_all_stored() {
+    let mut t = term();
+    // 'o' + 4 combining marks (grave, acute, circumflex, tilde).
+    feed(
+        &mut t,
+        "o\u{0300}\u{0301}\u{0302}\u{0303}".as_bytes(),
+    );
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'o');
+    let zw = cell.extra.as_ref().expect("4 marks stored").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0300}', '\u{0301}', '\u{0302}', '\u{0303}']);
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn mixed_zerowidth_types_on_same_cell() {
+    let mut t = term();
+    // 'a' + combining acute + ZWJ + VS16.
+    feed(&mut t, "a\u{0301}\u{200D}\u{FE0F}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'a');
+    let zw = cell.extra.as_ref().expect("mixed zw types").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0301}', '\u{200D}', '\u{FE0F}']);
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn combining_mark_after_line_wrap() {
+    // 5-column terminal. Write "ABCDE" to fill line 0, then "F" wraps to line 1.
+    // Then a combining mark should attach to 'F' on line 1.
+    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    feed(&mut t, "ABCDEF\u{0301}".as_bytes());
+
+    let grid = t.grid();
+    // 'F' is on line 1, col 0. Combining mark attaches to it.
+    let cell = &grid[crate::index::Line(1)][Column(0)];
+    assert_eq!(cell.ch, 'F');
+    let zw = cell.extra.as_ref().expect("combining on wrapped cell").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0301}']);
+    assert_eq!(grid.cursor().col(), Column(1));
+    assert_eq!(grid.cursor().line(), 1);
+}
+
+#[test]
+fn combining_mark_on_wide_char_after_wrap() {
+    use crate::cell::CellFlags;
+
+    // 5-column terminal. Write "ABC" (3 cols), then a wide char wraps to next line.
+    // Then a combining mark should attach to the wide char base, not the spacer.
+    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    feed(&mut t, b"ABCD");
+    // Wide char at col 4 can't fit → wraps to line 1.
+    feed(&mut t, "漢\u{0301}".as_bytes());
+
+    let grid = t.grid();
+    let base = &grid[crate::index::Line(1)][Column(0)];
+    assert_eq!(base.ch, '漢');
+    assert!(base.flags.contains(CellFlags::WIDE_CHAR));
+    let zw = base.extra.as_ref().expect("combining on wide after wrap").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0301}']);
+
+    // Spacer must not have the combining mark.
+    let spacer = &grid[crate::index::Line(1)][Column(1)];
+    assert!(spacer.flags.contains(CellFlags::WIDE_CHAR_SPACER));
+    assert!(spacer.extra.is_none());
+}
+
+#[test]
+fn zerowidth_space_at_col_zero_discarded() {
+    let mut t = term();
+    // U+200B at column 0 with no previous cell.
+    feed(&mut t, "\u{200B}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, ' ');
+    assert!(cell.extra.is_none());
+    assert_eq!(grid.cursor().col(), Column(0));
+}
+
+#[test]
+fn variation_selector_at_col_zero_discarded() {
+    let mut t = term();
+    // U+FE0F (VS16) at column 0 — no previous cell to attach to.
+    feed(&mut t, "\u{FE0F}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, ' ');
+    assert!(cell.extra.is_none());
+    assert_eq!(grid.cursor().col(), Column(0));
+}
+
+#[test]
+fn combining_mark_does_not_trigger_wrap() {
+    // 5-column terminal, fill line with "abcde" (wrap pending at col 5).
+    // Multiple combining marks should attach to 'e' without wrapping.
+    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    feed(
+        &mut t,
+        "abcde\u{0300}\u{0301}\u{0302}".as_bytes(),
+    );
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(4)];
+    assert_eq!(cell.ch, 'e');
+    let zw = cell.extra.as_ref().expect("3 marks on wrap-pending").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{0300}', '\u{0301}', '\u{0302}']);
+    // Still on line 0, cursor at col 5 (wrap pending). No wrap occurred.
+    assert_eq!(grid.cursor().line(), 0);
+    assert_eq!(grid.cursor().col(), Column(5));
+}
+
+#[test]
+fn zjw_between_wide_chars_stored_correctly() {
+    use crate::cell::CellFlags;
+
+    let mut t = term();
+    // Two CJK chars with ZWJ between them: 漢 + ZWJ + 字
+    feed(&mut t, "漢\u{200D}字".as_bytes());
+
+    let grid = t.grid();
+    // 漢 at col 0 with ZWJ.
+    let c1 = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(c1.ch, '漢');
+    assert!(c1.flags.contains(CellFlags::WIDE_CHAR));
+    let zw = c1.extra.as_ref().expect("ZWJ between wide chars").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{200D}']);
+
+    // 字 at col 2.
+    let c2 = &grid[crate::index::Line(0)][Column(2)];
+    assert_eq!(c2.ch, '字');
+    assert!(c2.flags.contains(CellFlags::WIDE_CHAR));
+
+    assert_eq!(grid.cursor().col(), Column(4));
+}
+
+#[test]
+fn emoji_with_vs16_and_combining() {
+    let mut t = term();
+    // '❤' (U+2764) + VS16 (U+FE0F) + combining enclosing keycap (U+20E3).
+    // Both zero-width chars stored on the heart.
+    feed(&mut t, "\u{2764}\u{FE0F}\u{20E3}".as_bytes());
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, '\u{2764}');
+    let zw = cell.extra.as_ref().expect("VS16 + combining").zerowidth.as_slice();
+    assert_eq!(zw, &['\u{FE0F}', '\u{20E3}']);
+}
+
+#[test]
+fn dirty_tracked_for_combining_mark() {
+    let mut t = term();
+    // Write 'a', drain dirty, then add combining mark.
+    feed(&mut t, b"a");
+    t.grid_mut().dirty_mut().drain().for_each(drop);
+
+    // Combining mark should mark line 0 dirty.
+    feed(&mut t, "\u{0301}".as_bytes());
+
+    let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
+    assert!(dirty.contains(&0), "combining mark should mark line dirty: {dirty:?}");
+}
+
+#[test]
+fn dirty_tracked_for_zerowidth_space() {
+    let mut t = term();
+    feed(&mut t, b"x");
+    t.grid_mut().dirty_mut().drain().for_each(drop);
+
+    // Zero-width space should mark line 0 dirty.
+    feed(&mut t, "\u{200B}".as_bytes());
+
+    let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
+    assert!(dirty.contains(&0), "zero-width space should mark line dirty: {dirty:?}");
+}
