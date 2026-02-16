@@ -19,22 +19,23 @@ use winit::window::Window;
 ///
 /// Does nothing when `opacity >= 1.0`. When `blur` is true and the platform
 /// supports it, enables frosted glass / vibrancy behind transparent areas.
-pub fn apply_transparency(window: &Window, opacity: f32, blur: bool) {
+/// The `bg` color tints the acrylic/blur layer on Windows (ignored on other
+/// platforms).
+pub fn apply_transparency(window: &Window, opacity: f32, blur: bool, bg: (u8, u8, u8)) {
     if opacity >= 1.0 {
         return;
     }
 
     if blur {
-        apply_blur(window, opacity);
+        apply_blur(window, opacity, bg);
     }
 }
 
 /// Apply platform-specific blur effects.
 #[cfg(target_os = "windows")]
-fn apply_blur(window: &Window, opacity: f32) {
+fn apply_blur(window: &Window, opacity: f32, bg: (u8, u8, u8)) {
     let alpha = (opacity * 255.0) as u8;
-    // Tinted dark background with the requested opacity.
-    let color = Some((30_u8, 30, 46, alpha));
+    let color = Some((bg.0, bg.1, bg.2, alpha));
     match window_vibrancy::apply_acrylic(window, color) {
         Ok(()) => log::info!("transparency: acrylic applied (alpha={alpha})"),
         Err(e) => log::warn!("transparency: acrylic failed: {e}"),
@@ -42,7 +43,7 @@ fn apply_blur(window: &Window, opacity: f32) {
 }
 
 #[cfg(target_os = "macos")]
-fn apply_blur(window: &Window, _opacity: f32) {
+fn apply_blur(window: &Window, _opacity: f32, _bg: (u8, u8, u8)) {
     match window_vibrancy::apply_vibrancy(
         window,
         window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
@@ -55,13 +56,13 @@ fn apply_blur(window: &Window, _opacity: f32) {
 }
 
 #[cfg(target_os = "linux")]
-fn apply_blur(window: &Window, _opacity: f32) {
+fn apply_blur(window: &Window, _opacity: f32, _bg: (u8, u8, u8)) {
     window.set_blur(true);
     log::info!("transparency: compositor blur enabled");
 }
 
 // Fallback for other platforms (WASM, etc.).
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-fn apply_blur(_window: &Window, _opacity: f32) {
+fn apply_blur(_window: &Window, _opacity: f32, _bg: (u8, u8, u8)) {
     log::debug!("transparency: blur not supported on this platform");
 }

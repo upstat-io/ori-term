@@ -49,7 +49,7 @@ fn main() {
     let _ = font::discovery::resolve_user_fallback("__nonexistent__");
 
     // Validate GPU availability (enumerate adapters without needing a window).
-    let adapter_count = gpu::state::validate_gpu();
+    let adapter_count = gpu::validate_gpu();
     log::info!("GPU validation: {adapter_count} adapter(s) found");
 
     // Validate clipboard pipeline (falls back to no-op if no display server).

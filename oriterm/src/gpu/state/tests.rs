@@ -4,7 +4,7 @@ use wgpu::{
     CompositeAlphaMode, DownlevelFlags, SurfaceCapabilities, TextureFormat, TextureUsages,
 };
 
-use super::{cache_dir, GpuState};
+use super::{build_surface_config, cache_dir, GpuState};
 
 /// Full downlevel flags (all features supported).
 const ALL_FLAGS: DownlevelFlags = DownlevelFlags::all();
@@ -212,6 +212,85 @@ fn select_alpha_mode_inherit_as_only_option() {
         GpuState::select_alpha_mode(&caps),
         CompositeAlphaMode::Inherit,
     );
+}
+
+#[test]
+fn select_alpha_mode_empty_defaults_to_opaque() {
+    let caps = SurfaceCapabilities {
+        formats: vec![],
+        present_modes: vec![],
+        alpha_modes: vec![],
+        usages: TextureUsages::RENDER_ATTACHMENT,
+    };
+
+    // Empty alpha_modes should not panic; falls back to Opaque.
+    assert_eq!(
+        GpuState::select_alpha_mode(&caps),
+        CompositeAlphaMode::Opaque,
+    );
+}
+
+// --- Surface config builder ---
+
+#[test]
+fn build_surface_config_sets_view_formats_when_needed() {
+    let config = build_surface_config(
+        TextureFormat::Bgra8Unorm,
+        TextureFormat::Bgra8UnormSrgb,
+        CompositeAlphaMode::Opaque,
+        true,
+        800,
+        600,
+    );
+
+    assert_eq!(config.format, TextureFormat::Bgra8Unorm);
+    assert_eq!(config.view_formats, vec![TextureFormat::Bgra8UnormSrgb]);
+    assert_eq!(config.width, 800);
+    assert_eq!(config.height, 600);
+}
+
+#[test]
+fn build_surface_config_skips_view_formats_when_unsupported() {
+    let config = build_surface_config(
+        TextureFormat::Bgra8Unorm,
+        TextureFormat::Bgra8UnormSrgb,
+        CompositeAlphaMode::Opaque,
+        false,
+        800,
+        600,
+    );
+
+    assert!(config.view_formats.is_empty());
+}
+
+#[test]
+fn build_surface_config_no_view_formats_when_formats_match() {
+    let config = build_surface_config(
+        TextureFormat::Bgra8UnormSrgb,
+        TextureFormat::Bgra8UnormSrgb,
+        CompositeAlphaMode::PreMultiplied,
+        true,
+        1920,
+        1080,
+    );
+
+    assert!(config.view_formats.is_empty());
+    assert_eq!(config.alpha_mode, CompositeAlphaMode::PreMultiplied);
+}
+
+#[test]
+fn build_surface_config_clamps_zero_dimensions() {
+    let config = build_surface_config(
+        TextureFormat::Bgra8UnormSrgb,
+        TextureFormat::Bgra8UnormSrgb,
+        CompositeAlphaMode::Opaque,
+        false,
+        0,
+        0,
+    );
+
+    assert_eq!(config.width, 1);
+    assert_eq!(config.height, 1);
 }
 
 // --- Cache directory ---
