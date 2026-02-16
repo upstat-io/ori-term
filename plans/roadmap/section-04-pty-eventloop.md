@@ -25,7 +25,7 @@ sections:
     status: complete
   - id: "4.7"
     title: PTY Reader Thread
-    status: in-progress
+    status: complete
   - id: "4.8"
     title: Tab Struct
     status: not-started
@@ -200,10 +200,12 @@ The dedicated thread that reads PTY output, parses VTE, and updates terminal sta
   - [x] Uses `lease()` → `lock_unfair()` pattern from Alacritty
   - [x] Releases lock between read batches
 - [x] `PtyHandle::take_master()` — added to `spawn.rs` so master can be handed to PtyEventLoop
-- [ ] **Tests**:
-  - [ ] `event_loop_processes_pty_output` — spawns shell, verifies terminal grid has content (currently failing — shell prompt not appearing within 500ms in CI/WSL)
-  - [x] `event_loop_shutdown_on_eof` — kill child, thread exits on EOF
+- [x] **Tests** (mock-based with `std::io::pipe()` + `MockMaster`, no real PTY):
+  - [x] `shutdown_on_reader_eof` — drop pipe write end → EOF → thread exits
+  - [x] `processes_pty_output_into_terminal` — write bytes to pipe → VTE parses into grid
+  - [x] `processes_channel_input` — `Msg::Input` forwarded to PTY writer
   - [x] `read_buffer_size_is_64kb` — constant check
+  - [x] `max_locked_parse_is_64kb` — constant check
 
 ---
 

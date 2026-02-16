@@ -1654,6 +1654,7 @@ dependencies = [
 name = "oriterm"
 version = "0.1.0-alpha.3"
 dependencies = [
+ "anyhow",
  "arboard",
  "base64",
  "bitflags 2.10.0",

@@ -5,6 +5,72 @@ use std::path::PathBuf;
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+/// Exit status from a child process.
+///
+/// Wraps the underlying PTY library's exit status so callers don't depend
+/// on `portable_pty` types directly.
+#[derive(Debug, Clone)]
+#[allow(dead_code, reason = "fields read by methods; methods used by Tab in 4.8")]
+pub struct ExitStatus {
+    /// Process exit code.
+    code: u32,
+    /// Signal name if the process was terminated by a signal.
+    signal: Option<String>,
+}
+
+#[allow(dead_code, reason = "methods used by Tab in 4.8")]
+impl ExitStatus {
+    /// Returns `true` if the process exited successfully (code 0, no signal).
+    pub fn success(&self) -> bool {
+        self.signal.is_none() && self.code == 0
+    }
+
+    /// Returns the process exit code.
+    pub fn exit_code(&self) -> u32 {
+        self.code
+    }
+
+    /// Returns the signal name if the process was killed by a signal.
+    pub fn signal(&self) -> Option<&str> {
+        self.signal.as_deref()
+    }
+}
+
+impl From<portable_pty::ExitStatus> for ExitStatus {
+    fn from(status: portable_pty::ExitStatus) -> Self {
+        Self {
+            code: status.exit_code(),
+            signal: status.signal().map(String::from),
+        }
+    }
+}
+
+/// Owned PTY control handle for resize operations.
+///
+/// Wraps the underlying PTY library's control handle so callers don't depend
+/// on `portable_pty` types directly.
+pub struct PtyControl(Box<dyn MasterPty + Send>);
+
+impl PtyControl {
+    /// Construct from a raw `MasterPty` trait object (test use only).
+    #[cfg(test)]
+    pub(crate) fn from_raw(inner: Box<dyn MasterPty + Send>) -> Self {
+        Self(inner)
+    }
+
+    /// Resize the PTY to the given dimensions.
+    pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
+        self.0
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| io::Error::other(e.to_string()))
+    }
+}
+
 /// Configuration for spawning a PTY.
 pub struct PtyConfig {
     /// Terminal dimensions in rows.
@@ -42,7 +108,7 @@ impl Default for PtyConfig {
 pub struct PtyHandle {
     reader: Option<Box<dyn io::Read + Send>>,
     writer: Option<Box<dyn io::Write + Send>>,
-    master: Option<Box<dyn MasterPty + Send>>,
+    control: Option<PtyControl>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
@@ -63,31 +129,24 @@ impl PtyHandle {
         self.writer.take()
     }
 
-    /// Take the PTY master handle (for resize operations).
+    /// Take the PTY control handle (for resize operations).
     ///
-    /// Returns `None` if already taken. The master is typically handed to
-    /// the [`PtyEventLoop`](super::event_loop::PtyEventLoop).
+    /// Returns `None` if already taken. The control handle is typically
+    /// handed to the [`PtyEventLoop`](super::event_loop::PtyEventLoop).
     #[allow(dead_code, reason = "used by Tab in 4.8 and event_loop tests")]
-    pub fn take_master(&mut self) -> Option<Box<dyn MasterPty + Send>> {
-        self.master.take()
+    pub fn take_control(&mut self) -> Option<PtyControl> {
+        self.control.take()
     }
 
     /// Resize the PTY to new dimensions.
     ///
-    /// Returns an error if the master has been taken.
+    /// Returns an error if the control handle has been taken.
     pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
-        let master = self
-            .master
+        let ctl = self
+            .control
             .as_ref()
-            .ok_or_else(|| io::Error::other("PTY master already taken"))?;
-        master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| io::Error::other(e.to_string()))
+            .ok_or_else(|| io::Error::other("PTY control handle already taken"))?;
+        ctl.resize(rows, cols)
     }
 
     /// Get the child process ID, if available.
@@ -101,8 +160,8 @@ impl PtyHandle {
     }
 
     /// Wait for the child process to exit (blocking).
-    pub fn wait(&mut self) -> io::Result<portable_pty::ExitStatus> {
-        self.child.wait()
+    pub fn wait(&mut self) -> io::Result<ExitStatus> {
+        self.child.wait().map(ExitStatus::from)
     }
 
 }
@@ -146,7 +205,7 @@ pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
     Ok(PtyHandle {
         reader: Some(reader),
         writer: Some(writer),
-        master: Some(pair.master),
+        control: Some(PtyControl(pair.master)),
         child,
     })
 }
