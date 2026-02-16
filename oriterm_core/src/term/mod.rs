@@ -12,7 +12,7 @@ pub mod renderable;
 
 pub use charset::CharsetState;
 pub use mode::TermMode;
-pub use renderable::{DamageLine, RenderableCell, RenderableContent, RenderableCursor};
+pub use renderable::{DamageLine, RenderableCell, RenderableContent, RenderableCursor, TermDamage};
 
 use std::collections::VecDeque;
 
@@ -268,6 +268,26 @@ impl<T: EventListener> Term<T> {
         } else {
             (false, damage)
         }
+    }
+
+    /// Drain damage from the active grid.
+    ///
+    /// Returns a [`TermDamage`] iterator that yields dirty lines and clears
+    /// marks as it goes. Check [`TermDamage::is_all_dirty`] first — when true,
+    /// repaint everything and drop the iterator (which clears remaining marks).
+    pub fn damage(&mut self) -> TermDamage<'_> {
+        let grid = self.grid_mut();
+        let cols = grid.cols();
+        let all_dirty = grid.dirty().is_all_dirty();
+        TermDamage::new(grid.dirty_mut().drain(), cols, all_dirty)
+    }
+
+    /// Clear all damage marks without reading them.
+    ///
+    /// Called when the renderer wants to discard pending damage (e.g. after
+    /// a full repaint that doesn't need per-line tracking).
+    pub fn reset_damage(&mut self) {
+        self.grid_mut().dirty_mut().drain().for_each(drop);
     }
 
     /// Switch between primary and alternate screen.

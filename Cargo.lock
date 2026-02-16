@@ -1688,6 +1688,7 @@ dependencies = [
  "bitflags 2.10.0",
  "criterion",
  "log",
+ "parking_lot",
  "unicode-width",
  "vte",
 ]

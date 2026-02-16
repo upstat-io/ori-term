@@ -388,6 +388,9 @@ Visual highlighting of selected text during GPU rendering.
 - [ ] **Include selection range in RenderableContent**:
   - [ ] Pass current selection (if any) to the render function
   - [ ] Borrow selection immutably during frame building
+- [ ] **Selection damage tracking** (incremental redraw on selection change):
+  - [ ] Mark only affected lines dirty when selection is created, extended, or cleared
+  - [ ] See Section 23.1 for full design  <!-- blocked-by:23 -->
 - [ ] **Tests** (visual/integration):
   - [ ] Selection highlight inverts colors for selected cells
   - [ ] Wide character selected as complete unit

@@ -260,6 +260,18 @@ Complete reference of every DECSET/DECRST private mode and standard mode that or
 - [ ] `ESC >` (DECKPNM): Normal keypad mode. Numpad keys send their face values.
 - [ ] Store as flag in `TermMode`
 
+### DECALN — Screen Alignment Test (`ESC # 8`)
+
+- [ ] `ESC # 8` (DECALN): fill entire screen with 'E' characters
+  - [ ] Every cell on every visible line set to 'E' with default attributes
+  - [ ] Cursor moved to origin (0, 0)
+  - [ ] Scroll region reset to full screen
+  - [ ] Mark all lines dirty (full damage)
+- [ ] **Tests**:
+  - [ ] After DECALN, every cell contains 'E'
+  - [ ] Cursor is at (0, 0)
+  - [ ] All lines are damaged
+
 ### Mode Interactions
 
 - [ ] Mouse modes (9, 1000, 1002, 1003) are mutually exclusive — enabling one implicitly disables the others
