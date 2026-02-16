@@ -24,8 +24,7 @@ use winit::event_loop::EventLoopProxy;
 
 use oriterm_core::{Event, EventListener, FairMutex, Term};
 
-use crate::pty::event_loop::PtyEventLoop;
-use crate::pty::{Msg, PtyConfig, PtyHandle, spawn_pty};
+use crate::pty::{Msg, PtyConfig, PtyEventLoop, PtyHandle, spawn_pty};
 
 /// Unique identifier for a tab.
 ///
@@ -275,11 +274,13 @@ impl Drop for Tab {
             while !handle.is_finished() {
                 if Instant::now() >= deadline {
                     log::warn!("tab {:?}: reader thread did not exit within 2s", self.id);
-                    return;
+                    break;
                 }
                 std::thread::sleep(SHUTDOWN_POLL_INTERVAL);
             }
-            let _ = handle.join();
+            if handle.is_finished() {
+                let _ = handle.join();
+            }
         }
 
         // 4. Reap the child process.
