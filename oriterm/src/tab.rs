@@ -1,24 +1,31 @@
-//! Tab identity, cross-thread event types, and PTY communication bridges.
+//! Tab ownership and lifecycle.
 //!
-//! `TabId` uniquely identifies a tab across the application lifetime.
-//! `TermEvent` is the winit user event type — background threads send
-//! these to the event loop for dispatch. `EventProxy` bridges terminal
-//! events to winit. `Notifier` bridges keyboard input to the PTY thread.
+//! Each `Tab` owns the full PTY ↔ terminal pipeline: a `Term<EventProxy>`
+//! wrapped in `Arc<FairMutex>`, the reader thread that feeds PTY output
+//! through VTE, and the `Notifier` that delivers keyboard input to the PTY.
+//!
+//! Supporting types: `TabId` (unique identity), `TermEvent` (winit user
+//! event), `EventProxy` (terminal → winit bridge), `Notifier` (input →
+//! PTY bridge).
 
-// Tab types are wired into the event loop and PTY spawning in later
-// subsections of Section 04. In test builds the tests exercise all
-// public items, so `#[expect(dead_code)]` would produce unfulfilled
-// warnings.
-#![allow(dead_code, reason = "tab types wired into event loop in 4.5+")]
+// Tab is constructed in Section 4.9 (end-to-end verification). Until then,
+// tests exercise all public items, so `#[expect(dead_code)]` would produce
+// unfulfilled warnings.
+#![allow(dead_code, reason = "Tab wired into main in 4.9")]
 
+use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use winit::event_loop::EventLoopProxy;
 
-use oriterm_core::{Event, EventListener};
+use oriterm_core::{Event, EventListener, FairMutex, Term};
 
-use crate::pty::Msg;
+use crate::pty::event_loop::PtyEventLoop;
+use crate::pty::{Msg, PtyConfig, PtyHandle, spawn_pty};
 
 /// Unique identifier for a tab.
 ///
@@ -114,6 +121,169 @@ impl Notifier {
     /// Request the reader thread to shut down.
     pub fn shutdown(&self) {
         let _ = self.tx.send(Msg::Shutdown);
+    }
+}
+
+/// Maximum time to wait for the reader thread during [`Tab::drop`].
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Poll interval while waiting for the reader thread to finish.
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Owns all per-tab state: terminal, PTY handles, reader thread.
+///
+/// Created via [`Tab::new`], which spawns a PTY process and wires the
+/// full I/O pipeline. Dropping a `Tab` sends a shutdown signal, kills
+/// the child process, and joins the reader thread with a timeout.
+pub struct Tab {
+    /// Unique tab identifier.
+    id: TabId,
+    /// Shared terminal state (accessed by both render and PTY threads).
+    terminal: Arc<FairMutex<Term<EventProxy>>>,
+    /// Sends commands (input, resize, shutdown) to the PTY reader thread.
+    notifier: Notifier,
+    /// PTY reader thread join handle.
+    reader_thread: Option<JoinHandle<()>>,
+    /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
+    pty: PtyHandle,
+    /// Last known window title (set by OSC 0/2 from the shell).
+    title: String,
+    /// Bell indicator (set on bell event, cleared on focus).
+    has_bell: bool,
+}
+
+impl Tab {
+    /// Spawn a new tab with a live shell process.
+    ///
+    /// Creates the PTY, terminal state machine, and reader thread. The
+    /// terminal is wrapped in `Arc<FairMutex>` for concurrent access by
+    /// the render thread and PTY reader thread.
+    pub fn new(
+        id: TabId,
+        rows: u16,
+        cols: u16,
+        scrollback: usize,
+        proxy: EventLoopProxy<TermEvent>,
+    ) -> io::Result<Self> {
+        // 1. Spawn PTY with the default shell.
+        let config = PtyConfig {
+            rows,
+            cols,
+            ..Default::default()
+        };
+        let mut pty = spawn_pty(&config)?;
+
+        // 2. Take handles before they're moved into the event loop.
+        let reader = pty
+            .take_reader()
+            .ok_or_else(|| io::Error::other("PTY reader unavailable"))?;
+        let writer = pty
+            .take_writer()
+            .ok_or_else(|| io::Error::other("PTY writer unavailable"))?;
+        let control = pty
+            .take_control()
+            .ok_or_else(|| io::Error::other("PTY control unavailable"))?;
+
+        // 3. Create the terminal state machine with an event proxy.
+        let event_proxy = EventProxy::new(proxy, id);
+        let term = Term::new(usize::from(rows), usize::from(cols), scrollback, event_proxy);
+        let terminal = Arc::new(FairMutex::new(term));
+
+        // 4. Wire the message channel.
+        let (tx, rx) = mpsc::channel();
+        let notifier = Notifier::new(tx);
+
+        // 5. Build and spawn the reader thread.
+        let event_loop =
+            PtyEventLoop::new(Arc::clone(&terminal), reader, writer, rx, control);
+        let reader_thread = event_loop.spawn();
+
+        Ok(Self {
+            id,
+            terminal,
+            notifier,
+            reader_thread: Some(reader_thread),
+            pty,
+            title: String::new(),
+            has_bell: false,
+        })
+    }
+
+    /// Tab identity.
+    pub fn id(&self) -> TabId {
+        self.id
+    }
+
+    /// Shared terminal state for rendering.
+    ///
+    /// The renderer locks the `FairMutex` to snapshot the grid. The lock
+    /// is held briefly — the PTY reader thread uses bounded parsing to
+    /// avoid starving the renderer.
+    pub fn terminal(&self) -> &Arc<FairMutex<Term<EventProxy>>> {
+        &self.terminal
+    }
+
+    /// Last known window title (from OSC 0/2).
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Whether the bell has fired since the tab was last focused.
+    pub fn has_bell(&self) -> bool {
+        self.has_bell
+    }
+
+    /// Clear the bell indicator (call when the tab gains focus).
+    pub fn clear_bell(&mut self) {
+        self.has_bell = false;
+    }
+
+    /// Set the bell indicator.
+    pub fn set_bell(&mut self) {
+        self.has_bell = true;
+    }
+
+    /// Update the window title.
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
+
+    /// Send raw bytes to the PTY (keyboard input, escape responses).
+    pub fn write_input(&self, bytes: &[u8]) {
+        self.notifier.notify(bytes);
+    }
+
+    /// Resize the PTY dimensions.
+    ///
+    /// Terminal grid resize (reflow) is handled separately in Section 12.
+    pub fn resize(&self, rows: u16, cols: u16) {
+        self.notifier.resize(rows, cols);
+    }
+}
+
+impl Drop for Tab {
+    fn drop(&mut self) {
+        // 1. Signal the reader thread to stop.
+        self.notifier.shutdown();
+
+        // 2. Kill the child process to unblock any pending PTY read.
+        let _ = self.pty.kill();
+
+        // 3. Join the reader thread with a timeout.
+        if let Some(handle) = self.reader_thread.take() {
+            let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
+            while !handle.is_finished() {
+                if Instant::now() >= deadline {
+                    log::warn!("tab {:?}: reader thread did not exit within 2s", self.id);
+                    return;
+                }
+                std::thread::sleep(SHUTDOWN_POLL_INTERVAL);
+            }
+            let _ = handle.join();
+        }
+
+        // 4. Reap the child process.
+        let _ = self.pty.wait();
     }
 }
 

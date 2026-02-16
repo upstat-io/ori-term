@@ -10,7 +10,7 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 /// Wraps the underlying PTY library's exit status so callers don't depend
 /// on `portable_pty` types directly.
 #[derive(Debug, Clone)]
-#[allow(dead_code, reason = "fields read by methods; methods used by Tab in 4.8")]
+#[allow(dead_code, reason = "fields read by methods; methods used when UI reports exit status")]
 pub struct ExitStatus {
     /// Process exit code.
     code: u32,
@@ -18,7 +18,7 @@ pub struct ExitStatus {
     signal: Option<String>,
 }
 
-#[allow(dead_code, reason = "methods used by Tab in 4.8")]
+#[allow(dead_code, reason = "used when UI reports exit status")]
 impl ExitStatus {
     /// Returns `true` if the process exited successfully (code 0, no signal).
     pub fn success(&self) -> bool {
@@ -133,7 +133,6 @@ impl PtyHandle {
     ///
     /// Returns `None` if already taken. The control handle is typically
     /// handed to the [`PtyEventLoop`](super::event_loop::PtyEventLoop).
-    #[allow(dead_code, reason = "used by Tab in 4.8 and event_loop tests")]
     pub fn take_control(&mut self) -> Option<PtyControl> {
         self.control.take()
     }
@@ -164,6 +163,14 @@ impl PtyHandle {
         self.child.wait().map(ExitStatus::from)
     }
 
+    /// Non-blocking check for child exit.
+    ///
+    /// Returns `Ok(Some(status))` if the child has exited, `Ok(None)` if
+    /// still running, or `Err` on failure.
+    #[allow(dead_code, reason = "used when Tab reports child exit to UI")]
+    pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+        self.child.try_wait().map(|opt| opt.map(ExitStatus::from))
+    }
 }
 
 /// Spawn a PTY with the configured shell and environment.

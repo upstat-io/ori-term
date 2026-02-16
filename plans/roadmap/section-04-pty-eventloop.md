@@ -28,7 +28,7 @@ sections:
     status: complete
   - id: "4.8"
     title: Tab Struct
-    status: not-started
+    status: complete
   - id: "4.9"
     title: End-to-End Verification
     status: not-started
@@ -215,30 +215,33 @@ Owns all per-tab state: terminal, PTY handles, reader thread.
 
 **File:** `oriterm/src/tab.rs`
 
-- [ ] `Tab` struct
-  - [ ] Fields:
+- [x] `Tab` struct
+  - [x] Fields:
     - `id: TabId`
     - `terminal: Arc<oriterm_core::FairMutex<oriterm_core::Term<EventProxy>>>`
     - `notifier: Notifier` — send input/resize/shutdown to PTY thread
     - `reader_thread: Option<JoinHandle<()>>` — reader thread handle
+    - `pty: PtyHandle` — child process lifecycle (reader/writer/control taken)
     - `title: String` — last known title (updated from Event::Title)
     - `has_bell: bool` — bell badge (cleared on focus)
-  - [ ] `Tab::new(id: TabId, rows: u16, cols: u16, scrollback: usize, proxy: EventLoopProxy<TermEvent>) -> io::Result<Self>`
-    - [ ] Spawn PTY via `pty::spawn_shell(rows, cols)`
-    - [ ] Create `EventProxy` with tab_id and proxy
-    - [ ] Create `Term::new(rows, cols, scrollback, event_proxy)`
-    - [ ] Wrap in `Arc<FairMutex<...>>`
-    - [ ] Create `(tx, rx)` channel
-    - [ ] Create `Notifier` with tx
-    - [ ] Create `PtyEventLoop` with terminal clone, reader, writer, rx, master
-    - [ ] Spawn reader thread: `event_loop.spawn()`
-    - [ ] Return Tab
-  - [ ] `Tab::write_input(&self, bytes: &[u8])` — send input to PTY via Notifier
-  - [ ] `Tab::resize(&self, rows: u16, cols: u16)` — resize PTY + terminal
-  - [ ] `Tab::terminal(&self) -> &Arc<FairMutex<Term<EventProxy>>>` — for renderer to lock + snapshot
-  - [ ] `impl Drop for Tab`
-    - [ ] Send `Msg::Shutdown` to reader thread
-    - [ ] Join reader thread (with timeout)
+  - [x] `Tab::new(id: TabId, rows: u16, cols: u16, scrollback: usize, proxy: EventLoopProxy<TermEvent>) -> io::Result<Self>`
+    - [x] Spawn PTY via `pty::spawn_pty(&PtyConfig)`
+    - [x] Create `EventProxy` with tab_id and proxy
+    - [x] Create `Term::new(rows, cols, scrollback, event_proxy)`
+    - [x] Wrap in `Arc<FairMutex<...>>`
+    - [x] Create `(tx, rx)` channel
+    - [x] Create `Notifier` with tx
+    - [x] Create `PtyEventLoop` with terminal clone, reader, writer, rx, control
+    - [x] Spawn reader thread: `event_loop.spawn()`
+    - [x] Return Tab
+  - [x] `Tab::write_input(&self, bytes: &[u8])` — send input to PTY via Notifier
+  - [x] `Tab::resize(&self, rows: u16, cols: u16)` — resize PTY + terminal
+  - [x] `Tab::terminal(&self) -> &Arc<FairMutex<Term<EventProxy>>>` — for renderer to lock + snapshot
+  - [x] `impl Drop for Tab`
+    - [x] Send `Msg::Shutdown` to reader thread
+    - [x] Kill child process to unblock pending PTY read
+    - [x] Join reader thread (with timeout via `is_finished()` poll loop)
+    - [x] Reap child process
 
 ---
 
