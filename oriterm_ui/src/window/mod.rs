@@ -11,9 +11,11 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::{Icon, Window, WindowAttributes};
 
 use crate::geometry::{Point, Size};
-use crate::scale::ScaleFactor;
 
 /// Configuration for creating a new window.
+///
+/// Scale factor is not included — it is a runtime property of the display,
+/// not a configuration input. Query `window.scale_factor()` after creation.
 #[derive(Debug, Clone)]
 pub struct WindowConfig {
     /// Window title.
@@ -26,8 +28,6 @@ pub struct WindowConfig {
     pub blur: bool,
     /// Initial window position, or `None` for OS default.
     pub position: Option<Point>,
-    /// DPI scale factor (used for scaling UI elements).
-    pub scale_factor: ScaleFactor,
 }
 
 impl Default for WindowConfig {
@@ -38,7 +38,6 @@ impl Default for WindowConfig {
             transparent: false,
             blur: false,
             position: None,
-            scale_factor: ScaleFactor::default(),
         }
     }
 }
@@ -89,7 +88,7 @@ pub fn create_window(
 ///
 /// All platforms share a frameless, initially-invisible window. Per-platform
 /// `#[cfg]` blocks add OS-specific attributes.
-pub fn build_window_attributes(config: &WindowConfig) -> WindowAttributes {
+fn build_window_attributes(config: &WindowConfig) -> WindowAttributes {
     let mut attrs = WindowAttributes::default()
         .with_title(&config.title)
         .with_inner_size(winit::dpi::LogicalSize::new(
@@ -115,7 +114,7 @@ pub fn build_window_attributes(config: &WindowConfig) -> WindowAttributes {
 /// Loads the embedded application icon (256x256 RGBA, decoded at build time).
 ///
 /// Returns `None` if the icon data is malformed.
-pub fn load_icon() -> Option<Icon> {
+fn load_icon() -> Option<Icon> {
     static ICON_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon_rgba.bin"));
 
     if ICON_DATA.len() < 8 {

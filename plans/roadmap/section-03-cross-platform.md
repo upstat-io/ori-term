@@ -297,12 +297,12 @@ Chrome's `WM_NCHITTEST` equivalent as a **platform-independent pure function**. 
 
 Config-driven window creation. All platforms use frameless windows (Chrome-style CSD) from day one.
 
-- [x] `WindowConfig` struct — `title`, `inner_size: Size`, `transparent: bool`, `blur: bool`, `position: Option<Point>`, `scale_factor: ScaleFactor`
+- [x] `WindowConfig` struct — `title`, `inner_size: Size`, `transparent: bool`, `blur: bool`, `position: Option<Point>` (scale factor queried from window post-creation)
 - [x] `WindowError` enum — `Creation(winit::error::OsError)`
 - [x] `create_window(event_loop, config) -> Result<Arc<Window>, WindowError>`
   - [x] Window created invisible (render first frame, then `set_visible(true)` to avoid flash)
-- [x] `load_icon() -> Option<Icon>` — embedded application icon (RGBA, decoded at build time)
-- [x] `build_window_attributes(config) -> WindowAttributes` — per-platform `#[cfg]` dispatch:
+- [x] `load_icon() -> Option<Icon>` — embedded application icon (RGBA, decoded at build time) (module-private)
+- [x] `build_window_attributes(config) -> WindowAttributes` — per-platform `#[cfg]` dispatch (module-private):
   - [x] **All platforms:** `with_decorations(false)`, `with_visible(false)`, `with_transparent(config.transparent)`
   - [x] **Windows:** `with_no_redirection_bitmap(true)` when transparent
   - [x] **macOS:** `with_titlebar_transparent(true)`, `with_fullsize_content_view(true)`, `with_option_as_alt(Both)`
