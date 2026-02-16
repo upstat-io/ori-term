@@ -182,6 +182,26 @@ impl Grid {
             *stop = i % 8 == 0;
         }
     }
+
+    /// Mark the current cursor line dirty and move to `new_line`.
+    ///
+    /// Marks both old and new lines dirty so a damage-aware renderer
+    /// redraws the cursor in both its old and new positions.
+    pub(crate) fn move_cursor_line(&mut self, new_line: usize) {
+        self.dirty.mark(self.cursor.line());
+        self.cursor.set_line(new_line);
+        self.dirty.mark(self.cursor.line());
+    }
+
+    /// Mark the current cursor line dirty and move to `new_col`.
+    ///
+    /// The cursor stays on the same line, so only the current line
+    /// needs to be marked dirty (the cursor's old and new positions
+    /// are both on this line).
+    pub(crate) fn move_cursor_col(&mut self, new_col: crate::index::Column) {
+        self.dirty.mark(self.cursor.line());
+        self.cursor.set_col(new_col);
+    }
 }
 
 impl Index<Line> for Grid {

@@ -186,7 +186,7 @@ fn bench_scroll_bce(c: &mut Criterion) {
             &(cols, lines),
             |b, &(cols, lines)| {
                 let mut grid = filled_grid(lines, cols);
-                grid.cursor_mut().template.bg =
+                grid.cursor_mut().template_mut().bg =
                     vte::ansi::Color::Indexed(4);
                 b.iter(|| {
                     grid.cursor_mut().set_line(lines - 1);

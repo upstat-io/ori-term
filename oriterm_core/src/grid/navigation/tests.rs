@@ -419,28 +419,125 @@ fn move_down_outside_scroll_region_clamps_to_last() {
     assert_eq!(grid.cursor().line(), 9);
 }
 
+// Dirty tracking
+
 #[test]
-fn cursor_only_movement_does_not_dirty() {
+fn move_up_marks_old_and_new_lines_dirty() {
     let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(5);
     let _: Vec<usize> = grid.dirty_mut().drain().collect();
 
     grid.move_up(3);
-    grid.move_down(5);
-    grid.move_forward(10);
-    grid.move_backward(3);
-    grid.move_to(10, Column(40));
-    grid.move_to_column(Column(20));
-    grid.move_to_line(5);
-    grid.carriage_return();
-    grid.backspace();
-    grid.tab();
-    grid.tab_backward();
-    grid.save_cursor();
-    grid.restore_cursor();
+    assert_eq!(grid.cursor().line(), 2);
 
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&5), "old cursor line should be dirty");
+    assert!(dirty.contains(&2), "new cursor line should be dirty");
+}
+
+#[test]
+fn move_down_marks_old_and_new_lines_dirty() {
+    let mut grid = Grid::new(24, 80);
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.move_down(4);
+    assert_eq!(grid.cursor().line(), 4);
+
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&0), "old cursor line should be dirty");
+    assert!(dirty.contains(&4), "new cursor line should be dirty");
+}
+
+#[test]
+fn move_to_marks_old_and_new_lines_dirty() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(3);
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.move_to(10, Column(40));
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&3), "old cursor line should be dirty");
+    assert!(dirty.contains(&10), "new cursor line should be dirty");
+}
+
+#[test]
+fn carriage_return_marks_current_line_dirty() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(7);
+    grid.cursor_mut().set_col(Column(40));
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.carriage_return();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&7), "current line should be dirty");
+}
+
+#[test]
+fn linefeed_non_scroll_marks_old_and_new_lines_dirty() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(5);
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.linefeed();
+    assert_eq!(grid.cursor().line(), 6);
+
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&5), "old cursor line should be dirty");
+    assert!(dirty.contains(&6), "new cursor line should be dirty");
+}
+
+#[test]
+fn reverse_index_non_scroll_marks_old_and_new_lines_dirty() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(5);
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.reverse_index();
+    assert_eq!(grid.cursor().line(), 4);
+
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&5), "old cursor line should be dirty");
+    assert!(dirty.contains(&4), "new cursor line should be dirty");
+}
+
+#[test]
+fn restore_cursor_marks_old_and_new_lines_dirty() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(10);
+    grid.cursor_mut().set_col(Column(42));
+    grid.save_cursor();
+    grid.cursor_mut().set_line(3);
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.restore_cursor();
+    assert_eq!(grid.cursor().line(), 10);
+
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&3), "old cursor line should be dirty");
+    assert!(dirty.contains(&10), "restored cursor line should be dirty");
+}
+
+#[test]
+fn tab_marks_current_line_dirty() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_col(Column(1));
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.tab();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&0), "current line should be dirty after tab");
+}
+
+#[test]
+fn save_cursor_does_not_dirty() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(5);
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.save_cursor();
     assert!(
         !grid.dirty().is_any_dirty(),
-        "cursor-only movement should not mark dirty"
+        "save_cursor should not mark dirty"
     );
 }
 

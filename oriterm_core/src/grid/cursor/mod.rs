@@ -42,10 +42,11 @@ pub struct Cursor {
     col: Column,
     /// Template cell applied to new characters (fg, bg, flags).
     ///
-    /// Intentionally `pub` — the VTE handler sets SGR attributes directly
-    /// on this cell, and Grid editing methods read it for character writes
-    /// and BCE (Background Color Erase) operations.
-    pub template: Cell,
+    /// The VTE handler sets SGR attributes directly on this cell, and Grid
+    /// editing methods read it for character writes and BCE operations.
+    /// `pub(crate)` — external consumers use the `template()`/`template_mut()`
+    /// accessors instead.
+    pub(crate) template: Cell,
 }
 
 impl Cursor {
@@ -66,6 +67,16 @@ impl Cursor {
     /// Current column.
     pub fn col(&self) -> Column {
         self.col
+    }
+
+    /// Immutable reference to the template cell.
+    pub fn template(&self) -> &Cell {
+        &self.template
+    }
+
+    /// Mutable reference to the template cell.
+    pub fn template_mut(&mut self) -> &mut Cell {
+        &mut self.template
     }
 
     /// Set the cursor line.
