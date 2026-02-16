@@ -10,6 +10,7 @@ use crate::cell::CellFlags;
 use crate::color::palette::dim_rgb;
 use crate::color::{Palette, Rgb};
 use crate::grid::cursor::CursorShape;
+use crate::grid::dirty::DirtyIter;
 use crate::index::Column;
 use crate::term::mode::TermMode;
 
@@ -80,6 +81,49 @@ pub struct RenderableContent {
     pub all_dirty: bool,
     /// Per-line damage (empty when `all_dirty` is true).
     pub damage: Vec<DamageLine>,
+}
+
+/// Drain iterator for terminal damage.
+///
+/// Yields `DamageLine` entries for each dirty row and clears dirty marks
+/// as it iterates. Dropping the iterator clears any remaining marks.
+/// Use [`TermDamage::is_all_dirty`] to check whether a full repaint is
+/// needed before iterating individual lines.
+pub struct TermDamage<'a> {
+    iter: DirtyIter<'a>,
+    right: Column,
+    all_dirty: bool,
+}
+
+impl<'a> TermDamage<'a> {
+    /// Build a drain iterator from a grid's dirty tracker.
+    pub(crate) fn new(iter: DirtyIter<'a>, cols: usize, all_dirty: bool) -> Self {
+        Self {
+            iter,
+            right: Column(cols.saturating_sub(1)),
+            all_dirty,
+        }
+    }
+
+    /// Whether the entire viewport needs redrawing.
+    ///
+    /// When true, callers may skip per-line iteration and repaint everything.
+    /// The iterator still yields all lines, so dropping it clears all marks.
+    pub fn is_all_dirty(&self) -> bool {
+        self.all_dirty
+    }
+}
+
+impl Iterator for TermDamage<'_> {
+    type Item = DamageLine;
+
+    fn next(&mut self) -> Option<DamageLine> {
+        self.iter.next().map(|line| DamageLine {
+            line,
+            left: Column(0),
+            right: self.right,
+        })
+    }
 }
 
 /// Resolve a cell's foreground color, applying bold-as-bright and dim.

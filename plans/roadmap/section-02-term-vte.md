@@ -1,7 +1,7 @@
 ---
 section: 2
 title: Terminal State Machine + VTE
-status: in-progress
+status: complete
 tier: 0
 goal: Build Term<T> and implement all ~50 VTE handler methods so escape sequences produce correct grid state
 sections:
@@ -43,13 +43,13 @@ sections:
     status: complete
   - id: "2.13"
     title: FairMutex
-    status: not-started
+    status: complete
   - id: "2.14"
     title: Damage Tracking Integration
-    status: not-started
+    status: complete
   - id: "2.15"
     title: Section Completion
-    status: not-started
+    status: complete
 ---
 
 # Section 02: Terminal State Machine + VTE
@@ -517,22 +517,22 @@ Prevents starvation between PTY reader thread and render thread. Ported from Ala
 
 **Reference:** Alacritty `alacritty_terminal/src/sync.rs` (FairMutex); Ghostty `src/Surface.zig` (3-thread model with mailboxes — different approach worth studying)
 
-- [ ] `FairMutex<T>` struct
-  - [ ] Fields:
+- [x] `FairMutex<T>` struct
+  - [x] Fields:
     - `data: parking_lot::Mutex<T>` — the actual data
     - `next: parking_lot::Mutex<()>` — fairness lock
-  - [ ] `FairMutex::new(data: T) -> Self`
-  - [ ] `lock(&self) -> FairMutexGuard<'_, T>` — fair lock: acquire `next`, then `data`
-  - [ ] `lock_unfair(&self) -> parking_lot::MutexGuard<'_, T>` — skip fairness (for PTY thread)
-  - [ ] `try_lock_unfair(&self) -> Option<parking_lot::MutexGuard<'_, T>>` — non-blocking try
-  - [ ] `lease(&self) -> FairMutexLease<'_>` — reserve the `next` lock (PTY thread signals intent)
-- [ ] `FairMutexGuard<'_, T>` — RAII guard that releases both locks on drop
-- [ ] `FairMutexLease<'_>` — RAII guard for the `next` lock only
-- [ ] **Tests**:
-  - [ ] Basic lock/unlock works
-  - [ ] Two threads can take turns locking
-  - [ ] `try_lock_unfair` returns None when locked
-  - [ ] Lease prevents fair lock from starving unfair lock
+  - [x] `FairMutex::new(data: T) -> Self`
+  - [x] `lock(&self) -> FairMutexGuard<'_, T>` — fair lock: acquire `next`, then `data`
+  - [x] `lock_unfair(&self) -> parking_lot::MutexGuard<'_, T>` — skip fairness (for PTY thread)
+  - [x] `try_lock_unfair(&self) -> Option<parking_lot::MutexGuard<'_, T>>` — non-blocking try
+  - [x] `lease(&self) -> FairMutexLease<'_>` — reserve the `next` lock (PTY thread signals intent)
+- [x] `FairMutexGuard<'_, T>` — RAII guard that releases both locks on drop
+- [x] `FairMutexLease<'_>` — RAII guard for the `next` lock only
+- [x] **Tests**:
+  - [x] Basic lock/unlock works
+  - [x] Two threads can take turns locking
+  - [x] `try_lock_unfair` returns None when locked
+  - [x] Lease prevents fair lock from starving unfair lock
 
 ---
 
@@ -540,32 +540,32 @@ Prevents starvation between PTY reader thread and render thread. Ported from Ala
 
 Wire dirty tracking from Grid into the RenderableContent snapshot.
 
-- [ ] `Term::damage(&self) -> impl Iterator<Item = DamageLine>`
-  - [ ] Returns dirty lines from active grid's DirtyTracker
-  - [ ] After reading damage, marks are cleared (drain semantics)
-- [ ] `Term::reset_damage(&mut self)` — mark all clean (called after renderer consumes)
-- [ ] `RenderableContent` includes damage info
-  - [ ] If `all_dirty`, damage list is empty (signals full redraw)
-  - [ ] Otherwise, damage list contains only changed lines
-- [ ] **Tests**:
-  - [ ] Write char → line is damaged
-  - [ ] Read damage → line no longer damaged
-  - [ ] scroll_up → all lines damaged
-  - [ ] No changes → no damage
+- [x] `Term::damage(&mut self) -> TermDamage<'_>`
+  - [x] Returns dirty lines from active grid's DirtyTracker
+  - [x] After reading damage, marks are cleared (drain semantics)
+- [x] `Term::reset_damage(&mut self)` — mark all clean (called after renderer consumes)
+- [x] `RenderableContent` includes damage info
+  - [x] If `all_dirty`, damage list is empty (signals full redraw)
+  - [x] Otherwise, damage list contains only changed lines
+- [x] **Tests**:
+  - [x] Write char → line is damaged
+  - [x] Read damage → line no longer damaged
+  - [x] scroll_up → all lines damaged
+  - [x] No changes → no damage
 
 ---
 
 ## 2.15 Section Completion
 
-- [ ] All 2.1–2.14 items complete
-- [ ] `cargo test -p oriterm_core` — all tests pass (Grid + Term + VTE)
-- [ ] `cargo clippy -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
-- [ ] Feed `echo "hello world"` through Term<VoidListener> → correct grid state
-- [ ] Feed CSI sequences (cursor move, erase, SGR) → correct results
-- [ ] Feed OSC sequences (title, palette) → correct events fired
-- [ ] Alt screen switch works correctly
-- [ ] RenderableContent snapshot extracts correct data
-- [ ] FairMutex compiles and basic tests pass
-- [ ] No GPU, no PTY, no window — purely in-memory terminal emulation
+- [x] All 2.1–2.14 items complete
+- [x] `cargo test -p oriterm_core` — all tests pass (Grid + Term + VTE)
+- [x] `cargo clippy -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
+- [x] Feed `echo "hello world"` through Term<VoidListener> → correct grid state
+- [x] Feed CSI sequences (cursor move, erase, SGR) → correct results
+- [x] Feed OSC sequences (title, palette) → correct events fired
+- [x] Alt screen switch works correctly
+- [x] RenderableContent snapshot extracts correct data
+- [x] FairMutex compiles and basic tests pass
+- [x] No GPU, no PTY, no window — purely in-memory terminal emulation
 
 **Exit Criteria:** Full VTE processing works in-memory. `Term<VoidListener>` can process any escape sequence and produce correct grid state. `RenderableContent` snapshots work.

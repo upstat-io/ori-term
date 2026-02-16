@@ -104,6 +104,45 @@ These events mark everything dirty (conservative — can optimize individual cas
   - [ ] After drain, `is_any_dirty()` returns false
   - [ ] Resize marks all rows dirty
 
+### Column-Level Damage Bounds
+
+Refine damage granularity from full-line to column ranges. Currently `DamageLine` always reports `left=0, right=cols-1`. Alacritty tracks per-line `LineDamageBounds` with `left`/`right` that expand via `min(left)` / `max(right)` as cells are modified.
+
+- [ ] Track left/right column bounds per dirty line (expand on each cell write)
+  - [ ] Initial undamaged state: `left=cols, right=0` (inverted → `is_damaged = left <= right`)
+  - [ ] Each cell mutation calls `expand(col, col)`: `left = min(left, col)`, `right = max(right, col)`
+  - [ ] Erase/delete operations: expand from cursor to affected range end
+- [ ] `DamageLine` reports actual column bounds instead of always full-line
+- [ ] Renderer uses column bounds to skip unchanged cells within a row
+- [ ] **Tests**:
+  - [ ] Write single char → damage bounds cover only that column
+  - [ ] Write two chars at different columns → bounds expand to cover both
+  - [ ] Erase chars → bounds cover erase range
+  - [ ] Full-line operations still report `left=0, right=cols-1`
+
+### Selection Damage Tracking
+
+When selection changes, only damage the affected lines rather than forcing a full redraw. Alacritty tracks `old_selection` and diffs against the new selection to determine which lines need redrawing.
+
+- [ ] Store previous selection range after each frame
+- [ ] On selection change, damage only lines that were selected or are now selected
+- [ ] Selection clear damages the previously-selected lines
+- [ ] Selection drag damages the incrementally changed lines (not the entire selection)
+- [ ] **Tests**:
+  - [ ] New selection damages only the selected lines
+  - [ ] Extending selection damages only the newly-covered lines
+  - [ ] Clearing selection damages only the previously-selected lines
+
+### Insert Mode Damage Interaction
+
+When INSERT mode (IRM) is active, cell insertions shift existing content right, which can affect the entire line from cursor to right margin. Alacritty forces full damage when INSERT mode is active during `damage()`.
+
+- [ ] When INSERT mode is active, force full-line damage for the cursor row on any cell write
+- [ ] On `unset_mode(Insert)`, mark all lines dirty (exit from insert mode may have left stale damage)
+- [ ] **Tests**:
+  - [ ] Write char in INSERT mode → full line damaged
+  - [ ] Exit INSERT mode → all dirty
+
 ---
 
 ## 23.2 Parsing Performance

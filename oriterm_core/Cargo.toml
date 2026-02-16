@@ -9,6 +9,7 @@ license = "MIT"
 base64 = "0.22"
 bitflags = "2"
 log = "0.4"
+parking_lot = "0.12"
 unicode-width = "0.2"
 vte = { version = "0.15.0", features = ["ansi"] }
 
