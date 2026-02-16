@@ -13,9 +13,7 @@ mod spawn;
 pub mod signal;
 
 pub use reader::{PtyEvent, PtyReader};
-#[allow(unused_imports, reason = "ExitStatus re-exported for Tab in 4.8")]
-pub use spawn::ExitStatus;
-pub use spawn::{PtyConfig, PtyControl, spawn_pty};
+pub use spawn::{PtyConfig, PtyControl, PtyHandle, spawn_pty};
 
 /// Commands sent from the main thread to the PTY reader thread.
 ///

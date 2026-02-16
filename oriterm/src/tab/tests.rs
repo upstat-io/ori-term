@@ -1,10 +1,12 @@
-//! Tests for tab identity, event types, EventProxy, and Notifier.
+//! Tests for tab identity, event types, EventProxy, Notifier, and Tab.
 
 use std::sync::mpsc;
 
+use winit::event_loop::EventLoopProxy;
+
 use oriterm_core::{Event, EventListener};
 
-use super::{EventProxy, Notifier, TabId, TermEvent};
+use super::{EventProxy, Notifier, Tab, TabId, TermEvent};
 use crate::pty::Msg;
 
 // ---------------------------------------------------------------------------
@@ -79,8 +81,7 @@ fn term_event_debug_format() {
 
 #[test]
 fn event_proxy_sends_terminal_event() {
-    let event_loop = build_test_event_loop();
-    let proxy = event_loop.create_proxy();
+    let proxy = test_proxy();
     let tab_id = TabId::next();
     let event_proxy = EventProxy::new(proxy, tab_id);
 
@@ -170,14 +171,124 @@ fn notifier_survives_dropped_receiver() {
 }
 
 // ---------------------------------------------------------------------------
+// Tab (live PTY)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tab_spawns_with_live_pty() {
+    let proxy = test_proxy();
+    let id = TabId::next();
+
+    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+
+    assert_eq!(tab.id(), id);
+    assert_eq!(tab.title(), "");
+    assert!(!tab.has_bell());
+}
+
+#[test]
+fn tab_terminal_is_accessible() {
+    let proxy = test_proxy();
+    let id = TabId::next();
+
+    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+
+    // Lock the terminal and verify grid dimensions.
+    let term = tab.terminal().lock();
+    let grid = term.grid();
+    assert_eq!(grid.cols(), 80);
+    assert_eq!(grid.lines(), 24);
+}
+
+#[test]
+fn tab_write_input_reaches_pty() {
+    let proxy = test_proxy();
+    let id = TabId::next();
+
+    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+
+    // Should not panic — bytes go through Notifier → channel → PTY writer.
+    tab.write_input(b"echo hello\r\n");
+}
+
+#[test]
+fn tab_resize_sends_to_pty() {
+    let proxy = test_proxy();
+    let id = TabId::next();
+
+    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+
+    // Should not panic — resize goes through Notifier → channel → PTY control.
+    tab.resize(40, 120);
+}
+
+#[test]
+fn tab_bell_state() {
+    let proxy = test_proxy();
+    let id = TabId::next();
+
+    let mut tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+
+    assert!(!tab.has_bell());
+    tab.set_bell();
+    assert!(tab.has_bell());
+    tab.clear_bell();
+    assert!(!tab.has_bell());
+}
+
+#[test]
+fn tab_title_update() {
+    let proxy = test_proxy();
+    let id = TabId::next();
+
+    let mut tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+
+    assert_eq!(tab.title(), "");
+    tab.set_title("my terminal".into());
+    assert_eq!(tab.title(), "my terminal");
+}
+
+#[test]
+fn tab_drop_is_clean() {
+    let proxy = test_proxy();
+    let id = TabId::next();
+
+    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+
+    // Drop should send Shutdown, kill child, and join reader thread
+    // without panicking.
+    drop(tab);
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Get a cloned winit `EventLoopProxy` for tests.
+///
+/// Winit only allows one `EventLoop` per process. This creates one
+/// on first call (leaked to keep the proxy valid) and clones the
+/// proxy for each test.
+fn test_proxy() -> EventLoopProxy<TermEvent> {
+    use std::sync::OnceLock;
+
+    static PROXY: OnceLock<EventLoopProxy<TermEvent>> = OnceLock::new();
+    PROXY
+        .get_or_init(|| {
+            let event_loop = build_event_loop();
+            let proxy = event_loop.create_proxy();
+            // Leak so the event loop stays alive for the process lifetime.
+            std::mem::forget(event_loop);
+            proxy
+        })
+        .clone()
+}
 
 /// Build a winit event loop usable from test threads.
 ///
 /// Tests run outside the main thread. winit requires `any_thread(true)`
 /// on both Windows and Linux (X11/Wayland) to allow this.
-fn build_test_event_loop() -> winit::event_loop::EventLoop<TermEvent> {
+fn build_event_loop() -> winit::event_loop::EventLoop<TermEvent> {
     #[cfg(windows)]
     {
         use winit::platform::windows::EventLoopBuilderExtWindows;
