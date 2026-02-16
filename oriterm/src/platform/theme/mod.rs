@@ -9,12 +9,6 @@
 //!
 //! Reference: `WezTerm` appearance detection, Ghostty color scheme sync.
 
-// Theme detection is wired into app startup in a later section.
-// In test builds, tests exercise system_theme() and helpers so dead_code
-// doesn't fire — making #![expect(dead_code)] produce an unfulfilled-lint
-// warning on some platforms.
-#![allow(dead_code, reason = "theme detection wired into app startup later")]
-
 use oriterm_core::Theme;
 
 /// Detect the system's color theme preference.

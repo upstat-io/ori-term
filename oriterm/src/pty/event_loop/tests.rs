@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::sync::Arc;
 
-use oriterm_core::{FairMutex, Term, VoidListener};
+use oriterm_core::{FairMutex, Term, Theme, VoidListener};
 
 use super::{PtyEventLoop, MAX_LOCKED_PARSE, READ_BUFFER_SIZE};
 use crate::pty::{Msg, PtyControl};
@@ -70,7 +70,7 @@ fn build_event_loop(
     Arc<FairMutex<Term<VoidListener>>>,
     mpsc::Sender<Msg>,
 ) {
-    let terminal = Arc::new(FairMutex::new(Term::new(24, 80, 1000, VoidListener)));
+    let terminal = Arc::new(FairMutex::new(Term::new(24, 80, 1000, Theme::default(), VoidListener)));
     let (tx, rx) = mpsc::channel();
 
     let event_loop = PtyEventLoop::new(

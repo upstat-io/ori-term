@@ -10,10 +10,11 @@ use crate::grid::CursorShape;
 use crate::index::Column;
 use crate::term::mode::TermMode;
 use crate::term::Term;
+use crate::theme::Theme;
 
 /// Create a 4x10 terminal for compact tests.
 fn term() -> Term<VoidListener> {
-    Term::new(4, 10, 100, VoidListener)
+    Term::new(4, 10, 100, Theme::default(), VoidListener)
 }
 
 /// Feed raw bytes through the VTE processor.
@@ -390,7 +391,7 @@ fn mark_all_dirty_reports_full_redraw() {
 
 #[test]
 fn scrollback_content_visible_when_scrolled() {
-    let mut t = Term::new(4, 10, 100, VoidListener);
+    let mut t = Term::new(4, 10, 100, Theme::default(), VoidListener);
 
     // Fill 4 lines and scroll one into scrollback.
     feed(&mut t, b"AAAAAAAAAA\r\n");
@@ -808,7 +809,7 @@ fn wrap_flag_set_at_end_of_line() {
 
 #[test]
 fn scrollback_preserves_colors() {
-    let mut t = Term::new(4, 10, 100, VoidListener);
+    let mut t = Term::new(4, 10, 100, Theme::default(), VoidListener);
     let palette = Palette::default();
 
     // Write a red line that will scroll into scrollback.
@@ -830,7 +831,7 @@ fn scrollback_preserves_colors() {
 
 #[test]
 fn scrollback_preserves_bold_flag() {
-    let mut t = Term::new(4, 10, 100, VoidListener);
+    let mut t = Term::new(4, 10, 100, Theme::default(), VoidListener);
 
     // Write a bold line that scrolls into scrollback.
     feed(&mut t, b"\x1b[1mBBBBBBBBBB\r\n\x1b[0m");
@@ -1267,7 +1268,7 @@ fn variation_selector_propagates_to_renderable() {
 
 #[test]
 fn zjw_emoji_sequence_renderable_cells() {
-    let mut t = Term::new(4, 20, 100, VoidListener);
+    let mut t = Term::new(4, 20, 100, Theme::default(), VoidListener);
     // 👨‍👩‍👧 = U+1F468 + ZWJ + U+1F469 + ZWJ + U+1F467
     // Without mode 2027: each emoji is a separate wide char, ZWJs stored.
     feed(
@@ -1351,7 +1352,7 @@ fn four_combining_marks_propagate_to_renderable() {
 
 #[test]
 fn scrollback_preserves_combining_marks() {
-    let mut t = Term::new(4, 10, 100, VoidListener);
+    let mut t = Term::new(4, 10, 100, Theme::default(), VoidListener);
 
     // Write 'é' (e + combining acute) that will scroll into scrollback.
     feed(&mut t, "e\u{0301}".as_bytes());

@@ -180,8 +180,9 @@ impl Tab {
             .ok_or_else(|| io::Error::other("PTY control unavailable"))?;
 
         // 3. Create the terminal state machine with an event proxy.
+        let theme = crate::platform::theme::system_theme();
         let event_proxy = EventProxy::new(proxy, id);
-        let term = Term::new(usize::from(rows), usize::from(cols), scrollback, event_proxy);
+        let term = Term::new(usize::from(rows), usize::from(cols), scrollback, theme, event_proxy);
         let terminal = Arc::new(FairMutex::new(term));
 
         // 4. Wire the message channel.

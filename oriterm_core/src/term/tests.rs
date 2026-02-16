@@ -4,14 +4,16 @@ use std::collections::VecDeque;
 
 use vte::ansi::{KeyboardModes, Processor};
 
+use crate::color::Rgb;
 use crate::event::VoidListener;
 use crate::grid::CursorShape;
 use crate::index::{Column, Line};
+use crate::theme::Theme;
 
 use super::{Term, TermMode};
 
 fn make_term() -> Term<VoidListener> {
-    Term::new(24, 80, 1000, VoidListener)
+    Term::new(24, 80, 1000, Theme::default(), VoidListener)
 }
 
 /// Feed raw bytes through the VTE processor.
@@ -116,7 +118,7 @@ fn swap_alt_preserves_keyboard_mode_stacks() {
 
 /// Create a small terminal and clear initial damage.
 fn damage_term() -> Term<VoidListener> {
-    let mut t = Term::new(6, 10, 100, VoidListener);
+    let mut t = Term::new(6, 10, 100, Theme::default(), VoidListener);
     t.reset_damage();
     t
 }
@@ -736,4 +738,64 @@ fn damage_set_scroll_region_damages_via_goto() {
     let lines = damaged_lines(&mut t);
     assert!(lines.contains(&0), "cursor-to-origin damages line 0");
     assert!(lines.contains(&2), "old cursor line 2 should be damaged");
+}
+
+// --- Theme integration ---
+
+#[test]
+fn new_with_dark_theme_uses_dark_palette() {
+    let t = Term::new(4, 10, 0, Theme::Dark, VoidListener);
+    assert_eq!(t.palette().foreground(), Rgb { r: 0xd3, g: 0xd7, b: 0xcf });
+    assert_eq!(t.palette().background(), Rgb { r: 0x00, g: 0x00, b: 0x00 });
+    assert_eq!(t.theme(), Theme::Dark);
+}
+
+#[test]
+fn new_with_light_theme_uses_light_palette() {
+    let t = Term::new(4, 10, 0, Theme::Light, VoidListener);
+    assert_eq!(t.palette().foreground(), Rgb { r: 0x2e, g: 0x34, b: 0x36 });
+    assert_eq!(t.palette().background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+    assert_eq!(t.theme(), Theme::Light);
+}
+
+#[test]
+fn set_theme_switches_palette() {
+    let mut t = Term::new(4, 10, 0, Theme::Dark, VoidListener);
+    t.reset_damage();
+
+    t.set_theme(Theme::Light);
+
+    assert_eq!(t.theme(), Theme::Light);
+    assert_eq!(t.palette().foreground(), Rgb { r: 0x2e, g: 0x34, b: 0x36 });
+    assert_eq!(t.palette().background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+
+    let dmg = t.damage();
+    assert!(dmg.is_all_dirty(), "set_theme should mark all dirty");
+    drop(dmg);
+}
+
+#[test]
+fn set_theme_same_theme_is_noop() {
+    let mut t = Term::new(4, 10, 0, Theme::Dark, VoidListener);
+    t.reset_damage();
+
+    t.set_theme(Theme::Dark);
+
+    assert_eq!(t.theme(), Theme::Dark);
+    let dmg: Vec<_> = t.damage().collect();
+    assert!(dmg.is_empty(), "same theme should not produce damage");
+}
+
+#[test]
+fn ris_resets_to_current_theme() {
+    let mut t = Term::new(4, 10, 0, Theme::Light, VoidListener);
+    // Verify light palette is active.
+    assert_eq!(t.palette().background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+
+    // RIS (ESC c) should reset to the stored theme (Light), not Dark.
+    feed(&mut t, b"\x1bc");
+
+    assert_eq!(t.theme(), Theme::Light);
+    assert_eq!(t.palette().background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+    assert_eq!(t.palette().foreground(), Rgb { r: 0x2e, g: 0x34, b: 0x36 });
 }
