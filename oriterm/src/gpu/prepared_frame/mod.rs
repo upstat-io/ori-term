@@ -1,0 +1,97 @@
+//! Prepared frame output from the Prepare phase of the render pipeline.
+//!
+//! [`PreparedFrame`] holds three [`InstanceWriter`] buffers (backgrounds,
+//! glyphs, cursors) plus metadata the Render phase needs to upload and draw.
+//! The three buffers map to three draw calls in painter's order:
+//! backgrounds first, then glyphs on top, then cursors last.
+
+// In test builds, tests construct PreparedFrame so it's not dead code.
+// In non-test builds, nothing constructs it until Section 5.8.
+#![cfg_attr(
+    not(test),
+    expect(dead_code, reason = "GPU infrastructure used starting in Section 5.8")
+)]
+
+use oriterm_core::Rgb;
+
+use super::instance_writer::InstanceWriter;
+
+/// GPU-ready frame data produced by the Prepare phase.
+///
+/// Contains three instance buffers for the three rendering layers
+/// (drawn in order: backgrounds → glyphs → cursors) plus the clear
+/// color and total instance count for the Render phase.
+pub struct PreparedFrame {
+    /// Background rectangle instances (solid-color cell fills).
+    pub backgrounds: InstanceWriter,
+    /// Glyph instances (texture-sampled from the atlas).
+    pub glyphs: InstanceWriter,
+    /// Cursor instances (block, bar, underline shapes).
+    pub cursors: InstanceWriter,
+    /// Window clear color (alpha-premultiplied).
+    pub clear_color: [f64; 4],
+}
+
+impl PreparedFrame {
+    /// Create an empty frame with the given clear color.
+    pub fn new(background: Rgb, opacity: f64) -> Self {
+        Self {
+            backgrounds: InstanceWriter::new(),
+            glyphs: InstanceWriter::new(),
+            cursors: InstanceWriter::new(),
+            clear_color: rgb_to_clear(background, opacity),
+        }
+    }
+
+    /// Create an empty frame pre-allocated for the given grid dimensions.
+    ///
+    /// `cols * rows` instances are reserved for backgrounds (one per cell),
+    /// and the same for glyphs. Cursors are always small (typically 1–2).
+    pub fn with_capacity(cols: usize, rows: usize, background: Rgb, opacity: f64) -> Self {
+        let cells = cols * rows;
+        Self {
+            backgrounds: InstanceWriter::with_capacity(cells),
+            glyphs: InstanceWriter::with_capacity(cells),
+            cursors: InstanceWriter::with_capacity(4),
+            clear_color: rgb_to_clear(background, opacity),
+        }
+    }
+
+    /// Total instance count across all three buffers.
+    pub fn total_instances(&self) -> usize {
+        self.backgrounds.len() + self.glyphs.len() + self.cursors.len()
+    }
+
+    /// Whether all three buffers are empty.
+    pub fn is_empty(&self) -> bool {
+        self.backgrounds.is_empty() && self.glyphs.is_empty() && self.cursors.is_empty()
+    }
+
+    /// Reset all buffers for the next frame, retaining allocated memory.
+    pub fn clear(&mut self) {
+        self.backgrounds.clear();
+        self.glyphs.clear();
+        self.cursors.clear();
+    }
+
+    /// Update the clear color (e.g. after a palette change).
+    pub fn set_clear_color(&mut self, background: Rgb, opacity: f64) {
+        self.clear_color = rgb_to_clear(background, opacity);
+    }
+}
+
+/// Convert an `Rgb` + opacity to the `[f64; 4]` wgpu expects for clear color.
+///
+/// The color is premultiplied: each channel is scaled by opacity so the
+/// compositor blends correctly with `PreMultiplied` alpha mode.
+fn rgb_to_clear(c: Rgb, opacity: f64) -> [f64; 4] {
+    [
+        f64::from(c.r) / 255.0 * opacity,
+        f64::from(c.g) / 255.0 * opacity,
+        f64::from(c.b) / 255.0 * opacity,
+        opacity,
+    ]
+}
+
+#[cfg(test)]
+mod tests;
