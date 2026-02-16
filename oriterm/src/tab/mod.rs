@@ -275,7 +275,9 @@ impl Drop for Tab {
                 std::thread::sleep(SHUTDOWN_POLL_INTERVAL);
             }
             if handle.is_finished() {
-                let _ = handle.join();
+                if let Err(_payload) = handle.join() {
+                    log::warn!("tab {:?}: reader thread panicked", self.id);
+                }
             }
         }
 
