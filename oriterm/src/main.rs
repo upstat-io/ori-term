@@ -5,6 +5,7 @@ mod font;
 mod gpu;
 mod platform;
 mod pty;
+mod tab;
 
 use std::io::{self, Write};
 use std::sync::mpsc;

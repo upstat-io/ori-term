@@ -1,31 +1,31 @@
 ---
 section: 4
 title: PTY + Event Loop
-status: not-started
+status: in-progress
 tier: 1
 goal: Spawn a shell via ConPTY, wire the reader thread, and verify end-to-end I/O through Term<EventProxy>
 sections:
   - id: "4.1"
     title: Binary Crate Setup
-    status: not-started
+    status: complete
   - id: "4.2"
     title: TabId + TermEvent Types
-    status: not-started
+    status: complete
   - id: "4.3"
     title: PTY Spawning
-    status: not-started
+    status: complete
   - id: "4.4"
     title: Message Channel
-    status: not-started
+    status: complete
   - id: "4.5"
     title: EventProxy (EventListener impl)
-    status: not-started
+    status: complete
   - id: "4.6"
     title: Notifier (Notify impl)
-    status: not-started
+    status: complete
   - id: "4.7"
     title: PTY Reader Thread
-    status: not-started
+    status: in-progress
   - id: "4.8"
     title: Tab Struct
     status: not-started
@@ -51,18 +51,18 @@ sections:
 
 Set up the `oriterm/` binary crate in the workspace.
 
-- [ ] Create `oriterm/` directory with `Cargo.toml` and `src/main.rs`
-  - [ ] `Cargo.toml`: name = `oriterm`, edition = 2024, same lint config
-  - [ ] Dependencies: `oriterm_core = { path = "../oriterm_core" }`, all GUI/platform deps from current root Cargo.toml
-  - [ ] `[[bin]]` name = `oriterm`, path = `src/main.rs`
-- [ ] Move existing `src/main.rs` → `oriterm/src/main.rs`
-- [ ] Move `build.rs` → `oriterm/build.rs`
-- [ ] Move `assets/` reference in build.rs (update paths)
-- [ ] Update workspace root `Cargo.toml`:
-  - [ ] `[workspace]` with `members = ["oriterm_core", "oriterm"]`
-  - [ ] Remove `[[bin]]` and `[dependencies]` from root (they live in crate-level Cargo.tomls now)
-- [ ] Verify: `cargo build --target x86_64-pc-windows-gnu` builds both crates
-- [ ] Verify: `cargo build -p oriterm --target x86_64-pc-windows-gnu` builds the binary
+- [x] Create `oriterm/` directory with `Cargo.toml` and `src/main.rs`
+  - [x] `Cargo.toml`: name = `oriterm`, edition = 2024, same lint config
+  - [x] Dependencies: `oriterm_core = { path = "../oriterm_core" }`, all GUI/platform deps from current root Cargo.toml
+  - [x] `[[bin]]` name = `oriterm`, path = `src/main.rs`
+- [x] Move existing `src/main.rs` → `oriterm/src/main.rs`
+- [x] Move `build.rs` → `oriterm/build.rs`
+- [x] Move `assets/` reference in build.rs (update paths)
+- [x] Update workspace root `Cargo.toml`:
+  - [x] `[workspace]` with `members = ["oriterm_core", "oriterm"]`
+  - [x] Remove `[[bin]]` and `[dependencies]` from root (they live in crate-level Cargo.tomls now)
+- [x] Verify: `cargo build --target x86_64-pc-windows-gnu` builds both crates
+- [x] Verify: `cargo build -p oriterm --target x86_64-pc-windows-gnu` builds the binary
 
 ---
 
@@ -72,17 +72,17 @@ Newtype for tab identity and the event type for cross-thread communication.
 
 **File:** `oriterm/src/tab.rs` (initial, will grow)
 
-- [ ] `TabId` newtype
-  - [ ] `pub struct TabId(pub u64)`
-  - [ ] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Hash`
-  - [ ] `TabId::next() -> Self` — atomic counter for unique IDs
-    - [ ] Use `std::sync::atomic::AtomicU64` static counter
-- [ ] `TermEvent` enum — winit user event type
-  - [ ] `Terminal { tab_id: TabId, event: oriterm_core::Event }` — event from terminal library
-  - [ ] Derive: `Debug`
-- [ ] **Tests**:
-  - [ ] `TabId::next()` generates unique IDs
-  - [ ] `TermEvent` variants can be constructed
+- [x] `TabId` newtype
+  - [x] `pub struct TabId(u64)` (inner field private — construction only via `next()`)
+  - [x] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Hash`
+  - [x] `TabId::next() -> Self` — atomic counter for unique IDs
+    - [x] Use `std::sync::atomic::AtomicU64` static counter
+- [x] `TermEvent` enum — winit user event type
+  - [x] `Terminal { tab_id: TabId, event: oriterm_core::Event }` — event from terminal library
+  - [x] Derive: `Debug`
+- [x] **Tests**:
+  - [x] `TabId::next()` generates unique IDs
+  - [x] `TermEvent` variants can be constructed
 
 ---
 
@@ -92,27 +92,27 @@ Create a PTY and spawn the default shell.
 
 **File:** `oriterm/src/pty/spawn.rs`
 
-- [ ] `spawn_shell(rows: u16, cols: u16) -> io::Result<PtyHandle>`
-  - [ ] Call `portable_pty::native_pty_system()`
-  - [ ] `pty_system.openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })`
-  - [ ] `CommandBuilder::new_default_prog()` — default shell
-  - [ ] `pair.slave.spawn_command(cmd)` — spawn child process
-  - [ ] Drop `pair.slave` (reader gets EOF when child exits)
-  - [ ] Clone reader: `pair.master.try_clone_reader()`
-  - [ ] Take writer: `pair.master.take_writer()`
-  - [ ] Return `PtyHandle` containing reader, writer, master, child
-- [ ] `PtyHandle` struct
-  - [ ] Fields:
+- [x] `spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle>` (richer API than planned `spawn_shell`)
+  - [x] Call `portable_pty::native_pty_system()`
+  - [x] `pty_system.openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })`
+  - [x] `CommandBuilder::new(shell)` with `default_shell()` detection
+  - [x] `pair.slave.spawn_command(cmd)` — spawn child process
+  - [x] Drop `pair.slave` (reader gets EOF when child exits)
+  - [x] Clone reader: `pair.master.try_clone_reader()`
+  - [x] Take writer: `pair.master.take_writer()`
+  - [x] Return `PtyHandle` containing reader, writer, master, child
+- [x] `PtyHandle` struct
+  - [x] Fields:
     - `reader: Box<dyn Read + Send>` — PTY output (read by reader thread)
     - `writer: Box<dyn Write + Send>` — PTY input (written by Notifier)
     - `master: Box<dyn portable_pty::MasterPty + Send>` — for resize
     - `child: Box<dyn portable_pty::Child + Send + Sync>` — child process handle
-  - [ ] `PtyHandle::resize(&self, rows: u16, cols: u16) -> io::Result<()>`
-    - [ ] `self.master.resize(PtySize { rows, cols, ... })`
-- [ ] `mod.rs`: `pub mod spawn;` re-export `PtyHandle`, `spawn_shell`
-- [ ] **Tests**:
-  - [ ] Spawning a shell succeeds (integration test, may need `#[cfg(target_os)]` gate)
-  - [ ] Reader and writer are valid (not None)
+  - [x] `PtyHandle::resize(&self, rows: u16, cols: u16) -> io::Result<()>`
+    - [x] `self.master.resize(PtySize { rows, cols, ... })`
+- [x] `mod.rs`: `pub mod spawn;` re-export `PtyHandle`, `spawn_pty`
+- [x] **Tests**:
+  - [x] Spawning a shell succeeds (integration test)
+  - [x] Reader and writer are valid (not None)
 
 ---
 
@@ -122,13 +122,13 @@ Messages from the main thread to the PTY reader thread.
 
 **File:** `oriterm/src/pty/mod.rs`
 
-- [ ] `Msg` enum — commands sent to PTY thread
-  - [ ] `Input(Vec<u8>)` — bytes to write to PTY
-  - [ ] `Resize { rows: u16, cols: u16 }` — resize the PTY
-  - [ ] `Shutdown` — gracefully stop the reader thread
-- [ ] Use `std::sync::mpsc::channel::<Msg>()` — unbounded channel
-  - [ ] Sender held by `Notifier` (main thread side)
-  - [ ] Receiver consumed by reader thread
+- [x] `Msg` enum — commands sent to PTY thread
+  - [x] `Input(Vec<u8>)` — bytes to write to PTY
+  - [x] `Resize { rows: u16, cols: u16 }` — resize the PTY
+  - [x] `Shutdown` — gracefully stop the reader thread
+- [x] Use `std::sync::mpsc::channel::<Msg>()` — unbounded channel
+  - [x] Sender held by `Notifier` (main thread side)
+  - [x] Receiver consumed by reader thread
 
 ---
 
@@ -138,15 +138,15 @@ Bridges terminal events to the winit event loop.
 
 **File:** `oriterm/src/tab.rs`
 
-- [ ] `EventProxy` struct
-  - [ ] Fields:
+- [x] `EventProxy` struct
+  - [x] Fields:
     - `proxy: winit::event_loop::EventLoopProxy<TermEvent>` — winit's thread-safe event sender
     - `tab_id: TabId`
-  - [ ] `impl oriterm_core::EventListener for EventProxy`
-    - [ ] `fn send_event(&self, event: oriterm_core::Event)`
-      - [ ] `let _ = self.proxy.send_event(TermEvent::Terminal { tab_id: self.tab_id, event });`
-      - [ ] Silently ignore send errors (window may have closed)
-- [ ] `EventProxy` must be `Send + 'static` (required by `EventListener` bound)
+  - [x] `impl oriterm_core::EventListener for EventProxy`
+    - [x] `fn send_event(&self, event: oriterm_core::Event)`
+      - [x] `let _ = self.proxy.send_event(TermEvent::Terminal { tab_id: self.tab_id, event });`
+      - [x] Silently ignore send errors (window may have closed)
+- [x] `EventProxy` must be `Send + 'static` (required by `EventListener` bound)
 
 ---
 
@@ -156,16 +156,15 @@ Sends input bytes and commands to the PTY reader thread.
 
 **File:** `oriterm/src/tab.rs`
 
-- [ ] `Notifier` struct
-  - [ ] Fields:
+- [x] `Notifier` struct
+  - [x] Fields:
     - `tx: std::sync::mpsc::Sender<Msg>` — channel sender
-  - [ ] `impl oriterm_core::Notify for Notifier`
-    - [ ] `fn notify<B: Into<Cow<'static, [u8]>>>(&self, bytes: B)`
-      - [ ] `let _ = self.tx.send(Msg::Input(bytes.into().into_owned()));`
-  - [ ] `Notifier::resize(&self, rows: u16, cols: u16)`
-    - [ ] `let _ = self.tx.send(Msg::Resize { rows, cols });`
-  - [ ] `Notifier::shutdown(&self)`
-    - [ ] `let _ = self.tx.send(Msg::Shutdown);`
+  - [x] `Notifier::notify(&self, bytes: &[u8])` — send bytes (skips empty)
+    - [x] `let _ = self.tx.send(Msg::Input(bytes.to_vec()));`
+  - [x] `Notifier::resize(&self, rows: u16, cols: u16)`
+    - [x] `let _ = self.tx.send(Msg::Resize { rows, cols });`
+  - [x] `Notifier::shutdown(&self)`
+    - [x] `let _ = self.tx.send(Msg::Shutdown);`
 
 ---
 
@@ -173,51 +172,38 @@ Sends input bytes and commands to the PTY reader thread.
 
 The dedicated thread that reads PTY output, parses VTE, and updates terminal state.
 
-**File:** `oriterm/src/pty/mod.rs`
+**File:** `oriterm/src/pty/event_loop.rs`
 
-- [ ] `PtyEventLoop` struct
-  - [ ] Fields:
-    - `terminal: Arc<oriterm_core::FairMutex<oriterm_core::Term<EventProxy>>>` — shared terminal state
+- [x] `PtyEventLoop` struct
+  - [x] Fields:
+    - `terminal: Arc<oriterm_core::FairMutex<oriterm_core::Term<T>>>` — shared terminal state (generic over `EventListener`)
     - `reader: Box<dyn Read + Send>` — PTY read handle
     - `writer: Box<dyn Write + Send>` — PTY write handle
     - `rx: std::sync::mpsc::Receiver<Msg>` — command receiver
     - `pty_master: Box<dyn portable_pty::MasterPty + Send>` — for resize
     - `processor: vte::ansi::Processor` — VTE parser state machine
-  - [ ] `PtyEventLoop::new(...)` — constructor, takes all handles
-  - [ ] `PtyEventLoop::spawn(self) -> JoinHandle<()>` — start the reader thread
-    - [ ] `std::thread::Builder::new().name("pty-reader".into()).spawn(move || self.run())`
-  - [ ] `fn run(mut self)` — main loop:
-    ```
-    loop {
-        // 1. Drain command channel (non-blocking)
-        self.process_commands();
-
-        // 2. Read from PTY (blocking, with timeout or polling)
-        let n = self.reader.read(&mut buf);
-
-        // 3. If data available, lock terminal and parse
-        if n > 0 {
-            let _lease = self.terminal.lease();
-            let mut term = self.terminal.lock_unfair();
-            self.processor.advance(&mut *term, &buf[..n]);
-            // Collect PTY responses (DA, CPR, etc.) and write back
-            // Drop lock
-        }
-
-        // 4. Check if child exited
-    }
-    ```
-  - [ ] `fn process_commands(&mut self)` — drain rx:
-    - [ ] `Msg::Input(bytes)` → `self.writer.write_all(&bytes)`
-    - [ ] `Msg::Resize { rows, cols }` → `self.pty_master.resize(...)` + lock term + `term.resize(cols, rows)`
-    - [ ] `Msg::Shutdown` → break out of loop
-  - [ ] Read buffer: `[u8; 65536]` (64KB, stack-allocated)
-  - [ ] Max locked parse: process up to 64KB under one lock acquisition, then release and re-lock for more
-    - [ ] Prevents holding lock for too long on large output bursts
-- [ ] **Thread safety**:
-  - [ ] PTY reader thread holds `FairMutex` lock only during `processor.advance()` (microseconds to low ms)
-  - [ ] Uses `lease()` → `lock_unfair()` pattern from Alacritty
-  - [ ] Releases lock between read batches
+  - [x] `PtyEventLoop::new(...)` — constructor, takes all handles
+  - [x] `PtyEventLoop::spawn(self) -> JoinHandle<()>` — start the reader thread
+    - [x] `std::thread::Builder::new().name("pty-reader".into()).spawn(move || self.run())`
+  - [x] `fn run(mut self)` — main loop: drain commands → blocking read → parse in bounded chunks → EOF/error exits
+  - [x] `fn parse_pty_output(&mut self, data: &[u8])` — lock-bounded VTE parsing in 64KB chunks
+  - [x] `fn process_commands(&mut self) -> bool` — drain rx:
+    - [x] `Msg::Input(bytes)` → `self.writer.write_all(&bytes)`
+    - [x] `Msg::Resize { rows, cols }` → `self.resize_pty(rows, cols)` (PTY master only; Term resize is Section 12)
+    - [x] `Msg::Shutdown` → return false (breaks loop)
+  - [x] `fn resize_pty(&self, rows, cols)` — resize PTY master via `portable_pty::PtySize`
+  - [x] Read buffer: `vec![0u8; 65536]` (64KB, heap-allocated to avoid clippy::large_stack_arrays)
+  - [x] Max locked parse: `MAX_LOCKED_PARSE = 0x1_0000` (64KB) per lock acquisition, then release and re-lock
+    - [x] Prevents holding lock for too long on large output bursts
+- [x] **Thread safety**:
+  - [x] PTY reader thread holds `FairMutex` lock only during `processor.advance()` (microseconds to low ms)
+  - [x] Uses `lease()` → `lock_unfair()` pattern from Alacritty
+  - [x] Releases lock between read batches
+- [x] `PtyHandle::take_master()` — added to `spawn.rs` so master can be handed to PtyEventLoop
+- [ ] **Tests**:
+  - [ ] `event_loop_processes_pty_output` — spawns shell, verifies terminal grid has content (currently failing — shell prompt not appearing within 500ms in CI/WSL)
+  - [x] `event_loop_shutdown_on_eof` — kill child, thread exits on EOF
+  - [x] `read_buffer_size_is_64kb` — constant check
 
 ---
 
