@@ -2,3 +2,5 @@
 
 pub(crate) mod state;
 pub(crate) mod transparency;
+
+pub(crate) use state::validate_gpu;

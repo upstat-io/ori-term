@@ -9,10 +9,23 @@
 // loop (added in Section 05). Suppress dead-code warnings until then.
 #![expect(dead_code, reason = "GPU infrastructure used in Section 05")]
 
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use winit::window::Window;
+
+/// Error returned when GPU initialization fails on all backends.
+#[derive(Debug)]
+pub struct GpuInitError;
+
+impl fmt::Display for GpuInitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("failed to initialize GPU with any backend")
+    }
+}
+
+impl std::error::Error for GpuInitError {}
 
 /// GPU state shared across all windows.
 pub struct GpuState {
@@ -43,7 +56,7 @@ impl GpuState {
     /// (the only path that gives `PreMultiplied` alpha on Windows HWND
     /// swapchains). Otherwise prefers Vulkan (supports pipeline caching for
     /// faster subsequent launches).
-    pub fn new(window: &Arc<Window>, transparent: bool) -> Self {
+    pub fn new(window: &Arc<Window>, transparent: bool) -> Result<Self, GpuInitError> {
         #[cfg(not(target_os = "windows"))]
         let _ = transparent;
 
@@ -52,7 +65,7 @@ impl GpuState {
         #[cfg(target_os = "windows")]
         if transparent {
             if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, true) {
-                return state;
+                return Ok(state);
             }
             log::warn!("DX12 DirectComposition init failed, falling back to Vulkan");
         }
@@ -60,17 +73,16 @@ impl GpuState {
         // Prefer Vulkan — it supports pipeline caching (compiled shaders
         // persisted to disk).
         if let Some(state) = Self::try_init(window, wgpu::Backends::VULKAN, false) {
-            return state;
+            return Ok(state);
         }
 
         // Fall back to other primary backends (DX12, Metal).
         if let Some(state) = Self::try_init(window, wgpu::Backends::PRIMARY, false) {
-            return state;
+            return Ok(state);
         }
 
         // Last resort: secondary backends (GL, etc.).
-        Self::try_init(window, wgpu::Backends::SECONDARY, false)
-            .expect("failed to initialize GPU with any backend")
+        Self::try_init(window, wgpu::Backends::SECONDARY, false).ok_or(GpuInitError)
     }
 
     /// Returns the native surface format used for surface configuration.
@@ -95,16 +107,14 @@ impl GpuState {
     ) -> Option<(wgpu::Surface<'static>, wgpu::SurfaceConfiguration)> {
         let surface = self.instance.create_surface(window.clone()).ok()?;
         let size = window.inner_size();
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: self.surface_format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: self.surface_alpha_mode,
-            view_formats: self.view_formats(),
-            desired_maximum_frame_latency: 2,
-        };
+        let config = build_surface_config(
+            self.surface_format,
+            self.render_format,
+            self.surface_alpha_mode,
+            self.supports_view_formats,
+            size.width,
+            size.height,
+        );
         surface.configure(&self.device, &config);
         Some((surface, config))
     }
@@ -160,7 +170,7 @@ impl GpuState {
 
         let caps = surface.get_capabilities(&adapter);
         let downlevel = adapter.get_downlevel_capabilities();
-        let (surface_format, render_format, view_formats) =
+        let (surface_format, render_format, _) =
             Self::select_formats(&caps, downlevel.flags)?;
         let surface_alpha_mode = Self::select_alpha_mode(&caps);
         let supports_view_formats = downlevel
@@ -169,19 +179,16 @@ impl GpuState {
 
         // Configure the initial surface.
         let size = window.inner_size();
-        surface.configure(
-            &device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: surface_format,
-                width: size.width.max(1),
-                height: size.height.max(1),
-                present_mode: wgpu::PresentMode::Fifo,
-                alpha_mode: surface_alpha_mode,
-                view_formats,
-                desired_maximum_frame_latency: 2,
-            },
+        let config = build_surface_config(
+            surface_format,
+            render_format,
+            surface_alpha_mode,
+            supports_view_formats,
+            size.width,
+            size.height,
         );
+        surface.configure(&device, &config);
+        drop(config);
 
         let info = adapter.get_info();
         let transparency_supported =
@@ -313,17 +320,10 @@ impl GpuState {
         {
             wgpu::CompositeAlphaMode::PostMultiplied
         } else {
-            caps.alpha_modes[0]
-        }
-    }
-
-    /// Compute the `view_formats` list needed for surface configuration.
-    fn view_formats(&self) -> Vec<wgpu::TextureFormat> {
-        let needs_view_format = self.render_format != self.surface_format;
-        if needs_view_format && self.supports_view_formats {
-            vec![self.render_format]
-        } else {
-            vec![]
+            caps.alpha_modes
+                .first()
+                .copied()
+                .unwrap_or(wgpu::CompositeAlphaMode::Opaque)
         }
     }
 
@@ -370,6 +370,37 @@ impl GpuState {
         );
 
         (Some(cache), Some(cache_path))
+    }
+}
+
+/// Build a [`wgpu::SurfaceConfiguration`] from the resolved GPU parameters.
+///
+/// Single source of truth for surface config — called from both `try_init()`
+/// (initial probe) and `create_surface()` (per-window).
+fn build_surface_config(
+    surface_format: wgpu::TextureFormat,
+    render_format: wgpu::TextureFormat,
+    alpha_mode: wgpu::CompositeAlphaMode,
+    supports_view_formats: bool,
+    width: u32,
+    height: u32,
+) -> wgpu::SurfaceConfiguration {
+    let needs_view_format = render_format != surface_format;
+    let view_formats = if needs_view_format && supports_view_formats {
+        vec![render_format]
+    } else {
+        vec![]
+    };
+
+    wgpu::SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format: surface_format,
+        width: width.max(1),
+        height: height.max(1),
+        present_mode: wgpu::PresentMode::Fifo,
+        alpha_mode,
+        view_formats,
+        desired_maximum_frame_latency: 2,
     }
 }
 
