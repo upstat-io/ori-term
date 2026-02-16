@@ -27,7 +27,7 @@ impl<T: EventListener> Term<T> {
         self.alt_grid.reset();
         self.mode = TermMode::default();
         self.charset = CharsetState::default();
-        self.palette = crate::color::Palette::default();
+        self.palette = crate::color::Palette::for_theme(self.theme);
         self.cursor_shape = crate::grid::CursorShape::default();
         self.title.clear();
         self.title_stack.clear();

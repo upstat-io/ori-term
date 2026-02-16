@@ -22,6 +22,7 @@ use crate::color::Palette;
 use crate::event::EventListener;
 use crate::grid::{CursorShape, Grid};
 use crate::index::{Column, Line};
+use crate::theme::Theme;
 
 /// Maximum depth for title stack (xterm push/pop title).
 ///
@@ -51,6 +52,8 @@ pub struct Term<T: EventListener> {
     mode: TermMode,
     /// Color palette (270 entries).
     palette: Palette,
+    /// Active color theme (dark/light).
+    theme: Theme,
     /// Character set translation state (G0–G3).
     charset: CharsetState,
     /// Window title (set by OSC 0/1/2).
@@ -73,12 +76,13 @@ pub struct Term<T: EventListener> {
 
 impl<T: EventListener> Term<T> {
     /// Create a new terminal with the given dimensions and scrollback capacity.
-    pub fn new(lines: usize, cols: usize, scrollback: usize, listener: T) -> Self {
+    pub fn new(lines: usize, cols: usize, scrollback: usize, theme: Theme, listener: T) -> Self {
         Self {
             grid: Grid::with_scrollback(lines, cols, scrollback),
             alt_grid: Grid::with_scrollback(lines, cols, 0),
             mode: TermMode::default(),
-            palette: Palette::default(),
+            palette: Palette::for_theme(theme),
+            theme,
             charset: CharsetState::default(),
             title: String::new(),
             cwd: None,
@@ -108,6 +112,25 @@ impl<T: EventListener> Term<T> {
     /// Reference to the color palette.
     pub fn palette(&self) -> &Palette {
         &self.palette
+    }
+
+    /// Current color theme.
+    pub fn theme(&self) -> Theme {
+        self.theme
+    }
+
+    /// Switch the active color theme.
+    ///
+    /// Rebuilds the palette for the new theme and marks all lines dirty so
+    /// the renderer repaints with the new colors. No-op if the theme is
+    /// unchanged.
+    pub fn set_theme(&mut self, theme: Theme) {
+        if self.theme == theme {
+            return;
+        }
+        self.theme = theme;
+        self.palette = Palette::for_theme(theme);
+        self.grid_mut().dirty_mut().mark_all();
     }
 
     /// Current window title.

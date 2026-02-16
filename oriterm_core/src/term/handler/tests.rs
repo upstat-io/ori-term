@@ -10,6 +10,7 @@ use vte::ansi::Processor;
 use crate::event::{Event, EventListener};
 use crate::index::Column;
 use crate::term::Term;
+use crate::theme::Theme;
 
 /// Event listener that records all events for assertions.
 #[derive(Clone)]
@@ -36,13 +37,13 @@ impl EventListener for RecordingListener {
 /// Create a Term with 24 lines, 80 columns, and a recording listener.
 fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
     let listener = RecordingListener::new();
-    let term = Term::new(24, 80, 0, listener.clone());
+    let term = Term::new(24, 80, 0, Theme::default(), listener.clone());
     (term, listener)
 }
 
 /// Create a Term with VoidListener (when events don't matter).
 fn term() -> Term<crate::event::VoidListener> {
-    Term::new(24, 80, 0, crate::event::VoidListener)
+    Term::new(24, 80, 0, Theme::default(), crate::event::VoidListener)
 }
 
 /// Feed raw bytes through the VTE processor.
@@ -2329,7 +2330,7 @@ fn esc7_esc8_preserves_sgr_attributes() {
 #[test]
 fn esc7_esc8_preserves_wrap_pending() {
     // 5-column terminal.
-    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
     // Fill the line to trigger wrap-pending (col == cols).
     feed(&mut t, b"ABCDE");
     // Cursor col should be past last column (wrap-pending).
@@ -2514,7 +2515,7 @@ fn reverse_index_from_middle_moves_up() {
 /// Ghostty: reverseIndex at top of scroll region scrolls within region.
 #[test]
 fn reverse_index_top_of_scroll_region() {
-    let mut t = Term::new(10, 2, 0, crate::event::VoidListener);
+    let mut t = Term::new(10, 2, 0, Theme::default(), crate::event::VoidListener);
     // Set up content.
     feed(&mut t, b"\x1b[2;1H"); // Move to line 1 (0-based)
     feed(&mut t, b"A\r\n");
@@ -2539,7 +2540,7 @@ fn reverse_index_top_of_scroll_region() {
 /// Ghostty: reverseIndex outside scroll region just moves cursor up.
 #[test]
 fn reverse_index_outside_scroll_region() {
-    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
     feed(&mut t, b"A\r\n");
     feed(&mut t, b"B\r\n");
     feed(&mut t, b"C");
@@ -3028,7 +3029,7 @@ fn combining_mark_at_wrap_pending() {
     // 5-column terminal: write "abcde" to fill the line.
     // After 'e', cursor is at col 5 (== cols), i.e. wrap-pending.
     // A combining mark should attach to 'e' at col 4, not trigger a wrap.
-    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
     feed(&mut t, "abcde\u{0300}".as_bytes());
 
     let grid = t.grid();
@@ -3236,7 +3237,7 @@ fn mixed_zerowidth_types_on_same_cell() {
 fn combining_mark_after_line_wrap() {
     // 5-column terminal. Write "ABCDE" to fill line 0, then "F" wraps to line 1.
     // Then a combining mark should attach to 'F' on line 1.
-    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
     feed(&mut t, "ABCDEF\u{0301}".as_bytes());
 
     let grid = t.grid();
@@ -3255,7 +3256,7 @@ fn combining_mark_on_wide_char_after_wrap() {
 
     // 5-column terminal. Write "ABC" (3 cols), then a wide char wraps to next line.
     // Then a combining mark should attach to the wide char base, not the spacer.
-    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
     feed(&mut t, b"ABCD");
     // Wide char at col 4 can't fit → wraps to line 1.
     feed(&mut t, "漢\u{0301}".as_bytes());
@@ -3303,7 +3304,7 @@ fn variation_selector_at_col_zero_discarded() {
 fn combining_mark_does_not_trigger_wrap() {
     // 5-column terminal, fill line with "abcde" (wrap pending at col 5).
     // Multiple combining marks should attach to 'e' without wrapping.
-    let mut t = Term::new(5, 5, 0, crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
     feed(
         &mut t,
         "abcde\u{0300}\u{0301}\u{0302}".as_bytes(),
