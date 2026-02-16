@@ -5,7 +5,7 @@
 //! Uses `portable-pty` for platform abstraction: `ConPTY` on Windows,
 //! `openpty`/`forkpty` on Linux, POSIX PTY on macOS.
 
-pub mod event_loop;
+pub(crate) mod event_loop;
 mod reader;
 mod spawn;
 
@@ -13,7 +13,9 @@ mod spawn;
 pub mod signal;
 
 pub use reader::{PtyEvent, PtyReader};
-pub use spawn::{PtyConfig, spawn_pty};
+#[allow(unused_imports, reason = "ExitStatus re-exported for Tab in 4.8")]
+pub use spawn::ExitStatus;
+pub use spawn::{PtyConfig, PtyControl, spawn_pty};
 
 /// Commands sent from the main thread to the PTY reader thread.
 ///

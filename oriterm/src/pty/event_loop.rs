@@ -17,11 +17,10 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use portable_pty::MasterPty;
-
 use oriterm_core::{EventListener, FairMutex, Term};
 
 use super::Msg;
+use super::PtyControl;
 
 /// Maximum bytes parsed under one lock acquisition.
 ///
@@ -49,8 +48,8 @@ pub struct PtyEventLoop<T: EventListener> {
     writer: Box<dyn Write + Send>,
     /// Command receiver (input, resize, shutdown from main thread).
     rx: mpsc::Receiver<Msg>,
-    /// PTY master handle for resize operations.
-    pty_master: Box<dyn MasterPty + Send>,
+    /// PTY control handle for resize operations.
+    pty_control: PtyControl,
     /// VTE parser state machine.
     processor: vte::ansi::Processor,
 }
@@ -62,24 +61,24 @@ impl<T: EventListener> PtyEventLoop<T> {
         reader: Box<dyn Read + Send>,
         writer: Box<dyn Write + Send>,
         rx: mpsc::Receiver<Msg>,
-        pty_master: Box<dyn MasterPty + Send>,
+        pty_control: PtyControl,
     ) -> Self {
         Self {
             terminal,
             reader,
             writer,
             rx,
-            pty_master,
+            pty_control,
             processor: vte::ansi::Processor::new(),
         }
     }
 
-    /// Spawn the reader thread. Returns a join handle.
+    /// Spawn the event loop thread. Returns a join handle.
     pub fn spawn(self) -> JoinHandle<()> {
         thread::Builder::new()
-            .name("pty-reader".into())
+            .name("pty-event-loop".into())
             .spawn(move || self.run())
-            .expect("failed to spawn pty-reader thread")
+            .expect("failed to spawn pty-event-loop thread")
     }
 
     /// Main event loop — runs until PTY closes or shutdown is received.
@@ -133,7 +132,9 @@ impl<T: EventListener> PtyEventLoop<T> {
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
                 Msg::Input(bytes) => {
-                    let _ = self.writer.write_all(&bytes);
+                    if let Err(e) = self.writer.write_all(&bytes) {
+                        log::warn!("PTY write failed: {e}");
+                    }
                     let _ = self.writer.flush();
                 }
                 Msg::Resize { rows, cols } => {
@@ -149,13 +150,7 @@ impl<T: EventListener> PtyEventLoop<T> {
     ///
     /// Terminal grid resize (reflow) is handled in Section 12.
     fn resize_pty(&self, rows: u16, cols: u16) {
-        let size = portable_pty::PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-        if let Err(e) = self.pty_master.resize(size) {
+        if let Err(e) = self.pty_control.resize(rows, cols) {
             log::warn!("PTY resize failed: {e}");
         }
     }

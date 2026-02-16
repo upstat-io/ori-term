@@ -175,8 +175,8 @@ fn notifier_survives_dropped_receiver() {
 
 /// Build a winit event loop usable from test threads.
 ///
-/// On Windows, winit requires `with_any_thread(true)` because tests run
-/// outside the main thread. Other platforms allow it by default.
+/// Tests run outside the main thread. winit requires `any_thread(true)`
+/// on both Windows and Linux (X11/Wayland) to allow this.
 fn build_test_event_loop() -> winit::event_loop::EventLoop<TermEvent> {
     #[cfg(windows)]
     {
@@ -186,7 +186,15 @@ fn build_test_event_loop() -> winit::event_loop::EventLoop<TermEvent> {
             .build()
             .expect("event loop")
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        winit::event_loop::EventLoop::<TermEvent>::with_user_event()
+            .with_any_thread(true)
+            .build()
+            .expect("event loop")
+    }
+    #[cfg(target_os = "macos")]
     {
         winit::event_loop::EventLoop::<TermEvent>::with_user_event()
             .build()

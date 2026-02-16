@@ -50,6 +50,7 @@ path = "src/main.rs"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
+anyhow = "1"
 
 [lints]
 workspace = true
