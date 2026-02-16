@@ -42,7 +42,7 @@ impl Default for PtyConfig {
 pub struct PtyHandle {
     reader: Option<Box<dyn io::Read + Send>>,
     writer: Option<Box<dyn io::Write + Send>>,
-    master: Box<dyn MasterPty + Send>,
+    master: Option<Box<dyn MasterPty + Send>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
@@ -63,9 +63,24 @@ impl PtyHandle {
         self.writer.take()
     }
 
+    /// Take the PTY master handle (for resize operations).
+    ///
+    /// Returns `None` if already taken. The master is typically handed to
+    /// the [`PtyEventLoop`](super::event_loop::PtyEventLoop).
+    #[allow(dead_code, reason = "used by Tab in 4.8 and event_loop tests")]
+    pub fn take_master(&mut self) -> Option<Box<dyn MasterPty + Send>> {
+        self.master.take()
+    }
+
     /// Resize the PTY to new dimensions.
+    ///
+    /// Returns an error if the master has been taken.
     pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
-        self.master
+        let master = self
+            .master
+            .as_ref()
+            .ok_or_else(|| io::Error::other("PTY master already taken"))?;
+        master
             .resize(PtySize {
                 rows,
                 cols,
@@ -131,7 +146,7 @@ pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
     Ok(PtyHandle {
         reader: Some(reader),
         writer: Some(writer),
-        master: pair.master,
+        master: Some(pair.master),
         child,
     })
 }

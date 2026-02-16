@@ -1,9 +1,11 @@
 //! Cross-platform PTY abstraction.
 //!
-//! Provides PTY creation, shell spawning, and a background reader thread.
+//! Provides PTY creation, shell spawning, a background reader thread, and the
+//! message channel for main-thread → PTY-thread communication.
 //! Uses `portable-pty` for platform abstraction: `ConPTY` on Windows,
 //! `openpty`/`forkpty` on Linux, POSIX PTY on macOS.
 
+pub mod event_loop;
 mod reader;
 mod spawn;
 
@@ -12,6 +14,26 @@ pub mod signal;
 
 pub use reader::{PtyEvent, PtyReader};
 pub use spawn::{PtyConfig, spawn_pty};
+
+/// Commands sent from the main thread to the PTY reader thread.
+///
+/// Delivered via `std::sync::mpsc::channel`. The sender is held by
+/// [`Notifier`](crate::tab::Notifier), the receiver by
+/// [`PtyEventLoop`](event_loop::PtyEventLoop).
+#[derive(Debug)]
+pub enum Msg {
+    /// Bytes to write to the PTY (keyboard input, escape responses).
+    Input(Vec<u8>),
+    /// Resize the PTY and terminal grid.
+    Resize {
+        /// New row count.
+        rows: u16,
+        /// New column count.
+        cols: u16,
+    },
+    /// Gracefully stop the reader thread.
+    Shutdown,
+}
 
 #[cfg(test)]
 mod tests;
