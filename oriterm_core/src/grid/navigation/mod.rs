@@ -27,7 +27,7 @@ impl Grid {
         } else {
             0
         };
-        self.cursor.set_line(line.saturating_sub(count).max(top));
+        self.move_cursor_line(line.saturating_sub(count).max(top));
     }
 
     /// CUD: move cursor down by `count` lines, clamped to the bottom of
@@ -39,41 +39,41 @@ impl Grid {
         } else {
             self.lines - 1
         };
-        self.cursor.set_line((line + count).min(bottom));
+        self.move_cursor_line((line + count).min(bottom));
     }
 
     /// CUF: move cursor right by `count` columns, clamped to the last column.
     pub fn move_forward(&mut self, count: usize) {
         let col = self.cursor.col().0;
         let last = self.cols - 1;
-        self.cursor.set_col(Column((col + count).min(last)));
+        self.move_cursor_col(Column((col + count).min(last)));
     }
 
     /// CUB: move cursor left by `count` columns, clamped to column 0.
     pub fn move_backward(&mut self, count: usize) {
         let col = self.cursor.col().0;
-        self.cursor.set_col(Column(col.saturating_sub(count)));
+        self.move_cursor_col(Column(col.saturating_sub(count)));
     }
 
     /// CUP: set cursor to absolute `(line, col)`, clamped to grid bounds.
     pub fn move_to(&mut self, line: usize, col: Column) {
-        self.cursor.set_line(line.min(self.lines - 1));
-        self.cursor.set_col(Column(col.0.min(self.cols - 1)));
+        self.move_cursor_line(line.min(self.lines - 1));
+        self.move_cursor_col(Column(col.0.min(self.cols - 1)));
     }
 
     /// CHA: set cursor column to `col`, clamped to the last column.
     pub fn move_to_column(&mut self, col: Column) {
-        self.cursor.set_col(Column(col.0.min(self.cols - 1)));
+        self.move_cursor_col(Column(col.0.min(self.cols - 1)));
     }
 
     /// VPA: set cursor line to `line`, clamped to the last line.
     pub fn move_to_line(&mut self, line: usize) {
-        self.cursor.set_line(line.min(self.lines - 1));
+        self.move_cursor_line(line.min(self.lines - 1));
     }
 
     /// CR: move cursor to column 0.
     pub fn carriage_return(&mut self) {
-        self.cursor.set_col(Column(0));
+        self.move_cursor_col(Column(0));
     }
 
     /// BS: move cursor left by one column.
@@ -86,9 +86,9 @@ impl Grid {
 
         if col >= cols {
             // Wrap-pending: snap to last column.
-            self.cursor.set_col(Column(cols - 1));
+            self.move_cursor_col(Column(cols - 1));
         } else if col > 0 {
-            self.cursor.set_col(Column(col - 1));
+            self.move_cursor_col(Column(col - 1));
         } else {
             // Already at column 0: no-op.
         }
@@ -102,7 +102,7 @@ impl Grid {
             // At bottom of scroll region: scroll region content up.
             self.scroll_up(1);
         } else if line + 1 < self.lines {
-            self.cursor.set_line(line + 1);
+            self.move_cursor_line(line + 1);
         } else {
             // Already at last line, outside scroll region: no-op.
         }
@@ -116,7 +116,7 @@ impl Grid {
             // At top of scroll region: scroll region content down.
             self.scroll_down(1);
         } else if line > 0 {
-            self.cursor.set_line(line - 1);
+            self.move_cursor_line(line - 1);
         } else {
             // Already at line 0, outside scroll region: no-op.
         }
@@ -136,12 +136,12 @@ impl Grid {
         // Search forward for the next tab stop.
         for c in (col + 1)..self.cols {
             if self.tab_stops[c] {
-                self.cursor.set_col(Column(c));
+                self.move_cursor_col(Column(c));
                 return;
             }
         }
         // No tab stop found: move to last column.
-        self.cursor.set_col(Column(last));
+        self.move_cursor_col(Column(last));
     }
 
     /// CBT: move cursor to the previous tab stop, or column 0.
@@ -153,12 +153,12 @@ impl Grid {
         // Search backward for the previous tab stop.
         for c in (0..col).rev() {
             if self.tab_stops[c] {
-                self.cursor.set_col(Column(c));
+                self.move_cursor_col(Column(c));
                 return;
             }
         }
         // No tab stop found: move to column 0.
-        self.cursor.set_col(Column(0));
+        self.move_cursor_col(Column(0));
     }
 
     /// HTS: set a tab stop at the current cursor column.
@@ -192,11 +192,14 @@ impl Grid {
     /// DECRC: restore cursor from saved state, or reset to origin if
     /// nothing was saved.
     pub fn restore_cursor(&mut self) {
+        let old_line = self.cursor.line();
+        self.dirty.mark(old_line);
         if let Some(saved) = &self.saved_cursor {
             self.cursor = saved.clone();
         } else {
             self.cursor = super::cursor::Cursor::new();
         }
+        self.dirty.mark(self.cursor.line());
     }
 }
 

@@ -880,15 +880,19 @@ fn linefeed_at_bottom_of_sub_region_marks_only_region() {
 }
 
 #[test]
-fn linefeed_in_middle_does_not_dirty() {
+fn linefeed_in_middle_marks_cursor_lines_dirty() {
     let mut grid = Grid::new(10, 5);
     let _: Vec<usize> = grid.dirty_mut().drain().collect();
 
-    // Cursor in the middle — linefeed just moves cursor down.
+    // Cursor in the middle — linefeed moves cursor down and marks
+    // both old and new cursor lines dirty.
     grid.cursor_mut().set_line(3);
     grid.linefeed();
 
-    assert!(!grid.dirty().is_any_dirty());
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&3), "old cursor line should be dirty");
+    assert!(dirty.contains(&4), "new cursor line should be dirty");
+    assert_eq!(dirty.len(), 2);
 }
 
 #[test]
@@ -917,14 +921,17 @@ fn reverse_index_at_top_of_sub_region_marks_only_region() {
 }
 
 #[test]
-fn reverse_index_in_middle_does_not_dirty() {
+fn reverse_index_in_middle_marks_cursor_lines_dirty() {
     let mut grid = Grid::new(10, 5);
     let _: Vec<usize> = grid.dirty_mut().drain().collect();
 
     grid.cursor_mut().set_line(5);
     grid.reverse_index();
 
-    assert!(!grid.dirty().is_any_dirty());
+    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    assert!(dirty.contains(&5), "old cursor line should be dirty");
+    assert!(dirty.contains(&4), "new cursor line should be dirty");
+    assert_eq!(dirty.len(), 2);
 }
 
 // --- scrollback content after mem::replace ---
