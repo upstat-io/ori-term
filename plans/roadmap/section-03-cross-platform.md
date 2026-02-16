@@ -1,13 +1,13 @@
 ---
 section: 3
 title: Cross-Platform
-status: not-started
+status: in-progress
 tier: 0
 goal: Day-one first-class support for Windows, Linux, and macOS — all three platforms are equal targets from the start, with native PTY, fonts, clipboard, and GPU on each
 sections:
   - id: "03.1"
     title: PTY Abstraction
-    status: not-started
+    status: complete
   - id: "03.2"
     title: Platform Fonts
     status: not-started
@@ -52,38 +52,38 @@ sections:
 
 Cross-platform PTY via `portable-pty`. Each platform uses its native PTY implementation.
 
-**Files:** `oriterm/src/tab/mod.rs` (PTY creation), `oriterm_core/src/pty.rs` (if abstracted)
+**Files:** `oriterm/src/pty/mod.rs`, `oriterm/src/pty/spawn.rs`, `oriterm/src/pty/reader.rs`, `oriterm/src/pty/signal.rs`
 
 **Reference:** `_old/src/tab/mod.rs`, `portable-pty` crate docs
 
-- [ ] Cross-platform PTY via `portable-pty` crate:
-  - [ ] Windows: ConPTY (`portable_pty::native_pty_system()`) — Windows 10 1809+
-  - [ ] Linux: `openpty` / `forkpty` (same crate, automatic selection)
-  - [ ] macOS: POSIX PTY (same crate, automatic selection)
-- [ ] PTY resize via `pty_master.resize()` — works on all platforms
-- [ ] Background reader thread per tab:
-  - [ ] Reads PTY output in a dedicated thread
-  - [ ] Sends data to main thread via channel (or shared state)
-  - [ ] Thread exits cleanly when PTY is closed or child process exits
-- [ ] Shell detection:
-  - [ ] Windows: `cmd.exe` default (configurable via `terminal.shell` in config)
-  - [ ] Linux/macOS: reads `$SHELL` environment variable, defaults to `/bin/sh`
-  - [ ] Config override: `terminal.shell` takes priority on all platforms
-- [ ] Handle `SIGCHLD` on Unix for child process exit notification:
-  - [ ] Currently the PTY reader thread detects EOF when child exits
-  - [ ] Add explicit signal handling for robustness (catch zombie processes)
-  - [ ] Use `signal-hook` crate or manual `sigaction` setup
-  - [ ] On child exit: close the tab (or display "[process exited]" and await keypress)
-- [ ] Environment variable passthrough:
-  - [ ] Pass `TERM=xterm-256color` (or `oriterm` if terminfo is installed)
-  - [ ] Pass `COLORTERM=truecolor` for 24-bit color detection
-  - [ ] Pass `TERM_PROGRAM=oriterm` for shell integration detection
-  - [ ] Platform-specific: inherit `PATH`, `HOME`/`USERPROFILE`, `LANG`/`LC_*`
-- [ ] **Tests:**
-  - [ ] PTY creation succeeds on the current platform
-  - [ ] Shell detection returns a valid shell path
-  - [ ] Environment variables are set correctly in child process
-  - [ ] PTY resize does not error
+- [x] Cross-platform PTY via `portable-pty` crate:
+  - [x] Windows: ConPTY (`portable_pty::native_pty_system()`) — Windows 10 1809+
+  - [x] Linux: `openpty` / `forkpty` (same crate, automatic selection)
+  - [x] macOS: POSIX PTY (same crate, automatic selection)
+- [x] PTY resize via `pty_master.resize()` — works on all platforms
+- [x] Background reader thread per tab:
+  - [x] Reads PTY output in a dedicated thread
+  - [x] Sends data to main thread via channel (or shared state)
+  - [x] Thread exits cleanly when PTY is closed or child process exits
+- [x] Shell detection:
+  - [x] Windows: `cmd.exe` default (configurable via `terminal.shell` in config)
+  - [x] Linux/macOS: reads `$SHELL` environment variable, defaults to `/bin/sh`
+  - [x] Config override: `terminal.shell` takes priority on all platforms
+- [x] Handle `SIGCHLD` on Unix for child process exit notification:
+  - [x] Currently the PTY reader thread detects EOF when child exits
+  - [x] Add explicit signal handling for robustness (catch zombie processes)
+  - [x] Use `signal-hook` crate or manual `sigaction` setup
+  - [x] On child exit: close the tab (or display "[process exited]" and await keypress)
+- [x] Environment variable passthrough:
+  - [x] Pass `TERM=xterm-256color` (or `oriterm` if terminfo is installed)
+  - [x] Pass `COLORTERM=truecolor` for 24-bit color detection
+  - [x] Pass `TERM_PROGRAM=oriterm` for shell integration detection
+  - [x] Platform-specific: inherit `PATH`, `HOME`/`USERPROFILE`, `LANG`/`LC_*`
+- [x] **Tests:**
+  - [x] PTY creation succeeds on the current platform
+  - [x] Shell detection returns a valid shell path
+  - [x] Environment variables are set correctly in child process
+  - [x] PTY resize does not error
 
 ---
 

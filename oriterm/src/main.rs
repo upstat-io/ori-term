@@ -1,62 +1,41 @@
 //! Binary entry point for the oriterm terminal emulator.
 
-use std::io::{self, Read, Write};
+mod pty;
+
+use std::io::{self, Write};
+use std::sync::mpsc;
 use std::thread;
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use crate::pty::{PtyConfig, PtyEvent, PtyReader, spawn_pty};
 
 fn main() {
-    let pty_system = native_pty_system();
+    #[cfg(unix)]
+    if let Err(e) = pty::signal::init() {
+        log::warn!("failed to register SIGCHLD handler: {e}");
+    }
 
-    let pair = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .expect("failed to open pty");
+    let config = PtyConfig::default();
+    let mut handle = spawn_pty(&config).expect("failed to spawn PTY");
 
-    let cmd = CommandBuilder::new_default_prog();
-    let mut child = pair
-        .slave
-        .spawn_command(cmd)
-        .expect("failed to spawn shell");
+    if let Some(pid) = handle.process_id() {
+        log::debug!("spawned shell (PID {pid})");
+    }
 
-    // Drop the slave side so the reader detects EOF when the shell exits.
-    drop(pair.slave);
+    // Verify PTY responds to resize.
+    let _ = handle.resize(config.rows, config.cols);
 
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .expect("failed to clone pty reader");
-    let mut writer = pair
-        .master
-        .take_writer()
-        .expect("failed to take pty writer");
+    let reader = handle.take_reader().expect("PTY reader unavailable");
+    let mut writer = handle.take_writer().expect("PTY writer unavailable");
 
-    // Relay PTY output to stdout.
-    let _output = thread::spawn(move || {
-        let mut stdout = io::stdout();
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => return,
-                Ok(n) => {
-                    if stdout.write_all(&buf[..n]).is_err() || stdout.flush().is_err() {
-                        return;
-                    }
-                }
-            }
-        }
-    });
+    let (tx, rx) = mpsc::channel();
+    let pty_reader = PtyReader::spawn(reader, tx);
 
     // Relay stdin to PTY input.
     let _input = thread::spawn(move || {
         let mut stdin = io::stdin();
         let mut buf = [0u8; 4096];
         loop {
-            match stdin.read(&mut buf) {
+            match io::Read::read(&mut stdin, &mut buf) {
                 Ok(0) | Err(_) => return,
                 Ok(n) => {
                     if writer.write_all(&buf[..n]).is_err() {
@@ -67,6 +46,18 @@ fn main() {
         }
     });
 
-    // Block until the shell process exits.
-    let _ = child.wait();
+    // Print PTY output from the reader thread.
+    for event in rx {
+        match event {
+            PtyEvent::Data(data) => {
+                let _ = io::stdout().write_all(&data);
+                let _ = io::stdout().flush();
+            }
+            PtyEvent::Closed => break,
+        }
+    }
+
+    pty_reader.join();
+    let _ = handle.kill();
+    let _ = handle.wait();
 }
