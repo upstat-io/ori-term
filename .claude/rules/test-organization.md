@@ -6,21 +6,14 @@ All unit tests live in dedicated sibling `tests.rs` files, not inline in source 
 
 ### Structure
 
-For **file modules** (`foo.rs`):
-```
-src/
-  foo.rs          ← source, ends with `#[cfg(test)] mod tests;`
-  foo/
-    tests.rs      ← all tests for foo
-```
-
-For **directory modules** (`foo/mod.rs`):
 ```
 src/
   foo/
     mod.rs        ← source, ends with `#[cfg(test)] mod tests;`
     tests.rs      ← all tests for foo
 ```
+
+When a module has tests, it **must** be a directory module (`foo/mod.rs`), not a file module (`foo.rs`). Never have `foo.rs` alongside a `foo/` directory.
 
 ### Rules
 
@@ -56,7 +49,8 @@ use crate::index::{Column, Line};
 ### When Adding New Modules
 
 When creating a new source file that will have tests:
-1. Create the source file with production code.
-2. Add `#[cfg(test)] mod tests;` at the bottom.
-3. Create the sibling `tests.rs` file with the tests.
-4. Verify with `cargo test`.
+1. Create the directory: `foo/`.
+2. Create `foo/mod.rs` with production code.
+3. Add `#[cfg(test)] mod tests;` at the bottom of `mod.rs`.
+4. Create `foo/tests.rs` with the tests.
+5. Verify with `cargo test`.
