@@ -16,7 +16,7 @@ sections:
     status: complete
   - id: "5.4"
     title: WGSL Shaders + GPU Pipelines
-    status: not-started
+    status: complete
   - id: "5.5"
     title: Uniform Buffer + Bind Groups
     status: not-started
@@ -169,9 +169,9 @@ The organizing principle for all rendering. Every frame flows through these phas
   - [x] Windows: `window_vibrancy::apply_acrylic()` for translucent background (via `gpu::transparency`)
   - [x] Linux/macOS: compositor-dependent (via `gpu::transparency`, see Section 03)
   - [x] Fallback: opaque dark background if vibrancy not available (opacity >= 1.0 short-circuits)
-- [ ] Forward-looking IME setup (no-op until Section 8.3 wires handlers):
-  - [ ] `window.set_ime_allowed(true)` — enable IME input
-  - [ ] `window.set_ime_purpose(ImePurpose::Terminal)` — hint for IME engine
+- [x] Forward-looking IME setup (no-op until Section 8.3 wires handlers):
+  - [x] `window.set_ime_allowed(true)` — enable IME input
+  - [x] `window.set_ime_purpose(ImePurpose::Terminal)` — hint for IME engine
 
 ---
 
@@ -216,39 +216,38 @@ The organizing principle for all rendering. Every frame flows through these phas
 
 ### Shaders
 
-- [ ] Background vertex shader:
-  - [ ] Input: instance data (position, size, bg_color, corner_radius)
-  - [ ] Output: screen-space quad with color
-  - [ ] Generate 4 vertices from instance (position + size → quad corners)
-  - [ ] Pass bg_color and corner_radius to fragment shader
-- [ ] Background fragment shader:
-  - [ ] Solid fill with bg_color
-  - [ ] Optional: rounded corners via SDF (if corner_radius > 0)
-- [ ] Foreground vertex shader:
-  - [ ] Input: instance data (position, size, uv_pos, uv_size, fg_color, atlas_page)
-  - [ ] Output: screen-space quad with UV coordinates
-- [ ] Foreground fragment shader:
-  - [ ] Sample glyph alpha from atlas texture
-  - [ ] Output: fg_color with sampled alpha (pre-multiplied alpha blending)
-- [ ] Uniform buffer struct (shared by both shaders):
-  - [ ] `screen_size: vec2<f32>` — viewport dimensions in pixels
-  - [ ] Used to convert pixel coordinates to NDC (-1..1)
+- [x] Background vertex shader:
+  - [x] Input: instance data (pos, size, uv, fg_color, bg_color, kind)
+  - [x] Output: screen-space quad with color
+  - [x] Generate 4 vertices from instance (position + size → quad corners via TriangleStrip)
+  - [x] Pass bg_color to fragment shader
+- [x] Background fragment shader:
+  - [x] Solid fill with bg_color
+- [x] Foreground vertex shader:
+  - [x] Input: instance data (pos, size, uv, fg_color, bg_color, kind)
+  - [x] Output: screen-space quad with UV coordinates
+- [x] Foreground fragment shader:
+  - [x] Sample glyph alpha from atlas texture (R8Unorm)
+  - [x] Output: fg_color with sampled alpha (pre-multiplied alpha blending)
+- [x] Uniform buffer struct (shared by both shaders):
+  - [x] `screen_size: vec2<f32>` — viewport dimensions in pixels (16B with padding)
+  - [x] Used to convert pixel coordinates to NDC (-1..1)
 
 ### Pipelines
 
-- [ ] `create_bg_pipeline(gpu: &GpuState, uniform_layout: &wgpu::BindGroupLayout) -> wgpu::RenderPipeline`
-  - [ ] Vertex shader: bg vertex
-  - [ ] Fragment shader: bg fragment
-  - [ ] Instance buffer layout: stride 80 bytes
-  - [ ] Blend state: opaque (no alpha blending for backgrounds)
-  - [ ] Target format: `gpu.surface_format`
-- [ ] `create_fg_pipeline(gpu: &GpuState, uniform_layout: &wgpu::BindGroupLayout, atlas_layout: &wgpu::BindGroupLayout) -> wgpu::RenderPipeline`
-  - [ ] Vertex shader: fg vertex
-  - [ ] Fragment shader: fg fragment
-  - [ ] Same instance buffer layout
-  - [ ] Blend state: pre-multiplied alpha
-  - [ ] Two bind groups: uniforms + atlas texture
-  - [ ] Target format: `gpu.surface_format`
+- [x] `create_bg_pipeline(gpu: &GpuState, uniform_layout: &BindGroupLayout) -> RenderPipeline`
+  - [x] Vertex shader: bg vertex
+  - [x] Fragment shader: bg fragment
+  - [x] Instance buffer layout: stride 80 bytes
+  - [x] Blend state: premultiplied alpha (for transparent windows)
+  - [x] Target format: `gpu.render_format()`
+- [x] `create_fg_pipeline(gpu: &GpuState, uniform_layout: &BindGroupLayout, atlas_layout: &BindGroupLayout) -> RenderPipeline`
+  - [x] Vertex shader: fg vertex
+  - [x] Fragment shader: fg fragment
+  - [x] Same instance buffer layout
+  - [x] Blend state: premultiplied alpha
+  - [x] Two bind groups: uniforms + atlas texture
+  - [x] Target format: `gpu.render_format()`
 
 ### Instance Buffer Layout
 
@@ -256,18 +255,15 @@ The organizing principle for all rendering. Every frame flows through these phas
 Offset  Size  Field           Type
 0       8     pos             vec2<f32>
 8       8     size            vec2<f32>
-16      8     uv_pos          vec2<f32>
-24      8     uv_size         vec2<f32>
+16      16    uv              vec4<f32>
 32      16    fg_color        vec4<f32>
 48      16    bg_color        vec4<f32>
-64      4     flags           u32
-68      4     corner_radius   f32
-72      4     atlas_page      u32
-76      4     _pad            u32
+64      4     kind            u32
+68      12    _pad            3 × u32
 Total:  80 bytes per instance
 ```
 
-- [ ] Vertex pulling: no vertex buffer, use `@builtin(vertex_index)` to generate 6 vertices per instance (two triangles)
+- [x] Vertex pulling: no vertex buffer, use `@builtin(vertex_index)` to generate 4 vertices per instance (TriangleStrip)
 
 ---
 
