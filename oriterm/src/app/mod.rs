@@ -56,6 +56,10 @@ pub(crate) struct App {
     // Cursor blink state (application-level, not terminal-level).
     cursor_blink: CursorBlink,
 
+    // Whether the terminal's CURSOR_BLINKING mode is active.
+    // Cached from the last extracted frame to gate blink timer in about_to_wait.
+    blinking_active: bool,
+
     // Configuration.
     window_config: WindowConfig,
 }
@@ -77,6 +81,7 @@ impl App {
             event_proxy,
             dirty: false,
             cursor_blink: CursorBlink::new(),
+            blinking_active: false,
             window_config,
         }
     }
@@ -259,11 +264,19 @@ impl ApplicationHandler<TermEvent> for App {
 
                     let mut frame = extract_frame(tab.terminal(), viewport, cell);
 
+                    // Cache blinking mode for about_to_wait gating.
+                    // Reset blink phase on false→true transition so the
+                    // cursor starts visible when blinking is first enabled.
+                    let blinking_now =
+                        frame.content.mode.contains(TermMode::CURSOR_BLINKING);
+                    if blinking_now && !self.blinking_active {
+                        self.cursor_blink.reset();
+                    }
+                    self.blinking_active = blinking_now;
+
                     // Apply cursor blink: hide cursor during the "off" phase
                     // when the terminal has requested blinking.
-                    if frame.content.mode.contains(TermMode::CURSOR_BLINKING)
-                        && !self.cursor_blink.is_visible()
-                    {
+                    if blinking_now && !self.cursor_blink.is_visible() {
                         frame.content.cursor.visible = false;
                     }
 
@@ -359,8 +372,8 @@ impl ApplicationHandler<TermEvent> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Drive cursor blink timer.
-        if self.cursor_blink.update() {
+        // Drive cursor blink timer only when blinking is active.
+        if self.blinking_active && self.cursor_blink.update() {
             self.dirty = true;
         }
 
@@ -373,8 +386,9 @@ impl ApplicationHandler<TermEvent> for App {
         }
 
         // Schedule wakeup for the next blink toggle so the event loop
-        // doesn't sleep past it.
-        if self.tab.is_some() {
+        // doesn't sleep past it. When blinking is inactive, the default
+        // ControlFlow::Wait lets the event loop sleep indefinitely.
+        if self.blinking_active {
             event_loop.set_control_flow(ControlFlow::WaitUntil(
                 self.cursor_blink.next_toggle(),
             ));
