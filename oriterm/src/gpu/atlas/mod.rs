@@ -104,6 +104,12 @@ impl GlyphAtlas {
         device: &Device,
         queue: &Queue,
     ) -> Option<AtlasEntry> {
+        debug_assert_eq!(
+            glyph.format,
+            crate::font::GlyphFormat::Alpha,
+            "GlyphAtlas only supports Alpha format (R8Unorm texture)",
+        );
+
         if let Some(&entry) = self.cache.get(&key) {
             return Some(entry);
         }
