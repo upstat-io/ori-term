@@ -6,6 +6,7 @@ pub(crate) mod extract;
 pub(crate) mod frame_input;
 pub(crate) mod instance_writer;
 pub(crate) mod pipeline;
+pub(crate) mod prepare;
 pub(crate) mod prepared_frame;
 pub(crate) mod render_target;
 pub(crate) mod state;
@@ -29,6 +30,13 @@ pub(crate) use bind_groups::{AtlasBindGroup, UniformBuffer, create_placeholder_a
     reason = "extract functions used starting in Section 5.11"
 )]
 pub(crate) use extract::{extract_frame, extract_frame_into};
+
+// Prepare phase re-exports consumed starting in Section 5.11 (App struct).
+#[expect(
+    unused_imports,
+    reason = "prepare phase used starting in Section 5.11"
+)]
+pub(crate) use prepare::{AtlasLookup, prepare_frame};
 
 // Re-exports consumed starting in Section 5.9/5.10.
 #[expect(

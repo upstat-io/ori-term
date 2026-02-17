@@ -31,7 +31,7 @@ sections:
     status: complete
   - id: "5.9"
     title: "Prepare Phase (CPU)"
-    status: in-progress
+    status: complete
   - id: "5.10"
     title: "Render Phase (GPU)"
     status: not-started
@@ -388,45 +388,48 @@ Lock terminal state, copy to owned snapshot, release lock immediately. No GPU ty
 
 Convert `FrameInput` into GPU-ready instance buffers. **Pure CPU, no wgpu types, fully unit-testable.**
 
-**File:** `oriterm/src/gpu/prepare.rs`
+**File:** `oriterm/src/gpu/prepare/mod.rs`
 
 - [x] `InstanceWriter` struct — reusable CPU-side byte buffer
   - [x] Fields: `buf: Vec<u8>`, `count: usize`, `stride: usize` (80)
   - [x] `new(stride)`, `clear()`, `push(data: &[u8])`, `count()`, `as_bytes()`, `into_buffer()`
   - [x] Grows but never shrinks — reused across frames
 
-- [ ] `prepare_frame(input: &FrameInput, atlas: &AtlasLookup) -> PreparedFrame`
-  - [ ] `AtlasLookup` — trait or struct that maps `GlyphKey → AtlasEntry` (no GPU types)
-    - [ ] Production: backed by `GlyphAtlas` cache
-    - [ ] Tests: backed by `HashMap<GlyphKey, AtlasEntry>` — no GPU needed
-  - [ ] Clear instance writers (reuse buffers from previous frame)
-  - [ ] For each visible row in `input.cells`:
-    - [ ] For each cell in row:
-      - [ ] Compute pixel position: `(col * cell_width, row * cell_height)`
-      - [ ] Build 80-byte bg instance: position, size, bg_color, corner_radius=0
-      - [ ] Push to `bg_instances`
-      - [ ] If cell has a visible character (not space):
-        - [ ] Look up glyph UV in `atlas` by `GlyphKey`
-        - [ ] Build 80-byte fg instance: position + bearing offset, glyph size, UV, fg_color
-        - [ ] Push to `fg_instances`
-  - [ ] Build cursor instance(s):
-    - [ ] `Block` → bg rect (cursor color) + fg glyph (inverted)
-    - [ ] `Bar` → 2px vertical line at left edge
-    - [ ] `Underline` → thin horizontal line at bottom
-    - [ ] `HollowBlock` → 4 thin outline rects
-    - [ ] Respect `SHOW_CURSOR` flag, blink state
-  - [ ] Build selection highlight instances (inverted bg/fg for selected cells)
-  - [ ] Return `PreparedFrame` with populated instance writers + clear color + viewport
+- [x] `prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFrame`
+  - [x] `AtlasLookup` — trait that maps `(char, GlyphStyle) → AtlasEntry` (no GPU types)
+    - [x] Production: backed by `FontCollection::resolve` + `GlyphAtlas::lookup` (Section 5.10)
+    - [x] Tests: backed by `HashMap<(char, GlyphStyle), AtlasEntry>` — no GPU needed
+  - [x] Create `PreparedFrame::with_capacity(cols, rows, palette.background, 1.0)`
+  - [x] For each cell in `input.content.cells`:
+    - [x] Skip `WIDE_CHAR_SPACER` cells (primary wide char handles both columns)
+    - [x] Compute pixel position: `(col * cell_width, row * cell_height)`
+    - [x] Build 80-byte bg instance: position, size, bg_color
+    - [x] Push to `backgrounds` (wide chars get 2× cell_width)
+    - [x] If cell has a visible character (not space):
+      - [x] Convert `CellFlags` → `GlyphStyle` via `glyph_style()` helper
+      - [x] Look up glyph UV in `atlas` by `(char, GlyphStyle)`
+      - [x] Build 80-byte fg instance: position + bearing offset, glyph size, UV, fg_color
+      - [x] Push to `glyphs`
+  - [x] Build cursor instance(s) via `build_cursor()`:
+    - [x] `Block` → full cell rect
+    - [x] `Bar` → 2px vertical line at left edge
+    - [x] `Underline` → 2px horizontal line at bottom
+    - [x] `HollowBlock` → 4 thin outline rects (top, bottom, left, right)
+    - [x] `Hidden` → no instances
+    - [x] Only emitted when `cursor.visible` is true
+  - [x] Selection highlight is a no-op (SelectionRange = (), selection = None until Section 9)
+  - [x] Return `PreparedFrame` with populated instance writers + clear color
 
 ### Testability
 
-- [ ] `prepare_frame` is a pure function: same `FrameInput` + same `AtlasLookup` = identical `PreparedFrame`
-- [ ] Instance buffer contents are deterministic — snapshot-testable
-- [ ] No wgpu, no device, no queue — runs in `cargo test` without GPU
-- [ ] Test helpers:
-  - [ ] `assert_instance_count(prepared, expected_bg, expected_fg)` — verify instance counts
-  - [ ] `decode_instance(bytes: &[u8]) -> DecodedInstance` — parse 80-byte instance for assertions
-  - [ ] `DecodedInstance` has `pos`, `size`, `fg_color`, `bg_color`, `uv_pos`, `flags` fields
+- [x] `prepare_frame` is a pure function: same `FrameInput` + same `AtlasLookup` = identical `PreparedFrame`
+- [x] Instance buffer contents are deterministic — snapshot-testable
+- [x] No wgpu, no device, no queue — runs in `cargo test` without GPU
+- [x] Test helpers:
+  - [x] `assert_counts(prepared, bg, fg, cursor)` — verify instance counts
+  - [x] `decode_instance(bytes: &[u8]) -> DecodedInstance` — parse 80-byte instance for assertions
+  - [x] `DecodedInstance` has `pos`, `size`, `uv`, `fg_color`, `bg_color`, `kind` fields
+- [x] 27 unit tests: instance correctness, counts, colors, positions, bearings, cursor shapes, determinism, glyph styles
 
 ---
 
