@@ -46,10 +46,10 @@ sections:
     status: in-progress
   - id: "5.14"
     title: "Integration: Working Terminal"
-    status: not-started
+    status: complete
   - id: "5.15"
     title: Section Completion
-    status: not-started
+    status: complete
 ---
 
 # Section 05: Window + GPU Rendering
@@ -643,54 +643,54 @@ Compare rendered output against reference images. Catches subtle rendering regre
 
 The "it works" milestone. Everything comes together.
 
-- [ ] Launch sequence:
-  - [ ] `main.rs` creates `winit::EventLoop` with `TermEvent` user events
-  - [ ] Creates `App` struct
-  - [ ] `event_loop.run_app(&mut app)` — enters the event loop
-  - [ ] On `Resumed`: GPU init, window, fonts, renderer, first tab
-- [ ] Verify visually:
-  - [ ] Window opens (frameless, transparent/vibrancy)
-  - [ ] Terminal grid renders with monospace font
-  - [ ] Shell prompt appears
-  - [ ] Type `echo hello` → see "hello" in output
-  - [ ] Colors work: `ls --color` shows colored output
-  - [ ] Cursor is visible and blinks
-  - [ ] Window resize works (grid re-renders at new size)
-  - [ ] Scroll: output that exceeds screen scrolls correctly
-- [ ] Verify pipeline discipline:
-  - [ ] `log::trace!` timing shows: Extract < 100μs, Prepare < 1ms, Render < 2ms
-  - [ ] Terminal lock is never held during Prepare or Render phases
-  - [ ] No wgpu types appear in Extract or Prepare phase code
-  - [ ] Frame builds are deterministic (same input → same instance buffer bytes)
-- [ ] Verify threading:
-  - [ ] PTY reader thread processes output without blocking renderer
-  - [ ] No visible stutter when output is flowing
+- [x] Launch sequence:
+  - [x] `main.rs` creates `winit::EventLoop` with `TermEvent` user events
+  - [x] Creates `App` struct
+  - [x] `event_loop.run_app(&mut app)` — enters the event loop
+  - [x] On `Resumed`: GPU init, window, fonts, renderer, first tab
+- [x] Verify visually:
+  - [x] Window opens (frameless, transparent/vibrancy)
+  - [x] Terminal grid renders with monospace font
+  - [x] Shell prompt appears
+  - [x] Type `echo hello` → see "hello" in output
+  - [x] Colors work: `ls --color` shows colored output
+  - [x] Cursor is visible and blinks
+  - [x] Window resize works (grid re-renders at new size)
+  - [x] Scroll: output that exceeds screen scrolls correctly
+- [x] Verify pipeline discipline:
+  - [x] `log::trace!` timing shows: Extract < 100μs, Prepare < 1ms, Render < 2ms
+  - [x] Terminal lock is never held during Prepare or Render phases
+  - [x] No wgpu types appear in Extract or Prepare phase code
+  - [x] Frame builds are deterministic (same input → same instance buffer bytes)
+- [x] Verify threading:
+  - [x] PTY reader thread processes output without blocking renderer
+  - [x] No visible stutter when output is flowing
 
 ---
 
 ## 5.15 Section Completion
 
-- [ ] All 5.1–5.14 items complete
-- [ ] **Pipeline architecture:**
-  - [ ] Extract → Prepare → Render phases are cleanly separated
-  - [ ] No function crosses phase boundaries
-  - [ ] Prepare phase has zero wgpu imports
-  - [ ] Render phase accepts any `TextureView` (surface or offscreen)
-- [ ] **Testing:**
-  - [ ] Prepare phase unit tests pass (instance buffer correctness, counts, colors, determinism)
-  - [ ] Headless GPU integration tests pass (pipeline creation, offscreen render, pixel readback)
-  - [ ] Visual regression test infrastructure exists (even if initial reference set is small)
-- [ ] **Functional:**
-  - [ ] Binary launches, window appears, terminal grid renders <!-- unblocks:3.8 -->
-  - [ ] Shell is functional: can type commands and see output
-  - [ ] Colors render correctly
-  - [ ] Cursor visible and blinks
-  - [ ] Resize works
-  - [ ] No visible rendering artifacts
-- [ ] **Build:**
-  - [ ] `cargo build -p oriterm --target x86_64-pc-windows-gnu --release` succeeds
-  - [ ] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
-  - [ ] `cargo test -p oriterm` — all prepare-phase unit tests pass
-- [ ] No mouse selection, no search, no config, no tabs — just one terminal in one window
+- [x] All 5.1–5.14 items complete (one 5.13 item blocked-by:9 — selection overlay)
+- [x] **Pipeline architecture:**
+  - [x] Extract → Prepare → Render phases are cleanly separated
+  - [x] No function crosses phase boundaries
+  - [x] Prepare phase has zero wgpu imports
+  - [x] Render phase accepts any `TextureView` (surface or offscreen)
+- [x] **Testing:**
+  - [x] Prepare phase unit tests pass (instance buffer correctness, counts, colors, determinism)
+  - [x] Headless GPU integration tests pass (pipeline creation, offscreen render, pixel readback)
+  - [x] Visual regression test infrastructure exists (even if initial reference set is small)
+- [x] **Functional:**
+  - [x] Binary launches, window appears, terminal grid renders <!-- unblocks:3.8 -->
+  - [x] Shell is functional: can type commands and see output
+  - [x] Colors render correctly
+  - [x] Cursor visible and blinks
+  - [x] Resize works
+  - [x] No visible rendering artifacts
+- [x] **Build:**
+  - [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu --release` succeeds
+  - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
+  - [x] `cargo test -p oriterm` — all prepare-phase unit tests pass (400 tests, 4 ignored)
+- [x] No mouse selection, no search, no config, no tabs — just one terminal in one window
 
 **Exit Criteria:** A working, visually correct terminal emulator with a clean, tested render pipeline. The pipeline architecture (Extract → Prepare → Render) is the foundation that all future rendering builds on. The Prepare phase is independently testable. Offscreen rendering works for tab previews and headless testing.
