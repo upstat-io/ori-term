@@ -5,8 +5,9 @@
 //! and semantic palette colors. The Prepare phase consumes a `FrameInput` and
 //! produces a [`PreparedFrame`](super::prepared_frame::PreparedFrame).
 
-// FrameInput is consumed starting in Section 5.8; suppress until then.
-#![expect(dead_code, reason = "GPU infrastructure used starting in Section 5.8")]
+// In test builds, extract/tests.rs exercises these types so dead_code doesn't
+// fire — making #![expect(dead_code)] produce an unfulfilled-lint warning.
+#![allow(dead_code, reason = "frame input types consumed starting in Section 5.9")]
 
 use oriterm_core::{RenderableContent, Rgb};
 
@@ -59,6 +60,7 @@ pub struct FramePalette {
 /// Composes the terminal snapshot ([`RenderableContent`]) with the rendering
 /// context needed to convert logical cells into pixel geometry. Built during
 /// the Extract phase, consumed by the Prepare phase.
+#[derive(Debug)]
 pub struct FrameInput {
     /// Terminal content snapshot (cells, cursor, damage, mode).
     pub content: RenderableContent,
@@ -88,6 +90,74 @@ impl FrameInput {
     /// Whether the entire viewport needs a full repaint.
     pub fn needs_full_repaint(&self) -> bool {
         self.content.all_dirty
+    }
+
+    /// Build a test frame from a text string.
+    ///
+    /// Creates a grid of `cols × rows` cells. `text` is laid out left-to-right,
+    /// top-to-bottom; cells beyond the text length are filled with spaces. All
+    /// cells use default dark-theme colors. Cell size is 8×16 px.
+    #[cfg(test)]
+    pub fn test_grid(cols: usize, rows: usize, text: &str) -> Self {
+        use oriterm_core::{
+            CellFlags, Column, CursorShape, RenderableCell, RenderableContent, RenderableCursor,
+            TermMode,
+        };
+
+        let fg = Rgb {
+            r: 211,
+            g: 215,
+            b: 207,
+        };
+        let bg = Rgb { r: 0, g: 0, b: 0 };
+
+        let mut cells = Vec::with_capacity(cols * rows);
+        let mut chars = text.chars();
+
+        for row in 0..rows {
+            for col in 0..cols {
+                let ch = chars.next().unwrap_or(' ');
+                cells.push(RenderableCell {
+                    line: row,
+                    column: Column(col),
+                    ch,
+                    fg,
+                    bg,
+                    flags: CellFlags::empty(),
+                    underline_color: None,
+                    zerowidth: Vec::new(),
+                });
+            }
+        }
+
+        Self {
+            content: RenderableContent {
+                cells,
+                cursor: RenderableCursor {
+                    line: 0,
+                    column: Column(0),
+                    shape: CursorShape::default(),
+                    visible: true,
+                },
+                display_offset: 0,
+                mode: TermMode::SHOW_CURSOR,
+                all_dirty: true,
+                damage: Vec::new(),
+            },
+            viewport: ViewportSize::new(cols as u32 * 8, rows as u32 * 16),
+            cell_size: CellMetrics::new(8.0, 16.0, 12.0),
+            palette: FramePalette {
+                background: bg,
+                foreground: fg,
+                cursor_color: Rgb {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                },
+            },
+            selection: None,
+            search_matches: Vec::new(),
+        }
     }
 }
 
