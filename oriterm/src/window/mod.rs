@@ -79,6 +79,11 @@ impl TermWindow {
             transparency::apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
         }
 
+        // Enable IME input for CJK and other complex input methods.
+        // Handlers are wired in Section 8.3; this is a no-op until then.
+        window.set_ime_allowed(true);
+        window.set_ime_purpose(winit::window::ImePurpose::Terminal);
+
         Ok(Self {
             window,
             surface,

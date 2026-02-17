@@ -2,6 +2,7 @@
 
 pub(crate) mod frame_input;
 pub(crate) mod instance_writer;
+pub(crate) mod pipeline;
 pub(crate) mod prepared_frame;
 pub(crate) mod render_target;
 pub(crate) mod state;
