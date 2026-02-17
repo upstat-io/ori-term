@@ -51,6 +51,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 anyhow = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [lints]
 workspace = true

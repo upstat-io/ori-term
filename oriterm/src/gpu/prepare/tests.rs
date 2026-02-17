@@ -698,3 +698,137 @@ fn prepare_into_updates_clear_color() {
     assert_ne!(frame.clear_color, first_clear);
     assert_eq!(frame.clear_color, [1.0, 0.0, 0.0, 1.0]);
 }
+
+// ── Full-size grid instance counts (80×24) ──
+
+#[test]
+fn full_grid_all_spaces_1920_bg_zero_fg() {
+    let input = FrameInput::test_grid(80, 24, "");
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas);
+
+    assert_eq!(frame.backgrounds.len(), 80 * 24);
+    assert_eq!(frame.glyphs.len(), 0);
+}
+
+#[test]
+fn full_grid_all_chars_1920_bg_and_fg() {
+    let text: String = std::iter::repeat_n('A', 80 * 24).collect();
+    let input = FrameInput::test_grid(80, 24, &text);
+    let atlas = atlas_with(&['A']);
+
+    let frame = prepare_frame(&input, &atlas);
+
+    assert_eq!(frame.backgrounds.len(), 80 * 24);
+    assert_eq!(frame.glyphs.len(), 80 * 24);
+}
+
+// ── Color resolution: bold, 256-color, truecolor ──
+
+#[test]
+fn bold_color_variant_in_instance_bytes() {
+    // Bold cells: the extract phase resolves the bold color. The prepare phase
+    // passes it through. Verify the bold flag affects glyph style selection and
+    // that the fg_color in the instance matches what was set on the cell.
+    let bright_red = Rgb {
+        r: 255,
+        g: 100,
+        b: 100,
+    };
+    let mut input = FrameInput::test_grid(1, 1, "B");
+    input.content.cells[0].flags = CellFlags::BOLD;
+    input.content.cells[0].fg = bright_red;
+
+    let mut map = HashMap::new();
+    map.insert(('B', GlyphStyle::Bold), test_entry('B'));
+    let atlas = TestAtlas(map);
+
+    let frame = prepare_frame(&input, &atlas);
+
+    assert_eq!(frame.glyphs.len(), 1);
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(fg.fg_color, rgb_f32(bright_red));
+}
+
+#[test]
+fn ansi_256_color_in_instance_bytes() {
+    let color_208 = Rgb {
+        r: 255,
+        g: 135,
+        b: 0,
+    };
+    let mut input = FrameInput::test_grid(1, 1, "X");
+    input.content.cells[0].fg = color_208;
+
+    let atlas = atlas_with(&['X']);
+
+    let frame = prepare_frame(&input, &atlas);
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(fg.fg_color, rgb_f32(color_208));
+}
+
+#[test]
+fn truecolor_in_instance_bytes() {
+    let tc = Rgb {
+        r: 100,
+        g: 200,
+        b: 50,
+    };
+    let mut input = FrameInput::test_grid(1, 1, "T");
+    input.content.cells[0].fg = tc;
+    input.content.cells[0].bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 30,
+    };
+
+    let atlas = atlas_with(&['T']);
+
+    let frame = prepare_frame(&input, &atlas);
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(fg.fg_color, rgb_f32(tc));
+
+    let bg = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(
+        bg.bg_color,
+        rgb_f32(Rgb {
+            r: 30,
+            g: 30,
+            b: 30,
+        }),
+    );
+}
+
+// ── Viewport bounds ──
+
+#[test]
+fn no_instances_outside_grid_bounds() {
+    // 3×2 grid at 8×16 cell size = 24×32 viewport.
+    let input = FrameInput::test_grid(3, 2, "ABCDEF");
+    let atlas = atlas_with(&['A', 'B', 'C', 'D', 'E', 'F']);
+
+    let frame = prepare_frame(&input, &atlas);
+
+    let vp_w = 3.0 * 8.0; // 24.0
+    let vp_h = 2.0 * 16.0; // 32.0
+
+    // Verify all bg instances are within viewport.
+    for i in 0..frame.backgrounds.len() {
+        let inst = nth_instance(frame.backgrounds.as_bytes(), i);
+        assert!(
+            inst.pos.0 >= 0.0 && inst.pos.0 + inst.size.0 <= vp_w,
+            "bg instance {i} x out of bounds: pos={}, size={}",
+            inst.pos.0,
+            inst.size.0,
+        );
+        assert!(
+            inst.pos.1 >= 0.0 && inst.pos.1 + inst.size.1 <= vp_h,
+            "bg instance {i} y out of bounds: pos={}, size={}",
+            inst.pos.1,
+            inst.size.1,
+        );
+    }
+}

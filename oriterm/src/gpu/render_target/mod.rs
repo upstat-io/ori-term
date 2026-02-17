@@ -5,8 +5,9 @@
 //! on both surfaces and offscreen targets. Used for tab previews, headless
 //! test rendering, thumbnails, and visual regression tests.
 
-// Render targets are fully implemented but not yet consumed (Section 5.13).
-#![expect(dead_code, reason = "used starting in Section 5.13")]
+// Production consumers arrive in later sections (tab previews, thumbnails).
+// Currently only used by test code (pipeline_tests, visual_regression).
+#![allow(dead_code)]
 
 use std::fmt;
 
