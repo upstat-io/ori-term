@@ -43,7 +43,7 @@ sections:
     status: complete
   - id: "5.13"
     title: Render Pipeline Testing
-    status: not-started
+    status: in-progress
   - id: "5.14"
     title: "Integration: Working Terminal"
     status: not-started
@@ -557,78 +557,85 @@ Minimal keyboard handling + cursor rendering. Just enough to type and see output
 
 Testing strategy for the render pipeline. Three layers of tests, from fast/cheap to slow/thorough.
 
-**File:** `oriterm/src/gpu/tests/`
+**Files:** `oriterm/src/gpu/prepare/tests.rs` (Layer 1), `oriterm/src/gpu/pipeline_tests.rs` (Layer 2), `oriterm/src/gpu/visual_regression.rs` (Layer 3)
+
+**Deviations from original plan:**
+- Layer 1 tests live in `prepare/tests.rs` (existing from 5.9) rather than a new `gpu/tests/` directory — follows sibling-tests pattern.
+- Layer 2 tests live in `gpu/pipeline_tests.rs` (full-pipeline integration) rather than `gpu/tests/`.
+- Layer 3 tests live in `gpu/visual_regression.rs` with references in `oriterm/tests/references/`.
+- Cursor shapes generate separate reference PNGs per shape (4 images) instead of one composite.
+- Selection overlay test deferred: `SelectionRange = ()` placeholder (arrives in Section 9).
 
 ### Layer 1: Unit Tests — Prepare Phase (no GPU, runs in `cargo test`)
 
 These test the CPU-side rendering logic. Fast, deterministic, run everywhere.
 
-- [ ] **Instance buffer correctness:**
-  - [ ] Given a `FrameInput` with known cells, verify the exact bytes in `PreparedFrame`
-  - [ ] Test: single character 'A' at (0,0) → verify bg instance has correct position/size/color, fg instance has correct UV/position
-  - [ ] Test: empty cell (space) → bg instance only, no fg instance
-  - [ ] Test: wide character (CJK) → one bg instance spanning 2 cells, one fg instance
-  - [ ] Test: cursor at (5, 3) → verify cursor instance position matches cell position
+- [x] **Instance buffer correctness:**
+  - [x] Given a `FrameInput` with known cells, verify the exact bytes in `PreparedFrame`
+  - [x] Test: single character 'A' at (0,0) → verify bg instance has correct position/size/color, fg instance has correct UV/position
+  - [x] Test: empty cell (space) → bg instance only, no fg instance
+  - [x] Test: wide character (CJK) → one bg instance spanning 2 cells, one fg instance
+  - [x] Test: cursor at (5, 3) → verify cursor instance position matches cell position
 
-- [ ] **Instance count tests:**
-  - [ ] 80×24 grid with all spaces → 1920 bg instances, 0 fg instances
-  - [ ] 80×24 grid with all 'A' → 1920 bg + 1920 fg instances
-  - [ ] Grid with selection → extra overlay instances for selection highlight
+- [x] **Instance count tests:**
+  - [x] 80×24 grid with all spaces → 1920 bg instances, 0 fg instances
+  - [x] 80×24 grid with all 'A' → 1920 bg + 1920 fg instances
+  - [ ] Grid with selection → extra overlay instances for selection highlight <!-- blocked-by:9 -->
 
-- [ ] **Color resolution tests:**
-  - [ ] Default fg/bg → correct palette colors in instance bytes
-  - [ ] Bold text → bold color variant
-  - [ ] Inverse video → fg/bg swapped in instance
-  - [ ] 256-color and truecolor → correct RGB in instance bytes
+- [x] **Color resolution tests:**
+  - [x] Default fg/bg → correct palette colors in instance bytes
+  - [x] Bold text → bold color variant
+  - [x] Inverse video → fg/bg swapped in instance
+  - [x] 256-color and truecolor → correct RGB in instance bytes
 
-- [ ] **Layout tests:**
-  - [ ] Cell positions are pixel-perfect: cell (c, r) → position (c * cell_width, r * cell_height)
-  - [ ] Glyph bearing offsets applied correctly
-  - [ ] Viewport bounds respected (no instances outside viewport)
+- [x] **Layout tests:**
+  - [x] Cell positions are pixel-perfect: cell (c, r) → position (c * cell_width, r * cell_height)
+  - [x] Glyph bearing offsets applied correctly
+  - [x] Viewport bounds respected (no instances outside viewport)
 
-- [ ] **Determinism test:**
-  - [ ] Same `FrameInput` → identical `PreparedFrame` bytes (bitwise equal)
-  - [ ] Run twice, compare — catches any hidden state or randomness
+- [x] **Determinism test:**
+  - [x] Same `FrameInput` → identical `PreparedFrame` bytes (bitwise equal)
+  - [x] Run twice, compare — catches any hidden state or randomness
 
 ### Layer 2: Integration Tests — Headless GPU (needs GPU adapter, no window)
 
 These test the full pipeline including GPU submission. Slower, but still automated.
 
-- [ ] **Headless rendering setup:**
-  - [ ] `GpuState::new_headless()` — creates adapter with `compatible_surface: None`
-  - [ ] Create offscreen `RenderTarget` (e.g. 640×480)
-  - [ ] Full pipeline: extract → prepare → render to offscreen target → read back pixels
+- [x] **Headless rendering setup:**
+  - [x] `GpuState::new_headless()` — creates adapter with `compatible_surface: None`
+  - [x] Create offscreen `RenderTarget` (e.g. 640×480)
+  - [x] Full pipeline: extract → prepare → render to offscreen target → read back pixels
 
-- [ ] **Pixel readback tests:**
-  - [ ] Render a single colored cell → verify the pixel region has the expected color
-  - [ ] Render white text on black background → verify non-zero alpha in glyph region
-  - [ ] Render cursor → verify cursor pixels are present at expected position
+- [x] **Pixel readback tests:**
+  - [x] Render a single colored cell → verify the pixel region has the expected color
+  - [x] Render white text on black background → verify non-zero alpha in glyph region
+  - [x] Render cursor → verify cursor pixels are present at expected position
 
-- [ ] **Pipeline smoke tests:**
-  - [ ] Pipeline creation does not error
-  - [ ] GPU adapter is found
-  - [ ] Offscreen render target creates successfully
-  - [ ] A frame renders without GPU errors or validation warnings
-  - [ ] `wgpu` validation layer enabled in tests to catch API misuse
+- [x] **Pipeline smoke tests:**
+  - [x] Pipeline creation does not error
+  - [x] GPU adapter is found
+  - [x] Offscreen render target creates successfully
+  - [x] A frame renders without GPU errors or validation warnings
+  - [x] `wgpu` validation layer enabled in tests to catch API misuse
 
 ### Layer 3: Visual Regression Tests (optional, CI-friendly)
 
 Compare rendered output against reference images. Catches subtle rendering regressions.
 
-- [ ] **Reference image workflow:**
-  - [ ] Render known terminal content to PNG via headless pipeline
-  - [ ] Compare against checked-in reference PNGs in `tests/references/`
-  - [ ] Fuzzy comparison: allow per-pixel tolerance (±2 per channel) for anti-aliasing differences
-  - [ ] On failure: save actual output + diff image for inspection
-- [ ] **Test scenarios:**
-  - [ ] `tests/references/basic_grid.png` — 80×24 grid with ASCII text
-  - [ ] `tests/references/colors_16.png` — 16 ANSI colors
-  - [ ] `tests/references/cursor_shapes.png` — all cursor shapes
-  - [ ] `tests/references/bold_italic.png` — styled text
-- [ ] **CI considerations:**
-  - [ ] Headless GPU tests require a GPU adapter in CI (or software rasterizer like lavapipe/llvmpipe)
-  - [ ] Mark as `#[ignore]` by default, run with `cargo test -- --ignored` in GPU-enabled CI
-  - [ ] Non-GPU unit tests (Layer 1) always run in all CI environments
+- [x] **Reference image workflow:**
+  - [x] Render known terminal content to PNG via headless pipeline
+  - [x] Compare against checked-in reference PNGs in `tests/references/`
+  - [x] Fuzzy comparison: allow per-pixel tolerance (±2 per channel) for anti-aliasing differences
+  - [x] On failure: save actual output + diff image for inspection
+- [x] **Test scenarios:**
+  - [x] `tests/references/basic_grid.png` — 80×24 grid with ASCII text
+  - [x] `tests/references/colors_16.png` — 16 ANSI colors
+  - [x] `tests/references/cursor_shapes.png` — all cursor shapes (4 separate PNGs)
+  - [x] `tests/references/bold_italic.png` — styled text
+- [x] **CI considerations:**
+  - [x] Headless GPU tests require a GPU adapter in CI (or software rasterizer like lavapipe/llvmpipe)
+  - [x] Mark as `#[ignore]` by default, run with `cargo test -- --ignored` in GPU-enabled CI
+  - [x] Non-GPU unit tests (Layer 1) always run in all CI environments
 
 ---
 

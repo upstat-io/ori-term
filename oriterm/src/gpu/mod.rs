@@ -18,3 +18,8 @@ pub(crate) use extract::extract_frame;
 pub(crate) use frame_input::ViewportSize;
 pub(crate) use renderer::{GpuRenderer, SurfaceError};
 pub(crate) use state::GpuState;
+
+#[cfg(test)]
+mod pipeline_tests;
+#[cfg(test)]
+mod visual_regression;
