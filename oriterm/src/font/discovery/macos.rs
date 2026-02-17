@@ -26,7 +26,7 @@ fn font_dirs() -> Vec<PathBuf> {
 }
 
 /// Build a filename → full path index by scanning all font directories once.
-fn build_font_index() -> HashMap<String, PathBuf> {
+pub(crate) fn build_font_index() -> HashMap<String, PathBuf> {
     let mut index = HashMap::new();
     for dir in font_dirs() {
         index_font_dir(&dir, &mut index);
@@ -53,8 +53,11 @@ fn index_font_dir(dir: &Path, index: &mut HashMap<String, PathBuf>) {
 }
 
 /// Try to find a user-specified family by scanning for filenames.
-pub(super) fn try_user_family(name: &str, _weight: u16) -> Option<DiscoveryResult> {
-    let index = build_font_index();
+pub(super) fn try_user_family(
+    name: &str,
+    _weight: u16,
+    index: &HashMap<String, PathBuf>,
+) -> Option<DiscoveryResult> {
     let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
 
     // Try the name as a filename directly.
@@ -99,8 +102,10 @@ pub(super) fn try_user_family(name: &str, _weight: u16) -> Option<DiscoveryResul
 }
 
 /// Try platform default families in priority order.
-pub(super) fn try_platform_defaults(_weight: u16) -> Option<DiscoveryResult> {
-    let index = build_font_index();
+pub(super) fn try_platform_defaults(
+    _weight: u16,
+    index: &HashMap<String, PathBuf>,
+) -> Option<DiscoveryResult> {
     let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
 
     let primary = try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;

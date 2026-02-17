@@ -12,8 +12,7 @@ use std::sync::Arc;
 use swash::scale::ScaleContext;
 
 use super::discovery::{self, FontOrigin};
-use super::{FontError, GlyphFormat, GlyphStyle, RasterKey, ResolvedGlyph, SyntheticFlags};
-use crate::gpu::frame_input::CellMetrics;
+use super::{CellMetrics, FontError, GlyphFormat, GlyphStyle, RasterKey, ResolvedGlyph, SyntheticFlags};
 use face::{build_face, cap_height_px, compute_metrics, glyph_id, rasterize_from_face, FaceData};
 
 pub use face::size_key;
@@ -65,21 +64,9 @@ impl FontSet {
 
         let regular = load_font_data(primary, 0)?;
 
-        let bold = if primary.has_variant[1] {
-            load_font_data(primary, 1).ok()
-        } else {
-            None
-        };
-        let italic = if primary.has_variant[2] {
-            load_font_data(primary, 2).ok()
-        } else {
-            None
-        };
-        let bold_italic = if primary.has_variant[3] {
-            load_font_data(primary, 3).ok()
-        } else {
-            None
-        };
+        let bold = try_load_variant(primary, 1, "Bold");
+        let italic = try_load_variant(primary, 2, "Italic");
+        let bold_italic = try_load_variant(primary, 3, "BoldItalic");
 
         let fallbacks = result
             .fallbacks
@@ -144,7 +131,6 @@ pub struct RasterizedGlyph {
 pub struct FontCollection {
     // Faces
     primary: [Option<FaceData>; 4],
-    has_variant: [bool; 4],
     fallbacks: Vec<FaceData>,
     // Metrics
     size_px: f32,
@@ -209,7 +195,6 @@ impl FontCollection {
 
         let mut collection = Self {
             primary: [Some(regular_face), bold, italic, bold_italic],
-            has_variant: font_set.has_variant,
             fallbacks,
             size_px,
             cell_width,
@@ -310,13 +295,6 @@ impl FontCollection {
         }
     }
 
-    /// Find which face covers a character for the given style.
-    ///
-    /// Convenience wrapper around [`resolve`](Self::resolve).
-    pub fn find_face_for_char(&self, ch: char, style: GlyphStyle) -> ResolvedGlyph {
-        self.resolve(ch, style)
-    }
-
     // ── Rasterization ──
 
     /// Rasterize a glyph and cache the result.
@@ -324,6 +302,9 @@ impl FontCollection {
     /// Returns `None` for empty glyphs (e.g. space) or unsupported formats.
     /// Subsequent calls with the same key return the cached bitmap.
     pub fn rasterize(&mut self, key: RasterKey) -> Option<&RasterizedGlyph> {
+        // Early return on cache hit. Uses `contains_key` + final `get` rather
+        // than `if let Some(g) = get()` to avoid an immutable borrow that
+        // conflicts with the mutable `insert` on the miss path.
         if self.glyph_cache.contains_key(&key) {
             return self.glyph_cache.get(&key);
         }
@@ -426,6 +407,26 @@ fn weight_variation(face_idx: u16, weight: u16) -> Option<f32> {
         Some(w as f32)
     } else {
         None
+    }
+}
+
+/// Try to load a primary variant, logging on failure.
+///
+/// Returns `None` if the variant has no file or if loading fails (with a warning).
+fn try_load_variant(
+    primary: &discovery::FamilyDiscovery,
+    slot: usize,
+    name: &str,
+) -> Option<FontData> {
+    if !primary.has_variant[slot] {
+        return None;
+    }
+    match load_font_data(primary, slot) {
+        Ok(fd) => Some(fd),
+        Err(e) => {
+            log::warn!("font: failed to load {name} variant: {e}");
+            None
+        }
     }
 }
 

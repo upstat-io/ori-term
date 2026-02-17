@@ -2,7 +2,8 @@
 
 use oriterm_core::{Column, CursorShape, RenderableContent, RenderableCursor, Rgb, TermMode};
 
-use super::{CellMetrics, FrameInput, FramePalette, ViewportSize};
+use super::{FrameInput, FramePalette, ViewportSize};
+use crate::font::CellMetrics;
 
 const BG: Rgb = Rgb { r: 0, g: 0, b: 0 };
 const FG: Rgb = Rgb {

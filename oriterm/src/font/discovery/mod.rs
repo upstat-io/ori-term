@@ -19,6 +19,8 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use families::{FALLBACK_FONTS, FamilySpec};
@@ -89,9 +91,32 @@ pub struct DiscoveryResult {
 ///
 /// This function always succeeds — the embedded fallback guarantees a result.
 pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryResult {
+    // Build the font index once for directory-scanning platforms.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let font_index = {
+        #[cfg(target_os = "linux")]
+        {
+            linux::build_font_index()
+        }
+        #[cfg(target_os = "macos")]
+        {
+            macos::build_font_index()
+        }
+    };
+
     // Try user-specified family first.
     if let Some(name) = family_override {
-        if let Some(result) = try_user_family(name, weight) {
+        let result = {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            {
+                try_user_family_with_index(name, weight, &font_index)
+            }
+            #[cfg(target_os = "windows")]
+            {
+                try_user_family(name, weight)
+            }
+        };
+        if let Some(result) = result {
             log::info!("font discovery: using user-specified family {name:?}");
             return result;
         }
@@ -99,7 +124,17 @@ pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryRe
     }
 
     // Try platform defaults.
-    if let Some(result) = try_platform_defaults(weight) {
+    let result = {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            try_platform_defaults_with_index(weight, &font_index)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            try_platform_defaults(weight)
+        }
+    };
+    if let Some(result) = result {
         return result;
     }
 
@@ -145,35 +180,48 @@ fn embedded_family() -> FamilyDiscovery {
     }
 }
 
-/// Try to find a user-specified family name via platform discovery.
+/// Try to find a user-specified family name via platform discovery (Windows).
+#[cfg(target_os = "windows")]
 fn try_user_family(name: &str, weight: u16) -> Option<DiscoveryResult> {
-    #[cfg(target_os = "windows")]
-    {
-        windows::try_user_family(name, weight)
-    }
+    windows::try_user_family(name, weight)
+}
+
+/// Try to find a user-specified family name using a pre-built font index (Linux/macOS).
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn try_user_family_with_index(
+    name: &str,
+    weight: u16,
+    index: &HashMap<String, PathBuf>,
+) -> Option<DiscoveryResult> {
     #[cfg(target_os = "linux")]
     {
-        linux::try_user_family(name, weight)
+        linux::try_user_family(name, weight, index)
     }
     #[cfg(target_os = "macos")]
     {
-        macos::try_user_family(name, weight)
+        macos::try_user_family(name, weight, index)
     }
 }
 
-/// Try platform default families in priority order.
+/// Try platform default families in priority order (Windows).
+#[cfg(target_os = "windows")]
 fn try_platform_defaults(weight: u16) -> Option<DiscoveryResult> {
-    #[cfg(target_os = "windows")]
-    {
-        windows::try_platform_defaults(weight)
-    }
+    windows::try_platform_defaults(weight)
+}
+
+/// Try platform default families using a pre-built font index (Linux/macOS).
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn try_platform_defaults_with_index(
+    weight: u16,
+    index: &HashMap<String, PathBuf>,
+) -> Option<DiscoveryResult> {
     #[cfg(target_os = "linux")]
     {
-        linux::try_platform_defaults(weight)
+        linux::try_platform_defaults(weight, index)
     }
     #[cfg(target_os = "macos")]
     {
-        macos::try_platform_defaults(weight)
+        macos::try_platform_defaults(weight, index)
     }
 }
 

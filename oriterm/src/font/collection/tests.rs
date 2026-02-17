@@ -190,16 +190,6 @@ fn resolve_bold_with_system_fonts() {
     assert_ne!(resolved.glyph_id, 0, "'A' Bold should resolve to something");
 }
 
-#[test]
-fn find_face_for_char_matches_resolve() {
-    let fc = embedded_only_collection(GlyphFormat::Alpha);
-    let r1 = fc.resolve('X', GlyphStyle::Regular);
-    let r2 = fc.find_face_for_char('X', GlyphStyle::Regular);
-    assert_eq!(r1.glyph_id, r2.glyph_id);
-    assert_eq!(r1.face_idx, r2.face_idx);
-    assert_eq!(r1.synthetic, r2.synthetic);
-}
-
 // ── Rasterization ──
 
 #[test]
