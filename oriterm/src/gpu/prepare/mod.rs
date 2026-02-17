@@ -43,18 +43,44 @@ fn glyph_style(flags: CellFlags) -> GlyphStyle {
 
 /// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`].
 ///
-/// This is the core of the render pipeline's CPU side. It iterates every
-/// visible cell, emits background and glyph instances, then builds cursor
-/// instances. The result is fully deterministic: same input + same atlas =
-/// bitwise identical output.
+/// Allocates a new `PreparedFrame` with capacity for the grid dimensions,
+/// then delegates to [`prepare_frame_into`]. For steady-state rendering,
+/// prefer `prepare_frame_into` to reuse allocations across frames.
 pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFrame {
     let cols = input.columns();
     let rows = input.rows();
+    let opacity = f64::from(input.palette.opacity);
+    let mut frame = PreparedFrame::with_capacity(cols, rows, input.palette.background, opacity);
+    fill_frame(input, atlas, &mut frame);
+    frame
+}
+
+/// Convert a [`FrameInput`] into a pre-existing [`PreparedFrame`], reusing
+/// its buffer allocations.
+///
+/// Clears all instance buffers (retaining capacity), updates the clear
+/// color, then fills backgrounds, glyphs, and cursors. This avoids the
+/// ~307KB per-frame allocation that [`prepare_frame`] incurs for an 80x24
+/// terminal.
+pub fn prepare_frame_into(
+    input: &FrameInput,
+    atlas: &dyn AtlasLookup,
+    out: &mut PreparedFrame,
+) {
+    out.clear();
+    out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
+    fill_frame(input, atlas, out);
+}
+
+/// Shared implementation: emit instances into `frame`.
+///
+/// Iterates every visible cell, emits background and glyph instances, then
+/// builds cursor instances. The result is fully deterministic: same input +
+/// same atlas = bitwise identical output.
+fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedFrame) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
-
-    let mut frame = PreparedFrame::with_capacity(cols, rows, input.palette.background, 1.0);
 
     for cell in &input.content.cells {
         // Wide char spacers are handled by the primary wide char cell.
@@ -99,7 +125,7 @@ pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFra
     let cursor = &input.content.cursor;
     if cursor.visible {
         build_cursor(
-            &mut frame,
+            frame,
             cursor.shape,
             cursor.column.0,
             cursor.line,
@@ -108,8 +134,6 @@ pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFra
             input.palette.cursor_color,
         );
     }
-
-    frame
 }
 
 /// Emit cursor instances into the prepared frame.

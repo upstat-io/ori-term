@@ -39,6 +39,7 @@ fn test_palette() -> FramePalette {
         background: BG,
         foreground: FG,
         cursor_color: CURSOR,
+        opacity: 1.0,
     }
 }
 
@@ -96,6 +97,7 @@ fn frame_palette_stores_colors() {
     assert_eq!(p.background, BG);
     assert_eq!(p.foreground, FG);
     assert_eq!(p.cursor_color, CURSOR);
+    assert_eq!(p.opacity, 1.0);
 }
 
 // --- FrameInput ---
