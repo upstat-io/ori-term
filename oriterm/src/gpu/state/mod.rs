@@ -156,11 +156,18 @@ impl GpuState {
     /// Returns `None` if no compatible adapter is found or device creation
     /// fails, allowing the caller to fall back to the next backend.
     fn try_init(window: &Arc<Window>, backends: wgpu::Backends, dcomp: bool) -> Option<Self> {
+        let t0 = std::time::Instant::now();
         let instance = Self::create_instance(backends, dcomp);
+        let t_instance = t0.elapsed();
+
         let surface = instance.create_surface(window.clone()).ok()?;
+        let t_surface = t0.elapsed();
+
         let adapter = pick_adapter(&instance, Some(&surface), backends)?;
+        let t_adapter = t0.elapsed();
 
         let (device, queue) = request_device(&adapter)?;
+        let t_device = t0.elapsed();
 
         let caps = surface.get_capabilities(&adapter);
         let downlevel = adapter.get_downlevel_capabilities();
@@ -182,6 +189,7 @@ impl GpuState {
         );
         surface.configure(&device, &config);
         drop(config);
+        let t_configure = t0.elapsed();
 
         let info = adapter.get_info();
         let transparency_supported =
@@ -203,7 +211,14 @@ impl GpuState {
 
         let (pipeline_cache, pipeline_cache_path) =
             pipeline_cache::load_pipeline_cache(&device, &info);
+        let t_cache = t0.elapsed();
         drop(adapter);
+
+        log::info!(
+            "GPU init breakdown: instance={t_instance:?} surface={t_surface:?} \
+             adapter={t_adapter:?} device={t_device:?} configure={t_configure:?} \
+             cache={t_cache:?}",
+        );
 
         Some(Self {
             instance,

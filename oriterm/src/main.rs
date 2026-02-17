@@ -57,6 +57,9 @@ fn init_logger() {
         }
 
         fn log(&self, record: &log::Record<'_>) {
+            if !self.enabled(record.metadata()) {
+                return;
+            }
             if let Ok(mut f) = self.0.lock() {
                 let _ = writeln!(f, "[{}] {}", record.level(), record.args());
             }
@@ -77,7 +80,7 @@ fn init_logger() {
     if let Ok(file) = std::fs::File::create(&path) {
         let logger = Box::new(FileLogger(Mutex::new(file)));
         if log::set_logger(Box::leak(logger)).is_ok() {
-            log::set_max_level(log::LevelFilter::Debug);
+            log::set_max_level(log::LevelFilter::Info);
         }
     }
 }
