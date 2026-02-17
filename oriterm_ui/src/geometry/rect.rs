@@ -27,6 +27,14 @@ impl Rect {
         Self { origin, size }
     }
 
+    /// Creates a rectangle from left, top, right, bottom edge coordinates.
+    ///
+    /// Useful when converting from platform types (e.g. Win32 `RECT`) that
+    /// store edges rather than origin + size.
+    pub fn from_ltrb(left: f32, top: f32, right: f32, bottom: f32) -> Self {
+        Self::new(left, top, right - left, bottom - top)
+    }
+
     /// Creates a rectangle from raw coordinates and dimensions.
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {

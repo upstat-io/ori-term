@@ -95,6 +95,11 @@ Window creation is expensive (GPU surface, compositor effects, DPI handling). De
   - [ ] Restore saved window position if `saved_pos` provided (before showing, to avoid jump)
   - [ ] Show window (if `visible == true`)
   - [ ] Return `WindowId`
+- [ ] **Fullscreen toggle**:
+  - [ ] `TermWindow::toggle_fullscreen(&self)` — query `window.fullscreen()`, toggle between `Some(Fullscreen::Borderless(None))` and `None`
+  - [ ] Wired to `Action::ToggleFullscreen` keybinding (Alt+Enter on Windows/Linux, Ctrl+Cmd+F on macOS)
+  - [ ] No separate `is_fullscreen` state — query winit's `window.fullscreen()` directly as source of truth
+  - [ ] **Ref:** Alacritty `display/window.rs:392-428`, winit `Window::set_fullscreen`, `Window::fullscreen`
 - [ ] `handle_resize(&mut self, window_id: WindowId, width: u32, height: u32)`
   - [ ] Settings window: just resize surface, return early
   - [ ] Query actual DPI on Windows (WndProc subclass may have updated it via `WM_DPICHANGED`)

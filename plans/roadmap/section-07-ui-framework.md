@@ -97,7 +97,20 @@ The low-level 2D drawing API. Everything visible on screen is drawn through thes
   - [ ] `Color::hex(0xRRGGBB)`, `Color::rgba(r, g, b, a)`, `Color::WHITE`, `Color::TRANSPARENT`
 
 - [ ] `Point`, `Size`, `Rect`, `Insets` — already established in Section 03.5 (`oriterm_ui/src/geometry.rs`)
-  - [ ] Extend as needed for drawing (e.g., `Rect` already has `contains`, `intersects`, `inset`, `offset`, `union`)
+  - [ ] Extend as needed for drawing (e.g., `Rect` already has `contains`, `intersects`, `inset`, `offset`, `union`, `from_ltrb`)
+
+- [ ] **Type-safe coordinate spaces** — add phantom type parameters to geometry types
+  - [ ] Marker types: `Logical` (device-independent pixels), `Physical` (hardware pixels), `Screen` (screen-absolute)
+  - [ ] `Point<U = Logical>`, `Size<U = Logical>`, `Rect<U = Logical>` — default parameter preserves all existing code unchanged
+  - [ ] Manual `Copy`/`Clone`/`Debug`/`PartialEq`/`Default` impls (derive doesn't work with phantom generics — Rust issue #26925)
+  - [ ] `Insets` stays unit-agnostic (deltas, not positions)
+  - [ ] `Scale<Src, Dst>` type replaces `ScaleFactor` — encodes conversion direction at type level
+    - [ ] `Scale::uniform(factor)` for common case, `Scale::new(x, y)` for non-square pixel displays
+    - [ ] `transform_point(Point<Src>) -> Point<Dst>`, `transform_size`, `transform_rect`
+    - [ ] `inverse() -> Scale<Dst, Src>` — flips direction
+  - [ ] Boundary annotations: `hit_test()` takes `Point<Logical>`, GPU submission uses `Point<Physical>`, Win32 FFI uses `Point<Screen>`
+  - [ ] **Reference:** WezTerm's `PixelUnit`/`ScreenPixelUnit` phantom types, euclid's `Scale<T, Src, Dst>`, Chromium's `dip_util.h` conversion functions
+  - [ ] **Migration:** incremental — existing code stays on `Point` (= `Point<Logical>`), new boundary code annotates explicitly
 
 - [ ] Shader support:
   - [ ] Rounded rectangle SDF in fragment shader (same shader, branched on corner_radius > 0)
