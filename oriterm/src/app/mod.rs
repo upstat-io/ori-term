@@ -1,0 +1,353 @@
+//! Application struct and winit event loop handler.
+//!
+//! [`App`] implements winit's [`ApplicationHandler`] to drive the terminal.
+//! It wires together the three-phase rendering pipeline (Extract → Prepare →
+//! Render), handles window events, and dispatches terminal events from the
+//! PTY reader thread.
+
+use winit::application::ApplicationHandler;
+use winit::event::{ElementState, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::window::WindowId;
+
+use oriterm_core::Event;
+use oriterm_ui::window::WindowConfig;
+
+use crate::font::{FontCollection, FontSet, GlyphFormat};
+use crate::gpu::{GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame};
+use crate::tab::{Tab, TabId, TermEvent};
+use crate::window::TermWindow;
+
+/// Default font size in points (wired from config in Section 13).
+const DEFAULT_FONT_SIZE_PT: f32 = 11.0;
+
+/// Default DPI for font rasterization (wired from config in Section 13).
+const DEFAULT_DPI: f32 = 96.0;
+
+/// Default font weight (CSS-style 100–900).
+const DEFAULT_FONT_WEIGHT: u16 = 400;
+
+/// Default scrollback buffer size in lines.
+const DEFAULT_SCROLLBACK: usize = 10_000;
+
+/// Terminal application state and event loop handler.
+///
+/// Owns all top-level resources: GPU state, renderer, window, and tab.
+/// Implements winit's `ApplicationHandler<TermEvent>` to receive both
+/// window events and terminal events from the PTY reader thread.
+pub(crate) struct App {
+    // GPU + rendering (lazy init on Resumed).
+    gpu: Option<GpuState>,
+    renderer: Option<GpuRenderer>,
+    window: Option<TermWindow>,
+
+    // Terminal state (single tab for now; multi-tab in Section 15).
+    tab: Option<Tab>,
+
+    // Event loop proxy for creating per-tab EventProxy instances.
+    event_proxy: EventLoopProxy<TermEvent>,
+
+    // Redraw coalescing.
+    dirty: bool,
+
+    // Configuration.
+    window_config: WindowConfig,
+}
+
+impl App {
+    /// Create a new application instance.
+    ///
+    /// All GPU/window/tab state is `None` until [`resumed`] is called by
+    /// the event loop (lazy initialization pattern from winit docs).
+    pub(crate) fn new(
+        event_proxy: EventLoopProxy<TermEvent>,
+        window_config: WindowConfig,
+    ) -> Self {
+        Self {
+            gpu: None,
+            renderer: None,
+            window: None,
+            tab: None,
+            event_proxy,
+            dirty: false,
+            window_config,
+        }
+    }
+}
+
+impl ApplicationHandler<TermEvent> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+
+        // 1. Create window (invisible) for GPU surface capability probing.
+        let window_arc = match oriterm_ui::window::create_window(
+            event_loop,
+            &self.window_config,
+        ) {
+            Ok(w) => w,
+            Err(e) => {
+                log::error!("failed to create window: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
+
+        // 2. Init GPU with the window (probes adapter, format, alpha mode).
+        let gpu = match GpuState::new(&window_arc, self.window_config.transparent) {
+            Ok(g) => g,
+            Err(e) => {
+                log::error!("failed to initialize GPU: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
+
+        // 3. Wrap the same window into TermWindow (creates surface, applies effects).
+        let window = match TermWindow::from_window(
+            window_arc,
+            &self.window_config,
+            &gpu,
+        ) {
+            Ok(w) => w,
+            Err(e) => {
+                log::error!("failed to attach GPU surface to window: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
+
+        // 4. Discover fonts and build the font collection.
+        let font_set = match FontSet::load(None, DEFAULT_FONT_WEIGHT) {
+            Ok(fs) => fs,
+            Err(e) => {
+                log::error!("failed to load fonts: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
+        let font_collection = match FontCollection::new(
+            font_set,
+            DEFAULT_FONT_SIZE_PT,
+            DEFAULT_DPI,
+            GlyphFormat::Alpha,
+            DEFAULT_FONT_WEIGHT,
+        ) {
+            Ok(fc) => fc,
+            Err(e) => {
+                log::error!("failed to create font collection: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
+
+        // 5. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
+        let renderer = GpuRenderer::new(&gpu, font_collection);
+
+        // 6. Compute grid dimensions from viewport and cell metrics.
+        let (w, h) = window.size_px();
+        let cell = renderer.font_collection().cell_metrics();
+        let cols = cell.columns(w).max(1);
+        let rows = cell.rows(h).max(1);
+
+        // 7. Spawn the terminal tab (PTY + VTE + Term).
+        let tab_id = TabId::next();
+        let tab = match Tab::new(
+            tab_id,
+            rows as u16,
+            cols as u16,
+            DEFAULT_SCROLLBACK,
+            self.event_proxy.clone(),
+        ) {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("failed to spawn tab: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
+
+        log::info!(
+            "app: initialized — {}x{} px, {cols} cols × {rows} rows, \
+             font={} {:.1}pt",
+            w,
+            h,
+            renderer.font_collection().family_name(),
+            DEFAULT_FONT_SIZE_PT,
+        );
+
+        // Show window before storing — winit won't deliver RedrawRequested
+        // to an invisible window, so we must be visible first.
+        window.set_visible(true);
+
+        self.gpu = Some(gpu);
+        self.renderer = Some(renderer);
+        self.window = Some(window);
+        self.tab = Some(tab);
+        self.dirty = true;
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        match event {
+            WindowEvent::CloseRequested => {
+                if let Some(gpu) = &self.gpu {
+                    gpu.save_pipeline_cache();
+                }
+                event_loop.exit();
+            }
+
+            WindowEvent::Resized(size) => {
+                if let (Some(gpu), Some(window), Some(renderer)) =
+                    (&self.gpu, &mut self.window, &self.renderer)
+                {
+                    window.resize_surface(size.width, size.height, gpu);
+
+                    let cell = renderer.font_collection().cell_metrics();
+                    let cols = cell.columns(size.width).max(1);
+                    let rows = cell.rows(size.height).max(1);
+
+                    if let Some(tab) = &self.tab {
+                        tab.resize(rows as u16, cols as u16);
+                    }
+
+                    self.dirty = true;
+                }
+            }
+
+            WindowEvent::RedrawRequested => {
+                log::trace!("RedrawRequested");
+                // Three-phase pipeline: Extract → Prepare → Render.
+                let render_result = {
+                    let Some(gpu) = self.gpu.as_ref() else {
+                        log::warn!("redraw: no gpu");
+                        return;
+                    };
+                    let Some(renderer) = self.renderer.as_mut() else {
+                        log::warn!("redraw: no renderer");
+                        return;
+                    };
+                    let Some(window) = self.window.as_ref() else {
+                        log::warn!("redraw: no window");
+                        return;
+                    };
+                    let Some(tab) = self.tab.as_ref() else {
+                        log::warn!("redraw: no tab");
+                        return;
+                    };
+
+                    if !window.has_surface_area() {
+                        log::warn!("redraw: no surface area");
+                        return;
+                    }
+
+                    let (w, h) = window.size_px();
+                    let viewport = ViewportSize::new(w, h);
+                    let cell = renderer.font_collection().cell_metrics();
+
+                    let frame = extract_frame(tab.terminal(), viewport, cell);
+                    let prepared = renderer.prepare(&frame, gpu);
+                    log::trace!(
+                        "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
+                        frame.content.cells.len(),
+                        prepared.backgrounds.len(),
+                        prepared.glyphs.len(),
+                        prepared.cursors.len(),
+                    );
+                    renderer.render_to_surface(&prepared, gpu, window.surface())
+                };
+
+                match render_result {
+                    Ok(()) => log::trace!("render ok"),
+                    Err(SurfaceError::Lost) => {
+                        log::warn!("surface lost, reconfiguring");
+                        if let (Some(window), Some(gpu)) =
+                            (self.window.as_mut(), self.gpu.as_ref())
+                        {
+                            let (w, h) = window.size_px();
+                            window.resize_surface(w, h, gpu);
+                        }
+                    }
+                    Err(e) => log::error!("render error: {e}"),
+                }
+
+            }
+
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state != ElementState::Pressed {
+                    return;
+                }
+                if let Some(text) = &event.text {
+                    if let Some(tab) = &self.tab {
+                        tab.write_input(text.as_bytes());
+                        self.dirty = true;
+                    }
+                }
+            }
+
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                if let Some(window) = &mut self.window {
+                    if window.update_scale_factor(scale_factor) {
+                        self.dirty = true;
+                    }
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: TermEvent) {
+        let TermEvent::Terminal { tab_id: _, event } = event;
+        match event {
+            Event::Wakeup => {
+                self.dirty = true;
+            }
+            Event::Bell => {
+                if let Some(tab) = &mut self.tab {
+                    tab.set_bell();
+                }
+            }
+            Event::Title(title) => {
+                if let Some(tab) = &mut self.tab {
+                    tab.set_title(title);
+                }
+            }
+            Event::ResetTitle => {
+                if let Some(tab) = &mut self.tab {
+                    tab.set_title(String::new());
+                }
+            }
+            Event::PtyWrite(s) => {
+                if let Some(tab) = &self.tab {
+                    tab.write_input(s.as_bytes());
+                }
+            }
+            Event::ChildExit(code) => {
+                log::info!("child process exited with code {code}");
+                if let Some(gpu) = &self.gpu {
+                    gpu.save_pipeline_cache();
+                }
+                event_loop.exit();
+            }
+            _ => {
+                log::debug!("unhandled terminal event: {event:?}");
+            }
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if self.dirty {
+            log::debug!("about_to_wait: dirty, requesting redraw");
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            self.dirty = false;
+        }
+    }
+}

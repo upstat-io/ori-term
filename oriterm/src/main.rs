@@ -1,8 +1,13 @@
 //! Binary entry point for the oriterm terminal emulator.
 //!
-//! Currently a verification harness: validates font discovery, GPU adapters,
-//! clipboard, and the full PTY → VTE → Term pipeline via [`Tab`].
+//! Builds a winit event loop and runs the [`App`] as the application handler.
+//! All initialization (GPU, window, fonts, tab) happens lazily inside
+//! [`App::resumed`] when the event loop first becomes active.
 
+// GUI application — no console window on Windows.
+#![windows_subsystem = "windows"]
+
+mod app;
 mod clipboard;
 mod font;
 mod gpu;
@@ -11,134 +16,70 @@ mod pty;
 mod tab;
 mod window;
 
-use std::thread;
-use std::time::{Duration, Instant};
+use oriterm_ui::window::WindowConfig;
 
-use oriterm_core::{Column, Line};
-
-use crate::tab::{Tab, TabId, TermEvent};
+use crate::tab::TermEvent;
 
 fn main() {
+    init_logger();
+
     #[cfg(unix)]
     if let Err(e) = pty::signal::init() {
         log::warn!("failed to register SIGCHLD handler: {e}");
     }
 
-    // Discover fonts at startup (validates the discovery pipeline).
-    let fonts = font::discovery::discover_fonts(None, 400);
-    log::info!(
-        "font discovery: primary={:?} (origin={:?}, face_indices={:?}, \
-         variants=[{}, {}, {}, {}]), embedded={}B, {} fallback(s)",
-        fonts.primary.family_name,
-        fonts.primary.origin,
-        fonts.primary.face_indices,
-        fonts.primary.has_variant[0],
-        fonts.primary.has_variant[1],
-        fonts.primary.has_variant[2],
-        fonts.primary.has_variant[3],
-        font::discovery::EMBEDDED_FONT_DATA.len(),
-        fonts.fallbacks.len(),
-    );
-    for (i, path) in fonts.primary.paths.iter().enumerate() {
-        if let Some(p) = path {
-            log::info!("  slot[{i}]: {}", p.display());
-        }
-    }
-    for fb in &fonts.fallbacks {
-        log::info!(
-            "  fallback: {} (face={}, origin={:?})",
-            fb.path.display(),
-            fb.face_index,
-            fb.origin,
-        );
-    }
-    // Exercise user fallback resolution (no-op with None result).
-    let _ = font::discovery::resolve_user_fallback("__nonexistent__");
-
-    // Validate GPU availability (enumerate adapters without needing a window).
-    let adapter_count = gpu::validate_gpu();
-    log::info!("GPU validation: {adapter_count} adapter(s) found");
-
-    // Validate clipboard pipeline (falls back to no-op if no display server).
-    let mut cb = clipboard::Clipboard::new();
-    cb.store(
-        oriterm_core::event::ClipboardType::Clipboard,
-        "oriterm clipboard test",
-    );
-    let clip = cb.load(oriterm_core::event::ClipboardType::Clipboard);
-    log::info!("clipboard: loaded {} bytes", clip.len());
-
-    // --- End-to-end Tab verification (Section 4.9) ---
-
-    // Create a winit EventLoop for the EventProxy (no window needed yet).
     let event_loop = build_event_loop();
     let proxy = event_loop.create_proxy();
-    // Leak the event loop so the proxy remains valid. The event loop isn't run
-    // (no window to dispatch to) — it only exists for EventLoopProxy.
-    std::mem::forget(event_loop);
 
-    // Spawn a Tab (PTY + reader thread + Term + VTE pipeline).
-    let mut tab = Tab::new(TabId::next(), 24, 80, 1000, proxy).expect("failed to create tab");
-    log::info!("tab {:?}: spawned 24x80", tab.id());
+    let window_config = WindowConfig::default();
+    let mut app = app::App::new(proxy, window_config);
 
-    // Send an echo command to the shell.
-    tab.write_input(b"echo hello\r\n");
-
-    // Poll until "hello" appears in the terminal grid or timeout.
-    let found = poll_grid_for(&tab, "hello", Duration::from_secs(5));
-
-    if found {
-        log::info!("PASS: end-to-end PTY -> VTE -> Term pipeline verified");
-    } else {
-        log::error!("FAIL: 'hello' not found in terminal grid after 5s");
+    if let Err(e) = event_loop.run_app(&mut app) {
+        log::error!("event loop error: {e}");
     }
-
-    // Verify resize: change dimensions from 80x24 to 120x40.
-    tab.resize(40, 120);
-    log::info!("tab {:?}: resized to 40x120", tab.id());
-
-    // Exercise title and bell state (normally set by shell via events).
-    tab.set_title("verification".into());
-    log::info!("tab {:?}: title={:?}", tab.id(), tab.title());
-
-    tab.set_bell();
-    log::info!("tab {:?}: bell={}", tab.id(), tab.has_bell());
-    tab.clear_bell();
-
-    // Detect child exit via signal (complements PTY EOF detection in reader).
-    #[cfg(unix)]
-    if pty::signal::check() {
-        log::info!("SIGCHLD detected");
-    }
-
-    // Clean shutdown: drop sends Shutdown, kills child, joins reader thread.
-    drop(tab);
-
-    log::info!("verification complete");
 }
 
-/// Poll the terminal grid until `needle` appears in any visible row.
+/// Initialize a minimal file logger next to the executable.
 ///
-/// Returns `true` if found before `timeout`, `false` otherwise.
-fn poll_grid_for(tab: &Tab, needle: &str, timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
+/// Writes to `oriterm.log` in the same directory as the binary.
+/// This avoids needing an external logging crate while still capturing
+/// errors from the GUI-subsystem binary (which has no console).
+fn init_logger() {
+    use std::io::Write;
+    use std::sync::Mutex;
 
-    while Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(50));
+    struct FileLogger(Mutex<std::fs::File>);
 
-        let term = tab.terminal().lock();
-        let grid = term.grid();
+    impl log::Log for FileLogger {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            // Only log our crate's messages, not wgpu/naga noise.
+            metadata.target().starts_with("oriterm")
+        }
 
-        for line_idx in 0..grid.lines() {
-            let row = &grid[Line(line_idx as i32)];
-            let text: String = (0..grid.cols()).map(|c| row[Column(c)].ch).collect();
-            if text.contains(needle) {
-                return true;
+        fn log(&self, record: &log::Record<'_>) {
+            if let Ok(mut f) = self.0.lock() {
+                let _ = writeln!(f, "[{}] {}", record.level(), record.args());
+            }
+        }
+
+        fn flush(&self) {
+            if let Ok(f) = self.0.lock() {
+                let _ = Write::flush(&mut &*f);
             }
         }
     }
 
-    false
+    let path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("oriterm.log")))
+        .unwrap_or_else(|| std::path::PathBuf::from("oriterm.log"));
+
+    if let Ok(file) = std::fs::File::create(&path) {
+        let logger = Box::new(FileLogger(Mutex::new(file)));
+        if log::set_logger(Box::leak(logger)).is_ok() {
+            log::set_max_level(log::LevelFilter::Debug);
+        }
+    }
 }
 
 /// Build a winit event loop usable from the main thread.

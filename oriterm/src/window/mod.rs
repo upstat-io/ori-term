@@ -9,13 +9,6 @@
 //! attaches a wgpu surface. After the first frame is rendered, the caller
 //! shows the window via [`TermWindow::set_visible()`] to avoid a white flash.
 
-// TermWindow is fully implemented but not yet called from the event loop
-// (added later in Section 05). Suppress dead-code warnings until then.
-#![expect(
-    dead_code,
-    reason = "TermWindow used once event loop is wired in Section 05"
-)]
-
 use std::fmt;
 use std::sync::Arc;
 
@@ -58,6 +51,7 @@ pub(crate) struct TermWindow {
     /// DPI scale factor from the display.
     scale_factor: ScaleFactor,
     /// Whether the window is currently maximized.
+    #[allow(dead_code, reason = "maximized state for Section 7")]
     is_maximized: bool,
 }
 
@@ -70,6 +64,7 @@ impl TermWindow {
     /// When `config.transparent` and `config.blur` are both true, platform-specific
     /// vibrancy effects (Acrylic on Windows, vibrancy on macOS, compositor blur on
     /// Linux) are applied.
+    #[allow(dead_code, reason = "multi-window constructor in Section 15")]
     pub(crate) fn new(
         event_loop: &ActiveEventLoop,
         config: &WindowConfig,
@@ -103,14 +98,49 @@ impl TermWindow {
         })
     }
 
+    /// Wrap an existing winit window with a GPU surface.
+    ///
+    /// Unlike [`new`](Self::new), this does not create a window — it wraps
+    /// the provided one. Used when the window was created earlier for GPU
+    /// initialization (surface capability probing).
+    pub(crate) fn from_window(
+        window: Arc<Window>,
+        config: &WindowConfig,
+        gpu: &GpuState,
+    ) -> Result<Self, WindowCreateError> {
+        let (surface, surface_config) = gpu.create_surface(&window)?;
+
+        let phys_size = window.inner_size();
+        let size_px = (phys_size.width, phys_size.height);
+        let scale_factor = ScaleFactor::new(window.scale_factor());
+
+        if config.transparent && config.blur {
+            transparency::apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
+        }
+
+        window.set_ime_allowed(true);
+        window.set_ime_purpose(winit::window::ImePurpose::Terminal);
+
+        Ok(Self {
+            window,
+            surface,
+            surface_config,
+            size_px,
+            scale_factor,
+            is_maximized: false,
+        })
+    }
+
     // Accessors
 
     /// Returns the winit [`WindowId`] for event routing.
+    #[allow(dead_code, reason = "window routing in Section 15")]
     pub(crate) fn window_id(&self) -> WindowId {
         self.window.id()
     }
 
     /// Returns a reference to the underlying winit [`Window`].
+    #[allow(dead_code, reason = "window access for later sections")]
     pub(crate) fn window(&self) -> &Window {
         &self.window
     }
@@ -121,6 +151,7 @@ impl TermWindow {
     }
 
     /// Returns the current surface configuration.
+    #[allow(dead_code, reason = "surface config access for later sections")]
     pub(crate) fn surface_config(&self) -> &wgpu::SurfaceConfiguration {
         &self.surface_config
     }
@@ -131,11 +162,13 @@ impl TermWindow {
     }
 
     /// Returns the DPI scale factor.
+    #[allow(dead_code, reason = "scale factor query for Section 6")]
     pub(crate) fn scale_factor(&self) -> ScaleFactor {
         self.scale_factor
     }
 
     /// Returns whether the window is currently maximized.
+    #[allow(dead_code, reason = "maximized state for Section 7")]
     pub(crate) fn is_maximized(&self) -> bool {
         self.is_maximized
     }
@@ -178,6 +211,7 @@ impl TermWindow {
     }
 
     /// Update the maximized state.
+    #[allow(dead_code, reason = "maximized state for Section 7")]
     pub(crate) fn set_maximized(&mut self, maximized: bool) {
         self.is_maximized = maximized;
     }

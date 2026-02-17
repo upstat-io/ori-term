@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "5.11"
     title: App Struct + Event Loop
-    status: not-started
+    status: complete
   - id: "5.12"
     title: Basic Input + Cursor
     status: not-started
@@ -497,36 +497,40 @@ The main application struct. Implements winit's `ApplicationHandler`. Orchestrat
 
 **File:** `oriterm/src/app/mod.rs`
 
-- [ ] `App` struct
-  - [ ] Fields:
+- [x] `App` struct
+  - [x] Fields:
     - `gpu: Option<GpuState>` — initialized on `Resumed` event
     - `renderer: Option<GpuRenderer>` — initialized after GPU + fonts
     - `window: Option<TermWindow>` — created on `Resumed`
-    - `tabs: HashMap<TabId, Tab>` — active tabs (initially one)
-    - `active_tab: Option<TabId>` — currently focused tab
+    - `tab: Option<Tab>` — single tab (multi-tab deferred to Section 15)
     - `event_proxy: EventLoopProxy<TermEvent>` — for creating EventProxy instances
-    - `frame_input_scratch: Option<FrameInput>` — reusable allocation
-  - [ ] Max ~10 fields. Additional state goes in dedicated sub-structs.
-- [ ] `impl ApplicationHandler<TermEvent> for App`
-  - [ ] `fn resumed(...)` — init GPU, window, fonts, renderer, first tab
-  - [ ] `fn window_event(...)`:
-    - [ ] `CloseRequested` → exit
-    - [ ] `Resized(new_size)` → resize window + PTY
-    - [ ] `RedrawRequested` → **run the 3-phase pipeline:**
-      1. `let frame_input = extract_frame(&tab.terminal, ...);`
-      2. `let prepared = prepare_frame(&frame_input, &renderer.atlas);`
-      3. `renderer.render_to_surface(&prepared, &gpu, &window.surface);`
-    - [ ] `KeyboardInput` → forward to PTY (basic)
-    - [ ] `ScaleFactorChanged` → recalculate font metrics, resize
-  - [ ] `fn user_event(...)` — handle terminal events (wakeup, title, bell, child exit)
-  - [ ] `fn about_to_wait(...)` — coalesce: if dirty, render once, clear dirty
+    - `dirty: bool` — coalesced redraw flag
+    - `first_frame: bool` — show window after first render
+    - `window_config: WindowConfig` — cached window config
+  - [x] Max ~10 fields. Additional state goes in dedicated sub-structs.
+- [x] `impl ApplicationHandler<TermEvent> for App`
+  - [x] `fn resumed(...)` — init GPU, window, fonts, renderer, first tab
+  - [x] `fn window_event(...)`:
+    - [x] `CloseRequested` → save pipeline cache, exit
+    - [x] `Resized(new_size)` → resize surface + PTY
+    - [x] `RedrawRequested` → **run the 3-phase pipeline:**
+      1. `let frame = extract_frame(&tab.terminal, viewport, cell);`
+      2. `let prepared = renderer.prepare(&frame, gpu);`
+      3. `renderer.render_to_surface(&prepared, gpu, window.surface());`
+    - [x] `KeyboardInput` → forward `event.text` to PTY (basic, expanded in Section 8)
+    - [x] `ScaleFactorChanged` → update scale factor, mark dirty
+  - [x] `fn user_event(...)` — handle terminal events (wakeup, title, bell, child exit, pty write)
+  - [x] `fn about_to_wait(...)` — coalesce: if dirty, request_redraw, clear dirty
+- [x] `TermWindow::from_window()` — wrap existing window with GPU surface (avoids double window creation)
+- [x] `main.rs` rewritten: SIGCHLD init → build event loop → create App → `run_app`
+- [x] Removed dead_code annotations from gpu, window, font, tab modules (items now consumed by App)
 
-**File:** `oriterm/src/app/event_loop.rs`
+**Deviation:** Single `Option<Tab>` instead of `HashMap<TabId, Tab>` + `active_tab` — multi-tab is Section 15. No `frame_input_scratch` — the `extract_frame_into` optimization can be added when profiling shows it's needed. Event loop + event batching live in `app/mod.rs` (no separate `event_loop.rs` file needed — the impl is compact).
 
-- [ ] Event batching:
-  - [ ] Collect `dirty` flag during event processing
-  - [ ] In `about_to_wait`: if dirty, run pipeline once, clear dirty
-  - [ ] Prevents per-keystroke renders when typing fast
+- [x] Event batching:
+  - [x] Collect `dirty` flag during event processing
+  - [x] In `about_to_wait`: if dirty, `request_redraw()`, clear dirty
+  - [x] Prevents per-keystroke renders when typing fast
 
 ---
 

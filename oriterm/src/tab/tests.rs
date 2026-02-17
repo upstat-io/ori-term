@@ -106,26 +106,28 @@ fn event_proxy_is_send() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn notifier_sends_input() {
-    let (tx, rx) = mpsc::channel();
-    let notifier = Notifier::new(tx);
+fn notifier_writes_input_to_pipe() {
+    let (pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
+    let (tx, _rx) = mpsc::channel();
+    let notifier = Notifier::new(Box::new(pipe_writer), tx);
 
     notifier.notify(b"hello");
 
-    match rx.recv().expect("should receive") {
-        Msg::Input(data) => assert_eq!(data, b"hello"),
-        other => panic!("expected Input, got {other:?}"),
-    }
+    let mut buf = [0u8; 5];
+    let mut r = pipe_reader;
+    std::io::Read::read_exact(&mut r, &mut buf).expect("read");
+    assert_eq!(&buf, b"hello");
 }
 
 #[test]
 fn notifier_skips_empty_input() {
+    let (_pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
     let (tx, rx) = mpsc::channel();
-    let notifier = Notifier::new(tx);
+    let notifier = Notifier::new(Box::new(pipe_writer), tx);
 
     notifier.notify(b"");
 
-    // Channel should be empty — empty bytes are not sent.
+    // Channel should be empty — empty bytes are not written.
     assert!(
         rx.try_recv().is_err(),
         "empty input should not produce a message",
@@ -134,8 +136,9 @@ fn notifier_skips_empty_input() {
 
 #[test]
 fn notifier_sends_resize() {
+    let (_pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
     let (tx, rx) = mpsc::channel();
-    let notifier = Notifier::new(tx);
+    let notifier = Notifier::new(Box::new(pipe_writer), tx);
 
     notifier.resize(40, 120);
 
@@ -150,8 +153,9 @@ fn notifier_sends_resize() {
 
 #[test]
 fn notifier_sends_shutdown() {
+    let (_pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
     let (tx, rx) = mpsc::channel();
-    let notifier = Notifier::new(tx);
+    let notifier = Notifier::new(Box::new(pipe_writer), tx);
 
     notifier.shutdown();
 
@@ -163,8 +167,9 @@ fn notifier_sends_shutdown() {
 
 #[test]
 fn notifier_survives_dropped_receiver() {
+    let (_pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
     let (tx, rx) = mpsc::channel::<Msg>();
-    let notifier = Notifier::new(tx);
+    let notifier = Notifier::new(Box::new(pipe_writer), tx);
     drop(rx);
 
     // Should not panic when receiver is gone.

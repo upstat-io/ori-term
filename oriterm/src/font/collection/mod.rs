@@ -43,6 +43,7 @@ pub struct FontSet {
     /// Bold-italic face data (if a real bold-italic variant was found).
     bold_italic: Option<FontData>,
     /// Which style slots have real font files.
+    #[allow(dead_code, reason = "font fields consumed in later sections")]
     has_variant: [bool; 4],
     /// Ordered fallback fonts for missing-glyph coverage.
     fallbacks: Vec<FontData>,
@@ -113,6 +114,7 @@ pub struct RasterizedGlyph {
     /// Vertical bearing (pixels from baseline to top edge; positive = above).
     pub bearing_y: i32,
     /// Horizontal advance width in pixels.
+    #[allow(dead_code, reason = "font fields consumed in later sections")]
     pub advance: f32,
     /// Pixel format of the bitmap data.
     pub format: GlyphFormat,
@@ -230,11 +232,13 @@ impl FontCollection {
     }
 
     /// Rasterization format.
+    #[allow(dead_code, reason = "font fields consumed in later sections")]
     pub fn format(&self) -> GlyphFormat {
         self.format
     }
 
     /// Number of cached glyphs.
+    #[allow(dead_code, reason = "font fields consumed in later sections")]
     pub fn cache_len(&self) -> usize {
         self.glyph_cache.len()
     }

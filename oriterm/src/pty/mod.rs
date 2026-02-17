@@ -26,8 +26,6 @@ pub use spawn::{PtyConfig, PtyControl, PtyHandle, spawn_pty};
 /// [`PtyEventLoop`].
 #[derive(Debug)]
 pub enum Msg {
-    /// Bytes to write to the PTY (keyboard input, escape responses).
-    Input(Vec<u8>),
     /// Resize the PTY and terminal grid.
     Resize {
         /// New row count.

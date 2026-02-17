@@ -9,7 +9,7 @@
 //! winit event loop → `Notifier` → `Msg::Input` → this thread's
 //! `process_commands` → PTY writer.
 
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
@@ -41,9 +41,7 @@ pub struct PtyEventLoop<T: EventListener> {
     terminal: Arc<FairMutex<Term<T>>>,
     /// PTY output reader (child → parent).
     reader: Box<dyn Read + Send>,
-    /// PTY input writer (parent → child).
-    writer: Box<dyn Write + Send>,
-    /// Command receiver (input, resize, shutdown from main thread).
+    /// Command receiver (resize, shutdown from main thread).
     rx: mpsc::Receiver<Msg>,
     /// PTY control handle for resize operations.
     pty_control: PtyControl,
@@ -56,14 +54,12 @@ impl<T: EventListener> PtyEventLoop<T> {
     pub fn new(
         terminal: Arc<FairMutex<Term<T>>>,
         reader: Box<dyn Read + Send>,
-        writer: Box<dyn Write + Send>,
         rx: mpsc::Receiver<Msg>,
         pty_control: PtyControl,
     ) -> Self {
         Self {
             terminal,
             reader,
-            writer,
             rx,
             pty_control,
             processor: vte::ansi::Processor::new(),
@@ -89,14 +85,19 @@ impl<T: EventListener> PtyEventLoop<T> {
 
             // 2. Read from PTY (blocking).
             let n = match self.reader.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) => {
+                    log::info!("PTY EOF");
+                    break;
+                }
                 Ok(n) => n,
                 Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) => {
-                    log::debug!("PTY read error, closing reader: {e}");
+                    log::info!("PTY read error, closing reader: {e}");
                     break;
                 }
             };
+
+            log::info!("PTY read {n} bytes: {:?}", String::from_utf8_lossy(&buf[..n.min(200)]));
 
             // 3. Lock terminal and parse in bounded chunks.
             self.parse_pty_output(&buf[..n]);
@@ -118,6 +119,13 @@ impl<T: EventListener> PtyEventLoop<T> {
             let _lease = self.terminal.lease();
             let mut term = self.terminal.lock_unfair();
             self.processor.advance(&mut *term, chunk);
+            let sync_bytes = self.processor.sync_bytes_count();
+            if sync_bytes > 0 {
+                log::warn!("sync buffer: {sync_bytes} bytes pending");
+            }
+            // Notify the main thread after each chunk so the renderer can
+            // pick up partial updates during large output bursts.
+            term.event_listener().send_event(oriterm_core::Event::Wakeup);
             drop(term);
 
             offset = chunk_end;
@@ -127,17 +135,9 @@ impl<T: EventListener> PtyEventLoop<T> {
     /// Drain the command channel (non-blocking).
     ///
     /// Returns `false` if a `Shutdown` message was received.
-    fn process_commands(&mut self) -> bool {
+    fn process_commands(&self) -> bool {
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
-                Msg::Input(bytes) => {
-                    if let Err(e) = self.writer.write_all(&bytes) {
-                        log::warn!("PTY write failed: {e}");
-                    }
-                    if let Err(e) = self.writer.flush() {
-                        log::debug!("PTY flush failed: {e}");
-                    }
-                }
                 Msg::Resize { rows, cols } => {
                     self.resize_pty(rows, cols);
                 }

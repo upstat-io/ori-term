@@ -5,10 +5,6 @@
 //! Windows transparency), adapter enumeration (discrete GPU preferred), sRGB
 //! surface format derivation, and Vulkan pipeline cache persistence.
 
-// GpuState and helpers are fully implemented but not yet called from the event
-// loop (added in Section 05). Suppress dead-code warnings until then.
-#![expect(dead_code, reason = "GPU infrastructure used in Section 05")]
-
 mod pipeline_cache;
 
 use std::fmt;
@@ -92,6 +88,7 @@ impl GpuState {
     /// Used for testing and offscreen rendering. Picks any available adapter
     /// (including software rasterizers) and uses `Rgba8UnormSrgb` as the
     /// default format for render target compatibility.
+    #[allow(dead_code, reason = "headless GPU for testing")]
     pub fn new_headless() -> Result<Self, GpuInitError> {
         Self::try_init_headless(wgpu::Backends::PRIMARY)
             .or_else(|| Self::try_init_headless(wgpu::Backends::SECONDARY))
@@ -99,6 +96,7 @@ impl GpuState {
     }
 
     /// Returns the native surface format used for surface configuration.
+    #[allow(dead_code, reason = "surface format query for later sections")]
     pub fn surface_format(&self) -> wgpu::TextureFormat {
         self.surface_format
     }
@@ -109,6 +107,7 @@ impl GpuState {
     }
 
     /// Returns true if the surface alpha mode supports transparency.
+    #[allow(dead_code, reason = "transparency query for later sections")]
     pub fn supports_transparency(&self) -> bool {
         !matches!(self.surface_alpha_mode, wgpu::CompositeAlphaMode::Opaque)
     }
@@ -222,6 +221,7 @@ impl GpuState {
     /// Try to initialize GPU in headless mode with the given backend set.
     ///
     /// No surface is created — uses `Rgba8UnormSrgb` as default format.
+    #[allow(dead_code, reason = "headless GPU for testing")]
     fn try_init_headless(backends: wgpu::Backends) -> Option<Self> {
         let instance = Self::create_instance(backends, false);
         let adapter = pick_adapter(&instance, None, backends)?;
@@ -396,6 +396,7 @@ fn build_surface_config(
 /// Logs adapter info for each compatible GPU found. Returns the number of
 /// adapters discovered. This is a lightweight check that does not require a
 /// window or surface.
+#[allow(dead_code, reason = "GPU validation diagnostics")]
 pub fn validate_gpu() -> usize {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,

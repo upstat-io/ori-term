@@ -158,6 +158,7 @@ pub(super) fn try_platform_defaults(weight: u16) -> Option<DiscoveryResult> {
 }
 
 /// Resolve a user-configured fallback font name to a path.
+#[allow(dead_code, reason = "font discovery consumed in later sections")]
 pub(super) fn resolve_user_fallback(family: &str) -> Option<FallbackDiscovery> {
     // Try DirectWrite.
     if let Some(path) = resolve_font_dwrite(
