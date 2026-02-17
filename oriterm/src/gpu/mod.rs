@@ -1,5 +1,6 @@
 //! GPU rendering: wgpu state management, render pipeline types, and platform transparency.
 
+pub(crate) mod bind_groups;
 pub(crate) mod frame_input;
 pub(crate) mod instance_writer;
 pub(crate) mod pipeline;
@@ -7,6 +8,13 @@ pub(crate) mod prepared_frame;
 pub(crate) mod render_target;
 pub(crate) mod state;
 pub(crate) mod transparency;
+
+// Re-exports consumed starting in Section 5.10.
+#[expect(
+    unused_imports,
+    reason = "bind group types used starting in Section 5.10"
+)]
+pub(crate) use bind_groups::{AtlasBindGroup, UniformBuffer, create_placeholder_atlas_texture};
 
 // Re-exports consumed starting in Section 5.8.
 #[expect(
