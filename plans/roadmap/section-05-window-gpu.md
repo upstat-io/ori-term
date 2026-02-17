@@ -13,7 +13,7 @@ sections:
     status: complete
   - id: "5.3"
     title: wgpu GpuState + Offscreen Render Targets
-    status: in-progress
+    status: complete
   - id: "5.4"
     title: WGSL Shaders + GPU Pipelines
     status: not-started
@@ -188,22 +188,22 @@ The organizing principle for all rendering. Every frame flows through these phas
     - [x] Request adapter (high performance preference)
     - [x] Request device with reasonable limits
     - [x] Determine surface format from adapter capabilities
-  - [ ] `GpuState::new_headless() -> Result<Self>`
-    - [ ] Same as `new()` but with `compatible_surface: None`
-    - [ ] Used for testing — no window or surface required
-    - [ ] Falls back to software rasterizer if no GPU available
+  - [x] `GpuState::new_headless() -> Result<Self>`
+    - [x] Same as `new()` but with `compatible_surface: None`
+    - [x] Used for testing — no window or surface required
+    - [x] Falls back to software rasterizer if no GPU available
   - [x] `GpuState::configure_surface(&self, surface: &wgpu::Surface, width: u32, height: u32) -> wgpu::SurfaceConfiguration`
     - [x] Select present mode: `Mailbox` preferred (low latency), `Fifo` fallback
     - [x] Alpha mode: `PreMultiplied` for transparency, `Opaque` fallback
     - [x] Return configuration
-  - [ ] Offscreen render targets:
-    - [ ] `create_render_target(width: u32, height: u32) -> RenderTarget`
-    - [ ] `RenderTarget` struct: `texture: wgpu::Texture`, `view: wgpu::TextureView`
-    - [ ] Same format as surface (`surface_format`) so pipelines are reusable
-    - [ ] Used for: tab previews, headless test rendering, thumbnails
-    - [ ] `read_render_target(target: &RenderTarget) -> Vec<u8>` — read pixels back to CPU
-      - [ ] `buffer.slice(..).map_async(MapMode::Read, ...)` + `device.poll(Maintain::Wait)`
-      - [ ] Returns RGBA bytes — used by visual regression tests and thumbnail generation
+  - [x] Offscreen render targets:
+    - [x] `create_render_target(width: u32, height: u32) -> RenderTarget`
+    - [x] `RenderTarget` struct: `texture: wgpu::Texture`, `view: wgpu::TextureView`
+    - [x] Same format as surface (`render_format`) so pipelines are reusable
+    - [x] Used for: tab previews, headless test rendering, thumbnails
+    - [x] `read_render_target(target: &RenderTarget) -> Vec<u8>` — read pixels back to CPU
+      - [x] `buffer.slice(..).map_async(MapMode::Read, ...)` + `device.poll(PollType::wait_indefinitely())`
+      - [x] Returns RGBA bytes — used by visual regression tests and thumbnail generation
 
 ---
 
