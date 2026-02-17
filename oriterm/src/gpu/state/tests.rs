@@ -2,7 +2,7 @@
 
 use wgpu::{CompositeAlphaMode, SurfaceCapabilities, TextureFormat, TextureUsages};
 
-use super::{build_surface_config, cache_dir, GpuState};
+use super::{build_surface_config, select_alpha_mode, select_formats};
 
 fn caps_with_formats(formats: Vec<TextureFormat>) -> SurfaceCapabilities {
     SurfaceCapabilities {
@@ -19,7 +19,7 @@ fn caps_with_formats(formats: Vec<TextureFormat>) -> SurfaceCapabilities {
 fn select_formats_srgb_surface() {
     let caps = caps_with_formats(vec![TextureFormat::Bgra8UnormSrgb]);
 
-    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
+    let (surface_fmt, render_fmt) = select_formats(&caps).unwrap();
 
     // When surface is already sRGB, render format matches.
     assert_eq!(surface_fmt, TextureFormat::Bgra8UnormSrgb);
@@ -30,7 +30,7 @@ fn select_formats_srgb_surface() {
 fn select_formats_non_srgb_surface_derives_srgb_render() {
     let caps = caps_with_formats(vec![TextureFormat::Bgra8Unorm]);
 
-    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
+    let (surface_fmt, render_fmt) = select_formats(&caps).unwrap();
 
     // Non-sRGB surface: render format is the sRGB suffix.
     assert_eq!(surface_fmt, TextureFormat::Bgra8Unorm);
@@ -41,7 +41,7 @@ fn select_formats_non_srgb_surface_derives_srgb_render() {
 fn select_formats_rgba_surface() {
     let caps = caps_with_formats(vec![TextureFormat::Rgba8Unorm]);
 
-    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
+    let (surface_fmt, render_fmt) = select_formats(&caps).unwrap();
 
     assert_eq!(surface_fmt, TextureFormat::Rgba8Unorm);
     assert_eq!(render_fmt, TextureFormat::Rgba8UnormSrgb);
@@ -50,7 +50,7 @@ fn select_formats_rgba_surface() {
 #[test]
 fn select_formats_empty_formats_returns_none() {
     let caps = caps_with_formats(vec![]);
-    assert!(GpuState::select_formats(&caps).is_none());
+    assert!(select_formats(&caps).is_none());
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn select_formats_picks_first_when_multiple_available() {
         TextureFormat::Bgra8UnormSrgb,
     ]);
 
-    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
+    let (surface_fmt, render_fmt) = select_formats(&caps).unwrap();
 
     // Should pick the first format, not scan for an sRGB one.
     assert_eq!(surface_fmt, TextureFormat::Bgra8Unorm);
@@ -75,7 +75,7 @@ fn select_formats_multiple_with_srgb_first() {
         TextureFormat::Rgba8Unorm,
     ]);
 
-    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
+    let (surface_fmt, render_fmt) = select_formats(&caps).unwrap();
 
     // sRGB is already first, so render_format matches.
     assert_eq!(surface_fmt, TextureFormat::Bgra8UnormSrgb);
@@ -98,7 +98,7 @@ fn select_alpha_mode_prefers_premultiplied() {
     };
 
     assert_eq!(
-        GpuState::select_alpha_mode(&caps),
+        select_alpha_mode(&caps),
         CompositeAlphaMode::PreMultiplied,
     );
 }
@@ -116,7 +116,7 @@ fn select_alpha_mode_falls_back_to_postmultiplied() {
     };
 
     assert_eq!(
-        GpuState::select_alpha_mode(&caps),
+        select_alpha_mode(&caps),
         CompositeAlphaMode::PostMultiplied,
     );
 }
@@ -130,10 +130,7 @@ fn select_alpha_mode_falls_back_to_first_available() {
         usages: TextureUsages::RENDER_ATTACHMENT,
     };
 
-    assert_eq!(
-        GpuState::select_alpha_mode(&caps),
-        CompositeAlphaMode::Opaque,
-    );
+    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::Opaque);
 }
 
 #[test]
@@ -146,10 +143,7 @@ fn select_alpha_mode_inherit_as_only_option() {
     };
 
     // When only Inherit is available, use it (common fallback).
-    assert_eq!(
-        GpuState::select_alpha_mode(&caps),
-        CompositeAlphaMode::Inherit,
-    );
+    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::Inherit);
 }
 
 #[test]
@@ -162,10 +156,7 @@ fn select_alpha_mode_empty_defaults_to_opaque() {
     };
 
     // Empty alpha_modes should not panic; falls back to Opaque.
-    assert_eq!(
-        GpuState::select_alpha_mode(&caps),
-        CompositeAlphaMode::Opaque,
-    );
+    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::Opaque);
 }
 
 // --- Surface config builder ---
@@ -235,7 +226,7 @@ fn build_surface_config_clamps_zero_dimensions() {
 
 #[test]
 fn cache_dir_returns_valid_path() {
-    let dir = cache_dir();
+    let dir = super::pipeline_cache::cache_dir();
     let path_str = dir.to_string_lossy();
     assert!(
         path_str.contains("ori_term"),
@@ -254,7 +245,7 @@ fn validate_gpu_does_not_panic() {
 
 // --- GPU integration tests (require real adapter) ---
 
-/// Helper: attempt to get a GPU adapter, returning None in headless
+/// Helper: attempt to get a GPU adapter, returning `None` in headless
 /// environments.
 fn try_get_adapter() -> Option<(wgpu::Instance, wgpu::Adapter)> {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -403,4 +394,27 @@ fn gpu_texture_dimension_limits_are_reasonable() {
         "GPU must support at least {min_buffer} byte buffers, got {}",
         limits.max_buffer_size,
     );
+}
+
+// --- Headless GPU init ---
+
+#[test]
+fn headless_init_succeeds_when_adapter_available() {
+    use super::GpuState;
+
+    match GpuState::new_headless() {
+        Ok(gpu) => {
+            // Headless always uses Rgba8UnormSrgb.
+            assert_eq!(
+                gpu.render_format(),
+                TextureFormat::Rgba8UnormSrgb,
+            );
+            assert_eq!(gpu.surface_format(), gpu.render_format());
+            // Headless has no compositor, so no transparency.
+            assert!(!gpu.supports_transparency());
+        }
+        Err(_) => {
+            eprintln!("skipped: no GPU adapter available for headless init");
+        }
+    }
 }
