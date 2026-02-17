@@ -59,6 +59,11 @@ Calculate new grid dimensions from window pixel size and cell metrics. Dispatch 
 - [ ] Notify PTY of new dimensions (see 12.2)
 - [ ] Reconfigure GPU surface if pixel dimensions changed
 - [ ] Mark all rows dirty for full redraw after resize
+- [ ] **Resize increments** (cell-boundary snapping):
+  - [ ] When `config.window.resize_increments` is true, call `window.set_resize_increments(Some(PhysicalSize::new(cell_width, cell_height)))`
+  - [ ] Update increments on font change or DPI change (cell dimensions change)
+  - [ ] Snaps window resize to exact cell boundaries — no partial-cell padding at edges
+  - [ ] **Ref:** Alacritty `display/mod.rs` `set_resize_increments`, winit `Window::set_resize_increments(Option<Size>)`
 
 **Ref:** Alacritty `event.rs` zero-dimension guard, resize pipeline
 

@@ -313,6 +313,32 @@ fn rect_from_origin_size() {
 }
 
 #[test]
+fn rect_from_ltrb() {
+    let r = Rect::from_ltrb(10.0, 20.0, 40.0, 60.0);
+    assert_eq!(r.x(), 10.0);
+    assert_eq!(r.y(), 20.0);
+    assert_eq!(r.width(), 30.0);
+    assert_eq!(r.height(), 40.0);
+    assert_eq!(r.right(), 40.0);
+    assert_eq!(r.bottom(), 60.0);
+}
+
+#[test]
+fn rect_from_ltrb_equivalence() {
+    // from_ltrb(l, t, r, b) == new(l, t, r-l, b-t).
+    let a = Rect::from_ltrb(10.0, 20.0, 110.0, 120.0);
+    let b = Rect::new(10.0, 20.0, 100.0, 100.0);
+    assert_eq!(a, b);
+}
+
+#[test]
+fn rect_from_ltrb_zero_area() {
+    // Same left/right or top/bottom produces an empty rect.
+    assert!(Rect::from_ltrb(5.0, 5.0, 5.0, 10.0).is_empty());
+    assert!(Rect::from_ltrb(5.0, 5.0, 10.0, 5.0).is_empty());
+}
+
+#[test]
 fn rect_new_equivalence() {
     let a = Rect::new(1.0, 2.0, 3.0, 4.0);
     let b = Rect::from_origin_size(Point::new(1.0, 2.0), Size::new(3.0, 4.0));

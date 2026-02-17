@@ -169,6 +169,9 @@ The organizing principle for all rendering. Every frame flows through these phas
   - [x] Windows: `window_vibrancy::apply_acrylic()` for translucent background (via `gpu::transparency`)
   - [x] Linux/macOS: compositor-dependent (via `gpu::transparency`, see Section 03)
   - [x] Fallback: opaque dark background if vibrancy not available (opacity >= 1.0 short-circuits)
+- [ ] Forward-looking IME setup (no-op until Section 8.3 wires handlers):
+  - [ ] `window.set_ime_allowed(true)` — enable IME input
+  - [ ] `window.set_ime_purpose(ImePurpose::Terminal)` — hint for IME engine
 
 ---
 

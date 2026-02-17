@@ -108,8 +108,16 @@ Top-level config and per-section structs. All fields have defaults via `#[serde(
     - `opacity: f32` — window opacity 0.0-1.0 (default: 1.0)
     - `tab_bar_opacity: Option<f32>` — independent tab bar opacity (falls back to opacity)
     - `blur: bool` — enable backdrop blur (default: true)
+    - `decorations: Decorations` — window decoration mode (default: `None` for frameless CSD)
+    - `resize_increments: bool` — snap resize to cell boundaries (default: false)
   - [ ] `effective_opacity(&self) -> f32` — clamped to [0.0, 1.0]
   - [ ] `effective_tab_bar_opacity(&self) -> f32` — clamped, falls back to opacity when None
+- [ ] `Decorations` enum
+  - [ ] `Full` — OS-native title bar and borders
+  - [ ] `None` — frameless window with custom CSD (default)
+  - [ ] On Windows/Linux: maps to `with_decorations(bool)` in winit
+  - [ ] macOS extends with `Transparent` (transparent titlebar) and `Buttonless` (hide traffic lights) via winit macOS extensions
+  - [ ] **Ref:** Alacritty `config/window.rs:183-189`, winit `WindowAttributes::with_decorations`
 - [ ] `BehaviorConfig` struct
   - [ ] Fields:
     - `copy_on_select: bool` — auto-copy on selection release (default: true)
@@ -240,7 +248,7 @@ Map key + modifiers to application actions. Linear scan with O(1) expected-case 
   - [ ] `Character(String)` — always stored lowercase
   - [ ] Derive: `Debug`, `Clone`, `PartialEq`, `Eq`, `Hash`
 - [ ] `Action` enum — what to do when a keybinding matches
-  - [ ] Variants: `Copy`, `Paste`, `SmartCopy`, `SmartPaste`, `NewTab`, `CloseTab`, `NextTab`, `PrevTab`, `ZoomIn`, `ZoomOut`, `ZoomReset`, `ScrollPageUp`, `ScrollPageDown`, `ScrollToTop`, `ScrollToBottom`, `OpenSearch`, `ReloadConfig`, `PreviousPrompt`, `NextPrompt`, `DuplicateTab`, `MoveTabToNewWindow`, `SendText(String)`, `None`
+  - [ ] Variants: `Copy`, `Paste`, `SmartCopy`, `SmartPaste`, `NewTab`, `CloseTab`, `NextTab`, `PrevTab`, `ZoomIn`, `ZoomOut`, `ZoomReset`, `ScrollPageUp`, `ScrollPageDown`, `ScrollToTop`, `ScrollToBottom`, `OpenSearch`, `ReloadConfig`, `PreviousPrompt`, `NextPrompt`, `DuplicateTab`, `MoveTabToNewWindow`, `ToggleFullscreen`, `SendText(String)`, `None`
   - [ ] `SmartCopy`: copy if selection exists, else fall through to PTY (Ctrl+C sends SIGINT)
   - [ ] `SmartPaste`: paste from clipboard (Ctrl+V without Shift)
   - [ ] `SendText(String)`: send literal bytes to PTY (supports escape sequences)
@@ -289,6 +297,7 @@ Built-in default keybindings. User bindings override these.
   - [ ] `Shift+End` -> ScrollToBottom
   - [ ] `Ctrl+Shift+ArrowUp` -> PreviousPrompt
   - [ ] `Ctrl+Shift+ArrowDown` -> NextPrompt
+  - [ ] `Alt+Enter` -> ToggleFullscreen (Windows/Linux), `Ctrl+Cmd+F` -> ToggleFullscreen (macOS)
   - [ ] `Ctrl+C` -> SmartCopy (must come AFTER Ctrl+Shift+C)
   - [ ] `Ctrl+V` -> SmartPaste (must come AFTER Ctrl+Shift+V)
 
