@@ -10,6 +10,8 @@
 
 use oriterm_core::{RenderableContent, Rgb};
 
+use crate::font::CellMetrics;
+
 /// Placeholder for selection range — replaced in Section 9.
 pub type SelectionRange = ();
 
@@ -34,51 +36,6 @@ impl ViewportSize {
             width: width.max(1),
             height: height.max(1),
         }
-    }
-}
-
-/// Cell dimensions in pixels, derived from the font metrics.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CellMetrics {
-    /// Cell width in pixels (fractional for subpixel accuracy).
-    pub width: f32,
-    /// Cell height in pixels (fractional for subpixel accuracy).
-    pub height: f32,
-    /// Distance from cell top to text baseline, in pixels.
-    pub baseline: f32,
-}
-
-impl CellMetrics {
-    /// Create cell metrics from font-derived dimensions.
-    ///
-    /// # Panics
-    ///
-    /// Panics in debug mode if any dimension is non-positive or non-finite.
-    pub fn new(width: f32, height: f32, baseline: f32) -> Self {
-        debug_assert!(
-            width > 0.0 && width.is_finite(),
-            "cell width must be positive"
-        );
-        debug_assert!(
-            height > 0.0 && height.is_finite(),
-            "cell height must be positive"
-        );
-        debug_assert!(baseline.is_finite(), "baseline must be finite");
-        Self {
-            width,
-            height,
-            baseline,
-        }
-    }
-
-    /// Number of columns that fit in the viewport width.
-    pub fn columns(&self, viewport_width: u32) -> usize {
-        (f64::from(viewport_width) / f64::from(self.width)).floor() as usize
-    }
-
-    /// Number of rows that fit in the viewport height.
-    pub fn rows(&self, viewport_height: u32) -> usize {
-        (f64::from(viewport_height) / f64::from(self.height)).floor() as usize
     }
 }
 

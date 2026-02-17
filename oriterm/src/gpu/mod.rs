@@ -21,7 +21,7 @@ pub(crate) use bind_groups::{AtlasBindGroup, UniformBuffer, create_placeholder_a
     unused_imports,
     reason = "render pipeline types used starting in Section 5.8"
 )]
-pub(crate) use frame_input::{CellMetrics, FrameInput, FramePalette, ViewportSize};
+pub(crate) use frame_input::{FrameInput, FramePalette, ViewportSize};
 #[expect(
     unused_imports,
     reason = "render pipeline types used starting in Section 5.8"
