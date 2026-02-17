@@ -3,6 +3,7 @@
 use oriterm_core::Rgb;
 
 use super::PreparedFrame;
+use crate::gpu::frame_input::ViewportSize;
 
 const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
 const WHITE: Rgb = Rgb {
@@ -11,18 +12,24 @@ const WHITE: Rgb = Rgb {
     b: 255,
 };
 
+/// Default test viewport (not meaningful for these tests).
+const VP: ViewportSize = ViewportSize {
+    width: 640,
+    height: 480,
+};
+
 // --- Construction ---
 
 #[test]
 fn new_frame_is_empty() {
-    let frame = PreparedFrame::new(BLACK, 1.0);
+    let frame = PreparedFrame::new(VP, BLACK, 1.0);
     assert!(frame.is_empty());
     assert_eq!(frame.total_instances(), 0);
 }
 
 #[test]
 fn with_capacity_starts_empty() {
-    let frame = PreparedFrame::with_capacity(80, 24, BLACK, 1.0);
+    let frame = PreparedFrame::with_capacity(VP, 80, 24, BLACK, 1.0);
     assert!(frame.is_empty());
     assert_eq!(frame.total_instances(), 0);
 }
@@ -31,32 +38,32 @@ fn with_capacity_starts_empty() {
 
 #[test]
 fn clear_color_opaque_black() {
-    let frame = PreparedFrame::new(BLACK, 1.0);
+    let frame = PreparedFrame::new(VP, BLACK, 1.0);
     assert_eq!(frame.clear_color, [0.0, 0.0, 0.0, 1.0]);
 }
 
 #[test]
 fn clear_color_opaque_white() {
-    let frame = PreparedFrame::new(WHITE, 1.0);
+    let frame = PreparedFrame::new(VP, WHITE, 1.0);
     assert_eq!(frame.clear_color, [1.0, 1.0, 1.0, 1.0]);
 }
 
 #[test]
 fn clear_color_half_transparent() {
-    let frame = PreparedFrame::new(WHITE, 0.5);
+    let frame = PreparedFrame::new(VP, WHITE, 0.5);
     // Premultiplied: each channel * 0.5.
     assert_eq!(frame.clear_color, [0.5, 0.5, 0.5, 0.5]);
 }
 
 #[test]
 fn clear_color_fully_transparent() {
-    let frame = PreparedFrame::new(WHITE, 0.0);
+    let frame = PreparedFrame::new(VP, WHITE, 0.0);
     assert_eq!(frame.clear_color, [0.0, 0.0, 0.0, 0.0]);
 }
 
 #[test]
 fn set_clear_color_updates() {
-    let mut frame = PreparedFrame::new(BLACK, 1.0);
+    let mut frame = PreparedFrame::new(VP, BLACK, 1.0);
     frame.set_clear_color(WHITE, 0.5);
     assert_eq!(frame.clear_color, [0.5, 0.5, 0.5, 0.5]);
 }
@@ -65,7 +72,7 @@ fn set_clear_color_updates() {
 
 #[test]
 fn populate_and_count() {
-    let mut frame = PreparedFrame::new(BLACK, 1.0);
+    let mut frame = PreparedFrame::new(VP, BLACK, 1.0);
 
     frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
     frame.backgrounds.push_rect(8.0, 0.0, 8.0, 16.0, BLACK, 1.0);
@@ -83,7 +90,7 @@ fn populate_and_count() {
 
 #[test]
 fn clear_resets_all_buffers() {
-    let mut frame = PreparedFrame::new(BLACK, 1.0);
+    let mut frame = PreparedFrame::new(VP, BLACK, 1.0);
     frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
     frame
         .glyphs
@@ -98,7 +105,7 @@ fn clear_resets_all_buffers() {
 
 #[test]
 fn clear_and_reuse() {
-    let mut frame = PreparedFrame::new(BLACK, 1.0);
+    let mut frame = PreparedFrame::new(VP, BLACK, 1.0);
 
     // First frame.
     frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);

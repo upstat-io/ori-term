@@ -145,6 +145,9 @@ impl InstanceWriter {
     }
 
     /// Push a cursor rectangle instance.
+    ///
+    /// Color is written to the `bg_color` field (same as rects) so cursors
+    /// render correctly with the background pipeline (solid-fill shader).
     pub fn push_cursor(&mut self, x: f32, y: f32, w: f32, h: f32, color: Rgb, alpha: f32) {
         self.push_instance(
             x,
@@ -152,8 +155,8 @@ impl InstanceWriter {
             w,
             h,
             [0.0, 0.0, 0.0, 0.0],
-            rgb_to_floats(color, alpha),
             [0.0, 0.0, 0.0, 0.0],
+            rgb_to_floats(color, alpha),
             InstanceKind::Cursor,
         );
     }
