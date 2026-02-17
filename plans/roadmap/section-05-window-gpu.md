@@ -19,7 +19,7 @@ sections:
     status: complete
   - id: "5.5"
     title: Uniform Buffer + Bind Groups
-    status: not-started
+    status: complete
   - id: "5.6"
     title: Font Discovery + Rasterization
     status: not-started
@@ -269,18 +269,22 @@ Total:  80 bytes per instance
 
 ## 5.5 Uniform Buffer + Bind Groups
 
-**File:** `oriterm/src/gpu/renderer.rs`
+**File:** `oriterm/src/gpu/bind_groups/mod.rs`
 
-- [ ] Uniform buffer:
-  - [ ] Create `wgpu::Buffer` with `BufferUsages::UNIFORM | COPY_DST`
-  - [ ] Size: 8 bytes (two f32 for screen size)
-  - [ ] Updated on resize: `queue.write_buffer(&uniform_buf, 0, &[width, height])`
-- [ ] Uniform bind group layout:
-  - [ ] Binding 0: uniform buffer, vertex + fragment visibility
-- [ ] Atlas bind group layout:
-  - [ ] Binding 0: texture view (atlas page), fragment visibility
-  - [ ] Binding 1: sampler (linear filtering), fragment visibility
-- [ ] Create bind groups from layouts + resources
+- [x] Uniform buffer:
+  - [x] Create `wgpu::Buffer` with `BufferUsages::UNIFORM | COPY_DST`
+  - [x] Size: 16 bytes (`vec2<f32> screen_size` + `vec2<f32> _pad`)
+  - [x] Updated on resize: `UniformBuffer::write_screen_size(&queue, width, height)`
+- [x] Uniform bind group layout:
+  - [x] Binding 0: uniform buffer, vertex visibility (created in 5.4 pipeline.rs)
+- [x] Atlas bind group layout:
+  - [x] Binding 0: texture view (atlas page), fragment visibility (created in 5.4 pipeline.rs)
+  - [x] Binding 1: sampler (linear filtering), fragment visibility (created in 5.4 pipeline.rs)
+- [x] Create bind groups from layouts + resources
+  - [x] `UniformBuffer::new()` — buffer + bind group from uniform layout
+  - [x] `AtlasBindGroup::new()` — sampler + bind group from atlas layout + texture view
+  - [x] `AtlasBindGroup::rebuild()` — recreate bind group when atlas texture grows
+  - [x] `create_placeholder_atlas_texture()` — 1x1 `R8Unorm` white pixel for pre-atlas bootstrapping
 
 ---
 
