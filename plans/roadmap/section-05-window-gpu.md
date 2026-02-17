@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "5.12"
     title: Basic Input + Cursor
-    status: not-started
+    status: complete
   - id: "5.13"
     title: Render Pipeline Testing
     status: not-started
@@ -538,16 +538,18 @@ The main application struct. Implements winit's `ApplicationHandler`. Orchestrat
 
 Minimal keyboard handling + cursor rendering. Just enough to type and see output.
 
-- [ ] `WindowEvent::KeyboardInput` handler:
-  - [ ] Extract `event.text` (logical text from keypress)
-  - [ ] Send to active tab: `tab.write_input(text.as_bytes())`
-  - [ ] Handle Enter (`\r`), Backspace (`\x7f`), Ctrl+C (`\x03`), Ctrl+D (`\x04`)
-  - [ ] Ignore modifier-only presses, function keys (expanded in Section 08)
-- [ ] Cursor rendering (handled in Prepare phase, 5.9):
-  - [ ] Block, Bar, Underline, HollowBlock shapes
-  - [ ] Blink: 530ms on, 530ms off (standard xterm timing)
-  - [ ] Reset blink on keypress
-  - [ ] Respect `TermMode::SHOW_CURSOR`
+- [x] `WindowEvent::KeyboardInput` handler:
+  - [x] Extract `event.text` (logical text from keypress)
+  - [x] Send to active tab: `tab.write_input(text.as_bytes())`
+  - [x] Handle Enter (`\r`), Backspace (`\x7f`), Ctrl+C (`\x03`), Ctrl+D (`\x04`)
+  - [x] Ignore modifier-only presses, function keys (expanded in Section 08)
+- [x] Cursor rendering (handled in Prepare phase, 5.9):
+  - [x] Block, Bar, Underline, HollowBlock shapes
+  - [x] Blink: 530ms on, 530ms off (standard xterm timing)
+  - [x] Reset blink on keypress
+  - [x] Respect `TermMode::SHOW_CURSOR`
+
+**Deviation:** Keyboard input was mostly implemented in 5.11 (basic `event.text` forwarding). 5.12 added cursor blink state machine (`app/cursor_blink/mod.rs`) with `CursorBlink` struct tracking 530ms on/off phases. Blink is application-level state — the terminal declares `TermMode::CURSOR_BLINKING`, the App drives the timer via `ControlFlow::WaitUntil`. Blink visibility is applied between Extract and Prepare phases. Enter/Backspace/Ctrl+C/Ctrl+D work automatically through winit's `event.text` field — no special-casing needed.
 
 ---
 

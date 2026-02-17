@@ -5,14 +5,17 @@
 //! Render), handles window events, and dispatches terminal events from the
 //! PTY reader thread.
 
+mod cursor_blink;
+
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::window::WindowId;
 
-use oriterm_core::Event;
+use oriterm_core::{Event, TermMode};
 use oriterm_ui::window::WindowConfig;
 
+use self::cursor_blink::CursorBlink;
 use crate::font::{FontCollection, FontSet, GlyphFormat};
 use crate::gpu::{GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame};
 use crate::tab::{Tab, TabId, TermEvent};
@@ -50,6 +53,9 @@ pub(crate) struct App {
     // Redraw coalescing.
     dirty: bool,
 
+    // Cursor blink state (application-level, not terminal-level).
+    cursor_blink: CursorBlink,
+
     // Configuration.
     window_config: WindowConfig,
 }
@@ -70,6 +76,7 @@ impl App {
             tab: None,
             event_proxy,
             dirty: false,
+            cursor_blink: CursorBlink::new(),
             window_config,
         }
     }
@@ -250,7 +257,16 @@ impl ApplicationHandler<TermEvent> for App {
                     let viewport = ViewportSize::new(w, h);
                     let cell = renderer.font_collection().cell_metrics();
 
-                    let frame = extract_frame(tab.terminal(), viewport, cell);
+                    let mut frame = extract_frame(tab.terminal(), viewport, cell);
+
+                    // Apply cursor blink: hide cursor during the "off" phase
+                    // when the terminal has requested blinking.
+                    if frame.content.mode.contains(TermMode::CURSOR_BLINKING)
+                        && !self.cursor_blink.is_visible()
+                    {
+                        frame.content.cursor.visible = false;
+                    }
+
                     let prepared = renderer.prepare(&frame, gpu);
                     log::trace!(
                         "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
@@ -285,6 +301,7 @@ impl ApplicationHandler<TermEvent> for App {
                 if let Some(text) = &event.text {
                     if let Some(tab) = &self.tab {
                         tab.write_input(text.as_bytes());
+                        self.cursor_blink.reset();
                         self.dirty = true;
                     }
                 }
@@ -341,13 +358,26 @@ impl ApplicationHandler<TermEvent> for App {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Drive cursor blink timer.
+        if self.cursor_blink.update() {
+            self.dirty = true;
+        }
+
         if self.dirty {
             log::debug!("about_to_wait: dirty, requesting redraw");
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
             self.dirty = false;
+        }
+
+        // Schedule wakeup for the next blink toggle so the event loop
+        // doesn't sleep past it.
+        if self.tab.is_some() {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                self.cursor_blink.next_toggle(),
+            ));
         }
     }
 }
