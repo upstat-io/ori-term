@@ -173,6 +173,23 @@ fn pack_exact_fit_at_horizontal_boundary() {
     assert_eq!(shelves[0].x_cursor, 1024);
 }
 
+#[test]
+fn pack_sequential_returns_correct_x_offsets() {
+    let mut shelves = vec![];
+
+    // Pack three glyphs of widths 10, 15, 20 (all height 12).
+    let a = try_pack_in_page(&mut shelves, 10, 12, 1024).unwrap();
+    let b = try_pack_in_page(&mut shelves, 15, 12, 1024).unwrap();
+    let c = try_pack_in_page(&mut shelves, 20, 12, 1024).unwrap();
+
+    // Each follows the previous on the same shelf.
+    assert_eq!(a, (0, 0));
+    assert_eq!(b, (10, 0));
+    assert_eq!(c, (25, 0));
+    assert_eq!(shelves.len(), 1);
+    assert_eq!(shelves[0].x_cursor, 45);
+}
+
 // ── GPU integration tests ──
 
 #[test]
@@ -444,4 +461,201 @@ fn glyphs_do_not_overlap() {
             );
         }
     }
+}
+
+#[test]
+fn insert_sequential_glyphs_have_correct_uv_offsets() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let ps = PAGE_SIZE as f32;
+
+    // Insert glyph A: 8×14.
+    let key_a = test_key(65);
+    let glyph_a = test_glyph(8, 14);
+    let a = atlas
+        .insert(key_a, &glyph_a, &gpu.device, &gpu.queue)
+        .unwrap();
+
+    // First glyph lands at origin (0, 0).
+    assert!((a.uv_x).abs() < f32::EPSILON);
+    assert!((a.uv_y).abs() < f32::EPSILON);
+
+    // Insert glyph B: 10×14 (same height, fits on same shelf).
+    let key_b = test_key(66);
+    let glyph_b = test_glyph(10, 14);
+    let b = atlas
+        .insert(key_b, &glyph_b, &gpu.device, &gpu.queue)
+        .unwrap();
+
+    // Glyph B should land at x = 8 + GLYPH_PADDING, y = 0.
+    let expected_x = (8 + GLYPH_PADDING) as f32 / ps;
+    assert!(
+        (b.uv_x - expected_x).abs() < f32::EPSILON,
+        "expected uv_x={expected_x}, got {}",
+        b.uv_x,
+    );
+    assert!((b.uv_y).abs() < f32::EPSILON);
+
+    // Insert glyph C: 12×20 (taller, creates new shelf).
+    let key_c = test_key(67);
+    let glyph_c = test_glyph(12, 20);
+    let c = atlas
+        .insert(key_c, &glyph_c, &gpu.device, &gpu.queue)
+        .unwrap();
+
+    // New shelf starts at y = shelf_0_height = 14 + GLYPH_PADDING.
+    let expected_y = (14 + GLYPH_PADDING) as f32 / ps;
+    assert!(
+        (c.uv_x).abs() < f32::EPSILON,
+        "expected uv_x=0, got {}",
+        c.uv_x,
+    );
+    assert!(
+        (c.uv_y - expected_y).abs() < f32::EPSILON,
+        "expected uv_y={expected_y}, got {}",
+        c.uv_y,
+    );
+}
+
+#[test]
+fn reinsert_after_clear_packs_from_origin() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+
+    // Fill with some glyphs at various positions.
+    for i in 0..10u16 {
+        let key = test_key(i);
+        let glyph = test_glyph(20, 20);
+        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+    }
+    assert_eq!(atlas.len(), 10);
+
+    atlas.clear();
+
+    // Re-insert should pack from origin.
+    let key = test_key(100);
+    let glyph = test_glyph(8, 14);
+    let entry = atlas
+        .insert(key, &glyph, &gpu.device, &gpu.queue)
+        .unwrap();
+
+    assert_eq!(entry.page, 0);
+    assert!((entry.uv_x).abs() < f32::EPSILON);
+    assert!((entry.uv_y).abs() < f32::EPSILON);
+}
+
+#[test]
+fn multi_page_old_entries_still_accessible() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+
+    // Insert a small glyph on page 0 first.
+    let key_first = test_key(0);
+    let first_glyph = test_glyph(8, 14);
+    let first = atlas
+        .insert(key_first, &first_glyph, &gpu.device, &gpu.queue)
+        .unwrap();
+    assert_eq!(first.page, 0);
+    let first_uv_x = first.uv_x;
+    let first_uv_y = first.uv_y;
+
+    // Fill page 0 with large glyphs to trigger page 1 allocation.
+    for i in 1..=100u16 {
+        let key = test_key(i);
+        let glyph = test_glyph(100, 100);
+        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+    }
+    assert!(atlas.page_count() >= 2);
+
+    // The first glyph should still be accessible with unchanged coordinates.
+    let looked_up = atlas.lookup(key_first).unwrap();
+    assert_eq!(looked_up.page, 0);
+    assert_eq!(looked_up.uv_x, first_uv_x);
+    assert_eq!(looked_up.uv_y, first_uv_y);
+    assert_eq!(looked_up.width, 8);
+    assert_eq!(looked_up.height, 14);
+}
+
+#[test]
+fn insert_at_max_dimension_succeeds() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let max_dim = PAGE_SIZE - GLYPH_PADDING;
+
+    let key = test_key(1);
+    let glyph = test_glyph(max_dim, max_dim);
+
+    // A glyph exactly at the max dimension should succeed.
+    assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_some());
+}
+
+#[test]
+fn insert_one_over_max_dimension_fails() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let over = PAGE_SIZE - GLYPH_PADDING + 1;
+
+    // Width one pixel over the max should fail.
+    let key_w = test_key(1);
+    let glyph_w = test_glyph(over, 1);
+    assert!(atlas
+        .insert(key_w, &glyph_w, &gpu.device, &gpu.queue)
+        .is_none());
+
+    // Height one pixel over the max should also fail.
+    let key_h = test_key(2);
+    let glyph_h = test_glyph(1, over);
+    assert!(atlas
+        .insert(key_h, &glyph_h, &gpu.device, &gpu.queue)
+        .is_none());
+}
+
+#[test]
+fn insert_zero_width_nonzero_height_returns_none() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let key = test_key(1);
+    let glyph = test_glyph(0, 14);
+
+    assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_none());
+    assert!(atlas.lookup(key).is_none());
+}
+
+#[test]
+fn insert_nonzero_width_zero_height_returns_none() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let key = test_key(1);
+    let glyph = test_glyph(8, 0);
+
+    assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_none());
+    assert!(atlas.lookup(key).is_none());
 }
