@@ -14,6 +14,7 @@
 
 use oriterm_core::Rgb;
 
+use super::frame_input::ViewportSize;
 use super::instance_writer::InstanceWriter;
 
 /// GPU-ready frame data produced by the Prepare phase.
@@ -28,17 +29,20 @@ pub struct PreparedFrame {
     pub glyphs: InstanceWriter,
     /// Cursor instances (block, bar, underline shapes).
     pub cursors: InstanceWriter,
+    /// Viewport pixel dimensions for uniform buffer update.
+    pub viewport: ViewportSize,
     /// Window clear color (alpha-premultiplied).
     pub clear_color: [f64; 4],
 }
 
 impl PreparedFrame {
     /// Create an empty frame with the given clear color.
-    pub fn new(background: Rgb, opacity: f64) -> Self {
+    pub fn new(viewport: ViewportSize, background: Rgb, opacity: f64) -> Self {
         Self {
             backgrounds: InstanceWriter::new(),
             glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::new(),
+            viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
     }
@@ -47,12 +51,19 @@ impl PreparedFrame {
     ///
     /// `cols * rows` instances are reserved for backgrounds (one per cell),
     /// and the same for glyphs. Cursors are always small (typically 1–2).
-    pub fn with_capacity(cols: usize, rows: usize, background: Rgb, opacity: f64) -> Self {
+    pub fn with_capacity(
+        viewport: ViewportSize,
+        cols: usize,
+        rows: usize,
+        background: Rgb,
+        opacity: f64,
+    ) -> Self {
         let cells = cols * rows;
         Self {
             backgrounds: InstanceWriter::with_capacity(cells),
             glyphs: InstanceWriter::with_capacity(cells),
             cursors: InstanceWriter::with_capacity(4),
+            viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
     }

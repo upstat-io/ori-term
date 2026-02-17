@@ -34,7 +34,7 @@ sections:
     status: complete
   - id: "5.10"
     title: "Render Phase (GPU)"
-    status: not-started
+    status: complete
   - id: "5.11"
     title: App Struct + Event Loop
     status: not-started
@@ -437,52 +437,57 @@ Convert `FrameInput` into GPU-ready instance buffers. **Pure CPU, no wgpu types,
 
 Upload prepared buffers to GPU, execute draw calls, present. This phase is thin — all logic is in Prepare.
 
-**File:** `oriterm/src/gpu/render.rs`
+**File:** `oriterm/src/gpu/renderer/mod.rs`
 
-- [ ] `GpuRenderer` struct
-  - [ ] Fields:
+**Deviations from original plan:**
+- Directory module (`renderer/mod.rs` + `renderer/tests.rs`) per test-organization rules.
+- Single render pass with 3 draw calls (bg, fg, cursor) instead of 2 separate passes. Cursors use the bg pipeline as solid-fill rects.
+- `push_cursor` changed to write color to `bg_color` field (matching bg shader) instead of `fg_color`.
+- `PreparedFrame` gained `viewport: ViewportSize` field for uniform buffer update.
+- `RendererAtlas` bridge struct implements `AtlasLookup` for the Prepare phase.
+- `ensure_glyphs_cached` pre-pass rasterizes + inserts missing glyphs before prepare.
+- `draw(0..4, ...)` (TriangleStrip) instead of plan's `draw(0..6, ...)`.
+
+- [x] `GpuRenderer` struct
+  - [x] Fields:
     - `bg_pipeline: wgpu::RenderPipeline`
     - `fg_pipeline: wgpu::RenderPipeline`
-    - `uniform_buffer: wgpu::Buffer`
-    - `uniform_bind_group: wgpu::BindGroup`
+    - `uniform_buffer: UniformBuffer`
+    - `atlas_bind_group: AtlasBindGroup`
+    - `atlas_layout: wgpu::BindGroupLayout` — for atlas bind group rebuild
     - `atlas: GlyphAtlas`
-    - `atlas_bind_group: wgpu::BindGroup`
-    - `bg_gpu_buffer: Option<wgpu::Buffer>` — GPU-side, grows as needed
-    - `fg_gpu_buffer: Option<wgpu::Buffer>` — GPU-side, grows as needed
     - `font_collection: FontCollection`
-  - [ ] `GpuRenderer::new(gpu: &GpuState, font_collection: FontCollection) -> Self`
-    - [ ] Create pipelines, uniform buffer, bind groups, atlas
-    - [ ] Pre-cache ASCII glyphs in atlas
+    - `bg_buffer: Option<wgpu::Buffer>` — GPU-side, grows as needed
+    - `fg_buffer: Option<wgpu::Buffer>` — GPU-side, grows as needed
+    - `cursor_buffer: Option<wgpu::Buffer>` — GPU-side, grows as needed
+  - [x] `GpuRenderer::new(gpu: &GpuState, font_collection: FontCollection) -> Self`
+    - [x] Create pipelines, uniform buffer, bind groups, atlas
+    - [x] Pre-cache ASCII glyphs in atlas
 
-- [ ] `render_frame(&mut self, prepared: &PreparedFrame, gpu: &GpuState, target: &wgpu::TextureView)`
-  - [ ] **Note: accepts any `TextureView`** — not coupled to a surface
-  - [ ] Update uniform buffer with viewport size: `queue.write_buffer(&uniform_buf, 0, &[w, h])`
-  - [ ] Ensure GPU buffers are large enough (grow if needed, never shrink)
-  - [ ] Upload instance data: `queue.write_buffer(&bg_gpu_buf, 0, prepared.bg_instances.as_bytes())`
-  - [ ] Upload fg instances similarly
-  - [ ] Create command encoder
-  - [ ] **Render pass 1: Backgrounds**
-    - [ ] Load op: `Clear` with `prepared.clear_color`
-    - [ ] Set bg_pipeline, uniform bind group, bg_gpu_buffer
-    - [ ] `draw(0..6, 0..bg_instance_count)` — 6 vertices per quad, instanced
-  - [ ] **Render pass 2: Foregrounds**
-    - [ ] Load op: `Load` (preserve backgrounds)
-    - [ ] Set fg_pipeline, uniform + atlas bind groups, fg_gpu_buffer
-    - [ ] `draw(0..6, 0..fg_instance_count)`
-  - [ ] `gpu.queue.submit([encoder.finish()])`
+- [x] `render_frame(&mut self, prepared: &PreparedFrame, gpu: &GpuState, target: &wgpu::TextureView)`
+  - [x] **Note: accepts any `TextureView`** — not coupled to a surface
+  - [x] Update uniform buffer with viewport size from `PreparedFrame::viewport`
+  - [x] Ensure GPU buffers are large enough (grow if needed, never shrink)
+  - [x] Upload instance data for backgrounds, glyphs, and cursors
+  - [x] Create command encoder
+  - [x] **Single render pass with 3 draw calls:**
+    - [x] Draw 1: Backgrounds — `Clear` with `prepared.clear_color`, bg_pipeline
+    - [x] Draw 2: Glyphs — fg_pipeline with atlas texture bind group
+    - [x] Draw 3: Cursors — bg_pipeline (solid-fill, color in `bg_color`)
+  - [x] `gpu.queue.submit([encoder.finish()])`
 
-- [ ] `render_to_surface(&mut self, prepared: &PreparedFrame, gpu: &GpuState, surface: &wgpu::Surface) -> Result<()>`
-  - [ ] Acquire surface texture: `surface.get_current_texture()`
-  - [ ] Create view from surface texture
-  - [ ] Call `render_frame(prepared, gpu, &view)`
-  - [ ] `output.present()`
-  - [ ] Handle surface errors: `Lost` → reconfigure, `OutOfMemory` → skip, `Timeout` → skip
+- [x] `render_to_surface(&mut self, prepared: &PreparedFrame, gpu: &GpuState, surface: &wgpu::Surface) -> Result<(), SurfaceError>`
+  - [x] Acquire surface texture: `surface.get_current_texture()`
+  - [x] Create view from surface texture (with sRGB render format)
+  - [x] Call `render_frame(prepared, gpu, &view)`
+  - [x] `output.present()`
+  - [x] Handle surface errors: `Lost`/`Outdated` → caller reconfigures, `OutOfMemory`/`Timeout`/`Other` → propagated
 
-- [ ] GPU buffer management:
-  - [ ] `ensure_buffer(device, existing: &mut Option<Buffer>, needed_bytes, usage) -> &Buffer`
-  - [ ] If existing buffer is large enough, reuse it
-  - [ ] Otherwise, create new buffer (round up to power of 2)
-  - [ ] Prevents per-frame GPU buffer allocation
+- [x] GPU buffer management:
+  - [x] `ensure_buffer(device, slot: &mut Option<Buffer>, data: &[u8]) -> Option<&Buffer>`
+  - [x] If existing buffer is large enough, reuse it
+  - [x] Otherwise, create new buffer (round up to power of 2, min 256)
+  - [x] Prevents per-frame GPU buffer allocation
 
 ---
 

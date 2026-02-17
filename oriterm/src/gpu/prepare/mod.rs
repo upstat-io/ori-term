@@ -30,7 +30,7 @@ pub trait AtlasLookup {
 }
 
 /// Convert cell flags to the corresponding glyph style.
-fn glyph_style(flags: CellFlags) -> GlyphStyle {
+pub(crate) fn glyph_style(flags: CellFlags) -> GlyphStyle {
     let bold = flags.contains(CellFlags::BOLD);
     let italic = flags.contains(CellFlags::ITALIC);
     match (bold, italic) {
@@ -50,7 +50,8 @@ pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFra
     let cols = input.columns();
     let rows = input.rows();
     let opacity = f64::from(input.palette.opacity);
-    let mut frame = PreparedFrame::with_capacity(cols, rows, input.palette.background, opacity);
+    let mut frame =
+        PreparedFrame::with_capacity(input.viewport, cols, rows, input.palette.background, opacity);
     fill_frame(input, atlas, &mut frame);
     frame
 }
@@ -68,6 +69,7 @@ pub fn prepare_frame_into(
     out: &mut PreparedFrame,
 ) {
     out.clear();
+    out.viewport = input.viewport;
     out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
     fill_frame(input, atlas, out);
 }

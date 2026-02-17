@@ -122,11 +122,17 @@ fn push_cursor_field_offsets() {
 
     let rec = w.as_bytes();
 
-    // FG = green at alpha 0.75.
+    // FG (zeroed for cursors — color goes in BG for bg_pipeline rendering).
     assert_eq!(read_f32(rec, 32), 0.0);
-    assert!((read_f32(rec, 36) - 128.0 / 255.0).abs() < 1e-6);
+    assert_eq!(read_f32(rec, 36), 0.0);
     assert_eq!(read_f32(rec, 40), 0.0);
-    assert_eq!(read_f32(rec, 44), 0.75);
+    assert_eq!(read_f32(rec, 44), 0.0);
+
+    // BG = green at alpha 0.75.
+    assert_eq!(read_f32(rec, 48), 0.0);
+    assert!((read_f32(rec, 52) - 128.0 / 255.0).abs() < 1e-6);
+    assert_eq!(read_f32(rec, 56), 0.0);
+    assert_eq!(read_f32(rec, 60), 0.75);
 
     // Kind = Cursor (2).
     assert_eq!(read_u32(rec, 64), 2);

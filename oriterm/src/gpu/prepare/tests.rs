@@ -7,7 +7,7 @@ use oriterm_core::{CellFlags, Column, CursorShape, Rgb};
 use super::{prepare_frame, prepare_frame_into, AtlasLookup};
 use crate::font::GlyphStyle;
 use crate::gpu::atlas::AtlasEntry;
-use crate::gpu::frame_input::FrameInput;
+use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
 use crate::gpu::prepared_frame::PreparedFrame;
 
@@ -509,7 +509,8 @@ fn cursor_color_from_palette() {
     let frame = prepare_frame(&input, &atlas);
 
     let c = nth_instance(frame.cursors.as_bytes(), 0);
-    assert_eq!(c.fg_color, rgb_f32(cursor_color));
+    // Cursor color is in bg_color (rendered via bg_pipeline as solid-fill rect).
+    assert_eq!(c.bg_color, rgb_f32(cursor_color));
 }
 
 // ── Missing atlas entries ──
@@ -626,7 +627,7 @@ fn prepare_into_matches_prepare() {
 
     let fresh = prepare_frame(&input, &atlas);
 
-    let mut reused = PreparedFrame::new(Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    let mut reused = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
     prepare_frame_into(&input, &atlas, &mut reused);
 
     assert_eq!(fresh.backgrounds.as_bytes(), reused.backgrounds.as_bytes());

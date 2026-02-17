@@ -9,6 +9,7 @@ pub(crate) mod pipeline;
 pub(crate) mod prepare;
 pub(crate) mod prepared_frame;
 pub(crate) mod render_target;
+pub(crate) mod renderer;
 pub(crate) mod state;
 pub(crate) mod transparency;
 
@@ -59,6 +60,12 @@ pub(crate) use prepared_frame::PreparedFrame;
     reason = "render targets used starting in Section 5.13"
 )]
 pub(crate) use render_target::{ReadbackError, RenderTarget};
+// Renderer re-exports consumed starting in Section 5.11 (App struct).
+#[expect(
+    unused_imports,
+    reason = "renderer types used starting in Section 5.11"
+)]
+pub(crate) use renderer::{GpuRenderer, SurfaceError};
 pub(crate) use state::validate_gpu;
 #[expect(
     unused_imports,
