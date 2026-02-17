@@ -2,6 +2,7 @@
 
 pub(crate) mod atlas;
 pub(crate) mod bind_groups;
+pub(crate) mod extract;
 pub(crate) mod frame_input;
 pub(crate) mod instance_writer;
 pub(crate) mod pipeline;
@@ -22,20 +23,27 @@ pub(crate) use atlas::{AtlasEntry, GlyphAtlas};
 )]
 pub(crate) use bind_groups::{AtlasBindGroup, UniformBuffer, create_placeholder_atlas_texture};
 
-// Re-exports consumed starting in Section 5.8.
+// Extract phase re-exports consumed starting in Section 5.11 (App struct).
 #[expect(
     unused_imports,
-    reason = "render pipeline types used starting in Section 5.8"
+    reason = "extract functions used starting in Section 5.11"
+)]
+pub(crate) use extract::{extract_frame, extract_frame_into};
+
+// Re-exports consumed starting in Section 5.9/5.10.
+#[expect(
+    unused_imports,
+    reason = "render pipeline types used starting in Section 5.11"
 )]
 pub(crate) use frame_input::{FrameInput, FramePalette, ViewportSize};
 #[expect(
     unused_imports,
-    reason = "render pipeline types used starting in Section 5.8"
+    reason = "render pipeline types used starting in Section 5.9"
 )]
 pub(crate) use instance_writer::{InstanceKind, InstanceWriter};
 #[expect(
     unused_imports,
-    reason = "render pipeline types used starting in Section 5.8"
+    reason = "render pipeline types used starting in Section 5.9"
 )]
 pub(crate) use prepared_frame::PreparedFrame;
 #[expect(

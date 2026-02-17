@@ -28,7 +28,7 @@ sections:
     status: complete
   - id: "5.8"
     title: "Extract Phase (CPU)"
-    status: not-started
+    status: complete
   - id: "5.9"
     title: "Prepare Phase (CPU)"
     status: in-progress
@@ -354,25 +354,33 @@ Texture atlas for glyph bitmaps. Shelf-packing on 1024×1024 texture pages.
 
 Lock terminal state, copy to owned snapshot, release lock immediately. No GPU types.
 
-**File:** `oriterm/src/gpu/extract.rs`
+**File:** `oriterm/src/gpu/extract/mod.rs`
 
-- [ ] `extract_frame(terminal: &FairMutex<Term<EventProxy>>, cursor_state: &CursorState, viewport: (u32, u32), cell_size: (f32, f32), baseline: f32) -> FrameInput`
-  - [ ] `let term = terminal.lock();` — fair lock
-  - [ ] Copy visible cells to `Vec<RenderableCell>`
-  - [ ] Copy cursor position/shape/visibility
-  - [ ] Copy active selection bounds (if any)
-  - [ ] Copy palette colors needed for this frame
-  - [ ] `drop(term);` — release lock immediately
-  - [ ] Total lock hold time: microseconds
-  - [ ] Return `FrameInput` (fully owned, no references)
-- [ ] `log::trace!` timing around lock acquire/release for profiling
-- [ ] **Rule**: after `extract_frame` returns, the terminal lock is NEVER touched again during this frame
+**Deviations from original plan:**
+- Signature uses `ViewportSize` and `CellMetrics` newtypes instead of raw tuples.
+- `CursorState` parameter omitted (blink logic is part of Section 5.12). Cursor visibility is already resolved by `Term::renderable_content()` via `TermMode::SHOW_CURSOR`.
+- Generic over `T: EventListener` (not concrete `EventProxy`) for testability with `VoidListener`.
+- Added `extract_frame_into` for buffer reuse (hot-path variant matching `renderable_content_into` pattern).
+
+- [x] `extract_frame(terminal: &FairMutex<Term<T>>, viewport: ViewportSize, cell_size: CellMetrics) -> FrameInput`
+  - [x] `let term = terminal.lock();` — fair lock
+  - [x] Copy visible cells to `Vec<RenderableCell>` (via `Term::renderable_content()`)
+  - [x] Copy cursor position/shape/visibility
+  - [x] Copy active selection bounds (if any — `None` placeholder)
+  - [x] Copy palette colors needed for this frame (`FramePalette` from `Palette`)
+  - [x] `drop(term);` — release lock immediately
+  - [x] Total lock hold time: microseconds
+  - [x] Return `FrameInput` (fully owned, no references)
+- [x] `extract_frame_into` — reuse variant that fills `&mut FrameInput` in place
+- [x] `log::trace!` timing around lock acquire/release for profiling
+- [x] **Rule**: after `extract_frame` returns, the terminal lock is NEVER touched again during this frame
 
 ### Testability
 
-- [ ] `FrameInput` can be constructed manually in tests (no terminal or lock needed)
-- [ ] `FrameInput` implements `Debug` for snapshot testing
-- [ ] Factory helpers: `FrameInput::test_grid(cols: usize, rows: usize, text: &str)` — build a test frame from a string
+- [x] `FrameInput` can be constructed manually in tests (no terminal or lock needed)
+- [x] `FrameInput` implements `Debug` for snapshot testing
+- [x] Factory helpers: `FrameInput::test_grid(cols: usize, rows: usize, text: &str)` — build a test frame from a string
+- [x] 14 extract tests + 5 test_grid tests (19 total new tests)
 
 ---
 

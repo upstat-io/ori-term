@@ -148,3 +148,59 @@ fn frame_input_incremental_repaint() {
 
     assert!(!input.needs_full_repaint());
 }
+
+// --- test_grid helper ---
+
+#[test]
+fn test_grid_creates_correct_dimensions() {
+    let input = FrameInput::test_grid(80, 24, "");
+
+    assert_eq!(input.content.cells.len(), 80 * 24);
+    assert_eq!(input.columns(), 80);
+    assert_eq!(input.rows(), 24);
+}
+
+#[test]
+fn test_grid_fills_text_then_spaces() {
+    let input = FrameInput::test_grid(4, 1, "AB");
+
+    assert_eq!(input.content.cells[0].ch, 'A');
+    assert_eq!(input.content.cells[1].ch, 'B');
+    assert_eq!(input.content.cells[2].ch, ' ');
+    assert_eq!(input.content.cells[3].ch, ' ');
+}
+
+#[test]
+fn test_grid_wraps_text_across_rows() {
+    let input = FrameInput::test_grid(3, 2, "ABCDE");
+
+    // Row 0: A B C.
+    assert_eq!(input.content.cells[0].ch, 'A');
+    assert_eq!(input.content.cells[2].ch, 'C');
+    // Row 1: D E <space>.
+    assert_eq!(input.content.cells[3].ch, 'D');
+    assert_eq!(input.content.cells[4].ch, 'E');
+    assert_eq!(input.content.cells[5].ch, ' ');
+}
+
+#[test]
+fn test_grid_cell_coordinates() {
+    let input = FrameInput::test_grid(3, 2, "");
+
+    // Row 0.
+    assert_eq!(input.content.cells[0].line, 0);
+    assert_eq!(input.content.cells[0].column, Column(0));
+    assert_eq!(input.content.cells[2].line, 0);
+    assert_eq!(input.content.cells[2].column, Column(2));
+    // Row 1.
+    assert_eq!(input.content.cells[3].line, 1);
+    assert_eq!(input.content.cells[3].column, Column(0));
+}
+
+#[test]
+fn test_grid_has_debug() {
+    let input = FrameInput::test_grid(2, 2, "AB");
+    // FrameInput derives Debug — verify it doesn't panic.
+    let debug = format!("{input:?}");
+    assert!(debug.contains("FrameInput"));
+}
