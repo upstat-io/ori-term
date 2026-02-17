@@ -5,10 +5,6 @@
 //! and semantic palette colors. The Prepare phase consumes a `FrameInput` and
 //! produces a [`PreparedFrame`](super::prepared_frame::PreparedFrame).
 
-// In test builds, extract/tests.rs exercises these types so dead_code doesn't
-// fire — making #![expect(dead_code)] produce an unfulfilled-lint warning.
-#![allow(dead_code, reason = "frame input types consumed starting in Section 5.9")]
-
 use oriterm_core::{RenderableContent, Rgb};
 
 use crate::font::CellMetrics;
@@ -74,8 +70,10 @@ pub struct FrameInput {
     /// Semantic colors for background clear and cursor.
     pub palette: FramePalette,
     /// Active selection range (placeholder until Section 9).
+    #[allow(dead_code, reason = "selection rendering in Section 9")]
     pub selection: Option<SelectionRange>,
     /// Active search matches (placeholder until Section 11).
+    #[allow(dead_code, reason = "search highlight rendering in Section 11")]
     pub search_matches: Vec<SearchMatch>,
 }
 
@@ -91,6 +89,7 @@ impl FrameInput {
     }
 
     /// Whether the entire viewport needs a full repaint.
+    #[allow(dead_code, reason = "damage tracking optimization for later sections")]
     pub fn needs_full_repaint(&self) -> bool {
         self.content.all_dirty
     }

@@ -1,6 +1,3 @@
-// Font types consumed starting in Section 5.7; suppress until then.
-#![expect(dead_code, reason = "GPU infrastructure used starting in Section 5.7")]
-
 //! Font management: discovery, loading, and rasterization.
 //!
 //! This module handles finding font files on disk across platforms, loading
@@ -19,8 +16,7 @@ use std::fmt;
 
 use bitflags::bitflags;
 
-#[expect(unused_imports, reason = "re-exports consumed starting in Section 5.7")]
-pub use collection::{FontCollection, FontData, FontSet, RasterizedGlyph};
+pub use collection::{FontCollection, FontSet};
 
 /// Cell dimensions in pixels, derived from the font metrics.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,15 +71,19 @@ pub enum GlyphFormat {
     /// 1 byte/pixel grayscale alpha coverage.
     Alpha,
     /// 4 bytes/pixel RGBA per-channel subpixel coverage (R-G-B order).
+    #[allow(dead_code, reason = "subpixel rendering in Section 6")]
     SubpixelRgb,
     /// 4 bytes/pixel RGBA per-channel subpixel coverage (B-G-R order).
+    #[allow(dead_code, reason = "subpixel rendering in Section 6")]
     SubpixelBgr,
     /// 4 bytes/pixel RGBA premultiplied color (for color emoji via skrifa in Section 6).
+    #[allow(dead_code, reason = "color emoji in Section 6")]
     Color,
 }
 
 impl GlyphFormat {
     /// Bytes per pixel for this format.
+    #[allow(dead_code, reason = "used by atlas upload in Section 6")]
     pub fn bytes_per_pixel(self) -> u32 {
         match self {
             Self::Alpha => 1,
@@ -142,6 +142,7 @@ pub struct ResolvedGlyph {
     /// Face index: 0–3 = primary, 4+ = fallback.
     pub face_idx: u16,
     /// Whether synthetic style transformations are needed.
+    #[allow(dead_code, reason = "synthetic bold/italic rendering in Section 6")]
     pub synthetic: SyntheticFlags,
 }
 

@@ -1,3 +1,6 @@
+// Clipboard consumed starting in Section 9 (selection + paste).
+#![allow(dead_code, reason = "clipboard consumed starting in Section 9")]
+
 //! Platform clipboard access for copy/paste operations.
 //!
 //! Uses `clipboard-win` on Windows and `arboard` on Linux/macOS.

@@ -1,7 +1,3 @@
-// In test builds, tests exercise these items so dead_code doesn't
-// fire — making #![expect(dead_code)] produce an unfulfilled-lint warning.
-#![allow(dead_code, reason = "prepare phase consumed starting in Section 5.11")]
-
 //! Prepare phase: convert a [`FrameInput`] into GPU-ready instance buffers.
 //!
 //! [`prepare_frame`] is a pure CPU function — no wgpu types, no device, no

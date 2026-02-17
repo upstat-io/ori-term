@@ -119,7 +119,7 @@ contention, starvation, fair lock, reader thread lock
 ---
 
 ### Section 05: Window + GPU Rendering
-**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** In Progress (5.1–5.6 complete)
+**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** In Progress (5.1–5.11 complete)
 
 ```
 render pipeline, staged pipeline, Extract, Prepare, Render, 3-phase
@@ -149,6 +149,19 @@ input forwarding, keyboard, basic input, Enter, Backspace
 cell_width, cell_height, baseline, font metrics
 testing, unit test, headless GPU, visual regression, reference PNG
 determinism, pixel readback, decode_instance, assert_instance_count
+```
+
+---
+
+### Section 05B: Startup Performance
+**File:** `section-05b-startup-perf.md` | **Tier:** 2 | **Status:** Not Started | **Blocks:** 06
+
+```
+startup, launch, performance, cold start, warm start
+dwrote, FontCollection::system, DirectWrite, COM, font cache
+parallel, thread, concurrent, GPU init, font discovery
+pipeline cache, shader compilation, pre-cache, ASCII
+profiling, timing, Instant, startup time, latency
 ```
 
 ---
@@ -535,6 +548,7 @@ session serialization, workspace presets, broadcast input
 | 03 | Cross-Platform | `section-03-cross-platform.md` | 0 | Not Started |
 | 04 | PTY + Event Loop | `section-04-pty-eventloop.md` | 1 | Not Started |
 | 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | In Progress |
+| 05B | Startup Performance | `section-05b-startup-perf.md` | 2 | Not Started (blocks 06) |
 | 06 | Font Pipeline | `section-06-font-pipeline.md` | 2 | Not Started |
 | 07 | 2D UI Framework | `section-07-ui-framework.md` | 2 | Not Started |
 | 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Not Started |
@@ -565,7 +579,7 @@ session serialization, workspace presets, broadcast input
 |------|----------|-------|
 | 0 | 01-03 | Core library + cross-platform architecture |
 | 1 | 04 | Process layer (PTY, threads) |
-| 2 | 05-07 | Rendering foundation (window, GPU, fonts, UI framework) |
+| 2 | 05, 05B, 06-07 | Rendering foundation (window, GPU, fonts, UI framework) |
 | 3 | 08-14 | Interaction (keyboard, mouse, selection, search, config) |
 | 4 | 15-21 | Multi-tab + chrome (feature parity with prototype) |
 | 5 | 22-23 | Hardening (terminal modes, performance) |
@@ -584,6 +598,8 @@ session serialization, workspace presets, broadcast input
 04 PTY + Event Loop       <- builds on platform PTY abstraction
  |
 05 Window + GPU           <- first visual milestone (Vulkan/DX12/Metal via wgpu)
+ |
+05B Startup Performance   <- zero-delay launch (BLOCKS 06)
  |
 06 Font Pipeline          <- advanced fonts, ligatures, emoji
  |

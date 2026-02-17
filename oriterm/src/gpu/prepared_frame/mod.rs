@@ -5,13 +5,6 @@
 //! The three buffers map to three draw calls in painter's order:
 //! backgrounds first, then glyphs on top, then cursors last.
 
-// In test builds, tests construct PreparedFrame so it's not dead code.
-// In non-test builds, nothing constructs it until Section 5.8.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "GPU infrastructure used starting in Section 5.8")
-)]
-
 use oriterm_core::Rgb;
 
 use super::frame_input::ViewportSize;
@@ -37,6 +30,7 @@ pub struct PreparedFrame {
 
 impl PreparedFrame {
     /// Create an empty frame with the given clear color.
+    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn new(viewport: ViewportSize, background: Rgb, opacity: f64) -> Self {
         Self {
             backgrounds: InstanceWriter::new(),
@@ -69,16 +63,19 @@ impl PreparedFrame {
     }
 
     /// Total instance count across all three buffers.
+    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn total_instances(&self) -> usize {
         self.backgrounds.len() + self.glyphs.len() + self.cursors.len()
     }
 
     /// Whether all three buffers are empty.
+    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn is_empty(&self) -> bool {
         self.backgrounds.is_empty() && self.glyphs.is_empty() && self.cursors.is_empty()
     }
 
     /// Reset all buffers for the next frame, retaining allocated memory.
+    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn clear(&mut self) {
         self.backgrounds.clear();
         self.glyphs.clear();
@@ -86,6 +83,7 @@ impl PreparedFrame {
     }
 
     /// Update the clear color (e.g. after a palette change).
+    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn set_clear_color(&mut self, background: Rgb, opacity: f64) {
         self.clear_color = rgb_to_clear(background, opacity);
     }

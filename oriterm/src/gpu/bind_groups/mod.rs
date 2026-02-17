@@ -7,10 +7,6 @@
 //! Bind group *layouts* live in [`super::pipeline`] (created in Section 5.4).
 //! This module creates the actual GPU resources and bind groups from those layouts.
 
-// Bind groups are consumed starting in Section 5.10. `allow` (not `expect`)
-// because tests exercise these items, making the lint unfulfilled in test builds.
-#![allow(dead_code, reason = "bind groups consumed starting in Section 5.10")]
-
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource,
     Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, FilterMode, Queue,
@@ -122,6 +118,7 @@ impl AtlasBindGroup {
 /// Returns both the texture and its view so the atlas bind group can be
 /// created before the real glyph atlas exists (Section 5.7). The foreground
 /// pipeline requires both bind groups to be set even when no glyphs are drawn.
+#[allow(dead_code, reason = "placeholder texture for early pipeline init")]
 pub fn create_placeholder_atlas_texture(device: &Device, queue: &Queue) -> (Texture, TextureView) {
     let texture = device.create_texture(&TextureDescriptor {
         label: Some("placeholder_atlas"),

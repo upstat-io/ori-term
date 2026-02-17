@@ -94,6 +94,11 @@ impl<T: EventListener> Term<T> {
         }
     }
 
+    /// Event listener for terminal events.
+    pub fn event_listener(&self) -> &T {
+        &self.event_listener
+    }
+
     /// Reference to the active grid.
     pub fn grid(&self) -> &Grid {
         if self.mode.contains(TermMode::ALT_SCREEN) {

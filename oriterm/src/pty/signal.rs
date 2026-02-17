@@ -16,7 +16,7 @@ use signal_hook::consts::SIGCHLD;
 
 /// Initialization result: either the flag on success or an error message.
 enum InitState {
-    Ok(Arc<AtomicBool>),
+    Ok(#[allow(dead_code, reason = "flag read in check()")] Arc<AtomicBool>),
     Err(String),
 }
 
@@ -45,6 +45,7 @@ pub fn init() -> io::Result<()> {
 /// Returns `true` if one or more child processes have exited. The flag
 /// is cleared atomically (test-and-clear), so consecutive calls without
 /// an intervening signal return `false`.
+#[allow(dead_code, reason = "SIGCHLD polling for future use")]
 pub fn check() -> bool {
     matches!(STATE.get(), Some(InitState::Ok(f)) if f.swap(false, Ordering::Relaxed))
 }

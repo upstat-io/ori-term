@@ -68,6 +68,7 @@ pub struct FallbackDiscovery {
     /// Face index within a `.ttc` collection file.
     pub face_index: u32,
     /// How this fallback was found.
+    #[allow(dead_code, reason = "font discovery consumed in later sections")]
     pub origin: FontOrigin,
 }
 
@@ -150,6 +151,7 @@ pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryRe
 ///
 /// Accepts either a family name (resolved via platform APIs or directory scan)
 /// or an absolute file path. Returns `None` if the font cannot be found.
+#[allow(dead_code, reason = "font discovery consumed in later sections")]
 pub fn resolve_user_fallback(family: &str) -> Option<FallbackDiscovery> {
     #[cfg(target_os = "windows")]
     {

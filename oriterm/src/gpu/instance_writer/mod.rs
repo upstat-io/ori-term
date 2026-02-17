@@ -9,9 +9,6 @@
 //! known offsets — no padding, no alignment surprises. All multi-byte fields
 //! are little-endian (matching GPU expectations on all target platforms).
 
-// InstanceWriter is consumed starting in Section 5.8; suppress until then.
-#![expect(dead_code, reason = "GPU infrastructure used starting in Section 5.8")]
-
 use oriterm_core::Rgb;
 
 /// Bytes per instance record in the GPU buffer.
@@ -35,8 +32,11 @@ const OFF_BG_G: usize = 52; //  f32  — background G [0..1]
 const OFF_BG_B: usize = 56; //  f32  — background B [0..1]
 const OFF_BG_A: usize = 60; //  f32  — background A [0..1]
 const OFF_KIND: usize = 64; //  u32  — instance kind (rect/glyph/cursor)
+#[allow(dead_code, reason = "reserved padding fields")]
 const OFF_PAD1: usize = 68; //  u32  — reserved
+#[allow(dead_code, reason = "reserved padding fields")]
 const OFF_PAD2: usize = 72; //  u32  — reserved
+#[allow(dead_code, reason = "reserved padding fields")]
 const OFF_PAD3: usize = 76; //  u32  — reserved
 
 /// Instance kind tag written into the record at offset 64.
@@ -93,11 +93,13 @@ impl InstanceWriter {
     }
 
     /// Total bytes currently stored.
+    #[allow(dead_code, reason = "instance writer methods for later sections")]
     pub fn byte_len(&self) -> usize {
         self.buf.len()
     }
 
     /// Reset to zero instances, retaining allocated memory.
+    #[allow(dead_code, reason = "instance writer methods for later sections")]
     pub fn clear(&mut self) {
         self.buf.clear();
     }
@@ -166,6 +168,7 @@ impl InstanceWriter {
     /// # Panics
     ///
     /// Panics if `bytes.len() != INSTANCE_SIZE`.
+    #[allow(dead_code, reason = "instance writer methods for later sections")]
     pub fn push_raw(&mut self, bytes: &[u8]) {
         assert_eq!(
             bytes.len(),

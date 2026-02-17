@@ -1,7 +1,3 @@
-// Atlas types consumed starting in Section 5.10. `allow` (not `expect`)
-// because tests exercise these items, making the lint unfulfilled in test builds.
-#![allow(dead_code, reason = "atlas types consumed starting in Section 5.10")]
-
 //! Glyph atlas: shelf-packed texture pages for GPU glyph rendering.
 //!
 //! [`GlyphAtlas`] manages one or more 1024×1024 `R8Unorm` texture pages,
@@ -41,6 +37,7 @@ struct Shelf {
 #[derive(Debug, Clone, Copy)]
 pub struct AtlasEntry {
     /// Page index (for multi-page rendering).
+    #[allow(dead_code, reason = "multi-page atlas in Section 6")]
     pub page: u32,
     /// Normalized U coordinate of left edge (0.0–1.0).
     pub uv_x: f32,
@@ -171,16 +168,19 @@ impl GlyphAtlas {
     }
 
     /// Texture view for a specific page.
+    #[allow(dead_code, reason = "atlas management in later sections")]
     pub fn page_view(&self, page: u32) -> Option<&TextureView> {
         self.page_views.get(page as usize)
     }
 
     /// Number of cached glyph entries.
+    #[allow(dead_code, reason = "atlas management in later sections")]
     pub fn len(&self) -> usize {
         self.cache.len()
     }
 
     /// Whether the cache is empty.
+    #[allow(dead_code, reason = "atlas management in later sections")]
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
@@ -194,6 +194,7 @@ impl GlyphAtlas {
     ///
     /// Keeps the first texture page but drops extras. Called on font size
     /// change when all cached glyphs become invalid.
+    #[allow(dead_code, reason = "atlas management in later sections")]
     pub fn clear(&mut self) {
         self.cache.clear();
         self.empty_keys.clear();

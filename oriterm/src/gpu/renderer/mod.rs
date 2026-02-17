@@ -1,7 +1,3 @@
-// GpuRenderer is consumed starting in Section 5.11. `allow` (not `expect`)
-// because tests exercise these items, making the lint unfulfilled in test builds.
-#![allow(dead_code, reason = "renderer consumed starting in Section 5.11")]
-
 //! GPU renderer: ties pipelines, atlas, fonts, and buffers into a single
 //! draw-frame entry point.
 //!
@@ -165,6 +161,7 @@ impl GpuRenderer {
     }
 
     /// Glyph atlas for cache statistics.
+    #[allow(dead_code, reason = "atlas access for diagnostics and Section 6")]
     pub fn atlas(&self) -> &GlyphAtlas {
         &self.atlas
     }
@@ -226,6 +223,7 @@ impl GpuRenderer {
     }
 
     /// Run the Prepare phase into an existing `PreparedFrame`, reusing buffers.
+    #[allow(dead_code, reason = "frame reuse optimization for later sections")]
     pub fn prepare_into(
         &mut self,
         input: &FrameInput,

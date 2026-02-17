@@ -49,9 +49,9 @@ pub enum TermEvent {
     ///
     /// Wraps `oriterm_core::Event` with the originating tab's identity
     /// so the event loop knows which tab to update.
-    #[allow(dead_code, reason = "fields read by winit event dispatch in Section 5")]
     Terminal {
         /// Which tab produced this event.
+        #[allow(dead_code, reason = "tab routing in Section 15")]
         tab_id: TabId,
         /// The terminal event (wakeup, title change, bell, etc.).
         event: Event,
@@ -86,26 +86,40 @@ impl EventListener for EventProxy {
     }
 }
 
-/// Sends input and commands to the PTY reader thread.
+/// Sends input to the PTY and commands to the reader thread.
 ///
-/// All messages go through the channel to the [`PtyEventLoop`](crate::pty::event_loop::PtyEventLoop).
+/// Input bytes are written directly to the PTY pipe (avoiding the channel
+/// deadlock where the reader thread blocks on `read()` and never drains
+/// `Msg::Input`). Resize and shutdown commands still go through the channel.
 pub struct Notifier {
-    /// Channel sender to the PTY reader thread.
+    /// Direct PTY writer — bypasses the reader thread's command channel.
+    writer: std::sync::Mutex<Box<dyn io::Write + Send>>,
+    /// Channel sender for commands (resize, shutdown) to the reader thread.
     tx: mpsc::Sender<Msg>,
 }
 
 impl Notifier {
-    /// Create a new notifier wrapping the given channel sender.
-    pub fn new(tx: mpsc::Sender<Msg>) -> Self {
-        Self { tx }
+    /// Create a new notifier with a direct PTY writer and command channel.
+    pub fn new(writer: Box<dyn io::Write + Send>, tx: mpsc::Sender<Msg>) -> Self {
+        Self {
+            writer: std::sync::Mutex::new(writer),
+            tx,
+        }
     }
 
     /// Send raw bytes to the PTY (keyboard input, escape responses).
+    ///
+    /// Writes directly to the PTY pipe — no channel hop, no deadlock.
     pub fn notify(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
-        let _ = self.tx.send(Msg::Input(bytes.to_vec()));
+        if let Ok(mut w) = self.writer.lock() {
+            if let Err(e) = w.write_all(bytes) {
+                log::warn!("PTY write failed: {e}");
+            }
+            let _ = w.flush();
+        }
     }
 
     /// Resize the PTY and terminal grid.
@@ -191,12 +205,13 @@ impl Tab {
         );
         let terminal = Arc::new(FairMutex::new(term));
 
-        // 4. Wire the message channel.
+        // 4. Wire the message channel. Writer goes to Notifier for direct
+        //    PTY writes; the reader thread only needs reader + control.
         let (tx, rx) = mpsc::channel();
-        let notifier = Notifier::new(tx);
+        let notifier = Notifier::new(writer, tx);
 
         // 5. Build and spawn the reader thread.
-        let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, writer, rx, control);
+        let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, rx, control);
         let reader_thread = event_loop.spawn()?;
 
         Ok(Self {
@@ -211,6 +226,7 @@ impl Tab {
     }
 
     /// Tab identity.
+    #[allow(dead_code, reason = "tab identity used in Section 15")]
     pub fn id(&self) -> TabId {
         self.id
     }
@@ -225,16 +241,19 @@ impl Tab {
     }
 
     /// Last known window title (from OSC 0/2).
+    #[allow(dead_code, reason = "tab bar display in Section 15")]
     pub fn title(&self) -> &str {
         &self.title
     }
 
     /// Whether the bell has fired since the tab was last focused.
+    #[allow(dead_code, reason = "bell indicator in Section 15")]
     pub fn has_bell(&self) -> bool {
         self.has_bell
     }
 
     /// Clear the bell indicator (call when the tab gains focus).
+    #[allow(dead_code, reason = "bell indicator in Section 15")]
     pub fn clear_bell(&mut self) {
         self.has_bell = false;
     }

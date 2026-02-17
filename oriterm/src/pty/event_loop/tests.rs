@@ -61,10 +61,10 @@ impl portable_pty::MasterPty for MockControl {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Build a PtyEventLoop with a mock control handle and the given reader/writer.
+/// Build a PtyEventLoop with a mock control handle and the given reader.
 fn build_event_loop(
     reader: Box<dyn Read + Send>,
-    writer: Box<dyn Write + Send>,
+    _writer: Box<dyn Write + Send>,
 ) -> (
     PtyEventLoop<VoidListener>,
     Arc<FairMutex<Term<VoidListener>>>,
@@ -82,7 +82,6 @@ fn build_event_loop(
     let event_loop = PtyEventLoop::new(
         Arc::clone(&terminal),
         reader,
-        writer,
         rx,
         PtyControl::from_raw(Box::new(MockControl)),
     );
@@ -140,39 +139,6 @@ fn processes_pty_output_into_terminal() {
     );
 }
 
-#[test]
-fn processes_channel_input() {
-    let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
-    let (capture_reader, capture_writer) = std::io::pipe().expect("capture pipe");
-
-    let (event_loop, _terminal, tx) =
-        build_event_loop(Box::new(pipe_reader), Box::new(capture_writer));
-
-    let join = event_loop.spawn().expect("spawn event loop");
-
-    // Write something to the PTY reader so the event loop wakes up and
-    // drains the command channel on the next iteration.
-    pipe_writer.write_all(b"prompt> ").expect("write");
-
-    // Send input via channel.
-    tx.send(Msg::Input(b"typed text".to_vec())).expect("send");
-
-    // Give the event loop time to process, then close pipe for EOF.
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    drop(pipe_writer);
-
-    join.join().expect("reader thread should exit on EOF");
-
-    // Read what was written to the capture writer.
-    drop(tx);
-    let mut captured = Vec::new();
-    let mut reader = capture_reader;
-    reader.read_to_end(&mut captured).expect("read captured");
-    assert_eq!(
-        captured, b"typed text",
-        "input should be forwarded to writer"
-    );
-}
 
 #[test]
 fn read_buffer_size_is_64kb() {

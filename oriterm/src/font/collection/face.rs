@@ -22,6 +22,7 @@ pub(crate) struct FaceData {
     /// Raw font file bytes.
     pub(crate) bytes: Arc<Vec<u8>>,
     /// Index within a `.ttc` collection file (0 for standalone `.ttf`).
+    #[allow(dead_code, reason = "font face helpers consumed in later sections")]
     pub(crate) face_index: u32,
     /// Byte offset to the font table directory.
     offset: u32,
@@ -62,6 +63,7 @@ pub(crate) fn font_ref(fd: &FaceData) -> FontRef<'_> {
 }
 
 /// Check whether a face covers a given character.
+#[allow(dead_code, reason = "font face helpers consumed in later sections")]
 pub(crate) fn has_glyph(fd: &FaceData, ch: char) -> bool {
     font_ref(fd).charmap().map(ch) != 0
 }
