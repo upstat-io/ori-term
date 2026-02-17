@@ -66,13 +66,16 @@ pub(super) fn save_pipeline_cache(
     }
     // Atomic write: write to temp, then rename.
     let temp = path.with_extension("tmp");
-    if std::fs::write(&temp, &data).is_ok() {
-        let _ = std::fs::rename(&temp, path);
-        log::info!(
-            "pipeline cache: saved {} bytes to {}",
-            data.len(),
-            path.display(),
-        );
+    match std::fs::write(&temp, &data) {
+        Ok(()) => {
+            let _ = std::fs::rename(&temp, path);
+            log::info!(
+                "pipeline cache: saved {} bytes to {}",
+                data.len(),
+                path.display(),
+            );
+        }
+        Err(e) => log::warn!("pipeline cache: failed to write {}: {e}", temp.display()),
     }
 }
 

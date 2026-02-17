@@ -33,9 +33,9 @@ impl std::error::Error for GpuInitError {}
 pub struct GpuState {
     instance: wgpu::Instance,
     /// Shared device for all render commands.
-    pub(crate) device: wgpu::Device,
+    pub(super) device: wgpu::Device,
     /// Shared queue for all render submissions.
-    pub(crate) queue: wgpu::Queue,
+    pub(super) queue: wgpu::Queue,
     /// Native surface format (used for surface configuration).
     surface_format: wgpu::TextureFormat,
     /// sRGB format for render passes and pipelines. May differ from
@@ -131,6 +131,17 @@ impl GpuState {
         );
         surface.configure(&self.device, &config);
         Ok((surface, config))
+    }
+
+    /// Reconfigure an existing surface (e.g. after a window resize).
+    ///
+    /// Encapsulates device access so callers don't need the raw wgpu `Device`.
+    pub fn configure_surface(
+        &self,
+        surface: &wgpu::Surface<'_>,
+        config: &wgpu::SurfaceConfiguration,
+    ) {
+        surface.configure(&self.device, config);
     }
 
     /// Save the pipeline cache to disk. Call before exit.

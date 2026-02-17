@@ -148,7 +148,7 @@ impl TermWindow {
         self.size_px = (w, h);
         self.surface_config.width = w;
         self.surface_config.height = h;
-        self.surface.configure(&gpu.device, &self.surface_config);
+        gpu.configure_surface(&self.surface, &self.surface_config);
     }
 
     /// Update the DPI scale factor (e.g. when the window moves between monitors).
