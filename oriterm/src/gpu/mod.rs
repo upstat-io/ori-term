@@ -36,7 +36,7 @@ pub(crate) use extract::{extract_frame, extract_frame_into};
     unused_imports,
     reason = "prepare phase used starting in Section 5.11"
 )]
-pub(crate) use prepare::{AtlasLookup, prepare_frame};
+pub(crate) use prepare::{AtlasLookup, prepare_frame, prepare_frame_into};
 
 // Re-exports consumed starting in Section 5.9/5.10.
 #[expect(

@@ -100,12 +100,16 @@ pub(crate) fn extract_frame_into<T: EventListener>(
 }
 
 /// Extract semantic palette colors from the terminal.
+///
+/// Opacity defaults to 1.0 (fully opaque) until wired from config in
+/// Section 5.11.
 fn extract_palette<T: EventListener>(term: &Term<T>) -> FramePalette {
     let palette = term.palette();
     FramePalette {
         background: palette.background(),
         foreground: palette.foreground(),
         cursor_color: palette.cursor_color(),
+        opacity: 1.0,
     }
 }
 

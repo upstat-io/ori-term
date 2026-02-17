@@ -44,8 +44,9 @@ impl ViewportSize {
 ///
 /// Per-cell fg/bg are already resolved in `RenderableCell`. This captures
 /// only the three global colors the renderer needs: clear color, cursor
-/// fill, and text-under-cursor inversion color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// fill, and text-under-cursor inversion color — plus the window opacity
+/// for transparent rendering.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FramePalette {
     /// Window clear color (terminal background).
     pub background: Rgb,
@@ -53,6 +54,8 @@ pub struct FramePalette {
     pub foreground: Rgb,
     /// Cursor rectangle fill color.
     pub cursor_color: Rgb,
+    /// Window opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    pub opacity: f32,
 }
 
 /// Complete input for one render frame.
@@ -154,6 +157,7 @@ impl FrameInput {
                     g: 255,
                     b: 255,
                 },
+                opacity: 1.0,
             },
             selection: None,
             search_matches: Vec::new(),

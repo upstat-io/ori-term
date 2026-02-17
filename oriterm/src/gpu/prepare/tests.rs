@@ -4,11 +4,12 @@ use std::collections::HashMap;
 
 use oriterm_core::{CellFlags, Column, CursorShape, Rgb};
 
-use super::{prepare_frame, AtlasLookup};
+use super::{prepare_frame, prepare_frame_into, AtlasLookup};
 use crate::font::GlyphStyle;
 use crate::gpu::atlas::AtlasEntry;
 use crate::gpu::frame_input::FrameInput;
 use crate::gpu::instance_writer::INSTANCE_SIZE;
+use crate::gpu::prepared_frame::PreparedFrame;
 
 // ── Test atlas ──
 
@@ -108,7 +109,7 @@ fn nth_instance(bytes: &[u8], n: usize) -> DecodedInstance {
 }
 
 /// Assert instance counts across all three buffers.
-fn assert_counts(frame: &crate::gpu::prepared_frame::PreparedFrame, bg: usize, fg: usize, cursor: usize) {
+fn assert_counts(frame: &PreparedFrame, bg: usize, fg: usize, cursor: usize) {
     assert_eq!(
         frame.backgrounds.len(),
         bg,
@@ -596,4 +597,103 @@ fn clear_color_matches_palette_background() {
         1.0,
     ];
     assert_eq!(frame.clear_color, expected);
+}
+
+#[test]
+fn clear_color_respects_palette_opacity() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.palette.opacity = 0.5;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas);
+
+    let bg = input.palette.background;
+    let expected = [
+        f64::from(bg.r) / 255.0 * 0.5,
+        f64::from(bg.g) / 255.0 * 0.5,
+        f64::from(bg.b) / 255.0 * 0.5,
+        0.5,
+    ];
+    assert_eq!(frame.clear_color, expected);
+}
+
+// ── prepare_frame_into ──
+
+#[test]
+fn prepare_into_matches_prepare() {
+    let input = FrameInput::test_grid(10, 5, "Hello World!");
+    let atlas = atlas_with(&['H', 'e', 'l', 'o', 'W', 'r', 'd', '!']);
+
+    let fresh = prepare_frame(&input, &atlas);
+
+    let mut reused = PreparedFrame::new(Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_into(&input, &atlas, &mut reused);
+
+    assert_eq!(fresh.backgrounds.as_bytes(), reused.backgrounds.as_bytes());
+    assert_eq!(fresh.glyphs.as_bytes(), reused.glyphs.as_bytes());
+    assert_eq!(fresh.cursors.as_bytes(), reused.cursors.as_bytes());
+    assert_eq!(fresh.clear_color, reused.clear_color);
+}
+
+#[test]
+fn prepare_into_reuses_allocation() {
+    let large_text: String = std::iter::repeat_n('A', 50).collect();
+    let input = FrameInput::test_grid(10, 5, &large_text);
+    let atlas = atlas_with(&['A']);
+
+    // First prepare allocates large buffers.
+    let mut frame = prepare_frame(&input, &atlas);
+    let first_bg_count = frame.backgrounds.len();
+    let first_fg_count = frame.glyphs.len();
+
+    // Second prepare with smaller input reuses (clear + refill).
+    let small = FrameInput::test_grid(2, 1, "A");
+    prepare_frame_into(&small, &atlas, &mut frame);
+
+    // Counts reflect new input, not old.
+    assert_eq!(frame.backgrounds.len(), 2);
+    assert_eq!(frame.glyphs.len(), 1);
+    assert!(first_bg_count > frame.backgrounds.len());
+    assert!(first_fg_count > frame.glyphs.len());
+}
+
+#[test]
+fn prepare_into_clears_previous_content() {
+    let input1 = FrameInput::test_grid(10, 5, "AAAAAAAAAA");
+    let atlas = atlas_with(&['A', 'B']);
+
+    let mut frame = prepare_frame(&input1, &atlas);
+    let first_bg = frame.backgrounds.len();
+    let first_fg = frame.glyphs.len();
+
+    // Second frame with different content.
+    let input2 = FrameInput::test_grid(2, 1, "B");
+    prepare_frame_into(&input2, &atlas, &mut frame);
+
+    // Counts should reflect the new input, not accumulate.
+    assert_eq!(frame.backgrounds.len(), 2); // 2 cells
+    assert_eq!(frame.glyphs.len(), 1); // 1 glyph ('B')
+    assert_ne!(frame.backgrounds.len(), first_bg + 2);
+    assert_ne!(frame.glyphs.len(), first_fg + 1);
+}
+
+#[test]
+fn prepare_into_updates_clear_color() {
+    let input1 = FrameInput::test_grid(2, 1, "");
+    let atlas = empty_atlas();
+
+    let mut frame = prepare_frame(&input1, &atlas);
+    let first_clear = frame.clear_color;
+
+    // Change palette background.
+    let mut input2 = FrameInput::test_grid(2, 1, "");
+    input2.palette.background = Rgb {
+        r: 255,
+        g: 0,
+        b: 0,
+    };
+    prepare_frame_into(&input2, &atlas, &mut frame);
+
+    assert_ne!(frame.clear_color, first_clear);
+    assert_eq!(frame.clear_color, [1.0, 0.0, 0.0, 1.0]);
 }
