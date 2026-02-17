@@ -107,6 +107,7 @@ pub struct GpuRenderer {
 impl GpuRenderer {
     /// Create a new renderer with pipelines, atlas, and pre-cached ASCII glyphs.
     pub fn new(gpu: &GpuState, mut font_collection: FontCollection) -> Self {
+        let t0 = std::time::Instant::now();
         let device = &gpu.device;
         let queue = &gpu.queue;
 
@@ -117,6 +118,7 @@ impl GpuRenderer {
         // Pipelines.
         let bg_pipeline = create_bg_pipeline(gpu, &uniform_layout);
         let fg_pipeline = create_fg_pipeline(gpu, &uniform_layout, &atlas_layout);
+        let t_pipelines = t0.elapsed();
 
         // Uniform buffer.
         let uniform_buffer = UniformBuffer::new(device, &uniform_layout);
@@ -135,9 +137,15 @@ impl GpuRenderer {
                 atlas.insert(key, glyph, device, queue);
             }
         }
+        let t_precache = t0.elapsed();
 
         // Atlas bind group (with real atlas texture, not placeholder).
         let atlas_bind_group = AtlasBindGroup::new(device, &atlas_layout, atlas.primary_view());
+
+        log::info!(
+            "renderer init: pipelines={t_pipelines:?} precache={t_precache:?} total={:?}",
+            t0.elapsed(),
+        );
 
         Self {
             bg_pipeline,
