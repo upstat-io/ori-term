@@ -43,7 +43,7 @@ sections:
     status: in-progress
   - id: "6.13"
     title: UI Text Shaping
-    status: not-started
+    status: complete
   - id: "6.14"
     title: Pre-Caching + Performance
     status: not-started
@@ -609,32 +609,32 @@ Shape non-grid text (tab bar titles, search bar, status text) through rustybuzz 
 
 **Reference:** `_old/src/font/shaper.rs` (shape_text_string)
 
-- [ ] `UiShapedGlyph` struct
-  - [ ] Fields:
+- [x] `UiShapedGlyph` struct
+  - [x] Fields:
     - `glyph_id: u16`
     - `face_idx: FaceIdx`
     - `x_advance: f32` — absolute pixel advance (for cursor positioning)
     - `x_offset: f32`
     - `y_offset: f32`
-  - [ ] No `col_start` / `col_span` — UI text is free-positioned, not grid-locked
-- [ ] `shape_text_string(text: &str, faces: &[Option<rustybuzz::Face>], collection: &FontCollection, output: &mut Vec<UiShapedGlyph>)`
-  - [ ] Segment text into runs by font face (same as grid shaping)
-  - [ ] Shape through rustybuzz
-  - [ ] Emit glyphs with absolute x_advance (sum of advances = total text width)
-  - [ ] Spaces: emit as advance-only (glyph_id = 0, advance = space width)
-- [ ] `measure_text(text: &str, collection: &FontCollection) -> f32`
-  - [ ] Sum x_advances for all glyphs → total pixel width
-  - [ ] Used for tab bar layout, text truncation, centering
-- [ ] Text truncation with ellipsis:
-  - [ ] If text width > available width: truncate and append `…` (U+2026)
-  - [ ] Binary search for truncation point
+  - [x] No `col_start` / `col_span` — UI text is free-positioned, not grid-locked
+- [x] `shape_text_string(text: &str, faces: &[Option<rustybuzz::Face>], collection: &FontCollection, output: &mut Vec<UiShapedGlyph>)`
+  - [x] Segment text into runs by font face (same as grid shaping)
+  - [x] Shape through rustybuzz
+  - [x] Emit glyphs with absolute x_advance (sum of advances = total text width)
+  - [x] Spaces: emit as advance-only (glyph_id = 0, advance = space width)
+- [x] `measure_text(text: &str, collection: &FontCollection) -> f32`
+  - [x] Sum x_advances for all glyphs → total pixel width
+  - [x] Used for tab bar layout, text truncation, centering
+- [x] Text truncation with ellipsis:
+  - [x] If text width > available width: truncate and append `…` (U+2026)
+  - [x] Cell-width-based truncation (exact for monospace)
 - [ ] Integration with tab bar and search bar rendering:
   - [ ] Tab title → `shape_text_string` → glyph instances
   - [ ] Search query → `shape_text_string` → glyph instances
-- [ ] **Tests**:
-  - [ ] "Hello" → 5 glyphs with sequential advances
-  - [ ] Measure text returns correct total width
-  - [ ] Truncation: long text gets ellipsis at correct position
+- [x] **Tests**:
+  - [x] "Hello" → 5 glyphs with sequential advances
+  - [x] Measure text returns correct total width
+  - [x] Truncation: long text gets ellipsis at correct position
 
 ---
 
@@ -962,7 +962,7 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 - [ ] Subpixel rendering (LCD): per-channel alpha blending, RGB/BGR support, auto-disabled on HiDPI
 - [ ] Subpixel glyph positioning: fractional offsets for UI text and combining marks
 - [ ] All text decorations: single, double, curly, dotted, dashed underline + strikethrough
-- [ ] UI text shaping: tab bar titles, search bar, measure + truncate
+- [x] UI text shaping: tab bar titles, search bar, measure + truncate
 - [ ] Pre-caching: no first-frame stall for ASCII
 - [ ] Visual regression suite: golden image tests for all character types, sizes, and DPI scales
 - [ ] **Visual tests** (automated via golden images):

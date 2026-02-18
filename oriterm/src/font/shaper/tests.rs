@@ -472,3 +472,123 @@ fn col_glyph_map_ligature_span() {
     assert_eq!(map[1], None, "col 1 is continuation of ligature");
     assert_eq!(map[2], Some(1), "normal glyph at col 2");
 }
+
+// ── UI Text Shaping ──
+
+#[test]
+fn ui_shape_hello_produces_five_glyphs() {
+    let fc = test_collection();
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    super::shape_text_string("Hello", &faces, &fc, &mut output, &mut None);
+
+    assert_eq!(output.len(), 5, "5 glyphs for 'Hello'");
+    for g in &output {
+        assert!(g.x_advance > 0.0, "each glyph should have positive advance");
+    }
+}
+
+#[test]
+fn ui_shape_sequential_advances() {
+    let fc = test_collection();
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    super::shape_text_string("Hello", &faces, &fc, &mut output, &mut None);
+
+    // Monospace font: all advances should be equal.
+    let first = output[0].x_advance;
+    for g in &output[1..] {
+        assert!(
+            (g.x_advance - first).abs() < 0.01,
+            "monospace font should have equal advances: {first} vs {}",
+            g.x_advance,
+        );
+    }
+}
+
+#[test]
+fn ui_shape_space_is_advance_only() {
+    let fc = test_collection();
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    super::shape_text_string("A B", &faces, &fc, &mut output, &mut None);
+
+    assert_eq!(output.len(), 3, "'A B' → 3 glyphs");
+    assert_eq!(output[1].glyph_id, 0, "space is advance-only (glyph_id=0)");
+    assert!(
+        output[1].x_advance > 0.0,
+        "space should have positive advance"
+    );
+}
+
+#[test]
+fn ui_shape_empty_string() {
+    let fc = test_collection();
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    super::shape_text_string("", &faces, &fc, &mut output, &mut None);
+
+    assert!(output.is_empty(), "empty string produces no glyphs");
+}
+
+#[test]
+fn ui_measure_text_returns_total_width() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let width = super::measure_text("Hello", &fc);
+
+    // Monospace: 5 chars × cell_width. Shaped advances may differ slightly
+    // from cell_metrics due to different measurement paths (rustybuzz vs swash).
+    let expected = 5.0 * cell_w;
+    assert!(
+        (width - expected).abs() < cell_w,
+        "measured width {width} should be ≈ {expected} (within one cell)",
+    );
+}
+
+#[test]
+fn ui_measure_empty_is_zero() {
+    let fc = test_collection();
+    let width = super::measure_text("", &fc);
+    assert!(
+        (width - 0.0).abs() < f32::EPSILON,
+        "empty text has zero width",
+    );
+}
+
+#[test]
+fn ui_truncate_short_text_unchanged() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let result = super::truncate_with_ellipsis("Hello", 10.0 * cell_w, &fc);
+    assert_eq!(
+        result.as_ref(),
+        "Hello",
+        "short text should not be truncated"
+    );
+}
+
+#[test]
+fn ui_truncate_long_text_gets_ellipsis() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    // Max width fits 3 cells, text is 10 chars.
+    let result = super::truncate_with_ellipsis("HelloWorld", 3.0 * cell_w, &fc);
+    assert!(
+        result.ends_with('\u{2026}'),
+        "truncated text should end with ellipsis: {result:?}",
+    );
+    assert!(
+        result.len() < "HelloWorld".len(),
+        "truncated should be shorter"
+    );
+}
+
+#[test]
+fn ui_truncate_exact_fit() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    // Max width exactly fits 5 cells.
+    let result = super::truncate_with_ellipsis("Hello", 5.0 * cell_w, &fc);
+    assert_eq!(result.as_ref(), "Hello", "exact fit should not truncate");
+}
