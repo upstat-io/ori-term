@@ -31,7 +31,7 @@ sections:
     status: complete
   - id: "6.9"
     title: Built-in Geometric Glyphs
-    status: not-started
+    status: complete
   - id: "6.10"
     title: Color Emoji
     status: not-started
@@ -207,14 +207,14 @@ Break a terminal row into shaping runs. Each run is a contiguous sequence of cha
   - [x] Run breaks on:
     - [x] Space (' ') or null ('\0') — spaces excluded from run text but don't break same-face runs
     - [x] Font face change (different glyph found in different face)
-    - [ ] Built-in glyph character (box drawing, blocks, braille, powerline) <!-- blocked-by:6.9 -->
+    - [x] Built-in glyph character (box drawing, blocks, braille, powerline)
     - [x] Wide char spacer
   - [x] Runs reuse a scratch `Vec<ShapingRun>` (cleared + refilled each frame, not reallocated)
 - [x] **Tests**:
   - [x] `"hello world"` → same-face chars merge across spaces, space excluded from run text
   - [x] `"hello你好"` → two runs if CJK resolves to different face (wide char test covers face resolution)
   - [x] `"a\u{0301}"` (a + combining accent) → single run with "á" text, byte_to_col maps both to same column
-  - [ ] `"━"` (box drawing) → no run (handled by builtin glyph system) <!-- blocked-by:6.9 -->
+  - [x] `"━"` (box drawing) → no run (handled by builtin glyph system)
 
 ---
 
@@ -417,45 +417,53 @@ Pixel-perfect rendering for box drawing, block elements, braille, and powerline 
 
 **Reference:** `_old/src/gpu/builtin_glyphs.rs`
 
-- [ ] `is_builtin(ch: char) -> bool` — fast check if character is handled by builtin system
-- [ ] `draw_builtin_glyph(ch: char, x: f32, y: f32, w: f32, h: f32, fg: [f32; 4], instances: &mut InstanceWriter) -> bool`
-  - [ ] Returns true if handled, false to fall through to font pipeline
-- [ ] **Box Drawing** (U+2500–U+257F):
-  - [ ] 128 characters, lookup table: `[left, right, up, down]` per char
-  - [ ] Values: 0=none, 1=light (thin), 2=heavy (thick), 3=double
-  - [ ] Render from cell center: horizontal segments left/right, vertical segments up/down
-  - [ ] Line thickness: thin = `max(1.0, round(cell_width / 8.0))`, heavy = `thin * 3.0`
-  - [ ] Double lines: two parallel lines with gap = `max(2.0, thin * 2.0)`
-  - [ ] Segments connect cleanly at cell boundaries (critical for box drawing to look right)
-- [ ] **Block Elements** (U+2580–U+259F):
-  - [ ] Full block `█` (U+2588): entire cell filled
-  - [ ] Upper half `▀` (U+2580): top half filled
-  - [ ] Lower N/8 blocks (U+2581–U+2587): fractional heights from bottom
-  - [ ] Left N/8 blocks (U+2589–U+258F): fractional widths from left
-  - [ ] Shade blocks: light `░` (25% alpha), medium `▒` (50%), dark `▓` (75%)
-  - [ ] Quadrant blocks (U+2596–U+259F): bitmask → fill selected quadrants
-- [ ] **Braille** (U+2800–U+28FF):
-  - [ ] 8-dot pattern in 2×4 grid
-  - [ ] Character value encodes which dots are filled (8-bit bitmask)
-  - [ ] Dot positions: 2 columns × 4 rows within cell
-  - [ ] Render as small filled circles or rectangles at fractional cell positions
-- [ ] **Powerline** (U+E0A0–U+E0D4):
-  - [ ] Right-pointing solid triangle (U+E0B0): filled triangle, scanline rendered
-  - [ ] Left-pointing solid triangle (U+E0B2): mirrored
-  - [ ] Right-pointing thin arrow (U+E0B1): outline only
-  - [ ] Left-pointing thin arrow (U+E0B3): mirrored outline
-  - [ ] Branch symbol (U+E0A0): git branch icon
-  - [ ] Rounded separators, flame shapes, etc.
-- [ ] Integration with rendering loop:
-  - [ ] Before font glyph lookup: `if builtin_glyphs::draw_builtin_glyph(...) { continue; }`
-  - [ ] Built-in glyphs emit background-layer instances (opaque rectangles, not atlas-textured)
-- [ ] **Tests**:
-  - [ ] Box drawing: `'─'` (U+2500) produces horizontal line
-  - [ ] Box drawing: `'┼'` (U+253C) produces cross
-  - [ ] Block: `'█'` fills entire cell
-  - [ ] Block: `'▄'` fills lower half
-  - [ ] Braille: `'⠿'` (U+283F) fills all 6 main dots
-  - [ ] Powerline: `''` (U+E0B0) produces triangle
+- [x] `is_builtin(ch: char) -> bool` — fast check if character is handled by builtin system
+- [x] Atlas-based rasterization: CPU → alpha bitmap → atlas → normal glyph pipeline
+  - [x] `Canvas` struct for alpha bitmap drawing with `fill_rect`, `blend_pixel`, `fill_line` (SDF anti-aliased)
+  - [x] `rasterize(ch, cell_w, cell_h) -> Option<RasterizedGlyph>` — dispatch to category
+  - [x] `raster_key(ch, size_q6) -> RasterKey` — uses `FaceIdx::BUILTIN` sentinel
+  - [x] `ensure_cached(input, size_q6, atlas, gpu)` — scan cells, rasterize + insert into atlas
+- [x] **Box Drawing** (U+2500–U+257F):
+  - [x] 128 characters, lookup table: `[left, right, up, down]` per char
+  - [x] Values: 0=none, 1=light (thin), 2=heavy (thick), 3=double
+  - [x] Render from cell center: horizontal segments left/right, vertical segments up/down
+  - [x] Line thickness: thin = `max(1.0, round(cell_width / 8.0))`, heavy = `thin * 3.0`
+  - [x] Double lines: two parallel lines with gap = `max(2.0, thin * 2.0)`
+  - [x] Segments connect cleanly at cell boundaries (critical for box drawing to look right)
+  - [x] Rounded corners (U+256D–U+2570): right-angle fallback
+  - [x] Diagonals (U+2571–U+2573): anti-aliased via SDF line rendering
+- [x] **Block Elements** (U+2580–U+259F):
+  - [x] Full block `█` (U+2588): entire cell filled
+  - [x] Upper half `▀` (U+2580): top half filled
+  - [x] Lower N/8 blocks (U+2581–U+2587): fractional heights from bottom
+  - [x] Left N/8 blocks (U+2589–U+258F): fractional widths from left
+  - [x] Shade blocks: light `░` (25% alpha), medium `▒` (50%), dark `▓` (75%)
+  - [x] Quadrant blocks (U+2596–U+259F): bitmask → fill selected quadrants
+- [x] **Braille** (U+2800–U+28FF):
+  - [x] 8-dot pattern in 2×4 grid
+  - [x] Character value encodes which dots are filled (8-bit bitmask)
+  - [x] Dot positions: 2 columns × 4 rows within cell
+  - [x] Render as rectangles at fractional cell positions
+- [x] **Powerline** (U+E0A0–U+E0D4):
+  - [x] Right-pointing solid triangle (U+E0B0): filled triangle, scanline rendered
+  - [x] Left-pointing solid triangle (U+E0B2): mirrored
+  - [x] Right-pointing thin arrow (U+E0B1): outline only
+  - [x] Left-pointing thin arrow (U+E0B3): mirrored outline
+  - [x] Rounded separators (U+E0B4, U+E0B6): solid triangles
+  - [x] Unrecognized powerline chars → return None (fall through to font)
+- [x] Integration with rendering pipeline:
+  - [x] `FaceIdx::BUILTIN` sentinel (u16::MAX) — reuses existing `RasterKey` type
+  - [x] Builtins skipped in `segment_runs()` — not shaped through rustybuzz
+  - [x] `ensure_cached()` phase between shaped glyph caching and prepare
+  - [x] `fill_frame_shaped()` builtin branch: bypass bearing math, position at (x, y) directly
+- [x] **Tests** (37 tests):
+  - [x] `is_builtin()` range coverage and exclusion tests
+  - [x] `raster_key` uses `FaceIdx::BUILTIN`
+  - [x] Box drawing: horizontal line, vertical line, cross, double horizontal, rounded corner, diagonal (with AA)
+  - [x] Block: full block, upper/lower half, right half, shades (25%/50%/75%)
+  - [x] Braille: empty, single dot, six dots, all eight dots
+  - [x] Powerline: right/left triangles, thin outline, unrecognized falls through
+  - [x] Canvas: dimensions, fill_rect clipping, blend_pixel saturation, fill_line AA, glyph format
 
 ---
 
