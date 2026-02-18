@@ -4,8 +4,9 @@ use std::collections::HashMap;
 
 use oriterm_core::{CellFlags, Column, CursorShape, Rgb};
 
-use super::{prepare_frame, prepare_frame_into, AtlasLookup};
-use crate::font::GlyphStyle;
+use super::{prepare_frame, prepare_frame_into, prepare_frame_shaped, AtlasLookup, ShapedFrame};
+use crate::font::shaper::ShapedGlyph;
+use crate::font::{FaceIdx, GlyphStyle, RasterKey};
 use crate::gpu::atlas::AtlasEntry;
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
@@ -19,6 +20,10 @@ struct TestAtlas(HashMap<(char, GlyphStyle), AtlasEntry>);
 impl AtlasLookup for TestAtlas {
     fn lookup(&self, ch: char, style: GlyphStyle) -> Option<&AtlasEntry> {
         self.0.get(&(ch, style))
+    }
+
+    fn lookup_key(&self, _key: RasterKey) -> Option<&AtlasEntry> {
+        None
     }
 }
 
@@ -831,4 +836,258 @@ fn no_instances_outside_grid_bounds() {
             inst.size.1,
         );
     }
+}
+
+// ── Shaped rendering tests ──
+
+/// Test atlas that looks up glyphs by [`RasterKey`] (shaped path).
+struct KeyTestAtlas(HashMap<RasterKey, AtlasEntry>);
+
+impl AtlasLookup for KeyTestAtlas {
+    fn lookup(&self, _ch: char, _style: GlyphStyle) -> Option<&AtlasEntry> {
+        None
+    }
+
+    fn lookup_key(&self, key: RasterKey) -> Option<&AtlasEntry> {
+        self.0.get(&key)
+    }
+}
+
+/// Create a deterministic atlas entry for a glyph ID.
+fn test_entry_for_glyph(glyph_id: u16) -> AtlasEntry {
+    AtlasEntry {
+        page: 0,
+        uv_x: (glyph_id % 16) as f32 / 16.0,
+        uv_y: (glyph_id / 16) as f32 / 16.0,
+        uv_w: 7.0 / 1024.0,
+        uv_h: 14.0 / 1024.0,
+        width: 7,
+        height: 14,
+        bearing_x: 1,
+        bearing_y: 12,
+    }
+}
+
+/// Build a `KeyTestAtlas` with entries for the given glyph IDs.
+fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
+    let mut map = HashMap::new();
+    for &gid in glyph_ids {
+        let key = RasterKey {
+            glyph_id: gid,
+            face_idx: FaceIdx::REGULAR,
+            size_q6,
+        };
+        map.insert(key, test_entry_for_glyph(gid));
+    }
+    KeyTestAtlas(map)
+}
+
+/// Build a ShapedFrame for a 1-row grid from a slice of ShapedGlyphs.
+fn shaped_one_row(cols: usize, glyphs: &[ShapedGlyph], size_q6: u32) -> ShapedFrame {
+    let mut sf = ShapedFrame::new(cols, size_q6);
+    let mut col_map = Vec::new();
+    crate::font::shaper::build_col_glyph_map(glyphs, cols, &mut col_map);
+    sf.push_row(glyphs, &col_map);
+    sf
+}
+
+#[test]
+fn shaped_single_glyph_one_bg_one_fg() {
+    let size_q6 = 768; // 12px * 64
+    let input = FrameInput::test_grid(3, 1, "A  ");
+    let atlas = key_atlas_with(&[42], size_q6);
+
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        col_start: 0,
+        col_span: 1,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // 3 bg instances (one per cell), 1 fg instance (shaped glyph at col 0), 1 cursor.
+    assert_counts(&frame, 3, 1, 1);
+}
+
+#[test]
+fn shaped_ligature_one_fg_two_bg() {
+    // Simulate a ligature spanning cols 0-1 (e.g. "fi" → single glyph).
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(3, 1, "fi ");
+    // Mark col 0 as the ligature origin, col 1 as regular (the shaper
+    // handles the merge — bg instances come from the cell data).
+    input.content.cells[0].ch = 'f';
+    input.content.cells[1].ch = 'i';
+
+    let atlas = key_atlas_with(&[100], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 100,
+        face_idx: FaceIdx::REGULAR,
+        col_start: 0,
+        col_span: 2, // ligature spans 2 columns
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // 3 bg (per-cell), 1 fg (single ligature glyph at col 0), 1 cursor.
+    assert_counts(&frame, 3, 1, 1);
+
+    // The fg glyph should be at col 0 position.
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(100);
+    assert_eq!(fg.pos.0, 0.0 + entry.bearing_x as f32);
+}
+
+#[test]
+fn shaped_combining_marks_two_fg_instances() {
+    // Base glyph at col 0 + combining mark at col 0 → 2 fg instances.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(2, 1, "a ");
+    let atlas = key_atlas_with(&[50, 51], size_q6);
+
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 50,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 0,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 51,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 0, // same col — combining mark
+            col_span: 1,
+            x_offset: 2.0,
+            y_offset: 3.0,
+        },
+    ];
+    let shaped = shaped_one_row(2, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // 2 bg (per-cell), 2 fg (base + combining mark), 1 cursor.
+    assert_counts(&frame, 2, 2, 1);
+}
+
+#[test]
+fn shaped_offset_applied_to_glyph_position() {
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(1, 1, "X");
+    let atlas = key_atlas_with(&[60], size_q6);
+
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 60,
+        face_idx: FaceIdx::REGULAR,
+        col_start: 0,
+        col_span: 1,
+        x_offset: 1.5,
+        y_offset: 2.0,
+    }];
+    let shaped = shaped_one_row(1, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    assert_eq!(frame.glyphs.len(), 1);
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    let entry = test_entry_for_glyph(60);
+
+    // glyph_x = 0.0 + bearing_x(1) + x_offset(1.5) = 2.5
+    let expected_x = 0.0 + entry.bearing_x as f32 + 1.5;
+    // glyph_y = 0.0 + baseline(12.0) - bearing_y(12) - y_offset(2.0) = -2.0
+    let expected_y = 0.0 + 12.0 - entry.bearing_y as f32 - 2.0;
+    assert_eq!(fg.pos, (expected_x, expected_y));
+}
+
+#[test]
+fn shaped_backgrounds_independent_of_glyphs() {
+    // Backgrounds should be per-cell regardless of shaped glyph layout.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(4, 1, "ABCD");
+    // Ligature spans cols 0-1, normal glyphs at 2 and 3.
+    let atlas = key_atlas_with(&[100, 101, 102], size_q6);
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 100,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 0,
+            col_span: 2,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 101,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 2,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 102,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 3,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+    let shaped = shaped_one_row(4, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // 4 bg instances (one per cell), 3 fg instances (ligature + 2 normal).
+    assert_counts(&frame, 4, 3, 1);
+
+    // Each bg is cell_width × cell_height at the correct position.
+    for i in 0..4 {
+        let bg = nth_instance(frame.backgrounds.as_bytes(), i);
+        assert_eq!(bg.size, (8.0, 16.0), "bg {i} should be cell-sized");
+        assert_eq!(bg.pos.0, i as f32 * 8.0, "bg {i} x position");
+    }
+}
+
+#[test]
+fn shaped_missing_glyph_in_atlas_skips_fg() {
+    // Shaped glyph exists but atlas doesn't have it → no fg instance.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(1, 1, "X");
+    let atlas = KeyTestAtlas(HashMap::new()); // empty atlas
+
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 99,
+        face_idx: FaceIdx::REGULAR,
+        col_start: 0,
+        col_span: 1,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let shaped = shaped_one_row(1, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // 1 bg, 0 fg (atlas miss), 1 cursor.
+    assert_counts(&frame, 1, 0, 1);
+}
+
+#[test]
+fn shaped_empty_glyphs_produces_bg_only() {
+    // All cells are spaces → no shaped glyphs → bg only.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(3, 1, "   ");
+    let atlas = KeyTestAtlas(HashMap::new());
+
+    let shaped = ShapedFrame::new(3, size_q6);
+    // Push an empty row (no glyphs).
+    let empty_glyphs: Vec<ShapedGlyph> = Vec::new();
+    let mut col_map = Vec::new();
+    crate::font::shaper::build_col_glyph_map(&empty_glyphs, 3, &mut col_map);
+
+    let mut sf = shaped;
+    sf.push_row(&empty_glyphs, &col_map);
+    let frame = prepare_frame_shaped(&input, &atlas, &sf);
+
+    assert_counts(&frame, 3, 0, 1);
 }

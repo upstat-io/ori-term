@@ -9,32 +9,49 @@
 //! wraps `FontCollection::resolve` + `GlyphAtlas::lookup`; tests use a simple
 //! `HashMap`.
 
+pub(crate) mod shaped_frame;
+
 use oriterm_core::{CellFlags, CursorShape, Rgb};
 
 use super::atlas::AtlasEntry;
 use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
-use crate::font::GlyphStyle;
+use crate::font::shaper::ShapedGlyph;
+use crate::font::{GlyphStyle, RasterKey};
+
+pub(crate) use shaped_frame::ShapedFrame;
 
 /// Abstracts glyph atlas lookup for testability.
 ///
-/// Production (Section 5.10): wraps `FontCollection::resolve` +
-/// `GlyphAtlas::lookup`. Tests: wraps a `HashMap<(char, GlyphStyle), AtlasEntry>`.
+/// Production: the shaped path uses [`lookup_key`](Self::lookup_key) for
+/// direct `RasterKey` → `AtlasEntry` lookups. Tests may override `lookup`
+/// for the per-cell unshaped path.
 pub trait AtlasLookup {
     /// Look up a cached glyph entry by character and style.
-    fn lookup(&self, ch: char, style: GlyphStyle) -> Option<&AtlasEntry>;
+    ///
+    /// Used by the unshaped [`prepare_frame`] test path. Default returns
+    /// `None` — production implementations only need [`lookup_key`](Self::lookup_key).
+    #[allow(dead_code, reason = "used by test-only unshaped prepare_frame path")]
+    fn lookup(&self, _ch: char, _style: GlyphStyle) -> Option<&AtlasEntry> {
+        None
+    }
+
+    /// Look up a cached glyph entry by [`RasterKey`] (shaped path).
+    fn lookup_key(&self, key: RasterKey) -> Option<&AtlasEntry>;
 }
 
 /// Convert cell flags to the corresponding glyph style.
-pub(crate) fn glyph_style(flags: CellFlags) -> GlyphStyle {
+#[cfg(test)]
+fn glyph_style(flags: CellFlags) -> GlyphStyle {
     GlyphStyle::from_cell_flags(flags)
 }
 
-/// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`].
+/// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`] using per-cell
+/// character lookups (unshaped path).
 ///
-/// Allocates a new `PreparedFrame` with capacity for the grid dimensions,
-/// then delegates to [`prepare_frame_into`]. For steady-state rendering,
-/// prefer `prepare_frame_into` to reuse allocations across frames.
+/// Used by tests to verify prepare logic without shaping complexity. Production
+/// rendering uses [`prepare_frame_shaped`] instead.
+#[cfg(test)]
 pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFrame {
     let cols = input.columns();
     let rows = input.rows();
@@ -46,12 +63,10 @@ pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFra
 }
 
 /// Convert a [`FrameInput`] into a pre-existing [`PreparedFrame`], reusing
-/// its buffer allocations.
+/// its buffer allocations (unshaped path).
 ///
-/// Clears all instance buffers (retaining capacity), updates the clear
-/// color, then fills backgrounds, glyphs, and cursors. This avoids the
-/// ~307KB per-frame allocation that [`prepare_frame`] incurs for an 80x24
-/// terminal.
+/// Used by tests. Production rendering uses [`prepare_frame_shaped`] instead.
+#[cfg(test)]
 pub fn prepare_frame_into(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
@@ -63,11 +78,32 @@ pub fn prepare_frame_into(
     fill_frame(input, atlas, out);
 }
 
-/// Shared implementation: emit instances into `frame`.
+/// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`] using shaped
+/// glyph data.
 ///
-/// Iterates every visible cell, emits background and glyph instances, then
-/// builds cursor instances. The result is fully deterministic: same input +
-/// same atlas = bitwise identical output.
+/// Like [`prepare_frame`] but uses pre-shaped glyph positions from a
+/// [`ShapedFrame`] instead of per-cell character lookups. This enables
+/// ligatures, combining marks, and shaper-driven positioning.
+pub fn prepare_frame_shaped(
+    input: &FrameInput,
+    atlas: &dyn AtlasLookup,
+    shaped: &ShapedFrame,
+) -> PreparedFrame {
+    let cols = input.columns();
+    let rows = input.rows();
+    let opacity = f64::from(input.palette.opacity);
+    let mut frame =
+        PreparedFrame::with_capacity(input.viewport, cols, rows, input.palette.background, opacity);
+    fill_frame_shaped(input, atlas, shaped, &mut frame);
+    frame
+}
+
+/// Unshaped per-cell rendering: emit instances into `frame`.
+///
+/// Iterates every visible cell, emits background and glyph instances via
+/// character lookup, then builds cursor instances. Used by tests; production
+/// rendering uses [`fill_frame_shaped`].
+#[cfg(test)]
 fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedFrame) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
@@ -125,6 +161,94 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
             ch,
             input.palette.cursor_color,
         );
+    }
+}
+
+/// Shaped rendering: emit background, glyph, and cursor instances from shaped data.
+///
+/// Backgrounds and cursors use the same per-cell logic as [`fill_frame`].
+/// Glyphs are driven by the [`ShapedFrame`] col-to-glyph map instead of
+/// per-cell character lookups, enabling ligatures and combining marks.
+fn fill_frame_shaped(
+    input: &FrameInput,
+    atlas: &dyn AtlasLookup,
+    shaped: &ShapedFrame,
+    frame: &mut PreparedFrame,
+) {
+    let cw = input.cell_size.width;
+    let ch = input.cell_size.height;
+    let baseline = input.cell_size.baseline;
+
+    for cell in &input.content.cells {
+        if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+            continue;
+        }
+
+        let col = cell.column.0;
+        let row = cell.line;
+        let x = col as f32 * cw;
+        let y = row as f32 * ch;
+
+        // Background (identical to unshaped path).
+        let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
+            2.0 * cw
+        } else {
+            cw
+        };
+        frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
+
+        // Foreground: emit shaped glyphs via col-to-glyph map.
+        if let Some(start_idx) = shaped.col_map(row, col) {
+            let row_glyphs = shaped.row_glyphs(row);
+            emit_shaped_glyphs(row_glyphs, start_idx, col, x, y, baseline, shaped.size_q6(), atlas, cell.fg, frame);
+        }
+    }
+
+    // Cursor (identical to unshaped path).
+    let cursor = &input.content.cursor;
+    if cursor.visible {
+        build_cursor(frame, cursor.shape, cursor.column.0, cursor.line, cw, ch, input.palette.cursor_color);
+    }
+}
+
+/// Emit glyph instances for a shaped cell: base glyph + any combining marks.
+///
+/// Starts at `start_idx` in `row_glyphs` (the base glyph from the col map),
+/// then iterates forward while subsequent glyphs share the same `col_start`
+/// (combining marks are contiguous in the shaper output).
+fn emit_shaped_glyphs(
+    row_glyphs: &[ShapedGlyph],
+    start_idx: usize,
+    col: usize,
+    x: f32,
+    y: f32,
+    baseline: f32,
+    size_q6: u32,
+    atlas: &dyn AtlasLookup,
+    fg: Rgb,
+    frame: &mut PreparedFrame,
+) {
+    let mut is_first = true;
+    for sg in &row_glyphs[start_idx..] {
+        // Stop at the first glyph in a different column (combining marks are contiguous).
+        if !is_first && sg.col_start != col {
+            break;
+        }
+        is_first = false;
+
+        let key = RasterKey {
+            glyph_id: sg.glyph_id,
+            face_idx: sg.face_idx,
+            size_q6,
+        };
+        if let Some(entry) = atlas.lookup_key(key) {
+            // Apply shaper offsets: x_offset shifts horizontally,
+            // y_offset shifts vertically (positive = up in font coords = subtract in screen).
+            let gx = x + entry.bearing_x as f32 + sg.x_offset;
+            let gy = y + baseline - entry.bearing_y as f32 - sg.y_offset;
+            let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
+            frame.glyphs.push_glyph(gx, gy, entry.width as f32, entry.height as f32, uv, fg, 1.0, entry.page);
+        }
     }
 }
 

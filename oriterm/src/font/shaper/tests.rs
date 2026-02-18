@@ -321,6 +321,45 @@ fn col_glyph_map_reuses_buffer() {
 }
 
 #[test]
+fn col_glyph_map_first_wins_for_combining_marks() {
+    // Two glyphs at the same col_start: base char (glyph 50) and combining mark (glyph 51).
+    // build_col_glyph_map should store the FIRST glyph's index.
+    let glyphs = vec![
+        super::ShapedGlyph {
+            glyph_id: 50,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 0,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        super::ShapedGlyph {
+            glyph_id: 51,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 0, // same column — combining mark
+            col_span: 1,
+            x_offset: 1.5,
+            y_offset: 3.0,
+        },
+        super::ShapedGlyph {
+            glyph_id: 52,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 1,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+
+    let mut map = Vec::new();
+    super::build_col_glyph_map(&glyphs, 2, &mut map);
+
+    // First-wins: col 0 points to glyph 0 (the base), not glyph 1 (the combining mark).
+    assert_eq!(map[0], Some(0), "first-wins: base glyph claims col 0");
+    assert_eq!(map[1], Some(2), "next column maps to glyph at col 1");
+}
+
+#[test]
 fn col_glyph_map_ligature_span() {
     // Simulate a ligature spanning 2 columns.
     let glyphs = vec![

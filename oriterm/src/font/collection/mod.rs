@@ -238,7 +238,6 @@ impl FontCollection {
     ///
     /// Faces borrow from `self`, so the returned vec must not outlive `self`.
     /// Create once per frame, reuse across all rows.
-    #[allow(dead_code, reason = "consumed by renderer integration in later section")]
     pub fn create_shaping_faces(&self) -> Vec<Option<rustybuzz::Face<'_>>> {
         let total = 4 + self.fallbacks.len();
         let mut faces = Vec::with_capacity(total);

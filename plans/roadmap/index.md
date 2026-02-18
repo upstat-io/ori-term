@@ -167,7 +167,7 @@ profiling, timing, Instant, startup time, latency
 ---
 
 ### Section 06: Font Pipeline + Best-in-Class Glyph Rendering
-**File:** `section-06-font-pipeline.md` | **Tier:** 2 | **Status:** Not Started
+**File:** `section-06-font-pipeline.md` | **Tier:** 2 | **Status:** In Progress
 
 ```
 font, FontCollection, FontSet, FaceData, FaceIdx, font discovery
@@ -811,7 +811,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 04 | PTY + Event Loop | `section-04-pty-eventloop.md` | 1 | Not Started |
 | 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | In Progress |
 | 05B | Startup Performance | `section-05b-startup-perf.md` | 2 | Not Started (blocks 06) |
-| 06 | Font Pipeline | `section-06-font-pipeline.md` | 2 | Not Started |
+| 06 | Font Pipeline | `section-06-font-pipeline.md` | 2 | In Progress |
 | 07 | 2D UI Framework | `section-07-ui-framework.md` | 2 | Not Started |
 | 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Not Started |
 | 09 | Selection & Clipboard | `section-09-selection-clipboard.md` | 3 | Not Started |

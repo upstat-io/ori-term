@@ -5,10 +5,8 @@
 //! The caller runs Extract → Prepare on the CPU, then hands the resulting
 //! [`PreparedFrame`] to [`GpuRenderer::render_frame`] for GPU submission.
 
-use std::collections::HashMap;
 use std::fmt;
 
-use oriterm_core::CellFlags;
 use wgpu::{
     BindGroupLayout, Buffer, BufferDescriptor, BufferUsages, Color, CommandEncoderDescriptor,
     Device, LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
@@ -22,10 +20,11 @@ use super::pipeline::{
     create_atlas_bind_group_layout, create_bg_pipeline, create_fg_pipeline,
     create_uniform_bind_group_layout,
 };
-use super::prepare::{self, AtlasLookup};
+use super::prepare::{self, AtlasLookup, ShapedFrame};
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
 use crate::font::collection::size_key;
+use crate::font::shaper::{build_col_glyph_map, prepare_line, shape_prepared_runs};
 use crate::font::{CellMetrics, FontCollection, GlyphStyle, RasterKey};
 
 // ── Error type ──
@@ -58,27 +57,16 @@ impl std::error::Error for SurfaceError {}
 
 // ── Atlas lookup bridge ──
 
-/// Bridges [`FontCollection`] + [`GlyphAtlas`] into the [`AtlasLookup`] trait.
+/// Bridges [`GlyphAtlas`] into the [`AtlasLookup`] trait.
 ///
-/// Used by the Prepare phase to look up cached glyphs without GPU types.
-/// Reads from the resolve cache populated by [`GpuRenderer::ensure_glyphs_cached`]
-/// to avoid redundant `FontCollection::resolve` calls.
+/// Used by the Prepare phase to look up cached glyphs by [`RasterKey`]
+/// without exposing GPU types.
 struct RendererAtlas<'a> {
-    resolve_cache: &'a HashMap<(char, GlyphStyle), RasterKey>,
-    collection: &'a FontCollection,
     atlas: &'a GlyphAtlas,
-    size_q6: u32,
 }
 
 impl AtlasLookup for RendererAtlas<'_> {
-    fn lookup(&self, ch: char, style: GlyphStyle) -> Option<&super::atlas::AtlasEntry> {
-        let key = if let Some(&cached) = self.resolve_cache.get(&(ch, style)) {
-            cached
-        } else {
-            // Cache miss (should be rare — ensure_glyphs_cached covers all cells).
-            let resolved = self.collection.resolve(ch, style);
-            RasterKey::from_resolved(resolved, self.size_q6)
-        };
+    fn lookup_key(&self, key: RasterKey) -> Option<&super::atlas::AtlasEntry> {
         self.atlas.lookup(key)
     }
 }
@@ -103,11 +91,6 @@ pub struct GpuRenderer {
     // Atlas + fonts
     atlas: GlyphAtlas,
     font_collection: FontCollection,
-
-    // Resolve cache: (char, GlyphStyle) → RasterKey.
-    // Stable across frames — only invalidated on font change. Populated by
-    // `ensure_glyphs_cached`, consumed by `RendererAtlas::lookup`.
-    resolve_cache: HashMap<(char, GlyphStyle), RasterKey>,
 
     // Per-frame GPU instance buffers (grow-only, never shrink).
     bg_buffer: Option<Buffer>,
@@ -136,12 +119,10 @@ impl GpuRenderer {
 
         // Atlas + pre-cache printable ASCII (0x20–0x7E).
         let mut atlas = GlyphAtlas::new(device);
-        let mut resolve_cache = HashMap::new();
         let size_q6 = size_key(font_collection.size_px());
         for ch in ' '..='~' {
             let resolved = font_collection.resolve(ch, GlyphStyle::Regular);
             let key = RasterKey::from_resolved(resolved, size_q6);
-            resolve_cache.insert((ch, GlyphStyle::Regular), key);
             if let Some(glyph) = font_collection.rasterize(key) {
                 atlas.insert(key, glyph, queue);
             }
@@ -164,7 +145,6 @@ impl GpuRenderer {
             atlas_layout,
             atlas,
             font_collection,
-            resolve_cache,
             bg_buffer: None,
             fg_buffer: None,
             cursor_buffer: None,
@@ -191,61 +171,82 @@ impl GpuRenderer {
 
     // ── Frame preparation ──
 
-    /// Ensure all glyphs in the frame are cached in the atlas.
+    /// Shape all visible rows into a [`ShapedFrame`].
     ///
-    /// Rasterizes and uploads any missing glyphs. Must be called before
-    /// [`prepare`](Self::prepare) so every atlas lookup hits the cache.
-    pub fn ensure_glyphs_cached(&mut self, input: &FrameInput, gpu: &GpuState) {
+    /// Creates rustybuzz faces from the font collection, shapes each row,
+    /// and builds per-row glyph-to-column maps. The returned `ShapedFrame`
+    /// is fully owned (no borrows into font data) so `self` can be mutably
+    /// borrowed afterward for atlas caching.
+    fn shape_frame(&self, input: &FrameInput) -> ShapedFrame {
+        let cols = input.columns();
+        let rows = input.rows();
         let size_q6 = size_key(self.font_collection.size_px());
+        let faces = self.font_collection.create_shaping_faces();
 
-        for cell in &input.content.cells {
-            if cell.ch == ' ' || cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
-                continue;
-            }
+        let mut shaped = ShapedFrame::new(cols, size_q6);
+        let mut runs = Vec::new();
+        let mut glyphs = Vec::new();
+        let mut col_map = Vec::new();
 
-            let style = prepare::glyph_style(cell.flags);
+        for row_idx in 0..rows {
+            let start = row_idx * cols;
+            let end = start + cols;
+            let row_cells = &input.content.cells[start..end];
 
-            // Use the resolve cache to avoid redundant charmap + fallback
-            // chain lookups. The cache persists across frames since the
-            // mapping is stable until font configuration changes.
-            let key = if let Some(&cached) = self.resolve_cache.get(&(cell.ch, style)) {
-                cached
-            } else {
-                let resolved = self.font_collection.resolve(cell.ch, style);
-                let k = RasterKey::from_resolved(resolved, size_q6);
-                self.resolve_cache.insert((cell.ch, style), k);
-                k
+            prepare_line(row_cells, cols, &self.font_collection, &mut runs);
+            shape_prepared_runs(&runs, &faces, &self.font_collection, &mut glyphs);
+            build_col_glyph_map(&glyphs, cols, &mut col_map);
+            shaped.push_row(&glyphs, &col_map);
+        }
+
+        shaped
+    }
+
+    /// Ensure all shaped glyphs are cached in the atlas.
+    ///
+    /// Iterates all glyphs in the shaped frame, rasterizes and uploads any
+    /// missing ones. Must be called before the Prepare phase so every
+    /// `lookup_key` call hits the cache.
+    fn ensure_shaped_glyphs_cached(&mut self, shaped: &ShapedFrame, gpu: &GpuState) {
+        let size_q6 = shaped.size_q6();
+
+        for glyph in shaped.all_glyphs() {
+            let key = RasterKey {
+                glyph_id: glyph.glyph_id,
+                face_idx: glyph.face_idx,
+                size_q6,
             };
 
-            // Touch the page for LRU tracking if already cached.
             if self.atlas.lookup_touch(key).is_some() {
                 continue;
             }
-
             if self.atlas.is_known_empty(key) {
                 continue;
             }
-
-            if let Some(glyph) = self.font_collection.rasterize(key) {
-                self.atlas.insert(key, glyph, &gpu.queue);
+            if let Some(rasterized) = self.font_collection.rasterize(key) {
+                self.atlas.insert(key, rasterized, &gpu.queue);
             }
         }
     }
 
-    /// Run the Prepare phase: convert a `FrameInput` into a `PreparedFrame`.
+    /// Run the Prepare phase: shape text and convert a `FrameInput` into a `PreparedFrame`.
     ///
-    /// Calls [`ensure_glyphs_cached`](Self::ensure_glyphs_cached) first, then
-    /// builds the prepared frame via the atlas lookup bridge.
+    /// Three phases:
+    /// 1. **Shape** — segment rows into runs and shape via rustybuzz.
+    /// 2. **Cache** — rasterize and upload any missing shaped glyphs.
+    /// 3. **Prepare** — emit GPU instances from shaped glyph positions.
     pub fn prepare(&mut self, input: &FrameInput, gpu: &GpuState) -> PreparedFrame {
         self.atlas.begin_frame();
-        self.ensure_glyphs_cached(input, gpu);
-        let bridge = RendererAtlas {
-            resolve_cache: &self.resolve_cache,
-            collection: &self.font_collection,
-            atlas: &self.atlas,
-            size_q6: size_key(self.font_collection.size_px()),
-        };
-        prepare::prepare_frame(input, &bridge)
+
+        // Phase A: Shape all rows (borrows font_collection immutably).
+        let shaped = self.shape_frame(input);
+
+        // Phase B: Ensure shaped glyphs cached (borrows self mutably).
+        self.ensure_shaped_glyphs_cached(&shaped, gpu);
+
+        // Phase C: Build prepared frame via atlas lookup bridge.
+        let bridge = RendererAtlas { atlas: &self.atlas };
+        prepare::prepare_frame_shaped(input, &bridge, &shaped)
     }
 
     /// Run the Prepare phase into an existing `PreparedFrame`, reusing buffers.
@@ -257,14 +258,11 @@ impl GpuRenderer {
         out: &mut PreparedFrame,
     ) {
         self.atlas.begin_frame();
-        self.ensure_glyphs_cached(input, gpu);
-        let bridge = RendererAtlas {
-            resolve_cache: &self.resolve_cache,
-            collection: &self.font_collection,
-            atlas: &self.atlas,
-            size_q6: size_key(self.font_collection.size_px()),
-        };
-        prepare::prepare_frame_into(input, &bridge, out);
+        let shaped = self.shape_frame(input);
+        self.ensure_shaped_glyphs_cached(&shaped, gpu);
+        let bridge = RendererAtlas { atlas: &self.atlas };
+        // TODO: add prepare_frame_shaped_into when frame reuse is needed.
+        *out = prepare::prepare_frame_shaped(input, &bridge, &shaped);
     }
 
     // ── Render phase ──

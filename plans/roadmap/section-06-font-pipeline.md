@@ -22,7 +22,7 @@ sections:
     status: in-progress
   - id: "6.6"
     title: Combining Marks + Zero-Width Characters
-    status: in-progress
+    status: complete
   - id: "6.7"
     title: OpenType Feature Control
     status: in-progress
@@ -234,7 +234,7 @@ Shape each run through rustybuzz to produce positioned glyphs with correct ligat
   - [x] For each run:
     - [x] Create `rustybuzz::UnicodeBuffer`, push run's text
     - [x] Set direction: `LeftToRight` (terminal is always LTR)
-    - [ ] Get features for this face: `collection.features_for_face(run.face_idx)` <!-- blocked-by:6.7 -->
+    - [x] Get features for this face: `collection.features_for_face(run.face_idx)`
     - [x] Call `rustybuzz::shape(face, &features, buffer)`
     - [x] Extract `glyph_infos()` and `glyph_positions()`
     - [x] Scale: `effective_size / upem`
@@ -270,20 +270,22 @@ Map shaped glyphs back to grid columns. Ligatures span multiple columns — only
   - [x] `col_glyph_map: Vec<Option<usize>>` — maps column index → index in shaped glyphs vec
   - [x] For each shaped glyph: `col_glyph_map[glyph.col_start] = Some(glyph_index)`
   - [x] Subsequent columns of a ligature (col_start+1, col_start+2, ...) remain `None`
-  - [ ] During rendering: if `col_glyph_map[col]` is `Some(i)` → render glyph; if `None` → skip (continuation of ligature) <!-- blocked-by:6.8 -->
-- [ ] Ligature background:
-  - [ ] Background color for each column still rendered independently (cell-by-cell)
-  - [ ] Only the foreground glyph spans multiple columns
+  - [x] During rendering: if `col_glyph_map[col]` is `Some(i)` → render glyph; if `None` → skip (continuation of ligature)
+  - [x] Implemented via `ShapedFrame` col map + `fill_frame_shaped` in `gpu/prepare/mod.rs`
+- [x] Ligature background:
+  - [x] Background color for each column still rendered independently (cell-by-cell)
+  - [x] Only the foreground glyph spans multiple columns
 - [ ] Ligature + selection interaction:
   - [ ] If selection covers part of a ligature, still render the full glyph
   - [ ] Selection highlighting applies to individual cells (not whole ligature)
-- [ ] Ligature + cursor interaction:
-  - [ ] Cursor on a ligature column renders on top of the glyph
-  - [ ] Cursor rendering is per-cell, unaffected by glyph span
-- [ ] **Tests**:
-  - [ ] `"=>"` ligature: col 0 gets glyph, col 1 is None
-  - [ ] Selection of col 1 of a ligature doesn't duplicate glyph
-  - [ ] Mixed ligature + non-ligature on same line renders correctly
+- [x] Ligature + cursor interaction:
+  - [x] Cursor on a ligature column renders on top of the glyph
+  - [x] Cursor rendering is per-cell, unaffected by glyph span
+- [x] **Tests** (shaped rendering):
+  - [x] Ligature: 2-col glyph → 2 bg instances, 1 fg instance (at col 0 only)
+  - [x] Background independence: ligature cells get individual bg rects
+  - [ ] Selection of col 1 of a ligature doesn't duplicate glyph <!-- blocked-by:9 -->
+  - [x] Mixed ligature + non-ligature on same line renders correctly
 
 ---
 
@@ -307,10 +309,11 @@ Handle combining diacritics, ZWJ sequences, and other zero-width characters.
   - [x] In `prepare_line()`: after appending base char, also append `cell.extra.zerowidth` chars to run text
   - [x] All zero-width chars get same column mapping as their base char
   - [x] Rustybuzz handles combining: base + accent → single positioned cluster
-- [ ] Rendering: <!-- blocked-by:6.8 -->
-  - [ ] Shaper produces multiple glyphs at same col_start (base + marks)
-  - [ ] Each glyph rendered with its own x_offset/y_offset from shaper
-  - [ ] Multiple glyphs at same column are all rendered (not just first)
+- [x] Rendering:
+  - [x] Shaper produces multiple glyphs at same col_start (base + marks)
+  - [x] Each glyph rendered with its own x_offset/y_offset from shaper
+  - [x] Multiple glyphs at same column are all rendered via first-wins col map + forward iteration
+  - [x] Implemented via `emit_shaped_glyphs` in `gpu/prepare/mod.rs`
 - [x] **Tests**:
   - [x] `'e'` + `'\u{0301}'` (combining acute) → single shaping cluster at same column
   - [x] `'a'` + multiple combining marks → all stored in zerowidth vec
