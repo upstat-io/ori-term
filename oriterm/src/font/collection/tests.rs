@@ -813,7 +813,7 @@ fn synthetic_bold_italic_applies_both() {
 
 #[test]
 fn regular_cells_have_no_synthesis() {
-    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::Regular);
     assert_eq!(
         resolved.synthetic,
