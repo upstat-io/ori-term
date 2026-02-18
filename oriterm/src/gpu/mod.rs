@@ -2,6 +2,7 @@
 
 pub(crate) mod atlas;
 pub(crate) mod bind_groups;
+pub(crate) mod builtin_glyphs;
 pub(crate) mod extract;
 pub(crate) mod frame_input;
 pub(crate) mod instance_writer;

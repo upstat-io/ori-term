@@ -1,0 +1,244 @@
+//! Built-in geometric glyph rasterization for box drawing, block elements,
+//! braille patterns, and powerline symbols.
+//!
+//! These characters are rasterized from cell dimensions on the CPU into alpha
+//! bitmaps, then inserted into the glyph atlas and rendered through the normal
+//! texture-sampled pipeline. This produces pixel-perfect results regardless of
+//! which font is loaded.
+
+mod blocks;
+mod box_drawing;
+mod braille;
+mod powerline;
+
+use crate::font::collection::RasterizedGlyph;
+use crate::font::{FaceIdx, GlyphFormat, RasterKey};
+
+use super::atlas::GlyphAtlas;
+use super::frame_input::FrameInput;
+use super::state::GpuState;
+
+// ── Public API ──
+
+/// Whether a character should be rendered as a built-in geometric glyph.
+///
+/// O(1) range match covering box drawing, block elements, braille patterns,
+/// and powerline symbols.
+pub(crate) fn is_builtin(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{2500}'..='\u{257F}'   // Box Drawing
+        | '\u{2580}'..='\u{259F}' // Block Elements
+        | '\u{2800}'..='\u{28FF}' // Braille Patterns
+        | '\u{E0A0}'..='\u{E0A3}' // Powerline
+        | '\u{E0B0}'..='\u{E0D4}' // Powerline Extra
+    )
+}
+
+/// Construct a [`RasterKey`] for a built-in glyph.
+///
+/// Uses [`FaceIdx::BUILTIN`] as the face index and the character's codepoint
+/// as the glyph ID. All built-in codepoints fit in `u16`.
+pub(crate) fn raster_key(ch: char, size_q6: u32) -> RasterKey {
+    RasterKey {
+        glyph_id: ch as u16,
+        face_idx: FaceIdx::BUILTIN,
+        size_q6,
+    }
+}
+
+/// Rasterize a built-in glyph to an alpha bitmap.
+///
+/// Returns `None` if the character is not a recognized built-in or if cell
+/// dimensions are zero. The returned glyph has `bearing_x = 0`, `bearing_y = 0`
+/// and fills the entire cell.
+pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<RasterizedGlyph> {
+    if cell_w == 0 || cell_h == 0 {
+        return None;
+    }
+
+    let mut canvas = Canvas::new(cell_w, cell_h);
+    let handled = match ch {
+        '\u{2500}'..='\u{257F}' => box_drawing::draw_box(&mut canvas, ch),
+        '\u{2580}'..='\u{259F}' => blocks::draw_block(&mut canvas, ch),
+        '\u{2800}'..='\u{28FF}' => braille::draw_braille(&mut canvas, ch),
+        '\u{E0A0}'..='\u{E0A3}' | '\u{E0B0}'..='\u{E0D4}' => {
+            powerline::draw_powerline(&mut canvas, ch)
+        }
+        _ => false,
+    };
+
+    if handled {
+        Some(canvas.into_rasterized_glyph())
+    } else {
+        None
+    }
+}
+
+/// Rasterize and cache built-in geometric glyphs found in the frame.
+///
+/// Scans all cells for built-in characters (box drawing, block elements,
+/// braille, powerline). On cache miss, rasterizes the glyph to an alpha
+/// bitmap and inserts it into the atlas.
+pub(crate) fn ensure_cached(
+    input: &FrameInput,
+    size_q6: u32,
+    atlas: &mut GlyphAtlas,
+    gpu: &GpuState,
+) {
+    let cell_w = input.cell_size.width.round() as u32;
+    let cell_h = input.cell_size.height.round() as u32;
+
+    for cell in &input.content.cells {
+        if !is_builtin(cell.ch) {
+            continue;
+        }
+        let key = raster_key(cell.ch, size_q6);
+        if atlas.lookup_touch(key).is_some() {
+            continue;
+        }
+        if atlas.is_known_empty(key) {
+            continue;
+        }
+        if let Some(glyph) = rasterize(cell.ch, cell_w, cell_h) {
+            atlas.insert(key, &glyph, &gpu.queue);
+        }
+    }
+}
+
+// ── Canvas ──
+
+/// Simple alpha bitmap for rasterizing built-in glyphs.
+///
+/// Coordinates are in pixel space relative to the cell origin (0, 0).
+/// All drawing operations clip to canvas bounds.
+pub(super) struct Canvas {
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+}
+
+impl Canvas {
+    /// Create a zero-filled canvas of the given pixel dimensions.
+    fn new(width: u32, height: u32) -> Self {
+        Self {
+            data: vec![0; (width * height) as usize],
+            width,
+            height,
+        }
+    }
+
+    /// Canvas width in pixels.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Canvas height in pixels.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Fill a rectangle with a solid alpha value.
+    ///
+    /// Uses `floor()` for the start edge and `ceil()` for the end edge to
+    /// ensure complete coverage of the specified area. Out-of-bounds regions
+    /// are clipped.
+    pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, alpha: u8) {
+        let x0 = (x.floor() as i32).max(0) as u32;
+        let y0 = (y.floor() as i32).max(0) as u32;
+        let x1 = ((x + w).ceil() as u32).min(self.width);
+        let y1 = ((y + h).ceil() as u32).min(self.height);
+
+        for py in y0..y1 {
+            let row_start = (py * self.width) as usize;
+            for px in x0..x1 {
+                self.data[row_start + px as usize] = alpha;
+            }
+        }
+    }
+
+    /// Blend an alpha value at a single pixel (saturating add, clamped to 255).
+    ///
+    /// Out-of-bounds coordinates are silently ignored.
+    pub fn blend_pixel(&mut self, x: i32, y: i32, alpha: u8) {
+        if x >= 0 && y >= 0 && (x as u32) < self.width && (y as u32) < self.height {
+            let idx = (y as u32 * self.width + x as u32) as usize;
+            self.data[idx] = self.data[idx].saturating_add(alpha);
+        }
+    }
+
+    /// Draw an anti-aliased line segment with the given thickness.
+    ///
+    /// Uses signed-distance-field evaluation: each pixel's alpha is determined
+    /// by its perpendicular distance to the line segment, with a 1px anti-alias
+    /// transition zone at the edges.
+    pub fn fill_line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32) {
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let len = dx.hypot(dy);
+        if len < f32::EPSILON {
+            return;
+        }
+
+        // Unit normal perpendicular to the line.
+        let nx = -dy / len;
+        let ny = dx / len;
+
+        let half_t = thickness / 2.0;
+        let max_dist = half_t + 0.5;
+
+        // Bounding box expanded by thickness.
+        let min_x = (x0.min(x1) - max_dist).floor().max(0.0) as u32;
+        let min_y = (y0.min(y1) - max_dist).floor().max(0.0) as u32;
+        let max_x = ((x0.max(x1) + max_dist).ceil() as u32).min(self.width);
+        let max_y = ((y0.max(y1) + max_dist).ceil() as u32).min(self.height);
+
+        let inv_len = 1.0 / len;
+
+        for py in min_y..max_y {
+            for px in min_x..max_x {
+                let pc_x = px as f32 + 0.5;
+                let pc_y = py as f32 + 0.5;
+
+                // Perpendicular distance from pixel center to infinite line.
+                let d = ((pc_x - x0) * nx + (pc_y - y0) * ny).abs();
+
+                // Longitudinal parameter along the line (0..len).
+                let along = (pc_x - x0) * dx * inv_len + (pc_y - y0) * dy * inv_len;
+
+                // Clip to line segment with 0.5px extension for clean endpoints.
+                if along < -0.5 || along > len + 0.5 {
+                    continue;
+                }
+
+                let alpha = if d <= half_t - 0.5 {
+                    255u8
+                } else if d <= half_t + 0.5 {
+                    ((half_t + 0.5 - d) * 255.0) as u8
+                } else {
+                    continue;
+                };
+
+                self.blend_pixel(px as i32, py as i32, alpha);
+            }
+        }
+    }
+
+    /// Consume the canvas and produce a [`RasterizedGlyph`].
+    ///
+    /// The glyph fills the entire cell: `bearing_x = 0`, `bearing_y = 0`.
+    fn into_rasterized_glyph(self) -> RasterizedGlyph {
+        RasterizedGlyph {
+            width: self.width,
+            height: self.height,
+            bearing_x: 0,
+            bearing_y: 0,
+            advance: self.width as f32,
+            format: GlyphFormat::Alpha,
+            bitmap: self.data,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

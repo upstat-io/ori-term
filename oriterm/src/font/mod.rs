@@ -133,9 +133,14 @@ impl FaceIdx {
     /// Regular primary face.
     pub const REGULAR: Self = Self(0);
 
+    /// Sentinel for built-in geometric glyphs (box drawing, blocks, braille, powerline).
+    ///
+    /// These glyphs are rasterized from cell dimensions, not from any font face.
+    pub const BUILTIN: Self = Self(u16::MAX);
+
     /// Whether this index refers to a fallback font (index >= 4).
     pub fn is_fallback(self) -> bool {
-        self.0 >= 4
+        self.0 >= 4 && self != Self::BUILTIN
     }
 
     /// Convert to `usize` for array indexing.
