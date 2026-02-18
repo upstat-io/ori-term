@@ -225,6 +225,11 @@ impl FontCollection {
         &self.features
     }
 
+    /// Whether the collection has a real Bold face (not synthetic).
+    pub fn has_bold(&self) -> bool {
+        self.primary[GlyphStyle::Bold as usize].is_some()
+    }
+
     /// Create rustybuzz `Face` objects for all loaded faces.
     ///
     /// Returns one entry per face slot (4 primary + N fallbacks). Primary faces
@@ -263,6 +268,43 @@ impl FontCollection {
         }
 
         faces
+    }
+
+    // ── Public operations ──
+
+    /// Change font size, recomputing all derived metrics and caches.
+    ///
+    /// Recomputes cell metrics from the Regular face at the new size,
+    /// recalculates cap-height normalization for fallback fonts, clears the
+    /// glyph cache, and re-pre-caches ASCII glyphs.
+    pub fn set_size(&mut self, size_pt: f32, dpi: f32) {
+        let size_px = size_pt * dpi / 72.0;
+
+        // Recompute metrics from Regular face.
+        let regular = self.primary[0].as_ref().expect("Regular face required");
+        let fm = compute_metrics(&regular.bytes, regular.face_index, size_px);
+        let primary_cap = cap_height_px(&regular.bytes, regular.face_index, size_px);
+
+        // Recalculate cap-height normalization for fallbacks.
+        for (fb, meta) in self.fallbacks.iter().zip(self.fallback_meta.iter_mut()) {
+            let fb_cap = cap_height_px(&fb.bytes, fb.face_index, size_px);
+            meta.scale_factor = if fb_cap > 0.0 && primary_cap > 0.0 {
+                primary_cap / fb_cap
+            } else {
+                1.0
+            };
+        }
+
+        self.size_px = size_px;
+        self.cell_width = fm.cell_width;
+        self.cell_height = fm.cell_height;
+        self.baseline = fm.baseline;
+        self.underline_offset = fm.underline_offset;
+        self.stroke_size = fm.stroke_size;
+        self.strikeout_offset = fm.strikeout_offset;
+        self.cap_height_px = primary_cap;
+        self.glyph_cache.clear();
+        self.pre_cache_ascii();
     }
 
     // ── Resolution ──
@@ -433,13 +475,20 @@ impl FontCollection {
         self.try_regular_with(ch, SyntheticFlags::BOLD | SyntheticFlags::ITALIC)
     }
 
-    /// Pre-cache all printable ASCII glyphs (0x20–0x7E).
+    /// Pre-cache all printable ASCII glyphs (0x20–0x7E) for Regular and Bold.
     fn pre_cache_ascii(&mut self) {
         let size_q6 = size_key(self.size_px);
         for ch in ' '..='~' {
             let resolved = self.resolve(ch, GlyphStyle::Regular);
             let key = RasterKey::from_resolved(resolved, size_q6);
             let _ = self.rasterize(key);
+        }
+        if self.has_bold() {
+            for ch in ' '..='~' {
+                let resolved = self.resolve(ch, GlyphStyle::Bold);
+                let key = RasterKey::from_resolved(resolved, size_q6);
+                let _ = self.rasterize(key);
+            }
         }
     }
 }

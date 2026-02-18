@@ -10,7 +10,7 @@ mod helpers;
 use std::fmt;
 
 use wgpu::{
-    BindGroupLayout, Buffer, Color, CommandEncoderDescriptor, LoadOp, Operations,
+    BindGroupLayout, Buffer, Color, CommandEncoderDescriptor, LoadOp, Operations, Queue,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, StoreOp, TextureView,
     TextureViewDescriptor,
 };
@@ -139,14 +139,7 @@ impl GpuRenderer {
 
         // Monochrome atlas + pre-cache printable ASCII (0x20–0x7E).
         let mut atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
-        let size_q6 = size_key(font_collection.size_px());
-        for ch in ' '..='~' {
-            let resolved = font_collection.resolve(ch, GlyphStyle::Regular);
-            let key = RasterKey::from_resolved(resolved, size_q6);
-            if let Some(glyph) = font_collection.rasterize(key) {
-                atlas.insert(key, glyph, queue);
-            }
-        }
+        pre_cache_atlas(&mut atlas, &mut font_collection, queue);
         let t_precache = t0.elapsed();
 
         // Color atlas (starts empty — emoji cached on first use).
@@ -389,6 +382,57 @@ impl GpuRenderer {
         self.render_frame(gpu, &view);
         output.present();
         Ok(())
+    }
+
+    // ── Font size change ──
+
+    /// Change font size, recomputing metrics, clearing atlases, and re-caching.
+    ///
+    /// Delegates to [`FontCollection::set_size`] for metrics + glyph cache,
+    /// then clears both GPU atlases, re-populates the monochrome atlas with
+    /// ASCII glyphs, and rebuilds bind groups for the new texture state.
+    #[allow(dead_code, reason = "font size change wired in later section")]
+    pub fn set_font_size(&mut self, size_pt: f32, dpi: f32, gpu: &GpuState) {
+        self.font_collection.set_size(size_pt, dpi);
+
+        self.atlas.clear();
+        self.color_atlas.clear();
+
+        pre_cache_atlas(&mut self.atlas, &mut self.font_collection, &gpu.queue);
+
+        self.atlas_bind_group
+            .rebuild(&gpu.device, &self.atlas_layout, self.atlas.view());
+        self.color_atlas_bind_group.rebuild(
+            &gpu.device,
+            &self.atlas_layout,
+            self.color_atlas.view(),
+        );
+    }
+}
+
+// ── Free functions ──
+
+/// Pre-cache printable ASCII glyphs (Regular + Bold) into the monochrome atlas.
+///
+/// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has
+/// a real Bold face. Used by both `GpuRenderer::new()` and `set_font_size()`.
+fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, queue: &Queue) {
+    let size_q6 = size_key(fc.size_px());
+    for ch in ' '..='~' {
+        let resolved = fc.resolve(ch, GlyphStyle::Regular);
+        let key = RasterKey::from_resolved(resolved, size_q6);
+        if let Some(glyph) = fc.rasterize(key) {
+            atlas.insert(key, glyph, queue);
+        }
+    }
+    if fc.has_bold() {
+        for ch in ' '..='~' {
+            let resolved = fc.resolve(ch, GlyphStyle::Bold);
+            let key = RasterKey::from_resolved(resolved, size_q6);
+            if let Some(glyph) = fc.rasterize(key) {
+                atlas.insert(key, glyph, queue);
+            }
+        }
     }
 }
 

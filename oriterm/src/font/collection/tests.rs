@@ -939,3 +939,82 @@ fn embolden_strength_scales_with_size() {
         "32px font should have 1.0px embolden"
     );
 }
+
+// ── Bold pre-caching (Section 6.14) ──
+
+#[test]
+fn pre_cache_bold_populates() {
+    // System collection has a real Bold face → should cache Bold ASCII too.
+    let system = system_collection(GlyphFormat::Alpha);
+    let embedded = embedded_only_collection(GlyphFormat::Alpha);
+    // System collection with Bold face should have more cached glyphs than
+    // embedded-only (which has no Bold face and caches only Regular).
+    if system.has_bold() {
+        assert!(
+            system.cache_len() > embedded.cache_len(),
+            "Bold pre-cache should add glyphs (system={}, embedded={})",
+            system.cache_len(),
+            embedded.cache_len(),
+        );
+    }
+}
+
+#[test]
+fn has_bold_false_for_embedded_only() {
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    assert!(!fc.has_bold(), "embedded-only collection has no Bold face");
+}
+
+// ── set_size (Section 6.14) ──
+
+#[test]
+fn set_size_recomputes_metrics() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let old_metrics = fc.cell_metrics();
+
+    fc.set_size(18.0, 96.0);
+    let new_metrics = fc.cell_metrics();
+
+    assert_ne!(
+        old_metrics, new_metrics,
+        "changing size 12→18 should produce different cell metrics"
+    );
+    assert!(
+        new_metrics.width > old_metrics.width,
+        "larger font should have wider cells"
+    );
+    assert!(
+        new_metrics.height > old_metrics.height,
+        "larger font should have taller cells"
+    );
+}
+
+#[test]
+fn set_size_clears_and_repopulates_cache() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let initial_count = fc.cache_len();
+    assert!(
+        initial_count >= 90,
+        "initial pre-cache should populate ASCII"
+    );
+
+    fc.set_size(18.0, 96.0);
+    assert!(
+        fc.cache_len() >= 90,
+        "set_size should re-pre-cache ASCII (got {})",
+        fc.cache_len(),
+    );
+}
+
+#[test]
+fn set_size_updates_size_px() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let expected = 18.0 * 96.0 / 72.0;
+
+    fc.set_size(18.0, 96.0);
+    assert!(
+        (fc.size_px() - expected).abs() < f32::EPSILON,
+        "size_px should reflect new size (expected {expected}, got {})",
+        fc.size_px(),
+    );
+}
