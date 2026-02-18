@@ -6,6 +6,7 @@
 
 mod face;
 mod loading;
+mod metadata;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,38 +15,13 @@ use swash::scale::ScaleContext;
 
 use super::{CellMetrics, FaceIdx, FontError, GlyphFormat, GlyphStyle, RasterKey, ResolvedGlyph, SyntheticFlags};
 use face::{build_face, cap_height_px, compute_metrics, glyph_id, rasterize_from_face, FaceData};
+use metadata::{default_features, effective_size_for, weight_variation, FallbackMeta};
+#[cfg(test)]
+use metadata::{parse_features, MAX_FONT_SIZE, MIN_FONT_SIZE};
+pub use face::size_key;
 pub use loading::FontSet;
 #[cfg(test)]
 use loading::FontData;
-
-pub use face::size_key;
-
-/// Minimum font size in pixels (prevents degenerate scaling).
-const MIN_FONT_SIZE: f32 = 2.0;
-
-/// Maximum font size in pixels (prevents absurd scaling).
-const MAX_FONT_SIZE: f32 = 200.0;
-
-/// Per-fallback metadata for cap-height normalization and feature overrides.
-///
-/// Each entry in `fallback_meta` corresponds 1:1 to the matching entry in
-/// `fallbacks`. System-discovered fallbacks get auto-computed `scale_factor`
-/// with default features; user-configured fallbacks can override features
-/// and add a `size_offset`.
-struct FallbackMeta {
-    /// Cap-height normalization: `primary_cap_height / fallback_cap_height`.
-    ///
-    /// Ensures glyphs from different fonts appear at visually consistent sizes.
-    /// A value of 1.0 means the fallback already matches the primary.
-    scale_factor: f32,
-    /// User-configured size adjustment in points (0.0 if unset).
-    size_offset: f32,
-    /// Per-fallback OpenType feature overrides.
-    ///
-    /// When `Some`, these features replace collection-wide defaults for this
-    /// fallback. When `None`, collection defaults apply.
-    features: Option<Vec<rustybuzz::Feature>>,
-}
 
 /// A rasterized glyph bitmap ready for atlas upload.
 #[derive(Debug, Clone)]
@@ -238,6 +214,13 @@ impl FontCollection {
     ///
     /// Faces borrow from `self`, so the returned vec must not outlive `self`.
     /// Create once per frame, reuse across all rows.
+    ///
+    /// # Performance
+    ///
+    /// Called every frame (~12-60us). Caching faces across frames would require
+    /// a self-referential struct (`Face<'a>` borrows from `FaceData` inside
+    /// `FontCollection`), which needs `unsafe` lifetime transmutation or a
+    /// crate like `yoke`. Not worth the complexity while the cost is bounded.
     pub fn create_shaping_faces(&self) -> Vec<Option<rustybuzz::Face<'_>>> {
         let total = 4 + self.fallbacks.len();
         let mut faces = Vec::with_capacity(total);
@@ -436,68 +419,6 @@ impl FontCollection {
             let _ = self.rasterize(key);
         }
     }
-}
-
-// ── Free functions ──
-
-/// Default OpenType features: standard ligatures + contextual alternates.
-///
-/// These are the features most users expect from a terminal font.
-fn default_features() -> Vec<rustybuzz::Feature> {
-    parse_features(&["liga", "calt"])
-}
-
-/// Parse feature tag strings into rustybuzz features.
-///
-/// Each string follows rustybuzz's `Feature::from_str` format:
-/// - `"liga"` — enable standard ligatures
-/// - `"-liga"` — disable standard ligatures
-/// - `"+dlig"` — enable discretionary ligatures
-/// - `"kern=0"` — disable kerning
-///
-/// Invalid tags are logged and skipped.
-pub fn parse_features(tags: &[&str]) -> Vec<rustybuzz::Feature> {
-    tags.iter()
-        .filter_map(|tag| match tag.parse::<rustybuzz::Feature>() {
-            Ok(f) => Some(f),
-            Err(e) => {
-                log::warn!("font: invalid OpenType feature '{tag}': {e}");
-                None
-            }
-        })
-        .collect()
-}
-
-/// Compute effective font size for a face index with cap-height normalization.
-///
-/// Primary faces return `base_size` unchanged. Fallback faces are scaled by
-/// their cap-height ratio: `base_size * scale_factor + size_offset`, clamped
-/// to `[MIN_FONT_SIZE, MAX_FONT_SIZE]`.
-fn effective_size_for(face_idx: FaceIdx, base_size: f32, fallback_meta: &[FallbackMeta]) -> f32 {
-    if let Some(fb_i) = face_idx.fallback_index() {
-        if let Some(meta) = fallback_meta.get(fb_i) {
-            return (base_size * meta.scale_factor + meta.size_offset)
-                .clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
-        }
-    }
-    base_size
-}
-
-/// Compute the `wght` variation value for a face index.
-///
-/// Primary faces use the configured weight (Regular/Italic) or bold-derived
-/// weight (Bold/BoldItalic). Fallback faces return `None`.
-fn weight_variation(face_idx: FaceIdx, weight: u16) -> Option<f32> {
-    if face_idx.is_fallback() {
-        return None;
-    }
-    let i = face_idx.as_usize();
-    let w = if i == 1 || i == 3 {
-        (weight + 300).min(900)
-    } else {
-        weight
-    };
-    Some(w as f32)
 }
 
 #[cfg(test)]
