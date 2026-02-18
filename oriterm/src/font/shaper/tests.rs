@@ -537,12 +537,11 @@ fn ui_measure_text_returns_total_width() {
     let cell_w = fc.cell_metrics().width;
     let width = super::measure_text("Hello", &fc);
 
-    // Monospace: 5 chars × cell_width. Shaped advances may differ slightly
-    // from cell_metrics due to different measurement paths (rustybuzz vs swash).
+    // measure_text uses unicode_width × cell_width, so the result is exact.
     let expected = 5.0 * cell_w;
     assert!(
-        (width - expected).abs() < cell_w,
-        "measured width {width} should be ≈ {expected} (within one cell)",
+        (width - expected).abs() < f32::EPSILON,
+        "measured width {width} should be exactly {expected}",
     );
 }
 

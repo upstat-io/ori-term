@@ -131,7 +131,11 @@ fn shape_ui_run(
         // No face — emit advance-only glyphs based on unicode width.
         let cell_w = collection.cell_metrics().width;
         for ch in text.chars() {
-            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32;
+            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+            if w == 0 {
+                continue;
+            }
+            let w = w as f32;
             output.push(UiShapedGlyph {
                 glyph_id: 0,
                 face_idx,
@@ -170,15 +174,14 @@ fn shape_ui_run(
 
 /// Measure the total pixel width of a text string.
 ///
-/// Creates shaping faces internally, shapes the text, and sums all glyph
-/// advances. Suitable for layout of short UI strings (tab titles, labels)
-/// that are measured once per layout pass.
+/// Uses `unicode_width * cell_width` for measurement, consistent with
+/// [`truncate_with_ellipsis`]. Exact for monospace fonts. Suitable for
+/// layout of short UI strings (tab titles, labels).
 pub fn measure_text(text: &str, collection: &FontCollection) -> f32 {
-    let faces = collection.create_shaping_faces();
-    let mut output = Vec::new();
-    let mut buffer_slot = None;
-    shape_text_string(text, &faces, collection, &mut output, &mut buffer_slot);
-    output.iter().map(|g| g.x_advance).sum()
+    let cell_w = collection.cell_metrics().width;
+    text.chars()
+        .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w)
+        .sum()
 }
 
 /// Truncate text with ellipsis if it exceeds `max_width` pixels.
