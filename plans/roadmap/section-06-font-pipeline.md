@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "6.12"
     title: Text Decorations
-    status: not-started
+    status: in-progress
   - id: "6.13"
     title: UI Text Shaping
     status: not-started
@@ -557,41 +557,47 @@ All underline styles, strikethrough, hyperlink underline, URL hover underline.
 
 **Reference:** `_old/src/gpu/render_grid.rs` (underline/strikethrough sections)
 
-- [ ] **Single underline** (CellFlags::UNDERLINE):
-  - [ ] Solid line at `y = cell_bottom - 2px`, thickness = 1px
-  - [ ] Spans cell width
-- [ ] **Double underline** (CellFlags::DOUBLE_UNDERLINE):
-  - [ ] Two solid lines: `y = cell_bottom - 2px` and `y = cell_bottom - 4px`
-- [ ] **Curly underline** (CellFlags::CURLY_UNDERLINE):
-  - [ ] Sine wave: `y = base_y + amplitude * sin(x * freq)`
-  - [ ] Rendered as a sequence of short horizontal rectangles (1px tall) at computed y positions
-  - [ ] Amplitude: ~2px, frequency: ~2π per cell_width
-- [ ] **Dotted underline** (CellFlags::DOTTED_UNDERLINE):
-  - [ ] Alternating 1px on, 1px off pattern
-  - [ ] Phase reset at start of each cell
-- [ ] **Dashed underline** (CellFlags::DASHED_UNDERLINE):
-  - [ ] 3px on, 2px off pattern
-- [ ] **Underline color** (SGR 58):
-  - [ ] `cell.extra().underline_color` — resolved via palette
-  - [ ] If present: use this color for underline
-  - [ ] If absent: use foreground color
-- [ ] **Strikethrough** (CellFlags::STRIKETHROUGH):
-  - [ ] Solid line at `y = cell_top + cell_height / 2`, thickness = 1px
-  - [ ] Color: foreground color
-- [ ] **Hyperlink underline** (cell has hyperlink via OSC 8):
+- [x] **Single underline** (CellFlags::UNDERLINE):
+  - [x] Solid line at `y = cell_bottom - 2px`, thickness = 1px
+  - [x] Spans cell width
+- [x] **Double underline** (CellFlags::DOUBLE_UNDERLINE):
+  - [x] Two solid lines: `y = cell_bottom - 2px` and `y = cell_bottom - 4px`
+- [x] **Curly underline** (CellFlags::CURLY_UNDERLINE):
+  - [x] Sine wave: `y = base_y + amplitude * sin(x * freq)`
+  - [x] Rendered as a sequence of short horizontal rectangles (1px tall) at computed y positions
+  - [x] Amplitude: ~2px, frequency: ~2π per cell_width
+- [x] **Dotted underline** (CellFlags::DOTTED_UNDERLINE):
+  - [x] Alternating 1px on, 1px off pattern
+  - [x] Phase reset at start of each cell
+- [x] **Dashed underline** (CellFlags::DASHED_UNDERLINE):
+  - [x] 3px on, 2px off pattern
+- [x] **Underline color** (SGR 58):
+  - [x] `cell.underline_color` — resolved in extract phase
+  - [x] If present: use this color for underline
+  - [x] If absent: use foreground color
+- [x] **Strikethrough** (CellFlags::STRIKETHROUGH):
+  - [x] Solid line at `y = cell_top + cell_height / 2`, thickness = 1px
+  - [x] Color: foreground color
+- [ ] **Hyperlink underline** (cell has hyperlink via OSC 8): <!-- blocked-by:10 -->
   - [ ] Dotted underline when not hovered
   - [ ] Solid underline when hovered (cursor over cell)
   - [ ] Color: foreground color (or a distinct link color)
-- [ ] **URL hover underline** (implicitly detected URL):
+- [ ] **URL hover underline** (implicitly detected URL): <!-- blocked-by:14 -->
   - [ ] Solid underline on hover
   - [ ] Only visible when Ctrl held + mouse over URL range
-- [ ] All decorations emit background-layer instances (opaque rectangles)
-- [ ] **Tests**:
-  - [ ] Single underline: 1px line at correct y
-  - [ ] Curly underline: wave shape (visual test)
-  - [ ] Dotted: alternating pattern
-  - [ ] Underline color: uses SGR 58 color when set
-  - [ ] Strikethrough: centered horizontally
+- [x] All decorations emit background-layer instances (opaque rectangles)
+- [x] **Tests**:
+  - [x] Single underline: 1px line at correct y
+  - [x] Curly underline: wave shape (per-pixel sine rects)
+  - [x] Dotted: alternating pattern
+  - [x] Underline color: uses SGR 58 color when set
+  - [x] Strikethrough: centered horizontally
+  - [x] Double underline: two rects at correct positions
+  - [x] Dashed underline: 3-on-2-off pattern
+  - [x] Underline and strikethrough coexist
+  - [x] No flags: no extra decoration rects
+  - [x] Wide char: underline spans double width
+  - [x] Fg color fallback: underline uses fg when no SGR 58
 
 ---
 

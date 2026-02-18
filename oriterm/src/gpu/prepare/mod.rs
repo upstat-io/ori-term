@@ -9,6 +9,7 @@
 //! wraps `FontCollection::resolve` + `GlyphAtlas::lookup`; tests use a simple
 //! `HashMap`.
 
+mod decorations;
 pub(crate) mod shaped_frame;
 
 use oriterm_core::{CellFlags, CursorShape, Rgb};
@@ -149,6 +150,11 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
         };
         frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
 
+        decorations::draw_decorations(
+            &mut frame.backgrounds, cell.flags, cell.underline_color,
+            cell.fg, x, y, bg_w, ch,
+        );
+
         // Foreground glyph (skip spaces).
         if cell.ch != ' ' {
             let style = glyph_style(cell.flags);
@@ -217,6 +223,11 @@ fn fill_frame_shaped(
             cw
         };
         frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
+
+        decorations::draw_decorations(
+            &mut frame.backgrounds, cell.flags, cell.underline_color,
+            cell.fg, x, y, bg_w, ch,
+        );
 
         // Built-in geometric glyphs: bypass shaping, render from atlas.
         if crate::font::is_builtin(cell.ch) {
