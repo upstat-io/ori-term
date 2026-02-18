@@ -3,7 +3,7 @@ section: 28
 title: Extensibility
 status: not-started
 tier: 7
-goal: Lua scripting, custom shaders, smart paste, undo close tab
+goal: Lua scripting, custom shaders, smart paste, undo close tab, session recording, workspaces
 sections:
   - id: "28.1"
     title: Scripting Layer
@@ -18,6 +18,12 @@ sections:
     title: Undo Close Tab
     status: not-started
   - id: "28.5"
+    title: Session Recording + Playback
+    status: not-started
+  - id: "28.6"
+    title: Workspaces
+    status: not-started
+  - id: "28.7"
     title: Section Completion
     status: not-started
 ---
@@ -272,9 +278,101 @@ Restore accidentally closed tabs.
 
 ---
 
-## 28.5 Section Completion
+## 28.5 Session Recording + Playback
 
-- [ ] All 28.1-28.4 items complete
+Record terminal sessions for replay, debugging, and demos.
+
+**File:** `oriterm/src/recording/mod.rs`
+
+**Reference:** WezTerm `wezterm record`, asciinema format
+
+- [ ] Recording format:
+  - [ ] Use asciicast v2 format (JSON lines) for ecosystem compatibility
+  - [ ] Header: `{"version": 2, "width": 80, "height": 24, "timestamp": ..., "env": {...}}`
+  - [ ] Events: `[time_offset, "o", "data"]` — time (float seconds), type, payload
+  - [ ] Input events: `[time_offset, "i", "data"]` — optional, for recording typed input
+- [ ] `oriterm record` subcommand:
+  - [ ] `oriterm record -o session.cast` — record to file
+  - [ ] `oriterm record` — record to default path (`~/.local/share/oriterm/recordings/`)
+  - [ ] Auto-name: `recording-YYYY-MM-DD-HHMMSS.cast`
+  - [ ] Recording indicator: subtle "REC" badge in tab bar (red dot)
+- [ ] Recording engine:
+  - [ ] Tee PTY output: duplicate all bytes from PTY reader to recording file
+  - [ ] Timestamp each chunk relative to session start
+  - [ ] Optional: record input events (keystrokes sent to PTY)
+  - [ ] Flush periodically (every 1s) to prevent data loss on crash
+- [ ] `oriterm play` subcommand:
+  - [ ] `oriterm play session.cast` — replay recording in a new terminal window
+  - [ ] Playback at original speed (honor timestamps)
+  - [ ] `--speed <factor>` — 2x, 0.5x playback speed
+  - [ ] Pause/resume with spacebar
+  - [ ] Seek with arrow keys (skip forward/backward 5s)
+- [ ] Integration with running sessions:
+  - [ ] `Ctrl+Shift+R` — toggle recording of current pane
+  - [ ] Action: `ToggleRecording` in keybinding system
+  - [ ] Recording state stored per pane
+- [ ] **Tests:**
+  - [ ] Recording produces valid asciicast v2 JSON
+  - [ ] Timestamps are monotonically increasing
+  - [ ] Playback reproduces original output
+  - [ ] Speed factor scales timing correctly
+
+---
+
+## 28.6 Workspaces
+
+Named groups of tabs/panes with layout persistence and quick switching.
+
+**File:** `oriterm/src/app/workspaces.rs`, `oriterm_mux/src/registry.rs` (workspace registry)
+
+**Reference:** WezTerm workspaces (`SwitchToWorkspace`, `SwitchWorkspaceRelative`)
+
+- [ ] `Workspace` concept:
+  - [ ] Named collection of tabs within a window
+  - [ ] Each workspace has its own tab list and active tab
+  - [ ] Switching workspaces swaps the visible tab set
+  - [ ] Think of it like virtual desktops, but for terminal tabs
+- [ ] `WorkspaceId(u64)` newtype
+- [ ] `Workspace` struct:
+  - [ ] `id: WorkspaceId`
+  - [ ] `name: String` — user-visible name (e.g., "default", "project-x", "devops")
+  - [ ] `tabs: Vec<TabId>` — tab order within this workspace
+  - [ ] `active_tab: usize` — index into `tabs`
+- [ ] Workspace management:
+  - [ ] Default workspace: "default" — all tabs start here
+  - [ ] `SwitchToWorkspace(name)` action — switch to named workspace (create if needed)
+  - [ ] `SwitchWorkspaceRelative(offset)` action — cycle through workspaces
+  - [ ] `RenameWorkspace(name)` action — rename current workspace
+  - [ ] Moving tabs between workspaces
+- [ ] Workspace presets via config/Lua:
+  ```toml
+  [[workspace]]
+  name = "dev"
+  tabs = [
+    { title = "editor", cwd = "~/projects/myapp" },
+    { title = "server", cwd = "~/projects/myapp", command = "cargo run" },
+    { title = "tests", cwd = "~/projects/myapp" },
+  ]
+  ```
+  - [ ] Lua: `oriterm.create_workspace({ name = "dev", tabs = {...} })`
+- [ ] Workspace persistence:
+  - [ ] Save workspace layouts as part of session persistence (Section 35)
+  - [ ] Restore workspace names and tab assignments on session restore
+- [ ] Keybindings:
+  - [ ] `Ctrl+Shift+W` — workspace switcher (shows list)
+  - [ ] `Ctrl+Shift+N` — new workspace (prompts for name)
+- [ ] **Tests:**
+  - [ ] Create workspace with name
+  - [ ] Switch workspace swaps visible tabs
+  - [ ] Tab moves between workspaces
+  - [ ] Default workspace always exists
+  - [ ] Workspace preset creates tabs from config
+
+---
+
+## 28.7 Section Completion
+
+- [ ] All 28.1-28.6 items complete
 - [ ] Lua scripting engine loads and executes user scripts
 - [ ] Scripts can react to events (tab_created, output, key, etc.)
 - [ ] Scripts can invoke actions (new_tab, split, set_theme, etc.)

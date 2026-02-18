@@ -3,7 +3,7 @@ section: 24
 title: Visual Polish
 status: not-started
 tier: 6
-goal: Cursor blinking, hide-while-typing, minimum contrast, HiDPI, smooth scrolling, background images
+goal: Cursor blinking, hide-while-typing, minimum contrast, HiDPI, smooth scrolling, background images, gradients, backdrop effects
 sections:
   - id: "24.1"
     title: Cursor Blinking
@@ -24,6 +24,12 @@ sections:
     title: Background Images
     status: not-started
   - id: "24.7"
+    title: Background Gradients
+    status: not-started
+  - id: "24.8"
+    title: Window Backdrop Effects
+    status: not-started
+  - id: "24.9"
     title: Section Completion
     status: not-started
 ---
@@ -243,9 +249,92 @@ Display a background image behind the terminal grid.
 
 ---
 
-## 24.7 Section Completion
+## 24.7 Background Gradients
 
-- [ ] All 24.1-24.6 items complete
+GPU-rendered gradient backgrounds as an alternative to solid colors or images.
+
+**File:** `oriterm/src/gpu/renderer.rs` (render pass), `oriterm/src/gpu/pipeline.rs` (gradient shader)
+
+**Reference:** WezTerm `background` config (gradient presets + custom)
+
+- [ ] Config:
+  ```toml
+  [window]
+  background_gradient = "none"  # "none", "linear", "radial"
+  gradient_colors = ["#1e1e2e", "#313244"]  # start and end colors
+  gradient_angle = 180  # degrees, for linear gradient (0 = top-to-bottom)
+  gradient_opacity = 1.0  # 0.0-1.0, blended with background color
+  ```
+- [ ] Linear gradient:
+  - [ ] Two-stop gradient from color A to color B
+  - [ ] Angle configurable: 0° = top→bottom, 90° = left→right, etc.
+  - [ ] WGSL shader: interpolate colors based on UV coordinates rotated by angle
+- [ ] Radial gradient:
+  - [ ] Center-to-edge gradient
+  - [ ] Color A at center, color B at edges
+  - [ ] WGSL shader: distance from center → lerp between colors
+- [ ] Multi-stop gradients (stretch goal):
+  - [ ] `gradient_colors = ["#1e1e2e", "#313244", "#45475a"]` — 3+ stops
+  - [ ] Even distribution across gradient length
+- [ ] Rendering:
+  - [ ] Full-screen quad before cell backgrounds (same pass as background image)
+  - [ ] If both gradient and image specified: gradient first, image on top with alpha
+  - [ ] Cell backgrounds blend on top of gradient
+- [ ] Interaction with transparency:
+  - [ ] Gradient respects `window.opacity` — blended with compositor-provided background
+  - [ ] `gradient_opacity` controls gradient's own alpha (independent of window opacity)
+- [ ] Hot-reload: gradient config changes apply immediately
+- [ ] **Tests:**
+  - [ ] Linear gradient: pixel at top differs from pixel at bottom
+  - [ ] Angle rotation: 90° gradient varies horizontally, not vertically
+  - [ ] Gradient opacity: alpha applied correctly
+  - [ ] Config "none": no gradient rendered
+
+---
+
+## 24.8 Window Backdrop Effects
+
+Platform-specific compositor effects: Acrylic/Mica on Windows, blur on macOS/Linux.
+
+**File:** `oriterm/src/app.rs` (window creation), `oriterm/src/config.rs` (config)
+
+**Reference:** WezTerm `win32_system_backdrop`, Ghostty `background-blur-radius`, `window-vibrancy` crate
+
+- [ ] Config:
+  ```toml
+  [window]
+  backdrop = "none"  # "none", "blur", "acrylic", "mica", "auto"
+  ```
+- [ ] Windows backdrop effects (Win32):
+  - [ ] `blur` — `DWM_SYSTEMBACKDROP_TYPE::DWMSBT_TRANSIENTWINDOW` (standard blur)
+  - [ ] `acrylic` — `DWM_SYSTEMBACKDROP_TYPE::DWMSBT_TRANSIENTWINDOW` with tint color
+  - [ ] `mica` — `DWM_SYSTEMBACKDROP_TYPE::DWMSBT_MAINWINDOW` (Windows 11 only)
+  - [ ] `auto` — Mica on Windows 11, Acrylic on Windows 10
+  - [ ] Requires `window.opacity < 1.0` to see the effect through the window
+  - [ ] Uses `window-vibrancy` crate (already a dependency)
+- [ ] macOS backdrop effects:
+  - [ ] `blur` — `NSVisualEffectView` with `NSVisualEffectBlendingMode::behindWindow`
+  - [ ] Material selection: `.hudWindow` or `.sidebar` for tasteful blur
+  - [ ] `window-vibrancy` crate handles the NSVisualEffectView setup
+- [ ] Linux backdrop effects:
+  - [ ] KDE: `_KDE_NET_WM_BLUR_BEHIND_REGION` X11 property
+  - [ ] GNOME/Wayland: limited support — compositor-dependent
+  - [ ] `blur`: best-effort, log warning if unsupported
+- [ ] Interaction with other features:
+  - [ ] Backdrop visible only when `window.opacity < 1.0`
+  - [ ] Background gradient renders on top of backdrop effect
+  - [ ] Background image renders on top of backdrop effect
+  - [ ] Cell backgrounds render on top of all of the above
+- [ ] **Tests:**
+  - [ ] Config parsing: all backdrop variants
+  - [ ] "none" disables backdrop
+  - [ ] "auto" selects platform-appropriate effect
+
+---
+
+## 24.9 Section Completion
+
+- [ ] All 24.1-24.8 items complete
 - [ ] Cursor blinks at configured rate for blinking styles
 - [ ] Cursor blink resets on keypress
 - [ ] Mouse cursor hides when typing, reappears on move

@@ -27,6 +27,12 @@ sections:
     title: Keybinding Config Parsing
     status: not-started
   - id: "13.8"
+    title: CLI Subcommands
+    status: not-started
+  - id: "13.9"
+    title: Shell Completion Scripts
+    status: not-started
+  - id: "13.10"
     title: Section Completion
     status: not-started
 ---
@@ -344,9 +350,74 @@ Parse keybinding entries from TOML and merge with defaults.
 
 ---
 
-## 13.8 Section Completion
+## 13.8 CLI Subcommands
 
-- [ ] All 13.1-13.7 items complete
+Utility subcommands for font discovery, keybinding reference, config validation, and theme browsing — diagnostic tools every terminal ships.
+
+**File:** `oriterm/src/cli.rs` (clap subcommands)
+
+**Reference:** Alacritty `alacritty msg`, Ghostty `ghostty +list-fonts`, WezTerm `wezterm ls-fonts`
+
+- [ ] `oriterm ls-fonts` — list discovered fonts with fallback chain:
+  - [ ] Show primary font family + all 4 style variants (Regular/Bold/Italic/BoldItalic)
+  - [ ] Show fallback chain in priority order
+  - [ ] For each face: family name, style, file path, format (TrueType/OpenType), variable axes
+  - [ ] `--codepoint <char>` — show which font resolves a specific character
+  - [ ] Output: plain text, one font per line
+- [ ] `oriterm show-keys` — dump current keybindings:
+  - [ ] Load config, merge defaults with user overrides
+  - [ ] Show all active bindings: `Ctrl+Shift+C -> Copy`, etc.
+  - [ ] `--default` — show only default bindings (ignore user config)
+  - [ ] Group by category (clipboard, tabs, navigation, etc.)
+- [ ] `oriterm list-themes` — browse available color schemes:
+  - [ ] List all built-in themes by name
+  - [ ] List user-defined themes from config directory
+  - [ ] `--preview` — show ANSI color preview for each theme (16-color palette sample)
+- [ ] `oriterm validate-config` — check config without launching:
+  - [ ] Parse config file, report errors with line numbers
+  - [ ] Validate font families exist on system
+  - [ ] Validate color values parse correctly
+  - [ ] Validate keybinding key names and action names
+  - [ ] Exit 0 on valid, exit 1 on errors
+- [ ] `oriterm show-config` — dump resolved config:
+  - [ ] Load config with all defaults filled in
+  - [ ] Serialize to TOML and print
+  - [ ] Shows effective config (defaults + user overrides merged)
+- [ ] Subcommand dispatch: all subcommands run without opening a window (headless)
+- [ ] **Tests:**
+  - [ ] `validate-config` on valid config returns exit 0
+  - [ ] `validate-config` on invalid TOML returns exit 1 with error message
+  - [ ] `show-config` output is valid TOML that can be re-parsed
+  - [ ] `ls-fonts` includes primary font family
+
+---
+
+## 13.9 Shell Completion Scripts
+
+Generate shell completion scripts for bash, zsh, fish, and PowerShell.
+
+**File:** `oriterm/src/cli.rs` (clap `generate` integration)
+
+**Reference:** WezTerm `wezterm shell-completion`, clap `clap_complete` crate
+
+- [ ] Add `clap_complete` dependency
+- [ ] `oriterm completions <shell>` subcommand:
+  - [ ] `oriterm completions bash` — output bash completion script
+  - [ ] `oriterm completions zsh` — output zsh completion script
+  - [ ] `oriterm completions fish` — output fish completion script
+  - [ ] `oriterm completions powershell` — output PowerShell completion script
+  - [ ] Output to stdout (user redirects to appropriate file)
+- [ ] Completions cover: all subcommands, `--config`, `--working-directory`, `--shell`, etc.
+- [ ] Install instructions printed when run without redirection
+- [ ] **Tests:**
+  - [ ] Each shell variant produces non-empty output
+  - [ ] Output contains expected subcommand names
+
+---
+
+## 13.10 Section Completion
+
+- [ ] All 13.1-13.9 items complete
 - [ ] `cargo test -p oriterm` — config and keybinding tests pass
 - [ ] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
 - [ ] Config loads from TOML file on startup (defaults if missing)

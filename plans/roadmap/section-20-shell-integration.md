@@ -39,6 +39,12 @@ sections:
     title: Notification Handling
     status: not-started
   - id: "20.12"
+    title: Semantic Zone Navigation
+    status: not-started
+  - id: "20.13"
+    title: Command Completion Notifications
+    status: not-started
+  - id: "20.14"
     title: Section Completion
     status: not-started
 ---
@@ -223,9 +229,87 @@ Collect notifications from OSC 9/99/777 sequences and forward them to the OS not
 
 ---
 
-## 20.12 Section Completion
+## 20.12 Semantic Zone Navigation
 
-- [ ] All 20.1–20.11 items complete
+Expose prompt markers (OSC 133) as user-facing navigation features — jump between prompts, select command output.
+
+**File:** `oriterm/src/app/prompt_nav.rs`
+
+**Reference:** WezTerm `ScrollToPrompt`, Ghostty `scroll-to-prompt`
+
+- [ ] **Prompt line tracking:**
+  - [ ] Store prompt positions in grid: `prompt_rows: Vec<usize>` (absolute row indices where OSC 133;A was received)
+  - [ ] Updated by the prompt state machine (Section 20.8) — when `PromptStart` received, record cursor row
+  - [ ] Pruned on scrollback eviction (remove rows that fell off the top)
+- [ ] **Jump to prompt:**
+  - [ ] `PreviousPrompt` action (default: `Ctrl+Shift+ArrowUp`):
+    - [ ] Find nearest prompt row ABOVE current viewport top (or vi cursor if in vi mode)
+    - [ ] Scroll viewport to center that prompt row
+  - [ ] `NextPrompt` action (default: `Ctrl+Shift+ArrowDown`):
+    - [ ] Find nearest prompt row BELOW current position
+    - [ ] Scroll viewport to center that prompt row
+  - [ ] Wrap: at first/last prompt, stop (don't wrap around)
+- [ ] **Select command output:**
+  - [ ] `SelectCommandOutput` action (default: unbound, available via command palette):
+    - [ ] From current prompt row, find the next prompt row
+    - [ ] Select all rows between `OutputStart` (OSC 133;C) and next `PromptStart` (OSC 133;A)
+    - [ ] Creates a standard selection (Section 09 model) over the output region
+  - [ ] `SelectCommandInput` action:
+    - [ ] Select text between `CommandStart` (OSC 133;B) and `OutputStart` (OSC 133;C)
+    - [ ] Selects just the typed command (useful for copying commands)
+- [ ] **Visual prompt markers** (optional):
+  - [ ] Subtle left-margin indicator at prompt lines (thin colored bar, 2px)
+  - [ ] Config: `behavior.prompt_markers = true | false` (default: false)
+- [ ] Graceful fallback: if no shell integration / no OSC 133 data, navigation actions are no-ops
+- [ ] **Tests:**
+  - [ ] Prompt rows recorded on OSC 133;A
+  - [ ] PreviousPrompt scrolls to correct row
+  - [ ] NextPrompt scrolls forward correctly
+  - [ ] SelectCommandOutput creates selection over correct range
+  - [ ] No prompts: navigation is no-op (no crash)
+
+---
+
+## 20.13 Command Completion Notifications
+
+Desktop notification when a long-running command finishes in an unfocused tab/window.
+
+**File:** `oriterm/src/app/command_notify.rs`
+
+**Reference:** Ghostty `notify-on-command-finish`, iTerm2 shell integration
+
+- [ ] **Command timing:**
+  - [ ] Track command start time: when OSC 133;C (output start) received, record `Instant::now()`
+  - [ ] Track command end: when OSC 133;D (command complete) received, compute elapsed duration
+  - [ ] Store: `last_command_duration: Option<Duration>` per pane
+- [ ] **Notification trigger conditions:**
+  - [ ] Command ran longer than threshold (default: 10 seconds)
+  - [ ] Pane is NOT focused (unfocused tab or unfocused window)
+  - [ ] Config: `behavior.notify_on_command_finish` enum:
+    - [ ] `never` — disabled
+    - [ ] `unfocused` — only when pane is not focused (default)
+    - [ ] `always` — always notify, even if focused
+  - [ ] Config: `behavior.notify_command_threshold_secs = 10` — minimum duration to trigger
+- [ ] **Notification dispatch:**
+  - [ ] Emit `Notification` (reuse Section 20.11 notification system)
+  - [ ] Title: `"Command finished"` or pane title
+  - [ ] Body: `"<command> completed in <duration>"` (command text from shell integration if available)
+  - [ ] Platform-specific: Windows toast, macOS NSUserNotification, Linux D-Bus notification
+- [ ] **Tab bell integration:**
+  - [ ] Optionally flash the tab bar for the completed tab (reuse bell pulse)
+  - [ ] Config: `behavior.notify_command_bell = true | false` (default: true)
+- [ ] **Tests:**
+  - [ ] Command < threshold: no notification
+  - [ ] Command >= threshold + unfocused: notification sent
+  - [ ] Command >= threshold + focused: no notification (in `unfocused` mode)
+  - [ ] `never` mode: no notifications regardless
+  - [ ] `always` mode: notification even when focused
+
+---
+
+## 20.14 Section Completion
+
+- [ ] All 20.1–20.13 items complete
 - [ ] Shell detection identifies all five shell types correctly
 - [ ] Injection mechanisms set correct environment variables per shell
 - [ ] Integration scripts emit proper OSC 7, OSC 133, and notification sequences

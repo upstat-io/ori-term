@@ -129,7 +129,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 
 **Mux event flow (daemon mode):** PTY Reader → `MuxEvent` → MuxServer → `OutputCoalescer` (1ms/16ms/100ms tiered) → push to client via IPC → GUI renders.
 
-## Section Overview (38 Sections, 10 Tiers)
+## Section Overview (41 Sections, 10 Tiers)
 
 ### Tier 0 — Core Library + Cross-Platform Architecture
 | Section | Title | What |
@@ -158,8 +158,10 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 10 | Mouse Input & Reporting | Mouse reporting modes, selection state machine, auto-scroll |
 | 11 | Search | Plain text + regex search, search UI overlay, match highlighting |
 | 12 | Resize & Reflow | Window resize, grid reflow, PTY resize notification |
-| 13 | Config & Keybindings | TOML config, hot reload, file watcher, keybinding system |
+| 13 | Config & Keybindings | TOML config, hot reload, file watcher, keybinding system, CLI subcommands |
 | 14 | URL Detection | Implicit URL detection, hover underline, Ctrl+click open |
+| 40 | Vi/Copy Mode | Modal navigation (hjkl), word/line/bracket motions, visual selection, yank, search integration |
+| 41 | Hints & Quick Select | Regex-based pattern matching, keyboard-selectable labels, configurable actions |
 
 ### Tier 4 — Chrome (Tab Bar, Drag, Routing, Shell, Menus)
 | Section | Title | What |
@@ -169,7 +171,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 17 | Drag & Drop | Chrome-style drag, tear-off, OS drag, merge detection |
 | ~~18~~ | ~~Multi-Window & Lifecycle~~ | *Superseded → Section 32* |
 | 19 | Event Routing & Scheduling | Coordinate systems, dispatch, frame budget, cursor blink |
-| 20 | Shell Integration | Shell detection, injection, OSC 7/133, prompt state, two-parser |
+| 20 | Shell Integration | Shell detection, injection, OSC 7/133, prompt state, two-parser, semantic zones, command notifications |
 | 21 | Context Menu & Controls | GPU-rendered menus, config reload, settings UI, window controls |
 
 ### Tier 4M — Multiplexing Foundation (NEW)
@@ -184,14 +186,15 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 ### Tier 5 — Hardening
 | Section | Title | What |
 |---------|-------|------|
-| 22 | Terminal Modes | Comprehensive DECSET/DECRST table, mode interactions, image protocol |
+| 22 | Terminal Modes | Comprehensive DECSET/DECRST table, mode interactions |
 | 23 | Performance & Damage Tracking | Damage tracking, ring buffer, parsing optimization, benchmarks |
 | 38 | Terminal Protocol Extensions | Capability reporting (DA, DECRQM, XTGETTCAP), color queries, extended SGR (underline styles/colors), window manipulation, DCS passthrough |
+| 39 | Image Protocols | Kitty Graphics Protocol, Sixel, iTerm2 inline images, GPU compositing |
 
 ### Tier 6 — Polish
 | Section | Title | What |
 |---------|-------|------|
-| 24 | Visual Polish | Cursor blink, hide-while-typing, smooth scroll, background images |
+| 24 | Visual Polish | Cursor blink, hide-while-typing, smooth scroll, background images, gradients, backdrop effects |
 | 25 | Theme System | 100+ themes, TOML theme files, discovery, light/dark auto-switch |
 
 ### Tier 7 — Advanced
@@ -199,13 +202,13 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 |---------|-------|------|
 | ~~26~~ | ~~Split Panes~~ | *Superseded → Sections 29, 31, 33* |
 | 27 | Command Palette & Quick Terminal | Fuzzy search palette, global hotkey dropdown, notifications |
-| 28 | Extensibility | Lua scripting, custom shaders, smart paste, undo close tab |
+| 28 | Extensibility | Lua scripting, custom shaders, smart paste, undo close tab, session recording, workspaces |
 
 ### Tier 7A — Server + Persistence + Remote (NEW)
 | Section | Title | What |
 |---------|-------|------|
 | 34 | IPC Protocol + Daemon Mode | Wire protocol (15-byte header, bincode+zstd), MuxServer daemon, OutputCoalescer (1ms push), MuxClient, auto-start daemon |
-| 35 | Session Persistence + Remote Domains | Session save/load, crash recovery, scrollback archive, SshDomain, WslDomain full implementation |
+| 35 | Session Persistence + Remote Domains | Session save/load, crash recovery, scrollback archive, SshDomain, WslDomain full impl, tmux control mode |
 | 36 | Remote Attach + Network Transport | TCP+TLS transport, SSH tunnel mode, authentication, MuxDomain for remote daemon, `oriterm connect` CLI, bandwidth-aware rendering |
 | 37 | TUI Client | `oriterm-tui` binary — terminal-in-terminal client, attach/detach, prefix key, split/float rendering via crossterm, tmux replacement |
 
@@ -219,10 +222,10 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | **M4: Terminal renders** | 05 complete | Window opens, staged render pipeline, terminal grid visible, shell works |
 | **M5: Full font pipeline** | 06 complete | Ligatures, emoji, fallback chains, box drawing, text decorations |
 | **M6: UI framework** | 07 complete | Drawing primitives, layout engine, widgets, overlay system |
-| **M7: Interactive** | 08-14 complete | Keyboard, mouse, selection, clipboard, search, config, resize, URLs |
+| **M7: Interactive** | 08-14, 40-41 complete | Keyboard, mouse, selection, clipboard, search, config, resize, URLs, vi mode, hints |
 | **M8: Multiplexing** | 29-33 complete | Split panes, floating panes, multi-tab, multi-window — all through mux layer |
 | **M8b: Chrome** | 16-17, 19-21 complete | Tab bar, drag/drop, event routing, shell integration, menus |
-| **M9: Hardened** | 22-23, 38 complete | All terminal modes, protocol extensions, performance optimized, damage tracking |
+| **M9: Hardened** | 22-23, 38-39 complete | All terminal modes, protocol extensions, image protocols, performance optimized, damage tracking |
 | **M10: Polished** | 24-25 complete | Cursor blink, smooth scroll, 100+ themes, light/dark auto |
 | **M11: Advanced** | 27-28 complete | Command palette, Lua scripting |
 | **M12: Server mode** | 34-35 complete | Daemon keeps sessions alive, session persistence, SSH/WSL domains |

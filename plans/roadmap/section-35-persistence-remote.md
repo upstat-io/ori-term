@@ -3,7 +3,7 @@ section: 35
 title: Session Persistence + Remote Domains
 status: not-started
 tier: 7A
-goal: Session save/load with crash recovery, scrollback archiving, full SshDomain and WslDomain implementations for remote shell spawning
+goal: Session save/load with crash recovery, scrollback archiving, full SshDomain and WslDomain implementations, tmux control mode integration
 sections:
   - id: "35.1"
     title: Session Save + Load
@@ -21,6 +21,9 @@ sections:
     title: WslDomain Full Implementation
     status: not-started
   - id: "35.6"
+    title: tmux Control Mode Integration
+    status: not-started
+  - id: "35.7"
     title: Section Completion
     status: not-started
 ---
@@ -268,9 +271,50 @@ Full WSL domain implementation — spawn shells in any installed WSL distributio
 
 ---
 
-## 35.6 Section Completion
+## 35.6 tmux Control Mode Integration
 
-- [ ] All 35.1–35.5 items complete
+Act as a native frontend for tmux sessions via tmux's control mode (`-CC`). Users with existing tmux workflows get native GPU-rendered tabs/panes without abandoning tmux.
+
+**File:** `oriterm/src/domain/tmux.rs`, `oriterm_mux/src/domain.rs` (TmuxDomain)
+
+**Reference:** WezTerm `mux/src/tmux.rs`, `mux/src/tmux_commands.rs`, iTerm2 tmux integration
+
+- [ ] `TmuxDomain` — implements `Domain` trait:
+  - [ ] Connect to existing tmux server via `tmux -CC attach` or `tmux -CC new-session`
+  - [ ] Parse tmux control mode output (line-based protocol, `%`-prefixed notifications)
+  - [ ] Map tmux windows → ori_term tabs, tmux panes → ori_term panes
+- [ ] tmux control mode protocol:
+  - [ ] Notifications: `%begin`, `%end`, `%output`, `%layout-change`, `%session-changed`, `%window-add`, `%window-close`, `%exit`
+  - [ ] Commands: `send-keys`, `split-window`, `new-window`, `kill-pane`, `resize-pane`, `select-pane`
+  - [ ] Layout parsing: tmux layout strings (e.g., `"180x50,0,0[180x25,0,0,180x24,0,26]"`) → SplitTree
+- [ ] Bidirectional sync:
+  - [ ] tmux layout changes → update ori_term split tree
+  - [ ] ori_term split/resize → send tmux commands
+  - [ ] tmux pane output → route to correct ori_term pane
+  - [ ] ori_term keyboard input → `send-keys` to correct tmux pane
+- [ ] Session management:
+  - [ ] `oriterm attach-tmux` — attach to existing tmux session
+  - [ ] `oriterm attach-tmux -t session-name` — attach to named session
+  - [ ] Detach: `Ctrl+B d` (or configured prefix) sends detach to tmux
+  - [ ] Multiple tmux sessions: each as a separate domain
+- [ ] Config:
+  ```toml
+  [[domain.tmux]]
+  name = "local-tmux"
+  tmux_path = "tmux"  # path to tmux binary
+  ```
+- [ ] **Tests:**
+  - [ ] tmux control mode output parsed correctly
+  - [ ] Layout string converted to SplitTree
+  - [ ] `send-keys` command generated for keyboard input
+  - [ ] Window add/close notifications update tab list
+  - [ ] Pane output routed to correct pane
+
+---
+
+## 35.7 Section Completion
+
+- [ ] All 35.1–35.6 items complete
 - [ ] Session persistence: save/load/restore with atomic writes
 - [ ] Crash recovery: detects unclean shutdown, offers restore
 - [ ] Scrollback archive: unlimited scrollback via disk archiving
