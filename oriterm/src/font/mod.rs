@@ -11,6 +11,8 @@
 
 pub mod collection;
 pub mod discovery;
+#[allow(dead_code, reason = "shaper consumed by renderer integration in later section")]
+pub mod shaper;
 
 use std::fmt;
 
@@ -107,6 +109,53 @@ pub enum GlyphStyle {
     BoldItalic = 3,
 }
 
+impl GlyphStyle {
+    /// Derive the glyph style from cell attribute flags.
+    pub fn from_cell_flags(flags: oriterm_core::CellFlags) -> Self {
+        let bold = flags.contains(oriterm_core::CellFlags::BOLD);
+        let italic = flags.contains(oriterm_core::CellFlags::ITALIC);
+        match (bold, italic) {
+            (true, true) => Self::BoldItalic,
+            (true, false) => Self::Bold,
+            (false, true) => Self::Italic,
+            (false, false) => Self::Regular,
+        }
+    }
+}
+
+/// Compact face index into the font collection.
+///
+/// Indices 0–3 map to primary style variants (Regular, Bold, Italic, `BoldItalic`).
+/// Indices 4+ map to fallback fonts in priority order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FaceIdx(pub u16);
+
+impl FaceIdx {
+    /// Regular primary face.
+    pub const REGULAR: Self = Self(0);
+
+    /// Whether this index refers to a fallback font (index >= 4).
+    pub fn is_fallback(self) -> bool {
+        self.0 >= 4
+    }
+
+    /// Convert to `usize` for array indexing.
+    pub fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+
+    /// Fallback index (offset from 4) for indexing into the fallback array.
+    ///
+    /// Returns `None` if this is a primary face.
+    pub fn fallback_index(self) -> Option<usize> {
+        if self.is_fallback() {
+            Some(self.0 as usize - 4)
+        } else {
+            None
+        }
+    }
+}
+
 /// Cache key for rasterized glyphs — glyph-ID-based, not character-based.
 ///
 /// The `size_q6` field encodes size in 26.6 fixed-point: `(size_px * 64.0).round() as u32`.
@@ -115,8 +164,8 @@ pub enum GlyphStyle {
 pub struct RasterKey {
     /// Glyph ID within the font face.
     pub glyph_id: u16,
-    /// Face index: 0–3 = primary (Regular/Bold/Italic/BoldItalic), 4+ = fallback.
-    pub face_idx: u16,
+    /// Which font face this glyph belongs to.
+    pub face_idx: FaceIdx,
     /// Size in 26.6 fixed-point: `(size_px * 64.0).round() as u32`.
     pub size_q6: u32,
 }
@@ -139,8 +188,8 @@ bitflags! {
 pub struct ResolvedGlyph {
     /// Glyph ID within the font face.
     pub glyph_id: u16,
-    /// Face index: 0–3 = primary, 4+ = fallback.
-    pub face_idx: u16,
+    /// Which font face resolved this character.
+    pub face_idx: FaceIdx,
     /// Whether synthetic style transformations are needed.
     #[allow(dead_code, reason = "synthetic bold/italic rendering in Section 6")]
     pub synthetic: SyntheticFlags,

@@ -27,14 +27,7 @@ pub trait AtlasLookup {
 
 /// Convert cell flags to the corresponding glyph style.
 pub(crate) fn glyph_style(flags: CellFlags) -> GlyphStyle {
-    let bold = flags.contains(CellFlags::BOLD);
-    let italic = flags.contains(CellFlags::ITALIC);
-    match (bold, italic) {
-        (true, true) => GlyphStyle::BoldItalic,
-        (true, false) => GlyphStyle::Bold,
-        (false, true) => GlyphStyle::Italic,
-        (false, false) => GlyphStyle::Regular,
-    }
+    GlyphStyle::from_cell_flags(flags)
 }
 
 /// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`].

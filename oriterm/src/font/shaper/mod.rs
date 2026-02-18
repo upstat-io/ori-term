@@ -1,0 +1,277 @@
+//! Text shaping via rustybuzz — segments grid rows into runs, shapes each run,
+//! and maps shaped glyphs back to grid columns.
+//!
+//! # Two-Phase API
+//!
+//! 1. [`prepare_line`] — segment a row of cells into [`ShapingRun`]s (immutable).
+//! 2. [`shape_prepared_runs`] — shape each run through rustybuzz → [`ShapedGlyph`]s.
+//!
+//! Splitting into two phases lets callers create rustybuzz `Face` objects once
+//! per frame and reuse them across all rows.
+
+use oriterm_core::{Cell, CellFlags};
+
+use super::collection::FontCollection;
+use super::{FaceIdx, GlyphStyle};
+
+// ── Types ──
+
+/// A contiguous run of characters sharing the same font face.
+///
+/// Produced by [`prepare_line`], consumed by [`shape_prepared_runs`].
+pub struct ShapingRun {
+    /// Text to shape (base characters + combining marks).
+    pub(crate) text: String,
+    /// Which font face to shape this run with.
+    pub(crate) face_idx: FaceIdx,
+    /// Starting grid column of this run.
+    pub(crate) col_start: usize,
+    /// Maps byte offset in `text` to grid column index.
+    ///
+    /// Critical for mapping rustybuzz cluster indices back to grid positions.
+    pub(crate) byte_to_col: Vec<usize>,
+}
+
+/// A shaped glyph positioned on the grid.
+///
+/// Produced by [`shape_prepared_runs`]. Each glyph occupies one or more grid
+/// columns (ligatures span multiple).
+#[derive(Debug, Clone, Copy)]
+pub struct ShapedGlyph {
+    /// Glyph ID within the font face (post-shaping, NOT codepoint).
+    pub glyph_id: u16,
+    /// Which font face this was shaped from.
+    #[allow(dead_code, reason = "consumed by renderer integration in later section")]
+    pub face_idx: FaceIdx,
+    /// First grid column this glyph occupies.
+    pub col_start: usize,
+    /// Number of grid columns (1 = normal, 2+ = ligature or wide char).
+    pub col_span: usize,
+    /// Shaper X positioning offset in pixels.
+    #[allow(dead_code, reason = "consumed by renderer integration in later section")]
+    pub x_offset: f32,
+    /// Shaper Y positioning offset in pixels.
+    #[allow(dead_code, reason = "consumed by renderer integration in later section")]
+    pub y_offset: f32,
+}
+
+// ── Phase 1: Run Segmentation ──
+
+/// Segment a row of cells into shaping runs.
+///
+/// Clears and fills `runs_out`. Each run contains characters that share the
+/// same font face and can be shaped together. Run boundaries occur at:
+/// - Space (`' '`) or null (`'\0'`)
+/// - Font face changes (different glyph found in a different face)
+/// - Wide char spacers (part of the preceding wide char)
+///
+/// Combining marks (zero-width characters) are appended to the same column
+/// as their base character within the current run.
+pub fn prepare_line(
+    row: &[Cell],
+    cols: usize,
+    collection: &FontCollection,
+    runs_out: &mut Vec<ShapingRun>,
+) {
+    runs_out.clear();
+    segment_runs(row, cols, collection, runs_out);
+}
+
+/// Internal segmentation logic.
+fn segment_runs(
+    row: &[Cell],
+    cols: usize,
+    collection: &FontCollection,
+    runs: &mut Vec<ShapingRun>,
+) {
+    let mut col = 0;
+
+    while col < cols {
+        let cell = &row[col];
+
+        // Skip wide char spacers (part of preceding wide char).
+        if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+            col += 1;
+            continue;
+        }
+
+        // Run boundaries: space or null.
+        if cell.ch == ' ' || cell.ch == '\0' {
+            col += 1;
+            continue;
+        }
+
+        let style = GlyphStyle::from_cell_flags(cell.flags);
+        let resolved = collection.resolve(cell.ch, style);
+        let face_idx = resolved.face_idx;
+
+        // Check if we can extend the current run (same face).
+        let extend = runs
+            .last()
+            .is_some_and(|r: &ShapingRun| r.face_idx == face_idx);
+
+        if extend {
+            let run = runs.last_mut().expect("checked above");
+            append_cell_to_run(run, cell, col);
+        } else {
+            let mut run = ShapingRun {
+                text: String::new(),
+                face_idx,
+                col_start: col,
+                byte_to_col: Vec::new(),
+            };
+            append_cell_to_run(&mut run, cell, col);
+            runs.push(run);
+        }
+
+        col += if cell.flags.contains(CellFlags::WIDE_CHAR) {
+            2
+        } else {
+            1
+        };
+    }
+}
+
+/// Append a cell's character and zero-width marks to a shaping run.
+fn append_cell_to_run(run: &mut ShapingRun, cell: &Cell, col: usize) {
+    // Base character.
+    let byte_start = run.text.len();
+    run.text.push(cell.ch);
+    for _ in byte_start..run.text.len() {
+        run.byte_to_col.push(col);
+    }
+
+    // Combining marks / zero-width characters.
+    if let Some(extra) = &cell.extra {
+        for &zw in &extra.zerowidth {
+            let zw_start = run.text.len();
+            run.text.push(zw);
+            for _ in zw_start..run.text.len() {
+                run.byte_to_col.push(col);
+            }
+        }
+    }
+}
+
+// ── Phase 2: Shaping ──
+
+/// Shape pre-segmented runs using pre-created rustybuzz faces.
+///
+/// Clears and fills `output`. Faces should be created once per frame via
+/// [`FontCollection::create_shaping_faces`].
+pub fn shape_prepared_runs(
+    runs: &[ShapingRun],
+    faces: &[Option<rustybuzz::Face<'_>>],
+    collection: &FontCollection,
+    output: &mut Vec<ShapedGlyph>,
+) {
+    output.clear();
+    for run in runs {
+        shape_run(run, faces, collection, output);
+    }
+}
+
+/// Shape a single run and append results to the output vec.
+fn shape_run(
+    run: &ShapingRun,
+    faces: &[Option<rustybuzz::Face<'_>>],
+    collection: &FontCollection,
+    output: &mut Vec<ShapedGlyph>,
+) {
+    let face_i = run.face_idx.as_usize();
+    let Some(face) = faces.get(face_i).and_then(|f| f.as_ref()) else {
+        emit_unshaped_fallback(run, output);
+        return;
+    };
+
+    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    buffer.push_str(&run.text);
+    buffer.set_direction(rustybuzz::Direction::LeftToRight);
+
+    let features = collection.features_for_face(run.face_idx);
+    let glyph_buffer = rustybuzz::shape(face, features, buffer);
+    let infos = glyph_buffer.glyph_infos();
+    let positions = glyph_buffer.glyph_positions();
+
+    let upem = face.units_per_em() as f32;
+    let eff_size = collection.effective_size(run.face_idx);
+    let scale = eff_size / upem;
+    let cell_w = collection.cell_metrics().width;
+
+    for (info, pos) in infos.iter().zip(positions.iter()) {
+        let cluster = info.cluster as usize;
+
+        // Map cluster (byte offset) → grid column.
+        let col = run
+            .byte_to_col
+            .get(cluster)
+            .copied()
+            .unwrap_or(run.col_start);
+
+        // Compute col_span from advance width.
+        let advance_px = pos.x_advance as f32 * scale;
+        let col_span = (advance_px / cell_w).round().max(1.0) as usize;
+
+        let x_offset = pos.x_offset as f32 * scale;
+        let y_offset = pos.y_offset as f32 * scale;
+
+        output.push(ShapedGlyph {
+            glyph_id: info.glyph_id as u16,
+            face_idx: run.face_idx,
+            col_start: col,
+            col_span,
+            x_offset,
+            y_offset,
+        });
+    }
+}
+
+/// Fallback for when no rustybuzz face is available — emit one glyph per char.
+fn emit_unshaped_fallback(run: &ShapingRun, output: &mut Vec<ShapedGlyph>) {
+    let mut col = run.col_start;
+    for ch in run.text.chars() {
+        let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if w == 0 {
+            continue;
+        }
+        output.push(ShapedGlyph {
+            glyph_id: 0,
+            face_idx: run.face_idx,
+            col_start: col,
+            col_span: w,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        });
+        col += w;
+    }
+}
+
+// ── Phase 3: Column ↔ Glyph Mapping ──
+
+/// Build a column-to-glyph map from shaped output.
+///
+/// Clears and fills `map_out` with `cols` entries. Each entry is either:
+/// - `Some(glyph_index)` — the glyph that starts at this column
+/// - `None` — this column is a continuation of a multi-column glyph (ligature
+///   or wide char), or has no glyph (space, null)
+///
+/// The renderer uses this map to decide: render the glyph at `Some` columns,
+/// skip `None` columns (the glyph was already rendered at the start column).
+pub fn build_col_glyph_map(
+    glyphs: &[ShapedGlyph],
+    cols: usize,
+    map_out: &mut Vec<Option<usize>>,
+) {
+    map_out.clear();
+    map_out.resize(cols, None);
+
+    for (i, glyph) in glyphs.iter().enumerate() {
+        if glyph.col_start < cols {
+            map_out[glyph.col_start] = Some(i);
+        }
+        // Continuation columns (col_start+1 .. col_start+col_span) stay None.
+    }
+}
+
+#[cfg(test)]
+mod tests;

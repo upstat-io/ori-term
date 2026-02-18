@@ -5,101 +5,46 @@
 //! and rasterizes glyphs into bitmaps ready for GPU atlas upload.
 
 mod face;
+mod loading;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use swash::scale::ScaleContext;
 
-use super::discovery::{self, FontOrigin};
-use super::{CellMetrics, FontError, GlyphFormat, GlyphStyle, RasterKey, ResolvedGlyph, SyntheticFlags};
+use super::{CellMetrics, FaceIdx, FontError, GlyphFormat, GlyphStyle, RasterKey, ResolvedGlyph, SyntheticFlags};
 use face::{build_face, cap_height_px, compute_metrics, glyph_id, rasterize_from_face, FaceData};
+pub use loading::FontSet;
+#[cfg(test)]
+use loading::FontData;
 
 pub use face::size_key;
 
-// ── Public types ──
+/// Minimum font size in pixels (prevents degenerate scaling).
+const MIN_FONT_SIZE: f32 = 2.0;
 
-/// Raw font bytes and collection index (pre-validation).
-pub struct FontData {
-    /// Font file bytes shared via `Arc` for rustybuzz face creation.
-    data: Arc<Vec<u8>>,
-    /// Face index within a `.ttc` collection (0 for standalone `.ttf`).
-    index: u32,
-}
+/// Maximum font size in pixels (prevents absurd scaling).
+const MAX_FONT_SIZE: f32 = 200.0;
 
-/// Four style variants plus an ordered fallback chain.
+/// Per-fallback metadata for cap-height normalization and feature overrides.
 ///
-/// Constructed by [`FontSet::load`] from discovery results. Passed to
-/// [`FontCollection::new`] for validation and metrics computation.
-pub struct FontSet {
-    /// Human-readable family name.
-    family_name: String,
-    /// Regular face data (always present).
-    regular: FontData,
-    /// Bold face data (if a real bold variant was found).
-    bold: Option<FontData>,
-    /// Italic face data (if a real italic variant was found).
-    italic: Option<FontData>,
-    /// Bold-italic face data (if a real bold-italic variant was found).
-    bold_italic: Option<FontData>,
-    /// Which style slots have real font files.
-    #[allow(dead_code, reason = "font fields consumed in later sections")]
-    has_variant: [bool; 4],
-    /// Ordered fallback fonts for missing-glyph coverage.
-    fallbacks: Vec<FontData>,
-}
-
-impl FontSet {
-    /// Load font data from discovery results.
+/// Each entry in `fallback_meta` corresponds 1:1 to the matching entry in
+/// `fallbacks`. System-discovered fallbacks get auto-computed `scale_factor`
+/// with default features; user-configured fallbacks can override features
+/// and add a `size_offset`.
+pub(crate) struct FallbackMeta {
+    /// Cap-height normalization: `primary_cap_height / fallback_cap_height`.
     ///
-    /// If `family` is `None`, uses platform defaults (with embedded fallback).
-    /// The `weight` parameter is CSS-style (100–900) for the Regular slot.
-    pub fn load(family: Option<&str>, weight: u16) -> Result<Self, FontError> {
-        let result = discovery::discover_fonts(family, weight);
-        Self::from_discovery(&result)
-    }
-
-    /// Build a `FontSet` from a discovery result.
-    fn from_discovery(result: &discovery::DiscoveryResult) -> Result<Self, FontError> {
-        let primary = &result.primary;
-
-        let regular = load_font_data(primary, 0)?;
-
-        let bold = try_load_variant(primary, 1, "Bold");
-        let italic = try_load_variant(primary, 2, "Italic");
-        let bold_italic = try_load_variant(primary, 3, "BoldItalic");
-
-        let fallbacks = result
-            .fallbacks
-            .iter()
-            .filter_map(|fb| {
-                let bytes = match std::fs::read(&fb.path) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        log::warn!(
-                            "font: failed to load fallback {}: {e}",
-                            fb.path.display()
-                        );
-                        return None;
-                    }
-                };
-                Some(FontData {
-                    data: Arc::new(bytes),
-                    index: fb.face_index,
-                })
-            })
-            .collect();
-
-        Ok(Self {
-            family_name: primary.family_name.clone(),
-            regular,
-            bold,
-            italic,
-            bold_italic,
-            has_variant: primary.has_variant,
-            fallbacks,
-        })
-    }
+    /// Ensures glyphs from different fonts appear at visually consistent sizes.
+    /// A value of 1.0 means the fallback already matches the primary.
+    pub(crate) scale_factor: f32,
+    /// User-configured size adjustment in points (0.0 if unset).
+    pub(crate) size_offset: f32,
+    /// Per-fallback OpenType feature overrides.
+    ///
+    /// When `Some`, these features replace collection-wide defaults for this
+    /// fallback. When `None`, collection defaults apply.
+    pub(crate) features: Option<Vec<rustybuzz::Feature>>,
 }
 
 /// A rasterized glyph bitmap ready for atlas upload.
@@ -134,12 +79,13 @@ pub struct FontCollection {
     // Faces
     primary: [Option<FaceData>; 4],
     fallbacks: Vec<FaceData>,
+    fallback_meta: Vec<FallbackMeta>,
     // Metrics
     size_px: f32,
     cell_width: f32,
     cell_height: f32,
     baseline: f32,
-    #[expect(dead_code, reason = "used for fallback normalization in Section 6")]
+    #[allow(dead_code, reason = "used for diagnostics and future dynamic fallback loading")]
     cap_height_px: f32,
     // Rasterization
     format: GlyphFormat,
@@ -148,6 +94,10 @@ pub struct FontCollection {
     // Config
     weight: u16,
     family_name: String,
+    /// Collection-wide OpenType features applied to all primary faces.
+    ///
+    /// Default: `["liga", "calt"]` (standard ligatures + contextual alternates).
+    features: Vec<rustybuzz::Feature>,
 }
 
 impl FontCollection {
@@ -188,16 +138,30 @@ impl FontCollection {
             .as_ref()
             .and_then(|fd| build_face(Arc::clone(&fd.data), fd.index));
 
-        // Validate fallbacks.
-        let fallbacks: Vec<FaceData> = font_set
-            .fallbacks
-            .iter()
-            .filter_map(|fd| build_face(Arc::clone(&fd.data), fd.index))
-            .collect();
+        // Validate fallbacks and compute cap-height normalization.
+        let mut fallbacks = Vec::new();
+        let mut fallback_meta = Vec::new();
+        for fd in &font_set.fallbacks {
+            if let Some(face) = build_face(Arc::clone(&fd.data), fd.index) {
+                let fb_cap = cap_height_px(&fd.data, fd.index, size_px);
+                let scale_factor = if fb_cap > 0.0 && primary_cap > 0.0 {
+                    primary_cap / fb_cap
+                } else {
+                    1.0
+                };
+                fallbacks.push(face);
+                fallback_meta.push(FallbackMeta {
+                    scale_factor,
+                    size_offset: 0.0,
+                    features: None,
+                });
+            }
+        }
 
         let mut collection = Self {
             primary: [Some(regular_face), bold, italic, bold_italic],
             fallbacks,
+            fallback_meta,
             size_px,
             cell_width,
             cell_height,
@@ -208,6 +172,7 @@ impl FontCollection {
             scale_context: ScaleContext::new(),
             weight,
             family_name: font_set.family_name,
+            features: default_features(),
         };
 
         collection.pre_cache_ascii();
@@ -243,6 +208,63 @@ impl FontCollection {
         self.glyph_cache.len()
     }
 
+    /// Effective pixel size for a face, accounting for cap-height normalization.
+    ///
+    /// Primary faces return `size_px`. Fallback faces are scaled by their
+    /// cap-height ratio plus any user-configured `size_offset`.
+    pub fn effective_size(&self, face_idx: FaceIdx) -> f32 {
+        effective_size_for(face_idx, self.size_px, &self.fallback_meta)
+    }
+
+    /// OpenType features for a given face.
+    ///
+    /// Primary faces (0–3) use collection-wide defaults. Fallback faces use
+    /// their per-fallback override if configured, otherwise collection defaults.
+    pub fn features_for_face(&self, face_idx: FaceIdx) -> &[rustybuzz::Feature] {
+        if let Some(fb_i) = face_idx.fallback_index() {
+            if let Some(meta) = self.fallback_meta.get(fb_i) {
+                if let Some(ref fb_features) = meta.features {
+                    return fb_features;
+                }
+            }
+        }
+        &self.features
+    }
+
+    /// Create rustybuzz `Face` objects for all loaded faces.
+    ///
+    /// Returns one entry per face slot (4 primary + N fallbacks). Primary faces
+    /// get weight variation applied; fallback faces use font defaults.
+    ///
+    /// Faces borrow from `self`, so the returned vec must not outlive `self`.
+    /// Create once per frame, reuse across all rows.
+    #[allow(dead_code, reason = "consumed by renderer integration in later section")]
+    pub fn create_shaping_faces(&self) -> Vec<Option<rustybuzz::Face<'_>>> {
+        let total = 4 + self.fallbacks.len();
+        let mut faces = Vec::with_capacity(total);
+
+        // Primary faces with weight variation.
+        for (i, slot) in self.primary.iter().enumerate() {
+            faces.push(slot.as_ref().and_then(|fd| {
+                let mut face = rustybuzz::Face::from_slice(&fd.bytes, fd.face_index)?;
+                if let Some(w) = weight_variation(FaceIdx(i as u16), self.weight) {
+                    face.set_variations(&[rustybuzz::Variation {
+                        tag: rustybuzz::ttf_parser::Tag::from_bytes(b"wght"),
+                        value: w,
+                    }]);
+                }
+                Some(face)
+            }));
+        }
+
+        // Fallback faces (no weight variation).
+        for fb in &self.fallbacks {
+            faces.push(rustybuzz::Face::from_slice(&fb.bytes, fb.face_index));
+        }
+
+        faces
+    }
+
     // ── Resolution ──
 
     /// Resolve a character to a font face and glyph ID.
@@ -259,7 +281,7 @@ impl FontCollection {
             if gid != 0 {
                 return ResolvedGlyph {
                     glyph_id: gid,
-                    face_idx: idx as u16,
+                    face_idx: FaceIdx(idx as u16),
                     synthetic: SyntheticFlags::NONE,
                 };
             }
@@ -284,7 +306,7 @@ impl FontCollection {
             if gid != 0 {
                 return ResolvedGlyph {
                     glyph_id: gid,
-                    face_idx: (4 + i) as u16,
+                    face_idx: FaceIdx((4 + i) as u16),
                     synthetic: SyntheticFlags::NONE,
                 };
             }
@@ -294,7 +316,7 @@ impl FontCollection {
         let gid = self.primary[0].as_ref().map_or(0, |fd| glyph_id(fd, ch));
         ResolvedGlyph {
             glyph_id: gid,
-            face_idx: 0,
+            face_idx: FaceIdx::REGULAR,
             synthetic: SyntheticFlags::NONE,
         }
     }
@@ -314,17 +336,17 @@ impl FontCollection {
         }
 
         // Inline face lookup for disjoint borrows with scale_context.
-        let i = key.face_idx as usize;
-        let fd = if i < 4 {
-            self.primary[i].as_ref()?
+        let fd = if let Some(fb_i) = key.face_idx.fallback_index() {
+            self.fallbacks.get(fb_i)?
         } else {
-            self.fallbacks.get(i - 4)?
+            self.primary[key.face_idx.as_usize()].as_ref()?
         };
+        let size = effective_size_for(key.face_idx, self.size_px, &self.fallback_meta);
         let wght = weight_variation(key.face_idx, self.weight);
         let glyph = rasterize_from_face(
             fd,
             key.glyph_id,
-            self.size_px,
+            size,
             wght,
             self.format,
             &mut self.scale_context,
@@ -343,7 +365,7 @@ impl FontCollection {
         if gid != 0 {
             Some(ResolvedGlyph {
                 glyph_id: gid,
-                face_idx: 0,
+                face_idx: FaceIdx::REGULAR,
                 synthetic: flags,
             })
         } else {
@@ -359,7 +381,7 @@ impl FontCollection {
             if gid != 0 {
                 return Some(ResolvedGlyph {
                     glyph_id: gid,
-                    face_idx: GlyphStyle::Bold as u16,
+                    face_idx: FaceIdx(GlyphStyle::Bold as u16),
                     synthetic: SyntheticFlags::ITALIC,
                 });
             }
@@ -370,7 +392,7 @@ impl FontCollection {
             if gid != 0 {
                 return Some(ResolvedGlyph {
                     glyph_id: gid,
-                    face_idx: GlyphStyle::Italic as u16,
+                    face_idx: FaceIdx(GlyphStyle::Italic as u16),
                     synthetic: SyntheticFlags::BOLD,
                 });
             }
@@ -396,62 +418,64 @@ impl FontCollection {
 
 // ── Free functions ──
 
+/// Default OpenType features: standard ligatures + contextual alternates.
+///
+/// These are the features most users expect from a terminal font.
+fn default_features() -> Vec<rustybuzz::Feature> {
+    parse_features(&["liga", "calt"])
+}
+
+/// Parse feature tag strings into rustybuzz features.
+///
+/// Each string follows rustybuzz's `Feature::from_str` format:
+/// - `"liga"` — enable standard ligatures
+/// - `"-liga"` — disable standard ligatures
+/// - `"+dlig"` — enable discretionary ligatures
+/// - `"kern=0"` — disable kerning
+///
+/// Invalid tags are logged and skipped.
+pub fn parse_features(tags: &[&str]) -> Vec<rustybuzz::Feature> {
+    tags.iter()
+        .filter_map(|tag| match tag.parse::<rustybuzz::Feature>() {
+            Ok(f) => Some(f),
+            Err(e) => {
+                log::warn!("font: invalid OpenType feature '{tag}': {e}");
+                None
+            }
+        })
+        .collect()
+}
+
+/// Compute effective font size for a face index with cap-height normalization.
+///
+/// Primary faces return `base_size` unchanged. Fallback faces are scaled by
+/// their cap-height ratio: `base_size * scale_factor + size_offset`, clamped
+/// to `[MIN_FONT_SIZE, MAX_FONT_SIZE]`.
+fn effective_size_for(face_idx: FaceIdx, base_size: f32, fallback_meta: &[FallbackMeta]) -> f32 {
+    if let Some(fb_i) = face_idx.fallback_index() {
+        if let Some(meta) = fallback_meta.get(fb_i) {
+            return (base_size * meta.scale_factor + meta.size_offset)
+                .clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+        }
+    }
+    base_size
+}
+
 /// Compute the `wght` variation value for a face index.
 ///
 /// Primary faces use the configured weight (Regular/Italic) or bold-derived
 /// weight (Bold/BoldItalic). Fallback faces return `None`.
-fn weight_variation(face_idx: u16, weight: u16) -> Option<f32> {
-    let i = face_idx as usize;
-    if i < 4 {
-        let w = if i == 1 || i == 3 {
-            (weight + 300).min(900)
-        } else {
-            weight
-        };
-        Some(w as f32)
-    } else {
-        None
-    }
-}
-
-/// Try to load a primary variant, logging on failure.
-///
-/// Returns `None` if the variant has no file or if loading fails (with a warning).
-fn try_load_variant(
-    primary: &discovery::FamilyDiscovery,
-    slot: usize,
-    name: &str,
-) -> Option<FontData> {
-    if !primary.has_variant[slot] {
+fn weight_variation(face_idx: FaceIdx, weight: u16) -> Option<f32> {
+    if face_idx.is_fallback() {
         return None;
     }
-    match load_font_data(primary, slot) {
-        Ok(fd) => Some(fd),
-        Err(e) => {
-            log::warn!("font: failed to load {name} variant: {e}");
-            None
-        }
-    }
-}
-
-/// Load font data for a style slot from a discovery result.
-fn load_font_data(
-    primary: &discovery::FamilyDiscovery,
-    slot: usize,
-) -> Result<FontData, FontError> {
-    let bytes = if let Some(ref path) = primary.paths[slot] {
-        std::fs::read(path)?
-    } else if primary.origin == FontOrigin::Embedded && slot == 0 {
-        discovery::EMBEDDED_FONT_DATA.to_vec()
+    let i = face_idx.as_usize();
+    let w = if i == 1 || i == 3 {
+        (weight + 300).min(900)
     } else {
-        return Err(FontError::InvalidFont(format!(
-            "no font data for slot {slot}"
-        )));
+        weight
     };
-    Ok(FontData {
-        data: Arc::new(bytes),
-        index: primary.face_indices[slot],
-    })
+    Some(w as f32)
 }
 
 #[cfg(test)]

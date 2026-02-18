@@ -1,31 +1,31 @@
 ---
 section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
-status: not-started
+status: in-progress
 tier: 2
 goal: "Best font rendering of any terminal emulator. Full shaping pipeline with hinting, LCD subpixel rendering, subpixel positioning, proper font synthesis, and automated visual regression testing. The feature users switch terminals for."
 sections:
   - id: "6.1"
     title: Multi-Face Font Loading
-    status: not-started
+    status: complete
   - id: "6.2"
     title: Fallback Chain + Cap-Height Normalization
-    status: not-started
+    status: in-progress
   - id: "6.3"
     title: Run Segmentation
-    status: not-started
+    status: in-progress
   - id: "6.4"
     title: Rustybuzz Text Shaping
-    status: not-started
+    status: in-progress
   - id: "6.5"
     title: Ligature + Multi-Cell Glyph Handling
-    status: not-started
+    status: in-progress
   - id: "6.6"
     title: Combining Marks + Zero-Width Characters
-    status: not-started
+    status: in-progress
   - id: "6.7"
     title: OpenType Feature Control
-    status: not-started
+    status: in-progress
   - id: "6.8"
     title: Advanced Atlas (Guillotine + LRU + Multi-Page)
     status: not-started
@@ -98,39 +98,39 @@ Load all 4 style variants (Regular, Bold, Italic, BoldItalic) from the primary f
 
 **Reference:** `_old/src/font/collection.rs`
 
-- [ ] `FaceData` struct
-  - [ ] Fields:
+- [x] `FaceData` struct
+  - [x] Fields:
     - `bytes: Arc<Vec<u8>>` — raw font file bytes (shared across variants from same file)
     - `face_index: u32` — index within .ttc collection
     - `offset: u32` — byte offset to font table directory
     - `cache_key: swash::CacheKey` — swash cache identifier
-- [ ] `FaceIdx` newtype — `pub struct FaceIdx(pub u16)`
-  - [ ] 0–3: primary styles (Regular=0, Bold=1, Italic=2, BoldItalic=3)
-  - [ ] 4+: fallback fonts in priority order
-- [ ] `FontCollection` expanded fields:
-  - [ ] `primary: [Option<FaceData>; 4]` — Regular, Bold, Italic, BoldItalic
-  - [ ] `has_variant: [bool; 4]` — true = real font file, false = fallback to Regular
-  - [ ] `font_paths: [Option<PathBuf>; 4]`
-  - [ ] `weight: u16` — CSS weight (100–900, default 400)
-- [ ] Loading pipeline:
-  - [ ] Load Regular (required — fail if missing)
-  - [ ] Try loading Bold, Italic, BoldItalic from same family
-  - [ ] If variant not found: `has_variant[i] = false` (will use Regular + synthetic styling)
-  - [ ] Compute cell metrics from Regular face (cell_width from 'M' advance, cell_height from ascent + descent)
-- [ ] Platform discovery (`font/discovery.rs`):
-  - [ ] Windows (dwrote): enumerate via DirectWrite API by family name
-  - [ ] Linux: scan `~/.local/share/fonts/`, `/usr/share/fonts/`, `/usr/local/share/fonts/`
-  - [ ] Family search order: user-configured > JetBrains Mono > Cascadia Code > Consolas > Courier New
-- [ ] `find_face_for_char(&self, ch: char, preferred_style: GlyphStyle) -> Option<FaceIdx>`
-  - [ ] Try preferred style in primary
-  - [ ] Fall back to Regular in primary
-  - [ ] Fall back through fallback chain
-  - [ ] Return None only if .notdef everywhere
-- [ ] **Tests**:
-  - [ ] Load a system font, all 4 variants attempted
-  - [ ] `find_face_for_char('A', Bold)` returns Bold face if available
-  - [ ] `find_face_for_char('A', Bold)` returns Regular if no Bold face
-  - [ ] Unknown char falls to fallback chain
+- [x] `FaceIdx` newtype — `pub struct FaceIdx(pub u16)`
+  - [x] 0–3: primary styles (Regular=0, Bold=1, Italic=2, BoldItalic=3)
+  - [x] 4+: fallback fonts in priority order
+- [x] `FontCollection` expanded fields:
+  - [x] `primary: [Option<FaceData>; 4]` — Regular, Bold, Italic, BoldItalic
+  - [x] `has_variant: [bool; 4]` — true = real font file, false = fallback to Regular
+  - [x] `font_paths: [Option<PathBuf>; 4]` — stored in `FontSet` / `FamilyDiscovery`, consumed eagerly during loading
+  - [x] `weight: u16` — CSS weight (100–900, default 400)
+- [x] Loading pipeline:
+  - [x] Load Regular (required — fail if missing)
+  - [x] Try loading Bold, Italic, BoldItalic from same family
+  - [x] If variant not found: `has_variant[i] = false` (will use Regular + synthetic styling)
+  - [x] Compute cell metrics from Regular face (cell_width from 'M' advance, cell_height from ascent + descent)
+- [x] Platform discovery (`font/discovery.rs`):
+  - [x] Windows (dwrote): enumerate via DirectWrite API by family name
+  - [x] Linux: scan `~/.local/share/fonts/`, `/usr/share/fonts/`, `/usr/local/share/fonts/`
+  - [x] Family search order: user-configured > JetBrains Mono > Cascadia Code > Consolas > Courier New
+- [x] `find_face_for_char(&self, ch: char, preferred_style: GlyphStyle) -> Option<FaceIdx>` — implemented as `resolve()` returning `ResolvedGlyph`
+  - [x] Try preferred style in primary
+  - [x] Fall back to Regular in primary
+  - [x] Fall back through fallback chain
+  - [x] Return None only if .notdef everywhere — returns .notdef (glyph_id=0) from Regular
+- [x] **Tests**:
+  - [x] Load a system font, all 4 variants attempted
+  - [x] `find_face_for_char('A', Bold)` returns Bold face if available
+  - [x] `find_face_for_char('A', Bold)` returns Regular if no Bold face
+  - [x] Unknown char falls to fallback chain
 
 ---
 
@@ -142,41 +142,41 @@ Fallback fonts for characters missing from the primary (CJK, symbols, emoji). Vi
 
 **Reference:** `_old/src/font/collection.rs` (cap_height_px, FallbackMeta)
 
-- [ ] `FallbackMeta` struct
-  - [ ] Fields:
-    - `features: Vec<rustybuzz::Feature>` — per-fallback OpenType features (override collection defaults)
+- [x] `FallbackMeta` struct
+  - [x] Fields:
+    - `features: Vec<rustybuzz::Feature>` — per-fallback OpenType features (override collection defaults) — deferred to Section 6.7 (OpenType Feature Control)
     - `scale_factor: f32` — cap-height normalization ratio
     - `size_offset: f32` — user-configured size offset in points
-- [ ] Fallback loading:
-  - [ ] `fallbacks: Vec<FaceData>` — priority-ordered fallback fonts
-  - [ ] `fallback_meta: Vec<FallbackMeta>` — per-fallback metadata (1:1 with fallbacks)
-  - [ ] User-configured fallbacks loaded first (from config TOML)
-  - [ ] System-discovered fallbacks loaded after
-  - [ ] Lazy loading: `ensure_fallbacks_loaded()` called once on first use
-- [ ] Cap-height normalization:
-  - [ ] `cap_height_px(bytes, face_index, size) -> f32`
-    - [ ] Read OS/2 table `sCapHeight` field via rustybuzz Face
-    - [ ] If missing: estimate as `ascender * 0.75`
-    - [ ] Convert from font units: `cap_units / upem * size`
-  - [ ] `primary_cap_height_px: f32` — computed from Regular at load time
-  - [ ] Per-fallback: `scale_factor = primary_cap_height / fallback_cap_height`
-  - [ ] Effective size: `base_size * scale_factor + size_offset`
-  - [ ] **Why:** Noto Sans CJK looks tiny next to JetBrains Mono at same pt size. Normalizing by cap-height makes glyphs visually consistent.
-- [ ] `effective_size(&self, face_idx: FaceIdx) -> f32`
-  - [ ] Primary faces: base size
-  - [ ] Fallback faces: `base_size * meta.scale_factor + meta.size_offset`
-- [ ] User-configurable per-fallback:
+- [x] Fallback loading:
+  - [x] `fallbacks: Vec<FaceData>` — priority-ordered fallback fonts
+  - [x] `fallback_meta: Vec<FallbackMeta>` — per-fallback metadata (1:1 with fallbacks)
+  - [ ] User-configured fallbacks loaded first (from config TOML) <!-- blocked-by:13 -->
+  - [x] System-discovered fallbacks loaded after
+  - [x] Lazy loading: `ensure_fallbacks_loaded()` called once on first use — implemented as eager loading during `FontCollection::new()` (design evolved; no lazy loading needed)
+- [x] Cap-height normalization:
+  - [x] `cap_height_px(bytes, face_index, size) -> f32`
+    - [x] Read OS/2 table `sCapHeight` field via rustybuzz Face
+    - [x] If missing: estimate as `ascender * 0.75`
+    - [x] Convert from font units: `cap_units / upem * size`
+  - [x] `primary_cap_height_px: f32` — computed from Regular at load time
+  - [x] Per-fallback: `scale_factor = primary_cap_height / fallback_cap_height`
+  - [x] Effective size: `base_size * scale_factor + size_offset`
+  - [x] **Why:** Noto Sans CJK looks tiny next to JetBrains Mono at same pt size. Normalizing by cap-height makes glyphs visually consistent.
+- [x] `effective_size(&self, face_idx: FaceIdx) -> f32`
+  - [x] Primary faces: base size
+  - [x] Fallback faces: `base_size * meta.scale_factor + meta.size_offset`
+- [ ] User-configurable per-fallback: <!-- blocked-by:13 -->
   ```toml
   [[font.fallback]]
   family = "Noto Sans CJK"
   features = ["-liga"]
   size_offset = -2.0
   ```
-- [ ] **Tests**:
-  - [ ] Fallback chain resolves CJK char to CJK font
-  - [ ] Cap-height scale factor computed correctly (known font pair)
-  - [ ] Effective size for fallback differs from primary
-  - [ ] User size_offset applied
+- [x] **Tests**:
+  - [x] Fallback chain resolves CJK char to CJK font
+  - [x] Cap-height scale factor computed correctly (known font pair) — tested via `effective_size_for_with_scaling`
+  - [x] Effective size for fallback differs from primary
+  - [x] User size_offset applied
 
 ---
 
@@ -188,33 +188,33 @@ Break a terminal row into shaping runs. Each run is a contiguous sequence of cha
 
 **Reference:** `_old/src/font/shaper.rs` (prepare_line)
 
-- [ ] `ShapingRun` struct
-  - [ ] Fields:
+- [x] `ShapingRun` struct
+  - [x] Fields:
     - `text: String` — base characters + combining marks for this run
     - `face_idx: FaceIdx` — which font face to shape with
     - `col_start: usize` — grid column where run starts
     - `byte_to_col: Vec<usize>` — maps byte offset in `text` → grid column
-  - [ ] byte_to_col is critical for mapping rustybuzz cluster indices back to grid positions
-- [ ] `prepare_line(row: &[Cell], cols: usize, collection: &FontCollection, runs: &mut Vec<ShapingRun>)`
-  - [ ] Iterate cells left to right
-  - [ ] Skip `WIDE_CHAR_SPACER` cells (they're part of the preceding wide char)
-  - [ ] For each cell:
-    - [ ] Determine face via `find_face_for_char(cell.ch, style_from_flags(cell.flags))`
-    - [ ] If face differs from current run, or cell is space/null/builtin: start new run
-    - [ ] Append `cell.ch` to current run's text
-    - [ ] Record byte offset → column mapping
-    - [ ] Append zero-width characters (combining marks) from cell at same column mapping
-  - [ ] Run breaks on:
-    - [ ] Space (' ') or null ('\0')
-    - [ ] Font face change (different glyph found in different face)
-    - [ ] Built-in glyph character (box drawing, blocks, braille, powerline)
-    - [ ] Wide char spacer
-  - [ ] Runs reuse a scratch `Vec<ShapingRun>` (cleared + refilled each frame, not reallocated)
-- [ ] **Tests**:
-  - [ ] `"hello world"` → two runs: "hello" (face 0), "world" (face 0) — space breaks runs
-  - [ ] `"hello你好"` → two runs if CJK resolves to different face
-  - [ ] `"a\u{0301}"` (a + combining accent) → single run with "á" text, byte_to_col maps both to same column
-  - [ ] `"━"` (box drawing) → no run (handled by builtin glyph system)
+  - [x] byte_to_col is critical for mapping rustybuzz cluster indices back to grid positions
+- [x] `prepare_line(row: &[Cell], cols: usize, collection: &FontCollection, runs: &mut Vec<ShapingRun>)`
+  - [x] Iterate cells left to right
+  - [x] Skip `WIDE_CHAR_SPACER` cells (they're part of the preceding wide char)
+  - [x] For each cell:
+    - [x] Determine face via `find_face_for_char(cell.ch, style_from_flags(cell.flags))`
+    - [x] If face differs from current run, or cell is space/null: start new run
+    - [x] Append `cell.ch` to current run's text
+    - [x] Record byte offset → column mapping
+    - [x] Append zero-width characters (combining marks) from cell at same column mapping
+  - [x] Run breaks on:
+    - [x] Space (' ') or null ('\0') — spaces excluded from run text but don't break same-face runs
+    - [x] Font face change (different glyph found in different face)
+    - [ ] Built-in glyph character (box drawing, blocks, braille, powerline) <!-- blocked-by:6.9 -->
+    - [x] Wide char spacer
+  - [x] Runs reuse a scratch `Vec<ShapingRun>` (cleared + refilled each frame, not reallocated)
+- [x] **Tests**:
+  - [x] `"hello world"` → same-face chars merge across spaces, space excluded from run text
+  - [x] `"hello你好"` → two runs if CJK resolves to different face (wide char test covers face resolution)
+  - [x] `"a\u{0301}"` (a + combining accent) → single run with "á" text, byte_to_col maps both to same column
+  - [ ] `"━"` (box drawing) → no run (handled by builtin glyph system) <!-- blocked-by:6.9 -->
 
 ---
 
@@ -226,37 +226,37 @@ Shape each run through rustybuzz to produce positioned glyphs with correct ligat
 
 **Reference:** `_old/src/font/shaper.rs` (shape_prepared_runs)
 
-- [ ] Two-phase API:
-  - [ ] Phase 1: `prepare_line()` — segment into runs (immutable, reuses scratch buffers)
-  - [ ] Phase 2: `shape_prepared_runs()` — shape each run (needs rustybuzz Face references)
-  - [ ] **Why two phases?** Create rustybuzz `Face` objects once per frame, reuse across all rows. Faces borrow font bytes, so they must outlive shaping calls.
-- [ ] `shape_prepared_runs(runs: &[ShapingRun], faces: &[Option<rustybuzz::Face>], collection: &FontCollection, output: &mut Vec<ShapedGlyph>)`
-  - [ ] For each run:
-    - [ ] Create `rustybuzz::UnicodeBuffer`, push run's text
-    - [ ] Set direction: `LeftToRight` (terminal is always LTR)
-    - [ ] Get features for this face: `collection.features_for_face(run.face_idx)`
-    - [ ] Call `rustybuzz::shape(face, &features, buffer)`
-    - [ ] Extract `glyph_infos()` and `glyph_positions()`
-    - [ ] Scale: `effective_size / upem`
-    - [ ] For each (info, position) pair:
-      - [ ] Map `info.cluster` (byte offset) → grid column via `run.byte_to_col`
-      - [ ] Compute `col_span` from advance: `(x_advance * scale / cell_width).round().max(1)`
-      - [ ] Emit `ShapedGlyph`
-- [ ] `ShapedGlyph` struct
-  - [ ] Fields:
+- [x] Two-phase API:
+  - [x] Phase 1: `prepare_line()` — segment into runs (immutable, reuses scratch buffers)
+  - [x] Phase 2: `shape_prepared_runs()` — shape each run (needs rustybuzz Face references)
+  - [x] **Why two phases?** Create rustybuzz `Face` objects once per frame, reuse across all rows. Faces borrow font bytes, so they must outlive shaping calls.
+- [x] `shape_prepared_runs(runs: &[ShapingRun], faces: &[Option<rustybuzz::Face>], collection: &FontCollection, output: &mut Vec<ShapedGlyph>)`
+  - [x] For each run:
+    - [x] Create `rustybuzz::UnicodeBuffer`, push run's text
+    - [x] Set direction: `LeftToRight` (terminal is always LTR)
+    - [ ] Get features for this face: `collection.features_for_face(run.face_idx)` <!-- blocked-by:6.7 -->
+    - [x] Call `rustybuzz::shape(face, &features, buffer)`
+    - [x] Extract `glyph_infos()` and `glyph_positions()`
+    - [x] Scale: `effective_size / upem`
+    - [x] For each (info, position) pair:
+      - [x] Map `info.cluster` (byte offset) → grid column via `run.byte_to_col`
+      - [x] Compute `col_span` from advance: `(x_advance * scale / cell_width).round().max(1)`
+      - [x] Emit `ShapedGlyph`
+- [x] `ShapedGlyph` struct
+  - [x] Fields:
     - `glyph_id: u16` — rustybuzz glyph ID (NOT codepoint — this is the shaped result)
     - `face_idx: FaceIdx` — which face this was shaped from
     - `col_start: usize` — first grid column this glyph occupies
     - `col_span: usize` — how many columns (1 = normal, 2+ = ligature or wide char)
     - `x_offset: f32` — shaper x positioning offset (pixels)
     - `y_offset: f32` — shaper y positioning offset (pixels)
-- [ ] Output reuses scratch `Vec<ShapedGlyph>` (cleared + refilled each row)
-- [ ] **Tests**:
-  - [ ] `"hello"` → 5 glyphs, each col_span=1
-  - [ ] `"=>"` with ligature-supporting font → 1 glyph, col_span=2
-  - [ ] `"fi"` with liga feature → 1 glyph (fi ligature), col_span=2
-  - [ ] `"好"` (wide char) → 1 glyph, col_span=2
-  - [ ] CJK char → shaped from fallback face, correct face_idx
+- [x] Output reuses scratch `Vec<ShapedGlyph>` (cleared + refilled each row)
+- [x] **Tests**:
+  - [x] `"hello"` → 5 glyphs, each col_span=1
+  - [ ] `"=>"` with ligature-supporting font → 1 glyph, col_span=2 <!-- blocked-by:6.5 -->
+  - [ ] `"fi"` with liga feature → 1 glyph (fi ligature), col_span=2 <!-- blocked-by:6.5 -->
+  - [ ] `"好"` (wide char) → 1 glyph, col_span=2 — requires CJK fallback font in test env
+  - [ ] CJK char → shaped from fallback face, correct face_idx — requires CJK fallback font in test env
 
 ---
 
@@ -266,11 +266,11 @@ Map shaped glyphs back to grid columns. Ligatures span multiple columns — only
 
 **File:** `oriterm/src/gpu/render_grid.rs` (rendering integration)
 
-- [ ] Column → glyph mapping:
-  - [ ] `col_glyph_map: Vec<Option<usize>>` — maps column index → index in shaped glyphs vec
-  - [ ] For each shaped glyph: `col_glyph_map[glyph.col_start] = Some(glyph_index)`
-  - [ ] Subsequent columns of a ligature (col_start+1, col_start+2, ...) remain `None`
-  - [ ] During rendering: if `col_glyph_map[col]` is `Some(i)` → render glyph; if `None` → skip (continuation of ligature)
+- [x] Column → glyph mapping:
+  - [x] `col_glyph_map: Vec<Option<usize>>` — maps column index → index in shaped glyphs vec
+  - [x] For each shaped glyph: `col_glyph_map[glyph.col_start] = Some(glyph_index)`
+  - [x] Subsequent columns of a ligature (col_start+1, col_start+2, ...) remain `None`
+  - [ ] During rendering: if `col_glyph_map[col]` is `Some(i)` → render glyph; if `None` → skip (continuation of ligature) <!-- blocked-by:6.8 -->
 - [ ] Ligature background:
   - [ ] Background color for each column still rendered independently (cell-by-cell)
   - [ ] Only the foreground glyph spans multiple columns
@@ -293,28 +293,30 @@ Handle combining diacritics, ZWJ sequences, and other zero-width characters.
 
 **Files:** `oriterm_core/src/cell.rs` (storage), `oriterm/src/font/shaper.rs` (shaping)
 
-- [ ] Cell storage for zero-width characters:
-  - [ ] Add to `CellExtra`: `zerowidth: Option<Vec<char>>` — combining marks attached to this cell
-  - [ ] `Cell::push_zerowidth(&mut self, ch: char)` — add combining mark
-  - [ ] `Cell::zerowidth(&self) -> &[char]` — get combining marks (empty slice if none)
-  - [ ] Zero-width chars don't advance the cursor — they attach to the preceding cell
-- [ ] VTE handler integration:
-  - [ ] When `input(ch)` receives a character with `unicode_width == 0`:
-    - [ ] Don't advance cursor
-    - [ ] Push to previous cell's zerowidth list
-- [ ] Shaping integration:
-  - [ ] In `prepare_line()`: after appending base char, also append `cell.zerowidth()` chars to run text
-  - [ ] All zero-width chars get same column mapping as their base char
-  - [ ] Rustybuzz handles combining: base + accent → single positioned cluster
-- [ ] Rendering:
+- [x] Cell storage for zero-width characters:
+  - [x] Add to `CellExtra`: `zerowidth: Vec<char>` — combining marks attached to this cell
+  - [x] `Cell::push_zerowidth(&mut self, ch: char)` — add combining mark (lazy `Arc<CellExtra>` allocation)
+  - [x] `Cell::zerowidth(&self) -> &[char]` — access via `cell.extra.zerowidth`
+  - [x] Zero-width chars don't advance the cursor — they attach to the preceding cell
+- [x] VTE handler integration:
+  - [x] When `input(ch)` receives a character with `unicode_width == 0`:
+    - [x] Don't advance cursor
+    - [x] Push to previous cell's zerowidth list via `grid.push_zerowidth(c)`
+  - [x] Grid backtracking handles wrap-pending state and wide-char spacers
+- [x] Shaping integration:
+  - [x] In `prepare_line()`: after appending base char, also append `cell.extra.zerowidth` chars to run text
+  - [x] All zero-width chars get same column mapping as their base char
+  - [x] Rustybuzz handles combining: base + accent → single positioned cluster
+- [ ] Rendering: <!-- blocked-by:6.8 -->
   - [ ] Shaper produces multiple glyphs at same col_start (base + marks)
   - [ ] Each glyph rendered with its own x_offset/y_offset from shaper
   - [ ] Multiple glyphs at same column are all rendered (not just first)
-- [ ] **Tests**:
-  - [ ] `'e'` + `'\u{0301}'` (combining acute) → single shaping cluster at same column
-  - [ ] `'a'` + `'\u{0308}'` (combining diaeresis) → 'ä' appearance
-  - [ ] ZWJ sequence (e.g., family emoji): stored as base + zerowidth sequence
-  - [ ] Width: combining marks don't advance cursor (width 0)
+- [x] **Tests**:
+  - [x] `'e'` + `'\u{0301}'` (combining acute) → single shaping cluster at same column
+  - [x] `'a'` + multiple combining marks → all stored in zerowidth vec
+  - [x] ZWJ sequence: stored as base + zerowidth sequence
+  - [x] Width: combining marks don't advance cursor (width 0)
+  - [x] Edge cases: col 0 discard, wrap-pending, wide-char spacer backtrack
 
 ---
 
@@ -324,30 +326,33 @@ Collection-wide and per-fallback OpenType feature settings.
 
 **File:** `oriterm/src/font/collection.rs` (continued)
 
-- [ ] Collection-wide features:
-  - [ ] `features: Vec<rustybuzz::Feature>` — applied to all primary faces
-  - [ ] Default: `["liga", "calt"]` (standard ligatures + contextual alternates)
-  - [ ] Parsed from config: `"liga"` → enable, `"-liga"` → disable
-- [ ] Per-fallback features:
-  - [ ] `FallbackMeta.features` — overrides collection defaults for specific fallback
-  - [ ] Use case: disable ligatures for CJK fonts (`["-liga"]`)
-- [ ] `features_for_face(&self, face_idx: FaceIdx) -> &[rustybuzz::Feature]`
-  - [ ] Primary (0–3): return collection-wide features
-  - [ ] Fallback (4+): return fallback-specific features
-- [ ] Feature parsing:
-  - [ ] `parse_features(input: &[&str]) -> Vec<rustybuzz::Feature>`
-  - [ ] `"liga"` → `Feature { tag: tag!("liga"), value: 1, start: 0, end: u32::MAX }`
-  - [ ] `"-dlig"` → `Feature { tag: tag!("dlig"), value: 0, start: 0, end: u32::MAX }`
-- [ ] Config integration:
+- [x] Collection-wide features:
+  - [x] `features: Vec<rustybuzz::Feature>` — applied to all primary faces
+  - [x] Default: `["liga", "calt"]` (standard ligatures + contextual alternates)
+  - [x] Parsed from config: `"liga"` → enable, `"-liga"` → disable (via `parse_features()`)
+- [x] Per-fallback features:
+  - [x] `FallbackMeta.features: Option<Vec<Feature>>` — overrides collection defaults for specific fallback
+  - [x] Use case: disable ligatures for CJK fonts (`["-liga"]`)
+- [x] `features_for_face(&self, face_idx: FaceIdx) -> &[rustybuzz::Feature]`
+  - [x] Primary (0–3): return collection-wide features
+  - [x] Fallback (4+): return fallback-specific features (or collection defaults if no override)
+- [x] Feature parsing:
+  - [x] `parse_features(input: &[&str]) -> Vec<rustybuzz::Feature>`
+  - [x] `"liga"` → `Feature { tag: tag!("liga"), value: 1, start: 0, end: u32::MAX }`
+  - [x] `"-dlig"` → `Feature { tag: tag!("dlig"), value: 0, start: 0, end: u32::MAX }`
+- [x] Features passed to rustybuzz during shaping (`shape_run()` calls `features_for_face()`)
+- [ ] Config integration: <!-- blocked-by:13 -->
   ```toml
   [font]
   features = ["liga", "calt", "dlig"]
   ligatures = true  # Shorthand for liga + calt
   ```
-- [ ] **Tests**:
-  - [ ] Features parsed correctly: "liga" → value 1, "-liga" → value 0
-  - [ ] Collection features applied during shaping
-  - [ ] Fallback override: CJK font uses different features than primary
+- [x] **Tests**:
+  - [x] Features parsed correctly: "liga" → value 1, "-liga" → value 0
+  - [x] Collection features applied during shaping (features passed to `rustybuzz::shape()`)
+  - [x] Fallback without override uses collection defaults
+  - [x] Invalid feature tags skipped with warning
+  - [x] Default features are liga + calt
 
 ---
 

@@ -1,7 +1,7 @@
 //! Tests for the glyph atlas.
 
 use crate::font::collection::RasterizedGlyph;
-use crate::font::{GlyphFormat, RasterKey};
+use crate::font::{FaceIdx, GlyphFormat, RasterKey};
 use crate::gpu::state::GpuState;
 
 use super::{try_pack_in_page, GlyphAtlas, Shelf, GLYPH_PADDING, PAGE_SIZE};
@@ -23,7 +23,7 @@ fn test_glyph(width: u32, height: u32) -> RasterizedGlyph {
 fn test_key(glyph_id: u16) -> RasterKey {
     RasterKey {
         glyph_id,
-        face_idx: 0,
+        face_idx: FaceIdx::REGULAR,
         size_q6: 896, // ~14px
     }
 }
