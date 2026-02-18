@@ -301,15 +301,15 @@ impl ApplicationHandler<TermEvent> for App {
                         frame.content.cursor.visible = false;
                     }
 
-                    let prepared = renderer.prepare(&frame, gpu);
+                    renderer.prepare(&frame, gpu);
                     log::trace!(
                         "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
                         frame.content.cells.len(),
-                        prepared.backgrounds.len(),
-                        prepared.glyphs.len(),
-                        prepared.cursors.len(),
+                        renderer.prepared().backgrounds.len(),
+                        renderer.prepared().glyphs.len(),
+                        renderer.prepared().cursors.len(),
                     );
-                    renderer.render_to_surface(&prepared, gpu, window.surface())
+                    renderer.render_to_surface(gpu, window.surface())
                 };
 
                 match render_result {

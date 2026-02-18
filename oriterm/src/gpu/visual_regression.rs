@@ -69,8 +69,8 @@ fn render_to_pixels(
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    let prepared = renderer.prepare(input, gpu);
-    renderer.render_frame(&prepared, gpu, target.view());
+    renderer.prepare(input, gpu);
+    renderer.render_frame(gpu, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")
 }

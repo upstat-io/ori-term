@@ -13,6 +13,8 @@ use wgpu::{
     StoreOp, TextureView, TextureViewDescriptor,
 };
 
+use oriterm_core::Rgb;
+
 use super::atlas::GlyphAtlas;
 use super::bind_groups::{AtlasBindGroup, UniformBuffer};
 use super::frame_input::FrameInput;
@@ -23,6 +25,7 @@ use super::pipeline::{
 use super::prepare::{self, AtlasLookup, ShapedFrame};
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
+use crate::gpu::frame_input::ViewportSize;
 use crate::font::collection::size_key;
 use crate::font::shaper::{build_col_glyph_map, prepare_line, shape_prepared_runs};
 use crate::font::{CellMetrics, FontCollection, GlyphStyle, RasterKey};
@@ -71,6 +74,34 @@ impl AtlasLookup for RendererAtlas<'_> {
     }
 }
 
+// ── Shaping scratch ──
+
+/// Reusable per-frame scratch buffers for the shaping pipeline.
+///
+/// Stored on [`GpuRenderer`] and cleared each frame to avoid per-frame
+/// allocation of the shaping intermediaries and output.
+struct ShapingScratch {
+    /// Shaped frame output (glyph positions + col maps).
+    frame: ShapedFrame,
+    /// Shaping run segments for the current row.
+    runs: Vec<crate::font::shaper::ShapingRun>,
+    /// Shaped glyphs for the current row.
+    glyphs: Vec<crate::font::shaper::ShapedGlyph>,
+    /// Column-to-glyph map for the current row.
+    col_map: Vec<Option<usize>>,
+}
+
+impl ShapingScratch {
+    fn new() -> Self {
+        Self {
+            frame: ShapedFrame::new(0, 0),
+            runs: Vec::new(),
+            glyphs: Vec::new(),
+            col_map: Vec::new(),
+        }
+    }
+}
+
 // ── GpuRenderer ──
 
 /// Owns all GPU rendering resources and executes the Render phase.
@@ -91,6 +122,10 @@ pub struct GpuRenderer {
     // Atlas + fonts
     atlas: GlyphAtlas,
     font_collection: FontCollection,
+
+    // Per-frame reusable scratch buffers.
+    shaping: ShapingScratch,
+    prepared: PreparedFrame,
 
     // Per-frame GPU instance buffers (grow-only, never shrink).
     bg_buffer: Option<Buffer>,
@@ -145,6 +180,12 @@ impl GpuRenderer {
             atlas_layout,
             atlas,
             font_collection,
+            shaping: ShapingScratch::new(),
+            prepared: PreparedFrame::new(
+                ViewportSize::new(1, 1),
+                Rgb { r: 0, g: 0, b: 0 },
+                1.0,
+            ),
             bg_buffer: None,
             fg_buffer: None,
             cursor_buffer: None,
@@ -171,136 +212,90 @@ impl GpuRenderer {
 
     // ── Frame preparation ──
 
-    /// Shape all visible rows into a [`ShapedFrame`].
+    /// Run the Prepare phase: shape text and build GPU instance buffers.
     ///
-    /// Creates rustybuzz faces from the font collection, shapes each row,
-    /// and builds per-row glyph-to-column maps. The returned `ShapedFrame`
-    /// is fully owned (no borrows into font data) so `self` can be mutably
-    /// borrowed afterward for atlas caching.
-    fn shape_frame(&self, input: &FrameInput) -> ShapedFrame {
-        let cols = input.columns();
-        let rows = input.rows();
-        let size_q6 = size_key(self.font_collection.size_px());
-        let faces = self.font_collection.create_shaping_faces();
-
-        let mut shaped = ShapedFrame::new(cols, size_q6);
-        let mut runs = Vec::new();
-        let mut glyphs = Vec::new();
-        let mut col_map = Vec::new();
-
-        for row_idx in 0..rows {
-            let start = row_idx * cols;
-            let end = start + cols;
-            let row_cells = &input.content.cells[start..end];
-
-            prepare_line(row_cells, cols, &self.font_collection, &mut runs);
-            shape_prepared_runs(&runs, &faces, &self.font_collection, &mut glyphs);
-            build_col_glyph_map(&glyphs, cols, &mut col_map);
-            shaped.push_row(&glyphs, &col_map);
-        }
-
-        shaped
-    }
-
-    /// Ensure all shaped glyphs are cached in the atlas.
-    ///
-    /// Iterates all glyphs in the shaped frame, rasterizes and uploads any
-    /// missing ones. Must be called before the Prepare phase so every
-    /// `lookup_key` call hits the cache.
-    fn ensure_shaped_glyphs_cached(&mut self, shaped: &ShapedFrame, gpu: &GpuState) {
-        let size_q6 = shaped.size_q6();
-
-        for glyph in shaped.all_glyphs() {
-            let key = RasterKey {
-                glyph_id: glyph.glyph_id,
-                face_idx: glyph.face_idx,
-                size_q6,
-            };
-
-            if self.atlas.lookup_touch(key).is_some() {
-                continue;
-            }
-            if self.atlas.is_known_empty(key) {
-                continue;
-            }
-            if let Some(rasterized) = self.font_collection.rasterize(key) {
-                self.atlas.insert(key, rasterized, &gpu.queue);
-            }
-        }
-    }
-
-    /// Run the Prepare phase: shape text and convert a `FrameInput` into a `PreparedFrame`.
+    /// Fills `self.prepared` via buffer reuse (no per-frame allocation after
+    /// the first frame). Access the result via [`prepared()`](Self::prepared).
     ///
     /// Three phases:
     /// 1. **Shape** — segment rows into runs and shape via rustybuzz.
     /// 2. **Cache** — rasterize and upload any missing shaped glyphs.
     /// 3. **Prepare** — emit GPU instances from shaped glyph positions.
-    pub fn prepare(&mut self, input: &FrameInput, gpu: &GpuState) -> PreparedFrame {
+    pub fn prepare(&mut self, input: &FrameInput, gpu: &GpuState) {
         self.atlas.begin_frame();
 
-        // Phase A: Shape all rows (borrows font_collection immutably).
-        let shaped = self.shape_frame(input);
+        // Phase A: Shape all rows. Free function for split-borrow:
+        // borrows font_collection immutably, shaping scratch mutably.
+        shape_frame(input, &self.font_collection, &mut self.shaping);
 
-        // Phase B: Ensure shaped glyphs cached (borrows self mutably).
-        self.ensure_shaped_glyphs_cached(&shaped, gpu);
+        // Phase B: Ensure shaped glyphs cached. Free function for split-borrow:
+        // borrows shaping.frame immutably, atlas + font_collection mutably.
+        ensure_shaped_glyphs_cached(
+            &self.shaping.frame,
+            &mut self.atlas,
+            &mut self.font_collection,
+            gpu,
+        );
 
-        // Phase C: Build prepared frame via atlas lookup bridge.
+        // Phase C: Fill prepared frame via atlas lookup bridge (reuses allocations).
         let bridge = RendererAtlas { atlas: &self.atlas };
-        prepare::prepare_frame_shaped(input, &bridge, &shaped)
+        prepare::prepare_frame_shaped_into(
+            input,
+            &bridge,
+            &self.shaping.frame,
+            &mut self.prepared,
+        );
     }
 
-    /// Run the Prepare phase into an existing `PreparedFrame`, reusing buffers.
-    #[allow(dead_code, reason = "frame reuse optimization for later sections")]
-    pub fn prepare_into(
-        &mut self,
-        input: &FrameInput,
-        gpu: &GpuState,
-        out: &mut PreparedFrame,
-    ) {
-        self.atlas.begin_frame();
-        let shaped = self.shape_frame(input);
-        self.ensure_shaped_glyphs_cached(&shaped, gpu);
-        let bridge = RendererAtlas { atlas: &self.atlas };
-        // TODO: add prepare_frame_shaped_into when frame reuse is needed.
-        *out = prepare::prepare_frame_shaped(input, &bridge, &shaped);
+    /// The most recently prepared frame.
+    pub fn prepared(&self) -> &PreparedFrame {
+        &self.prepared
     }
 
     // ── Render phase ──
 
-    /// Upload prepared buffers to the GPU and execute draw calls.
+    /// Upload the stored prepared frame to the GPU and execute draw calls.
     ///
+    /// Reads from `self.prepared` (filled by [`prepare`](Self::prepare)).
     /// Accepts any `TextureView` as target — works for both surfaces and
     /// offscreen render targets (tab previews, headless testing).
-    pub fn render_frame(
-        &mut self,
-        prepared: &PreparedFrame,
-        gpu: &GpuState,
-        target: &TextureView,
-    ) {
+    pub fn render_frame(&mut self, gpu: &GpuState, target: &TextureView) {
         let device = &gpu.device;
         let queue = &gpu.queue;
-        let vp = prepared.viewport;
+        let vp = self.prepared.viewport;
 
         // Update screen_size uniform.
         self.uniform_buffer
             .write_screen_size(queue, vp.width as f32, vp.height as f32);
 
         // Upload instance data to GPU buffers.
-        let bg_buf =
-            ensure_buffer(device, &mut self.bg_buffer, prepared.backgrounds.as_bytes(), "bg_instance_buffer");
-        let fg_buf =
-            ensure_buffer(device, &mut self.fg_buffer, prepared.glyphs.as_bytes(), "fg_instance_buffer");
-        let cur_buf =
-            ensure_buffer(device, &mut self.cursor_buffer, prepared.cursors.as_bytes(), "cursor_instance_buffer");
+        let bg_buf = ensure_buffer(
+            device,
+            &mut self.bg_buffer,
+            self.prepared.backgrounds.as_bytes(),
+            "bg_instance_buffer",
+        );
+        let fg_buf = ensure_buffer(
+            device,
+            &mut self.fg_buffer,
+            self.prepared.glyphs.as_bytes(),
+            "fg_instance_buffer",
+        );
+        let cur_buf = ensure_buffer(
+            device,
+            &mut self.cursor_buffer,
+            self.prepared.cursors.as_bytes(),
+            "cursor_instance_buffer",
+        );
 
         if let Some(buf) = bg_buf {
-            queue.write_buffer(buf, 0, prepared.backgrounds.as_bytes());
+            queue.write_buffer(buf, 0, self.prepared.backgrounds.as_bytes());
         }
         if let Some(buf) = fg_buf {
-            queue.write_buffer(buf, 0, prepared.glyphs.as_bytes());
+            queue.write_buffer(buf, 0, self.prepared.glyphs.as_bytes());
         }
         if let Some(buf) = cur_buf {
-            queue.write_buffer(buf, 0, prepared.cursors.as_bytes());
+            queue.write_buffer(buf, 0, self.prepared.cursors.as_bytes());
         }
 
         // Encode render commands.
@@ -309,10 +304,10 @@ impl GpuRenderer {
         });
 
         let clear = Color {
-            r: prepared.clear_color[0],
-            g: prepared.clear_color[1],
-            b: prepared.clear_color[2],
-            a: prepared.clear_color[3],
+            r: self.prepared.clear_color[0],
+            g: self.prepared.clear_color[1],
+            b: self.prepared.clear_color[2],
+            a: self.prepared.clear_color[3],
         };
 
         {
@@ -333,33 +328,33 @@ impl GpuRenderer {
             let uniform_bg = self.uniform_buffer.bind_group();
 
             // Draw 1: Backgrounds (solid-color cell rects).
-            if !prepared.backgrounds.is_empty() {
+            if !self.prepared.backgrounds.is_empty() {
                 if let Some(buf) = &self.bg_buffer {
                     pass.set_pipeline(&self.bg_pipeline);
                     pass.set_bind_group(0, uniform_bg, &[]);
                     pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..4, 0..prepared.backgrounds.len() as u32);
+                    pass.draw(0..4, 0..self.prepared.backgrounds.len() as u32);
                 }
             }
 
             // Draw 2: Glyphs (atlas-sampled text).
-            if !prepared.glyphs.is_empty() {
+            if !self.prepared.glyphs.is_empty() {
                 if let Some(buf) = &self.fg_buffer {
                     pass.set_pipeline(&self.fg_pipeline);
                     pass.set_bind_group(0, uniform_bg, &[]);
                     pass.set_bind_group(1, self.atlas_bind_group.bind_group(), &[]);
                     pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..4, 0..prepared.glyphs.len() as u32);
+                    pass.draw(0..4, 0..self.prepared.glyphs.len() as u32);
                 }
             }
 
             // Draw 3: Cursors (solid-color rects via bg pipeline).
-            if !prepared.cursors.is_empty() {
+            if !self.prepared.cursors.is_empty() {
                 if let Some(buf) = &self.cursor_buffer {
                     pass.set_pipeline(&self.bg_pipeline);
                     pass.set_bind_group(0, uniform_bg, &[]);
                     pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..4, 0..prepared.cursors.len() as u32);
+                    pass.draw(0..4, 0..self.prepared.cursors.len() as u32);
                 }
             }
         }
@@ -367,13 +362,12 @@ impl GpuRenderer {
         queue.submit(std::iter::once(encoder.finish()));
     }
 
-    /// Acquire a surface texture, render, and present.
+    /// Acquire a surface texture, render the stored prepared frame, and present.
     ///
     /// Handles surface errors: `Lost`/`Outdated` → caller should reconfigure,
     /// `OutOfMemory` → propagated, `Timeout` → propagated.
     pub fn render_to_surface(
         &mut self,
-        prepared: &PreparedFrame,
         gpu: &GpuState,
         surface: &wgpu::Surface<'_>,
     ) -> Result<(), SurfaceError> {
@@ -392,9 +386,69 @@ impl GpuRenderer {
             ..Default::default()
         });
 
-        self.render_frame(prepared, gpu, &view);
+        self.render_frame(gpu, &view);
         output.present();
         Ok(())
+    }
+}
+
+// ── Free functions for split-borrow shaping pipeline ──
+
+/// Shape all visible rows into the scratch `ShapedFrame`.
+///
+/// Free function (not a method) so the borrow checker can see that
+/// `font_collection` is borrowed immutably while `scratch` is borrowed
+/// mutably — both are distinct fields of `GpuRenderer`.
+fn shape_frame(input: &FrameInput, fonts: &FontCollection, scratch: &mut ShapingScratch) {
+    let cols = input.columns();
+    let size_q6 = size_key(fonts.size_px());
+    scratch.frame.clear(cols, size_q6);
+    if cols == 0 {
+        return;
+    }
+    // Clamp rows to actual cell data — viewport dimensions may race ahead
+    // of the terminal grid during async resize.
+    let rows = input.rows().min(input.content.cells.len() / cols);
+    let faces = fonts.create_shaping_faces();
+
+    for row_idx in 0..rows {
+        let start = row_idx * cols;
+        let end = start + cols;
+        let row_cells = &input.content.cells[start..end];
+
+        prepare_line(row_cells, cols, fonts, &mut scratch.runs);
+        shape_prepared_runs(&scratch.runs, &faces, fonts, &mut scratch.glyphs);
+        build_col_glyph_map(&scratch.glyphs, cols, &mut scratch.col_map);
+        scratch.frame.push_row(&scratch.glyphs, &scratch.col_map);
+    }
+}
+
+/// Ensure all shaped glyphs are cached in the atlas.
+///
+/// Free function for split-borrow: reads `shaped` immutably while mutating
+/// `atlas` and `fonts` — both are distinct fields of `GpuRenderer`.
+fn ensure_shaped_glyphs_cached(
+    shaped: &ShapedFrame,
+    atlas: &mut GlyphAtlas,
+    fonts: &mut FontCollection,
+    gpu: &GpuState,
+) {
+    let size_q6 = shaped.size_q6();
+    for glyph in shaped.all_glyphs() {
+        let key = RasterKey {
+            glyph_id: glyph.glyph_id,
+            face_idx: glyph.face_idx,
+            size_q6,
+        };
+        if atlas.lookup_touch(key).is_some() {
+            continue;
+        }
+        if atlas.is_known_empty(key) {
+            continue;
+        }
+        if let Some(rasterized) = fonts.rasterize(key) {
+            atlas.insert(key, rasterized, &gpu.queue);
+        }
     }
 }
 

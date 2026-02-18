@@ -4,7 +4,10 @@ use std::collections::HashMap;
 
 use oriterm_core::{CellFlags, Column, CursorShape, Rgb};
 
-use super::{prepare_frame, prepare_frame_into, prepare_frame_shaped, AtlasLookup, ShapedFrame};
+use super::{
+    prepare_frame, prepare_frame_into, prepare_frame_shaped, prepare_frame_shaped_into,
+    AtlasLookup, ShapedFrame,
+};
 use crate::font::shaper::ShapedGlyph;
 use crate::font::{FaceIdx, GlyphStyle, RasterKey};
 use crate::gpu::atlas::AtlasEntry;
@@ -1090,4 +1093,102 @@ fn shaped_empty_glyphs_produces_bg_only() {
     let frame = prepare_frame_shaped(&input, &atlas, &sf);
 
     assert_counts(&frame, 3, 0, 1);
+}
+
+// ── prepare_frame_shaped_into ──
+
+#[test]
+fn shaped_into_matches_shaped() {
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(4, 1, "ABCD");
+    let atlas = key_atlas_with(&[100, 101, 102], size_q6);
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 100,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 0,
+            col_span: 2,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 101,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 2,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 102,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 3,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+    let shaped = shaped_one_row(4, &glyphs, size_q6);
+
+    let fresh = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    let mut reused = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut reused);
+
+    assert_eq!(fresh.backgrounds.as_bytes(), reused.backgrounds.as_bytes());
+    assert_eq!(fresh.glyphs.as_bytes(), reused.glyphs.as_bytes());
+    assert_eq!(fresh.cursors.as_bytes(), reused.cursors.as_bytes());
+    assert_eq!(fresh.clear_color, reused.clear_color);
+    assert_eq!(fresh.viewport, reused.viewport);
+}
+
+#[test]
+fn shaped_into_reuses_allocation() {
+    let size_q6 = 768;
+    let large_text: String = std::iter::repeat_n('A', 50).collect();
+    let input = FrameInput::test_grid(10, 5, &large_text);
+
+    // Build shaped data for 50 glyphs.
+    let glyphs: Vec<ShapedGlyph> = (0..50)
+        .map(|i| ShapedGlyph {
+            glyph_id: 42,
+            face_idx: FaceIdx::REGULAR,
+            col_start: i % 10,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        })
+        .collect();
+    let atlas = key_atlas_with(&[42], size_q6);
+
+    // Build shaped frame with all 5 rows.
+    let mut sf = ShapedFrame::new(10, size_q6);
+    for row_start in (0..50).step_by(10) {
+        let row_glyphs = &glyphs[row_start..row_start + 10];
+        let mut col_map = Vec::new();
+        crate::font::shaper::build_col_glyph_map(row_glyphs, 10, &mut col_map);
+        sf.push_row(row_glyphs, &col_map);
+    }
+
+    // First prepare.
+    let mut frame = prepare_frame_shaped(&input, &atlas, &sf);
+    let first_bg = frame.backgrounds.len();
+    let first_fg = frame.glyphs.len();
+
+    // Second prepare with smaller input reuses allocations.
+    let small = FrameInput::test_grid(2, 1, "A ");
+    let small_glyphs = vec![ShapedGlyph {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        col_start: 0,
+        col_span: 1,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let small_shaped = shaped_one_row(2, &small_glyphs, size_q6);
+    prepare_frame_shaped_into(&small, &atlas, &small_shaped, &mut frame);
+
+    assert_eq!(frame.backgrounds.len(), 2);
+    assert!(first_bg > frame.backgrounds.len());
+    assert!(first_fg > frame.glyphs.len());
 }

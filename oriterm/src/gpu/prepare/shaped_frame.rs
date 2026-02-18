@@ -74,6 +74,16 @@ impl ShapedFrame {
         self.col_maps[row * self.cols + col]
     }
 
+    /// Number of columns per row.
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
+
+    /// Number of shaped rows.
+    pub fn rows(&self) -> usize {
+        self.row_spans.len()
+    }
+
     /// All glyphs across all rows (for atlas pre-caching).
     pub fn all_glyphs(&self) -> &[ShapedGlyph] {
         &self.glyphs
@@ -84,11 +94,15 @@ impl ShapedFrame {
         self.size_q6
     }
 
-    /// Reset for reuse on the next frame (retains allocations).
-    #[allow(dead_code, reason = "frame reuse optimization for later sections")]
-    pub fn clear(&mut self) {
+    /// Reset for reuse on the next frame, updating metadata.
+    ///
+    /// Clears all glyph and mapping data while retaining allocations.
+    /// `cols` and `size_q6` are updated to match the new frame's parameters.
+    pub fn clear(&mut self, cols: usize, size_q6: u32) {
         self.glyphs.clear();
         self.row_spans.clear();
         self.col_maps.clear();
+        self.cols = cols;
+        self.size_q6 = size_q6;
     }
 }
