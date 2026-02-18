@@ -84,6 +84,10 @@ pub fn prepare_frame_into(
 /// Like [`prepare_frame`] but uses pre-shaped glyph positions from a
 /// [`ShapedFrame`] instead of per-cell character lookups. This enables
 /// ligatures, combining marks, and shaper-driven positioning.
+///
+/// Used by tests to get a fresh frame. Production uses
+/// [`prepare_frame_shaped_into`] for buffer reuse.
+#[cfg(test)]
 pub fn prepare_frame_shaped(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
@@ -96,6 +100,23 @@ pub fn prepare_frame_shaped(
         PreparedFrame::with_capacity(input.viewport, cols, rows, input.palette.background, opacity);
     fill_frame_shaped(input, atlas, shaped, &mut frame);
     frame
+}
+
+/// Convert a [`FrameInput`] into a pre-existing [`PreparedFrame`], reusing
+/// its buffer allocations (shaped path).
+///
+/// Like [`prepare_frame_shaped`] but clears and refills `out` instead of
+/// allocating a new frame.
+pub fn prepare_frame_shaped_into(
+    input: &FrameInput,
+    atlas: &dyn AtlasLookup,
+    shaped: &ShapedFrame,
+    out: &mut PreparedFrame,
+) {
+    out.clear();
+    out.viewport = input.viewport;
+    out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
+    fill_frame_shaped(input, atlas, shaped, out);
 }
 
 /// Unshaped per-cell rendering: emit instances into `frame`.
@@ -198,6 +219,10 @@ fn fill_frame_shaped(
         frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
 
         // Foreground: emit shaped glyphs via col-to-glyph map.
+        // Guard: viewport cells may exceed shaped frame during async resize.
+        if row >= shaped.rows() || col >= shaped.cols() {
+            continue;
+        }
         if let Some(start_idx) = shaped.col_map(row, col) {
             let row_glyphs = shaped.row_glyphs(row);
             emit_shaped_glyphs(row_glyphs, start_idx, col, x, y, baseline, shaped.size_q6(), atlas, cell.fg, frame);

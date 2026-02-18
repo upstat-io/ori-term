@@ -30,7 +30,6 @@ pub struct PreparedFrame {
 
 impl PreparedFrame {
     /// Create an empty frame with the given clear color.
-    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn new(viewport: ViewportSize, background: Rgb, opacity: f64) -> Self {
         Self {
             backgrounds: InstanceWriter::new(),
@@ -45,6 +44,7 @@ impl PreparedFrame {
     ///
     /// `cols * rows` instances are reserved for backgrounds (one per cell),
     /// and the same for glyphs. Cursors are always small (typically 1–2).
+    #[cfg(test)]
     pub fn with_capacity(
         viewport: ViewportSize,
         cols: usize,
@@ -75,7 +75,6 @@ impl PreparedFrame {
     }
 
     /// Reset all buffers for the next frame, retaining allocated memory.
-    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn clear(&mut self) {
         self.backgrounds.clear();
         self.glyphs.clear();
@@ -83,7 +82,6 @@ impl PreparedFrame {
     }
 
     /// Update the clear color (e.g. after a palette change).
-    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn set_clear_color(&mut self, background: Rgb, opacity: f64) {
         self.clear_color = rgb_to_clear(background, opacity);
     }

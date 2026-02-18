@@ -70,6 +70,7 @@ impl InstanceWriter {
     }
 
     /// Create a writer pre-allocated for `capacity` instances.
+    #[cfg(test)]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             buf: Vec::with_capacity(capacity * INSTANCE_SIZE),

@@ -77,8 +77,8 @@ fn frame_renders_without_errors() {
     let target = gpu.create_render_target(640, 384);
     let input = FrameInput::test_grid(80, 24, "Hello, World!");
 
-    let prepared = renderer.prepare(&input, &gpu);
-    renderer.render_frame(&prepared, &gpu, target.view());
+    renderer.prepare(&input, &gpu);
+    renderer.render_frame(&gpu, target.view());
 
     // No panic or GPU validation error = success.
 }
@@ -97,8 +97,8 @@ fn wgpu_validation_layer_enabled_in_tests() {
     let target = gpu.create_render_target(64, 64);
     let input = FrameInput::test_grid(8, 4, "test");
 
-    let prepared = renderer.prepare(&input, &gpu);
-    renderer.render_frame(&prepared, &gpu, target.view());
+    renderer.prepare(&input, &gpu);
+    renderer.render_frame(&gpu, target.view());
 
     // wgpu validation errors cause panics in debug mode, so reaching
     // here confirms the validation layer accepted our API usage.
@@ -128,8 +128,8 @@ fn render_colored_cell_correct_bg_color() {
     input.cell_size = cell_metrics;
 
     let target = gpu.create_render_target(cw, ch);
-    let prepared = renderer.prepare(&input, &gpu);
-    renderer.render_frame(&prepared, &gpu, target.view());
+    renderer.prepare(&input, &gpu);
+    renderer.render_frame(&gpu, target.view());
 
     let pixels = gpu
         .read_render_target(&target)
@@ -184,8 +184,8 @@ fn render_text_produces_nonzero_alpha_in_glyph_region() {
     input.palette.background = Rgb { r: 0, g: 0, b: 0 };
 
     let target = gpu.create_render_target(w, h);
-    let prepared = renderer.prepare(&input, &gpu);
-    renderer.render_frame(&prepared, &gpu, target.view());
+    renderer.prepare(&input, &gpu);
+    renderer.render_frame(&gpu, target.view());
 
     let pixels = gpu
         .read_render_target(&target)
@@ -243,8 +243,8 @@ fn render_cursor_pixels_at_expected_position() {
     }
 
     let target = gpu.create_render_target(w, h);
-    let prepared = renderer.prepare(&input, &gpu);
-    renderer.render_frame(&prepared, &gpu, target.view());
+    renderer.prepare(&input, &gpu);
+    renderer.render_frame(&gpu, target.view());
 
     let pixels = gpu
         .read_render_target(&target)
@@ -301,8 +301,8 @@ fn full_pipeline_extract_prepare_render_readback() {
     let target = gpu.create_render_target(w, h);
 
     // Run the full pipeline via GpuRenderer (ensure_glyphs_cached + prepare + render).
-    let prepared = renderer.prepare(&input, &gpu);
-    renderer.render_frame(&prepared, &gpu, target.view());
+    renderer.prepare(&input, &gpu);
+    renderer.render_frame(&gpu, target.view());
 
     // Readback and verify basic sanity.
     let pixels = gpu
