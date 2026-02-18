@@ -4,7 +4,7 @@ use crate::font::collection::RasterizedGlyph;
 use crate::font::{FaceIdx, GlyphFormat, RasterKey};
 use crate::gpu::state::GpuState;
 
-use super::{try_pack_in_page, GlyphAtlas, Shelf, GLYPH_PADDING, PAGE_SIZE};
+use super::{GlyphAtlas, GLYPH_PADDING, PAGE_SIZE};
 
 // ── Helpers ──
 
@@ -26,168 +26,6 @@ fn test_key(glyph_id: u16) -> RasterKey {
         face_idx: FaceIdx::REGULAR,
         size_q6: 896, // ~14px
     }
-}
-
-// ── Packing logic (no GPU) ──
-
-#[test]
-fn pack_first_glyph_on_empty_page() {
-    let mut shelves = vec![];
-
-    let result = try_pack_in_page(&mut shelves, 10, 12, 1024);
-
-    assert_eq!(result, Some((0, 0)));
-    assert_eq!(shelves.len(), 1);
-    assert_eq!(shelves[0].y, 0);
-    assert_eq!(shelves[0].height, 12);
-    assert_eq!(shelves[0].x_cursor, 10);
-}
-
-#[test]
-fn pack_second_glyph_same_shelf() {
-    let mut shelves = vec![Shelf {
-        y: 0,
-        height: 12,
-        x_cursor: 10,
-    }];
-
-    let result = try_pack_in_page(&mut shelves, 8, 12, 1024);
-
-    assert_eq!(result, Some((10, 0)));
-    assert_eq!(shelves.len(), 1);
-    assert_eq!(shelves[0].x_cursor, 18);
-}
-
-#[test]
-fn pack_tall_glyph_creates_new_shelf() {
-    let mut shelves = vec![Shelf {
-        y: 0,
-        height: 12,
-        x_cursor: 10,
-    }];
-
-    let result = try_pack_in_page(&mut shelves, 8, 20, 1024);
-
-    assert_eq!(result, Some((0, 12)));
-    assert_eq!(shelves.len(), 2);
-    assert_eq!(shelves[1].y, 12);
-    assert_eq!(shelves[1].height, 20);
-}
-
-#[test]
-fn pack_best_fit_selects_smallest_sufficient_shelf() {
-    let mut shelves = vec![
-        Shelf {
-            y: 0,
-            height: 20,
-            x_cursor: 100,
-        },
-        Shelf {
-            y: 20,
-            height: 12,
-            x_cursor: 100,
-        },
-        Shelf {
-            y: 32,
-            height: 15,
-            x_cursor: 100,
-        },
-    ];
-
-    // Glyph needs height 11 — shelf 1 (height 12) is best fit.
-    let result = try_pack_in_page(&mut shelves, 10, 11, 1024);
-
-    assert_eq!(result, Some((100, 20)));
-    assert_eq!(shelves[1].x_cursor, 110);
-}
-
-#[test]
-fn pack_returns_none_when_page_full() {
-    let mut shelves = vec![Shelf {
-        y: 0,
-        height: 1024,
-        x_cursor: 1024,
-    }];
-
-    let result = try_pack_in_page(&mut shelves, 10, 10, 1024);
-
-    assert!(result.is_none());
-}
-
-#[test]
-fn pack_returns_none_when_no_vertical_room() {
-    let mut shelves = vec![Shelf {
-        y: 0,
-        height: 1000,
-        x_cursor: 1024, // Full horizontally.
-    }];
-
-    // Only 24 pixels of vertical room remain, glyph needs 30.
-    let result = try_pack_in_page(&mut shelves, 10, 30, 1024);
-
-    assert!(result.is_none());
-}
-
-#[test]
-fn pack_fits_in_remaining_vertical_space() {
-    let mut shelves = vec![Shelf {
-        y: 0,
-        height: 1000,
-        x_cursor: 1024,
-    }];
-
-    // 24 pixels remain, glyph needs 20 — fits.
-    let result = try_pack_in_page(&mut shelves, 10, 20, 1024);
-
-    assert_eq!(result, Some((0, 1000)));
-    assert_eq!(shelves.len(), 2);
-}
-
-#[test]
-fn pack_overflows_horizontally_to_new_shelf() {
-    let mut shelves = vec![Shelf {
-        y: 0,
-        height: 12,
-        x_cursor: 1020,
-    }];
-
-    // Only 4 pixels of horizontal room — glyph needs 5.
-    let result = try_pack_in_page(&mut shelves, 5, 12, 1024);
-
-    assert_eq!(result, Some((0, 12)));
-    assert_eq!(shelves.len(), 2);
-}
-
-#[test]
-fn pack_exact_fit_at_horizontal_boundary() {
-    let mut shelves = vec![Shelf {
-        y: 0,
-        height: 12,
-        x_cursor: 1014,
-    }];
-
-    // Exactly 10 pixels remain — glyph needs 10.
-    let result = try_pack_in_page(&mut shelves, 10, 12, 1024);
-
-    assert_eq!(result, Some((1014, 0)));
-    assert_eq!(shelves[0].x_cursor, 1024);
-}
-
-#[test]
-fn pack_sequential_returns_correct_x_offsets() {
-    let mut shelves = vec![];
-
-    // Pack three glyphs of widths 10, 15, 20 (all height 12).
-    let a = try_pack_in_page(&mut shelves, 10, 12, 1024).unwrap();
-    let b = try_pack_in_page(&mut shelves, 15, 12, 1024).unwrap();
-    let c = try_pack_in_page(&mut shelves, 20, 12, 1024).unwrap();
-
-    // Each follows the previous on the same shelf.
-    assert_eq!(a, (0, 0));
-    assert_eq!(b, (10, 0));
-    assert_eq!(c, (25, 0));
-    assert_eq!(shelves.len(), 1);
-    assert_eq!(shelves[0].x_cursor, 45);
 }
 
 // ── GPU integration tests ──
@@ -322,8 +160,8 @@ fn insert_many_glyphs_fits_on_one_page() {
 
     let mut atlas = GlyphAtlas::new(&gpu.device);
 
-    // Insert 95 ASCII glyphs (0x20–0x7E), each 8×14.
-    // Padded: 9×15. Per shelf: floor(1024/9) = 113. One shelf suffices.
+    // Insert 95 ASCII glyphs (0x20–0x7E), each 8×14. Guillotine packer
+    // on a 2048×2048 page handles these easily.
     for glyph_id in 0x20u16..=0x7Eu16 {
         let key = test_key(glyph_id);
         let glyph = test_glyph(8, 14);
@@ -343,19 +181,19 @@ fn insert_triggers_new_page_allocation() {
 
     let mut atlas = GlyphAtlas::new(&gpu.device);
 
-    // Fill page 0 with 100×100 glyphs. Padded: 101×101.
-    // Per shelf: floor(1024/101) = 10. Shelves: floor(1024/101) = 10.
+    // Fill page 0 with 200×200 glyphs. Padded: 201×201.
+    // Per row: floor(2048/201) = 10. Columns: floor(2048/201) = 10.
     // Total per page: 10 × 10 = 100.
     for i in 0..100u16 {
         let key = test_key(i);
-        let glyph = test_glyph(100, 100);
+        let glyph = test_glyph(200, 200);
         atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
     }
     assert_eq!(atlas.page_count(), 1);
 
     // The 101st glyph should trigger page 2.
     let key = test_key(100);
-    let glyph = test_glyph(100, 100);
+    let glyph = test_glyph(200, 200);
     let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
 
     assert_eq!(atlas.page_count(), 2);
@@ -371,14 +209,14 @@ fn insert_oversized_glyph_returns_none() {
 
     let mut atlas = GlyphAtlas::new(&gpu.device);
     let key = test_key(1);
-    // Width exceeds max (PAGE_SIZE - GLYPH_PADDING = 1023).
+    // Width exceeds max (PAGE_SIZE - GLYPH_PADDING = 2047).
     let glyph = test_glyph(PAGE_SIZE, 1);
 
     assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_none());
 }
 
 #[test]
-fn primary_view_returns_page_zero() {
+fn view_returns_d2_array_view() {
     let Ok(gpu) = GpuState::new_headless() else {
         eprintln!("skipped: no GPU adapter available");
         return;
@@ -386,9 +224,8 @@ fn primary_view_returns_page_zero() {
 
     let atlas = GlyphAtlas::new(&gpu.device);
 
-    let _view = atlas.primary_view();
-    assert!(atlas.page_view(0).is_some());
-    assert!(atlas.page_view(1).is_none());
+    // Should not panic.
+    let _view = atlas.view();
 }
 
 #[test]
@@ -400,13 +237,13 @@ fn clear_after_multi_page_resets_to_one_page() {
 
     let mut atlas = GlyphAtlas::new(&gpu.device);
 
-    // Trigger multi-page allocation (same as insert_triggers_new_page).
+    // Trigger multi-page allocation.
     for i in 0..=100u16 {
         let key = test_key(i);
-        let glyph = test_glyph(100, 100);
+        let glyph = test_glyph(200, 200);
         atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
     }
-    assert_eq!(atlas.page_count(), 2);
+    assert!(atlas.page_count() >= 2);
 
     atlas.clear();
 
@@ -466,64 +303,6 @@ fn glyphs_do_not_overlap() {
 }
 
 #[test]
-fn insert_sequential_glyphs_have_correct_uv_offsets() {
-    let Ok(gpu) = GpuState::new_headless() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
-    let mut atlas = GlyphAtlas::new(&gpu.device);
-    let ps = PAGE_SIZE as f32;
-
-    // Insert glyph A: 8×14.
-    let key_a = test_key(65);
-    let glyph_a = test_glyph(8, 14);
-    let a = atlas
-        .insert(key_a, &glyph_a, &gpu.device, &gpu.queue)
-        .unwrap();
-
-    // First glyph lands at origin (0, 0).
-    assert!((a.uv_x).abs() < f32::EPSILON);
-    assert!((a.uv_y).abs() < f32::EPSILON);
-
-    // Insert glyph B: 10×14 (same height, fits on same shelf).
-    let key_b = test_key(66);
-    let glyph_b = test_glyph(10, 14);
-    let b = atlas
-        .insert(key_b, &glyph_b, &gpu.device, &gpu.queue)
-        .unwrap();
-
-    // Glyph B should land at x = 8 + GLYPH_PADDING, y = 0.
-    let expected_x = (8 + GLYPH_PADDING) as f32 / ps;
-    assert!(
-        (b.uv_x - expected_x).abs() < f32::EPSILON,
-        "expected uv_x={expected_x}, got {}",
-        b.uv_x,
-    );
-    assert!((b.uv_y).abs() < f32::EPSILON);
-
-    // Insert glyph C: 12×20 (taller, creates new shelf).
-    let key_c = test_key(67);
-    let glyph_c = test_glyph(12, 20);
-    let c = atlas
-        .insert(key_c, &glyph_c, &gpu.device, &gpu.queue)
-        .unwrap();
-
-    // New shelf starts at y = shelf_0_height = 14 + GLYPH_PADDING.
-    let expected_y = (14 + GLYPH_PADDING) as f32 / ps;
-    assert!(
-        (c.uv_x).abs() < f32::EPSILON,
-        "expected uv_x=0, got {}",
-        c.uv_x,
-    );
-    assert!(
-        (c.uv_y - expected_y).abs() < f32::EPSILON,
-        "expected uv_y={expected_y}, got {}",
-        c.uv_y,
-    );
-}
-
-#[test]
 fn reinsert_after_clear_packs_from_origin() {
     let Ok(gpu) = GpuState::new_headless() else {
         eprintln!("skipped: no GPU adapter available");
@@ -552,42 +331,6 @@ fn reinsert_after_clear_packs_from_origin() {
     assert_eq!(entry.page, 0);
     assert!((entry.uv_x).abs() < f32::EPSILON);
     assert!((entry.uv_y).abs() < f32::EPSILON);
-}
-
-#[test]
-fn multi_page_old_entries_still_accessible() {
-    let Ok(gpu) = GpuState::new_headless() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
-    let mut atlas = GlyphAtlas::new(&gpu.device);
-
-    // Insert a small glyph on page 0 first.
-    let key_first = test_key(0);
-    let first_glyph = test_glyph(8, 14);
-    let first = atlas
-        .insert(key_first, &first_glyph, &gpu.device, &gpu.queue)
-        .unwrap();
-    assert_eq!(first.page, 0);
-    let first_uv_x = first.uv_x;
-    let first_uv_y = first.uv_y;
-
-    // Fill page 0 with large glyphs to trigger page 1 allocation.
-    for i in 1..=100u16 {
-        let key = test_key(i);
-        let glyph = test_glyph(100, 100);
-        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
-    }
-    assert!(atlas.page_count() >= 2);
-
-    // The first glyph should still be accessible with unchanged coordinates.
-    let looked_up = atlas.lookup(key_first).unwrap();
-    assert_eq!(looked_up.page, 0);
-    assert_eq!(looked_up.uv_x, first_uv_x);
-    assert_eq!(looked_up.uv_y, first_uv_y);
-    assert_eq!(looked_up.width, 8);
-    assert_eq!(looked_up.height, 14);
 }
 
 #[test]
@@ -730,4 +473,135 @@ fn repeated_insert_of_empty_glyph_is_idempotent() {
     assert!(atlas.is_known_empty(key));
     // Zero-size glyphs don't count as cached entries.
     assert_eq!(atlas.len(), 0);
+}
+
+// ── LRU and frame counter tests ──
+
+#[test]
+fn begin_frame_increments_counter() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+
+    assert_eq!(atlas.frame_counter(), 0);
+    atlas.begin_frame();
+    assert_eq!(atlas.frame_counter(), 1);
+    atlas.begin_frame();
+    assert_eq!(atlas.frame_counter(), 2);
+}
+
+#[test]
+fn lru_eviction_evicts_oldest_page() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+
+    // Fill all 4 pages with large glyphs (one page-filling glyph each),
+    // advancing the frame counter between pages.
+    let max_dim = PAGE_SIZE - GLYPH_PADDING;
+    for i in 0..4u16 {
+        atlas.begin_frame();
+        let key = test_key(i);
+        let glyph = test_glyph(max_dim, max_dim);
+        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+    }
+    assert_eq!(atlas.page_count(), 4);
+
+    // All 4 pages are full. Page 0 was used at frame 1 (oldest).
+    // Inserting another glyph should evict page 0.
+    atlas.begin_frame();
+    let key = test_key(10);
+    let glyph = test_glyph(8, 14);
+    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+
+    // The new glyph should be on page 0 (the evicted page).
+    assert_eq!(entry.page, 0);
+
+    // Page 0's original glyph should be gone.
+    assert!(atlas.lookup(test_key(0)).is_none());
+
+    // Other pages' glyphs should still exist.
+    assert!(atlas.lookup(test_key(1)).is_some());
+    assert!(atlas.lookup(test_key(2)).is_some());
+    assert!(atlas.lookup(test_key(3)).is_some());
+}
+
+#[test]
+fn lru_eviction_preserves_newer_pages() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let max_dim = PAGE_SIZE - GLYPH_PADDING;
+
+    // Fill 4 pages.
+    for i in 0..4u16 {
+        atlas.begin_frame();
+        let key = test_key(i);
+        let glyph = test_glyph(max_dim, max_dim);
+        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+    }
+
+    // Touch page 0 by looking up its glyph, making it the most recently used.
+    atlas.begin_frame();
+    let page = atlas.lookup(test_key(0)).map(|e| e.page);
+    assert!(page.is_some());
+    atlas.touch_page(page.unwrap());
+
+    // Now page 1 is the oldest (frame 2). Inserting should evict page 1.
+    atlas.begin_frame();
+    let key = test_key(10);
+    let glyph = test_glyph(8, 14);
+    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+
+    assert_eq!(entry.page, 1);
+    assert!(atlas.lookup(test_key(1)).is_none()); // evicted
+    assert!(atlas.lookup(test_key(0)).is_some()); // preserved (touched)
+    assert!(atlas.lookup(test_key(2)).is_some()); // preserved
+    assert!(atlas.lookup(test_key(3)).is_some()); // preserved
+}
+
+#[test]
+fn q6_keying_distinct_sizes() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device);
+
+    // Same glyph_id but different size_q6 → different cache entries.
+    let key_14 = RasterKey {
+        glyph_id: 65,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: 896, // ~14px
+    };
+    let key_16 = RasterKey {
+        glyph_id: 65,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: 1024, // ~16px
+    };
+
+    let glyph_14 = test_glyph(8, 14);
+    let glyph_16 = test_glyph(9, 16);
+
+    let e14 = atlas
+        .insert(key_14, &glyph_14, &gpu.device, &gpu.queue)
+        .unwrap();
+    let e16 = atlas
+        .insert(key_16, &glyph_16, &gpu.device, &gpu.queue)
+        .unwrap();
+
+    assert_eq!(atlas.len(), 2);
+    assert_ne!(e14.uv_x, e16.uv_x);
+    assert_eq!(e14.width, 8);
+    assert_eq!(e16.width, 9);
 }

@@ -1,43 +1,43 @@
-//! Glyph atlas: shelf-packed texture pages for GPU glyph rendering.
+//! Glyph atlas: guillotine-packed texture array for GPU glyph rendering.
 //!
-//! [`GlyphAtlas`] manages one or more 1024×1024 `R8Unorm` texture pages,
-//! packing rasterized glyph bitmaps into horizontal shelves. Glyphs are
-//! inserted once and looked up by [`RasterKey`] on subsequent frames.
+//! [`GlyphAtlas`] manages a pre-allocated `Texture2DArray` (2048×2048 × 4
+//! pages) using guillotine bin packing for mixed glyph sizes. Pages are
+//! evicted via LRU when all are full. Glyphs are inserted once and looked
+//! up by [`RasterKey`] on subsequent frames.
+
+mod rect_packer;
 
 use std::collections::{HashMap, HashSet};
 
 use wgpu::{
     Device, Extent3d, Queue, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureUsages, TextureView, TextureViewDescriptor,
+    TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
 };
 
+use self::rect_packer::RectPacker;
 use crate::font::collection::RasterizedGlyph;
 use crate::font::RasterKey;
 
-/// Default atlas page dimension (width = height).
-const PAGE_SIZE: u32 = 1024;
+/// Atlas page dimension (width = height).
+const PAGE_SIZE: u32 = 2048;
+
+/// Maximum number of texture array layers.
+const MAX_PAGES: u32 = 4;
 
 /// Padding between glyphs to prevent texture filtering artifacts.
 const GLYPH_PADDING: u32 = 1;
 
-/// A horizontal shelf within an atlas page.
-///
-/// Glyphs are placed left-to-right. The shelf height is set by the first
-/// glyph placed on it (plus padding) and does not change afterward.
-struct Shelf {
-    /// Y offset of the shelf's top edge on the page.
-    y: u32,
-    /// Shelf height in pixels (includes padding).
-    height: u32,
-    /// Next available X position (advances right with each glyph).
-    x_cursor: u32,
+/// Per-page packing state and LRU metadata.
+struct AtlasPage {
+    packer: RectPacker,
+    last_used_frame: u64,
+    glyph_count: u32,
 }
 
 /// Location and metrics of a cached glyph in the atlas.
 #[derive(Debug, Clone, Copy)]
 pub struct AtlasEntry {
-    /// Page index (for multi-page rendering).
-    #[allow(dead_code, reason = "multi-page atlas in Section 6")]
+    /// Page index (texture array layer).
     pub page: u32,
     /// Normalized U coordinate of left edge (0.0–1.0).
     pub uv_x: f32,
@@ -57,42 +57,73 @@ pub struct AtlasEntry {
     pub bearing_y: i32,
 }
 
-/// Texture atlas for glyph bitmaps using shelf-packing.
+/// Texture atlas for glyph bitmaps using guillotine packing on a `Texture2DArray`.
 ///
-/// Manages one or more 1024×1024 `R8Unorm` texture pages. Glyphs are packed
-/// into horizontal shelves, uploaded via `queue.write_texture`, and cached by
-/// [`RasterKey`] for O(1) lookup on subsequent frames.
+/// Manages a single pre-allocated `R8Unorm` texture array with up to
+/// [`MAX_PAGES`] layers. Glyphs are packed using guillotine best-short-side-fit,
+/// uploaded via `queue.write_texture`, and cached by [`RasterKey`] for O(1)
+/// lookup. When all pages are full, the least-recently-used page is evicted.
 pub struct GlyphAtlas {
-    pages: Vec<Texture>,
-    page_views: Vec<TextureView>,
-    shelves: Vec<Vec<Shelf>>,
+    /// Single pre-allocated `Texture2DArray`.
+    texture: Texture,
+    /// `D2Array` view over all layers.
+    view: TextureView,
+    /// Per-page packing state + LRU metadata.
+    pages: Vec<AtlasPage>,
+    /// Glyph cache: `RasterKey` → atlas entry.
     cache: HashMap<RasterKey, AtlasEntry>,
     /// Keys known to produce zero-size glyphs (spaces, non-printing chars).
-    ///
-    /// Prevents repeated rasterization attempts for glyphs that will never
-    /// produce atlas entries.
     empty_keys: HashSet<RasterKey>,
     page_size: u32,
+    max_pages: u32,
+    /// Monotonically increasing frame counter for LRU tracking.
+    frame_counter: u64,
 }
 
 impl GlyphAtlas {
-    /// Create a new atlas with one empty 1024×1024 `R8Unorm` page.
+    /// Create a new atlas with a pre-allocated texture array and one active page.
     pub fn new(device: &Device) -> Self {
-        let (texture, view) = create_atlas_page(device, PAGE_SIZE, 0);
+        let (texture, view) = create_texture_array(device, PAGE_SIZE, MAX_PAGES);
 
         Self {
-            pages: vec![texture],
-            page_views: vec![view],
-            shelves: vec![vec![]],
+            texture,
+            view,
+            pages: vec![AtlasPage {
+                packer: RectPacker::new(PAGE_SIZE, PAGE_SIZE),
+                last_used_frame: 0,
+                glyph_count: 0,
+            }],
             cache: HashMap::new(),
             empty_keys: HashSet::new(),
             page_size: PAGE_SIZE,
+            max_pages: MAX_PAGES,
+            frame_counter: 0,
         }
     }
 
+    /// Increment the frame counter for LRU tracking.
+    ///
+    /// Call at the start of each frame before any glyph lookups or inserts.
+    pub fn begin_frame(&mut self) {
+        self.frame_counter += 1;
+    }
+
     /// Look up a previously inserted glyph.
+    ///
+    /// For LRU correctness, callers with `&mut` access should also call
+    /// [`touch_page`](Self::touch_page) with the entry's page index.
     pub fn lookup(&self, key: RasterKey) -> Option<&AtlasEntry> {
         self.cache.get(&key)
+    }
+
+    /// Mark a page as used this frame for LRU tracking.
+    ///
+    /// Call after [`lookup`](Self::lookup) when you have mutable access to
+    /// ensure recently-used pages are not evicted.
+    pub fn touch_page(&mut self, page: u32) {
+        if let Some(p) = self.pages.get_mut(page as usize) {
+            p.last_used_frame = self.frame_counter;
+        }
     }
 
     /// Whether the key is known to produce a zero-size glyph.
@@ -105,7 +136,7 @@ impl GlyphAtlas {
 
     /// Insert a rasterized glyph into the atlas.
     ///
-    /// Finds space via shelf-packing, uploads the bitmap to the GPU, and
+    /// Finds space via guillotine packing, uploads the bitmap to the GPU, and
     /// caches the entry. Returns `None` for zero-size glyphs (e.g. space)
     /// or glyphs too large for an atlas page.
     pub fn insert(
@@ -141,13 +172,16 @@ impl GlyphAtlas {
             return None;
         }
 
-        let (page, x, y) = self.allocate(glyph.width, glyph.height, device);
+        let (page_idx, x, y) = self.find_space(glyph.width, glyph.height, device);
 
-        upload_glyph(queue, &self.pages[page as usize], x, y, glyph);
+        upload_glyph(queue, &self.texture, page_idx, x, y, glyph);
+
+        self.pages[page_idx as usize].last_used_frame = self.frame_counter;
+        self.pages[page_idx as usize].glyph_count += 1;
 
         let ps = self.page_size as f32;
         let entry = AtlasEntry {
-            page,
+            page: page_idx,
             uv_x: x as f32 / ps,
             uv_y: y as f32 / ps,
             uv_w: glyph.width as f32 / ps,
@@ -162,139 +196,162 @@ impl GlyphAtlas {
         Some(entry)
     }
 
-    /// Primary (page 0) texture view for atlas bind group creation.
-    pub fn primary_view(&self) -> &TextureView {
-        &self.page_views[0]
+    /// Look up or insert a glyph in one call.
+    ///
+    /// If the key is already cached, returns the entry (touching LRU).
+    /// If the key is known empty, returns `None`. Otherwise, calls
+    /// `rasterize` to produce the glyph and inserts it.
+    ///
+    /// This unifies the lookup-rasterize-insert pattern used by
+    /// [`ensure_glyphs_cached`](crate::gpu::renderer::GpuRenderer::ensure_glyphs_cached).
+    #[allow(dead_code, reason = "convenience API for later integration")]
+    pub fn get_or_insert(
+        &mut self,
+        key: RasterKey,
+        rasterize: impl FnOnce() -> Option<RasterizedGlyph>,
+        device: &Device,
+        queue: &Queue,
+    ) -> Option<AtlasEntry> {
+        // Cache hit — touch page and return.
+        if let Some(entry) = self.cache.get(&key).copied() {
+            self.touch_page(entry.page);
+            return Some(entry);
+        }
+
+        // Known empty — skip rasterization.
+        if self.empty_keys.contains(&key) {
+            return None;
+        }
+
+        // Cache miss — rasterize and insert.
+        let glyph = rasterize()?;
+        self.insert(key, &glyph, device, queue)
     }
 
-    /// Texture view for a specific page.
-    #[allow(dead_code, reason = "atlas management in later sections")]
-    pub fn page_view(&self, page: u32) -> Option<&TextureView> {
-        self.page_views.get(page as usize)
+    /// `Texture2DArray` view for atlas bind group creation.
+    pub fn view(&self) -> &TextureView {
+        &self.view
     }
 
     /// Number of cached glyph entries.
-    #[allow(dead_code, reason = "atlas management in later sections")]
+    #[allow(dead_code, reason = "used in tests and diagnostics")]
     pub fn len(&self) -> usize {
         self.cache.len()
     }
 
     /// Whether the cache is empty.
-    #[allow(dead_code, reason = "atlas management in later sections")]
+    #[allow(dead_code, reason = "used in tests and diagnostics")]
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
 
-    /// Number of allocated texture pages.
+    /// Number of active atlas pages.
+    #[allow(dead_code, reason = "used in tests and diagnostics")]
     pub fn page_count(&self) -> usize {
         self.pages.len()
     }
 
-    /// Clear all cached glyphs and reset shelves.
+    /// Current frame counter value.
+    #[allow(dead_code, reason = "used in tests and diagnostics")]
+    pub fn frame_counter(&self) -> u64 {
+        self.frame_counter
+    }
+
+    /// Clear all cached glyphs and reset packing state.
     ///
-    /// Keeps the first texture page but drops extras. Called on font size
-    /// change when all cached glyphs become invalid.
-    #[allow(dead_code, reason = "atlas management in later sections")]
+    /// Keeps the texture array but resets to one active page. Called on font
+    /// size change when all cached glyphs become invalid.
+    #[allow(dead_code, reason = "used in tests and font size change")]
     pub fn clear(&mut self) {
         self.cache.clear();
         self.empty_keys.clear();
-        for shelf_list in &mut self.shelves {
-            shelf_list.clear();
+        for page in &mut self.pages {
+            page.packer.reset();
+            page.glyph_count = 0;
         }
         self.pages.truncate(1);
-        self.page_views.truncate(1);
-        self.shelves.truncate(1);
     }
 
     // ── Private helpers ──
 
-    /// Allocate space for a glyph, returning `(page, x, y)`.
+    /// Find space for a glyph, returning `(page_idx, x, y)`.
     ///
-    /// Uses best-fit shelf selection: picks the shelf with the smallest
-    /// sufficient height to minimize wasted vertical space. Creates new
-    /// shelves and pages as needed.
-    fn allocate(&mut self, w: u32, h: u32, device: &Device) -> (u32, u32, u32) {
+    /// Tries each existing page's guillotine packer. If all are full and
+    /// fewer than `max_pages` exist, adds a new page. If at the page limit,
+    /// evicts the least-recently-used page.
+    fn find_space(&mut self, w: u32, h: u32, _device: &Device) -> (u32, u32, u32) {
         let padded_w = w + GLYPH_PADDING;
         let padded_h = h + GLYPH_PADDING;
 
-        for (page_idx, page_shelves) in self.shelves.iter_mut().enumerate() {
-            if let Some((x, y)) =
-                try_pack_in_page(page_shelves, padded_w, padded_h, self.page_size)
-            {
-                return (page_idx as u32, x, y);
+        // Try existing pages.
+        for (i, page) in self.pages.iter_mut().enumerate() {
+            if let Some((x, y)) = page.packer.pack(padded_w, padded_h) {
+                return (i as u32, x, y);
             }
         }
 
-        // All pages full — allocate a new one.
-        let page_idx = self.pages.len();
-        let (texture, view) = create_atlas_page(device, self.page_size, page_idx);
-        self.pages.push(texture);
-        self.page_views.push(view);
-        self.shelves.push(vec![]);
+        // All pages full — add a new one if under the limit.
+        if (self.pages.len() as u32) < self.max_pages {
+            let page_idx = self.pages.len();
+            self.pages.push(AtlasPage {
+                packer: RectPacker::new(self.page_size, self.page_size),
+                last_used_frame: self.frame_counter,
+                glyph_count: 0,
+            });
 
-        let page_shelves = self.shelves.last_mut().expect("just pushed");
-        let (x, y) = try_pack_in_page(page_shelves, padded_w, padded_h, self.page_size)
-            .expect("fresh page must fit glyph within page_size bounds");
+            let (x, y) = self.pages[page_idx]
+                .packer
+                .pack(padded_w, padded_h)
+                .expect("fresh page must fit glyph within page_size bounds");
 
-        (page_idx as u32, x, y)
+            return (page_idx as u32, x, y);
+        }
+
+        // At max pages — LRU eviction.
+        let evicted = self.find_lru_page();
+        self.evict_page(evicted);
+
+        let (x, y) = self.pages[evicted]
+            .packer
+            .pack(padded_w, padded_h)
+            .expect("freshly evicted page must fit glyph");
+
+        (evicted as u32, x, y)
+    }
+
+    /// Find the page index with the smallest `last_used_frame`.
+    fn find_lru_page(&self) -> usize {
+        self.pages
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, p)| p.last_used_frame)
+            .map(|(i, _)| i)
+            .expect("at least one page exists")
+    }
+
+    /// Evict a page: reset its packer and remove all cache entries on it.
+    fn evict_page(&mut self, page_idx: usize) {
+        self.pages[page_idx].packer.reset();
+        self.pages[page_idx].glyph_count = 0;
+        self.pages[page_idx].last_used_frame = self.frame_counter;
+        self.cache.retain(|_, e| e.page as usize != page_idx);
     }
 }
 
 // ── Free functions ──
 
-/// Try to pack a glyph into an existing page using best-fit shelf selection.
-///
-/// Scans all shelves for the one with the smallest sufficient height that
-/// has enough horizontal room. Creates a new shelf if no existing shelf fits.
-fn try_pack_in_page(
-    shelves: &mut Vec<Shelf>,
-    padded_w: u32,
-    padded_h: u32,
-    page_size: u32,
-) -> Option<(u32, u32)> {
-    let mut best: Option<(usize, u32)> = None;
-
-    for (i, shelf) in shelves.iter().enumerate() {
-        if shelf.height >= padded_h && shelf.x_cursor + padded_w <= page_size {
-            let waste = shelf.height - padded_h;
-            if best.is_none_or(|(_, bw)| waste < bw) {
-                best = Some((i, waste));
-            }
-        }
-    }
-
-    if let Some((idx, _)) = best {
-        let shelf = &mut shelves[idx];
-        let x = shelf.x_cursor;
-        let y = shelf.y;
-        shelf.x_cursor += padded_w;
-        return Some((x, y));
-    }
-
-    // No existing shelf fits — start a new one.
-    let new_y = shelves.last().map_or(0, |s| s.y + s.height);
-    if new_y + padded_h > page_size {
-        return None;
-    }
-
-    shelves.push(Shelf {
-        y: new_y,
-        height: padded_h,
-        x_cursor: padded_w,
-    });
-
-    Some((0, new_y))
-}
-
-/// Create an `R8Unorm` atlas texture page.
-fn create_atlas_page(device: &Device, size: u32, idx: usize) -> (Texture, TextureView) {
-    let label = format!("atlas_page_{idx}");
+/// Create a pre-allocated `R8Unorm` texture array.
+fn create_texture_array(
+    device: &Device,
+    size: u32,
+    max_pages: u32,
+) -> (Texture, TextureView) {
     let texture = device.create_texture(&TextureDescriptor {
-        label: Some(&label),
+        label: Some("glyph_atlas_array"),
         size: Extent3d {
             width: size,
             height: size,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: max_pages,
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -303,20 +360,36 @@ fn create_atlas_page(device: &Device, size: u32, idx: usize) -> (Texture, Textur
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let view = texture.create_view(&TextureViewDescriptor::default());
+
+    let view = texture.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+
     (texture, view)
 }
 
-/// Upload a glyph bitmap to a position on an atlas texture.
+/// Upload a glyph bitmap to a position on a texture array layer.
 ///
 /// Assumes `R8Unorm` format (1 byte per pixel). The glyph must use
 /// [`GlyphFormat::Alpha`](crate::font::GlyphFormat::Alpha).
-fn upload_glyph(queue: &Queue, texture: &Texture, x: u32, y: u32, glyph: &RasterizedGlyph) {
+fn upload_glyph(
+    queue: &Queue,
+    texture: &Texture,
+    page_idx: u32,
+    x: u32,
+    y: u32,
+    glyph: &RasterizedGlyph,
+) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,
             mip_level: 0,
-            origin: wgpu::Origin3d { x, y, z: 0 },
+            origin: wgpu::Origin3d {
+                x,
+                y,
+                z: page_idx,
+            },
             aspect: wgpu::TextureAspect::All,
         },
         &glyph.bitmap,

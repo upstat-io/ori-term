@@ -107,6 +107,7 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
                     uv,
                     cell.fg,
                     1.0,
+                    entry.page,
                 );
             }
         }

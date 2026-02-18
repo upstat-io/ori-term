@@ -72,7 +72,7 @@ fn placeholder_texture_creation_succeeds() {
 }
 
 #[test]
-fn placeholder_texture_is_1x1_r8unorm() {
+fn placeholder_texture_is_1x1_d2array_r8unorm() {
     let Ok(gpu) = GpuState::new_headless() else {
         eprintln!("skipped: no GPU adapter available");
         return;

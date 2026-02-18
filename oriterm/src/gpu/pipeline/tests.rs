@@ -13,19 +13,20 @@ fn stride_matches_instance_size() {
 }
 
 #[test]
-fn six_attributes() {
-    assert_eq!(INSTANCE_ATTRS.len(), 6);
+fn seven_attributes() {
+    assert_eq!(INSTANCE_ATTRS.len(), 7);
 }
 
 #[test]
 fn attribute_offsets_and_locations() {
-    let expected: [(u64, u32); 6] = [
+    let expected: [(u64, u32); 7] = [
         (0, 0),  // pos
         (8, 1),  // size
         (16, 2), // uv
         (32, 3), // fg_color
         (48, 4), // bg_color
         (64, 5), // kind
+        (68, 6), // atlas_page
     ];
 
     for (attr, (offset, location)) in INSTANCE_ATTRS.iter().zip(expected.iter()) {

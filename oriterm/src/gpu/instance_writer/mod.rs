@@ -32,8 +32,7 @@ const OFF_BG_G: usize = 52; //  f32  — background G [0..1]
 const OFF_BG_B: usize = 56; //  f32  — background B [0..1]
 const OFF_BG_A: usize = 60; //  f32  — background A [0..1]
 const OFF_KIND: usize = 64; //  u32  — instance kind (rect/glyph/cursor)
-#[allow(dead_code, reason = "reserved padding fields")]
-const OFF_PAD1: usize = 68; //  u32  — reserved
+const OFF_ATLAS_PAGE: usize = 68; //  u32  — atlas texture array layer index
 #[allow(dead_code, reason = "reserved padding fields")]
 const OFF_PAD2: usize = 72; //  u32  — reserved
 #[allow(dead_code, reason = "reserved padding fields")]
@@ -117,13 +116,14 @@ impl InstanceWriter {
             [0.0, 0.0, 0.0, 0.0],
             rgb_to_floats(bg, alpha),
             InstanceKind::Rect,
+            0,
         );
     }
 
     /// Push a texture-sampled glyph instance.
     ///
     /// `uv` is `[u_left, v_top, u_width, v_height]` in atlas texture
-    /// coordinates (0..1).
+    /// coordinates (0..1). `atlas_page` selects the texture array layer.
     pub fn push_glyph(
         &mut self,
         x: f32,
@@ -133,6 +133,7 @@ impl InstanceWriter {
         uv: [f32; 4],
         fg: Rgb,
         alpha: f32,
+        atlas_page: u32,
     ) {
         self.push_instance(
             x,
@@ -143,6 +144,7 @@ impl InstanceWriter {
             rgb_to_floats(fg, alpha),
             [0.0, 0.0, 0.0, 0.0],
             InstanceKind::Glyph,
+            atlas_page,
         );
     }
 
@@ -160,6 +162,7 @@ impl InstanceWriter {
             [0.0, 0.0, 0.0, 0.0],
             rgb_to_floats(color, alpha),
             InstanceKind::Cursor,
+            0,
         );
     }
 
@@ -189,6 +192,7 @@ impl InstanceWriter {
         fg: [f32; 4],
         bg: [f32; 4],
         kind: InstanceKind,
+        atlas_page: u32,
     ) {
         let start = self.buf.len();
         self.buf.resize(start + INSTANCE_SIZE, 0);
@@ -215,7 +219,8 @@ impl InstanceWriter {
         write_f32(rec, OFF_BG_A, bg[3]);
 
         write_u32(rec, OFF_KIND, kind as u32);
-        // Padding already zeroed by resize.
+        write_u32(rec, OFF_ATLAS_PAGE, atlas_page);
+        // Remaining padding already zeroed by resize.
     }
 }
 

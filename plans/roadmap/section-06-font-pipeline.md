@@ -28,7 +28,7 @@ sections:
     status: in-progress
   - id: "6.8"
     title: Advanced Atlas (Guillotine + LRU + Multi-Page)
-    status: not-started
+    status: complete
   - id: "6.9"
     title: Built-in Geometric Glyphs
     status: not-started
@@ -364,45 +364,45 @@ Replace Section 04's simple shelf packing with the production atlas: guillotine 
 
 **Reference:** `_old/src/gpu/atlas.rs`
 
-- [ ] Guillotine rectangle packing:
-  - [ ] `RectPacker` struct
-    - [ ] `free_rects: Vec<Rect>` — available rectangles
-    - [ ] `pack(w: u32, h: u32) -> Option<(u32, u32)>` — find best-short-side-fit
-    - [ ] Split: remove chosen rect, create up to 2 children (horizontal or vertical split based on leftover shape)
-    - [ ] Reset: clear to single full-page rect
-  - [ ] **Why guillotine over shelf?** Better packing density for mixed glyph sizes (CJK large + Latin small + accent tiny)
-- [ ] Multi-page texture array:
-  - [ ] `GlyphAtlas.texture: wgpu::Texture` — `Texture2DArray` format
-  - [ ] Page size: 2048×2048 (configurable, old app used 2048)
-  - [ ] Max pages: 4 (= 16MB VRAM at R8Unorm)
-  - [ ] Start with 1 page, grow on demand up to max
-  - [ ] `pages: Vec<AtlasPage>` — per-page packing state + LRU frame counter
-- [ ] LRU eviction:
-  - [ ] Each page tracks `last_used_frame: u64`
-  - [ ] When all pages full and new glyph needs space:
-    - [ ] Find page with oldest `last_used_frame`
-    - [ ] Reset that page's packer
-    - [ ] Remove all cache entries pointing to that page
-    - [ ] Re-insert the new glyph on the now-empty page
-- [ ] Cache key: `(glyph_id: u16, face_idx: FaceIdx, size_q6: u32, collection_id: u8)`
-  - [ ] `size_q6 = (size * 64.0).round() as u32` — 26.6 fixed-point for precise DPI-aware keying
-  - [ ] `collection_id` discriminates grid font (0) vs UI font (1)
-  - [ ] **Why Q6?** Prevents rounding collisions at fractional DPI: 13.95pt vs 14.05pt get distinct keys
-- [ ] `get_or_insert_shaped(glyph_id, face_idx, size_q6, collection_id, rasterize_fn, queue) -> &AtlasEntry`
-  - [ ] Check `shaped_entries` HashMap
-  - [ ] If miss: call `rasterize_fn()` to get bitmap, upload to atlas, cache entry
-  - [ ] Update page's `last_used_frame`
-  - [ ] Return atlas entry (UV coordinates, metrics, page index)
-- [ ] `AtlasEntry` struct (same as old):
-  - [ ] `uv_pos: [f32; 2]`, `uv_size: [f32; 2]`, `metrics: GlyphMetrics`, `page: u32`
-- [ ] `begin_frame()` — increment frame counter
-- [ ] `clear()` — full atlas reset (called on font size change)
-- [ ] **Tests**:
-  - [ ] Guillotine packing: insert 100 varied-size rects, all find positions
-  - [ ] Multi-page: fill page 0, overflow to page 1
-  - [ ] LRU eviction: fill all 4 pages, insert new glyph → oldest page evicted
-  - [ ] Cache hit: same key returns same entry
-  - [ ] Q6 keying: slightly different sizes produce different keys
+- [x] Guillotine rectangle packing:
+  - [x] `RectPacker` struct (`gpu/atlas/rect_packer/mod.rs`)
+    - [x] `free_rects: Vec<Rect>` — available rectangles
+    - [x] `pack(w: u32, h: u32) -> Option<(u32, u32)>` — find best-short-side-fit
+    - [x] Split: remove chosen rect, create up to 2 children (horizontal or vertical split based on leftover shape)
+    - [x] Reset: clear to single full-page rect
+  - [x] **Why guillotine over shelf?** Better packing density for mixed glyph sizes (CJK large + Latin small + accent tiny)
+- [x] Multi-page texture array:
+  - [x] `GlyphAtlas.texture: wgpu::Texture` — `Texture2DArray` format
+  - [x] Page size: 2048×2048
+  - [x] Max pages: 4 (= 16MB VRAM at R8Unorm)
+  - [x] Start with 1 page, grow on demand up to max
+  - [x] `pages: Vec<AtlasPage>` — per-page packing state + LRU frame counter
+- [x] LRU eviction:
+  - [x] Each page tracks `last_used_frame: u64`
+  - [x] When all pages full and new glyph needs space:
+    - [x] Find page with oldest `last_used_frame`
+    - [x] Reset that page's packer
+    - [x] Remove all cache entries pointing to that page
+    - [x] Re-insert the new glyph on the now-empty page
+- [x] Cache key: `RasterKey { glyph_id: u16, face_idx: FaceIdx, size_q6: u32 }`
+  - [x] `size_q6 = (size * 64.0).round() as u32` — 26.6 fixed-point for precise DPI-aware keying
+  - [x] **Why Q6?** Prevents rounding collisions at fractional DPI: 13.95pt vs 14.05pt get distinct keys
+- [x] `get_or_insert(key, rasterize_fn, device, queue) -> Option<AtlasEntry>`
+  - [x] Check cache HashMap
+  - [x] If miss: call `rasterize_fn()` to get bitmap, upload to atlas, cache entry
+  - [x] Update page's `last_used_frame` via `touch_page()`
+  - [x] Return atlas entry (UV coordinates, metrics, page index)
+- [x] `AtlasEntry` struct: `page`, `uv_x/y/w/h`, `width/height`, `bearing_x/y`
+- [x] `begin_frame()` — increment frame counter (called from `GpuRenderer::prepare()`)
+- [x] `clear()` — full atlas reset (called on font size change)
+- [x] Shader + pipeline: `texture_2d_array`, 7 instance attributes (added `atlas_page`), `D2Array` bind layout
+- [x] **Tests**:
+  - [x] Guillotine packing: 50 varied-size rects with no-overlap verification
+  - [x] Multi-page: fill page 0, overflow to page 1
+  - [x] LRU eviction: fill all 4 pages, insert new glyph → oldest page evicted
+  - [x] LRU eviction preserves newer pages when oldest is touched
+  - [x] Cache hit: same key returns same entry
+  - [x] Q6 keying: slightly different sizes produce different keys
 
 ---
 

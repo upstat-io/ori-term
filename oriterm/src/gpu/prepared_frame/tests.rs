@@ -78,7 +78,7 @@ fn populate_and_count() {
     frame.backgrounds.push_rect(8.0, 0.0, 8.0, 16.0, BLACK, 1.0);
     frame
         .glyphs
-        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
     frame.cursors.push_cursor(0.0, 0.0, 8.0, 16.0, WHITE, 1.0);
 
     assert!(!frame.is_empty());
@@ -94,7 +94,7 @@ fn clear_resets_all_buffers() {
     frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
     frame
         .glyphs
-        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
     frame.cursors.push_cursor(0.0, 0.0, 8.0, 16.0, WHITE, 1.0);
 
     frame.clear();
@@ -118,9 +118,9 @@ fn clear_and_reuse() {
     // Second frame.
     frame
         .glyphs
-        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
     frame
         .glyphs
-        .push_glyph(8.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+        .push_glyph(8.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
     assert_eq!(frame.total_instances(), 2);
 }

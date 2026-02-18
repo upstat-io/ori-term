@@ -101,6 +101,7 @@ pub struct GpuRenderer {
     // Bind groups + layouts
     uniform_buffer: UniformBuffer,
     atlas_bind_group: AtlasBindGroup,
+    #[allow(dead_code, reason = "retained for atlas rebuild on font change")]
     atlas_layout: BindGroupLayout,
 
     // Atlas + fonts
@@ -153,8 +154,8 @@ impl GpuRenderer {
         }
         let t_precache = t0.elapsed();
 
-        // Atlas bind group (with real atlas texture, not placeholder).
-        let atlas_bind_group = AtlasBindGroup::new(device, &atlas_layout, atlas.primary_view());
+        // Atlas bind group (with real atlas texture array).
+        let atlas_bind_group = AtlasBindGroup::new(device, &atlas_layout, atlas.view());
 
         log::info!(
             "renderer init: pipelines={t_pipelines:?} precache={t_precache:?} total={:?}",
@@ -197,7 +198,6 @@ impl GpuRenderer {
     /// [`prepare`](Self::prepare) so every atlas lookup hits the cache.
     pub fn ensure_glyphs_cached(&mut self, input: &FrameInput, gpu: &GpuState) {
         let size_q6 = size_key(self.font_collection.size_px());
-        let prev_pages = self.atlas.page_count();
 
         for cell in &input.content.cells {
             if cell.ch == ' ' || cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
@@ -222,22 +222,20 @@ impl GpuRenderer {
                 k
             };
 
-            if self.atlas.lookup(key).is_some() || self.atlas.is_known_empty(key) {
+            // Touch the page for LRU tracking if already cached.
+            let page = self.atlas.lookup(key).map(|e| e.page);
+            if let Some(p) = page {
+                self.atlas.touch_page(p);
+                continue;
+            }
+
+            if self.atlas.is_known_empty(key) {
                 continue;
             }
 
             if let Some(glyph) = self.font_collection.rasterize(key) {
                 self.atlas.insert(key, glyph, &gpu.device, &gpu.queue);
             }
-        }
-
-        // Rebuild atlas bind group if new pages were allocated.
-        if self.atlas.page_count() > prev_pages {
-            self.atlas_bind_group.rebuild(
-                &gpu.device,
-                &self.atlas_layout,
-                self.atlas.primary_view(),
-            );
         }
     }
 
@@ -246,6 +244,7 @@ impl GpuRenderer {
     /// Calls [`ensure_glyphs_cached`](Self::ensure_glyphs_cached) first, then
     /// builds the prepared frame via the atlas lookup bridge.
     pub fn prepare(&mut self, input: &FrameInput, gpu: &GpuState) -> PreparedFrame {
+        self.atlas.begin_frame();
         self.ensure_glyphs_cached(input, gpu);
         let bridge = RendererAtlas {
             resolve_cache: &self.resolve_cache,
@@ -264,6 +263,7 @@ impl GpuRenderer {
         gpu: &GpuState,
         out: &mut PreparedFrame,
     ) {
+        self.atlas.begin_frame();
         self.ensure_glyphs_cached(input, gpu);
         let bridge = RendererAtlas {
             resolve_cache: &self.resolve_cache,

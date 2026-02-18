@@ -1,8 +1,8 @@
 // Foreground shader: atlas-sampled glyph quads.
 //
 // Same vertex pulling pattern as the background shader. The fragment shader
-// samples an R8Unorm atlas texture and tints with fg_color using premultiplied
-// alpha.
+// samples an R8Unorm atlas texture array and tints with fg_color using
+// premultiplied alpha.
 
 struct Uniform {
     screen_size: vec2<f32>,
@@ -13,7 +13,7 @@ struct Uniform {
 var<uniform> uniforms: Uniform;
 
 @group(1) @binding(0)
-var atlas_texture: texture_2d<f32>;
+var atlas_texture: texture_2d_array<f32>;
 
 @group(1) @binding(1)
 var atlas_sampler: sampler;
@@ -25,12 +25,14 @@ struct InstanceInput {
     @location(3) fg_color: vec4<f32>,
     @location(4) bg_color: vec4<f32>,
     @location(5) kind: u32,
+    @location(6) atlas_page: u32,
 }
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) fg_color: vec4<f32>,
     @location(1) tex_coord: vec2<f32>,
+    @location(2) @interpolate(flat) atlas_page: u32,
 }
 
 @vertex
@@ -59,12 +61,13 @@ fn vs_main(
     out.position = vec4<f32>(ndc, 0.0, 1.0);
     out.fg_color = instance.fg_color;
     out.tex_coord = tex_coord;
+    out.atlas_page = instance.atlas_page;
     return out;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let alpha = textureSample(atlas_texture, atlas_sampler, input.tex_coord).r;
+    let alpha = textureSample(atlas_texture, atlas_sampler, input.tex_coord, input.atlas_page).r;
     let color = input.fg_color;
     return vec4<f32>(color.rgb * alpha, alpha) * color.a;
 }
