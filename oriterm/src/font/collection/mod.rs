@@ -32,19 +32,19 @@ const MAX_FONT_SIZE: f32 = 200.0;
 /// `fallbacks`. System-discovered fallbacks get auto-computed `scale_factor`
 /// with default features; user-configured fallbacks can override features
 /// and add a `size_offset`.
-pub(crate) struct FallbackMeta {
+struct FallbackMeta {
     /// Cap-height normalization: `primary_cap_height / fallback_cap_height`.
     ///
     /// Ensures glyphs from different fonts appear at visually consistent sizes.
     /// A value of 1.0 means the fallback already matches the primary.
-    pub(crate) scale_factor: f32,
+    scale_factor: f32,
     /// User-configured size adjustment in points (0.0 if unset).
-    pub(crate) size_offset: f32,
+    size_offset: f32,
     /// Per-fallback OpenType feature overrides.
     ///
     /// When `Some`, these features replace collection-wide defaults for this
     /// fallback. When `None`, collection defaults apply.
-    pub(crate) features: Option<Vec<rustybuzz::Feature>>,
+    features: Option<Vec<rustybuzz::Feature>>,
 }
 
 /// A rasterized glyph bitmap ready for atlas upload.
@@ -328,9 +328,9 @@ impl FontCollection {
     /// Returns `None` for empty glyphs (e.g. space) or unsupported formats.
     /// Subsequent calls with the same key return the cached bitmap.
     pub fn rasterize(&mut self, key: RasterKey) -> Option<&RasterizedGlyph> {
-        // Early return on cache hit. Uses `contains_key` + final `get` rather
-        // than `if let Some(g) = get()` to avoid an immutable borrow that
-        // conflicts with the mutable `insert` on the miss path.
+        // Cache hit — early return. Uses `contains_key` + final `get` because
+        // `if let Some(g) = get()` borrows `glyph_cache` for the return
+        // lifetime, conflicting with `insert` on the miss path (E0502).
         if self.glyph_cache.contains_key(&key) {
             return self.glyph_cache.get(&key);
         }

@@ -8,7 +8,7 @@ use super::super::discovery::{self, FontOrigin};
 use super::super::FontError;
 
 /// Raw font bytes and collection index (pre-validation).
-pub struct FontData {
+pub(super) struct FontData {
     /// Font file bytes shared via `Arc` for rustybuzz face creation.
     pub(super) data: Arc<Vec<u8>>,
     /// Face index within a `.ttc` collection (0 for standalone `.ttf`).
