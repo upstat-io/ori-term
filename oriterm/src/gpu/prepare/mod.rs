@@ -281,6 +281,7 @@ fn emit_shaped_glyphs(
             glyph_id: sg.glyph_id,
             face_idx: sg.face_idx,
             size_q6,
+            synthetic: sg.synthetic,
         };
         if let Some(entry) = atlas.lookup_key(key) {
             // Apply shaper offsets: x_offset shifts horizontally,

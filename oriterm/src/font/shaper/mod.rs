@@ -12,7 +12,7 @@
 use oriterm_core::{Cell, CellFlags, RenderableCell};
 
 use super::collection::FontCollection;
-use super::{FaceIdx, GlyphStyle};
+use super::{FaceIdx, GlyphStyle, SyntheticFlags};
 
 // ── ShapableCell trait ──
 
@@ -61,7 +61,7 @@ impl ShapableCell for RenderableCell {
 
 // ── Types ──
 
-/// A contiguous run of characters sharing the same font face.
+/// A contiguous run of characters sharing the same font face and synthesis.
 ///
 /// Produced by [`prepare_line`], consumed by [`shape_prepared_runs`].
 pub struct ShapingRun {
@@ -69,6 +69,8 @@ pub struct ShapingRun {
     pub(crate) text: String,
     /// Which font face to shape this run with.
     pub(crate) face_idx: FaceIdx,
+    /// Synthetic transformations needed for this run's glyphs.
+    pub(crate) synthetic: SyntheticFlags,
     /// Starting grid column of this run.
     pub(crate) col_start: usize,
     /// Maps byte offset in `text` to grid column index.
@@ -87,6 +89,8 @@ pub struct ShapedGlyph {
     pub glyph_id: u16,
     /// Which font face this was shaped from.
     pub face_idx: FaceIdx,
+    /// Synthetic transformations to apply at rasterization time.
+    pub synthetic: SyntheticFlags,
     /// First grid column this glyph occupies.
     pub col_start: usize,
     /// Number of grid columns (1 = normal, 2+ = ligature or wide char).
@@ -168,12 +172,13 @@ fn segment_runs<C: ShapableCell>(
             collection.resolve(cell.ch(), style)
         };
         let face_idx = resolved.face_idx;
+        let synthetic = resolved.synthetic;
 
-        // Check if we can extend the current run (same face).
+        // Check if we can extend the current run (same face and synthesis).
         let extend = run_count > 0
-            && runs
-                .get(run_count - 1)
-                .is_some_and(|r: &ShapingRun| r.face_idx == face_idx);
+            && runs.get(run_count - 1).is_some_and(|r: &ShapingRun| {
+                r.face_idx == face_idx && r.synthetic == synthetic
+            });
 
         if extend {
             append_cell_to_run(&mut runs[run_count - 1], cell, col);
@@ -181,12 +186,14 @@ fn segment_runs<C: ShapableCell>(
             // Recycle existing slot or push a new one.
             if run_count < runs.len() {
                 runs[run_count].face_idx = face_idx;
+                runs[run_count].synthetic = synthetic;
                 runs[run_count].col_start = col;
                 // text and byte_to_col already cleared by caller.
             } else {
                 runs.push(ShapingRun {
                     text: String::new(),
                     face_idx,
+                    synthetic,
                     col_start: col,
                     byte_to_col: Vec::new(),
                 });
@@ -302,6 +309,7 @@ fn shape_run(
         output.push(ShapedGlyph {
             glyph_id: info.glyph_id as u16,
             face_idx: run.face_idx,
+            synthetic: run.synthetic,
             col_start: col,
             col_span,
             x_offset,
@@ -324,6 +332,7 @@ fn emit_unshaped_fallback(run: &ShapingRun, output: &mut Vec<ShapedGlyph>) {
         output.push(ShapedGlyph {
             glyph_id: 0,
             face_idx: run.face_idx,
+            synthetic: run.synthetic,
             col_start: col,
             col_span: w,
             x_offset: 0.0,

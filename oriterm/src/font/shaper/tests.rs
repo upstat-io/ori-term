@@ -6,7 +6,7 @@ use oriterm_core::{Cell, CellExtra, CellFlags};
 
 use super::{prepare_line, shape_prepared_runs};
 use crate::font::collection::FontCollection;
-use crate::font::{FaceIdx, FontSet, GlyphFormat};
+use crate::font::{FaceIdx, FontSet, GlyphFormat, SyntheticFlags};
 
 // ── Helpers ──
 
@@ -387,6 +387,7 @@ fn col_glyph_map_reuses_buffer() {
     let glyphs = vec![super::ShapedGlyph {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
         col_start: 0,
         col_span: 1,
         x_offset: 0.0,
@@ -406,6 +407,7 @@ fn col_glyph_map_first_wins_for_combining_marks() {
         super::ShapedGlyph {
             glyph_id: 50,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 0,
             col_span: 1,
             x_offset: 0.0,
@@ -414,6 +416,7 @@ fn col_glyph_map_first_wins_for_combining_marks() {
         super::ShapedGlyph {
             glyph_id: 51,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 0, // same column — combining mark
             col_span: 1,
             x_offset: 1.5,
@@ -422,6 +425,7 @@ fn col_glyph_map_first_wins_for_combining_marks() {
         super::ShapedGlyph {
             glyph_id: 52,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 1,
             col_span: 1,
             x_offset: 0.0,
@@ -444,6 +448,7 @@ fn col_glyph_map_ligature_span() {
         super::ShapedGlyph {
             glyph_id: 100,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 0,
             col_span: 2, // ligature spans cols 0-1
             x_offset: 0.0,
@@ -452,6 +457,7 @@ fn col_glyph_map_ligature_span() {
         super::ShapedGlyph {
             glyph_id: 101,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 2,
             col_span: 1,
             x_offset: 0.0,

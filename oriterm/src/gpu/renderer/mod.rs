@@ -499,6 +499,7 @@ fn ensure_shaped_glyphs_cached(
             glyph_id: glyph.glyph_id,
             face_idx: glyph.face_idx,
             size_q6,
+            synthetic: glyph.synthetic,
         };
         // Check both atlases for cache hit.
         if mono_atlas.lookup_touch(key).is_some() || color_atlas.lookup_touch(key).is_some() {

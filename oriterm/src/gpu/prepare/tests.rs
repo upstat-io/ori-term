@@ -9,7 +9,7 @@ use super::{
     AtlasLookup, ShapedFrame,
 };
 use crate::font::shaper::ShapedGlyph;
-use crate::font::{FaceIdx, GlyphStyle, RasterKey};
+use crate::font::{FaceIdx, GlyphStyle, RasterKey, SyntheticFlags};
 use crate::gpu::atlas::AtlasEntry;
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
@@ -881,6 +881,7 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
             glyph_id: gid,
             face_idx: FaceIdx::REGULAR,
             size_q6,
+            synthetic: SyntheticFlags::NONE,
         };
         map.insert(key, test_entry_for_glyph(gid));
     }
@@ -905,6 +906,7 @@ fn shaped_single_glyph_one_bg_one_fg() {
     let glyphs = vec![ShapedGlyph {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
         col_start: 0,
         col_span: 1,
         x_offset: 0.0,
@@ -931,6 +933,7 @@ fn shaped_ligature_one_fg_two_bg() {
     let glyphs = vec![ShapedGlyph {
         glyph_id: 100,
         face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
         col_start: 0,
         col_span: 2, // ligature spans 2 columns
         x_offset: 0.0,
@@ -959,6 +962,7 @@ fn shaped_combining_marks_two_fg_instances() {
         ShapedGlyph {
             glyph_id: 50,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 0,
             col_span: 1,
             x_offset: 0.0,
@@ -967,6 +971,7 @@ fn shaped_combining_marks_two_fg_instances() {
         ShapedGlyph {
             glyph_id: 51,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 0, // same col — combining mark
             col_span: 1,
             x_offset: 2.0,
@@ -989,6 +994,7 @@ fn shaped_offset_applied_to_glyph_position() {
     let glyphs = vec![ShapedGlyph {
         glyph_id: 60,
         face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
         col_start: 0,
         col_span: 1,
         x_offset: 1.5,
@@ -1019,6 +1025,7 @@ fn shaped_backgrounds_independent_of_glyphs() {
         ShapedGlyph {
             glyph_id: 100,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 0,
             col_span: 2,
             x_offset: 0.0,
@@ -1027,6 +1034,7 @@ fn shaped_backgrounds_independent_of_glyphs() {
         ShapedGlyph {
             glyph_id: 101,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 2,
             col_span: 1,
             x_offset: 0.0,
@@ -1035,6 +1043,7 @@ fn shaped_backgrounds_independent_of_glyphs() {
         ShapedGlyph {
             glyph_id: 102,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 3,
             col_span: 1,
             x_offset: 0.0,
@@ -1065,6 +1074,7 @@ fn shaped_missing_glyph_in_atlas_skips_fg() {
     let glyphs = vec![ShapedGlyph {
         glyph_id: 99,
         face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
         col_start: 0,
         col_span: 1,
         x_offset: 0.0,
@@ -1111,6 +1121,7 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
         glyph_id: 200,
         face_idx: FaceIdx::REGULAR,
         size_q6,
+        synthetic: SyntheticFlags::NONE,
     };
     map.insert(key, AtlasEntry {
         page: 0,
@@ -1129,6 +1140,7 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
     let glyphs = vec![ShapedGlyph {
         glyph_id: 200,
         face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
         col_start: 0,
         col_span: 1,
         x_offset: 0.0,
@@ -1151,12 +1163,12 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
     let mut map = HashMap::new();
     // Mono glyph 'A' at col 0.
     map.insert(
-        RasterKey { glyph_id: 10, face_idx: FaceIdx::REGULAR, size_q6 },
+        RasterKey { glyph_id: 10, face_idx: FaceIdx::REGULAR, size_q6, synthetic: SyntheticFlags::NONE },
         test_entry_for_glyph(10),
     );
     // Color emoji 'E' at col 1.
     map.insert(
-        RasterKey { glyph_id: 200, face_idx: FaceIdx::REGULAR, size_q6 },
+        RasterKey { glyph_id: 200, face_idx: FaceIdx::REGULAR, size_q6, synthetic: SyntheticFlags::NONE },
         AtlasEntry {
             is_color: true,
             ..test_entry_for_glyph(200)
@@ -1164,7 +1176,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
     );
     // Mono glyph 'B' at col 2.
     map.insert(
-        RasterKey { glyph_id: 11, face_idx: FaceIdx::REGULAR, size_q6 },
+        RasterKey { glyph_id: 11, face_idx: FaceIdx::REGULAR, size_q6, synthetic: SyntheticFlags::NONE },
         test_entry_for_glyph(11),
     );
     let atlas = KeyTestAtlas(map);
@@ -1173,6 +1185,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
         ShapedGlyph {
             glyph_id: 10,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 0,
             col_span: 1,
             x_offset: 0.0,
@@ -1181,6 +1194,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
         ShapedGlyph {
             glyph_id: 200,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 1,
             col_span: 1,
             x_offset: 0.0,
@@ -1189,6 +1203,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
         ShapedGlyph {
             glyph_id: 11,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 2,
             col_span: 1,
             x_offset: 0.0,
@@ -1214,6 +1229,7 @@ fn shaped_into_matches_shaped() {
         ShapedGlyph {
             glyph_id: 100,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 0,
             col_span: 2,
             x_offset: 0.0,
@@ -1222,6 +1238,7 @@ fn shaped_into_matches_shaped() {
         ShapedGlyph {
             glyph_id: 101,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 2,
             col_span: 1,
             x_offset: 0.0,
@@ -1230,6 +1247,7 @@ fn shaped_into_matches_shaped() {
         ShapedGlyph {
             glyph_id: 102,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: 3,
             col_span: 1,
             x_offset: 0.0,
@@ -1261,6 +1279,7 @@ fn shaped_into_reuses_allocation() {
         .map(|i| ShapedGlyph {
             glyph_id: 42,
             face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
             col_start: i % 10,
             col_span: 1,
             x_offset: 0.0,
@@ -1288,6 +1307,7 @@ fn shaped_into_reuses_allocation() {
     let small_glyphs = vec![ShapedGlyph {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
         col_start: 0,
         col_span: 1,
         x_offset: 0.0,

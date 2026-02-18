@@ -7,11 +7,11 @@
 use std::sync::Arc;
 
 use swash::scale::{image::Content, Render, ScaleContext, Source, StrikeWith};
-use swash::zeno::Format;
+use swash::zeno::{Angle, Format, Transform};
 use swash::{CacheKey, FontRef};
 
 use super::RasterizedGlyph;
-use crate::font::GlyphFormat;
+use crate::font::{GlyphFormat, SyntheticFlags};
 
 /// Validated font data with swash metadata.
 ///
@@ -80,15 +80,23 @@ pub(super) fn glyph_id(fd: &FaceData, ch: char) -> u16 {
 /// Tries color sources first (COLR outlines, CBDT/sbix bitmaps), then falls
 /// back to the configured outline format. Returns `None` for empty glyphs.
 ///
+/// When `synthetic` flags are set, applies outline manipulation before
+/// rasterization: emboldening for [`SyntheticFlags::BOLD`] and a 14-degree
+/// skew for [`SyntheticFlags::ITALIC`]. Synthesis is skipped for color
+/// glyphs (bitmaps can't be outline-manipulated).
+///
 /// When a color source produces output, the returned [`RasterizedGlyph`] has
 /// `format: GlyphFormat::Color` with RGBA premultiplied data regardless of
 /// the requested `format`. Callers must route color glyphs to a separate
 /// RGBA atlas.
+#[allow(clippy::too_many_arguments, reason = "rasterization requires all these parameters")]
 pub(super) fn rasterize_from_face(
     fd: &FaceData,
     glyph_id: u16,
     size_px: f32,
     wght: Option<f32>,
+    synthetic: SyntheticFlags,
+    cell_height: f32,
     format: GlyphFormat,
     ctx: &mut ScaleContext,
 ) -> Option<RasterizedGlyph> {
@@ -108,13 +116,27 @@ pub(super) fn rasterize_from_face(
     };
 
     // Try color sources first, then fall back to outline.
-    let image = Render::new(&[
+    let mut render = Render::new(&[
         Source::ColorOutline(0),
         Source::ColorBitmap(StrikeWith::BestFit),
         Source::Outline,
-    ])
-    .format(zeno_fmt)
-    .render(&mut scaler, glyph_id)?;
+    ]);
+    render.format(zeno_fmt);
+
+    // Apply synthesis (outline manipulation before rasterization).
+    // Order: embolden first, then transform — matches swash's internal
+    // application order in Render::render().
+    if synthetic.contains(SyntheticFlags::BOLD) {
+        render.embolden(embolden_strength(cell_height));
+    }
+    if synthetic.contains(SyntheticFlags::ITALIC) {
+        render.transform(Some(Transform::skew(
+            Angle::from_degrees(SYNTHETIC_ITALIC_ANGLE),
+            Angle::from_degrees(0.0),
+        )));
+    }
+
+    let image = render.render(&mut scaler, glyph_id)?;
 
     let out_format = match image.content {
         Content::Color => GlyphFormat::Color,
@@ -131,6 +153,23 @@ pub(super) fn rasterize_from_face(
         bitmap: image.data,
     })
 }
+
+/// Embolden strength in pixels for synthetic bold.
+///
+/// Adapted from Ghostty's formula: `ceil(height_26dot6 * 64 / 2048)` converted
+/// from `FreeType` 26.6 fixed-point to swash pixel coordinates. Scales with
+/// font size so bold looks consistent from 8pt to 24pt.
+///
+/// Examples: 17px → 0.53px, 20px → 0.63px, 32px → 1.0px.
+pub(super) fn embolden_strength(cell_height: f32) -> f32 {
+    (cell_height * 2.0).ceil() / 64.0
+}
+
+/// Standard synthetic italic angle in degrees.
+///
+/// 14° matches the CSS oblique spec and is used by Ghostty (12°) and
+/// cosmic-text (14°). We use 14° as the more standard value.
+const SYNTHETIC_ITALIC_ANGLE: f32 = 14.0;
 
 /// Compute cell metrics from font bytes at the given pixel size.
 ///
