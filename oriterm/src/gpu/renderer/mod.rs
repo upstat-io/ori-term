@@ -89,6 +89,8 @@ struct ShapingScratch {
     glyphs: Vec<crate::font::shaper::ShapedGlyph>,
     /// Column-to-glyph map for the current row.
     col_map: Vec<Option<usize>>,
+    /// Rustybuzz buffer reused across frames to avoid per-frame allocation.
+    unicode_buffer: Option<rustybuzz::UnicodeBuffer>,
 }
 
 impl ShapingScratch {
@@ -98,6 +100,7 @@ impl ShapingScratch {
             runs: Vec::new(),
             glyphs: Vec::new(),
             col_map: Vec::new(),
+            unicode_buffer: None,
         }
     }
 }
@@ -420,7 +423,13 @@ fn shape_frame(input: &FrameInput, fonts: &FontCollection, scratch: &mut Shaping
         let row_cells = &input.content.cells[start..end];
 
         prepare_line(row_cells, cols, fonts, &mut scratch.runs);
-        shape_prepared_runs(&scratch.runs, &faces, fonts, &mut scratch.glyphs);
+        shape_prepared_runs(
+            &scratch.runs,
+            &faces,
+            fonts,
+            &mut scratch.glyphs,
+            &mut scratch.unicode_buffer,
+        );
         build_col_glyph_map(&scratch.glyphs, cols, &mut scratch.col_map);
         scratch.frame.push_row(&scratch.glyphs, &scratch.col_map);
     }
