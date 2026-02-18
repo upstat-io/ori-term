@@ -1320,3 +1320,183 @@ fn shaped_into_reuses_allocation() {
     assert!(first_bg > frame.backgrounds.len());
     assert!(first_fg > frame.glyphs.len());
 }
+
+// ── Text decoration tests (Section 6.12) ──
+
+/// Build a 1×1 test grid with the given flags on cell 0.
+fn frame_with_flags(flags: CellFlags) -> FrameInput {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cells[0].flags = flags;
+    input
+}
+
+/// Build a 1×1 test grid with flags and an explicit underline color.
+fn frame_with_underline_color(flags: CellFlags, color: Rgb) -> FrameInput {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cells[0].flags = flags;
+    input.content.cells[0].underline_color = Some(color);
+    input
+}
+
+/// Count background instances beyond the 1 base background rect per cell.
+///
+/// In a 1×1 grid, the first bg instance is always the cell background.
+/// Any additional instances come from decorations.
+fn decoration_bg_count(frame: &PreparedFrame) -> usize {
+    frame.backgrounds.len() - 1
+}
+
+#[test]
+fn single_underline_one_extra_bg() {
+    let input = frame_with_flags(CellFlags::UNDERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // 1 base bg + 1 underline rect.
+    assert_eq!(decoration_bg_count(&frame), 1);
+
+    // Underline Y = y + cell_height - 2.0 = 0 + 16 - 2 = 14.
+    let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ul.pos.1, 14.0);
+    assert_eq!(ul.size, (8.0, 1.0));
+}
+
+#[test]
+fn single_underline_uses_fg_color() {
+    let input = frame_with_flags(CellFlags::UNDERLINE);
+    let fg = input.content.cells[0].fg;
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ul.bg_color, rgb_f32(fg));
+}
+
+#[test]
+fn single_underline_uses_sgr58_color() {
+    let sgr58 = Rgb {
+        r: 255,
+        g: 0,
+        b: 128,
+    };
+    let input = frame_with_underline_color(CellFlags::UNDERLINE, sgr58);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ul.bg_color, rgb_f32(sgr58));
+}
+
+#[test]
+fn double_underline_two_extra_bgs() {
+    let input = frame_with_flags(CellFlags::DOUBLE_UNDERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // 1 base bg + 2 underline rects.
+    assert_eq!(decoration_bg_count(&frame), 2);
+
+    // First line at underline_y = 14, second at underline_y - 2 = 12.
+    let ul1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ul1.pos.1, 14.0);
+    assert_eq!(ul1.size, (8.0, 1.0));
+
+    let ul2 = nth_instance(frame.backgrounds.as_bytes(), 2);
+    assert_eq!(ul2.pos.1, 12.0);
+    assert_eq!(ul2.size, (8.0, 1.0));
+}
+
+#[test]
+fn curly_underline_per_pixel_rects() {
+    let input = frame_with_flags(CellFlags::CURLY_UNDERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // cell_width=8 → 8 per-pixel rects.
+    assert_eq!(decoration_bg_count(&frame), 8);
+}
+
+#[test]
+fn dotted_underline_alternating() {
+    let input = frame_with_flags(CellFlags::DOTTED_UNDERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // cell_width=8, step_by(2) → 4 dots (at 0, 2, 4, 6).
+    assert_eq!(decoration_bg_count(&frame), 4);
+}
+
+#[test]
+fn dashed_underline_pattern() {
+    let input = frame_with_flags(CellFlags::DASHED_UNDERLINE);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // cell_width=8, pattern 3-on-2-off: dx 0,1,2 on, 3,4 off, 5,6,7 on → 6.
+    assert_eq!(decoration_bg_count(&frame), 6);
+}
+
+#[test]
+fn strikethrough_at_center() {
+    let input = frame_with_flags(CellFlags::STRIKETHROUGH);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // 1 base bg + 1 strikethrough rect.
+    assert_eq!(decoration_bg_count(&frame), 1);
+
+    // Strikethrough Y = y + cell_height / 2.0 = 0 + 8.0.
+    let st = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(st.pos.1, 8.0);
+    assert_eq!(st.size, (8.0, 1.0));
+}
+
+#[test]
+fn strikethrough_uses_fg_color() {
+    let input = frame_with_flags(CellFlags::STRIKETHROUGH);
+    let fg = input.content.cells[0].fg;
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    let st = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(st.bg_color, rgb_f32(fg));
+}
+
+#[test]
+fn underline_and_strikethrough_coexist() {
+    let input = frame_with_flags(CellFlags::UNDERLINE | CellFlags::STRIKETHROUGH);
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // 1 base bg + 1 underline + 1 strikethrough = 2 decoration rects.
+    assert_eq!(decoration_bg_count(&frame), 2);
+}
+
+#[test]
+fn no_flags_no_decorations() {
+    let input = frame_with_flags(CellFlags::empty());
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // 1 base bg only, no decorations.
+    assert_eq!(decoration_bg_count(&frame), 0);
+}
+
+#[test]
+fn wide_char_underline_spans_double_width() {
+    let mut input = FrameInput::test_grid(4, 1, "");
+    // Wide char at col 0.
+    input.content.cells[0].ch = '\u{4E16}';
+    input.content.cells[0].flags = CellFlags::WIDE_CHAR | CellFlags::UNDERLINE;
+    input.content.cells[1].ch = ' ';
+    input.content.cells[1].flags = CellFlags::WIDE_CHAR_SPACER;
+
+    let atlas = atlas_with(&['\u{4E16}']);
+    let frame = prepare_frame(&input, &atlas);
+
+    // Find the underline rect (second bg instance for the wide char cell).
+    let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
+    // Wide char bg_w = 2 * cell_width = 16.0, underline should match.
+    assert_eq!(ul.size.0, 16.0);
+    assert_eq!(ul.size.1, 1.0);
+}
