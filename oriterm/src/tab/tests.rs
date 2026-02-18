@@ -83,6 +83,7 @@ fn term_event_debug_format() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn event_proxy_sends_terminal_event() {
     let proxy = test_proxy();
     let tab_id = TabId::next();
@@ -183,6 +184,7 @@ fn notifier_survives_dropped_receiver() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn tab_spawns_with_live_pty() {
     let proxy = test_proxy();
     let id = TabId::next();
@@ -195,6 +197,7 @@ fn tab_spawns_with_live_pty() {
 }
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn tab_terminal_is_accessible() {
     let proxy = test_proxy();
     let id = TabId::next();
@@ -209,6 +212,7 @@ fn tab_terminal_is_accessible() {
 }
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn tab_write_input_reaches_pty() {
     let proxy = test_proxy();
     let id = TabId::next();
@@ -220,6 +224,7 @@ fn tab_write_input_reaches_pty() {
 }
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn tab_resize_sends_to_pty() {
     let proxy = test_proxy();
     let id = TabId::next();
@@ -231,6 +236,7 @@ fn tab_resize_sends_to_pty() {
 }
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn tab_bell_state() {
     let proxy = test_proxy();
     let id = TabId::next();
@@ -245,6 +251,7 @@ fn tab_bell_state() {
 }
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn tab_title_update() {
     let proxy = test_proxy();
     let id = TabId::next();
@@ -257,6 +264,7 @@ fn tab_title_update() {
 }
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn tab_drop_is_clean() {
     let proxy = test_proxy();
     let id = TabId::next();
@@ -273,10 +281,7 @@ fn tab_drop_is_clean() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "requires native Windows (ConPTY output unreliable via WSL interop)"
-)]
+#[ignore = "requires display server (winit event loop)"]
 fn echo_appears_in_terminal_grid() {
     let tab = make_tab(24, 80);
 
@@ -291,6 +296,7 @@ fn echo_appears_in_terminal_grid() {
 }
 
 #[test]
+#[ignore = "requires display server (winit event loop)"]
 fn thread_lifecycle_spawn_and_drop() {
     // Create multiple tabs in sequence to verify each one spawns and
     // shuts down cleanly without leaking threads or panicking.
@@ -307,10 +313,7 @@ fn thread_lifecycle_spawn_and_drop() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "requires native Windows (ConPTY output unreliable via WSL interop)"
-)]
+#[ignore = "requires display server (winit event loop)"]
 fn thread_lifecycle_drop_joins_reader() {
     let tab = make_tab(24, 80);
 
@@ -330,10 +333,7 @@ fn thread_lifecycle_drop_joins_reader() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "requires native Windows (ConPTY output unreliable via WSL interop)"
-)]
+#[ignore = "requires display server (winit event loop)"]
 fn fair_mutex_concurrent_access() {
     let tab = make_tab(24, 80);
     let terminal = Arc::clone(tab.terminal());
@@ -404,10 +404,7 @@ fn fair_mutex_concurrent_access() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "requires native Windows (ConPTY output unreliable via WSL interop)"
-)]
+#[ignore = "requires display server (winit event loop)"]
 fn resize_updates_pty_dimensions() {
     let tab = make_tab(24, 80);
 
