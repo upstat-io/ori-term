@@ -100,6 +100,7 @@ impl<T: EventListener> Term<T> {
         clippy::needless_pass_by_ref_mut,
         reason = "Handler trait requires &mut self"
     )]
+    #[expect(clippy::unused_self, reason = "stub — will use self when implemented")]
     pub(super) fn dcs_set_modify_other_keys(&mut self, mode: ModifyOtherKeys) {
         debug!("Ignoring modifyOtherKeys: {mode:?}");
     }

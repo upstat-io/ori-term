@@ -15,7 +15,7 @@ use crate::font::CellMetrics;
 use crate::gpu::builtin_glyphs::decorations::{
     CURLY_GLYPH_ID, DASHED_GLYPH_ID, DOTTED_GLYPH_ID, curly_amplitude, decoration_key,
 };
-use crate::gpu::instance_writer::InstanceWriter;
+use crate::gpu::instance_writer::{InstanceWriter, ScreenRect};
 
 use super::AtlasLookup;
 
@@ -42,6 +42,10 @@ impl DecorationContext<'_> {
     /// Patterned underlines (curly, dotted, dashed) are emitted as glyph
     /// instances from the atlas. If the atlas entry is missing (e.g. in tests),
     /// falls back to per-pixel rect emission.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "per-cell decoration params: flags, colors, position, cell width"
+    )]
     pub(super) fn draw(
         &mut self,
         flags: CellFlags,
@@ -68,14 +72,23 @@ impl DecorationContext<'_> {
 
         if has_strikethrough {
             let strike_y = y + self.metrics.baseline - self.metrics.strikeout_offset;
-            self.backgrounds
-                .push_rect(x, strike_y, cell_width, t, fg, 1.0);
+            let rect = ScreenRect {
+                x,
+                y: strike_y,
+                w: cell_width,
+                h: t,
+            };
+            self.backgrounds.push_rect(rect, fg, 1.0);
         }
     }
 
     /// Dispatch to the appropriate underline style.
     ///
     /// Priority: curly > double > dotted > dashed > single.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "underline dispatch: flags, color, and position/dimensions"
+    )]
     fn draw_underline(&mut self, flags: CellFlags, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
         if flags.contains(CellFlags::CURLY_UNDERLINE) {
             if !self.try_atlas_decoration(CURLY_GLYPH_ID, color, x, y) {
@@ -93,7 +106,8 @@ impl DecorationContext<'_> {
             }
         } else {
             // Single underline (plain UNDERLINE flag).
-            self.backgrounds.push_rect(x, y, w, t, color, 1.0);
+            self.backgrounds
+                .push_rect(ScreenRect { x, y, w, h: t }, color, 1.0);
         }
     }
 
@@ -112,16 +126,13 @@ impl DecorationContext<'_> {
                 y
             };
             let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-            self.glyphs.push_glyph(
+            let rect = ScreenRect {
                 x,
-                glyph_y,
-                entry.width as f32,
-                entry.height as f32,
-                uv,
-                color,
-                1.0,
-                entry.page,
-            );
+                y: glyph_y,
+                w: entry.width as f32,
+                h: entry.height as f32,
+            };
+            self.glyphs.push_glyph(rect, uv, color, 1.0, entry.page);
             true
         } else {
             false
@@ -132,24 +143,51 @@ impl DecorationContext<'_> {
 // ── Rect-based fallbacks (used when atlas entries are unavailable) ──
 
 /// Curly underline fallback: per-pixel sine wave rects.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "rect fallback: renderer, color, geometry"
+)]
 fn draw_curly_underline_rects(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
     let amplitude = curly_amplitude(t);
     let steps = w as usize;
     for dx in 0..steps {
         let phase = (dx as f32 / w) * std::f32::consts::TAU;
         let offset = (phase.sin() * amplitude).round();
-        bg.push_rect(x + dx as f32, y + offset, 1.0, t, color, 1.0);
+        let rect = ScreenRect {
+            x: x + dx as f32,
+            y: y + offset,
+            w: 1.0,
+            h: t,
+        };
+        bg.push_rect(rect, color, 1.0);
     }
 }
 
 /// Double underline: two lines separated by a gap that scales with thickness.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "rect fallback: renderer, color, geometry"
+)]
 fn draw_double_underline(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
     let gap = (t + 1.0).ceil();
-    bg.push_rect(x, y, w, t, color, 1.0);
-    bg.push_rect(x, y - gap, w, t, color, 1.0);
+    bg.push_rect(ScreenRect { x, y, w, h: t }, color, 1.0);
+    bg.push_rect(
+        ScreenRect {
+            x,
+            y: y - gap,
+            w,
+            h: t,
+        },
+        color,
+        1.0,
+    );
 }
 
 /// Dotted underline fallback: per-pixel alternating rects.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "rect fallback: renderer, color, geometry"
+)]
 fn draw_dotted_underline_rects(
     bg: &mut InstanceWriter,
     color: Rgb,
@@ -160,11 +198,21 @@ fn draw_dotted_underline_rects(
 ) {
     let steps = w as usize;
     for dx in (0..steps).step_by(2) {
-        bg.push_rect(x + dx as f32, y, 1.0, t, color, 1.0);
+        let rect = ScreenRect {
+            x: x + dx as f32,
+            y,
+            w: 1.0,
+            h: t,
+        };
+        bg.push_rect(rect, color, 1.0);
     }
 }
 
 /// Dashed underline fallback: per-pixel 3-on-2-off rects.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "rect fallback: renderer, color, geometry"
+)]
 fn draw_dashed_underline_rects(
     bg: &mut InstanceWriter,
     color: Rgb,
@@ -176,7 +224,13 @@ fn draw_dashed_underline_rects(
     let steps = w as usize;
     for dx in 0..steps {
         if dx % 5 < 3 {
-            bg.push_rect(x + dx as f32, y, 1.0, t, color, 1.0);
+            let rect = ScreenRect {
+                x: x + dx as f32,
+                y,
+                w: 1.0,
+                h: t,
+            };
+            bg.push_rect(rect, color, 1.0);
         }
     }
 }

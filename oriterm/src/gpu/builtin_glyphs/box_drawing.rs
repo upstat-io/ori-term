@@ -67,6 +67,10 @@ pub(super) fn draw_box(canvas: &mut Canvas, ch: char) -> bool {
 }
 
 /// Draw a horizontal segment from `from_x` to `to_x` at vertical center `cy`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "line drawing primitives: canvas, weight, endpoints, thickness"
+)]
 fn draw_h_segment(
     canvas: &mut Canvas,
     weight: Weight,
@@ -99,6 +103,10 @@ fn draw_h_segment(
 }
 
 /// Draw a vertical segment from `from_y` to `to_y` at horizontal center `cx`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "line drawing primitives: canvas, weight, endpoints, thickness"
+)]
 fn draw_v_segment(
     canvas: &mut Canvas,
     weight: Weight,

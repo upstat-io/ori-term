@@ -371,14 +371,14 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
 
     let rects_lock = data.interactive_rects.lock();
     let rects: &[Rect] = rects_lock.as_ref().map(|g| g.as_slice()).unwrap_or(&[]);
-    let result = hit_test::hit_test(
-        point,
+    let chrome = hit_test::WindowChrome {
         window_size,
-        data.border_width,
-        data.caption_height,
-        rects,
+        border_width: data.border_width,
+        caption_height: data.caption_height,
+        interactive_rects: rects,
         is_maximized,
-    );
+    };
+    let result = hit_test::hit_test(point, &chrome);
 
     map_hit_result(result)
 }

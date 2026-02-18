@@ -19,6 +19,7 @@ use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
 use crate::font::shaper::ShapedGlyph;
 use crate::font::{GlyphStyle, RasterKey};
+use crate::gpu::instance_writer::ScreenRect;
 
 pub(crate) use shaped_frame::ShapedFrame;
 
@@ -154,7 +155,16 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
         } else {
             cw
         };
-        frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
+        frame.backgrounds.push_rect(
+            ScreenRect {
+                x,
+                y,
+                w: bg_w,
+                h: ch,
+            },
+            cell.bg,
+            1.0,
+        );
 
         decorations::DecorationContext {
             backgrounds: &mut frame.backgrounds,
@@ -172,16 +182,13 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
                 let glyph_x = x + entry.bearing_x as f32;
                 let glyph_y = y + baseline - entry.bearing_y as f32;
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-                frame.glyphs.push_glyph(
-                    glyph_x,
-                    glyph_y,
-                    entry.width as f32,
-                    entry.height as f32,
-                    uv,
-                    cell.fg,
-                    1.0,
-                    entry.page,
-                );
+                let rect = ScreenRect {
+                    x: glyph_x,
+                    y: glyph_y,
+                    w: entry.width as f32,
+                    h: entry.height as f32,
+                };
+                frame.glyphs.push_glyph(rect, uv, cell.fg, 1.0, entry.page);
             }
         }
     }
@@ -232,7 +239,16 @@ fn fill_frame_shaped(
         } else {
             cw
         };
-        frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
+        frame.backgrounds.push_rect(
+            ScreenRect {
+                x,
+                y,
+                w: bg_w,
+                h: ch,
+            },
+            cell.bg,
+            1.0,
+        );
 
         decorations::DecorationContext {
             backgrounds: &mut frame.backgrounds,
@@ -248,16 +264,13 @@ fn fill_frame_shaped(
             let key = super::builtin_glyphs::raster_key(cell.ch, shaped.size_q6());
             if let Some(entry) = atlas.lookup_key(key) {
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-                frame.glyphs.push_glyph(
+                let rect = ScreenRect {
                     x,
                     y,
-                    entry.width as f32,
-                    entry.height as f32,
-                    uv,
-                    cell.fg,
-                    1.0,
-                    entry.page,
-                );
+                    w: entry.width as f32,
+                    h: entry.height as f32,
+                };
+                frame.glyphs.push_glyph(rect, uv, cell.fg, 1.0, entry.page);
             }
             continue;
         }
@@ -316,6 +329,10 @@ impl GlyphEmitter<'_> {
     /// Color emoji (entries with `is_color`) are routed to `frame.color_glyphs`
     /// instead of `frame.glyphs`, so they render via the RGBA pipeline without
     /// `fg_color` tinting.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "per-cell shaped glyph params: glyph source, grid column, screen position, color"
+    )]
     fn emit(
         &mut self,
         row_glyphs: &[ShapedGlyph],
@@ -345,21 +362,18 @@ impl GlyphEmitter<'_> {
                 let gx = x + entry.bearing_x as f32 + sg.x_offset;
                 let gy = y + self.baseline - entry.bearing_y as f32 - sg.y_offset;
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
+                let rect = ScreenRect {
+                    x: gx,
+                    y: gy,
+                    w: entry.width as f32,
+                    h: entry.height as f32,
+                };
                 let writer = if entry.is_color {
                     &mut self.frame.color_glyphs
                 } else {
                     &mut self.frame.glyphs
                 };
-                writer.push_glyph(
-                    gx,
-                    gy,
-                    entry.width as f32,
-                    entry.height as f32,
-                    uv,
-                    fg,
-                    1.0,
-                    entry.page,
-                );
+                writer.push_glyph(rect, uv, fg, 1.0, entry.page);
             }
         }
     }
@@ -373,6 +387,10 @@ impl GlyphEmitter<'_> {
 /// - `Underline` — 2px-tall horizontal line at the bottom.
 /// - `HollowBlock` — 4 thin outline rectangles (top, bottom, left, right).
 /// - `Hidden` — no instances.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "cursor geometry: frame, shape, grid position, cell size, color"
+)]
 fn build_cursor(
     frame: &mut PreparedFrame,
     shape: CursorShape,
@@ -384,33 +402,53 @@ fn build_cursor(
 ) {
     let x = col as f32 * cw;
     let y = row as f32 * ch;
-    let thickness = 2.0_f32;
+    let t = 2.0_f32;
 
     match shape {
         CursorShape::Block => {
-            frame.cursors.push_cursor(x, y, cw, ch, color, 1.0);
-        }
-        CursorShape::Bar => {
-            frame.cursors.push_cursor(x, y, thickness, ch, color, 1.0);
-        }
-        CursorShape::Underline => {
             frame
                 .cursors
-                .push_cursor(x, y + ch - thickness, cw, thickness, color, 1.0);
+                .push_cursor(ScreenRect { x, y, w: cw, h: ch }, color, 1.0);
+        }
+        CursorShape::Bar => {
+            frame
+                .cursors
+                .push_cursor(ScreenRect { x, y, w: t, h: ch }, color, 1.0);
+        }
+        CursorShape::Underline => {
+            let rect = ScreenRect {
+                x,
+                y: y + ch - t,
+                w: cw,
+                h: t,
+            };
+            frame.cursors.push_cursor(rect, color, 1.0);
         }
         CursorShape::HollowBlock => {
             // Top edge.
-            frame.cursors.push_cursor(x, y, cw, thickness, color, 1.0);
+            frame
+                .cursors
+                .push_cursor(ScreenRect { x, y, w: cw, h: t }, color, 1.0);
             // Bottom edge.
-            frame
-                .cursors
-                .push_cursor(x, y + ch - thickness, cw, thickness, color, 1.0);
+            let rect = ScreenRect {
+                x,
+                y: y + ch - t,
+                w: cw,
+                h: t,
+            };
+            frame.cursors.push_cursor(rect, color, 1.0);
             // Left edge.
-            frame.cursors.push_cursor(x, y, thickness, ch, color, 1.0);
-            // Right edge.
             frame
                 .cursors
-                .push_cursor(x + cw - thickness, y, thickness, ch, color, 1.0);
+                .push_cursor(ScreenRect { x, y, w: t, h: ch }, color, 1.0);
+            // Right edge.
+            let rect = ScreenRect {
+                x: x + cw - t,
+                y,
+                w: t,
+                h: ch,
+            };
+            frame.cursors.push_cursor(rect, color, 1.0);
         }
         CursorShape::Hidden => {}
     }

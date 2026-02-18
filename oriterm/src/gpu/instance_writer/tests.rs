@@ -2,7 +2,7 @@
 
 use oriterm_core::Rgb;
 
-use super::{INSTANCE_SIZE, InstanceKind, InstanceWriter};
+use super::{INSTANCE_SIZE, InstanceKind, InstanceWriter, ScreenRect};
 
 /// Read a little-endian `f32` from the given byte offset.
 fn read_f32(buf: &[u8], offset: usize) -> f32 {
@@ -32,7 +32,16 @@ fn instance_size_is_80_bytes() {
 #[test]
 fn push_rect_produces_80_byte_record() {
     let mut w = InstanceWriter::new();
-    w.push_rect(10.0, 20.0, 8.0, 16.0, BLACK, 1.0);
+    w.push_rect(
+        ScreenRect {
+            x: 10.0,
+            y: 20.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        BLACK,
+        1.0,
+    );
 
     assert_eq!(w.len(), 1);
     assert_eq!(w.byte_len(), 80);
@@ -41,7 +50,16 @@ fn push_rect_produces_80_byte_record() {
 #[test]
 fn push_rect_field_offsets() {
     let mut w = InstanceWriter::new();
-    w.push_rect(10.0, 20.0, 8.0, 16.0, RED, 0.5);
+    w.push_rect(
+        ScreenRect {
+            x: 10.0,
+            y: 20.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        RED,
+        0.5,
+    );
 
     let rec = w.as_bytes();
 
@@ -84,7 +102,18 @@ fn push_rect_field_offsets() {
 fn push_glyph_field_offsets() {
     let mut w = InstanceWriter::new();
     let uv = [0.25, 0.5, 0.125, 0.25];
-    w.push_glyph(100.0, 200.0, 8.0, 16.0, uv, WHITE, 1.0, 0);
+    w.push_glyph(
+        ScreenRect {
+            x: 100.0,
+            y: 200.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        uv,
+        WHITE,
+        1.0,
+        0,
+    );
 
     let rec = w.as_bytes();
 
@@ -118,7 +147,16 @@ fn push_glyph_field_offsets() {
 fn push_cursor_field_offsets() {
     let mut w = InstanceWriter::new();
     let green = Rgb { r: 0, g: 128, b: 0 };
-    w.push_cursor(50.0, 100.0, 8.0, 16.0, green, 0.75);
+    w.push_cursor(
+        ScreenRect {
+            x: 50.0,
+            y: 100.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        green,
+        0.75,
+    );
 
     let rec = w.as_bytes();
 
@@ -143,7 +181,16 @@ fn push_cursor_field_offsets() {
 #[test]
 fn rgb_conversion_boundary_values() {
     let mut w = InstanceWriter::new();
-    w.push_rect(0.0, 0.0, 1.0, 1.0, WHITE, 1.0);
+    w.push_rect(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        },
+        WHITE,
+        1.0,
+    );
 
     let rec = w.as_bytes();
     assert_eq!(read_f32(rec, 48), 1.0);
@@ -151,7 +198,16 @@ fn rgb_conversion_boundary_values() {
     assert_eq!(read_f32(rec, 56), 1.0);
 
     let mut w2 = InstanceWriter::new();
-    w2.push_rect(0.0, 0.0, 1.0, 1.0, BLACK, 0.0);
+    w2.push_rect(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        },
+        BLACK,
+        0.0,
+    );
 
     let rec2 = w2.as_bytes();
     assert_eq!(read_f32(rec2, 48), 0.0);
@@ -168,7 +224,16 @@ fn rgb_mid_value_conversion() {
         b: 192,
     };
     let mut w = InstanceWriter::new();
-    w.push_rect(0.0, 0.0, 1.0, 1.0, mid, 1.0);
+    w.push_rect(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        },
+        mid,
+        1.0,
+    );
 
     let rec = w.as_bytes();
     assert!((read_f32(rec, 48) - 128.0 / 255.0).abs() < 1e-6);
@@ -197,9 +262,38 @@ fn with_capacity_starts_empty() {
 #[test]
 fn multiple_pushes_accumulate() {
     let mut w = InstanceWriter::new();
-    w.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
-    w.push_glyph(8.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
-    w.push_cursor(16.0, 0.0, 2.0, 16.0, RED, 1.0);
+    w.push_rect(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        BLACK,
+        1.0,
+    );
+    w.push_glyph(
+        ScreenRect {
+            x: 8.0,
+            y: 0.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        [0.0; 4],
+        WHITE,
+        1.0,
+        0,
+    );
+    w.push_cursor(
+        ScreenRect {
+            x: 16.0,
+            y: 0.0,
+            w: 2.0,
+            h: 16.0,
+        },
+        RED,
+        1.0,
+    );
 
     assert_eq!(w.len(), 3);
     assert_eq!(w.byte_len(), 240);
@@ -215,7 +309,16 @@ fn multiple_pushes_accumulate() {
 fn clear_resets_length_but_retains_capacity() {
     let mut w = InstanceWriter::new();
     for _ in 0..50 {
-        w.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
+        w.push_rect(
+            ScreenRect {
+                x: 0.0,
+                y: 0.0,
+                w: 8.0,
+                h: 16.0,
+            },
+            BLACK,
+            1.0,
+        );
     }
     assert_eq!(w.len(), 50);
 
@@ -231,9 +334,29 @@ fn clear_resets_length_but_retains_capacity() {
 #[test]
 fn clear_and_reuse() {
     let mut w = InstanceWriter::new();
-    w.push_rect(0.0, 0.0, 8.0, 16.0, RED, 1.0);
+    w.push_rect(
+        ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        RED,
+        1.0,
+    );
     w.clear();
-    w.push_glyph(10.0, 20.0, 8.0, 16.0, [0.1, 0.2, 0.3, 0.4], WHITE, 1.0, 0);
+    w.push_glyph(
+        ScreenRect {
+            x: 10.0,
+            y: 20.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        [0.1, 0.2, 0.3, 0.4],
+        WHITE,
+        1.0,
+        0,
+    );
 
     assert_eq!(w.len(), 1);
     let rec = w.as_bytes();

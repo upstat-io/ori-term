@@ -52,6 +52,10 @@ impl CellMetrics {
     /// # Panics
     ///
     /// Panics in debug mode if any dimension is non-positive or non-finite.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "struct field initialization from independent font metrics"
+    )]
     pub fn new(
         width: f32,
         height: f32,
