@@ -11,7 +11,7 @@ use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource,
     Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, FilterMode, Queue,
     SamplerDescriptor, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-    TextureView, TextureViewDescriptor,
+    TextureView, TextureViewDescriptor, TextureViewDimension,
 };
 
 /// Uniform buffer size in bytes: `vec2<f32> screen_size` + `vec2<f32> _pad` = 16 bytes.
@@ -72,6 +72,7 @@ impl UniformBuffer {
 /// is created once and reused across rebuilds.
 pub struct AtlasBindGroup {
     bind_group: BindGroup,
+    #[allow(dead_code, reason = "retained for rebuild on font/atlas change")]
     sampler: wgpu::Sampler,
 }
 
@@ -101,8 +102,9 @@ impl AtlasBindGroup {
 
     /// Recreate the bind group with a new texture view.
     ///
-    /// Called when the atlas texture grows (e.g. new shelf page allocated).
+    /// Called when the atlas texture changes (e.g. font size change + clear).
     /// Reuses the existing sampler.
+    #[allow(dead_code, reason = "used on atlas clear/font change")]
     pub fn rebuild(&mut self, device: &Device, layout: &BindGroupLayout, view: &TextureView) {
         self.bind_group = create_atlas_bind_group(device, layout, view, &self.sampler);
     }
@@ -113,11 +115,11 @@ impl AtlasBindGroup {
     }
 }
 
-/// Create a 1x1 `R8Unorm` placeholder texture (white pixel).
+/// Create a 1×1 `R8Unorm` placeholder `D2Array` texture (white pixel).
 ///
-/// Returns both the texture and its view so the atlas bind group can be
-/// created before the real glyph atlas exists (Section 5.7). The foreground
-/// pipeline requires both bind groups to be set even when no glyphs are drawn.
+/// Returns both the texture and its `D2Array` view so the atlas bind group
+/// can be created before the real glyph atlas exists. A 1-layer `D2Array`
+/// view satisfies the bind group layout.
 #[allow(dead_code, reason = "placeholder texture for early pipeline init")]
 pub fn create_placeholder_atlas_texture(device: &Device, queue: &Queue) -> (Texture, TextureView) {
     let texture = device.create_texture(&TextureDescriptor {
@@ -156,7 +158,10 @@ pub fn create_placeholder_atlas_texture(device: &Device, queue: &Queue) -> (Text
         },
     );
 
-    let view = texture.create_view(&TextureViewDescriptor::default());
+    let view = texture.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D2Array),
+        ..Default::default()
+    });
     (texture, view)
 }
 

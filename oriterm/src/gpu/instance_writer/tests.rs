@@ -84,7 +84,7 @@ fn push_rect_field_offsets() {
 fn push_glyph_field_offsets() {
     let mut w = InstanceWriter::new();
     let uv = [0.25, 0.5, 0.125, 0.25];
-    w.push_glyph(100.0, 200.0, 8.0, 16.0, uv, WHITE, 1.0);
+    w.push_glyph(100.0, 200.0, 8.0, 16.0, uv, WHITE, 1.0, 0);
 
     let rec = w.as_bytes();
 
@@ -198,7 +198,7 @@ fn with_capacity_starts_empty() {
 fn multiple_pushes_accumulate() {
     let mut w = InstanceWriter::new();
     w.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
-    w.push_glyph(8.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+    w.push_glyph(8.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
     w.push_cursor(16.0, 0.0, 2.0, 16.0, RED, 1.0);
 
     assert_eq!(w.len(), 3);
@@ -233,7 +233,7 @@ fn clear_and_reuse() {
     let mut w = InstanceWriter::new();
     w.push_rect(0.0, 0.0, 8.0, 16.0, RED, 1.0);
     w.clear();
-    w.push_glyph(10.0, 20.0, 8.0, 16.0, [0.1, 0.2, 0.3, 0.4], WHITE, 1.0);
+    w.push_glyph(10.0, 20.0, 8.0, 16.0, [0.1, 0.2, 0.3, 0.4], WHITE, 1.0, 0);
 
     assert_eq!(w.len(), 1);
     let rec = w.as_bytes();

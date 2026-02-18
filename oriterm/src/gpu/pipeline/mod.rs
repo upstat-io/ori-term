@@ -31,7 +31,7 @@ pub const INSTANCE_STRIDE: u64 = INSTANCE_SIZE as u64;
 /// Vertex attributes for the 80-byte instance record.
 ///
 /// Maps to the `InstanceInput` struct in the WGSL shaders.
-pub const INSTANCE_ATTRS: [VertexAttribute; 6] = [
+pub const INSTANCE_ATTRS: [VertexAttribute; 7] = [
     // location 0: pos (vec2<f32>) at offset 0.
     VertexAttribute {
         format: VertexFormat::Float32x2,
@@ -67,6 +67,12 @@ pub const INSTANCE_ATTRS: [VertexAttribute; 6] = [
         format: VertexFormat::Uint32,
         offset: 64,
         shader_location: 5,
+    },
+    // location 6: atlas_page (u32) at offset 68.
+    VertexAttribute {
+        format: VertexFormat::Uint32,
+        offset: 68,
+        shader_location: 6,
     },
 ];
 
@@ -139,7 +145,7 @@ pub fn create_atlas_bind_group_layout(device: &Device) -> BindGroupLayout {
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Texture {
                     sample_type: TextureSampleType::Float { filterable: true },
-                    view_dimension: TextureViewDimension::D2,
+                    view_dimension: TextureViewDimension::D2Array,
                     multisampled: false,
                 },
                 count: None,
