@@ -495,6 +495,61 @@ capability reporting, progressive enhancement, feature discovery
 
 ---
 
+### Section 39: Image Protocols
+**File:** `section-39-image-protocols.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+image, inline image, image protocol, image cache, ImageData, ImagePlacement
+Kitty graphics, APC, ESC_G, kitty image, image transmission, chunked transfer
+image placement, image ID, placement ID, z-index, image delete
+Sixel, sixel graphics, DCS, sixel data, palette, sixel decode
+iTerm2 image, OSC 1337, imgcat, inline image display
+image rendering, GPU compositing, image texture, image atlas
+image animation, frame, animated GIF, animation control
+image memory, image eviction, LRU, memory limit, 256 MB
+viu, timg, hologram, ranger preview, Jupyter inline plot
+```
+
+---
+
+### Section 40: Vi Mode + Copy Mode
+**File:** `section-40-vi-copy-mode.md` | **Tier:** 3 | **Status:** Not Started
+
+```
+vi mode, copy mode, keyboard navigation, modal input
+vi cursor, hjkl, word motion, line motion, vertical motion
+w, b, e, W, B, E, word boundary, WORD boundary
+0, ^, $, gg, G, H, M, L, viewport motion
+Ctrl+U, Ctrl+D, half page, Ctrl+B, Ctrl+F, full page
+f, F, t, T, inline search, ;, comma, repeat
+%, bracket matching, *, #, word under cursor
+v, V, Ctrl+V, visual selection, line selection, block selection
+y, yank, copy, vi copy, keyboard copy
+/, ?, n, N, vi search, search forward, search backward
+zz, center view, auto-scroll, scrollback navigation
+Ctrl+Shift+Space, toggle vi mode, vi mode cursor
+```
+
+---
+
+### Section 41: Hints + Quick Select
+**File:** `section-41-hints-quick-select.md` | **Tier:** 3 | **Status:** Not Started
+
+```
+hints, hint mode, quick select, labeled selection
+hint pattern, regex pattern, URL hint, path hint, hash hint
+git hash, IP address, email, file path, custom pattern
+hint label, alphabet, single char label, two char label
+progressive filtering, label assignment, proximity sort
+hint action, copy, open, CopyAndPaste, select
+Ctrl+Shift+H, hint keybinding, per-pattern keybinding
+url_template, JIRA, GitHub issue, custom URL
+hint rendering, dim, label overlay, contrast color
+vimium, quick copy, pattern registry
+```
+
+---
+
 ### Section 24: Visual Polish
 **File:** `section-24-visual-polish.md` | **Tier:** 6 | **Status:** Not Started
 
@@ -775,6 +830,9 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Not Started |
 | 23 | Performance & Damage Tracking | `section-23-performance.md` | 5 | Not Started |
 | 38 | Terminal Protocol Extensions | `section-38-protocol-extensions.md` | 5 | Not Started |
+| 39 | Image Protocols | `section-39-image-protocols.md` | 5 | Not Started |
+| 40 | Vi Mode + Copy Mode | `section-40-vi-copy-mode.md` | 3 | Not Started |
+| 41 | Hints + Quick Select | `section-41-hints-quick-select.md` | 3 | Not Started |
 | 24 | Visual Polish | `section-24-visual-polish.md` | 6 | Not Started |
 | 25 | Theme System | `section-25-theme-system.md` | 6 | Not Started |
 | 26 | Split Panes | `section-26-split-panes.md` | 7 | Superseded → 29, 31, 33 |
@@ -797,10 +855,10 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 0 | 01-03 | Core library + cross-platform architecture |
 | 1 | 04 | Process layer (PTY, threads) |
 | 2 | 05, 05B, 06-07 | Rendering foundation (window, GPU, fonts, UI framework) |
-| 3 | 08-14 | Interaction (keyboard, mouse, selection, search, config) |
+| 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23, 38 | Hardening (terminal modes, performance, protocol extensions) |
+| 5 | 22-23, 38-39 | Hardening (terminal modes, performance, protocol extensions, image protocols) |
 | 6 | 24-25 | Polish (visual refinements, themes) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |
@@ -827,6 +885,10 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
  |                                 |    |     (depends on 29, 30, 05)
 08-14 Interaction                  |    |
  |                                 |    32 Tab & Window Mgmt (Mux-Aware)
+40 Vi Mode + Copy Mode             |    |
+ |   (depends on 08, 09, 11)       |    |
+41 Hints + Quick Select             |    |
+ |   (depends on 08, 14)           |    |
  |                                 |    |     (depends on 31)
 16-17, 19-21 Chrome                |    |
  |  (tab bar, drag, routing,       |    33 Split Nav + Floating Panes
@@ -839,6 +901,9 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
           38 Protocol Extensions        |
                |  (depends on 02, 06,   |
                |   22)                  |
+          39 Image Protocols            |
+               |  (depends on 02, 05,   |
+               |   06)                  |
                |                        |
           24-25 Polish                  |
                |                        |

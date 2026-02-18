@@ -124,11 +124,27 @@ The Domain trait abstracts shell spawning. Each domain knows how to create a she
   - [ ] `WslDomain::new(id: DomainId, distro: String) -> Self`
   - [ ] `spawn_pane`: spawns `wsl.exe -d <distro> -- <shell>` via `portable-pty`
   - [ ] `can_spawn`: checks if WSL is available (`wsl.exe --list` succeeds)
+- [ ] `SerialDomain` — connect to serial ports for embedded development:
+  - [ ] `SerialDomain::new(id: DomainId, port: String, baud: u32) -> Self`
+  - [ ] `spawn_pane`: opens serial port as PTY-like stream
+  - [ ] Serial port config: baud rate, data bits, stop bits, parity, flow control
+  - [ ] Config:
+    ```toml
+    [[domain.serial]]
+    name = "arduino"
+    port = "COM3"       # or "/dev/ttyUSB0" on Linux
+    baud = 115200
+    ```
+  - [ ] `can_spawn`: checks if port exists and is accessible
+  - [ ] Uses `serialport` crate for cross-platform serial I/O
+  - [ ] CLI: `oriterm serial --port COM3 --baud 115200`
+  - [ ] No PTY wrapping — raw serial bytes piped to terminal (CR/LF handling configurable)
 
 **Tests:**
 - [ ] `LocalDomain`: `can_spawn()` returns true
 - [ ] `LocalDomain`: `spawn_pane()` creates a pane with valid PaneId
 - [ ] `WslDomain` stub: `can_spawn()` returns false if WSL unavailable
+- [ ] `SerialDomain`: config parsing (port, baud, data bits)
 - [ ] `SpawnConfig` default values are sensible
 
 ---

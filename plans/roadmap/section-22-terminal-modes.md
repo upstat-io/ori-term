@@ -308,36 +308,9 @@ Complete reference of every DECSET/DECRST private mode and standard mode that or
 
 ## 22.7 Image Protocol
 
-Display images inline in the terminal. This is a deferred feature — document the design but do not implement until higher-priority sections are complete.
+**Moved to Section 39.** Image protocol support (Kitty Graphics, Sixel, iTerm2) is now a dedicated section with full design detail. See `section-39-image-protocols.md`.
 
-**Files:** (to be determined — likely `oriterm_core/src/image.rs`, `oriterm/src/gpu/render_image.rs`)
-
-**Reference:** Kitty image protocol spec, Ghostty `src/terminal/kitty/graphics*.zig` (image storage + rendering), WezTerm image protocol crates
-
-- [ ] Kitty image protocol (preferred):
-  - [ ] Image transmission via APC sequences (`ESC_P ... ESC\`)
-  - [ ] Transmission methods: direct (base64 payload), file path reference, shared memory
-  - [ ] Image placement: position (cell coordinates), size (cells or pixels), z-index (above/below text)
-  - [ ] Image operations: display, delete by ID, delete by position, animate (frame sequences)
-  - [ ] Image IDs and placement IDs for managing multiple images
-  - [ ] Chunked transmission for large images (multiple APC sequences with `m=1` continuation flag)
-- [ ] Sixel graphics (legacy):
-  - [ ] Parse sixel data from DCS sequences (`DCS P1;P2;P3 q <sixel-data> ST`)
-  - [ ] Decode sixel pixel rows (6 pixels per character, palette-based)
-  - [ ] Render sixel images as bitmaps placed in the terminal grid
-  - [ ] Scrolling: sixel images scroll with the text
-- [ ] Image storage:
-  - [ ] Cache decoded images in memory (GPU texture or CPU bitmap)
-  - [ ] Evict images when scrolled out of view or explicitly deleted
-  - [ ] Configurable memory limit for image cache (default: 256 MB)
-  - [ ] Reference counting: multiple placements can reference the same image data
-- [ ] Rendering:
-  - [ ] Composite images over cell backgrounds in the GPU render pass
-  - [ ] Separate texture bind group for image atlas (distinct from glyph atlas)
-  - [ ] Z-ordering: images can render above or below text depending on placement flags
-  - [ ] Clip images to cell boundaries
-
-**Status:** Deferred. This is a complex feature that requires significant GPU pipeline changes. Document the design here for future implementation.
+- [ ] Section 39 complete (Kitty Graphics + Sixel + iTerm2 image protocols)
 
 ---
 

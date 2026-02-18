@@ -60,6 +60,12 @@ sections:
     title: Visual Regression Testing
     status: not-started
   - id: "6.19"
+    title: Variable Font Axes
+    status: not-started
+  - id: "6.20"
+    title: Font Codepoint Mapping
+    status: not-started
+  - id: "6.21"
     title: Section Completion
     status: not-started
 ---
@@ -840,9 +846,90 @@ Automated pixel-level comparison of rendered text against golden reference image
 
 ---
 
-## 6.19 Section Completion
+## 6.19 Variable Font Axes
 
-- [ ] All 6.1–6.18 items complete
+Support variable fonts with configurable axis values (weight, width, slant, etc.) instead of requiring separate font files per style.
+
+**File:** `oriterm/src/font/collection.rs`, `oriterm/src/font/rasterize.rs`
+
+**Reference:** Ghostty `font-variation-*` config, CSS `font-variation-settings`
+
+- [ ] Variable font axis detection:
+  - [ ] Query font for available axes: `wght` (weight), `wdth` (width), `slnt` (slant), `ital` (italic), custom axes
+  - [ ] Store discovered axes in `FaceData`: `axes: Vec<(Tag, f32, f32, f32)>` — (tag, min, default, max)
+  - [ ] `has_axis(&self, tag: &str) -> bool` — check if font supports an axis
+- [ ] Config integration:
+  ```toml
+  [font]
+  variations = { wght = 450, wdth = 87.5 }  # per-axis values
+  ```
+  - [ ] Parse `variations: HashMap<String, f32>` from TOML
+  - [ ] Validate values against axis min/max ranges
+  - [ ] Clamp out-of-range values with warning log
+- [ ] Rasterization with variations:
+  - [ ] Pass variations to swash: `scale_ctx.builder(face).variations(&[(tag, value), ...])`
+  - [ ] Variable weight replaces synthetic bold when `wght` axis available
+  - [ ] Variable slant replaces synthetic italic when `slnt` or `ital` axis available
+  - [ ] Synthesis detection: prefer real axis over synthetic when available
+- [ ] Per-style variation overrides:
+  - [ ] Regular: use configured base variations
+  - [ ] Bold: `wght = min(base_wght + 300, axis_max)` (unless user specifies explicit bold weight)
+  - [ ] Italic: `slnt = -12` or `ital = 1` (unless user specifies)
+  - [ ] BoldItalic: combine bold weight + italic slant
+- [ ] Atlas key includes variation settings (different axis values produce different glyphs)
+- [ ] **Tests:**
+  - [ ] Variable font with `wght` axis: weight 400 vs 700 produce different glyphs
+  - [ ] Axis clamping: value beyond max clamped to max
+  - [ ] Bold derivation: `wght + 300` capped at axis maximum
+  - [ ] Config roundtrip: variations parsed from TOML correctly
+  - [ ] Non-variable font: variations ignored gracefully
+
+---
+
+## 6.20 Font Codepoint Mapping
+
+Force specific Unicode ranges to render with specific fonts, overriding the normal fallback chain.
+
+**File:** `oriterm/src/font/collection.rs`
+
+**Reference:** Ghostty `font-codepoint-map` config
+
+- [ ] `CodepointMap` struct:
+  - [ ] `ranges: Vec<(RangeInclusive<u32>, FaceIdx)>` — codepoint range → font face
+  - [ ] Sorted by range start for binary search lookup
+- [ ] Config integration:
+  ```toml
+  [[font.codepoint_map]]
+  range = "E000-F8FF"          # Private Use Area (Nerd Font symbols)
+  family = "Symbols Nerd Font"
+
+  [[font.codepoint_map]]
+  range = "4E00-9FFF"          # CJK Unified Ideographs
+  family = "Noto Sans CJK SC"
+  ```
+  - [ ] Parse range as hex: `"E000-F8FF"` → `0xE000..=0xF8FF`
+  - [ ] Single codepoint: `"E0B0"` → `0xE0B0..=0xE0B0`
+  - [ ] Load referenced font family at collection init time
+- [ ] Integration with `find_face_for_char`:
+  - [ ] Check codepoint map FIRST, before primary and fallback chain
+  - [ ] If mapped: return mapped face directly (skip normal resolution)
+  - [ ] If not mapped: fall through to normal primary → fallback chain
+- [ ] Use cases:
+  - [ ] Force Nerd Font symbols to a specific Nerd Font (avoids wrong font picking up PUA)
+  - [ ] Force CJK to a specific CJK font (avoids system choosing wrong variant)
+  - [ ] Force emoji to a specific emoji font
+- [ ] **Tests:**
+  - [ ] Mapped codepoint resolves to configured font
+  - [ ] Unmapped codepoint falls through to normal chain
+  - [ ] Range parsing: hex range, single codepoint
+  - [ ] Multiple maps: first matching range wins
+  - [ ] Invalid font family: warning logged, fallback to normal chain
+
+---
+
+## 6.21 Section Completion
+
+- [ ] All 6.1–6.20 items complete
 - [ ] Full font pipeline: multi-face, fallback chain, cap-height normalization
 - [ ] Rustybuzz shaping: ligatures, combining marks, OpenType features
 - [ ] Advanced atlas: guillotine packing, multi-page, LRU eviction, Q6 keying
