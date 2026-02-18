@@ -14,7 +14,7 @@ mod powerline;
 use wgpu::Queue;
 
 use crate::font::collection::RasterizedGlyph;
-use crate::font::{is_builtin, FaceIdx, GlyphFormat, RasterKey};
+use crate::font::{is_builtin, FaceIdx, GlyphFormat, RasterKey, SyntheticFlags};
 
 use super::atlas::GlyphAtlas;
 use super::frame_input::FrameInput;
@@ -28,6 +28,7 @@ pub(crate) fn raster_key(ch: char, size_q6: u32) -> RasterKey {
         glyph_id: ch as u16,
         face_idx: FaceIdx::BUILTIN,
         size_q6,
+        synthetic: SyntheticFlags::NONE,
     }
 }
 

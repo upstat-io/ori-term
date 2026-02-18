@@ -162,6 +162,9 @@ impl FaceIdx {
 ///
 /// The `size_q6` field encodes size in 26.6 fixed-point: `(size_px * 64.0).round() as u32`.
 /// This avoids floating-point hashing while preserving sub-pixel size changes.
+///
+/// Includes [`SyntheticFlags`] so that emboldened/skewed glyphs are cached
+/// separately from their unsynthesized counterparts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RasterKey {
     /// Glyph ID within the font face.
@@ -170,6 +173,8 @@ pub struct RasterKey {
     pub face_idx: FaceIdx,
     /// Size in 26.6 fixed-point: `(size_px * 64.0).round() as u32`.
     pub size_q6: u32,
+    /// Synthetic transformations applied at rasterization time.
+    pub synthetic: SyntheticFlags,
 }
 
 impl RasterKey {
@@ -179,6 +184,7 @@ impl RasterKey {
             glyph_id: resolved.glyph_id,
             face_idx: resolved.face_idx,
             size_q6,
+            synthetic: resolved.synthetic,
         }
     }
 }
@@ -204,7 +210,6 @@ pub struct ResolvedGlyph {
     /// Which font face resolved this character.
     pub face_idx: FaceIdx,
     /// Whether synthetic style transformations are needed.
-    #[allow(dead_code, reason = "synthetic bold/italic rendering in Section 6")]
     pub synthetic: SyntheticFlags,
 }
 

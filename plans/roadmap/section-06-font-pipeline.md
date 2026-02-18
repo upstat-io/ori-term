@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "6.11"
     title: Font Synthesis (Bold + Italic)
-    status: not-started
+    status: complete
   - id: "6.12"
     title: Text Decorations
     status: not-started
@@ -514,38 +514,38 @@ When a font lacks a Bold or Italic variant, synthesize it properly using swash's
 
 **Reference:** `_old/src/font/collection.rs` (weight_variation_for), Ghostty `src/font/face/freetype.zig` (embolden formula)
 
-- [ ] Variable font weight (preferred path):
-  - [ ] If font has `wght` axis: use font variations instead of separate Bold file
-  - [ ] `weight_variation_for(face_idx: FaceIdx, weight: u16) -> Option<f32>`
-    - [ ] Regular/Italic: use base weight (e.g., 400)
-    - [ ] Bold/BoldItalic: `min(weight + 300, 900)` — CSS "bolder" algorithm
-    - [ ] Fallbacks: `None` (use font's default weight)
-  - [ ] Pass to swash: `scale_ctx.builder(face).variations(&[("wght", value)])`
-- [ ] Synthetic bold via `Render::embolden(strength)` (when no real Bold and no wght axis):
-  - [ ] `embolden()` uniformly expands outlines before rasterization — strokes get thicker in all directions, not just a 1px horizontal shift
-  - [ ] Strength formula (from Ghostty): `(font_height_px * 64.0 / 2048.0).ceil()` — scales proportionally with font size so bold looks consistent at 8pt and 24pt
-  - [ ] Bounding box grows: adjust glyph metrics (bearing_x, width) to account for expansion so glyphs don't clip at cell edges
-  - [ ] Atlas key includes `synthetic_bold: bool` — emboldened glyphs cached separately from regular
-- [ ] Synthetic italic via `Render::transform(Transform::skew(14°, 0°))`:
-  - [ ] Standard 14-degree oblique angle (CSS spec, same as Ghostty and cosmic-text)
-  - [ ] `Transform::skew(Angle::from_degrees(14.0), Angle::from_degrees(0.0))`
-  - [ ] Applied when cell has ITALIC flag but face lacks real italic variant
-  - [ ] Atlas key includes `synthetic_italic: bool` — skewed glyphs cached separately
-- [ ] Use swash `Synthesis` for automatic detection:
-  - [ ] `font_attributes.synthesize(requested_attributes) -> Synthesis`
-  - [ ] `synthesis.embolden()` → apply embolden
-  - [ ] `synthesis.skew()` → apply transform with returned angle
-  - [ ] `synthesis.variations()` → apply weight/width settings
-- [ ] Synthesis combinations:
-  - [ ] BoldItalic with no variant: apply BOTH embolden and skew simultaneously
-  - [ ] Order: variations first, then embolden, then transform (swash applies in render order)
-- [ ] **Tests**:
-  - [ ] Variable font: weight variation applied (wght=700 produces thicker strokes)
-  - [ ] Synthetic bold: emboldened glyph is wider than regular (measure rasterized bitmap)
-  - [ ] Synthetic italic: skewed glyph has non-zero horizontal displacement
-  - [ ] Combined bold+italic: both embolden and skew applied
-  - [ ] Regular cells: no synthesis applied
-  - [ ] Synthesis detection: `Synthesis::any()` returns true only when variant is missing
+- [x] Variable font weight (preferred path):
+  - [x] If font has `wght` axis: use font variations instead of separate Bold file
+  - [x] `weight_variation_for(face_idx: FaceIdx, weight: u16) -> Option<f32>`
+    - [x] Regular/Italic: use base weight (e.g., 400)
+    - [x] Bold/BoldItalic: `min(weight + 300, 900)` — CSS "bolder" algorithm
+    - [x] Fallbacks: `None` (use font's default weight)
+  - [x] Pass to swash: `scale_ctx.builder(face).variations(&[("wght", value)])`
+- [x] Synthetic bold via `Render::embolden(strength)` (when no real Bold and no wght axis):
+  - [x] `embolden()` uniformly expands outlines before rasterization — strokes get thicker in all directions, not just a 1px horizontal shift
+  - [x] Strength formula (from Ghostty): `(font_height_px * 64.0 / 2048.0).ceil()` — scales proportionally with font size so bold looks consistent at 8pt and 24pt
+  - [x] Bounding box grows: adjust glyph metrics (bearing_x, width) to account for expansion so glyphs don't clip at cell edges
+  - [x] Atlas key includes `synthetic_bold: bool` — emboldened glyphs cached separately from regular
+- [x] Synthetic italic via `Render::transform(Transform::skew(14°, 0°))`:
+  - [x] Standard 14-degree oblique angle (CSS spec, same as Ghostty and cosmic-text)
+  - [x] `Transform::skew(Angle::from_degrees(14.0), Angle::from_degrees(0.0))`
+  - [x] Applied when cell has ITALIC flag but face lacks real italic variant
+  - [x] Atlas key includes `synthetic_italic: bool` — skewed glyphs cached separately
+- [x] Use swash `Synthesis` for automatic detection:
+  - [x] `font_attributes.synthesize(requested_attributes) -> Synthesis`
+  - [x] `synthesis.embolden()` → apply embolden
+  - [x] `synthesis.skew()` → apply transform with returned angle
+  - [x] `synthesis.variations()` → apply weight/width settings
+- [x] Synthesis combinations:
+  - [x] BoldItalic with no variant: apply BOTH embolden and skew simultaneously
+  - [x] Order: variations first, then embolden, then transform (swash applies in render order)
+- [x] **Tests**:
+  - [x] Variable font: weight variation applied (wght=700 produces thicker strokes)
+  - [x] Synthetic bold: emboldened glyph is wider than regular (measure rasterized bitmap)
+  - [x] Synthetic italic: skewed glyph has non-zero horizontal displacement
+  - [x] Combined bold+italic: both embolden and skew applied
+  - [x] Regular cells: no synthesis applied
+  - [x] Synthesis detection: `Synthesis::any()` returns true only when variant is missing
 
 ---
 

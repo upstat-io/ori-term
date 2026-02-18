@@ -360,6 +360,8 @@ impl FontCollection {
             key.glyph_id,
             size,
             wght,
+            key.synthetic,
+            self.cell_height,
             self.format,
             &mut self.scale_context,
         )?;
@@ -418,11 +420,7 @@ impl FontCollection {
         let size_q6 = size_key(self.size_px);
         for ch in ' '..='~' {
             let resolved = self.resolve(ch, GlyphStyle::Regular);
-            let key = RasterKey {
-                glyph_id: resolved.glyph_id,
-                face_idx: resolved.face_idx,
-                size_q6,
-            };
+            let key = RasterKey::from_resolved(resolved, size_q6);
             let _ = self.rasterize(key);
         }
     }

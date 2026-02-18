@@ -4,7 +4,10 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use super::face::{build_face, cap_height_px, compute_metrics, font_ref, has_glyph, validate_font};
+use super::face::{
+    build_face, cap_height_px, compute_metrics, embolden_strength, font_ref, has_glyph,
+    validate_font,
+};
 use super::{FontCollection, FontData, FontSet};
 use crate::font::discovery::EMBEDDED_FONT_DATA;
 use crate::font::{FaceIdx, GlyphFormat, GlyphStyle, RasterKey, SyntheticFlags};
@@ -196,11 +199,7 @@ fn resolve_bold_with_system_fonts() {
 fn rasterize_alpha_produces_bitmap() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     let glyph = fc.rasterize(key).expect("'A' must rasterize");
     assert!(glyph.width > 0, "bitmap width must be positive");
     assert!(glyph.height > 0, "bitmap height must be positive");
@@ -212,11 +211,7 @@ fn rasterize_alpha_produces_bitmap() {
 fn rasterize_alpha_bitmap_size() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     let glyph = fc.rasterize(key).expect("'H' must rasterize");
     let expected_len = (glyph.width * glyph.height) as usize;
     assert_eq!(
@@ -230,11 +225,7 @@ fn rasterize_alpha_bitmap_size() {
 fn rasterize_subpixel_rgb_bitmap_size() {
     let mut fc = embedded_only_collection(GlyphFormat::SubpixelRgb);
     let resolved = fc.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     let glyph = fc.rasterize(key).expect("'H' must rasterize");
     let expected_len = (glyph.width * glyph.height * 4) as usize;
     assert_eq!(
@@ -248,11 +239,7 @@ fn rasterize_subpixel_rgb_bitmap_size() {
 fn rasterize_bitmap_has_nonzero_pixels() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     let glyph = fc.rasterize(key).expect("'H' must rasterize");
     assert!(
         glyph.bitmap.iter().any(|&b| b > 0),
@@ -264,11 +251,7 @@ fn rasterize_bitmap_has_nonzero_pixels() {
 fn rasterize_cache_hit() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('B', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
 
     let first = fc.rasterize(key).expect("first rasterize");
     let first_bitmap = first.bitmap.clone();
@@ -286,11 +269,7 @@ fn rasterize_cache_hit() {
 fn rasterize_space_has_no_outline() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve(' ', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     // Space typically has no outline, so rasterize returns None. But some
     // fonts may define an outline; either result is acceptable.
     let result = fc.rasterize(key);
@@ -308,16 +287,19 @@ fn raster_key_equality() {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
+        synthetic: SyntheticFlags::NONE,
     };
     let k2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
+        synthetic: SyntheticFlags::NONE,
     };
     let k3 = RasterKey {
         glyph_id: 43,
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
+        synthetic: SyntheticFlags::NONE,
     };
     assert_eq!(k1, k2);
     assert_ne!(k1, k3);
@@ -329,11 +311,13 @@ fn raster_key_hash_consistency() {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
+        synthetic: SyntheticFlags::NONE,
     };
     let k2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
+        synthetic: SyntheticFlags::NONE,
     };
     let h1 = {
         let mut h = DefaultHasher::new();
@@ -411,11 +395,7 @@ fn pre_cache_populates_ascii() {
 fn rasterize_uppercase_has_positive_top_bearing() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     let glyph = fc.rasterize(key).expect("'H' must rasterize");
     assert!(
         glyph.bearing_y > 0,
@@ -428,11 +408,7 @@ fn rasterize_uppercase_has_positive_top_bearing() {
 fn rasterize_advance_positive() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('M', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     let glyph = fc.rasterize(key).expect("'M' must rasterize");
     assert!(
         glyph.advance > 0.0,
@@ -446,11 +422,7 @@ fn rasterize_advance_positive() {
 fn rasterized_glyph_carries_format_tag() {
     let mut fc = embedded_only_collection(GlyphFormat::SubpixelRgb);
     let resolved = fc.resolve('A', GlyphStyle::Regular);
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     let glyph = fc.rasterize(key).expect("'A' must rasterize");
     assert_eq!(
         glyph.format,
@@ -524,11 +496,7 @@ fn rasterize_emoji_as_color_format() {
     if resolved.glyph_id == 0 {
         return; // No emoji font available.
     }
-    let key = RasterKey {
-        glyph_id: resolved.glyph_id,
-        face_idx: resolved.face_idx,
-        size_q6: super::size_key(fc.size_px()),
-    };
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
     if let Some(glyph) = fc.rasterize(key) {
         if glyph.format == GlyphFormat::Color {
             // Color emoji: RGBA bitmap, 4 bytes per pixel.
@@ -770,4 +738,153 @@ fn features_for_face_fallback_without_override_uses_defaults() {
         2,
         "fallback without override should use collection defaults"
     );
+}
+
+// ── Font Synthesis (Section 6.11) ──
+
+/// Helper: rasterize a character with given synthetic flags.
+fn rasterize_with_synthesis(
+    fc: &mut FontCollection,
+    ch: char,
+    synthetic: SyntheticFlags,
+) -> Option<super::RasterizedGlyph> {
+    let resolved = fc.resolve(ch, GlyphStyle::Regular);
+    let key = RasterKey {
+        glyph_id: resolved.glyph_id,
+        face_idx: resolved.face_idx,
+        size_q6: super::size_key(fc.size_px()),
+        synthetic,
+    };
+    fc.rasterize(key).cloned()
+}
+
+#[test]
+fn synthetic_bold_produces_wider_bitmap() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let regular = rasterize_with_synthesis(&mut fc, 'H', SyntheticFlags::NONE)
+        .expect("regular 'H' must rasterize");
+    let bold = rasterize_with_synthesis(&mut fc, 'H', SyntheticFlags::BOLD)
+        .expect("synthetic bold 'H' must rasterize");
+
+    // Emboldening expands outlines — bitmap should be at least as wide.
+    assert!(
+        bold.width >= regular.width,
+        "synthetic bold should be at least as wide (regular={}, bold={})",
+        regular.width,
+        bold.width,
+    );
+    // Bitmaps must differ (embolden changes pixel values).
+    assert_ne!(
+        regular.bitmap, bold.bitmap,
+        "synthetic bold bitmap must differ from regular"
+    );
+}
+
+#[test]
+fn synthetic_italic_differs_from_regular() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let regular = rasterize_with_synthesis(&mut fc, 'H', SyntheticFlags::NONE)
+        .expect("regular 'H' must rasterize");
+    let italic = rasterize_with_synthesis(&mut fc, 'H', SyntheticFlags::ITALIC)
+        .expect("synthetic italic 'H' must rasterize");
+
+    // Skewing changes the bitmap.
+    assert_ne!(
+        regular.bitmap, italic.bitmap,
+        "synthetic italic bitmap must differ from regular"
+    );
+}
+
+#[test]
+fn synthetic_bold_italic_applies_both() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let regular = rasterize_with_synthesis(&mut fc, 'H', SyntheticFlags::NONE)
+        .expect("regular 'H' must rasterize");
+    let bold_italic =
+        rasterize_with_synthesis(&mut fc, 'H', SyntheticFlags::BOLD | SyntheticFlags::ITALIC)
+            .expect("synthetic bold+italic 'H' must rasterize");
+
+    // Combined synthesis must differ from plain regular.
+    assert_ne!(
+        regular.bitmap, bold_italic.bitmap,
+        "synthetic bold+italic bitmap must differ from regular"
+    );
+}
+
+#[test]
+fn regular_cells_have_no_synthesis() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    assert_eq!(
+        resolved.synthetic,
+        SyntheticFlags::NONE,
+        "regular style should have no synthetic flags"
+    );
+}
+
+#[test]
+fn synthesis_detection_bold_without_variant() {
+    // embedded_only_collection has no Bold face → resolve Bold produces synthetic flag.
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('A', GlyphStyle::Bold);
+    assert!(
+        resolved.synthetic.contains(SyntheticFlags::BOLD),
+        "resolving Bold without a Bold face should set BOLD flag"
+    );
+    assert_eq!(
+        resolved.face_idx,
+        FaceIdx::REGULAR,
+        "without Bold face, should fall back to Regular"
+    );
+}
+
+#[test]
+fn synthesis_detection_italic_without_variant() {
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('A', GlyphStyle::Italic);
+    assert!(
+        resolved.synthetic.contains(SyntheticFlags::ITALIC),
+        "resolving Italic without an Italic face should set ITALIC flag"
+    );
+}
+
+#[test]
+fn synthesis_detection_bold_italic_without_variants() {
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('A', GlyphStyle::BoldItalic);
+    assert!(
+        resolved.synthetic.contains(SyntheticFlags::BOLD),
+        "BoldItalic without variants should set BOLD flag"
+    );
+    assert!(
+        resolved.synthetic.contains(SyntheticFlags::ITALIC),
+        "BoldItalic without variants should set ITALIC flag"
+    );
+}
+
+#[test]
+fn synthetic_cache_separates_from_regular() {
+    // Same glyph_id + face_idx but different synthetic flags → different cache entries.
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let regular = rasterize_with_synthesis(&mut fc, 'A', SyntheticFlags::NONE)
+        .expect("regular must rasterize");
+    let bold = rasterize_with_synthesis(&mut fc, 'A', SyntheticFlags::BOLD)
+        .expect("bold must rasterize");
+
+    // They should be different glyphs (emboldening changes the bitmap).
+    assert_ne!(
+        regular.bitmap, bold.bitmap,
+        "cached regular and bold bitmaps must differ"
+    );
+}
+
+#[test]
+fn embolden_strength_scales_with_size() {
+    // Verify the formula produces reasonable pixel values.
+    let s17 = embolden_strength(17.0);
+    let s32 = embolden_strength(32.0);
+    assert!(s17 > 0.0, "embolden strength must be positive");
+    assert!(s32 > s17, "larger font should have greater embolden strength");
+    assert!(s17 < 1.0, "17px font should have sub-pixel embolden (~0.53)");
+    assert!((s32 - 1.0).abs() < f32::EPSILON, "32px font should have 1.0px embolden");
 }
