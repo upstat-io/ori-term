@@ -11,7 +11,6 @@
 
 pub mod collection;
 pub mod discovery;
-#[allow(dead_code, reason = "shaper consumed by renderer integration in later section")]
 pub mod shaper;
 
 use std::fmt;
