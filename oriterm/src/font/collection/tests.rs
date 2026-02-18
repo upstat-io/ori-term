@@ -7,7 +7,7 @@ use std::sync::Arc;
 use super::face::{build_face, cap_height_px, compute_metrics, font_ref, has_glyph, validate_font};
 use super::{FontCollection, FontData, FontSet};
 use crate::font::discovery::EMBEDDED_FONT_DATA;
-use crate::font::{GlyphFormat, GlyphStyle, RasterKey, SyntheticFlags};
+use crate::font::{FaceIdx, GlyphFormat, GlyphStyle, RasterKey, SyntheticFlags};
 
 /// Helper: build a FontCollection from system discovery with default settings.
 fn system_collection(format: GlyphFormat) -> FontCollection {
@@ -134,7 +134,7 @@ fn size_px_matches_computation() {
 fn resolve_ascii_regular() {
     let fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::Regular);
-    assert_eq!(resolved.face_idx, 0, "'A' should resolve to primary Regular");
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR, "'A' should resolve to primary Regular");
     assert_ne!(resolved.glyph_id, 0, "'A' must have a non-zero glyph ID");
     assert_eq!(
         resolved.synthetic,
@@ -148,7 +148,7 @@ fn resolve_bold_without_bold_face_is_synthetic() {
     let fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::Bold);
     assert_eq!(
-        resolved.face_idx, 0,
+        resolved.face_idx, FaceIdx::REGULAR,
         "should fall back to Regular face"
     );
     assert_ne!(resolved.glyph_id, 0);
@@ -162,7 +162,7 @@ fn resolve_bold_without_bold_face_is_synthetic() {
 fn resolve_italic_without_italic_face_is_synthetic() {
     let fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::Italic);
-    assert_eq!(resolved.face_idx, 0);
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
     assert!(
         resolved.synthetic.contains(SyntheticFlags::ITALIC),
         "should flag synthetic italic"
@@ -173,7 +173,7 @@ fn resolve_italic_without_italic_face_is_synthetic() {
 fn resolve_bold_italic_without_variants_is_synthetic() {
     let fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::BoldItalic);
-    assert_eq!(resolved.face_idx, 0);
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
     assert!(
         resolved
             .synthetic
@@ -306,17 +306,17 @@ fn rasterize_space_has_no_outline() {
 fn raster_key_equality() {
     let k1 = RasterKey {
         glyph_id: 42,
-        face_idx: 0,
+        face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
     };
     let k2 = RasterKey {
         glyph_id: 42,
-        face_idx: 0,
+        face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
     };
     let k3 = RasterKey {
         glyph_id: 43,
-        face_idx: 0,
+        face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
     };
     assert_eq!(k1, k2);
@@ -327,12 +327,12 @@ fn raster_key_equality() {
 fn raster_key_hash_consistency() {
     let k1 = RasterKey {
         glyph_id: 42,
-        face_idx: 0,
+        face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
     };
     let k2 = RasterKey {
         glyph_id: 42,
-        face_idx: 0,
+        face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
     };
     let h1 = {
@@ -467,5 +467,234 @@ fn family_name_not_empty() {
     assert!(
         !fc.family_name().is_empty(),
         "family name should not be empty"
+    );
+}
+
+// ── FaceIdx ──
+
+#[test]
+fn face_idx_primary_not_fallback() {
+    for i in 0..4 {
+        assert!(!FaceIdx(i).is_fallback(), "primary index {i} is not fallback");
+    }
+}
+
+#[test]
+fn face_idx_fallback_starts_at_4() {
+    assert!(FaceIdx(4).is_fallback());
+    assert!(FaceIdx(10).is_fallback());
+}
+
+#[test]
+fn face_idx_fallback_index() {
+    assert_eq!(FaceIdx(0).fallback_index(), None);
+    assert_eq!(FaceIdx(3).fallback_index(), None);
+    assert_eq!(FaceIdx(4).fallback_index(), Some(0));
+    assert_eq!(FaceIdx(7).fallback_index(), Some(3));
+}
+
+// ── Fallback chain ──
+
+#[test]
+fn resolve_unknown_char_returns_notdef_without_fallbacks() {
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    // CJK ideograph — not in JetBrains Mono.
+    let resolved = fc.resolve('\u{4E00}', GlyphStyle::Regular);
+    assert_eq!(
+        resolved.face_idx,
+        FaceIdx::REGULAR,
+        "unknown char should fall back to Regular"
+    );
+    // Glyph ID 0 = .notdef (unmapped character).
+    assert_eq!(resolved.glyph_id, 0, "unmapped char should be .notdef");
+}
+
+#[test]
+fn resolve_unknown_char_uses_fallback_when_available() {
+    // System discovery includes fallback fonts (e.g. Noto Sans CJK).
+    let fc = system_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('\u{4E00}', GlyphStyle::Regular);
+    // If system has CJK fallback, face_idx should be >= 4 (a fallback face)
+    // and glyph_id should be non-zero.
+    // If no CJK fallback is installed, this degrades to .notdef — both are valid.
+    if resolved.glyph_id != 0 {
+        assert!(
+            resolved.face_idx.is_fallback(),
+            "CJK char should resolve via fallback face (got face_idx={:?})",
+            resolved.face_idx,
+        );
+    }
+}
+
+// ── Cap-height normalization (Section 6.2) ──
+
+#[test]
+fn effective_size_primary_equals_base() {
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    let size = fc.effective_size(FaceIdx::REGULAR);
+    assert!(
+        (size - fc.size_px()).abs() < f32::EPSILON,
+        "primary face effective_size should equal base size"
+    );
+}
+
+#[test]
+fn effective_size_primary_all_styles_equal_base() {
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    for i in 0..4 {
+        let size = fc.effective_size(FaceIdx(i));
+        assert!(
+            (size - fc.size_px()).abs() < f32::EPSILON,
+            "primary face {i} effective_size should equal base size"
+        );
+    }
+}
+
+#[test]
+fn effective_size_for_unit_scale_factor() {
+    // FallbackMeta with scale_factor=1.0 should return base_size.
+    use super::FallbackMeta;
+
+    let meta = vec![FallbackMeta {
+        scale_factor: 1.0,
+        size_offset: 0.0,
+        features: None,
+    }];
+    let base = 16.0;
+    let result = super::effective_size_for(FaceIdx(4), base, &meta);
+    assert!(
+        (result - base).abs() < f32::EPSILON,
+        "scale_factor 1.0 should return base_size"
+    );
+}
+
+#[test]
+fn effective_size_for_with_scaling() {
+    use super::FallbackMeta;
+
+    let meta = vec![FallbackMeta {
+        scale_factor: 1.2,
+        size_offset: 0.0,
+        features: None,
+    }];
+    let base = 16.0;
+    let result = super::effective_size_for(FaceIdx(4), base, &meta);
+    let expected = 16.0 * 1.2;
+    assert!(
+        (result - expected).abs() < 0.01,
+        "scale_factor 1.2 should produce {expected}, got {result}"
+    );
+}
+
+#[test]
+fn effective_size_for_with_size_offset() {
+    use super::FallbackMeta;
+
+    let meta = vec![FallbackMeta {
+        scale_factor: 1.0,
+        size_offset: -2.0,
+        features: None,
+    }];
+    let base = 16.0;
+    let result = super::effective_size_for(FaceIdx(4), base, &meta);
+    let expected = 14.0;
+    assert!(
+        (result - expected).abs() < f32::EPSILON,
+        "size_offset -2 should produce {expected}, got {result}"
+    );
+}
+
+#[test]
+fn effective_size_for_clamps_to_min() {
+    use super::FallbackMeta;
+
+    let meta = vec![FallbackMeta {
+        scale_factor: 0.01,
+        size_offset: 0.0,
+        features: None,
+    }];
+    let result = super::effective_size_for(FaceIdx(4), 16.0, &meta);
+    assert!(
+        result >= super::MIN_FONT_SIZE,
+        "effective_size should not go below MIN_FONT_SIZE"
+    );
+}
+
+#[test]
+fn effective_size_for_clamps_to_max() {
+    use super::FallbackMeta;
+
+    let meta = vec![FallbackMeta {
+        scale_factor: 100.0,
+        size_offset: 0.0,
+        features: None,
+    }];
+    let result = super::effective_size_for(FaceIdx(4), 16.0, &meta);
+    assert!(
+        result <= super::MAX_FONT_SIZE,
+        "effective_size should not exceed MAX_FONT_SIZE"
+    );
+}
+
+// ── OpenType features (Section 6.7) ──
+
+#[test]
+fn parse_features_enable() {
+    let features = super::parse_features(&["liga"]);
+    assert_eq!(features.len(), 1);
+    assert_eq!(features[0].value, 1, "liga should be enabled (value=1)");
+}
+
+#[test]
+fn parse_features_disable() {
+    let features = super::parse_features(&["-liga"]);
+    assert_eq!(features.len(), 1);
+    assert_eq!(features[0].value, 0, "-liga should be disabled (value=0)");
+}
+
+#[test]
+fn parse_features_multiple() {
+    let features = super::parse_features(&["liga", "calt", "-dlig"]);
+    assert_eq!(features.len(), 3);
+    assert_eq!(features[0].value, 1, "liga enabled");
+    assert_eq!(features[1].value, 1, "calt enabled");
+    assert_eq!(features[2].value, 0, "dlig disabled");
+}
+
+#[test]
+fn parse_features_invalid_skipped() {
+    let features = super::parse_features(&["liga", "", "calt"]);
+    // Empty string is invalid; should be skipped.
+    assert_eq!(features.len(), 2, "invalid tag should be skipped");
+}
+
+#[test]
+fn default_features_has_liga_and_calt() {
+    let defaults = super::default_features();
+    assert_eq!(defaults.len(), 2, "defaults should be liga + calt");
+    assert_eq!(defaults[0].value, 1);
+    assert_eq!(defaults[1].value, 1);
+}
+
+#[test]
+fn features_for_face_primary_uses_collection_defaults() {
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    let features = fc.features_for_face(FaceIdx::REGULAR);
+    assert_eq!(
+        features.len(),
+        2,
+        "primary face should use collection defaults (liga + calt)"
+    );
+}
+
+#[test]
+fn features_for_face_fallback_without_override_uses_defaults() {
+    let fc = system_collection(GlyphFormat::Alpha);
+    // Fallback face (if any) without explicit override uses collection defaults.
+    let features = fc.features_for_face(FaceIdx(4));
+    assert_eq!(
+        features.len(),
+        2,
+        "fallback without override should use collection defaults"
     );
 }
