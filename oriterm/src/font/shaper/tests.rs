@@ -189,7 +189,7 @@ fn shape_hello_produces_five_glyphs() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output);
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
 
     assert_eq!(output.len(), 5, "5 glyphs for 'Hello'");
     for g in &output {
@@ -207,7 +207,7 @@ fn shape_preserves_column_positions() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output);
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
 
     // "A" and "B" merge into one run "AB" with byte_to_col=[0, 2].
     assert_eq!(output.len(), 2);
@@ -220,7 +220,7 @@ fn shape_empty_runs_produces_no_output() {
     let fc = test_collection();
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&[], &faces, &fc, &mut output);
+    shape_prepared_runs(&[], &faces, &fc, &mut output, &mut None);
 
     assert!(output.is_empty());
 }
@@ -234,13 +234,13 @@ fn shape_reuses_scratch_buffer() {
 
     let cells = make_cells("AB");
     prepare_line(&cells, cells.len(), &fc, &mut runs);
-    shape_prepared_runs(&runs, &faces, &fc, &mut output);
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
     assert_eq!(output.len(), 2);
 
     // Re-shape a different line — output should be replaced.
     let cells2 = make_cells("X");
     prepare_line(&cells2, cells2.len(), &fc, &mut runs);
-    shape_prepared_runs(&runs, &faces, &fc, &mut output);
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
     assert_eq!(output.len(), 1, "output should be cleared on re-shape");
 }
 
@@ -255,7 +255,7 @@ fn col_glyph_map_simple_ascii() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output);
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
 
     let mut map = Vec::new();
     super::build_col_glyph_map(&output, cells.len(), &mut map);
@@ -276,7 +276,7 @@ fn col_glyph_map_with_spaces() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output);
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
 
     let mut map = Vec::new();
     super::build_col_glyph_map(&output, cells.len(), &mut map);

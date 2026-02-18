@@ -226,17 +226,23 @@ fn append_cell_to_run<C: ShapableCell>(run: &mut ShapingRun, cell: &C, col: usiz
 ///
 /// Reuses a single `UnicodeBuffer` across all runs to avoid per-run heap
 /// allocation. The buffer is returned from each `GlyphBuffer::clear()`.
+/// Pass `buffer_slot` to persist the buffer across frames — the first call
+/// allocates, subsequent calls reuse the existing capacity.
 pub fn shape_prepared_runs(
     runs: &[ShapingRun],
     faces: &[Option<rustybuzz::Face<'_>>],
     collection: &FontCollection,
     output: &mut Vec<ShapedGlyph>,
+    buffer_slot: &mut Option<rustybuzz::UnicodeBuffer>,
 ) {
     output.clear();
-    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    let mut buffer = buffer_slot
+        .take()
+        .unwrap_or_default();
     for run in runs {
         buffer = shape_run(run, faces, collection, output, buffer);
     }
+    *buffer_slot = Some(buffer);
 }
 
 /// Shape a single run and append results to the output vec.
