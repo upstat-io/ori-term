@@ -46,7 +46,7 @@ sections:
     status: complete
   - id: "6.14"
     title: Pre-Caching + Performance
-    status: not-started
+    status: complete
   - id: "6.15"
     title: Hinting
     status: not-started
@@ -642,30 +642,30 @@ Shape non-grid text (tab bar titles, search bar, status text) through rustybuzz 
 
 Eliminate first-frame stalls and optimize per-frame costs.
 
-- [ ] Pre-cache ASCII (0x20–0x7E) at font load time:
-  - [ ] Rasterize all printable ASCII for Regular style
-  - [ ] Insert into atlas immediately
-  - [ ] First frame renders without any rasterization stalls
-- [ ] Pre-cache bold ASCII if bold face available
-- [ ] Scratch buffer reuse:
-  - [ ] `runs_scratch: Vec<ShapingRun>` — cleared + reused per row (not reallocated)
-  - [ ] `shaped_scratch: Vec<ShapedGlyph>` — same pattern
-  - [ ] `col_glyph_map: Vec<Option<usize>>` — same pattern
-  - [ ] Allocated once at max expected size, never shrink
-- [ ] Face creation once per frame:
-  - [ ] `create_shaping_faces(&self) -> Vec<Option<rustybuzz::Face>>` — creates Face references from FaceData
-  - [ ] Called once at start of frame, reused for all rows
-  - [ ] Faces borrow from `Arc<Vec<u8>>` in FaceData (zero-copy)
-- [ ] Font size change:
-  - [ ] Clear entire atlas
-  - [ ] Recompute cell metrics
-  - [ ] Re-pre-cache ASCII
-  - [ ] Invalidate all cached frame data
-- [ ] **Performance targets**:
-  - [ ] Shaping: < 2ms per frame for 80×24 terminal
-  - [ ] Atlas miss (new glyph): < 0.5ms per glyph (rasterize + upload)
-  - [ ] Atlas hit: HashMap lookup only (< 1μs)
-  - [ ] No allocation in per-cell rendering loop
+- [x] Pre-cache ASCII (0x20–0x7E) at font load time:
+  - [x] Rasterize all printable ASCII for Regular style
+  - [x] Insert into atlas immediately
+  - [x] First frame renders without any rasterization stalls
+- [x] Pre-cache bold ASCII if bold face available
+- [x] Scratch buffer reuse:
+  - [x] `runs_scratch: Vec<ShapingRun>` — cleared + reused per row (not reallocated)
+  - [x] `shaped_scratch: Vec<ShapedGlyph>` — same pattern
+  - [x] `col_glyph_map: Vec<Option<usize>>` — same pattern
+  - [x] Allocated once at max expected size, never shrink
+- [x] Face creation once per frame:
+  - [x] `create_shaping_faces(&self) -> Vec<Option<rustybuzz::Face>>` — creates Face references from FaceData
+  - [x] Called once at start of frame, reused for all rows
+  - [x] Faces borrow from `Arc<Vec<u8>>` in FaceData (zero-copy)
+- [x] Font size change:
+  - [x] Clear entire atlas
+  - [x] Recompute cell metrics
+  - [x] Re-pre-cache ASCII
+  - [x] Invalidate all cached frame data
+- [x] **Performance targets**:
+  - [x] Shaping: < 2ms per frame for 80×24 terminal
+  - [x] Atlas miss (new glyph): < 0.5ms per glyph (rasterize + upload)
+  - [x] Atlas hit: HashMap lookup only (< 1μs)
+  - [x] No allocation in per-cell rendering loop
 
 ---
 
