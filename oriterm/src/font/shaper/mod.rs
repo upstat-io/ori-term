@@ -67,17 +67,29 @@ pub struct ShapedGlyph {
 ///
 /// Combining marks (zero-width characters) are appended to the same column
 /// as their base character within the current run.
+///
+/// Inner allocations (`text`, `byte_to_col`) are retained across calls to
+/// avoid per-run heap churn.
 pub fn prepare_line(
     row: &[Cell],
     cols: usize,
     collection: &FontCollection,
     runs_out: &mut Vec<ShapingRun>,
 ) {
-    runs_out.clear();
+    // Clear inner buffers but keep the ShapingRun objects so their String
+    // and Vec capacities survive for reuse.
+    for run in runs_out.iter_mut() {
+        run.text.clear();
+        run.byte_to_col.clear();
+    }
     segment_runs(row, cols, collection, runs_out);
 }
 
 /// Internal segmentation logic.
+///
+/// Reuses existing `ShapingRun` slots (whose inner buffers were cleared by
+/// the caller) when possible, only allocating new runs when the vec grows.
+/// Truncates to the final run count at the end.
 fn segment_runs(
     row: &[Cell],
     cols: usize,
@@ -85,6 +97,8 @@ fn segment_runs(
     runs: &mut Vec<ShapingRun>,
 ) {
     let mut col = 0;
+    // Index of the next run slot to write into.
+    let mut run_count = 0;
 
     while col < cols {
         let cell = &row[col];
@@ -106,22 +120,29 @@ fn segment_runs(
         let face_idx = resolved.face_idx;
 
         // Check if we can extend the current run (same face).
-        let extend = runs
-            .last()
-            .is_some_and(|r: &ShapingRun| r.face_idx == face_idx);
+        let extend = run_count > 0
+            && runs
+                .get(run_count - 1)
+                .is_some_and(|r: &ShapingRun| r.face_idx == face_idx);
 
         if extend {
-            let run = runs.last_mut().expect("checked above");
-            append_cell_to_run(run, cell, col);
+            append_cell_to_run(&mut runs[run_count - 1], cell, col);
         } else {
-            let mut run = ShapingRun {
-                text: String::new(),
-                face_idx,
-                col_start: col,
-                byte_to_col: Vec::new(),
-            };
-            append_cell_to_run(&mut run, cell, col);
-            runs.push(run);
+            // Recycle existing slot or push a new one.
+            if run_count < runs.len() {
+                runs[run_count].face_idx = face_idx;
+                runs[run_count].col_start = col;
+                // text and byte_to_col already cleared by caller.
+            } else {
+                runs.push(ShapingRun {
+                    text: String::new(),
+                    face_idx,
+                    col_start: col,
+                    byte_to_col: Vec::new(),
+                });
+            }
+            append_cell_to_run(&mut runs[run_count], cell, col);
+            run_count += 1;
         }
 
         col += if cell.flags.contains(CellFlags::WIDE_CHAR) {
@@ -130,6 +151,8 @@ fn segment_runs(
             1
         };
     }
+
+    runs.truncate(run_count);
 }
 
 /// Append a cell's character and zero-width marks to a shaping run.
@@ -159,6 +182,9 @@ fn append_cell_to_run(run: &mut ShapingRun, cell: &Cell, col: usize) {
 ///
 /// Clears and fills `output`. Faces should be created once per frame via
 /// [`FontCollection::create_shaping_faces`].
+///
+/// Reuses a single `UnicodeBuffer` across all runs to avoid per-run heap
+/// allocation. The buffer is returned from each `GlyphBuffer::clear()`.
 pub fn shape_prepared_runs(
     runs: &[ShapingRun],
     faces: &[Option<rustybuzz::Face<'_>>],
@@ -166,25 +192,29 @@ pub fn shape_prepared_runs(
     output: &mut Vec<ShapedGlyph>,
 ) {
     output.clear();
+    let mut buffer = rustybuzz::UnicodeBuffer::new();
     for run in runs {
-        shape_run(run, faces, collection, output);
+        buffer = shape_run(run, faces, collection, output, buffer);
     }
 }
 
 /// Shape a single run and append results to the output vec.
+///
+/// Returns the `UnicodeBuffer` for reuse by the next run. When a face is
+/// missing, the buffer is returned unchanged (unshaped fallback path).
 fn shape_run(
     run: &ShapingRun,
     faces: &[Option<rustybuzz::Face<'_>>],
     collection: &FontCollection,
     output: &mut Vec<ShapedGlyph>,
-) {
+    mut buffer: rustybuzz::UnicodeBuffer,
+) -> rustybuzz::UnicodeBuffer {
     let face_i = run.face_idx.as_usize();
     let Some(face) = faces.get(face_i).and_then(|f| f.as_ref()) else {
         emit_unshaped_fallback(run, output);
-        return;
+        return buffer;
     };
 
-    let mut buffer = rustybuzz::UnicodeBuffer::new();
     buffer.push_str(&run.text);
     buffer.set_direction(rustybuzz::Direction::LeftToRight);
 
@@ -224,6 +254,9 @@ fn shape_run(
             y_offset,
         });
     }
+
+    // Return the cleared buffer for reuse by the next run.
+    glyph_buffer.clear()
 }
 
 /// Fallback for when no rustybuzz face is available — emit one glyph per char.

@@ -5,6 +5,7 @@
 //! The caller runs Extract → Prepare on the CPU, then hands the resulting
 //! [`PreparedFrame`] to [`GpuRenderer::render_frame`] for GPU submission.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use oriterm_core::CellFlags;
@@ -60,7 +61,10 @@ impl std::error::Error for SurfaceError {}
 /// Bridges [`FontCollection`] + [`GlyphAtlas`] into the [`AtlasLookup`] trait.
 ///
 /// Used by the Prepare phase to look up cached glyphs without GPU types.
+/// Reads from the resolve cache populated by [`GpuRenderer::ensure_glyphs_cached`]
+/// to avoid redundant `FontCollection::resolve` calls.
 struct RendererAtlas<'a> {
+    resolve_cache: &'a HashMap<(char, GlyphStyle), RasterKey>,
     collection: &'a FontCollection,
     atlas: &'a GlyphAtlas,
     size_q6: u32,
@@ -68,11 +72,16 @@ struct RendererAtlas<'a> {
 
 impl AtlasLookup for RendererAtlas<'_> {
     fn lookup(&self, ch: char, style: GlyphStyle) -> Option<&super::atlas::AtlasEntry> {
-        let resolved = self.collection.resolve(ch, style);
-        let key = RasterKey {
-            glyph_id: resolved.glyph_id,
-            face_idx: resolved.face_idx,
-            size_q6: self.size_q6,
+        let key = if let Some(&cached) = self.resolve_cache.get(&(ch, style)) {
+            cached
+        } else {
+            // Cache miss (should be rare — ensure_glyphs_cached covers all cells).
+            let resolved = self.collection.resolve(ch, style);
+            RasterKey {
+                glyph_id: resolved.glyph_id,
+                face_idx: resolved.face_idx,
+                size_q6: self.size_q6,
+            }
         };
         self.atlas.lookup(key)
     }
@@ -97,6 +106,11 @@ pub struct GpuRenderer {
     // Atlas + fonts
     atlas: GlyphAtlas,
     font_collection: FontCollection,
+
+    // Resolve cache: (char, GlyphStyle) → RasterKey.
+    // Stable across frames — only invalidated on font change. Populated by
+    // `ensure_glyphs_cached`, consumed by `RendererAtlas::lookup`.
+    resolve_cache: HashMap<(char, GlyphStyle), RasterKey>,
 
     // Per-frame GPU instance buffers (grow-only, never shrink).
     bg_buffer: Option<Buffer>,
@@ -155,6 +169,7 @@ impl GpuRenderer {
             atlas_layout,
             atlas,
             font_collection,
+            resolve_cache: HashMap::new(),
             bg_buffer: None,
             fg_buffer: None,
             cursor_buffer: None,
@@ -190,11 +205,21 @@ impl GpuRenderer {
             }
 
             let style = prepare::glyph_style(cell.flags);
-            let resolved = self.font_collection.resolve(cell.ch, style);
-            let key = RasterKey {
-                glyph_id: resolved.glyph_id,
-                face_idx: resolved.face_idx,
-                size_q6,
+
+            // Use the resolve cache to avoid redundant charmap + fallback
+            // chain lookups. The cache persists across frames since the
+            // mapping is stable until font configuration changes.
+            let key = if let Some(&cached) = self.resolve_cache.get(&(cell.ch, style)) {
+                cached
+            } else {
+                let resolved = self.font_collection.resolve(cell.ch, style);
+                let k = RasterKey {
+                    glyph_id: resolved.glyph_id,
+                    face_idx: resolved.face_idx,
+                    size_q6,
+                };
+                self.resolve_cache.insert((cell.ch, style), k);
+                k
             };
 
             if self.atlas.lookup(key).is_some() || self.atlas.is_known_empty(key) {
@@ -223,6 +248,7 @@ impl GpuRenderer {
     pub fn prepare(&mut self, input: &FrameInput, gpu: &GpuState) -> PreparedFrame {
         self.ensure_glyphs_cached(input, gpu);
         let bridge = RendererAtlas {
+            resolve_cache: &self.resolve_cache,
             collection: &self.font_collection,
             atlas: &self.atlas,
             size_q6: size_key(self.font_collection.size_px()),
@@ -240,6 +266,7 @@ impl GpuRenderer {
     ) {
         self.ensure_glyphs_cached(input, gpu);
         let bridge = RendererAtlas {
+            resolve_cache: &self.resolve_cache,
             collection: &self.font_collection,
             atlas: &self.atlas,
             size_q6: size_key(self.font_collection.size_px()),
