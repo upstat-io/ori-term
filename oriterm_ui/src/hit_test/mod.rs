@@ -7,6 +7,23 @@
 
 use crate::geometry::{Point, Rect, Size};
 
+/// Window chrome layout parameters for hit testing.
+///
+/// Bundles the window-level geometry needed to classify a point as client
+/// area, caption, or resize border.
+pub struct WindowChrome<'a> {
+    /// Total window size in physical pixels.
+    pub window_size: Size,
+    /// Resize border width in physical pixels.
+    pub border_width: f32,
+    /// Caption (title/tab bar) height in physical pixels.
+    pub caption_height: f32,
+    /// Rects within the caption that intercept clicks (buttons, tabs).
+    pub interactive_rects: &'a [Rect],
+    /// Whether the window is maximized (suppresses resize borders).
+    pub is_maximized: bool,
+}
+
 /// The semantic region a point falls in within a frameless window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HitTestResult {
@@ -50,31 +67,24 @@ pub enum ResizeDirection {
 ///
 /// Corners take priority over edges: a point in the top-left corner
 /// returns `TopLeft`, not `Top` or `Left`.
-pub fn hit_test(
-    point: Point,
-    window_size: Size,
-    border_width: f32,
-    caption_height: f32,
-    interactive_rects: &[Rect],
-    is_maximized: bool,
-) -> HitTestResult {
+pub fn hit_test(point: Point, chrome: &WindowChrome<'_>) -> HitTestResult {
     // 1. Check interactive rects first — buttons/tabs within caption are
     //    clickable, not draggable.
-    for rect in interactive_rects {
+    for rect in chrome.interactive_rects {
         if rect.contains(point) {
             return HitTestResult::Client;
         }
     }
 
     // 2. Check resize borders (suppressed when maximized).
-    if !is_maximized {
-        if let Some(direction) = resize_direction(point, window_size, border_width) {
+    if !chrome.is_maximized {
+        if let Some(direction) = resize_direction(point, chrome.window_size, chrome.border_width) {
             return HitTestResult::ResizeBorder(direction);
         }
     }
 
     // 3. Check caption area.
-    if point.y < caption_height {
+    if point.y < chrome.caption_height {
         return HitTestResult::Caption;
     }
 

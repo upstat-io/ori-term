@@ -1,6 +1,6 @@
 //! Unit tests for the GPU renderer.
 //!
-//! These tests verify the `ensure_buffer` helper and `SurfaceError` display.
+//! These tests verify `SurfaceError` display formatting.
 //! Full GPU integration tests (headless render + readback) live in Section 5.13.
 
 use super::*;

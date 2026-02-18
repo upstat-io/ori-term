@@ -5,7 +5,9 @@
 //! borrowed independently — e.g. `font_collection` immutably while
 //! `scratch` is borrowed mutably.
 
-use wgpu::{Buffer, BufferDescriptor, BufferUsages, Device};
+use wgpu::{
+    BindGroup, Buffer, BufferDescriptor, BufferUsages, Device, Queue, RenderPass, RenderPipeline,
+};
 
 use super::super::atlas::GlyphAtlas;
 use super::super::frame_input::FrameInput;
@@ -87,7 +89,7 @@ pub(super) fn ensure_shaped_glyphs_cached(
     mono_atlas: &mut GlyphAtlas,
     color_atlas: &mut GlyphAtlas,
     fonts: &mut FontCollection,
-    queue: &wgpu::Queue,
+    queue: &Queue,
 ) {
     let size_q6 = shaped.size_q6();
     for glyph in shaped.all_glyphs() {
@@ -116,18 +118,19 @@ pub(super) fn ensure_shaped_glyphs_cached(
     }
 }
 
-/// Ensure a GPU buffer exists and is large enough for `data`.
+/// Ensure a GPU buffer exists, is large enough, and upload `data` to it.
 ///
-/// Returns `Some(&Buffer)` if data is non-empty (caller should write to it),
-/// or `None` if data is empty (no upload needed).
-pub(super) fn ensure_buffer<'a>(
+/// No-ops when `data` is empty. Grows the buffer (power-of-2 amortized) when
+/// needed, then writes the data in a single `write_buffer` call.
+pub(super) fn upload_buffer(
     device: &Device,
-    slot: &'a mut Option<Buffer>,
+    queue: &Queue,
+    slot: &mut Option<Buffer>,
     data: &[u8],
     label: &'static str,
-) -> Option<&'a Buffer> {
+) {
     if data.is_empty() {
-        return None;
+        return;
     }
 
     let needed = data.len() as u64;
@@ -147,5 +150,37 @@ pub(super) fn ensure_buffer<'a>(
         }));
     }
 
-    slot.as_ref()
+    if let Some(buf) = slot.as_ref() {
+        queue.write_buffer(buf, 0, data);
+    }
+}
+
+/// Record a single instanced draw call into the render pass.
+///
+/// Sets the pipeline, bind groups, and vertex buffer, then issues an
+/// instanced `draw(0..4, 0..instance_count)`. No-ops when `instance_count`
+/// is zero or the buffer slot is empty.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "GPU render pass recording: pipeline, bind groups, buffer, count"
+)]
+pub(super) fn record_draw(
+    pass: &mut RenderPass<'_>,
+    pipeline: &RenderPipeline,
+    uniform_bg: &BindGroup,
+    atlas_bg: Option<&BindGroup>,
+    buffer: Option<&Buffer>,
+    instance_count: u32,
+) {
+    if instance_count == 0 {
+        return;
+    }
+    let Some(buf) = buffer else { return };
+    pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, uniform_bg, &[]);
+    if let Some(atlas) = atlas_bg {
+        pass.set_bind_group(1, atlas, &[]);
+    }
+    pass.set_vertex_buffer(0, buf.slice(..));
+    pass.draw(0..4, 0..instance_count);
 }

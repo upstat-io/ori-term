@@ -290,48 +290,11 @@ impl<T: EventListener> Term<T> {
             visible: cursor_visible,
         };
 
-        let (all_dirty, damage) = self.collect_damage(grid, lines, cols);
+        let (all_dirty, damage) = collect_damage(grid, lines, cols);
         out.display_offset = offset;
         out.mode = self.mode;
         out.all_dirty = all_dirty;
         out.damage = damage;
-    }
-
-    /// Collect damage information from the grid's dirty tracker.
-    fn collect_damage(&self, grid: &Grid, lines: usize, cols: usize) -> (bool, Vec<DamageLine>) {
-        let dirty = grid.dirty();
-
-        // Fast path: tracker explicitly flagged all-dirty (resize, alt swap).
-        // Avoids building a Vec that would be immediately discarded.
-        if dirty.is_all_dirty() {
-            return (true, Vec::new());
-        }
-
-        // Fast path: nothing dirty — skip the per-line scan entirely.
-        if !dirty.is_any_dirty() {
-            return (false, Vec::new());
-        }
-
-        // Slow path: check individual bits (handles mark_range covering all lines).
-        let mut all_dirty = true;
-        let mut damage = Vec::with_capacity(lines);
-        for line in 0..lines {
-            if dirty.is_dirty(line) {
-                damage.push(DamageLine {
-                    line,
-                    left: Column(0),
-                    right: Column(cols.saturating_sub(1)),
-                });
-            } else {
-                all_dirty = false;
-            }
-        }
-
-        if all_dirty && !damage.is_empty() {
-            (true, Vec::new())
-        } else {
-            (false, damage)
-        }
     }
 
     /// Drain damage from the active grid.
@@ -375,6 +338,43 @@ impl<T: EventListener> Term<T> {
             &mut self.inactive_keyboard_mode_stack,
         );
         self.grid_mut().dirty_mut().mark_all();
+    }
+}
+
+/// Collect damage information from the grid's dirty tracker.
+fn collect_damage(grid: &Grid, lines: usize, cols: usize) -> (bool, Vec<DamageLine>) {
+    let dirty = grid.dirty();
+
+    // Fast path: tracker explicitly flagged all-dirty (resize, alt swap).
+    // Avoids building a Vec that would be immediately discarded.
+    if dirty.is_all_dirty() {
+        return (true, Vec::new());
+    }
+
+    // Fast path: nothing dirty — skip the per-line scan entirely.
+    if !dirty.is_any_dirty() {
+        return (false, Vec::new());
+    }
+
+    // Slow path: check individual bits (handles mark_range covering all lines).
+    let mut all_dirty = true;
+    let mut damage = Vec::with_capacity(lines);
+    for line in 0..lines {
+        if dirty.is_dirty(line) {
+            damage.push(DamageLine {
+                line,
+                left: Column(0),
+                right: Column(cols.saturating_sub(1)),
+            });
+        } else {
+            all_dirty = false;
+        }
+    }
+
+    if all_dirty && !damage.is_empty() {
+        (true, Vec::new())
+    } else {
+        (false, damage)
     }
 }
 

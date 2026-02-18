@@ -412,6 +412,10 @@ fn create_texture_array(
 ///
 /// Handles both `R8Unorm` (1 byte/pixel) and `Rgba8Unorm` (4 bytes/pixel)
 /// textures based on the glyph's format.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "GPU texture upload: resource refs, destination coords, glyph data"
+)]
 fn upload_glyph(
     queue: &Queue,
     texture: &Texture,

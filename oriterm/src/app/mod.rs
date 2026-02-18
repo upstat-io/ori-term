@@ -82,25 +82,16 @@ impl App {
             window_config,
         }
     }
-}
 
-impl ApplicationHandler<TermEvent> for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
-        }
-
+    /// Run the one-shot startup sequence: window → GPU → fonts → renderer → tab.
+    ///
+    /// Returns `Err` with a displayable message on any failure. The caller
+    /// logs the error and exits the event loop.
+    fn try_init(&mut self, event_loop: &ActiveEventLoop) -> Result<(), Box<dyn std::error::Error>> {
         let t_start = std::time::Instant::now();
 
         // 1. Create window (invisible) for GPU surface capability probing.
-        let window_arc = match oriterm_ui::window::create_window(event_loop, &self.window_config) {
-            Ok(w) => w,
-            Err(e) => {
-                log::error!("failed to create window: {e}");
-                event_loop.exit();
-                return;
-            }
-        };
+        let window_arc = oriterm_ui::window::create_window(event_loop, &self.window_config)?;
         let t_window = t_start.elapsed();
 
         // 2. Spawn font discovery on a background thread (no GPU dependency).
@@ -127,39 +118,17 @@ impl ApplicationHandler<TermEvent> for App {
 
         // 3. Init GPU on main thread (requires window Arc, runs concurrently with fonts).
         let t_gpu_start = std::time::Instant::now();
-        let gpu = match GpuState::new(&window_arc, self.window_config.transparent) {
-            Ok(g) => g,
-            Err(e) => {
-                log::error!("failed to initialize GPU: {e}");
-                event_loop.exit();
-                return;
-            }
-        };
+        let gpu = GpuState::new(&window_arc, self.window_config.transparent)?;
         let t_gpu = t_gpu_start.elapsed();
 
         // 4. Wrap the same window into TermWindow (creates surface, applies effects).
-        let window = match TermWindow::from_window(window_arc, &self.window_config, &gpu) {
-            Ok(w) => w,
-            Err(e) => {
-                log::error!("failed to attach GPU surface to window: {e}");
-                event_loop.exit();
-                return;
-            }
-        };
+        let window = TermWindow::from_window(window_arc, &self.window_config, &gpu)?;
 
         // 5. Join font thread (GPU init + surface setup ran concurrently).
         let (font_collection, t_fonts) = match font_handle.join() {
             Ok(Ok(result)) => result,
-            Ok(Err(e)) => {
-                log::error!("failed to load fonts: {e}");
-                event_loop.exit();
-                return;
-            }
-            Err(_) => {
-                log::error!("font discovery thread panicked");
-                event_loop.exit();
-                return;
-            }
+            Ok(Err(e)) => return Err(e.into()),
+            Err(_) => return Err("font discovery thread panicked".into()),
         };
 
         // 6. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
@@ -176,37 +145,23 @@ impl ApplicationHandler<TermEvent> for App {
         // 8. Spawn the terminal tab (PTY + VTE + Term).
         let t_tab_start = std::time::Instant::now();
         let tab_id = TabId::next();
-        let tab = match Tab::new(
+        let tab = Tab::new(
             tab_id,
             rows as u16,
             cols as u16,
             DEFAULT_SCROLLBACK,
             self.event_proxy.clone(),
-        ) {
-            Ok(t) => t,
-            Err(e) => {
-                log::error!("failed to spawn tab: {e}");
-                event_loop.exit();
-                return;
-            }
-        };
+        )?;
         let t_tab = t_tab_start.elapsed();
 
         let t_total = t_start.elapsed();
         log::info!(
-            "app: startup — window={:?} gpu={:?} fonts={:?} renderer={:?} tab={:?} total={:?}",
-            t_window,
-            t_gpu,
-            t_fonts,
-            t_renderer,
-            t_tab,
-            t_total,
+            "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
+             renderer={t_renderer:?} tab={t_tab:?} total={t_total:?}",
         );
         log::info!(
-            "app: initialized — {}x{} px, {cols} cols × {rows} rows, \
+            "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
              font={} {:.1}pt",
-            w,
-            h,
             renderer.family_name(),
             DEFAULT_FONT_SIZE_PT,
         );
@@ -220,6 +175,19 @@ impl ApplicationHandler<TermEvent> for App {
         self.window = Some(window);
         self.tab = Some(tab);
         self.dirty = true;
+        Ok(())
+    }
+}
+
+impl ApplicationHandler<TermEvent> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        if let Err(e) = self.try_init(event_loop) {
+            log::error!("startup failed: {e}");
+            event_loop.exit();
+        }
     }
 
     fn window_event(

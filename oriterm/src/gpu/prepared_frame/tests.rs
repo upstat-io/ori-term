@@ -4,6 +4,7 @@ use oriterm_core::Rgb;
 
 use super::PreparedFrame;
 use crate::gpu::frame_input::ViewportSize;
+use crate::gpu::instance_writer::ScreenRect;
 
 const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
 const WHITE: Rgb = Rgb {
@@ -74,12 +75,22 @@ fn set_clear_color_updates() {
 fn populate_and_count() {
     let mut frame = PreparedFrame::new(VP, BLACK, 1.0);
 
-    frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
-    frame.backgrounds.push_rect(8.0, 0.0, 8.0, 16.0, BLACK, 1.0);
-    frame
-        .glyphs
-        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
-    frame.cursors.push_cursor(0.0, 0.0, 8.0, 16.0, WHITE, 1.0);
+    let r1 = ScreenRect {
+        x: 0.0,
+        y: 0.0,
+        w: 8.0,
+        h: 16.0,
+    };
+    let r2 = ScreenRect {
+        x: 8.0,
+        y: 0.0,
+        w: 8.0,
+        h: 16.0,
+    };
+    frame.backgrounds.push_rect(r1, BLACK, 1.0);
+    frame.backgrounds.push_rect(r2, BLACK, 1.0);
+    frame.glyphs.push_glyph(r1, [0.0; 4], WHITE, 1.0, 0);
+    frame.cursors.push_cursor(r1, WHITE, 1.0);
 
     assert!(!frame.is_empty());
     assert_eq!(frame.total_instances(), 4);
@@ -91,11 +102,15 @@ fn populate_and_count() {
 #[test]
 fn clear_resets_all_buffers() {
     let mut frame = PreparedFrame::new(VP, BLACK, 1.0);
-    frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
-    frame
-        .glyphs
-        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
-    frame.cursors.push_cursor(0.0, 0.0, 8.0, 16.0, WHITE, 1.0);
+    let r = ScreenRect {
+        x: 0.0,
+        y: 0.0,
+        w: 8.0,
+        h: 16.0,
+    };
+    frame.backgrounds.push_rect(r, BLACK, 1.0);
+    frame.glyphs.push_glyph(r, [0.0; 4], WHITE, 1.0, 0);
+    frame.cursors.push_cursor(r, WHITE, 1.0);
 
     frame.clear();
 
@@ -108,7 +123,13 @@ fn clear_and_reuse() {
     let mut frame = PreparedFrame::new(VP, BLACK, 1.0);
 
     // First frame.
-    frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
+    let r = ScreenRect {
+        x: 0.0,
+        y: 0.0,
+        w: 8.0,
+        h: 16.0,
+    };
+    frame.backgrounds.push_rect(r, BLACK, 1.0);
     assert_eq!(frame.total_instances(), 1);
 
     // Clear for next frame.
@@ -116,11 +137,13 @@ fn clear_and_reuse() {
     assert!(frame.is_empty());
 
     // Second frame.
-    frame
-        .glyphs
-        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
-    frame
-        .glyphs
-        .push_glyph(8.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0, 0);
+    frame.glyphs.push_glyph(r, [0.0; 4], WHITE, 1.0, 0);
+    let r2 = ScreenRect {
+        x: 8.0,
+        y: 0.0,
+        w: 8.0,
+        h: 16.0,
+    };
+    frame.glyphs.push_glyph(r2, [0.0; 4], WHITE, 1.0, 0);
     assert_eq!(frame.total_instances(), 2);
 }

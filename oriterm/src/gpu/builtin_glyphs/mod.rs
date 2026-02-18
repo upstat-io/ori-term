@@ -135,6 +135,10 @@ pub(crate) fn ensure_builtins_cached(
 }
 
 /// Cache a single decoration pattern if not already present.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "cache key, cell metrics, atlas resources, and rasterization function"
+)]
 fn cache_decoration(
     glyph_id: u16,
     size_q6: u32,
@@ -191,6 +195,10 @@ impl Canvas {
     /// Uses `floor()` for the start edge and `ceil()` for the end edge to
     /// ensure complete coverage of the specified area. Out-of-bounds regions
     /// are clipped.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "canvas rasterization: spatial coordinates and alpha"
+    )]
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, alpha: u8) {
         let x0 = (x.floor() as i32).max(0) as u32;
         let y0 = (y.floor() as i32).max(0) as u32;
@@ -220,6 +228,10 @@ impl Canvas {
     /// Uses signed-distance-field evaluation: each pixel's alpha is determined
     /// by its perpendicular distance to the line segment, with a 1px anti-alias
     /// transition zone at the edges.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "canvas rasterization: endpoints and thickness"
+    )]
     pub fn fill_line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32) {
         let dx = x1 - x0;
         let dy = y1 - y0;

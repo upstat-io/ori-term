@@ -11,6 +11,19 @@
 
 use oriterm_core::Rgb;
 
+/// Screen-space rectangle for GPU instance positioning.
+#[derive(Debug, Clone, Copy)]
+pub struct ScreenRect {
+    /// Pixel X of top-left corner.
+    pub x: f32,
+    /// Pixel Y of top-left corner.
+    pub y: f32,
+    /// Width in pixels.
+    pub w: f32,
+    /// Height in pixels.
+    pub h: f32,
+}
+
 /// Bytes per instance record in the GPU buffer.
 pub const INSTANCE_SIZE: usize = 80;
 
@@ -107,12 +120,12 @@ impl InstanceWriter {
     /// Push a solid-color rectangle instance.
     ///
     /// UV coordinates are zeroed (no texture sampling for rects).
-    pub fn push_rect(&mut self, x: f32, y: f32, w: f32, h: f32, bg: Rgb, alpha: f32) {
+    pub fn push_rect(&mut self, rect: ScreenRect, bg: Rgb, alpha: f32) {
         self.push_instance(
-            x,
-            y,
-            w,
-            h,
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0],
             rgb_to_floats(bg, alpha),
@@ -125,22 +138,23 @@ impl InstanceWriter {
     ///
     /// `uv` is `[u_left, v_top, u_width, v_height]` in atlas texture
     /// coordinates (0..1). `atlas_page` selects the texture array layer.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "glyph instance: screen rect, UV coords, color, atlas page"
+    )]
     pub fn push_glyph(
         &mut self,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
+        rect: ScreenRect,
         uv: [f32; 4],
         fg: Rgb,
         alpha: f32,
         atlas_page: u32,
     ) {
         self.push_instance(
-            x,
-            y,
-            w,
-            h,
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
             uv,
             rgb_to_floats(fg, alpha),
             [0.0, 0.0, 0.0, 0.0],
@@ -153,12 +167,12 @@ impl InstanceWriter {
     ///
     /// Color is written to the `bg_color` field (same as rects) so cursors
     /// render correctly with the background pipeline (solid-fill shader).
-    pub fn push_cursor(&mut self, x: f32, y: f32, w: f32, h: f32, color: Rgb, alpha: f32) {
+    pub fn push_cursor(&mut self, rect: ScreenRect, color: Rgb, alpha: f32) {
         self.push_instance(
-            x,
-            y,
-            w,
-            h,
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0],
             rgb_to_floats(color, alpha),
@@ -183,6 +197,10 @@ impl InstanceWriter {
     }
 
     /// Encode and append one 80-byte instance record.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "private 80-byte GPU record encoder: position, UV, colors, kind, page"
+    )]
     fn push_instance(
         &mut self,
         x: f32,

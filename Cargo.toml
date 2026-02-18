@@ -59,11 +59,11 @@ redundant_pub_crate = "allow"
 significant_drop_tightening = "allow"
 similar_names = "allow"
 suboptimal_flops = "allow"
-too_many_arguments = "allow"
-too_many_lines = "allow"
+too_many_arguments = "deny"
+too_many_lines = "deny"
 uninlined_format_args = "allow"
-unreadable_literal = "allow"
-unused_self = "allow"
+unreadable_literal = "deny"
+unused_self = "deny"
 
 [patch.crates-io]
 vte = { path = "crates/vte" }

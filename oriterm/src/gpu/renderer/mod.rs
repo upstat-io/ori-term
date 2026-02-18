@@ -30,7 +30,9 @@ use super::state::GpuState;
 use crate::font::collection::size_key;
 use crate::font::{CellMetrics, FontCollection, GlyphFormat, GlyphStyle, RasterKey};
 use crate::gpu::frame_input::ViewportSize;
-use helpers::{ShapingScratch, ensure_buffer, ensure_shaped_glyphs_cached, shape_frame};
+use helpers::{
+    ShapingScratch, ensure_shaped_glyphs_cached, record_draw, shape_frame, upload_buffer,
+};
 
 // ── Error type ──
 
@@ -261,44 +263,35 @@ impl GpuRenderer {
         self.uniform_buffer
             .write_screen_size(queue, vp.width as f32, vp.height as f32);
 
-        // Upload instance data to GPU buffers.
-        let bg_buf = ensure_buffer(
+        // Upload instance data to GPU buffers (ensure + write in one call).
+        upload_buffer(
             device,
+            queue,
             &mut self.bg_buffer,
             self.prepared.backgrounds.as_bytes(),
             "bg_instance_buffer",
         );
-        let fg_buf = ensure_buffer(
+        upload_buffer(
             device,
+            queue,
             &mut self.fg_buffer,
             self.prepared.glyphs.as_bytes(),
             "fg_instance_buffer",
         );
-        let color_fg_buf = ensure_buffer(
+        upload_buffer(
             device,
+            queue,
             &mut self.color_fg_buffer,
             self.prepared.color_glyphs.as_bytes(),
             "color_fg_instance_buffer",
         );
-        let cur_buf = ensure_buffer(
+        upload_buffer(
             device,
+            queue,
             &mut self.cursor_buffer,
             self.prepared.cursors.as_bytes(),
             "cursor_instance_buffer",
         );
-
-        if let Some(buf) = bg_buf {
-            queue.write_buffer(buf, 0, self.prepared.backgrounds.as_bytes());
-        }
-        if let Some(buf) = fg_buf {
-            queue.write_buffer(buf, 0, self.prepared.glyphs.as_bytes());
-        }
-        if let Some(buf) = color_fg_buf {
-            queue.write_buffer(buf, 0, self.prepared.color_glyphs.as_bytes());
-        }
-        if let Some(buf) = cur_buf {
-            queue.write_buffer(buf, 0, self.prepared.cursors.as_bytes());
-        }
 
         // Encode render commands.
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -328,48 +321,45 @@ impl GpuRenderer {
             });
 
             let uniform_bg = self.uniform_buffer.bind_group();
+            let mono_atlas = Some(self.atlas_bind_group.bind_group());
+            let color_atlas = Some(self.color_atlas_bind_group.bind_group());
 
             // Draw 1: Backgrounds (solid-color cell rects).
-            if !self.prepared.backgrounds.is_empty() {
-                if let Some(buf) = &self.bg_buffer {
-                    pass.set_pipeline(&self.bg_pipeline);
-                    pass.set_bind_group(0, uniform_bg, &[]);
-                    pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..4, 0..self.prepared.backgrounds.len() as u32);
-                }
-            }
-
+            record_draw(
+                &mut pass,
+                &self.bg_pipeline,
+                uniform_bg,
+                None,
+                self.bg_buffer.as_ref(),
+                self.prepared.backgrounds.len() as u32,
+            );
             // Draw 2: Monochrome glyphs (R8Unorm atlas, tinted by fg_color).
-            if !self.prepared.glyphs.is_empty() {
-                if let Some(buf) = &self.fg_buffer {
-                    pass.set_pipeline(&self.fg_pipeline);
-                    pass.set_bind_group(0, uniform_bg, &[]);
-                    pass.set_bind_group(1, self.atlas_bind_group.bind_group(), &[]);
-                    pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..4, 0..self.prepared.glyphs.len() as u32);
-                }
-            }
-
+            record_draw(
+                &mut pass,
+                &self.fg_pipeline,
+                uniform_bg,
+                mono_atlas,
+                self.fg_buffer.as_ref(),
+                self.prepared.glyphs.len() as u32,
+            );
             // Draw 3: Color glyphs (Rgba8Unorm atlas, rendered as-is).
-            if !self.prepared.color_glyphs.is_empty() {
-                if let Some(buf) = &self.color_fg_buffer {
-                    pass.set_pipeline(&self.color_fg_pipeline);
-                    pass.set_bind_group(0, uniform_bg, &[]);
-                    pass.set_bind_group(1, self.color_atlas_bind_group.bind_group(), &[]);
-                    pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..4, 0..self.prepared.color_glyphs.len() as u32);
-                }
-            }
-
+            record_draw(
+                &mut pass,
+                &self.color_fg_pipeline,
+                uniform_bg,
+                color_atlas,
+                self.color_fg_buffer.as_ref(),
+                self.prepared.color_glyphs.len() as u32,
+            );
             // Draw 4: Cursors (solid-color rects via bg pipeline).
-            if !self.prepared.cursors.is_empty() {
-                if let Some(buf) = &self.cursor_buffer {
-                    pass.set_pipeline(&self.bg_pipeline);
-                    pass.set_bind_group(0, uniform_bg, &[]);
-                    pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..4, 0..self.prepared.cursors.len() as u32);
-                }
-            }
+            record_draw(
+                &mut pass,
+                &self.bg_pipeline,
+                uniform_bg,
+                None,
+                self.cursor_buffer.as_ref(),
+                self.prepared.cursors.len() as u32,
+            );
         }
 
         queue.submit(std::iter::once(encoder.finish()));

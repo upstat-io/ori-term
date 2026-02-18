@@ -379,6 +379,10 @@ fn select_alpha_mode(caps: &wgpu::SurfaceCapabilities) -> wgpu::CompositeAlphaMo
 ///
 /// Single source of truth for surface config — called from both `try_init()`
 /// (initial probe) and `create_surface()` (per-window).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "wgpu SurfaceConfiguration: format, alpha mode, viewport dimensions"
+)]
 fn build_surface_config(
     surface_format: wgpu::TextureFormat,
     render_format: wgpu::TextureFormat,
