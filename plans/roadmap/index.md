@@ -474,6 +474,27 @@ benchmarks, criterion, throughput, latency, FPS, regression
 
 ---
 
+### Section 38: Terminal Protocol Extensions
+**File:** `section-38-protocol-extensions.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+DA, DA1, DA2, DA3, Device Attributes, primary, secondary, tertiary
+DSR, Device Status Report, CSI 5 n, CSI 6 n, cursor position report, CPR
+DECRQM, Request Mode, CSI ? Pm $ p, mode query, progressive enhancement
+XTGETTCAP, DCS + q, terminfo query, capability discovery
+DECRQSS, Request Setting, DCS $ q, SGR query, scroll region query
+OSC 4, OSC 10, OSC 11, OSC 12, color query, palette query, theme detection
+OSC 104, OSC 110, OSC 111, OSC 112, reset color
+extended underline, SGR 4:3, curly underline, dotted, dashed, double
+underline color, SGR 58, SGR 59, colored underline
+overline, SGR 53, SGR 55
+CSI t, window manipulation, window size, cell size, report, resize, iconify
+DCS passthrough, tmux passthrough, nested terminal
+capability reporting, progressive enhancement, feature discovery
+```
+
+---
+
 ### Section 24: Visual Polish
 **File:** `section-24-visual-polish.md` | **Tier:** 6 | **Status:** Not Started
 
@@ -678,6 +699,53 @@ path mapping, win_to_wsl, wsl_to_win, WSLENV
 
 ---
 
+### Section 36: Remote Attach + Network Transport
+**File:** `section-36-remote-attach.md` | **Tier:** 7A | **Status:** Not Started
+
+```
+remote attach, remote mux, network transport, TCP, TLS, rustls
+Transport trait, LocalTransport, TcpTlsTransport, SshTunnelTransport
+TOFU, trust on first use, certificate pinning, known_hosts, self-signed
+listen_address, port 4622, dual-stack, IPv4, IPv6, connection limit
+authentication, AuthMethod, SshKey, Token, challenge-response, nonce
+authorized_keys, SSH agent, token auth, pre-shared secret, rate limiting
+session token, reconnect token, brute-force resistant
+RemoteMuxDomain, Domain trait, remote proxy, mixed local+remote
+auto_reconnect, exponential backoff, reconnecting overlay, domain picker
+oriterm connect, CLI, --ssh, --list, --status, SSH tunnel auto-detect
+bandwidth-aware, RTT, EWMA, ping, pong, connection quality, jitter
+adaptive coalescing, adaptive compression, zstd level, delta encoding
+viewport-first rendering, scrollback on demand, progressive sync
+predictive local echo, Mosh-style, reconcile, cautious, aggressive
+connection quality indicator, green, yellow, red, latency display
+```
+
+---
+
+### Section 37: TUI Client
+**File:** `section-37-tui-client.md` | **Tier:** 7A | **Status:** Not Started
+
+```
+oriterm-tui, TUI client, terminal-in-terminal, headless, crossterm
+tmux replacement, attach, detach, session management, prefix key
+TuiApp, TuiRenderer, BufWriter, synchronized output, diff rendering
+tab bar TUI, status bar, pane area, box-drawing, split borders
+cell-by-cell rendering, escape sequence, SGR, color passthrough
+color adaptation, truecolor, 256-color, 16-color, NO_COLOR, downgrade
+floating pane TUI, overlay, z-order, shadow effect, box-drawing border
+cursor passthrough, DECSCUSR, focused pane cursor, hide unfocused
+prefix key, Ctrl+B, prefix mode, normal mode, copy mode
+split horizontal, split vertical, zoom, unzoom, pane navigation
+mouse input, click focus, tab switch, drag resize, scroll forward
+attach flow, raw mode, subscribe, event loop, crossterm event poll
+detach, Prefix+d, unsubscribe, restore terminal, RAII cleanup
+TuiCleanup, Drop guard, panic hook, SIGINT, SIGTERM, SIGHUP
+session list, new-session, kill-session, multi-client, shared session
+remote attach TUI, --ssh, --host, connection status, auto-detach
+```
+
+---
+
 ## Quick Reference
 
 | ID | Title | File | Tier | Status |
@@ -706,6 +774,7 @@ path mapping, win_to_wsl, wsl_to_win, WSLENV
 | 21 | Context Menu & Window Controls | `section-21-context-menu.md` | 4 | Not Started |
 | 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Not Started |
 | 23 | Performance & Damage Tracking | `section-23-performance.md` | 5 | Not Started |
+| 38 | Terminal Protocol Extensions | `section-38-protocol-extensions.md` | 5 | Not Started |
 | 24 | Visual Polish | `section-24-visual-polish.md` | 6 | Not Started |
 | 25 | Theme System | `section-25-theme-system.md` | 6 | Not Started |
 | 26 | Split Panes | `section-26-split-panes.md` | 7 | Superseded → 29, 31, 33 |
@@ -718,6 +787,8 @@ path mapping, win_to_wsl, wsl_to_win, WSLENV
 | 33 | Split Navigation + Floating Panes | `section-33-split-nav-floating.md` | 4M | Not Started |
 | 34 | IPC Protocol + Daemon Mode | `section-34-ipc-daemon.md` | 7A | Not Started |
 | 35 | Session Persistence + Remote Domains | `section-35-persistence-remote.md` | 7A | Not Started |
+| 36 | Remote Attach + Network Transport | `section-36-remote-attach.md` | 7A | Not Started |
+| 37 | TUI Client | `section-37-tui-client.md` | 7A | Not Started |
 
 ## Tier Summary
 
@@ -729,10 +800,10 @@ path mapping, win_to_wsl, wsl_to_win, WSLENV
 | 3 | 08-14 | Interaction (keyboard, mouse, selection, search, config) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23 | Hardening (terminal modes, performance) |
+| 5 | 22-23, 38 | Hardening (terminal modes, performance, protocol extensions) |
 | 6 | 24-25 | Polish (visual refinements, themes) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
-| **7A** | **34-35** | **Server + persistence (daemon, IPC, sessions, SSH, WSL)** |
+| **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |
 
 ## Dependency DAG
 
@@ -765,6 +836,10 @@ path mapping, win_to_wsl, wsl_to_win, WSLENV
                |                        |
           22-23 Hardening               |
                |                        |
+          38 Protocol Extensions        |
+               |  (depends on 02, 06,   |
+               |   22)                  |
+               |                        |
           24-25 Polish                  |
                |                        |
           27-28 Advanced                |
@@ -775,7 +850,13 @@ path mapping, win_to_wsl, wsl_to_win, WSLENV
                             |     (depends on 32)
                             |
                        35 Session Persistence + Remote Domains
-                                  (depends on 34)
+                            |     (depends on 34)
+                            |
+                       36 Remote Attach + Network Transport
+                            |     (depends on 34; benefits from 35)
+                            |
+                       37 TUI Client (oriterm-tui)
+                                  (depends on 36; can connect locally via 34)
 
   ~~15~~ Tab Struct           -> SUPERSEDED by 30, 32
   ~~18~~ Multi-Window         -> SUPERSEDED by 32

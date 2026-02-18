@@ -66,6 +66,16 @@ ori_term/                           Workspace root
 │       ├── config/                 TOML config, file watcher
 │       ├── key_encoding/           Kitty + legacy encoding
 │       └── clipboard.rs
+├── oriterm_tui/                    TUI client binary (terminal-in-terminal)
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs                 CLI entry point (clap)
+│       ├── app.rs                  TuiApp, event loop, MuxClient
+│       ├── render.rs               Terminal-in-terminal rendering (crossterm)
+│       ├── input.rs                Input routing, prefix key handling
+│       ├── session.rs              Attach/detach/list/new-session
+│       ├── status_bar.rs           Bottom status bar
+│       └── theme.rs                Host terminal color adaptation
 ├── _old/                           Old prototype (reference only)
 ├── assets/
 └── plans/
@@ -74,21 +84,28 @@ ori_term/                           Workspace root
 ## Dependency Graph
 
 ```
-oriterm (binary) ──depends──> oriterm_mux (mux) ──depends──> oriterm_core (lib)
+oriterm (GUI binary) ──depends──> oriterm_mux (mux) ──depends──> oriterm_core (lib)
      │                              │                              │
      ├── winit                      ├── serde (optional)           ├── vte
      ├── wgpu                       ├── bincode (server mode)      ├── bitflags
      ├── swash                      ├── zstd (server mode)         ├── parking_lot
-     ├── rustybuzz                  └── (no GUI, no PTY)           ├── unicode-width
-     ├── portable-pty                                              ├── base64
+     ├── rustybuzz                  ├── rustls (remote transport)  ├── unicode-width
+     ├── portable-pty               └── (no GUI, no PTY)           ├── base64
      ├── serde, toml, notify                                       ├── log
      ├── window-vibrancy                                           └── regex
      ├── clipboard-win / arboard
      ├── oriterm_mux
      └── oriterm_core
+
+oriterm_tui (TUI binary) ──depends──> oriterm_mux ──depends──> oriterm_core
+     │                                     │
+     ├── crossterm                         (shared: protocol, client, domain types)
+     ├── clap
+     ├── oriterm_mux
+     └── oriterm_core
 ```
 
-Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, mux, or platform APIs. `oriterm_mux` has zero knowledge of GUI, fonts, or platform APIs — it is a pure multiplexing layer that depends only on `oriterm_core` for terminal types.
+Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, mux, or platform APIs. `oriterm_mux` has zero knowledge of GUI, fonts, or platform APIs — it is a pure multiplexing layer that depends only on `oriterm_core` for terminal types. `oriterm_tui` has zero knowledge of GPU, fonts, or windowing — it renders entirely via terminal escape sequences.
 
 ## Threading Model
 
@@ -97,6 +114,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | Main (UI) | process | winit EventLoop, windows, GpuState, GpuRenderer, FontCollection | microseconds (snapshot) |
 | PTY Reader | pane | PTY read handle, read buffer, VTE Processor | microseconds (parse chunk) |
 | Mux Server | process (daemon mode) | InProcessMux, socket listener, connections | microseconds (dispatch) |
+| TUI Main | process (oriterm-tui) | crossterm event loop, MuxClient, TuiRenderer | microseconds (render frame) |
 
 | Primitive | Per | Purpose |
 |-----------|-----|---------|
@@ -111,7 +129,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 
 **Mux event flow (daemon mode):** PTY Reader → `MuxEvent` → MuxServer → `OutputCoalescer` (1ms/16ms/100ms tiered) → push to client via IPC → GUI renders.
 
-## Section Overview (35 Sections, 10 Tiers)
+## Section Overview (38 Sections, 10 Tiers)
 
 ### Tier 0 — Core Library + Cross-Platform Architecture
 | Section | Title | What |
@@ -168,6 +186,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 |---------|-------|------|
 | 22 | Terminal Modes | Comprehensive DECSET/DECRST table, mode interactions, image protocol |
 | 23 | Performance & Damage Tracking | Damage tracking, ring buffer, parsing optimization, benchmarks |
+| 38 | Terminal Protocol Extensions | Capability reporting (DA, DECRQM, XTGETTCAP), color queries, extended SGR (underline styles/colors), window manipulation, DCS passthrough |
 
 ### Tier 6 — Polish
 | Section | Title | What |
@@ -182,11 +201,13 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 27 | Command Palette & Quick Terminal | Fuzzy search palette, global hotkey dropdown, notifications |
 | 28 | Extensibility | Lua scripting, custom shaders, smart paste, undo close tab |
 
-### Tier 7A — Server + Persistence (NEW)
+### Tier 7A — Server + Persistence + Remote (NEW)
 | Section | Title | What |
 |---------|-------|------|
 | 34 | IPC Protocol + Daemon Mode | Wire protocol (15-byte header, bincode+zstd), MuxServer daemon, OutputCoalescer (1ms push), MuxClient, auto-start daemon |
 | 35 | Session Persistence + Remote Domains | Session save/load, crash recovery, scrollback archive, SshDomain, WslDomain full implementation |
+| 36 | Remote Attach + Network Transport | TCP+TLS transport, SSH tunnel mode, authentication, MuxDomain for remote daemon, `oriterm connect` CLI, bandwidth-aware rendering |
+| 37 | TUI Client | `oriterm-tui` binary — terminal-in-terminal client, attach/detach, prefix key, split/float rendering via crossterm, tmux replacement |
 
 ## Milestones
 
@@ -201,10 +222,12 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | **M7: Interactive** | 08-14 complete | Keyboard, mouse, selection, clipboard, search, config, resize, URLs |
 | **M8: Multiplexing** | 29-33 complete | Split panes, floating panes, multi-tab, multi-window — all through mux layer |
 | **M8b: Chrome** | 16-17, 19-21 complete | Tab bar, drag/drop, event routing, shell integration, menus |
-| **M9: Hardened** | 22-23 complete | All terminal modes, performance optimized, damage tracking |
+| **M9: Hardened** | 22-23, 38 complete | All terminal modes, protocol extensions, performance optimized, damage tracking |
 | **M10: Polished** | 24-25 complete | Cursor blink, smooth scroll, 100+ themes, light/dark auto |
 | **M11: Advanced** | 27-28 complete | Command palette, Lua scripting |
 | **M12: Server mode** | 34-35 complete | Daemon keeps sessions alive, session persistence, SSH/WSL domains |
+| **M13: Remote attach** | 36 complete | Connect GUI to remote daemon, SSH tunnel or TLS, bandwidth-aware rendering |
+| **M14: TUI client** | 37 complete | `oriterm-tui` — headless attach/detach, terminal-in-terminal rendering, tmux replacement |
 
 ## Key References
 
