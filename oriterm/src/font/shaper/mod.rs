@@ -9,6 +9,15 @@
 //! Splitting into two phases lets callers create rustybuzz `Face` objects once
 //! per frame and reuse them across all rows.
 
+#[allow(dead_code, reason = "UI text shaping consumed by tab bar and overlays")]
+mod ui_text;
+
+#[allow(
+    unused_imports,
+    reason = "UI text shaping consumed by tab bar and overlays"
+)]
+pub use ui_text::{UiShapedGlyph, measure_text, shape_text_string, truncate_with_ellipsis};
+
 use oriterm_core::{Cell, CellFlags, RenderableCell};
 
 use super::collection::FontCollection;
