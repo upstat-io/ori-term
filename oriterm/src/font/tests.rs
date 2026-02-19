@@ -297,6 +297,16 @@ fn subpx_offset_out_of_range_defaults_to_zero() {
 }
 
 #[test]
+fn subpx_bin_negative_offsets() {
+    // Negative offsets use abs(fract), so -0.25 → same as 0.25.
+    assert_eq!(subpx_bin(-0.25), 1);
+    assert_eq!(subpx_bin(-0.50), 2);
+    assert_eq!(subpx_bin(-0.75), 3);
+    assert_eq!(subpx_bin(-1.0), 0);
+    assert_eq!(subpx_bin(-3.37), subpx_bin(0.37));
+}
+
+#[test]
 fn subpx_round_trip() {
     for phase in 0..4u8 {
         assert_eq!(

@@ -1368,6 +1368,31 @@ fn all_four_subpx_phases_rasterize_successfully() {
 }
 
 #[test]
+fn subpx_offset_preserves_bearing_and_advance() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('H', GlyphStyle::Regular);
+    let size_q6 = super::size_key(fc.size_px());
+
+    let g0 = fc
+        .rasterize(RasterKey::from_resolved(resolved, size_q6, true, 0))
+        .expect("phase 0 must rasterize")
+        .clone();
+    let g2 = fc
+        .rasterize(RasterKey::from_resolved(resolved, size_q6, true, 2))
+        .expect("phase 2 must rasterize");
+
+    assert_eq!(
+        g0.bearing_y, g2.bearing_y,
+        "bearing_y must be stable across phases",
+    );
+    assert!(
+        (g0.advance - g2.advance).abs() < f32::EPSILON,
+        "advance must be stable across phases",
+    );
+    assert_ne!(g0.bitmap, g2.bitmap, "bitmap should differ between phases");
+}
+
+#[test]
 fn raster_key_subpx_x_distinguishes_cache() {
     let k_phase0 = RasterKey {
         glyph_id: 42,
