@@ -764,16 +764,16 @@ LCD subpixel rendering uses the physical R/G/B subpixels of the display to achie
     - [x] **Pass bg_color as uniform/instance data**: the Prepare phase already computes bg_color per cell — pass it to the fg shader as an instance attribute
   - [x] **Recommended**: pass bg_color in the fg instance buffer (add 4 bytes per glyph instance)
 - [ ] Interaction with other features:
-  - [ ] Transparent backgrounds: subpixel rendering over transparency produces color fringing — fall back to grayscale alpha for cells with non-opaque backgrounds
-  - [ ] Selection highlighting: when selection inverts colors, subpixel glyphs must be re-resolved or fall back to grayscale
+  - [x] Transparent backgrounds: subpixel rendering over transparency produces color fringing — fall back to grayscale alpha for cells with non-opaque backgrounds
+  - [ ] Selection highlighting: when selection inverts colors, subpixel glyphs must be re-resolved or fall back to grayscale <!-- blocked-by:9 -->
   - [x] Color emoji: always grayscale alpha path (no subpixel for pre-colored bitmaps)
 - [x] **Tests**:
-  - [ ] Subpixel-rasterized glyph has wider bitmap than grayscale equivalent (3x horizontal)
-  - [ ] RGB vs BGR: channel order swapped correctly
+  - [x] Subpixel-rasterized glyph has wider bitmap than grayscale equivalent (3x horizontal)
+  - [x] RGB vs BGR: channel order swapped correctly
   - [x] Auto-disable: scale 2.0+ renders grayscale
-  - [ ] Config "none": forces grayscale regardless of scale
-  - [ ] Transparent cell: falls back to grayscale (no color fringing)
-  - [ ] Visual regression: compare subpixel vs grayscale rendering of reference string
+  - [x] Config "none": forces grayscale regardless of scale
+  - [x] Transparent cell: falls back to grayscale (no color fringing)
+  - [ ] Visual regression: compare subpixel vs grayscale rendering of reference string <!-- blocked-by:6.18 -->
 
 ---
 

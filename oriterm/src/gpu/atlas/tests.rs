@@ -672,3 +672,52 @@ fn color_atlas_insert_produces_color_kind() {
     let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
     assert_eq!(entry.kind, AtlasKind::Color);
 }
+
+#[test]
+fn subpixel_bitmap_4x_grayscale_bytes() {
+    // Subpixel glyphs store 4 bytes/pixel (per-channel RGBA coverage) vs
+    // grayscale's 1 byte/pixel — effectively 3x horizontal resolution
+    // encoded in the R, G, B channels.
+    let w = 8u32;
+    let h = 14u32;
+    let alpha_glyph = test_glyph(w, h);
+    let sp_glyph = subpixel_glyph(w, h);
+
+    assert_eq!(
+        alpha_glyph.bitmap.len(),
+        (w * h) as usize,
+        "grayscale: 1 byte per pixel",
+    );
+    assert_eq!(
+        sp_glyph.bitmap.len(),
+        (w * h * 4) as usize,
+        "subpixel: 4 bytes per pixel (RGBA per-channel coverage)",
+    );
+    assert_eq!(
+        sp_glyph.bitmap.len(),
+        alpha_glyph.bitmap.len() * 4,
+        "subpixel bitmap is 4x the size of grayscale",
+    );
+}
+
+#[test]
+fn bgr_atlas_insert_produces_subpixel_kind() {
+    // BGR subpixel glyphs route to the same AtlasKind::Subpixel as RGB.
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::SubpixelBgr);
+    let key = test_key(65);
+    let glyph = RasterizedGlyph {
+        width: 8,
+        height: 14,
+        bearing_x: 0,
+        bearing_y: 14,
+        advance: 8.0,
+        format: GlyphFormat::SubpixelBgr,
+        bitmap: vec![0xFF; 8 * 14 * 4],
+    };
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
+    assert_eq!(entry.kind, AtlasKind::Subpixel);
+}

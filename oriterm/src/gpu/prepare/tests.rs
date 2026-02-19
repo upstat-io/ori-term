@@ -1526,3 +1526,143 @@ fn wide_char_underline_spans_double_width() {
     assert_eq!(ul.size.0, 16.0);
     assert_eq!(ul.size.1, 1.0);
 }
+
+// ── Subpixel glyph routing (Section 6.16) ──
+
+#[test]
+fn subpixel_glyph_routes_to_subpixel_buffer() {
+    // A shaped glyph with AtlasKind::Subpixel should go to frame.subpixel_glyphs,
+    // not frame.glyphs (mono) or frame.color_glyphs.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(1, 1, "A");
+
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        size_q6,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+    };
+    map.insert(
+        key,
+        AtlasEntry {
+            kind: AtlasKind::Subpixel,
+            ..test_entry_for_glyph(42)
+        },
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
+        col_start: 0,
+        col_span: 1,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let shaped = shaped_one_row(1, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    assert_eq!(
+        frame.glyphs.len(),
+        0,
+        "subpixel glyph should NOT be in monochrome buffer",
+    );
+    assert_eq!(
+        frame.subpixel_glyphs.len(),
+        1,
+        "subpixel glyph should be in subpixel buffer",
+    );
+    assert_eq!(
+        frame.color_glyphs.len(),
+        0,
+        "subpixel glyph should NOT be in color buffer",
+    );
+}
+
+#[test]
+fn mixed_mono_subpixel_color_route_to_separate_buffers() {
+    // Three glyphs, one per atlas kind, all route to their correct buffers.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(3, 1, "ABC");
+
+    let mut map = HashMap::new();
+    // Mono glyph.
+    map.insert(
+        RasterKey {
+            glyph_id: 10,
+            face_idx: FaceIdx::REGULAR,
+            size_q6,
+            synthetic: SyntheticFlags::NONE,
+            hinted: true,
+        },
+        test_entry_for_glyph(10), // default: AtlasKind::Mono
+    );
+    // Subpixel glyph.
+    map.insert(
+        RasterKey {
+            glyph_id: 20,
+            face_idx: FaceIdx::REGULAR,
+            size_q6,
+            synthetic: SyntheticFlags::NONE,
+            hinted: true,
+        },
+        AtlasEntry {
+            kind: AtlasKind::Subpixel,
+            ..test_entry_for_glyph(20)
+        },
+    );
+    // Color glyph.
+    map.insert(
+        RasterKey {
+            glyph_id: 30,
+            face_idx: FaceIdx::REGULAR,
+            size_q6,
+            synthetic: SyntheticFlags::NONE,
+            hinted: true,
+        },
+        AtlasEntry {
+            kind: AtlasKind::Color,
+            ..test_entry_for_glyph(30)
+        },
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 10,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 0,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 20,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 1,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 30,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 2,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    assert_eq!(frame.glyphs.len(), 1, "1 mono glyph");
+    assert_eq!(frame.subpixel_glyphs.len(), 1, "1 subpixel glyph");
+    assert_eq!(frame.color_glyphs.len(), 1, "1 color glyph");
+}

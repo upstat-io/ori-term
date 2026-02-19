@@ -44,6 +44,75 @@ fn subpixel_mode_glyph_format() {
     assert_eq!(SubpixelMode::None.glyph_format(), GlyphFormat::Alpha);
 }
 
+#[test]
+fn subpixel_none_forces_alpha_regardless_of_scale() {
+    // Config "none" overrides scale factor — always produces Alpha (grayscale).
+    assert_eq!(
+        SubpixelMode::None.glyph_format(),
+        GlyphFormat::Alpha,
+        "None at any scale → Alpha",
+    );
+    // Even though 1x scale would normally give RGB, explicit None wins.
+    assert_ne!(
+        SubpixelMode::None.glyph_format(),
+        SubpixelMode::from_scale_factor(1.0).glyph_format(),
+        "explicit None differs from auto-detected 1x",
+    );
+}
+
+#[test]
+fn subpixel_rgb_and_bgr_are_distinct() {
+    let rgb = SubpixelMode::Rgb.glyph_format();
+    let bgr = SubpixelMode::Bgr.glyph_format();
+
+    // Both are subpixel formats.
+    assert!(rgb.is_subpixel());
+    assert!(bgr.is_subpixel());
+
+    // But they are not equal — channel order differs.
+    assert_ne!(
+        rgb, bgr,
+        "RGB and BGR produce different GlyphFormat variants"
+    );
+}
+
+// ── SubpixelMode::for_display (transparent background fallback) ──
+
+#[test]
+fn subpixel_for_display_opaque_uses_scale_factor() {
+    // Fully opaque background delegates to scale factor logic.
+    assert_eq!(
+        SubpixelMode::for_display(1.0, 1.0),
+        SubpixelMode::Rgb,
+        "opaque + 1x → RGB",
+    );
+    assert_eq!(
+        SubpixelMode::for_display(2.0, 1.0),
+        SubpixelMode::None,
+        "opaque + 2x → None (HiDPI)",
+    );
+}
+
+#[test]
+fn subpixel_for_display_transparent_forces_none() {
+    // Transparent background disables subpixel regardless of scale factor.
+    assert_eq!(
+        SubpixelMode::for_display(1.0, 0.9),
+        SubpixelMode::None,
+        "transparent + 1x → None (fringing prevention)",
+    );
+    assert_eq!(
+        SubpixelMode::for_display(1.0, 0.5),
+        SubpixelMode::None,
+        "half-transparent + 1x → None",
+    );
+    assert_eq!(
+        SubpixelMode::for_display(1.0, 0.0),
+        SubpixelMode::None,
+        "fully transparent + 1x → None",
+    );
+}
+
 // ── GlyphFormat ──
 
 #[test]
