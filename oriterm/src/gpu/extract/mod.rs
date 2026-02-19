@@ -64,7 +64,6 @@ pub(crate) fn extract_frame<T: EventListener>(
 /// Like [`extract_frame`] but refills `out` in place, reusing the `Vec`
 /// allocations inside `out.content`. Avoids per-frame allocation for the
 /// `cells` and `damage` vectors (typically `lines × cols × 56` bytes).
-#[allow(dead_code, reason = "frame reuse optimization for later sections")]
 pub(crate) fn extract_frame_into<T: EventListener>(
     terminal: &FairMutex<Term<T>>,
     out: &mut FrameInput,

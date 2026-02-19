@@ -12,6 +12,8 @@ mod braille;
 pub(crate) mod decorations;
 mod powerline;
 
+use std::collections::HashSet;
+
 use wgpu::Queue;
 
 use oriterm_core::CellFlags;
@@ -70,10 +72,14 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
 /// block elements, braille, powerline) and patterned underline flags (curly,
 /// dotted, dashed). Built-in glyphs are rasterized individually on cache miss;
 /// decoration patterns are collected as flags and rasterized once after the scan.
+///
+/// `empty_keys` is the cross-atlas set of keys known to produce zero-size
+/// glyphs, shared with the shaped-glyph caching path.
 pub(crate) fn ensure_builtins_cached(
     input: &FrameInput,
     size_q6: u32,
     atlas: &mut GlyphAtlas,
+    empty_keys: &mut HashSet<RasterKey>,
     queue: &Queue,
 ) {
     let cell_w = input.cell_size.width.round() as u32;
@@ -88,11 +94,11 @@ pub(crate) fn ensure_builtins_cached(
         // Built-in geometric glyphs.
         if is_builtin(cell.ch) {
             let key = raster_key(cell.ch, size_q6);
-            if atlas.lookup_touch(key).is_none() && !atlas.is_known_empty(key) {
+            if atlas.lookup_touch(key).is_none() && !empty_keys.contains(&key) {
                 if let Some(glyph) = rasterize(cell.ch, cell_w, cell_h) {
                     atlas.insert(key, &glyph, queue);
                 } else {
-                    atlas.mark_empty(key);
+                    empty_keys.insert(key);
                 }
             }
         }
@@ -111,6 +117,7 @@ pub(crate) fn ensure_builtins_cached(
             size_q6,
             metrics,
             atlas,
+            empty_keys,
             queue,
             decorations::rasterize_curly,
         );
@@ -121,6 +128,7 @@ pub(crate) fn ensure_builtins_cached(
             size_q6,
             metrics,
             atlas,
+            empty_keys,
             queue,
             decorations::rasterize_dotted,
         );
@@ -131,6 +139,7 @@ pub(crate) fn ensure_builtins_cached(
             size_q6,
             metrics,
             atlas,
+            empty_keys,
             queue,
             decorations::rasterize_dashed,
         );
@@ -140,24 +149,25 @@ pub(crate) fn ensure_builtins_cached(
 /// Cache a single decoration pattern if not already present.
 #[expect(
     clippy::too_many_arguments,
-    reason = "cache key, cell metrics, atlas resources, and rasterization function"
+    reason = "cache key, cell metrics, atlas + empty set, and rasterization function"
 )]
 fn cache_decoration(
     glyph_id: u16,
     size_q6: u32,
     metrics: &CellMetrics,
     atlas: &mut GlyphAtlas,
+    empty_keys: &mut HashSet<RasterKey>,
     queue: &Queue,
     rasterize_fn: fn(&CellMetrics) -> Option<RasterizedGlyph>,
 ) {
     let key = decorations::decoration_key(glyph_id, size_q6);
-    if atlas.lookup_touch(key).is_some() || atlas.is_known_empty(key) {
+    if atlas.lookup_touch(key).is_some() || empty_keys.contains(&key) {
         return;
     }
     if let Some(glyph) = rasterize_fn(metrics) {
         atlas.insert(key, &glyph, queue);
     } else {
-        atlas.mark_empty(key);
+        empty_keys.insert(key);
     }
 }
 

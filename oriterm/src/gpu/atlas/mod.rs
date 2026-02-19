@@ -12,7 +12,7 @@
 
 mod rect_packer;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use wgpu::{
     Device, Extent3d, Queue, Texture, TextureDescriptor, TextureDimension, TextureFormat,
@@ -104,8 +104,6 @@ pub struct GlyphAtlas {
     pages: Vec<AtlasPage>,
     /// Glyph cache: `RasterKey` → atlas entry.
     cache: HashMap<RasterKey, AtlasEntry>,
-    /// Keys known to produce zero-size glyphs (spaces, non-printing chars).
-    empty_keys: HashSet<RasterKey>,
     page_size: u32,
     max_pages: u32,
     /// Monotonically increasing frame counter for LRU tracking.
@@ -137,7 +135,6 @@ impl GlyphAtlas {
                 glyph_count: 0,
             }],
             cache: HashMap::new(),
-            empty_keys: HashSet::new(),
             page_size: PAGE_SIZE,
             max_pages: MAX_PAGES,
             frame_counter: 0,
@@ -182,23 +179,6 @@ impl GlyphAtlas {
         }
     }
 
-    /// Whether the key is known to produce a zero-size glyph.
-    ///
-    /// Callers should skip rasterization when this returns `true`, since
-    /// the glyph will never produce an atlas entry.
-    pub fn is_known_empty(&self, key: RasterKey) -> bool {
-        self.empty_keys.contains(&key)
-    }
-
-    /// Record that a key produces no visible glyph.
-    ///
-    /// Prevents repeated fruitless rasterization attempts on subsequent
-    /// frames for codepoints that are in a built-in range but have no
-    /// rendering path.
-    pub fn mark_empty(&mut self, key: RasterKey) {
-        self.empty_keys.insert(key);
-    }
-
     /// Insert a rasterized glyph into the atlas.
     ///
     /// Finds space via guillotine packing, uploads the bitmap to the GPU, and
@@ -215,7 +195,6 @@ impl GlyphAtlas {
         }
 
         if glyph.width == 0 || glyph.height == 0 {
-            self.empty_keys.insert(key);
             return None;
         }
 
@@ -263,8 +242,9 @@ impl GlyphAtlas {
     /// Look up or insert a glyph in one call.
     ///
     /// If the key is already cached, returns the entry (touching LRU).
-    /// If the key is known empty, returns `None`. Otherwise, calls
-    /// `rasterize` to produce the glyph and inserts it.
+    /// Otherwise, calls `rasterize` to produce the glyph and inserts it.
+    /// Callers that maintain a separate empty-key set should check it
+    /// before calling this method.
     ///
     /// This unifies the lookup-rasterize-insert pattern used by
     /// [`ensure_glyphs_cached`](crate::gpu::renderer::GpuRenderer::ensure_glyphs_cached).
@@ -279,11 +259,6 @@ impl GlyphAtlas {
         if let Some(entry) = self.cache.get(&key).copied() {
             self.touch_page(entry.page);
             return Some(entry);
-        }
-
-        // Known empty — skip rasterization.
-        if self.empty_keys.contains(&key) {
-            return None;
         }
 
         // Cache miss — rasterize and insert.
@@ -327,7 +302,6 @@ impl GlyphAtlas {
     #[allow(dead_code, reason = "used in tests and font size change")]
     pub fn clear(&mut self) {
         self.cache.clear();
-        self.empty_keys.clear();
         for page in &mut self.pages {
             page.packer.reset();
             page.glyph_count = 0;

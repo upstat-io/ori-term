@@ -49,11 +49,16 @@ impl GpuRenderer {
         self.clear_and_recache(gpu);
     }
 
-    /// Clear all atlases, re-cache ASCII, and rebuild bind groups.
+    /// Clear all atlases and empty-key set, then re-cache ASCII.
+    ///
+    /// No bind group rebuild needed: `clear()` resets the packer and cache
+    /// but the underlying `Texture2DArray` and its `TextureView` are
+    /// pre-allocated at atlas creation and never change identity.
     fn clear_and_recache(&mut self, gpu: &GpuState) {
         self.atlas.clear();
         self.subpixel_atlas.clear();
         self.color_atlas.clear();
+        self.empty_keys.clear();
 
         let format = self.font_collection.format();
         if format.is_subpixel() {
@@ -65,18 +70,5 @@ impl GpuRenderer {
         } else {
             pre_cache_atlas(&mut self.atlas, &mut self.font_collection, &gpu.queue);
         }
-
-        self.atlas_bind_group
-            .rebuild(&gpu.device, &self.atlas_layout, self.atlas.view());
-        self.subpixel_atlas_bind_group.rebuild(
-            &gpu.device,
-            &self.atlas_layout,
-            self.subpixel_atlas.view(),
-        );
-        self.color_atlas_bind_group.rebuild(
-            &gpu.device,
-            &self.atlas_layout,
-            self.color_atlas.view(),
-        );
     }
 }
