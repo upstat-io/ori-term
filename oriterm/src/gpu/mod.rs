@@ -23,5 +23,5 @@ pub(crate) use transparency::apply_transparency;
 
 #[cfg(test)]
 mod pipeline_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu-tests"))]
 mod visual_regression;

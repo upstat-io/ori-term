@@ -8,7 +8,7 @@ use super::face::{
     build_face, cap_height_px, compute_metrics, embolden_strength, font_ref, has_glyph,
     validate_font,
 };
-use super::{FontCollection, FontData, FontSet};
+use super::{FontCollection, FontSet};
 use crate::font::discovery::EMBEDDED_FONT_DATA;
 use crate::font::{FaceIdx, GlyphFormat, GlyphStyle, HintingMode, RasterKey, SyntheticFlags};
 
@@ -24,20 +24,15 @@ fn system_collection(format: GlyphFormat) -> FontCollection {
 /// Guarantees no Bold/Italic/BoldItalic variants and no fallbacks, so
 /// style substitution tests behave deterministically.
 fn embedded_only_collection(format: GlyphFormat) -> FontCollection {
-    let font_set = FontSet {
-        family_name: "JetBrains Mono (embedded)".to_owned(),
-        regular: FontData {
-            data: Arc::new(EMBEDDED_FONT_DATA.to_vec()),
-            index: 0,
-        },
-        bold: None,
-        italic: None,
-        bold_italic: None,
-        has_variant: [true, false, false, false],
-        fallbacks: Vec::new(),
-    };
-    FontCollection::new(font_set, 12.0, 96.0, format, 400, HintingMode::Full)
-        .expect("collection must build")
+    FontCollection::new(
+        FontSet::embedded(),
+        12.0,
+        96.0,
+        format,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build")
 }
 
 // ── Face helpers ──
