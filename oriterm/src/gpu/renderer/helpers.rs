@@ -12,9 +12,10 @@ use wgpu::{
 use super::super::atlas::GlyphAtlas;
 use super::super::frame_input::FrameInput;
 use super::super::prepare::ShapedFrame;
-use crate::font::collection::size_key;
-use crate::font::shaper::{build_col_glyph_map, prepare_line, shape_prepared_runs};
-use crate::font::{FontCollection, GlyphFormat, RasterKey};
+use crate::font::{
+    FontCollection, GlyphFormat, RasterKey, build_col_glyph_map, prepare_line, shape_prepared_runs,
+    size_key,
+};
 
 /// Reusable per-frame scratch buffers for the shaping pipeline.
 ///
@@ -24,9 +25,9 @@ pub(super) struct ShapingScratch {
     /// Shaped frame output (glyph positions + col maps).
     pub(super) frame: ShapedFrame,
     /// Shaping run segments for the current row.
-    runs: Vec<crate::font::shaper::ShapingRun>,
+    runs: Vec<crate::font::ShapingRun>,
     /// Shaped glyphs for the current row.
-    glyphs: Vec<crate::font::shaper::ShapedGlyph>,
+    glyphs: Vec<crate::font::ShapedGlyph>,
     /// Column-to-glyph map for the current row.
     col_map: Vec<Option<usize>>,
     /// Rustybuzz buffer reused across frames to avoid per-frame allocation.

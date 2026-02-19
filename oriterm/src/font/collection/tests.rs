@@ -414,17 +414,17 @@ fn compute_metrics_decoration_fields() {
     );
 }
 
-// ── Pre-cache ──
+// ── Cache ──
 
 #[test]
-fn pre_cache_populates_ascii() {
+fn new_collection_has_empty_cache() {
     let fc = embedded_only_collection(GlyphFormat::Alpha);
-    // Space has no outline, so cache count may be less than full 95 printable chars.
-    // Most ASCII glyphs do have outlines.
-    assert!(
-        fc.cache_len() >= 90,
-        "pre-cache should populate most ASCII glyphs (got {})",
-        fc.cache_len()
+    // FontCollection::new() no longer pre-caches ASCII — the GPU renderer's
+    // pre_cache_atlas() fills both the HashMap and atlas in one pass.
+    assert_eq!(
+        fc.cache_len(),
+        0,
+        "new collection should start with empty cache"
     );
 }
 
@@ -940,21 +940,19 @@ fn embolden_strength_scales_with_size() {
     );
 }
 
-// ── Bold pre-caching (Section 6.14) ──
+// ── Bold face availability (Section 6.14) ──
 
 #[test]
-fn pre_cache_bold_populates() {
-    // System collection has a real Bold face → should cache Bold ASCII too.
-    let system = system_collection(GlyphFormat::Alpha);
-    let embedded = embedded_only_collection(GlyphFormat::Alpha);
-    // System collection with Bold face should have more cached glyphs than
-    // embedded-only (which has no Bold face and caches only Regular).
+fn bold_rasterization_works_when_available() {
+    // System collection may have a real Bold face — verify it can rasterize.
+    let mut system = system_collection(GlyphFormat::Alpha);
     if system.has_bold() {
+        let resolved = system.resolve('A', GlyphStyle::Bold);
+        let key = RasterKey::from_resolved(resolved, super::size_key(system.size_px()));
+        let glyph = system.rasterize(key);
         assert!(
-            system.cache_len() > embedded.cache_len(),
-            "Bold pre-cache should add glyphs (system={}, embedded={})",
-            system.cache_len(),
-            embedded.cache_len(),
+            glyph.is_some(),
+            "Bold 'A' should rasterize when Bold face exists"
         );
     }
 }
@@ -990,20 +988,19 @@ fn set_size_recomputes_metrics() {
 }
 
 #[test]
-fn set_size_clears_and_repopulates_cache() {
+fn set_size_clears_cache() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
-    let initial_count = fc.cache_len();
+    // Manually rasterize a glyph to populate the cache.
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let _ = fc.rasterize(key);
     assert!(
-        initial_count >= 90,
-        "initial pre-cache should populate ASCII"
+        fc.cache_len() > 0,
+        "cache should have entries after rasterize"
     );
 
     fc.set_size(18.0, 96.0);
-    assert!(
-        fc.cache_len() >= 90,
-        "set_size should re-pre-cache ASCII (got {})",
-        fc.cache_len(),
-    );
+    assert_eq!(fc.cache_len(), 0, "set_size should clear the glyph cache",);
 }
 
 #[test]

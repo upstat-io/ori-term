@@ -8,8 +8,7 @@ use super::{
     AtlasLookup, ShapedFrame, prepare_frame, prepare_frame_into, prepare_frame_shaped,
     prepare_frame_shaped_into,
 };
-use crate::font::shaper::ShapedGlyph;
-use crate::font::{FaceIdx, GlyphStyle, RasterKey, SyntheticFlags};
+use crate::font::{FaceIdx, GlyphStyle, RasterKey, ShapedGlyph, SyntheticFlags};
 use crate::gpu::atlas::AtlasEntry;
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
@@ -888,7 +887,7 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
 fn shaped_one_row(cols: usize, glyphs: &[ShapedGlyph], size_q6: u32) -> ShapedFrame {
     let mut sf = ShapedFrame::new(cols, size_q6);
     let mut col_map = Vec::new();
-    crate::font::shaper::build_col_glyph_map(glyphs, cols, &mut col_map);
+    crate::font::build_col_glyph_map(glyphs, cols, &mut col_map);
     sf.push_row(glyphs, &col_map);
     sf
 }
@@ -1094,7 +1093,7 @@ fn shaped_empty_glyphs_produces_bg_only() {
     // Push an empty row (no glyphs).
     let empty_glyphs: Vec<ShapedGlyph> = Vec::new();
     let mut col_map = Vec::new();
-    crate::font::shaper::build_col_glyph_map(&empty_glyphs, 3, &mut col_map);
+    crate::font::build_col_glyph_map(&empty_glyphs, 3, &mut col_map);
 
     let mut sf = shaped;
     sf.push_row(&empty_glyphs, &col_map);
@@ -1315,7 +1314,7 @@ fn shaped_into_reuses_allocation() {
     for row_start in (0..50).step_by(10) {
         let row_glyphs = &glyphs[row_start..row_start + 10];
         let mut col_map = Vec::new();
-        crate::font::shaper::build_col_glyph_map(row_glyphs, 10, &mut col_map);
+        crate::font::build_col_glyph_map(row_glyphs, 10, &mut col_map);
         sf.push_row(row_glyphs, &col_map);
     }
 

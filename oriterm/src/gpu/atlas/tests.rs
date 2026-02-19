@@ -1,7 +1,6 @@
 //! Tests for the glyph atlas.
 
-use crate::font::collection::RasterizedGlyph;
-use crate::font::{FaceIdx, GlyphFormat, RasterKey, SyntheticFlags};
+use crate::font::{FaceIdx, GlyphFormat, RasterKey, RasterizedGlyph, SyntheticFlags};
 use crate::gpu::state::GpuState;
 
 use super::{GLYPH_PADDING, GlyphAtlas, PAGE_SIZE};

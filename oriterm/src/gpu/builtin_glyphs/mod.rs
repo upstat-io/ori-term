@@ -16,8 +16,9 @@ use wgpu::Queue;
 
 use oriterm_core::CellFlags;
 
-use crate::font::collection::RasterizedGlyph;
-use crate::font::{CellMetrics, FaceIdx, GlyphFormat, RasterKey, SyntheticFlags, is_builtin};
+use crate::font::{
+    CellMetrics, FaceIdx, GlyphFormat, RasterKey, RasterizedGlyph, SyntheticFlags, is_builtin,
+};
 
 use super::atlas::GlyphAtlas;
 use super::frame_input::FrameInput;
