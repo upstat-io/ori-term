@@ -8,10 +8,16 @@ impl FontCollection {
 
     /// Resolve a character to a font face and glyph ID.
     ///
-    /// Tries the requested style, falls back through style substitution
-    /// (with appropriate synthetic flags), then tries fallback fonts,
-    /// and finally returns .notdef from Regular.
+    /// Checks the codepoint map first. If the character isn't mapped (or the
+    /// mapped face lacks the glyph), tries the requested style, falls back
+    /// through style substitution (with appropriate synthetic flags), then
+    /// tries fallback fonts, and finally returns .notdef from Regular.
     pub fn resolve(&self, ch: char, style: GlyphStyle) -> ResolvedGlyph {
+        // 0. Check codepoint map override.
+        if let Some(resolved) = self.resolve_codepoint_override(ch) {
+            return resolved;
+        }
+
         let idx = style as usize;
 
         // 1. Try requested style.
@@ -62,12 +68,17 @@ impl FontCollection {
 
     /// Resolve preferring fallback fonts for emoji presentation (VS16).
     ///
-    /// When VS16 (U+FE0F) forces emoji presentation, tries fallback fonts
-    /// first because color emoji fonts (Segoe UI Emoji, Noto Color Emoji)
-    /// are typically in the fallback chain, not the primary terminal font.
+    /// Checks the codepoint map first. Otherwise, tries fallback fonts first
+    /// because color emoji fonts (Segoe UI Emoji, Noto Color Emoji) are
+    /// typically in the fallback chain, not the primary terminal font.
     ///
     /// Falls back to normal [`resolve`] if no fallback covers the character.
     pub fn resolve_prefer_emoji(&self, ch: char, style: GlyphStyle) -> ResolvedGlyph {
+        // 0. Check codepoint map override.
+        if let Some(resolved) = self.resolve_codepoint_override(ch) {
+            return resolved;
+        }
+
         // Try fallback fonts first (color emoji fonts are typically here).
         for (i, fb) in self.fallbacks.iter().enumerate() {
             let gid = glyph_id(fb, ch);
@@ -94,6 +105,29 @@ impl FontCollection {
                 glyph_id: gid,
                 face_idx: FaceIdx::REGULAR,
                 synthetic: flags,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Check the codepoint map for an explicit face override.
+    ///
+    /// Returns `None` if the codepoint isn't mapped or if the mapped face
+    /// doesn't contain the glyph, allowing normal resolution to proceed.
+    fn resolve_codepoint_override(&self, ch: char) -> Option<ResolvedGlyph> {
+        let face_idx = self.codepoint_map.lookup(ch as u32)?;
+        let fd = if let Some(fb_i) = face_idx.fallback_index() {
+            self.fallbacks.get(fb_i)?
+        } else {
+            self.primary.get(face_idx.as_usize())?.as_ref()?
+        };
+        let gid = glyph_id(fd, ch);
+        if gid != 0 {
+            Some(ResolvedGlyph {
+                glyph_id: gid,
+                face_idx,
+                synthetic: SyntheticFlags::NONE,
             })
         } else {
             None

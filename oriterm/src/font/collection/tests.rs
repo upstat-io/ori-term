@@ -1664,3 +1664,72 @@ fn nonvariable_font_synthesis_still_works() {
         "synthetic bold must still differ from regular on non-variable fonts",
     );
 }
+
+// ── Codepoint map (Section 6.20) ──
+
+#[test]
+fn codepoint_map_overrides_resolve() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    // Map ASCII 'A' to the Regular face (FaceIdx(0)). The embedded font
+    // covers it, so the override should return a valid glyph.
+    fc.add_codepoint_mapping(0x41, 0x5A, FaceIdx::REGULAR);
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    assert_ne!(resolved.glyph_id, 0, "mapped codepoint must resolve");
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
+}
+
+#[test]
+fn codepoint_map_miss_falls_through() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    // Map only a narrow range.
+    fc.add_codepoint_mapping(0xE000, 0xE0FF, FaceIdx::REGULAR);
+    // Resolve a character outside the mapped range — should fall through
+    // to normal resolution.
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    assert_ne!(resolved.glyph_id, 0, "'A' must resolve via normal chain");
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
+}
+
+#[test]
+fn codepoint_map_invalid_face_falls_through() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    // Map to a face index that doesn't exist (no fallbacks loaded).
+    fc.add_codepoint_mapping(0x41, 0x5A, FaceIdx(99));
+    // Should fall through to normal resolution since FaceIdx(99) is invalid.
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    assert_ne!(resolved.glyph_id, 0, "'A' must resolve via normal chain");
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
+}
+
+#[test]
+fn codepoint_map_glyph_not_in_mapped_face_falls_through() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    // Map CJK range to the embedded font (which doesn't cover CJK).
+    fc.add_codepoint_mapping(0x4E00, 0x9FFF, FaceIdx::REGULAR);
+    // CJK char should fall through since the embedded font lacks it.
+    let resolved = fc.resolve('\u{4E00}', GlyphStyle::Regular);
+    // Will ultimately fall back to .notdef since there are no fallbacks.
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
+}
+
+#[test]
+fn codepoint_map_overrides_emoji_resolve() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    // Map an emoji codepoint to Regular.
+    fc.add_codepoint_mapping(0x1F600, 0x1F64F, FaceIdx::REGULAR);
+    // Resolve via emoji path — should still check codepoint map first.
+    let resolved = fc.resolve_prefer_emoji('\u{1F600}', GlyphStyle::Regular);
+    // The embedded font doesn't have emoji, so it falls through to normal.
+    // But the map is checked first in resolve_prefer_emoji.
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
+}
+
+#[test]
+fn codepoint_map_no_entries_is_noop() {
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    assert!(!fc.has_codepoint_mappings());
+    // Normal resolution should work unchanged.
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    assert_ne!(resolved.glyph_id, 0);
+    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
+}

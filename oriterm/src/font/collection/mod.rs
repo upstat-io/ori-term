@@ -4,6 +4,7 @@
 //! validates faces, computes cell metrics, resolves characters to glyph IDs,
 //! and rasterizes glyphs into bitmaps ready for GPU atlas upload.
 
+mod codepoint_map;
 mod face;
 mod loading;
 mod metadata;
@@ -18,6 +19,8 @@ use super::{
     CellMetrics, FaceIdx, FontError, GlyphFormat, GlyphStyle, HintingMode, RasterKey,
     ResolvedGlyph, SyntheticFlags,
 };
+use codepoint_map::CodepointMap;
+pub(crate) use codepoint_map::parse_hex_range;
 pub use face::size_key;
 use face::{FaceData, build_face, cap_height_px, compute_metrics, rasterize_from_face};
 pub use loading::FontSet;
@@ -81,6 +84,8 @@ pub struct FontCollection {
     ///
     /// Default: `["liga", "calt"]` (standard ligatures + contextual alternates).
     features: Vec<rustybuzz::Feature>,
+    /// Codepoint-to-face overrides. Checked before the normal fallback chain.
+    codepoint_map: CodepointMap,
 }
 
 impl FontCollection {
@@ -169,6 +174,7 @@ impl FontCollection {
             weight,
             family_name: font_set.family_name,
             features: default_features(),
+            codepoint_map: CodepointMap::new(),
         };
 
         Ok(collection)
@@ -288,6 +294,24 @@ impl FontCollection {
         }
 
         faces
+    }
+
+    // ── Codepoint map ──
+
+    /// Add a codepoint-to-face override.
+    ///
+    /// Codepoints in `start..=end` will resolve to `face_idx` before
+    /// consulting the normal primary + fallback chain. If the mapped face
+    /// doesn't contain the codepoint, normal resolution is used.
+    #[allow(dead_code, reason = "wired by config system in Section 13")]
+    pub fn add_codepoint_mapping(&mut self, start: u32, end: u32, face_idx: FaceIdx) {
+        self.codepoint_map.add(start, end, face_idx);
+    }
+
+    /// Whether the codepoint map has any entries.
+    #[allow(dead_code, reason = "wired by config system in Section 13")]
+    pub fn has_codepoint_mappings(&self) -> bool {
+        !self.codepoint_map.is_empty()
     }
 
     // ── Public operations ──

@@ -69,7 +69,7 @@ Top-level config and per-section structs. All fields have defaults via `#[serde(
     - `behavior: BehaviorConfig`
     - `bell: BellConfig`
     - `keybind: Vec<KeybindConfig>` — user keybinding overrides
-- [ ] `FontConfig` struct <!-- unblocks:6.15 -->
+- [ ] `FontConfig` struct <!-- unblocks:6.15 --><!-- unblocks:6.20 -->
   - [ ] Fields:
     - `size: f32` — point size (default: from render::FONT_SIZE)
     - `family: Option<String>` — primary font family name
