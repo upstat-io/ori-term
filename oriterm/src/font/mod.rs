@@ -17,6 +17,8 @@ use std::fmt;
 
 use bitflags::bitflags;
 
+#[allow(unused_imports, reason = "wired by config system in Section 13")]
+pub(crate) use collection::parse_hex_range;
 pub use collection::{FontCollection, FontSet, RasterizedGlyph, size_key};
 pub use shaper::{ShapedGlyph, ShapingRun, build_col_glyph_map, prepare_line, shape_prepared_runs};
 

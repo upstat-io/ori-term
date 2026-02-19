@@ -64,7 +64,7 @@ sections:
     status: in-progress
   - id: "6.20"
     title: Font Codepoint Mapping
-    status: not-started
+    status: in-progress
   - id: "6.21"
     title: Section Completion
     status: not-started
@@ -921,10 +921,10 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 
 **Reference:** Ghostty `font-codepoint-map` config
 
-- [ ] `CodepointMap` struct:
-  - [ ] `ranges: Vec<(RangeInclusive<u32>, FaceIdx)>` — codepoint range → font face
-  - [ ] Sorted by range start for binary search lookup
-- [ ] Config integration:
+- [x] `CodepointMap` struct:
+  - [x] `ranges: Vec<(RangeInclusive<u32>, FaceIdx)>` — codepoint range → font face
+  - [x] Sorted by range start for binary search lookup
+- [ ] Config integration: <!-- blocked-by:13 -->
   ```toml
   [[font.codepoint_map]]
   range = "E000-F8FF"          # Private Use Area (Nerd Font symbols)
@@ -934,23 +934,23 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
   range = "4E00-9FFF"          # CJK Unified Ideographs
   family = "Noto Sans CJK SC"
   ```
-  - [ ] Parse range as hex: `"E000-F8FF"` → `0xE000..=0xF8FF`
-  - [ ] Single codepoint: `"E0B0"` → `0xE0B0..=0xE0B0`
-  - [ ] Load referenced font family at collection init time
-- [ ] Integration with `find_face_for_char`:
-  - [ ] Check codepoint map FIRST, before primary and fallback chain
-  - [ ] If mapped: return mapped face directly (skip normal resolution)
-  - [ ] If not mapped: fall through to normal primary → fallback chain
-- [ ] Use cases:
-  - [ ] Force Nerd Font symbols to a specific Nerd Font (avoids wrong font picking up PUA)
-  - [ ] Force CJK to a specific CJK font (avoids system choosing wrong variant)
-  - [ ] Force emoji to a specific emoji font
-- [ ] **Tests:**
-  - [ ] Mapped codepoint resolves to configured font
-  - [ ] Unmapped codepoint falls through to normal chain
-  - [ ] Range parsing: hex range, single codepoint
-  - [ ] Multiple maps: first matching range wins
-  - [ ] Invalid font family: warning logged, fallback to normal chain
+  - [x] Parse range as hex: `"E000-F8FF"` → `0xE000..=0xF8FF`
+  - [x] Single codepoint: `"E0B0"` → `0xE0B0..=0xE0B0`
+  - [ ] Load referenced font family at collection init time <!-- blocked-by:13 -->
+- [x] Integration with `find_face_for_char`:
+  - [x] Check codepoint map FIRST, before primary and fallback chain
+  - [x] If mapped: return mapped face directly (skip normal resolution)
+  - [x] If not mapped: fall through to normal primary → fallback chain
+- [x] Use cases:
+  - [x] Force Nerd Font symbols to a specific Nerd Font (avoids wrong font picking up PUA)
+  - [x] Force CJK to a specific CJK font (avoids system choosing wrong variant)
+  - [x] Force emoji to a specific emoji font
+- [x] **Tests:**
+  - [x] Mapped codepoint resolves to configured font
+  - [x] Unmapped codepoint falls through to normal chain
+  - [x] Range parsing: hex range, single codepoint
+  - [x] Multiple maps: first matching range wins
+  - [x] Invalid font family: warning logged, fallback to normal chain
 
 ---
 
