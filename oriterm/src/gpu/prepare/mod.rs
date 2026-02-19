@@ -17,8 +17,7 @@ use oriterm_core::{CellFlags, CursorShape, Rgb};
 use super::atlas::AtlasEntry;
 use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
-use crate::font::shaper::ShapedGlyph;
-use crate::font::{GlyphStyle, RasterKey};
+use crate::font::{GlyphStyle, RasterKey, ShapedGlyph};
 use crate::gpu::instance_writer::ScreenRect;
 
 pub(crate) use shaped_frame::ShapedFrame;

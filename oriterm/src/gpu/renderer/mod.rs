@@ -27,8 +27,7 @@ use super::pipeline::{
 use super::prepare::{self, AtlasLookup};
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
-use crate::font::collection::size_key;
-use crate::font::{CellMetrics, FontCollection, GlyphFormat, GlyphStyle, RasterKey};
+use crate::font::{CellMetrics, FontCollection, GlyphFormat, GlyphStyle, RasterKey, size_key};
 use crate::gpu::frame_input::ViewportSize;
 use helpers::{
     ShapingScratch, ensure_shaped_glyphs_cached, record_draw, shape_frame, upload_buffer,

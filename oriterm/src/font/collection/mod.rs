@@ -22,9 +22,12 @@ use face::{FaceData, build_face, cap_height_px, compute_metrics, glyph_id, raste
 #[cfg(test)]
 use loading::FontData;
 pub use loading::FontSet;
-use metadata::{FallbackMeta, default_features, effective_size_for, weight_variation};
 #[cfg(test)]
-use metadata::{MAX_FONT_SIZE, MIN_FONT_SIZE, parse_features};
+use metadata::parse_features;
+use metadata::{
+    FallbackMeta, MAX_FONT_SIZE, MIN_FONT_SIZE, default_features, effective_size_for,
+    weight_variation,
+};
 
 /// A rasterized glyph bitmap ready for atlas upload.
 #[derive(Debug, Clone)]
@@ -88,8 +91,9 @@ pub struct FontCollection {
 impl FontCollection {
     /// Build a font collection from a loaded font set.
     ///
-    /// Validates all faces, computes cell metrics from the Regular font,
-    /// and pre-caches all printable ASCII glyphs (0x20–0x7E).
+    /// Validates all faces and computes cell metrics from the Regular font.
+    /// ASCII glyphs are not pre-cached here — the GPU renderer's
+    /// `pre_cache_atlas()` fills both the `HashMap` and the atlas in one pass.
     pub fn new(
         font_set: FontSet,
         size_pt: f32,
@@ -97,7 +101,7 @@ impl FontCollection {
         format: GlyphFormat,
         weight: u16,
     ) -> Result<Self, FontError> {
-        let size_px = size_pt * dpi / 72.0;
+        let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
 
         // Validate Regular (required).
         let regular_face =
@@ -142,7 +146,7 @@ impl FontCollection {
             }
         }
 
-        let mut collection = Self {
+        let collection = Self {
             primary: [Some(regular_face), bold, italic, bold_italic],
             fallbacks,
             fallback_meta,
@@ -162,7 +166,6 @@ impl FontCollection {
             features: default_features(),
         };
 
-        collection.pre_cache_ascii();
         Ok(collection)
     }
 
@@ -275,10 +278,11 @@ impl FontCollection {
     /// Change font size, recomputing all derived metrics and caches.
     ///
     /// Recomputes cell metrics from the Regular face at the new size,
-    /// recalculates cap-height normalization for fallback fonts, clears the
-    /// glyph cache, and re-pre-caches ASCII glyphs.
+    /// recalculates cap-height normalization for fallback fonts, and clears
+    /// the glyph cache. The caller (`GpuRenderer::set_font_size`) is
+    /// responsible for re-populating the atlas afterward.
     pub fn set_size(&mut self, size_pt: f32, dpi: f32) {
-        let size_px = size_pt * dpi / 72.0;
+        let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
 
         // Recompute metrics from Regular face.
         let regular = self.primary[0].as_ref().expect("Regular face required");
@@ -304,7 +308,6 @@ impl FontCollection {
         self.strikeout_offset = fm.strikeout_offset;
         self.cap_height_px = primary_cap;
         self.glyph_cache.clear();
-        self.pre_cache_ascii();
     }
 
     // ── Resolution ──
@@ -473,23 +476,6 @@ impl FontCollection {
         }
         // Try regular with both flags.
         self.try_regular_with(ch, SyntheticFlags::BOLD | SyntheticFlags::ITALIC)
-    }
-
-    /// Pre-cache all printable ASCII glyphs (0x20–0x7E) for Regular and Bold.
-    fn pre_cache_ascii(&mut self) {
-        let size_q6 = size_key(self.size_px);
-        for ch in ' '..='~' {
-            let resolved = self.resolve(ch, GlyphStyle::Regular);
-            let key = RasterKey::from_resolved(resolved, size_q6);
-            let _ = self.rasterize(key);
-        }
-        if self.has_bold() {
-            for ch in ' '..='~' {
-                let resolved = self.resolve(ch, GlyphStyle::Bold);
-                let key = RasterKey::from_resolved(resolved, size_q6);
-                let _ = self.rasterize(key);
-            }
-        }
     }
 }
 

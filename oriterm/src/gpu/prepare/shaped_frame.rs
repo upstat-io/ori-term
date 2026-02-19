@@ -5,7 +5,7 @@
 //! per frame by the renderer, consumed by the prepare phase to emit glyph
 //! instances from shaped data instead of per-cell character lookups.
 
-use crate::font::shaper::ShapedGlyph;
+use crate::font::ShapedGlyph;
 
 /// Pre-shaped glyph data for all visible rows.
 ///
@@ -44,7 +44,7 @@ impl ShapedFrame {
     /// `glyphs` are the shaped output for one row. `col_map` maps columns
     /// to indices within `glyphs` (produced by [`build_col_glyph_map`]).
     ///
-    /// [`build_col_glyph_map`]: crate::font::shaper::build_col_glyph_map
+    /// [`build_col_glyph_map`]: crate::font::build_col_glyph_map
     pub fn push_row(&mut self, glyphs: &[ShapedGlyph], col_map: &[Option<usize>]) {
         debug_assert_eq!(
             col_map.len(),

@@ -17,7 +17,8 @@ use std::fmt;
 
 use bitflags::bitflags;
 
-pub use collection::{FontCollection, FontSet};
+pub use collection::{FontCollection, FontSet, RasterizedGlyph, size_key};
+pub use shaper::{ShapedGlyph, ShapingRun, build_col_glyph_map, prepare_line, shape_prepared_runs};
 
 /// Cell dimensions in pixels, derived from the font metrics.
 #[derive(Debug, Clone, Copy, PartialEq)]

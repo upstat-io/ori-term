@@ -27,8 +27,7 @@ use oriterm_core::{CellFlags, Column, CursorShape, Rgb};
 use super::frame_input::{FrameInput, ViewportSize};
 use super::renderer::GpuRenderer;
 use super::state::GpuState;
-use crate::font::collection::FontCollection;
-use crate::font::{FontSet, GlyphFormat};
+use crate::font::{FontCollection, FontSet, GlyphFormat};
 
 /// Per-channel tolerance for pixel comparison. Accounts for anti-aliasing
 /// differences and minor rasterization variance across GPU drivers.

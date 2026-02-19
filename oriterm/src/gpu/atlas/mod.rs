@@ -19,8 +19,7 @@ use wgpu::{
 };
 
 use self::rect_packer::RectPacker;
-use crate::font::collection::RasterizedGlyph;
-use crate::font::{GlyphFormat, RasterKey};
+use crate::font::{GlyphFormat, RasterKey, RasterizedGlyph};
 
 /// Atlas page dimension (width = height).
 const PAGE_SIZE: u32 = 2048;
