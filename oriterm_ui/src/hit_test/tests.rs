@@ -1,4 +1,8 @@
-use crate::geometry::{Point, Rect, Size};
+use crate::geometry::Logical;
+
+type Point = crate::geometry::Point<Logical>;
+type Size = crate::geometry::Size<Logical>;
+type Rect = crate::geometry::Rect<Logical>;
 
 use super::{HitTestResult, ResizeDirection, WindowChrome, hit_test};
 

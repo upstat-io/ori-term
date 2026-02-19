@@ -1,10 +1,10 @@
 //! Prepared frame output from the Prepare phase of the render pipeline.
 //!
-//! [`PreparedFrame`] holds five [`InstanceWriter`] buffers (backgrounds,
-//! glyphs, subpixel glyphs, color glyphs, cursors) plus metadata the
-//! Render phase needs to upload and draw. The five buffers map to five
+//! [`PreparedFrame`] holds six [`InstanceWriter`] buffers (backgrounds,
+//! glyphs, subpixel glyphs, color glyphs, cursors, UI rects) plus metadata
+//! the Render phase needs to upload and draw. The six buffers map to six
 //! draw calls in painter's order: backgrounds → mono glyphs → subpixel
-//! glyphs → color glyphs → cursors.
+//! glyphs → color glyphs → cursors → UI rects.
 
 use oriterm_core::Rgb;
 
@@ -13,10 +13,10 @@ use super::instance_writer::InstanceWriter;
 
 /// GPU-ready frame data produced by the Prepare phase.
 ///
-/// Contains five instance buffers for the five rendering layers
+/// Contains six instance buffers for the six rendering layers
 /// (drawn in order: backgrounds → mono glyphs → subpixel glyphs →
-/// color glyphs → cursors) plus the clear color and total instance
-/// count for the Render phase.
+/// color glyphs → cursors → UI rects) plus the clear color and total
+/// instance count for the Render phase.
 pub struct PreparedFrame {
     /// Background rectangle instances (solid-color cell fills).
     pub backgrounds: InstanceWriter,
@@ -28,6 +28,8 @@ pub struct PreparedFrame {
     pub color_glyphs: InstanceWriter,
     /// Cursor instances (block, bar, underline shapes).
     pub cursors: InstanceWriter,
+    /// UI rect instances (SDF rounded rectangles with optional border).
+    pub ui_rects: InstanceWriter,
     /// Viewport pixel dimensions for uniform buffer update.
     pub viewport: ViewportSize,
     /// Window clear color (alpha-premultiplied).
@@ -43,6 +45,7 @@ impl PreparedFrame {
             subpixel_glyphs: InstanceWriter::new(),
             color_glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::new(),
+            ui_rects: InstanceWriter::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -67,12 +70,13 @@ impl PreparedFrame {
             subpixel_glyphs: InstanceWriter::new(),
             color_glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::with_capacity(4),
+            ui_rects: InstanceWriter::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
     }
 
-    /// Total instance count across all five buffers.
+    /// Total instance count across all six buffers.
     #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn total_instances(&self) -> usize {
         self.backgrounds.len()
@@ -80,9 +84,10 @@ impl PreparedFrame {
             + self.subpixel_glyphs.len()
             + self.color_glyphs.len()
             + self.cursors.len()
+            + self.ui_rects.len()
     }
 
-    /// Whether all five buffers are empty.
+    /// Whether all six buffers are empty.
     #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn is_empty(&self) -> bool {
         self.backgrounds.is_empty()
@@ -90,6 +95,7 @@ impl PreparedFrame {
             && self.subpixel_glyphs.is_empty()
             && self.color_glyphs.is_empty()
             && self.cursors.is_empty()
+            && self.ui_rects.is_empty()
     }
 
     /// Reset all buffers for the next frame, retaining allocated memory.
@@ -99,6 +105,7 @@ impl PreparedFrame {
         self.subpixel_glyphs.clear();
         self.color_glyphs.clear();
         self.cursors.clear();
+        self.ui_rects.clear();
     }
 
     /// Update the clear color (e.g. after a palette change).

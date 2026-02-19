@@ -1,6 +1,10 @@
-use crate::geometry::{Point, Rect, Size};
+use crate::geometry::Logical;
 
 use super::ScaleFactor;
+
+type Point = crate::geometry::Point<Logical>;
+type Size = crate::geometry::Size<Logical>;
+type Rect = crate::geometry::Rect<Logical>;
 
 #[test]
 fn default_is_1x() {

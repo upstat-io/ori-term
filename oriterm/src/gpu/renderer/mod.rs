@@ -23,7 +23,8 @@ use super::bind_groups::{AtlasBindGroup, UniformBuffer};
 use super::frame_input::FrameInput;
 use super::pipeline::{
     create_atlas_bind_group_layout, create_bg_pipeline, create_color_fg_pipeline,
-    create_fg_pipeline, create_subpixel_fg_pipeline, create_uniform_bind_group_layout,
+    create_fg_pipeline, create_subpixel_fg_pipeline, create_ui_rect_pipeline,
+    create_uniform_bind_group_layout,
 };
 use super::prepare::{self, AtlasLookup};
 use super::prepared_frame::PreparedFrame;
@@ -99,6 +100,7 @@ pub struct GpuRenderer {
     fg_pipeline: RenderPipeline,
     subpixel_fg_pipeline: RenderPipeline,
     color_fg_pipeline: RenderPipeline,
+    ui_rect_pipeline: RenderPipeline,
 
     // Bind groups + layouts
     uniform_buffer: UniformBuffer,
@@ -127,6 +129,7 @@ pub struct GpuRenderer {
     subpixel_fg_buffer: Option<Buffer>,
     color_fg_buffer: Option<Buffer>,
     cursor_buffer: Option<Buffer>,
+    ui_rect_buffer: Option<Buffer>,
 }
 
 impl GpuRenderer {
@@ -145,6 +148,7 @@ impl GpuRenderer {
         let fg_pipeline = create_fg_pipeline(gpu, &uniform_layout, &atlas_layout);
         let subpixel_fg_pipeline = create_subpixel_fg_pipeline(gpu, &uniform_layout, &atlas_layout);
         let color_fg_pipeline = create_color_fg_pipeline(gpu, &uniform_layout, &atlas_layout);
+        let ui_rect_pipeline = create_ui_rect_pipeline(gpu, &uniform_layout);
         let t_pipelines = t0.elapsed();
 
         // Uniform buffer.
@@ -185,6 +189,7 @@ impl GpuRenderer {
             fg_pipeline,
             subpixel_fg_pipeline,
             color_fg_pipeline,
+            ui_rect_pipeline,
             uniform_buffer,
             atlas_bind_group,
             subpixel_atlas_bind_group,
@@ -201,6 +206,7 @@ impl GpuRenderer {
             subpixel_fg_buffer: None,
             color_fg_buffer: None,
             cursor_buffer: None,
+            ui_rect_buffer: None,
         }
     }
 
@@ -365,6 +371,13 @@ impl GpuRenderer {
             self.prepared.cursors.as_bytes(),
             "cursor_instance_buffer",
         );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.ui_rect_buffer,
+            self.prepared.ui_rects.as_bytes(),
+            "ui_rect_instance_buffer",
+        );
     }
 
     /// Record the five draw passes into the render pass.
@@ -418,6 +431,15 @@ impl GpuRenderer {
             None,
             self.cursor_buffer.as_ref(),
             self.prepared.cursors.len() as u32,
+        );
+        // Draw 6: UI rects (SDF rounded rectangles via ui_rect pipeline).
+        record_draw(
+            pass,
+            &self.ui_rect_pipeline,
+            uniform_bg,
+            None,
+            self.ui_rect_buffer.as_ref(),
+            self.prepared.ui_rects.len() as u32,
         );
     }
 

@@ -1,4 +1,10 @@
-use super::{Insets, Point, Rect, Size};
+use super::{Insets, Logical};
+
+// Concrete type aliases pin U = Logical so inference works in expressions
+// like `Rect::new(...)` and `Point::default()` without type annotations.
+type Point = super::Point<Logical>;
+type Size = super::Size<Logical>;
+type Rect = super::Rect<Logical>;
 
 // --- Point ---
 // Ported from Chromium ui/gfx/geometry/point_f_unittest.cc
