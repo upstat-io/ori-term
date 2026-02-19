@@ -5,8 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use super::face::{
-    build_face, cap_height_px, compute_metrics, embolden_strength, font_ref, has_glyph,
-    validate_font,
+    build_face, compute_metrics, embolden_strength, font_ref, has_glyph, validate_font,
 };
 use super::{FontCollection, FontSet};
 use crate::font::discovery::EMBEDDED_FONT_DATA;
@@ -373,12 +372,15 @@ fn size_key_fractional() {
     assert_eq!(super::size_key(12.5), 800, "12.5 * 64 = 800");
 }
 
-// ── cap_height_px ──
+// ── cap_height ──
 
 #[test]
-fn cap_height_px_positive() {
-    let cap = cap_height_px(EMBEDDED_FONT_DATA, 0, 16.0);
-    assert!(cap > 0.0, "cap height should be positive for embedded font");
+fn cap_height_positive() {
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    assert!(
+        m.cap_height > 0.0,
+        "cap height should be positive for embedded font"
+    );
 }
 
 // ── compute_metrics ──
