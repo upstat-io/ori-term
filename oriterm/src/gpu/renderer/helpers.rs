@@ -5,6 +5,8 @@
 //! borrowed independently — e.g. `font_collection` immutably while
 //! `scratch` is borrowed mutably.
 
+use std::collections::HashSet;
+
 use wgpu::{
     BindGroup, Buffer, BufferDescriptor, BufferUsages, Device, Queue, RenderPass, RenderPipeline,
 };
@@ -88,15 +90,20 @@ pub(super) fn shape_frame(
 /// - [`GlyphFormat::Color`] → `color_atlas`.
 /// - [`GlyphFormat::SubpixelRgb`] / [`GlyphFormat::SubpixelBgr`] → `subpixel_atlas`.
 /// - [`GlyphFormat::Alpha`] → `mono_atlas`.
+///
+/// `empty_keys` is a cross-atlas set of keys known to produce zero-size
+/// glyphs. A glyph that fails rasterization produces no bitmap regardless
+/// of target atlas, so this set is shared across all three.
 #[expect(
     clippy::too_many_arguments,
-    reason = "three atlases + fonts + queue for glyph routing"
+    reason = "three atlases + empty set + fonts + queue for glyph routing"
 )]
 pub(super) fn ensure_shaped_glyphs_cached(
     shaped: &ShapedFrame,
     mono_atlas: &mut GlyphAtlas,
     subpixel_atlas: &mut GlyphAtlas,
     color_atlas: &mut GlyphAtlas,
+    empty_keys: &mut HashSet<RasterKey>,
     fonts: &mut FontCollection,
     queue: &Queue,
 ) {
@@ -118,7 +125,7 @@ pub(super) fn ensure_shaped_glyphs_cached(
         {
             continue;
         }
-        if mono_atlas.is_known_empty(key) {
+        if empty_keys.contains(&key) {
             continue;
         }
         if let Some(rasterized) = fonts.rasterize(key) {
@@ -134,7 +141,7 @@ pub(super) fn ensure_shaped_glyphs_cached(
                 }
             }
         } else {
-            mono_atlas.mark_empty(key);
+            empty_keys.insert(key);
         }
     }
 }

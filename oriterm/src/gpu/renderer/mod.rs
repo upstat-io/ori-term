@@ -8,12 +8,12 @@
 mod font_config;
 mod helpers;
 
+use std::collections::HashSet;
 use std::fmt;
 
 use wgpu::{
-    BindGroupLayout, Buffer, Color, CommandEncoderDescriptor, LoadOp, Operations,
-    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, StoreOp, TextureView,
-    TextureViewDescriptor,
+    Buffer, Color, CommandEncoderDescriptor, LoadOp, Operations, RenderPassColorAttachment,
+    RenderPassDescriptor, RenderPipeline, StoreOp, TextureView, TextureViewDescriptor,
 };
 
 use oriterm_core::Rgb;
@@ -105,13 +105,16 @@ pub struct GpuRenderer {
     atlas_bind_group: AtlasBindGroup,
     subpixel_atlas_bind_group: AtlasBindGroup,
     color_atlas_bind_group: AtlasBindGroup,
-    #[allow(dead_code, reason = "retained for atlas rebuild on font change")]
-    atlas_layout: BindGroupLayout,
-
     // Atlases + fonts
     atlas: GlyphAtlas,
     subpixel_atlas: GlyphAtlas,
     color_atlas: GlyphAtlas,
+    /// Keys known to produce zero-size glyphs (spaces, non-printing chars).
+    ///
+    /// Cross-atlas: a glyph that fails rasterization produces no bitmap
+    /// regardless of target atlas. Owned here rather than per-atlas so
+    /// all three atlases share a single authoritative set.
+    empty_keys: HashSet<RasterKey>,
     font_collection: FontCollection,
 
     // Per-frame reusable scratch buffers.
@@ -186,10 +189,10 @@ impl GpuRenderer {
             atlas_bind_group,
             subpixel_atlas_bind_group,
             color_atlas_bind_group,
-            atlas_layout,
             atlas,
             subpixel_atlas,
             color_atlas,
+            empty_keys: HashSet::new(),
             font_collection,
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
@@ -244,6 +247,7 @@ impl GpuRenderer {
             &mut self.atlas,
             &mut self.subpixel_atlas,
             &mut self.color_atlas,
+            &mut self.empty_keys,
             &mut self.font_collection,
             &gpu.queue,
         );
@@ -254,6 +258,7 @@ impl GpuRenderer {
             input,
             self.shaping.frame.size_q6(),
             &mut self.atlas,
+            &mut self.empty_keys,
             &gpu.queue,
         );
 

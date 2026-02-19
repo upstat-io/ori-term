@@ -72,7 +72,7 @@ fn insert_and_lookup_round_trip() {
 }
 
 #[test]
-fn insert_zero_size_returns_none_and_caches_as_empty() {
+fn insert_zero_size_returns_none() {
     let Ok(gpu) = GpuState::new_headless() else {
         eprintln!("skipped: no GPU adapter available");
         return;
@@ -82,10 +82,10 @@ fn insert_zero_size_returns_none_and_caches_as_empty() {
     let key = test_key(32); // space
     let glyph = test_glyph(0, 0);
 
-    assert!(!atlas.is_known_empty(key));
     assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
     assert!(atlas.lookup(key).is_none());
-    assert!(atlas.is_known_empty(key));
+    // Zero-size glyphs are not stored in the atlas cache.
+    assert_eq!(atlas.len(), 0);
 }
 
 #[test]
@@ -384,7 +384,6 @@ fn insert_zero_width_nonzero_height_returns_none() {
 
     assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
     assert!(atlas.lookup(key).is_none());
-    assert!(atlas.is_known_empty(key));
 }
 
 #[test]
@@ -400,58 +399,10 @@ fn insert_nonzero_width_zero_height_returns_none() {
 
     assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
     assert!(atlas.lookup(key).is_none());
-    assert!(atlas.is_known_empty(key));
 }
 
 #[test]
-fn is_known_empty_false_for_unseen_key() {
-    let Ok(gpu) = GpuState::new_headless() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
-    let atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
-
-    assert!(!atlas.is_known_empty(test_key(99)));
-}
-
-#[test]
-fn is_known_empty_false_for_normal_glyph() {
-    let Ok(gpu) = GpuState::new_headless() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
-    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
-    let key = test_key(65);
-    let glyph = test_glyph(8, 14);
-
-    atlas.insert(key, &glyph, &gpu.queue);
-
-    assert!(!atlas.is_known_empty(key));
-}
-
-#[test]
-fn clear_resets_empty_keys() {
-    let Ok(gpu) = GpuState::new_headless() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
-    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
-    let key = test_key(32);
-    let glyph = test_glyph(0, 0);
-
-    atlas.insert(key, &glyph, &gpu.queue);
-    assert!(atlas.is_known_empty(key));
-
-    atlas.clear();
-
-    assert!(!atlas.is_known_empty(key));
-}
-
-#[test]
-fn repeated_insert_of_empty_glyph_is_idempotent() {
+fn repeated_insert_of_zero_size_is_idempotent() {
     let Ok(gpu) = GpuState::new_headless() else {
         eprintln!("skipped: no GPU adapter available");
         return;
@@ -466,7 +417,6 @@ fn repeated_insert_of_empty_glyph_is_idempotent() {
         assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
     }
 
-    assert!(atlas.is_known_empty(key));
     // Zero-size glyphs don't count as cached entries.
     assert_eq!(atlas.len(), 0);
 }

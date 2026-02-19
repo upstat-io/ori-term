@@ -17,7 +17,10 @@ use oriterm_ui::window::WindowConfig;
 
 use self::cursor_blink::CursorBlink;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, SubpixelMode};
-use crate::gpu::{GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame};
+use crate::gpu::{
+    FrameInput, GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame,
+    extract_frame_into,
+};
 use crate::tab::{Tab, TabId, TermEvent};
 use crate::window::TermWindow;
 
@@ -50,6 +53,9 @@ pub(crate) struct App {
     // Event loop proxy for creating per-tab EventProxy instances.
     event_proxy: EventLoopProxy<TermEvent>,
 
+    // Per-frame reusable extraction buffer (lazily initialized on first redraw).
+    frame: Option<FrameInput>,
+
     // Redraw coalescing.
     dirty: bool,
 
@@ -76,6 +82,7 @@ impl App {
             window: None,
             tab: None,
             event_proxy,
+            frame: None,
             dirty: false,
             cursor_blink: CursorBlink::new(),
             blinking_active: false,
@@ -222,7 +229,18 @@ impl App {
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
 
-            let mut frame = extract_frame(tab.terminal(), viewport, cell);
+            // Reuse the FrameInput allocation across frames. First frame
+            // does a fresh allocation; subsequent frames refill in place.
+            let frame = match &mut self.frame {
+                Some(existing) => {
+                    extract_frame_into(tab.terminal(), existing, viewport, cell);
+                    existing
+                }
+                slot @ None => {
+                    *slot = Some(extract_frame(tab.terminal(), viewport, cell));
+                    slot.as_mut().expect("just assigned")
+                }
+            };
 
             // Cache blinking mode for about_to_wait gating.
             // Reset blink phase on false→true transition so the
@@ -239,7 +257,7 @@ impl App {
                 frame.content.cursor.visible = false;
             }
 
-            renderer.prepare(&frame, gpu);
+            renderer.prepare(frame, gpu);
             log::trace!(
                 "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
                 frame.content.cells.len(),
