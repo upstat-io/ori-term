@@ -151,6 +151,9 @@ pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryRe
 ///
 /// Accepts either a family name (resolved via platform APIs or directory scan)
 /// or an absolute file path. Returns `None` if the font cannot be found.
+///
+/// On Linux/macOS, builds a font index once and passes it to the platform
+/// resolver. Windows uses DirectWrite and does not need an index.
 #[allow(dead_code, reason = "font discovery consumed in later sections")]
 pub fn resolve_user_fallback(family: &str) -> Option<FallbackDiscovery> {
     #[cfg(target_os = "windows")]
@@ -159,11 +162,13 @@ pub fn resolve_user_fallback(family: &str) -> Option<FallbackDiscovery> {
     }
     #[cfg(target_os = "linux")]
     {
-        linux::resolve_user_fallback(family)
+        let index = linux::build_font_index();
+        linux::resolve_user_fallback(family, &index)
     }
     #[cfg(target_os = "macos")]
     {
-        macos::resolve_user_fallback(family)
+        let index = macos::build_font_index();
+        macos::resolve_user_fallback(family, &index)
     }
 }
 

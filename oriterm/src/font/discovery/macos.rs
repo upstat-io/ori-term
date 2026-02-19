@@ -114,9 +114,12 @@ pub(super) fn try_platform_defaults(
 }
 
 /// Resolve a user-configured fallback font name to a path.
-pub(super) fn resolve_user_fallback(family: &str) -> Option<FallbackDiscovery> {
-    let index = build_font_index();
-
+///
+/// Accepts a pre-built font index to avoid rescanning font directories.
+pub(super) fn resolve_user_fallback(
+    family: &str,
+    index: &HashMap<String, PathBuf>,
+) -> Option<FallbackDiscovery> {
     if let Some(path) = index.get(family) {
         return Some(FallbackDiscovery {
             path: path.clone(),

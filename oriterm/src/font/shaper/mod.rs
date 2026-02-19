@@ -75,17 +75,17 @@ impl ShapableCell for RenderableCell {
 /// Produced by [`prepare_line`], consumed by [`shape_prepared_runs`].
 pub struct ShapingRun {
     /// Text to shape (base characters + combining marks).
-    pub(crate) text: String,
+    pub(super) text: String,
     /// Which font face to shape this run with.
-    pub(crate) face_idx: FaceIdx,
+    pub(super) face_idx: FaceIdx,
     /// Synthetic transformations needed for this run's glyphs.
-    pub(crate) synthetic: SyntheticFlags,
+    pub(super) synthetic: SyntheticFlags,
     /// Starting grid column of this run.
-    pub(crate) col_start: usize,
+    pub(super) col_start: usize,
     /// Maps byte offset in `text` to grid column index.
     ///
     /// Critical for mapping rustybuzz cluster indices back to grid positions.
-    pub(crate) byte_to_col: Vec<usize>,
+    pub(super) byte_to_col: Vec<usize>,
 }
 
 /// A shaped glyph positioned on the grid.
