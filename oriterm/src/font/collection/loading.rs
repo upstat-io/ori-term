@@ -38,6 +38,27 @@ pub struct FontSet {
 }
 
 impl FontSet {
+    /// Build a `FontSet` from the embedded `JetBrains` Mono Regular only.
+    ///
+    /// No system font discovery, no Bold/Italic/BoldItalic variants, no
+    /// fallbacks. Produces deterministic output regardless of system fonts —
+    /// ideal for visual regression tests.
+    #[cfg(test)]
+    pub fn embedded() -> Self {
+        Self {
+            family_name: "JetBrains Mono (embedded)".to_owned(),
+            regular: FontData {
+                data: Arc::new(discovery::EMBEDDED_FONT_DATA.to_vec()),
+                index: 0,
+            },
+            bold: None,
+            italic: None,
+            bold_italic: None,
+            has_variant: [true, false, false, false],
+            fallbacks: Vec::new(),
+        }
+    }
+
     /// Load font data from discovery results.
     ///
     /// If `family` is `None`, uses platform defaults (with embedded fallback).

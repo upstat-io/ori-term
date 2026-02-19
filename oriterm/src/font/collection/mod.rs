@@ -20,8 +20,6 @@ use super::{
 };
 pub use face::size_key;
 use face::{FaceData, build_face, cap_height_px, compute_metrics, rasterize_from_face};
-#[cfg(test)]
-use loading::FontData;
 pub use loading::FontSet;
 #[cfg(test)]
 use metadata::parse_features;
