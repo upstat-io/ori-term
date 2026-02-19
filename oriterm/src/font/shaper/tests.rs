@@ -663,6 +663,52 @@ fn truncate_with_ellipsis_cjk_boundary() {
     );
 }
 
+// ── Zero-width edge cases (unicode-width parity) ──
+
+#[test]
+fn measure_text_variation_selectors_zero_width() {
+    // FE0E (text presentation) and FE0F (emoji presentation) are zero-width.
+    let fc = test_collection();
+    let width = super::measure_text("\u{FE0E}", &fc);
+    assert!(width.abs() < f32::EPSILON);
+    let width = super::measure_text("\u{FE0F}", &fc);
+    assert!(width.abs() < f32::EPSILON);
+}
+
+#[test]
+fn measure_text_null_and_control_chars_zero_width() {
+    let fc = test_collection();
+    assert!(super::measure_text("\0", &fc).abs() < f32::EPSILON);
+    assert!(super::measure_text("\x01", &fc).abs() < f32::EPSILON);
+    assert!(super::measure_text("\x7F", &fc).abs() < f32::EPSILON); // DEL
+}
+
+#[test]
+fn measure_text_soft_hyphen_zero_width() {
+    let fc = test_collection();
+    // U+00AD SOFT HYPHEN — zero display width per unicode-width.
+    assert!(super::measure_text("\u{00AD}", &fc).abs() < f32::EPSILON);
+}
+
+// ── Truncation budget edge cases ──
+
+#[test]
+fn truncate_with_ellipsis_zero_budget() {
+    let fc = test_collection();
+    // Zero budget → just ellipsis.
+    let result = super::truncate_with_ellipsis("Hello", 0.0, &fc);
+    assert_eq!(result.as_ref(), "\u{2026}");
+}
+
+#[test]
+fn truncate_with_ellipsis_one_cell_budget() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    // Exactly 1 cell → only room for ellipsis.
+    let result = super::truncate_with_ellipsis("Hello", cell_w, &fc);
+    assert_eq!(result.as_ref(), "\u{2026}");
+}
+
 #[test]
 fn truncate_with_ellipsis_shorter_than_max() {
     let fc = test_collection();

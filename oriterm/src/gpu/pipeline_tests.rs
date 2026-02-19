@@ -78,6 +78,20 @@ fn subpixel_blend_per_channel_independence() {
     assert!((out[3] - 1.0).abs() < 1e-6, "A: max channel coverage");
 }
 
+#[test]
+fn subpixel_blend_semitransparent_fg() {
+    let fg = [1.0, 1.0, 1.0, 0.5]; // 50% opacity foreground
+    let bg = [0.0, 0.0, 0.0, 1.0];
+    let out = subpixel_blend(fg, bg, [1.0, 1.0, 1.0]);
+    // mask=1 → mix(bg, fg, 1) = fg for each channel = 1.0
+    // a = max(1,1,1) * 0.5 = 0.5
+    // premultiplied: 1.0 * 0.5 = 0.5
+    assert!((out[0] - 0.5).abs() < 1e-6);
+    assert!((out[1] - 0.5).abs() < 1e-6);
+    assert!((out[2] - 0.5).abs() < 1e-6);
+    assert!((out[3] - 0.5).abs() < 1e-6);
+}
+
 use super::frame_input::{FrameInput, ViewportSize};
 use super::renderer::GpuRenderer;
 use super::state::GpuState;

@@ -704,6 +704,34 @@ fn subpixel_bitmap_4x_grayscale_bytes() {
 }
 
 #[test]
+fn subpx_phases_stored_separately() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+    let glyph = test_glyph(8, 14);
+
+    let mut k0 = test_key(65);
+    k0.subpx_x = 0;
+    let mut k2 = test_key(65);
+    k2.subpx_x = 2;
+
+    let e0 = atlas.insert(k0, &glyph, &gpu.queue).unwrap();
+    let e2 = atlas.insert(k2, &glyph, &gpu.queue).unwrap();
+
+    // Different UV positions (different atlas slots).
+    assert!(
+        e0.uv_x != e2.uv_x || e0.uv_y != e2.uv_y,
+        "different subpx phases must occupy different atlas slots",
+    );
+    // Both lookup correctly.
+    assert!(atlas.lookup(k0).is_some());
+    assert!(atlas.lookup(k2).is_some());
+}
+
+#[test]
 fn bgr_atlas_insert_produces_subpixel_kind() {
     // BGR subpixel glyphs route to the same AtlasKind::Subpixel as RGB.
     let Ok(gpu) = GpuState::new_headless() else {
