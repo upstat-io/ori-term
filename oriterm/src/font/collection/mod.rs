@@ -65,12 +65,7 @@ pub struct FontCollection {
     fallback_meta: Vec<FallbackMeta>,
     // Metrics
     size_px: f32,
-    cell_width: f32,
-    cell_height: f32,
-    baseline: f32,
-    underline_offset: f32,
-    stroke_size: f32,
-    strikeout_offset: f32,
+    metrics: CellMetrics,
     #[allow(
         dead_code,
         reason = "used for diagnostics and future dynamic fallback loading"
@@ -153,17 +148,21 @@ impl FontCollection {
             }
         }
 
+        let metrics = CellMetrics::new(
+            font_metrics.cell_width,
+            font_metrics.cell_height,
+            font_metrics.baseline,
+            font_metrics.underline_offset,
+            font_metrics.stroke_size,
+            font_metrics.strikeout_offset,
+        );
+
         let collection = Self {
             primary: [Some(regular_face), bold, italic, bold_italic],
             fallbacks,
             fallback_meta,
             size_px,
-            cell_width: font_metrics.cell_width,
-            cell_height: font_metrics.cell_height,
-            baseline: font_metrics.baseline,
-            underline_offset: font_metrics.underline_offset,
-            stroke_size: font_metrics.stroke_size,
-            strikeout_offset: font_metrics.strikeout_offset,
+            metrics,
             cap_height_px: primary_cap,
             format,
             hinting,
@@ -181,14 +180,7 @@ impl FontCollection {
 
     /// Cell metrics for the GPU renderer.
     pub fn cell_metrics(&self) -> CellMetrics {
-        CellMetrics::new(
-            self.cell_width,
-            self.cell_height,
-            self.baseline,
-            self.underline_offset,
-            self.stroke_size,
-            self.strikeout_offset,
-        )
+        self.metrics
     }
 
     /// Font size in pixels.
@@ -312,12 +304,14 @@ impl FontCollection {
         }
 
         self.size_px = size_px;
-        self.cell_width = fm.cell_width;
-        self.cell_height = fm.cell_height;
-        self.baseline = fm.baseline;
-        self.underline_offset = fm.underline_offset;
-        self.stroke_size = fm.stroke_size;
-        self.strikeout_offset = fm.strikeout_offset;
+        self.metrics = CellMetrics::new(
+            fm.cell_width,
+            fm.cell_height,
+            fm.baseline,
+            fm.underline_offset,
+            fm.stroke_size,
+            fm.strikeout_offset,
+        );
         self.cap_height_px = primary_cap;
         self.glyph_cache.clear();
     }
@@ -389,7 +383,7 @@ impl FontCollection {
             size,
             wght,
             key.synthetic,
-            self.cell_height,
+            self.metrics.height,
             self.format,
             self.hinting.hint_flag(),
             subpx_x_offset,

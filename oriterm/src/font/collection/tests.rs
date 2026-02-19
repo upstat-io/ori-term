@@ -105,9 +105,10 @@ fn font_set_load_default_succeeds() {
 #[test]
 fn collection_new_produces_positive_metrics() {
     let fc = embedded_only_collection(GlyphFormat::Alpha);
-    assert!(fc.cell_width > 0.0, "cell_width must be positive");
-    assert!(fc.cell_height > 0.0, "cell_height must be positive");
-    assert!(fc.baseline > 0.0, "baseline must be positive");
+    let m = fc.cell_metrics();
+    assert!(m.width > 0.0, "cell_width must be positive");
+    assert!(m.height > 0.0, "cell_height must be positive");
+    assert!(m.baseline > 0.0, "baseline must be positive");
 }
 
 #[test]
