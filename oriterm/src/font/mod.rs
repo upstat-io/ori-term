@@ -193,6 +193,23 @@ impl SubpixelMode {
         }
     }
 
+    /// Auto-detect subpixel mode considering both scale and background opacity.
+    ///
+    /// Subpixel rendering over transparent backgrounds produces visible color
+    /// fringing because the per-channel blending assumes an opaque background.
+    /// When `opacity < 1.0`, forces grayscale regardless of scale factor.
+    #[allow(
+        dead_code,
+        reason = "wired when opacity becomes configurable — Section 13"
+    )]
+    pub fn for_display(scale_factor: f64, opacity: f64) -> Self {
+        if opacity < 1.0 {
+            Self::None
+        } else {
+            Self::from_scale_factor(scale_factor)
+        }
+    }
+
     /// Convert to the [`GlyphFormat`] used for rasterization.
     ///
     /// Returns `Alpha` when subpixel is disabled, otherwise the matching
