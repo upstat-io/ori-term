@@ -1,29 +1,67 @@
-//! An axis-aligned rectangle in logical pixel coordinates.
+//! An axis-aligned rectangle parameterized by coordinate space.
 //!
-//! Composed as `origin: Point` + `size: Size` (Chromium pattern).
+//! Composed as `origin: Point<U>` + `size: Size<U>` (Chromium pattern).
 //! Uses half-open interval semantics: the left/top edges are inclusive,
 //! the right/bottom edges are exclusive — `[x, x+w) x [y, y+h)`.
+
+use std::fmt;
 
 use super::insets::Insets;
 use super::point::Point;
 use super::size::Size;
+use super::units::Logical;
 
-/// An axis-aligned rectangle in logical pixels.
+/// An axis-aligned rectangle in pixels, parameterized by coordinate space.
 ///
 /// Half-open interval: `contains()` treats left/top as inclusive and
-/// right/bottom as exclusive.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+/// right/bottom as exclusive. The type parameter `U` defaults to
+/// [`Logical`] so unparameterized `Rect` works identically to the
+/// previous untagged type.
 #[must_use]
-pub struct Rect {
+pub struct Rect<U = Logical> {
     /// Top-left corner.
-    pub origin: Point,
+    pub origin: Point<U>,
     /// Width and height.
-    pub size: Size,
+    pub size: Size<U>,
 }
 
-impl Rect {
+// Manual trait impls to avoid spurious `U: Trait` bounds from derive.
+
+impl<U> Copy for Rect<U> {}
+
+impl<U> Clone for Rect<U> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<U> fmt::Debug for Rect<U> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Rect")
+            .field("origin", &self.origin)
+            .field("size", &self.size)
+            .finish()
+    }
+}
+
+impl<U> PartialEq for Rect<U> {
+    fn eq(&self, other: &Self) -> bool {
+        self.origin == other.origin && self.size == other.size
+    }
+}
+
+impl<U> Default for Rect<U> {
+    fn default() -> Self {
+        Self {
+            origin: Point::default(),
+            size: Size::default(),
+        }
+    }
+}
+
+impl<U> Rect<U> {
     /// Creates a rectangle from an origin point and a size.
-    pub fn from_origin_size(origin: Point, size: Size) -> Self {
+    pub fn from_origin_size(origin: Point<U>, size: Size<U>) -> Self {
         Self { origin, size }
     }
 
@@ -74,7 +112,7 @@ impl Rect {
     }
 
     /// Center point.
-    pub fn center(self) -> Point {
+    pub fn center(self) -> Point<U> {
         Point::new(
             self.origin.x + self.size.width() / 2.0,
             self.origin.y + self.size.height() / 2.0,
@@ -89,7 +127,7 @@ impl Rect {
     /// Half-open containment: `[x, x+w) x [y, y+h)`.
     ///
     /// Left and top edges are inclusive; right and bottom are exclusive.
-    pub fn contains(self, point: Point) -> bool {
+    pub fn contains(self, point: Point<U>) -> bool {
         point.x >= self.x()
             && point.x < self.right()
             && point.y >= self.y()

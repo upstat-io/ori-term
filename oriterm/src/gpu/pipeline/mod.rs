@@ -1,12 +1,14 @@
 //! GPU render pipelines: WGSL shaders, vertex layout, and pipeline factories.
 //!
-//! Four pipelines share a single 80-byte instance buffer layout:
+//! Five pipelines share a single 80-byte instance buffer layout:
 //! - **Background** ([`create_bg_pipeline`]): solid-color quads, no texture.
 //! - **Foreground** ([`create_fg_pipeline`]): `R8Unorm` atlas-sampled glyph quads.
 //! - **Subpixel foreground** ([`create_subpixel_fg_pipeline`]): `Rgba8Unorm`
 //!   atlas-sampled LCD subpixel quads (per-channel `mix(bg, fg, mask)`).
 //! - **Color foreground** ([`create_color_fg_pipeline`]): `Rgba8Unorm` atlas-sampled
 //!   color emoji quads (no `fg_color` tinting).
+//! - **UI rect** ([`create_ui_rect_pipeline`]): SDF rounded rectangles with
+//!   optional border, using offsets 72–79 for corner radius and border width.
 //!
 //! All use `TriangleStrip` topology with vertex pulling (`@builtin(vertex_index)`).
 
@@ -34,6 +36,9 @@ const SUBPIXEL_FG_SHADER_SRC: &str = include_str!("../shaders/subpixel_fg.wgsl")
 
 /// Embedded WGSL source for the color foreground shader.
 const COLOR_FG_SHADER_SRC: &str = include_str!("../shaders/color_fg.wgsl");
+
+/// Embedded WGSL source for the UI rect shader.
+const UI_RECT_SHADER_SRC: &str = include_str!("../shaders/ui_rect.wgsl");
 
 /// Instance buffer stride in bytes.
 pub const INSTANCE_STRIDE: u64 = INSTANCE_SIZE as u64;
@@ -113,7 +118,63 @@ const QUAD_PRIMITIVE: PrimitiveState = PrimitiveState {
     conservative: false,
 };
 
-/// Returns the instance buffer layout shared by both pipelines.
+/// Vertex attributes for the 80-byte UI rect instance record.
+///
+/// Extends [`INSTANCE_ATTRS`] with two additional fields at offsets 72 and 76
+/// for corner radius and border width used by the SDF rounded rect shader.
+pub const UI_RECT_ATTRS: [VertexAttribute; 9] = [
+    // Shared attributes (locations 0–6) — same as INSTANCE_ATTRS.
+    VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    },
+    VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 8,
+        shader_location: 1,
+    },
+    VertexAttribute {
+        format: VertexFormat::Float32x4,
+        offset: 16,
+        shader_location: 2,
+    },
+    VertexAttribute {
+        format: VertexFormat::Float32x4,
+        offset: 32,
+        shader_location: 3,
+    },
+    VertexAttribute {
+        format: VertexFormat::Float32x4,
+        offset: 48,
+        shader_location: 4,
+    },
+    VertexAttribute {
+        format: VertexFormat::Uint32,
+        offset: 64,
+        shader_location: 5,
+    },
+    VertexAttribute {
+        format: VertexFormat::Uint32,
+        offset: 68,
+        shader_location: 6,
+    },
+    // UI rect-specific attributes.
+    // location 7: corner_radius (f32) at offset 72.
+    VertexAttribute {
+        format: VertexFormat::Float32,
+        offset: 72,
+        shader_location: 7,
+    },
+    // location 8: border_width (f32) at offset 76.
+    VertexAttribute {
+        format: VertexFormat::Float32,
+        offset: 76,
+        shader_location: 8,
+    },
+];
+
+/// Returns the instance buffer layout shared by the terminal pipelines.
 pub fn instance_buffer_layout() -> VertexBufferLayout<'static> {
     VertexBufferLayout {
         array_stride: INSTANCE_STRIDE,
@@ -350,6 +411,64 @@ pub fn create_color_fg_pipeline(
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[instance_buffer_layout()],
+            },
+            primitive: QUAD_PRIMITIVE,
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: gpu.render_format(),
+                    blend: Some(PREMUL_ALPHA_BLEND),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: gpu.pipeline_cache.as_ref(),
+        })
+}
+
+/// Returns the instance buffer layout for the UI rect pipeline.
+///
+/// Same stride as [`instance_buffer_layout`] but with two extra attributes
+/// at offsets 72 and 76 for corner radius and border width.
+pub fn ui_rect_buffer_layout() -> VertexBufferLayout<'static> {
+    VertexBufferLayout {
+        array_stride: INSTANCE_STRIDE,
+        step_mode: VertexStepMode::Instance,
+        attributes: &UI_RECT_ATTRS,
+    }
+}
+
+/// Create the UI rect render pipeline.
+///
+/// Uses only bind group 0 (uniforms). Renders SDF rounded rectangles with
+/// optional border via the `ui_rect.wgsl` shader. Premultiplied alpha blend.
+pub fn create_ui_rect_pipeline(gpu: &GpuState, uniform_layout: &BindGroupLayout) -> RenderPipeline {
+    let shader = gpu.device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("ui_rect_shader"),
+        source: wgpu::ShaderSource::Wgsl(UI_RECT_SHADER_SRC.into()),
+    });
+
+    let pipeline_layout = gpu
+        .device
+        .create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("ui_rect_pipeline_layout"),
+            bind_group_layouts: &[uniform_layout],
+            ..Default::default()
+        });
+
+    gpu.device
+        .create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("ui_rect_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[ui_rect_buffer_layout()],
             },
             primitive: QUAD_PRIMITIVE,
             depth_stencil: None,

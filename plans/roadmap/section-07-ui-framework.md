@@ -1,13 +1,13 @@
 ---
 section: 7
 title: 2D UI Framework
-status: not-started
+status: in-progress
 tier: 2
 goal: A lightweight GPU-rendered UI framework on top of wgpu — drawing primitives, layout engine, and widget kit for ori_term's rich cross-platform UI
 sections:
   - id: "07.1"
     title: Drawing Primitives
-    status: not-started
+    status: complete
   - id: "07.2"
     title: Text Rendering Integration
     status: not-started
@@ -45,7 +45,7 @@ sections:
 
 # Section 07: 2D UI Framework
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Build a lightweight, GPU-rendered 2D UI framework on top of wgpu. This is what makes ori_term fundamentally different from Alacritty, Ghostty, and WezTerm — those terminals have essentially no UI. ori_term has a rich, cross-platform UI with settings panels, controls, command palette, context menus, and more. All GPU-rendered, all consistent across Windows/Linux/macOS.
 
 **Crate:** `oriterm_ui` (created in Section 03.5 with geometry, scale, hit_test, window foundation) — reusable, not coupled to terminal logic
@@ -72,50 +72,50 @@ The low-level 2D drawing API. Everything visible on screen is drawn through thes
 
 **File:** `oriterm_ui/src/draw.rs`, `oriterm_ui/src/draw/rect.rs`, `oriterm_ui/src/draw/shadow.rs`
 
-- [ ] `DrawList` — ordered list of draw commands, batched into GPU instance buffers
-  - [ ] `push_rect(rect: Rect, style: RectStyle)` — filled rectangle
-  - [ ] `push_text(pos: Point, shaped: &ShapedText, color: Color)` — pre-shaped text run
-  - [ ] `push_line(from: Point, to: Point, width: f32, color: Color)` — line segment
-  - [ ] `push_image(rect: Rect, texture: TextureId, uv: UvRect)` — textured quad
-  - [ ] `push_clip(rect: Rect)` / `pop_clip()` — scissor rect stack
-  - [ ] `clear()` — reset for next frame
-  - [ ] `as_instances() -> (&[u8], usize)` — ready for GPU upload
+- [x] `DrawList` — ordered list of draw commands, batched into GPU instance buffers
+  - [x] `push_rect(rect: Rect, style: RectStyle)` — filled rectangle
+  - [ ] `push_text(pos: Point, shaped: &ShapedText, color: Color)` — pre-shaped text run <!-- blocked-by:07.2 -->
+  - [x] `push_line(from: Point, to: Point, width: f32, color: Color)` — line segment
+  - [x] `push_image(rect: Rect, texture: TextureId, uv: UvRect)` — textured quad
+  - [x] `push_clip(rect: Rect)` / `pop_clip()` — scissor rect stack
+  - [x] `clear()` — reset for next frame
+  - [x] `as_instances() -> (&[u8], usize)` — ready for GPU upload (implemented as `draw_list_convert` module in oriterm, keeping oriterm_ui GPU-agnostic)
 
-- [ ] `RectStyle` — how to draw a rectangle
-  - [ ] `fill: Option<Color>` — solid fill color
-  - [ ] `border: Option<Border>` — border (width, color, per-side)
-  - [ ] `corner_radius: [f32; 4]` — per-corner radius (TL, TR, BR, BL)
-  - [ ] `shadow: Option<Shadow>` — drop shadow (offset, blur, color)
-  - [ ] `gradient: Option<Gradient>` — linear/radial gradient fill
+- [x] `RectStyle` — how to draw a rectangle
+  - [x] `fill: Option<Color>` — solid fill color
+  - [x] `border: Option<Border>` — border (width, color, per-side)
+  - [x] `corner_radius: [f32; 4]` — per-corner radius (TL, TR, BR, BL)
+  - [x] `shadow: Option<Shadow>` — drop shadow (offset, blur, color)
+  - [x] `gradient: Option<Gradient>` — linear/radial gradient fill
 
-- [ ] `Shadow` — box shadow via blurred rect behind the element
-  - [ ] `offset: (f32, f32)`, `blur_radius: f32`, `spread: f32`, `color: Color`
-  - [ ] Rendered as a separate instance with expanded bounds and alpha falloff
-  - [ ] No multi-pass blur needed — approximate with pre-computed Gaussian texture or SDF
+- [x] `Shadow` — box shadow via blurred rect behind the element
+  - [x] `offset: (f32, f32)`, `blur_radius: f32`, `spread: f32`, `color: Color`
+  - [x] Rendered as a separate instance with expanded bounds and alpha falloff
+  - [x] No multi-pass blur needed — approximate with pre-computed Gaussian texture or SDF
 
-- [ ] `Color` — `[f32; 4]` RGBA, with helper constructors
-  - [ ] `Color::hex(0xRRGGBB)`, `Color::rgba(r, g, b, a)`, `Color::WHITE`, `Color::TRANSPARENT`
+- [x] `Color` — `[f32; 4]` RGBA, with helper constructors
+  - [x] `Color::hex(0xRRGGBB)`, `Color::rgba(r, g, b, a)`, `Color::WHITE`, `Color::TRANSPARENT`
 
-- [ ] `Point`, `Size`, `Rect`, `Insets` — already established in Section 03.5 (`oriterm_ui/src/geometry.rs`)
-  - [ ] Extend as needed for drawing (e.g., `Rect` already has `contains`, `intersects`, `inset`, `offset`, `union`, `from_ltrb`)
+- [x] `Point`, `Size`, `Rect`, `Insets` — already established in Section 03.5 (`oriterm_ui/src/geometry.rs`)
+  - [x] Extend as needed for drawing (e.g., `Rect` already has `contains`, `intersects`, `inset`, `offset`, `union`, `from_ltrb`)
 
-- [ ] **Type-safe coordinate spaces** — add phantom type parameters to geometry types
-  - [ ] Marker types: `Logical` (device-independent pixels), `Physical` (hardware pixels), `Screen` (screen-absolute)
-  - [ ] `Point<U = Logical>`, `Size<U = Logical>`, `Rect<U = Logical>` — default parameter preserves all existing code unchanged
-  - [ ] Manual `Copy`/`Clone`/`Debug`/`PartialEq`/`Default` impls (derive doesn't work with phantom generics — Rust issue #26925)
-  - [ ] `Insets` stays unit-agnostic (deltas, not positions)
-  - [ ] `Scale<Src, Dst>` type replaces `ScaleFactor` — encodes conversion direction at type level
-    - [ ] `Scale::uniform(factor)` for common case, `Scale::new(x, y)` for non-square pixel displays
-    - [ ] `transform_point(Point<Src>) -> Point<Dst>`, `transform_size`, `transform_rect`
-    - [ ] `inverse() -> Scale<Dst, Src>` — flips direction
-  - [ ] Boundary annotations: `hit_test()` takes `Point<Logical>`, GPU submission uses `Point<Physical>`, Win32 FFI uses `Point<Screen>`
-  - [ ] **Reference:** WezTerm's `PixelUnit`/`ScreenPixelUnit` phantom types, euclid's `Scale<T, Src, Dst>`, Chromium's `dip_util.h` conversion functions
-  - [ ] **Migration:** incremental — existing code stays on `Point` (= `Point<Logical>`), new boundary code annotates explicitly
+- [x] **Type-safe coordinate spaces** — add phantom type parameters to geometry types
+  - [x] Marker types: `Logical` (device-independent pixels), `Physical` (hardware pixels), `Screen` (screen-absolute)
+  - [x] `Point<U = Logical>`, `Size<U = Logical>`, `Rect<U = Logical>` — default parameter preserves all existing code unchanged
+  - [x] Manual `Copy`/`Clone`/`Debug`/`PartialEq`/`Default` impls (derive doesn't work with phantom generics — Rust issue #26925)
+  - [x] `Insets` stays unit-agnostic (deltas, not positions)
+  - [x] `Scale<Src, Dst>` type replaces `ScaleFactor` — encodes conversion direction at type level
+    - [x] `Scale::uniform(factor)` for common case, `Scale::new(x, y)` for non-square pixel displays
+    - [x] `transform_point(Point<Src>) -> Point<Dst>`, `transform_size`, `transform_rect`
+    - [x] `inverse() -> Scale<Dst, Src>` — flips direction
+  - [x] Boundary annotations: `hit_test()` takes `Point<Logical>`, GPU submission uses `Point<Physical>`, Win32 FFI uses `Point<Screen>`
+  - [x] **Reference:** WezTerm's `PixelUnit`/`ScreenPixelUnit` phantom types, euclid's `Scale<T, Src, Dst>`, Chromium's `dip_util.h` conversion functions
+  - [x] **Migration:** incremental — existing code stays on `Point` (= `Point<Logical>`), new boundary code annotates explicitly
 
-- [ ] Shader support:
-  - [ ] Rounded rectangle SDF in fragment shader (same shader, branched on corner_radius > 0)
-  - [ ] Border rendering via SDF edge detection
-  - [ ] All primitives batch into the existing instance buffer pipeline (no separate draw calls per shape)
+- [x] Shader support:
+  - [x] Rounded rectangle SDF in fragment shader (same shader, branched on corner_radius > 0)
+  - [x] Border rendering via SDF edge detection
+  - [x] All primitives batch into the existing instance buffer pipeline (no separate draw calls per shape)
 
 ---
 
