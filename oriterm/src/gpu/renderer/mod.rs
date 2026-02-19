@@ -78,10 +78,10 @@ struct CombinedAtlasLookup<'a> {
 
 impl AtlasLookup for CombinedAtlasLookup<'_> {
     fn lookup_key(&self, key: RasterKey) -> Option<&super::atlas::AtlasEntry> {
-        self.color
+        self.mono
             .lookup(key)
             .or_else(|| self.subpixel.lookup(key))
-            .or_else(|| self.mono.lookup(key))
+            .or_else(|| self.color.lookup(key))
     }
 }
 
