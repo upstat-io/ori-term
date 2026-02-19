@@ -251,6 +251,11 @@ pub(super) struct FontMetrics {
     pub cell_width: f32,
     pub cell_height: f32,
     pub baseline: f32,
+    /// Cap height in pixels (distance from baseline to top of capitals).
+    ///
+    /// Read from swash `Metrics.cap_height`. Falls back to `ascent * 0.75`
+    /// when the font's OS/2 table version < 2 or the field is missing.
+    pub cap_height: f32,
     /// Distance below baseline to underline center (positive = below).
     pub underline_offset: f32,
     /// Thickness of underline and strikethrough strokes.
@@ -281,6 +286,14 @@ pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> Fo
         .advance_width(gid)
         .ceil();
 
+    // Cap height from swash. Falls back to 0.75 * ascent when the OS/2 table
+    // version < 2 or the field is missing (swash returns 0.0).
+    let cap_height = if metrics.cap_height > 0.0 {
+        metrics.cap_height
+    } else {
+        metrics.ascent * 0.75
+    };
+
     // swash underline_offset is negative (below baseline), negate for our
     // convention where positive = pixels below baseline.
     let underline_offset = -metrics.underline_offset;
@@ -291,33 +304,11 @@ pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> Fo
         cell_width,
         cell_height,
         baseline,
+        cap_height,
         underline_offset,
         stroke_size,
         strikeout_offset,
     }
-}
-
-/// Compute the cap height in pixels for a font at the given pixel size.
-///
-/// Reads `capital_height` from the OS/2 table via `ttf-parser`. Falls back to
-/// `0.75 * ascender` when the metric is missing.
-pub(super) fn cap_height_px(bytes: &[u8], face_index: u32, size_px: f32) -> f32 {
-    let Some(face) = rustybuzz::Face::from_slice(bytes, face_index) else {
-        return 0.0;
-    };
-    let upem = face.units_per_em() as f32;
-    if upem == 0.0 {
-        return 0.0;
-    }
-    let cap_units = face
-        .tables()
-        .os2
-        .and_then(|os2| {
-            let h = os2.capital_height()?;
-            Some(h as f32)
-        })
-        .unwrap_or_else(|| face.ascender() as f32 * 0.75);
-    cap_units / upem * size_px
 }
 
 /// Convert a font size in pixels to 26.6 fixed-point for use as a cache key.

@@ -22,7 +22,7 @@ use super::{
 use codepoint_map::CodepointMap;
 pub(crate) use codepoint_map::parse_hex_range;
 pub use face::size_key;
-use face::{FaceData, build_face, cap_height_px, compute_metrics, rasterize_from_face};
+use face::{FaceData, build_face, compute_metrics, rasterize_from_face};
 pub use loading::FontSet;
 #[cfg(test)]
 use metadata::parse_features;
@@ -115,7 +115,7 @@ impl FontCollection {
 
         // Compute metrics from Regular.
         let font_metrics = compute_metrics(&font_set.regular.data, font_set.regular.index, size_px);
-        let primary_cap = cap_height_px(&font_set.regular.data, font_set.regular.index, size_px);
+        let primary_cap = font_metrics.cap_height;
 
         // Validate optional primary variants.
         let bold = font_set
@@ -136,9 +136,9 @@ impl FontCollection {
         let mut fallback_meta = Vec::new();
         for fd in &font_set.fallbacks {
             if let Some(face) = build_face(Arc::clone(&fd.data), fd.index) {
-                let fb_cap = cap_height_px(&fd.data, fd.index, size_px);
-                let scale_factor = if fb_cap > 0.0 && primary_cap > 0.0 {
-                    primary_cap / fb_cap
+                let fb_metrics = compute_metrics(&fd.data, fd.index, size_px);
+                let scale_factor = if fb_metrics.cap_height > 0.0 && primary_cap > 0.0 {
+                    primary_cap / fb_metrics.cap_height
                 } else {
                     1.0
                 };
@@ -328,13 +328,13 @@ impl FontCollection {
         // Recompute metrics from Regular face.
         let regular = self.primary[0].as_ref().expect("Regular face required");
         let fm = compute_metrics(&regular.bytes, regular.face_index, size_px);
-        let primary_cap = cap_height_px(&regular.bytes, regular.face_index, size_px);
+        let primary_cap = fm.cap_height;
 
         // Recalculate cap-height normalization for fallbacks.
         for (fb, meta) in self.fallbacks.iter().zip(self.fallback_meta.iter_mut()) {
-            let fb_cap = cap_height_px(&fb.bytes, fb.face_index, size_px);
-            meta.scale_factor = if fb_cap > 0.0 && primary_cap > 0.0 {
-                primary_cap / fb_cap
+            let fb_m = compute_metrics(&fb.bytes, fb.face_index, size_px);
+            meta.scale_factor = if fb_m.cap_height > 0.0 && primary_cap > 0.0 {
+                primary_cap / fb_m.cap_height
             } else {
                 1.0
             };
