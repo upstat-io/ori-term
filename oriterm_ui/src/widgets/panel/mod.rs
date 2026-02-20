@@ -3,6 +3,8 @@
 //! Wraps a single child widget with configurable styling. Used for card-style
 //! layouts, dialog backgrounds, and settings panels.
 
+use std::cell::RefCell;
+
 use crate::color::Color;
 use crate::draw::{RectStyle, Shadow};
 use crate::geometry::Insets;
@@ -50,6 +52,8 @@ pub struct PanelWidget {
     id: WidgetId,
     child: Box<dyn Widget>,
     style: PanelStyle,
+    /// Cached layout result, keyed by bounds.
+    cached_layout: RefCell<Option<(crate::geometry::Rect, LayoutNode)>>,
 }
 
 impl PanelWidget {
@@ -59,6 +63,7 @@ impl PanelWidget {
             id: WidgetId::next(),
             child,
             style: PanelStyle::default(),
+            cached_layout: RefCell::new(None),
         }
     }
 
@@ -97,15 +102,30 @@ impl PanelWidget {
         self
     }
 
-    /// Computes child layout within the given panel bounds.
-    fn child_layout(&self, ctx: &LayoutCtx<'_>, bounds: crate::geometry::Rect) -> LayoutNode {
-        let child_box = self.child.layout(ctx);
+    /// Returns cached layout if bounds match, otherwise recomputes.
+    fn get_or_compute_layout(
+        &self,
+        measurer: &dyn super::TextMeasurer,
+        bounds: crate::geometry::Rect,
+    ) -> LayoutNode {
+        {
+            let cached = self.cached_layout.borrow();
+            if let Some((ref cb, ref node)) = *cached {
+                if *cb == bounds {
+                    return node.clone();
+                }
+            }
+        }
+        let ctx = LayoutCtx { measurer };
+        let child_box = self.child.layout(&ctx);
         let wrapper = LayoutBox::flex(crate::layout::Direction::Column, vec![child_box])
             .with_padding(self.style.padding)
             .with_width(SizeSpec::Fill)
             .with_height(SizeSpec::Fill)
             .with_widget_id(self.id);
-        compute_layout(&wrapper, bounds)
+        let node = compute_layout(&wrapper, bounds);
+        *self.cached_layout.borrow_mut() = Some((bounds, node.clone()));
+        node
     }
 }
 
@@ -137,10 +157,7 @@ impl Widget for PanelWidget {
         ctx.draw_list.push_rect(ctx.bounds, rect_style);
 
         // Compute child layout and draw child.
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let layout = self.child_layout(&layout_ctx, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
@@ -155,10 +172,7 @@ impl Widget for PanelWidget {
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let layout = self.child_layout(&layout_ctx, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             if child_node.rect.contains(event.pos) {
                 let child_ctx = EventCtx {
@@ -173,10 +187,7 @@ impl Widget for PanelWidget {
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let layout = self.child_layout(&layout_ctx, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             let child_ctx = EventCtx {
                 measurer: ctx.measurer,
@@ -189,10 +200,7 @@ impl Widget for PanelWidget {
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let layout = self.child_layout(&layout_ctx, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             let child_ctx = EventCtx {
                 measurer: ctx.measurer,
@@ -202,6 +210,10 @@ impl Widget for PanelWidget {
             return self.child.handle_key(event, &child_ctx);
         }
         WidgetResponse::ignored()
+    }
+
+    fn focusable_children(&self) -> Vec<WidgetId> {
+        self.child.focusable_children()
     }
 }
 

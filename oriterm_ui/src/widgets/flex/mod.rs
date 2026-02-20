@@ -5,8 +5,10 @@
 //! configurable gap, alignment, and justification. Delegates to the
 //! flex layout solver from Section 07.3.
 
+use std::cell::RefCell;
+
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent, layout_hit_test};
+use crate::input::{HoverEvent, KeyEvent, MouseEvent, MouseEventKind, layout_hit_test};
 use crate::layout::{Align, Direction, Justify, LayoutBox, LayoutNode, compute_layout};
 use crate::widget_id::WidgetId;
 
@@ -25,6 +27,11 @@ pub struct FlexWidget {
     gap: f32,
     align: Align,
     justify: Justify,
+    /// Index of the child currently under the cursor (set by mouse Move).
+    hovered_child: Option<usize>,
+    /// Cached layout result, keyed by bounds. Avoids re-solving the layout
+    /// solver when bounds haven't changed between draw/event calls.
+    cached_layout: RefCell<Option<(Rect, LayoutNode)>>,
 }
 
 impl FlexWidget {
@@ -37,6 +44,8 @@ impl FlexWidget {
             gap: 0.0,
             align: Align::Start,
             justify: Justify::Start,
+            hovered_child: None,
+            cached_layout: RefCell::new(None),
         }
     }
 
@@ -49,6 +58,8 @@ impl FlexWidget {
             gap: 0.0,
             align: Align::Start,
             justify: Justify::Start,
+            hovered_child: None,
+            cached_layout: RefCell::new(None),
         }
     }
 
@@ -78,10 +89,25 @@ impl FlexWidget {
         self.children.len()
     }
 
-    /// Computes layout for all children within the given bounds.
-    fn compute_child_layout(&self, ctx: &LayoutCtx<'_>, bounds: Rect) -> LayoutNode {
-        let layout_box = self.build_layout_box(ctx);
-        compute_layout(&layout_box, bounds)
+    /// Returns cached layout if bounds match, otherwise recomputes.
+    fn get_or_compute_layout(
+        &self,
+        measurer: &dyn super::TextMeasurer,
+        bounds: Rect,
+    ) -> LayoutNode {
+        {
+            let cached = self.cached_layout.borrow();
+            if let Some((ref cb, ref node)) = *cached {
+                if *cb == bounds {
+                    return node.clone();
+                }
+            }
+        }
+        let ctx = LayoutCtx { measurer };
+        let layout_box = self.build_layout_box(&ctx);
+        let node = compute_layout(&layout_box, bounds);
+        *self.cached_layout.borrow_mut() = Some((bounds, node.clone()));
+        node
     }
 
     /// Builds the `LayoutBox` descriptor tree.
@@ -97,6 +123,48 @@ impl FlexWidget {
     /// Finds which child widget matches a `WidgetId` from hit testing.
     fn find_child_index(&self, target: WidgetId) -> Option<usize> {
         self.children.iter().position(|c| c.id() == target)
+    }
+
+    /// Updates hover tracking when the cursor moves. Sends Enter/Leave to
+    /// the correct child based on hit testing.
+    fn update_hover(
+        &mut self,
+        layout: &LayoutNode,
+        pos: crate::geometry::Point,
+        ctx: &EventCtx<'_>,
+    ) -> WidgetResponse {
+        let new_hover = self.hit_test_children(layout, pos);
+        if new_hover == self.hovered_child {
+            return WidgetResponse::ignored();
+        }
+        // Leave old child.
+        if let Some(old_idx) = self.hovered_child {
+            if let (Some(child), Some(child_node)) =
+                (self.children.get_mut(old_idx), layout.children.get(old_idx))
+            {
+                let child_ctx = EventCtx {
+                    measurer: ctx.measurer,
+                    bounds: child_node.content_rect,
+                    is_focused: ctx.is_focused,
+                };
+                child.handle_hover(HoverEvent::Leave, &child_ctx);
+            }
+        }
+        // Enter new child.
+        if let Some(new_idx) = new_hover {
+            if let (Some(child), Some(child_node)) =
+                (self.children.get_mut(new_idx), layout.children.get(new_idx))
+            {
+                let child_ctx = EventCtx {
+                    measurer: ctx.measurer,
+                    bounds: child_node.content_rect,
+                    is_focused: ctx.is_focused,
+                };
+                child.handle_hover(HoverEvent::Enter, &child_ctx);
+            }
+        }
+        self.hovered_child = new_hover;
+        WidgetResponse::redraw()
     }
 
     /// Finds the deepest child widget under a point via hit testing.
@@ -133,10 +201,7 @@ impl Widget for FlexWidget {
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let layout = self.compute_child_layout(&layout_ctx, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
 
         for (idx, child) in self.children.iter().enumerate() {
             if let Some(child_node) = layout.children.get(idx) {
@@ -154,10 +219,12 @@ impl Widget for FlexWidget {
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let layout = self.compute_child_layout(&layout_ctx, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+
+        // Track hover state on cursor moves.
+        if matches!(event.kind, MouseEventKind::Move) {
+            return self.update_hover(&layout, event.pos, ctx);
+        }
 
         if let Some(idx) = self.hit_test_children(&layout, event.pos) {
             if let (Some(child), Some(child_node)) =
@@ -175,27 +242,56 @@ impl Widget for FlexWidget {
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Hover events are already targeted — delegate to all children.
-        // The routing layer manages hover enter/leave per widget.
-        for child in &mut self.children {
-            let resp = child.handle_hover(event, ctx);
-            if resp.response.is_handled() {
-                return resp;
+        match event {
+            HoverEvent::Enter => {
+                // Position unknown — defer to next mouse Move for child targeting.
+                WidgetResponse::handled()
+            }
+            HoverEvent::Leave => {
+                // Clear tracked hover child with correct bounds.
+                if let Some(idx) = self.hovered_child.take() {
+                    let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+                    if let (Some(child), Some(child_node)) =
+                        (self.children.get_mut(idx), layout.children.get(idx))
+                    {
+                        let child_ctx = EventCtx {
+                            measurer: ctx.measurer,
+                            bounds: child_node.content_rect,
+                            is_focused: ctx.is_focused,
+                        };
+                        child.handle_hover(HoverEvent::Leave, &child_ctx);
+                    }
+                }
+                WidgetResponse::handled()
+            }
+        }
+    }
+
+    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+
+        // Delegate to all children with correct per-child bounds.
+        for (idx, child) in self.children.iter_mut().enumerate() {
+            if let Some(child_node) = layout.children.get(idx) {
+                let child_ctx = EventCtx {
+                    measurer: ctx.measurer,
+                    bounds: child_node.content_rect,
+                    is_focused: ctx.is_focused,
+                };
+                let resp = child.handle_key(event, &child_ctx);
+                if resp.response.is_handled() {
+                    return resp;
+                }
             }
         }
         WidgetResponse::ignored()
     }
 
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Key events go to the focused child. Since we don't track focus
-        // here, delegate to all children; the focused one will handle it.
-        for child in &mut self.children {
-            let resp = child.handle_key(event, ctx);
-            if resp.response.is_handled() {
-                return resp;
-            }
-        }
-        WidgetResponse::ignored()
+    fn focusable_children(&self) -> Vec<WidgetId> {
+        self.children
+            .iter()
+            .flat_map(|c| c.focusable_children())
+            .collect()
     }
 }
 

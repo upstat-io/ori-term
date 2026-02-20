@@ -4,11 +4,13 @@
 //! container's visible area. Provides mouse wheel scrolling, keyboard
 //! navigation (PageUp/Down, Home/End), and an overlay scrollbar.
 
+use std::cell::RefCell;
+
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseEvent, MouseEventKind, ScrollDelta};
-use crate::layout::{LayoutBox, compute_layout};
+use crate::layout::{LayoutBox, LayoutNode, compute_layout};
 use crate::widget_id::WidgetId;
 
 use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
@@ -66,6 +68,8 @@ pub struct ScrollWidget {
     scrollbar_style: ScrollbarStyle,
     /// Pixels per mouse wheel line.
     line_height: f32,
+    /// Cached child natural size, keyed by viewport bounds.
+    cached_child_layout: RefCell<Option<(Rect, LayoutNode)>>,
 }
 
 impl ScrollWidget {
@@ -79,6 +83,7 @@ impl ScrollWidget {
             scroll_offset_x: 0.0,
             scrollbar_style: ScrollbarStyle::default(),
             line_height: 20.0,
+            cached_child_layout: RefCell::new(None),
         }
     }
 
@@ -92,6 +97,7 @@ impl ScrollWidget {
             scroll_offset_x: 0.0,
             scrollbar_style: ScrollbarStyle::default(),
             line_height: 20.0,
+            cached_child_layout: RefCell::new(None),
         }
     }
 
@@ -113,10 +119,18 @@ impl ScrollWidget {
         self.scroll_offset = offset.clamp(0.0, max);
     }
 
-    /// Computes the child's natural (unconstrained) size.
-    fn child_natural_size(&self, ctx: &LayoutCtx<'_>, viewport: Rect) -> (f32, f32) {
-        let child_box = self.child.layout(ctx);
-        // Give the child unlimited space in the scroll direction.
+    /// Returns cached child natural size if viewport matches, otherwise recomputes.
+    fn child_natural_size(&self, measurer: &dyn super::TextMeasurer, viewport: Rect) -> (f32, f32) {
+        {
+            let cached = self.cached_child_layout.borrow();
+            if let Some((ref cv, ref node)) = *cached {
+                if *cv == viewport {
+                    return (node.rect.width(), node.rect.height());
+                }
+            }
+        }
+        let ctx = LayoutCtx { measurer };
+        let child_box = self.child.layout(&ctx);
         let (w, h) = match self.direction {
             ScrollDirection::Vertical => (viewport.width(), f32::INFINITY),
             ScrollDirection::Horizontal => (f32::INFINITY, viewport.height()),
@@ -124,7 +138,9 @@ impl ScrollWidget {
         };
         let unconstrained = Rect::new(0.0, 0.0, w, h);
         let node = compute_layout(&child_box, unconstrained);
-        (node.rect.width(), node.rect.height())
+        let size = (node.rect.width(), node.rect.height());
+        *self.cached_child_layout.borrow_mut() = Some((viewport, node));
+        size
     }
 
     /// Scrolls by a delta, clamping to valid range. Returns true if offset changed.
@@ -181,10 +197,7 @@ impl Widget for ScrollWidget {
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let (content_w, content_h) = self.child_natural_size(&layout_ctx, ctx.bounds);
+        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.bounds);
 
         // Clip to visible area.
         ctx.draw_list.push_clip(ctx.bounds);
@@ -213,10 +226,7 @@ impl Widget for ScrollWidget {
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let (content_w, content_h) = self.child_natural_size(&layout_ctx, ctx.bounds);
+        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.bounds);
         let view_h = ctx.bounds.height();
 
         // Handle scroll events.
@@ -255,10 +265,7 @@ impl Widget for ScrollWidget {
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let (_, content_h) = self.child_natural_size(&layout_ctx, ctx.bounds);
+        let (_, content_h) = self.child_natural_size(ctx.measurer, ctx.bounds);
         let view_h = ctx.bounds.height();
 
         // Handle scroll keys.
@@ -301,6 +308,15 @@ impl Widget for ScrollWidget {
 
         // Delegate to child for non-scroll keys.
         self.child.handle_key(event, ctx)
+    }
+
+    fn focusable_children(&self) -> Vec<WidgetId> {
+        let mut ids = Vec::new();
+        if self.is_focusable() {
+            ids.push(self.id());
+        }
+        ids.extend(self.child.focusable_children());
+        ids
     }
 }
 

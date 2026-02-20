@@ -165,6 +165,19 @@ pub trait Widget {
 
     /// Handles a keyboard event. Returns a response with optional action.
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
+
+    /// Collects focusable widget IDs reachable from this widget.
+    ///
+    /// Leaf widgets return their own ID if focusable; containers override
+    /// to recurse into children. Used by the overlay manager to build
+    /// modal focus order.
+    fn focusable_children(&self) -> Vec<WidgetId> {
+        if self.is_focusable() {
+            vec![self.id()]
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 // Default dark-theme colors shared across widget styles.
