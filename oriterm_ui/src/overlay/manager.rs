@@ -224,12 +224,14 @@ impl OverlayManager {
 
     /// Routes a mouse event through the overlay stack.
     ///
-    /// Hit-tests overlays back-to-front (topmost first). See
-    /// [`OverlayEventResult`] for the routing rules.
+    /// Hit-tests overlays back-to-front (topmost first). The `focused_widget`
+    /// parameter indicates which widget currently has keyboard focus (from the
+    /// app layer's `FocusManager`). See [`OverlayEventResult`] for routing rules.
     pub fn process_mouse_event(
         &mut self,
         event: &MouseEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
+        focused_widget: Option<WidgetId>,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
             return OverlayEventResult::PassThrough;
@@ -240,10 +242,11 @@ impl OverlayManager {
             if self.overlays[i].computed_rect.contains(event.pos) {
                 let overlay = &mut self.overlays[i];
                 let id = overlay.id;
+                let root_id = overlay.widget.id();
                 let ctx = EventCtx {
                     measurer,
                     bounds: overlay.computed_rect,
-                    is_focused: false,
+                    is_focused: focused_widget == Some(root_id),
                 };
                 let response = overlay.widget.handle_mouse(event, &ctx);
                 return OverlayEventResult::Delivered {
@@ -274,10 +277,13 @@ impl OverlayManager {
     /// Routes a key event through the overlay stack.
     ///
     /// Escape dismisses the topmost overlay. Modal overlays never pass through.
+    /// The `focused_widget` parameter indicates which widget currently has
+    /// keyboard focus (from the app layer's `FocusManager`).
     pub fn process_key_event(
         &mut self,
         event: KeyEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
+        focused_widget: Option<WidgetId>,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
             return OverlayEventResult::PassThrough;
@@ -292,10 +298,11 @@ impl OverlayManager {
         let topmost = self.overlays.last_mut().expect("checked non-empty above");
         let id = topmost.id;
         let is_modal = topmost.kind == OverlayKind::Modal;
+        let root_id = topmost.widget.id();
         let ctx = EventCtx {
             measurer,
             bounds: topmost.computed_rect,
-            is_focused: true,
+            is_focused: focused_widget == Some(root_id),
         };
         let response = topmost.widget.handle_key(event, &ctx);
 
@@ -310,11 +317,15 @@ impl OverlayManager {
     }
 
     /// Routes a hover event through the overlay stack.
+    ///
+    /// The `focused_widget` parameter indicates which widget currently has
+    /// keyboard focus (from the app layer's `FocusManager`).
     pub fn process_hover_event(
         &mut self,
         point: Point,
         event: HoverEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
+        focused_widget: Option<WidgetId>,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
             return OverlayEventResult::PassThrough;
@@ -325,10 +336,11 @@ impl OverlayManager {
             if self.overlays[i].computed_rect.contains(point) {
                 let overlay = &mut self.overlays[i];
                 let id = overlay.id;
+                let root_id = overlay.widget.id();
                 let ctx = EventCtx {
                     measurer,
                     bounds: overlay.computed_rect,
-                    is_focused: false,
+                    is_focused: focused_widget == Some(root_id),
                 };
                 let response = overlay.widget.handle_hover(event, &ctx);
                 return OverlayEventResult::Delivered {
@@ -355,19 +367,6 @@ impl OverlayManager {
         if topmost.kind != OverlayKind::Modal {
             return None;
         }
-        let mut ids = Vec::new();
-        collect_focusable(&*topmost.widget, &mut ids);
-        Some(ids)
-    }
-}
-
-/// Recursively collects focusable widget IDs.
-///
-/// For the modal focus order, we only need the top-level widget's focusability.
-/// Container widgets would need their own traversal — for now we check the
-/// root widget only.
-fn collect_focusable(widget: &dyn Widget, ids: &mut Vec<WidgetId>) {
-    if widget.is_focusable() {
-        ids.push(widget.id());
+        Some(topmost.widget.focusable_children())
     }
 }

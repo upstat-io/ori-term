@@ -5,6 +5,7 @@ use crate::draw::{DrawCommand, DrawList};
 use crate::geometry::{Point, Rect, Size};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::widgets::button::ButtonWidget;
+use crate::widgets::flex::FlexWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, Widget, WidgetAction};
@@ -332,7 +333,7 @@ fn overlay_rect_unknown_id() {
 fn mouse_pass_through_when_empty() {
     let mut mgr = OverlayManager::new(viewport());
     let event = mouse_down(50.0, 50.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
@@ -344,7 +345,7 @@ fn mouse_click_inside_overlay_delivers() {
 
     let rect = mgr.overlay_rect(id).unwrap();
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::Delivered { .. }));
 }
 
@@ -356,7 +357,7 @@ fn mouse_click_outside_dismisses() {
 
     // Click far from the overlay.
     let event = mouse_down(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
 
     match result {
         OverlayEventResult::Dismissed(dismissed_id) => assert_eq!(dismissed_id, id),
@@ -373,7 +374,7 @@ fn mouse_move_outside_does_not_dismiss() {
 
     // Mouse move (not click) outside should pass through, not dismiss.
     let event = mouse_move(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
     assert_eq!(mgr.count(), 1);
 }
@@ -385,7 +386,7 @@ fn mouse_click_outside_modal_blocks() {
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
     let event = mouse_down(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::Blocked));
     // Modal should still be there.
     assert_eq!(mgr.count(), 1);
@@ -401,7 +402,7 @@ fn mouse_topmost_overlay_wins() {
 
     let rect = mgr.overlay_rect(id2).unwrap();
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
 
     match result {
         OverlayEventResult::Delivered { overlay_id, .. } => assert_eq!(overlay_id, id2),
@@ -414,7 +415,7 @@ fn mouse_topmost_overlay_wins() {
 #[test]
 fn key_pass_through_when_empty() {
     let mut mgr = OverlayManager::new(viewport());
-    let result = mgr.process_key_event(key_event(Key::Enter), &MockMeasurer::STANDARD);
+    let result = mgr.process_key_event(key_event(Key::Enter), &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
@@ -425,7 +426,7 @@ fn escape_dismisses_topmost() {
     let id2 = mgr.push_overlay(label_widget("B"), anchor(), Placement::Below);
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
-    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     match result {
         OverlayEventResult::Dismissed(id) => assert_eq!(id, id2),
         other => panic!("expected Dismissed, got {other:?}"),
@@ -439,7 +440,7 @@ fn escape_dismisses_modal() {
     let id = mgr.push_modal(label_widget("Modal"), anchor(), Placement::Center);
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
-    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     match result {
         OverlayEventResult::Dismissed(dismissed_id) => assert_eq!(dismissed_id, id),
         other => panic!("expected Dismissed, got {other:?}"),
@@ -453,7 +454,7 @@ fn modal_never_passes_key_through() {
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
     // A random key that the label won't handle.
-    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD);
+    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD, None);
     // Modal should deliver (even if Ignored by widget), never PassThrough.
     assert!(matches!(result, OverlayEventResult::Delivered { .. }));
 }
@@ -465,7 +466,7 @@ fn non_modal_key_can_pass_through() {
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
     // Labels don't handle key events → should pass through.
-    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD);
+    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
@@ -478,6 +479,7 @@ fn hover_pass_through_when_empty() {
         Point::new(50.0, 50.0),
         HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        None,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
@@ -493,6 +495,7 @@ fn hover_inside_overlay_delivers() {
         Point::new(rect.x() + 5.0, rect.y() + 5.0),
         HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        None,
     );
     assert!(matches!(result, OverlayEventResult::Delivered { .. }));
 }
@@ -507,6 +510,7 @@ fn hover_outside_modal_blocks() {
         Point::new(1.0, 1.0),
         HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        None,
     );
     assert!(matches!(result, OverlayEventResult::Blocked));
 }
@@ -521,6 +525,7 @@ fn hover_outside_non_modal_passes_through() {
         Point::new(1.0, 1.0),
         HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        None,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
@@ -691,14 +696,14 @@ fn button_in_overlay_receives_click_action() {
 
     // Down then up = click.
     let down = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
-    mgr.process_mouse_event(&down, &MockMeasurer::STANDARD);
+    mgr.process_mouse_event(&down, &MockMeasurer::STANDARD, None);
 
     let up = MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
         pos: Point::new(rect.x() + 5.0, rect.y() + 5.0),
         modifiers: Modifiers::NONE,
     };
-    let result = mgr.process_mouse_event(&up, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&up, &MockMeasurer::STANDARD, None);
 
     match result {
         OverlayEventResult::Delivered { response, .. } => {
@@ -720,7 +725,7 @@ fn stacked_modals_inner_dismiss_restores_outer() {
     assert!(mgr.has_modal());
 
     // Escape dismisses inner modal.
-    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     match result {
         OverlayEventResult::Dismissed(id) => assert_eq!(id, id2),
         other => panic!("expected inner dismissed, got {other:?}"),
@@ -732,11 +737,11 @@ fn stacked_modals_inner_dismiss_restores_outer() {
 
     // Click outside is still blocked by outer modal.
     let event = mouse_down(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::Blocked));
 
     // Second escape dismisses outer.
-    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     match result {
         OverlayEventResult::Dismissed(id) => assert_eq!(id, id1),
         other => panic!("expected outer dismissed, got {other:?}"),
@@ -753,20 +758,20 @@ fn multiple_escapes_dismiss_stack_one_at_a_time() {
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
     // Three escapes should dismiss C, B, A in order.
-    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id3));
     assert_eq!(mgr.count(), 2);
 
-    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id2));
     assert_eq!(mgr.count(), 1);
 
-    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id1));
     assert!(mgr.is_empty());
 
     // Fourth escape passes through (stack empty).
-    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     assert!(matches!(r, OverlayEventResult::PassThrough));
 }
 
@@ -782,7 +787,7 @@ fn scroll_outside_overlay_does_not_dismiss() {
         pos: Point::new(1.0, 1.0),
         modifiers: Modifiers::NONE,
     };
-    let result = mgr.process_mouse_event(&scroll, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&scroll, &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
     assert_eq!(mgr.count(), 1, "scroll should not dismiss overlay");
 }
@@ -799,7 +804,7 @@ fn right_click_outside_also_dismisses() {
         pos: Point::new(1.0, 1.0),
         modifiers: Modifiers::NONE,
     };
-    let result = mgr.process_mouse_event(&right_click, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&right_click, &MockMeasurer::STANDARD, None);
     match result {
         OverlayEventResult::Dismissed(dismissed_id) => assert_eq!(dismissed_id, id),
         other => panic!("expected Dismissed on right-click, got {other:?}"),
@@ -834,13 +839,13 @@ fn dismiss_topmost_reveals_overlay_below() {
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
     // Escape removes Upper.
-    mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD);
+    mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
     assert_eq!(mgr.count(), 1);
 
     // Lower overlay should now receive events.
     let rect = mgr.overlay_rect(id1).unwrap();
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
     match result {
         OverlayEventResult::Delivered { overlay_id, .. } => assert_eq!(overlay_id, id1),
         other => panic!("expected Delivered to lower, got {other:?}"),
@@ -894,13 +899,13 @@ fn non_modal_over_modal_blocks_correctly() {
 
     // Click outside both: topmost is non-modal with dismiss_on_click_outside.
     let event = mouse_down(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
     // Should dismiss the non-modal popup.
     assert!(matches!(result, OverlayEventResult::Dismissed(_)));
     assert_eq!(mgr.count(), 1);
 
     // Now topmost is modal — click outside is blocked.
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::Blocked));
 }
 
@@ -932,7 +937,7 @@ fn mouse_up_outside_does_not_dismiss() {
         pos: Point::new(1.0, 1.0),
         modifiers: Modifiers::NONE,
     };
-    let result = mgr.process_mouse_event(&up, &MockMeasurer::STANDARD);
+    let result = mgr.process_mouse_event(&up, &MockMeasurer::STANDARD, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
     assert_eq!(mgr.count(), 1, "mouse up should not dismiss");
 }
@@ -944,7 +949,7 @@ fn modal_key_delivery_reports_correct_overlay_id() {
     let id = mgr.push_modal(label_widget("Dialog"), anchor(), Placement::Center);
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
-    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD);
+    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD, None);
     match result {
         OverlayEventResult::Delivered { overlay_id, .. } => assert_eq!(overlay_id, id),
         other => panic!("expected Delivered with modal id, got {other:?}"),
@@ -993,4 +998,23 @@ fn label_not_focusable_in_modal() {
     let order = mgr.modal_focus_order();
     assert!(order.is_some());
     assert!(order.unwrap().is_empty(), "label has no focusable elements");
+}
+
+#[test]
+fn modal_focus_order_traverses_containers() {
+    // Flex wrapping two buttons — focus order should find both.
+    let btn1 = ButtonWidget::new("OK");
+    let btn1_id = btn1.id();
+    let btn2 = ButtonWidget::new("Cancel");
+    let btn2_id = btn2.id();
+    let flex: Box<dyn Widget> = Box::new(FlexWidget::row(vec![Box::new(btn1), Box::new(btn2)]));
+
+    let mut mgr = OverlayManager::new(viewport());
+    mgr.push_modal(flex, anchor(), Placement::Center);
+    mgr.layout_overlays(&MockMeasurer::STANDARD);
+
+    let ids = mgr.modal_focus_order().expect("modal present");
+    assert!(ids.contains(&btn1_id), "should find first button");
+    assert!(ids.contains(&btn2_id), "should find second button");
+    assert_eq!(ids.len(), 2);
 }

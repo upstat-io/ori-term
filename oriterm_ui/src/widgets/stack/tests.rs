@@ -324,3 +324,39 @@ fn stack_single_child_receives_events() {
         other => panic!("expected Clicked, got {other:?}"),
     }
 }
+
+#[test]
+fn stack_mouse_falls_through_to_back_child() {
+    // Label (non-interactive) on top, button behind it.
+    // Click should fall through the label to reach the button.
+    let btn = button("Behind");
+    let btn_id = btn.id();
+    let mut stack = StackWidget::new(vec![btn, label("Overlay")]);
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: false,
+    };
+
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+    };
+    let _ = stack.handle_mouse(&down, &ctx);
+
+    let up = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+    };
+    let resp = stack.handle_mouse(&up, &ctx);
+
+    match resp.action {
+        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
+        other => panic!("expected click to fall through to back button, got {other:?}"),
+    }
+}

@@ -4,7 +4,7 @@
 //! bounds. The last child in the list is frontmost (drawn last, receives
 //! events first). Used for absolute positioning within a relative container.
 
-use crate::geometry::{Point, Rect};
+use crate::geometry::Rect;
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, compute_layout};
 use crate::widget_id::WidgetId;
@@ -19,6 +19,8 @@ use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 pub struct StackWidget {
     id: WidgetId,
     children: Vec<Box<dyn Widget>>,
+    /// Index of the child currently hovered (set by hover Enter).
+    hovered_child: Option<usize>,
 }
 
 impl StackWidget {
@@ -27,6 +29,7 @@ impl StackWidget {
         Self {
             id: WidgetId::next(),
             children,
+            hovered_child: None,
         }
     }
 
@@ -50,18 +53,6 @@ impl StackWidget {
             max_h = max_h.max(node.rect.height());
         }
         (max_w, max_h)
-    }
-
-    /// Returns the frontmost child index if the point is within bounds.
-    ///
-    /// All stack children share the same bounds, so if the point is inside
-    /// the stack, the frontmost (last) child is the hit target.
-    fn hit_test_back_to_front(&self, pos: Point, bounds: Rect) -> Option<usize> {
-        if !self.children.is_empty() && bounds.contains(pos) {
-            Some(self.children.len() - 1)
-        } else {
-            None
-        }
     }
 }
 
@@ -97,28 +88,42 @@ impl Widget for StackWidget {
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+        if !ctx.bounds.contains(event.pos) {
+            return WidgetResponse::ignored();
+        }
         // Route back-to-front: frontmost child that handles it wins.
-        if let Some(idx) = self.hit_test_back_to_front(event.pos, ctx.bounds) {
-            // Try from frontmost (last) down to the hit child.
-            for i in (idx..self.children.len()).rev() {
-                let resp = self.children[i].handle_mouse(event, ctx);
-                if resp.response.is_handled() {
-                    return resp;
-                }
+        for child in self.children.iter_mut().rev() {
+            let resp = child.handle_mouse(event, ctx);
+            if resp.response.is_handled() {
+                return resp;
             }
         }
         WidgetResponse::ignored()
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Hover propagates to all children (frontmost first).
-        for child in self.children.iter_mut().rev() {
-            let resp = child.handle_hover(event, ctx);
-            if resp.response.is_handled() {
-                return resp;
+        match event {
+            HoverEvent::Enter => {
+                // Enter the frontmost child that accepts hover.
+                for (idx, child) in self.children.iter_mut().enumerate().rev() {
+                    let resp = child.handle_hover(HoverEvent::Enter, ctx);
+                    if resp.response.is_handled() {
+                        self.hovered_child = Some(idx);
+                        return resp;
+                    }
+                }
+                WidgetResponse::ignored()
+            }
+            HoverEvent::Leave => {
+                // Leave only the tracked hovered child.
+                if let Some(idx) = self.hovered_child.take() {
+                    if let Some(child) = self.children.get_mut(idx) {
+                        return child.handle_hover(HoverEvent::Leave, ctx);
+                    }
+                }
+                WidgetResponse::handled()
             }
         }
-        WidgetResponse::ignored()
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
@@ -130,6 +135,13 @@ impl Widget for StackWidget {
             }
         }
         WidgetResponse::ignored()
+    }
+
+    fn focusable_children(&self) -> Vec<WidgetId> {
+        self.children
+            .iter()
+            .flat_map(|c| c.focusable_children())
+            .collect()
     }
 }
 
