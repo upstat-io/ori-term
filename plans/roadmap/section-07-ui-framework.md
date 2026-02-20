@@ -25,7 +25,7 @@ sections:
     status: complete
   - id: "07.7"
     title: Container Widgets
-    status: not-started
+    status: complete
   - id: "07.8"
     title: Overlay & Modal System
     status: not-started
@@ -313,35 +313,35 @@ The basic building blocks.
 
 ## 07.7 Container Widgets
 
-Widgets that contain and arrange other widgets.
+Widgets that contain and arrange other widgets. Children stored as `Box<dyn Widget>` for heterogeneous composition.
 
-**File:** `oriterm_ui/src/widgets/containers.rs`
+**Files:** `oriterm_ui/src/widgets/flex/`, `oriterm_ui/src/widgets/panel/`, `oriterm_ui/src/widgets/spacer/`, `oriterm_ui/src/widgets/stack/`, `oriterm_ui/src/widgets/scroll/`
 
 ### Row / Column (Flex Container)
-- [ ] `FlexWidget { direction: Direction, children: Vec<Widget>, gap: f32, align: Align, justify: Justify }`
-- [ ] The primary layout container — everything is nested Rows and Columns
-- [ ] Delegates to the flex layout algorithm (07.3)
+- [x] `FlexWidget { direction: Direction, children: Vec<Box<dyn Widget>>, gap: f32, align: Align, justify: Justify }`
+- [x] The primary layout container — everything is nested Rows and Columns
+- [x] Delegates to the flex layout algorithm (07.3)
 
 ### Scroll Container
-- [ ] `ScrollWidget { child: Widget, scroll_offset: f32, direction: ScrollDirection }`
-- [ ] Clips child to container bounds
-- [ ] Scrollbar: thin overlay scrollbar (appears on hover/scroll, fades out)
-- [ ] Mouse wheel scrolling, trackpad smooth scroll
-- [ ] Keyboard: PageUp/PageDown, Home/End
+- [x] `ScrollWidget { child: Box<dyn Widget>, scroll_offset: f32, direction: ScrollDirection }`
+- [x] Clips child to container bounds
+- [x] Scrollbar: thin overlay scrollbar (appears on hover/scroll, fades out)
+- [x] Mouse wheel scrolling, trackpad smooth scroll
+- [x] Keyboard: PageUp/PageDown, Home/End
 
 ### Panel
-- [ ] `PanelWidget { child: Widget, style: PanelStyle }`
-- [ ] Visual container with background, border, rounded corners, shadow
-- [ ] Used for settings panels, dialog backgrounds, card-style layouts
+- [x] `PanelWidget { child: Box<dyn Widget>, style: PanelStyle }`
+- [x] Visual container with background, border, rounded corners, shadow
+- [x] Used for settings panels, dialog backgrounds, card-style layouts
 
 ### Spacer
-- [ ] `SpacerWidget { size: Size }` — flexible or fixed empty space
-- [ ] `Spacer::fill()` — pushes siblings to opposite ends
+- [x] `SpacerWidget { size: Size }` — flexible or fixed empty space
+- [x] `Spacer::fill()` — pushes siblings to opposite ends
 
 ### Stack (Z-axis)
-- [ ] `StackWidget { children: Vec<Widget> }` — children overlaid on top of each other
-- [ ] Used for positioning elements absolutely within a relative container
-- [ ] Last child is frontmost
+- [x] `StackWidget { children: Vec<Box<dyn Widget>> }` — children overlaid on top of each other
+- [x] Used for positioning elements absolutely within a relative container
+- [x] Last child is frontmost
 
 ---
 

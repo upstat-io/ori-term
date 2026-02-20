@@ -10,9 +10,14 @@ pub mod text_measurer;
 pub mod button;
 pub mod checkbox;
 pub mod dropdown;
+pub mod flex;
 pub mod label;
+pub mod panel;
+pub mod scroll;
 pub mod separator;
 pub mod slider;
+pub mod spacer;
+pub mod stack;
 pub mod text_input;
 pub mod toggle;
 
