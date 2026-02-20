@@ -3,6 +3,7 @@ use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::compute_layout;
 use crate::widgets::button::ButtonWidget;
+use crate::widgets::flex::FlexWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
@@ -250,6 +251,47 @@ fn stack_mouse_outside_bounds_ignored() {
         modifiers: Modifiers::NONE,
     };
     assert_eq!(stack.handle_mouse(&event, &ctx), WidgetResponse::ignored());
+}
+
+#[test]
+fn stack_sizes_to_flex_child() {
+    // A Flex (Column) child with two labels should contribute its natural size.
+    // 2 labels * 16px = 32px tall, "Hello" = 5*8 = 40px wide.
+    let col: Box<dyn Widget> = Box::new(FlexWidget::column(vec![label("Hello"), label("World")]));
+    let stack = StackWidget::new(vec![col]);
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+    };
+    let layout_box = stack.layout(&ctx);
+    let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
+    let node = compute_layout(&layout_box, viewport);
+
+    assert_eq!(node.rect.width(), 40.0);
+    assert_eq!(node.rect.height(), 32.0);
+}
+
+#[test]
+fn stack_sizes_to_largest_including_flex() {
+    // Mix of Leaf (label) and Flex (column) children. Stack sizes to the largest.
+    // Label "Wide label!!" = 12*8 = 96px wide, 16px tall.
+    // Column of 3 labels = 3*16 = 48px tall, "AB" = 16px wide.
+    let wide_label = label("Wide label!!");
+    let tall_col: Box<dyn Widget> = Box::new(FlexWidget::column(vec![
+        label("AB"),
+        label("AB"),
+        label("AB"),
+    ]));
+    let stack = StackWidget::new(vec![wide_label, tall_col]);
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+    };
+    let layout_box = stack.layout(&ctx);
+    let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
+    let node = compute_layout(&layout_box, viewport);
+
+    // Width from label (96px), height from column (48px).
+    assert_eq!(node.rect.width(), 96.0);
+    assert_eq!(node.rect.height(), 48.0);
 }
 
 #[test]

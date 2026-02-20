@@ -171,21 +171,35 @@ impl Widget for PanelWidget {
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let child_ctx = EventCtx {
+        let layout_ctx = LayoutCtx {
             measurer: ctx.measurer,
-            bounds: ctx.bounds.inset(self.style.padding),
-            is_focused: ctx.is_focused,
         };
-        self.child.handle_hover(event, &child_ctx)
+        let layout = self.child_layout(&layout_ctx, ctx.bounds);
+        if let Some(child_node) = layout.children.first() {
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: child_node.content_rect,
+                is_focused: ctx.is_focused,
+            };
+            return self.child.handle_hover(event, &child_ctx);
+        }
+        WidgetResponse::ignored()
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let child_ctx = EventCtx {
+        let layout_ctx = LayoutCtx {
             measurer: ctx.measurer,
-            bounds: ctx.bounds.inset(self.style.padding),
-            is_focused: ctx.is_focused,
         };
-        self.child.handle_key(event, &child_ctx)
+        let layout = self.child_layout(&layout_ctx, ctx.bounds);
+        if let Some(child_node) = layout.children.first() {
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: child_node.content_rect,
+                is_focused: ctx.is_focused,
+            };
+            return self.child.handle_key(event, &child_ctx);
+        }
+        WidgetResponse::ignored()
     }
 }
 

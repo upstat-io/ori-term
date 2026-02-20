@@ -4,9 +4,9 @@
 //! bounds. The last child in the list is frontmost (drawn last, receives
 //! events first). Used for absolute positioning within a relative container.
 
-use crate::geometry::Point;
+use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
-use crate::layout::LayoutBox;
+use crate::layout::{LayoutBox, compute_layout};
 use crate::widget_id::WidgetId;
 
 use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
@@ -35,20 +35,19 @@ impl StackWidget {
         self.children.len()
     }
 
-    /// Finds the largest intrinsic size among children to size the stack.
+    /// Finds the largest resolved size among children to size the stack.
+    ///
+    /// Resolves each child through the layout solver with unconstrained bounds
+    /// so both `Leaf` and `Flex` children contribute their natural size.
     fn max_child_size(&self, ctx: &LayoutCtx<'_>) -> (f32, f32) {
         let mut max_w: f32 = 0.0;
         let mut max_h: f32 = 0.0;
+        let unconstrained = Rect::new(0.0, 0.0, f32::INFINITY, f32::INFINITY);
         for child in &self.children {
             let child_box = child.layout(ctx);
-            if let crate::layout::BoxContent::Leaf {
-                intrinsic_width,
-                intrinsic_height,
-            } = child_box.content
-            {
-                max_w = max_w.max(intrinsic_width);
-                max_h = max_h.max(intrinsic_height);
-            }
+            let node = compute_layout(&child_box, unconstrained);
+            max_w = max_w.max(node.rect.width());
+            max_h = max_h.max(node.rect.height());
         }
         (max_w, max_h)
     }
@@ -57,7 +56,7 @@ impl StackWidget {
     ///
     /// All stack children share the same bounds, so if the point is inside
     /// the stack, the frontmost (last) child is the hit target.
-    fn hit_test_back_to_front(&self, pos: Point, bounds: crate::geometry::Rect) -> Option<usize> {
+    fn hit_test_back_to_front(&self, pos: Point, bounds: Rect) -> Option<usize> {
         if !self.children.is_empty() && bounds.contains(pos) {
             Some(self.children.len() - 1)
         } else {
