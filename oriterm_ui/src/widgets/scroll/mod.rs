@@ -211,13 +211,14 @@ impl Widget for ScrollWidget {
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+        let layout_ctx = LayoutCtx {
+            measurer: ctx.measurer,
+        };
+        let (content_w, content_h) = self.child_natural_size(&layout_ctx, ctx.bounds);
+        let view_h = ctx.bounds.height();
+
         // Handle scroll events.
         if let MouseEventKind::Scroll(delta) = event.kind {
-            let layout_ctx = LayoutCtx {
-                measurer: ctx.measurer,
-            };
-            let (_, content_h) = self.child_natural_size(&layout_ctx, ctx.bounds);
-            let view_h = ctx.bounds.height();
             let delta_y = match delta {
                 ScrollDelta::Pixels { y, .. } => y,
                 ScrollDelta::Lines { y, .. } => y * self.line_height,
@@ -238,10 +239,6 @@ impl Widget for ScrollWidget {
             pos: child_pos,
             modifiers: event.modifiers,
         };
-        let layout_ctx = LayoutCtx {
-            measurer: ctx.measurer,
-        };
-        let (content_w, content_h) = self.child_natural_size(&layout_ctx, ctx.bounds);
         let child_bounds = Rect::new(0.0, 0.0, content_w, content_h);
         let child_ctx = EventCtx {
             measurer: ctx.measurer,
