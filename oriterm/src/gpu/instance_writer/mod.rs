@@ -113,7 +113,6 @@ impl InstanceWriter {
     }
 
     /// Reset to zero instances, retaining allocated memory.
-    #[allow(dead_code, reason = "instance writer methods for later sections")]
     pub fn clear(&mut self) {
         self.buf.clear();
     }

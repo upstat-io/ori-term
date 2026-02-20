@@ -299,7 +299,6 @@ impl GlyphAtlas {
     ///
     /// Keeps the texture array but resets to one active page. Called on font
     /// size change when all cached glyphs become invalid.
-    #[allow(dead_code, reason = "used in tests and font size change")]
     pub fn clear(&mut self) {
         self.cache.clear();
         for page in &mut self.pages {

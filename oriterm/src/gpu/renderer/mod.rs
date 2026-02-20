@@ -243,7 +243,7 @@ impl GpuRenderer {
     /// Run the Prepare phase: shape text and build GPU instance buffers.
     ///
     /// Fills `self.prepared` via buffer reuse (no per-frame allocation after
-    /// the first frame). Access the result via [`prepared()`](Self::prepared).
+    /// the first frame).
     ///
     /// Three phases:
     /// 1. **Shape** — segment rows into runs and shape via rustybuzz.
@@ -285,11 +285,14 @@ impl GpuRenderer {
             color: &self.color_atlas,
         };
         prepare::prepare_frame_shaped_into(input, &bridge, &self.shaping.frame, &mut self.prepared);
-    }
 
-    /// The most recently prepared frame.
-    pub fn prepared(&self) -> &PreparedFrame {
-        &self.prepared
+        log::trace!(
+            "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
+            input.content.cells.len(),
+            self.prepared.backgrounds.len(),
+            self.prepared.glyphs.len(),
+            self.prepared.cursors.len(),
+        );
     }
 
     // ── Render phase ──
