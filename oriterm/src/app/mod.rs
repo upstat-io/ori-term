@@ -258,13 +258,6 @@ impl App {
             }
 
             renderer.prepare(frame, gpu);
-            log::trace!(
-                "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
-                frame.content.cells.len(),
-                renderer.prepared().backgrounds.len(),
-                renderer.prepared().glyphs.len(),
-                renderer.prepared().cursors.len(),
-            );
             renderer.render_to_surface(gpu, window.surface())
         };
 
