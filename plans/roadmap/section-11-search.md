@@ -168,7 +168,7 @@ Search bar overlay rendered on top of the terminal grid, with text input, match 
 - [ ] `App::scroll_to_search_match(&self, tab_id: TabId)`
   - [ ] Convert focused match's StableRowIndex to absolute row
   - [ ] If match outside current viewport: scroll display_offset to center it
-- [ ] Search bar rendering:
+- [ ] Search bar rendering: <!-- unblocks:6.13 -->
   - [ ] Position: top-right of grid area (configurable in future)
   - [ ] Content: query text, match count ("N of M"), up/down navigation indicators
   - [ ] Rendered as GPU instances on foreground layer

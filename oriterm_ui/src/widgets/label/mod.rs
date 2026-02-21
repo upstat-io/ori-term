@@ -10,7 +10,9 @@ use crate::layout::LayoutBox;
 use crate::text::{TextOverflow, TextStyle};
 use crate::widget_id::WidgetId;
 
-use super::{DEFAULT_FG, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::theme::UiTheme;
+
+use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
 /// Style for a [`LabelWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -23,13 +25,20 @@ pub struct LabelStyle {
     pub overflow: TextOverflow,
 }
 
-impl Default for LabelStyle {
-    fn default() -> Self {
+impl LabelStyle {
+    /// Derives a label style from the given theme.
+    pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
-            color: DEFAULT_FG,
-            font_size: 13.0,
+            color: theme.fg_primary,
+            font_size: theme.font_size,
             overflow: TextOverflow::Clip,
         }
+    }
+}
+
+impl Default for LabelStyle {
+    fn default() -> Self {
+        Self::from_theme(&UiTheme::dark())
     }
 }
 

@@ -15,6 +15,7 @@ pub mod layout;
 pub mod overlay;
 pub mod scale;
 pub mod text;
+pub mod theme;
 pub mod widget_id;
 pub mod widgets;
 pub mod window;

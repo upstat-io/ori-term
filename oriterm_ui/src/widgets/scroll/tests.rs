@@ -35,6 +35,7 @@ fn scroll_layout_reports_child_size() {
     let scroll = make_scroll(short_content());
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = scroll.layout(&ctx);
     // Use a viewport wide enough that no clamping occurs.
@@ -91,6 +92,7 @@ fn scroll_draws_with_clip() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     scroll.draw(&mut ctx);
 
@@ -122,6 +124,7 @@ fn scroll_wheel_changes_offset() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Scroll down (negative delta_y means scroll down in our convention).
@@ -153,6 +156,7 @@ fn key_home_resets_to_top() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let event = KeyEvent {
@@ -176,6 +180,7 @@ fn key_end_scrolls_to_bottom() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let event = KeyEvent {
@@ -200,6 +205,7 @@ fn key_arrow_down_scrolls() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let event = KeyEvent {
@@ -228,6 +234,7 @@ fn scroll_clip_rect_matches_viewport() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     scroll.draw(&mut ctx);
 
@@ -255,6 +262,7 @@ fn scroll_child_drawn_offset_by_scroll() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     scroll.draw(&mut ctx);
 
@@ -283,6 +291,7 @@ fn scroll_draws_scrollbar_when_overflowing() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     scroll.draw(&mut ctx);
 
@@ -314,6 +323,7 @@ fn scroll_no_scrollbar_when_content_fits() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     scroll.draw(&mut ctx);
 
@@ -337,6 +347,7 @@ fn scroll_multiple_wheel_events_accumulate() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Scroll down 3 times.
@@ -363,6 +374,7 @@ fn scroll_wheel_clamps_at_bottom() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Scroll way past the bottom.
@@ -387,6 +399,7 @@ fn scroll_wheel_clamps_at_top() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Scroll up from top (should stay at 0).
@@ -409,6 +422,7 @@ fn scroll_pixel_delta_works() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Trackpad-style pixel delta.
@@ -435,6 +449,7 @@ fn scroll_delegates_non_scroll_mouse_to_child() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let down = MouseEvent {
@@ -470,6 +485,7 @@ fn arrow_up_scrolls_upward() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let event = KeyEvent {
@@ -519,6 +535,7 @@ fn horizontal_scroll_draws_with_clip() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     scroll.draw(&mut ctx);
 
@@ -563,6 +580,7 @@ fn scroll_content_exactly_fits_no_scrollbar() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     scroll.draw(&mut ctx);
 
@@ -589,6 +607,7 @@ fn scroll_hover_delegates_to_child() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Hover should delegate to the child.
@@ -622,6 +641,7 @@ fn scroll_with_scrollbar_style() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     scroll.draw(&mut ctx);
     assert!(!draw_list.is_empty());

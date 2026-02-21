@@ -13,10 +13,9 @@ use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEven
 use crate::layout::LayoutBox;
 use crate::widget_id::WidgetId;
 
-use super::{
-    DEFAULT_ACCENT, DEFAULT_BG, DEFAULT_DISABLED_BG, DEFAULT_DISABLED_FG, DEFAULT_FOCUS_RING,
-    DEFAULT_HOVER_BG, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse,
-};
+use crate::theme::UiTheme;
+
+use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 /// Duration of the toggle slide animation.
 const TOGGLE_DURATION: Duration = Duration::from_millis(150);
@@ -46,20 +45,27 @@ pub struct ToggleStyle {
     pub focus_ring_color: Color,
 }
 
-impl Default for ToggleStyle {
-    fn default() -> Self {
+impl ToggleStyle {
+    /// Derives a toggle style from the given theme.
+    pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
             width: 40.0,
             height: 22.0,
-            off_bg: DEFAULT_BG,
-            off_hover_bg: DEFAULT_HOVER_BG,
-            on_bg: DEFAULT_ACCENT,
+            off_bg: theme.bg_primary,
+            off_hover_bg: theme.bg_hover,
+            on_bg: theme.accent,
             thumb_color: Color::WHITE,
             thumb_padding: 2.0,
-            disabled_bg: DEFAULT_DISABLED_BG,
-            disabled_thumb: DEFAULT_DISABLED_FG,
-            focus_ring_color: DEFAULT_FOCUS_RING,
+            disabled_bg: theme.bg_secondary,
+            disabled_thumb: theme.fg_disabled,
+            focus_ring_color: theme.accent,
         }
+    }
+}
+
+impl Default for ToggleStyle {
+    fn default() -> Self {
+        Self::from_theme(&UiTheme::dark())
     }
 }
 

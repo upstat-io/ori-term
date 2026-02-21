@@ -82,6 +82,7 @@ impl Widget for StackWidget {
                 focused_widget: ctx.focused_widget,
                 now: ctx.now,
                 animations_running: ctx.animations_running,
+                theme: ctx.theme,
             };
             child.draw(&mut child_ctx);
         }
@@ -135,6 +136,7 @@ impl Widget for StackWidget {
                 bounds: ctx.bounds,
                 is_focused: ctx.focused_widget == Some(child.id()),
                 focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
             };
             let resp = child.handle_key(event, &child_ctx);
             if resp.response.is_handled() {

@@ -275,7 +275,7 @@ Map shaped glyphs back to grid columns. Ligatures span multiple columns — only
 - [x] Ligature background:
   - [x] Background color for each column still rendered independently (cell-by-cell)
   - [x] Only the foreground glyph spans multiple columns
-- [ ] Ligature + selection interaction:
+- [ ] Ligature + selection interaction: <!-- blocked-by:9 -->
   - [ ] If selection covers part of a ligature, still render the full glyph
   - [ ] Selection highlighting applies to individual cells (not whole ligature)
 - [x] Ligature + cursor interaction:
@@ -628,7 +628,7 @@ Shape non-grid text (tab bar titles, search bar, status text) through rustybuzz 
 - [x] Text truncation with ellipsis:
   - [x] If text width > available width: truncate and append `…` (U+2026)
   - [x] Cell-width-based truncation (exact for monospace)
-- [ ] Integration with tab bar and search bar rendering:
+- [ ] Integration with tab bar and search bar rendering: <!-- blocked-by:16 --><!-- blocked-by:11 -->
   - [ ] Tab title → `shape_text_string` → glyph instances
   - [ ] Search query → `shape_text_string` → glyph instances
 - [x] **Tests**:
@@ -773,7 +773,7 @@ LCD subpixel rendering uses the physical R/G/B subpixels of the display to achie
   - [x] Auto-disable: scale 2.0+ renders grayscale
   - [x] Config "none": forces grayscale regardless of scale
   - [x] Transparent cell: falls back to grayscale (no color fringing)
-  - [ ] Visual regression: compare subpixel vs grayscale rendering of reference string <!-- blocked-by:6.18 -->
+  - [ ] Visual regression: compare subpixel vs grayscale rendering of reference string
 
 ---
 
@@ -804,7 +804,7 @@ Render glyphs at fractional pixel offsets for tighter, more natural spacing. Mos
   - [x] **Combining marks**: shaper x_offset/y_offset are fractional — rasterize at correct subpixel offset for precise diacritic placement
   - [x] **Ligature internals**: multi-glyph ligatures may have fractional internal offsets
   - [x] **Base grid text**: integer cell boundaries → phase 0. No extra atlas cost.
-- [ ] Config:
+- [ ] Config: <!-- blocked-by:13 -->
   ```toml
   [font]
   subpixel_positioning = true  # default true; false snaps everything to integer
@@ -882,7 +882,7 @@ Support variable fonts with configurable axis values (weight, width, slant, etc.
   - [x] Store discovered axes in `FaceData`: `axes: Vec<AxisInfo>` — tag, min, default, max
   - [x] `has_axis(axes, tag) -> bool` — check if font supports an axis
   - [x] `clamp_to_axis(axes, tag, value) -> f32` — clamp to axis range
-- [ ] Config integration (blocked-by:13):
+- [ ] Config integration: <!-- blocked-by:13 -->
   ```toml
   [font]
   variations = { wght = 450, wdth = 87.5 }  # per-axis values
@@ -909,7 +909,7 @@ Support variable fonts with configurable axis values (weight, width, slant, etc.
   - [x] Non-variable font: variations ignored gracefully, synthesis still works
   - [x] Fallback faces: empty variations
   - [x] slnt preferred over ital axis
-  - [ ] Config roundtrip: variations parsed from TOML correctly (blocked-by:13)
+  - [ ] Config roundtrip: variations parsed from TOML correctly <!-- blocked-by:13 -->
 
 ---
 

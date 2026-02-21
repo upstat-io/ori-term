@@ -14,6 +14,7 @@ fn event_ctx() -> EventCtx<'static> {
         bounds: Rect::new(0.0, 0.0, 200.0, 28.0),
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     }
 }
 
@@ -241,7 +242,10 @@ fn disabled_ignores() {
 fn layout_uses_min_width() {
     let ti = TextInputWidget::new();
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = ti.layout(&ctx);
     let s = TextInputStyle::default();
 
@@ -260,7 +264,10 @@ fn layout_uses_min_width() {
 fn placeholder_layout_measures_placeholder() {
     let ti = TextInputWidget::new().with_placeholder("Type here...");
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = ti.layout(&ctx);
 
     if let BoxContent::Leaf {

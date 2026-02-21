@@ -14,6 +14,7 @@ fn event_ctx() -> EventCtx<'static> {
         bounds: Rect::new(0.0, 0.0, 200.0, 20.0),
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     }
 }
 
@@ -51,7 +52,10 @@ fn with_checked_builder() {
 fn layout_dimensions() {
     let cb = CheckboxWidget::new("Check");
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = cb.layout(&ctx);
     let s = CheckboxStyle::default();
 

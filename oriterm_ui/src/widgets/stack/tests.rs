@@ -24,6 +24,7 @@ fn stack_sizes_to_largest_child() {
     let stack = StackWidget::new(vec![label("AB"), label("ABCD")]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = stack.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -47,6 +48,7 @@ fn stack_draws_all_children() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     stack.draw(&mut ctx);
 
@@ -72,6 +74,7 @@ fn stack_key_routes_to_frontmost() {
         bounds,
         is_focused: false,
         focused_widget: Some(front_id),
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let event = KeyEvent {
@@ -101,6 +104,7 @@ fn stack_mouse_routes_to_frontmost() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let down = MouseEvent {
@@ -140,6 +144,7 @@ fn stack_empty() {
     let stack = StackWidget::new(vec![]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = stack.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -165,6 +170,7 @@ fn stack_draws_in_painter_order() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     stack.draw(&mut ctx);
 
@@ -197,6 +203,7 @@ fn stack_empty_mouse_ignored() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -216,6 +223,7 @@ fn stack_empty_key_ignored() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -237,6 +245,7 @@ fn stack_hover_routes_to_frontmost() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Hover enter should reach the frontmost child.
@@ -254,6 +263,7 @@ fn stack_mouse_outside_bounds_ignored() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Click outside the stack's bounds.
@@ -273,6 +283,7 @@ fn stack_sizes_to_flex_child() {
     let stack = StackWidget::new(vec![col]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = stack.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -296,6 +307,7 @@ fn stack_sizes_to_largest_including_flex() {
     let stack = StackWidget::new(vec![wide_label, tall_col]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = stack.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -319,6 +331,7 @@ fn stack_single_child_receives_events() {
         bounds,
         is_focused: false,
         focused_widget: Some(btn_id),
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let event = KeyEvent {
@@ -347,6 +360,7 @@ fn stack_mouse_falls_through_to_back_child() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let down = MouseEvent {

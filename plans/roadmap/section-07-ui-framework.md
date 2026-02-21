@@ -34,7 +34,7 @@ sections:
     status: complete
   - id: "07.10"
     title: Theming & Styling
-    status: not-started
+    status: in-progress
   - id: "07.11"
     title: Terminal Grid Widget
     status: not-started
@@ -447,27 +447,27 @@ Consistent visual styling across all widgets.
 
 **File:** `oriterm_ui/src/theme.rs`
 
-- [ ] `UiTheme` — all UI colors, sizes, and spacing in one struct
-  - [ ] `bg_primary: Color` — main background
-  - [ ] `bg_secondary: Color` — panel/card background
-  - [ ] `bg_hover: Color` — hover highlight
-  - [ ] `bg_active: Color` — pressed/active state
-  - [ ] `fg_primary: Color` — primary text
-  - [ ] `fg_secondary: Color` — secondary/dimmed text
-  - [ ] `fg_disabled: Color` — disabled state text
-  - [ ] `accent: Color` — accent color (focus ring, toggle on, selection)
-  - [ ] `border: Color` — default border color
-  - [ ] `shadow: Color` — shadow color (semi-transparent black)
-  - [ ] `corner_radius: f32` — default corner radius
-  - [ ] `spacing: f32` — default gap between elements
-  - [ ] `font_size: f32` — default UI font size
-  - [ ] `font_size_small: f32` — small text
-  - [ ] `font_size_large: f32` — headings
+- [x] `UiTheme` — all UI colors, sizes, and spacing in one struct
+  - [x] `bg_primary: Color` — main background
+  - [x] `bg_secondary: Color` — panel/card background
+  - [x] `bg_hover: Color` — hover highlight
+  - [x] `bg_active: Color` — pressed/active state
+  - [x] `fg_primary: Color` — primary text
+  - [x] `fg_secondary: Color` — secondary/dimmed text
+  - [x] `fg_disabled: Color` — disabled state text
+  - [x] `accent: Color` — accent color (focus ring, toggle on, selection)
+  - [x] `border: Color` — default border color
+  - [x] `shadow: Color` — shadow color (semi-transparent black)
+  - [x] `corner_radius: f32` — default corner radius
+  - [x] `spacing: f32` — default gap between elements
+  - [x] `font_size: f32` — default UI font size
+  - [x] `font_size_small: f32` — small text
+  - [x] `font_size_large: f32` — headings
 
-- [ ] `UiTheme::dark() -> Self` — dark theme defaults
-- [ ] `UiTheme::light() -> Self` — light theme defaults
-- [ ] Theme propagates through the widget tree (widgets inherit from parent unless overridden)
-- [ ] Integrates with Section 03 system theme detection (auto dark/light)
+- [x] `UiTheme::dark() -> Self` — dark theme defaults
+- [x] `UiTheme::light() -> Self` — light theme defaults
+- [x] Theme propagates through the widget tree (widgets inherit from parent unless overridden)
+- [ ] Integrates with Section 03 system theme detection (auto dark/light) <!-- blocked-by:3 -->
 
 ---
 

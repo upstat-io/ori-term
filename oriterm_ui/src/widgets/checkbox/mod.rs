@@ -11,11 +11,9 @@ use crate::layout::LayoutBox;
 use crate::text::TextStyle;
 use crate::widget_id::WidgetId;
 
-use super::{
-    DEFAULT_ACCENT, DEFAULT_BG, DEFAULT_BORDER, DEFAULT_DISABLED_BG, DEFAULT_DISABLED_FG,
-    DEFAULT_FG, DEFAULT_FOCUS_RING, DEFAULT_HOVER_BG, DrawCtx, EventCtx, LayoutCtx, Widget,
-    WidgetAction, WidgetResponse,
-};
+use crate::theme::UiTheme;
+
+use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 /// Visual style for a [`CheckboxWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -50,24 +48,31 @@ pub struct CheckboxStyle {
     pub focus_ring_color: Color,
 }
 
-impl Default for CheckboxStyle {
-    fn default() -> Self {
+impl CheckboxStyle {
+    /// Derives a checkbox style from the given theme.
+    pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
             box_size: 16.0,
-            gap: 8.0,
-            bg: DEFAULT_BG,
-            hover_bg: DEFAULT_HOVER_BG,
-            checked_bg: DEFAULT_ACCENT,
-            border_color: DEFAULT_BORDER,
+            gap: theme.spacing,
+            bg: theme.bg_primary,
+            hover_bg: theme.bg_hover,
+            checked_bg: theme.accent,
+            border_color: theme.border,
             border_width: 1.0,
             corner_radius: 3.0,
             check_color: Color::WHITE,
-            label_color: DEFAULT_FG,
-            font_size: 13.0,
-            disabled_fg: DEFAULT_DISABLED_FG,
-            disabled_bg: DEFAULT_DISABLED_BG,
-            focus_ring_color: DEFAULT_FOCUS_RING,
+            label_color: theme.fg_primary,
+            font_size: theme.font_size,
+            disabled_fg: theme.fg_disabled,
+            disabled_bg: theme.bg_secondary,
+            focus_ring_color: theme.accent,
         }
+    }
+}
+
+impl Default for CheckboxStyle {
+    fn default() -> Self {
+        Self::from_theme(&UiTheme::dark())
     }
 }
 

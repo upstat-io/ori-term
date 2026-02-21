@@ -14,10 +14,7 @@ use crate::geometry::Insets;
 use crate::text::TextStyle;
 use crate::widget_id::WidgetId;
 
-use super::{
-    DEFAULT_BG, DEFAULT_BORDER, DEFAULT_DISABLED_BG, DEFAULT_DISABLED_FG, DEFAULT_FG,
-    DEFAULT_FOCUS_RING,
-};
+use crate::theme::UiTheme;
 
 /// Visual style for a [`TextInputWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -54,25 +51,32 @@ pub struct TextInputStyle {
     pub disabled_bg: Color,
 }
 
+impl TextInputStyle {
+    /// Derives a text input style from the given theme.
+    pub fn from_theme(theme: &UiTheme) -> Self {
+        Self {
+            fg: theme.fg_primary,
+            bg: theme.bg_primary,
+            border_color: theme.border,
+            focus_border_color: theme.accent,
+            border_width: 1.0,
+            corner_radius: theme.corner_radius,
+            padding: Insets::vh(6.0, 8.0),
+            font_size: theme.font_size,
+            placeholder_color: theme.fg_disabled,
+            cursor_color: theme.fg_primary,
+            cursor_width: 1.5,
+            selection_color: theme.accent.with_alpha(0.3),
+            min_width: 120.0,
+            disabled_fg: theme.fg_disabled,
+            disabled_bg: theme.bg_secondary,
+        }
+    }
+}
+
 impl Default for TextInputStyle {
     fn default() -> Self {
-        Self {
-            fg: DEFAULT_FG,
-            bg: DEFAULT_BG,
-            border_color: DEFAULT_BORDER,
-            focus_border_color: DEFAULT_FOCUS_RING,
-            border_width: 1.0,
-            corner_radius: 4.0,
-            padding: Insets::vh(6.0, 8.0),
-            font_size: 13.0,
-            placeholder_color: Color::from_rgb_u8(0x80, 0x80, 0x80),
-            cursor_color: Color::WHITE,
-            cursor_width: 1.5,
-            selection_color: Color::from_rgb_u8(0x26, 0x4F, 0x78),
-            min_width: 120.0,
-            disabled_fg: DEFAULT_DISABLED_FG,
-            disabled_bg: DEFAULT_DISABLED_BG,
-        }
+        Self::from_theme(&UiTheme::dark())
     }
 }
 

@@ -14,7 +14,10 @@ fn horizontal_defaults() {
 fn horizontal_layout_fills_width() {
     let sep = SeparatorWidget::horizontal();
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = sep.layout(&ctx);
     assert_eq!(layout.width, SizeSpec::Fill);
     if let BoxContent::Leaf {
@@ -31,7 +34,10 @@ fn horizontal_layout_fills_width() {
 fn horizontal_with_label_uses_text_height() {
     let sep = SeparatorWidget::horizontal().with_label("Section");
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = sep.layout(&ctx);
     if let BoxContent::Leaf {
         intrinsic_height, ..
@@ -48,7 +54,10 @@ fn horizontal_with_label_uses_text_height() {
 fn vertical_layout_fills_height() {
     let sep = SeparatorWidget::vertical();
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = sep.layout(&ctx);
     assert_eq!(layout.height, SizeSpec::Fill);
     if let BoxContent::Leaf {
@@ -65,7 +74,10 @@ fn vertical_layout_fills_height() {
 fn has_widget_id() {
     let sep = SeparatorWidget::horizontal();
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = sep.layout(&ctx);
     assert_eq!(layout.widget_id, Some(sep.id()));
 }
@@ -78,7 +90,10 @@ fn with_style_applies() {
     };
     let sep = SeparatorWidget::horizontal().with_style(style);
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = sep.layout(&ctx);
     if let BoxContent::Leaf {
         intrinsic_height, ..
