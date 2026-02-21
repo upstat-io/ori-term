@@ -47,7 +47,7 @@ fn platform_theme() -> Theme {
     // SAFETY: `RegGetValueW` is a standard Win32 API. We pass valid
     // null-terminated wide strings, a correctly sized output buffer,
     // and restrict the result type to `REG_DWORD` via `RRF_RT_REG_DWORD`.
-    #[allow(unsafe_code)]
+    #[allow(unsafe_code, reason = "RegGetValueW is a standard Win32 API")]
     let status = unsafe {
         RegGetValueW(
             HKEY_CURRENT_USER,
