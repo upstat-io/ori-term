@@ -22,6 +22,7 @@ use crate::gpu::{
     extract_frame_into,
 };
 use crate::tab::{Tab, TabId, TermEvent};
+use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
 /// Default font size in points (wired from config in Section 13).
@@ -49,6 +50,9 @@ pub(crate) struct App {
 
     // Terminal state (single tab for now; multi-tab in Section 15).
     tab: Option<Tab>,
+
+    // Terminal grid widget (layout + event routing participant).
+    terminal_grid: Option<TerminalGridWidget>,
 
     // Event loop proxy for creating per-tab EventProxy instances.
     event_proxy: EventLoopProxy<TermEvent>,
@@ -81,6 +85,7 @@ impl App {
             renderer: None,
             window: None,
             tab: None,
+            terminal_grid: None,
             event_proxy,
             frame: None,
             dirty: false,
@@ -163,7 +168,10 @@ impl App {
         let cols = cell.columns(w).max(1);
         let rows = cell.rows(h).max(1);
 
-        // 8. Spawn the terminal tab (PTY + VTE + Term).
+        // 8. Create grid widget with cell metrics and initial grid size.
+        let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
+
+        // 9. Spawn the terminal tab (PTY + VTE + Term).
         let t_tab_start = std::time::Instant::now();
         let tab_id = TabId::next();
         let tab = Tab::new(
@@ -195,6 +203,7 @@ impl App {
         self.renderer = Some(renderer);
         self.window = Some(window);
         self.tab = Some(tab);
+        self.terminal_grid = Some(grid_widget);
         self.dirty = true;
         Ok(())
     }
@@ -257,6 +266,15 @@ impl App {
                 frame.content.cursor.visible = false;
             }
 
+            // Apply grid origin from layout bounds. When the layout engine
+            // positions the grid (e.g. below a tab bar), this shifts all
+            // cell rendering. Currently (0.0, 0.0) until layout is wired.
+            if let Some(grid) = &self.terminal_grid {
+                if let Some(bounds) = grid.bounds() {
+                    frame.origin = (bounds.x(), bounds.y());
+                }
+            }
+
             renderer.prepare(frame, gpu);
             renderer.render_to_surface(gpu, window.surface())
         };
@@ -309,6 +327,11 @@ impl ApplicationHandler<TermEvent> for App {
                     let cell = renderer.cell_metrics();
                     let cols = cell.columns(size.width).max(1);
                     let rows = cell.rows(size.height).max(1);
+
+                    if let Some(grid) = &mut self.terminal_grid {
+                        grid.set_cell_metrics(cell.width, cell.height);
+                        grid.set_grid_size(cols, rows);
+                    }
 
                     if let Some(tab) = &self.tab {
                         tab.resize(rows as u16, cols as u16);

@@ -136,6 +136,7 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
+    let (ox, oy) = input.origin;
 
     for cell in &input.content.cells {
         // Wide char spacers are handled by the primary wide char cell.
@@ -145,8 +146,8 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
 
         let col = cell.column.0;
         let row = cell.line;
-        let x = col as f32 * cw;
-        let y = row as f32 * ch;
+        let x = ox + col as f32 * cw;
+        let y = oy + row as f32 * ch;
 
         // Background: wide chars span 2 cell widths.
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
@@ -202,6 +203,8 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
             cursor.line,
             cw,
             ch,
+            ox,
+            oy,
             input.palette.cursor_color,
         );
     }
@@ -221,6 +224,7 @@ fn fill_frame_shaped(
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
+    let (ox, oy) = input.origin;
 
     for cell in &input.content.cells {
         if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
@@ -229,8 +233,8 @@ fn fill_frame_shaped(
 
         let col = cell.column.0;
         let row = cell.line;
-        let x = col as f32 * cw;
-        let y = row as f32 * ch;
+        let x = ox + col as f32 * cw;
+        let y = oy + row as f32 * ch;
 
         // Background (identical to unshaped path).
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
@@ -302,6 +306,8 @@ fn fill_frame_shaped(
             cursor.line,
             cw,
             ch,
+            ox,
+            oy,
             input.palette.cursor_color,
         );
     }
@@ -399,7 +405,7 @@ impl GlyphEmitter<'_> {
 /// - `Hidden` — no instances.
 #[expect(
     clippy::too_many_arguments,
-    reason = "cursor geometry: frame, shape, grid position, cell size, color"
+    reason = "cursor geometry: frame, shape, grid position, cell size, origin offset, color"
 )]
 fn build_cursor(
     frame: &mut PreparedFrame,
@@ -408,10 +414,12 @@ fn build_cursor(
     row: usize,
     cw: f32,
     ch: f32,
+    ox: f32,
+    oy: f32,
     color: Rgb,
 ) {
-    let x = col as f32 * cw;
-    let y = row as f32 * ch;
+    let x = ox + col as f32 * cw;
+    let y = oy + row as f32 * ch;
     let t = 2.0_f32;
 
     match shape {

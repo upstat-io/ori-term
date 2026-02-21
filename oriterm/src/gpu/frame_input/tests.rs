@@ -109,6 +109,7 @@ fn frame_input_grid_dimensions() {
         viewport: ViewportSize::new(800, 600),
         cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
+        origin: (0.0, 0.0),
         selection: None,
         search_matches: Vec::new(),
     };
@@ -127,6 +128,7 @@ fn frame_input_needs_full_repaint() {
         viewport: ViewportSize::new(800, 600),
         cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
+        origin: (0.0, 0.0),
         selection: None,
         search_matches: Vec::new(),
     };
@@ -144,6 +146,7 @@ fn frame_input_incremental_repaint() {
         viewport: ViewportSize::new(800, 600),
         cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
+        origin: (0.0, 0.0),
         selection: None,
         search_matches: Vec::new(),
     };
