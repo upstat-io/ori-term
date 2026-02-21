@@ -466,3 +466,111 @@ fn redirect_spacer_wide_char() {
     // Click on normal cell at col 4 → stays at col 4.
     assert_eq!(redirect_spacer(&grid, 0, 4), 4);
 }
+
+// --- classify_press ---
+
+use oriterm_core::grid::StableRowIndex;
+use oriterm_core::{Selection, SelectionMode, SelectionPoint};
+
+use super::{PressAction, PressInput, classify_press};
+
+/// Build a `PressInput` with common defaults, overriding specific fields.
+fn press(click_count: u8, col: usize, side: Side, row: StableRowIndex) -> PressInput {
+    PressInput {
+        click_count,
+        shift: false,
+        alt: false,
+        col,
+        side,
+        stable_row: row,
+        word_bounds: None,
+        line_bounds: None,
+        existing_mode: None,
+    }
+}
+
+#[test]
+fn double_click_creates_word_selection() {
+    let row = StableRowIndex(0);
+    let mut input = press(2, 5, Side::Left, row);
+    input.word_bounds = Some((3, 7));
+
+    let PressAction::New(sel) = classify_press(&input) else {
+        panic!("expected PressAction::New");
+    };
+    assert_eq!(sel.mode, SelectionMode::Word);
+    assert_eq!(sel.anchor.col, 3);
+    assert_eq!(sel.anchor.side, Side::Left);
+    assert_eq!(sel.pivot.col, 7);
+    assert_eq!(sel.pivot.side, Side::Right);
+}
+
+#[test]
+fn triple_click_creates_line_selection() {
+    let start_row = StableRowIndex(0);
+    let end_row = StableRowIndex(2);
+    let mut input = press(3, 10, Side::Left, StableRowIndex(1));
+    input.line_bounds = Some((start_row, end_row, 80));
+
+    let PressAction::New(sel) = classify_press(&input) else {
+        panic!("expected PressAction::New");
+    };
+    assert_eq!(sel.mode, SelectionMode::Line);
+    assert_eq!(sel.anchor.row, start_row);
+    assert_eq!(sel.anchor.col, 0);
+    assert_eq!(sel.anchor.side, Side::Left);
+    assert_eq!(sel.pivot.row, end_row);
+    assert_eq!(sel.pivot.col, 79);
+    assert_eq!(sel.pivot.side, Side::Right);
+}
+
+#[test]
+fn alt_click_toggles_block_mode() {
+    let row = StableRowIndex(0);
+
+    // Alt+click with no existing selection → Block.
+    let mut input = press(1, 5, Side::Left, row);
+    input.alt = true;
+    let PressAction::New(sel) = classify_press(&input) else {
+        panic!("expected PressAction::New");
+    };
+    assert_eq!(sel.mode, SelectionMode::Block);
+
+    // Alt+click when existing selection is Block → Char.
+    input.existing_mode = Some(SelectionMode::Block);
+    let PressAction::New(sel) = classify_press(&input) else {
+        panic!("expected PressAction::New");
+    };
+    assert_eq!(sel.mode, SelectionMode::Char);
+
+    // Alt+click when existing selection is Char → Block.
+    input.existing_mode = Some(SelectionMode::Char);
+    let PressAction::New(sel) = classify_press(&input) else {
+        panic!("expected PressAction::New");
+    };
+    assert_eq!(sel.mode, SelectionMode::Block);
+}
+
+#[test]
+fn shift_click_extends_existing_selection() {
+    let row = StableRowIndex(5);
+
+    // Shift+click with existing Char selection → Extend.
+    let mut input = press(1, 20, Side::Right, row);
+    input.shift = true;
+    input.existing_mode = Some(SelectionMode::Char);
+    let PressAction::Extend(point) = classify_press(&input) else {
+        panic!("expected PressAction::Extend");
+    };
+    assert_eq!(point.row, row);
+    assert_eq!(point.col, 20);
+    assert_eq!(point.side, Side::Right);
+
+    // Shift+click with NO existing selection → New (not Extend).
+    input.existing_mode = None;
+    let action = classify_press(&input);
+    assert!(
+        matches!(action, PressAction::New(_)),
+        "shift+click without selection should create new, got {action:?}",
+    );
+}

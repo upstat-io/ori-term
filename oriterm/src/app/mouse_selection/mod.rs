@@ -183,29 +183,93 @@ pub(crate) fn handle_press(
         (c, stable, wb, lb)
     };
 
+    let action = classify_press(&PressInput {
+        click_count,
+        shift,
+        alt,
+        col,
+        side,
+        stable_row,
+        word_bounds,
+        line_bounds,
+        existing_mode: tab.selection().map(|s| s.mode),
+    });
+
+    match action {
+        PressAction::Extend(point) => {
+            tab.update_selection_end(point);
+            mouse.drag_active = true;
+        }
+        PressAction::New(selection) => {
+            tab.set_selection(selection);
+            if click_count >= 2 {
+                mouse.drag_active = true;
+            }
+        }
+    }
+    true
+}
+
+/// Result of classifying a mouse press for selection creation.
+#[derive(Debug)]
+pub(crate) enum PressAction {
+    /// Extend an existing selection to a new endpoint.
+    Extend(SelectionPoint),
+    /// Replace the current selection with a new one.
+    New(Selection),
+}
+
+/// Input state for classifying a mouse press.
+///
+/// Bundles the computed click state and grid-resolved coordinates
+/// needed to determine the selection action.
+pub(crate) struct PressInput {
+    /// Multi-click count (1 = char, 2 = word, 3 = line).
+    pub click_count: u8,
+    /// Whether Shift was held.
+    pub shift: bool,
+    /// Whether Alt was held.
+    pub alt: bool,
+    /// Grid column (clamped, spacer-redirected).
+    pub col: usize,
+    /// Which half of the cell was clicked.
+    pub side: Side,
+    /// Stable row of the click.
+    pub stable_row: StableRowIndex,
+    /// Word boundaries (start, end) for double-click.
+    pub word_bounds: Option<(usize, usize)>,
+    /// Line boundaries (`start_row`, `end_row`, cols) for triple-click.
+    pub line_bounds: Option<(StableRowIndex, StableRowIndex, usize)>,
+    /// Selection mode of the existing selection, if any.
+    pub existing_mode: Option<SelectionMode>,
+}
+
+/// Determine the selection action for a mouse press.
+///
+/// Pure logic: given the click state and grid-resolved coordinates,
+/// returns the appropriate selection action without side effects.
+pub(crate) fn classify_press(input: &PressInput) -> PressAction {
     // Shift+click: extend existing selection.
-    if shift && tab.selection().is_some() {
-        tab.update_selection_end(SelectionPoint {
-            row: stable_row,
-            col,
-            side,
+    if input.shift && input.existing_mode.is_some() {
+        return PressAction::Extend(SelectionPoint {
+            row: input.stable_row,
+            col: input.col,
+            side: input.side,
         });
-        mouse.drag_active = true;
-        return true;
     }
 
     // Create new selection based on click count.
-    let selection = match (click_count, word_bounds, line_bounds) {
+    let selection = match (input.click_count, input.word_bounds, input.line_bounds) {
         (2, Some((ws, we)), _) => {
             // Double-click: word selection.
             Selection::new_word(
                 SelectionPoint {
-                    row: stable_row,
+                    row: input.stable_row,
                     col: ws,
                     side: Side::Left,
                 },
                 SelectionPoint {
-                    row: stable_row,
+                    row: input.stable_row,
                     col: we,
                     side: Side::Right,
                 },
@@ -228,11 +292,9 @@ pub(crate) fn handle_press(
         }
         _ => {
             // Single click: char selection. Alt toggles block mode.
-            let mut sel = Selection::new_char(stable_row, col, side);
-            if alt {
-                let was_block = tab
-                    .selection()
-                    .is_some_and(|s| s.mode == SelectionMode::Block);
+            let mut sel = Selection::new_char(input.stable_row, input.col, input.side);
+            if input.alt {
+                let was_block = input.existing_mode == Some(SelectionMode::Block);
                 sel.mode = if was_block {
                     SelectionMode::Char
                 } else {
@@ -243,12 +305,7 @@ pub(crate) fn handle_press(
         }
     };
 
-    tab.set_selection(selection);
-    // For double/triple clicks, drag is immediately active (no threshold).
-    if click_count >= 2 {
-        mouse.drag_active = true;
-    }
-    true
+    PressAction::New(selection)
 }
 
 /// Handle mouse drag (cursor moved while button held).
