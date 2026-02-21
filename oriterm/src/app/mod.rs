@@ -155,14 +155,13 @@ impl App {
             // Override cursor for mark mode: show a hollow block at the mark
             // cursor position so the user can see where they are navigating.
             if let Some(mc) = tab.mark_cursor() {
-                if let Some(offset) = mc.row.0.checked_sub(frame.content.stable_row_base) {
-                    let viewport_line = offset as usize;
-                    if viewport_line < frame.rows() {
-                        frame.content.cursor.line = viewport_line;
-                        frame.content.cursor.column = Column(mc.col);
-                        frame.content.cursor.shape = CursorShape::HollowBlock;
-                        frame.content.cursor.visible = true;
-                    }
+                if let Some((line, col)) =
+                    mc.to_viewport(frame.content.stable_row_base, frame.rows())
+                {
+                    frame.content.cursor.line = line;
+                    frame.content.cursor.column = Column(col);
+                    frame.content.cursor.shape = CursorShape::HollowBlock;
+                    frame.content.cursor.visible = true;
                 }
             }
 
@@ -227,7 +226,14 @@ impl App {
                 if event.state == ElementState::Pressed {
                     let action = mark_mode::handle_mark_mode_key(tab, event, self.modifiers);
                     match action {
-                        mark_mode::MarkAction::Handled | mark_mode::MarkAction::Exit { .. } => {
+                        mark_mode::MarkAction::Handled => {
+                            self.dirty = true;
+                        }
+                        mark_mode::MarkAction::Exit { copy } => {
+                            if copy {
+                                // TODO(section-15): wire clipboard write from selection content.
+                                log::debug!("mark mode: copy requested (clipboard not yet wired)");
+                            }
                             self.dirty = true;
                         }
                         mark_mode::MarkAction::Ignored => {}

@@ -126,3 +126,70 @@ pub(crate) fn buffer_end(b: GridBounds) -> AbsCursor {
         col: b.cols.saturating_sub(1),
     }
 }
+
+/// Pre-extracted word boundary data for pure word motion functions.
+///
+/// Computed under terminal lock so that the motion functions themselves
+/// remain pure (no grid access, no locks).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct WordContext {
+    /// Word start column at the current cursor position.
+    pub(crate) ws: usize,
+    /// Word end column at the current cursor position.
+    pub(crate) we: usize,
+    /// Word start at `(abs_row, ws - 1)`, if `ws > 0`.
+    pub(crate) prev_same_row_ws: Option<usize>,
+    /// Word start at `(abs_row - 1, cols - 1)`, if `abs_row > 0`.
+    pub(crate) prev_row_ws: Option<usize>,
+    /// Word end at `(abs_row, we + 1)`, if `we + 1 < cols`.
+    pub(crate) next_same_row_we: Option<usize>,
+    /// Word end at `(abs_row + 1, 0)`, if `abs_row + 1 < total_rows`.
+    pub(crate) next_row_we: Option<usize>,
+}
+
+/// Move cursor to the start of the current or previous word.
+pub(crate) fn word_left(c: AbsCursor, ctx: &WordContext) -> AbsCursor {
+    if c.col > ctx.ws {
+        AbsCursor {
+            abs_row: c.abs_row,
+            col: ctx.ws,
+        }
+    } else if let Some(ws) = ctx.prev_same_row_ws {
+        AbsCursor {
+            abs_row: c.abs_row,
+            col: ws,
+        }
+    } else if let Some(ws) = ctx.prev_row_ws {
+        AbsCursor {
+            abs_row: c.abs_row.saturating_sub(1),
+            col: ws,
+        }
+    } else {
+        AbsCursor { abs_row: 0, col: 0 }
+    }
+}
+
+/// Move cursor to the end of the current or next word.
+pub(crate) fn word_right(c: AbsCursor, ctx: &WordContext, b: GridBounds) -> AbsCursor {
+    if c.col < ctx.we {
+        AbsCursor {
+            abs_row: c.abs_row,
+            col: ctx.we,
+        }
+    } else if let Some(we) = ctx.next_same_row_we {
+        AbsCursor {
+            abs_row: c.abs_row,
+            col: we,
+        }
+    } else if let Some(we) = ctx.next_row_we {
+        AbsCursor {
+            abs_row: c.abs_row + 1,
+            col: we,
+        }
+    } else {
+        AbsCursor {
+            abs_row: c.abs_row,
+            col: b.cols.saturating_sub(1),
+        }
+    }
+}
