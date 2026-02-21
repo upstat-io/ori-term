@@ -469,8 +469,8 @@ fn redirect_spacer_wide_char() {
 
 // --- classify_press ---
 
+use oriterm_core::SelectionMode;
 use oriterm_core::grid::StableRowIndex;
-use oriterm_core::{Selection, SelectionMode, SelectionPoint};
 
 use super::{PressAction, PressInput, classify_press};
 
