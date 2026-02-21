@@ -69,6 +69,12 @@ pub struct FrameInput {
     pub cell_size: CellMetrics,
     /// Semantic colors for background clear and cursor.
     pub palette: FramePalette,
+    /// Pixel offset applied to all cell positions.
+    ///
+    /// When the terminal grid is positioned by the layout engine (e.g. below
+    /// a tab bar), this shifts every background, glyph, and cursor instance
+    /// by `(ox, oy)`. Zero-cost when `(0.0, 0.0)`.
+    pub origin: (f32, f32),
     /// Active selection range (placeholder until Section 9).
     #[allow(dead_code, reason = "selection rendering in Section 9")]
     pub selection: Option<SelectionRange>,
@@ -158,6 +164,7 @@ impl FrameInput {
                 },
                 opacity: 1.0,
             },
+            origin: (0.0, 0.0),
             selection: None,
             search_matches: Vec::new(),
         }

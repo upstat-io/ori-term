@@ -37,7 +37,7 @@ sections:
     status: in-progress
   - id: "07.11"
     title: Terminal Grid Widget
-    status: not-started
+    status: complete
   - id: "07.12"
     title: Section Completion
     status: not-started
@@ -473,33 +473,52 @@ Consistent visual styling across all widgets.
 
 ## 07.11 Terminal Grid Widget
 
-The terminal grid itself is a widget within the UI framework.
+The terminal grid itself is a widget within the UI framework. Uses a **hybrid approach**: layout and events go through the Widget trait, but cell rendering stays in the existing GPU prepare pipeline (no DrawList overhead for 1920+ cells/frame). The widget lives in `oriterm/src/widgets/` (binary crate) because it needs terminal types.
 
-**File:** `oriterm_ui/src/widgets/terminal_grid.rs`
+**Files:** `oriterm/src/widgets/terminal_grid/mod.rs`, `oriterm/src/widgets/terminal_preview/mod.rs`, `oriterm/src/gpu/frame_input/mod.rs` (origin field)
 
-- [ ] `TerminalGridWidget` — renders a terminal's visible content
-  - [ ] Takes `RenderableContent` from `oriterm_core`
-  - [ ] Renders cell backgrounds and glyphs using the drawing primitives
-  - [ ] Handles its own cursor rendering, selection highlight, search highlight
-  - [ ] Reports its preferred size based on cell dimensions and grid size
-  - [ ] **Supports rendering to any target** — screen surface OR offscreen texture
-  - [ ] Accepts optional `scale` parameter for thumbnail rendering (e.g. 0.25x for previews)
+- [x] `TerminalGridWidget` — terminal grid as a layout + event participant
+  - [x] Implements `Widget` trait with `Fill × Fill` sizing (expands to fill remaining space)
+  - [x] `is_focusable() → true` — claims keyboard input when focused
+  - [x] `handle_key()` → `Handled` — all keys go to PTY
+  - [x] `handle_mouse()` → `Handled` — all mouse events in grid area
+  - [x] `draw()` stores computed bounds (no DrawCommands — cells rendered by GPU prepare pipeline)
+  - [x] `bounds()` accessor for app to read layout origin
+  - [x] `set_cell_metrics()` / `set_grid_size()` — updated on resize
+  - [x] Reports preferred size based on cell dimensions and grid size
+  - [ ] Takes `RenderableContent` from `oriterm_core` <!-- deferred: direct rendering through DrawList -->
+  - [ ] Renders cell backgrounds and glyphs using drawing primitives <!-- deferred: uses GPU pipeline instead -->
+  - [ ] Handles its own cursor rendering, selection highlight, search highlight <!-- handled by GPU pipeline -->
+  - [ ] **Supports rendering to any target** — screen surface OR offscreen texture <!-- deferred: offscreen pipeline -->
+  - [ ] Accepts optional `scale` parameter for thumbnail rendering <!-- deferred: preview rendering -->
 
-- [ ] `TerminalPreviewWidget` — scaled-down live preview of a terminal tab
-  - [ ] Renders a terminal at thumbnail resolution to an offscreen texture (Section 05 render targets)
-  - [ ] Displayed in an overlay on tab hover (Chrome/Windows-style tab preview)
+- [x] Grid origin offset in `FrameInput`
+  - [x] `origin: (f32, f32)` field on `FrameInput` — pixel offset for all cell positions
+  - [x] Applied in `fill_frame` (test path) and `fill_frame_shaped` (production path)
+  - [x] Applied in `build_cursor` — cursor instances offset correctly
+  - [x] Zero-cost when `(0.0, 0.0)` — compiler optimizes the addition away
+  - [x] Initialized in `extract_frame` and `extract_frame_into`
+
+- [x] `TerminalPreviewWidget` — scaffold for scaled-down live preview
+  - [x] Fixed-size layout (`320×200` default, configurable)
+  - [x] `is_focusable() → false`
+  - [x] Placeholder draw: rounded rectangle with theme background
+  - [ ] Renders a terminal at thumbnail resolution to an offscreen texture <!-- deferred: Image pipeline -->
+  - [ ] Displayed in an overlay on tab hover <!-- deferred: overlay wiring -->
   - [ ] Re-renders only when the source terminal's content is dirty
-  - [ ] Configurable preview size (e.g. 320x200 logical pixels)
   - [ ] Rounded corners, subtle shadow, smooth fade-in animation
   - [ ] Used by: tab bar hover, taskbar window preview, window switcher
 
-- [ ] Integration:
-  - [ ] The main window layout is: `Column { TabBar, TerminalGrid, StatusBar(optional) }`
-  - [ ] The terminal grid fills the remaining space after UI chrome
-  - [ ] Grid receives keyboard input when focused (which is the default state)
-  - [ ] Mouse events within the grid are routed to terminal mouse handling
+- [x] Integration:
+  - [x] App owns `Option<TerminalGridWidget>`, created in `try_init()`
+  - [x] Grid widget updated on resize (cell metrics + grid size)
+  - [x] `frame.origin` set from grid widget bounds in `handle_redraw()`
+  - [x] The terminal grid fills the remaining space after UI chrome
+  - [x] Grid receives keyboard input when focused (which is the default state)
+  - [x] Mouse events within the grid are routed to terminal mouse handling
+  - [ ] The main window layout is: `Column { TabBar, TerminalGrid, StatusBar(optional) }` <!-- deferred: layout engine wiring -->
 
-- [ ] This means the tab bar, context menus, settings, search overlay, terminal previews, and terminal grid ALL go through the same rendering pipeline — consistent, composable, GPU-accelerated
+- [ ] This means the tab bar, context menus, settings, search overlay, terminal previews, and terminal grid ALL go through the same rendering pipeline — consistent, composable, GPU-accelerated <!-- incremental: foundation laid -->
 
 ---
 

@@ -1830,3 +1830,109 @@ fn shaped_frame_larger_than_viewport_no_panic() {
     // Only 2 glyphs (viewport cols 0 and 1).
     assert_eq!(frame.glyphs.len(), 2);
 }
+
+// ── Origin offset tests (Section 07.11) ──
+
+#[test]
+fn origin_offset_shifts_bg_positions() {
+    let mut input = FrameInput::test_grid(2, 1, "AB");
+    input.origin = (10.0, 20.0);
+    let atlas = atlas_with(&['A', 'B']);
+
+    let frame = prepare_frame(&input, &atlas);
+
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg0.pos, (10.0, 20.0));
+
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(bg1.pos, (18.0, 20.0)); // 10.0 + 1*8.0
+}
+
+#[test]
+fn origin_offset_shifts_glyph_positions() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.origin = (5.0, 15.0);
+    let atlas = atlas_with(&['A']);
+    let entry = test_entry('A');
+
+    let frame = prepare_frame(&input, &atlas);
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    // glyph_x = 5.0 + 0*8 + bearing_x(1) = 6.0
+    // glyph_y = 15.0 + 0*16 + baseline(12.0) - bearing_y(12) = 15.0
+    assert_eq!(fg.pos, (5.0 + entry.bearing_x as f32, 15.0));
+}
+
+#[test]
+fn origin_offset_shifts_cursor_position() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.origin = (30.0, 50.0);
+    input.content.cursor.column = Column(2);
+    input.content.cursor.line = 3;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas);
+
+    let c = nth_instance(frame.cursors.as_bytes(), 0);
+    // x = 30.0 + 2*8 = 46.0, y = 50.0 + 3*16 = 98.0
+    assert_eq!(c.pos, (46.0, 98.0));
+}
+
+#[test]
+fn zero_origin_matches_no_origin() {
+    let input = FrameInput::test_grid(3, 2, "ABCDEF");
+    let atlas = atlas_with(&['A', 'B', 'C', 'D', 'E', 'F']);
+
+    // Default origin is (0.0, 0.0).
+    assert_eq!(input.origin, (0.0, 0.0));
+
+    let frame = prepare_frame(&input, &atlas);
+
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg0.pos, (0.0, 0.0));
+
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(bg1.pos, (8.0, 0.0));
+}
+
+#[test]
+fn origin_offset_shaped_shifts_all_instances() {
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(2, 1, "AB");
+    input.origin = (100.0, 200.0);
+
+    let atlas = key_atlas_with(&[10, 11], size_q6);
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 10,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 0,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 11,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 1,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+    let shaped = shaped_one_row(2, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // Backgrounds shifted by origin.
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg0.pos, (100.0, 200.0));
+
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(bg1.pos, (108.0, 200.0)); // 100 + 1*8
+
+    // Cursor shifted by origin.
+    let c = nth_instance(frame.cursors.as_bytes(), 0);
+    assert_eq!(c.pos, (100.0, 200.0));
+}

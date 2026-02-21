@@ -14,6 +14,7 @@ mod gpu;
 mod platform;
 mod pty;
 mod tab;
+mod widgets;
 mod window;
 
 use oriterm_ui::window::WindowConfig;
