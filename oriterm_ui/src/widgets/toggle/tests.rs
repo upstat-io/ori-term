@@ -16,6 +16,7 @@ fn event_ctx() -> EventCtx<'static> {
         bounds: Rect::new(0.0, 0.0, 40.0, 22.0),
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     }
 }
 
@@ -55,7 +56,10 @@ fn with_on_builder() {
 fn layout_fixed_size() {
     let t = ToggleWidget::new();
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = t.layout(&ctx);
     let s = ToggleStyle::default();
 
@@ -296,7 +300,10 @@ fn with_style_applies_custom_style() {
 
     // Layout should reflect the custom size.
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = t.layout(&ctx);
     if let BoxContent::Leaf {
         intrinsic_width,
@@ -359,6 +366,7 @@ fn toggle_draw_signals_animations_running() {
         focused_widget: None,
         now,
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     t.draw(&mut draw_ctx);
 
@@ -386,6 +394,7 @@ fn toggle_draw_no_animation_signal_when_idle() {
         focused_widget: None,
         now,
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     t.draw(&mut draw_ctx);
 
@@ -415,6 +424,7 @@ fn toggle_draws_thumb_at_correct_position() {
         focused_widget: None,
         now,
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     t.draw(&mut draw_ctx);
 
@@ -461,6 +471,7 @@ fn toggle_draws_thumb_at_off_position() {
         focused_widget: None,
         now,
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     t.draw(&mut draw_ctx);
 

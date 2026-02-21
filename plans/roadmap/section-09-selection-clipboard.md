@@ -370,7 +370,7 @@ Visual highlighting of selected text during GPU rendering.
   - [ ] Default: inverted colors (swap fg/bg of selected cells)
   - [ ] Alternative: user-configured selection_fg / selection_bg from palette
   - [ ] Colors stored in palette semantic slots (see Section 01, 1.3: CellExtra)
-- [ ] **Render approach** (during cell rendering loop): <!-- unblocks:5.13 -->
+- [ ] **Render approach** (during cell rendering loop): <!-- unblocks:5.13 --><!-- unblocks:6.5 --><!-- unblocks:6.16 -->
   - [ ] For each visible cell: check `selection.contains(stable_row, col)`
   - [ ] If selected: override fg/bg with selection colors
   - [ ] Convert viewport row to StableRowIndex for comparison

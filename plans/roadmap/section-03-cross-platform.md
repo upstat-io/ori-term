@@ -421,7 +421,7 @@ Audit and implement all platform-conditional code paths. Every `#[cfg(target_os 
 
 ---
 
-## 03.7 System Theme Detection
+## 03.7 System Theme Detection <!-- unblocks:07.10 -->
 
 Detect the operating system's dark/light mode preference and adapt the terminal's default color scheme.
 

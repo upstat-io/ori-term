@@ -18,6 +18,7 @@ fn event_ctx() -> EventCtx<'static> {
         bounds: Rect::new(0.0, 0.0, 200.0, 28.0),
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     }
 }
 
@@ -72,7 +73,10 @@ fn selected_clamped() {
 fn layout_accommodates_widest_item() {
     let dd = DropdownWidget::new(items());
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = dd.layout(&ctx);
     let s = DropdownStyle::default();
 

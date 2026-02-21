@@ -18,6 +18,7 @@ fn panel_layout_includes_padding() {
     let panel = make_panel_with_label("Hello");
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = panel.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -35,6 +36,7 @@ fn panel_child_gets_content_rect() {
     let panel = make_panel_with_label("Hi");
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = panel.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -62,6 +64,7 @@ fn panel_draws_background_rect() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     panel.draw(&mut ctx);
 
@@ -95,6 +98,7 @@ fn panel_custom_style() {
     let panel = make_panel_with_label("Styled").with_style(style.clone());
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = panel.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -120,6 +124,7 @@ fn panel_delegates_key_to_child() {
         bounds,
         is_focused: false,
         focused_widget: Some(child_id),
+        theme: &super::super::tests::TEST_THEME,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -154,6 +159,7 @@ fn panel_delegates_mouse_to_child() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Click inside the child area (accounting for 12px padding).
@@ -192,6 +198,7 @@ fn panel_mouse_outside_child_ignored() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Click in the panel's padding area (outside child bounds).
@@ -218,6 +225,7 @@ fn panel_delegates_hover_to_child() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Hover should delegate to child.
@@ -244,6 +252,7 @@ fn panel_with_bg() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     panel.draw(&mut ctx);
 
@@ -270,6 +279,7 @@ fn panel_with_corner_radius() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     panel.draw(&mut ctx);
 
@@ -286,6 +296,7 @@ fn panel_with_padding_affects_layout() {
     let panel = make_panel_with_label("Pad").with_padding(Insets::all(30.0));
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = panel.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -321,6 +332,7 @@ fn panel_with_shadow() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     panel.draw(&mut ctx);
 

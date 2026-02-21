@@ -13,6 +13,8 @@ use crate::input::{HoverEvent, KeyEvent, MouseEvent, MouseEventKind, layout_hit_
 use crate::layout::{Align, Direction, Justify, LayoutBox, LayoutNode, compute_layout};
 use crate::widget_id::WidgetId;
 
+use crate::theme::UiTheme;
+
 use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
 /// A flex container that arranges children along a main axis.
@@ -94,6 +96,7 @@ impl FlexWidget {
     fn get_or_compute_layout(
         &self,
         measurer: &dyn super::TextMeasurer,
+        theme: &UiTheme,
         bounds: Rect,
     ) -> Rc<LayoutNode> {
         {
@@ -104,7 +107,7 @@ impl FlexWidget {
                 }
             }
         }
-        let ctx = LayoutCtx { measurer };
+        let ctx = LayoutCtx { measurer, theme };
         let layout_box = self.build_layout_box(&ctx);
         let node = Rc::new(compute_layout(&layout_box, bounds));
         *self.cached_layout.borrow_mut() = Some((bounds, Rc::clone(&node)));
@@ -148,6 +151,7 @@ impl FlexWidget {
                     bounds: child_node.content_rect,
                     is_focused: ctx.focused_widget == Some(child.id()),
                     focused_widget: ctx.focused_widget,
+                    theme: ctx.theme,
                 };
                 child.handle_hover(HoverEvent::Leave, &child_ctx);
             }
@@ -162,6 +166,7 @@ impl FlexWidget {
                     bounds: child_node.content_rect,
                     is_focused: ctx.focused_widget == Some(child.id()),
                     focused_widget: ctx.focused_widget,
+                    theme: ctx.theme,
                 };
                 child.handle_hover(HoverEvent::Enter, &child_ctx);
             }
@@ -204,7 +209,7 @@ impl Widget for FlexWidget {
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
 
         for (idx, child) in self.children.iter().enumerate() {
             if let Some(child_node) = layout.children.get(idx) {
@@ -215,6 +220,7 @@ impl Widget for FlexWidget {
                     focused_widget: ctx.focused_widget,
                     now: ctx.now,
                     animations_running: ctx.animations_running,
+                    theme: ctx.theme,
                 };
                 child.draw(&mut child_ctx);
             }
@@ -222,7 +228,7 @@ impl Widget for FlexWidget {
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
 
         // Track hover state on cursor moves.
         if matches!(event.kind, MouseEventKind::Move) {
@@ -238,6 +244,7 @@ impl Widget for FlexWidget {
                     bounds: child_node.content_rect,
                     is_focused: ctx.focused_widget == Some(child.id()),
                     focused_widget: ctx.focused_widget,
+                    theme: ctx.theme,
                 };
                 return child.handle_mouse(event, &child_ctx);
             }
@@ -254,7 +261,7 @@ impl Widget for FlexWidget {
             HoverEvent::Leave => {
                 // Clear tracked hover child with correct bounds.
                 if let Some(idx) = self.hovered_child.take() {
-                    let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+                    let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
                     if let (Some(child), Some(child_node)) =
                         (self.children.get_mut(idx), layout.children.get(idx))
                     {
@@ -263,6 +270,7 @@ impl Widget for FlexWidget {
                             bounds: child_node.content_rect,
                             is_focused: ctx.focused_widget == Some(child.id()),
                             focused_widget: ctx.focused_widget,
+                            theme: ctx.theme,
                         };
                         child.handle_hover(HoverEvent::Leave, &child_ctx);
                     }
@@ -273,7 +281,7 @@ impl Widget for FlexWidget {
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
 
         // Delegate to children with per-child focus discrimination.
         for (idx, child) in self.children.iter_mut().enumerate() {
@@ -283,6 +291,7 @@ impl Widget for FlexWidget {
                     bounds: child_node.content_rect,
                     is_focused: ctx.focused_widget == Some(child.id()),
                     focused_widget: ctx.focused_widget,
+                    theme: ctx.theme,
                 };
                 let resp = child.handle_key(event, &child_ctx);
                 if resp.response.is_handled() {

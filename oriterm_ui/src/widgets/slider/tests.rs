@@ -14,6 +14,7 @@ fn slider_ctx() -> EventCtx<'static> {
         bounds: Rect::new(0.0, 0.0, 200.0, 16.0),
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     }
 }
 
@@ -78,7 +79,10 @@ fn value_clamped_to_range() {
 fn layout_dimensions() {
     let s = SliderWidget::new();
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = s.layout(&ctx);
     let style = SliderStyle::default();
 

@@ -11,11 +11,9 @@ use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEven
 use crate::layout::LayoutBox;
 use crate::widget_id::WidgetId;
 
-use super::{
-    DEFAULT_ACCENT, DEFAULT_BG, DEFAULT_BORDER, DEFAULT_DISABLED_BG, DEFAULT_DISABLED_FG,
-    DEFAULT_FOCUS_RING, DEFAULT_HOVER_BG, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction,
-    WidgetResponse,
-};
+use crate::theme::UiTheme;
+
+use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 /// Visual style for a [`SliderWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -48,23 +46,30 @@ pub struct SliderStyle {
     pub focus_ring_color: Color,
 }
 
-impl Default for SliderStyle {
-    fn default() -> Self {
+impl SliderStyle {
+    /// Derives a slider style from the given theme.
+    pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
             width: 200.0,
             track_height: 4.0,
-            track_bg: DEFAULT_BG,
-            fill_color: DEFAULT_ACCENT,
+            track_bg: theme.bg_primary,
+            fill_color: theme.accent,
             track_radius: 2.0,
             thumb_size: 16.0,
             thumb_color: Color::WHITE,
-            thumb_hover_color: DEFAULT_HOVER_BG,
-            thumb_border_color: DEFAULT_BORDER,
+            thumb_hover_color: theme.bg_hover,
+            thumb_border_color: theme.border,
             thumb_border_width: 1.0,
-            disabled_bg: DEFAULT_DISABLED_BG,
-            disabled_fill: DEFAULT_DISABLED_FG,
-            focus_ring_color: DEFAULT_FOCUS_RING,
+            disabled_bg: theme.bg_secondary,
+            disabled_fill: theme.fg_disabled,
+            focus_ring_color: theme.accent,
         }
+    }
+}
+
+impl Default for SliderStyle {
+    fn default() -> Self {
+        Self::from_theme(&UiTheme::dark())
     }
 }
 

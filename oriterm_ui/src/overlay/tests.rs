@@ -3,7 +3,8 @@ use std::time::Instant;
 
 use crate::draw::{DrawCommand, DrawList};
 use crate::geometry::{Point, Rect, Size};
-use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::input::{Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::theme::UiTheme;
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::flex::FlexWidget;
 use crate::widgets::label::LabelWidget;
@@ -11,6 +12,8 @@ use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, Widget, WidgetAction};
 
 use super::OverlayManager;
+
+const TEST_THEME: UiTheme = UiTheme::dark();
 use super::manager::OverlayEventResult;
 use super::overlay_id::OverlayId;
 use super::placement::{Placement, compute_overlay_rect};
@@ -311,7 +314,7 @@ fn multiple_overlays_ordering() {
 fn overlay_rect_accessor() {
     let mut mgr = OverlayManager::new(viewport());
     let id = mgr.push_overlay(label_widget("Test"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let rect = mgr.overlay_rect(id);
     assert!(rect.is_some());
@@ -333,7 +336,7 @@ fn overlay_rect_unknown_id() {
 fn mouse_pass_through_when_empty() {
     let mut mgr = OverlayManager::new(viewport());
     let event = mouse_down(50.0, 50.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
@@ -341,11 +344,11 @@ fn mouse_pass_through_when_empty() {
 fn mouse_click_inside_overlay_delivers() {
     let mut mgr = OverlayManager::new(viewport());
     let id = mgr.push_overlay(button_widget("Click"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let rect = mgr.overlay_rect(id).unwrap();
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
     assert!(matches!(result, OverlayEventResult::Delivered { .. }));
 }
 
@@ -353,11 +356,11 @@ fn mouse_click_inside_overlay_delivers() {
 fn mouse_click_outside_dismisses() {
     let mut mgr = OverlayManager::new(viewport());
     let id = mgr.push_overlay(label_widget("Popup"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Click far from the overlay.
     let event = mouse_down(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
 
     match result {
         OverlayEventResult::Dismissed(dismissed_id) => assert_eq!(dismissed_id, id),
@@ -370,11 +373,11 @@ fn mouse_click_outside_dismisses() {
 fn mouse_move_outside_does_not_dismiss() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_overlay(label_widget("Popup"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Mouse move (not click) outside should pass through, not dismiss.
     let event = mouse_move(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
     assert_eq!(mgr.count(), 1);
 }
@@ -383,10 +386,10 @@ fn mouse_move_outside_does_not_dismiss() {
 fn mouse_click_outside_modal_blocks() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_modal(label_widget("Modal"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let event = mouse_down(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
     assert!(matches!(result, OverlayEventResult::Blocked));
     // Modal should still be there.
     assert_eq!(mgr.count(), 1);
@@ -398,11 +401,11 @@ fn mouse_topmost_overlay_wins() {
     // Two overlays at the same position.
     let _id1 = mgr.push_overlay(button_widget("Back"), anchor(), Placement::Below);
     let id2 = mgr.push_overlay(button_widget("Front"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let rect = mgr.overlay_rect(id2).unwrap();
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
 
     match result {
         OverlayEventResult::Delivered { overlay_id, .. } => assert_eq!(overlay_id, id2),
@@ -415,7 +418,12 @@ fn mouse_topmost_overlay_wins() {
 #[test]
 fn key_pass_through_when_empty() {
     let mut mgr = OverlayManager::new(viewport());
-    let result = mgr.process_key_event(key_event(Key::Enter), &MockMeasurer::STANDARD, None);
+    let result = mgr.process_key_event(
+        key_event(Key::Enter),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
@@ -424,9 +432,14 @@ fn escape_dismisses_topmost() {
     let mut mgr = OverlayManager::new(viewport());
     let _id1 = mgr.push_overlay(label_widget("A"), anchor(), Placement::Below);
     let id2 = mgr.push_overlay(label_widget("B"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
-    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    let result = mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     match result {
         OverlayEventResult::Dismissed(id) => assert_eq!(id, id2),
         other => panic!("expected Dismissed, got {other:?}"),
@@ -438,9 +451,14 @@ fn escape_dismisses_topmost() {
 fn escape_dismisses_modal() {
     let mut mgr = OverlayManager::new(viewport());
     let id = mgr.push_modal(label_widget("Modal"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
-    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    let result = mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     match result {
         OverlayEventResult::Dismissed(dismissed_id) => assert_eq!(dismissed_id, id),
         other => panic!("expected Dismissed, got {other:?}"),
@@ -451,10 +469,15 @@ fn escape_dismisses_modal() {
 fn modal_never_passes_key_through() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_modal(label_widget("Modal"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // A random key that the label won't handle.
-    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD, None);
+    let result = mgr.process_key_event(
+        key_event(Key::ArrowDown),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     // Modal should deliver (even if Ignored by widget), never PassThrough.
     assert!(matches!(result, OverlayEventResult::Delivered { .. }));
 }
@@ -463,10 +486,15 @@ fn modal_never_passes_key_through() {
 fn non_modal_key_can_pass_through() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_overlay(label_widget("Popup"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Labels don't handle key events → should pass through.
-    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD, None);
+    let result = mgr.process_key_event(
+        key_event(Key::ArrowDown),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
@@ -477,8 +505,8 @@ fn hover_pass_through_when_empty() {
     let mut mgr = OverlayManager::new(viewport());
     let result = mgr.process_hover_event(
         Point::new(50.0, 50.0),
-        HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        &TEST_THEME,
         None,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
@@ -488,13 +516,13 @@ fn hover_pass_through_when_empty() {
 fn hover_inside_overlay_delivers() {
     let mut mgr = OverlayManager::new(viewport());
     let id = mgr.push_overlay(button_widget("Btn"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let rect = mgr.overlay_rect(id).unwrap();
     let result = mgr.process_hover_event(
         Point::new(rect.x() + 5.0, rect.y() + 5.0),
-        HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        &TEST_THEME,
         None,
     );
     assert!(matches!(result, OverlayEventResult::Delivered { .. }));
@@ -504,12 +532,12 @@ fn hover_inside_overlay_delivers() {
 fn hover_outside_modal_blocks() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_modal(label_widget("Modal"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let result = mgr.process_hover_event(
         Point::new(1.0, 1.0),
-        HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        &TEST_THEME,
         None,
     );
     assert!(matches!(result, OverlayEventResult::Blocked));
@@ -519,12 +547,12 @@ fn hover_outside_modal_blocks() {
 fn hover_outside_non_modal_passes_through() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_overlay(label_widget("Popup"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let result = mgr.process_hover_event(
         Point::new(1.0, 1.0),
-        HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        &TEST_THEME,
         None,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
@@ -544,7 +572,7 @@ fn hover_transition_sends_leave_to_old_overlay() {
     let anchor_b = Rect::new(300.0, 50.0, 80.0, 30.0);
     let id_b = mgr.push_overlay(btn_b, anchor_b, Placement::Below);
 
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let rect_a = mgr.overlay_rect(id_a).unwrap();
     let rect_b = mgr.overlay_rect(id_b).unwrap();
@@ -552,8 +580,8 @@ fn hover_transition_sends_leave_to_old_overlay() {
     // Hover into overlay A.
     let result = mgr.process_hover_event(
         Point::new(rect_a.x() + 5.0, rect_a.y() + 5.0),
-        HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        &TEST_THEME,
         None,
     );
     assert!(matches!(
@@ -567,8 +595,8 @@ fn hover_transition_sends_leave_to_old_overlay() {
     // Hover into overlay B — should send Leave to A internally.
     let result = mgr.process_hover_event(
         Point::new(rect_b.x() + 5.0, rect_b.y() + 5.0),
-        HoverEvent::Enter,
         &MockMeasurer::STANDARD,
+        &TEST_THEME,
         None,
     );
     assert!(matches!(
@@ -582,8 +610,8 @@ fn hover_transition_sends_leave_to_old_overlay() {
     // Hover outside both — should clear tracking.
     let result = mgr.process_hover_event(
         Point::new(1.0, 1.0),
-        HoverEvent::Leave,
         &MockMeasurer::STANDARD,
+        &TEST_THEME,
         None,
     );
     assert!(matches!(result, OverlayEventResult::PassThrough));
@@ -604,6 +632,7 @@ fn draw_empty_is_noop() {
         focused_widget: None,
         now: Instant::now(),
         animations_running: &anim_flag,
+        theme: &TEST_THEME,
     };
     mgr.draw_overlays(&mut ctx);
     assert!(draw_list.is_empty());
@@ -613,7 +642,7 @@ fn draw_empty_is_noop() {
 fn draw_non_modal_no_dimming() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_overlay(label_widget("A"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
@@ -625,6 +654,7 @@ fn draw_non_modal_no_dimming() {
         focused_widget: None,
         now: Instant::now(),
         animations_running: &anim_flag,
+        theme: &TEST_THEME,
     };
     mgr.draw_overlays(&mut ctx);
 
@@ -640,7 +670,7 @@ fn draw_non_modal_no_dimming() {
 fn draw_modal_emits_dimming_rect() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_modal(label_widget("Modal"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
@@ -652,6 +682,7 @@ fn draw_modal_emits_dimming_rect() {
         focused_widget: None,
         now: Instant::now(),
         animations_running: &anim_flag,
+        theme: &TEST_THEME,
     };
     mgr.draw_overlays(&mut ctx);
 
@@ -675,7 +706,7 @@ fn draw_overlays_in_painter_order() {
     // Use different labels so we can distinguish them by glyph count.
     mgr.push_overlay(label_widget("AB"), anchor(), Placement::Below);
     mgr.push_overlay(label_widget("ABCDE"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
@@ -687,6 +718,7 @@ fn draw_overlays_in_painter_order() {
         focused_widget: None,
         now: Instant::now(),
         animations_running: &anim_flag,
+        theme: &TEST_THEME,
     };
     mgr.draw_overlays(&mut ctx);
 
@@ -710,7 +742,7 @@ fn modal_focus_order_returns_focusable_ids() {
     let btn = button_widget("Focus Me");
     let btn_id = btn.id();
     mgr.push_modal(btn, anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let order = mgr.modal_focus_order();
     assert!(order.is_some());
@@ -749,20 +781,20 @@ fn button_in_overlay_receives_click_action() {
     let btn = button_widget("Go");
     let btn_id = btn.id();
     let id = mgr.push_overlay(btn, anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let rect = mgr.overlay_rect(id).unwrap();
 
     // Down then up = click.
     let down = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
-    mgr.process_mouse_event(&down, &MockMeasurer::STANDARD, None);
+    mgr.process_mouse_event(&down, &MockMeasurer::STANDARD, &TEST_THEME, None);
 
     let up = MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
         pos: Point::new(rect.x() + 5.0, rect.y() + 5.0),
         modifiers: Modifiers::NONE,
     };
-    let result = mgr.process_mouse_event(&up, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&up, &MockMeasurer::STANDARD, &TEST_THEME, None);
 
     match result {
         OverlayEventResult::Delivered { response, .. } => {
@@ -784,7 +816,12 @@ fn stacked_modals_inner_dismiss_restores_outer() {
     assert!(mgr.has_modal());
 
     // Escape dismisses inner modal.
-    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    let result = mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     match result {
         OverlayEventResult::Dismissed(id) => assert_eq!(id, id2),
         other => panic!("expected inner dismissed, got {other:?}"),
@@ -796,11 +833,16 @@ fn stacked_modals_inner_dismiss_restores_outer() {
 
     // Click outside is still blocked by outer modal.
     let event = mouse_down(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
     assert!(matches!(result, OverlayEventResult::Blocked));
 
     // Second escape dismisses outer.
-    let result = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    let result = mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     match result {
         OverlayEventResult::Dismissed(id) => assert_eq!(id, id1),
         other => panic!("expected outer dismissed, got {other:?}"),
@@ -814,23 +856,43 @@ fn multiple_escapes_dismiss_stack_one_at_a_time() {
     let id1 = mgr.push_overlay(label_widget("A"), anchor(), Placement::Below);
     let id2 = mgr.push_overlay(label_widget("B"), anchor(), Placement::Below);
     let id3 = mgr.push_overlay(label_widget("C"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Three escapes should dismiss C, B, A in order.
-    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    let r = mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id3));
     assert_eq!(mgr.count(), 2);
 
-    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    let r = mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id2));
     assert_eq!(mgr.count(), 1);
 
-    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    let r = mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     assert!(matches!(r, OverlayEventResult::Dismissed(id) if id == id1));
     assert!(mgr.is_empty());
 
     // Fourth escape passes through (stack empty).
-    let r = mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    let r = mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     assert!(matches!(r, OverlayEventResult::PassThrough));
 }
 
@@ -839,14 +901,14 @@ fn scroll_outside_overlay_does_not_dismiss() {
     // Scroll events are not clicks — should not dismiss.
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_overlay(label_widget("Menu"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let scroll = MouseEvent {
         kind: MouseEventKind::Scroll(crate::input::ScrollDelta::Lines { x: 0.0, y: -3.0 }),
         pos: Point::new(1.0, 1.0),
         modifiers: Modifiers::NONE,
     };
-    let result = mgr.process_mouse_event(&scroll, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&scroll, &MockMeasurer::STANDARD, &TEST_THEME, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
     assert_eq!(mgr.count(), 1, "scroll should not dismiss overlay");
 }
@@ -856,14 +918,14 @@ fn right_click_outside_also_dismisses() {
     // Right-click is also a Down event — should dismiss non-modal overlay.
     let mut mgr = OverlayManager::new(viewport());
     let id = mgr.push_overlay(label_widget("Context"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let right_click = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Right),
         pos: Point::new(1.0, 1.0),
         modifiers: Modifiers::NONE,
     };
-    let result = mgr.process_mouse_event(&right_click, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&right_click, &MockMeasurer::STANDARD, &TEST_THEME, None);
     match result {
         OverlayEventResult::Dismissed(dismissed_id) => assert_eq!(dismissed_id, id),
         other => panic!("expected Dismissed on right-click, got {other:?}"),
@@ -895,16 +957,21 @@ fn dismiss_topmost_reveals_overlay_below() {
     let mut mgr = OverlayManager::new(viewport());
     let id1 = mgr.push_overlay(button_widget("Lower"), anchor(), Placement::Below);
     let _id2 = mgr.push_overlay(label_widget("Upper"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Escape removes Upper.
-    mgr.process_key_event(key_event(Key::Escape), &MockMeasurer::STANDARD, None);
+    mgr.process_key_event(
+        key_event(Key::Escape),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     assert_eq!(mgr.count(), 1);
 
     // Lower overlay should now receive events.
     let rect = mgr.overlay_rect(id1).unwrap();
     let event = mouse_down(rect.x() + 5.0, rect.y() + 5.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
     match result {
         OverlayEventResult::Delivered { overlay_id, .. } => assert_eq!(overlay_id, id1),
         other => panic!("expected Delivered to lower, got {other:?}"),
@@ -916,14 +983,14 @@ fn viewport_resize_relayouts_overlays() {
     // Chromium: window resize must reposition overlays.
     let mut mgr = OverlayManager::new(viewport());
     let id = mgr.push_overlay(label_widget("Popup"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let rect_before = mgr.overlay_rect(id).unwrap();
 
     // Shrink viewport.
     let small_vp = Rect::new(0.0, 0.0, 400.0, 300.0);
     mgr.set_viewport(small_vp);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let rect_after = mgr.overlay_rect(id).unwrap();
 
@@ -951,20 +1018,20 @@ fn non_modal_over_modal_blocks_correctly() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_modal(label_widget("Modal Base"), anchor(), Placement::Center);
     mgr.push_overlay(label_widget("Popup"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     // Topmost is non-modal, so has_modal is false (checks topmost only).
     assert!(!mgr.has_modal());
 
     // Click outside both: topmost is non-modal with dismiss_on_click_outside.
     let event = mouse_down(1.0, 1.0);
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
     // Should dismiss the non-modal popup.
     assert!(matches!(result, OverlayEventResult::Dismissed(_)));
     assert_eq!(mgr.count(), 1);
 
     // Now topmost is modal — click outside is blocked.
-    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&event, &MockMeasurer::STANDARD, &TEST_THEME, None);
     assert!(matches!(result, OverlayEventResult::Blocked));
 }
 
@@ -977,7 +1044,7 @@ fn push_after_clear_works() {
     mgr.clear_all();
 
     let id = mgr.push_overlay(label_widget("Fresh"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     assert_eq!(mgr.count(), 1);
     assert!(!mgr.has_modal());
@@ -989,14 +1056,14 @@ fn mouse_up_outside_does_not_dismiss() {
     // Only Down events dismiss, not Up.
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_overlay(label_widget("Popup"), anchor(), Placement::Below);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let up = MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
         pos: Point::new(1.0, 1.0),
         modifiers: Modifiers::NONE,
     };
-    let result = mgr.process_mouse_event(&up, &MockMeasurer::STANDARD, None);
+    let result = mgr.process_mouse_event(&up, &MockMeasurer::STANDARD, &TEST_THEME, None);
     assert!(matches!(result, OverlayEventResult::PassThrough));
     assert_eq!(mgr.count(), 1, "mouse up should not dismiss");
 }
@@ -1006,9 +1073,14 @@ fn modal_key_delivery_reports_correct_overlay_id() {
     // Verify the overlay_id in Delivered matches the modal.
     let mut mgr = OverlayManager::new(viewport());
     let id = mgr.push_modal(label_widget("Dialog"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
-    let result = mgr.process_key_event(key_event(Key::ArrowDown), &MockMeasurer::STANDARD, None);
+    let result = mgr.process_key_event(
+        key_event(Key::ArrowDown),
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+    );
     match result {
         OverlayEventResult::Delivered { overlay_id, .. } => assert_eq!(overlay_id, id),
         other => panic!("expected Delivered with modal id, got {other:?}"),
@@ -1021,7 +1093,7 @@ fn draw_stacked_modals_emits_two_dim_rects() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_modal(label_widget("Outer"), anchor(), Placement::Center);
     mgr.push_modal(label_widget("Inner"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
@@ -1033,6 +1105,7 @@ fn draw_stacked_modals_emits_two_dim_rects() {
         focused_widget: None,
         now: Instant::now(),
         animations_running: &anim_flag,
+        theme: &TEST_THEME,
     };
     mgr.draw_overlays(&mut ctx);
 
@@ -1052,7 +1125,7 @@ fn label_not_focusable_in_modal() {
     // Labels are not focusable — modal focus order should be empty.
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_modal(label_widget("Text Only"), anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let order = mgr.modal_focus_order();
     assert!(order.is_some());
@@ -1070,7 +1143,7 @@ fn modal_focus_order_traverses_containers() {
 
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_modal(flex, anchor(), Placement::Center);
-    mgr.layout_overlays(&MockMeasurer::STANDARD);
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let ids = mgr.modal_focus_order().expect("modal present");
     assert!(ids.contains(&btn1_id), "should find first button");

@@ -16,6 +16,7 @@ fn event_ctx(bounds: Rect) -> EventCtx<'static> {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     }
 }
 
@@ -62,7 +63,10 @@ fn disabled_not_focusable() {
 fn layout_includes_padding() {
     let btn = ButtonWidget::new("OK");
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = btn.layout(&ctx);
     let style = ButtonStyle::default();
 
@@ -226,7 +230,10 @@ fn set_label_updates() {
 fn empty_label_layout() {
     let btn = ButtonWidget::new("");
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = btn.layout(&ctx);
     let style = ButtonStyle::default();
 
@@ -307,7 +314,10 @@ fn with_style_applies_custom_style() {
 
     // Layout should reflect the custom padding.
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = btn.layout(&ctx);
     if let BoxContent::Leaf {
         intrinsic_width,
@@ -423,6 +433,7 @@ fn draw_signals_animations_running() {
         focused_widget: None,
         now,
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     btn.draw(&mut draw_ctx);
 

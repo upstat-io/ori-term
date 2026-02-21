@@ -24,11 +24,11 @@ pub mod toggle;
 use std::cell::Cell;
 use std::time::Instant;
 
-use crate::color::Color;
 use crate::draw::DrawList;
 use crate::geometry::Rect;
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::LayoutBox;
+use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 pub use text_measurer::TextMeasurer;
@@ -111,6 +111,8 @@ pub enum WidgetAction {
 pub struct LayoutCtx<'a> {
     /// Text measurement provider.
     pub measurer: &'a dyn TextMeasurer,
+    /// Active UI theme.
+    pub theme: &'a UiTheme,
 }
 
 /// Context passed to [`Widget::draw`].
@@ -127,6 +129,8 @@ pub struct DrawCtx<'a> {
     pub now: Instant,
     /// Set to `true` by widgets with running animations to request redraw.
     pub animations_running: &'a Cell<bool>,
+    /// Active UI theme.
+    pub theme: &'a UiTheme,
 }
 
 /// Context passed to mouse and keyboard event handlers.
@@ -142,6 +146,8 @@ pub struct EventCtx<'a> {
     /// Containers use this to set per-child `is_focused` correctly,
     /// so only the focused child responds to key events.
     pub focused_widget: Option<WidgetId>,
+    /// Active UI theme.
+    pub theme: &'a UiTheme,
 }
 
 /// The core widget trait.
@@ -184,35 +190,6 @@ pub trait Widget {
         }
     }
 }
-
-// Default dark-theme colors shared across widget styles.
-
-/// Default widget background color (dark surface).
-pub const DEFAULT_BG: Color = Color::from_rgb_u8(0x2D, 0x2D, 0x2D);
-
-/// Default widget background when hovered.
-pub const DEFAULT_HOVER_BG: Color = Color::from_rgb_u8(0x3D, 0x3D, 0x3D);
-
-/// Default widget background when pressed.
-pub const DEFAULT_PRESSED_BG: Color = Color::from_rgb_u8(0x1D, 0x1D, 0x1D);
-
-/// Default widget foreground / text color.
-pub const DEFAULT_FG: Color = Color::from_rgb_u8(0xE0, 0xE0, 0xE0);
-
-/// Default widget border color.
-pub const DEFAULT_BORDER: Color = Color::from_rgb_u8(0x55, 0x55, 0x55);
-
-/// Default accent color (for toggles, sliders, focused elements).
-pub const DEFAULT_ACCENT: Color = Color::from_rgb_u8(0x4A, 0x9E, 0xFF);
-
-/// Default disabled text/foreground color.
-pub const DEFAULT_DISABLED_FG: Color = Color::from_rgb_u8(0x80, 0x80, 0x80);
-
-/// Default disabled background color.
-pub const DEFAULT_DISABLED_BG: Color = Color::from_rgb_u8(0x25, 0x25, 0x25);
-
-/// Default focus ring color.
-pub const DEFAULT_FOCUS_RING: Color = Color::from_rgb_u8(0x4A, 0x9E, 0xFF);
 
 #[cfg(test)]
 pub(crate) mod tests;

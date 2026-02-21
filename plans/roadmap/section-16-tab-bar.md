@@ -138,7 +138,7 @@ Render the tab bar as GPU instances. The tab bar is rendered in the overlay pass
   - [ ] When tabs reorder during drag: displaced tabs get a non-zero offset that decays to 0 over ~100ms
   - [ ] `decay_tab_animations(&mut self) -> bool` — returns true if any animation is still active (needs continued rendering)
   - [ ] Chrome-style behavior: tabs **snap immediately** to new positions during drag. Animation only applies on drag-end.
-- [ ] Tab title rendering:
+- [ ] Tab title rendering: <!-- unblocks:6.13 -->
   - [ ] Use UI font collection (separate from terminal font, possibly different family/weight)
   - [ ] `ui_collection.truncate_to_pixel_width(title, max_text_px)` — truncates with `...` (U+2026) if too wide
   - [ ] Max text width = `tab_width - 2*TAB_PADDING - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD`

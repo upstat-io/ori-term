@@ -24,6 +24,7 @@ fn row_layout_places_children_horizontally() {
     let row = FlexWidget::row(vec![label("AB"), label("CD")]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = row.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -43,6 +44,7 @@ fn column_layout_places_children_vertically() {
     let col = FlexWidget::column(vec![label("AB"), label("CD")]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = col.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -62,6 +64,7 @@ fn row_with_gap() {
     let row = FlexWidget::row(vec![label("A"), label("B")]).with_gap(10.0);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = row.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -78,6 +81,7 @@ fn row_with_spacer_pushes_apart() {
     let row = FlexWidget::row(vec![label("L"), Box::new(SpacerWidget::fill()), label("R")]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let mut layout_box = row.layout(&ctx);
     // Force the row to fill width so the spacer has room to expand.
@@ -96,6 +100,7 @@ fn column_with_center_align() {
     let col = FlexWidget::column(vec![label("AB"), label("ABCD")]).with_align(Align::Center);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = col.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -113,6 +118,7 @@ fn row_with_justify_space_between() {
         .with_justify(Justify::SpaceBetween);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let mut layout_box = row.layout(&ctx);
     layout_box.width = SizeSpec::Fill;
@@ -151,6 +157,7 @@ fn flex_draws_children() {
         focused_widget: None,
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     row.draw(&mut ctx);
 
@@ -177,6 +184,7 @@ fn flex_delegates_mouse_to_child() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Click inside the button area (x > 40px).
@@ -214,6 +222,7 @@ fn flex_delegates_key_to_child() {
         bounds,
         is_focused: false,
         focused_widget: Some(btn_id),
+        theme: &super::super::tests::TEST_THEME,
     };
 
     let event = KeyEvent {
@@ -233,6 +242,7 @@ fn flex_empty_row() {
     let row = FlexWidget::row(vec![]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = row.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -251,6 +261,7 @@ fn mouse_outside_children_is_ignored() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
     // Click far outside the label (label is 8px wide).
     let event = MouseEvent {
@@ -271,6 +282,7 @@ fn deeply_nested_layout_correct() {
     let outer_col = FlexWidget::column(vec![label("Header"), Box::new(inner_row), label("Footer")]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = outer_col.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -304,6 +316,7 @@ fn deeply_nested_mouse_routing() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Button is at row y=16 (after header), x=24 (after "Pre"=24px).
@@ -339,6 +352,7 @@ fn mouse_on_gap_between_children_is_ignored() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // "A" occupies x=[0,8), gap is x=[8,28), "B" at x=[28,36).
@@ -362,6 +376,7 @@ fn empty_flex_mouse_events_ignored() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -381,6 +396,7 @@ fn empty_flex_key_events_ignored() {
         bounds,
         is_focused: true,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -406,6 +422,7 @@ fn focused_widget_id_propagates_through_draw() {
         focused_widget: Some(btn_id),
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
     };
     row.draw(&mut ctx);
 
@@ -429,6 +446,7 @@ fn panel_inside_flex_layout() {
     let row = FlexWidget::row(vec![label("Before"), Box::new(panel)]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = row.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -459,6 +477,7 @@ fn child_consumes_event_stops_propagation() {
         bounds,
         is_focused: false,
         focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
     };
 
     // Click at x=5 (inside first button).

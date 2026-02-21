@@ -11,7 +11,9 @@ use crate::layout::LayoutBox;
 use crate::text::TextStyle;
 use crate::widget_id::WidgetId;
 
-use super::{DEFAULT_BORDER, DEFAULT_FG, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::theme::UiTheme;
+
+use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
 /// Style for a [`SeparatorWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -28,15 +30,22 @@ pub struct SeparatorStyle {
     pub label_gap: f32,
 }
 
+impl SeparatorStyle {
+    /// Derives a separator style from the given theme.
+    pub fn from_theme(theme: &UiTheme) -> Self {
+        Self {
+            color: theme.border,
+            thickness: 1.0,
+            label_color: theme.fg_primary,
+            label_font_size: theme.font_size_small,
+            label_gap: theme.spacing,
+        }
+    }
+}
+
 impl Default for SeparatorStyle {
     fn default() -> Self {
-        Self {
-            color: DEFAULT_BORDER,
-            thickness: 1.0,
-            label_color: DEFAULT_FG,
-            label_font_size: 11.0,
-            label_gap: 8.0,
-        }
+        Self::from_theme(&UiTheme::dark())
     }
 }
 

@@ -14,6 +14,8 @@ use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseEvent, MouseEventK
 use crate::layout::{LayoutBox, LayoutNode, compute_layout};
 use crate::widget_id::WidgetId;
 
+use crate::theme::UiTheme;
+
 use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
 /// Scroll direction.
@@ -121,7 +123,12 @@ impl ScrollWidget {
     }
 
     /// Returns cached child natural size if viewport matches, otherwise recomputes.
-    fn child_natural_size(&self, measurer: &dyn super::TextMeasurer, viewport: Rect) -> (f32, f32) {
+    fn child_natural_size(
+        &self,
+        measurer: &dyn super::TextMeasurer,
+        theme: &UiTheme,
+        viewport: Rect,
+    ) -> (f32, f32) {
         {
             let cached = self.cached_child_layout.borrow();
             if let Some((ref cv, ref node)) = *cached {
@@ -130,7 +137,7 @@ impl ScrollWidget {
                 }
             }
         }
-        let ctx = LayoutCtx { measurer };
+        let ctx = LayoutCtx { measurer, theme };
         let child_box = self.child.layout(&ctx);
         let (w, h) = match self.direction {
             ScrollDirection::Vertical => (viewport.width(), f32::INFINITY),
@@ -198,7 +205,7 @@ impl Widget for ScrollWidget {
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.bounds);
+        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
 
         // Clip to visible area.
         ctx.draw_list.push_clip(ctx.bounds);
@@ -217,6 +224,7 @@ impl Widget for ScrollWidget {
             focused_widget: ctx.focused_widget,
             now: ctx.now,
             animations_running: ctx.animations_running,
+            theme: ctx.theme,
         };
         self.child.draw(&mut child_ctx);
 
@@ -227,7 +235,7 @@ impl Widget for ScrollWidget {
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.bounds);
+        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
         let view_h = ctx.bounds.height();
 
         // Handle scroll events.
@@ -258,6 +266,7 @@ impl Widget for ScrollWidget {
             bounds: child_bounds,
             is_focused: ctx.focused_widget == Some(self.child.id()),
             focused_widget: ctx.focused_widget,
+            theme: ctx.theme,
         };
         self.child.handle_mouse(&child_event, &child_ctx)
     }
@@ -267,7 +276,7 @@ impl Widget for ScrollWidget {
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let (_, content_h) = self.child_natural_size(ctx.measurer, ctx.bounds);
+        let (_, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
         let view_h = ctx.bounds.height();
 
         // Handle scroll keys.

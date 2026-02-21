@@ -15,7 +15,10 @@ fn default_style() {
 fn layout_uses_measurer() {
     let label = LabelWidget::new("test");
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = label.layout(&ctx);
 
     // "test" = 4 chars * 8px = 32px wide, 16px tall.
@@ -35,7 +38,10 @@ fn layout_uses_measurer() {
 fn layout_has_widget_id() {
     let label = LabelWidget::new("x");
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = label.layout(&ctx);
     assert_eq!(layout.widget_id, Some(label.id()));
 }
@@ -63,7 +69,10 @@ fn with_style_applies() {
 fn empty_text_layout() {
     let label = LabelWidget::new("");
     let m = MockMeasurer::new();
-    let ctx = LayoutCtx { measurer: &m };
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
     let layout = label.layout(&ctx);
     if let crate::layout::BoxContent::Leaf {
         intrinsic_width, ..

@@ -10,6 +10,7 @@ fn fixed_spacer_layout() {
     let spacer = SpacerWidget::fixed(20.0, 10.0);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = spacer.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -23,6 +24,7 @@ fn fill_spacer_fills_viewport() {
     let spacer = SpacerWidget::fill();
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = spacer.layout(&ctx);
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -49,6 +51,7 @@ fn fixed_spacer_size_spec() {
     let spacer = SpacerWidget::fixed(50.0, 25.0);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = spacer.layout(&ctx);
     assert_eq!(layout_box.width, SizeSpec::Fixed(50.0));
@@ -60,6 +63,7 @@ fn fill_spacer_size_spec() {
     let spacer = SpacerWidget::fill();
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
+        theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = spacer.layout(&ctx);
     assert_eq!(layout_box.width, SizeSpec::Fill);

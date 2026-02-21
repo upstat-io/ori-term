@@ -9,6 +9,7 @@ use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect, Size};
 use crate::input::{HoverEvent, Key, KeyEvent, MouseEvent, MouseEventKind};
 use crate::layout::compute_layout;
+use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
@@ -196,9 +197,13 @@ impl OverlayManager {
     ///
     /// For each overlay: measures the widget's intrinsic size via the layout
     /// solver, then computes the screen-space placement rectangle.
-    pub fn layout_overlays(&mut self, measurer: &dyn crate::widgets::TextMeasurer) {
+    pub fn layout_overlays(
+        &mut self,
+        measurer: &dyn crate::widgets::TextMeasurer,
+        theme: &UiTheme,
+    ) {
         let viewport = self.viewport;
-        let layout_ctx = LayoutCtx { measurer };
+        let layout_ctx = LayoutCtx { measurer, theme };
 
         for overlay in &mut self.overlays {
             let layout_box = overlay.widget.layout(&layout_ctx);
@@ -230,6 +235,7 @@ impl OverlayManager {
                 focused_widget: ctx.focused_widget,
                 now: ctx.now,
                 animations_running: ctx.animations_running,
+                theme: ctx.theme,
             };
             overlay.widget.draw(&mut overlay_ctx);
         }
@@ -244,6 +250,7 @@ impl OverlayManager {
         &mut self,
         event: &MouseEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
+        theme: &UiTheme,
         focused_widget: Option<WidgetId>,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
@@ -261,6 +268,7 @@ impl OverlayManager {
                     bounds: overlay.computed_rect,
                     is_focused: focused_widget == Some(root_id),
                     focused_widget,
+                    theme,
                 };
                 let response = overlay.widget.handle_mouse(event, &ctx);
                 return OverlayEventResult::Delivered {
@@ -297,6 +305,7 @@ impl OverlayManager {
         &mut self,
         event: KeyEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
+        theme: &UiTheme,
         focused_widget: Option<WidgetId>,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
@@ -318,6 +327,7 @@ impl OverlayManager {
             bounds: topmost.computed_rect,
             is_focused: focused_widget == Some(root_id),
             focused_widget,
+            theme,
         };
         let response = topmost.widget.handle_key(event, &ctx);
 
@@ -339,8 +349,8 @@ impl OverlayManager {
     pub fn process_hover_event(
         &mut self,
         point: Point,
-        _event: HoverEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
+        theme: &UiTheme,
         focused_widget: Option<WidgetId>,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
@@ -363,6 +373,7 @@ impl OverlayManager {
                         bounds: old_overlay.computed_rect,
                         is_focused: focused_widget == Some(root_id),
                         focused_widget,
+                        theme,
                     };
                     old_overlay.widget.handle_hover(HoverEvent::Leave, &ctx);
                 }
@@ -380,6 +391,7 @@ impl OverlayManager {
                 bounds: overlay.computed_rect,
                 is_focused: focused_widget == Some(root_id),
                 focused_widget,
+                theme,
             };
             let response = overlay.widget.handle_hover(HoverEvent::Enter, &ctx);
             return OverlayEventResult::Delivered {

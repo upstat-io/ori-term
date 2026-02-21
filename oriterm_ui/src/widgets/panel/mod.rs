@@ -13,7 +13,9 @@ use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::widget_id::WidgetId;
 
-use super::{DEFAULT_BG, DEFAULT_BORDER, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::theme::UiTheme;
+
+use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
 /// Visual style for a [`PanelWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -32,16 +34,29 @@ pub struct PanelStyle {
     pub shadow: Option<Shadow>,
 }
 
+impl PanelStyle {
+    /// Derives a panel style from the given theme.
+    pub fn from_theme(theme: &UiTheme) -> Self {
+        Self {
+            bg: theme.bg_primary,
+            border_color: theme.border,
+            border_width: 1.0,
+            corner_radius: theme.corner_radius * 2.0,
+            padding: Insets::all(12.0),
+            shadow: Some(Shadow {
+                offset_x: 0.0,
+                offset_y: 2.0,
+                blur_radius: 8.0,
+                spread: 0.0,
+                color: theme.shadow,
+            }),
+        }
+    }
+}
+
 impl Default for PanelStyle {
     fn default() -> Self {
-        Self {
-            bg: DEFAULT_BG,
-            border_color: DEFAULT_BORDER,
-            border_width: 1.0,
-            corner_radius: 8.0,
-            padding: Insets::all(12.0),
-            shadow: None,
-        }
+        Self::from_theme(&UiTheme::dark())
     }
 }
 
@@ -107,6 +122,7 @@ impl PanelWidget {
     fn get_or_compute_layout(
         &self,
         measurer: &dyn super::TextMeasurer,
+        theme: &UiTheme,
         bounds: crate::geometry::Rect,
     ) -> Rc<LayoutNode> {
         {
@@ -117,7 +133,7 @@ impl PanelWidget {
                 }
             }
         }
-        let ctx = LayoutCtx { measurer };
+        let ctx = LayoutCtx { measurer, theme };
         let child_box = self.child.layout(&ctx);
         let wrapper = LayoutBox::flex(crate::layout::Direction::Column, vec![child_box])
             .with_padding(self.style.padding)
@@ -158,7 +174,7 @@ impl Widget for PanelWidget {
         ctx.draw_list.push_rect(ctx.bounds, rect_style);
 
         // Compute child layout and draw child.
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
@@ -167,13 +183,14 @@ impl Widget for PanelWidget {
                 focused_widget: ctx.focused_widget,
                 now: ctx.now,
                 animations_running: ctx.animations_running,
+                theme: ctx.theme,
             };
             self.child.draw(&mut child_ctx);
         }
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             if child_node.rect.contains(event.pos) {
                 let child_ctx = EventCtx {
@@ -181,6 +198,7 @@ impl Widget for PanelWidget {
                     bounds: child_node.content_rect,
                     is_focused: ctx.focused_widget == Some(self.child.id()),
                     focused_widget: ctx.focused_widget,
+                    theme: ctx.theme,
                 };
                 return self.child.handle_mouse(event, &child_ctx);
             }
@@ -189,13 +207,14 @@ impl Widget for PanelWidget {
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             let child_ctx = EventCtx {
                 measurer: ctx.measurer,
                 bounds: child_node.content_rect,
                 is_focused: ctx.focused_widget == Some(self.child.id()),
                 focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
             };
             return self.child.handle_hover(event, &child_ctx);
         }
@@ -203,13 +222,14 @@ impl Widget for PanelWidget {
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
+        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             let child_ctx = EventCtx {
                 measurer: ctx.measurer,
                 bounds: child_node.content_rect,
                 is_focused: ctx.focused_widget == Some(self.child.id()),
                 focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
             };
             return self.child.handle_key(event, &child_ctx);
         }

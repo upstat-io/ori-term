@@ -1,6 +1,10 @@
 use crate::text::{ShapedGlyph, ShapedText, TextMetrics, TextStyle};
+use crate::theme::UiTheme;
 
 use super::text_measurer::TextMeasurer;
+
+/// Shared dark theme constant for widget tests.
+pub const TEST_THEME: UiTheme = UiTheme::dark();
 
 /// Mock text measurer for widget tests.
 ///
