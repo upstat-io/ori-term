@@ -1,0 +1,202 @@
+//! Tests for paste text processing.
+
+use std::path::Path;
+
+use super::{
+    count_newlines, filter_paste, format_dropped_paths, normalize_line_endings, prepare_paste,
+    strip_escape_chars,
+};
+
+// --- filter_paste ---
+
+#[test]
+fn filter_strips_tabs() {
+    assert_eq!(filter_paste("hello\tworld"), "helloworld");
+    assert_eq!(filter_paste("\t\t"), "");
+}
+
+#[test]
+fn filter_converts_smart_double_quotes() {
+    // U+201C left double quotation mark, U+201D right double quotation mark.
+    assert_eq!(filter_paste("\u{201C}hello\u{201D}"), "\"hello\"");
+}
+
+#[test]
+fn filter_converts_smart_single_quotes() {
+    // U+2018 left single quotation mark, U+2019 right single quotation mark.
+    assert_eq!(filter_paste("\u{2018}it\u{2019}s"), "'it's");
+}
+
+#[test]
+fn filter_converts_em_dash_to_double_hyphen() {
+    assert_eq!(filter_paste("hello\u{2014}world"), "hello--world");
+}
+
+#[test]
+fn filter_converts_en_dash_to_hyphen() {
+    assert_eq!(filter_paste("2020\u{2013}2025"), "2020-2025");
+}
+
+#[test]
+fn filter_converts_non_breaking_spaces() {
+    assert_eq!(filter_paste("hello\u{00A0}world"), "hello world");
+    assert_eq!(filter_paste("hello\u{202F}world"), "hello world");
+}
+
+#[test]
+fn filter_preserves_normal_text() {
+    let text = "Hello, world! 123 @#$";
+    assert_eq!(filter_paste(text), text);
+}
+
+#[test]
+fn filter_combined_characters() {
+    let input = "\u{201C}Don\u{2019}t\u{201D}\t\u{2014}\u{00A0}test";
+    assert_eq!(filter_paste(input), "\"Don't\"-- test");
+}
+
+// --- normalize_line_endings ---
+
+#[test]
+fn normalize_crlf_to_cr() {
+    assert_eq!(normalize_line_endings("hello\r\nworld"), "hello\rworld");
+}
+
+#[test]
+fn normalize_standalone_lf_to_cr() {
+    assert_eq!(normalize_line_endings("hello\nworld"), "hello\rworld");
+}
+
+#[test]
+fn normalize_standalone_cr_unchanged() {
+    assert_eq!(normalize_line_endings("hello\rworld"), "hello\rworld");
+}
+
+#[test]
+fn normalize_mixed_line_endings() {
+    // CRLF, then LF, then CR.
+    assert_eq!(normalize_line_endings("a\r\nb\nc\rd"), "a\rb\rc\rd");
+}
+
+#[test]
+fn normalize_preserves_unicode() {
+    assert_eq!(normalize_line_endings("日本語\r\nテスト"), "日本語\rテスト");
+}
+
+#[test]
+fn normalize_consecutive_crlf() {
+    assert_eq!(normalize_line_endings("a\r\n\r\nb"), "a\r\rb");
+}
+
+// --- strip_escape_chars ---
+
+#[test]
+fn strip_removes_esc() {
+    assert_eq!(strip_escape_chars("hello\x1b[31mworld"), "hello[31mworld");
+}
+
+#[test]
+fn strip_preserves_text_without_esc() {
+    let text = "hello world 123";
+    assert_eq!(strip_escape_chars(text), text);
+}
+
+#[test]
+fn strip_removes_bracketed_paste_end_marker() {
+    // The ESC in \x1b[201~ is stripped, preventing paste escape.
+    assert_eq!(
+        strip_escape_chars("injected\x1b[201~text"),
+        "injected[201~text"
+    );
+}
+
+// --- count_newlines ---
+
+#[test]
+fn count_no_newlines() {
+    assert_eq!(count_newlines("hello world"), 0);
+}
+
+#[test]
+fn count_single_lf() {
+    assert_eq!(count_newlines("hello\nworld"), 1);
+}
+
+#[test]
+fn count_crlf_as_one() {
+    assert_eq!(count_newlines("hello\r\nworld"), 1);
+}
+
+#[test]
+fn count_mixed_newlines() {
+    assert_eq!(count_newlines("a\r\nb\nc\rd"), 3);
+}
+
+// --- prepare_paste ---
+
+#[test]
+fn prepare_plain_no_filter() {
+    let result = prepare_paste("hello\nworld", false, false);
+    assert_eq!(result, b"hello\rworld");
+}
+
+#[test]
+fn prepare_with_filter() {
+    let result = prepare_paste("hello\tworld", false, true);
+    assert_eq!(result, b"helloworld");
+}
+
+#[test]
+fn prepare_bracketed() {
+    let result = prepare_paste("hello", true, false);
+    assert_eq!(result, b"\x1b[200~hello\x1b[201~");
+}
+
+#[test]
+fn prepare_bracketed_strips_esc() {
+    let result = prepare_paste("hello\x1bworld", true, false);
+    assert_eq!(result, b"\x1b[200~helloworld\x1b[201~");
+}
+
+#[test]
+fn prepare_bracketed_with_filter_and_crlf() {
+    let result = prepare_paste("\u{201C}hi\u{201D}\r\n", true, true);
+    // Filter: smart quotes → straight. Normalize: CRLF → CR. Strip ESC: no ESC to strip.
+    assert_eq!(result, b"\x1b[200~\"hi\"\r\x1b[201~");
+}
+
+// --- format_dropped_paths ---
+
+#[test]
+fn format_single_path_no_spaces() {
+    let paths = [Path::new("/home/user/file.txt")];
+    let refs: Vec<&Path> = paths.iter().copied().collect();
+    assert_eq!(format_dropped_paths(&refs), "/home/user/file.txt");
+}
+
+#[test]
+fn format_single_path_with_spaces() {
+    let paths = [Path::new("/home/user/my file.txt")];
+    let refs: Vec<&Path> = paths.iter().copied().collect();
+    assert_eq!(format_dropped_paths(&refs), "\"/home/user/my file.txt\"");
+}
+
+#[test]
+fn format_multiple_paths() {
+    let paths = [
+        Path::new("/home/user/a.txt"),
+        Path::new("/home/user/my file.txt"),
+        Path::new("/tmp/b.txt"),
+    ];
+    let refs: Vec<&Path> = paths.iter().copied().collect();
+    assert_eq!(
+        format_dropped_paths(&refs),
+        "/home/user/a.txt \"/home/user/my file.txt\" /tmp/b.txt"
+    );
+}
+
+#[test]
+fn format_empty_paths() {
+    let refs: Vec<&Path> = vec![];
+    assert_eq!(format_dropped_paths(&refs), "");
+}

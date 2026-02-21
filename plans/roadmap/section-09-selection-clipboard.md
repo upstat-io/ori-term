@@ -22,7 +22,7 @@ sections:
     status: in-progress
   - id: "9.6"
     title: Paste Operations
-    status: not-started
+    status: in-progress
   - id: "9.7"
     title: Selection Rendering
     status: in-progress
@@ -318,12 +318,12 @@ Windows Terminal-style paste with character filtering, line ending normalization
 
 **Reference:** `_old/src/clipboard.rs`
 
-- [ ] **Paste triggers**:
-  - [ ] Ctrl+Shift+V — paste from clipboard
-  - [ ] Ctrl+V — paste (when no VT conflict)
-  - [ ] Shift+Insert — paste
-  - [ ] Right-click — paste (when no selection and context menu disabled)
-- [ ] **Character filtering on paste** (configurable `FilterOnPaste` setting):
+- [x] **Paste triggers**:
+  - [x] Ctrl+Shift+V — paste from clipboard
+  - [x] Ctrl+V — paste (when no VT conflict)
+  - [x] Shift+Insert — paste
+  - [x] Right-click — paste (when no selection and context menu disabled)
+- [x] **Character filtering on paste** (configurable `FilterOnPaste` setting):
   | Character | Behavior |
   |-----------|----------|
   | Tab (`\t`) | Strip (prevents tab expansion issues) |
@@ -332,33 +332,33 @@ Windows Terminal-style paste with character filtering, line ending normalization
   | Smart single quotes (U+2018, U+2019) | Convert to straight single quotes (`'`) |
   | Em-dash (U+2014) | Convert to double hyphen (`--`) |
   | En-dash (U+2013) | Convert to hyphen (`-`) |
-- [ ] **Line ending handling**:
-  - [ ] Convert Windows CRLF (`\r\n`) to CR (`\r`) for terminal
-  - [ ] Filter duplicate `\n` if preceded by `\r` (collapse CRLF to CR)
-  - [ ] Strip ESC characters when bracketed paste mode enabled
-- [ ] **Bracketed paste** (XTERM DECSET 2004):
-  - [ ] Check TermMode::BRACKETED_PASTE flag on active tab
-  - [ ] When enabled: wrap paste in `\x1b[200~` ... `\x1b[201~`
-  - [ ] Allows applications to differentiate pasted text from typed text
-  - [ ] Strip ESC (`\x1b`) characters from pasted content within brackets
-- [ ] **Multi-line paste warning** (configurable):
-  - [ ] Detect newlines in pasted content
-  - [ ] Optionally warn user before sending multi-line paste to shell
-  - [ ] Configurable: always warn, never warn, warn if > N lines
-- [ ] **File drag-and-drop paste**:
-  - [ ] Handle `WindowEvent::DroppedFile` events
-  - [ ] Extract file path(s)
-  - [ ] Auto-quote paths containing spaces: `"C:\path with spaces\file.txt"`
-  - [ ] Write path(s) to PTY as if typed
-  - [ ] Multiple files: space-separated
-- [ ] **Tests** (`oriterm/src/clipboard.rs` `#[cfg(test)]`):
-  - [ ] FilterOnPaste strips tabs
-  - [ ] FilterOnPaste converts smart quotes to straight quotes
-  - [ ] FilterOnPaste converts em-dash to double hyphen
-  - [ ] CRLF converted to CR
-  - [ ] Bracketed paste wraps content in ESC[200~ / ESC[201~
-  - [ ] ESC chars stripped within bracketed paste
-  - [ ] File path with spaces gets quoted
+- [x] **Line ending handling**:
+  - [x] Convert Windows CRLF (`\r\n`) to CR (`\r`) for terminal
+  - [x] Filter duplicate `\n` if preceded by `\r` (collapse CRLF to CR)
+  - [x] Strip ESC characters when bracketed paste mode enabled
+- [x] **Bracketed paste** (XTERM DECSET 2004):
+  - [x] Check TermMode::BRACKETED_PASTE flag on active tab
+  - [x] When enabled: wrap paste in `\x1b[200~` ... `\x1b[201~`
+  - [x] Allows applications to differentiate pasted text from typed text
+  - [x] Strip ESC (`\x1b`) characters from pasted content within brackets
+- [x] **Multi-line paste warning** (configurable):
+  - [x] Detect newlines in pasted content
+  - [ ] Optionally warn user before sending multi-line paste to shell <!-- blocked-by:13 -->
+  - [ ] Configurable: always warn, never warn, warn if > N lines <!-- blocked-by:13 -->
+- [x] **File drag-and-drop paste**:
+  - [x] Handle `WindowEvent::DroppedFile` events
+  - [x] Extract file path(s)
+  - [x] Auto-quote paths containing spaces: `"C:\path with spaces\file.txt"`
+  - [x] Write path(s) to PTY as if typed
+  - [x] Multiple files: space-separated
+- [x] **Tests** (`oriterm_core/src/paste/tests.rs`):
+  - [x] FilterOnPaste strips tabs
+  - [x] FilterOnPaste converts smart quotes to straight quotes
+  - [x] FilterOnPaste converts em-dash to double hyphen
+  - [x] CRLF converted to CR
+  - [x] Bracketed paste wraps content in ESC[200~ / ESC[201~
+  - [x] ESC chars stripped within bracketed paste
+  - [x] File path with spaces gets quoted
 
 ---
 

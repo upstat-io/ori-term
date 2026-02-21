@@ -12,6 +12,7 @@ pub mod color;
 pub mod event;
 pub mod grid;
 pub mod index;
+pub mod paste;
 pub mod selection;
 pub mod sync;
 pub mod term;
