@@ -167,10 +167,10 @@ Windows Terminal-style mouse selection with drag threshold, multi-click modes, a
   - [x] Click count detection: rapid clicks cycle 1 -> 2 -> 3 -> 1 (in `oriterm_core::selection::click::tests`)
   - [x] Click at different position resets to 1
   - [x] Expired click window resets to 1
-  - [ ] Double-click creates Word selection with correct boundaries
-  - [ ] Triple-click creates Line selection spanning wrapped lines
-  - [ ] Alt+click toggles block mode
-  - [ ] Shift+click extends existing selection
+  - [x] Double-click creates Word selection with correct boundaries
+  - [x] Triple-click creates Line selection spanning wrapped lines
+  - [x] Alt+click toggles block mode
+  - [x] Shift+click extends existing selection
 
 ---
 
