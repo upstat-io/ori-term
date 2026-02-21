@@ -1441,3 +1441,227 @@ fn delimiter_class_unicode_letters() {
     assert_eq!(delimiter_class('Ω'), 0, "Greek omega");
     assert_eq!(delimiter_class('д'), 0, "Cyrillic");
 }
+
+// -- Wrapped line word boundary (ref: WezTerm double_click_wrapped_selection) --
+
+#[test]
+fn word_boundaries_wrapped_line_stays_within_row() {
+    // word_boundaries operates on a single row, so a word that spans
+    // a soft-wrapped boundary is not detected as a single word.
+    let mut grid = Grid::new(2, 5);
+    write_str(&mut grid, 0, "hello");
+    grid[crate::index::Line(0)][Column(4)].flags |= crate::cell::CellFlags::WRAP;
+    write_str(&mut grid, 1, "world");
+
+    // Click on 'e' in row 0: selects "hello" (cols 0-4), not "helloworld".
+    let (s, e) = word_boundaries(&grid, 0, 1);
+    assert_eq!((s, e), (0, 4));
+
+    // Click on 'o' in row 1: selects "world" (cols 0-4).
+    let (s, e) = word_boundaries(&grid, 1, 1);
+    assert_eq!((s, e), (0, 4));
+}
+
+// -- Out-of-bounds selection (ref: WezTerm drag_selection beyond grid) --
+
+#[test]
+fn extract_text_selection_col_beyond_grid_width() {
+    let mut grid = Grid::new(1, 10);
+    write_str(&mut grid, 0, "Hello");
+
+    // Selection end col (100) far exceeds grid width (10).
+    // extract_text should clamp to grid width and not panic.
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(0),
+            col: 100,
+            side: Side::Right,
+        },
+    };
+    assert_eq!(extract_text(&grid, &sel), "Hello");
+}
+
+// -- Scrollback with display offset (ref: WezTerm selection_in_scrollback) --
+
+#[test]
+fn extract_text_scrollback_with_display_offset() {
+    let mut grid = Grid::with_scrollback(3, 10, 10);
+    write_str(&mut grid, 0, "row_A");
+    write_str(&mut grid, 1, "row_B");
+    write_str(&mut grid, 2, "row_C");
+    grid.scroll_up(2);
+    // scrollback: [row_A, row_B], visible: [row_C→overwritten, blank, blank]
+    write_str(&mut grid, 0, "row_D");
+    write_str(&mut grid, 1, "row_E");
+    // scrollback: [row_A (SRI 0), row_B (SRI 1)]
+    // visible:    [row_D (SRI 2), row_E (SRI 3), blank (SRI 4)]
+
+    // Scroll viewport back 1 line into history.
+    grid.scroll_display(1);
+    // Viewport: line 0 = row_B, line 1 = row_D, line 2 = row_E.
+
+    let start = StableRowIndex::from_visible(&grid, 0);
+    let end = StableRowIndex::from_visible(&grid, 2);
+
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: start,
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: start,
+            col: 0,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: end,
+            col: 9,
+            side: Side::Right,
+        },
+    };
+    let text = extract_text(&grid, &sel);
+    assert_eq!(text, "row_B\nrow_D\nrow_E");
+}
+
+// -- Reverse multi-row drag (ref: WezTerm drag_select reverse) --
+
+#[test]
+fn extract_text_reverse_multi_row_same_as_forward() {
+    let mut grid = Grid::new(3, 10);
+    write_str(&mut grid, 0, "line_one");
+    write_str(&mut grid, 1, "line_two");
+    write_str(&mut grid, 2, "line_tre");
+
+    let forward = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 2,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 2,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(2),
+            col: 5,
+            side: Side::Right,
+        },
+    };
+    let reverse = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: sri(2),
+            col: 5,
+            side: Side::Right,
+        },
+        pivot: SelectionPoint {
+            row: sri(2),
+            col: 5,
+            side: Side::Right,
+        },
+        end: SelectionPoint {
+            row: sri(0),
+            col: 2,
+            side: Side::Left,
+        },
+    };
+    let fwd_text = extract_text(&grid, &forward);
+    let rev_text = extract_text(&grid, &reverse);
+    assert_eq!(fwd_text, rev_text, "reverse drag should produce same text");
+    assert_eq!(fwd_text, "ne_one\nline_two\nline_t");
+}
+
+// -- Selection expand then contract (ref: Alacritty selection_bigger_then_smaller) --
+
+#[test]
+fn selection_expand_then_contract_updates_containment() {
+    let mut sel = Selection::new_char(sri(5), 10, Side::Left);
+
+    // Expand to col 20.
+    sel.end = SelectionPoint {
+        row: sri(5),
+        col: 20,
+        side: Side::Right,
+    };
+    assert!(sel.contains(sri(5), 15), "expanded covers col 15");
+    assert!(sel.contains(sri(5), 20), "expanded covers col 20");
+    assert!(!sel.contains(sri(5), 21));
+
+    // Contract back to col 8 (before anchor at 10).
+    sel.end = SelectionPoint {
+        row: sri(5),
+        col: 8,
+        side: Side::Left,
+    };
+    assert!(
+        !sel.contains(sri(5), 15),
+        "contracted no longer covers col 15"
+    );
+    assert!(
+        !sel.contains(sri(5), 20),
+        "contracted no longer covers col 20"
+    );
+    // ordered: min=(5,8,Left), max=(5,10,Left). effective_end_col = 9.
+    assert!(sel.contains(sri(5), 8));
+    assert!(sel.contains(sri(5), 9));
+    assert!(!sel.contains(sri(5), 10), "anchor Side::Left → end_col=9");
+
+    // Contract to same position as anchor → empty.
+    sel.end = sel.anchor;
+    assert!(sel.is_empty());
+}
+
+// -- Block mode with wide char at boundary (ref: WezTerm drag_selection emoji) --
+
+#[test]
+fn block_mode_extract_text_wide_char_at_block_edge() {
+    let mut grid = Grid::new(2, 10);
+    grid.move_to(0, Column(0));
+    grid.put_char('A');
+    grid.put_char('漢'); // cols 1-2 (wide)
+    grid.put_char('B'); // col 3
+    grid.move_to(1, Column(0));
+    grid.put_char('X');
+    grid.put_char('Y');
+    grid.put_char('Z');
+    grid.put_char('W');
+
+    // Block select cols 1-3 across both rows.
+    let sel = Selection {
+        mode: SelectionMode::Block,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 1,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 1,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(1),
+            col: 3,
+            side: Side::Right,
+        },
+    };
+    // Row 0: col 1 = 漢, col 2 = spacer (skipped), col 3 = B → "漢B".
+    // Row 1: Y(1), Z(2), W(3) → "YZW".
+    assert_eq!(extract_text(&grid, &sel), "漢B\nYZW");
+}
