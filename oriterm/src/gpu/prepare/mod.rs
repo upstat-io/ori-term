@@ -53,7 +53,11 @@ fn glyph_style(flags: CellFlags) -> GlyphStyle {
 /// Used by tests to verify prepare logic without shaping complexity. Production
 /// rendering uses [`prepare_frame_shaped`] instead.
 #[cfg(test)]
-pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFrame {
+pub fn prepare_frame(
+    input: &FrameInput,
+    atlas: &dyn AtlasLookup,
+    origin: (f32, f32),
+) -> PreparedFrame {
     let cols = input.columns();
     let rows = input.rows();
     let opacity = f64::from(input.palette.opacity);
@@ -64,7 +68,7 @@ pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFra
         input.palette.background,
         opacity,
     );
-    fill_frame(input, atlas, &mut frame);
+    fill_frame(input, atlas, &mut frame, origin, true);
     frame
 }
 
@@ -73,11 +77,16 @@ pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFra
 ///
 /// Used by tests. Production rendering uses [`prepare_frame_shaped`] instead.
 #[cfg(test)]
-pub fn prepare_frame_into(input: &FrameInput, atlas: &dyn AtlasLookup, out: &mut PreparedFrame) {
+pub fn prepare_frame_into(
+    input: &FrameInput,
+    atlas: &dyn AtlasLookup,
+    out: &mut PreparedFrame,
+    origin: (f32, f32),
+) {
     out.clear();
     out.viewport = input.viewport;
     out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-    fill_frame(input, atlas, out);
+    fill_frame(input, atlas, out, origin, true);
 }
 
 /// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`] using shaped
@@ -94,6 +103,7 @@ pub fn prepare_frame_shaped(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     shaped: &ShapedFrame,
+    origin: (f32, f32),
 ) -> PreparedFrame {
     let cols = input.columns();
     let rows = input.rows();
@@ -105,7 +115,7 @@ pub fn prepare_frame_shaped(
         input.palette.background,
         opacity,
     );
-    fill_frame_shaped(input, atlas, shaped, &mut frame);
+    fill_frame_shaped(input, atlas, shaped, &mut frame, origin, true);
     frame
 }
 
@@ -113,17 +123,25 @@ pub fn prepare_frame_shaped(
 /// its buffer allocations (shaped path).
 ///
 /// Like [`prepare_frame_shaped`] but clears and refills `out` instead of
-/// allocating a new frame.
+/// allocating a new frame. The `origin` offset shifts all cell positions
+/// (from layout), and `cursor_blink_visible` gates cursor emission (from
+/// application-level blink state).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "origin + cursor blink are pipeline context, not FrameInput concerns"
+)]
 pub fn prepare_frame_shaped_into(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     shaped: &ShapedFrame,
     out: &mut PreparedFrame,
+    origin: (f32, f32),
+    cursor_blink_visible: bool,
 ) {
     out.clear();
     out.viewport = input.viewport;
     out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-    fill_frame_shaped(input, atlas, shaped, out);
+    fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
 }
 
 /// Unshaped per-cell rendering: emit instances into `frame`.
@@ -132,11 +150,17 @@ pub fn prepare_frame_shaped_into(
 /// character lookup, then builds cursor instances. Used by tests; production
 /// rendering uses [`fill_frame_shaped`].
 #[cfg(test)]
-fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedFrame) {
+fn fill_frame(
+    input: &FrameInput,
+    atlas: &dyn AtlasLookup,
+    frame: &mut PreparedFrame,
+    origin: (f32, f32),
+    cursor_blink_visible: bool,
+) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
-    let (ox, oy) = input.origin;
+    let (ox, oy) = origin;
 
     for cell in &input.content.cells {
         // Wide char spacers are handled by the primary wide char cell.
@@ -193,9 +217,9 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
         }
     }
 
-    // Cursor instances.
+    // Cursor instances (gated by terminal visibility AND application blink state).
     let cursor = &input.content.cursor;
-    if cursor.visible {
+    if cursor.visible && cursor_blink_visible {
         build_cursor(
             frame,
             cursor.shape,
@@ -215,16 +239,22 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
 /// Backgrounds and cursors use the same per-cell logic as [`fill_frame`].
 /// Glyphs are driven by the [`ShapedFrame`] col-to-glyph map instead of
 /// per-cell character lookups, enabling ligatures and combining marks.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "origin + cursor blink are pipeline context passed from renderer"
+)]
 fn fill_frame_shaped(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     shaped: &ShapedFrame,
     frame: &mut PreparedFrame,
+    origin: (f32, f32),
+    cursor_blink_visible: bool,
 ) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
-    let (ox, oy) = input.origin;
+    let (ox, oy) = origin;
 
     for cell in &input.content.cells {
         if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
@@ -296,9 +326,9 @@ fn fill_frame_shaped(
         }
     }
 
-    // Cursor (identical to unshaped path).
+    // Cursor (gated by terminal visibility AND application blink state).
     let cursor = &input.content.cursor;
-    if cursor.visible {
+    if cursor.visible && cursor_blink_visible {
         build_cursor(
             frame,
             cursor.shape,

@@ -260,22 +260,21 @@ impl App {
             }
             self.blinking_active = blinking_now;
 
-            // Apply cursor blink: hide cursor during the "off" phase
-            // when the terminal has requested blinking.
-            if blinking_now && !self.cursor_blink.is_visible() {
-                frame.content.cursor.visible = false;
-            }
+            // Cursor blink: the "off" phase hides the cursor. This flag is
+            // passed to the Prepare phase which gates cursor emission —
+            // the extracted frame is never mutated between Extract and Prepare.
+            let cursor_blink_visible = !blinking_now || self.cursor_blink.is_visible();
 
-            // Apply grid origin from layout bounds. When the layout engine
+            // Grid origin from layout bounds. When the layout engine
             // positions the grid (e.g. below a tab bar), this shifts all
-            // cell rendering. Currently (0.0, 0.0) until layout is wired.
-            if let Some(grid) = &self.terminal_grid {
-                if let Some(bounds) = grid.bounds() {
-                    frame.origin = (bounds.x(), bounds.y());
-                }
-            }
+            // cell rendering.
+            let origin = self
+                .terminal_grid
+                .as_ref()
+                .and_then(TerminalGridWidget::bounds)
+                .map_or((0.0, 0.0), |b| (b.x(), b.y()));
 
-            renderer.prepare(frame, gpu);
+            renderer.prepare(frame, gpu, origin, cursor_blink_visible);
             renderer.render_to_surface(gpu, window.surface())
         };
 

@@ -155,7 +155,7 @@ fn single_char_produces_one_bg_and_one_fg() {
     let input = FrameInput::test_grid(1, 1, "A");
     let atlas = atlas_with(&['A']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // 1 bg for the cell, 1 fg for the glyph, 1 cursor (block at 0,0).
     assert_counts(&frame, 1, 1, 1);
@@ -166,7 +166,7 @@ fn single_char_bg_position_and_size() {
     let input = FrameInput::test_grid(2, 2, "A");
     let atlas = atlas_with(&['A']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let bg = nth_instance(frame.backgrounds.as_bytes(), 0);
     assert_eq!(bg.pos, (0.0, 0.0));
@@ -180,7 +180,7 @@ fn single_char_fg_position_with_bearing() {
     let atlas = atlas_with(&['A']);
     let entry = test_entry('A');
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
     // glyph_x = 0.0 + bearing_x(1) = 1.0
@@ -197,7 +197,7 @@ fn single_char_fg_color_matches_cell() {
     let atlas = atlas_with(&['A']);
     let fg_rgb = input.content.cells[0].fg;
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
     assert_eq!(fg.fg_color, rgb_f32(fg_rgb));
@@ -209,7 +209,7 @@ fn single_char_bg_color_matches_cell() {
     let atlas = atlas_with(&['A']);
     let bg_rgb = input.content.cells[0].bg;
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let bg = nth_instance(frame.backgrounds.as_bytes(), 0);
     assert_eq!(bg.bg_color, rgb_f32(bg_rgb));
@@ -222,7 +222,7 @@ fn empty_cell_produces_bg_only() {
     let input = FrameInput::test_grid(1, 1, " ");
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.backgrounds.len(), 1);
     assert_eq!(frame.glyphs.len(), 0);
@@ -233,7 +233,7 @@ fn all_spaces_grid_no_fg_instances() {
     let input = FrameInput::test_grid(10, 5, "");
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.backgrounds.len(), 50);
     assert_eq!(frame.glyphs.len(), 0);
@@ -245,7 +245,7 @@ fn all_chars_grid_equal_bg_and_fg() {
     let input = FrameInput::test_grid(10, 1, &text);
     let atlas = atlas_with(&['A']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.backgrounds.len(), 10);
     assert_eq!(frame.glyphs.len(), 10);
@@ -264,7 +264,7 @@ fn wide_char_produces_double_width_bg() {
 
     let atlas = atlas_with(&['\u{4E16}']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // 1 bg for wide char (double width) + 2 bg for remaining cells = 3 bg.
     // 1 fg for the wide char glyph.
@@ -285,7 +285,7 @@ fn wide_char_spacer_skipped() {
 
     let atlas = atlas_with(&['\u{4E16}']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // Only 1 bg (the wide char covers both columns), not 2.
     assert_eq!(frame.backgrounds.len(), 1);
@@ -298,7 +298,7 @@ fn cell_positions_are_pixel_perfect() {
     let input = FrameInput::test_grid(3, 3, "ABCDEFGHI");
     let atlas = atlas_with(&['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // Cell (0,0) → (0, 0), (1,0) → (8, 0), (2,0) → (16, 0)
     // Cell (0,1) → (0, 16), (1,1) → (8, 16), etc.
@@ -324,7 +324,7 @@ fn glyph_bearing_offsets_applied() {
     let atlas = atlas_with(&['A']);
     let entry = test_entry('A');
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
     let expected_x = 0.0 + entry.bearing_x as f32;
@@ -340,7 +340,7 @@ fn default_colors_in_instances() {
     let atlas = atlas_with(&['A']);
     let cell = &input.content.cells[0];
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let bg = nth_instance(frame.backgrounds.as_bytes(), 0);
     assert_eq!(bg.bg_color, rgb_f32(cell.bg));
@@ -362,7 +362,7 @@ fn inverse_colors_passed_through() {
 
     let atlas = atlas_with(&['X']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let bg = nth_instance(frame.backgrounds.as_bytes(), 0);
     assert_eq!(bg.bg_color, rgb_f32(original_fg));
@@ -380,8 +380,8 @@ fn same_input_produces_identical_output() {
         'H', 'e', 'l', 'o', 'W', 'r', 'd', '!', 'T', 's', 't', 'i', 'n', 'g', 'm', '.',
     ]);
 
-    let frame1 = prepare_frame(&input, &atlas);
-    let frame2 = prepare_frame(&input, &atlas);
+    let frame1 = prepare_frame(&input, &atlas, (0.0, 0.0));
+    let frame2 = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame1.backgrounds.as_bytes(), frame2.backgrounds.as_bytes());
     assert_eq!(frame1.glyphs.as_bytes(), frame2.glyphs.as_bytes());
@@ -396,7 +396,7 @@ fn block_cursor_one_instance() {
     let input = FrameInput::test_grid(10, 5, "");
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // Default cursor is Block at (0,0), visible.
     assert_eq!(frame.cursors.len(), 1);
@@ -413,7 +413,7 @@ fn bar_cursor_one_instance_2px_wide() {
     input.content.cursor.shape = CursorShape::Bar;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.cursors.len(), 1);
 
@@ -428,7 +428,7 @@ fn underline_cursor_one_instance_2px_tall() {
     input.content.cursor.shape = CursorShape::Underline;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.cursors.len(), 1);
 
@@ -443,7 +443,7 @@ fn hollow_block_cursor_four_instances() {
     input.content.cursor.shape = CursorShape::HollowBlock;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.cursors.len(), 4);
 }
@@ -454,7 +454,7 @@ fn hollow_block_edges() {
     input.content.cursor.shape = CursorShape::HollowBlock;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let top = nth_instance(frame.cursors.as_bytes(), 0);
     assert_eq!(top.pos, (0.0, 0.0));
@@ -479,7 +479,7 @@ fn hidden_cursor_zero_instances() {
     input.content.cursor.shape = CursorShape::Hidden;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.cursors.len(), 0);
 }
@@ -490,7 +490,7 @@ fn cursor_invisible_zero_instances() {
     input.content.cursor.visible = false;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.cursors.len(), 0);
 }
@@ -502,7 +502,7 @@ fn cursor_at_position() {
     input.content.cursor.line = 3;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let c = nth_instance(frame.cursors.as_bytes(), 0);
     assert_eq!(c.pos, (40.0, 48.0)); // 5*8=40, 3*16=48
@@ -514,7 +514,7 @@ fn cursor_color_from_palette() {
     let atlas = empty_atlas();
     let cursor_color = input.palette.cursor_color;
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let c = nth_instance(frame.cursors.as_bytes(), 0);
     // Cursor color is in bg_color (rendered via bg_pipeline as solid-fill rect).
@@ -528,7 +528,7 @@ fn missing_glyph_skips_fg_instance() {
     let input = FrameInput::test_grid(1, 1, "Z");
     let atlas = empty_atlas(); // No entry for 'Z'.
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.backgrounds.len(), 1);
     assert_eq!(frame.glyphs.len(), 0);
@@ -545,7 +545,7 @@ fn bold_cell_uses_bold_style() {
     map.insert((('B'), GlyphStyle::Bold), test_entry('B'));
     let atlas = TestAtlas(map);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // Should find the Bold entry and produce a glyph.
     assert_eq!(frame.glyphs.len(), 1);
@@ -560,7 +560,7 @@ fn italic_cell_uses_italic_style() {
     map.insert(('I', GlyphStyle::Italic), test_entry('I'));
     let atlas = TestAtlas(map);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 1);
 }
@@ -574,7 +574,7 @@ fn bold_italic_cell_uses_bold_italic_style() {
     map.insert(('X', GlyphStyle::BoldItalic), test_entry('X'));
     let atlas = TestAtlas(map);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 1);
 }
@@ -586,7 +586,7 @@ fn ten_by_five_all_spaces() {
     let input = FrameInput::test_grid(10, 5, "");
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_counts(&frame, 50, 0, 1); // 1 cursor (block, visible)
 }
@@ -597,7 +597,7 @@ fn clear_color_matches_palette_background() {
     let atlas = empty_atlas();
     let bg = input.palette.background;
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let expected = [
         f64::from(bg.r) / 255.0,
@@ -614,7 +614,7 @@ fn clear_color_respects_palette_opacity() {
     input.palette.opacity = 0.5;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let bg = input.palette.background;
     let expected = [
@@ -633,10 +633,10 @@ fn prepare_into_matches_prepare() {
     let input = FrameInput::test_grid(10, 5, "Hello World!");
     let atlas = atlas_with(&['H', 'e', 'l', 'o', 'W', 'r', 'd', '!']);
 
-    let fresh = prepare_frame(&input, &atlas);
+    let fresh = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let mut reused = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_into(&input, &atlas, &mut reused);
+    prepare_frame_into(&input, &atlas, &mut reused, (0.0, 0.0));
 
     assert_eq!(fresh.backgrounds.as_bytes(), reused.backgrounds.as_bytes());
     assert_eq!(fresh.glyphs.as_bytes(), reused.glyphs.as_bytes());
@@ -651,13 +651,13 @@ fn prepare_into_reuses_allocation() {
     let atlas = atlas_with(&['A']);
 
     // First prepare allocates large buffers.
-    let mut frame = prepare_frame(&input, &atlas);
+    let mut frame = prepare_frame(&input, &atlas, (0.0, 0.0));
     let first_bg_count = frame.backgrounds.len();
     let first_fg_count = frame.glyphs.len();
 
     // Second prepare with smaller input reuses (clear + refill).
     let small = FrameInput::test_grid(2, 1, "A");
-    prepare_frame_into(&small, &atlas, &mut frame);
+    prepare_frame_into(&small, &atlas, &mut frame, (0.0, 0.0));
 
     // Counts reflect new input, not old.
     assert_eq!(frame.backgrounds.len(), 2);
@@ -671,13 +671,13 @@ fn prepare_into_clears_previous_content() {
     let input1 = FrameInput::test_grid(10, 5, "AAAAAAAAAA");
     let atlas = atlas_with(&['A', 'B']);
 
-    let mut frame = prepare_frame(&input1, &atlas);
+    let mut frame = prepare_frame(&input1, &atlas, (0.0, 0.0));
     let first_bg = frame.backgrounds.len();
     let first_fg = frame.glyphs.len();
 
     // Second frame with different content.
     let input2 = FrameInput::test_grid(2, 1, "B");
-    prepare_frame_into(&input2, &atlas, &mut frame);
+    prepare_frame_into(&input2, &atlas, &mut frame, (0.0, 0.0));
 
     // Counts should reflect the new input, not accumulate.
     assert_eq!(frame.backgrounds.len(), 2); // 2 cells
@@ -691,13 +691,13 @@ fn prepare_into_updates_clear_color() {
     let input1 = FrameInput::test_grid(2, 1, "");
     let atlas = empty_atlas();
 
-    let mut frame = prepare_frame(&input1, &atlas);
+    let mut frame = prepare_frame(&input1, &atlas, (0.0, 0.0));
     let first_clear = frame.clear_color;
 
     // Change palette background.
     let mut input2 = FrameInput::test_grid(2, 1, "");
     input2.palette.background = Rgb { r: 255, g: 0, b: 0 };
-    prepare_frame_into(&input2, &atlas, &mut frame);
+    prepare_frame_into(&input2, &atlas, &mut frame, (0.0, 0.0));
 
     assert_ne!(frame.clear_color, first_clear);
     assert_eq!(frame.clear_color, [1.0, 0.0, 0.0, 1.0]);
@@ -710,7 +710,7 @@ fn full_grid_all_spaces_1920_bg_zero_fg() {
     let input = FrameInput::test_grid(80, 24, "");
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.backgrounds.len(), 80 * 24);
     assert_eq!(frame.glyphs.len(), 0);
@@ -722,7 +722,7 @@ fn full_grid_all_chars_1920_bg_and_fg() {
     let input = FrameInput::test_grid(80, 24, &text);
     let atlas = atlas_with(&['A']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.backgrounds.len(), 80 * 24);
     assert_eq!(frame.glyphs.len(), 80 * 24);
@@ -748,7 +748,7 @@ fn bold_color_variant_in_instance_bytes() {
     map.insert(('B', GlyphStyle::Bold), test_entry('B'));
     let atlas = TestAtlas(map);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 1);
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
@@ -767,7 +767,7 @@ fn ansi_256_color_in_instance_bytes() {
 
     let atlas = atlas_with(&['X']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
     assert_eq!(fg.fg_color, rgb_f32(color_208));
@@ -790,7 +790,7 @@ fn truecolor_in_instance_bytes() {
 
     let atlas = atlas_with(&['T']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
     assert_eq!(fg.fg_color, rgb_f32(tc));
@@ -814,7 +814,7 @@ fn no_instances_outside_grid_bounds() {
     let input = FrameInput::test_grid(3, 2, "ABCDEF");
     let atlas = atlas_with(&['A', 'B', 'C', 'D', 'E', 'F']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let vp_w = 3.0 * 8.0; // 24.0
     let vp_h = 2.0 * 16.0; // 32.0
@@ -911,7 +911,7 @@ fn shaped_single_glyph_one_bg_one_fg() {
         y_offset: 0.0,
     }];
     let shaped = shaped_one_row(3, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 3 bg instances (one per cell), 1 fg instance (shaped glyph at col 0), 1 cursor.
     assert_counts(&frame, 3, 1, 1);
@@ -938,7 +938,7 @@ fn shaped_ligature_one_fg_two_bg() {
         y_offset: 0.0,
     }];
     let shaped = shaped_one_row(3, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 3 bg (per-cell), 1 fg (single ligature glyph at col 0), 1 cursor.
     assert_counts(&frame, 3, 1, 1);
@@ -977,7 +977,7 @@ fn shaped_combining_marks_two_fg_instances() {
         },
     ];
     let shaped = shaped_one_row(2, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 2 bg (per-cell), 2 fg (base + combining mark), 1 cursor.
     assert_counts(&frame, 2, 2, 1);
@@ -1017,7 +1017,7 @@ fn shaped_offset_applied_to_glyph_position() {
         y_offset: 2.0,
     }];
     let shaped = shaped_one_row(1, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 1);
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
@@ -1068,7 +1068,7 @@ fn shaped_backgrounds_independent_of_glyphs() {
         },
     ];
     let shaped = shaped_one_row(4, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 4 bg instances (one per cell), 3 fg instances (ligature + 2 normal).
     assert_counts(&frame, 4, 3, 1);
@@ -1098,7 +1098,7 @@ fn shaped_missing_glyph_in_atlas_skips_fg() {
         y_offset: 0.0,
     }];
     let shaped = shaped_one_row(1, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 1 bg, 0 fg (atlas miss), 1 cursor.
     assert_counts(&frame, 1, 0, 1);
@@ -1119,7 +1119,7 @@ fn shaped_empty_glyphs_produces_bg_only() {
 
     let mut sf = shaped;
     sf.push_row(&empty_glyphs, &col_map);
-    let frame = prepare_frame_shaped(&input, &atlas, &sf);
+    let frame = prepare_frame_shaped(&input, &atlas, &sf, (0.0, 0.0));
 
     assert_counts(&frame, 3, 0, 1);
 }
@@ -1170,7 +1170,7 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
         y_offset: 0.0,
     }];
     let shaped = shaped_one_row(1, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // Monochrome glyphs should be empty — the color glyph went to color_glyphs.
     assert_eq!(
@@ -1266,7 +1266,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
         },
     ];
     let shaped = shaped_one_row(3, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 2, "2 mono glyphs in monochrome buffer");
     assert_eq!(frame.color_glyphs.len(), 1, "1 color glyph in color buffer");
@@ -1311,10 +1311,10 @@ fn shaped_into_matches_shaped() {
     ];
     let shaped = shaped_one_row(4, &glyphs, size_q6);
 
-    let fresh = prepare_frame_shaped(&input, &atlas, &shaped);
+    let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     let mut reused = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut reused);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut reused, (0.0, 0.0), true);
 
     assert_eq!(fresh.backgrounds.as_bytes(), reused.backgrounds.as_bytes());
     assert_eq!(fresh.glyphs.as_bytes(), reused.glyphs.as_bytes());
@@ -1353,7 +1353,7 @@ fn shaped_into_reuses_allocation() {
     }
 
     // First prepare.
-    let mut frame = prepare_frame_shaped(&input, &atlas, &sf);
+    let mut frame = prepare_frame_shaped(&input, &atlas, &sf, (0.0, 0.0));
     let first_bg = frame.backgrounds.len();
     let first_fg = frame.glyphs.len();
 
@@ -1369,7 +1369,7 @@ fn shaped_into_reuses_allocation() {
         y_offset: 0.0,
     }];
     let small_shaped = shaped_one_row(2, &small_glyphs, size_q6);
-    prepare_frame_shaped_into(&small, &atlas, &small_shaped, &mut frame);
+    prepare_frame_shaped_into(&small, &atlas, &small_shaped, &mut frame, (0.0, 0.0), true);
 
     assert_eq!(frame.backgrounds.len(), 2);
     assert!(first_bg > frame.backgrounds.len());
@@ -1405,7 +1405,7 @@ fn decoration_bg_count(frame: &PreparedFrame) -> usize {
 fn single_underline_one_extra_bg() {
     let input = frame_with_flags(CellFlags::UNDERLINE);
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // 1 base bg + 1 underline rect.
     assert_eq!(decoration_bg_count(&frame), 1);
@@ -1421,7 +1421,7 @@ fn single_underline_uses_fg_color() {
     let input = frame_with_flags(CellFlags::UNDERLINE);
     let fg = input.content.cells[0].fg;
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
     assert_eq!(ul.bg_color, rgb_f32(fg));
@@ -1436,7 +1436,7 @@ fn single_underline_uses_sgr58_color() {
     };
     let input = frame_with_underline_color(CellFlags::UNDERLINE, sgr58);
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
     assert_eq!(ul.bg_color, rgb_f32(sgr58));
@@ -1446,7 +1446,7 @@ fn single_underline_uses_sgr58_color() {
 fn double_underline_two_extra_bgs() {
     let input = frame_with_flags(CellFlags::DOUBLE_UNDERLINE);
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // 1 base bg + 2 underline rects.
     assert_eq!(decoration_bg_count(&frame), 2);
@@ -1465,7 +1465,7 @@ fn double_underline_two_extra_bgs() {
 fn curly_underline_per_pixel_rects() {
     let input = frame_with_flags(CellFlags::CURLY_UNDERLINE);
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // cell_width=8 → 8 per-pixel rects.
     assert_eq!(decoration_bg_count(&frame), 8);
@@ -1475,7 +1475,7 @@ fn curly_underline_per_pixel_rects() {
 fn dotted_underline_alternating() {
     let input = frame_with_flags(CellFlags::DOTTED_UNDERLINE);
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // cell_width=8, step_by(2) → 4 dots (at 0, 2, 4, 6).
     assert_eq!(decoration_bg_count(&frame), 4);
@@ -1485,7 +1485,7 @@ fn dotted_underline_alternating() {
 fn dashed_underline_pattern() {
     let input = frame_with_flags(CellFlags::DASHED_UNDERLINE);
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // cell_width=8, pattern 3-on-2-off: dx 0,1,2 on, 3,4 off, 5,6,7 on → 6.
     assert_eq!(decoration_bg_count(&frame), 6);
@@ -1495,7 +1495,7 @@ fn dashed_underline_pattern() {
 fn strikethrough_at_center() {
     let input = frame_with_flags(CellFlags::STRIKETHROUGH);
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // 1 base bg + 1 strikethrough rect.
     assert_eq!(decoration_bg_count(&frame), 1);
@@ -1511,7 +1511,7 @@ fn strikethrough_uses_fg_color() {
     let input = frame_with_flags(CellFlags::STRIKETHROUGH);
     let fg = input.content.cells[0].fg;
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let st = nth_instance(frame.backgrounds.as_bytes(), 1);
     assert_eq!(st.bg_color, rgb_f32(fg));
@@ -1521,7 +1521,7 @@ fn strikethrough_uses_fg_color() {
 fn underline_and_strikethrough_coexist() {
     let input = frame_with_flags(CellFlags::UNDERLINE | CellFlags::STRIKETHROUGH);
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // 1 base bg + 1 underline + 1 strikethrough = 2 decoration rects.
     assert_eq!(decoration_bg_count(&frame), 2);
@@ -1531,7 +1531,7 @@ fn underline_and_strikethrough_coexist() {
 fn no_flags_no_decorations() {
     let input = frame_with_flags(CellFlags::empty());
     let atlas = atlas_with(&['A']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // 1 base bg only, no decorations.
     assert_eq!(decoration_bg_count(&frame), 0);
@@ -1547,7 +1547,7 @@ fn wide_char_underline_spans_double_width() {
     input.content.cells[1].flags = CellFlags::WIDE_CHAR_SPACER;
 
     let atlas = atlas_with(&['\u{4E16}']);
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     // Find the underline rect (second bg instance for the wide char cell).
     let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
@@ -1594,7 +1594,7 @@ fn subpixel_glyph_routes_to_subpixel_buffer() {
         y_offset: 0.0,
     }];
     let shaped = shaped_one_row(1, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     assert_eq!(
         frame.glyphs.len(),
@@ -1697,7 +1697,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
         },
     ];
     let shaped = shaped_one_row(3, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 1, "1 mono glyph");
     assert_eq!(frame.subpixel_glyphs.len(), 1, "1 subpixel glyph");
@@ -1738,7 +1738,7 @@ fn shaped_frame_smaller_than_viewport_skips_excess_cells() {
         },
     ];
     let shaped = shaped_one_row(2, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // All 4 cells produce backgrounds.
     assert_eq!(frame.backgrounds.len(), 4);
@@ -1765,7 +1765,7 @@ fn shaped_frame_fewer_rows_than_viewport_skips_excess_rows() {
         y_offset: 0.0,
     }];
     let shaped = shaped_one_row(2, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 6 backgrounds (2 cols * 3 rows).
     assert_eq!(frame.backgrounds.len(), 6);
@@ -1823,7 +1823,7 @@ fn shaped_frame_larger_than_viewport_no_panic() {
         },
     ];
     let shaped = shaped_one_row(4, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // Only 2 backgrounds (viewport is 2×1).
     assert_eq!(frame.backgrounds.len(), 2);
@@ -1835,11 +1835,10 @@ fn shaped_frame_larger_than_viewport_no_panic() {
 
 #[test]
 fn origin_offset_shifts_bg_positions() {
-    let mut input = FrameInput::test_grid(2, 1, "AB");
-    input.origin = (10.0, 20.0);
+    let input = FrameInput::test_grid(2, 1, "AB");
     let atlas = atlas_with(&['A', 'B']);
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (10.0, 20.0));
 
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
     assert_eq!(bg0.pos, (10.0, 20.0));
@@ -1850,12 +1849,11 @@ fn origin_offset_shifts_bg_positions() {
 
 #[test]
 fn origin_offset_shifts_glyph_positions() {
-    let mut input = FrameInput::test_grid(1, 1, "A");
-    input.origin = (5.0, 15.0);
+    let input = FrameInput::test_grid(1, 1, "A");
     let atlas = atlas_with(&['A']);
     let entry = test_entry('A');
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (5.0, 15.0));
 
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
     // glyph_x = 5.0 + 0*8 + bearing_x(1) = 6.0
@@ -1866,12 +1864,11 @@ fn origin_offset_shifts_glyph_positions() {
 #[test]
 fn origin_offset_shifts_cursor_position() {
     let mut input = FrameInput::test_grid(10, 5, "");
-    input.origin = (30.0, 50.0);
     input.content.cursor.column = Column(2);
     input.content.cursor.line = 3;
     let atlas = empty_atlas();
 
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (30.0, 50.0));
 
     let c = nth_instance(frame.cursors.as_bytes(), 0);
     // x = 30.0 + 2*8 = 46.0, y = 50.0 + 3*16 = 98.0
@@ -1884,9 +1881,7 @@ fn zero_origin_matches_no_origin() {
     let atlas = atlas_with(&['A', 'B', 'C', 'D', 'E', 'F']);
 
     // Default origin is (0.0, 0.0).
-    assert_eq!(input.origin, (0.0, 0.0));
-
-    let frame = prepare_frame(&input, &atlas);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
     assert_eq!(bg0.pos, (0.0, 0.0));
@@ -1898,8 +1893,7 @@ fn zero_origin_matches_no_origin() {
 #[test]
 fn origin_offset_shaped_shifts_all_instances() {
     let size_q6 = 768;
-    let mut input = FrameInput::test_grid(2, 1, "AB");
-    input.origin = (100.0, 200.0);
+    let input = FrameInput::test_grid(2, 1, "AB");
 
     let atlas = key_atlas_with(&[10, 11], size_q6);
     let glyphs = vec![
@@ -1923,7 +1917,7 @@ fn origin_offset_shaped_shifts_all_instances() {
         },
     ];
     let shaped = shaped_one_row(2, &glyphs, size_q6);
-    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (100.0, 200.0));
 
     // Backgrounds shifted by origin.
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);

@@ -245,11 +245,22 @@ impl GpuRenderer {
     /// Fills `self.prepared` via buffer reuse (no per-frame allocation after
     /// the first frame).
     ///
+    /// The `origin` offset positions the grid on screen (from layout). The
+    /// `cursor_blink_visible` flag gates cursor emission (from application
+    /// blink state) — when `false`, no cursor instances are emitted even
+    /// if the terminal reports the cursor as visible.
+    ///
     /// Three phases:
     /// 1. **Shape** — segment rows into runs and shape via rustybuzz.
     /// 2. **Cache** — rasterize and upload any missing shaped glyphs.
     /// 3. **Prepare** — emit GPU instances from shaped glyph positions.
-    pub fn prepare(&mut self, input: &FrameInput, gpu: &GpuState) {
+    pub fn prepare(
+        &mut self,
+        input: &FrameInput,
+        gpu: &GpuState,
+        origin: (f32, f32),
+        cursor_blink_visible: bool,
+    ) {
         self.atlas.begin_frame();
         self.subpixel_atlas.begin_frame();
         self.color_atlas.begin_frame();
@@ -284,7 +295,14 @@ impl GpuRenderer {
             subpixel: &self.subpixel_atlas,
             color: &self.color_atlas,
         };
-        prepare::prepare_frame_shaped_into(input, &bridge, &self.shaping.frame, &mut self.prepared);
+        prepare::prepare_frame_shaped_into(
+            input,
+            &bridge,
+            &self.shaping.frame,
+            &mut self.prepared,
+            origin,
+            cursor_blink_visible,
+        );
 
         log::trace!(
             "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
