@@ -273,6 +273,17 @@ impl Tab {
         self.notifier.notify(bytes);
     }
 
+    /// Scroll to the live terminal position.
+    ///
+    /// If the user is viewing scrollback, resets the display offset to zero
+    /// so the most recent output is visible. No-op if already at the bottom.
+    pub fn scroll_to_bottom(&self) {
+        let mut term = self.terminal.lock();
+        if term.grid().display_offset() > 0 {
+            term.grid_mut().scroll_display(isize::MIN);
+        }
+    }
+
     /// Resize the PTY dimensions.
     ///
     /// Terminal grid resize (reflow) is handled separately in Section 12.
