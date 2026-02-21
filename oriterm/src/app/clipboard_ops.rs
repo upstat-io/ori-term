@@ -1,12 +1,17 @@
-//! Copy and clipboard operations for the application.
+//! Copy, paste, and clipboard operations for the application.
 //!
-//! Implements copy triggers (keybindings), clipboard writes from selection
-//! content, and OSC 52 clipboard integration.
+//! Implements copy triggers (keybindings), paste triggers, clipboard writes
+//! from selection content, paste filtering, bracketed paste, and OSC 52
+//! clipboard integration.
+
+use std::path::PathBuf;
 
 use winit::event::ElementState;
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
+use oriterm_core::TermMode;
 use oriterm_core::event::ClipboardType;
+use oriterm_core::paste;
 use oriterm_core::selection::extract_text;
 
 use super::App;
@@ -17,6 +22,14 @@ pub(super) enum CopyAction {
     Handled,
     /// The event was not a copy keybinding.
     NotCopy,
+}
+
+/// Result of a paste keybinding check.
+pub(super) enum PasteAction {
+    /// The event was a paste keybinding and was handled.
+    Handled,
+    /// The event was not a paste keybinding.
+    NotPaste,
 }
 
 impl App {
@@ -101,5 +114,116 @@ impl App {
             }
             _ => CopyAction::NotCopy,
         }
+    }
+
+    /// Try to handle a key event as a paste keybinding.
+    ///
+    /// Recognizes:
+    /// - **Ctrl+Shift+V** — paste from clipboard
+    /// - **Ctrl+V** — paste (when no VT conflict: only when Ctrl+V is not
+    ///   captured by the terminal application)
+    /// - **Shift+Insert** — paste from clipboard
+    ///
+    /// Returns `Handled` if the event was consumed, `NotPaste` if it should
+    /// continue through the normal dispatch chain.
+    pub(super) fn try_paste_keybinding(
+        &mut self,
+        event: &winit::event::KeyEvent,
+        modifiers: ModifiersState,
+    ) -> PasteAction {
+        if event.state != ElementState::Pressed {
+            return PasteAction::NotPaste;
+        }
+
+        let ctrl = modifiers.control_key();
+        let shift = modifiers.shift_key();
+
+        match event.physical_key {
+            // Ctrl+Shift+V — always paste.
+            PhysicalKey::Code(KeyCode::KeyV) if ctrl && shift => {
+                self.paste_from_clipboard();
+                PasteAction::Handled
+            }
+            // Ctrl+V (no shift) — paste only. Terminals don't have a VT
+            // conflict for Ctrl+V that needs smart behavior like Ctrl+C.
+            // Applications expecting literal Ctrl+V should use Ctrl+Shift+V.
+            PhysicalKey::Code(KeyCode::KeyV) if ctrl && !shift => {
+                self.paste_from_clipboard();
+                PasteAction::Handled
+            }
+            // Shift+Insert — paste.
+            PhysicalKey::Code(KeyCode::Insert) if shift && !ctrl => {
+                self.paste_from_clipboard();
+                PasteAction::Handled
+            }
+            _ => PasteAction::NotPaste,
+        }
+    }
+
+    /// Paste text from the system clipboard into the active terminal.
+    ///
+    /// Applies character filtering (if enabled), line ending normalization,
+    /// ESC stripping (for bracketed paste), and bracketed paste wrapping.
+    pub(crate) fn paste_from_clipboard(&mut self) {
+        let text = self.clipboard.load(ClipboardType::Clipboard);
+        if text.is_empty() {
+            return;
+        }
+
+        let newlines = paste::count_newlines(&text);
+        if newlines > 0 {
+            log::debug!("pasting multi-line text ({} lines)", newlines + 1);
+            // TODO(section-13): wire multi-line paste warning config.
+            // When enabled, block paste and show confirmation dialog.
+        }
+
+        self.write_paste_to_pty(&text);
+    }
+
+    /// Paste dropped file paths into the active terminal.
+    ///
+    /// Paths with spaces are auto-quoted. Multiple paths are space-separated.
+    pub(crate) fn paste_dropped_files(&self, paths: &[PathBuf]) {
+        if paths.is_empty() {
+            return;
+        }
+
+        let refs: Vec<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
+        let text = paste::format_dropped_paths(&refs);
+        if text.is_empty() {
+            return;
+        }
+
+        log::debug!("pasting {} dropped file path(s)", paths.len());
+        self.write_paste_to_pty(&text);
+    }
+
+    /// Process and write paste text to the PTY.
+    ///
+    /// Reads the terminal mode to determine bracketed paste, applies the
+    /// full paste processing pipeline, and writes the result to the PTY.
+    fn write_paste_to_pty(&self, text: &str) {
+        let Some(tab) = &self.tab else { return };
+
+        let bracketed = tab
+            .terminal()
+            .lock()
+            .mode()
+            .contains(TermMode::BRACKETED_PASTE);
+        // TODO(section-13): wire FilterOnPaste config setting. Default: enabled.
+        let filter = true;
+
+        let bytes = paste::prepare_paste(text, bracketed, filter);
+        if bytes.is_empty() {
+            return;
+        }
+
+        tab.scroll_to_bottom();
+        tab.write_input(&bytes);
+        log::debug!(
+            "pasted {} bytes to PTY (bracketed={})",
+            bytes.len(),
+            bracketed
+        );
     }
 }

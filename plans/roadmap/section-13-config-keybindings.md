@@ -124,7 +124,7 @@ Top-level config and per-section structs. All fields have defaults via `#[serde(
   - [ ] On Windows/Linux: maps to `with_decorations(bool)` in winit
   - [ ] macOS extends with `Transparent` (transparent titlebar) and `Buttonless` (hide traffic lights) via winit macOS extensions
   - [ ] **Ref:** Alacritty `config/window.rs:183-189`, winit `WindowAttributes::with_decorations`
-- [ ] `BehaviorConfig` struct
+- [ ] `BehaviorConfig` struct <!-- unblocks:9.6 -->
   - [ ] Fields:
     - `copy_on_select: bool` — auto-copy on selection release (default: true)
     - `bold_is_bright: bool` — bold text uses bright colors (default: true)

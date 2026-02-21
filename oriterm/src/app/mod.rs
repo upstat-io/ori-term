@@ -165,6 +165,15 @@ impl App {
             return;
         }
 
+        // Paste keybindings: Ctrl+Shift+V, Ctrl+V, Shift+Insert.
+        if matches!(
+            self.try_paste_keybinding(event, self.modifiers),
+            clipboard_ops::PasteAction::Handled,
+        ) {
+            self.dirty = true;
+            return;
+        }
+
         // Normal key encoding to PTY.
         let Some(tab) = &self.tab else { return };
 
@@ -343,14 +352,26 @@ impl ApplicationHandler<TermEvent> for App {
                 }
             },
 
-            // Right-click: copy if selection exists.
+            // Right-click: copy if selection exists, paste if not.
             // TODO(section-21): when context menu is enabled, show menu instead.
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Right,
                 ..
             } => {
-                self.copy_selection();
+                let has_selection = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
+                if has_selection {
+                    self.copy_selection();
+                } else {
+                    self.paste_from_clipboard();
+                }
+                self.dirty = true;
+            }
+
+            // File drag-and-drop: paste paths into terminal.
+            WindowEvent::DroppedFile(path) => {
+                self.paste_dropped_files(&[path]);
+                self.dirty = true;
             }
 
             _ => {}
