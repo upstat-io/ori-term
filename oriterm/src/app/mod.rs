@@ -22,7 +22,7 @@ use crate::gpu::{
     FrameInput, GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame,
     extract_frame_into,
 };
-use crate::key_encoding::{self, KeyEventType, KeyInput, Modifiers};
+use crate::key_encoding::{self, KeyEventType, KeyInput};
 use crate::tab::{Tab, TabId, TermEvent};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
@@ -315,13 +315,10 @@ impl App {
             (ElementState::Pressed, false) => KeyEventType::Press,
         };
 
-        // Convert winit modifiers → key encoding modifiers.
-        let mods = build_modifiers(self.modifiers);
-
         // Encode the key event.
         let bytes = key_encoding::encode_key(&KeyInput {
             key: &event.logical_key,
-            mods,
+            mods: self.modifiers.into(),
             mode,
             text: event.text.as_ref().map(SmolStr::as_str),
             location: event.location,
@@ -329,14 +326,7 @@ impl App {
         });
 
         if !bytes.is_empty() {
-            // Scroll to live position if viewing scrollback.
-            {
-                let mut term = tab.terminal().lock();
-                if term.grid().display_offset() > 0 {
-                    term.grid_mut().scroll_display(isize::MIN);
-                }
-            }
-
+            tab.scroll_to_bottom();
             tab.write_input(&bytes);
             self.cursor_blink.reset();
             self.dirty = true;
@@ -347,29 +337,12 @@ impl App {
     fn handle_ime_commit(&mut self, text: &str) {
         let Some(tab) = &self.tab else { return };
         if !text.is_empty() {
-            // Scroll to live position on IME input.
-            {
-                let mut term = tab.terminal().lock();
-                if term.grid().display_offset() > 0 {
-                    term.grid_mut().scroll_display(isize::MIN);
-                }
-            }
-
+            tab.scroll_to_bottom();
             tab.write_input(text.as_bytes());
             self.cursor_blink.reset();
             self.dirty = true;
         }
     }
-}
-
-/// Convert winit [`ModifiersState`] to key encoding [`Modifiers`].
-fn build_modifiers(m: ModifiersState) -> Modifiers {
-    let mut mods = Modifiers::empty();
-    mods.set(Modifiers::SHIFT, m.shift_key());
-    mods.set(Modifiers::ALT, m.alt_key());
-    mods.set(Modifiers::CONTROL, m.control_key());
-    mods.set(Modifiers::SUPER, m.super_key());
-    mods
 }
 
 impl ApplicationHandler<TermEvent> for App {

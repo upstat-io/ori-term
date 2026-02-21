@@ -1187,3 +1187,56 @@ fn ctrl_8() {
     let r = enc(Key::Character("8".into()), Modifiers::CONTROL, no_mode());
     assert_eq!(r, vec![0x7f]);
 }
+
+// ==================== From<ModifiersState> for Modifiers ====================
+
+use winit::keyboard::ModifiersState;
+
+#[test]
+fn from_modifiers_state_empty() {
+    let m: Modifiers = ModifiersState::empty().into();
+    assert_eq!(m, Modifiers::empty());
+}
+
+#[test]
+fn from_modifiers_state_shift() {
+    let m: Modifiers = ModifiersState::SHIFT.into();
+    assert_eq!(m, Modifiers::SHIFT);
+}
+
+#[test]
+fn from_modifiers_state_alt() {
+    let m: Modifiers = ModifiersState::ALT.into();
+    assert_eq!(m, Modifiers::ALT);
+}
+
+#[test]
+fn from_modifiers_state_control() {
+    let m: Modifiers = ModifiersState::CONTROL.into();
+    assert_eq!(m, Modifiers::CONTROL);
+}
+
+#[test]
+fn from_modifiers_state_super() {
+    let m: Modifiers = ModifiersState::SUPER.into();
+    assert_eq!(m, Modifiers::SUPER);
+}
+
+#[test]
+fn from_modifiers_state_ctrl_shift() {
+    let m: Modifiers = (ModifiersState::CONTROL | ModifiersState::SHIFT).into();
+    assert_eq!(m, Modifiers::CONTROL | Modifiers::SHIFT);
+}
+
+#[test]
+fn from_modifiers_state_all() {
+    let winit_all = ModifiersState::SHIFT
+        | ModifiersState::ALT
+        | ModifiersState::CONTROL
+        | ModifiersState::SUPER;
+    let m: Modifiers = winit_all.into();
+    assert_eq!(
+        m,
+        Modifiers::SHIFT | Modifiers::ALT | Modifiers::CONTROL | Modifiers::SUPER,
+    );
+}

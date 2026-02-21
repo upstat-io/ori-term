@@ -8,7 +8,7 @@ mod kitty;
 mod legacy;
 
 use bitflags::bitflags;
-use winit::keyboard::{Key, KeyLocation};
+use winit::keyboard::{Key, KeyLocation, ModifiersState};
 
 use oriterm_core::TermMode;
 
@@ -51,6 +51,17 @@ impl Modifiers {
     /// Returns 0 when no modifiers are active (caller should omit the parameter).
     pub(crate) fn xterm_param(self) -> u8 {
         if self.is_empty() { 0 } else { self.bits() + 1 }
+    }
+}
+
+impl From<ModifiersState> for Modifiers {
+    fn from(m: ModifiersState) -> Self {
+        let mut mods = Self::empty();
+        mods.set(Self::SHIFT, m.shift_key());
+        mods.set(Self::ALT, m.alt_key());
+        mods.set(Self::CONTROL, m.control_key());
+        mods.set(Self::SUPER, m.super_key());
+        mods
     }
 }
 
