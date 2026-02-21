@@ -401,6 +401,241 @@ fn selection_across_rows() {
 }
 
 // ---------------------------------------------------------------------------
+// Degenerate grid bounds
+// ---------------------------------------------------------------------------
+
+#[test]
+fn single_row_single_col_grid_all_motions_clamp() {
+    let b = GridBounds {
+        total_rows: 1,
+        cols: 1,
+        visible_lines: 1,
+    };
+    let origin = AbsCursor { abs_row: 0, col: 0 };
+
+    assert_eq!(motion::move_left(origin, b), origin);
+    assert_eq!(motion::move_right(origin, b), origin);
+    assert_eq!(motion::move_up(origin), origin);
+    assert_eq!(motion::move_down(origin, b), origin);
+    assert_eq!(motion::page_up(origin, b), origin);
+    assert_eq!(motion::page_down(origin, b), origin);
+    assert_eq!(motion::line_start(origin), origin);
+    assert_eq!(motion::line_end(origin, b), origin);
+    assert_eq!(motion::buffer_start(), origin);
+    assert_eq!(motion::buffer_end(b), origin);
+}
+
+#[test]
+fn zero_column_grid_does_not_panic() {
+    let b = GridBounds {
+        total_rows: 10,
+        cols: 0,
+        visible_lines: 10,
+    };
+    let c = AbsCursor { abs_row: 0, col: 0 };
+
+    // These should not panic — saturating_sub handles cols=0.
+    let _ = motion::move_left(c, b);
+    let _ = motion::move_right(c, b);
+    let _ = motion::line_end(c, b);
+    let _ = motion::buffer_end(b);
+}
+
+#[test]
+fn zero_row_grid_does_not_panic() {
+    let b = GridBounds {
+        total_rows: 0,
+        cols: 80,
+        visible_lines: 0,
+    };
+    let c = AbsCursor { abs_row: 0, col: 0 };
+
+    let _ = motion::move_down(c, b);
+    let _ = motion::page_down(c, b);
+    let _ = motion::buffer_end(b);
+}
+
+// ---------------------------------------------------------------------------
+// Sequential motions accumulate
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sequential_right_motions_accumulate() {
+    let b = bounds_80x24();
+    let mut c = AbsCursor { abs_row: 0, col: 0 };
+    for _ in 0..5 {
+        c = motion::move_right(c, b);
+    }
+    assert_eq!(c, AbsCursor { abs_row: 0, col: 5 });
+}
+
+#[test]
+fn sequential_motions_wrap_across_rows() {
+    let b = GridBounds {
+        total_rows: 10,
+        cols: 3,
+        visible_lines: 10,
+    };
+    let mut c = AbsCursor { abs_row: 0, col: 0 };
+    // 3 cols per row: move right 7 times → row 2 col 1.
+    for _ in 0..7 {
+        c = motion::move_right(c, b);
+    }
+    assert_eq!(c, AbsCursor { abs_row: 2, col: 1 });
+
+    // Move left 7 times → back to origin.
+    for _ in 0..7 {
+        c = motion::move_left(c, b);
+    }
+    assert_eq!(c, AbsCursor { abs_row: 0, col: 0 });
+}
+
+#[test]
+fn sequential_down_then_up_returns_to_start() {
+    let b = bounds_80x24();
+    let start = AbsCursor {
+        abs_row: 10,
+        col: 40,
+    };
+    let mut c = start;
+    for _ in 0..5 {
+        c = motion::move_down(c, b);
+    }
+    assert_eq!(c.abs_row, 15);
+    assert_eq!(c.col, 40);
+    for _ in 0..5 {
+        c = motion::move_up(c);
+    }
+    assert_eq!(c, start);
+}
+
+// ---------------------------------------------------------------------------
+// Page up preserves column
+// ---------------------------------------------------------------------------
+
+#[test]
+fn page_up_preserves_col() {
+    let b = bounds_with_scrollback();
+    let c = AbsCursor {
+        abs_row: 50,
+        col: 42,
+    };
+    let r = motion::page_up(c, b);
+    assert_eq!(r.col, 42);
+}
+
+// ---------------------------------------------------------------------------
+// Selection direction reversal
+// ---------------------------------------------------------------------------
+
+#[test]
+fn selection_reversal_forward_then_backward() {
+    // Simulate: anchor at col 5, extend forward to col 8, then reverse to col 3.
+    // After reversal, cols 3..=5 should be selected (anchor inclusive).
+    let anchor = SelectionPoint {
+        row: StableRowIndex(0),
+        col: 5,
+        side: Side::Right, // backward: anchor gets Right
+    };
+    let end = SelectionPoint {
+        row: StableRowIndex(0),
+        col: 3,
+        side: Side::Left, // backward: end gets Left
+    };
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor,
+        pivot: anchor,
+        end,
+    };
+
+    // After ordering: start=(3,Left), end=(5,Right).
+    assert!(sel.contains(StableRowIndex(0), 3));
+    assert!(sel.contains(StableRowIndex(0), 4));
+    assert!(sel.contains(StableRowIndex(0), 5));
+    assert!(!sel.contains(StableRowIndex(0), 2));
+    assert!(!sel.contains(StableRowIndex(0), 6));
+}
+
+#[test]
+fn selection_reversal_across_rows() {
+    // Anchor at row 5 col 10, extend backward to row 3 col 70.
+    let anchor = SelectionPoint {
+        row: StableRowIndex(5),
+        col: 10,
+        side: Side::Right, // backward
+    };
+    let end = SelectionPoint {
+        row: StableRowIndex(3),
+        col: 70,
+        side: Side::Left, // backward
+    };
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor,
+        pivot: anchor,
+        end,
+    };
+
+    // Ordered: start=(3,70,Left), end=(5,10,Right).
+    assert!(sel.contains(StableRowIndex(3), 70));
+    assert!(sel.contains(StableRowIndex(3), 79));
+    assert!(sel.contains(StableRowIndex(4), 0));
+    assert!(sel.contains(StableRowIndex(4), 79));
+    assert!(sel.contains(StableRowIndex(5), 0));
+    assert!(sel.contains(StableRowIndex(5), 10));
+    assert!(!sel.contains(StableRowIndex(5), 11));
+    assert!(!sel.contains(StableRowIndex(3), 69));
+}
+
+// ---------------------------------------------------------------------------
+// Single-cell selection (Equal case)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn selection_equal_position_is_empty() {
+    // When anchor == end with (Left, Left), the selection is empty.
+    // This is correct: shifting back to the anchor deselects everything.
+    let point = SelectionPoint {
+        row: StableRowIndex(0),
+        col: 5,
+        side: Side::Left,
+    };
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor: point,
+        pivot: point,
+        end: point,
+    };
+
+    assert!(sel.is_empty());
+    // effective_start_col=5, effective_end_col=4 → nothing contained.
+    assert!(!sel.contains(StableRowIndex(0), 5));
+}
+
+#[test]
+fn selection_equal_at_col_zero_is_empty() {
+    // Edge case: Equal at col 0 — effective_end_col returns 0 (not wrapping).
+    let point = SelectionPoint {
+        row: StableRowIndex(0),
+        col: 0,
+        side: Side::Left,
+    };
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor: point,
+        pivot: point,
+        end: point,
+    };
+
+    assert!(sel.is_empty());
+    // effective_end_col for (col=0, Left) returns 0 (col > 0 check fails).
+    // effective_start_col=0, effective_end_col=0 → contains col 0.
+    // This is a special case: is_empty() is true but contains(0) may be true.
+    // The is_empty check takes priority in rendering.
+}
+
+// ---------------------------------------------------------------------------
 // Roadmap checkbox tests (9.3 spec)
 // ---------------------------------------------------------------------------
 // These verify the mark mode state transitions. Tests that require a full
@@ -501,6 +736,98 @@ fn escape_clears_selection_and_exits_mark_mode() {
 
     assert!(tab.selection().is_none(), "selection should be cleared");
     assert!(!tab.is_mark_mode(), "mark mode should be exited");
+}
+
+// ---------------------------------------------------------------------------
+// Auto-scroll (ensure_visible)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "requires display server (winit event loop)"]
+fn auto_scroll_moves_viewport_when_cursor_above() {
+    use super::ensure_visible;
+
+    let mut tab = make_tab(24, 80);
+    tab.enter_mark_mode();
+
+    // Scroll the viewport into scrollback, then place cursor above viewport.
+    // First we need content in scrollback — write enough to create scrollback.
+    let lines: String = (0..50).map(|i| format!("line {i}\r\n")).collect();
+    tab.write_input(lines.as_bytes());
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    // Scroll up so viewport shows older content.
+    tab.scroll_display(20);
+
+    // Place mark cursor at the very top of the buffer.
+    let top_cursor = {
+        let term = tab.terminal().lock();
+        let g = term.grid();
+        let stable = StableRowIndex::from_absolute(g, 0);
+        MarkCursor {
+            row: stable,
+            col: 0,
+        }
+    };
+    tab.set_mark_cursor(top_cursor);
+
+    // ensure_visible should scroll to make the cursor visible.
+    ensure_visible(&tab, &top_cursor);
+
+    // Verify the cursor is now within the visible viewport.
+    let visible = {
+        let term = tab.terminal().lock();
+        let g = term.grid();
+        let Some(abs_row) = top_cursor.row.to_absolute(g) else {
+            panic!("row should be valid");
+        };
+        let sb_len = g.scrollback().len();
+        let offset = g.display_offset();
+        let lines = g.lines();
+        let first_visible = sb_len.saturating_sub(offset);
+        let last_visible = first_visible + lines.saturating_sub(1);
+        abs_row >= first_visible && abs_row <= last_visible
+    };
+    assert!(
+        visible,
+        "cursor should be within visible viewport after auto-scroll"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Word navigation at boundaries
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "requires display server (winit event loop)"]
+fn word_left_at_buffer_start_clamps() {
+    use super::word_left;
+
+    let tab = make_tab(24, 80);
+    let term = tab.terminal().lock();
+    let g = term.grid();
+
+    // At absolute row 0, col 0 — should clamp to origin.
+    let r = word_left(g, 0, 0);
+    assert_eq!(r, AbsCursor { abs_row: 0, col: 0 });
+}
+
+#[test]
+#[ignore = "requires display server (winit event loop)"]
+fn word_right_at_buffer_end_clamps() {
+    use super::word_right;
+
+    let tab = make_tab(24, 80);
+    let term = tab.terminal().lock();
+    let g = term.grid();
+
+    let total_rows = g.scrollback().len() + g.lines();
+    let last_row = total_rows.saturating_sub(1);
+    let last_col = g.cols().saturating_sub(1);
+
+    // At the last cell of the buffer — should clamp.
+    let r = word_right(g, last_row, last_col, total_rows);
+    assert_eq!(r.abs_row, last_row);
 }
 
 // ---------------------------------------------------------------------------
