@@ -574,3 +574,30 @@ fn shift_click_extends_existing_selection() {
         "shift+click without selection should create new, got {action:?}",
     );
 }
+
+// --- Emoji wide char spacer redirect (ref: WezTerm drag_selection emoji) ---
+
+#[test]
+fn redirect_spacer_emoji_wide_char() {
+    use oriterm_core::grid::Grid;
+    use oriterm_core::{CellFlags, Column, Line};
+
+    let mut grid = Grid::new(1, 10);
+    grid.move_to(0, Column(0));
+    grid.put_char('💀'); // width 2: col 0 = base, col 1 = spacer
+    grid.put_char('A'); // col 2
+
+    // Verify spacer flag was set by put_char.
+    assert!(
+        grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+
+    // Click on emoji spacer → redirected to base cell.
+    assert_eq!(redirect_spacer(&grid, 0, 1), 0);
+    // Click on emoji base → stays.
+    assert_eq!(redirect_spacer(&grid, 0, 0), 0);
+    // Click on 'A' → stays.
+    assert_eq!(redirect_spacer(&grid, 0, 2), 2);
+}
