@@ -20,27 +20,26 @@ pub(super) enum CopyAction {
 }
 
 impl App {
+    /// Extract text from the active tab's selection.
+    ///
+    /// Returns `None` if there is no tab, no selection, or the selection is
+    /// empty. Borrow of `self.tab` is confined to this method so callers can
+    /// mutate `self.clipboard` after.
+    fn extract_selection_text(&self) -> Option<String> {
+        let tab = self.tab.as_ref()?;
+        let sel = tab.selection()?;
+        let term = tab.terminal().lock();
+        let text = extract_text(term.grid(), sel);
+        (!text.is_empty()).then_some(text)
+    }
+
     /// Copy the active selection to the system clipboard.
     ///
-    /// Extracts text from the current tab's selection, stores it in the
-    /// clipboard. Returns `true` if text was copied.
-    ///
-    /// Borrow pattern: the immutable borrow of `self.tab` (for grid + selection)
-    /// is confined to the inner block so `self.clipboard` can be mutated after.
+    /// Returns `true` if text was copied.
     pub(crate) fn copy_selection(&mut self) -> bool {
-        let text = {
-            let Some(tab) = &self.tab else {
-                return false;
-            };
-            let Some(sel) = tab.selection() else {
-                return false;
-            };
-            let term = tab.terminal().lock();
-            extract_text(term.grid(), sel)
-        };
-        if text.is_empty() {
+        let Some(text) = self.extract_selection_text() else {
             return false;
-        }
+        };
         self.clipboard.store(ClipboardType::Clipboard, &text);
         log::debug!("copied {} bytes to clipboard", text.len());
         true
@@ -52,13 +51,7 @@ impl App {
     /// is a no-op (the clipboard module silently ignores `Selection` stores
     /// when no primary selection provider is available).
     pub(crate) fn copy_selection_to_primary(&mut self) {
-        let text = {
-            let Some(tab) = &self.tab else { return };
-            let Some(sel) = tab.selection() else { return };
-            let term = tab.terminal().lock();
-            extract_text(term.grid(), sel)
-        };
-        if !text.is_empty() {
+        if let Some(text) = self.extract_selection_text() {
             self.clipboard.store(ClipboardType::Selection, &text);
         }
     }

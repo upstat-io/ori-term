@@ -35,7 +35,7 @@ trait ClipboardProvider {
 /// The `clipboard` field is always available. The `selection` field holds
 /// an X11/Wayland primary selection provider on Linux, or `None` on
 /// Windows/macOS where primary selection doesn't exist.
-pub struct Clipboard {
+pub(crate) struct Clipboard {
     clipboard: Box<dyn ClipboardProvider>,
     selection: Option<Box<dyn ClipboardProvider>>,
 }
@@ -45,13 +45,13 @@ impl Clipboard {
     ///
     /// Falls back to a no-op provider if the system clipboard is unavailable
     /// (e.g. headless environment without a display server).
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         platform_create()
     }
 
     /// Create a no-op clipboard for testing and headless operation.
     #[cfg(test)]
-    pub fn new_nop() -> Self {
+    pub(crate) fn new_nop() -> Self {
         Self {
             clipboard: Box::new(NopProvider),
             selection: None,
@@ -62,7 +62,7 @@ impl Clipboard {
     ///
     /// Storing to `Selection` when no selection provider is available
     /// (Windows, macOS) is silently ignored.
-    pub fn store(&mut self, ty: ClipboardType, text: &str) {
+    pub(crate) fn store(&mut self, ty: ClipboardType, text: &str) {
         let provider = match (ty, &mut self.selection) {
             (ClipboardType::Selection, Some(sel)) => sel,
             (ClipboardType::Selection, None) => return,
@@ -78,7 +78,7 @@ impl Clipboard {
     ///
     /// Loading from `Selection` when no selection provider is available
     /// falls back to the system clipboard (Alacritty convention).
-    pub fn load(&mut self, ty: ClipboardType) -> String {
+    pub(crate) fn load(&mut self, ty: ClipboardType) -> String {
         let provider = match (ty, &mut self.selection) {
             (ClipboardType::Selection, Some(sel)) => sel,
             _ => &mut self.clipboard,

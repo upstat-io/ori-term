@@ -54,7 +54,6 @@ impl MouseState {
     }
 
     /// Whether a drag is currently active (threshold exceeded).
-    #[allow(dead_code, reason = "used for cursor shape changes and tests")]
     pub(crate) fn is_dragging(&self) -> bool {
         self.left_down && self.drag_active
     }
