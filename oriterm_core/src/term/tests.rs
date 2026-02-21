@@ -886,3 +886,291 @@ fn ris_resets_to_current_theme() {
         }
     );
 }
+
+// Selection dirty flag tests.
+
+#[test]
+fn selection_dirty_initially_false() {
+    let term = make_term();
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_character_input() {
+    let mut term = make_term();
+    feed(&mut term, b"A");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_cleared_by_clear_selection_dirty() {
+    let mut term = make_term();
+    feed(&mut term, b"A");
+    assert!(term.is_selection_dirty());
+    term.clear_selection_dirty();
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_erase_display() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // ED 2 — erase entire display.
+    feed(&mut term, b"\x1b[2J");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_erase_line() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // EL 0 — erase from cursor to end of line.
+    feed(&mut term, b"\x1b[K");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_insert_blank() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // ICH — insert 1 blank character.
+    feed(&mut term, b"\x1b[@");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_delete_chars() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // DCH — delete 1 character.
+    feed(&mut term, b"\x1b[P");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_scroll_up() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // SU — scroll up 1 line.
+    feed(&mut term, b"\x1b[S");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_scroll_down() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // SD — scroll down 1 line.
+    feed(&mut term, b"\x1b[T");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_insert_lines() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // IL — insert 1 line.
+    feed(&mut term, b"\x1b[L");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_delete_lines() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // DL — delete 1 line.
+    feed(&mut term, b"\x1b[M");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_erase_chars() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // ECH — erase 1 character.
+    feed(&mut term, b"\x1b[X");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_linefeed() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    feed(&mut term, b"\n");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_newline() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // NEL — next line.
+    feed(&mut term, b"\x1bE");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_reverse_index() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // RI — reverse index.
+    feed(&mut term, b"\x1bM");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_reset() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // RIS — full reset.
+    feed(&mut term, b"\x1bc");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_swap_alt() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    term.swap_alt();
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_cursor_movement() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // CUF — move cursor forward 1.
+    feed(&mut term, b"\x1b[C");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_sgr() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // SGR bold.
+    feed(&mut term, b"\x1b[1m");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_backspace() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    feed(&mut term, b"\x08");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_carriage_return() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    feed(&mut term, b"\r");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_cup_goto() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // CUP — move cursor to row 5, col 10.
+    feed(&mut term, b"\x1b[5;10H");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_cursor_up() {
+    let mut term = make_term();
+    // Move cursor down first so up has room.
+    feed(&mut term, b"\x1b[10B");
+    term.clear_selection_dirty();
+    // CUU — move cursor up.
+    feed(&mut term, b"\x1b[A");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_cursor_down() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // CUD — move cursor down.
+    feed(&mut term, b"\x1b[B");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_cursor_backward() {
+    let mut term = make_term();
+    // Move cursor right first so backward has room.
+    feed(&mut term, b"\x1b[10C");
+    term.clear_selection_dirty();
+    // CUB — move cursor backward.
+    feed(&mut term, b"\x1b[D");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_save_restore_cursor() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // DECSC + DECRC — save then restore cursor.
+    feed(&mut term, b"\x1b7\x1b8");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_not_set_by_mode_set() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // DECSET 25 — show cursor.
+    feed(&mut term, b"\x1b[?25h");
+    assert!(!term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_erase_display_below() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // ED 0 — erase below cursor.
+    feed(&mut term, b"\x1b[0J");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_erase_display_above() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // ED 1 — erase above cursor.
+    feed(&mut term, b"\x1b[1J");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_erase_scrollback() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // ED 3 — erase scrollback.
+    feed(&mut term, b"\x1b[3J");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_cleared_then_resets_on_new_output() {
+    let mut term = make_term();
+    feed(&mut term, b"A");
+    assert!(term.is_selection_dirty());
+    term.clear_selection_dirty();
+    assert!(!term.is_selection_dirty());
+    // New output sets the flag again.
+    feed(&mut term, b"B");
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn selection_dirty_set_by_alt_screen_via_decset() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+    // DECSET 1049 — switch to alt screen.
+    feed(&mut term, b"\x1b[?1049h");
+    assert!(term.is_selection_dirty());
+}

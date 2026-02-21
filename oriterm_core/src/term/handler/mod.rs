@@ -33,6 +33,7 @@ impl<T: EventListener> Handler for Term<T> {
     /// Print a character, translated through the active charset.
     #[inline]
     fn input(&mut self, c: char) {
+        self.selection_dirty = true;
         let c = self.charset.translate(c);
         let width = match UnicodeWidthChar::width(c) {
             Some(width) => width,
@@ -70,6 +71,7 @@ impl<T: EventListener> Handler for Term<T> {
     /// LF: linefeed (+ CR in LNM mode).
     #[inline]
     fn linefeed(&mut self) {
+        self.selection_dirty = true;
         let lnm = self.mode.contains(TermMode::LINE_FEED_NEW_LINE);
         let grid = self.grid_mut();
         if lnm {
@@ -170,6 +172,7 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// ED: erase in display.
     fn clear_screen(&mut self, mode: ClearMode) {
+        self.selection_dirty = true;
         let erase = match mode {
             ClearMode::Below => DisplayEraseMode::Below,
             ClearMode::Above => DisplayEraseMode::Above,
@@ -181,6 +184,7 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// EL: erase in line.
     fn clear_line(&mut self, mode: LineClearMode) {
+        self.selection_dirty = true;
         let erase = match mode {
             LineClearMode::Right => LineEraseMode::Right,
             LineClearMode::Left => LineEraseMode::Left,
@@ -191,6 +195,7 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// ECH: erase characters (replace with blanks, no shift).
     fn erase_chars(&mut self, count: usize) {
+        self.selection_dirty = true;
         self.grid_mut().erase_chars(count);
     }
 
@@ -198,42 +203,50 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// ICH: insert blank characters at cursor.
     fn insert_blank(&mut self, count: usize) {
+        self.selection_dirty = true;
         self.grid_mut().insert_blank(count);
     }
 
     /// DCH: delete characters at cursor.
     fn delete_chars(&mut self, count: usize) {
+        self.selection_dirty = true;
         self.grid_mut().delete_chars(count);
     }
 
     /// IL: insert blank lines at cursor.
     fn insert_blank_lines(&mut self, count: usize) {
+        self.selection_dirty = true;
         self.grid_mut().insert_lines(count);
     }
 
     /// DL: delete lines at cursor.
     fn delete_lines(&mut self, count: usize) {
+        self.selection_dirty = true;
         self.grid_mut().delete_lines(count);
     }
 
     // --- CSI scroll ---
     /// SU: scroll up (content moves up, blank lines at bottom).
     fn scroll_up(&mut self, count: usize) {
+        self.selection_dirty = true;
         self.grid_mut().scroll_up(count);
     }
 
     /// SD: scroll down (content moves down, blank lines at top).
     fn scroll_down(&mut self, count: usize) {
+        self.selection_dirty = true;
         self.grid_mut().scroll_down(count);
     }
 
     /// RI: reverse index (move cursor up, scroll down at top of region).
     fn reverse_index(&mut self) {
+        self.selection_dirty = true;
         self.grid_mut().reverse_index();
     }
 
     /// NEL: next line (carriage return + linefeed).
     fn newline(&mut self) {
+        self.selection_dirty = true;
         self.grid_mut().next_line();
     }
 
