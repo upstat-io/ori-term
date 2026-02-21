@@ -25,7 +25,7 @@ sections:
     status: not-started
   - id: "9.7"
     title: Selection Rendering
-    status: not-started
+    status: in-progress
   - id: "9.8"
     title: Section Completion
     status: not-started
@@ -370,36 +370,47 @@ Visual highlighting of selected text during GPU rendering.
 
 **Reference:** `_old/src/gpu/render_grid.rs` (selection check in cell loop)
 
-- [ ] **Selection colors**: configurable selection foreground and background
-  - [ ] Default: inverted colors (swap fg/bg of selected cells)
-  - [ ] Alternative: user-configured selection_fg / selection_bg from palette
-  - [ ] Colors stored in palette semantic slots (see Section 01, 1.3: CellExtra)
-- [ ] **Render approach** (during cell rendering loop): <!-- unblocks:5.13 --><!-- unblocks:6.5 --><!-- unblocks:6.16 -->
-  - [ ] For each visible cell: check `selection.contains(stable_row, col)`
-  - [ ] If selected: override fg/bg with selection colors
-  - [ ] Convert viewport row to StableRowIndex for comparison
-  - [ ] Selection check must be efficient (called per-cell per-frame)
-- [ ] **Double-wide character handling**:
-  - [ ] If WIDE_CHAR cell is selected: highlight both the wide char cell and its spacer
-  - [ ] If only the spacer col is in selection bounds: still highlight both cells
-  - [ ] Never render half of a double-wide character as selected
-- [ ] **Selection across wrapped lines**:
-  - [ ] Highlight continues seamlessly across wrap boundaries
-  - [ ] No gap between wrapped rows in the selection highlight
-- [ ] **Block selection rendering**:
-  - [ ] Only highlight cells within rectangular bounds (min_col..max_col, min_row..max_row)
-  - [ ] Rows between start and end use same column bounds
-- [ ] **Include selection range in RenderableContent**:
-  - [ ] Pass current selection (if any) to the render function
-  - [ ] Borrow selection immutably during frame building
+- [x] **Selection colors**: configurable selection foreground and background
+  - [x] Default: inverted colors (swap fg/bg of selected cells)
+  - [ ] Alternative: user-configured selection_fg / selection_bg from palette <!-- blocked-by:13 -->
+  - [ ] Colors stored in palette semantic slots (see Section 01, 1.3: CellExtra) <!-- blocked-by:13 -->
+- [x] **Render approach** (during cell rendering loop): <!-- unblocks:5.13 --><!-- unblocks:6.5 --><!-- unblocks:6.16 -->
+  - [x] For each visible cell: check `selection.contains(stable_row, col)`
+  - [x] If selected: override fg/bg with selection colors
+  - [x] Convert viewport row to StableRowIndex for comparison
+  - [x] Selection check must be efficient (called per-cell per-frame)
+- [x] **Double-wide character handling**:
+  - [x] If WIDE_CHAR cell is selected: highlight both the wide char cell and its spacer
+  - [x] If only the spacer col is in selection bounds: still highlight both cells
+  - [x] Never render half of a double-wide character as selected
+- [x] **Selection across wrapped lines**:
+  - [x] Highlight continues seamlessly across wrap boundaries
+  - [x] No gap between wrapped rows in the selection highlight
+- [x] **Block selection rendering**:
+  - [x] Only highlight cells within rectangular bounds (min_col..max_col, min_row..max_row)
+  - [x] Rows between start and end use same column bounds
+- [x] **Include selection range in RenderableContent**:
+  - [x] Pass current selection (if any) to the render function
+  - [x] Borrow selection immutably during frame building
 - [ ] **Selection damage tracking** (incremental redraw on selection change):
   - [ ] Mark only affected lines dirty when selection is created, extended, or cleared
   - [ ] See Section 23.1 for full design  <!-- blocked-by:23 -->
-- [ ] **Tests** (visual/integration):
-  - [ ] Selection highlight inverts colors for selected cells
-  - [ ] Wide character selected as complete unit
-  - [ ] Block selection renders rectangular highlight
-  - [ ] Selection across wrapped lines has no visual gap
+- [x] **Edge case handling**:
+  - [x] Block cursor exclusion: skip selection inversion at cursor position
+  - [x] INVERSE (SGR 7) cells: use palette defaults instead of double-swap
+  - [x] fg==bg fallback: prevent invisible text by using palette defaults
+  - [x] HIDDEN (SGR 8) guard: intentionally hidden text stays invisible under selection
+  - [x] Non-block cursors (underline, beam): do not block selection inversion
+- [x] **Tests** (visual/integration):
+  - [x] Selection highlight inverts colors for selected cells
+  - [x] Wide character selected as complete unit
+  - [x] Block selection renders rectangular highlight
+  - [x] Selection across wrapped lines has no visual gap
+  - [x] Block cursor at selected cell skips inversion
+  - [x] INVERSE flag cell uses palette defaults when selected
+  - [x] fg==bg cell falls back to palette defaults when selected
+  - [x] HIDDEN cell stays invisible when selected
+  - [x] Underline cursor does not block selection inversion
 
 ---
 

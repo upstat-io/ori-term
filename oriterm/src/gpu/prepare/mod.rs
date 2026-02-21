@@ -12,10 +12,10 @@
 mod decorations;
 pub(crate) mod shaped_frame;
 
-use oriterm_core::{CellFlags, CursorShape, Rgb};
+use oriterm_core::{CellFlags, Column, CursorShape, RenderableCell, RenderableCursor, Rgb};
 
 use super::atlas::{AtlasEntry, AtlasKind};
-use super::frame_input::FrameInput;
+use super::frame_input::{FrameInput, FramePalette, FrameSelection};
 use super::prepared_frame::PreparedFrame;
 use crate::font::{FontRealm, GlyphStyle, RasterKey, ShapedGlyph, subpx_bin, subpx_offset};
 use crate::gpu::instance_writer::ScreenRect;
@@ -45,6 +45,63 @@ pub trait AtlasLookup {
 #[cfg(test)]
 fn glyph_style(flags: CellFlags) -> GlyphStyle {
     GlyphStyle::from_cell_flags(flags)
+}
+
+/// Resolve per-cell colors with selection highlighting applied.
+///
+/// Returns `(fg, bg)` for the cell, accounting for:
+/// - **Selection inversion**: selected cells swap fg/bg.
+/// - **Block cursor exclusion**: the cell under a visible block cursor is not
+///   inverted — the cursor overlay handles its own visual.
+/// - **INVERSE flag**: cells already inverted by SGR 7 would look identical
+///   to unselected normal cells after a naive swap. Falls back to palette
+///   defaults to ensure the selection is visible.
+/// - **fg==bg reveal**: if inversion produces matching fg/bg (invisible text),
+///   falls back to palette defaults — unless the cell has HIDDEN set (SGR 8
+///   intentionally hides text, and selection should not reveal it).
+fn resolve_cell_colors(
+    cell: &RenderableCell,
+    sel: Option<&FrameSelection>,
+    cursor: &RenderableCursor,
+    cursor_blink_visible: bool,
+    palette: &FramePalette,
+) -> (Rgb, Rgb) {
+    let col = cell.column.0;
+    let row = cell.line;
+    let is_wide = cell.flags.contains(CellFlags::WIDE_CHAR);
+
+    // Block cursor cell: skip selection inversion so cursor overlay dominates.
+    let is_block_cursor_cell = cursor_blink_visible
+        && cursor.visible
+        && cursor.shape == CursorShape::Block
+        && cursor.line == row
+        && cursor.column == Column(col);
+
+    let selected = !is_block_cursor_cell
+        && sel.is_some_and(|s| s.contains(row, col) || (is_wide && s.contains(row, col + 1)));
+
+    if !selected {
+        return (cell.fg, cell.bg);
+    }
+
+    // INVERSE cells: the simple swap undoes the already-applied SGR 7
+    // inversion, making the selected cell look identical to an unselected
+    // normal cell. Fall back to palette defaults for a guaranteed-visible
+    // highlight.
+    if cell.flags.contains(CellFlags::INVERSE) {
+        return (palette.background, palette.foreground);
+    }
+
+    let (sel_fg, sel_bg) = (cell.bg, cell.fg);
+
+    // If inversion produces matching fg/bg, text becomes invisible.
+    // Fall back to palette defaults — unless HIDDEN (SGR 8) is set,
+    // which intentionally hides text even under selection.
+    if sel_fg == sel_bg && !cell.flags.contains(CellFlags::HIDDEN) {
+        return (palette.background, palette.foreground);
+    }
+
+    (sel_fg, sel_bg)
 }
 
 /// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`] using per-cell
@@ -161,6 +218,8 @@ fn fill_frame(
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
     let (ox, oy) = origin;
+    let sel = input.selection.as_ref();
+    let cursor = &input.content.cursor;
 
     for cell in &input.content.cells {
         // Wide char spacers are handled by the primary wide char cell.
@@ -169,9 +228,10 @@ fn fill_frame(
         }
 
         let col = cell.column.0;
-        let row = cell.line;
         let x = ox + col as f32 * cw;
-        let y = oy + row as f32 * ch;
+        let y = oy + cell.line as f32 * ch;
+
+        let (fg, bg) = resolve_cell_colors(cell, sel, cursor, cursor_blink_visible, &input.palette);
 
         // Background: wide chars span 2 cell widths.
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
@@ -186,7 +246,7 @@ fn fill_frame(
                 w: bg_w,
                 h: ch,
             },
-            cell.bg,
+            bg,
             1.0,
         );
 
@@ -197,7 +257,7 @@ fn fill_frame(
             size_q6: 0,
             metrics: &input.cell_size,
         }
-        .draw(cell.flags, cell.underline_color, cell.fg, x, y, bg_w);
+        .draw(cell.flags, cell.underline_color, fg, x, y, bg_w);
 
         // Foreground glyph (skip spaces).
         if cell.ch != ' ' {
@@ -212,13 +272,12 @@ fn fill_frame(
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                frame.glyphs.push_glyph(rect, uv, cell.fg, 1.0, entry.page);
+                frame.glyphs.push_glyph(rect, uv, fg, 1.0, entry.page);
             }
         }
     }
 
     // Cursor instances (gated by terminal visibility AND application blink state).
-    let cursor = &input.content.cursor;
     if cursor.visible && cursor_blink_visible {
         build_cursor(
             frame,
@@ -255,6 +314,8 @@ fn fill_frame_shaped(
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
     let (ox, oy) = origin;
+    let sel = input.selection.as_ref();
+    let cursor = &input.content.cursor;
 
     for cell in &input.content.cells {
         if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
@@ -265,6 +326,8 @@ fn fill_frame_shaped(
         let row = cell.line;
         let x = ox + col as f32 * cw;
         let y = oy + row as f32 * ch;
+
+        let (fg, bg) = resolve_cell_colors(cell, sel, cursor, cursor_blink_visible, &input.palette);
 
         // Background (identical to unshaped path).
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
@@ -279,7 +342,7 @@ fn fill_frame_shaped(
                 w: bg_w,
                 h: ch,
             },
-            cell.bg,
+            bg,
             1.0,
         );
 
@@ -290,7 +353,7 @@ fn fill_frame_shaped(
             size_q6: shaped.size_q6(),
             metrics: &input.cell_size,
         }
-        .draw(cell.flags, cell.underline_color, cell.fg, x, y, bg_w);
+        .draw(cell.flags, cell.underline_color, fg, x, y, bg_w);
 
         // Built-in geometric glyphs: bypass shaping, render from atlas.
         if crate::font::is_builtin(cell.ch) {
@@ -303,7 +366,7 @@ fn fill_frame_shaped(
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                frame.glyphs.push_glyph(rect, uv, cell.fg, 1.0, entry.page);
+                frame.glyphs.push_glyph(rect, uv, fg, 1.0, entry.page);
             }
             continue;
         }
@@ -322,12 +385,11 @@ fn fill_frame_shaped(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, start_idx, col, x, y, cell.fg, cell.bg);
+            .emit(row_glyphs, start_idx, col, x, y, fg, bg);
         }
     }
 
     // Cursor (gated by terminal visibility AND application blink state).
-    let cursor = &input.content.cursor;
     if cursor.visible && cursor_blink_visible {
         build_cursor(
             frame,

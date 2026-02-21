@@ -97,11 +97,11 @@ const ANSI_COLORS: [Rgb; 16] = [
     }, // 15 Bright White
 ];
 
-/// Default foreground for dark theme (light gray — Tango Aluminium 3).
+/// Default foreground for dark theme (neutral light gray — matches Windows Terminal).
 const DARK_FG: Rgb = Rgb {
-    r: 0xd3,
-    g: 0xd7,
-    b: 0xcf,
+    r: 0xcc,
+    g: 0xcc,
+    b: 0xcc,
 };
 /// Default background for dark theme (black).
 const DARK_BG: Rgb = Rgb {

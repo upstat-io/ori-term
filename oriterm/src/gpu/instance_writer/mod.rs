@@ -11,6 +11,8 @@
 
 use oriterm_core::Rgb;
 
+use super::srgb_to_linear;
+
 /// Screen-space rectangle for GPU instance positioning.
 #[derive(Debug, Clone, Copy)]
 pub struct ScreenRect {
@@ -327,12 +329,15 @@ impl Default for InstanceWriter {
     }
 }
 
-/// Convert `Rgb` + alpha to `[f32; 4]` in 0..1 range.
+/// Convert `Rgb` + alpha to linear-light `[f32; 4]` for the GPU.
+///
+/// Each sRGB byte is decoded via [`srgb_to_linear`] so the values are
+/// truly linear when sent to the `*Srgb` render target.
 fn rgb_to_floats(c: Rgb, a: f32) -> [f32; 4] {
     [
-        f32::from(c.r) / 255.0,
-        f32::from(c.g) / 255.0,
-        f32::from(c.b) / 255.0,
+        srgb_to_linear(c.r),
+        srgb_to_linear(c.g),
+        srgb_to_linear(c.b),
         a,
     ]
 }

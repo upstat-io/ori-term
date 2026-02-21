@@ -247,9 +247,9 @@ fn dark_theme_has_light_foreground() {
     assert_eq!(
         p.foreground(),
         Rgb {
-            r: 0xd3,
-            g: 0xd7,
-            b: 0xcf
+            r: 0xcc,
+            g: 0xcc,
+            b: 0xcc
         }
     );
 }

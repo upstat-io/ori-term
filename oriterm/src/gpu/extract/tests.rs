@@ -1,7 +1,8 @@
 //! Unit tests for the extract phase.
 
 use oriterm_core::{
-    CellFlags, Column, CursorShape, FairMutex, Rgb, Term, TermMode, Theme, VoidListener,
+    CellFlags, Column, CursorShape, FairMutex, Rgb, StableRowIndex, Term, TermMode, Theme,
+    VoidListener,
 };
 use vte::ansi::Processor;
 
@@ -634,9 +635,9 @@ fn extract_dark_theme_palette() {
     assert_eq!(
         frame.palette.foreground,
         Rgb {
-            r: 0xd3,
-            g: 0xd7,
-            b: 0xcf,
+            r: 0xcc,
+            g: 0xcc,
+            b: 0xcc,
         },
     );
     assert_eq!(
@@ -974,11 +975,16 @@ fn extract_into_updates_cell_content() {
 
 #[test]
 fn extract_into_clears_selection() {
+    use oriterm_core::{Selection, Side};
+
+    use crate::gpu::frame_input::FrameSelection;
+
     let terminal = make_terminal(4, 10);
     let viewport = ViewportSize::new(80, 64);
 
     let mut frame = extract_frame(&terminal, viewport, CELL);
-    frame.selection = Some(());
+    let sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
+    frame.selection = Some(FrameSelection::new(&sel, 0));
 
     extract_frame_into(&terminal, &mut frame, viewport, CELL);
     assert!(frame.selection.is_none());

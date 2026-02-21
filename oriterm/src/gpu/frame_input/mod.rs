@@ -5,15 +5,44 @@
 //! and semantic palette colors. The Prepare phase consumes a `FrameInput` and
 //! produces a [`PreparedFrame`](super::prepared_frame::PreparedFrame).
 
+use oriterm_core::grid::StableRowIndex;
+use oriterm_core::selection::{Selection, SelectionBounds};
 use oriterm_core::{RenderableContent, Rgb};
 
 use crate::font::CellMetrics;
 
-/// Placeholder for selection range — replaced in Section 9.
-pub type SelectionRange = ();
-
 /// Placeholder for search match — replaced in Section 11.
 pub type SearchMatch = ();
+
+/// Selection state snapshotted for one frame.
+///
+/// Encapsulates [`SelectionBounds`] with the viewport→stable row mapping
+/// so the Prepare phase can test containment without terminal access.
+#[derive(Debug)]
+pub struct FrameSelection {
+    bounds: SelectionBounds,
+    /// Stable row index of viewport line 0.
+    base_stable: u64,
+}
+
+impl FrameSelection {
+    /// Build from an active selection and the viewport's stable row base.
+    ///
+    /// `stable_row_base` is `RenderableContent::stable_row_base` — the
+    /// `StableRowIndex` value of viewport line 0.
+    pub fn new(selection: &Selection, stable_row_base: u64) -> Self {
+        Self {
+            bounds: selection.bounds(),
+            base_stable: stable_row_base,
+        }
+    }
+
+    /// Test whether a visible cell at (`viewport_line`, `col`) is selected.
+    pub fn contains(&self, viewport_line: usize, col: usize) -> bool {
+        let stable = StableRowIndex(self.base_stable + viewport_line as u64);
+        self.bounds.contains(stable, col)
+    }
+}
 
 /// Pixel dimensions of the viewport.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,9 +98,8 @@ pub struct FrameInput {
     pub cell_size: CellMetrics,
     /// Semantic colors for background clear and cursor.
     pub palette: FramePalette,
-    /// Active selection range (placeholder until Section 9).
-    #[allow(dead_code, reason = "selection rendering in Section 9")]
-    pub selection: Option<SelectionRange>,
+    /// Active selection for highlight rendering.
+    pub selection: Option<FrameSelection>,
     /// Active search matches (placeholder until Section 11).
     #[allow(dead_code, reason = "search highlight rendering in Section 11")]
     pub search_matches: Vec<SearchMatch>,
@@ -142,6 +170,7 @@ impl FrameInput {
                     visible: true,
                 },
                 display_offset: 0,
+                stable_row_base: 0,
                 mode: TermMode::SHOW_CURSOR,
                 all_dirty: true,
                 damage: Vec::new(),

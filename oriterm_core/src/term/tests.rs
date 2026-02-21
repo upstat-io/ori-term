@@ -772,9 +772,9 @@ fn new_with_dark_theme_uses_dark_palette() {
     assert_eq!(
         t.palette().foreground(),
         Rgb {
-            r: 0xd3,
-            g: 0xd7,
-            b: 0xcf
+            r: 0xcc,
+            g: 0xcc,
+            b: 0xcc
         }
     );
     assert_eq!(
