@@ -72,6 +72,10 @@ pub struct Term<T: EventListener> {
     inactive_keyboard_mode_stack: VecDeque<KeyboardModes>,
     /// Event sink for terminal events.
     event_listener: T,
+    /// Set by content-modifying VTE handler operations (character printing,
+    /// erase, insert/delete, scroll). Checked by the owning layer to decide
+    /// whether to clear an active selection.
+    selection_dirty: bool,
 }
 
 impl<T: EventListener> Term<T> {
@@ -91,12 +95,27 @@ impl<T: EventListener> Term<T> {
             keyboard_mode_stack: VecDeque::new(),
             inactive_keyboard_mode_stack: VecDeque::new(),
             event_listener: listener,
+            selection_dirty: false,
         }
     }
 
     /// Event listener for terminal events.
     pub fn event_listener(&self) -> &T {
         &self.event_listener
+    }
+
+    /// Whether grid content was modified since the last check.
+    ///
+    /// Set by content-modifying VTE handler operations (character printing,
+    /// erase, insert/delete, scroll). The owning layer should check this
+    /// after terminal output and clear any active selection when true.
+    pub fn is_selection_dirty(&self) -> bool {
+        self.selection_dirty
+    }
+
+    /// Reset the selection-dirty flag after handling invalidation.
+    pub fn clear_selection_dirty(&mut self) {
+        self.selection_dirty = false;
     }
 
     /// Reference to the active grid.
@@ -320,8 +339,10 @@ impl<T: EventListener> Term<T> {
     /// Switch between primary and alternate screen.
     ///
     /// Saves/restores cursor, toggles `TermMode::ALT_SCREEN`, swaps keyboard
-    /// mode stacks, and marks all lines dirty.
+    /// mode stacks, and marks all lines dirty. Also marks selection as dirty
+    /// since screen content changes completely.
     pub fn swap_alt(&mut self) {
+        self.selection_dirty = true;
         if self.mode.contains(TermMode::ALT_SCREEN) {
             // Switching back to primary: save alt cursor, restore primary cursor.
             self.alt_grid.save_cursor();

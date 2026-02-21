@@ -6,6 +6,7 @@
 //! prevents losing the originally selected unit during drag extension.
 
 pub(crate) mod boundaries;
+mod click;
 #[cfg(test)]
 mod tests;
 pub(crate) mod text;
@@ -13,6 +14,7 @@ pub(crate) mod text;
 pub use boundaries::{
     delimiter_class, is_word_delimiter, logical_line_end, logical_line_start, word_boundaries,
 };
+pub use click::ClickDetector;
 pub use text::extract_text;
 
 use std::cmp::Ordering;

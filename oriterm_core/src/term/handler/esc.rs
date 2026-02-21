@@ -17,6 +17,8 @@ impl<T: EventListener> Term<T> {
     pub(super) fn esc_reset_state(&mut self) {
         debug!("RIS: full terminal reset");
 
+        self.selection_dirty = true;
+
         // If in alt screen, swap back to primary first so the grid references
         // are correct after reset.
         if self.mode.contains(TermMode::ALT_SCREEN) {

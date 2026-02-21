@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use winit::event_loop::EventLoopProxy;
 
-use oriterm_core::{Event, EventListener, FairMutex, Term};
+use oriterm_core::{Event, EventListener, FairMutex, Selection, SelectionPoint, Term};
 
 use crate::pty::{Msg, PtyConfig, PtyEventLoop, PtyHandle, spawn_pty};
 
@@ -159,6 +159,9 @@ pub struct Tab {
     title: String,
     /// Bell indicator (set on bell event, cleared on focus).
     has_bell: bool,
+    /// Active text selection, if any.
+    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
+    selection: Option<Selection>,
 }
 
 impl Tab {
@@ -222,6 +225,7 @@ impl Tab {
             pty,
             title: String::new(),
             has_bell: false,
+            selection: None,
         })
     }
 
@@ -266,6 +270,57 @@ impl Tab {
     /// Update the window title.
     pub fn set_title(&mut self, title: String) {
         self.title = title;
+    }
+
+    /// Active text selection, if any.
+    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
+    pub fn selection(&self) -> Option<&Selection> {
+        self.selection.as_ref()
+    }
+
+    /// Replace the active selection.
+    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
+    pub fn set_selection(&mut self, selection: Selection) {
+        self.selection = Some(selection);
+    }
+
+    /// Clear the active selection.
+    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
+    pub fn clear_selection(&mut self) {
+        self.selection = None;
+    }
+
+    /// Update the endpoint of an active selection during drag.
+    ///
+    /// No-op if no selection exists.
+    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
+    pub fn update_selection_end(&mut self, end: SelectionPoint) {
+        if let Some(sel) = &mut self.selection {
+            sel.end = end;
+        }
+    }
+
+    /// Check whether terminal output has invalidated the selection.
+    ///
+    /// Locks the terminal, checks the `selection_dirty` flag, and clears the
+    /// selection if grid content was modified since the last check. Call this
+    /// when handling terminal wakeup events.
+    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
+    pub fn check_selection_invalidation(&mut self) {
+        if self.selection.is_none() {
+            // No selection to invalidate — still clear the flag to avoid stale state.
+            let mut term = self.terminal.lock();
+            if term.is_selection_dirty() {
+                term.clear_selection_dirty();
+            }
+            return;
+        }
+        let mut term = self.terminal.lock();
+        if term.is_selection_dirty() {
+            term.clear_selection_dirty();
+            drop(term);
+            self.selection = None;
+        }
     }
 
     /// Send raw bytes to the PTY (keyboard input, escape responses).

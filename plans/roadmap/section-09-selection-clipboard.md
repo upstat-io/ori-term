@@ -7,7 +7,7 @@ goal: Windows Terminal-style 3-point selection, all selection modes, clipboard w
 sections:
   - id: "9.1"
     title: Selection Model & Anchoring
-    status: in-progress
+    status: complete
   - id: "9.2"
     title: Mouse Selection
     status: not-started
@@ -88,12 +88,16 @@ Windows Terminal uses a 3-point selection model: anchor, pivot, and endpoint. Th
     - [x] Other modes: use effective_start_col/effective_end_col at boundary rows, full rows in between
   - [x] `is_empty(&self) -> bool` — true if Char mode and anchor == end (zero area)
 - [x] Selection across scrollback: points use `StableRowIndex` (absolute row positions that survive scrollback eviction)
-- [ ] Selection invalidation: clear on output that affects selected region
-- [ ] Multi-click detection:
-  - [ ] Track last click position and timestamp
-  - [ ] Use 500ms window for multi-click detection
-  - [ ] Click counter cycles: 1 -> 2 -> 3 -> 1 (single -> double -> triple -> reset)
-  - [ ] Clicks must be in same cell position to count as multi-click
+- [x] Selection invalidation: clear on output that affects selected region
+  - [x] `selection_dirty` flag on `Term<T>` set by content-modifying VTE handler operations
+  - [x] `Tab::check_selection_invalidation()` checks flag and clears selection on terminal wakeup
+  - [x] `Tab` owns `selection: Option<Selection>` with set/clear/update_end accessors
+- [x] Multi-click detection:
+  - [x] Track last click position and timestamp
+  - [x] Use 500ms window for multi-click detection
+  - [x] Click counter cycles: 1 -> 2 -> 3 -> 1 (single -> double -> triple -> reset)
+  - [x] Clicks must be in same cell position to count as multi-click
+  - [x] `ClickDetector` struct in `oriterm_core::selection::click` with `click()` and `reset()`
 - [x] Re-export `Selection`, `SelectionPoint`, `SelectionMode`, `Side` from `oriterm_core/src/lib.rs`
 - [x] **Tests** (`oriterm_core/src/selection/mod.rs` `#[cfg(test)]`):
   - [x] `new_char` creates selection with anchor == pivot == end
