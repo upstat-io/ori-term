@@ -17,3 +17,19 @@ pub struct MarkCursor {
     /// Column (0-based).
     pub col: usize,
 }
+
+impl MarkCursor {
+    /// Convert to viewport coordinates given the viewport's stable row base.
+    ///
+    /// Returns `(viewport_line, col)` if the cursor is within the viewport,
+    /// `None` if it has scrolled off-screen.
+    pub fn to_viewport(self, stable_row_base: u64, max_lines: usize) -> Option<(usize, usize)> {
+        let offset = self.row.0.checked_sub(stable_row_base)?;
+        let line = offset as usize;
+        if line < max_lines {
+            Some((line, self.col))
+        } else {
+            None
+        }
+    }
+}

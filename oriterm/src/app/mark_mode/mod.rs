@@ -13,7 +13,7 @@ use oriterm_core::grid::Grid;
 use oriterm_core::selection::word_boundaries;
 use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side, StableRowIndex};
 
-use self::motion::{AbsCursor, GridBounds};
+use self::motion::{AbsCursor, GridBounds, WordContext};
 use crate::tab::{MarkCursor, Tab};
 
 /// Result of processing a key event in mark mode.
@@ -150,6 +150,9 @@ fn apply_motion(tab: &mut Tab, m: Motion, shift: bool) {
             col: old_cursor.col,
         };
 
+        let word_ctx = matches!(m, Motion::WordLeft | Motion::WordRight)
+            .then(|| extract_word_context(g, abs_row, cur.col));
+
         let new_abs = match m {
             Motion::Left => motion::move_left(cur, bounds),
             Motion::Right => motion::move_right(cur, bounds),
@@ -161,8 +164,10 @@ fn apply_motion(tab: &mut Tab, m: Motion, shift: bool) {
             Motion::LineEnd => motion::line_end(cur, bounds),
             Motion::BufferStart => motion::buffer_start(),
             Motion::BufferEnd => motion::buffer_end(bounds),
-            Motion::WordLeft => word_left(g, abs_row, cur.col),
-            Motion::WordRight => word_right(g, abs_row, cur.col, bounds.total_rows),
+            Motion::WordLeft => motion::word_left(cur, word_ctx.as_ref().expect("computed above")),
+            Motion::WordRight => {
+                motion::word_right(cur, word_ctx.as_ref().expect("computed above"), bounds)
+            }
         };
 
         let stable = StableRowIndex::from_absolute(g, new_abs.abs_row);
@@ -183,52 +188,41 @@ fn apply_motion(tab: &mut Tab, m: Motion, shift: bool) {
     ensure_visible(tab, &new_cursor);
 }
 
-/// Move cursor to the start of the current or previous word.
-fn word_left(g: &Grid, abs_row: usize, col: usize) -> AbsCursor {
-    let (ws, _) = word_boundaries(g, abs_row, col);
-    if col > ws {
-        AbsCursor { abs_row, col: ws }
-    } else if ws > 0 {
-        let (prev_ws, _) = word_boundaries(g, abs_row, ws - 1);
-        AbsCursor {
-            abs_row,
-            col: prev_ws,
-        }
-    } else if abs_row > 0 {
-        let prev_end = g.cols().saturating_sub(1);
-        let (prev_ws, _) = word_boundaries(g, abs_row - 1, prev_end);
-        AbsCursor {
-            abs_row: abs_row - 1,
-            col: prev_ws,
-        }
-    } else {
-        AbsCursor { abs_row: 0, col: 0 }
-    }
-}
-
-/// Move cursor to the end of the current or next word.
-fn word_right(g: &Grid, abs_row: usize, col: usize, total_rows: usize) -> AbsCursor {
+/// Extract word boundary data under terminal lock for pure word motions.
+fn extract_word_context(g: &Grid, abs_row: usize, col: usize) -> WordContext {
+    let (ws, we) = word_boundaries(g, abs_row, col);
     let cols = g.cols();
-    let (_, we) = word_boundaries(g, abs_row, col);
-    if col < we {
-        AbsCursor { abs_row, col: we }
-    } else if we + 1 < cols {
-        let (_, next_we) = word_boundaries(g, abs_row, we + 1);
-        AbsCursor {
-            abs_row,
-            col: next_we,
-        }
-    } else if abs_row + 1 < total_rows {
-        let (_, next_we) = word_boundaries(g, abs_row + 1, 0);
-        AbsCursor {
-            abs_row: abs_row + 1,
-            col: next_we,
-        }
+    let total_rows = g.scrollback().len() + g.lines();
+
+    let prev_same_row_ws = if ws > 0 {
+        Some(word_boundaries(g, abs_row, ws - 1).0)
     } else {
-        AbsCursor {
-            abs_row,
-            col: cols.saturating_sub(1),
-        }
+        None
+    };
+    let prev_row_ws = if abs_row > 0 {
+        let end = cols.saturating_sub(1);
+        Some(word_boundaries(g, abs_row - 1, end).0)
+    } else {
+        None
+    };
+    let next_same_row_we = if we + 1 < cols {
+        Some(word_boundaries(g, abs_row, we + 1).1)
+    } else {
+        None
+    };
+    let next_row_we = if abs_row + 1 < total_rows {
+        Some(word_boundaries(g, abs_row + 1, 0).1)
+    } else {
+        None
+    };
+
+    WordContext {
+        ws,
+        we,
+        prev_same_row_ws,
+        prev_row_ws,
+        next_same_row_we,
+        next_row_we,
     }
 }
 

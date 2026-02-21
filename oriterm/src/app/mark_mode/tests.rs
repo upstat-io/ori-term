@@ -795,28 +795,175 @@ fn auto_scroll_moves_viewport_when_cursor_above() {
 }
 
 // ---------------------------------------------------------------------------
-// Word navigation at boundaries
+// Word navigation (pure motion functions)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn word_left_jumps_to_word_start() {
+    // Cursor inside a word (col 7, word starts at 5).
+    let c = AbsCursor { abs_row: 2, col: 7 };
+    let ctx = motion::WordContext {
+        ws: 5,
+        we: 9,
+        prev_same_row_ws: None,
+        prev_row_ws: None,
+        next_same_row_we: None,
+        next_row_we: None,
+    };
+    assert_eq!(motion::word_left(c, &ctx), AbsCursor { abs_row: 2, col: 5 });
+}
+
+#[test]
+fn word_left_jumps_to_prev_word_on_same_row() {
+    // Cursor at word start (col 5, ws=5), prev word starts at 0.
+    let c = AbsCursor { abs_row: 2, col: 5 };
+    let ctx = motion::WordContext {
+        ws: 5,
+        we: 9,
+        prev_same_row_ws: Some(0),
+        prev_row_ws: None,
+        next_same_row_we: None,
+        next_row_we: None,
+    };
+    assert_eq!(motion::word_left(c, &ctx), AbsCursor { abs_row: 2, col: 0 });
+}
+
+#[test]
+fn word_left_wraps_to_prev_row() {
+    // Cursor at col 0, ws=0, no prev word on same row, prev row available.
+    let c = AbsCursor { abs_row: 3, col: 0 };
+    let ctx = motion::WordContext {
+        ws: 0,
+        we: 4,
+        prev_same_row_ws: None,
+        prev_row_ws: Some(70),
+        next_same_row_we: None,
+        next_row_we: None,
+    };
+    assert_eq!(
+        motion::word_left(c, &ctx),
+        AbsCursor {
+            abs_row: 2,
+            col: 70
+        }
+    );
+}
+
+#[test]
+fn word_left_at_origin_clamps() {
+    let c = AbsCursor { abs_row: 0, col: 0 };
+    let ctx = motion::WordContext {
+        ws: 0,
+        we: 0,
+        prev_same_row_ws: None,
+        prev_row_ws: None,
+        next_same_row_we: None,
+        next_row_we: None,
+    };
+    assert_eq!(motion::word_left(c, &ctx), AbsCursor { abs_row: 0, col: 0 });
+}
+
+#[test]
+fn word_right_jumps_to_word_end() {
+    // Cursor inside a word (col 2, word ends at 4).
+    let c = AbsCursor { abs_row: 1, col: 2 };
+    let ctx = motion::WordContext {
+        ws: 0,
+        we: 4,
+        prev_same_row_ws: None,
+        prev_row_ws: None,
+        next_same_row_we: None,
+        next_row_we: None,
+    };
+    assert_eq!(
+        motion::word_right(c, &ctx, bounds_80x24()),
+        AbsCursor { abs_row: 1, col: 4 }
+    );
+}
+
+#[test]
+fn word_right_jumps_to_next_word_on_same_row() {
+    // Cursor at word end (col 4, we=4), next word ends at 9.
+    let c = AbsCursor { abs_row: 1, col: 4 };
+    let ctx = motion::WordContext {
+        ws: 0,
+        we: 4,
+        prev_same_row_ws: None,
+        prev_row_ws: None,
+        next_same_row_we: Some(9),
+        next_row_we: None,
+    };
+    assert_eq!(
+        motion::word_right(c, &ctx, bounds_80x24()),
+        AbsCursor { abs_row: 1, col: 9 }
+    );
+}
+
+#[test]
+fn word_right_wraps_to_next_row() {
+    // Cursor at word end, no next word on same row, next row available.
+    let c = AbsCursor {
+        abs_row: 1,
+        col: 75,
+    };
+    let ctx = motion::WordContext {
+        ws: 70,
+        we: 75,
+        prev_same_row_ws: None,
+        prev_row_ws: None,
+        next_same_row_we: None,
+        next_row_we: Some(5),
+    };
+    assert_eq!(
+        motion::word_right(c, &ctx, bounds_80x24()),
+        AbsCursor { abs_row: 2, col: 5 }
+    );
+}
+
+#[test]
+fn word_right_clamps_at_end_of_buffer() {
+    // Last row, at word end, no next word, no next row.
+    let c = AbsCursor {
+        abs_row: 23,
+        col: 75,
+    };
+    let ctx = motion::WordContext {
+        ws: 70,
+        we: 75,
+        prev_same_row_ws: None,
+        prev_row_ws: None,
+        next_same_row_we: None,
+        next_row_we: None,
+    };
+    assert_eq!(
+        motion::word_right(c, &ctx, bounds_80x24()),
+        AbsCursor {
+            abs_row: 23,
+            col: 79
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Word navigation with live grid (integration)
 // ---------------------------------------------------------------------------
 
 #[test]
 #[ignore = "requires display server (winit event loop)"]
-fn word_left_at_buffer_start_clamps() {
-    use super::word_left;
-
+fn word_left_at_buffer_start_clamps_with_grid() {
     let tab = make_tab(24, 80);
     let term = tab.terminal().lock();
     let g = term.grid();
 
-    // At absolute row 0, col 0 — should clamp to origin.
-    let r = word_left(g, 0, 0);
+    let ctx = super::extract_word_context(g, 0, 0);
+    let c = AbsCursor { abs_row: 0, col: 0 };
+    let r = motion::word_left(c, &ctx);
     assert_eq!(r, AbsCursor { abs_row: 0, col: 0 });
 }
 
 #[test]
 #[ignore = "requires display server (winit event loop)"]
-fn word_right_at_buffer_end_clamps() {
-    use super::word_right;
-
+fn word_right_at_buffer_end_clamps_with_grid() {
     let tab = make_tab(24, 80);
     let term = tab.terminal().lock();
     let g = term.grid();
@@ -824,9 +971,18 @@ fn word_right_at_buffer_end_clamps() {
     let total_rows = g.scrollback().len() + g.lines();
     let last_row = total_rows.saturating_sub(1);
     let last_col = g.cols().saturating_sub(1);
+    let bounds = GridBounds {
+        total_rows,
+        cols: g.cols(),
+        visible_lines: g.lines(),
+    };
 
-    // At the last cell of the buffer — should clamp.
-    let r = word_right(g, last_row, last_col, total_rows);
+    let ctx = super::extract_word_context(g, last_row, last_col);
+    let c = AbsCursor {
+        abs_row: last_row,
+        col: last_col,
+    };
+    let r = motion::word_right(c, &ctx, bounds);
     assert_eq!(r.abs_row, last_row);
 }
 
