@@ -160,7 +160,6 @@ pub struct Tab {
     /// Bell indicator (set on bell event, cleared on focus).
     has_bell: bool,
     /// Active text selection, if any.
-    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
     selection: Option<Selection>,
 }
 
@@ -273,7 +272,6 @@ impl Tab {
     }
 
     /// Active text selection, if any.
-    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
     pub fn selection(&self) -> Option<&Selection> {
         self.selection.as_ref()
     }

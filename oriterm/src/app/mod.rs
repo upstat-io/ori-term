@@ -19,7 +19,7 @@ use oriterm_ui::window::WindowConfig;
 use self::cursor_blink::CursorBlink;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, SubpixelMode};
 use crate::gpu::{
-    FrameInput, GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame,
+    FrameInput, FrameSelection, GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame,
     extract_frame_into,
 };
 use crate::key_encoding::{self, KeyEventType, KeyInput};
@@ -256,6 +256,14 @@ impl App {
                     slot.as_mut().expect("just assigned")
                 }
             };
+
+            // Snapshot selection for rendering. The selection lives on Tab
+            // (not inside Term), so we build the FrameSelection after the
+            // terminal lock is released, using the stable_row_base from
+            // the extracted content.
+            frame.selection = tab
+                .selection()
+                .map(|sel| FrameSelection::new(sel, frame.content.stable_row_base));
 
             // Cache blinking mode for about_to_wait gating.
             // Reset blink phase on false→true transition so the

@@ -178,6 +178,7 @@ impl Selection {
 /// Compute once with `Selection::bounds()`, then test many cells with
 /// `SelectionBounds::contains()`. This avoids redundant min/max computation
 /// per cell during rendering (O(1) per cell instead of O(3) comparisons).
+#[derive(Debug)]
 pub struct SelectionBounds {
     pub mode: SelectionMode,
     pub start: SelectionPoint,

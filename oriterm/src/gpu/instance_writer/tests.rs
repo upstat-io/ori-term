@@ -3,6 +3,7 @@
 use oriterm_core::Rgb;
 
 use super::{INSTANCE_SIZE, InstanceKind, InstanceWriter, ScreenRect};
+use crate::gpu::srgb_to_linear;
 
 /// Read a little-endian `f32` from the given byte offset.
 fn read_f32(buf: &[u8], offset: usize) -> f32 {
@@ -166,9 +167,9 @@ fn push_cursor_field_offsets() {
     assert_eq!(read_f32(rec, 40), 0.0);
     assert_eq!(read_f32(rec, 44), 0.0);
 
-    // BG = green at alpha 0.75.
+    // BG = green at alpha 0.75 (sRGB→linear).
     assert_eq!(read_f32(rec, 48), 0.0);
-    assert!((read_f32(rec, 52) - 128.0 / 255.0).abs() < 1e-6);
+    assert!((read_f32(rec, 52) - srgb_to_linear(128)).abs() < 1e-6);
     assert_eq!(read_f32(rec, 56), 0.0);
     assert_eq!(read_f32(rec, 60), 0.75);
 
@@ -289,9 +290,9 @@ fn rgb_mid_value_conversion() {
     );
 
     let rec = w.as_bytes();
-    assert!((read_f32(rec, 48) - 128.0 / 255.0).abs() < 1e-6);
-    assert!((read_f32(rec, 52) - 64.0 / 255.0).abs() < 1e-6);
-    assert!((read_f32(rec, 56) - 192.0 / 255.0).abs() < 1e-6);
+    assert!((read_f32(rec, 48) - srgb_to_linear(128)).abs() < 1e-6);
+    assert!((read_f32(rec, 52) - srgb_to_linear(64)).abs() < 1e-6);
+    assert!((read_f32(rec, 56) - srgb_to_linear(192)).abs() < 1e-6);
 }
 
 // --- Lifecycle ---

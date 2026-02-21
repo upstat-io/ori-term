@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use oriterm_core::{CellFlags, Column, CursorShape, Rgb};
+use oriterm_core::{CellFlags, Column, CursorShape, Rgb, Selection, Side, StableRowIndex};
 
 use super::{
     AtlasLookup, ShapedFrame, prepare_frame, prepare_frame_into, prepare_frame_shaped,
@@ -10,9 +10,10 @@ use super::{
 };
 use crate::font::{FaceIdx, FontRealm, GlyphStyle, RasterKey, ShapedGlyph, SyntheticFlags};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
-use crate::gpu::frame_input::{FrameInput, ViewportSize};
+use crate::gpu::frame_input::{FrameInput, FrameSelection, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
 use crate::gpu::prepared_frame::PreparedFrame;
+use crate::gpu::srgb_to_linear;
 
 // ── Test atlas ──
 
@@ -138,12 +139,12 @@ fn assert_counts(frame: &PreparedFrame, bg: usize, fg: usize, cursor: usize) {
     );
 }
 
-/// Convert Rgb to the [f32; 4] that push_rect writes to bg_color.
+/// Convert Rgb to the linear-light `[f32; 4]` that push_rect writes to bg_color.
 fn rgb_f32(c: Rgb) -> [f32; 4] {
     [
-        f32::from(c.r) / 255.0,
-        f32::from(c.g) / 255.0,
-        f32::from(c.b) / 255.0,
+        srgb_to_linear(c.r),
+        srgb_to_linear(c.g),
+        srgb_to_linear(c.b),
         1.0,
     ]
 }
@@ -600,9 +601,9 @@ fn clear_color_matches_palette_background() {
     let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let expected = [
-        f64::from(bg.r) / 255.0,
-        f64::from(bg.g) / 255.0,
-        f64::from(bg.b) / 255.0,
+        f64::from(srgb_to_linear(bg.r)),
+        f64::from(srgb_to_linear(bg.g)),
+        f64::from(srgb_to_linear(bg.b)),
         1.0,
     ];
     assert_eq!(frame.clear_color, expected);
@@ -618,9 +619,9 @@ fn clear_color_respects_palette_opacity() {
 
     let bg = input.palette.background;
     let expected = [
-        f64::from(bg.r) / 255.0 * 0.5,
-        f64::from(bg.g) / 255.0 * 0.5,
-        f64::from(bg.b) / 255.0 * 0.5,
+        f64::from(srgb_to_linear(bg.r)) * 0.5,
+        f64::from(srgb_to_linear(bg.g)) * 0.5,
+        f64::from(srgb_to_linear(bg.b)) * 0.5,
         0.5,
     ];
     assert_eq!(frame.clear_color, expected);
@@ -1929,4 +1930,607 @@ fn origin_offset_shaped_shifts_all_instances() {
     // Cursor shifted by origin.
     let c = nth_instance(frame.cursors.as_bytes(), 0);
     assert_eq!(c.pos, (100.0, 200.0));
+}
+
+// ── Selection rendering ──
+
+/// Helper: create a FrameSelection covering columns `start_col..=end_col` on
+/// viewport line `line`. Uses `stable_row_base = 0` so stable row == viewport line.
+fn selection_range(line: usize, start_col: usize, end_col: usize) -> FrameSelection {
+    let anchor = oriterm_core::SelectionPoint {
+        row: StableRowIndex(line as u64),
+        col: start_col,
+        side: Side::Left,
+    };
+    let end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(line as u64),
+        col: end_col,
+        side: Side::Right,
+    };
+    let sel = Selection::new_char(anchor.row, anchor.col, Side::Left);
+    // Build a selection spanning the range by constructing bounds directly.
+    let mut sel = sel;
+    sel.end = end;
+    FrameSelection::new(&sel, 0)
+}
+
+#[test]
+fn selection_inverts_bg_color() {
+    let mut input = FrameInput::test_grid(3, 1, "ABC");
+    let atlas = atlas_with(&['A', 'B', 'C']);
+
+    // Select column 1 ("B").
+    input.selection = Some(selection_range(0, 1, 1));
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // 3 bg instances: col 0 (normal), col 1 (selected), col 2 (normal).
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
+
+    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let selected_bg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+
+    assert_eq!(bg0.bg_color, normal_bg, "col 0 should be normal bg");
+    assert_eq!(bg1.bg_color, selected_bg, "col 1 should have inverted bg");
+    assert_eq!(bg2.bg_color, normal_bg, "col 2 should be normal bg");
+}
+
+#[test]
+fn selection_inverts_fg_color() {
+    let mut input = FrameInput::test_grid(2, 1, "AB");
+    let atlas = atlas_with(&['A', 'B']);
+
+    // Hide cursor so block cursor exclusion doesn't interfere.
+    input.content.cursor.visible = false;
+
+    // Select column 0 ("A").
+    input.selection = Some(selection_range(0, 0, 0));
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Glyph "A" (col 0) should have inverted fg (black instead of light gray).
+    let fg0 = nth_instance(frame.glyphs.as_bytes(), 0);
+    let selected_fg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    assert_eq!(
+        fg0.fg_color, selected_fg,
+        "selected glyph should have inverted fg"
+    );
+
+    // Glyph "B" (col 1) should have normal fg.
+    let fg1 = nth_instance(frame.glyphs.as_bytes(), 1);
+    let normal_fg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+    assert_eq!(
+        fg1.fg_color, normal_fg,
+        "unselected glyph should have normal fg"
+    );
+}
+
+#[test]
+fn selection_no_effect_when_none() {
+    let input = FrameInput::test_grid(2, 1, "AB");
+    let atlas = atlas_with(&['A', 'B']);
+
+    // No selection.
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+
+    assert_eq!(bg0.bg_color, normal_bg);
+    assert_eq!(bg1.bg_color, normal_bg);
+}
+
+#[test]
+fn selection_wide_char_highlights_both_cells() {
+    use oriterm_core::RenderableCell;
+
+    // Build a grid with a wide char at col 0: 'Ａ' (fullwidth A, 2 cells wide).
+    let fg = Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    };
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    let cells = vec![
+        RenderableCell {
+            line: 0,
+            column: Column(0),
+            ch: 'Ａ',
+            fg,
+            bg,
+            flags: CellFlags::WIDE_CHAR,
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(1),
+            ch: ' ',
+            fg,
+            bg,
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(2),
+            ch: 'B',
+            fg,
+            bg,
+            flags: CellFlags::empty(),
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+    ];
+
+    let mut input = FrameInput::test_grid(3, 1, "");
+    input.content.cells = cells;
+    input.content.cursor.visible = false;
+
+    // Select just col 0 (the wide char base cell).
+    input.selection = Some(selection_range(0, 0, 0));
+
+    let atlas = atlas_with(&['Ａ', 'B']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Wide char spacers are skipped, so we get 2 bg instances:
+    // bg[0] = wide char (2 cells wide, selected), bg[1] = 'B' (normal).
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+
+    let selected_bg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+
+    assert_eq!(bg0.bg_color, selected_bg, "wide char should be selected");
+    assert_eq!(bg0.size, (16.0, 16.0), "wide char bg should span 2 cells");
+    assert_eq!(bg1.bg_color, normal_bg, "'B' should be normal");
+}
+
+#[test]
+fn selection_block_mode_rectangular() {
+    use oriterm_core::SelectionPoint;
+
+    // 4x2 grid: "ABCD" / "EFGH". Block select cols 1..2, rows 0..1.
+    let mut input = FrameInput::test_grid(4, 2, "ABCDEFGH");
+    let atlas = atlas_with(&['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+
+    let anchor = SelectionPoint {
+        row: StableRowIndex(0),
+        col: 1,
+        side: Side::Left,
+    };
+    let pivot = SelectionPoint {
+        row: StableRowIndex(0),
+        col: 1,
+        side: Side::Left,
+    };
+    let mut sel = Selection::new_word(anchor, pivot);
+    sel.mode = oriterm_core::SelectionMode::Block;
+    sel.end = SelectionPoint {
+        row: StableRowIndex(1),
+        col: 2,
+        side: Side::Right,
+    };
+    input.selection = Some(FrameSelection::new(&sel, 0));
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+
+    // Row 0: A(normal) B(selected) C(selected) D(normal).
+    let a = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let b = nth_instance(frame.backgrounds.as_bytes(), 1);
+    let c = nth_instance(frame.backgrounds.as_bytes(), 2);
+    let d = nth_instance(frame.backgrounds.as_bytes(), 3);
+
+    assert_eq!(a.bg_color, normal_bg, "A should be normal");
+    assert_eq!(b.bg_color, selected_bg, "B should be selected");
+    assert_eq!(c.bg_color, selected_bg, "C should be selected");
+    assert_eq!(d.bg_color, normal_bg, "D should be normal");
+
+    // Row 1: E(normal) F(selected) G(selected) H(normal).
+    let e = nth_instance(frame.backgrounds.as_bytes(), 4);
+    let f = nth_instance(frame.backgrounds.as_bytes(), 5);
+    let g = nth_instance(frame.backgrounds.as_bytes(), 6);
+    let h = nth_instance(frame.backgrounds.as_bytes(), 7);
+
+    assert_eq!(e.bg_color, normal_bg, "E should be normal");
+    assert_eq!(f.bg_color, selected_bg, "F should be selected");
+    assert_eq!(g.bg_color, selected_bg, "G should be selected");
+    assert_eq!(h.bg_color, normal_bg, "H should be normal");
+}
+
+#[test]
+fn selection_wide_char_spacer_only_highlights_both() {
+    use oriterm_core::RenderableCell;
+
+    // Wide char at col 0, spacer at col 1, narrow 'B' at col 2.
+    // Selection covers only col 1 (the spacer). The wide char should
+    // still be highlighted because you can't render half a wide char.
+    let fg = Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    };
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    let cells = vec![
+        RenderableCell {
+            line: 0,
+            column: Column(0),
+            ch: 'Ａ',
+            fg,
+            bg,
+            flags: CellFlags::WIDE_CHAR,
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(1),
+            ch: ' ',
+            fg,
+            bg,
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(2),
+            ch: 'B',
+            fg,
+            bg,
+            flags: CellFlags::empty(),
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+    ];
+
+    let mut input = FrameInput::test_grid(3, 1, "");
+    input.content.cells = cells;
+    input.content.cursor.visible = false;
+
+    // Select only col 1 (the spacer column).
+    input.selection = Some(selection_range(0, 1, 1));
+
+    let atlas = atlas_with(&['Ａ', 'B']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+
+    // bg[0] = wide char (should be selected because spacer col is in range).
+    // bg[1] = 'B' (normal).
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+
+    assert_eq!(
+        bg0.bg_color, selected_bg,
+        "wide char should be selected via spacer"
+    );
+    assert_eq!(bg1.bg_color, normal_bg, "'B' should be normal");
+}
+
+#[test]
+fn selection_across_wrapped_lines_no_gap() {
+    // Two rows, selection spans from row 0 col 2 to row 1 col 1.
+    // All cells from col 2 on row 0 and cols 0..1 on row 1 should be selected.
+    let mut input = FrameInput::test_grid(4, 2, "ABCDEFGH");
+    let atlas = atlas_with(&['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+
+    let anchor = oriterm_core::SelectionPoint {
+        row: StableRowIndex(0),
+        col: 2,
+        side: Side::Left,
+    };
+    let sel = Selection::new_char(anchor.row, anchor.col, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(1),
+        col: 1,
+        side: Side::Right,
+    };
+    input.selection = Some(FrameSelection::new(&sel, 0));
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+
+    // Row 0: A(norm) B(norm) C(sel) D(sel).
+    let a = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let b = nth_instance(frame.backgrounds.as_bytes(), 1);
+    let c = nth_instance(frame.backgrounds.as_bytes(), 2);
+    let d = nth_instance(frame.backgrounds.as_bytes(), 3);
+    assert_eq!(a.bg_color, normal_bg, "A should be normal");
+    assert_eq!(b.bg_color, normal_bg, "B should be normal");
+    assert_eq!(c.bg_color, selected_bg, "C should be selected");
+    assert_eq!(d.bg_color, selected_bg, "D should be selected");
+
+    // Row 1: E(sel) F(sel) G(norm) H(norm).
+    let e = nth_instance(frame.backgrounds.as_bytes(), 4);
+    let f = nth_instance(frame.backgrounds.as_bytes(), 5);
+    let g = nth_instance(frame.backgrounds.as_bytes(), 6);
+    let h = nth_instance(frame.backgrounds.as_bytes(), 7);
+    assert_eq!(
+        e.bg_color, selected_bg,
+        "E should be selected (wrap continues)"
+    );
+    assert_eq!(f.bg_color, selected_bg, "F should be selected");
+    assert_eq!(g.bg_color, normal_bg, "G should be normal");
+    assert_eq!(h.bg_color, normal_bg, "H should be normal");
+}
+
+#[test]
+fn selection_block_cursor_skips_inversion() {
+    use oriterm_core::RenderableCell;
+
+    // 3x1 grid: "ABC". Select all three columns. Visible block cursor at col 1.
+    // Col 1 should NOT be inverted (cursor overlay dominates).
+    let fg = Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    };
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    let cells = vec![
+        RenderableCell {
+            line: 0,
+            column: Column(0),
+            ch: 'A',
+            fg,
+            bg,
+            flags: CellFlags::empty(),
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(1),
+            ch: 'B',
+            fg,
+            bg,
+            flags: CellFlags::empty(),
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+        RenderableCell {
+            line: 0,
+            column: Column(2),
+            ch: 'C',
+            fg,
+            bg,
+            flags: CellFlags::empty(),
+            underline_color: None,
+            zerowidth: Vec::new(),
+        },
+    ];
+
+    let mut input = FrameInput::test_grid(3, 1, "");
+    input.content.cells = cells;
+    // Visible block cursor at col 1.
+    input.content.cursor.visible = true;
+    input.content.cursor.shape = CursorShape::Block;
+    input.content.cursor.line = 0;
+    input.content.cursor.column = Column(1);
+
+    input.selection = Some(selection_range(0, 0, 2));
+
+    let atlas = atlas_with(&['A', 'B', 'C']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(fg);
+    let normal_bg = rgb_f32(bg);
+
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
+
+    assert_eq!(bg0.bg_color, selected_bg, "A should be selected");
+    assert_eq!(
+        bg1.bg_color, normal_bg,
+        "B at cursor should NOT be inverted"
+    );
+    assert_eq!(bg2.bg_color, selected_bg, "C should be selected");
+}
+
+#[test]
+fn selection_inverse_cell_uses_palette_defaults() {
+    use oriterm_core::RenderableCell;
+
+    // A cell with INVERSE flag already has fg/bg swapped by the renderable layer.
+    // Selection on this cell should use palette defaults, not double-swap.
+    let fg = Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    };
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    // INVERSE cell: renderable layer already swapped fg↔bg.
+    let cells = vec![RenderableCell {
+        line: 0,
+        column: Column(0),
+        ch: 'A',
+        fg: bg, // Swapped by renderable layer.
+        bg: fg, // Swapped by renderable layer.
+        flags: CellFlags::INVERSE,
+        underline_color: None,
+        zerowidth: Vec::new(),
+    }];
+
+    let mut input = FrameInput::test_grid(1, 1, "");
+    input.content.cells = cells;
+    input.content.cursor.visible = false;
+    input.selection = Some(selection_range(0, 0, 0));
+
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // INVERSE + selected: should use palette defaults (bg=foreground, fg=background).
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let fg0 = nth_instance(frame.glyphs.as_bytes(), 0);
+
+    let palette_fg = rgb_f32(fg);
+    let palette_bg = rgb_f32(bg);
+
+    assert_eq!(
+        bg0.bg_color, palette_fg,
+        "INVERSE selected bg should be palette foreground"
+    );
+    assert_eq!(
+        fg0.fg_color, palette_bg,
+        "INVERSE selected fg should be palette background"
+    );
+}
+
+#[test]
+fn selection_fg_eq_bg_falls_back_to_palette() {
+    use oriterm_core::RenderableCell;
+
+    // A cell where fg == bg (e.g., both red). Naive inversion would keep them
+    // equal, making text invisible. Should fall back to palette defaults.
+    let red = Rgb {
+        r: 200,
+        g: 50,
+        b: 50,
+    };
+
+    let cells = vec![RenderableCell {
+        line: 0,
+        column: Column(0),
+        ch: 'X',
+        fg: red,
+        bg: red,
+        flags: CellFlags::empty(),
+        underline_color: None,
+        zerowidth: Vec::new(),
+    }];
+
+    let mut input = FrameInput::test_grid(1, 1, "");
+    input.content.cells = cells;
+    input.content.cursor.visible = false;
+    input.selection = Some(selection_range(0, 0, 0));
+
+    let atlas = atlas_with(&['X']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // fg==bg swap still produces fg==bg. Should fall back to palette defaults.
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let fg0 = nth_instance(frame.glyphs.as_bytes(), 0);
+
+    let palette_fg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+    let palette_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+
+    assert_eq!(
+        bg0.bg_color, palette_fg,
+        "fg==bg selected should fall back to palette fg as bg"
+    );
+    assert_eq!(
+        fg0.fg_color, palette_bg,
+        "fg==bg selected should fall back to palette bg as fg"
+    );
+}
+
+#[test]
+fn selection_hidden_cell_stays_invisible() {
+    use oriterm_core::RenderableCell;
+
+    // A HIDDEN (SGR 8) cell where fg == bg intentionally hides text.
+    // Selection should NOT reveal it — the fg==bg fallback should be skipped.
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+
+    let cells = vec![RenderableCell {
+        line: 0,
+        column: Column(0),
+        ch: 'S',
+        fg: bg, // Hidden: fg set to bg.
+        bg,
+        flags: CellFlags::HIDDEN,
+        underline_color: None,
+        zerowidth: Vec::new(),
+    }];
+
+    let mut input = FrameInput::test_grid(1, 1, "");
+    input.content.cells = cells;
+    input.content.cursor.visible = false;
+    input.selection = Some(selection_range(0, 0, 0));
+
+    let atlas = atlas_with(&['S']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // HIDDEN + selected: swap produces fg==bg, but HIDDEN guard skips fallback.
+    // Result: sel_fg = cell.bg = black, sel_bg = cell.fg = black → both black.
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let fg0 = nth_instance(frame.glyphs.as_bytes(), 0);
+
+    assert_eq!(
+        bg0.bg_color, fg0.fg_color,
+        "HIDDEN cell should remain invisible when selected"
+    );
+}
+
+#[test]
+fn selection_underline_cursor_does_not_skip_inversion() {
+    // Non-block cursors (underline, beam) should NOT prevent selection inversion.
+    let mut input = FrameInput::test_grid(2, 1, "AB");
+    let atlas = atlas_with(&['A', 'B']);
+
+    // Visible underline cursor at col 0.
+    input.content.cursor.visible = true;
+    input.content.cursor.shape = CursorShape::Underline;
+    input.content.cursor.line = 0;
+    input.content.cursor.column = Column(0);
+
+    input.selection = Some(selection_range(0, 0, 0));
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let selected_bg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(
+        bg0.bg_color, selected_bg,
+        "underline cursor should not block selection inversion"
+    );
 }

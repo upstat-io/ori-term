@@ -219,6 +219,7 @@ impl<T: EventListener> Term<T> {
                 visible: false,
             },
             display_offset: 0,
+            stable_row_base: 0,
             mode: TermMode::empty(),
             all_dirty: false,
             damage: Vec::new(),
@@ -311,6 +312,8 @@ impl<T: EventListener> Term<T> {
 
         let (all_dirty, damage) = collect_damage(grid, lines, cols);
         out.display_offset = offset;
+        let base_abs = grid.scrollback().len().saturating_sub(offset);
+        out.stable_row_base = grid.total_evicted() as u64 + base_abs as u64;
         out.mode = self.mode;
         out.all_dirty = all_dirty;
         out.damage = damage;

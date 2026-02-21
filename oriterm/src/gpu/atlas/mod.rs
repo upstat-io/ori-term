@@ -122,7 +122,8 @@ impl GlyphAtlas {
     pub fn new(device: &Device, format: GlyphFormat) -> Self {
         let tex_format = match format {
             GlyphFormat::Alpha => TextureFormat::R8Unorm,
-            _ => TextureFormat::Rgba8Unorm,
+            GlyphFormat::Color => TextureFormat::Rgba8UnormSrgb,
+            _ => TextureFormat::Rgba8Unorm, // subpixel masks are linear
         };
         let (texture, view) = create_texture_array(device, PAGE_SIZE, MAX_PAGES, tex_format);
 

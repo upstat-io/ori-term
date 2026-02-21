@@ -73,6 +73,11 @@ pub struct RenderableContent {
     pub cursor: RenderableCursor,
     /// How far scrolled back into history (0 = live view).
     pub display_offset: usize,
+    /// Stable row index of viewport line 0.
+    ///
+    /// Enables converting viewport line numbers to `StableRowIndex` values
+    /// without holding the terminal lock: `StableRowIndex(stable_row_base + line)`.
+    pub stable_row_base: u64,
     /// Terminal mode flags snapshot.
     pub mode: TermMode,
     /// Whether the entire viewport needs redrawing.
@@ -91,6 +96,7 @@ impl RenderableContent {
         self.cells.clear();
         self.damage.clear();
         self.display_offset = 0;
+        self.stable_row_base = 0;
         self.mode = TermMode::empty();
         self.all_dirty = false;
         self.cursor = RenderableCursor {

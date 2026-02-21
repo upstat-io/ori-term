@@ -17,12 +17,28 @@ pub(crate) mod transparency;
 
 // Re-exports consumed by App and Window.
 pub(crate) use extract::{extract_frame, extract_frame_into};
-pub(crate) use frame_input::{FrameInput, ViewportSize};
+pub(crate) use frame_input::{FrameInput, FrameSelection, ViewportSize};
 pub(crate) use renderer::{GpuRenderer, SurfaceError};
 pub(crate) use state::GpuState;
 pub(crate) use transparency::apply_transparency;
 
+/// Decode a single sRGB byte (0–255) to a linear-light `f32` (0.0–1.0).
+///
+/// Uses the IEC 61966-2-1 piecewise transfer function. Values at or below
+/// the 0.04045 threshold are scaled linearly; above it the standard 2.4
+/// power curve is applied.
+pub(crate) fn srgb_to_linear(srgb_byte: u8) -> f32 {
+    let s = f32::from(srgb_byte) / 255.0;
+    if s <= 0.04045 {
+        s / 12.92
+    } else {
+        ((s + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 #[cfg(test)]
 mod pipeline_tests;
+#[cfg(test)]
+mod tests;
 #[cfg(all(test, feature = "gpu-tests"))]
 mod visual_regression;

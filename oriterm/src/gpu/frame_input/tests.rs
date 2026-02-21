@@ -28,6 +28,7 @@ fn empty_content() -> RenderableContent {
             visible: true,
         },
         display_offset: 0,
+        stable_row_base: 0,
         mode: TermMode::empty(),
         all_dirty: true,
         damage: Vec::new(),
@@ -205,4 +206,65 @@ fn test_grid_has_debug() {
     // FrameInput derives Debug — verify it doesn't panic.
     let debug = format!("{input:?}");
     assert!(debug.contains("FrameInput"));
+}
+
+// --- FrameSelection ---
+
+#[test]
+fn frame_selection_contains_viewport_line_zero() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    // Selection covering cols 2..5 on stable row 10.
+    let sel = Selection::new_char(StableRowIndex(10), 2, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(10),
+        col: 5,
+        side: Side::Right,
+    };
+
+    // Viewport line 0 maps to stable row 10 (base = 10).
+    let fs = FrameSelection::new(&sel, 10);
+    assert!(
+        fs.contains(0, 3),
+        "col 3 on viewport line 0 should be selected"
+    );
+    assert!(!fs.contains(0, 1), "col 1 should not be selected");
+    assert!(
+        !fs.contains(1, 3),
+        "viewport line 1 (stable 11) should not be selected"
+    );
+}
+
+#[test]
+fn frame_selection_with_scrollback_offset() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    // Selection on stable row 50.
+    let sel = Selection::new_char(StableRowIndex(50), 0, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(50),
+        col: 10,
+        side: Side::Right,
+    };
+
+    // base=45 means viewport line 5 = stable row 50.
+    let fs = FrameSelection::new(&sel, 45);
+    assert!(
+        !fs.contains(4, 5),
+        "viewport line 4 (stable 49) should not be selected"
+    );
+    assert!(
+        fs.contains(5, 5),
+        "viewport line 5 (stable 50) should be selected"
+    );
+    assert!(
+        !fs.contains(6, 5),
+        "viewport line 6 (stable 51) should not be selected"
+    );
 }

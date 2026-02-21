@@ -10,6 +10,7 @@ use oriterm_core::Rgb;
 
 use super::frame_input::ViewportSize;
 use super::instance_writer::InstanceWriter;
+use super::srgb_to_linear;
 
 /// GPU-ready frame data produced by the Prepare phase.
 ///
@@ -116,13 +117,13 @@ impl PreparedFrame {
 
 /// Convert an `Rgb` + opacity to the `[f64; 4]` wgpu expects for clear color.
 ///
-/// The color is premultiplied: each channel is scaled by opacity so the
-/// compositor blends correctly with `PreMultiplied` alpha mode.
+/// Each sRGB byte is decoded via [`srgb_to_linear`] before premultiplication
+/// so the clear color is truly linear for the `*Srgb` render target.
 fn rgb_to_clear(c: Rgb, opacity: f64) -> [f64; 4] {
     [
-        f64::from(c.r) / 255.0 * opacity,
-        f64::from(c.g) / 255.0 * opacity,
-        f64::from(c.b) / 255.0 * opacity,
+        f64::from(srgb_to_linear(c.r)) * opacity,
+        f64::from(srgb_to_linear(c.g)) * opacity,
+        f64::from(srgb_to_linear(c.b)) * opacity,
         opacity,
     ]
 }
