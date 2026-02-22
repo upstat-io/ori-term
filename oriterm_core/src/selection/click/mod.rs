@@ -39,7 +39,11 @@ impl ClickDetector {
     /// (Word selection), 3 for triple click (Line selection). The fourth
     /// rapid click resets to 1.
     pub fn click(&mut self, col: usize, row: usize) -> u8 {
-        let now = Instant::now();
+        self.click_at(col, row, Instant::now())
+    }
+
+    /// Register a click with an explicit timestamp (for deterministic testing).
+    pub(crate) fn click_at(&mut self, col: usize, row: usize, now: Instant) -> u8 {
         let same_pos = self.last_pos == Some((col, row));
         let within_time = self
             .last_time

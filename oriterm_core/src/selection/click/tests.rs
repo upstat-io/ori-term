@@ -1,7 +1,6 @@
 //! Tests for ClickDetector multi-click detection.
 
-use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::ClickDetector;
 
@@ -41,10 +40,10 @@ fn different_row_resets_to_one() {
 #[test]
 fn expired_time_window_resets_to_one() {
     let mut d = ClickDetector::new();
-    assert_eq!(d.click(5, 10), 1);
-    // Wait beyond the 500ms threshold.
-    thread::sleep(Duration::from_millis(550));
-    assert_eq!(d.click(5, 10), 1);
+    let t0 = Instant::now();
+    assert_eq!(d.click_at(5, 10, t0), 1);
+    // 550ms > 500ms threshold — resets.
+    assert_eq!(d.click_at(5, 10, t0 + Duration::from_millis(550)), 1);
 }
 
 #[test]
@@ -78,10 +77,10 @@ fn triple_click_then_different_position() {
 #[test]
 fn click_just_within_threshold_counts_as_multi() {
     let mut d = ClickDetector::new();
-    assert_eq!(d.click(3, 7), 1);
+    let t0 = Instant::now();
+    assert_eq!(d.click_at(3, 7, t0), 1);
     // 450ms < 500ms threshold — should still count.
-    thread::sleep(Duration::from_millis(450));
-    assert_eq!(d.click(3, 7), 2);
+    assert_eq!(d.click_at(3, 7, t0 + Duration::from_millis(450)), 2);
 }
 
 #[test]

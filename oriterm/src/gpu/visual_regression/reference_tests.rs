@@ -9,9 +9,11 @@ use oriterm_core::CellFlags;
 use crate::font::GlyphFormat;
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 
+use crate::font::HintingMode;
+
 use super::{
     TEST_DPI, TEST_FONT_SIZE_PT, compare_with_reference, headless_env, headless_env_full,
-    render_to_pixels,
+    headless_env_with_hinting, render_to_pixels,
 };
 
 /// Set a cell as a wide character with its trailing spacer.
@@ -334,6 +336,74 @@ fn mixed_styles() {
 
     let pixels = render_to_pixels(&gpu, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("mixed_styles", &pixels, w, h) {
+        panic!("visual regression: {msg}");
+    }
+}
+
+/// Hinting visibly changes pixel patterns by snapping outlines to the grid.
+///
+/// Renders the same reference string with `HintingMode::Full` and
+/// `HintingMode::None`, asserts the outputs differ, and saves the hinted
+/// version as a golden image for regression tracking.
+#[test]
+fn hinted_vs_unhinted() {
+    let Some((gpu_hint, mut renderer_hint)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let Some((gpu_none, mut renderer_none)) = headless_env_with_hinting(
+        TEST_FONT_SIZE_PT,
+        TEST_DPI,
+        GlyphFormat::Alpha,
+        HintingMode::None,
+    ) else {
+        eprintln!("skipped: no GPU adapter available for unhinted env");
+        return;
+    };
+
+    let cell_hint = renderer_hint.cell_metrics();
+    let cell_none = renderer_none.cell_metrics();
+    let text = "The quick brown fox jumps over the lazy dog 0123456789";
+    let cols = text.len();
+    let rows = 1;
+
+    // Hinted render.
+    let w_h = (cell_hint.width * cols as f32).ceil() as u32;
+    let h_h = (cell_hint.height * rows as f32).ceil() as u32;
+    let mut input_h = FrameInput::test_grid(cols, rows, text);
+    input_h.viewport = ViewportSize::new(w_h, h_h);
+    input_h.cell_size = cell_hint;
+    input_h.content.cursor.visible = false;
+    let pixels_hinted = render_to_pixels(&gpu_hint, &mut renderer_hint, &input_h);
+
+    // Unhinted render.
+    let w_n = (cell_none.width * cols as f32).ceil() as u32;
+    let h_n = (cell_none.height * rows as f32).ceil() as u32;
+    let mut input_n = FrameInput::test_grid(cols, rows, text);
+    input_n.viewport = ViewportSize::new(w_n, h_n);
+    input_n.cell_size = cell_none;
+    input_n.content.cursor.visible = false;
+    let pixels_unhinted = render_to_pixels(&gpu_none, &mut renderer_none, &input_n);
+
+    // Both should render non-empty output.
+    assert!(
+        pixels_hinted.iter().any(|&b| b > 0),
+        "hinted render should not be all zeros",
+    );
+    assert!(
+        pixels_unhinted.iter().any(|&b| b > 0),
+        "unhinted render should not be all zeros",
+    );
+
+    // Hinting snaps outlines to the pixel grid, producing different rasterization
+    // patterns than unhinted rendering which preserves outline shape.
+    assert_ne!(
+        pixels_hinted, pixels_unhinted,
+        "hinted and unhinted renders should differ",
+    );
+
+    // Save hinted render as golden image for regression tracking.
+    if let Err(msg) = compare_with_reference("hinted_full", &pixels_hinted, w_h, h_h) {
         panic!("visual regression: {msg}");
     }
 }
