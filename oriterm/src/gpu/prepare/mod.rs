@@ -15,7 +15,7 @@ pub(crate) mod shaped_frame;
 use oriterm_core::{CellFlags, Column, CursorShape, RenderableCell, RenderableCursor, Rgb};
 
 use super::atlas::{AtlasEntry, AtlasKind};
-use super::frame_input::{FrameInput, FramePalette, FrameSelection};
+use super::frame_input::{FrameInput, FramePalette, FrameSelection, MarkCursorOverride};
 use super::prepared_frame::PreparedFrame;
 use crate::font::{FontRealm, GlyphStyle, RasterKey, ShapedGlyph, subpx_bin, subpx_offset};
 use crate::gpu::instance_writer::ScreenRect;
@@ -39,6 +39,26 @@ pub trait AtlasLookup {
 
     /// Look up a cached glyph entry by [`RasterKey`] (shaped path).
     fn lookup_key(&self, key: RasterKey) -> Option<&AtlasEntry>;
+}
+
+/// Resolve the effective cursor for rendering.
+///
+/// When mark mode is active (`mark_cursor` is `Some`), the override replaces
+/// the terminal cursor's position and shape. Otherwise the extracted terminal
+/// cursor is used as-is.
+fn resolve_cursor(
+    content_cursor: &RenderableCursor,
+    mark: Option<&MarkCursorOverride>,
+) -> RenderableCursor {
+    match mark {
+        Some(mc) => RenderableCursor {
+            line: mc.line,
+            column: mc.column,
+            shape: mc.shape,
+            visible: true,
+        },
+        None => *content_cursor,
+    }
 }
 
 /// Convert cell flags to the corresponding glyph style.
@@ -219,7 +239,7 @@ fn fill_frame(
     let baseline = input.cell_size.baseline;
     let (ox, oy) = origin;
     let sel = input.selection.as_ref();
-    let cursor = &input.content.cursor;
+    let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
     for cell in &input.content.cells {
         // Wide char spacers are handled by the primary wide char cell.
@@ -231,7 +251,8 @@ fn fill_frame(
         let x = ox + col as f32 * cw;
         let y = oy + cell.line as f32 * ch;
 
-        let (fg, bg) = resolve_cell_colors(cell, sel, cursor, cursor_blink_visible, &input.palette);
+        let (fg, bg) =
+            resolve_cell_colors(cell, sel, &cursor, cursor_blink_visible, &input.palette);
 
         // Background: wide chars span 2 cell widths.
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
@@ -325,7 +346,7 @@ fn fill_frame_shaped(
     let baseline = input.cell_size.baseline;
     let (ox, oy) = origin;
     let sel = input.selection.as_ref();
-    let cursor = &input.content.cursor;
+    let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
     for cell in &input.content.cells {
         if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
@@ -337,7 +358,8 @@ fn fill_frame_shaped(
         let x = ox + col as f32 * cw;
         let y = oy + row as f32 * ch;
 
-        let (fg, bg) = resolve_cell_colors(cell, sel, cursor, cursor_blink_visible, &input.palette);
+        let (fg, bg) =
+            resolve_cell_colors(cell, sel, &cursor, cursor_blink_visible, &input.palette);
 
         // Background (identical to unshaped path).
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
@@ -464,7 +486,7 @@ impl GlyphEmitter<'_> {
         bg: Rgb,
     ) {
         let mut is_first = true;
-        for sg in &row_glyphs[start_idx..] {
+        for sg in row_glyphs.get(start_idx..).unwrap_or_default() {
             // Stop at the first glyph in a different column (combining marks are contiguous).
             if !is_first && sg.col_start != col {
                 break;

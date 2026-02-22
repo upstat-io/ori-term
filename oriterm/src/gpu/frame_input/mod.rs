@@ -7,7 +7,7 @@
 
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::selection::{Selection, SelectionBounds};
-use oriterm_core::{RenderableContent, Rgb};
+use oriterm_core::{Column, CursorShape, RenderableContent, Rgb};
 
 use crate::font::CellMetrics;
 
@@ -42,6 +42,22 @@ impl FrameSelection {
         let stable = StableRowIndex(self.base_stable + viewport_line as u64);
         self.bounds.contains(stable, col)
     }
+}
+
+/// Mark-mode cursor override for the Prepare phase.
+///
+/// When mark mode is active, the app sets this on [`FrameInput`] so the
+/// Prepare phase renders a hollow block at the mark position instead of
+/// the terminal's real cursor. The extract snapshot (`content.cursor`)
+/// is never mutated — this override is a separate rendering concern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkCursorOverride {
+    /// Viewport line (0 = top of visible area).
+    pub line: usize,
+    /// Column (0-based).
+    pub column: Column,
+    /// Cursor shape to render (always `HollowBlock` for mark mode).
+    pub shape: CursorShape,
 }
 
 /// Pixel dimensions of the viewport.
@@ -108,6 +124,12 @@ pub struct FrameInput {
     /// `(viewport_line, column)`. Set from mouse state after extraction;
     /// `None` when the cursor is outside the grid.
     pub hovered_cell: Option<(usize, usize)>,
+    /// Mark-mode cursor override.
+    ///
+    /// When set, the Prepare phase renders this cursor instead of
+    /// `content.cursor`. Set by the app layer after extraction when mark
+    /// mode is active; the extracted content is never mutated.
+    pub mark_cursor: Option<MarkCursorOverride>,
 }
 
 impl FrameInput {
@@ -196,6 +218,7 @@ impl FrameInput {
             selection: None,
             search_matches: Vec::new(),
             hovered_cell: None,
+            mark_cursor: None,
         }
     }
 }
