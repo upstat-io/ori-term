@@ -1147,6 +1147,162 @@ fn kitty_true_multi_char_sends_text() {
     assert_eq!(r, b"ae");
 }
 
+// ==================== Kitty: associated text (REPORT_ASSOCIATED_TEXT) ====================
+
+fn kitty_report_text() -> TermMode {
+    TermMode::default() | TermMode::REPORT_ALL_KEYS_AS_ESC | TermMode::REPORT_ASSOCIATED_TEXT
+}
+
+fn kitty_report_text_events() -> TermMode {
+    kitty_report_text() | TermMode::REPORT_EVENT_TYPES
+}
+
+#[test]
+fn kitty_text_plain_char() {
+    // 'a' with associated text → CSI u with text codepoint.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text(),
+        "a",
+    );
+    assert_eq!(r, b"\x1b[97;1;97u");
+}
+
+#[test]
+fn kitty_text_shift_a() {
+    // Shift+a produces 'A' (codepoint 65).
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::SHIFT,
+        kitty_report_text(),
+        "A",
+    );
+    assert_eq!(r, b"\x1b[97;2;65u");
+}
+
+#[test]
+fn kitty_text_ctrl_a_no_text() {
+    // Ctrl+a produces control code → text filtered out, no text suffix.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::CONTROL,
+        kitty_report_text(),
+        "\x01",
+    );
+    assert_eq!(r, b"\x1b[97;5u");
+}
+
+#[test]
+fn kitty_text_named_key_no_text() {
+    // Named keys (Enter) have no associated text.
+    let r = enc(
+        Key::Named(NamedKey::Enter),
+        Modifiers::empty(),
+        kitty_report_text(),
+    );
+    assert_eq!(r, b"\x1b[13u");
+}
+
+#[test]
+fn kitty_text_release_no_text() {
+    // Release events never include associated text.
+    let r = enc_event(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text_events(),
+        Some("a"),
+        KeyEventType::Release,
+    );
+    assert_eq!(r, b"\x1b[97;1:3u");
+}
+
+#[test]
+fn kitty_text_repeat_includes_text() {
+    // Repeat events include associated text.
+    let r = enc_event(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text_events(),
+        Some("a"),
+        KeyEventType::Repeat,
+    );
+    assert_eq!(r, b"\x1b[97;1:2;97u");
+}
+
+#[test]
+fn kitty_text_multi_codepoint() {
+    // Multi-codepoint text uses colon separators.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text(),
+        "ab",
+    );
+    assert_eq!(r, b"\x1b[97;1;97:98u");
+}
+
+#[test]
+fn kitty_text_filters_control_chars() {
+    // Control characters in text are filtered; remaining chars kept.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text(),
+        "a\nb",
+    );
+    // \n (0x0A) filtered out, leaves 'a' (97) and 'b' (98).
+    assert_eq!(r, b"\x1b[97;1;97:98u");
+}
+
+#[test]
+fn kitty_text_all_control_no_text_suffix() {
+    // If all text chars are control codes, no text suffix emitted.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text(),
+        "\x01\x02",
+    );
+    assert_eq!(r, b"\x1b[97u");
+}
+
+#[test]
+fn kitty_text_non_ascii() {
+    // Non-ASCII codepoint (e.g. U+00E5 = 229 = 'å').
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text(),
+        "\u{00E5}",
+    );
+    assert_eq!(r, b"\x1b[97;1;229u");
+}
+
+#[test]
+fn kitty_text_without_flag_no_text() {
+    // Without REPORT_ASSOCIATED_TEXT, text is not included even if present.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_all(),
+        "a",
+    );
+    assert_eq!(r, b"\x1b[97u");
+}
+
+#[test]
+fn kitty_text_bypasses_plain_text_passthrough() {
+    // With REPORT_ASSOCIATED_TEXT, plain printable chars still get CSI u encoding.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        TermMode::default() | TermMode::DISAMBIGUATE_ESC_CODES | TermMode::REPORT_ASSOCIATED_TEXT,
+        "a",
+    );
+    assert_eq!(r, b"\x1b[97;1;97u");
+}
+
 // ==================== Ctrl+/ and Ctrl+@ edge cases ====================
 
 #[test]

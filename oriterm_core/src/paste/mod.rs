@@ -131,13 +131,13 @@ pub fn prepare_paste(text: &str, bracketed: bool, filter: bool) -> Vec<u8> {
 ///
 /// Paths containing spaces are wrapped in double quotes. Multiple paths
 /// are space-separated.
-pub fn format_dropped_paths(paths: &[&Path]) -> String {
+pub fn format_dropped_paths<P: AsRef<Path>>(paths: &[P]) -> String {
     let mut out = String::new();
     for (i, path) in paths.iter().enumerate() {
         if i > 0 {
             out.push(' ');
         }
-        let s = path.display().to_string();
+        let s = path.as_ref().display().to_string();
         if s.contains(' ') {
             out.push('"');
             out.push_str(&s);
