@@ -112,6 +112,7 @@ fn frame_input_grid_dimensions() {
         palette: test_palette(),
         selection: None,
         search_matches: Vec::new(),
+        hovered_cell: None,
     };
 
     assert_eq!(input.columns(), 100);
@@ -130,6 +131,7 @@ fn frame_input_needs_full_repaint() {
         palette: test_palette(),
         selection: None,
         search_matches: Vec::new(),
+        hovered_cell: None,
     };
 
     assert!(input.needs_full_repaint());
@@ -147,6 +149,7 @@ fn frame_input_incremental_repaint() {
         palette: test_palette(),
         selection: None,
         search_matches: Vec::new(),
+        hovered_cell: None,
     };
 
     assert!(!input.needs_full_repaint());
@@ -206,6 +209,14 @@ fn test_grid_has_debug() {
     // FrameInput derives Debug — verify it doesn't panic.
     let debug = format!("{input:?}");
     assert!(debug.contains("FrameInput"));
+}
+
+// --- hovered_cell ---
+
+#[test]
+fn hovered_cell_defaults_to_none() {
+    let input = FrameInput::test_grid(4, 2, "");
+    assert_eq!(input.hovered_cell, None);
 }
 
 // --- FrameSelection ---

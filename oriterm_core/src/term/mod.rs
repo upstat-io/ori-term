@@ -277,12 +277,13 @@ impl<T: EventListener> Term<T> {
                 let bg = renderable::resolve_bg(cell.bg, palette);
                 let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
 
-                let (underline_color, zerowidth) = match cell.extra.as_ref() {
+                let (underline_color, has_hyperlink, zerowidth) = match cell.extra.as_ref() {
                     Some(e) => (
                         e.underline_color.map(|c| palette.resolve(c)),
+                        e.hyperlink.is_some(),
                         e.zerowidth.clone(),
                     ),
-                    None => (None, Vec::new()),
+                    None => (None, false, Vec::new()),
                 };
 
                 out.cells.push(RenderableCell {
@@ -293,6 +294,7 @@ impl<T: EventListener> Term<T> {
                     bg,
                     flags: cell.flags,
                     underline_color,
+                    has_hyperlink,
                     zerowidth,
                 });
             }

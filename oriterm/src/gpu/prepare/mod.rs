@@ -250,6 +250,7 @@ fn fill_frame(
             1.0,
         );
 
+        let is_hovered = input.hovered_cell == Some((cell.line, col));
         decorations::DecorationContext {
             backgrounds: &mut frame.backgrounds,
             glyphs: &mut frame.glyphs,
@@ -257,7 +258,16 @@ fn fill_frame(
             size_q6: 0,
             metrics: &input.cell_size,
         }
-        .draw(cell.flags, cell.underline_color, fg, x, y, bg_w);
+        .draw(
+            cell.flags,
+            cell.underline_color,
+            fg,
+            x,
+            y,
+            bg_w,
+            cell.has_hyperlink,
+            is_hovered,
+        );
 
         // Foreground glyph (skip spaces).
         if cell.ch != ' ' {
@@ -346,6 +356,7 @@ fn fill_frame_shaped(
             1.0,
         );
 
+        let is_hovered = input.hovered_cell == Some((row, col));
         decorations::DecorationContext {
             backgrounds: &mut frame.backgrounds,
             glyphs: &mut frame.glyphs,
@@ -353,7 +364,16 @@ fn fill_frame_shaped(
             size_q6: shaped.size_q6(),
             metrics: &input.cell_size,
         }
-        .draw(cell.flags, cell.underline_color, fg, x, y, bg_w);
+        .draw(
+            cell.flags,
+            cell.underline_color,
+            fg,
+            x,
+            y,
+            bg_w,
+            cell.has_hyperlink,
+            is_hovered,
+        );
 
         // Built-in geometric glyphs: bypass shaping, render from atlas.
         if crate::font::is_builtin(cell.ch) {

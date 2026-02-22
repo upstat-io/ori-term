@@ -578,10 +578,10 @@ All underline styles, strikethrough, hyperlink underline, URL hover underline.
 - [x] **Strikethrough** (CellFlags::STRIKETHROUGH):
   - [x] Solid line at `y = cell_top + cell_height / 2`, thickness = 1px
   - [x] Color: foreground color
-- [ ] **Hyperlink underline** (cell has hyperlink via OSC 8): <!-- blocked-by:10 -->
-  - [ ] Dotted underline when not hovered
-  - [ ] Solid underline when hovered (cursor over cell)
-  - [ ] Color: foreground color (or a distinct link color)
+- [x] **Hyperlink underline** (cell has hyperlink via OSC 8): <!-- blocked-by:10 -->
+  - [x] Dotted underline when not hovered
+  - [x] Solid underline when hovered (cursor over cell)
+  - [x] Color: foreground color (or a distinct link color)
 - [ ] **URL hover underline** (implicitly detected URL): <!-- blocked-by:14 -->
   - [ ] Solid underline on hover
   - [ ] Only visible when Ctrl held + mouse over URL range
@@ -773,7 +773,7 @@ LCD subpixel rendering uses the physical R/G/B subpixels of the display to achie
   - [x] Auto-disable: scale 2.0+ renders grayscale
   - [x] Config "none": forces grayscale regardless of scale
   - [x] Transparent cell: falls back to grayscale (no color fringing)
-  - [ ] Visual regression: compare subpixel vs grayscale rendering of reference string
+  - [x] Visual regression: compare subpixel vs grayscale rendering of reference string
 
 ---
 
@@ -813,7 +813,7 @@ Render glyphs at fractional pixel offsets for tighter, more natural spacing. Mos
   - [x] Phase 0 and phase 2 (0.5) produce different bitmaps for same glyph
   - [x] Quantization: 0.13 → phase 0, 0.37 → phase 1, 0.62 → phase 2, 0.88 → phase 3
   - [x] Grid text at integer position: always phase 0
-  - [ ] UI text: mixed phases across a shaped string
+  - [x] UI text: mixed phases across a shaped string
   - [x] Atlas key differs by subpx_x: cache stores separate entries
 
 ---

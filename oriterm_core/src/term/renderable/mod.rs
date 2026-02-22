@@ -32,6 +32,8 @@ pub struct RenderableCell {
     pub flags: CellFlags,
     /// Resolved underline color (if custom underline color is set).
     pub underline_color: Option<Rgb>,
+    /// Whether this cell has an OSC 8 hyperlink attached.
+    pub has_hyperlink: bool,
     /// Zero-width combining characters appended to this cell.
     pub zerowidth: Vec<char>,
 }

@@ -29,6 +29,13 @@ impl GpuRenderer {
     /// invalidates the glyph cache and atlases — cell metrics are unaffected
     /// because swash's `Metrics` API (used for cell dimensions) is independent
     /// of the hint flag.
+    ///
+    /// Prefer [`set_hinting_and_format`] when both change together (e.g.
+    /// scale factor change) to avoid a double clear-and-recache.
+    #[allow(
+        dead_code,
+        reason = "individual setter kept for single-property changes"
+    )]
     pub fn set_hinting_mode(&mut self, mode: HintingMode, gpu: &GpuState) {
         if !self.font_collection.set_hinting(mode) {
             return;
@@ -42,11 +49,36 @@ impl GpuRenderer {
     /// No-ops if the format is unchanged. Typically called once at startup
     /// after the display scale factor is known to enable LCD subpixel
     /// rendering on non-high-DPI displays.
+    ///
+    /// Prefer [`set_hinting_and_format`] when both change together (e.g.
+    /// scale factor change) to avoid a double clear-and-recache.
+    #[allow(
+        dead_code,
+        reason = "individual setter kept for single-property changes"
+    )]
     pub fn set_glyph_format(&mut self, format: GlyphFormat, gpu: &GpuState) {
         if !self.font_collection.set_format(format) {
             return;
         }
         self.clear_and_recache(gpu);
+    }
+
+    /// Change both hinting mode and glyph format, clearing atlases once.
+    ///
+    /// Used during scale factor changes where both settings typically change
+    /// together. Avoids the double clear-and-recache that would happen from
+    /// calling [`set_hinting_mode`] and [`set_glyph_format`] separately.
+    pub fn set_hinting_and_format(
+        &mut self,
+        mode: HintingMode,
+        format: GlyphFormat,
+        gpu: &GpuState,
+    ) {
+        let hinting_changed = self.font_collection.set_hinting(mode);
+        let format_changed = self.font_collection.set_format(format);
+        if hinting_changed || format_changed {
+            self.clear_and_recache(gpu);
+        }
     }
 
     /// Clear all atlases and empty-key set, then re-cache ASCII.

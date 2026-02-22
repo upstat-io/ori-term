@@ -35,16 +35,19 @@ pub(super) struct DecorationContext<'a> {
 impl DecorationContext<'_> {
     /// Emit underline and strikethrough decorations for a single cell.
     ///
-    /// Fast-path: returns immediately when no decoration flags are set.
-    /// Underlines and strikethrough are independent — both can coexist on
-    /// the same cell.
+    /// Fast-path: returns immediately when no decoration flags are set and
+    /// the cell has no hyperlink.
+    ///
+    /// Hyperlink underlines: cells with OSC 8 hyperlinks that lack an explicit
+    /// SGR underline get a dotted underline (solid when hovered). Explicit SGR
+    /// underlines take priority over the hyperlink decoration.
     ///
     /// Patterned underlines (curly, dotted, dashed) are emitted as glyph
     /// instances from the atlas. If the atlas entry is missing (e.g. in tests),
     /// falls back to per-pixel rect emission.
     #[expect(
         clippy::too_many_arguments,
-        reason = "per-cell decoration params: flags, colors, position, cell width"
+        reason = "per-cell decoration params: flags, colors, position, cell width, hyperlink state"
     )]
     pub(super) fn draw(
         &mut self,
@@ -54,19 +57,50 @@ impl DecorationContext<'_> {
         x: f32,
         y: f32,
         cell_width: f32,
+        has_hyperlink: bool,
+        is_hovered: bool,
     ) {
-        let has_underline = flags.intersects(CellFlags::ALL_UNDERLINES);
+        let has_explicit_underline = flags.intersects(CellFlags::ALL_UNDERLINES);
         let has_strikethrough = flags.contains(CellFlags::STRIKETHROUGH);
 
-        if !has_underline && !has_strikethrough {
+        if !has_explicit_underline && !has_strikethrough && !has_hyperlink {
             return;
         }
 
         let t = self.metrics.stroke_size;
+        let underline_y = y + self.metrics.baseline + self.metrics.underline_offset;
 
-        if has_underline {
+        // Hyperlink underline: dotted when idle, solid when hovered.
+        // Only emitted when the cell has no explicit SGR underline.
+        if has_hyperlink && !has_explicit_underline {
+            if is_hovered {
+                self.backgrounds.push_rect(
+                    ScreenRect {
+                        x,
+                        y: underline_y,
+                        w: cell_width,
+                        h: t,
+                    },
+                    fg,
+                    1.0,
+                );
+            } else {
+                // Dotted underline for non-hovered hyperlinks.
+                if !self.try_atlas_decoration(DOTTED_GLYPH_ID, fg, x, underline_y) {
+                    draw_dotted_underline_rects(
+                        self.backgrounds,
+                        fg,
+                        x,
+                        underline_y,
+                        cell_width,
+                        t,
+                    );
+                }
+            }
+        }
+
+        if has_explicit_underline {
             let color = underline_color.unwrap_or(fg);
-            let underline_y = y + self.metrics.baseline + self.metrics.underline_offset;
             self.draw_underline(flags, color, x, underline_y, cell_width, t);
         }
 

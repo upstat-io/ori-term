@@ -154,8 +154,8 @@ pub(super) fn encode_legacy(
         return encode_character(ch.as_str(), mods, text);
     }
 
-    // Unhandled key type.
-    Vec::new()
+    // Fallback: send the text as-is (handles Unidentified keys from RDP/IME).
+    text.map_or_else(Vec::new, |t| t.as_bytes().to_vec())
 }
 
 /// Encode simple named keys (Enter, Backspace, Tab, Escape, Space).

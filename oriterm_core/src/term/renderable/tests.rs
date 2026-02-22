@@ -1535,3 +1535,41 @@ fn combining_mark_at_wrap_pending_propagates_to_renderable() {
     assert_eq!(content.cursor.column, Column(10));
     assert_eq!(content.cursor.line, 0);
 }
+
+// --- Hyperlink presence ---
+
+#[test]
+fn cell_with_hyperlink_sets_has_hyperlink_true() {
+    use crate::cell::Hyperlink;
+
+    let mut t = term();
+    // Set hyperlink on cursor template, then print a character.
+    t.grid_mut()
+        .cursor_mut()
+        .template
+        .set_hyperlink(Some(Hyperlink {
+            id: None,
+            uri: "https://example.com".into(),
+        }));
+    t.grid_mut().put_char('L');
+
+    let content = t.renderable_content();
+    let cell = &content.cells[0];
+    assert_eq!(cell.ch, 'L');
+    assert!(
+        cell.has_hyperlink,
+        "cell with OSC 8 hyperlink should have has_hyperlink: true"
+    );
+}
+
+#[test]
+fn cell_without_hyperlink_has_hyperlink_false() {
+    let t = term();
+    let content = t.renderable_content();
+    for cell in &content.cells {
+        assert!(
+            !cell.has_hyperlink,
+            "default cells should have has_hyperlink: false"
+        );
+    }
+}

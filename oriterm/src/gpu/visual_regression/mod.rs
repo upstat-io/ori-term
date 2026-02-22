@@ -60,12 +60,21 @@ pub(super) fn headless_env() -> Option<(GpuState, GpuRenderer)> {
 
 /// Headless rendering environment with configurable font size and DPI.
 pub(super) fn headless_env_with_config(size_pt: f32, dpi: f32) -> Option<(GpuState, GpuRenderer)> {
+    headless_env_full(size_pt, dpi, GlyphFormat::Alpha)
+}
+
+/// Headless rendering environment with configurable font size, DPI, and glyph format.
+pub(super) fn headless_env_full(
+    size_pt: f32,
+    dpi: f32,
+    format: GlyphFormat,
+) -> Option<(GpuState, GpuRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
     let font_collection = FontCollection::new(
         FontSet::embedded(),
         size_pt,
         dpi,
-        GlyphFormat::Alpha,
+        format,
         TEST_FONT_WEIGHT,
         HintingMode::Full,
     )

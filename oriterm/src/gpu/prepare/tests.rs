@@ -2052,6 +2052,7 @@ fn selection_wide_char_highlights_both_cells() {
             bg,
             flags: CellFlags::WIDE_CHAR,
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2062,6 +2063,7 @@ fn selection_wide_char_highlights_both_cells() {
             bg,
             flags: CellFlags::WIDE_CHAR_SPACER,
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2072,6 +2074,7 @@ fn selection_wide_char_highlights_both_cells() {
             bg,
             flags: CellFlags::empty(),
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
     ];
@@ -2185,6 +2188,7 @@ fn selection_wide_char_spacer_only_highlights_both() {
             bg,
             flags: CellFlags::WIDE_CHAR,
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2195,6 +2199,7 @@ fn selection_wide_char_spacer_only_highlights_both() {
             bg,
             flags: CellFlags::WIDE_CHAR_SPACER,
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2205,6 +2210,7 @@ fn selection_wide_char_spacer_only_highlights_both() {
             bg,
             flags: CellFlags::empty(),
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
     ];
@@ -2314,6 +2320,7 @@ fn selection_block_cursor_skips_inversion() {
             bg,
             flags: CellFlags::empty(),
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2324,6 +2331,7 @@ fn selection_block_cursor_skips_inversion() {
             bg,
             flags: CellFlags::empty(),
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2334,6 +2342,7 @@ fn selection_block_cursor_skips_inversion() {
             bg,
             flags: CellFlags::empty(),
             underline_color: None,
+            has_hyperlink: false,
             zerowidth: Vec::new(),
         },
     ];
@@ -2388,6 +2397,7 @@ fn selection_inverse_cell_uses_palette_defaults() {
         bg: fg, // Swapped by renderable layer.
         flags: CellFlags::INVERSE,
         underline_color: None,
+        has_hyperlink: false,
         zerowidth: Vec::new(),
     }];
 
@@ -2436,6 +2446,7 @@ fn selection_fg_eq_bg_falls_back_to_palette() {
         bg: red,
         flags: CellFlags::empty(),
         underline_color: None,
+        has_hyperlink: false,
         zerowidth: Vec::new(),
     }];
 
@@ -2484,6 +2495,7 @@ fn selection_hidden_cell_stays_invisible() {
         bg,
         flags: CellFlags::HIDDEN,
         underline_color: None,
+        has_hyperlink: false,
         zerowidth: Vec::new(),
     }];
 
@@ -2584,4 +2596,90 @@ fn selection_underline_cursor_does_not_skip_inversion() {
         bg0.bg_color, selected_bg,
         "underline cursor should not block selection inversion"
     );
+}
+
+// ── Hyperlink underline tests ──
+
+/// Build a 1×1 hyperlink cell (no explicit underline flags).
+fn frame_with_hyperlink() -> FrameInput {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cells[0].has_hyperlink = true;
+    input.content.cursor.visible = false;
+    input
+}
+
+#[test]
+fn hyperlink_not_hovered_emits_dotted_underline() {
+    let input = frame_with_hyperlink();
+    let atlas = empty_atlas();
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Dotted underline fallback: cell_width=8, step_by(2) → 4 dots.
+    assert_eq!(
+        decoration_bg_count(&frame),
+        4,
+        "hyperlink (not hovered) should emit dotted underline rects",
+    );
+}
+
+#[test]
+fn hyperlink_hovered_emits_solid_underline() {
+    let mut input = frame_with_hyperlink();
+    input.hovered_cell = Some((0, 0));
+    let atlas = empty_atlas();
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Solid underline: 1 rect.
+    assert_eq!(
+        decoration_bg_count(&frame),
+        1,
+        "hyperlink (hovered) should emit single solid underline rect",
+    );
+
+    // Verify geometry matches a single underline.
+    let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ul.size, (8.0, 1.0));
+}
+
+#[test]
+fn hyperlink_hovered_uses_fg_color() {
+    let mut input = frame_with_hyperlink();
+    input.hovered_cell = Some((0, 0));
+    let fg = input.content.cells[0].fg;
+    let atlas = empty_atlas();
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let ul = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(ul.bg_color, rgb_f32(fg));
+}
+
+#[test]
+fn hyperlink_with_explicit_underline_uses_explicit_style() {
+    // When a cell has both a hyperlink and an explicit SGR underline,
+    // the explicit underline takes priority — no dotted link decoration.
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cells[0].has_hyperlink = true;
+    input.content.cells[0].flags = CellFlags::UNDERLINE;
+    input.content.cursor.visible = false;
+
+    let atlas = empty_atlas();
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Only the explicit single underline (1 rect), not the dotted link decoration.
+    assert_eq!(
+        decoration_bg_count(&frame),
+        1,
+        "explicit underline should override hyperlink decoration",
+    );
+}
+
+#[test]
+fn non_hyperlink_cell_no_extra_decorations() {
+    // Verify that a plain cell without hyperlink or underline flags produces
+    // no decoration instances — baseline sanity check.
+    let input = FrameInput::test_grid(1, 1, "A");
+    let atlas = empty_atlas();
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(decoration_bg_count(&frame), 0);
 }
