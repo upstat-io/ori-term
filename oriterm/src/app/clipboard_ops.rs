@@ -188,8 +188,7 @@ impl App {
             return;
         }
 
-        let refs: Vec<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
-        let text = paste::format_dropped_paths(&refs);
+        let text = paste::format_dropped_paths(paths);
         if text.is_empty() {
             return;
         }

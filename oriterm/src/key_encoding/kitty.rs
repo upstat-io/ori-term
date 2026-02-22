@@ -1,9 +1,11 @@
 //! Kitty keyboard protocol encoding (CSI u format).
 //!
 //! Progressive enhancement keyboard protocol for modern terminal applications.
-//! Encodes keys in `ESC [ codepoint ; modifiers [: event_type] u` format.
+//! Encodes keys in `ESC [ codepoint ; modifiers [: event_type] [; text] u` format.
 //! Mode flags control which information is reported, from basic disambiguation
-//! through full key release/repeat reporting.
+//! through full key release/repeat reporting and associated text.
+
+use std::fmt::Write;
 
 use winit::keyboard::{Key, NamedKey};
 
@@ -78,12 +80,13 @@ fn kitty_codepoint(key: NamedKey) -> Option<u32> {
 
 /// Encode a key event using the Kitty keyboard protocol (CSI u format).
 ///
-/// Format: `ESC [ codepoint ; modifiers [: event_type] u`
+/// Format: `ESC [ codepoint ; modifiers [: event_type] [; text] u`
 ///
 /// Returns an empty `Vec` for unhandled keys or suppressed release events.
 pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
     let report_all = input.mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC);
     let report_events = input.mode.contains(TermMode::REPORT_EVENT_TYPES);
+    let report_text = input.mode.contains(TermMode::REPORT_ASSOCIATED_TEXT);
 
     // Determine the codepoint.
     let codepoint = match input.key {
@@ -95,6 +98,7 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
             Some(cp) => {
                 // Printable char, no mods, normal press → send as plain text.
                 if should_send_as_text(cp, input.mods, report_all, report_events, input.event_type)
+                    && !report_text
                 {
                     return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
                 }
@@ -111,8 +115,15 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
         None => return Vec::new(), // Release without REPORT_EVENT_TYPES → suppress.
     };
 
+    // Resolve associated text (only for press/repeat, not release).
+    let text = if report_text && input.event_type != KeyEventType::Release {
+        input.text.and_then(encode_associated_text)
+    } else {
+        None
+    };
+
     // Build CSI u sequence.
-    build_csi_u(codepoint, input.mods, event_suffix)
+    build_csi_u(codepoint, input.mods, event_suffix, text.as_deref())
 }
 
 /// Extract the Unicode codepoint from a single-character string.
@@ -163,12 +174,36 @@ fn resolve_event_suffix(report_events: bool, event_type: KeyEventType) -> Option
     }
 }
 
-/// Build the final `ESC [ codepoint ; modifier [: event_type] u` sequence.
-fn build_csi_u(codepoint: u32, mods: Modifiers, event_suffix: &str) -> Vec<u8> {
+/// Encode associated text as colon-separated Unicode codepoints.
+///
+/// Filters out control characters (below U+0020 and DEL through U+009F).
+/// Returns `None` if no printable codepoints remain after filtering.
+fn encode_associated_text(text: &str) -> Option<String> {
+    let mut encoded = String::new();
+    for ch in text.chars() {
+        let cp = ch as u32;
+        if cp < 0x20 || (0x7f..=0x9f).contains(&cp) {
+            continue;
+        }
+        if !encoded.is_empty() {
+            encoded.push(':');
+        }
+        let _ = write!(encoded, "{cp}");
+    }
+    if encoded.is_empty() {
+        None
+    } else {
+        Some(encoded)
+    }
+}
+
+/// Build the final `ESC [ codepoint ; modifier [: event_type] [; text] u` sequence.
+fn build_csi_u(codepoint: u32, mods: Modifiers, event_suffix: &str, text: Option<&str>) -> Vec<u8> {
     let mod_param = mods.xterm_param();
-    if mod_param > 0 || !event_suffix.is_empty() {
+    if text.is_some() || mod_param > 0 || !event_suffix.is_empty() {
         let m = if mod_param > 0 { mod_param } else { 1 };
-        format!("\x1b[{codepoint};{m}{event_suffix}u").into_bytes()
+        let text_suffix = text.map_or(String::new(), |t| format!(";{t}"));
+        format!("\x1b[{codepoint};{m}{event_suffix}{text_suffix}u").into_bytes()
     } else {
         format!("\x1b[{codepoint}u").into_bytes()
     }
