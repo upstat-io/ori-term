@@ -20,7 +20,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
-use oriterm_core::Event;
+use oriterm_core::{Event, TermMode};
 use oriterm_ui::window::WindowConfig;
 
 use self::cursor_blink::CursorBlink;
@@ -114,6 +114,13 @@ impl App {
         }
     }
 
+    /// Read the terminal mode, locking briefly.
+    ///
+    /// Returns `None` if no tab is present.
+    fn terminal_mode(&self) -> Option<TermMode> {
+        self.tab.as_ref().map(|t| t.terminal().lock().mode())
+    }
+
     /// Handle mouse press for selection.
     fn handle_mouse_press(&mut self) {
         let pos = self.mouse.cursor_pos();
@@ -152,14 +159,20 @@ impl App {
         let pressed = state == ElementState::Pressed;
         self.mouse.set_button_down(button, pressed);
 
+        // Read terminal mode once (single lock acquisition) and determine
+        // whether mouse events should be reported to the PTY.
+        let report_mode = self
+            .terminal_mode()
+            .filter(|&m| self.should_report_mouse(m));
+
         match button {
             MouseButton::Left => {
-                if self.should_report_mouse() {
+                if let Some(mode) = report_mode {
                     let kind = match state {
                         ElementState::Pressed => mouse_report::MouseEventKind::Press,
                         ElementState::Released => mouse_report::MouseEventKind::Release,
                     };
-                    self.report_mouse_button(mouse_report::MouseButton::Left, kind);
+                    self.report_mouse_button(mouse_report::MouseButton::Left, kind, mode);
                 } else {
                     match state {
                         ElementState::Pressed => self.handle_mouse_press(),
@@ -176,12 +189,12 @@ impl App {
                 }
             }
             MouseButton::Middle => {
-                if self.should_report_mouse() {
+                if let Some(mode) = report_mode {
                     let kind = match state {
                         ElementState::Pressed => mouse_report::MouseEventKind::Press,
                         ElementState::Released => mouse_report::MouseEventKind::Release,
                     };
-                    self.report_mouse_button(mouse_report::MouseButton::Middle, kind);
+                    self.report_mouse_button(mouse_report::MouseButton::Middle, kind, mode);
                 } else if state == ElementState::Pressed {
                     self.paste_from_primary();
                 } else {
@@ -189,12 +202,12 @@ impl App {
                 }
             }
             MouseButton::Right => {
-                if self.should_report_mouse() {
+                if let Some(mode) = report_mode {
                     let kind = match state {
                         ElementState::Pressed => mouse_report::MouseEventKind::Press,
                         ElementState::Released => mouse_report::MouseEventKind::Release,
                     };
-                    self.report_mouse_button(mouse_report::MouseButton::Right, kind);
+                    self.report_mouse_button(mouse_report::MouseButton::Right, kind, mode);
                 } else if state == ElementState::Pressed {
                     let has_sel = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
                     if has_sel {
@@ -287,8 +300,7 @@ impl ApplicationHandler<TermEvent> for App {
                         let hinting = HintingMode::from_scale_factor(scale_factor);
                         let format = SubpixelMode::from_scale_factor(scale_factor).glyph_format();
                         if let (Some(renderer), Some(gpu)) = (&mut self.renderer, &self.gpu) {
-                            renderer.set_hinting_mode(hinting, gpu);
-                            renderer.set_glyph_format(format, gpu);
+                            renderer.set_hinting_and_format(hinting, format, gpu);
                         }
                         self.dirty = true;
                     }
@@ -297,8 +309,10 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse.set_cursor_pos(position);
-                if self.report_mouse_motion(position) {
-                    return;
+                if let Some(mode) = self.terminal_mode() {
+                    if self.report_mouse_motion(position, mode) {
+                        return;
+                    }
                 }
                 if self.mouse.left_down() {
                     self.handle_mouse_drag(position);
@@ -311,7 +325,9 @@ impl ApplicationHandler<TermEvent> for App {
 
             // Mouse wheel: report, alternate scroll, or viewport scroll.
             WindowEvent::MouseWheel { delta, .. } => {
-                self.handle_mouse_wheel(delta);
+                if let Some(mode) = self.terminal_mode() {
+                    self.handle_mouse_wheel(delta, mode);
+                }
             }
 
             // File drag-and-drop: paste paths into terminal.

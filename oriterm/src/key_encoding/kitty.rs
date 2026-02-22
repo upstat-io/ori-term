@@ -104,9 +104,12 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
                 }
                 cp
             }
-            None => return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec()),
+            None => {
+                return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec());
+            }
         },
-        _ => return Vec::new(),
+        // Unidentified keys (e.g. RDP/IME): send text as-is if available.
+        _ => return input.text.map_or_else(Vec::new, |t| t.as_bytes().to_vec()),
     };
 
     // Build event type suffix (only when REPORT_EVENT_TYPES active).

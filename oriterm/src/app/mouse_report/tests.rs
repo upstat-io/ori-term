@@ -703,3 +703,269 @@ fn scroll_release_still_encodes_as_press() {
     // But the button code is still ScrollUp (64), not generic release (3).
     assert!(s.contains("<64;"));
 }
+
+// -- Multi-button state machine --
+//
+// Verifies that encode_mouse_event produces the correct button codes when
+// multiple buttons transition through press/motion/release sequences.
+
+#[test]
+fn multi_button_press_release_sequence_sgr() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+
+    // Press Left → button code 0.
+    let e1 = event(MouseButton::Left, MouseEventKind::Press, 5, 5);
+    let s1 = std::str::from_utf8(encode_mouse_event(&e1, mode).as_bytes())
+        .unwrap()
+        .to_string();
+    assert!(s1.contains("<0;"), "left press should be code 0: {s1:?}");
+    assert!(s1.ends_with('M'));
+
+    // Press Right (while Left still held by app) → button code 2.
+    let e2 = event(MouseButton::Right, MouseEventKind::Press, 5, 5);
+    let s2 = std::str::from_utf8(encode_mouse_event(&e2, mode).as_bytes())
+        .unwrap()
+        .to_string();
+    assert!(s2.contains("<2;"), "right press should be code 2: {s2:?}");
+
+    // Release Left → SGR preserves button code 0 in release.
+    let e3 = event(MouseButton::Left, MouseEventKind::Release, 5, 5);
+    let s3 = std::str::from_utf8(encode_mouse_event(&e3, mode).as_bytes())
+        .unwrap()
+        .to_string();
+    assert!(
+        s3.contains("<0;"),
+        "left release should preserve code 0: {s3:?}"
+    );
+    assert!(s3.ends_with('m'), "release should use lowercase m: {s3:?}");
+
+    // Release Right → SGR preserves button code 2 in release.
+    let e4 = event(MouseButton::Right, MouseEventKind::Release, 5, 5);
+    let s4 = std::str::from_utf8(encode_mouse_event(&e4, mode).as_bytes())
+        .unwrap()
+        .to_string();
+    assert!(
+        s4.contains("<2;"),
+        "right release should preserve code 2: {s4:?}"
+    );
+    assert!(s4.ends_with('m'));
+}
+
+#[test]
+fn multi_button_press_release_sequence_normal() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+
+    // Press Left → button byte = 32 + 0 = 32.
+    let e1 = event(MouseButton::Left, MouseEventKind::Press, 5, 5);
+    let b1 = encode_mouse_event(&e1, mode).as_bytes().to_vec();
+    assert_eq!(b1[3], 32, "left press button byte");
+
+    // Press Right → button byte = 32 + 2 = 34.
+    let e2 = event(MouseButton::Right, MouseEventKind::Press, 5, 5);
+    let b2 = encode_mouse_event(&e2, mode).as_bytes().to_vec();
+    assert_eq!(b2[3], 34, "right press button byte");
+
+    // Release Left → Normal always uses code 3: button byte = 32 + 3 = 35.
+    let e3 = event(MouseButton::Left, MouseEventKind::Release, 5, 5);
+    let b3 = encode_mouse_event(&e3, mode).as_bytes().to_vec();
+    assert_eq!(b3[3], 35, "normal release always uses code 3");
+
+    // Release Right → same code 3 regardless of which button was released.
+    let e4 = event(MouseButton::Right, MouseEventKind::Release, 5, 5);
+    let b4 = encode_mouse_event(&e4, mode).as_bytes().to_vec();
+    assert_eq!(b4[3], 35);
+}
+
+// -- Release after motion --
+
+#[test]
+fn sgr_release_after_motion_uses_lowercase_m() {
+    let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR;
+
+    // Motion event: Left drag = code 32, uppercase M.
+    let motion = event(MouseButton::Left, MouseEventKind::Motion, 10, 10);
+    let ms = std::str::from_utf8(encode_mouse_event(&motion, mode).as_bytes())
+        .unwrap()
+        .to_string();
+    assert!(ms.ends_with('M'), "motion uses uppercase M: {ms:?}");
+    assert!(ms.contains("<32;"), "left drag motion is code 32: {ms:?}");
+
+    // Release event: Left = code 0, lowercase m.
+    let release = event(MouseButton::Left, MouseEventKind::Release, 10, 10);
+    let rs = std::str::from_utf8(encode_mouse_event(&release, mode).as_bytes())
+        .unwrap()
+        .to_string();
+    assert!(
+        rs.ends_with('m'),
+        "release after motion uses lowercase m: {rs:?}"
+    );
+    assert!(
+        rs.contains("<0;"),
+        "release uses base button code (no +32): {rs:?}"
+    );
+}
+
+#[test]
+fn normal_release_after_motion_uses_code_3() {
+    let mode = TermMode::MOUSE_DRAG;
+
+    // Motion: Left drag = code 32, button byte = 32 + 32 = 64.
+    let motion = event(MouseButton::Left, MouseEventKind::Motion, 5, 5);
+    let mb = encode_mouse_event(&motion, mode).as_bytes().to_vec();
+    assert_eq!(mb[3], 64, "left drag motion button byte");
+
+    // Release: code 3, button byte = 32 + 3 = 35.
+    let release = event(MouseButton::Left, MouseEventKind::Release, 5, 5);
+    let rb = encode_mouse_event(&release, mode).as_bytes().to_vec();
+    assert_eq!(rb[3], 35, "normal release uses code 3 after motion");
+}
+
+// -- Scroll with combined modifiers --
+
+#[test]
+fn scroll_up_shift_ctrl_sgr() {
+    let mods = MouseModifiers {
+        shift: true,
+        alt: false,
+        ctrl: true,
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event_with_mods(MouseButton::ScrollUp, MouseEventKind::Press, 5, 5, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // ScrollUp(64) + shift(4) + ctrl(16) = 84.
+    assert_eq!(s, "\x1b[<84;6;6M");
+}
+
+#[test]
+fn scroll_down_shift_alt_sgr() {
+    let mods = MouseModifiers {
+        shift: true,
+        alt: true,
+        ctrl: false,
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event_with_mods(MouseButton::ScrollDown, MouseEventKind::Press, 5, 5, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // ScrollDown(65) + shift(4) + alt(8) = 77.
+    assert_eq!(s, "\x1b[<77;6;6M");
+}
+
+#[test]
+fn scroll_up_all_modifiers_normal() {
+    let mods = MouseModifiers {
+        shift: true,
+        alt: true,
+        ctrl: true,
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event_with_mods(MouseButton::ScrollUp, MouseEventKind::Press, 0, 0, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // ScrollUp(64) + shift(4) + alt(8) + ctrl(16) = 92; button byte = 32 + 92 = 124.
+    assert_eq!(bytes[3], 124);
+}
+
+// -- UTF-8 encoding boundary at pos=2015 --
+
+#[test]
+fn utf8_exact_max_coord_2015() {
+    let mut buf = [0u8; 32];
+    // pos=2015: val = 32 + 1 + 2015 = 2048 = 0x800 — OUT of range (> 0x7FF).
+    let len = encode_utf8(&mut buf, 0, 2015, 0);
+    assert_eq!(len, 0, "pos 2015 should be out of range for UTF-8");
+}
+
+#[test]
+fn utf8_one_below_max_coord_2014() {
+    let mut buf = [0u8; 32];
+    // pos=2014: val = 32 + 1 + 2014 = 2047 = 0x7FF — exactly at the limit.
+    let len = encode_utf8(&mut buf, 0, 2014, 0);
+    assert!(len > 0, "pos 2014 should encode successfully");
+}
+
+#[test]
+fn utf8_boundary_symmetry() {
+    let mut buf = [0u8; 32];
+    // Both coords at max limit.
+    let len = encode_utf8(&mut buf, 0, 2014, 2014);
+    assert!(len > 0, "both coords at max should encode");
+
+    // One coord over limit.
+    let len = encode_utf8(&mut buf, 0, 2014, 2015);
+    assert_eq!(len, 0, "one coord over limit should fail");
+}
+
+// -- Double-press same button without release --
+
+#[test]
+fn double_press_same_button_encodes_independently() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+
+    // Two left presses without a release — each produces a valid, identical report.
+    let e = event(MouseButton::Left, MouseEventKind::Press, 5, 10);
+    let b1 = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let b2 = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(b1, b2, "duplicate press should produce identical encoding");
+    assert!(!b1.is_empty());
+}
+
+#[test]
+fn double_press_normal_encodes_independently() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+
+    let e = event(MouseButton::Left, MouseEventKind::Press, 5, 10);
+    let b1 = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let b2 = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(b1, b2, "duplicate press should produce identical encoding");
+    assert_eq!(b1.len(), 6);
+}
+
+// -- Exhaustive modifier × button matrix --
+
+#[test]
+fn all_modifier_combinations_all_buttons() {
+    // 8 modifier combinations × 4 base buttons = 32 entries.
+    let buttons = [
+        (MouseButton::Left, 0u8),
+        (MouseButton::Middle, 1),
+        (MouseButton::Right, 2),
+        (MouseButton::None, 3),
+    ];
+    let modifiers = [
+        (false, false, false, 0u8),
+        (true, false, false, 4),
+        (false, true, false, 8),
+        (false, false, true, 16),
+        (true, true, false, 12),
+        (true, false, true, 20),
+        (false, true, true, 24),
+        (true, true, true, 28),
+    ];
+
+    for (button, base_code) in &buttons {
+        for (shift, alt, ctrl, mod_bits) in &modifiers {
+            let expected_code = base_code + mod_bits;
+            let mods = MouseModifiers {
+                shift: *shift,
+                alt: *alt,
+                ctrl: *ctrl,
+            };
+            let code = apply_modifiers(button_code(*button, MouseEventKind::Press), mods);
+            assert_eq!(
+                code, expected_code,
+                "{button:?} + shift={shift} alt={alt} ctrl={ctrl}: expected {expected_code}, got {code}",
+            );
+
+            // Verify SGR encoding round-trips correctly.
+            let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+            let e = event_with_mods(*button, MouseEventKind::Press, 0, 0, mods);
+            let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+            let s = std::str::from_utf8(&bytes).unwrap();
+            assert!(
+                s.starts_with(&format!("\x1b[<{expected_code};")),
+                "{button:?} + mods({mod_bits}): SGR should start with code {expected_code}, got {s:?}",
+            );
+        }
+    }
+}

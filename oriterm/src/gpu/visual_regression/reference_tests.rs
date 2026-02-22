@@ -6,9 +6,13 @@
 
 use oriterm_core::CellFlags;
 
+use crate::font::GlyphFormat;
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 
-use super::{compare_with_reference, headless_env, render_to_pixels};
+use super::{
+    TEST_DPI, TEST_FONT_SIZE_PT, compare_with_reference, headless_env, headless_env_full,
+    render_to_pixels,
+};
 
 /// Set a cell as a wide character with its trailing spacer.
 fn set_wide_char(input: &mut FrameInput, cols: usize, row: usize, col: usize, ch: char) {
@@ -330,6 +334,72 @@ fn mixed_styles() {
 
     let pixels = render_to_pixels(&gpu, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("mixed_styles", &pixels, w, h) {
+        panic!("visual regression: {msg}");
+    }
+}
+
+/// Subpixel LCD rendering produces visually distinct output from grayscale.
+///
+/// Renders the same reference string in both SubpixelRgb and Alpha modes,
+/// asserts the pixel outputs differ, and saves the subpixel version as a
+/// golden image for regression tracking.
+#[test]
+fn subpixel_vs_grayscale() {
+    let Some((gpu_gray, mut renderer_gray)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let Some((gpu_sub, mut renderer_sub)) =
+        headless_env_full(TEST_FONT_SIZE_PT, TEST_DPI, GlyphFormat::SubpixelRgb)
+    else {
+        eprintln!("skipped: no GPU adapter available for subpixel env");
+        return;
+    };
+
+    let cell_gray = renderer_gray.cell_metrics();
+    let cell_sub = renderer_sub.cell_metrics();
+    let text = "The quick brown fox jumps over the lazy dog 0123456789";
+    let cols = text.len();
+    let rows = 1;
+
+    // Grayscale render.
+    let w_g = (cell_gray.width * cols as f32).ceil() as u32;
+    let h_g = (cell_gray.height * rows as f32).ceil() as u32;
+    let mut input_g = FrameInput::test_grid(cols, rows, text);
+    input_g.viewport = ViewportSize::new(w_g, h_g);
+    input_g.cell_size = cell_gray;
+    input_g.content.cursor.visible = false;
+    let pixels_gray = render_to_pixels(&gpu_gray, &mut renderer_gray, &input_g);
+
+    // Subpixel render.
+    let w_s = (cell_sub.width * cols as f32).ceil() as u32;
+    let h_s = (cell_sub.height * rows as f32).ceil() as u32;
+    let mut input_s = FrameInput::test_grid(cols, rows, text);
+    input_s.viewport = ViewportSize::new(w_s, h_s);
+    input_s.cell_size = cell_sub;
+    input_s.content.cursor.visible = false;
+    let pixels_subpx = render_to_pixels(&gpu_sub, &mut renderer_sub, &input_s);
+
+    // Both should render non-empty output.
+    assert!(
+        pixels_gray.iter().any(|&b| b > 0),
+        "grayscale render should not be all zeros",
+    );
+    assert!(
+        pixels_subpx.iter().any(|&b| b > 0),
+        "subpixel render should not be all zeros",
+    );
+
+    // Subpixel rendering should produce different pixel data from grayscale.
+    // The per-channel coverage in subpixel mode creates distinct anti-aliasing
+    // patterns that differ from single-channel alpha blending.
+    assert_ne!(
+        pixels_gray, pixels_subpx,
+        "subpixel and grayscale renders should differ",
+    );
+
+    // Save subpixel render as golden image for regression tracking.
+    if let Err(msg) = compare_with_reference("subpixel_rgb", &pixels_subpx, w_s, h_s) {
         panic!("visual regression: {msg}");
     }
 }

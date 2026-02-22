@@ -56,6 +56,7 @@ pub(crate) fn extract_frame<T: EventListener>(
         palette,
         selection: None,
         search_matches: Vec::new(),
+        hovered_cell: None,
     }
 }
 
@@ -93,6 +94,7 @@ pub(crate) fn extract_frame_into<T: EventListener>(
     out.palette = palette;
     out.selection = None;
     out.search_matches.clear();
+    out.hovered_cell = None;
 }
 
 /// Extract semantic palette colors from the terminal.

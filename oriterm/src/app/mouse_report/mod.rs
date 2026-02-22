@@ -241,32 +241,33 @@ pub(crate) fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseRep
 }
 
 impl App {
-    /// Whether mouse events should be reported to the PTY.
+    /// Whether mouse events should be reported to the PTY for the given mode.
     ///
     /// True when any mouse reporting mode is active and Shift is NOT held.
     /// Shift-bypass lets users select text even when the terminal app has
     /// requested mouse reporting.
-    pub(super) fn should_report_mouse(&self) -> bool {
-        if self.modifiers.shift_key() {
-            return false;
-        }
-        let Some(tab) = &self.tab else {
-            return false;
-        };
-        tab.terminal().lock().mode().intersects(TermMode::ANY_MOUSE)
+    ///
+    /// Pure check — does not lock the terminal. Caller reads mode once via
+    /// [`terminal_mode`](App::terminal_mode) and passes it through.
+    pub(super) fn should_report_mouse(&self, mode: TermMode) -> bool {
+        !self.modifiers.shift_key() && mode.intersects(TermMode::ANY_MOUSE)
     }
 
     /// Encode and send a mouse button event to the PTY.
     ///
-    /// Reads the terminal mode (locking briefly), encodes the event,
-    /// then writes to the PTY. No-op if the cursor is outside the grid.
-    pub(super) fn report_mouse_button(&self, button: MouseButton, kind: MouseEventKind) {
+    /// Encodes the event using the provided terminal mode, then writes to
+    /// the PTY. No-op if the cursor is outside the grid.
+    pub(super) fn report_mouse_button(
+        &self,
+        button: MouseButton,
+        kind: MouseEventKind,
+        mode: TermMode,
+    ) {
         let Some((col, line)) = self.mouse_cell() else {
             return;
         };
 
         let Some(tab) = &self.tab else { return };
-        let mode = tab.terminal().lock().mode();
         let event = MouseEvent {
             button,
             kind,
@@ -286,12 +287,11 @@ impl App {
     /// Performs motion deduplication: only sends a report when the cell
     /// changes. Returns `true` if motion was reported (caller should
     /// skip selection handling).
-    pub(super) fn report_mouse_motion(&mut self, position: PhysicalPosition<f64>) -> bool {
-        let Some(tab) = &self.tab else {
-            return false;
-        };
-
-        let mode = tab.terminal().lock().mode();
+    pub(super) fn report_mouse_motion(
+        &mut self,
+        position: PhysicalPosition<f64>,
+        mode: TermMode,
+    ) -> bool {
         let has_drag = mode.contains(TermMode::MOUSE_DRAG) && self.mouse.any_button_down();
         let has_motion = mode.contains(TermMode::MOUSE_MOTION);
 
@@ -336,7 +336,9 @@ impl App {
         let report = encode_mouse_event(&event, mode);
         let bytes = report.as_bytes();
         if !bytes.is_empty() {
-            tab.write_input(bytes);
+            if let Some(tab) = &self.tab {
+                tab.write_input(bytes);
+            }
         }
         true
     }
@@ -346,7 +348,7 @@ impl App {
     /// 1. Mouse reporting mode active → send scroll events to PTY.
     /// 2. Alt screen + `ALTERNATE_SCROLL` → send arrow keys to PTY.
     /// 3. Normal → scroll the viewport.
-    pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta) {
+    pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, mode: TermMode) {
         let lines = match delta {
             MouseScrollDelta::LineDelta(_, y) => {
                 if y == 0.0 {
@@ -374,7 +376,6 @@ impl App {
         };
 
         let Some(tab) = &self.tab else { return };
-        let mode = tab.terminal().lock().mode();
 
         // Tier 1: Mouse reporting.
         if mode.intersects(TermMode::ANY_MOUSE) && !self.modifiers.shift_key() {

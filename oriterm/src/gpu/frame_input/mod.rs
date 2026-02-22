@@ -103,6 +103,11 @@ pub struct FrameInput {
     /// Active search matches (placeholder until Section 11).
     #[allow(dead_code, reason = "search highlight rendering in Section 11")]
     pub search_matches: Vec<SearchMatch>,
+    /// Viewport cell under the mouse cursor for hyperlink hover detection.
+    ///
+    /// `(viewport_line, column)`. Set from mouse state after extraction;
+    /// `None` when the cursor is outside the grid.
+    pub hovered_cell: Option<(usize, usize)>,
 }
 
 impl FrameInput {
@@ -155,6 +160,7 @@ impl FrameInput {
                     bg,
                     flags: CellFlags::empty(),
                     underline_color: None,
+                    has_hyperlink: false,
                     zerowidth: Vec::new(),
                 });
             }
@@ -189,6 +195,7 @@ impl FrameInput {
             },
             selection: None,
             search_matches: Vec::new(),
+            hovered_cell: None,
         }
     }
 }

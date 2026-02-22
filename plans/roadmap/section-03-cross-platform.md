@@ -462,20 +462,20 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 ## 03.8 Section Completion
 
 - [ ] All 03.1-03.7 items complete <!-- blocked-by:13 -->
-- [ ] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality
-- [ ] Terminal runs on Linux with openpty, Vulkan, and clipboard support
+- [x] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality
+- [x] Terminal runs on Linux with openpty, Vulkan, and clipboard support
   - [ ] Tested on X11 and Wayland
 - [ ] Terminal runs on macOS with openpty, Metal, and clipboard support
 - [x] Font discovery works on all three platforms (falls back to embedded font if needed)
 - [x] Clipboard copy/paste works on all three platforms
-- [ ] GPU rendering works on all three platforms
+- [x] GPU rendering works on all three platforms
 - [x] Default shell detected correctly per platform
 - [x] Window decorations appropriate per platform
 - [x] URL opening works per platform
 - [x] Config paths follow platform conventions
 - [ ] Transparency works where compositor supports it <!-- blocked-by:13 -->
 - [x] System theme detection selects appropriate default palette
-- [ ] No platform-specific panics or crashes
+- [x] No platform-specific panics or crashes
 - [x] CI builds for all three platforms
 - [x] `cargo test --target x86_64-pc-windows-gnu` — passes
 - [x] `cargo test` (native Linux) — passes

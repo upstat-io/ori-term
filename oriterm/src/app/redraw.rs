@@ -3,6 +3,7 @@
 use oriterm_core::{Column, CursorShape, TermMode};
 
 use super::App;
+use super::mouse_selection::{self, GridCtx};
 use crate::gpu::{FrameSelection, SurfaceError, ViewportSize, extract_frame, extract_frame_into};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 
@@ -70,6 +71,16 @@ impl App {
             frame.selection = tab
                 .selection()
                 .map(|sel| FrameSelection::new(sel, frame.content.stable_row_base));
+
+            // Compute hovered cell for hyperlink underline rendering.
+            if let Some(grid_widget) = self.terminal_grid.as_ref() {
+                let ctx = GridCtx {
+                    widget: grid_widget,
+                    cell,
+                };
+                frame.hovered_cell = mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &ctx)
+                    .map(|(col, line)| (line, col));
+            }
 
             // Cache blinking mode for about_to_wait gating.
             // Reset blink phase on false→true transition so the

@@ -6,7 +6,7 @@ use oriterm_core::{Cell, CellExtra, CellFlags};
 
 use super::{prepare_line, shape_prepared_runs};
 use crate::font::collection::FontCollection;
-use crate::font::{FaceIdx, FontSet, GlyphFormat, HintingMode, SyntheticFlags};
+use crate::font::{FaceIdx, FontSet, GlyphFormat, HintingMode, SyntheticFlags, subpx_bin};
 
 // ── Helpers ──
 
@@ -1011,5 +1011,45 @@ fn truncate_with_ellipsis_shorter_than_max() {
         result.as_ref(),
         "AB",
         "short string should be returned unchanged",
+    );
+}
+
+// ── Subpixel Positioning: UI Text Mixed Phases ──
+
+/// UI text glyphs land at different subpixel phases across a shaped string.
+///
+/// In monospace fonts the per-glyph advance is typically non-integer in pixels,
+/// so cumulative x positions produce varying fractional parts. Each fractional
+/// offset quantizes to one of 4 subpixel phases (0, 1, 2, 3). A sufficiently
+/// long string should hit at least 2 distinct phases.
+#[test]
+fn ui_text_mixed_subpixel_phases() {
+    let fc = test_collection();
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+
+    // Shape a long-enough string to produce varied cumulative fractional offsets.
+    let text = "The quick brown fox jumps over the lazy dog";
+    super::shape_text_string(text, &faces, &fc, &mut output, &mut None);
+
+    assert!(
+        !output.is_empty(),
+        "shaped output should not be empty for '{text}'",
+    );
+
+    // Compute cumulative x position and subpixel phase for each glyph.
+    let mut cumulative_x = 0.0_f32;
+    let mut phases = std::collections::HashSet::new();
+    for glyph in &output {
+        let x_pos = cumulative_x + glyph.x_offset;
+        phases.insert(subpx_bin(x_pos));
+        cumulative_x += glyph.x_advance;
+    }
+
+    assert!(
+        phases.len() >= 2,
+        "UI text should produce at least 2 distinct subpixel phases, got {phases:?}. \
+         Cell width = {}, which may be exactly integer — try a different font size.",
+        fc.cell_metrics().width,
     );
 }
