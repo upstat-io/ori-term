@@ -54,6 +54,10 @@ impl App {
                 }
             };
 
+            // Set window opacity from config (extract phase doesn't have
+            // access to config — opacity is a window concern, not terminal state).
+            frame.palette.opacity = self.config.window.effective_opacity();
+
             // Mark-mode cursor override: set the override field so the
             // Prepare phase renders a hollow block at the mark position.
             // The extracted content.cursor is never mutated.

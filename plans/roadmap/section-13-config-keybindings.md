@@ -16,7 +16,7 @@ sections:
     status: complete
   - id: "13.4"
     title: Config Hot Reload
-    status: not-started
+    status: complete
   - id: "13.5"
     title: Keybinding System
     status: complete
@@ -28,7 +28,7 @@ sections:
     status: complete
   - id: "13.8"
     title: CLI Subcommands
-    status: not-started
+    status: complete
   - id: "13.9"
     title: Shell Completion Scripts
     status: not-started
@@ -226,18 +226,18 @@ Apply config changes to the running application without restart.
 
 **Reference:** `_old/src/app/config_reload.rs`
 
-- [ ] On `TermEvent::ConfigReload`:
-  - [ ] Call `Config::try_load()` — on error: log warning, keep previous config
-  - [ ] Compare new config against current config
-  - [ ] Apply deltas:
-    - [ ] Font change (family, size, weight, features, fallback): rebuild FontCollection, clear glyph atlas, recompute cell metrics, resize all tabs/grids
-    - [ ] Color change (scheme, overrides): rebuild palette, request redraw
-    - [ ] Window change (opacity, blur): update window transparency/blur settings
-    - [ ] Behavior change: update behavior flags
-    - [ ] Bell change: update bell config
-    - [ ] Keybinding change: rebuild merged keybinding table
-  - [ ] Broadcast changes to ALL tabs in ALL windows (font metrics affect every grid)
-  - [ ] Request redraw for all windows
+- [x] On `TermEvent::ConfigReload`:
+  - [x] Call `Config::try_load()` — on error: log warning, keep previous config
+  - [x] Compare new config against current config
+  - [x] Apply deltas:
+    - [x] Font change (family, size, weight, features, fallback): rebuild FontCollection, clear glyph atlas, recompute cell metrics, resize all tabs/grids
+    - [x] Color change (scheme, overrides): rebuild palette, request redraw
+    - [x] Window change (opacity, blur): update window transparency/blur settings
+    - [x] Behavior change: update behavior flags
+    - [x] Bell change: update bell config
+    - [x] Keybinding change: rebuild merged keybinding table
+  - [x] Broadcast changes to ALL tabs in ALL windows (font metrics affect every grid)
+  - [x] Request redraw for all windows
 
 ---
 
@@ -358,37 +358,37 @@ Utility subcommands for font discovery, keybinding reference, config validation,
 
 **Reference:** Alacritty `alacritty msg`, Ghostty `ghostty +list-fonts`, WezTerm `wezterm ls-fonts`
 
-- [ ] `oriterm ls-fonts` — list discovered fonts with fallback chain:
-  - [ ] Show primary font family + all 4 style variants (Regular/Bold/Italic/BoldItalic)
-  - [ ] Show fallback chain in priority order
-  - [ ] For each face: family name, style, file path, format (TrueType/OpenType), variable axes
-  - [ ] `--codepoint <char>` — show which font resolves a specific character
-  - [ ] Output: plain text, one font per line
-- [ ] `oriterm show-keys` — dump current keybindings:
-  - [ ] Load config, merge defaults with user overrides
-  - [ ] Show all active bindings: `Ctrl+Shift+C -> Copy`, etc.
-  - [ ] `--default` — show only default bindings (ignore user config)
-  - [ ] Group by category (clipboard, tabs, navigation, etc.)
-- [ ] `oriterm list-themes` — browse available color schemes:
-  - [ ] List all built-in themes by name
-  - [ ] List user-defined themes from config directory
-  - [ ] `--preview` — show ANSI color preview for each theme (16-color palette sample)
-- [ ] `oriterm validate-config` — check config without launching:
-  - [ ] Parse config file, report errors with line numbers
-  - [ ] Validate font families exist on system
-  - [ ] Validate color values parse correctly
-  - [ ] Validate keybinding key names and action names
-  - [ ] Exit 0 on valid, exit 1 on errors
-- [ ] `oriterm show-config` — dump resolved config:
-  - [ ] Load config with all defaults filled in
-  - [ ] Serialize to TOML and print
-  - [ ] Shows effective config (defaults + user overrides merged)
-- [ ] Subcommand dispatch: all subcommands run without opening a window (headless)
-- [ ] **Tests:**
-  - [ ] `validate-config` on valid config returns exit 0
-  - [ ] `validate-config` on invalid TOML returns exit 1 with error message
-  - [ ] `show-config` output is valid TOML that can be re-parsed
-  - [ ] `ls-fonts` includes primary font family
+- [x] `oriterm ls-fonts` — list discovered fonts with fallback chain:
+  - [x] Show primary font family + all 4 style variants (Regular/Bold/Italic/BoldItalic)
+  - [x] Show fallback chain in priority order
+  - [x] For each face: family name, style, file path, format (TrueType/OpenType), variable axes
+  - [x] `--codepoint <char>` — show which font resolves a specific character
+  - [x] Output: plain text, one font per line
+- [x] `oriterm show-keys` — dump current keybindings:
+  - [x] Load config, merge defaults with user overrides
+  - [x] Show all active bindings: `Ctrl+Shift+C -> Copy`, etc.
+  - [x] `--default` — show only default bindings (ignore user config)
+  - [x] Group by category (clipboard, tabs, navigation, etc.)
+- [x] `oriterm list-themes` — browse available color schemes:
+  - [x] List all built-in themes by name
+  - [x] List user-defined themes from config directory
+  - [x] `--preview` — show ANSI color preview for each theme (16-color palette sample)
+- [x] `oriterm validate-config` — check config without launching:
+  - [x] Parse config file, report errors with line numbers
+  - [x] Validate font families exist on system
+  - [x] Validate color values parse correctly
+  - [x] Validate keybinding key names and action names
+  - [x] Exit 0 on valid, exit 1 on errors
+- [x] `oriterm show-config` — dump resolved config:
+  - [x] Load config with all defaults filled in
+  - [x] Serialize to TOML and print
+  - [x] Shows effective config (defaults + user overrides merged)
+- [x] Subcommand dispatch: all subcommands run without opening a window (headless)
+- [x] **Tests:**
+  - [x] `validate-config` on valid config returns exit 0
+  - [x] `validate-config` on invalid TOML returns exit 1 with error message
+  - [x] `show-config` output is valid TOML that can be re-parsed
+  - [x] `ls-fonts` includes primary font family
 
 ---
 

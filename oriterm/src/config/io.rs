@@ -11,11 +11,13 @@ pub fn config_path() -> PathBuf {
 }
 
 /// Returns the path to the runtime state file (separate from user config).
+#[allow(dead_code, reason = "used in state persistence (Section 15)")]
 pub fn state_path() -> PathBuf {
     config_paths::config_dir().join("state.toml")
 }
 
 /// Persisted window geometry — saved on exit, restored on launch.
+#[allow(dead_code, reason = "used in state persistence (Section 15)")]
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct WindowState {
     pub x: i32,
@@ -28,6 +30,7 @@ impl WindowState {
     /// Loads window state from `state.toml`.
     ///
     /// Returns `None` if the file is missing, unreadable, or contains invalid TOML.
+    #[allow(dead_code, reason = "used in state persistence (Section 15)")]
     pub fn load() -> Option<Self> {
         let path = state_path();
         let data = std::fs::read_to_string(&path).ok()?;
@@ -41,6 +44,7 @@ impl WindowState {
     }
 
     /// Saves window state to `state.toml`. Creates the config directory if needed.
+    #[allow(dead_code, reason = "used in state persistence (Section 15)")]
     pub fn save(&self) {
         save_toml(self, &state_path(), "state");
     }
@@ -86,6 +90,7 @@ impl Config {
     }
 
     /// Saves config to the default path. Creates the directory if needed.
+    #[allow(dead_code, reason = "used in state persistence (Section 15)")]
     pub fn save(&self) {
         save_toml(self, &config_path(), "config");
     }

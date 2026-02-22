@@ -155,6 +155,7 @@ pub(crate) fn parse_action(s: &str) -> Option<Action> {
         "DuplicateTab" => Action::DuplicateTab,
         "MoveTabToNewWindow" => Action::MoveTabToNewWindow,
         "ToggleFullscreen" => Action::ToggleFullscreen,
+        "EnterMarkMode" => Action::EnterMarkMode,
         "None" => Action::None,
         _ => return None,
     })

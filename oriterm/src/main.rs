@@ -8,6 +8,7 @@
 #![windows_subsystem = "windows"]
 
 mod app;
+mod cli;
 mod clipboard;
 mod config;
 mod font;
@@ -20,11 +21,20 @@ mod tab;
 mod widgets;
 mod window;
 
-use oriterm_ui::window::WindowConfig;
+use clap::Parser;
 
+use crate::config::Config;
 use crate::tab::TermEvent;
 
 fn main() {
+    let args = cli::Cli::parse();
+
+    // CLI subcommands run headlessly — no window, no event loop.
+    if let Some(cmd) = args.command {
+        cli::attach_console();
+        cli::dispatch(cmd);
+    }
+
     init_logger();
 
     #[cfg(unix)]
@@ -35,8 +45,8 @@ fn main() {
     let event_loop = build_event_loop();
     let proxy = event_loop.create_proxy();
 
-    let window_config = WindowConfig::default();
-    let mut app = app::App::new(proxy, window_config);
+    let config = Config::load();
+    let mut app = app::App::new(proxy, config);
 
     if let Err(e) = event_loop.run_app(&mut app) {
         log::error!("event loop error: {e}");

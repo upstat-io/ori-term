@@ -2,7 +2,9 @@
 
 use winit::event_loop::ActiveEventLoop;
 
-use super::{App, DEFAULT_DPI, DEFAULT_FONT_SIZE_PT, DEFAULT_FONT_WEIGHT, DEFAULT_SCROLLBACK};
+use oriterm_ui::window::WindowConfig;
+
+use super::{App, DEFAULT_DPI};
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, SubpixelMode};
 use crate::gpu::{GpuRenderer, GpuState};
 use crate::tab::{Tab, TabId};
@@ -20,20 +22,31 @@ impl App {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let t_start = std::time::Instant::now();
 
+        // Build UI window config from the user's config.
+        let opacity = self.config.window.effective_opacity();
+        let window_config = WindowConfig {
+            title: "ori".into(),
+            transparent: opacity < 1.0,
+            blur: self.config.window.blur && opacity < 1.0,
+            opacity,
+            ..WindowConfig::default()
+        };
+
         // 1. Create window (invisible) for GPU surface capability probing.
-        let window_arc = oriterm_ui::window::create_window(event_loop, &self.window_config)?;
+        let window_arc = oriterm_ui::window::create_window(event_loop, &window_config)?;
         let t_window = t_start.elapsed();
 
         // 2. Spawn font discovery on a background thread (no GPU dependency).
-        let font_weight = DEFAULT_FONT_WEIGHT;
-        let font_size_pt = DEFAULT_FONT_SIZE_PT;
+        let font_weight = self.config.font.effective_weight();
+        let font_size_pt = self.config.font.size;
+        let font_family = self.config.font.family.clone();
         let font_dpi = DEFAULT_DPI;
         let font_handle = std::thread::Builder::new()
             .name("font-discovery".into())
             .spawn(
                 move || -> Result<(FontCollection, std::time::Duration), crate::font::FontError> {
                     let t0 = std::time::Instant::now();
-                    let font_set = FontSet::load(None, font_weight)?;
+                    let font_set = FontSet::load(font_family.as_deref(), font_weight)?;
                     // Default to Full hinting; adjusted after window creation
                     // once the actual display scale factor is known.
                     let fc = FontCollection::new(
@@ -53,11 +66,11 @@ impl App {
 
         // 3. Init GPU on main thread (requires window Arc, runs concurrently with fonts).
         let t_gpu_start = std::time::Instant::now();
-        let gpu = GpuState::new(&window_arc, self.window_config.transparent)?;
+        let gpu = GpuState::new(&window_arc, window_config.transparent)?;
         let t_gpu = t_gpu_start.elapsed();
 
         // 4. Wrap the same window into TermWindow (creates surface, applies effects).
-        let window = TermWindow::from_window(window_arc, &self.window_config, &gpu)?;
+        let window = TermWindow::from_window(window_arc, &window_config, &gpu)?;
 
         // 5. Join font thread (GPU init + surface setup ran concurrently).
         let (mut font_collection, t_fonts) = match font_handle.join() {
@@ -102,7 +115,7 @@ impl App {
             tab_id,
             rows as u16,
             cols as u16,
-            DEFAULT_SCROLLBACK,
+            self.config.terminal.scrollback,
             self.event_proxy.clone(),
         )?;
         let t_tab = t_tab_start.elapsed();
@@ -116,7 +129,7 @@ impl App {
             "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
              font={} {:.1}pt",
             renderer.family_name(),
-            DEFAULT_FONT_SIZE_PT,
+            font_size_pt,
         );
 
         // Show window before storing — winit won't deliver RedrawRequested
