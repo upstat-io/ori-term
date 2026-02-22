@@ -138,7 +138,7 @@ impl TermWindow {
     }
 
     /// Returns a reference to the underlying winit [`Window`].
-    #[allow(dead_code, reason = "window access for later sections")]
+    #[allow(dead_code, reason = "direct window access for later sections")]
     pub(crate) fn window(&self) -> &Window {
         &self.window
     }
@@ -160,7 +160,6 @@ impl TermWindow {
     }
 
     /// Returns the DPI scale factor.
-    #[allow(dead_code, reason = "scale factor query for Section 6")]
     pub(crate) fn scale_factor(&self) -> ScaleFactor {
         self.scale_factor
     }
@@ -227,6 +226,13 @@ impl TermWindow {
         } else {
             None
         });
+    }
+
+    /// Re-apply platform-specific transparency/blur effects.
+    ///
+    /// Called on config reload when opacity or blur settings change.
+    pub(crate) fn set_transparency(&self, opacity: f32, blur: bool) {
+        apply_transparency(&self.window, opacity, blur, DEFAULT_BLUR_TINT);
     }
 
     /// Show or hide the window.

@@ -30,7 +30,7 @@ impl App {
     /// Copy the active selection to the system clipboard.
     ///
     /// Returns `true` if text was copied.
-    pub(crate) fn copy_selection(&mut self) -> bool {
+    pub(super) fn copy_selection(&mut self) -> bool {
         let Some(text) = self.extract_selection_text() else {
             return false;
         };
@@ -44,7 +44,7 @@ impl App {
     /// Called on mouse release after a drag selection. On Windows/macOS this
     /// is a no-op (the clipboard module silently ignores `Selection` stores
     /// when no primary selection provider is available).
-    pub(crate) fn copy_selection_to_primary(&mut self) {
+    pub(super) fn copy_selection_to_primary(&mut self) {
         if let Some(text) = self.extract_selection_text() {
             self.clipboard.store(ClipboardType::Selection, &text);
         }
@@ -54,7 +54,7 @@ impl App {
     ///
     /// Applies character filtering (if enabled), line ending normalization,
     /// ESC stripping (for bracketed paste), and bracketed paste wrapping.
-    pub(crate) fn paste_from_clipboard(&mut self) {
+    pub(super) fn paste_from_clipboard(&mut self) {
         let text = self.clipboard.load(ClipboardType::Clipboard);
         if text.is_empty() {
             return;
@@ -72,7 +72,7 @@ impl App {
     /// Paste text from the primary selection (X11/Wayland middle-click paste).
     ///
     /// On Windows/macOS, the primary selection is typically empty (no-op).
-    pub(crate) fn paste_from_primary(&mut self) {
+    pub(super) fn paste_from_primary(&mut self) {
         let text = self.clipboard.load(ClipboardType::Selection);
         if text.is_empty() {
             return;
@@ -84,7 +84,7 @@ impl App {
     /// Paste dropped file paths into the active terminal.
     ///
     /// Paths with spaces are auto-quoted. Multiple paths are space-separated.
-    pub(crate) fn paste_dropped_files(&self, paths: &[PathBuf]) {
+    pub(super) fn paste_dropped_files(&self, paths: &[PathBuf]) {
         if paths.is_empty() {
             return;
         }

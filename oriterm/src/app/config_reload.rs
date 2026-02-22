@@ -9,7 +9,6 @@ use oriterm_core::Rgb;
 use super::{App, DEFAULT_DPI};
 use crate::config::Config;
 use crate::font::{FontCollection, FontSet, HintingMode};
-use crate::gpu::apply_transparency;
 use crate::keybindings;
 
 impl App {
@@ -73,10 +72,6 @@ impl App {
         else {
             return;
         };
-
-        // Preserve current hinting and format (display-dependent, not config-dependent).
-        let hinting = renderer.cell_metrics().width; // We need actual hinting mode
-        let _ = hinting; // Placeholder
 
         let weight = new.font.effective_weight();
         let font_set = match FontSet::load(new.font.family.as_deref(), weight) {
@@ -190,17 +185,7 @@ impl App {
         let opacity = new.window.effective_opacity();
         let blur = new.window.blur && opacity < 1.0;
 
-        // Re-apply platform-specific transparency effects.
-        apply_transparency(
-            window.window(),
-            opacity,
-            blur,
-            Rgb {
-                r: 30,
-                g: 30,
-                b: 46,
-            },
-        );
+        window.set_transparency(opacity, blur);
 
         log::info!("config reload: window opacity={opacity:.2}, blur={blur}",);
     }

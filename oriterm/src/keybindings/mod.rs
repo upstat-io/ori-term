@@ -7,17 +7,11 @@ use winit::keyboard::{Key, NamedKey};
 
 use crate::key_encoding::Modifiers;
 
-#[allow(
-    unused_imports,
-    reason = "used in tests and Section 13.8 CLI subcommands"
-)]
 pub(crate) use defaults::default_bindings;
 pub(crate) use parse::merge_bindings;
-#[allow(
-    unused_imports,
-    reason = "used in tests and Section 13.8 CLI subcommands"
-)]
-pub(crate) use parse::{parse_action, parse_key, parse_mods};
+#[allow(unused_imports, reason = "re-exported for future CLI use")]
+pub(crate) use parse::parse_mods;
+pub(crate) use parse::{parse_action, parse_key};
 
 /// Identifies a key independent of modifiers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

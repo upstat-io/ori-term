@@ -316,15 +316,9 @@ fn format_binding(b: &KeyBinding) -> String {
         parts.push("Super");
     }
 
-    parts.push(""); // Placeholder for the key name.
     let key_name = format_binding_key(&b.key);
-    let idx = parts.len() - 1;
-    let combo = parts[..idx]
-        .iter()
-        .copied()
-        .chain(std::iter::once(key_name.as_str()))
-        .collect::<Vec<_>>()
-        .join("+");
+    parts.push(&key_name);
+    let combo = parts.join("+");
 
     let action = format_action(&b.action);
     format!("{combo} -> {action}")
