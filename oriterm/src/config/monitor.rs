@@ -15,9 +15,15 @@ use crate::tab::TermEvent;
 /// config file is modified.
 ///
 /// Dropping the monitor signals the watcher thread to exit and joins it.
+///
+/// Drop order: `shutdown_tx` → `watcher` → `thread.join()`.
+/// Dropping the watcher closes `notify_tx`, which causes `notify_rx.recv()`
+/// in the thread to return `Err` and break the loop, allowing `join()`.
 pub(crate) struct ConfigMonitor {
     /// Signals the watcher thread to exit.
     shutdown_tx: Option<mpsc::Sender<()>>,
+    /// Filesystem watcher — dropped before joining thread to unblock `notify_rx.recv()`.
+    watcher: Option<notify::RecommendedWatcher>,
     /// Watcher thread handle — joined on drop.
     thread: Option<JoinHandle<()>>,
 }
@@ -61,14 +67,13 @@ impl ConfigMonitor {
         let thread = std::thread::Builder::new()
             .name("config-watcher".into())
             .spawn(move || {
-                // Keep the watcher alive for the lifetime of this thread.
-                let _watcher = watcher;
                 Self::watch_loop(&config_file, &proxy, &notify_rx, &shutdown_rx);
             })
             .ok()?;
 
         Some(Self {
             shutdown_tx: Some(shutdown_tx),
+            watcher: Some(watcher),
             thread: Some(thread),
         })
     }
@@ -125,6 +130,9 @@ impl Drop for ConfigMonitor {
         // Signal shutdown — dropping the sender closes the channel,
         // causing try_recv to return Disconnected.
         drop(self.shutdown_tx.take());
+        // Drop the watcher — closes notify_tx inside it, which makes
+        // notify_rx.recv() in the thread return Err and break the loop.
+        drop(self.watcher.take());
         if let Some(handle) = self.thread.take() {
             let _ = handle.join();
         }
