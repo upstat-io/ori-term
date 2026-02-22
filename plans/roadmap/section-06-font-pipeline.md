@@ -67,7 +67,7 @@ sections:
     status: complete
   - id: "6.21"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 06: Font Pipeline + Best-in-Class Glyph Rendering
@@ -956,34 +956,34 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 
 ## 6.21 Section Completion
 
-- [ ] All 6.1–6.20 items complete
-- [ ] Full font pipeline: multi-face, fallback chain, cap-height normalization
-- [ ] Rustybuzz shaping: ligatures, combining marks, OpenType features
-- [ ] Advanced atlas: guillotine packing, multi-page, LRU eviction, Q6 keying
-- [ ] Built-in glyphs: box drawing, blocks, braille, powerline — pixel-perfect
-- [ ] Color emoji: RGBA atlas, correct rendering without fg tinting
-- [ ] Font synthesis: proper embolden (outline expansion) + proper italic (14° skew) — no crude hacks
-- [ ] Hinting: auto-detected by DPI, user-overridable, atlas-aware
-- [ ] Subpixel rendering (LCD): per-channel alpha blending, RGB/BGR support, auto-disabled on HiDPI
-- [ ] Subpixel glyph positioning: fractional offsets for UI text and combining marks
-- [ ] All text decorations: single, double, curly, dotted, dashed underline + strikethrough
+- [ ] All 6.1–6.20 items complete *(blocked: 6.4, 6.5, 6.12, 6.16 have items pending Section 9/14)*
+- [x] Full font pipeline: multi-face, fallback chain, cap-height normalization
+- [x] Rustybuzz shaping: ligatures, combining marks, OpenType features
+- [x] Advanced atlas: guillotine packing, multi-page, LRU eviction, Q6 keying
+- [x] Built-in glyphs: box drawing, blocks, braille, powerline — pixel-perfect
+- [x] Color emoji: RGBA atlas, correct rendering without fg tinting
+- [x] Font synthesis: proper embolden (outline expansion) + proper italic (14° skew) — no crude hacks
+- [x] Hinting: auto-detected by DPI, user-overridable, atlas-aware
+- [x] Subpixel rendering (LCD): per-channel alpha blending, RGB/BGR support, auto-disabled on HiDPI
+- [x] Subpixel glyph positioning: fractional offsets for UI text and combining marks
+- [x] All text decorations: single, double, curly, dotted, dashed underline + strikethrough
 - [x] UI text shaping: tab bar titles, search bar, measure + truncate
-- [ ] Pre-caching: no first-frame stall for ASCII
-- [ ] Visual regression suite: golden image tests for all character types, sizes, and DPI scales
-- [ ] **Visual tests** (automated via golden images):
-  - [ ] Ligatures: `=>`, `->`, `!=` render as single glyphs
-  - [ ] Box drawing: connected borders, pixel-perfect at all sizes
-  - [ ] Braille: correct dot patterns
-  - [ ] Powerline: triangle shapes render correctly
-  - [ ] CJK: cap-height normalized, visually consistent with Latin text
-  - [ ] Emoji: rendered in color, correct size
-  - [ ] Combining marks: correctly positioned diacritics
-  - [ ] Synthetic bold: visually heavier than regular, no clipping
-  - [ ] Synthetic italic: 14° oblique, no artifacts
-  - [ ] Hinted vs unhinted: both produce clean output at their target DPIs
-  - [ ] Subpixel LCD: visibly sharper than grayscale on 1x displays
-- [ ] `./clippy-all.sh` — no warnings
-- [ ] `./test-all.sh` — all tests pass including visual regression suite
-- [ ] `./build-all.sh` — cross-compilation succeeds
+- [x] Pre-caching: no first-frame stall for ASCII
+- [x] Visual regression suite: golden image tests for all character types, sizes, and DPI scales
+- [x] **Visual tests** (automated via golden images):
+  - [x] Ligatures: `=>`, `->`, `!=` render as single glyphs
+  - [x] Box drawing: connected borders, pixel-perfect at all sizes
+  - [x] Braille: correct dot patterns
+  - [x] Powerline: triangle shapes render correctly
+  - [x] CJK: cap-height normalized, visually consistent with Latin text
+  - [x] Emoji: rendered in color, correct size
+  - [x] Combining marks: correctly positioned diacritics
+  - [x] Synthetic bold: visually heavier than regular, no clipping
+  - [x] Synthetic italic: 14° oblique, no artifacts
+  - [x] Hinted vs unhinted: both produce clean output at their target DPIs
+  - [x] Subpixel LCD: visibly sharper than grayscale on 1x displays
+- [x] `./clippy-all.sh` — no warnings
+- [x] `./test-all.sh` — all tests pass including visual regression suite
+- [x] `./build-all.sh` — cross-compilation succeeds
 
 **Exit Criteria:** Font rendering is best-in-class — not just feature-complete but visually superior. Every character type renders correctly. Hinting produces crisp text on 1080p. LCD subpixel rendering provides measurably sharper text than any competing GPU terminal. Font synthesis (bold/italic) is indistinguishable from real variants at normal reading distance. Visual regression tests prevent quality regressions. This is the feature users switch terminals for.
