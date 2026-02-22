@@ -69,6 +69,17 @@ pub(super) fn headless_env_full(
     dpi: f32,
     format: GlyphFormat,
 ) -> Option<(GpuState, GpuRenderer)> {
+    headless_env_with_hinting(size_pt, dpi, format, HintingMode::Full)
+}
+
+/// Headless rendering environment with full control over font size, DPI,
+/// glyph format, and hinting mode.
+pub(super) fn headless_env_with_hinting(
+    size_pt: f32,
+    dpi: f32,
+    format: GlyphFormat,
+    hinting: HintingMode,
+) -> Option<(GpuState, GpuRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
     let font_collection = FontCollection::new(
         FontSet::embedded(),
@@ -76,7 +87,7 @@ pub(super) fn headless_env_full(
         dpi,
         format,
         TEST_FONT_WEIGHT,
-        HintingMode::Full,
+        hinting,
     )
     .ok()?;
     let renderer = GpuRenderer::new(&gpu, font_collection);
