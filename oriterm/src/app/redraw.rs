@@ -4,7 +4,10 @@ use oriterm_core::{Column, CursorShape, TermMode};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
-use crate::gpu::{FrameSelection, SurfaceError, ViewportSize, extract_frame, extract_frame_into};
+use crate::gpu::{
+    FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize, extract_frame,
+    extract_frame_into,
+};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 
 impl App {
@@ -51,18 +54,17 @@ impl App {
                 }
             };
 
-            // Override cursor for mark mode: show a hollow block at the mark
-            // cursor position so the user can see where they are navigating.
-            if let Some(mc) = tab.mark_cursor() {
-                if let Some((line, col)) =
-                    mc.to_viewport(frame.content.stable_row_base, frame.rows())
-                {
-                    frame.content.cursor.line = line;
-                    frame.content.cursor.column = Column(col);
-                    frame.content.cursor.shape = CursorShape::HollowBlock;
-                    frame.content.cursor.visible = true;
-                }
-            }
+            // Mark-mode cursor override: set the override field so the
+            // Prepare phase renders a hollow block at the mark position.
+            // The extracted content.cursor is never mutated.
+            frame.mark_cursor = tab.mark_cursor().and_then(|mc| {
+                let (line, col) = mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
+                Some(MarkCursorOverride {
+                    line,
+                    column: Column(col),
+                    shape: CursorShape::HollowBlock,
+                })
+            });
 
             // Snapshot selection for rendering. The selection lives on Tab
             // (not inside Term), so we build the FrameSelection after the

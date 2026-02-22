@@ -51,6 +51,9 @@ const OFF_ATLAS_PAGE: usize = 68; //  u32  — atlas texture array layer index
 const OFF_CORNER_RADIUS: usize = 72; //  f32  — corner radius (UI rect)
 const OFF_BORDER_WIDTH: usize = 76; //  f32  — border width (UI rect)
 
+// Compile-time check: the last field's end must equal the declared record size.
+const _: () = assert!(OFF_BORDER_WIDTH + 4 == INSTANCE_SIZE);
+
 /// Instance kind tag written into the record at offset 64.
 ///
 /// The shader uses this to select between solid-fill (rect/cursor) and
