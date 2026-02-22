@@ -84,24 +84,24 @@ impl App {
         event: &winit::event::KeyEvent,
         modifiers: ModifiersState,
     ) -> CopyAction {
-        if event.state != ElementState::Pressed {
-            return CopyAction::NotCopy;
-        }
-
         let ctrl = modifiers.control_key();
         let shift = modifiers.shift_key();
 
         match event.physical_key {
             // Ctrl+Shift+C — always a copy keybinding.
             PhysicalKey::Code(KeyCode::KeyC) if ctrl && shift => {
-                self.copy_selection();
+                if event.state == ElementState::Pressed {
+                    self.copy_selection();
+                }
                 CopyAction::Handled
             }
             // Ctrl+C (no shift) — smart: copy if selection, else fall through to PTY.
             PhysicalKey::Code(KeyCode::KeyC) if ctrl && !shift => {
                 let has_selection = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
                 if has_selection {
-                    self.copy_selection();
+                    if event.state == ElementState::Pressed {
+                        self.copy_selection();
+                    }
                     CopyAction::Handled
                 } else {
                     CopyAction::NotCopy
@@ -109,7 +109,9 @@ impl App {
             }
             // Ctrl+Insert — copy selection.
             PhysicalKey::Code(KeyCode::Insert) if ctrl => {
-                self.copy_selection();
+                if event.state == ElementState::Pressed {
+                    self.copy_selection();
+                }
                 CopyAction::Handled
             }
             _ => CopyAction::NotCopy,
@@ -131,29 +133,31 @@ impl App {
         event: &winit::event::KeyEvent,
         modifiers: ModifiersState,
     ) -> PasteAction {
-        if event.state != ElementState::Pressed {
-            return PasteAction::NotPaste;
-        }
-
         let ctrl = modifiers.control_key();
         let shift = modifiers.shift_key();
 
         match event.physical_key {
             // Ctrl+Shift+V — always paste.
             PhysicalKey::Code(KeyCode::KeyV) if ctrl && shift => {
-                self.paste_from_clipboard();
+                if event.state == ElementState::Pressed {
+                    self.paste_from_clipboard();
+                }
                 PasteAction::Handled
             }
             // Ctrl+V (no shift) — paste only. Terminals don't have a VT
             // conflict for Ctrl+V that needs smart behavior like Ctrl+C.
             // Applications expecting literal Ctrl+V should use Ctrl+Shift+V.
             PhysicalKey::Code(KeyCode::KeyV) if ctrl && !shift => {
-                self.paste_from_clipboard();
+                if event.state == ElementState::Pressed {
+                    self.paste_from_clipboard();
+                }
                 PasteAction::Handled
             }
             // Shift+Insert — paste.
             PhysicalKey::Code(KeyCode::Insert) if shift && !ctrl => {
-                self.paste_from_clipboard();
+                if event.state == ElementState::Pressed {
+                    self.paste_from_clipboard();
+                }
                 PasteAction::Handled
             }
             _ => PasteAction::NotPaste,

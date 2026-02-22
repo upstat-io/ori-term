@@ -143,17 +143,19 @@ impl App {
         }
 
         // Ctrl+Shift+M enters mark mode.
-        if event.state == ElementState::Pressed && !event.repeat {
-            if self.modifiers.control_key()
-                && self.modifiers.shift_key()
-                && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
-            {
+        // Match on key+modifiers first, consume both press and release to
+        // prevent orphaned release events from leaking to the PTY.
+        if self.modifiers.control_key()
+            && self.modifiers.shift_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
+        {
+            if event.state == ElementState::Pressed && !event.repeat {
                 if let Some(tab) = &mut self.tab {
                     tab.enter_mark_mode();
                     self.dirty = true;
                 }
-                return;
             }
+            return;
         }
 
         // Copy keybindings: Ctrl+Shift+C, smart Ctrl+C, Ctrl+Insert.
