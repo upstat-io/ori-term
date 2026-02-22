@@ -6,7 +6,7 @@ A GPU-accelerated terminal emulator with a built-in multiplexer, written from sc
 
 Most terminal emulators make you choose: a fast GPU renderer (Alacritty, Ghostty) or a built-in multiplexer (WezTerm), but never both done well — and you still end up running tmux inside any of them. ori-term eliminates that entire layer. Splits, floating panes, tabs, sessions, and daemon mode are native. Close your laptop, reopen it, and your session is exactly where you left it. SSH into a remote machine and your panes feel local with Mosh-style predictive echo. Or skip the GUI entirely — `oriterm-tui` attaches to the same daemon from any terminal, giving you a tmux-like experience backed by the same multiplexer.
 
-Built by studying 18 terminal projects from the inside out — Alacritty, Ghostty, WezTerm, tmux, Mosh, Chrome, VS Code, Windows Terminal, and others. Cross-platform (Windows, Linux, macOS) from day one — no platform is primary, no platform is an afterthought.
+Built by studying terminal emulators (Alacritty, Ghostty, WezTerm, Windows Terminal), multiplexers (tmux, Mosh), and GUI applications (Chrome, VS Code) from the inside out. Cross-platform (Windows, Linux, macOS) from day one — no platform is primary, no platform is an afterthought.
 
 ### What sets it apart
 
