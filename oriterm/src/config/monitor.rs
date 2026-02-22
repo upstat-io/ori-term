@@ -86,8 +86,9 @@ impl ConfigMonitor {
     ) {
         while let Ok(event) = notify_rx.recv() {
             // Check for shutdown before processing.
-            if shutdown_rx.try_recv().is_ok() {
-                return;
+            match shutdown_rx.try_recv() {
+                Ok(()) | Err(mpsc::TryRecvError::Disconnected) => return,
+                Err(mpsc::TryRecvError::Empty) => {}
             }
 
             // Filter: only process events for our config file.
@@ -109,8 +110,9 @@ impl ConfigMonitor {
             }
 
             // Check for shutdown after debounce.
-            if shutdown_rx.try_recv().is_ok() {
-                return;
+            match shutdown_rx.try_recv() {
+                Ok(()) | Err(mpsc::TryRecvError::Disconnected) => return,
+                Err(mpsc::TryRecvError::Empty) => {}
             }
 
             log::info!("config_monitor: config file changed, sending reload event");

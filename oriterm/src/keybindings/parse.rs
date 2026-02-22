@@ -113,7 +113,12 @@ pub(crate) fn parse_mods(s: &str) -> Modifiers {
             "Shift" => mods |= Modifiers::SHIFT,
             "Alt" => mods |= Modifiers::ALT,
             "Super" => mods |= Modifiers::SUPER,
-            _ => {} // "None", "", or unknown — no modifier.
+            other => {
+                let trimmed = other.trim();
+                if !trimmed.is_empty() && trimmed != "None" {
+                    log::warn!("keybindings: unknown modifier {:?}", trimmed);
+                }
+            }
         }
     }
     mods

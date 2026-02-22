@@ -1,7 +1,5 @@
 //! Configuration unit tests.
 
-use oriterm_core::CursorShape;
-
 use super::*;
 
 #[test]
@@ -11,7 +9,7 @@ fn default_config_roundtrip() {
     let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
     assert!((parsed.font.size - 11.0).abs() < f32::EPSILON);
     assert_eq!(parsed.terminal.scrollback, 10_000);
-    assert_eq!(parsed.terminal.cursor_style, "block");
+    assert_eq!(parsed.terminal.cursor_style, CursorStyle::Block);
     assert_eq!(parsed.colors.scheme, "Catppuccin Mocha");
     assert_eq!(parsed.window.columns, 120);
     assert_eq!(parsed.window.rows, 30);
@@ -43,7 +41,7 @@ fn empty_toml_gives_defaults() {
     assert!((parsed.font.size - 11.0).abs() < f32::EPSILON);
     assert!(parsed.behavior.copy_on_select);
     assert!(parsed.behavior.bold_is_bright);
-    assert_eq!(parsed.terminal.cursor_style, "block");
+    assert_eq!(parsed.terminal.cursor_style, CursorStyle::Block);
 }
 
 #[test]
@@ -65,10 +63,10 @@ fn cursor_style_from_toml() {
 cursor_style = "bar"
 "#;
     let parsed: Config = toml::from_str(toml_str).expect("deserialize");
-    assert_eq!(parsed.terminal.cursor_style, "bar");
+    assert_eq!(parsed.terminal.cursor_style, CursorStyle::Bar);
     assert_eq!(
-        parse_cursor_style(&parsed.terminal.cursor_style),
-        CursorShape::Bar
+        parsed.terminal.cursor_style.to_shape(),
+        oriterm_core::CursorShape::Bar
     );
 }
 
@@ -92,14 +90,42 @@ cursor_blink_interval_ms = 250
 }
 
 #[test]
-fn parse_cursor_style_variants() {
-    assert_eq!(parse_cursor_style("block"), CursorShape::Block);
-    assert_eq!(parse_cursor_style("Block"), CursorShape::Block);
-    assert_eq!(parse_cursor_style("bar"), CursorShape::Bar);
-    assert_eq!(parse_cursor_style("beam"), CursorShape::Bar);
-    assert_eq!(parse_cursor_style("underline"), CursorShape::Underline);
-    assert_eq!(parse_cursor_style("Underline"), CursorShape::Underline);
-    assert_eq!(parse_cursor_style("unknown"), CursorShape::Block);
+fn cursor_style_serde_variants() {
+    use oriterm_core::CursorShape;
+
+    // All valid values deserialize correctly.
+    assert_eq!(
+        toml::from_str::<TerminalConfig>("cursor_style = \"block\"")
+            .unwrap()
+            .cursor_style,
+        CursorStyle::Block,
+    );
+    assert_eq!(
+        toml::from_str::<TerminalConfig>("cursor_style = \"bar\"")
+            .unwrap()
+            .cursor_style,
+        CursorStyle::Bar,
+    );
+    assert_eq!(
+        toml::from_str::<TerminalConfig>("cursor_style = \"beam\"")
+            .unwrap()
+            .cursor_style,
+        CursorStyle::Bar,
+    );
+    assert_eq!(
+        toml::from_str::<TerminalConfig>("cursor_style = \"underline\"")
+            .unwrap()
+            .cursor_style,
+        CursorStyle::Underline,
+    );
+
+    // Unknown value is a parse error (enforced by serde enum).
+    assert!(toml::from_str::<TerminalConfig>("cursor_style = \"unknown\"").is_err());
+
+    // to_shape() maps correctly.
+    assert_eq!(CursorStyle::Block.to_shape(), CursorShape::Block);
+    assert_eq!(CursorStyle::Bar.to_shape(), CursorShape::Bar);
+    assert_eq!(CursorStyle::Underline.to_shape(), CursorShape::Underline);
 }
 
 #[test]
@@ -450,7 +476,7 @@ fn color_overrides_roundtrip() {
 #[test]
 fn bell_defaults() {
     let parsed: Config = toml::from_str("").expect("deserialize");
-    assert_eq!(parsed.bell.animation, "ease_out");
+    assert_eq!(parsed.bell.animation, BellAnimation::EaseOut);
     assert_eq!(parsed.bell.duration_ms, 150);
     assert!(parsed.bell.color.is_none());
     assert!(parsed.bell.is_enabled());
