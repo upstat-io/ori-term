@@ -132,7 +132,6 @@ impl App {
     > {
         let font_weight = self.config.font.effective_weight();
         let font_size_pt = self.config.font.size;
-        let font_family = self.config.font.family.clone();
         let font_config = self.config.font.clone();
         let font_dpi = DEFAULT_DPI;
 
@@ -140,7 +139,7 @@ impl App {
             .name("font-discovery".into())
             .spawn(move || {
                 let t0 = std::time::Instant::now();
-                let mut font_set = FontSet::load(font_family.as_deref(), font_weight)?;
+                let mut font_set = FontSet::load(font_config.family.as_deref(), font_weight)?;
 
                 // Prepend user-configured fallback fonts.
                 let user_fb_families: Vec<&str> = font_config
