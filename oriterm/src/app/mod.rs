@@ -6,6 +6,7 @@
 //! PTY reader thread.
 
 mod clipboard_ops;
+mod config_reload;
 mod cursor_blink;
 mod init;
 mod keyboard_input;
@@ -21,28 +22,21 @@ use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
 use oriterm_core::{Event, TermMode};
-use oriterm_ui::window::WindowConfig;
 
 use self::cursor_blink::CursorBlink;
 use self::mouse_selection::MouseState;
 use crate::clipboard::Clipboard;
+use crate::config::Config;
+use crate::config::monitor::ConfigMonitor;
 use crate::font::{HintingMode, SubpixelMode};
 use crate::gpu::{FrameInput, GpuRenderer, GpuState};
+use crate::keybindings::{self, KeyBinding};
 use crate::tab::{Tab, TermEvent};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
-/// Default font size in points (wired from config in Section 13).
-const DEFAULT_FONT_SIZE_PT: f32 = 11.0;
-
-/// Default DPI for font rasterization (wired from config in Section 13).
+/// Default DPI for font rasterization.
 const DEFAULT_DPI: f32 = 96.0;
-
-/// Default font weight (CSS-style 100–900).
-const DEFAULT_FONT_WEIGHT: u16 = 400;
-
-/// Default scrollback buffer size in lines.
-const DEFAULT_SCROLLBACK: usize = 10_000;
 
 /// Terminal application state and event loop handler.
 ///
@@ -86,8 +80,14 @@ pub(crate) struct App {
     // System clipboard for copy/paste.
     clipboard: Clipboard,
 
-    // Configuration.
-    window_config: WindowConfig,
+    // User configuration (loaded from TOML, hot-reloaded on file change).
+    config: Config,
+
+    // Merged keybinding table (defaults + user overrides).
+    bindings: Vec<KeyBinding>,
+
+    // Config file watcher (kept alive for the lifetime of the app).
+    _config_monitor: Option<ConfigMonitor>,
 }
 
 impl App {
@@ -95,7 +95,9 @@ impl App {
     ///
     /// All GPU/window/tab state is `None` until [`resumed`] is called by
     /// the event loop (lazy initialization pattern from winit docs).
-    pub(crate) fn new(event_proxy: EventLoopProxy<TermEvent>, window_config: WindowConfig) -> Self {
+    pub(crate) fn new(event_proxy: EventLoopProxy<TermEvent>, config: Config) -> Self {
+        let bindings = keybindings::merge_bindings(&config.keybind);
+        let monitor = ConfigMonitor::new(event_proxy.clone());
         Self {
             gpu: None,
             renderer: None,
@@ -110,7 +112,9 @@ impl App {
             blinking_active: false,
             mouse: MouseState::new(),
             clipboard: Clipboard::new(),
-            window_config,
+            config,
+            bindings,
+            _config_monitor: monitor,
         }
     }
 
@@ -180,8 +184,7 @@ impl App {
                             let had_drag = self.mouse.is_dragging();
                             mouse_selection::handle_release(&mut self.mouse);
                             // CopyOnSelect: auto-copy to primary selection after drag.
-                            // TODO(section-13): wire CopyOnSelect config setting.
-                            if had_drag {
+                            if had_drag && self.config.behavior.copy_on_select {
                                 self.copy_selection_to_primary();
                             }
                         }
@@ -407,8 +410,7 @@ impl ApplicationHandler<TermEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: TermEvent) {
         match event {
             TermEvent::ConfigReload => {
-                log::info!("config reload requested");
-                // TODO(section-13.4): apply_config_reload()
+                self.apply_config_reload();
             }
             TermEvent::Terminal { tab_id: _, event } => {
                 self.handle_terminal_event(event_loop, event);

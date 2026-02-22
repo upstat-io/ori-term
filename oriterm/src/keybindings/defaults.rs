@@ -53,6 +53,8 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         bind(named(NamedKey::ArrowDown), cs, Action::NextPrompt),
         // Fullscreen (Alt+Enter on Windows/Linux).
         bind(named(NamedKey::Enter), alt, Action::ToggleFullscreen),
+        // Mark mode (vi-style selection navigation).
+        bind(ch("m"), cs, Action::EnterMarkMode),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),

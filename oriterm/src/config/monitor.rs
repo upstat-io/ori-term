@@ -13,8 +13,12 @@ use crate::tab::TermEvent;
 /// Watches the config file's parent directory for changes and sends
 /// `TermEvent::ConfigReload` through the event loop proxy when the
 /// config file is modified.
+///
+/// Dropping the monitor signals the watcher thread to exit and joins it.
 pub(crate) struct ConfigMonitor {
-    shutdown_tx: mpsc::Sender<()>,
+    /// Signals the watcher thread to exit.
+    shutdown_tx: Option<mpsc::Sender<()>>,
+    /// Watcher thread handle — joined on drop.
     thread: Option<JoinHandle<()>>,
 }
 
@@ -64,17 +68,9 @@ impl ConfigMonitor {
             .ok()?;
 
         Some(Self {
-            shutdown_tx,
+            shutdown_tx: Some(shutdown_tx),
             thread: Some(thread),
         })
-    }
-
-    /// Shut down the watcher thread.
-    pub(crate) fn shutdown(mut self) {
-        let _ = self.shutdown_tx.send(());
-        if let Some(handle) = self.thread.take() {
-            let _ = handle.join();
-        }
     }
 
     /// Watch loop — runs on the watcher thread.
@@ -120,6 +116,17 @@ impl ConfigMonitor {
                 // Event loop closed — exit the watcher thread.
                 return;
             }
+        }
+    }
+}
+
+impl Drop for ConfigMonitor {
+    fn drop(&mut self) {
+        // Signal shutdown — dropping the sender closes the channel,
+        // causing try_recv to return Disconnected.
+        drop(self.shutdown_tx.take());
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
         }
     }
 }

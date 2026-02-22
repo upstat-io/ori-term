@@ -3,18 +3,15 @@
 //! All structs use `#[serde(default)]` so partial TOML files
 //! fill in defaults for missing fields.
 
-// Config is wired into the application startup path in 13.4 (hot reload).
-// Until then, the module is only exercised by tests.
-#![expect(dead_code, reason = "config wired into App in section 13.4")]
-
 mod io;
 pub(crate) mod monitor;
 
-#[expect(
-    unused_imports,
-    reason = "WindowState and state_path used in section 13.4"
-)]
-pub(crate) use io::{WindowState, config_path, state_path};
+pub(crate) use io::config_path;
+
+#[allow(unused_imports, reason = "used in state persistence (Section 15)")]
+pub(crate) use io::WindowState;
+#[allow(unused_imports, reason = "used in state persistence (Section 15)")]
+pub(crate) use io::state_path;
 
 use std::collections::HashMap;
 
@@ -98,11 +95,13 @@ impl FontConfig {
     }
 
     /// Returns the bold weight derived from the user weight: `min(900, weight + 300)`.
+    #[allow(dead_code, reason = "used in config hot reload (Section 13.4)")]
     pub fn effective_bold_weight(&self) -> u16 {
         (self.effective_weight() + 300).min(900)
     }
 
     /// Returns `tab_bar_font_weight` clamped to [100, 900], defaulting to 600 (`SemiBold`).
+    #[allow(dead_code, reason = "used in config hot reload (Section 13.4)")]
     pub fn effective_tab_bar_weight(&self) -> u16 {
         self.tab_bar_font_weight.unwrap_or(600).clamp(100, 900)
     }
@@ -173,7 +172,7 @@ pub enum AlphaBlending {
 }
 
 /// Color scheme and palette configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ColorConfig {
     /// Color scheme name (default: "Catppuccin Mocha").
@@ -219,6 +218,7 @@ impl Default for ColorConfig {
 
 impl ColorConfig {
     /// Returns `minimum_contrast` clamped to [1.0, 21.0].
+    #[allow(dead_code, reason = "used in color config application")]
     pub fn effective_minimum_contrast(&self) -> f32 {
         self.minimum_contrast.clamp(1.0, 21.0)
     }
@@ -281,6 +281,7 @@ impl WindowConfig {
 
     /// Returns tab bar opacity clamped to [0.0, 1.0].
     /// Falls back to `opacity` when not explicitly set.
+    #[allow(dead_code, reason = "used in tab bar rendering (Section 16)")]
     pub fn effective_tab_bar_opacity(&self) -> f32 {
         self.tab_bar_opacity.unwrap_or(self.opacity).clamp(0.0, 1.0)
     }
@@ -342,6 +343,7 @@ impl Default for BellConfig {
 
 impl BellConfig {
     /// Returns true when the visual bell is enabled.
+    #[allow(dead_code, reason = "used in bell rendering (Section 24)")]
     pub fn is_enabled(&self) -> bool {
         self.duration_ms > 0 && self.animation != BellAnimation::None
     }

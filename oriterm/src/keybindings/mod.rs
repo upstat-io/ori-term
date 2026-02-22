@@ -1,11 +1,5 @@
 //! Keybinding system — map key+modifiers to actions.
 
-// Keybindings are wired into App::handle_keyboard_input in section 13.4.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "keybindings wired into App in section 13.4")
-)]
-
 mod defaults;
 mod parse;
 
@@ -13,16 +7,17 @@ use winit::keyboard::{Key, NamedKey};
 
 use crate::key_encoding::Modifiers;
 
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "keybindings wired into App in section 13.4")
+#[allow(
+    unused_imports,
+    reason = "used in tests and Section 13.8 CLI subcommands"
 )]
 pub(crate) use defaults::default_bindings;
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "keybindings wired into App in section 13.4")
+pub(crate) use parse::merge_bindings;
+#[allow(
+    unused_imports,
+    reason = "used in tests and Section 13.8 CLI subcommands"
 )]
-pub(crate) use parse::{merge_bindings, parse_action, parse_key, parse_mods};
+pub(crate) use parse::{parse_action, parse_key, parse_mods};
 
 /// Identifies a key independent of modifiers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -64,6 +59,8 @@ pub(crate) enum Action {
     MoveTabToNewWindow,
     /// Toggle fullscreen mode.
     ToggleFullscreen,
+    /// Enter vi-style mark/selection mode.
+    EnterMarkMode,
     /// Send literal bytes to the PTY.
     SendText(String),
     /// Explicitly unbinds a default binding.

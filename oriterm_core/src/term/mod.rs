@@ -146,6 +146,11 @@ impl<T: EventListener> Term<T> {
         &self.palette
     }
 
+    /// Mutable reference to the color palette (for config overrides).
+    pub fn palette_mut(&mut self) -> &mut Palette {
+        &mut self.palette
+    }
+
     /// Current color theme.
     pub fn theme(&self) -> Theme {
         self.theme
@@ -178,6 +183,11 @@ impl<T: EventListener> Term<T> {
     /// Current cursor shape.
     pub fn cursor_shape(&self) -> CursorShape {
         self.cursor_shape
+    }
+
+    /// Override the cursor shape (config-driven, not VTE-driven).
+    pub fn set_cursor_shape(&mut self, shape: CursorShape) {
+        self.cursor_shape = shape;
     }
 
     /// Reference to the charset state.

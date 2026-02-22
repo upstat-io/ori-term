@@ -1,0 +1,290 @@
+//! Configuration hot-reload — applies config changes without restart.
+//!
+//! When the config file watcher detects changes, [`App::apply_config_reload`]
+//! loads the new config, computes deltas, and applies only what changed:
+//! fonts, colors, cursor style, window, behavior, bell, keybindings.
+
+use oriterm_core::Rgb;
+
+use super::{App, DEFAULT_DPI};
+use crate::config::Config;
+use crate::font::{FontCollection, FontSet, HintingMode};
+use crate::gpu::apply_transparency;
+use crate::keybindings;
+
+impl App {
+    /// Apply a reloaded configuration to the running application.
+    ///
+    /// Reloads the config file, compares against the current config, and
+    /// applies only the fields that changed. On parse error, logs a warning
+    /// and keeps the previous config.
+    pub(super) fn apply_config_reload(&mut self) {
+        let new_config = match Config::try_load() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("config reload: {e}");
+                return;
+            }
+        };
+
+        self.apply_font_changes(&new_config);
+        self.apply_color_changes(&new_config);
+        self.apply_cursor_changes(&new_config);
+        self.apply_window_changes(&new_config);
+        self.apply_behavior_changes(&new_config);
+        self.apply_keybinding_changes(&new_config);
+
+        // Bell config is read from self.config at usage sites, so
+        // storing the new config is sufficient. Log if it changed.
+        if new_config.bell.duration_ms != self.config.bell.duration_ms
+            || new_config.bell.animation != self.config.bell.animation
+            || new_config.bell.color != self.config.bell.color
+        {
+            log::info!("config reload: bell settings updated");
+        }
+
+        // Store the new config as current.
+        self.config = new_config;
+
+        // Mark everything dirty for redraw.
+        self.dirty = true;
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+
+        log::info!("config reload: applied successfully");
+    }
+
+    /// Detect and apply font changes (family, size, weight, features, fallback).
+    fn apply_font_changes(&mut self, new: &Config) {
+        let old = &self.config.font;
+        let font_changed = (new.font.size - old.size).abs() > f32::EPSILON
+            || new.font.family != old.family
+            || new.font.weight != old.weight
+            || new.font.features != old.features
+            || new.font.fallback != old.fallback;
+
+        if !font_changed {
+            return;
+        }
+
+        let (Some(renderer), Some(gpu), Some(window)) =
+            (&mut self.renderer, &self.gpu, &self.window)
+        else {
+            return;
+        };
+
+        // Preserve current hinting and format (display-dependent, not config-dependent).
+        let hinting = renderer.cell_metrics().width; // We need actual hinting mode
+        let _ = hinting; // Placeholder
+
+        let weight = new.font.effective_weight();
+        let font_set = match FontSet::load(new.font.family.as_deref(), weight) {
+            Ok(fs) => fs,
+            Err(e) => {
+                log::warn!("config reload: font load failed: {e}");
+                return;
+            }
+        };
+
+        // Get current scale and hinting from the renderer's existing collection.
+        let scale = window.scale_factor().factor();
+        let cur_hinting = HintingMode::from_scale_factor(scale);
+        let cur_format = crate::font::SubpixelMode::from_scale_factor(scale).glyph_format();
+
+        let collection = match FontCollection::new(
+            font_set,
+            new.font.size,
+            DEFAULT_DPI,
+            cur_format,
+            weight,
+            cur_hinting,
+        ) {
+            Ok(fc) => fc,
+            Err(e) => {
+                log::warn!("config reload: font collection failed: {e}");
+                return;
+            }
+        };
+
+        let cell = collection.cell_metrics();
+        log::info!(
+            "config reload: font size={:.1}, cell={}x{}",
+            new.font.size,
+            cell.width,
+            cell.height,
+        );
+
+        renderer.replace_font_collection(collection, gpu);
+
+        // Resize grid to match new cell metrics.
+        let cell = renderer.cell_metrics();
+        let (w, h) = window.size_px();
+        let cols = cell.columns(w).max(1);
+        let rows = cell.rows(h).max(1);
+
+        if let Some(grid) = &mut self.terminal_grid {
+            grid.set_cell_metrics(cell.width, cell.height);
+            grid.set_grid_size(cols, rows);
+            grid.set_bounds(oriterm_ui::geometry::Rect::new(
+                0.0,
+                0.0,
+                cols as f32 * cell.width,
+                rows as f32 * cell.height,
+            ));
+        }
+
+        if let Some(tab) = &self.tab {
+            tab.resize(rows as u16, cols as u16);
+        }
+    }
+
+    /// Detect and apply color config changes.
+    ///
+    /// Rebuilds the palette from the current theme, applies config color
+    /// overrides, and marks all lines dirty so colors are re-resolved.
+    fn apply_color_changes(&self, new: &Config) {
+        if new.colors == self.config.colors {
+            return;
+        }
+
+        let Some(tab) = &self.tab else { return };
+        let mut term = tab.terminal().lock();
+
+        // Rebuild palette from current theme, then apply config overrides.
+        let theme = term.theme();
+        let mut palette = oriterm_core::Palette::for_theme(theme);
+        apply_color_overrides(&mut palette, &new.colors);
+
+        // Replace the palette and mark all lines dirty.
+        *term.palette_mut() = palette;
+        term.grid_mut().dirty_mut().mark_all();
+
+        log::info!("config reload: colors updated");
+    }
+
+    /// Detect and apply cursor style changes.
+    fn apply_cursor_changes(&self, new: &Config) {
+        if new.terminal.cursor_style == self.config.terminal.cursor_style {
+            return;
+        }
+
+        let shape = new.terminal.cursor_style.to_shape();
+        if let Some(tab) = &self.tab {
+            tab.terminal().lock().set_cursor_shape(shape);
+        }
+    }
+
+    /// Detect and apply window transparency/blur changes.
+    fn apply_window_changes(&self, new: &Config) {
+        let opacity_changed =
+            (new.window.effective_opacity() - self.config.window.effective_opacity()).abs()
+                > f32::EPSILON;
+        let blur_changed = new.window.blur != self.config.window.blur;
+
+        if !opacity_changed && !blur_changed {
+            return;
+        }
+
+        let Some(window) = &self.window else { return };
+        let opacity = new.window.effective_opacity();
+        let blur = new.window.blur && opacity < 1.0;
+
+        // Re-apply platform-specific transparency effects.
+        apply_transparency(
+            window.window(),
+            opacity,
+            blur,
+            Rgb {
+                r: 30,
+                g: 30,
+                b: 46,
+            },
+        );
+
+        log::info!("config reload: window opacity={opacity:.2}, blur={blur}",);
+    }
+
+    /// Detect and apply behavior config changes.
+    ///
+    /// Behavior flags are read from `self.config` at usage sites, so
+    /// storing the new config is sufficient. If `bold_is_bright` changed,
+    /// marks all lines dirty since existing cells may render differently.
+    fn apply_behavior_changes(&self, new: &Config) {
+        if new.behavior.bold_is_bright != self.config.behavior.bold_is_bright {
+            if let Some(tab) = &self.tab {
+                tab.terminal().lock().grid_mut().dirty_mut().mark_all();
+            }
+            log::info!("config reload: bold_is_bright changed");
+        }
+    }
+
+    /// Rebuild keybinding table from new config.
+    fn apply_keybinding_changes(&mut self, new: &Config) {
+        self.bindings = keybindings::merge_bindings(&new.keybind);
+    }
+}
+
+/// Apply color overrides from [`ColorConfig`](crate::config::ColorConfig) to a palette.
+///
+/// Sets both live and default values so OSC 104 resets to config values.
+fn apply_color_overrides(palette: &mut oriterm_core::Palette, colors: &crate::config::ColorConfig) {
+    if let Some(rgb) = colors.foreground.as_deref().and_then(parse_hex_color) {
+        palette.set_foreground(rgb);
+    }
+    if let Some(rgb) = colors.background.as_deref().and_then(parse_hex_color) {
+        palette.set_background(rgb);
+    }
+    if let Some(rgb) = colors.cursor.as_deref().and_then(parse_hex_color) {
+        palette.set_cursor_color(rgb);
+    }
+
+    // ANSI colors 0–7.
+    for (key, hex) in &colors.ansi {
+        if let (Ok(idx), Some(rgb)) = (key.parse::<usize>(), parse_hex_color(hex)) {
+            if idx < 8 {
+                palette.set_default(idx, rgb);
+            } else {
+                log::warn!("config: ansi color index {idx} out of range 0-7");
+            }
+        }
+    }
+
+    // Bright ANSI colors: keys 0–7 map to palette indices 8–15.
+    for (key, hex) in &colors.bright {
+        if let (Ok(idx), Some(rgb)) = (key.parse::<usize>(), parse_hex_color(hex)) {
+            if idx < 8 {
+                palette.set_default(idx + 8, rgb);
+            } else {
+                log::warn!("config: bright color index {idx} out of range 0-7");
+            }
+        }
+    }
+}
+
+/// Parse a `#RRGGBB` hex color string to [`Rgb`].
+///
+/// Accepts with or without the leading `#`. Returns `None` on invalid input.
+fn parse_hex_color(hex: &str) -> Option<Rgb> {
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    let bytes = hex.as_bytes();
+    if bytes.len() != 6 || !bytes.iter().all(u8::is_ascii_hexdigit) {
+        log::warn!("config: invalid hex color (expected 6 hex digits): {hex}");
+        return None;
+    }
+    // Safe: validated 6 ASCII hex digits above — all single-byte UTF-8.
+    let r = (hex_nibble(bytes[0]) << 4) | hex_nibble(bytes[1]);
+    let g = (hex_nibble(bytes[2]) << 4) | hex_nibble(bytes[3]);
+    let b = (hex_nibble(bytes[4]) << 4) | hex_nibble(bytes[5]);
+    Some(Rgb { r, g, b })
+}
+
+/// Convert a single ASCII hex digit to its numeric value.
+fn hex_nibble(b: u8) -> u8 {
+    match b {
+        b'0'..=b'9' => b - b'0',
+        b'a'..=b'f' => b - b'a' + 10,
+        b'A'..=b'F' => b - b'A' + 10,
+        _ => 0, // unreachable after validation
+    }
+}

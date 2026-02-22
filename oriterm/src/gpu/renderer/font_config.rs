@@ -3,7 +3,7 @@
 //! Each method delegates to [`FontCollection`] for metrics/cache invalidation,
 //! then clears GPU atlases and re-caches ASCII glyphs.
 
-use crate::font::{GlyphFormat, HintingMode};
+use crate::font::{FontCollection, GlyphFormat, HintingMode};
 use crate::gpu::state::GpuState;
 
 use super::GpuRenderer;
@@ -11,6 +11,15 @@ use super::helpers::pre_cache_atlas;
 
 impl GpuRenderer {
     // ── Font configuration ──
+
+    /// Replace the entire font collection (family, weight, features changed).
+    ///
+    /// Clears all GPU atlases and re-caches ASCII glyphs with the new fonts.
+    /// Returns the old cell metrics so callers can detect size changes.
+    pub fn replace_font_collection(&mut self, collection: FontCollection, gpu: &GpuState) {
+        self.font_collection = collection;
+        self.clear_and_recache(gpu);
+    }
 
     /// Change font size, recomputing metrics, clearing atlases, and re-caching.
     ///

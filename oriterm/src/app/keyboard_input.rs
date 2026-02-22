@@ -1,20 +1,22 @@
 //! Keyboard input dispatch for the application.
 //!
-//! Routes key events through mark mode, copy/paste keybindings, and
+//! Routes key events through mark mode, keybinding table lookup, and
 //! finally key encoding to the PTY. Also handles IME commit events.
 
 use winit::event::ElementState;
-use winit::keyboard::{KeyCode, PhysicalKey, SmolStr};
+use winit::keyboard::SmolStr;
 
-use super::{App, clipboard_ops, mark_mode};
+use super::{App, mark_mode};
 use crate::key_encoding::{self, KeyEventType, KeyInput};
+use crate::keybindings::{self, Action};
 
 impl App {
-    /// Dispatch a keyboard event through mark mode or key encoding to the PTY.
+    /// Dispatch a keyboard event through mark mode, keybindings, or PTY encoding.
     ///
-    /// Mark mode intercepts all key events when active. Otherwise, reads the
-    /// terminal mode, converts winit modifiers to key encoding modifiers,
-    /// encodes the key event, and sends the result to the PTY.
+    /// Priority order:
+    /// 1. Mark mode (if active, consumes all events).
+    /// 2. Keybinding table lookup.
+    /// 3. Normal key encoding to PTY.
     pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent) {
         // Mark mode: consume ALL key events (including releases) to prevent
         // leaking input to the PTY while navigating.
@@ -39,41 +41,25 @@ impl App {
             }
         }
 
-        // Ctrl+Shift+M enters mark mode.
-        // Match on key+modifiers first, consume both press and release to
-        // prevent orphaned release events from leaking to the PTY.
-        if self.modifiers.control_key()
-            && self.modifiers.shift_key()
-            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
-        {
-            if event.state == ElementState::Pressed && !event.repeat {
-                if let Some(tab) = &mut self.tab {
-                    tab.enter_mark_mode();
-                    self.dirty = true;
+        // Keybinding dispatch: look up the key+modifiers in the binding table.
+        if event.state == ElementState::Pressed {
+            let mods = self.modifiers.into();
+            if let Some(binding_key) = keybindings::key_to_binding_key(&event.logical_key) {
+                if let Some(action) = keybindings::find_binding(&self.bindings, &binding_key, mods)
+                {
+                    if self.execute_action(action.clone()) {
+                        return;
+                    }
                 }
             }
-            return;
-        }
-
-        // Copy keybindings: Ctrl+Shift+C, smart Ctrl+C, Ctrl+Insert.
-        if matches!(
-            self.try_copy_keybinding(event, self.modifiers),
-            clipboard_ops::CopyAction::Handled,
-        ) {
-            self.dirty = true;
-            return;
-        }
-
-        // Paste keybindings: Ctrl+Shift+V, Ctrl+V, Shift+Insert.
-        if matches!(
-            self.try_paste_keybinding(event, self.modifiers),
-            clipboard_ops::PasteAction::Handled,
-        ) {
-            self.dirty = true;
-            return;
         }
 
         // Normal key encoding to PTY.
+        self.encode_key_to_pty(event);
+    }
+
+    /// Encode a key event and send the result to the PTY.
+    fn encode_key_to_pty(&mut self, event: &winit::event::KeyEvent) {
         let Some(tab) = &self.tab else { return };
 
         let mode = tab.terminal().lock().mode();
@@ -99,6 +85,107 @@ impl App {
             self.cursor_blink.reset();
             self.dirty = true;
         }
+    }
+
+    /// Execute a keybinding action. Returns `true` if the event was consumed.
+    ///
+    /// `SmartCopy` returns `false` when no selection exists (fall through to PTY
+    /// so Ctrl+C sends SIGINT). Other actions always consume the event.
+    fn execute_action(&mut self, action: Action) -> bool {
+        match action {
+            Action::Copy => {
+                self.copy_selection();
+                self.dirty = true;
+                true
+            }
+            Action::Paste | Action::SmartPaste => {
+                self.paste_from_clipboard();
+                self.dirty = true;
+                true
+            }
+            Action::SmartCopy => {
+                let has_sel = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
+                if has_sel {
+                    self.copy_selection();
+                    self.dirty = true;
+                    true
+                } else {
+                    false
+                }
+            }
+            Action::ScrollPageUp => self.execute_scroll(true),
+            Action::ScrollPageDown => self.execute_scroll(false),
+            Action::ScrollToTop => {
+                if let Some(tab) = &self.tab {
+                    tab.scroll_display(isize::MAX);
+                }
+                self.dirty = true;
+                true
+            }
+            Action::ScrollToBottom => {
+                if let Some(tab) = &self.tab {
+                    tab.scroll_to_bottom();
+                }
+                self.dirty = true;
+                true
+            }
+            Action::ReloadConfig => {
+                self.apply_config_reload();
+                true
+            }
+            Action::ToggleFullscreen => {
+                if let Some(window) = &self.window {
+                    let is_fs = window.is_fullscreen();
+                    window.set_fullscreen(!is_fs);
+                }
+                true
+            }
+            Action::EnterMarkMode => {
+                if let Some(tab) = &mut self.tab {
+                    tab.enter_mark_mode();
+                    self.dirty = true;
+                }
+                true
+            }
+            Action::SendText(text) => {
+                if let Some(tab) = &self.tab {
+                    tab.scroll_to_bottom();
+                    tab.write_input(text.as_bytes());
+                    self.cursor_blink.reset();
+                }
+                self.dirty = true;
+                true
+            }
+            // Actions for future sections — consume the event but log a stub.
+            Action::NewTab
+            | Action::CloseTab
+            | Action::NextTab
+            | Action::PrevTab
+            | Action::ZoomIn
+            | Action::ZoomOut
+            | Action::ZoomReset
+            | Action::OpenSearch
+            | Action::PreviousPrompt
+            | Action::NextPrompt
+            | Action::DuplicateTab
+            | Action::MoveTabToNewWindow => {
+                log::debug!("keybinding action not yet implemented: {action:?}");
+                true
+            }
+            Action::None => true,
+        }
+    }
+
+    /// Scroll by one page in the given direction.
+    fn execute_scroll(&mut self, up: bool) -> bool {
+        if let Some(tab) = &self.tab {
+            let term = tab.terminal().lock();
+            let lines = term.grid().lines() as isize;
+            drop(term);
+            tab.scroll_display(if up { lines } else { -lines });
+        }
+        self.dirty = true;
+        true
     }
 
     /// Handle IME commit: send committed text directly to the PTY.

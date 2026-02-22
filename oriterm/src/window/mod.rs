@@ -214,6 +214,21 @@ impl TermWindow {
         self.is_maximized = maximized;
     }
 
+    /// Returns whether the window is currently in fullscreen mode.
+    pub(crate) fn is_fullscreen(&self) -> bool {
+        self.window.fullscreen().is_some()
+    }
+
+    /// Toggle fullscreen mode on or off.
+    pub(crate) fn set_fullscreen(&self, fullscreen: bool) {
+        use winit::window::Fullscreen;
+        self.window.set_fullscreen(if fullscreen {
+            Some(Fullscreen::Borderless(None))
+        } else {
+            None
+        });
+    }
+
     /// Show or hide the window.
     ///
     /// Call `set_visible(true)` after rendering the first frame to avoid

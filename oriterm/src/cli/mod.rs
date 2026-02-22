@@ -1,0 +1,373 @@
+//! CLI subcommands for headless diagnostics.
+//!
+//! Provides `ls-fonts`, `show-keys`, `list-themes`, `validate-config`, and
+//! `show-config` subcommands that run without opening a window. Standard
+//! in modern terminals (`WezTerm` `ls-fonts`, Ghostty `+list-fonts`).
+
+use std::fmt::Write;
+use std::process;
+
+use clap::{Parser, Subcommand};
+
+use crate::config::Config;
+use crate::font::discovery;
+use crate::keybindings::{self, Action, BindingKey, KeyBinding};
+
+/// GPU-accelerated terminal emulator.
+#[derive(Parser)]
+#[command(name = "oriterm", version, about)]
+pub(crate) struct Cli {
+    /// Subcommand to run (omit to launch the terminal).
+    #[command(subcommand)]
+    pub command: Option<SubCommand>,
+}
+
+/// Diagnostic subcommands that run headlessly.
+#[derive(Subcommand)]
+pub(crate) enum SubCommand {
+    /// List discovered fonts and fallback chain.
+    LsFonts(LsFontsArgs),
+    /// Dump current keybindings.
+    ShowKeys(ShowKeysArgs),
+    /// List available color themes.
+    ListThemes(ListThemesArgs),
+    /// Validate the config file without launching.
+    ValidateConfig,
+    /// Dump the resolved config (defaults + user overrides) as TOML.
+    ShowConfig,
+}
+
+/// Arguments for the `ls-fonts` subcommand.
+#[derive(Parser)]
+pub(crate) struct LsFontsArgs {
+    /// Show which font resolves a specific character.
+    #[arg(long)]
+    codepoint: Option<char>,
+}
+
+/// Arguments for the `show-keys` subcommand.
+#[derive(Parser)]
+pub(crate) struct ShowKeysArgs {
+    /// Show only built-in default bindings (ignore user config).
+    #[arg(long)]
+    default: bool,
+}
+
+/// Arguments for the `list-themes` subcommand.
+#[derive(Parser)]
+pub(crate) struct ListThemesArgs {
+    /// Print a 16-color sample for each theme.
+    #[arg(long)]
+    preview: bool,
+}
+
+/// Attach to the parent console on Windows so CLI output is visible.
+///
+/// The `#![windows_subsystem = "windows"]` attribute suppresses the console.
+/// CLI subcommands need to write to the parent terminal.
+pub(crate) fn attach_console() {
+    #[cfg(windows)]
+    {
+        // SAFETY: `AttachConsole` is a standard Win32 API. Passing
+        // `ATTACH_PARENT_PROCESS` attaches to the console of the parent
+        // process (e.g. cmd.exe / PowerShell). Failure is harmless —
+        // output just won't be visible.
+        #[allow(unsafe_code)]
+        unsafe {
+            windows_sys::Win32::System::Console::AttachConsole(
+                windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
+            );
+        }
+    }
+}
+
+/// Dispatch a CLI subcommand. Prints to stdout and exits.
+pub(crate) fn dispatch(cmd: SubCommand) -> ! {
+    match cmd {
+        SubCommand::LsFonts(args) => run_ls_fonts(&args),
+        SubCommand::ShowKeys(args) => run_show_keys(&args),
+        SubCommand::ListThemes(args) => run_list_themes(&args),
+        SubCommand::ValidateConfig => run_validate_config(),
+        SubCommand::ShowConfig => run_show_config(),
+    }
+}
+
+/// `ls-fonts` — list discovered fonts with fallback chain.
+fn run_ls_fonts(args: &LsFontsArgs) -> ! {
+    let config = Config::load();
+    let weight = config.font.effective_weight();
+    let result = discovery::discover_fonts(config.font.family.as_deref(), weight);
+
+    let mut out = String::new();
+    let _ = writeln!(out, "Primary font family: {}", result.primary.family_name);
+    let _ = writeln!(out, "  Origin: {:?}", result.primary.origin);
+
+    let labels = ["Regular", "Bold", "Italic", "Bold Italic"];
+    for (i, label) in labels.iter().enumerate() {
+        if result.primary.has_variant[i] {
+            let path_str = result.primary.paths[i]
+                .as_ref()
+                .map_or_else(|| "(embedded)".to_owned(), |p| p.display().to_string());
+            let _ = writeln!(out, "  {label}: {path_str}");
+        } else {
+            let _ = writeln!(out, "  {label}: (synthesized)");
+        }
+    }
+
+    if !result.fallbacks.is_empty() {
+        let _ = writeln!(out, "\nFallback chain:");
+        for (i, fb) in result.fallbacks.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "  {}. {} (index {})",
+                i + 1,
+                fb.path.display(),
+                fb.face_index
+            );
+        }
+    }
+
+    if let Some(ch) = args.codepoint {
+        let _ = writeln!(out, "\nCodepoint U+{:04X} ({ch}):", ch as u32);
+        let _ = writeln!(
+            out,
+            "  (font resolution requires loading — run the terminal to test)"
+        );
+    }
+
+    print!("{out}");
+    process::exit(0)
+}
+
+/// `show-keys` — dump keybindings in human-readable format.
+fn run_show_keys(args: &ShowKeysArgs) -> ! {
+    let bindings = if args.default {
+        keybindings::default_bindings()
+    } else {
+        let config = Config::load();
+        keybindings::merge_bindings(&config.keybind)
+    };
+
+    let mut out = String::new();
+    let source = if args.default { "Default" } else { "Active" };
+    let _ = writeln!(out, "{source} keybindings:\n");
+
+    for b in &bindings {
+        let _ = writeln!(out, "  {}", format_binding(b));
+    }
+
+    print!("{out}");
+    process::exit(0)
+}
+
+/// `list-themes` — list available color schemes.
+fn run_list_themes(args: &ListThemesArgs) -> ! {
+    let mut out = String::new();
+    let _ = writeln!(out, "Available themes:\n");
+    let _ = writeln!(out, "  * Catppuccin Mocha (default)");
+
+    if args.preview {
+        let _ = writeln!(out);
+        let _ = writeln!(out, "  16-color palette:");
+        let _ = write!(out, "  ");
+        // Standard ANSI colors 0-7.
+        for i in 0..8u8 {
+            let _ = write!(out, "\x1b[48;5;{i}m  ");
+        }
+        let _ = writeln!(out, "\x1b[0m");
+        let _ = write!(out, "  ");
+        // Bright colors 8-15.
+        for i in 8..16u8 {
+            let _ = write!(out, "\x1b[48;5;{i}m  ");
+        }
+        let _ = writeln!(out, "\x1b[0m");
+    }
+
+    print!("{out}");
+    process::exit(0)
+}
+
+/// `validate-config` — parse and validate the config file, exit 0 or 1.
+fn run_validate_config() -> ! {
+    let exit_code = match validate_config_inner() {
+        Ok(()) => {
+            println!("config: valid");
+            0
+        }
+        Err(errors) => {
+            for e in &errors {
+                eprintln!("error: {e}");
+            }
+            1
+        }
+    };
+    process::exit(exit_code)
+}
+
+/// Core validation logic, separated for testability.
+///
+/// Returns `Ok(())` when the config is valid, or a list of error messages.
+fn validate_config_inner() -> Result<(), Vec<String>> {
+    let config = match Config::try_load() {
+        Ok(c) => c,
+        Err(e) => return Err(vec![e]),
+    };
+
+    let mut errors = Vec::new();
+    validate_colors(&config, &mut errors);
+    validate_keybindings(&config, &mut errors);
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// Validate hex color strings in the config.
+fn validate_colors(config: &Config, errors: &mut Vec<String>) {
+    let fields: &[(&str, &Option<String>)] = &[
+        ("colors.foreground", &config.colors.foreground),
+        ("colors.background", &config.colors.background),
+        ("colors.cursor", &config.colors.cursor),
+        (
+            "colors.selection_foreground",
+            &config.colors.selection_foreground,
+        ),
+        (
+            "colors.selection_background",
+            &config.colors.selection_background,
+        ),
+    ];
+
+    for (name, value) in fields {
+        if let Some(hex) = value {
+            if !is_valid_hex_color(hex) {
+                errors.push(format!("{name}: invalid hex color {hex:?}"));
+            }
+        }
+    }
+
+    for (key, hex) in &config.colors.ansi {
+        if !is_valid_hex_color(hex) {
+            errors.push(format!("colors.ansi.{key}: invalid hex color {hex:?}"));
+        }
+    }
+    for (key, hex) in &config.colors.bright {
+        if !is_valid_hex_color(hex) {
+            errors.push(format!("colors.bright.{key}: invalid hex color {hex:?}"));
+        }
+    }
+
+    if let Some(hex) = &config.bell.color {
+        if !is_valid_hex_color(hex) {
+            errors.push(format!("bell.color: invalid hex color {hex:?}"));
+        }
+    }
+}
+
+/// Validate keybinding entries.
+fn validate_keybindings(config: &Config, errors: &mut Vec<String>) {
+    for (i, kb) in config.keybind.iter().enumerate() {
+        if keybindings::parse_key(&kb.key).is_none() {
+            errors.push(format!("keybind[{i}]: unknown key {:?}", kb.key));
+        }
+        if keybindings::parse_action(&kb.action).is_none() {
+            errors.push(format!("keybind[{i}]: unknown action {:?}", kb.action));
+        }
+    }
+}
+
+/// Check that a string is a valid `#RRGGBB` hex color.
+fn is_valid_hex_color(s: &str) -> bool {
+    let s = s.strip_prefix('#').unwrap_or(s);
+    s.len() == 6 && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// `show-config` — dump the resolved config as TOML.
+fn run_show_config() -> ! {
+    let config = Config::load();
+    match toml::to_string_pretty(&config) {
+        Ok(toml) => {
+            print!("{toml}");
+            process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("error: failed to serialize config: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Format a single keybinding as `Mods+Key -> Action`.
+fn format_binding(b: &KeyBinding) -> String {
+    let mut parts = Vec::new();
+
+    if b.mods.contains(crate::key_encoding::Modifiers::CONTROL) {
+        parts.push("Ctrl");
+    }
+    if b.mods.contains(crate::key_encoding::Modifiers::SHIFT) {
+        parts.push("Shift");
+    }
+    if b.mods.contains(crate::key_encoding::Modifiers::ALT) {
+        parts.push("Alt");
+    }
+    if b.mods.contains(crate::key_encoding::Modifiers::SUPER) {
+        parts.push("Super");
+    }
+
+    parts.push(""); // Placeholder for the key name.
+    let key_name = format_binding_key(&b.key);
+    let idx = parts.len() - 1;
+    let combo = parts[..idx]
+        .iter()
+        .copied()
+        .chain(std::iter::once(key_name.as_str()))
+        .collect::<Vec<_>>()
+        .join("+");
+
+    let action = format_action(&b.action);
+    format!("{combo} -> {action}")
+}
+
+/// Format a `BindingKey` as a human-readable string.
+fn format_binding_key(key: &BindingKey) -> String {
+    match key {
+        BindingKey::Named(n) => format!("{n:?}"),
+        BindingKey::Character(s) => s.to_uppercase(),
+    }
+}
+
+/// Format an `Action` as a human-readable string.
+fn format_action(action: &Action) -> String {
+    match action {
+        Action::Copy => "Copy".to_owned(),
+        Action::Paste => "Paste".to_owned(),
+        Action::SmartCopy => "SmartCopy".to_owned(),
+        Action::SmartPaste => "SmartPaste".to_owned(),
+        Action::NewTab => "NewTab".to_owned(),
+        Action::CloseTab => "CloseTab".to_owned(),
+        Action::NextTab => "NextTab".to_owned(),
+        Action::PrevTab => "PrevTab".to_owned(),
+        Action::ZoomIn => "ZoomIn".to_owned(),
+        Action::ZoomOut => "ZoomOut".to_owned(),
+        Action::ZoomReset => "ZoomReset".to_owned(),
+        Action::ScrollPageUp => "ScrollPageUp".to_owned(),
+        Action::ScrollPageDown => "ScrollPageDown".to_owned(),
+        Action::ScrollToTop => "ScrollToTop".to_owned(),
+        Action::ScrollToBottom => "ScrollToBottom".to_owned(),
+        Action::OpenSearch => "OpenSearch".to_owned(),
+        Action::ReloadConfig => "ReloadConfig".to_owned(),
+        Action::PreviousPrompt => "PreviousPrompt".to_owned(),
+        Action::NextPrompt => "NextPrompt".to_owned(),
+        Action::DuplicateTab => "DuplicateTab".to_owned(),
+        Action::MoveTabToNewWindow => "MoveTabToNewWindow".to_owned(),
+        Action::ToggleFullscreen => "ToggleFullscreen".to_owned(),
+        Action::EnterMarkMode => "EnterMarkMode".to_owned(),
+        Action::SendText(t) => format!("SendText:{t:?}"),
+        Action::None => "None".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests;

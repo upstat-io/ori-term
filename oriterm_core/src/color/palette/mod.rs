@@ -205,6 +205,32 @@ impl Palette {
     pub fn cursor_color(&self) -> Rgb {
         self.colors[NamedColor::Cursor as usize]
     }
+
+    /// Set both live and default value for an indexed color.
+    ///
+    /// Config overrides use this so the config value becomes the baseline
+    /// that OSC 104 resets to.
+    pub fn set_default(&mut self, index: usize, color: Rgb) {
+        if index < NUM_COLORS {
+            self.colors[index] = color;
+            self.defaults[index] = color;
+        }
+    }
+
+    /// Override the foreground color (live and default).
+    pub fn set_foreground(&mut self, color: Rgb) {
+        self.set_default(NamedColor::Foreground as usize, color);
+    }
+
+    /// Override the background color (live and default).
+    pub fn set_background(&mut self, color: Rgb) {
+        self.set_default(NamedColor::Background as usize, color);
+    }
+
+    /// Override the cursor color (live and default).
+    pub fn set_cursor_color(&mut self, color: Rgb) {
+        self.set_default(NamedColor::Cursor as usize, color);
+    }
 }
 
 /// Build the xterm-256 palette with semantic colors adapted to the theme.
