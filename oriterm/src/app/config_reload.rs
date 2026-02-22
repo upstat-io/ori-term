@@ -4,10 +4,8 @@
 //! loads the new config, computes deltas, and applies only what changed:
 //! fonts, colors, cursor style, window, behavior, bell, keybindings.
 
-use oriterm_core::Rgb;
-
 use super::{App, DEFAULT_DPI};
-use crate::config::Config;
+use crate::config::{self, Config};
 use crate::font::{FontCollection, FontSet, HintingMode};
 use crate::keybindings;
 
@@ -213,20 +211,28 @@ impl App {
 /// Apply color overrides from [`ColorConfig`](crate::config::ColorConfig) to a palette.
 ///
 /// Sets both live and default values so OSC 104 resets to config values.
-fn apply_color_overrides(palette: &mut oriterm_core::Palette, colors: &crate::config::ColorConfig) {
-    if let Some(rgb) = colors.foreground.as_deref().and_then(parse_hex_color) {
+fn apply_color_overrides(palette: &mut oriterm_core::Palette, colors: &config::ColorConfig) {
+    if let Some(rgb) = colors
+        .foreground
+        .as_deref()
+        .and_then(config::parse_hex_color)
+    {
         palette.set_foreground(rgb);
     }
-    if let Some(rgb) = colors.background.as_deref().and_then(parse_hex_color) {
+    if let Some(rgb) = colors
+        .background
+        .as_deref()
+        .and_then(config::parse_hex_color)
+    {
         palette.set_background(rgb);
     }
-    if let Some(rgb) = colors.cursor.as_deref().and_then(parse_hex_color) {
+    if let Some(rgb) = colors.cursor.as_deref().and_then(config::parse_hex_color) {
         palette.set_cursor_color(rgb);
     }
 
     // ANSI colors 0–7.
     for (key, hex) in &colors.ansi {
-        if let (Ok(idx), Some(rgb)) = (key.parse::<usize>(), parse_hex_color(hex)) {
+        if let (Ok(idx), Some(rgb)) = (key.parse::<usize>(), config::parse_hex_color(hex)) {
             if idx < 8 {
                 palette.set_default(idx, rgb);
             } else {
@@ -237,39 +243,12 @@ fn apply_color_overrides(palette: &mut oriterm_core::Palette, colors: &crate::co
 
     // Bright ANSI colors: keys 0–7 map to palette indices 8–15.
     for (key, hex) in &colors.bright {
-        if let (Ok(idx), Some(rgb)) = (key.parse::<usize>(), parse_hex_color(hex)) {
+        if let (Ok(idx), Some(rgb)) = (key.parse::<usize>(), config::parse_hex_color(hex)) {
             if idx < 8 {
                 palette.set_default(idx + 8, rgb);
             } else {
                 log::warn!("config: bright color index {idx} out of range 0-7");
             }
         }
-    }
-}
-
-/// Parse a `#RRGGBB` hex color string to [`Rgb`].
-///
-/// Accepts with or without the leading `#`. Returns `None` on invalid input.
-fn parse_hex_color(hex: &str) -> Option<Rgb> {
-    let hex = hex.strip_prefix('#').unwrap_or(hex);
-    let bytes = hex.as_bytes();
-    if bytes.len() != 6 || !bytes.iter().all(u8::is_ascii_hexdigit) {
-        log::warn!("config: invalid hex color (expected 6 hex digits): {hex}");
-        return None;
-    }
-    // Safe: validated 6 ASCII hex digits above — all single-byte UTF-8.
-    let r = (hex_nibble(bytes[0]) << 4) | hex_nibble(bytes[1]);
-    let g = (hex_nibble(bytes[2]) << 4) | hex_nibble(bytes[3]);
-    let b = (hex_nibble(bytes[4]) << 4) | hex_nibble(bytes[5]);
-    Some(Rgb { r, g, b })
-}
-
-/// Convert a single ASCII hex digit to its numeric value.
-fn hex_nibble(b: u8) -> u8 {
-    match b {
-        b'0'..=b'9' => b - b'0',
-        b'a'..=b'f' => b - b'a' + 10,
-        b'A'..=b'F' => b - b'A' + 10,
-        _ => 0, // unreachable after validation
     }
 }
