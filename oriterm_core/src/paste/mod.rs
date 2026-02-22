@@ -4,6 +4,7 @@
 //! character filtering, line ending normalization, ESC stripping, and
 //! bracketed paste wrapping.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 /// Bracketed paste mode start sequence (XTERM DECSET 2004).
@@ -105,10 +106,10 @@ pub fn count_newlines(text: &str) -> usize {
 /// Returns the raw bytes to send to the PTY.
 pub fn prepare_paste(text: &str, bracketed: bool, filter: bool) -> Vec<u8> {
     // Step 1: Character filtering.
-    let filtered = if filter {
-        filter_paste(text)
+    let filtered: Cow<'_, str> = if filter {
+        Cow::Owned(filter_paste(text))
     } else {
-        text.to_owned()
+        Cow::Borrowed(text)
     };
 
     // Step 2: Line ending normalization.
