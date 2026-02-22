@@ -2507,6 +2507,57 @@ fn selection_hidden_cell_stays_invisible() {
 }
 
 #[test]
+fn selection_preserves_instance_counts() {
+    // Selection is implemented as color inversion on existing instances, not
+    // as a separate overlay layer.  Instance counts must be identical
+    // regardless of whether a selection is active.
+    let text: String = std::iter::repeat_n('A', 10).collect();
+    let atlas = atlas_with(&['A']);
+
+    // Baseline: no selection.
+    let input_no_sel = FrameInput::test_grid(10, 3, &text);
+    let frame_no_sel = prepare_frame(&input_no_sel, &atlas, (0.0, 0.0));
+
+    // With selection covering a partial range on row 0.
+    let mut input_sel = FrameInput::test_grid(10, 3, &text);
+    input_sel.selection = Some(selection_range(0, 2, 7));
+    let frame_sel = prepare_frame(&input_sel, &atlas, (0.0, 0.0));
+
+    assert_eq!(
+        frame_no_sel.backgrounds.len(),
+        frame_sel.backgrounds.len(),
+        "selection should not change bg instance count"
+    );
+    assert_eq!(
+        frame_no_sel.glyphs.len(),
+        frame_sel.glyphs.len(),
+        "selection should not change fg instance count"
+    );
+    assert_eq!(
+        frame_no_sel.cursors.len(),
+        frame_sel.cursors.len(),
+        "selection should not change cursor instance count"
+    );
+
+    // Verify selected cells have inverted colors while unselected cells are unchanged.
+    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let selected_bg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+
+    let bg_col1 = nth_instance(frame_sel.backgrounds.as_bytes(), 1);
+    assert_eq!(bg_col1.bg_color, normal_bg, "col 1 should be normal bg");
+
+    let bg_col3 = nth_instance(frame_sel.backgrounds.as_bytes(), 3);
+    assert_eq!(
+        bg_col3.bg_color, selected_bg,
+        "col 3 (in selection) should have inverted bg"
+    );
+}
+
+#[test]
 fn selection_underline_cursor_does_not_skip_inversion() {
     // Non-block cursors (underline, beam) should NOT prevent selection inversion.
     let mut input = FrameInput::test_grid(2, 1, "AB");
