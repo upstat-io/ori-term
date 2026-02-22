@@ -720,3 +720,162 @@ fn redirect_spacer_emoji_wide_char() {
     // Click on 'A' → stays.
     assert_eq!(redirect_spacer(&grid, 0, 2), 2);
 }
+
+// --- Zero-size cell metrics guard ---
+
+#[test]
+fn zero_cell_width_returns_none() {
+    let (w, _) = ctx_at_origin(0.0, 16.0, 80, 24);
+    let c = test_cell_metrics(0.0, 16.0);
+    let ctx = grid_ctx(&w, c);
+    assert_eq!(pixel_to_cell(PhysicalPosition::new(40.0, 40.0), &ctx), None);
+}
+
+#[test]
+fn zero_cell_height_returns_none() {
+    let (w, _) = ctx_at_origin(8.0, 0.0, 80, 24);
+    let c = test_cell_metrics(8.0, 0.0);
+    let ctx = grid_ctx(&w, c);
+    assert_eq!(pixel_to_cell(PhysicalPosition::new(40.0, 40.0), &ctx), None);
+}
+
+// --- Motion deduplication state ---
+
+#[test]
+fn last_reported_cell_initially_none() {
+    let m = MouseState::new();
+    assert_eq!(m.last_reported_cell(), None);
+}
+
+#[test]
+fn last_reported_cell_set_and_get() {
+    let mut m = MouseState::new();
+    m.set_last_reported_cell(Some((5, 10)));
+    assert_eq!(m.last_reported_cell(), Some((5, 10)));
+}
+
+#[test]
+fn last_reported_cell_cleared() {
+    let mut m = MouseState::new();
+    m.set_last_reported_cell(Some((5, 10)));
+    m.set_last_reported_cell(None);
+    assert_eq!(m.last_reported_cell(), None);
+}
+
+#[test]
+fn last_reported_cell_updated() {
+    let mut m = MouseState::new();
+    m.set_last_reported_cell(Some((5, 10)));
+    m.set_last_reported_cell(Some((6, 10)));
+    assert_eq!(m.last_reported_cell(), Some((6, 10)));
+}
+
+// --- Multi-button state (motion priority) ---
+
+#[test]
+fn multi_button_left_and_right_both_tracked() {
+    let mut m = MouseState::new();
+    m.set_button_down(winit::event::MouseButton::Left, true);
+    m.set_button_down(winit::event::MouseButton::Right, true);
+    assert!(m.left_down());
+    assert!(m.right_down());
+    assert!(m.any_button_down());
+}
+
+#[test]
+fn release_left_preserves_right() {
+    let mut m = MouseState::new();
+    m.set_button_down(winit::event::MouseButton::Left, true);
+    m.set_button_down(winit::event::MouseButton::Right, true);
+    m.set_button_down(winit::event::MouseButton::Left, false);
+    assert!(!m.left_down());
+    assert!(m.right_down());
+    assert!(m.any_button_down());
+}
+
+#[test]
+fn release_right_preserves_left() {
+    let mut m = MouseState::new();
+    m.set_button_down(winit::event::MouseButton::Left, true);
+    m.set_button_down(winit::event::MouseButton::Right, true);
+    m.set_button_down(winit::event::MouseButton::Right, false);
+    assert!(m.left_down());
+    assert!(!m.right_down());
+    assert!(m.any_button_down());
+}
+
+#[test]
+fn all_three_buttons_simultaneous() {
+    let mut m = MouseState::new();
+    m.set_button_down(winit::event::MouseButton::Left, true);
+    m.set_button_down(winit::event::MouseButton::Middle, true);
+    m.set_button_down(winit::event::MouseButton::Right, true);
+    assert!(m.left_down());
+    assert!(m.middle_down());
+    assert!(m.right_down());
+    assert!(m.any_button_down());
+    // Release middle only.
+    m.set_button_down(winit::event::MouseButton::Middle, false);
+    assert!(m.left_down());
+    assert!(!m.middle_down());
+    assert!(m.right_down());
+}
+
+// --- classify_press edge cases ---
+
+#[test]
+fn double_click_without_word_bounds_creates_char_selection() {
+    // Double-click count but no word_bounds (e.g., empty cell) falls to
+    // single-click Char selection.
+    let row = StableRowIndex(0);
+    let input = press(2, 5, Side::Left, row);
+    // word_bounds is None by default in press().
+    let PressAction::New(sel) = classify_press(&input) else {
+        panic!("expected PressAction::New");
+    };
+    assert_eq!(sel.mode, SelectionMode::Char);
+}
+
+#[test]
+fn triple_click_without_line_bounds_creates_char_selection() {
+    // Triple-click count but no line_bounds falls to single-click Char.
+    let row = StableRowIndex(0);
+    let input = press(3, 5, Side::Left, row);
+    let PressAction::New(sel) = classify_press(&input) else {
+        panic!("expected PressAction::New");
+    };
+    assert_eq!(sel.mode, SelectionMode::Char);
+}
+
+#[test]
+fn shift_extend_preserves_side() {
+    // Shift+click should carry the click side to the extension point.
+    let row = StableRowIndex(5);
+    let mut input = press(1, 20, Side::Left, row);
+    input.shift = true;
+    input.existing_mode = Some(SelectionMode::Char);
+    let PressAction::Extend(point) = classify_press(&input) else {
+        panic!("expected PressAction::Extend");
+    };
+    assert_eq!(point.side, Side::Left);
+
+    input.side = Side::Right;
+    let PressAction::Extend(point) = classify_press(&input) else {
+        panic!("expected PressAction::Extend");
+    };
+    assert_eq!(point.side, Side::Right);
+}
+
+// --- pixel_to_side edge cases ---
+
+#[test]
+fn side_zero_cell_width_returns_left() {
+    let (w, _) = ctx_at_origin(0.0, 16.0, 80, 24);
+    let c = test_cell_metrics(0.0, 16.0);
+    let ctx = grid_ctx(&w, c);
+    // Zero-width cells should safely return Left.
+    assert_eq!(
+        pixel_to_side(PhysicalPosition::new(5.0, 0.0), &ctx),
+        Side::Left
+    );
+}

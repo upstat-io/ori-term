@@ -320,6 +320,18 @@ impl ApplicationHandler<TermEvent> for App {
                 self.dirty = true;
             }
 
+            // System dark/light theme changed — rebuild palette.
+            WindowEvent::ThemeChanged(winit_theme) => {
+                let theme = match winit_theme {
+                    winit::window::Theme::Dark => oriterm_core::Theme::Dark,
+                    winit::window::Theme::Light => oriterm_core::Theme::Light,
+                };
+                if let Some(tab) = &self.tab {
+                    tab.terminal().lock().set_theme(theme);
+                }
+                self.dirty = true;
+            }
+
             _ => {}
         }
     }

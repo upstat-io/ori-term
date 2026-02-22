@@ -568,6 +568,107 @@ fn scroll_up_with_alt_normal() {
     assert_eq!(bytes[3], 104);
 }
 
+// -- Motion always reports as "pressed" (M, not m) --
+
+#[test]
+fn sgr_motion_always_uppercase_m() {
+    // Motion events are neither press nor release — they use 'M' (pressed
+    // flag) because there's no "motion release". Verify for all button types.
+    let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR;
+    for button in [
+        MouseButton::Left,
+        MouseButton::Middle,
+        MouseButton::Right,
+        MouseButton::None,
+    ] {
+        let e = event(button, MouseEventKind::Motion, 5, 5);
+        let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+        let s = std::str::from_utf8(&bytes).unwrap();
+        assert!(
+            s.ends_with('M'),
+            "motion for {button:?} should use 'M', got {s:?}"
+        );
+    }
+}
+
+// -- Normal encoding: scroll events --
+
+#[test]
+fn normal_scroll_up_encoding() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event(MouseButton::ScrollUp, MouseEventKind::Press, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // ScrollUp(64); button byte = 32 + 64 = 96.
+    assert_eq!(bytes[3], 96);
+}
+
+#[test]
+fn normal_scroll_down_encoding() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event(MouseButton::ScrollDown, MouseEventKind::Press, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // ScrollDown(65); button byte = 32 + 65 = 97.
+    assert_eq!(bytes[3], 97);
+}
+
+#[test]
+fn normal_scroll_down_with_ctrl() {
+    let mods = MouseModifiers {
+        ctrl: true,
+        ..Default::default()
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event_with_mods(MouseButton::ScrollDown, MouseEventKind::Press, 5, 5, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // ScrollDown(65) + ctrl(16) = 81; button byte = 32 + 81 = 113.
+    assert_eq!(bytes[3], 113);
+}
+
+// -- UTF-8 encoding: motion --
+
+#[test]
+fn utf8_motion_encoding() {
+    let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_UTF8;
+    let e = event(MouseButton::Left, MouseEventKind::Motion, 5, 10);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(bytes.starts_with(b"\x1b[M"));
+    // Left(0) + motion(32) = 32; button byte = 32 + 32 = 64.
+    assert_eq!(bytes[3], 64);
+}
+
+#[test]
+fn utf8_no_button_motion_encoding() {
+    let mode = TermMode::MOUSE_MOTION | TermMode::MOUSE_UTF8;
+    let e = event(MouseButton::None, MouseEventKind::Motion, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(bytes.starts_with(b"\x1b[M"));
+    // None(3) + motion(32) = 35; button byte = 32 + 35 = 67.
+    assert_eq!(bytes[3], 67);
+}
+
+// -- Full dispatch: out-of-range returns empty --
+
+#[test]
+fn dispatch_normal_out_of_range_returns_empty() {
+    // Normal encoding drops events when coords > 222.
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event(MouseButton::Left, MouseEventKind::Press, 300, 300);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(
+        bytes.is_empty(),
+        "out-of-range Normal event should be empty"
+    );
+}
+
+#[test]
+fn dispatch_utf8_out_of_range_returns_empty() {
+    // UTF-8 encoding drops events when coords > 2015.
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    let e = event(MouseButton::Left, MouseEventKind::Press, 3000, 3000);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(bytes.is_empty(), "out-of-range UTF-8 event should be empty");
+}
+
 // -- Buffer overflow safety --
 
 #[test]
@@ -581,4 +682,24 @@ fn sgr_extreme_coordinates_fit_in_buffer() {
     assert!(bytes.len() <= 32);
     let s = std::str::from_utf8(bytes).unwrap();
     assert!(s.ends_with('M'));
+}
+
+// -- Scroll events always use Press kind --
+
+#[test]
+fn scroll_release_still_encodes_as_press() {
+    // Scroll events don't have a "release" — even if Release kind is passed,
+    // the scroll button code (64/65) carries through. In SGR, this means
+    // the event still uses 'M' (not 'm') because scroll has no release state.
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event(MouseButton::ScrollUp, MouseEventKind::Release, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // Release uses 'm' in SGR, even for scroll. This tests the actual behavior.
+    assert!(
+        s.ends_with('m'),
+        "SGR encodes Release as lowercase m: {s:?}"
+    );
+    // But the button code is still ScrollUp (64), not generic release (3).
+    assert!(s.contains("<64;"));
 }

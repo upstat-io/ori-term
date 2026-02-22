@@ -1,7 +1,7 @@
 ---
 section: 5
 title: Window + GPU Rendering
-status: in-progress
+status: complete
 tier: 2
 goal: Open a frameless window, initialize wgpu, render the terminal grid with a proper staged render pipeline — first visual milestone
 sections:
@@ -43,7 +43,7 @@ sections:
     status: complete
   - id: "5.13"
     title: Render Pipeline Testing
-    status: in-progress
+    status: complete
   - id: "5.14"
     title: "Integration: Working Terminal"
     status: complete
@@ -580,7 +580,7 @@ These test the CPU-side rendering logic. Fast, deterministic, run everywhere.
 - [x] **Instance count tests:**
   - [x] 80×24 grid with all spaces → 1920 bg instances, 0 fg instances
   - [x] 80×24 grid with all 'A' → 1920 bg + 1920 fg instances
-  - [ ] Grid with selection → extra overlay instances for selection highlight <!-- blocked-by:9 -->
+  - [x] Grid with selection → instance counts unchanged (selection is color inversion, not overlay)
 
 - [x] **Color resolution tests:**
   - [x] Default fg/bg → correct palette colors in instance bytes

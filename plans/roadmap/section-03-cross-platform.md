@@ -433,11 +433,11 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] Read `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`
   - [x] Value 0 = dark mode, value 1 = light mode
   - [x] Use raw Win32 `RegGetValueW` via `windows-sys`
-  - [ ] Optional: listen for registry change notifications to detect runtime theme switches <!-- blocked-by:5 (winit WindowEvent::ThemeChanged) -->
+  - [x] Optional: listen for registry change notifications to detect runtime theme switches (winit WindowEvent::ThemeChanged)
 - [x] macOS:
   - [x] Query `AppleInterfaceStyle` via `defaults read -g` (queries same system preference as `NSAppearance`)
   - [x] `"Dark"` = dark mode, key absent = light mode
-  - [ ] Listen for `NSApplication.effectiveAppearance` KVO changes for runtime detection <!-- blocked-by:5 (winit WindowEvent::ThemeChanged) -->
+  - [x] Listen for `NSApplication.effectiveAppearance` KVO changes for runtime detection (winit WindowEvent::ThemeChanged)
 - [x] Linux:
   - [x] Query `org.freedesktop.appearance.color-scheme` via D-Bus (`org.freedesktop.portal.Settings`)
   - [x] Value 1 = dark, value 2 = light, value 0 = no preference
@@ -461,21 +461,21 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 
 ## 03.8 Section Completion
 
-- [ ] All 03.1-03.7 items complete <!-- blocked-by:5 --><!-- blocked-by:13 -->
-- [ ] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality <!-- blocked-by:5 -->
-- [ ] Terminal runs on Linux with openpty, Vulkan, and clipboard support <!-- blocked-by:5 -->
-  - [ ] Tested on X11 and Wayland <!-- blocked-by:5 -->
-- [ ] Terminal runs on macOS with openpty, Metal, and clipboard support <!-- blocked-by:5 -->
+- [ ] All 03.1-03.7 items complete <!-- blocked-by:13 -->
+- [ ] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality
+- [ ] Terminal runs on Linux with openpty, Vulkan, and clipboard support
+  - [ ] Tested on X11 and Wayland
+- [ ] Terminal runs on macOS with openpty, Metal, and clipboard support
 - [x] Font discovery works on all three platforms (falls back to embedded font if needed)
 - [x] Clipboard copy/paste works on all three platforms
-- [ ] GPU rendering works on all three platforms <!-- blocked-by:5 -->
+- [ ] GPU rendering works on all three platforms
 - [x] Default shell detected correctly per platform
 - [x] Window decorations appropriate per platform
 - [x] URL opening works per platform
 - [x] Config paths follow platform conventions
-- [ ] Transparency works where compositor supports it <!-- blocked-by:5 --><!-- blocked-by:13 -->
+- [ ] Transparency works where compositor supports it <!-- blocked-by:13 -->
 - [x] System theme detection selects appropriate default palette
-- [ ] No platform-specific panics or crashes <!-- blocked-by:5 -->
+- [ ] No platform-specific panics or crashes
 - [x] CI builds for all three platforms
 - [x] `cargo test --target x86_64-pc-windows-gnu` — passes
 - [x] `cargo test` (native Linux) — passes
