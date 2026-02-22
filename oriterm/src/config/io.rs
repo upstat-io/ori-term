@@ -2,8 +2,6 @@
 
 use std::path::PathBuf;
 
-use oriterm_core::CursorShape;
-
 use super::Config;
 use crate::platform::config_paths;
 
@@ -90,17 +88,6 @@ impl Config {
     /// Saves config to the default path. Creates the directory if needed.
     pub fn save(&self) {
         save_toml(self, &config_path(), "config");
-    }
-}
-
-/// Parses a cursor style string to `CursorShape`.
-///
-/// Accepts "block", "bar"/"beam", "underline". Defaults to Block.
-pub fn parse_cursor_style(s: &str) -> CursorShape {
-    match s.to_ascii_lowercase().as_str() {
-        "bar" | "beam" => CursorShape::Bar,
-        "underline" => CursorShape::Underline,
-        _ => CursorShape::Block,
     }
 }
 

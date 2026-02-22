@@ -14,7 +14,7 @@ pub(crate) mod monitor;
     unused_imports,
     reason = "WindowState and state_path used in section 13.4"
 )]
-pub(crate) use io::{WindowState, config_path, parse_cursor_style, state_path};
+pub(crate) use io::{WindowState, config_path, state_path};
 
 use std::collections::HashMap;
 
@@ -108,6 +108,31 @@ impl FontConfig {
     }
 }
 
+/// Cursor style for config deserialization.
+///
+/// Maps user-facing TOML strings to `oriterm_core::CursorShape` values.
+/// `"beam"` is accepted as an alias for `Bar` (common in other terminals).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CursorStyle {
+    #[default]
+    Block,
+    #[serde(alias = "beam")]
+    Bar,
+    Underline,
+}
+
+impl CursorStyle {
+    /// Convert to the rendering-layer `CursorShape`.
+    pub fn to_shape(self) -> oriterm_core::CursorShape {
+        match self {
+            Self::Block => oriterm_core::CursorShape::Block,
+            Self::Bar => oriterm_core::CursorShape::Bar,
+            Self::Underline => oriterm_core::CursorShape::Underline,
+        }
+    }
+}
+
 /// Terminal behavior configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -116,8 +141,8 @@ pub struct TerminalConfig {
     pub shell: Option<String>,
     /// Scrollback lines (default: 10,000).
     pub scrollback: usize,
-    /// Cursor style: "block", "bar"/"beam", "underline" (default: "block").
-    pub cursor_style: String,
+    /// Cursor style (default: block).
+    pub cursor_style: CursorStyle,
     /// Enable cursor blinking (default: true).
     pub cursor_blink: bool,
     /// Blink interval in milliseconds (default: 530).
@@ -129,7 +154,7 @@ impl Default for TerminalConfig {
         Self {
             shell: None,
             scrollback: 10_000,
-            cursor_style: "block".to_owned(),
+            cursor_style: CursorStyle::default(),
             cursor_blink: true,
             cursor_blink_interval_ms: 530,
         }
@@ -283,12 +308,22 @@ impl Default for BehaviorConfig {
     }
 }
 
+/// Visual bell animation curve.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BellAnimation {
+    #[default]
+    EaseOut,
+    Linear,
+    None,
+}
+
 /// Visual bell configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BellConfig {
-    /// Visual bell animation: `ease_out`, `linear`, `none`.
-    pub animation: String,
+    /// Visual bell animation curve.
+    pub animation: BellAnimation,
     /// Duration in milliseconds (0 = disabled).
     pub duration_ms: u16,
     /// Flash color as "#RRGGBB" hex (default: white).
@@ -298,7 +333,7 @@ pub struct BellConfig {
 impl Default for BellConfig {
     fn default() -> Self {
         Self {
-            animation: "ease_out".into(),
+            animation: BellAnimation::default(),
             duration_ms: 150,
             color: None,
         }
@@ -308,7 +343,7 @@ impl Default for BellConfig {
 impl BellConfig {
     /// Returns true when the visual bell is enabled.
     pub fn is_enabled(&self) -> bool {
-        self.duration_ms > 0 && self.animation != "none"
+        self.duration_ms > 0 && self.animation != BellAnimation::None
     }
 }
 
