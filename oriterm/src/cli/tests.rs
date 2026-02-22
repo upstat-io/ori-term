@@ -2,10 +2,8 @@
 
 use clap_complete::Shell;
 
-use super::{
-    format_action, format_binding, format_binding_key, generate_completions, is_valid_hex_color,
-};
-use crate::config::Config;
+use super::{format_action, format_binding, format_binding_key, generate_completions};
+use crate::config::{self, Config};
 use crate::key_encoding::Modifiers;
 use crate::keybindings::{Action, BindingKey, KeyBinding};
 
@@ -48,7 +46,7 @@ fn validate_colors_accepts_valid_hex() {
 #[test]
 fn validate_keybindings_rejects_bad_key() {
     let mut config = Config::default();
-    config.keybind.push(crate::config::KeybindConfig {
+    config.keybind.push(config::KeybindConfig {
         key: "NotAKey!!!".to_owned(),
         mods: String::new(),
         action: "Copy".to_owned(),
@@ -63,7 +61,7 @@ fn validate_keybindings_rejects_bad_key() {
 #[test]
 fn validate_keybindings_rejects_bad_action() {
     let mut config = Config::default();
-    config.keybind.push(crate::config::KeybindConfig {
+    config.keybind.push(config::KeybindConfig {
         key: "c".to_owned(),
         mods: "Ctrl".to_owned(),
         action: "DoSomethingInvalid".to_owned(),
@@ -103,15 +101,21 @@ fn ls_fonts_finds_primary() {
 }
 
 #[test]
-fn is_valid_hex_color_cases() {
-    assert!(is_valid_hex_color("#ff00aa"));
-    assert!(is_valid_hex_color("#000000"));
-    assert!(is_valid_hex_color("#FFFFFF"));
-    assert!(is_valid_hex_color("abcdef")); // Without # prefix.
-    assert!(!is_valid_hex_color("not-hex"));
-    assert!(!is_valid_hex_color("#fff")); // Too short.
-    assert!(!is_valid_hex_color("#gggggg")); // Invalid hex chars.
-    assert!(!is_valid_hex_color("")); // Empty.
+fn parse_hex_color_cases() {
+    assert!(config::parse_hex_color("#ff00aa").is_some());
+    assert!(config::parse_hex_color("#000000").is_some());
+    assert!(config::parse_hex_color("#FFFFFF").is_some());
+    assert!(config::parse_hex_color("abcdef").is_some()); // Without # prefix.
+    assert!(config::parse_hex_color("not-hex").is_none());
+    assert!(config::parse_hex_color("#fff").is_none()); // Too short.
+    assert!(config::parse_hex_color("#gggggg").is_none()); // Invalid hex chars.
+    assert!(config::parse_hex_color("").is_none()); // Empty.
+
+    // Verify parsed RGB values.
+    let rgb = config::parse_hex_color("#ff00aa").unwrap();
+    assert_eq!(rgb.r, 0xff);
+    assert_eq!(rgb.g, 0x00);
+    assert_eq!(rgb.b, 0xaa);
 }
 
 #[test]
@@ -161,7 +165,7 @@ fn validate_accumulates_color_and_keybinding_errors() {
     let mut config = Config::default();
     config.colors.foreground = Some("bad1".to_owned());
     config.colors.background = Some("bad2".to_owned());
-    config.keybind.push(crate::config::KeybindConfig {
+    config.keybind.push(config::KeybindConfig {
         key: "???".to_owned(),
         mods: String::new(),
         action: "Bogus".to_owned(),
@@ -314,7 +318,7 @@ fn show_config_roundtrip_with_overrides() {
     config.terminal.scrollback = 50_000;
     config.colors.foreground = Some("#aabbcc".to_owned());
     config.window.opacity = 0.85;
-    config.keybind.push(crate::config::KeybindConfig {
+    config.keybind.push(config::KeybindConfig {
         key: "q".to_owned(),
         mods: "Ctrl".to_owned(),
         action: "CloseTab".to_owned(),
@@ -367,7 +371,7 @@ fn validate_colors_reports_all_bad_fields() {
 #[test]
 fn validate_keybindings_reports_bad_key_and_bad_action() {
     let mut config = Config::default();
-    config.keybind.push(crate::config::KeybindConfig {
+    config.keybind.push(config::KeybindConfig {
         key: "!!!".to_owned(),
         mods: String::new(),
         action: "Nonexistent".to_owned(),

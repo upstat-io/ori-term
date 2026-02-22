@@ -15,6 +15,7 @@ pub(crate) use io::state_path;
 
 use std::collections::HashMap;
 
+use oriterm_core::Rgb;
 use serde::{Deserialize, Serialize};
 
 /// Top-level configuration structure.
@@ -359,6 +360,33 @@ pub struct KeybindConfig {
     pub mods: String,
     /// Action name (e.g. "Copy", "Paste", "SendText:\x1b[A").
     pub action: String,
+}
+
+/// Parse a `#RRGGBB` hex color string to [`Rgb`].
+///
+/// Accepts with or without the leading `#`. Returns `None` on invalid input.
+pub(crate) fn parse_hex_color(hex: &str) -> Option<Rgb> {
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    let bytes = hex.as_bytes();
+    if bytes.len() != 6 || !bytes.iter().all(u8::is_ascii_hexdigit) {
+        log::warn!("config: invalid hex color (expected #RRGGBB): {hex}");
+        return None;
+    }
+    // Safe: validated 6 ASCII hex digits above — all single-byte UTF-8.
+    let r = (hex_nibble(bytes[0]) << 4) | hex_nibble(bytes[1]);
+    let g = (hex_nibble(bytes[2]) << 4) | hex_nibble(bytes[3]);
+    let b = (hex_nibble(bytes[4]) << 4) | hex_nibble(bytes[5]);
+    Some(Rgb { r, g, b })
+}
+
+/// Convert a single ASCII hex digit to its numeric value.
+fn hex_nibble(b: u8) -> u8 {
+    match b {
+        b'0'..=b'9' => b - b'0',
+        b'a'..=b'f' => b - b'a' + 10,
+        b'A'..=b'F' => b - b'A' + 10,
+        _ => 0, // unreachable after validation
+    }
 }
 
 #[cfg(test)]

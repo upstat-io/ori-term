@@ -11,7 +11,7 @@ use std::process;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
-use crate::config::Config;
+use crate::config::{self, Config};
 use crate::font::discovery;
 use crate::keybindings::{self, Action, BindingKey, KeyBinding};
 
@@ -255,25 +255,25 @@ fn validate_colors(config: &Config, errors: &mut Vec<String>) {
 
     for (name, value) in fields {
         if let Some(hex) = value {
-            if !is_valid_hex_color(hex) {
+            if config::parse_hex_color(hex).is_none() {
                 errors.push(format!("{name}: invalid hex color {hex:?}"));
             }
         }
     }
 
     for (key, hex) in &config.colors.ansi {
-        if !is_valid_hex_color(hex) {
+        if config::parse_hex_color(hex).is_none() {
             errors.push(format!("colors.ansi.{key}: invalid hex color {hex:?}"));
         }
     }
     for (key, hex) in &config.colors.bright {
-        if !is_valid_hex_color(hex) {
+        if config::parse_hex_color(hex).is_none() {
             errors.push(format!("colors.bright.{key}: invalid hex color {hex:?}"));
         }
     }
 
     if let Some(hex) = &config.bell.color {
-        if !is_valid_hex_color(hex) {
+        if config::parse_hex_color(hex).is_none() {
             errors.push(format!("bell.color: invalid hex color {hex:?}"));
         }
     }
@@ -289,12 +289,6 @@ fn validate_keybindings(config: &Config, errors: &mut Vec<String>) {
             errors.push(format!("keybind[{i}]: unknown action {:?}", kb.action));
         }
     }
-}
-
-/// Check that a string is a valid `#RRGGBB` hex color.
-fn is_valid_hex_color(s: &str) -> bool {
-    let s = s.strip_prefix('#').unwrap_or(s);
-    s.len() == 6 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// `show-config` — dump the resolved config as TOML.
@@ -395,31 +389,8 @@ fn format_binding_key(key: &BindingKey) -> String {
 /// Format an `Action` as a human-readable string.
 fn format_action(action: &Action) -> String {
     match action {
-        Action::Copy => "Copy".to_owned(),
-        Action::Paste => "Paste".to_owned(),
-        Action::SmartCopy => "SmartCopy".to_owned(),
-        Action::SmartPaste => "SmartPaste".to_owned(),
-        Action::NewTab => "NewTab".to_owned(),
-        Action::CloseTab => "CloseTab".to_owned(),
-        Action::NextTab => "NextTab".to_owned(),
-        Action::PrevTab => "PrevTab".to_owned(),
-        Action::ZoomIn => "ZoomIn".to_owned(),
-        Action::ZoomOut => "ZoomOut".to_owned(),
-        Action::ZoomReset => "ZoomReset".to_owned(),
-        Action::ScrollPageUp => "ScrollPageUp".to_owned(),
-        Action::ScrollPageDown => "ScrollPageDown".to_owned(),
-        Action::ScrollToTop => "ScrollToTop".to_owned(),
-        Action::ScrollToBottom => "ScrollToBottom".to_owned(),
-        Action::OpenSearch => "OpenSearch".to_owned(),
-        Action::ReloadConfig => "ReloadConfig".to_owned(),
-        Action::PreviousPrompt => "PreviousPrompt".to_owned(),
-        Action::NextPrompt => "NextPrompt".to_owned(),
-        Action::DuplicateTab => "DuplicateTab".to_owned(),
-        Action::MoveTabToNewWindow => "MoveTabToNewWindow".to_owned(),
-        Action::ToggleFullscreen => "ToggleFullscreen".to_owned(),
-        Action::EnterMarkMode => "EnterMarkMode".to_owned(),
         Action::SendText(t) => format!("SendText:{t:?}"),
-        Action::None => "None".to_owned(),
+        other => other.as_str().to_owned(),
     }
 }
 

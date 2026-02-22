@@ -61,6 +61,43 @@ pub(crate) enum Action {
     None,
 }
 
+impl Action {
+    /// Canonical string for this action variant.
+    ///
+    /// Returns the same strings that [`parse_action`] accepts, ensuring
+    /// round-trip consistency between `show-keys` output and TOML config.
+    /// `SendText` is not covered — it carries dynamic payload.
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Copy => "Copy",
+            Self::Paste => "Paste",
+            Self::SmartCopy => "SmartCopy",
+            Self::SmartPaste => "SmartPaste",
+            Self::NewTab => "NewTab",
+            Self::CloseTab => "CloseTab",
+            Self::NextTab => "NextTab",
+            Self::PrevTab => "PrevTab",
+            Self::ZoomIn => "ZoomIn",
+            Self::ZoomOut => "ZoomOut",
+            Self::ZoomReset => "ZoomReset",
+            Self::ScrollPageUp => "ScrollPageUp",
+            Self::ScrollPageDown => "ScrollPageDown",
+            Self::ScrollToTop => "ScrollToTop",
+            Self::ScrollToBottom => "ScrollToBottom",
+            Self::OpenSearch => "OpenSearch",
+            Self::ReloadConfig => "ReloadConfig",
+            Self::PreviousPrompt => "PreviousPrompt",
+            Self::NextPrompt => "NextPrompt",
+            Self::DuplicateTab => "DuplicateTab",
+            Self::MoveTabToNewWindow => "MoveTabToNewWindow",
+            Self::ToggleFullscreen => "ToggleFullscreen",
+            Self::EnterMarkMode => "EnterMarkMode",
+            Self::SendText(_) => "SendText",
+            Self::None => "None",
+        }
+    }
+}
+
 /// A resolved keybinding: key + modifiers -> action.
 #[derive(Debug, Clone)]
 pub(crate) struct KeyBinding {
