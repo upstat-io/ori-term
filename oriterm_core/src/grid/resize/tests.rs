@@ -531,6 +531,365 @@ fn resize_to_minimum_1x1() {
     assert_eq!(grid.cursor().col(), Column(0));
 }
 
+// ── Sparse content reflow ────────────────────────────────────────────
+
+#[test]
+fn reflow_sparse_cells_preserves_interior_blanks() {
+    // "a  b  c" with interior spaces — reflow must not collapse them.
+    let mut grid = Grid::new(10, 10);
+    grid[Line(0)][Column(0)] = cell('a');
+    grid[Line(0)][Column(3)] = cell('b');
+    grid[Line(0)][Column(6)] = cell('c');
+
+    // Shrink to 4 cols: wraps at col 4.
+    grid.resize(4, 10, true);
+    // Grow back: should recover exact positions.
+    grid.resize(10, 10, true);
+
+    assert_eq!(grid[Line(0)][Column(0)].ch, 'a');
+    assert_eq!(grid[Line(0)][Column(3)].ch, 'b');
+    assert_eq!(grid[Line(0)][Column(6)].ch, 'c');
+}
+
+// ── Multi-line wide char unwrap ─────────────────────────────────────
+
+#[test]
+fn reflow_multiline_wide_spacer_head_unwrap() {
+    // 3-line scenario: "abcde" wrapped at 3 cols with a wide char that
+    // splits across line 2→3. Growing should reconstruct all content.
+    let mut grid = Grid::new(10, 6);
+
+    // Row 0: "ab" + wide char at cols 2-3 = 4 display cols.
+    grid[Line(0)][Column(0)] = cell('a');
+    grid[Line(0)][Column(1)] = cell('b');
+    let mut w1 = cell('\u{4e16}');
+    w1.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(0)][Column(2)] = w1;
+    let mut s1 = Cell::default();
+    s1.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(0)][Column(3)] = s1;
+    // Row 1: another wide char at cols 0-1 + "cd".
+    let mut w2 = cell('\u{4e16}');
+    w2.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(1)][Column(0)] = w2;
+    let mut s2 = Cell::default();
+    s2.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(1)][Column(1)] = s2;
+    grid[Line(1)][Column(2)] = cell('c');
+    grid[Line(1)][Column(3)] = cell('d');
+
+    // Set WRAP to form a logical line.
+    grid[Line(0)][Column(5)].flags.insert(CellFlags::WRAP);
+
+    // Shrink to 3 cols, then grow back to 6.
+    grid.resize(3, 10, true);
+    grid.resize(6, 10, true);
+
+    // Content should survive: "ab" + wide + wide + "cd".
+    assert_eq!(grid[Line(0)][Column(0)].ch, 'a');
+    assert_eq!(grid[Line(0)][Column(1)].ch, 'b');
+    assert!(
+        grid[Line(0)][Column(2)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+}
+
+// ── Cursor tracking across multi-step reflows ───────────────────────
+
+#[test]
+fn cursor_tracks_through_narrow_grow_narrow_grow() {
+    let mut grid = Grid::new(10, 20);
+    write_row(&mut grid, 0, "hello world!!");
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(5)); // On ' '.
+
+    // Narrow → grow → narrow → grow.
+    grid.resize(5, 10, true);
+    grid.resize(20, 10, true);
+    grid.resize(7, 10, true);
+    grid.resize(20, 10, true);
+
+    // Cursor should remain within bounds.
+    assert!(grid.cursor().line() < grid.lines());
+    assert!(grid.cursor().col().0 < grid.cols());
+
+    // Content should survive.
+    assert_eq!(read_row(&grid, 0), "hello world!!");
+}
+
+#[test]
+fn cursor_on_wide_char_tracks_through_reflow() {
+    let mut grid = Grid::new(10, 10);
+    // "ab" + wide char at cols 2-3.
+    grid[Line(0)][Column(0)] = cell('a');
+    grid[Line(0)][Column(1)] = cell('b');
+    let mut wide = cell('\u{4e16}');
+    wide.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(0)][Column(2)] = wide;
+    let mut spacer = Cell::default();
+    spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(0)][Column(3)] = spacer;
+
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(2)); // On the wide char.
+
+    // Shrink to 3 cols: wide char wraps.
+    grid.resize(3, 10, true);
+    // Grow back.
+    grid.resize(10, 10, true);
+
+    // Cursor should be on or near the wide char.
+    assert!(grid.cursor().line() < grid.lines());
+    assert!(grid.cursor().col().0 < grid.cols());
+}
+
+// ── Exact-fit boundary ──────────────────────────────────────────────
+
+#[test]
+fn reflow_content_fits_exactly_in_new_width() {
+    let mut grid = Grid::new(10, 10);
+    // 10 chars fills the row exactly.
+    write_row(&mut grid, 0, "abcdefghij");
+    grid[Line(0)][Column(9)].flags.insert(CellFlags::WRAP);
+    write_row(&mut grid, 1, "klmno");
+
+    // Grow to 15: "abcdefghij" + "klmno" = 15 chars, fits exactly.
+    grid.resize(15, 10, true);
+
+    assert_eq!(read_row(&grid, 0), "abcdefghijklmno");
+    // No WRAP should remain since content fits the width exactly.
+    assert!(!grid[Line(0)][Column(14)].flags.contains(CellFlags::WRAP));
+}
+
+#[test]
+fn reflow_shrink_to_exact_content_length() {
+    let mut grid = Grid::new(10, 20);
+    write_row(&mut grid, 0, "hello");
+
+    // Shrink cols to exactly match content length (5).
+    grid.resize(5, 10, true);
+
+    assert_eq!(grid.cols(), 5);
+    assert_eq!(read_row(&grid, 0), "hello");
+    // Content fits exactly — no wrapping should occur.
+    assert!(!grid[Line(0)][Column(4)].flags.contains(CellFlags::WRAP));
+    assert_eq!(grid.scrollback().len(), 0);
+}
+
+// ── Wide char multi-size round-trip ─────────────────────────────────
+
+#[test]
+fn wide_char_survives_multiple_intermediate_sizes() {
+    let mut grid = Grid::new(10, 10);
+    // "a" + wide at cols 1-2.
+    grid[Line(0)][Column(0)] = cell('a');
+    let mut wide = cell('\u{4e16}');
+    wide.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(0)][Column(1)] = wide;
+    let mut spacer = Cell::default();
+    spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(0)][Column(2)] = spacer;
+
+    // Cycle through multiple sizes.
+    grid.resize(2, 10, true); // Wide char wraps.
+    grid.resize(5, 10, true); // Unwrap.
+    grid.resize(3, 10, true); // Wrap again.
+    grid.resize(10, 10, true); // Back to original.
+
+    assert_eq!(grid[Line(0)][Column(0)].ch, 'a');
+    assert!(
+        grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(2)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+// ── Attribute preservation ──────────────────────────────────────────
+
+#[test]
+fn reflow_preserves_cell_attributes() {
+    use vte::ansi::Color;
+
+    let mut grid = Grid::new(10, 10);
+    let mut c = cell('X');
+    c.flags = CellFlags::BOLD | CellFlags::ITALIC;
+    c.fg = Color::Indexed(1); // red
+    grid[Line(0)][Column(0)] = c;
+    write_row(&mut grid, 0, "Xbcdefghij");
+    // Restore the styled cell after write_row.
+    let mut styled = cell('X');
+    styled.flags = CellFlags::BOLD | CellFlags::ITALIC;
+    styled.fg = Color::Indexed(1);
+    grid[Line(0)][Column(0)] = styled;
+    grid[Line(0)][Column(9)].flags.insert(CellFlags::WRAP);
+    write_row(&mut grid, 1, "klmno");
+
+    // Shrink to 5, then grow back.
+    grid.resize(5, 10, true);
+    grid.resize(10, 10, true);
+
+    // The styled cell should retain its attributes.
+    let recovered = &grid[Line(0)][Column(0)];
+    assert!(recovered.flags.contains(CellFlags::BOLD));
+    assert!(recovered.flags.contains(CellFlags::ITALIC));
+    assert_eq!(recovered.fg, Color::Indexed(1));
+}
+
+// ── Scrollback overflow during reflow ───────────────────────────────
+
+#[test]
+fn reflow_scrollback_overflow_evicts_oldest() {
+    // Small scrollback capacity. Wrapping should evict oldest rows.
+    let mut grid = Grid::with_scrollback(5, 10, 3);
+    for i in 0..5 {
+        write_row(&mut grid, i, &format!("line{i}____")); // Fill 10 cols.
+    }
+    grid.cursor_mut().set_line(4);
+
+    // Shrink to 5 cols: each 10-char row wraps into 2 rows.
+    // 5 rows × 2 = 10 rows. 5 visible, 5 to scrollback.
+    // But scrollback capacity is only 3, so oldest 2 are evicted.
+    grid.resize(5, 5, true);
+
+    assert!(grid.scrollback().len() <= 3);
+    // Grid should still be valid.
+    assert_eq!(grid.lines(), 5);
+    assert_eq!(grid.cols(), 5);
+}
+
+// ── Saved cursor tracking ───────────────────────────────────────────
+
+#[test]
+fn resize_clamps_saved_cursor() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(20);
+    grid.cursor_mut().set_col(Column(70));
+    grid.save_cursor();
+
+    // Shrink well below saved cursor position.
+    grid.resize(40, 10, false);
+
+    // Restore and verify it was clamped.
+    grid.restore_cursor();
+    assert!(grid.cursor().line() < grid.lines());
+    assert!(grid.cursor().col().0 < grid.cols());
+}
+
+// ── Display offset edge cases ───────────────────────────────────────
+
+#[test]
+fn resize_clamps_display_offset_when_scrollback_shrinks() {
+    let mut grid = Grid::with_scrollback(5, 10, 100);
+    // Fill grid and push content to scrollback.
+    for i in 0..15 {
+        write_row(&mut grid, 0, &format!("line{i:02}___"));
+        grid.scroll_up(1);
+    }
+    grid.cursor_mut().set_line(4);
+
+    // Scroll back into history.
+    let sb_len = grid.scrollback().len();
+    grid.scroll_display(sb_len as isize);
+    assert_eq!(grid.display_offset(), sb_len);
+
+    // Grow: pulls from scrollback, reducing its length.
+    grid.resize(10, 8, false);
+
+    // Display offset must be clamped to new scrollback length.
+    assert!(grid.display_offset() <= grid.scrollback().len());
+}
+
+#[test]
+fn resize_display_offset_zero_stays_zero() {
+    let mut grid = Grid::with_scrollback(5, 10, 100);
+    write_row(&mut grid, 0, "hello");
+    // display_offset starts at 0 (live view).
+    assert_eq!(grid.display_offset(), 0);
+
+    grid.resize(20, 10, true);
+
+    assert_eq!(grid.display_offset(), 0);
+}
+
+// ── Reflow with only wide chars ─────────────────────────────────────
+
+#[test]
+fn reflow_grid_of_only_wide_chars() {
+    let mut grid = Grid::new(10, 6);
+    // Fill row 0 with 3 wide chars (6 display cols).
+    for i in 0..3 {
+        let col = i * 2;
+        let mut wide = cell('\u{4e16}');
+        wide.flags.insert(CellFlags::WIDE_CHAR);
+        grid[Line(0)][Column(col)] = wide;
+        let mut spacer = Cell::default();
+        spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+        grid[Line(0)][Column(col + 1)] = spacer;
+    }
+
+    // Shrink to 4 cols: 3rd wide char wraps.
+    grid.resize(4, 10, true);
+    assert_eq!(grid.cols(), 4);
+
+    // Grow back to 6.
+    grid.resize(6, 10, true);
+
+    // All 3 wide chars should survive.
+    for i in 0..3 {
+        let col = i * 2;
+        assert!(
+            grid[Line(0)][Column(col)]
+                .flags
+                .contains(CellFlags::WIDE_CHAR),
+            "wide char {i} missing at col {col}"
+        );
+        assert!(
+            grid[Line(0)][Column(col + 1)]
+                .flags
+                .contains(CellFlags::WIDE_CHAR_SPACER),
+            "spacer for wide char {i} missing at col {}",
+            col + 1
+        );
+    }
+}
+
+// ── Mixed wide + narrow across scrollback boundary ──────────────────
+
+#[test]
+fn reflow_mixed_wide_narrow_across_scrollback() {
+    let mut grid = Grid::new(5, 10);
+    // Row 0: "ab" + wide + "c" = 5 display cols.
+    grid[Line(0)][Column(0)] = cell('a');
+    grid[Line(0)][Column(1)] = cell('b');
+    let mut wide = cell('\u{4e16}');
+    wide.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(0)][Column(2)] = wide;
+    let mut spacer = Cell::default();
+    spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(0)][Column(3)] = spacer;
+    grid[Line(0)][Column(4)] = cell('c');
+    // Row 1-4: other content.
+    for i in 1..5 {
+        write_row(&mut grid, i, &format!("row{i}______"));
+    }
+    grid.cursor_mut().set_line(4);
+
+    // Shrink to 3 cols: forces wrapping + scrollback interaction.
+    grid.resize(3, 5, true);
+    // Grow back.
+    grid.resize(10, 5, true);
+
+    // First row content should be recoverable.
+    assert_eq!(grid[Line(0)][Column(0)].ch, 'a');
+    assert_eq!(grid[Line(0)][Column(1)].ch, 'b');
+}
+
 // ── Dirty tracking ──────────────────────────────────────────────────
 
 #[test]
