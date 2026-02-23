@@ -1,5 +1,7 @@
-use crate::geometry::Rect;
+use crate::geometry::{Point, Rect};
+use crate::input::{EventResponse, HoverEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::widgets::tests::MockMeasurer;
+use crate::widgets::{EventCtx, Widget, WidgetAction};
 
 use super::WindowChromeWidget;
 use super::constants::{
@@ -7,6 +9,58 @@ use super::constants::{
 };
 use super::controls::WindowControlButton;
 use super::layout::{ChromeLayout, ControlKind};
+
+// ── Test helpers ──
+
+/// Standard window width for tests.
+const TEST_WIDTH: f32 = 800.0;
+
+/// Create an `EventCtx` with standard test dimensions.
+fn make_ctx<'a>(measurer: &'a MockMeasurer, theme: &'a crate::theme::UiTheme) -> EventCtx<'a> {
+    EventCtx {
+        measurer,
+        bounds: Rect::new(0.0, 0.0, TEST_WIDTH, CAPTION_HEIGHT),
+        is_focused: false,
+        focused_widget: None,
+        theme,
+    }
+}
+
+/// Left mouse button press at the given position.
+fn left_down(x: f32, y: f32) -> MouseEvent {
+    MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(x, y),
+        modifiers: Modifiers::NONE,
+    }
+}
+
+/// Left mouse button release at the given position.
+fn left_up(x: f32, y: f32) -> MouseEvent {
+    MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(x, y),
+        modifiers: Modifiers::NONE,
+    }
+}
+
+/// Center point of the close button in an 800px window.
+fn close_center() -> (f32, f32) {
+    let x = TEST_WIDTH - CONTROL_BUTTON_WIDTH / 2.0;
+    (x, CAPTION_HEIGHT / 2.0)
+}
+
+/// Center point of the maximize button in an 800px window.
+fn maximize_center() -> (f32, f32) {
+    let x = TEST_WIDTH - CONTROL_BUTTON_WIDTH * 1.5;
+    (x, CAPTION_HEIGHT / 2.0)
+}
+
+/// Center point of the minimize button in an 800px window.
+fn minimize_center() -> (f32, f32) {
+    let x = TEST_WIDTH - CONTROL_BUTTON_WIDTH * 2.5;
+    (x, CAPTION_HEIGHT / 2.0)
+}
 
 // ── ChromeLayout tests ──
 
@@ -124,8 +178,6 @@ fn control_button_kind() {
 
 #[test]
 fn control_button_not_focusable() {
-    use crate::widgets::Widget;
-
     let btn = WindowControlButton::new(
         ControlKind::Minimize,
         crate::color::Color::WHITE,
@@ -147,7 +199,7 @@ fn control_button_hover_sets_pressed() {
 
     let measurer = MockMeasurer::STANDARD;
     let theme = crate::theme::UiTheme::dark();
-    let ctx = crate::widgets::EventCtx {
+    let ctx = EventCtx {
         measurer: &measurer,
         bounds: Rect::new(0.0, 0.0, 46.0, 36.0),
         is_focused: false,
@@ -155,12 +207,7 @@ fn control_button_hover_sets_pressed() {
         theme: &theme,
     };
 
-    use crate::widgets::Widget;
-    let event = crate::input::MouseEvent {
-        kind: crate::input::MouseEventKind::Down(crate::input::MouseButton::Left),
-        pos: crate::geometry::Point::new(23.0, 18.0),
-        modifiers: crate::input::Modifiers::NONE,
-    };
+    let event = left_down(23.0, 18.0);
     btn.handle_mouse(&event, &ctx);
     assert!(btn.is_pressed());
 }
@@ -219,4 +266,371 @@ fn chrome_widget_active_inactive() {
     chrome.set_active(false);
     chrome.set_active(true);
     // Verify no panic — colors tested through draw path.
+}
+
+// ── Click → action emission ──
+
+#[test]
+fn click_close_emits_window_close() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    chrome.handle_mouse(&left_down(cx, cy), &ctx);
+    let resp = chrome.handle_mouse(&left_up(cx, cy), &ctx);
+
+    assert_eq!(resp.action, Some(WidgetAction::WindowClose));
+}
+
+#[test]
+fn click_maximize_emits_window_maximize() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = maximize_center();
+    chrome.handle_mouse(&left_down(cx, cy), &ctx);
+    let resp = chrome.handle_mouse(&left_up(cx, cy), &ctx);
+
+    assert_eq!(resp.action, Some(WidgetAction::WindowMaximize));
+}
+
+#[test]
+fn click_minimize_emits_window_minimize() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = minimize_center();
+    chrome.handle_mouse(&left_down(cx, cy), &ctx);
+    let resp = chrome.handle_mouse(&left_up(cx, cy), &ctx);
+
+    assert_eq!(resp.action, Some(WidgetAction::WindowMinimize));
+}
+
+// ── Drag-off cancels action ──
+
+#[test]
+fn press_close_release_outside_no_action() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    chrome.handle_mouse(&left_down(cx, cy), &ctx);
+
+    // Release in the title area (far from any button).
+    let resp = chrome.handle_mouse(&left_up(100.0, cy), &ctx);
+
+    assert!(resp.action.is_none(), "drag-off should cancel action");
+}
+
+#[test]
+fn press_minimize_release_on_maximize_no_action() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (min_x, min_y) = minimize_center();
+    chrome.handle_mouse(&left_down(min_x, min_y), &ctx);
+
+    // Release on the maximize button instead.
+    let (max_x, max_y) = maximize_center();
+    let resp = chrome.handle_mouse(&left_up(max_x, max_y), &ctx);
+
+    assert!(
+        resp.action.is_none(),
+        "releasing on a different button should not emit an action",
+    );
+}
+
+// ── Hover state machine (update_hover) ──
+
+#[test]
+fn hover_enter_close_requests_redraw() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    let resp = chrome.update_hover(Point::new(cx, cy), &ctx);
+
+    assert_eq!(resp.response, EventResponse::RequestRedraw);
+}
+
+#[test]
+fn hover_move_between_buttons_requests_redraw() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    chrome.update_hover(Point::new(cx, cy), &ctx);
+
+    // Move to maximize button.
+    let (mx, my) = maximize_center();
+    let resp = chrome.update_hover(Point::new(mx, my), &ctx);
+
+    assert_eq!(
+        resp.response,
+        EventResponse::RequestRedraw,
+        "transitioning between buttons should redraw",
+    );
+}
+
+#[test]
+fn hover_same_button_twice_is_noop() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    chrome.update_hover(Point::new(cx, cy), &ctx);
+
+    // Same button again — no state change.
+    let resp = chrome.update_hover(Point::new(cx, cy), &ctx);
+
+    assert_eq!(
+        resp.response,
+        EventResponse::Ignored,
+        "re-hovering same button should not trigger redraw",
+    );
+}
+
+#[test]
+fn hover_leave_to_title_area_requests_redraw() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    chrome.update_hover(Point::new(cx, cy), &ctx);
+
+    // Move to the title area (no button).
+    let resp = chrome.update_hover(Point::new(100.0, cy), &ctx);
+
+    assert_eq!(
+        resp.response,
+        EventResponse::RequestRedraw,
+        "leaving all buttons should redraw",
+    );
+}
+
+// ── Hover leave clears state ──
+
+#[test]
+fn handle_hover_leave_clears_hovered_control() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    // Hover over close button.
+    let (cx, cy) = close_center();
+    chrome.update_hover(Point::new(cx, cy), &ctx);
+
+    // Cursor leaves the chrome area entirely.
+    let resp = chrome.handle_hover(HoverEvent::Leave, &ctx);
+
+    assert_eq!(
+        resp.response,
+        EventResponse::RequestRedraw,
+        "hover leave should request redraw to clear highlight",
+    );
+
+    // Re-entering the same button should trigger a new redraw
+    // (proves the old hover was cleared).
+    let resp = chrome.update_hover(Point::new(cx, cy), &ctx);
+    assert_eq!(
+        resp.response,
+        EventResponse::RequestRedraw,
+        "re-entering after leave should redraw",
+    );
+}
+
+#[test]
+fn handle_hover_leave_without_prior_hover_is_ignored() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    // Leave without ever hovering — should be a no-op.
+    let resp = chrome.handle_hover(HoverEvent::Leave, &ctx);
+
+    assert_eq!(resp.response, EventResponse::Ignored);
+}
+
+// ── Fullscreen ignores events ──
+
+#[test]
+fn fullscreen_ignores_mouse_down() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    chrome.set_fullscreen(true);
+
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    let resp = chrome.handle_mouse(&left_down(cx, cy), &ctx);
+
+    assert_eq!(resp.response, EventResponse::Ignored);
+    assert!(resp.action.is_none());
+}
+
+#[test]
+fn fullscreen_ignores_hover() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    chrome.set_fullscreen(true);
+
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    let resp = chrome.update_hover(Point::new(cx, cy), &ctx);
+
+    assert_eq!(resp.response, EventResponse::Ignored);
+}
+
+// ── Non-left buttons ignored ──
+
+#[test]
+fn right_click_on_control_ignored() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    let event = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Right),
+        pos: Point::new(cx, cy),
+        modifiers: Modifiers::NONE,
+    };
+    let resp = chrome.handle_mouse(&event, &ctx);
+
+    assert_eq!(resp.response, EventResponse::Ignored);
+    assert!(resp.action.is_none());
+}
+
+#[test]
+fn middle_click_on_control_ignored() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    let (cx, cy) = close_center();
+    let event = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Middle),
+        pos: Point::new(cx, cy),
+        modifiers: Modifiers::NONE,
+    };
+    let resp = chrome.handle_mouse(&event, &ctx);
+
+    assert_eq!(resp.response, EventResponse::Ignored);
+    assert!(resp.action.is_none());
+}
+
+// ── control_at_point boundary cases ──
+
+#[test]
+fn click_at_exact_button_left_edge_hits() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    // Close button left edge: x = 800 - 46 = 754.
+    let edge_x = TEST_WIDTH - CONTROL_BUTTON_WIDTH;
+    chrome.handle_mouse(&left_down(edge_x, CAPTION_HEIGHT / 2.0), &ctx);
+    let resp = chrome.handle_mouse(&left_up(edge_x, CAPTION_HEIGHT / 2.0), &ctx);
+
+    assert_eq!(
+        resp.action,
+        Some(WidgetAction::WindowClose),
+        "left edge (inclusive) should hit the close button",
+    );
+}
+
+#[test]
+fn click_at_exact_button_right_edge_misses() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    // Close button right edge: x = 800 (half-open, exclusive).
+    let resp = chrome.handle_mouse(&left_down(TEST_WIDTH, CAPTION_HEIGHT / 2.0), &ctx);
+
+    assert_eq!(
+        resp.response,
+        EventResponse::Ignored,
+        "right edge (exclusive) should miss the close button",
+    );
+}
+
+#[test]
+fn click_between_maximize_and_close_hits_close() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    // Boundary between maximize and close: x = 800 - 46 = 754.
+    // This is the left edge of close (inclusive) and right edge of
+    // maximize (exclusive), so it should hit close.
+    let boundary = TEST_WIDTH - CONTROL_BUTTON_WIDTH;
+    chrome.handle_mouse(&left_down(boundary, CAPTION_HEIGHT / 2.0), &ctx);
+    let resp = chrome.handle_mouse(&left_up(boundary, CAPTION_HEIGHT / 2.0), &ctx);
+
+    assert_eq!(resp.action, Some(WidgetAction::WindowClose));
+}
+
+#[test]
+fn click_1px_left_of_minimize_hits_title_area() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    // Minimize left edge: x = 800 - 3*46 = 662. Point at 661.9 misses.
+    let just_outside = TEST_WIDTH - CONTROL_BUTTON_WIDTH * 3.0 - 0.1;
+    let resp = chrome.handle_mouse(&left_down(just_outside, CAPTION_HEIGHT / 2.0), &ctx);
+
+    assert_eq!(
+        resp.response,
+        EventResponse::Ignored,
+        "point just left of minimize should be in the title area",
+    );
+}
+
+#[test]
+fn click_below_caption_height_ignored() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::theme::UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    // Point below the caption height (bottom edge is exclusive).
+    let (cx, _) = close_center();
+    let resp = chrome.handle_mouse(&left_down(cx, CAPTION_HEIGHT), &ctx);
+
+    assert_eq!(
+        resp.response,
+        EventResponse::Ignored,
+        "point at y == caption_height should miss (half-open)",
+    );
 }

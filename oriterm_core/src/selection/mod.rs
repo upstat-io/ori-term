@@ -7,12 +7,16 @@
 
 pub(crate) mod boundaries;
 mod click;
+pub(crate) mod html;
 #[cfg(test)]
 mod tests;
 pub(crate) mod text;
 
-pub use boundaries::{logical_line_end, logical_line_start, word_boundaries};
+pub use boundaries::{
+    DEFAULT_WORD_DELIMITERS, logical_line_end, logical_line_start, word_boundaries,
+};
 pub use click::ClickDetector;
+pub use html::extract_html;
 pub use text::extract_text;
 
 use std::cmp::Ordering;

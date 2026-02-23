@@ -28,6 +28,14 @@ trait ClipboardProvider {
 
     /// Write text to this clipboard. Returns `true` on success.
     fn set_text(&mut self, text: &str) -> bool;
+
+    /// Write HTML with plain-text fallback to this clipboard.
+    ///
+    /// Default implementation falls back to `set_text`.
+    fn set_html(&mut self, html: &str, alt_text: &str) -> bool {
+        let _ = html;
+        self.set_text(alt_text)
+    }
 }
 
 /// System clipboard with optional primary selection (X11/Wayland).
@@ -71,6 +79,16 @@ impl Clipboard {
 
         if !provider.set_text(text) {
             warn!("unable to store text in clipboard");
+        }
+    }
+
+    /// Store HTML with plain-text fallback in the system clipboard.
+    ///
+    /// The clipboard receives both HTML and plain text so that rich text
+    /// editors use the formatted version while plain editors get raw text.
+    pub(crate) fn store_html(&mut self, html: &str, alt_text: &str) {
+        if !self.clipboard.set_html(html, alt_text) {
+            warn!("unable to store HTML in clipboard");
         }
     }
 

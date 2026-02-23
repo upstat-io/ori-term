@@ -6,10 +6,12 @@
 
 use std::path::PathBuf;
 
+use winit::keyboard::ModifiersState;
+
 use oriterm_core::TermMode;
 use oriterm_core::event::ClipboardType;
 use oriterm_core::paste;
-use oriterm_core::selection::extract_text;
+use oriterm_core::selection::{extract_html, extract_text};
 
 use super::App;
 
@@ -29,14 +31,68 @@ impl App {
 
     /// Copy the active selection to the system clipboard.
     ///
-    /// Returns `true` if text was copied.
+    /// Modifier keys alter behavior:
+    /// - **Alt**: force HTML formatting regardless of `copy_formatting` config
+    /// - **Shift**: collapse multi-line selection to single line (join with spaces)
+    ///
+    /// When `copy_formatting` is enabled (or Alt held) and a renderer is
+    /// available, copies both HTML (with inline styles) and plain text.
+    /// Otherwise copies plain text only. Returns `true` if text was copied.
     pub(super) fn copy_selection(&mut self) -> bool {
+        let force_html = self.modifiers.contains(ModifiersState::ALT);
+        let collapse = self.modifiers.contains(ModifiersState::SHIFT);
+
+        if self.config.behavior.copy_formatting || force_html {
+            if let Some((html, text)) = self.extract_selection_html() {
+                let text = if collapse {
+                    collapse_lines(&text)
+                } else {
+                    text
+                };
+                self.clipboard.store_html(&html, &text);
+                log::debug!(
+                    "copied {} bytes HTML + {} bytes text to clipboard",
+                    html.len(),
+                    text.len()
+                );
+                return true;
+            }
+        }
+
         let Some(text) = self.extract_selection_text() else {
             return false;
+        };
+        let text = if collapse {
+            collapse_lines(&text)
+        } else {
+            text
         };
         self.clipboard.store(ClipboardType::Clipboard, &text);
         log::debug!("copied {} bytes to clipboard", text.len());
         true
+    }
+
+    /// Extract both HTML and plain text from the active tab's selection.
+    ///
+    /// Returns `None` if there is no tab, no selection, the selection is
+    /// empty, or no renderer is available for font metrics.
+    fn extract_selection_html(&self) -> Option<(String, String)> {
+        let tab = self.tab.as_ref()?;
+        let sel = tab.selection()?;
+        let renderer = self.renderer.as_ref()?;
+        let term = tab.terminal().lock();
+        let text = extract_text(term.grid(), sel);
+        if text.is_empty() {
+            return None;
+        }
+        let html = extract_html(
+            term.grid(),
+            sel,
+            term.palette(),
+            renderer.family_name(),
+            self.config.font.size,
+        );
+        Some((html, text))
     }
 
     /// Copy the active selection to the X11/Wayland primary selection.
@@ -126,4 +182,9 @@ impl App {
             bracketed
         );
     }
+}
+
+/// Collapse a multi-line string to a single line by replacing newlines with spaces.
+fn collapse_lines(text: &str) -> String {
+    text.lines().collect::<Vec<_>>().join(" ")
 }

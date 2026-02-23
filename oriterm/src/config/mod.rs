@@ -382,6 +382,10 @@ impl WindowConfig {
 }
 
 /// User interaction behavior configuration.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "config toggles are naturally boolean"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BehaviorConfig {
@@ -391,6 +395,18 @@ pub struct BehaviorConfig {
     pub bold_is_bright: bool,
     /// Enable shell integration injection (default: true).
     pub shell_integration: bool,
+    /// Include HTML/RTF formatting when copying selection to clipboard.
+    ///
+    /// When `true`, clipboard copy places both plain text and HTML with inline
+    /// styles (colors, bold, italic, underline) so pasting into rich text
+    /// editors preserves terminal formatting. Default: `false`.
+    pub copy_formatting: bool,
+    /// Characters that act as word boundaries for double-click selection.
+    ///
+    /// When double-clicking, the selection expands to include all contiguous
+    /// characters that are NOT in this set. For example, if `-` is not in the
+    /// delimiter set, `hello-world` selects as one word.
+    pub word_delimiters: String,
 }
 
 impl Default for BehaviorConfig {
@@ -399,6 +415,8 @@ impl Default for BehaviorConfig {
             copy_on_select: true,
             bold_is_bright: true,
             shell_integration: true,
+            copy_formatting: false,
+            word_delimiters: oriterm_core::DEFAULT_WORD_DELIMITERS.to_owned(),
         }
     }
 }

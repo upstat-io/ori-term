@@ -21,6 +21,10 @@ impl ClipboardProvider for ArboardClipboard {
     fn set_text(&mut self, text: &str) -> bool {
         self.ctx.set_text(text.to_owned()).is_ok()
     }
+
+    fn set_html(&mut self, html: &str, alt_text: &str) -> bool {
+        self.ctx.set_html(html, Some(alt_text)).is_ok()
+    }
 }
 
 /// X11/Wayland primary selection provider via `arboard`.

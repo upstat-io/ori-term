@@ -3,12 +3,12 @@
 use crate::grid::{Grid, StableRowIndex};
 use crate::index::{Column, Side};
 
-use super::boundaries::delimiter_class;
+use super::boundaries::{DEFAULT_WORD_DELIMITERS, delimiter_class};
 use super::*;
 
 /// Returns true if the character is a word delimiter (not a word character).
 fn is_word_delimiter(c: char) -> bool {
-    delimiter_class(c) != 0
+    delimiter_class(c, DEFAULT_WORD_DELIMITERS) != 0
 }
 
 /// Helper to create a `StableRowIndex` from a raw value.
@@ -246,25 +246,28 @@ fn is_empty_false_for_word_mode() {
 
 #[test]
 fn delimiter_class_word_char() {
-    assert_eq!(delimiter_class('a'), 0);
-    assert_eq!(delimiter_class('Z'), 0);
-    assert_eq!(delimiter_class('5'), 0);
-    assert_eq!(delimiter_class('_'), 0);
+    assert_eq!(delimiter_class('a', DEFAULT_WORD_DELIMITERS), 0);
+    assert_eq!(delimiter_class('Z', DEFAULT_WORD_DELIMITERS), 0);
+    assert_eq!(delimiter_class('5', DEFAULT_WORD_DELIMITERS), 0);
+    assert_eq!(delimiter_class('_', DEFAULT_WORD_DELIMITERS), 0);
+    // `-` is not in DEFAULT_WORD_DELIMITERS → word char (matches Alacritty).
+    assert_eq!(delimiter_class('-', DEFAULT_WORD_DELIMITERS), 0);
 }
 
 #[test]
 fn delimiter_class_whitespace() {
-    assert_eq!(delimiter_class(' '), 1);
-    assert_eq!(delimiter_class('\0'), 1);
-    assert_eq!(delimiter_class('\t'), 1);
+    assert_eq!(delimiter_class(' ', DEFAULT_WORD_DELIMITERS), 1);
+    assert_eq!(delimiter_class('\0', DEFAULT_WORD_DELIMITERS), 1);
+    assert_eq!(delimiter_class('\t', DEFAULT_WORD_DELIMITERS), 1);
 }
 
 #[test]
 fn delimiter_class_punctuation() {
-    assert_eq!(delimiter_class(';'), 2);
-    assert_eq!(delimiter_class('('), 2);
-    assert_eq!(delimiter_class('"'), 2);
-    assert_eq!(delimiter_class('-'), 2);
+    // Characters in DEFAULT_WORD_DELIMITERS are class 2.
+    assert_eq!(delimiter_class('(', DEFAULT_WORD_DELIMITERS), 2);
+    assert_eq!(delimiter_class('"', DEFAULT_WORD_DELIMITERS), 2);
+    assert_eq!(delimiter_class(',', DEFAULT_WORD_DELIMITERS), 2);
+    assert_eq!(delimiter_class('|', DEFAULT_WORD_DELIMITERS), 2);
 }
 
 #[test]
@@ -272,7 +275,10 @@ fn is_word_delimiter_matches_class() {
     assert!(!is_word_delimiter('a'));
     assert!(!is_word_delimiter('_'));
     assert!(is_word_delimiter(' '));
-    assert!(is_word_delimiter(';'));
+    // `;` is NOT in DEFAULT_WORD_DELIMITERS → word char.
+    assert!(!is_word_delimiter(';'));
+    // `(` IS in DEFAULT_WORD_DELIMITERS → delimiter.
+    assert!(is_word_delimiter('('));
 }
 
 #[test]
@@ -281,15 +287,15 @@ fn word_boundaries_simple_words() {
     write_str(&mut grid, 0, "hello world");
 
     // Click on 'e' (col 1): selects "hello" (cols 0-4).
-    let (s, e) = word_boundaries(&grid, 0, 1);
+    let (s, e) = word_boundaries(&grid, 0, 1, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (0, 4));
 
     // Click on 'w' (col 6): selects "world" (cols 6-10).
-    let (s, e) = word_boundaries(&grid, 0, 6);
+    let (s, e) = word_boundaries(&grid, 0, 6, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (6, 10));
 
     // Click on space (col 5): selects just the space.
-    let (s, e) = word_boundaries(&grid, 0, 5);
+    let (s, e) = word_boundaries(&grid, 0, 5, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (5, 5));
 }
 
@@ -306,15 +312,15 @@ fn word_boundaries_wide_char_pair() {
     }
 
     // Click on 漢 (col 0): selects "漢字" (cols 0-3 including spacers).
-    let (s, e) = word_boundaries(&grid, 0, 0);
+    let (s, e) = word_boundaries(&grid, 0, 0, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (0, 3));
 
     // Click on spacer of 漢 (col 1): redirects to base cell, same result.
-    let (s, e) = word_boundaries(&grid, 0, 1);
+    let (s, e) = word_boundaries(&grid, 0, 1, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (0, 3));
 
     // Click on 't' (col 5): selects "test" (cols 5-8).
-    let (s, e) = word_boundaries(&grid, 0, 5);
+    let (s, e) = word_boundaries(&grid, 0, 5, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (5, 8));
 }
 
@@ -327,7 +333,7 @@ fn word_boundaries_single_wide_char() {
     grid.put_char(' ');
     grid.put_char('A');
 
-    let (s, e) = word_boundaries(&grid, 0, 0);
+    let (s, e) = word_boundaries(&grid, 0, 0, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (0, 1), "wide char + spacer");
 }
 
@@ -338,7 +344,7 @@ fn word_boundaries_spacer_redirect() {
     grid.move_to(0, Column(0));
     grid.put_char('漢');
 
-    let (s, e) = word_boundaries(&grid, 0, 1);
+    let (s, e) = word_boundaries(&grid, 0, 1, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (0, 1));
 }
 
@@ -784,7 +790,7 @@ fn grid_reset_increments_total_evicted() {
 fn word_boundaries_empty_row() {
     // All spaces — space is class 1, so each space is its own "word".
     let grid = Grid::new(1, 10);
-    let (s, e) = word_boundaries(&grid, 0, 5);
+    let (s, e) = word_boundaries(&grid, 0, 5, DEFAULT_WORD_DELIMITERS);
     // All default cells are ' '. Space is class 1. All same class → entire row.
     assert_eq!(s, 0);
     assert_eq!(e, 9);
@@ -793,31 +799,59 @@ fn word_boundaries_empty_row() {
 #[test]
 fn word_boundaries_all_punctuation() {
     let mut grid = Grid::new(1, 10);
+    // `;` and `-` are NOT in DEFAULT_WORD_DELIMITERS, so they're all class 0.
     write_str(&mut grid, 0, ";;--;;");
-    let (s, e) = word_boundaries(&grid, 0, 2);
-    // '-' and ';' are both class 2. But char_class checks exact class match.
-    // '--' at cols 2-3 vs ';;' at cols 0-1: all are class 2, so they group.
+    let (s, e) = word_boundaries(&grid, 0, 2, DEFAULT_WORD_DELIMITERS);
     assert_eq!(s, 0);
     assert_eq!(e, 5);
 }
 
 #[test]
+fn word_boundaries_delimiter_chars() {
+    // Characters IN the delimiter set stop word expansion.
+    let mut grid = Grid::new(1, 20);
+    write_str(&mut grid, 0, "hello(world)");
+    let (s, e) = word_boundaries(&grid, 0, 1, DEFAULT_WORD_DELIMITERS);
+    assert_eq!((s, e), (0, 4), "'(' in delimiters stops at 'hello'");
+}
+
+#[test]
+fn word_boundaries_custom_delimiters() {
+    // Custom delimiter set: `-` breaks words.
+    let mut grid = Grid::new(1, 20);
+    write_str(&mut grid, 0, "hello-world");
+    let (s, e) = word_boundaries(&grid, 0, 1, "-");
+    assert_eq!(
+        (s, e),
+        (0, 4),
+        "hyphen in custom delimiters stops at 'hello'"
+    );
+    // With default delimiters, `-` does NOT break words.
+    let (s, e) = word_boundaries(&grid, 0, 1, DEFAULT_WORD_DELIMITERS);
+    assert_eq!(
+        (s, e),
+        (0, 10),
+        "hyphen not in defaults: 'hello-world' is one word"
+    );
+}
+
+#[test]
 fn word_boundaries_out_of_bounds_col() {
     let grid = Grid::new(1, 10);
-    let (s, e) = word_boundaries(&grid, 0, 100);
+    let (s, e) = word_boundaries(&grid, 0, 100, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (100, 100));
 }
 
 #[test]
 fn word_boundaries_out_of_bounds_row() {
     let grid = Grid::new(1, 10);
-    let (s, e) = word_boundaries(&grid, 99, 5);
+    let (s, e) = word_boundaries(&grid, 99, 5, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (5, 5));
 }
 
 #[test]
-fn delimiter_class_tab_is_whitespace() {
-    assert_eq!(delimiter_class('\t'), 1);
+fn delimiter_class_tab() {
+    assert_eq!(delimiter_class('\t', DEFAULT_WORD_DELIMITERS), 1);
 }
 
 // -- Text extraction edge cases --
@@ -1234,18 +1268,17 @@ fn extract_text_emoji_wide_char() {
 
 #[test]
 fn word_boundaries_emoji() {
-    // Emoji should be treated as word characters (alphanumeric by Unicode).
-    // Actually emoji are NOT alphanumeric — they're Symbol_Other.
-    // So they get delimiter_class 2 (punctuation/other).
+    // Emoji are not in DEFAULT_WORD_DELIMITERS → treated as word characters.
+    // So 💀A is one word (emoji + A both class 0).
     let mut grid = Grid::new(1, 20);
     grid.move_to(0, Column(0));
     grid.put_char('💀');
     grid.put_char('A');
 
-    // Click on emoji at col 0: emoji is class 2, 'A' is class 0 → separate.
-    let (s, e) = word_boundaries(&grid, 0, 0);
+    // Click on emoji at col 0: both emoji and 'A' are class 0 → one word.
+    let (s, e) = word_boundaries(&grid, 0, 0, DEFAULT_WORD_DELIMITERS);
     assert_eq!(s, 0);
-    assert_eq!(e, 1, "emoji + spacer");
+    assert_eq!(e, 2, "emoji + A is one word");
 }
 
 // -- Selection across scrollback + visible boundary --
@@ -1400,7 +1433,7 @@ fn word_boundaries_word_at_col_zero() {
     let mut grid = Grid::new(1, 20);
     write_str(&mut grid, 0, "hello world");
 
-    let (s, e) = word_boundaries(&grid, 0, 0);
+    let (s, e) = word_boundaries(&grid, 0, 0, DEFAULT_WORD_DELIMITERS);
     assert_eq!(s, 0, "word starts at col 0");
     assert_eq!(e, 4);
 }
@@ -1411,7 +1444,7 @@ fn word_boundaries_word_at_last_col() {
     // "ABC  hello" — "hello" ends at col 9 (last col).
     write_str(&mut grid, 0, "ABC  hello");
 
-    let (s, e) = word_boundaries(&grid, 0, 9);
+    let (s, e) = word_boundaries(&grid, 0, 9, DEFAULT_WORD_DELIMITERS);
     assert_eq!(s, 5);
     assert_eq!(e, 9, "word ends at last column");
 }
@@ -1421,25 +1454,41 @@ fn word_boundaries_word_at_last_col() {
 #[test]
 fn delimiter_class_cjk_is_word_char() {
     // CJK ideographs are alphanumeric per char::is_alphanumeric().
-    assert_eq!(delimiter_class('漢'), 0, "CJK should be word class");
-    assert_eq!(delimiter_class('字'), 0);
-    assert_eq!(delimiter_class('好'), 0);
+    assert_eq!(
+        delimiter_class('漢', DEFAULT_WORD_DELIMITERS),
+        0,
+        "CJK should be word class"
+    );
+    assert_eq!(delimiter_class('字', DEFAULT_WORD_DELIMITERS), 0);
+    assert_eq!(delimiter_class('好', DEFAULT_WORD_DELIMITERS), 0);
 }
 
 #[test]
-fn delimiter_class_emoji_is_punctuation() {
-    // Emoji are Symbol_Other, not alphanumeric → class 2.
-    assert_eq!(delimiter_class('💀'), 2);
-    assert_eq!(delimiter_class('🎉'), 2);
+fn delimiter_class_emoji_is_word_char() {
+    // Emoji are not in DEFAULT_WORD_DELIMITERS → treated as word characters.
+    assert_eq!(delimiter_class('💀', DEFAULT_WORD_DELIMITERS), 0);
+    assert_eq!(delimiter_class('🎉', DEFAULT_WORD_DELIMITERS), 0);
 }
 
 #[test]
 fn delimiter_class_unicode_letters() {
     // Non-ASCII alphabetic characters should be word class.
-    assert_eq!(delimiter_class('é'), 0, "accented latin");
-    assert_eq!(delimiter_class('ñ'), 0, "Spanish ñ");
-    assert_eq!(delimiter_class('Ω'), 0, "Greek omega");
-    assert_eq!(delimiter_class('д'), 0, "Cyrillic");
+    assert_eq!(
+        delimiter_class('é', DEFAULT_WORD_DELIMITERS),
+        0,
+        "accented latin"
+    );
+    assert_eq!(
+        delimiter_class('ñ', DEFAULT_WORD_DELIMITERS),
+        0,
+        "Spanish ñ"
+    );
+    assert_eq!(
+        delimiter_class('Ω', DEFAULT_WORD_DELIMITERS),
+        0,
+        "Greek omega"
+    );
+    assert_eq!(delimiter_class('д', DEFAULT_WORD_DELIMITERS), 0, "Cyrillic");
 }
 
 // -- Wrapped line word boundary (ref: WezTerm double_click_wrapped_selection) --
@@ -1454,11 +1503,11 @@ fn word_boundaries_wrapped_line_stays_within_row() {
     write_str(&mut grid, 1, "world");
 
     // Click on 'e' in row 0: selects "hello" (cols 0-4), not "helloworld".
-    let (s, e) = word_boundaries(&grid, 0, 1);
+    let (s, e) = word_boundaries(&grid, 0, 1, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (0, 4));
 
     // Click on 'o' in row 1: selects "world" (cols 0-4).
-    let (s, e) = word_boundaries(&grid, 1, 1);
+    let (s, e) = word_boundaries(&grid, 1, 1, DEFAULT_WORD_DELIMITERS);
     assert_eq!((s, e), (0, 4));
 }
 

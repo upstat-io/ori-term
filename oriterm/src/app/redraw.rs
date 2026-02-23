@@ -124,6 +124,7 @@ impl App {
                 let ctx = GridCtx {
                     widget: grid_widget,
                     cell,
+                    word_delimiters: &self.config.behavior.word_delimiters,
                 };
                 frame.hovered_cell = mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &ctx)
                     .map(|(col, line)| (line, col));

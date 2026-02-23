@@ -179,6 +179,7 @@ impl App {
             let ctx = mouse_selection::GridCtx {
                 widget: grid,
                 cell: renderer.cell_metrics(),
+                word_delimiters: &self.config.behavior.word_delimiters,
             };
             if mouse_selection::handle_press(&mut self.mouse, tab, &ctx, pos, self.modifiers) {
                 self.dirty = true;
@@ -194,6 +195,7 @@ impl App {
             let ctx = mouse_selection::GridCtx {
                 widget: grid,
                 cell: renderer.cell_metrics(),
+                word_delimiters: &self.config.behavior.word_delimiters,
             };
             if mouse_selection::handle_drag(&mut self.mouse, tab, &ctx, position) {
                 self.dirty = true;

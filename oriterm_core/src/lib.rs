@@ -25,7 +25,10 @@ pub use grid::{
     Cursor, CursorShape, DisplayEraseMode, Grid, LineEraseMode, Row, StableRowIndex, TabClearMode,
 };
 pub use index::{Boundary, Column, Direction, Line, Point, Side};
-pub use selection::{ClickDetector, Selection, SelectionBounds, SelectionMode, SelectionPoint};
+pub use selection::{
+    ClickDetector, DEFAULT_WORD_DELIMITERS, Selection, SelectionBounds, SelectionMode,
+    SelectionPoint,
+};
 pub use sync::{FairMutex, FairMutexGuard, FairMutexLease};
 pub use term::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, Term, TermDamage, TermMode,

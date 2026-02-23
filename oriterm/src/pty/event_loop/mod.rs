@@ -97,7 +97,7 @@ impl<T: EventListener> PtyEventLoop<T> {
                 }
             };
 
-            log::info!(
+            log::trace!(
                 "PTY read {n} bytes: {:?}",
                 String::from_utf8_lossy(&buf[..n.min(200)])
             );
