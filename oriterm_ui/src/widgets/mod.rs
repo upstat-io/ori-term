@@ -20,6 +20,7 @@ pub mod spacer;
 pub mod stack;
 pub mod text_input;
 pub mod toggle;
+pub mod window_chrome;
 
 use std::cell::Cell;
 use std::time::Instant;
@@ -105,6 +106,12 @@ pub enum WidgetAction {
     Selected { id: WidgetId, index: usize },
     /// An overlay content widget requests its own dismissal.
     DismissOverlay(WidgetId),
+    /// Minimize the window.
+    WindowMinimize,
+    /// Maximize or restore the window.
+    WindowMaximize,
+    /// Close the window.
+    WindowClose,
 }
 
 /// Context passed to [`Widget::layout`].

@@ -1,6 +1,14 @@
 //! Three-phase rendering pipeline: Extract → Prepare → Render.
 
+use std::cell::Cell;
+use std::time::Instant;
+
 use oriterm_core::{Column, CursorShape, TermMode};
+
+use oriterm_ui::draw::DrawList;
+use oriterm_ui::theme::UiTheme;
+use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
+use oriterm_ui::widgets::{DrawCtx, Widget};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
@@ -9,6 +17,39 @@ use crate::gpu::{
     extract_frame_into,
 };
 use crate::widgets::terminal_grid::TerminalGridWidget;
+
+/// Stub text measurer for chrome drawing (no text measurement needed for
+/// geometric symbols, but the trait is required by `DrawCtx`).
+pub(super) struct NullMeasurer;
+
+impl oriterm_ui::widgets::TextMeasurer for NullMeasurer {
+    fn measure(
+        &self,
+        _text: &str,
+        _style: &oriterm_ui::text::TextStyle,
+        _max_width: f32,
+    ) -> oriterm_ui::text::TextMetrics {
+        oriterm_ui::text::TextMetrics {
+            width: 0.0,
+            height: 0.0,
+            line_count: 0,
+        }
+    }
+
+    fn shape(
+        &self,
+        _text: &str,
+        _style: &oriterm_ui::text::TextStyle,
+        _max_width: f32,
+    ) -> oriterm_ui::text::ShapedText {
+        oriterm_ui::text::ShapedText {
+            glyphs: Vec::new(),
+            width: 0.0,
+            height: 0.0,
+            baseline: 0.0,
+        }
+    }
+}
 
 impl App {
     /// Execute the three-phase rendering pipeline: Extract → Prepare → Render.
@@ -112,6 +153,18 @@ impl App {
                 .map_or((0.0, 0.0), |b| (b.x(), b.y()));
 
             renderer.prepare(frame, gpu, origin, cursor_blink_visible);
+
+            // Draw window chrome into the UI rect layer.
+            let chrome_animating = Self::draw_chrome(
+                self.chrome.as_ref(),
+                renderer,
+                w,
+                window.scale_factor().factor() as f32,
+            );
+            if chrome_animating {
+                self.dirty = true;
+            }
+
             renderer.render_to_surface(gpu, window.surface())
         };
 
@@ -126,5 +179,45 @@ impl App {
             }
             Err(e) => log::error!("render error: {e}"),
         }
+    }
+
+    /// Draw window chrome into the renderer's UI rect layer.
+    ///
+    /// Returns `true` if chrome has running animations that need continued
+    /// redraws.
+    fn draw_chrome(
+        chrome: Option<&WindowChromeWidget>,
+        renderer: &mut crate::gpu::GpuRenderer,
+        viewport_width: u32,
+        scale: f32,
+    ) -> bool {
+        let Some(chrome) = chrome else {
+            return false;
+        };
+        if !chrome.is_visible() {
+            return false;
+        }
+
+        let mut draw_list = DrawList::new();
+        let animations_running = Cell::new(false);
+        let measurer = NullMeasurer;
+        let theme = UiTheme::dark();
+        let caption_h = chrome.caption_height();
+        let bounds =
+            oriterm_ui::geometry::Rect::new(0.0, 0.0, viewport_width as f32 / scale, caption_h);
+
+        let mut ctx = DrawCtx {
+            measurer: &measurer,
+            draw_list: &mut draw_list,
+            bounds,
+            focused_widget: None,
+            now: Instant::now(),
+            animations_running: &animations_running,
+            theme: &theme,
+        };
+        chrome.draw(&mut ctx);
+
+        renderer.append_ui_draw_list(&draw_list);
+        animations_running.get()
     }
 }

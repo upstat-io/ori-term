@@ -2,6 +2,7 @@
 
 use winit::event_loop::ActiveEventLoop;
 
+use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::window::WindowConfig;
 
 use super::{App, DEFAULT_DPI};
@@ -72,22 +73,49 @@ impl App {
         let renderer = GpuRenderer::new(&gpu, font_collection);
         let t_renderer = t_renderer_start.elapsed();
 
-        // 7. Compute grid dimensions from viewport and cell metrics.
+        // 7. Create window chrome widget (title bar + controls).
         let (w, h) = window.size_px();
-        let cell = renderer.cell_metrics();
-        let cols = cell.columns(w).max(1);
-        let rows = cell.rows(h).max(1);
+        let logical_w = w as f32 / window.scale_factor().factor() as f32;
+        let chrome_widget =
+            WindowChromeWidget::with_theme("ori", logical_w, &oriterm_ui::theme::UiTheme::dark());
+        let caption_height = chrome_widget.caption_height();
 
-        // 8. Create grid widget with cell metrics and initial grid size.
+        // 8. Enable Aero Snap on Windows (installs WndProc subclass).
+        #[cfg(target_os = "windows")]
+        {
+            let scale = window.scale_factor().factor() as f32;
+            oriterm_ui::platform_windows::enable_snap(
+                window.window(),
+                oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * scale,
+                caption_height * scale,
+            );
+            oriterm_ui::platform_windows::set_client_rects(
+                window.window(),
+                chrome_widget
+                    .interactive_rects()
+                    .iter()
+                    .map(|r| scale_rect(*r, scale))
+                    .collect(),
+            );
+        }
+
+        // 9. Compute grid dimensions from viewport, offset by caption height.
+        let cell = renderer.cell_metrics();
+        let caption_px = (caption_height * window.scale_factor().factor() as f32).round() as u32;
+        let grid_h = h.saturating_sub(caption_px);
+        let cols = cell.columns(w).max(1);
+        let rows = cell.rows(grid_h).max(1);
+
+        // 10. Create grid widget with cell metrics and initial grid size.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
         grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
             0.0,
-            0.0,
+            caption_height,
             cols as f32 * cell.width,
             rows as f32 * cell.height,
         ));
 
-        // 9. Spawn the terminal tab (PTY + VTE + Term).
+        // 11. Spawn the terminal tab (PTY + VTE + Term).
         let t_tab_start = std::time::Instant::now();
         let tab = self.create_initial_tab(rows, cols)?;
         let t_tab = t_tab_start.elapsed();
@@ -99,7 +127,7 @@ impl App {
         );
         log::info!(
             "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
-             font={} {:.1}pt",
+             caption={caption_height}px, font={} {:.1}pt",
             renderer.family_name(),
             self.config.font.size,
         );
@@ -113,6 +141,7 @@ impl App {
         self.window = Some(window);
         self.tab = Some(tab);
         self.terminal_grid = Some(grid_widget);
+        self.chrome = Some(chrome_widget);
         self.dirty = true;
         Ok(())
     }
@@ -192,4 +221,15 @@ impl App {
 
         Ok(tab)
     }
+}
+
+/// Scale a logical-pixel rect to physical pixels.
+#[cfg(target_os = "windows")]
+fn scale_rect(r: oriterm_ui::geometry::Rect, scale: f32) -> oriterm_ui::geometry::Rect {
+    oriterm_ui::geometry::Rect::new(
+        r.x() * scale,
+        r.y() * scale,
+        r.width() * scale,
+        r.height() * scale,
+    )
 }

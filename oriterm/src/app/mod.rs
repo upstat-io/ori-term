@@ -5,6 +5,7 @@
 //! Render), handles window events, and dispatches terminal events from the
 //! PTY reader thread.
 
+mod chrome;
 mod clipboard_ops;
 pub(crate) mod config_reload;
 mod cursor_blink;
@@ -36,6 +37,9 @@ use crate::tab::Tab;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
+use oriterm_ui::widgets::Widget;
+use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
+
 /// Default DPI for font rasterization.
 const DEFAULT_DPI: f32 = 96.0;
 
@@ -55,6 +59,9 @@ pub(crate) struct App {
 
     // Terminal grid widget (layout + event routing participant).
     terminal_grid: Option<TerminalGridWidget>,
+
+    // Window chrome widget (title bar + controls).
+    chrome: Option<WindowChromeWidget>,
 
     // Event loop proxy for creating per-tab EventProxy instances.
     event_proxy: EventLoopProxy<TermEvent>,
@@ -107,6 +114,7 @@ impl App {
             window: None,
             tab: None,
             terminal_grid: None,
+            chrome: None,
             event_proxy,
             frame: None,
             dirty: false,
@@ -126,6 +134,165 @@ impl App {
     /// Returns `None` if no tab is present.
     fn terminal_mode(&self) -> Option<TermMode> {
         self.tab.as_ref().map(|t| t.terminal().lock().mode())
+    }
+
+    /// Check if a mouse event should be handled by the chrome widget.
+    ///
+    /// Returns `true` if the event was consumed by chrome (click on a
+    /// control button), `false` if it should fall through to the grid.
+    fn try_chrome_mouse(
+        &mut self,
+        button: MouseButton,
+        state: ElementState,
+        event_loop: &ActiveEventLoop,
+    ) -> bool {
+        let pos = self.mouse.cursor_pos();
+        let (Some(chrome), Some(window)) = (&mut self.chrome, &self.window) else {
+            return false;
+        };
+        if !chrome.is_visible() {
+            return false;
+        }
+
+        let scale = window.scale_factor().factor() as f32;
+        let logical_y = pos.y as f32 / scale;
+
+        // Only intercept events within the caption height.
+        if logical_y >= chrome.caption_height() {
+            return false;
+        }
+
+        let logical_pos = oriterm_ui::geometry::Point::new(pos.x as f32 / scale, logical_y);
+
+        // Check if the click is on a control button.
+        let kind = match (button, state) {
+            (MouseButton::Left, ElementState::Pressed) => {
+                oriterm_ui::input::MouseEventKind::Down(oriterm_ui::input::MouseButton::Left)
+            }
+            (MouseButton::Left, ElementState::Released) => {
+                oriterm_ui::input::MouseEventKind::Up(oriterm_ui::input::MouseButton::Left)
+            }
+            _ => return false,
+        };
+
+        let event = oriterm_ui::input::MouseEvent {
+            kind,
+            pos: logical_pos,
+            modifiers: oriterm_ui::input::Modifiers::NONE,
+        };
+        let measurer = redraw::NullMeasurer;
+        let theme = oriterm_ui::theme::UiTheme::dark();
+        let ctx = oriterm_ui::widgets::EventCtx {
+            measurer: &measurer,
+            bounds: oriterm_ui::geometry::Rect::new(
+                0.0,
+                0.0,
+                chrome.caption_height(),
+                chrome.caption_height(),
+            ),
+            is_focused: false,
+            focused_widget: None,
+            theme: &theme,
+        };
+
+        let resp = chrome.handle_mouse(&event, &ctx);
+        if resp.response != oriterm_ui::input::EventResponse::Ignored {
+            if let Some(action) = &resp.action {
+                self.handle_chrome_action(action, event_loop);
+            }
+            self.dirty = true;
+            return true;
+        }
+        false
+    }
+
+    /// Handle window resize: reconfigure surface, update chrome layout,
+    /// resize grid and PTY.
+    fn handle_resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        let (Some(gpu), Some(window), Some(renderer)) =
+            (&self.gpu, &mut self.window, &self.renderer)
+        else {
+            return;
+        };
+
+        window.resize_surface(size.width, size.height, gpu);
+        let cell = renderer.cell_metrics();
+        let scale = window.scale_factor().factor() as f32;
+
+        // Update chrome layout for new window width.
+        let caption_height = if let Some(chrome) = &mut self.chrome {
+            let logical_w = size.width as f32 / scale;
+            chrome.set_window_width(logical_w);
+            chrome.caption_height()
+        } else {
+            0.0
+        };
+
+        // Grid viewport excludes caption height.
+        let caption_px = (caption_height * scale).round() as u32;
+        let grid_h = size.height.saturating_sub(caption_px);
+        let cols = cell.columns(size.width).max(1);
+        let rows = cell.rows(grid_h).max(1);
+
+        if let Some(grid) = &mut self.terminal_grid {
+            grid.set_cell_metrics(cell.width, cell.height);
+            grid.set_grid_size(cols, rows);
+            grid.set_bounds(oriterm_ui::geometry::Rect::new(
+                0.0,
+                caption_height,
+                cols as f32 * cell.width,
+                rows as f32 * cell.height,
+            ));
+        }
+
+        // Update platform hit test rects on Windows.
+        #[cfg(target_os = "windows")]
+        if let Some(chrome) = &self.chrome {
+            oriterm_ui::platform_windows::set_client_rects(
+                window.window(),
+                chrome
+                    .interactive_rects()
+                    .iter()
+                    .map(|r| {
+                        oriterm_ui::geometry::Rect::new(
+                            r.x() * scale,
+                            r.y() * scale,
+                            r.width() * scale,
+                            r.height() * scale,
+                        )
+                    })
+                    .collect(),
+            );
+        }
+
+        if let Some(tab) = &self.tab {
+            tab.resize(rows as u16, cols as u16);
+        }
+
+        self.dirty = true;
+    }
+
+    /// Update chrome hover state from a cursor position (physical pixels).
+    fn update_chrome_hover(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
+        let (Some(chrome), Some(window)) = (&mut self.chrome, &self.window) else {
+            return;
+        };
+        let scale = window.scale_factor().factor() as f32;
+        let logical =
+            oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
+        let measurer = redraw::NullMeasurer;
+        let theme = oriterm_ui::theme::UiTheme::dark();
+        let ctx = oriterm_ui::widgets::EventCtx {
+            measurer: &measurer,
+            bounds: oriterm_ui::geometry::Rect::default(),
+            is_focused: false,
+            focused_widget: None,
+            theme: &theme,
+        };
+        let resp = chrome.update_hover(logical, &ctx);
+        if resp.response == oriterm_ui::input::EventResponse::RequestRedraw {
+            self.dirty = true;
+        }
     }
 
     /// Handle mouse press for selection.
@@ -309,32 +476,7 @@ impl ApplicationHandler<TermEvent> for App {
             }
 
             WindowEvent::Resized(size) => {
-                if let (Some(gpu), Some(window), Some(renderer)) =
-                    (&self.gpu, &mut self.window, &self.renderer)
-                {
-                    window.resize_surface(size.width, size.height, gpu);
-
-                    let cell = renderer.cell_metrics();
-                    let cols = cell.columns(size.width).max(1);
-                    let rows = cell.rows(size.height).max(1);
-
-                    if let Some(grid) = &mut self.terminal_grid {
-                        grid.set_cell_metrics(cell.width, cell.height);
-                        grid.set_grid_size(cols, rows);
-                        grid.set_bounds(oriterm_ui::geometry::Rect::new(
-                            0.0,
-                            0.0,
-                            cols as f32 * cell.width,
-                            rows as f32 * cell.height,
-                        ));
-                    }
-
-                    if let Some(tab) = &self.tab {
-                        tab.resize(rows as u16, cols as u16);
-                    }
-
-                    self.dirty = true;
-                }
+                self.handle_resize(size);
             }
 
             WindowEvent::RedrawRequested => self.handle_redraw(),
@@ -365,8 +507,17 @@ impl ApplicationHandler<TermEvent> for App {
                 }
             }
 
+            WindowEvent::Focused(focused) => {
+                if let Some(chrome) = &mut self.chrome {
+                    chrome.set_active(focused);
+                    self.dirty = true;
+                }
+            }
+
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse.set_cursor_pos(position);
+                self.update_chrome_hover(position);
+
                 if let Some(mode) = self.terminal_mode() {
                     if self.report_mouse_motion(position, mode) {
                         return;
@@ -378,6 +529,11 @@ impl ApplicationHandler<TermEvent> for App {
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
+                // Check chrome first — if a control button was clicked,
+                // don't propagate to selection/PTY reporting.
+                if self.try_chrome_mouse(button, state, event_loop) {
+                    return;
+                }
                 self.handle_mouse_input(button, state);
             }
 
