@@ -145,7 +145,9 @@ impl App {
 
             // Grid origin from layout bounds. When the layout engine
             // positions the grid (e.g. below a tab bar), this shifts all
-            // cell rendering.
+            // cell rendering. Both bounds and cell metrics are in physical
+            // pixels; the viewport (screen_size uniform) is also physical,
+            // so the shader maps physical positions to NDC correctly.
             let origin = self
                 .terminal_grid
                 .as_ref()
@@ -154,12 +156,17 @@ impl App {
 
             renderer.prepare(frame, gpu, origin, cursor_blink_visible);
 
-            // Draw window chrome into the UI rect layer.
+            // Draw window chrome into the UI rect layer. Chrome widget
+            // draws in logical pixels; scale converts to physical pixels
+            // for the GPU pipeline (screen_size uniform is physical).
+            let scale = window.scale_factor().factor() as f32;
+            let logical_w = (w as f32 / scale).round() as u32;
             let chrome_animating = Self::draw_chrome(
                 self.chrome.as_ref(),
                 renderer,
-                w,
-                window.scale_factor().factor() as f32,
+                &mut self.chrome_draw_list,
+                logical_w,
+                scale,
             );
             if chrome_animating {
                 self.dirty = true;
@@ -183,12 +190,18 @@ impl App {
 
     /// Draw window chrome into the renderer's UI rect layer.
     ///
+    /// Chrome widget coordinates are in logical pixels. The `scale` factor
+    /// converts logical draw list positions to physical pixels for the GPU
+    /// pipeline (`screen_size` uniform is physical).
+    ///
     /// Returns `true` if chrome has running animations that need continued
-    /// redraws.
+    /// redraws. The `draw_list` is cleared and reused across frames to
+    /// avoid per-frame allocation.
     fn draw_chrome(
         chrome: Option<&WindowChromeWidget>,
         renderer: &mut crate::gpu::GpuRenderer,
-        viewport_width: u32,
+        draw_list: &mut DrawList,
+        logical_width: u32,
         scale: f32,
     ) -> bool {
         let Some(chrome) = chrome else {
@@ -198,17 +211,16 @@ impl App {
             return false;
         }
 
-        let mut draw_list = DrawList::new();
+        draw_list.clear();
         let animations_running = Cell::new(false);
         let measurer = NullMeasurer;
         let theme = UiTheme::dark();
         let caption_h = chrome.caption_height();
-        let bounds =
-            oriterm_ui::geometry::Rect::new(0.0, 0.0, viewport_width as f32 / scale, caption_h);
+        let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_width as f32, caption_h);
 
         let mut ctx = DrawCtx {
             measurer: &measurer,
-            draw_list: &mut draw_list,
+            draw_list,
             bounds,
             focused_widget: None,
             now: Instant::now(),
@@ -217,7 +229,7 @@ impl App {
         };
         chrome.draw(&mut ctx);
 
-        renderer.append_ui_draw_list(&draw_list);
+        renderer.append_ui_draw_list(draw_list, scale);
         animations_running.get()
     }
 }

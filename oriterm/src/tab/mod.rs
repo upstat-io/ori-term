@@ -380,10 +380,17 @@ impl Tab {
         self.terminal.lock().grid_mut().scroll_display(delta);
     }
 
-    /// Resize the PTY dimensions.
+    /// Resize the terminal grid and PTY to new dimensions.
     ///
-    /// Terminal grid resize (reflow) is handled separately in Section 12.
+    /// Resizes both grids (primary with reflow, alternate without) on the
+    /// calling thread, then notifies the PTY event loop to resize the OS
+    /// PTY handle. Grid resize happens first so the grid is at the new
+    /// dimensions before the shell receives SIGWINCH and redraws.
     pub fn resize(&self, rows: u16, cols: u16) {
+        // Resize the terminal grids (primary + alt).
+        self.terminal.lock().resize(rows as usize, cols as usize);
+
+        // Notify PTY event loop to resize the OS PTY handle.
         self.notifier.resize(rows, cols);
     }
 }

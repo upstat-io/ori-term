@@ -1,0 +1,447 @@
+use crate::cell::{Cell, CellFlags};
+use crate::grid::Grid;
+use crate::index::{Column, Line};
+
+/// Helper: create a cell with the given character.
+fn cell(ch: char) -> Cell {
+    Cell {
+        ch,
+        ..Cell::default()
+    }
+}
+
+/// Helper: write text into a grid row.
+fn write_row(grid: &mut Grid, line: usize, text: &str) {
+    for (col, ch) in text.chars().enumerate() {
+        grid[Line(line as i32)][Column(col)] = cell(ch);
+    }
+}
+
+/// Helper: read text from a grid row (trimming trailing spaces).
+fn read_row(grid: &Grid, line: usize) -> String {
+    let row = &grid[Line(line as i32)];
+    let mut s: String = (0..row.cols()).map(|c| row[Column(c)].ch).collect();
+    let trimmed = s.trim_end().len();
+    s.truncate(trimmed);
+    s
+}
+
+// ── Zero-size guards ────────────────────────────────────────────────
+
+#[test]
+fn resize_zero_cols_is_noop() {
+    let mut grid = Grid::new(24, 80);
+    grid.resize(0, 24, false);
+    assert_eq!(grid.cols(), 80);
+    assert_eq!(grid.lines(), 24);
+}
+
+#[test]
+fn resize_zero_lines_is_noop() {
+    let mut grid = Grid::new(24, 80);
+    grid.resize(80, 0, false);
+    assert_eq!(grid.cols(), 80);
+    assert_eq!(grid.lines(), 24);
+}
+
+#[test]
+fn resize_same_dimensions_is_noop() {
+    let mut grid = Grid::new(24, 80);
+    write_row(&mut grid, 0, "hello");
+    grid.resize(80, 24, true);
+    assert_eq!(read_row(&grid, 0), "hello");
+}
+
+// ── Row resize (vertical) ───────────────────────────────────────────
+
+#[test]
+fn shrink_rows_trims_trailing_blanks_first() {
+    let mut grid = Grid::new(10, 80);
+    // Write content in the first 3 rows, leave rest blank.
+    write_row(&mut grid, 0, "line0");
+    write_row(&mut grid, 1, "line1");
+    write_row(&mut grid, 2, "line2");
+    grid.cursor_mut().set_line(2);
+
+    grid.resize(80, 5, false);
+
+    assert_eq!(grid.lines(), 5);
+    assert_eq!(read_row(&grid, 0), "line0");
+    assert_eq!(read_row(&grid, 1), "line1");
+    assert_eq!(read_row(&grid, 2), "line2");
+    // No rows pushed to scrollback — blanks were trimmed.
+    assert_eq!(grid.scrollback().len(), 0);
+}
+
+#[test]
+fn shrink_rows_pushes_excess_to_scrollback() {
+    let mut grid = Grid::new(5, 80);
+    write_row(&mut grid, 0, "line0");
+    write_row(&mut grid, 1, "line1");
+    write_row(&mut grid, 2, "line2");
+    write_row(&mut grid, 3, "line3");
+    write_row(&mut grid, 4, "line4");
+    grid.cursor_mut().set_line(4);
+
+    grid.resize(80, 3, false);
+
+    assert_eq!(grid.lines(), 3);
+    // Top 2 rows pushed to scrollback.
+    assert_eq!(grid.scrollback().len(), 2);
+    // Visible rows are the last 3.
+    assert_eq!(read_row(&grid, 0), "line2");
+    assert_eq!(read_row(&grid, 1), "line3");
+    assert_eq!(read_row(&grid, 2), "line4");
+    // Cursor adjusted.
+    assert_eq!(grid.cursor().line(), 2);
+}
+
+#[test]
+fn shrink_rows_cursor_adjusted_for_scrollback_push() {
+    let mut grid = Grid::new(5, 80);
+    write_row(&mut grid, 0, "a");
+    write_row(&mut grid, 1, "b");
+    write_row(&mut grid, 2, "c");
+    grid.cursor_mut().set_line(2);
+
+    // Shrink by 1: trailing blanks trimmed (rows 3,4 blank), none pushed.
+    grid.resize(80, 4, false);
+    assert_eq!(grid.cursor().line(), 2);
+    assert_eq!(grid.scrollback().len(), 0);
+}
+
+#[test]
+fn grow_rows_appends_blanks_when_cursor_in_middle() {
+    let mut grid = Grid::new(5, 80);
+    write_row(&mut grid, 0, "line0");
+    write_row(&mut grid, 1, "line1");
+    grid.cursor_mut().set_line(1);
+
+    grid.resize(80, 8, false);
+
+    assert_eq!(grid.lines(), 8);
+    assert_eq!(read_row(&grid, 0), "line0");
+    assert_eq!(read_row(&grid, 1), "line1");
+    assert_eq!(grid.cursor().line(), 1);
+    assert_eq!(grid.scrollback().len(), 0);
+}
+
+#[test]
+fn grow_rows_pulls_from_scrollback_when_cursor_at_bottom() {
+    let mut grid = Grid::new(3, 80);
+    write_row(&mut grid, 0, "line0");
+    write_row(&mut grid, 1, "line1");
+    write_row(&mut grid, 2, "line2");
+    grid.cursor_mut().set_line(2);
+
+    // Shrink to push rows to scrollback.
+    grid.resize(80, 2, false);
+    assert_eq!(grid.scrollback().len(), 1);
+    assert_eq!(grid.cursor().line(), 1);
+
+    // Grow back — should pull from scrollback.
+    grid.resize(80, 3, false);
+    assert_eq!(grid.lines(), 3);
+    assert_eq!(grid.scrollback().len(), 0);
+    assert_eq!(read_row(&grid, 0), "line0");
+    assert_eq!(read_row(&grid, 1), "line1");
+    assert_eq!(read_row(&grid, 2), "line2");
+    assert_eq!(grid.cursor().line(), 2);
+}
+
+// ── Column resize (no reflow) ───────────────────────────────────────
+
+#[test]
+fn grow_cols_no_reflow_pads_with_blanks() {
+    let mut grid = Grid::new(3, 10);
+    write_row(&mut grid, 0, "hello");
+
+    grid.resize(20, 3, false);
+
+    assert_eq!(grid.cols(), 20);
+    assert_eq!(read_row(&grid, 0), "hello");
+    assert_eq!(grid[Line(0)].cols(), 20);
+}
+
+#[test]
+fn shrink_cols_no_reflow_truncates() {
+    let mut grid = Grid::new(3, 20);
+    write_row(&mut grid, 0, "hello world here");
+
+    grid.resize(5, 3, false);
+
+    assert_eq!(grid.cols(), 5);
+    assert_eq!(read_row(&grid, 0), "hello");
+}
+
+// ── Scroll region and cursor clamping ───────────────────────────────
+
+#[test]
+fn resize_resets_scroll_region() {
+    let mut grid = Grid::new(24, 80);
+    grid.set_scroll_region(5, Some(20));
+    assert_eq!(*grid.scroll_region(), 4..20);
+
+    grid.resize(80, 10, false);
+
+    assert_eq!(*grid.scroll_region(), 0..10);
+}
+
+#[test]
+fn resize_clamps_cursor_to_new_bounds() {
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().set_line(23);
+    grid.cursor_mut().set_col(Column(79));
+
+    grid.resize(40, 10, false);
+
+    assert_eq!(grid.cursor().line(), 9);
+    assert_eq!(grid.cursor().col(), Column(39));
+}
+
+#[test]
+fn resize_clamps_display_offset() {
+    let mut grid = Grid::with_scrollback(5, 80, 100);
+    // Push some content to scrollback.
+    for i in 0..10 {
+        write_row(&mut grid, 0, &format!("line{i}"));
+        grid.scroll_up(1);
+    }
+    // Scroll back into history.
+    grid.scroll_display(5);
+    assert!(grid.display_offset() > 0);
+
+    grid.resize(80, 5, false);
+
+    assert!(grid.display_offset() <= grid.scrollback().len());
+}
+
+// ── Tab stops ───────────────────────────────────────────────────────
+
+#[test]
+fn resize_resets_tab_stops_for_new_width() {
+    let mut grid = Grid::new(24, 80);
+    grid.resize(40, 24, false);
+
+    // Tab stops should be reset for new column count.
+    let stops = grid.tab_stops();
+    assert_eq!(stops.len(), 40);
+    assert!(stops[0]);
+    assert!(stops[8]);
+    assert!(stops[16]);
+    assert!(stops[24]);
+    assert!(stops[32]);
+    assert!(!stops[39]);
+}
+
+// ── Reflow: column grow (unwrap) ────────────────────────────────────
+
+#[test]
+fn reflow_grow_unwraps_soft_wrapped_line() {
+    let mut grid = Grid::new(3, 10);
+
+    // Simulate a soft-wrapped line: "helloabcde" + "world" split across two rows.
+    // Fill first row fully, then set WRAP on the last cell.
+    write_row(&mut grid, 0, "helloabcde");
+    grid[Line(0)][Column(9)].flags.insert(CellFlags::WRAP);
+    write_row(&mut grid, 1, "world");
+
+    // Grow to 20 cols: the wrapped line should unwrap into one row.
+    grid.resize(20, 3, true);
+
+    assert_eq!(grid.cols(), 20);
+    let row0 = read_row(&grid, 0);
+    assert_eq!(row0, "helloabcdeworld");
+}
+
+#[test]
+fn reflow_grow_non_wrapped_lines_stay_separate() {
+    let mut grid = Grid::new(3, 10);
+    write_row(&mut grid, 0, "hello");
+    // No WRAP flag — hard newline.
+    write_row(&mut grid, 1, "world");
+
+    grid.resize(20, 3, true);
+
+    assert_eq!(read_row(&grid, 0), "hello");
+    assert_eq!(read_row(&grid, 1), "world");
+}
+
+// ── Reflow: column shrink (wrap) ────────────────────────────────────
+
+#[test]
+fn reflow_shrink_wraps_long_line() {
+    let mut grid = Grid::new(20, 20);
+    write_row(&mut grid, 0, "hello world here!!");
+
+    grid.resize(10, 20, true);
+
+    assert_eq!(grid.cols(), 10);
+
+    // 18 chars wraps to 2 rows at 10 cols. The extra row from wrapping
+    // pushes the first half to scrollback (standard terminal behavior).
+    assert_eq!(grid.scrollback().len(), 1);
+
+    // Scrollback has the first 10 chars with WRAP flag.
+    let sb_row = grid.scrollback().get(0).expect("scrollback row");
+    let sb_text: String = (0..10).map(|c| sb_row[Column(c)].ch).collect();
+    assert_eq!(sb_text, "hello worl");
+    assert!(sb_row[Column(9)].flags.contains(CellFlags::WRAP));
+
+    // Visible row 0 has the remaining 8 chars.
+    let r0 = read_row(&grid, 0);
+    assert_eq!(r0, "d here!!");
+}
+
+#[test]
+fn reflow_shrink_preserves_cursor_within_bounds() {
+    let mut grid = Grid::new(20, 20);
+    write_row(&mut grid, 0, "hello world");
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(6)); // On 'w'.
+
+    grid.resize(5, 20, true);
+
+    // "hello world" (11 chars) at 5 cols wraps to 3 rows, pushing 2 to
+    // scrollback. Cursor's original content ('w') is in scrollback, so
+    // cursor is clamped to visible area.
+    assert!(grid.cursor().line() < grid.lines());
+    assert!(grid.cursor().col().0 < grid.cols());
+
+    // Content is preserved across scrollback + visible.
+    assert!(grid.scrollback().len() >= 2);
+}
+
+// ── Reflow: round-trip ──────────────────────────────────────────────
+
+#[test]
+fn reflow_shrink_then_grow_preserves_content() {
+    // Use enough lines so wrapped content stays visible during shrink.
+    let mut grid = Grid::new(10, 20);
+    write_row(&mut grid, 0, "hello world here!!");
+    write_row(&mut grid, 1, "second line");
+
+    // Shrink to 10 cols (wrap).
+    grid.resize(10, 10, true);
+    // Grow back to 20 cols (unwrap).
+    grid.resize(20, 10, true);
+
+    assert_eq!(read_row(&grid, 0), "hello world here!!");
+    assert_eq!(read_row(&grid, 1), "second line");
+}
+
+// ── Reflow: empty grid ──────────────────────────────────────────────
+
+#[test]
+fn reflow_empty_grid_produces_valid_state() {
+    let mut grid = Grid::new(3, 10);
+    grid.resize(20, 3, true);
+
+    assert_eq!(grid.cols(), 20);
+    assert_eq!(grid.lines(), 3);
+    assert!(grid[Line(0)][Column(0)].is_empty());
+}
+
+// ── Reflow: wide characters ─────────────────────────────────────────
+
+#[test]
+fn reflow_wide_char_at_boundary_wraps_correctly() {
+    let mut grid = Grid::new(10, 10);
+
+    // Write "abcd" then a wide CJK char at cols 4-5.
+    for (col, ch) in "abcd".chars().enumerate() {
+        grid[Line(0)][Column(col)] = cell(ch);
+    }
+    let mut wide = cell('\u{4e16}'); // CJK char (width=2).
+    wide.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(0)][Column(4)] = wide;
+    let mut spacer = Cell::default();
+    spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(0)][Column(5)] = spacer;
+
+    // Shrink to 5 cols: wide char at cols 4-5 can't fit (only col 4 left).
+    grid.resize(5, 10, true);
+
+    assert_eq!(grid.cols(), 5);
+    // Wrapping pushes "abcd" to scrollback, wide char starts visible row 0.
+    assert_eq!(grid.scrollback().len(), 1);
+    let sb = grid.scrollback().get(0).expect("scrollback");
+    let sb_text: String = (0..4).map(|c| sb[Column(c)].ch).collect();
+    assert_eq!(sb_text, "abcd");
+
+    // Visible row 0 has the wide char.
+    assert!(
+        grid[Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+// ── Combined row + col resize ───────────────────────────────────────
+
+#[test]
+fn resize_both_dimensions_simultaneously() {
+    let mut grid = Grid::new(10, 80);
+    write_row(&mut grid, 0, "hello");
+    write_row(&mut grid, 1, "world");
+    grid.cursor_mut().set_line(1);
+
+    grid.resize(40, 5, false);
+
+    assert_eq!(grid.cols(), 40);
+    assert_eq!(grid.lines(), 5);
+    assert_eq!(read_row(&grid, 0), "hello");
+    assert_eq!(read_row(&grid, 1), "world");
+}
+
+// ── Rapid resize sequences ──────────────────────────────────────────
+
+#[test]
+fn rapid_resize_sequence_does_not_panic() {
+    let mut grid = Grid::new(24, 80);
+    write_row(&mut grid, 0, "hello world");
+    grid.cursor_mut().set_line(5);
+
+    // Simulate rapid resize events.
+    grid.resize(40, 12, true);
+    grid.resize(120, 30, true);
+    grid.resize(80, 24, true);
+    grid.resize(10, 5, true);
+    grid.resize(80, 24, true);
+
+    assert_eq!(grid.cols(), 80);
+    assert_eq!(grid.lines(), 24);
+    // Content should survive.
+    assert_eq!(read_row(&grid, 0), "hello world");
+}
+
+#[test]
+fn resize_to_minimum_1x1() {
+    let mut grid = Grid::new(24, 80);
+    write_row(&mut grid, 0, "hello");
+
+    grid.resize(1, 1, true);
+
+    assert_eq!(grid.cols(), 1);
+    assert_eq!(grid.lines(), 1);
+    assert_eq!(grid.cursor().line(), 0);
+    assert_eq!(grid.cursor().col(), Column(0));
+}
+
+// ── Dirty tracking ──────────────────────────────────────────────────
+
+#[test]
+fn resize_marks_all_dirty() {
+    let mut grid = Grid::new(10, 80);
+    // Drain dirty state.
+    grid.dirty_mut().drain().for_each(drop);
+
+    grid.resize(40, 5, false);
+
+    assert!(grid.dirty().is_all_dirty());
+}

@@ -26,7 +26,6 @@ impl GpuRenderer {
     /// Delegates to [`FontCollection::set_size`] for metrics + glyph cache,
     /// then clears all GPU atlases, re-populates the appropriate atlas with
     /// ASCII glyphs, and rebuilds bind groups for the new texture state.
-    #[allow(dead_code, reason = "font size change wired in later section")]
     pub fn set_font_size(&mut self, size_pt: f32, dpi: f32, gpu: &GpuState) {
         self.font_collection.set_size(size_pt, dpi);
         self.clear_and_recache(gpu);

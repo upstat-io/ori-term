@@ -76,13 +76,11 @@ struct OsDragState {
 
 /// Per-window data stored via `SetWindowSubclass`.
 struct SnapData {
-    /// Logical border width for resize hit testing.
-    border_width: f32,
-    /// Logical caption (tab bar) height.
-    caption_height: f32,
-    /// Logical window size, updated via [`set_window_size()`].
-    window_size: Mutex<Size>,
-    /// Interactive regions (buttons, tabs) in logical coordinates.
+    /// Border width for resize hit testing (physical pixels).
+    border_width: Mutex<f32>,
+    /// Caption (tab bar) height (physical pixels).
+    caption_height: Mutex<f32>,
+    /// Interactive regions (buttons, tabs) in physical pixels.
     interactive_rects: Mutex<Vec<Rect>>,
     /// DPI from the most recent `WM_DPICHANGED`. 0 means not yet received.
     ///
@@ -103,8 +101,11 @@ static SNAP_PTRS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
 ///
 /// Adds `WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_CAPTION` so
 /// Windows recognizes the window for Aero Snap, hides the OS title bar via
-/// DWM, and installs a `WndProc` subclass. Call [`set_window_size()`] after
-/// this to initialize the cached size for hit testing.
+/// DWM, and installs a `WndProc` subclass.
+///
+/// `border_width` and `caption_height` are in physical pixels (scaled by the
+/// display scale factor). Use [`set_chrome_metrics()`] to update these after
+/// a DPI change, and [`set_client_rects()`] to update interactive regions.
 pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
     let Some(hwnd) = hwnd_from_window(window) else {
         log::warn!("enable_snap: failed to extract HWND — snap support not installed");
@@ -139,9 +140,8 @@ pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
 
         // Install `WndProc` subclass with per-window data.
         let data = Box::new(SnapData {
-            border_width,
-            caption_height,
-            window_size: Mutex::new(Size::default()),
+            border_width: Mutex::new(border_width),
+            caption_height: Mutex::new(caption_height),
             interactive_rects: Mutex::new(Vec::new()),
             last_dpi: AtomicU32::new(0),
             os_drag: Mutex::new(None),
@@ -149,7 +149,7 @@ pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
         let data_ptr = Box::into_raw(data);
         SetWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID, data_ptr as usize);
 
-        // Register pointer for lookup by set_client_rects / set_window_size.
+        // Register pointer for lookup by set_client_rects / set_chrome_metrics.
         if let Ok(mut map) = snap_ptrs().lock() {
             map.insert(hwnd as usize, data_ptr as usize);
         }
@@ -214,14 +214,17 @@ pub fn take_os_drag_result(window: &Window) -> Option<OsDragResult> {
     Some(result)
 }
 
-/// Updates the cached window size (logical pixels) for hit testing.
+/// Updates the caption height and border width after a DPI change.
 ///
-/// Call on every resize event. `WM_NCHITTEST` uses this to determine
-/// window bounds for the `hit_test()` function.
-pub fn set_window_size(window: &Window, size: Size) {
+/// Both values are in physical pixels (scaled by the new display scale
+/// factor). Call from the resize handler when a DPI change is detected.
+pub fn set_chrome_metrics(window: &Window, border_width: f32, caption_height: f32) {
     if let Some(data) = snap_data_for_window(window) {
-        if let Ok(mut lock) = data.window_size.lock() {
-            *lock = size;
+        if let Ok(mut lock) = data.border_width.lock() {
+            *lock = border_width;
+        }
+        if let Ok(mut lock) = data.caption_height.lock() {
+            *lock = caption_height;
         }
     }
 }
@@ -306,13 +309,6 @@ fn get_y_lparam(lp: isize) -> i32 {
     i32::from(((lp >> 16) & 0xFFFF) as i16)
 }
 
-/// Returns the DPI scale factor (DPI / 96). Defaults to 1.0 if no
-/// `WM_DPICHANGED` has been received.
-fn dpi_scale_factor(data: &SnapData) -> f32 {
-    let dpi = data.last_dpi.load(Ordering::Relaxed);
-    if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 }
-}
-
 /// Maps a [`HitTestResult`] to a Windows HT constant.
 fn map_hit_result(result: HitTestResult) -> LRESULT {
     (match result {
@@ -334,6 +330,11 @@ fn map_hit_result(result: HitTestResult) -> LRESULT {
 // --- Message handlers (extracted from subclass_proc for clarity) -----------
 
 /// Handles `WM_NCHITTEST` by delegating to [`hit_test::hit_test()`].
+///
+/// All coordinates are in physical pixels — the cursor position from
+/// `lparam`, the window rect from `GetWindowRect`, and the stored
+/// `border_width`/`caption_height`/`interactive_rects` (set via
+/// [`enable_snap()`] and [`set_client_rects()`]) are all physical.
 fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
     let cursor_x = get_x_lparam(lparam);
     let cursor_y = get_y_lparam(lparam);
@@ -348,33 +349,24 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
     unsafe { GetWindowRect(hwnd, &raw mut rect) };
 
     // Client-relative physical coordinates.
-    let phys_x = cursor_x - rect.left;
-    let phys_y = cursor_y - rect.top;
+    let point = Point::new((cursor_x - rect.left) as f32, (cursor_y - rect.top) as f32);
 
-    // Convert to logical coordinates for hit_test().
-    let scale = dpi_scale_factor(data);
-    let point = Point::new(phys_x as f32 / scale, phys_y as f32 / scale);
-
-    // Use cached size, falling back to window rect if not yet set.
-    let window_size = {
-        let cached = data.window_size.lock().map(|s| *s).unwrap_or_default();
-        if cached.is_empty() {
-            let w = (rect.right - rect.left) as f32 / scale;
-            let h = (rect.bottom - rect.top) as f32 / scale;
-            Size::new(w, h)
-        } else {
-            cached
-        }
-    };
+    // Physical window size from the actual window rect.
+    let window_size = Size::new(
+        (rect.right - rect.left) as f32,
+        (rect.bottom - rect.top) as f32,
+    );
 
     let is_maximized = unsafe { IsZoomed(hwnd) != 0 };
 
+    let border_width = data.border_width.lock().map(|g| *g).unwrap_or(0.0);
+    let caption_height = data.caption_height.lock().map(|g| *g).unwrap_or(0.0);
     let rects_lock = data.interactive_rects.lock();
     let rects: &[Rect] = rects_lock.as_ref().map(|g| g.as_slice()).unwrap_or(&[]);
     let chrome = hit_test::WindowChrome {
         window_size,
-        border_width: data.border_width,
-        caption_height: data.caption_height,
+        border_width,
+        caption_height,
         interactive_rects: rects,
         is_maximized,
     };

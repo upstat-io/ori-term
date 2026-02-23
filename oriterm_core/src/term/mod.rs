@@ -351,6 +351,38 @@ impl<T: EventListener> Term<T> {
         self.grid_mut().dirty_mut().drain().for_each(drop);
     }
 
+    /// Resize the terminal to new dimensions.
+    ///
+    /// Resizes both primary and alternate grids. The primary grid uses text
+    /// reflow (soft-wrapped lines re-wrap to fit the new width). The alternate
+    /// grid does not reflow (full-screen apps manage their own layout).
+    ///
+    /// Marks all lines dirty so the renderer repaints. Also marks selection
+    /// as dirty since content positions change.
+    pub fn resize(&mut self, new_lines: usize, new_cols: usize) {
+        if new_lines == 0 || new_cols == 0 {
+            return;
+        }
+
+        let is_alt = self.mode.contains(TermMode::ALT_SCREEN);
+
+        // Primary grid: reflow enabled.
+        self.grid.resize(new_cols, new_lines, true);
+
+        // Alternate grid: no reflow (apps like vim handle their own layout).
+        self.alt_grid.resize(new_cols, new_lines, false);
+
+        // Mark selection dirty since cell positions changed.
+        self.selection_dirty = true;
+
+        // Ensure the active grid's dirty tracker reflects the resize.
+        if is_alt {
+            self.alt_grid.dirty_mut().mark_all();
+        } else {
+            self.grid.dirty_mut().mark_all();
+        }
+    }
+
     /// Switch between primary and alternate screen.
     ///
     /// Saves/restores cursor, toggles `TermMode::ALT_SCREEN`, swaps keyboard

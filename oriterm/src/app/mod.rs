@@ -30,14 +30,12 @@ use crate::clipboard::Clipboard;
 use crate::config::Config;
 use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
-use crate::font::{HintingMode, SubpixelMode};
 use crate::gpu::{FrameInput, GpuRenderer, GpuState};
 use crate::keybindings::{self, KeyBinding};
 use crate::tab::Tab;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
-use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 /// Default DPI for font rasterization.
@@ -68,6 +66,9 @@ pub(crate) struct App {
 
     // Per-frame reusable extraction buffer (lazily initialized on first redraw).
     frame: Option<FrameInput>,
+
+    // Reusable draw list for chrome rendering (avoids per-frame allocation).
+    chrome_draw_list: oriterm_ui::draw::DrawList,
 
     // Redraw coalescing.
     dirty: bool,
@@ -117,6 +118,7 @@ impl App {
             chrome: None,
             event_proxy,
             frame: None,
+            chrome_draw_list: oriterm_ui::draw::DrawList::new(),
             dirty: false,
             modifiers: ModifiersState::empty(),
             cursor_blink: CursorBlink::new(blink_interval),
@@ -129,170 +131,43 @@ impl App {
         }
     }
 
-    /// Read the terminal mode, locking briefly.
+    /// Re-rasterize fonts and update rendering settings for a new DPI scale.
     ///
-    /// Returns `None` if no tab is present.
-    fn terminal_mode(&self) -> Option<TermMode> {
-        self.tab.as_ref().map(|t| t.terminal().lock().mode())
-    }
-
-    /// Check if a mouse event should be handled by the chrome widget.
-    ///
-    /// Returns `true` if the event was consumed by chrome (click on a
-    /// control button), `false` if it should fall through to the grid.
-    fn try_chrome_mouse(
-        &mut self,
-        button: MouseButton,
-        state: ElementState,
-        event_loop: &ActiveEventLoop,
-    ) -> bool {
-        let pos = self.mouse.cursor_pos();
-        let (Some(chrome), Some(window)) = (&mut self.chrome, &self.window) else {
-            return false;
-        };
-        if !chrome.is_visible() {
-            return false;
-        }
-
-        let scale = window.scale_factor().factor() as f32;
-        let logical_y = pos.y as f32 / scale;
-
-        // Only intercept events within the caption height.
-        if logical_y >= chrome.caption_height() {
-            return false;
-        }
-
-        let logical_pos = oriterm_ui::geometry::Point::new(pos.x as f32 / scale, logical_y);
-
-        // Check if the click is on a control button.
-        let kind = match (button, state) {
-            (MouseButton::Left, ElementState::Pressed) => {
-                oriterm_ui::input::MouseEventKind::Down(oriterm_ui::input::MouseButton::Left)
-            }
-            (MouseButton::Left, ElementState::Released) => {
-                oriterm_ui::input::MouseEventKind::Up(oriterm_ui::input::MouseButton::Left)
-            }
-            _ => return false,
-        };
-
-        let event = oriterm_ui::input::MouseEvent {
-            kind,
-            pos: logical_pos,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
-        };
-        let measurer = redraw::NullMeasurer;
-        let theme = oriterm_ui::theme::UiTheme::dark();
-        let ctx = oriterm_ui::widgets::EventCtx {
-            measurer: &measurer,
-            bounds: oriterm_ui::geometry::Rect::new(
-                0.0,
-                0.0,
-                chrome.caption_height(),
-                chrome.caption_height(),
-            ),
-            is_focused: false,
-            focused_widget: None,
-            theme: &theme,
-        };
-
-        let resp = chrome.handle_mouse(&event, &ctx);
-        if resp.response != oriterm_ui::input::EventResponse::Ignored {
-            if let Some(action) = &resp.action {
-                self.handle_chrome_action(action, event_loop);
-            }
-            self.dirty = true;
-            return true;
-        }
-        false
-    }
-
-    /// Handle window resize: reconfigure surface, update chrome layout,
-    /// resize grid and PTY.
-    fn handle_resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
-        let (Some(gpu), Some(window), Some(renderer)) =
-            (&self.gpu, &mut self.window, &self.renderer)
-        else {
+    /// Called when the window moves between monitors with different scale
+    /// factors. Recalculates font size at physical DPI, updates hinting
+    /// and subpixel mode, and clears/recaches glyph atlases.
+    fn handle_dpi_change(&mut self, scale_factor: f64) {
+        let (Some(renderer), Some(gpu)) = (&mut self.renderer, &self.gpu) else {
             return;
         };
+        let scale = scale_factor as f32;
+        let physical_dpi = DEFAULT_DPI * scale;
 
-        window.resize_surface(size.width, size.height, gpu);
-        let cell = renderer.cell_metrics();
-        let scale = window.scale_factor().factor() as f32;
+        // Re-rasterize at new physical DPI. This recomputes cell metrics
+        // and clears the glyph cache + GPU atlases.
+        renderer.set_font_size(self.config.font.size, physical_dpi, gpu);
 
-        // Update chrome layout for new window width.
-        let caption_height = if let Some(chrome) = &mut self.chrome {
-            let logical_w = size.width as f32 / scale;
-            chrome.set_window_width(logical_w);
-            chrome.caption_height()
-        } else {
-            0.0
-        };
+        // Update hinting and subpixel mode for the new scale factor.
+        let hinting = config_reload::resolve_hinting(&self.config.font, scale_factor);
+        let format =
+            config_reload::resolve_subpixel_mode(&self.config.font, scale_factor).glyph_format();
+        renderer.set_hinting_and_format(hinting, format, gpu);
 
-        // Grid viewport excludes caption height.
-        let caption_px = (caption_height * scale).round() as u32;
-        let grid_h = size.height.saturating_sub(caption_px);
-        let cols = cell.columns(size.width).max(1);
-        let rows = cell.rows(grid_h).max(1);
-
-        if let Some(grid) = &mut self.terminal_grid {
-            grid.set_cell_metrics(cell.width, cell.height);
-            grid.set_grid_size(cols, rows);
-            grid.set_bounds(oriterm_ui::geometry::Rect::new(
-                0.0,
-                caption_height,
-                cols as f32 * cell.width,
-                rows as f32 * cell.height,
-            ));
-        }
-
-        // Update platform hit test rects on Windows.
-        #[cfg(target_os = "windows")]
-        if let Some(chrome) = &self.chrome {
-            oriterm_ui::platform_windows::set_client_rects(
-                window.window(),
-                chrome
-                    .interactive_rects()
-                    .iter()
-                    .map(|r| {
-                        oriterm_ui::geometry::Rect::new(
-                            r.x() * scale,
-                            r.y() * scale,
-                            r.width() * scale,
-                            r.height() * scale,
-                        )
-                    })
-                    .collect(),
-            );
-        }
-
+        // Mark all grid lines dirty so the frame extraction re-reads every
+        // cell with the new cell metrics. Without this, the terminal content
+        // appears stale until PTY output marks individual lines dirty.
         if let Some(tab) = &self.tab {
-            tab.resize(rows as u16, cols as u16);
+            tab.terminal().lock().grid_mut().dirty_mut().mark_all();
         }
 
         self.dirty = true;
     }
 
-    /// Update chrome hover state from a cursor position (physical pixels).
-    fn update_chrome_hover(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
-        let (Some(chrome), Some(window)) = (&mut self.chrome, &self.window) else {
-            return;
-        };
-        let scale = window.scale_factor().factor() as f32;
-        let logical =
-            oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
-        let measurer = redraw::NullMeasurer;
-        let theme = oriterm_ui::theme::UiTheme::dark();
-        let ctx = oriterm_ui::widgets::EventCtx {
-            measurer: &measurer,
-            bounds: oriterm_ui::geometry::Rect::default(),
-            is_focused: false,
-            focused_widget: None,
-            theme: &theme,
-        };
-        let resp = chrome.update_hover(logical, &ctx);
-        if resp.response == oriterm_ui::input::EventResponse::RequestRedraw {
-            self.dirty = true;
-        }
+    /// Read the terminal mode, locking briefly.
+    ///
+    /// Returns `None` if no tab is present.
+    fn terminal_mode(&self) -> Option<TermMode> {
+        self.tab.as_ref().map(|t| t.terminal().lock().mode())
     }
 
     /// Handle mouse press for selection.
@@ -398,7 +273,7 @@ impl App {
     }
 
     /// Dispatch a terminal event from the PTY reader thread.
-    fn handle_terminal_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
+    fn handle_terminal_event(&mut self, _event_loop: &ActiveEventLoop, event: Event) {
         match event {
             Event::Wakeup => {
                 if let Some(tab) = &mut self.tab {
@@ -439,9 +314,9 @@ impl App {
             Event::ChildExit(code) => {
                 log::info!("child process exited with code {code}");
                 if let Some(gpu) = &self.gpu {
-                    gpu.save_pipeline_cache();
+                    gpu.save_pipeline_cache_async();
                 }
-                event_loop.exit();
+                std::process::exit(code);
             }
             _ => {
                 log::debug!("unhandled terminal event: {event:?}");
@@ -470,9 +345,9 @@ impl ApplicationHandler<TermEvent> for App {
         match event {
             WindowEvent::CloseRequested => {
                 if let Some(gpu) = &self.gpu {
-                    gpu.save_pipeline_cache();
+                    gpu.save_pipeline_cache_async();
                 }
-                event_loop.exit();
+                std::process::exit(0);
             }
 
             WindowEvent::Resized(size) => {
@@ -496,13 +371,7 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(window) = &mut self.window {
                     if window.update_scale_factor(scale_factor) {
-                        // Re-evaluate hinting and subpixel mode for the new scale.
-                        let hinting = HintingMode::from_scale_factor(scale_factor);
-                        let format = SubpixelMode::from_scale_factor(scale_factor).glyph_format();
-                        if let (Some(renderer), Some(gpu)) = (&mut self.renderer, &self.gpu) {
-                            renderer.set_hinting_and_format(hinting, format, gpu);
-                        }
-                        self.dirty = true;
+                        self.handle_dpi_change(scale_factor);
                     }
                 }
             }
@@ -514,17 +383,26 @@ impl ApplicationHandler<TermEvent> for App {
                 }
             }
 
+            WindowEvent::CursorLeft { .. } => {
+                self.clear_chrome_hover();
+            }
+
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse.set_cursor_pos(position);
                 self.update_chrome_hover(position);
 
-                if let Some(mode) = self.terminal_mode() {
-                    if self.report_mouse_motion(position, mode) {
-                        return;
+                // Skip terminal mouse handling when the cursor is in the
+                // chrome caption area. This avoids acquiring the terminal
+                // lock on every cursor move over the title bar.
+                if !self.cursor_in_chrome(position) {
+                    if let Some(mode) = self.terminal_mode() {
+                        if self.report_mouse_motion(position, mode) {
+                            return;
+                        }
                     }
-                }
-                if self.mouse.left_down() {
-                    self.handle_mouse_drag(position);
+                    if self.mouse.left_down() {
+                        self.handle_mouse_drag(position);
+                    }
                 }
             }
 
@@ -589,11 +467,18 @@ impl ApplicationHandler<TermEvent> for App {
         }
 
         if self.dirty {
-            log::debug!("about_to_wait: dirty, requesting redraw");
-            if let Some(window) = &self.window {
-                window.request_redraw();
-            }
+            // Clear dirty BEFORE rendering so that if handle_redraw sets
+            // it back to true (e.g. chrome hover animations in progress),
+            // the flag is preserved for the next frame.
             self.dirty = false;
+
+            // Render directly instead of deferring via request_redraw().
+            // On Windows, request_redraw() maps to WM_PAINT which has
+            // lower priority than input messages (WM_MOUSEMOVE). Rapid
+            // mouse movement delays painting indefinitely, causing visible
+            // lag for hover effects. Rendering here — at the end of the
+            // event batch — ensures the frame reflects the latest state.
+            self.handle_redraw();
         }
 
         // Schedule wakeup for the next blink toggle so the event loop

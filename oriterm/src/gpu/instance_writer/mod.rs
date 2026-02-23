@@ -26,6 +26,18 @@ pub struct ScreenRect {
     pub h: f32,
 }
 
+impl ScreenRect {
+    /// Scale all coordinates by a factor (e.g. logical → physical pixels).
+    pub fn scaled(self, s: f32) -> Self {
+        Self {
+            x: self.x * s,
+            y: self.y * s,
+            w: self.w * s,
+            h: self.h * s,
+        }
+    }
+}
+
 /// Bytes per instance record in the GPU buffer.
 pub const INSTANCE_SIZE: usize = 80;
 

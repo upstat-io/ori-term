@@ -143,12 +143,24 @@ impl GpuState {
         surface.configure(&self.device, config);
     }
 
-    /// Save the pipeline cache to disk. Call before exit.
-    pub fn save_pipeline_cache(&self) {
-        pipeline_cache::save_pipeline_cache(
-            self.pipeline_cache.as_ref(),
-            self.pipeline_cache_path.as_ref(),
-        );
+    /// Save the pipeline cache to disk on a background thread.
+    ///
+    /// Extracts the cache data synchronously (fast), then spawns a
+    /// detached thread for the disk write so the caller doesn't block.
+    pub fn save_pipeline_cache_async(&self) {
+        let (Some(cache), Some(path)) = (&self.pipeline_cache, &self.pipeline_cache_path) else {
+            return;
+        };
+        let Some(data) = cache.get_data() else {
+            return;
+        };
+        let path = path.clone();
+        std::thread::Builder::new()
+            .name("pipeline-cache-save".into())
+            .spawn(move || {
+                pipeline_cache::write_pipeline_cache(&path, &data);
+            })
+            .ok();
     }
 
     /// Try to initialize GPU with the given backend set and a window surface.

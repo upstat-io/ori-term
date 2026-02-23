@@ -53,23 +53,16 @@ pub(super) fn load_pipeline_cache(
     (Some(cache), Some(cache_path))
 }
 
-/// Save the pipeline cache to disk. Call before exit.
-pub(super) fn save_pipeline_cache(
-    pipeline_cache: Option<&wgpu::PipelineCache>,
-    pipeline_cache_path: Option<&PathBuf>,
-) {
-    let (Some(cache), Some(path)) = (pipeline_cache, pipeline_cache_path) else {
-        return;
-    };
-    let Some(data) = cache.get_data() else {
-        return;
-    };
+/// Write pipeline cache data to disk (atomic write via temp + rename).
+///
+/// Separated from [`save_pipeline_cache`] so it can be called from a
+/// background thread by [`GpuState::save_pipeline_cache_async`].
+pub(super) fn write_pipeline_cache(path: &PathBuf, data: &[u8]) {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    // Atomic write: write to temp, then rename.
     let temp = path.with_extension("tmp");
-    match std::fs::write(&temp, &data) {
+    match std::fs::write(&temp, data) {
         Ok(()) => {
             let _ = std::fs::rename(&temp, path);
             log::info!(

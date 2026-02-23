@@ -64,24 +64,29 @@ impl WindowChromeWidget {
     pub fn with_theme(title: impl Into<String>, window_width: f32, theme: &UiTheme) -> Self {
         let chrome_layout = ChromeLayout::compute(window_width, false, false);
 
-        let min_btn = WindowControlButton::new(
+        let caption_bg = theme.bg_secondary;
+
+        let mut min_btn = WindowControlButton::new(
             ControlKind::Minimize,
             theme.fg_primary,
             Color::TRANSPARENT,
             theme.bg_hover,
         );
-        let max_btn = WindowControlButton::new(
+        min_btn.set_caption_bg(caption_bg);
+        let mut max_btn = WindowControlButton::new(
             ControlKind::MaximizeRestore,
             theme.fg_primary,
             Color::TRANSPARENT,
             theme.bg_hover,
         );
-        let close_btn = WindowControlButton::new(
+        max_btn.set_caption_bg(caption_bg);
+        let mut close_btn = WindowControlButton::new(
             ControlKind::Close,
             theme.fg_primary,
             Color::TRANSPARENT,
             theme.bg_hover,
         );
+        close_btn.set_caption_bg(caption_bg);
 
         Self {
             id: WidgetId::next(),
@@ -93,8 +98,8 @@ impl WindowChromeWidget {
             chrome_layout,
             controls: [min_btn, max_btn, close_btn],
             hovered_control: None,
-            caption_bg: theme.bg_secondary,
-            caption_bg_inactive: darken(theme.bg_secondary, 0.3),
+            caption_bg,
+            caption_bg_inactive: darken(caption_bg, 0.3),
             caption_fg: theme.fg_secondary,
         }
     }
@@ -130,6 +135,7 @@ impl WindowChromeWidget {
     /// Sets the active/focused state.
     pub fn set_active(&mut self, active: bool) {
         self.active = active;
+        self.sync_caption_bg();
     }
 
     /// Sets the maximized state and recomputes layout.
@@ -157,6 +163,23 @@ impl WindowChromeWidget {
     fn recompute_layout(&mut self) {
         self.chrome_layout =
             ChromeLayout::compute(self.window_width, self.is_maximized, self.is_fullscreen);
+    }
+
+    /// Returns the current caption background color based on active state.
+    fn current_caption_bg(&self) -> Color {
+        if self.active {
+            self.caption_bg
+        } else {
+            self.caption_bg_inactive
+        }
+    }
+
+    /// Syncs the caption background color to all control buttons.
+    fn sync_caption_bg(&mut self) {
+        let bg = self.current_caption_bg();
+        for ctrl in &mut self.controls {
+            ctrl.set_caption_bg(bg);
+        }
     }
 
     /// Finds which control button (if any) contains the given point.
@@ -188,11 +211,7 @@ impl Widget for WindowChromeWidget {
         }
 
         // Caption background bar.
-        let bg = if self.active {
-            self.caption_bg
-        } else {
-            self.caption_bg_inactive
-        };
+        let bg = self.current_caption_bg();
         let caption_rect = Rect::new(0.0, 0.0, ctx.bounds.width(), self.caption_height());
         ctx.draw_list.push_rect(caption_rect, RectStyle::filled(bg));
 

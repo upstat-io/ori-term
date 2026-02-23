@@ -56,16 +56,23 @@ impl App {
             Err(_) => return Err("font discovery thread panicked".into()),
         };
 
-        // 5b. Adjust hinting and subpixel mode for the actual display scale factor.
-        // Config overrides take priority over auto-detection.
+        // 5b. Rescale fonts to physical DPI so glyph bitmaps match the
+        // physical surface resolution. At 1.5x scaling: 96 * 1.5 = 144 DPI,
+        // producing glyphs that are 1.5x larger in pixels — exactly matching
+        // the physical surface. Cell metrics become physical pixels.
         let scale = window.scale_factor().factor();
+        let physical_dpi = DEFAULT_DPI * scale as f32;
+        font_collection.set_size(self.config.font.size, physical_dpi);
+
+        // 5c. Adjust hinting and subpixel mode for the actual display scale factor.
+        // Config overrides take priority over auto-detection.
         let hinting = config_reload::resolve_hinting(&self.config.font, scale);
         font_collection.set_hinting(hinting);
         let subpixel_format =
             config_reload::resolve_subpixel_mode(&self.config.font, scale).glyph_format();
         font_collection.set_format(subpixel_format);
 
-        // 5c. Apply font config: features, per-fallback metadata, codepoint map.
+        // 5d. Apply font config: features, per-fallback metadata, codepoint map.
         config_reload::apply_font_config(&mut font_collection, &self.config.font, user_fb_count);
 
         // 6. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
@@ -81,36 +88,42 @@ impl App {
         let caption_height = chrome_widget.caption_height();
 
         // 8. Enable Aero Snap on Windows (installs WndProc subclass).
+        //    All values are in physical pixels — the subclass proc works in
+        //    the physical coordinate space of WM_NCHITTEST cursor positions.
         #[cfg(target_os = "windows")]
         {
-            let scale = window.scale_factor().factor() as f32;
+            let s = window.scale_factor().factor() as f32;
             oriterm_ui::platform_windows::enable_snap(
                 window.window(),
-                oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * scale,
-                caption_height * scale,
+                oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * s,
+                caption_height * s,
             );
             oriterm_ui::platform_windows::set_client_rects(
                 window.window(),
                 chrome_widget
                     .interactive_rects()
                     .iter()
-                    .map(|r| scale_rect(*r, scale))
+                    .map(|r| super::chrome::scale_rect(*r, s))
                     .collect(),
             );
         }
 
         // 9. Compute grid dimensions from viewport, offset by caption height.
+        // Cell metrics are in physical pixels (rasterized at physical DPI),
+        // so divide physical viewport by physical cell size directly.
         let cell = renderer.cell_metrics();
-        let caption_px = (caption_height * window.scale_factor().factor() as f32).round() as u32;
+        let scale = window.scale_factor().factor() as f32;
+        let caption_px = (caption_height * scale).round() as u32;
         let grid_h = h.saturating_sub(caption_px);
         let cols = cell.columns(w).max(1);
         let rows = cell.rows(grid_h).max(1);
 
         // 10. Create grid widget with cell metrics and initial grid size.
+        // Bounds are in physical pixels to match the physical viewport.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
         grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
             0.0,
-            caption_height,
+            caption_height * scale,
             cols as f32 * cell.width,
             rows as f32 * cell.height,
         ));
@@ -221,15 +234,4 @@ impl App {
 
         Ok(tab)
     }
-}
-
-/// Scale a logical-pixel rect to physical pixels.
-#[cfg(target_os = "windows")]
-fn scale_rect(r: oriterm_ui::geometry::Rect, scale: f32) -> oriterm_ui::geometry::Rect {
-    oriterm_ui::geometry::Rect::new(
-        r.x() * scale,
-        r.y() * scale,
-        r.width() * scale,
-        r.height() * scale,
-    )
 }
