@@ -8,6 +8,7 @@ pub mod cursor;
 pub mod dirty;
 pub mod editing;
 pub mod navigation;
+pub mod resize;
 pub mod ring;
 pub mod row;
 pub mod scroll;

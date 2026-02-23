@@ -44,6 +44,9 @@ pub struct WindowControlButton {
     bg: Color,
     hover_bg: Color,
     pressed_bg: Color,
+    /// Caption background color, set by the chrome widget before drawing.
+    /// Used by the restore symbol to occlude the back window outline.
+    caption_bg: Color,
 }
 
 impl WindowControlButton {
@@ -60,6 +63,7 @@ impl WindowControlButton {
             bg,
             hover_bg,
             pressed_bg: bg,
+            caption_bg: bg,
         }
     }
 
@@ -76,6 +80,11 @@ impl WindowControlButton {
     /// Updates the maximized state (affects maximize/restore symbol).
     pub fn set_maximized(&mut self, maximized: bool) {
         self.is_maximized = maximized;
+    }
+
+    /// Sets the caption background color for restore symbol rendering.
+    pub fn set_caption_bg(&mut self, color: Color) {
+        self.caption_bg = color;
     }
 
     /// Returns the current background color with hover interpolation.
@@ -151,7 +160,7 @@ fn draw_maximize(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
 }
 
 /// Draw the restore symbol: two overlapping square outlines.
-fn draw_restore(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
+fn draw_restore(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color, caption_bg: Color) {
     let cx = bounds.x() + bounds.width() / 2.0;
     let cy = bounds.y() + bounds.height() / 2.0;
     let size = SYMBOL_SIZE - 2.0;
@@ -169,7 +178,7 @@ fn draw_restore(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
 
     // Front window (offset down-left) with filled bg to occlude back window.
     let front = Rect::new(cx - size / 2.0, cy - size / 2.0, size, size);
-    let bg_style = RectStyle::filled(ctx.theme.bg_secondary).with_border(SYMBOL_STROKE_WIDTH, fg);
+    let bg_style = RectStyle::filled(caption_bg).with_border(SYMBOL_STROKE_WIDTH, fg);
     ctx.draw_list.push_rect(front, bg_style);
 }
 
@@ -223,7 +232,7 @@ impl Widget for WindowControlButton {
             ControlKind::Minimize => draw_minimize(ctx, ctx.bounds, fg),
             ControlKind::MaximizeRestore => {
                 if self.is_maximized {
-                    draw_restore(ctx, ctx.bounds, fg);
+                    draw_restore(ctx, ctx.bounds, fg, self.caption_bg);
                 } else {
                     draw_maximize(ctx, ctx.bounds, fg);
                 }

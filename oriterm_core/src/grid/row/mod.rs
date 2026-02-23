@@ -108,6 +108,31 @@ impl Row {
         }
     }
 
+    /// Whether the row contains only empty (default) cells.
+    pub fn is_blank(&self) -> bool {
+        self.inner.iter().all(Cell::is_empty)
+    }
+
+    /// Number of cells with content (trailing blanks trimmed).
+    ///
+    /// Returns the index of the last non-empty cell + 1, or 0 if the
+    /// row is entirely blank.
+    pub fn content_len(&self) -> usize {
+        self.inner
+            .iter()
+            .rposition(|c| !c.is_empty())
+            .map_or(0, |i| i + 1)
+    }
+
+    /// Resize the row to `new_cols`, padding with default cells or truncating.
+    ///
+    /// When growing, new cells are default (empty). When shrinking, excess
+    /// cells are dropped. Occ is clamped to the new length.
+    pub fn resize(&mut self, new_cols: usize) {
+        self.inner.resize_with(new_cols, Cell::default);
+        self.occ = self.occ.min(new_cols);
+    }
+
     /// Mutable access to the inner cell slice.
     ///
     /// # Occ contract

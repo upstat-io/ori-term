@@ -321,8 +321,13 @@ impl GpuRenderer {
     ///
     /// Call this after [`prepare`](Self::prepare) and before
     /// [`render_frame`](Self::render_frame).
-    pub fn append_ui_draw_list(&mut self, draw_list: &oriterm_ui::draw::DrawList) {
-        super::draw_list_convert::convert_draw_list(draw_list, &mut self.prepared.ui_rects, None);
+    pub fn append_ui_draw_list(&mut self, draw_list: &oriterm_ui::draw::DrawList, scale: f32) {
+        super::draw_list_convert::convert_draw_list(
+            draw_list,
+            &mut self.prepared.ui_rects,
+            None,
+            scale,
+        );
     }
 
     // ── Render phase ──

@@ -151,9 +151,10 @@ impl<T: EventListener> PtyEventLoop<T> {
         true
     }
 
-    /// Resize the PTY dimensions.
+    /// Resize the OS PTY dimensions.
     ///
-    /// Terminal grid resize (reflow) is handled in Section 12.
+    /// Grid resize (reflow) is handled by `Tab::resize` on the main thread
+    /// before this message is sent. This only does the OS-level PTY resize.
     fn resize_pty(&self, rows: u16, cols: u16) {
         if let Err(e) = self.pty_control.resize(rows, cols) {
             log::warn!("PTY resize failed: {e}");

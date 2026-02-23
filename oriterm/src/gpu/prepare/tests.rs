@@ -2683,3 +2683,143 @@ fn non_hyperlink_cell_no_extra_decorations() {
 
     assert_eq!(decoration_bg_count(&frame), 0);
 }
+
+// ── Viewport / coordinate system alignment ──
+//
+// The shader maps pixel positions to NDC: ndc = pos / screen_size * 2 - 1.
+// screen_size comes from FrameInput.viewport.  Cell positions come from
+// origin + col * cell_width.  For cells to fill the viewport correctly,
+// viewport and cell positions must be in the same coordinate system.
+
+#[test]
+fn cells_fill_viewport_when_viewport_matches_cell_units() {
+    // 10 cols × 2 rows, cell = 8×16. Default viewport = 80×32 = 10*8 × 2*16.
+    let input = FrameInput::test_grid(10, 2, "ABCDEFGHIJKLMNOPQRST");
+    let atlas = atlas_with(&[
+        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+        'S', 'T',
+    ]);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Last cell in row 0 at col 9: x = 9*8 = 72, right edge = 72+8 = 80.
+    let last_bg = nth_instance(frame.backgrounds.as_bytes(), 9);
+    let right_edge = last_bg.pos.0 + last_bg.size.0;
+    assert_eq!(
+        right_edge, frame.viewport.width as f32,
+        "cells should fill viewport width"
+    );
+
+    // NDC fraction for right edge: 80/80 = 1.0.
+    let ndc_frac = right_edge / frame.viewport.width as f32;
+    assert!(
+        (ndc_frac - 1.0).abs() < 0.001,
+        "right edge NDC should be 1.0, got {ndc_frac}",
+    );
+}
+
+#[test]
+fn oversized_viewport_causes_cells_to_underfill() {
+    // Demonstrate the bug: physical viewport > logical cell grid.
+    // At 1.25x DPI, physical viewport is 100×40 but cells are 10*8 × 2*16 = 80×32.
+    let mut input = FrameInput::test_grid(10, 2, "ABCDEFGHIJKLMNOPQRST");
+    let atlas = atlas_with(&[
+        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+        'S', 'T',
+    ]);
+
+    // Override viewport to physical (larger than cell grid).
+    input.viewport = ViewportSize::new(100, 40);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Cell positions are unchanged: right edge still at 80.
+    let last_bg = nth_instance(frame.backgrounds.as_bytes(), 9);
+    let right_edge = last_bg.pos.0 + last_bg.size.0;
+    assert_eq!(
+        right_edge, 80.0,
+        "cell positions use cell_size, not viewport"
+    );
+
+    // NDC fraction: 80/100 = 0.8 — cells only fill 80% of the screen!
+    let ndc_frac = right_edge / frame.viewport.width as f32;
+    assert!(
+        (ndc_frac - 0.8).abs() < 0.001,
+        "oversized viewport: cells fill {ndc_frac}, not 1.0",
+    );
+}
+
+#[test]
+fn chrome_origin_aligns_when_viewport_is_logical() {
+    // Simulates chrome (caption_height = 36 logical) with grid below.
+    // Viewport must be logical so that chrome and grid NDC match.
+    let caption_height = 36.0_f32;
+    let scale = 1.25_f32;
+
+    // Logical viewport: 1016×640.
+    let logical_h = 640_u32;
+
+    // Chrome bar bottom in NDC (logical coords): 36 / 640 = 0.05625.
+    let chrome_bottom_ndc = caption_height / logical_h as f32;
+
+    // Grid origin = caption_height in logical coords.
+    let grid_top_ndc = caption_height / logical_h as f32;
+
+    // They match: chrome bottom == grid top.
+    assert!(
+        (chrome_bottom_ndc - grid_top_ndc).abs() < 0.001,
+        "logical viewport: chrome={chrome_bottom_ndc}, grid={grid_top_ndc}",
+    );
+
+    // Now demonstrate the mismatch with physical viewport.
+    let physical_h = (logical_h as f32 * scale).round() as u32; // 800
+
+    // Chrome draws at physical pixels: 36 * 1.25 = 45.
+    let chrome_bottom_physical_ndc = (caption_height * scale) / physical_h as f32;
+    // Grid origin in logical: 36 / 800 = 0.045.
+    let grid_top_physical_ndc = caption_height / physical_h as f32;
+
+    // Mismatch: chrome (0.05625) > grid (0.045) — grid starts ABOVE chrome!
+    assert!(
+        chrome_bottom_physical_ndc > grid_top_physical_ndc,
+        "physical viewport mismatch: chrome={chrome_bottom_physical_ndc}, grid={grid_top_physical_ndc}",
+    );
+}
+
+#[test]
+fn origin_with_logical_viewport_fills_grid_area() {
+    // After chrome: grid starts at y=caption_height, viewport is logical.
+    // Cells should fill from caption to bottom of logical viewport.
+    let caption_height = 36.0_f32;
+    let cell_h = 16.0_f32;
+    let logical_h = 640_u32;
+    let grid_h = logical_h as f32 - caption_height; // 604
+    let rows = (grid_h / cell_h).floor() as usize; // 37
+
+    let mut input = FrameInput::test_grid(10, rows, "");
+    input.viewport = ViewportSize::new(80, logical_h);
+
+    let atlas = empty_atlas();
+    let frame = prepare_frame(&input, &atlas, (0.0, caption_height));
+
+    // First row starts at origin y.
+    let first_bg = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(
+        first_bg.pos.1, caption_height,
+        "first row at caption height"
+    );
+
+    // Last row: y = 36 + 36*16 = 36 + 576 = 612.
+    // Bottom edge: 612 + 16 = 628.
+    let last_row_idx = (rows - 1) * 10; // First cell of last row
+    let last_bg = nth_instance(frame.backgrounds.as_bytes(), last_row_idx);
+    let bottom_edge = last_bg.pos.1 + last_bg.size.1;
+
+    // Bottom edge (628) < viewport (640): grid doesn't quite reach bottom
+    // (because 604/16 = 37.75, we only get 37 rows). This is normal —
+    // there's a small gap at the bottom. But it's close.
+    assert!(bottom_edge <= logical_h as f32, "grid fits within viewport");
+    assert!(
+        bottom_edge > logical_h as f32 - cell_h,
+        "grid fills most of viewport: bottom={bottom_edge}, viewport={logical_h}",
+    );
+}

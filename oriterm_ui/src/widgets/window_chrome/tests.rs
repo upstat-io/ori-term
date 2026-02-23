@@ -29,7 +29,12 @@ fn layout_fullscreen_hidden() {
     let layout = ChromeLayout::compute(800.0, false, true);
     assert_eq!(layout.caption_height, 0.0);
     assert!(!layout.visible);
-    assert!(layout.interactive_rects.is_empty());
+    assert!(
+        layout
+            .interactive_rects
+            .iter()
+            .all(|r| *r == Rect::default())
+    );
 }
 
 #[test]

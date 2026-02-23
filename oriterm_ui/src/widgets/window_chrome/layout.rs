@@ -49,7 +49,7 @@ pub struct ChromeLayout {
     ///
     /// Points inside these rects are `Client`, not `Caption`, so clicks
     /// reach the buttons instead of initiating a window drag.
-    pub interactive_rects: Vec<Rect>,
+    pub interactive_rects: [Rect; 3],
     /// Whether chrome is visible (false in fullscreen).
     pub visible: bool,
 }
@@ -107,7 +107,7 @@ impl ChromeLayout {
         let title_width = (minimize_x - title_x).max(0.0);
         let title_rect = Rect::new(title_x, btn_y, title_width, caption_h);
 
-        let interactive_rects = controls.iter().map(|c| c.rect).collect();
+        let interactive_rects = [controls[0].rect, controls[1].rect, controls[2].rect];
 
         Self {
             caption_height: caption_h,
@@ -137,7 +137,7 @@ impl ChromeLayout {
                     rect: Rect::default(),
                 },
             ],
-            interactive_rects: Vec::new(),
+            interactive_rects: [Rect::default(); 3],
             visible: false,
         }
     }

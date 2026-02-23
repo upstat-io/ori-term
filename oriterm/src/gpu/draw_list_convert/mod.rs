@@ -45,6 +45,10 @@ pub struct TextContext<'a> {
 /// in `text_ctx` (routed by atlas kind). Pass `None` for `text_ctx` to defer
 /// text rendering.
 ///
+/// The `scale` factor converts logical-pixel draw commands to physical-pixel
+/// GPU coordinates. Pass `1.0` when draw list coordinates are already in
+/// physical pixels (or at 1:1 scale).
+///
 /// Shadow commands emit an expanded shadow rect before the main rect.
 /// Line commands are converted to thin rectangles.
 /// Image and clip commands are logged as no-ops.
@@ -52,20 +56,21 @@ pub fn convert_draw_list(
     draw_list: &DrawList,
     ui_writer: &mut InstanceWriter,
     text_ctx: Option<&mut TextContext<'_>>,
+    scale: f32,
 ) {
     // Reborrow text_ctx so we can use it across loop iterations.
     let mut text_ctx = text_ctx;
 
     for cmd in draw_list.commands() {
         match cmd {
-            DrawCommand::Rect { rect, style } => convert_rect(*rect, style, ui_writer),
+            DrawCommand::Rect { rect, style } => convert_rect(*rect, style, ui_writer, scale),
             DrawCommand::Line {
                 from,
                 to,
                 width,
                 color,
             } => {
-                convert_line(*from, *to, *width, *color, ui_writer);
+                convert_line(*from, *to, *width, *color, ui_writer, scale);
             }
             DrawCommand::Text {
                 position,
@@ -73,7 +78,7 @@ pub fn convert_draw_list(
                 color,
             } => {
                 if let Some(ctx) = text_ctx.as_deref_mut() {
-                    convert_text(*position, shaped, *color, ctx);
+                    convert_text(*position, shaped, *color, ctx, scale);
                 } else {
                     log::trace!("DrawCommand::Text deferred — no TextContext provided");
                 }
@@ -92,7 +97,7 @@ pub fn convert_draw_list(
 }
 
 /// Convert a styled rect command to one or two UI rect instances.
-fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter) {
+fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter, scale: f32) {
     // Resolve fill color: prefer gradient first stop, then solid fill.
     let fill = style
         .gradient
@@ -111,16 +116,16 @@ fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter) {
             h: rect.height() + expand * 2.0,
         };
         writer.push_ui_rect(
-            shadow_rect,
+            shadow_rect.scaled(scale),
             shadow.color.to_array(),
             [0.0; 4],
-            uniform_radius(&style.corner_radius) + expand,
+            (uniform_radius(&style.corner_radius) + expand) * scale,
             0.0,
         );
     }
 
     // Main rect instance.
-    let screen = to_screen_rect(rect);
+    let screen = to_screen_rect(rect).scaled(scale);
     let (border_color, border_width) = style
         .border
         .map_or(([0.0; 4], 0.0), |b| (b.color.to_array(), b.width));
@@ -129,13 +134,29 @@ fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter) {
         screen,
         fill.to_array(),
         border_color,
-        uniform_radius(&style.corner_radius),
-        border_width,
+        uniform_radius(&style.corner_radius) * scale,
+        border_width * scale,
     );
 }
 
-/// Convert a line segment to a thin axis-aligned rect instance.
-fn convert_line(from: Point, to: Point, width: f32, color: Color, writer: &mut InstanceWriter) {
+/// Convert a line segment to GPU rect instances.
+///
+/// Axis-aligned lines (horizontal or vertical) produce a single thin rect.
+/// Diagonal lines are decomposed into pixel-stepping rects along the major
+/// axis — one `width × width` rect per step — to avoid the AABB problem
+/// where a single bounding box fills a solid square for 45° lines.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "line conversion: endpoints, thickness, color, output, scale"
+)]
+fn convert_line(
+    from: Point,
+    to: Point,
+    width: f32,
+    color: Color,
+    writer: &mut InstanceWriter,
+    scale: f32,
+) {
     let dx = to.x - from.x;
     let dy = to.y - from.y;
     let len = dx.hypot(dy);
@@ -143,39 +164,65 @@ fn convert_line(from: Point, to: Point, width: f32, color: Color, writer: &mut I
         return;
     }
 
-    // Perpendicular offset for line thickness.
-    let nx = -dy / len * width * 0.5;
-    let ny = dx / len * width * 0.5;
+    let fill = color.to_array();
+    let hw = width * 0.5;
 
-    // Axis-aligned bounding box of the thick line.
-    let corners_x = [from.x + nx, from.x - nx, to.x + nx, to.x - nx];
-    let corners_y = [from.y + ny, from.y - ny, to.y + ny, to.y - ny];
+    // Axis-aligned fast paths: single rect.
+    if dx.abs() < f32::EPSILON {
+        // Vertical line.
+        let (min_y, max_y) = if from.y < to.y {
+            (from.y, to.y)
+        } else {
+            (to.y, from.y)
+        };
+        let rect = ScreenRect {
+            x: from.x - hw,
+            y: min_y,
+            w: width,
+            h: max_y - min_y,
+        }
+        .scaled(scale);
+        writer.push_ui_rect(rect, fill, [0.0; 4], 0.0, 0.0);
+        return;
+    }
+    if dy.abs() < f32::EPSILON {
+        // Horizontal line.
+        let (min_x, max_x) = if from.x < to.x {
+            (from.x, to.x)
+        } else {
+            (to.x, from.x)
+        };
+        let rect = ScreenRect {
+            x: min_x,
+            y: from.y - hw,
+            w: max_x - min_x,
+            h: width,
+        }
+        .scaled(scale);
+        writer.push_ui_rect(rect, fill, [0.0; 4], 0.0, 0.0);
+        return;
+    }
 
-    let min_x = corners_x[0]
-        .min(corners_x[1])
-        .min(corners_x[2])
-        .min(corners_x[3]);
-    let min_y = corners_y[0]
-        .min(corners_y[1])
-        .min(corners_y[2])
-        .min(corners_y[3]);
-    let max_x = corners_x[0]
-        .max(corners_x[1])
-        .max(corners_x[2])
-        .max(corners_x[3]);
-    let max_y = corners_y[0]
-        .max(corners_y[1])
-        .max(corners_y[2])
-        .max(corners_y[3]);
+    // Diagonal line: step along the major axis and emit one rect per step.
+    let steps = dx.abs().max(dy.abs()).ceil() as usize;
+    if steps == 0 {
+        return;
+    }
+    let sx = dx / steps as f32;
+    let sy = dy / steps as f32;
 
-    let screen = ScreenRect {
-        x: min_x,
-        y: min_y,
-        w: max_x - min_x,
-        h: max_y - min_y,
-    };
-
-    writer.push_ui_rect(screen, color.to_array(), [0.0; 4], 0.0, 0.0);
+    for i in 0..=steps {
+        let x = from.x + sx * i as f32;
+        let y = from.y + sy * i as f32;
+        let rect = ScreenRect {
+            x: x - hw,
+            y: y - hw,
+            w: width,
+            h: width,
+        }
+        .scaled(scale);
+        writer.push_ui_rect(rect, fill, [0.0; 4], 0.0, 0.0);
+    }
 }
 
 /// Convert a geometry [`Rect`] to a [`ScreenRect`] for the instance writer.
@@ -197,7 +244,13 @@ fn to_screen_rect(rect: Rect) -> ScreenRect {
 /// Position computation follows the same pattern as the terminal
 /// [`GlyphEmitter`](super::prepare::GlyphEmitter): bearing offsets place the
 /// glyph bitmap relative to the text origin, and subpixel phase is absorbed.
-fn convert_text(position: Point, shaped: &ShapedText, color: Color, ctx: &mut TextContext<'_>) {
+fn convert_text(
+    position: Point,
+    shaped: &ShapedText,
+    color: Color,
+    ctx: &mut TextContext<'_>,
+    scale: f32,
+) {
     let fg = color_to_rgb(color);
     let alpha = color.a;
     let baseline = shaped.baseline;
@@ -226,7 +279,7 @@ fn convert_text(position: Point, shaped: &ShapedText, color: Color, ctx: &mut Te
 
         if let Some(entry) = ctx.atlas.lookup_key(key) {
             emit_text_glyph(
-                cursor_x, position.y, baseline, glyph, entry, fg, alpha, subpx, ctx,
+                cursor_x, position.y, baseline, glyph, entry, fg, alpha, subpx, ctx, scale,
             );
         }
 
@@ -237,7 +290,7 @@ fn convert_text(position: Point, shaped: &ShapedText, color: Color, ctx: &mut Te
 /// Emit a single text glyph instance, routing by atlas kind.
 #[expect(
     clippy::too_many_arguments,
-    reason = "text glyph instance: position components, glyph data, atlas entry, color"
+    reason = "text glyph instance: position components, glyph data, atlas entry, color, scale"
 )]
 fn emit_text_glyph(
     cursor_x: f32,
@@ -249,6 +302,7 @@ fn emit_text_glyph(
     alpha: f32,
     subpx: u8,
     ctx: &mut TextContext<'_>,
+    scale: f32,
 ) {
     let absorbed = subpx_offset(subpx);
     let gx = cursor_x + glyph.x_offset - absorbed + entry.bearing_x as f32;
@@ -259,7 +313,8 @@ fn emit_text_glyph(
         y: gy,
         w: entry.width as f32,
         h: entry.height as f32,
-    };
+    }
+    .scaled(scale);
 
     let writer = match entry.kind {
         AtlasKind::Mono => &mut ctx.mono_writer,

@@ -93,6 +93,24 @@ impl ScrollbackBuffer {
         (0..self.len).map(move |i| &self.inner[self.physical_index(i)])
     }
 
+    /// Remove and return the most recently pushed row.
+    ///
+    /// Returns `None` if the buffer is empty. This is the inverse of `push`:
+    /// it shrinks the logical length by one and returns the newest entry.
+    /// Used by `Grid::resize_rows` to pull scrollback content back into the
+    /// visible viewport when the window grows.
+    pub(super) fn pop_newest(&mut self) -> Option<Row> {
+        if self.len == 0 {
+            return None;
+        }
+        let newest_idx = self.physical_index(0);
+        self.len -= 1;
+
+        // Take the row out and leave a placeholder. The buffer doesn't
+        // physically shrink — the slot becomes logically unused.
+        Some(mem::replace(&mut self.inner[newest_idx], Row::new(0)))
+    }
+
     /// Clear all stored rows without deallocating.
     pub fn clear(&mut self) {
         self.inner.clear();

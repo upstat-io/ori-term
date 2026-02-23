@@ -4,6 +4,8 @@
 //! loads the new config, computes deltas, and applies only what changed:
 //! fonts, colors, cursor style, window, behavior, bell, keybindings.
 
+use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
+
 use super::{App, DEFAULT_DPI};
 use crate::config::{self, Config, FontConfig};
 use crate::font::{
@@ -101,10 +103,12 @@ impl App {
         let hinting = resolve_hinting(&new.font, scale);
         let format = resolve_subpixel_mode(&new.font, scale).glyph_format();
 
+        let scale = scale as f32;
+        let physical_dpi = DEFAULT_DPI * scale;
         let mut collection = match FontCollection::new(
             font_set,
             new.font.size,
-            DEFAULT_DPI,
+            physical_dpi,
             format,
             weight,
             hinting,
@@ -129,18 +133,24 @@ impl App {
 
         renderer.replace_font_collection(collection, gpu);
 
-        // Resize grid to match new cell metrics.
+        // Resize grid to match new cell metrics (physical pixels).
         let cell = renderer.cell_metrics();
         let (w, h) = window.size_px();
+        let caption_height = self
+            .chrome
+            .as_ref()
+            .map_or(0.0, WindowChromeWidget::caption_height);
+        let caption_px = (caption_height * scale).round() as u32;
+        let grid_h = h.saturating_sub(caption_px);
         let cols = cell.columns(w).max(1);
-        let rows = cell.rows(h).max(1);
+        let rows = cell.rows(grid_h).max(1);
 
         if let Some(grid) = &mut self.terminal_grid {
             grid.set_cell_metrics(cell.width, cell.height);
             grid.set_grid_size(cols, rows);
             grid.set_bounds(oriterm_ui::geometry::Rect::new(
                 0.0,
-                0.0,
+                caption_height * scale,
                 cols as f32 * cell.width,
                 rows as f32 * cell.height,
             ));
