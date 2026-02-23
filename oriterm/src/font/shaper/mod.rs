@@ -168,8 +168,11 @@ fn segment_runs<C: ShapableCell>(
     while col < cols {
         let cell = &row[col];
 
-        // Skip wide char spacers (part of preceding wide char).
-        if cell.flags().contains(CellFlags::WIDE_CHAR_SPACER) {
+        // Skip spacer cells (trailing wide-char spacer or boundary padding).
+        if cell
+            .flags()
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
             col += 1;
             continue;
         }

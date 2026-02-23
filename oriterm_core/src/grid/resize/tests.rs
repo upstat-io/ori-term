@@ -382,6 +382,104 @@ fn reflow_wide_char_at_boundary_wraps_correctly() {
     );
 }
 
+#[test]
+fn reflow_wide_char_boundary_sets_leading_spacer() {
+    let mut grid = Grid::new(10, 10);
+
+    // "abcd" (4 cols) + wide CJK (2 cols) = 6 cols.
+    for (col, ch) in "abcd".chars().enumerate() {
+        grid[Line(0)][Column(col)] = cell(ch);
+    }
+    let mut wide = cell('\u{4e16}');
+    wide.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(0)][Column(4)] = wide;
+    let mut spacer = Cell::default();
+    spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(0)][Column(5)] = spacer;
+
+    // Shrink to 5 cols: wide char can't fit at col 4 (needs 2 cells).
+    // Cell at col 4 should become LEADING_WIDE_CHAR_SPACER.
+    grid.resize(5, 10, true);
+
+    let sb = grid.scrollback().get(0).expect("scrollback");
+    assert!(
+        sb[Column(4)]
+            .flags
+            .contains(CellFlags::LEADING_WIDE_CHAR_SPACER),
+        "boundary cell should be LEADING_WIDE_CHAR_SPACER"
+    );
+    assert!(
+        sb[Column(4)].flags.contains(CellFlags::WRAP),
+        "boundary cell should also have WRAP"
+    );
+}
+
+#[test]
+fn reflow_wide_char_round_trip_preserves_content() {
+    let mut grid = Grid::new(10, 10);
+
+    // "abcd" + wide CJK char at cols 4-5.
+    for (col, ch) in "abcd".chars().enumerate() {
+        grid[Line(0)][Column(col)] = cell(ch);
+    }
+    let mut wide = cell('\u{4e16}');
+    wide.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(0)][Column(4)] = wide;
+    let mut spacer = Cell::default();
+    spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(0)][Column(5)] = spacer;
+
+    // Shrink to 5 cols, then grow back to 10 cols.
+    grid.resize(5, 10, true);
+    grid.resize(10, 10, true);
+
+    // Content should be preserved without spurious spaces.
+    let r: String = (0..6).map(|c| grid[Line(0)][Column(c)].ch).collect();
+    assert_eq!(r, "abcd\u{4e16} ");
+    assert!(
+        grid[Line(0)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(5)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+#[test]
+fn reflow_leading_spacer_skipped_during_reflow() {
+    let mut grid = Grid::new(10, 6);
+
+    // "abc" + wide CJK at cols 3-4 in a 6-col grid.
+    for (col, ch) in "abc".chars().enumerate() {
+        grid[Line(0)][Column(col)] = cell(ch);
+    }
+    let mut wide = cell('\u{4e16}');
+    wide.flags.insert(CellFlags::WIDE_CHAR);
+    grid[Line(0)][Column(3)] = wide;
+    let mut spacer = Cell::default();
+    spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+    grid[Line(0)][Column(4)] = spacer;
+
+    // Shrink to 4 cols: wide char at col 3 can't fit (needs col 3+4, only 4 available).
+    grid.resize(4, 10, true);
+
+    // Boundary cell at col 3 should be LEADING_WIDE_CHAR_SPACER.
+    let sb = grid.scrollback().get(0).expect("scrollback");
+    assert!(
+        sb[Column(3)]
+            .flags
+            .contains(CellFlags::LEADING_WIDE_CHAR_SPACER)
+    );
+
+    // Grow back: leading spacer should be skipped, no extra space.
+    grid.resize(6, 10, true);
+    let r: String = (0..5).map(|c| grid[Line(0)][Column(c)].ch).collect();
+    assert_eq!(r, "abc\u{4e16} ");
+}
+
 // ── Combined row + col resize ───────────────────────────────────────
 
 #[test]

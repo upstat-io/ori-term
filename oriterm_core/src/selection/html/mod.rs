@@ -198,7 +198,10 @@ fn append_html_cells(
     for col in col_start..=last {
         let cell = &row[Column(col)];
 
-        if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+        if cell
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
             continue;
         }
         if cell.flags.contains(CellFlags::HIDDEN) {
@@ -255,7 +258,10 @@ fn append_cells_dual(
 
     for col in col_start..=last {
         let cell = &row[Column(col)];
-        if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+        if cell
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
             continue;
         }
 

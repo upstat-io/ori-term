@@ -230,6 +230,15 @@ impl App {
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
 
+        // Snap resize to cell boundaries when configured.
+        if self.config.window.resize_increments {
+            let inc = winit::dpi::PhysicalSize::new(
+                cell.width.round() as u32,
+                cell.height.round() as u32,
+            );
+            window.window().set_resize_increments(Some(inc));
+        }
+
         // Update chrome layout for new window width.
         let caption_height = if let Some(chrome) = &mut self.chrome {
             let logical_w = size.width as f32 / scale;

@@ -330,7 +330,10 @@ fn reflow_row_cells(
         let cell = &src_row[Column(src_col)];
 
         // Skip spacer cells (regenerated at new positions).
-        if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+        if cell
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
             if src_idx == cursor_abs && src_col == cursor_col {
                 *new_cursor_abs = result.len();
                 *new_cursor_col = out_col.saturating_sub(1);
@@ -344,7 +347,15 @@ fn reflow_row_cells(
         // Wrap to next output row if cell doesn't fit.
         if *out_col + cell_width > new_cols {
             if *out_col > 0 {
-                out_row[Column(new_cols - 1)].flags.insert(CellFlags::WRAP);
+                let boundary = &mut out_row[Column(new_cols - 1)];
+                boundary.flags.insert(CellFlags::WRAP);
+                // Wide char at boundary with a gap cell: the cell at
+                // new_cols - 1 is padding, not content. Mark it so
+                // reflow/selection/search skips it.
+                if is_wide && *out_col < new_cols {
+                    boundary.ch = ' ';
+                    boundary.flags.insert(CellFlags::LEADING_WIDE_CHAR_SPACER);
+                }
             }
             out_row.set_occ(new_cols);
             result.push(std::mem::replace(out_row, Row::new(new_cols)));
@@ -357,9 +368,11 @@ fn reflow_row_cells(
             *new_cursor_col = *out_col;
         }
 
-        // Write cell (strip old WRAP flag).
+        // Write cell (strip old WRAP and LEADING_WIDE_CHAR_SPACER flags).
         let mut new_cell = cell.clone();
-        new_cell.flags.remove(CellFlags::WRAP);
+        new_cell
+            .flags
+            .remove(CellFlags::WRAP | CellFlags::LEADING_WIDE_CHAR_SPACER);
         if !is_wide && cell.flags.contains(CellFlags::WIDE_CHAR) {
             new_cell.flags.remove(CellFlags::WIDE_CHAR);
         }

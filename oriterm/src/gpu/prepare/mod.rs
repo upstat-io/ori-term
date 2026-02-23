@@ -242,8 +242,11 @@ fn fill_frame(
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
     for cell in &input.content.cells {
-        // Wide char spacers are handled by the primary wide char cell.
-        if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+        // Spacer cells are handled by their primary cell (or are padding).
+        if cell
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
             continue;
         }
 
@@ -349,7 +352,10 @@ fn fill_frame_shaped(
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
     for cell in &input.content.cells {
-        if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+        if cell
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
             continue;
         }
 
