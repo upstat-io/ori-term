@@ -166,6 +166,25 @@ profiling, timing, Instant, startup time, latency
 
 ---
 
+### Section 05C: Window Chrome (Title Bar + Controls)
+**File:** `section-05c-window-chrome.md` | **Tier:** 2 | **Status:** Complete
+
+```
+window chrome, title bar, caption bar, window controls
+minimize, maximize, restore, close, control button
+WindowChromeWidget, ChromeLayout, WindowControlButton, ControlKind
+caption height, CAPTION_HEIGHT, CAPTION_HEIGHT_MAXIMIZED
+CONTROL_BUTTON_WIDTH, RESIZE_BORDER_WIDTH
+interactive rects, hit test, drag area, Aero Snap
+active, inactive, focused, unfocused, caption background
+grid offset, caption_px, terminal grid below chrome
+WidgetAction, WindowMinimize, WindowMaximize, WindowClose
+draw_chrome, NullMeasurer, append_ui_draw_list
+enable_snap, set_client_rects, platform wiring
+```
+
+---
+
 ### Section 06: Font Pipeline + Best-in-Class Glyph Rendering
 **File:** `section-06-font-pipeline.md` | **Tier:** 2 | **Status:** In Progress
 
@@ -811,6 +830,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 04 | PTY + Event Loop | `section-04-pty-eventloop.md` | 1 | Not Started |
 | 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | In Progress |
 | 05B | Startup Performance | `section-05b-startup-perf.md` | 2 | Not Started (blocks 06) |
+| 05C | Window Chrome | `section-05c-window-chrome.md` | 2 | Complete |
 | 06 | Font Pipeline | `section-06-font-pipeline.md` | 2 | In Progress |
 | 07 | 2D UI Framework | `section-07-ui-framework.md` | 2 | Not Started |
 | 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Not Started |

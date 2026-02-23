@@ -48,10 +48,6 @@ pub struct TextContext<'a> {
 /// Shadow commands emit an expanded shadow rect before the main rect.
 /// Line commands are converted to thin rectangles.
 /// Image and clip commands are logged as no-ops.
-#[allow(
-    dead_code,
-    reason = "public API for Section 07 — not yet wired into render loop"
-)]
 pub fn convert_draw_list(
     draw_list: &DrawList,
     ui_writer: &mut InstanceWriter,

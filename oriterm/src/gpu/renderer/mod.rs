@@ -313,6 +313,18 @@ impl GpuRenderer {
         );
     }
 
+    /// Append UI rect draw commands from a [`DrawList`] into the prepared frame.
+    ///
+    /// Converts rect and line commands to GPU instances via
+    /// [`convert_draw_list`]. Text commands are deferred (no text context
+    /// provided) — chrome uses geometric symbols, not font glyphs.
+    ///
+    /// Call this after [`prepare`](Self::prepare) and before
+    /// [`render_frame`](Self::render_frame).
+    pub fn append_ui_draw_list(&mut self, draw_list: &oriterm_ui::draw::DrawList) {
+        super::draw_list_convert::convert_draw_list(draw_list, &mut self.prepared.ui_rects, None);
+    }
+
     // ── Render phase ──
 
     /// Upload the stored prepared frame to the GPU and execute draw calls.
