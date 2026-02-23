@@ -444,6 +444,7 @@ impl App {
         let ctx = GridCtx {
             widget: grid,
             cell: renderer.cell_metrics(),
+            word_delimiters: &self.config.behavior.word_delimiters,
         };
         let pos = self.mouse.cursor_pos();
 
@@ -481,6 +482,7 @@ impl App {
         let ctx = GridCtx {
             widget: grid,
             cell: renderer.cell_metrics(),
+            word_delimiters: &self.config.behavior.word_delimiters,
         };
         mouse_selection::pixel_to_cell(pos, &ctx)
     }

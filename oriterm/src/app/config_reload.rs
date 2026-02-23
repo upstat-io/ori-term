@@ -49,9 +49,6 @@ impl App {
 
         // Mark everything dirty for redraw.
         self.dirty = true;
-        if let Some(window) = &self.window {
-            window.request_redraw();
-        }
 
         log::info!("config reload: applied successfully");
     }

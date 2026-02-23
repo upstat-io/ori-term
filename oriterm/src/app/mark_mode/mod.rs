@@ -55,6 +55,7 @@ pub(crate) fn handle_mark_mode_key(
     tab: &mut Tab,
     event: &KeyEvent,
     mods: ModifiersState,
+    word_delimiters: &str,
 ) -> MarkAction {
     // Ctrl+Shift+M toggles mark mode off.
     if mods.control_key()
@@ -89,7 +90,7 @@ pub(crate) fn handle_mark_mode_key(
             }
             _ => {
                 if let Some(m) = resolve_motion(*named, mods) {
-                    apply_motion(tab, m, mods.shift_key());
+                    apply_motion(tab, m, mods.shift_key(), word_delimiters);
                     return MarkAction::Handled;
                 }
             }
@@ -128,7 +129,7 @@ fn resolve_motion(named: NamedKey, mods: ModifiersState) -> Option<Motion> {
 }
 
 /// Apply a cursor motion, optionally extending the selection.
-fn apply_motion(tab: &mut Tab, m: Motion, shift: bool) {
+fn apply_motion(tab: &mut Tab, m: Motion, shift: bool, word_delimiters: &str) {
     let Some(old_cursor) = tab.mark_cursor() else {
         return;
     };
@@ -151,7 +152,7 @@ fn apply_motion(tab: &mut Tab, m: Motion, shift: bool) {
         };
 
         let word_ctx = matches!(m, Motion::WordLeft | Motion::WordRight)
-            .then(|| extract_word_context(g, abs_row, cur.col));
+            .then(|| extract_word_context(g, abs_row, cur.col, word_delimiters));
 
         let new_abs = match m {
             Motion::Left => motion::move_left(cur, bounds),
@@ -189,29 +190,34 @@ fn apply_motion(tab: &mut Tab, m: Motion, shift: bool) {
 }
 
 /// Extract word boundary data under terminal lock for pure word motions.
-fn extract_word_context(g: &Grid, abs_row: usize, col: usize) -> WordContext {
-    let (ws, we) = word_boundaries(g, abs_row, col);
+fn extract_word_context(
+    g: &Grid,
+    abs_row: usize,
+    col: usize,
+    word_delimiters: &str,
+) -> WordContext {
+    let (ws, we) = word_boundaries(g, abs_row, col, word_delimiters);
     let cols = g.cols();
     let total_rows = g.scrollback().len() + g.lines();
 
     let prev_same_row_ws = if ws > 0 {
-        Some(word_boundaries(g, abs_row, ws - 1).0)
+        Some(word_boundaries(g, abs_row, ws - 1, word_delimiters).0)
     } else {
         None
     };
     let prev_row_ws = if abs_row > 0 {
         let end = cols.saturating_sub(1);
-        Some(word_boundaries(g, abs_row - 1, end).0)
+        Some(word_boundaries(g, abs_row - 1, end, word_delimiters).0)
     } else {
         None
     };
     let next_same_row_we = if we + 1 < cols {
-        Some(word_boundaries(g, abs_row, we + 1).1)
+        Some(word_boundaries(g, abs_row, we + 1, word_delimiters).1)
     } else {
         None
     };
     let next_row_we = if abs_row + 1 < total_rows {
-        Some(word_boundaries(g, abs_row + 1, 0).1)
+        Some(word_boundaries(g, abs_row + 1, 0, word_delimiters).1)
     } else {
         None
     };

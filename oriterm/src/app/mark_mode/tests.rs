@@ -955,7 +955,7 @@ fn word_left_at_buffer_start_clamps_with_grid() {
     let term = tab.terminal().lock();
     let g = term.grid();
 
-    let ctx = super::extract_word_context(g, 0, 0);
+    let ctx = super::extract_word_context(g, 0, 0, oriterm_core::DEFAULT_WORD_DELIMITERS);
     let c = AbsCursor { abs_row: 0, col: 0 };
     let r = motion::word_left(c, &ctx);
     assert_eq!(r, AbsCursor { abs_row: 0, col: 0 });
@@ -977,7 +977,8 @@ fn word_right_at_buffer_end_clamps_with_grid() {
         visible_lines: g.lines(),
     };
 
-    let ctx = super::extract_word_context(g, last_row, last_col);
+    let ctx =
+        super::extract_word_context(g, last_row, last_col, oriterm_core::DEFAULT_WORD_DELIMITERS);
     let c = AbsCursor {
         abs_row: last_row,
         col: last_col,

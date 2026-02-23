@@ -23,7 +23,12 @@ impl App {
         if let Some(tab) = &mut self.tab {
             if tab.is_mark_mode() {
                 if event.state == ElementState::Pressed {
-                    let action = mark_mode::handle_mark_mode_key(tab, event, self.modifiers);
+                    let action = mark_mode::handle_mark_mode_key(
+                        tab,
+                        event,
+                        self.modifiers,
+                        &self.config.behavior.word_delimiters,
+                    );
                     match action {
                         mark_mode::MarkAction::Handled => {
                             self.dirty = true;

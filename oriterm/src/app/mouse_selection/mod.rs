@@ -154,13 +154,15 @@ const DRAG_THRESHOLD_PX: f64 = 2.0;
 
 /// Grid layout context needed for pixel-to-cell conversion.
 ///
-/// Bundles the terminal grid widget and cell metrics to avoid passing
-/// many individual parameters to mouse handling functions.
+/// Bundles the terminal grid widget, cell metrics, and selection config
+/// to avoid passing many individual parameters to mouse handling functions.
 pub(crate) struct GridCtx<'a> {
     /// The terminal grid widget (provides layout bounds).
     pub(crate) widget: &'a TerminalGridWidget,
     /// Cell metrics (provides cell width/height).
     pub(crate) cell: CellMetrics,
+    /// Word boundary delimiter characters for double-click selection.
+    pub(crate) word_delimiters: &'a str,
 }
 
 /// Convert a pixel position to grid cell coordinates (col, `viewport_line`).
@@ -247,7 +249,7 @@ pub(crate) fn handle_press(
         let stable = StableRowIndex::from_absolute(g, abs);
 
         let wb = if click_count == 2 {
-            Some(word_boundaries(g, abs, c))
+            Some(word_boundaries(g, abs, c, ctx.word_delimiters))
         } else {
             None
         };
@@ -420,7 +422,7 @@ pub(crate) fn handle_drag(
     // Try to convert pixel to cell within the grid area.
     if let Some((col, line)) = pixel_to_cell(pos, ctx) {
         let side = pixel_to_side(pos, ctx);
-        update_drag_endpoint(tab, col, line, side);
+        update_drag_endpoint(tab, col, line, side, ctx.word_delimiters);
         return true;
     }
 
@@ -439,7 +441,7 @@ pub(crate) fn handle_release(mouse: &mut MouseState) {
 }
 
 /// Update the selection endpoint during drag, respecting mode-aware snapping.
-fn update_drag_endpoint(tab: &mut Tab, col: usize, line: usize, side: Side) {
+fn update_drag_endpoint(tab: &mut Tab, col: usize, line: usize, side: Side, word_delimiters: &str) {
     // Read selection state before locking the terminal.
     let (sel_mode, sel_anchor) = match tab.selection() {
         Some(s) => (Some(s.mode), Some(s.anchor)),
@@ -457,7 +459,7 @@ fn update_drag_endpoint(tab: &mut Tab, col: usize, line: usize, side: Side) {
 
         match sel_mode {
             Some(SelectionMode::Word) => {
-                let (ws, we) = word_boundaries(g, abs_row, col);
+                let (ws, we) = word_boundaries(g, abs_row, col, word_delimiters);
                 let start_pt = SelectionPoint {
                     row: stable_row,
                     col: ws,

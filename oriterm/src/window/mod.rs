@@ -242,11 +242,6 @@ impl TermWindow {
     pub(crate) fn set_visible(&self, visible: bool) {
         self.window.set_visible(visible);
     }
-
-    /// Request the windowing system to schedule a redraw.
-    pub(crate) fn request_redraw(&self) {
-        self.window.request_redraw();
-    }
 }
 
 /// Errors that can occur when creating a [`TermWindow`].

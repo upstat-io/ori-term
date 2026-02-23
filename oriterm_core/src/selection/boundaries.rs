@@ -8,17 +8,30 @@ use crate::cell::CellFlags;
 use crate::grid::Grid;
 use crate::index::Column;
 
+/// Default word delimiter characters.
+///
+/// Matches Alacritty's `semantic_escape_chars`. Characters in this set stop
+/// word expansion during double-click selection. Everything not in this set
+/// is treated as a word character. For example, `-` is not in the default
+/// set, so `hello-world` selects as one word.
+pub const DEFAULT_WORD_DELIMITERS: &str = ",│`|:\"' ()[]{}<>\t";
+
 /// Character classification for word boundary detection.
 ///
-/// Returns 0 for word characters (alphanumeric + `_`), 1 for whitespace
-/// (space, null, tab), 2 for punctuation/other.
-pub(crate) fn delimiter_class(c: char) -> u8 {
-    if c.is_alphanumeric() || c == '_' {
-        0
-    } else if c == ' ' || c == '\0' || c == '\t' {
+/// Returns 0 for word characters, 1 for whitespace delimiters (space, null,
+/// tab), 2 for non-whitespace delimiters. The `word_delimiters` string is
+/// the authoritative set of boundary characters — anything not in it is a
+/// word character.
+pub(crate) fn delimiter_class(c: char, word_delimiters: &str) -> u8 {
+    if c == '\0' {
         1
-    } else {
+    } else if c == ' ' || c == '\t' {
+        // Whitespace always gets its own class so spaces group together.
+        1
+    } else if word_delimiters.contains(c) {
         2
+    } else {
+        0
     }
 }
 
@@ -27,7 +40,15 @@ pub(crate) fn delimiter_class(c: char) -> u8 {
 /// Returns (`start_col`, `end_col`) inclusive. Wide-char spacers are
 /// redirected to their base cell and skipped during scanning so that
 /// double-clicking a CJK character selects the full character.
-pub fn word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize) {
+///
+/// `word_delimiters` controls which characters act as word boundaries.
+/// Pass [`DEFAULT_WORD_DELIMITERS`] for standard behavior.
+pub fn word_boundaries(
+    grid: &Grid,
+    abs_row: usize,
+    col: usize,
+    word_delimiters: &str,
+) -> (usize, usize) {
     let row = match grid.absolute_row(abs_row) {
         Some(r) => r,
         None => return (col, col),
@@ -46,7 +67,7 @@ pub fn word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize
     };
 
     let ch = row[Column(click_col)].ch;
-    let class = delimiter_class(ch);
+    let class = delimiter_class(ch, word_delimiters);
 
     // Scan left, skipping wide-char spacers.
     let mut start = click_col;
@@ -58,12 +79,12 @@ pub fn word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize
             && prev > 0
         {
             // Spacer: check the base cell before it.
-            if delimiter_class(row[Column(prev - 1)].ch) == class {
+            if delimiter_class(row[Column(prev - 1)].ch, word_delimiters) == class {
                 start = prev - 1;
             } else {
                 break;
             }
-        } else if delimiter_class(row[Column(prev)].ch) == class {
+        } else if delimiter_class(row[Column(prev)].ch, word_delimiters) == class {
             start = prev;
         } else {
             break;
@@ -82,7 +103,7 @@ pub fn word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize
             end = next;
             continue;
         }
-        if delimiter_class(row[Column(next)].ch) == class {
+        if delimiter_class(row[Column(next)].ch, word_delimiters) == class {
             end = next;
         } else {
             break;

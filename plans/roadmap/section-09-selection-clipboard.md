@@ -244,7 +244,7 @@ Configurable word boundary detection for double-click selection and Ctrl+arrow w
 - [x] `logical_line_end(grid: &Grid, abs_row: usize) -> usize`
   - [x] Walk forwards through rows connected by WRAPLINE flag
   - [x] Returns absolute row index of last row in logical line
-- [ ] Configurable delimiters via settings (future: wired through config in Section 13) <!-- blocked-by:13 -->
+- [x] Configurable delimiters via settings (future: wired through config in Section 13)
 - [x] **Tests** (`oriterm_core/src/selection/boundaries.rs` `#[cfg(test)]`):
   - [x] `char_class('a')` returns 0 (word)
   - [x] `char_class(' ')` returns 1 (whitespace)
@@ -285,15 +285,15 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
   - [x] Handle grapheme clusters: base char + all zerowidth chars from CellExtra
 - [ ] **Clipboard formats** (placed on clipboard simultaneously):
   - [x] `CF_UNICODETEXT` — plain text (always)
-  - [ ] `HTML Format` — HTML with inline styles (if CopyFormatting enabled) <!-- blocked-by:13 -->
-    - [ ] Per-cell foreground/background colors as inline CSS
-    - [ ] Font name and size
-    - [ ] Bold rendering for BOLD cells
-    - [ ] Underline colors
-  - [ ] `Rich Text Format` — RTF with same styling (if CopyFormatting enabled) <!-- blocked-by:13 -->
-- [ ] **Copy modifiers**: <!-- blocked-by:13 -->
-  - [ ] Shift held during copy: collapse multi-line selection to single line (join with spaces)
-  - [ ] Alt held during copy: force HTML/RTF formatting regardless of CopyFormatting setting
+  - [x] `HTML Format` — HTML with inline styles (if CopyFormatting enabled) <!-- blocked-by:13 -->
+    - [x] Per-cell foreground/background colors as inline CSS
+    - [x] Font name and size
+    - [x] Bold rendering for BOLD cells
+    - [ ] Underline colors <!-- blocked-by:38 -->
+  - [x] ~~`Rich Text Format`~~ — skipped: no reference terminal implements RTF (WezTerm/Ghostty use HTML)
+- [x] **Copy modifiers**: <!-- blocked-by:13 -->
+  - [x] Shift held during copy: collapse multi-line selection to single line (join with spaces)
+  - [x] Alt held during copy: force HTML formatting regardless of CopyFormatting setting
 - [x] Selection NOT cleared after copy (user must press Escape or click elsewhere)
 - [x] **OSC 52 clipboard integration**:
   - [x] Application can set clipboard via `ESC]52;c;{base64_data}ST`

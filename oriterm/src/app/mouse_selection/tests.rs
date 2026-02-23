@@ -96,7 +96,11 @@ fn ctx_at_origin(
 }
 
 fn grid_ctx(widget: &TerminalGridWidget, cell: CellMetrics) -> GridCtx<'_> {
-    GridCtx { widget, cell }
+    GridCtx {
+        widget,
+        cell,
+        word_delimiters: oriterm_core::DEFAULT_WORD_DELIMITERS,
+    }
 }
 
 // --- pixel_to_cell ---
