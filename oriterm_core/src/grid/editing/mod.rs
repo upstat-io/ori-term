@@ -70,8 +70,12 @@ impl Grid {
             }
 
             // For wide chars at the last column, wrap instead of splitting.
+            // Mark the boundary cell as LEADING_WIDE_CHAR_SPACER so reflow,
+            // selection, and search skip it (avoids spurious spaces).
             if width == 2 && col + 1 >= cols {
-                self.rows[line][Column(col)].flags |= CellFlags::WRAP;
+                let boundary = &mut self.rows[line][Column(col)];
+                boundary.ch = ' ';
+                boundary.flags = CellFlags::LEADING_WIDE_CHAR_SPACER | CellFlags::WRAP;
                 self.linefeed();
                 self.cursor.set_col(Column(0));
                 continue;

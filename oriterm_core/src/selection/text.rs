@@ -85,7 +85,10 @@ fn append_cells(buf: &mut String, row: &Row, col_start: usize, col_end: usize) {
     let last = col_end.min(row.cols().saturating_sub(1));
     for col in col_start..=last {
         let cell = &row[Column(col)];
-        if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+        if cell
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
             continue;
         }
         let c = if cell.ch == '\0' { ' ' } else { cell.ch };

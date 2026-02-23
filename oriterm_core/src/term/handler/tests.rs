@@ -3637,6 +3637,36 @@ fn combining_mark_after_line_wrap() {
 }
 
 #[test]
+fn wide_char_at_boundary_sets_leading_spacer() {
+    use crate::cell::CellFlags;
+
+    // 5-column terminal. Write "ABCD" (fills cols 0-3), then a wide char at col 4
+    // can't fit (needs 2 cells, only 1 left). The boundary cell should become
+    // LEADING_WIDE_CHAR_SPACER, and the wide char goes to the next line.
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    feed(&mut t, b"ABCD");
+    feed(&mut t, "漢".as_bytes());
+
+    let grid = t.grid();
+
+    // Line 0, col 4: boundary padding (LEADING_WIDE_CHAR_SPACER + WRAP).
+    let boundary = &grid[crate::index::Line(0)][Column(4)];
+    assert!(
+        boundary.flags.contains(CellFlags::LEADING_WIDE_CHAR_SPACER),
+        "boundary cell should be LEADING_WIDE_CHAR_SPACER"
+    );
+    assert!(
+        boundary.flags.contains(CellFlags::WRAP),
+        "boundary cell should also have WRAP"
+    );
+
+    // Line 1, col 0: the wide char.
+    let wide = &grid[crate::index::Line(1)][Column(0)];
+    assert_eq!(wide.ch, '漢');
+    assert!(wide.flags.contains(CellFlags::WIDE_CHAR));
+}
+
+#[test]
 fn combining_mark_on_wide_char_after_wrap() {
     use crate::cell::CellFlags;
 

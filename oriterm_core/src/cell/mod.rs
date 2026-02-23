@@ -24,9 +24,15 @@ bitflags! {
         const INVERSE           = 1 << 5;
         const HIDDEN            = 1 << 6;
         const STRIKETHROUGH     = 1 << 7;
-        const WIDE_CHAR         = 1 << 8;
-        const WIDE_CHAR_SPACER  = 1 << 9;
-        const WRAP              = 1 << 10;
+        const WIDE_CHAR                 = 1 << 8;
+        const WIDE_CHAR_SPACER          = 1 << 9;
+        const WRAP                      = 1 << 10;
+        /// Padding cell before a wide char that wrapped to the next line.
+        ///
+        /// Inserted at `cols - 1` when a wide char can't fit and wraps.
+        /// Skipped during text extraction, selection, search, and reflow
+        /// to avoid spurious spaces.
+        const LEADING_WIDE_CHAR_SPACER  = 1 << 15;
         const CURLY_UNDERLINE   = 1 << 11;
         const DOTTED_UNDERLINE  = 1 << 12;
         const DASHED_UNDERLINE  = 1 << 13;
@@ -174,7 +180,10 @@ impl Cell {
         if self.flags.contains(CellFlags::WIDE_CHAR) {
             return 2;
         }
-        if self.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+        if self
+            .flags
+            .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+        {
             return 0;
         }
         UnicodeWidthChar::width(self.ch).unwrap_or(1)
