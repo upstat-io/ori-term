@@ -429,3 +429,113 @@ fn compare_locking_strategies() {
         result_b.renderer_pct(),
     );
 }
+
+// take_contended tests
+
+#[test]
+fn take_contended_initially_false() {
+    let mutex = FairMutex::new(());
+    assert!(!mutex.take_contended());
+}
+
+#[test]
+fn take_contended_cleared_after_read() {
+    let mutex = Arc::new(FairMutex::new(()));
+
+    // Hold the lock so a second thread blocks on the fairness gate.
+    let guard = mutex.lock();
+
+    let m = Arc::clone(&mutex);
+    let handle = thread::spawn(move || {
+        let _g = m.lock();
+    });
+
+    // Let the spawned thread park on the fairness gate.
+    thread::sleep(Duration::from_millis(20));
+
+    // First take should return true (thread blocked).
+    assert!(mutex.take_contended());
+    // Second take should return false (flag cleared).
+    assert!(!mutex.take_contended());
+
+    drop(guard);
+    handle.join().unwrap();
+}
+
+#[test]
+fn take_contended_not_set_on_unblocked_lock() {
+    let mutex = FairMutex::new(());
+
+    // Nobody holds the lock, so lock() should not set contended.
+    {
+        let _g = mutex.lock();
+    }
+    assert!(
+        !mutex.take_contended(),
+        "contended should be false when lock() doesn't block"
+    );
+
+    // Multiple uncontested acquisitions should not set it.
+    for _ in 0..10 {
+        let _g = mutex.lock();
+    }
+    assert!(!mutex.take_contended());
+}
+
+#[test]
+fn take_contended_set_on_blocked_lock() {
+    let mutex = Arc::new(FairMutex::new(()));
+
+    // Thread A holds the fairness gate.
+    let guard = mutex.lock();
+
+    // Thread B blocks on the fairness gate → sets contended.
+    let m = Arc::clone(&mutex);
+    let handle = thread::spawn(move || {
+        let _g = m.lock();
+    });
+
+    // Let thread B attempt the lock and park.
+    thread::sleep(Duration::from_millis(20));
+
+    assert!(
+        mutex.take_contended(),
+        "contended should be true when a lock() caller blocked"
+    );
+
+    drop(guard);
+    handle.join().unwrap();
+}
+
+#[test]
+fn take_contended_resets_per_contention_event() {
+    let mutex = Arc::new(FairMutex::new(()));
+
+    // Round 1: cause contention, read, clear.
+    let guard = mutex.lock();
+    let m = Arc::clone(&mutex);
+    let h1 = thread::spawn(move || {
+        let _g = m.lock();
+    });
+    thread::sleep(Duration::from_millis(20));
+    assert!(mutex.take_contended());
+    drop(guard);
+    h1.join().unwrap();
+
+    // Between rounds: no contention.
+    assert!(!mutex.take_contended());
+
+    // Round 2: cause contention again, verify flag is set again.
+    let guard = mutex.lock();
+    let m = Arc::clone(&mutex);
+    let h2 = thread::spawn(move || {
+        let _g = m.lock();
+    });
+    thread::sleep(Duration::from_millis(20));
+    assert!(
+        mutex.take_contended(),
+        "contended should be re-set on new contention"
+    );
+    drop(guard);
+    h2.join().unwrap();
+}

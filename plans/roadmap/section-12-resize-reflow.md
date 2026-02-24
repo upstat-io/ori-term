@@ -1,7 +1,7 @@
 ---
 section: 12
 title: Resize & Reflow
-status: in-progress
+status: complete
 tier: 3
 goal: Dynamic grid resize with PTY notification and text reflow on column change
 sections:
@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "12.6"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 12: Resize & Reflow
@@ -61,7 +61,7 @@ Calculate new grid dimensions from window pixel size and cell metrics. Dispatch 
 - [x] Mark all rows dirty for full redraw after resize
 - [x] **Resize increments** (cell-boundary snapping):
   - [x] When `config.window.resize_increments` is true, call `window.set_resize_increments(Some(PhysicalSize::new(cell_width, cell_height)))`
-  - [ ] Update increments on font change or DPI change (cell dimensions change)
+  - [x] Update increments on font change or DPI change (cell dimensions change)
   - [x] Snaps window resize to exact cell boundaries — no partial-cell padding at edges
   - [x] **Ref:** Alacritty `display/mod.rs` `set_resize_increments`, winit `Window::set_resize_increments(Option<Size>)`
 
@@ -199,18 +199,18 @@ Resize the alternate screen buffer without reflow (full-screen apps manage their
 
 ## 12.6 Section Completion
 
-- [ ] All 12.1-12.5 items complete
+- [x] All 12.1-12.5 items complete
 - [x] `cargo test -p oriterm_core` — reflow tests pass
 - [x] `cargo clippy -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
 - [x] Resizing the window resizes the grid with correct new dimensions
 - [x] PTY receives new dimensions on resize (no 0x0)
-- [ ] Shell prompt redraws correctly after resize
+- [x] Shell prompt redraws correctly after resize
 - [x] Text reflows when columns change (long lines wrap/unwrap)
 - [x] Wide characters handled at reflow boundaries (LEADING_WIDE_CHAR_SPACER)
 - [x] Cursor position preserved through resize and reflow
 - [x] No crash on zero-dimension resize
 - [x] No crash on rapid resize sequences
 - [x] Alternate screen resizes correctly (no reflow, cursor clamped)
-- [ ] vim/htop/tmux redraw correctly after resize
+- [x] vim/htop/tmux redraw correctly after resize
 
 **Exit Criteria:** Resizing the window produces correct terminal behavior -- text reflows, the shell adapts, full-screen apps redraw properly, and cursor position is preserved through resize operations.

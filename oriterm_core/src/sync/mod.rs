@@ -43,11 +43,12 @@ pub struct FairMutexGuard<'a, T> {
 
 /// RAII lease on the fairness gate, returned by [`FairMutex::lease`].
 ///
-/// Reserves a position in the fair queue without locking the data. Useful
-/// when the PTY reader thread needs to signal intent to access the terminal
-/// state, preventing the render thread from starving it.
-pub struct FairMutexLease<'a> {
-    next: MutexGuard<'a, ()>,
+/// Test-only: reserves a position in the fair queue without locking the
+/// data. Used in Pattern A comparison benchmarks.
+#[cfg(test)]
+pub(crate) struct FairMutexLease<'a> {
+    /// Held for Drop — releasing this guard frees the fairness gate.
+    _next: MutexGuard<'a, ()>,
 }
 
 impl<T> FairMutex<T> {
@@ -89,30 +90,30 @@ impl<T> FairMutex<T> {
 
     /// Acquires the mutex without fairness.
     ///
-    /// Bypasses the fairness gate, directly contending for the data lock.
-    /// Use this in the PTY reader thread where throughput matters more than
-    /// fairness.
-    pub fn lock_unfair(&self) -> MutexGuard<'_, T> {
+    /// Test-only: bypasses the fairness gate for Pattern A comparison
+    /// benchmarks. Production code uses [`lock`](Self::lock).
+    #[cfg(test)]
+    pub(crate) fn lock_unfair(&self) -> MutexGuard<'_, T> {
         self.data.lock()
     }
 
     /// Attempts to acquire the mutex without fairness or blocking.
     ///
-    /// Returns `None` if the data lock is currently held. Does not contend
-    /// for the fairness gate.
-    pub fn try_lock_unfair(&self) -> Option<MutexGuard<'_, T>> {
+    /// Test-only: returns `None` if the data lock is currently held.
+    /// Used in Pattern A comparison benchmarks.
+    #[cfg(test)]
+    pub(crate) fn try_lock_unfair(&self) -> Option<MutexGuard<'_, T>> {
         self.data.try_lock()
     }
 
     /// Reserves a position in the fair queue without locking the data.
     ///
-    /// The returned [`FairMutexLease`] holds the fairness gate, preventing
-    /// other fair callers from proceeding until the lease is dropped. This
-    /// is useful when the PTY reader thread needs to perform multiple
-    /// operations and wants to ensure it isn't starved between them.
-    pub fn lease(&self) -> FairMutexLease<'_> {
+    /// Test-only: the returned [`FairMutexLease`] holds the fairness
+    /// gate for Pattern A comparison benchmarks.
+    #[cfg(test)]
+    pub(crate) fn lease(&self) -> FairMutexLease<'_> {
         FairMutexLease {
-            next: self.next.lock(),
+            _next: self.next.lock(),
         }
     }
 }
@@ -132,15 +133,6 @@ impl<T> FairMutexGuard<'_, T> {
         // after receiving the fairness gate handoff.
         drop(data);
         MutexGuard::unlock_fair(next);
-    }
-}
-
-impl FairMutexLease<'_> {
-    /// Releases the lease using `parking_lot`'s fair unlock protocol.
-    ///
-    /// Hands the fairness gate directly to the next waiting thread.
-    pub fn unlock_fair(self) {
-        MutexGuard::unlock_fair(self.next);
     }
 }
 

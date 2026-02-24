@@ -29,7 +29,7 @@ pub use selection::{
     ClickDetector, DEFAULT_WORD_DELIMITERS, Selection, SelectionBounds, SelectionMode,
     SelectionPoint,
 };
-pub use sync::{FairMutex, FairMutexGuard, FairMutexLease};
+pub use sync::{FairMutex, FairMutexGuard};
 pub use term::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, Term, TermDamage, TermMode,
 };
