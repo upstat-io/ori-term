@@ -179,12 +179,11 @@ impl App {
 
         self.handle_render_result(render_result);
 
-        // Keep the IME candidate window positioned at the cursor while
-        // composition is active. Called after rendering to avoid borrow
-        // conflicts with the renderer's mutable borrow.
-        if !self.ime.preedit.is_empty() {
-            self.update_ime_cursor_area();
-        }
+        // Keep the IME candidate window positioned at the terminal cursor.
+        // Called every frame (not just during preedit) so Windows knows the
+        // cursor area before composition starts — otherwise the candidate
+        // popup defaults to the bottom-right corner (Alacritty pattern).
+        self.update_ime_cursor_area();
     }
 
     /// Handle the result of a render pass, recovering from surface loss.
