@@ -189,6 +189,23 @@ impl App {
         logical_y < chrome.caption_height()
     }
 
+    /// Update window resize increments from current cell metrics.
+    ///
+    /// Called after any change that affects cell dimensions (font size,
+    /// DPI, font family) so the window snaps to cell boundaries.
+    pub(super) fn update_resize_increments(&self) {
+        if !self.config.window.resize_increments {
+            return;
+        }
+        let (Some(renderer), Some(window)) = (&self.renderer, &self.window) else {
+            return;
+        };
+        let cell = renderer.cell_metrics();
+        let inc =
+            winit::dpi::PhysicalSize::new(cell.width.round() as u32, cell.height.round() as u32);
+        window.window().set_resize_increments(Some(inc));
+    }
+
     /// Handle window resize: reconfigure surface, update chrome layout,
     /// resize grid and PTY.
     pub(super) fn handle_resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
@@ -229,15 +246,6 @@ impl App {
         window.resize_surface(size.width, size.height, gpu);
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-
-        // Snap resize to cell boundaries when configured.
-        if self.config.window.resize_increments {
-            let inc = winit::dpi::PhysicalSize::new(
-                cell.width.round() as u32,
-                cell.height.round() as u32,
-            );
-            window.window().set_resize_increments(Some(inc));
-        }
 
         // Update chrome layout for new window width.
         let caption_height = if let Some(chrome) = &mut self.chrome {
@@ -289,6 +297,8 @@ impl App {
             tab.resize_pty(r, c);
         }
 
+        // Update resize increments after all borrows are released.
+        self.update_resize_increments();
         self.dirty = true;
     }
 }

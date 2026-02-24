@@ -157,6 +157,10 @@ impl App {
             tab.resize_grid(rows as u16, cols as u16);
             tab.resize_pty(rows as u16, cols as u16);
         }
+
+        // Resize increments depend on cell dimensions, which change with font.
+        // Called after destructured borrows of renderer/window are released.
+        self.update_resize_increments();
     }
 
     /// Detect and apply color config changes.

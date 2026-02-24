@@ -154,6 +154,9 @@ impl App {
             config_reload::resolve_subpixel_mode(&self.config.font, scale_factor).glyph_format();
         renderer.set_hinting_and_format(hinting, format, gpu);
 
+        // Resize increments depend on cell dimensions, which change with DPI.
+        self.update_resize_increments();
+
         // Mark all grid lines dirty so the frame extraction re-reads every
         // cell with the new cell metrics. Without this, the terminal content
         // appears stale until PTY output marks individual lines dirty.
