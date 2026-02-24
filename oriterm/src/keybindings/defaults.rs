@@ -23,7 +23,7 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
     let alt = Modifiers::ALT;
     let cs = ctrl | shift;
 
-    vec![
+    let mut bindings = vec![
         // Explicit copy / paste (Ctrl+Shift+C/V).
         bind(ch("c"), cs, Action::Copy),
         bind(ch("v"), cs, Action::Paste),
@@ -59,5 +59,32 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),
         bind(ch("v"), ctrl, Action::SmartPaste),
-    ]
+    ];
+
+    // macOS: Cmd-based bindings matching native conventions.
+    #[cfg(target_os = "macos")]
+    {
+        let cmd = Modifiers::SUPER;
+        let cmd_shift = cmd | shift;
+        bindings.extend([
+            bind(ch("c"), cmd, Action::Copy),
+            bind(ch("v"), cmd, Action::Paste),
+            bind(ch("t"), cmd, Action::NewTab),
+            bind(ch("w"), cmd, Action::CloseTab),
+            bind(ch("n"), cmd, Action::MoveTabToNewWindow),
+            bind(ch("="), cmd, Action::ZoomIn),
+            bind(ch("+"), cmd, Action::ZoomIn),
+            bind(ch("-"), cmd, Action::ZoomOut),
+            bind(ch("0"), cmd, Action::ZoomReset),
+            bind(ch("f"), cmd, Action::OpenSearch),
+            bind(named(NamedKey::ArrowUp), cmd, Action::ScrollToTop),
+            bind(named(NamedKey::ArrowDown), cmd, Action::ScrollToBottom),
+            // Cmd+Ctrl+F for macOS native fullscreen (green button).
+            bind(ch("f"), cmd | ctrl, Action::ToggleFullscreen),
+            bind(named(NamedKey::Tab), cmd, Action::NextTab),
+            bind(named(NamedKey::Tab), cmd_shift, Action::PrevTab),
+        ]);
+    }
+
+    bindings
 }
