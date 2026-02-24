@@ -14,9 +14,9 @@ use parking_lot::{Mutex, MutexGuard};
 /// the protected value. Fair callers acquire `next` first (establishing FIFO
 /// order), then `data`. Unfair callers bypass `next` entirely.
 ///
-/// The PTY reader thread typically uses [`lock_unfair`](FairMutex::lock_unfair)
-/// or [`try_lock_unfair`](FairMutex::try_lock_unfair) for throughput, while
-/// the render thread uses [`lock`](FairMutex::lock) for guaranteed access.
+/// Both the PTY reader and render threads use [`lock`](FairMutex::lock) for
+/// fair access. The reader calls [`unlock_fair`](FairMutexGuard::unlock_fair)
+/// to guarantee the renderer gets the next turn when contending.
 pub struct FairMutex<T> {
     /// The protected data.
     data: Mutex<T>,
@@ -32,7 +32,7 @@ pub struct FairMutexGuard<'a, T> {
     /// Data lock — provides access to the protected value.
     data: MutexGuard<'a, T>,
     /// Fairness gate — held to prevent queue jumping.
-    _next: MutexGuard<'a, ()>,
+    next: MutexGuard<'a, ()>,
 }
 
 /// RAII lease on the fairness gate, returned by [`FairMutex::lease`].
@@ -41,7 +41,7 @@ pub struct FairMutexGuard<'a, T> {
 /// when the PTY reader thread needs to signal intent to access the terminal
 /// state, preventing the render thread from starving it.
 pub struct FairMutexLease<'a> {
-    _next: MutexGuard<'a, ()>,
+    next: MutexGuard<'a, ()>,
 }
 
 impl<T> FairMutex<T> {
@@ -61,7 +61,7 @@ impl<T> FairMutex<T> {
     pub fn lock(&self) -> FairMutexGuard<'_, T> {
         let next = self.next.lock();
         let data = self.data.lock();
-        FairMutexGuard { data, _next: next }
+        FairMutexGuard { data, next }
     }
 
     /// Acquires the mutex without fairness.
@@ -89,8 +89,35 @@ impl<T> FairMutex<T> {
     /// operations and wants to ensure it isn't starved between them.
     pub fn lease(&self) -> FairMutexLease<'_> {
         FairMutexLease {
-            _next: self.next.lock(),
+            next: self.next.lock(),
         }
+    }
+}
+
+impl<T> FairMutexGuard<'_, T> {
+    /// Releases the guard using `parking_lot`'s fair unlock protocol.
+    ///
+    /// Unlike regular `drop()`, this hands the fairness gate directly to the
+    /// next waiting thread (if any), preventing barging. The PTY reader
+    /// should call this after each parse chunk so the render thread gets a
+    /// guaranteed turn.
+    ///
+    /// When no thread is waiting, this behaves identically to `drop()`.
+    pub fn unlock_fair(self) {
+        let Self { data, next } = self;
+        // Release data first so the next thread can acquire it immediately
+        // after receiving the fairness gate handoff.
+        drop(data);
+        MutexGuard::unlock_fair(next);
+    }
+}
+
+impl FairMutexLease<'_> {
+    /// Releases the lease using `parking_lot`'s fair unlock protocol.
+    ///
+    /// Hands the fairness gate directly to the next waiting thread.
+    pub fn unlock_fair(self) {
+        MutexGuard::unlock_fair(self.next);
     }
 }
 

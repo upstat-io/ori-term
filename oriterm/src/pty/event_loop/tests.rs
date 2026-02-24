@@ -5,16 +5,15 @@
 
 use std::io::{Read, Write};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use oriterm_core::{FairMutex, Term, Theme, VoidListener};
 
-use super::{MAX_LOCKED_PARSE, PtyEventLoop, READ_BUFFER_SIZE};
+use super::{COALESCE_DELAY, COALESCE_THRESHOLD, MAX_LOCKED_PARSE, PtyEventLoop, READ_BUFFER_SIZE};
 use crate::pty::Msg;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /// Build a PtyEventLoop with the given reader.
 fn build_event_loop(
@@ -38,10 +37,6 @@ fn build_event_loop(
 
     (event_loop, terminal, tx)
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn shutdown_on_reader_eof() {
@@ -97,4 +92,147 @@ fn read_buffer_size_is_64kb() {
 #[test]
 fn max_locked_parse_is_64kb() {
     assert_eq!(MAX_LOCKED_PARSE, 65536);
+}
+
+#[test]
+fn coalesce_threshold_below_read_buffer() {
+    assert!(COALESCE_THRESHOLD < READ_BUFFER_SIZE);
+}
+
+#[test]
+fn coalesce_delay_is_1ms() {
+    assert_eq!(COALESCE_DELAY, Duration::from_millis(1));
+}
+
+// --- Contention benchmarks ---
+//
+// These test the FairMutex locking strategies under realistic contention:
+// a "reader" thread floods data through a real PtyEventLoop (VTE parsing),
+// while a "renderer" thread tries to lock the terminal periodically.
+
+/// Feed flood data through a real PtyEventLoop while a contending thread
+/// measures how often it can acquire the terminal lock.
+///
+/// Returns `(reader_bytes, renderer_locks, elapsed)`.
+fn run_contention_bench(duration: Duration) -> (usize, usize, Duration) {
+    let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
+
+    let (event_loop, terminal, tx) =
+        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+
+    let join = event_loop.spawn().expect("spawn event loop");
+
+    let done = Arc::new(AtomicBool::new(false));
+    let renderer_count = Arc::new(AtomicUsize::new(0));
+
+    // Renderer thread — tries to lock the terminal in a tight loop.
+    let term_clone = Arc::clone(&terminal);
+    let done_clone = Arc::clone(&done);
+    let rc = Arc::clone(&renderer_count);
+    let renderer = thread::spawn(move || {
+        while !done_clone.load(Ordering::Relaxed) {
+            let _guard = term_clone.lock();
+            rc.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+
+    // Feed flood data from this thread.
+    // Use a repeating pattern of printable chars + newlines.
+    let flood_line = "A".repeat(79) + "\n";
+    let flood_block = flood_line.repeat(100); // ~8KB per block
+    let flood_bytes = flood_block.as_bytes();
+    let mut total_written = 0usize;
+
+    let start = Instant::now();
+    while start.elapsed() < duration {
+        match pipe_writer.write(flood_bytes) {
+            Ok(n) => total_written += n,
+            Err(_) => break,
+        }
+    }
+
+    // Stop.
+    done.store(true, Ordering::Relaxed);
+    let elapsed = start.elapsed();
+
+    // Close pipe → EOF → event loop exits.
+    drop(pipe_writer);
+    let _ = tx.send(Msg::Shutdown);
+    let _ = join.join();
+    renderer.join().expect("renderer thread");
+
+    let locks = renderer_count.load(Ordering::Relaxed);
+    (total_written, locks, elapsed)
+}
+
+/// Verifies that the renderer is not starved during flood output.
+///
+/// The reader thread floods data through a real PtyEventLoop (with actual
+/// VTE parsing). A contending renderer thread measures how many lock
+/// acquisitions it gets. With a working fair-lock strategy, the renderer
+/// must get consistent access.
+#[test]
+fn renderer_not_starved_during_flood() {
+    let (bytes, renderer_locks, elapsed) = run_contention_bench(Duration::from_millis(500));
+
+    let mb_written = bytes as f64 / (1024.0 * 1024.0);
+    let secs = elapsed.as_secs_f64();
+    let throughput_mbps = mb_written / secs;
+    let renderer_per_sec = renderer_locks as f64 / secs;
+
+    eprintln!("--- contention benchmark ---");
+    eprintln!("  duration:       {elapsed:?}");
+    eprintln!("  data written:   {mb_written:.1} MB");
+    eprintln!("  throughput:     {throughput_mbps:.1} MB/s");
+    eprintln!("  renderer locks: {renderer_locks} ({renderer_per_sec:.0}/s)");
+
+    // The renderer must get at least 60 locks/sec (one per frame at 60fps).
+    // A starved renderer would get 0 or single-digit locks over 500ms.
+    assert!(
+        renderer_locks >= 30,
+        "renderer starved: only {renderer_locks} locks in {elapsed:?} \
+         (need >= 30 for 60fps). throughput={throughput_mbps:.1} MB/s",
+    );
+}
+
+/// Measures baseline throughput without contention (reader only).
+///
+/// This establishes how fast the PtyEventLoop can parse data when there's
+/// no renderer thread competing for the lock.
+#[test]
+fn reader_throughput_no_contention() {
+    let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
+
+    let (event_loop, _terminal, tx) =
+        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+
+    let join = event_loop.spawn().expect("spawn event loop");
+
+    let flood_line = "A".repeat(79) + "\n";
+    let flood_block = flood_line.repeat(100);
+    let flood_bytes = flood_block.as_bytes();
+    let mut total_written = 0usize;
+
+    let duration = Duration::from_millis(500);
+    let start = Instant::now();
+    while start.elapsed() < duration {
+        match pipe_writer.write(flood_bytes) {
+            Ok(n) => total_written += n,
+            Err(_) => break,
+        }
+    }
+    let elapsed = start.elapsed();
+
+    drop(pipe_writer);
+    let _ = tx.send(Msg::Shutdown);
+    let _ = join.join();
+
+    let mb = total_written as f64 / (1024.0 * 1024.0);
+    let secs = elapsed.as_secs_f64();
+    let throughput = mb / secs;
+
+    eprintln!("--- throughput benchmark (no contention) ---");
+    eprintln!("  duration:   {elapsed:?}");
+    eprintln!("  written:    {mb:.1} MB");
+    eprintln!("  throughput: {throughput:.1} MB/s");
 }
