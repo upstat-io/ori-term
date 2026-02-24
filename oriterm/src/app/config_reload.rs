@@ -4,8 +4,6 @@
 //! loads the new config, computes deltas, and applies only what changed:
 //! fonts, colors, cursor style, window, behavior, bell, keybindings.
 
-use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
-
 use super::{App, DEFAULT_DPI};
 use crate::config::{self, Config, FontConfig};
 use crate::font::{
@@ -71,96 +69,73 @@ impl App {
             return;
         }
 
-        let (Some(renderer), Some(gpu), Some(window)) =
-            (&mut self.renderer, &self.gpu, &self.window)
-        else {
-            return;
-        };
-
-        let weight = new.font.effective_weight();
-        let mut font_set = match FontSet::load(new.font.family.as_deref(), weight) {
-            Ok(fs) => fs,
-            Err(e) => {
-                log::warn!("config reload: font load failed: {e}");
+        // Scoped to release renderer/gpu/window borrows before sync_grid_layout.
+        let (w, h) = {
+            let (Some(renderer), Some(gpu), Some(window)) =
+                (&mut self.renderer, &self.gpu, &self.window)
+            else {
                 return;
-            }
+            };
+
+            let weight = new.font.effective_weight();
+            let mut font_set = match FontSet::load(new.font.family.as_deref(), weight) {
+                Ok(fs) => fs,
+                Err(e) => {
+                    log::warn!("config reload: font load failed: {e}");
+                    return;
+                }
+            };
+
+            // Prepend user-configured fallback fonts before system fallbacks.
+            let user_fb_families: Vec<&str> = new
+                .font
+                .fallback
+                .iter()
+                .map(|f| f.family.as_str())
+                .collect();
+            let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
+
+            // Resolve hinting and subpixel mode: config overrides auto-detection.
+            let scale = window.scale_factor().factor();
+            let hinting = resolve_hinting(&new.font, scale);
+            let format = resolve_subpixel_mode(&new.font, scale).glyph_format();
+
+            let scale = scale as f32;
+            let physical_dpi = DEFAULT_DPI * scale;
+            let mut collection = match FontCollection::new(
+                font_set,
+                new.font.size,
+                physical_dpi,
+                format,
+                weight,
+                hinting,
+            ) {
+                Ok(fc) => fc,
+                Err(e) => {
+                    log::warn!("config reload: font collection failed: {e}");
+                    return;
+                }
+            };
+
+            // Apply all font config settings.
+            apply_font_config(&mut collection, &new.font, user_fb_count);
+
+            let cell = collection.cell_metrics();
+            log::info!(
+                "config reload: font size={:.1}, cell={}x{}",
+                new.font.size,
+                cell.width,
+                cell.height,
+            );
+
+            let size = window.size_px();
+            renderer.replace_font_collection(collection, gpu);
+            size
         };
 
-        // Prepend user-configured fallback fonts before system fallbacks.
-        let user_fb_families: Vec<&str> = new
-            .font
-            .fallback
-            .iter()
-            .map(|f| f.family.as_str())
-            .collect();
-        let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
-
-        // Resolve hinting and subpixel mode: config overrides auto-detection.
-        let scale = window.scale_factor().factor();
-        let hinting = resolve_hinting(&new.font, scale);
-        let format = resolve_subpixel_mode(&new.font, scale).glyph_format();
-
-        let scale = scale as f32;
-        let physical_dpi = DEFAULT_DPI * scale;
-        let mut collection = match FontCollection::new(
-            font_set,
-            new.font.size,
-            physical_dpi,
-            format,
-            weight,
-            hinting,
-        ) {
-            Ok(fc) => fc,
-            Err(e) => {
-                log::warn!("config reload: font collection failed: {e}");
-                return;
-            }
-        };
-
-        // Apply all font config settings.
-        apply_font_config(&mut collection, &new.font, user_fb_count);
-
-        let cell = collection.cell_metrics();
-        log::info!(
-            "config reload: font size={:.1}, cell={}x{}",
-            new.font.size,
-            cell.width,
-            cell.height,
-        );
-
-        renderer.replace_font_collection(collection, gpu);
-
-        // Resize grid to match new cell metrics (physical pixels).
-        let cell = renderer.cell_metrics();
-        let (w, h) = window.size_px();
-        let caption_height = self
-            .chrome
-            .as_ref()
-            .map_or(0.0, WindowChromeWidget::caption_height);
-        let caption_px = (caption_height * scale).round() as u32;
-        let grid_h = h.saturating_sub(caption_px);
-        let cols = cell.columns(w).max(1);
-        let rows = cell.rows(grid_h).max(1);
-
-        if let Some(grid) = &mut self.terminal_grid {
-            grid.set_cell_metrics(cell.width, cell.height);
-            grid.set_grid_size(cols, rows);
-            grid.set_bounds(oriterm_ui::geometry::Rect::new(
-                0.0,
-                caption_height * scale,
-                cols as f32 * cell.width,
-                rows as f32 * cell.height,
-            ));
-        }
-
-        if let Some(tab) = &self.tab {
-            tab.resize_grid(rows as u16, cols as u16);
-            tab.resize_pty(rows as u16, cols as u16);
-        }
-
-        // Resize increments depend on cell dimensions, which change with font.
-        // Called after destructured borrows of renderer/window are released.
-        self.update_resize_increments();
+        // Grid dimensions, terminal widget, PTY, and resize increments all
+        // depend on cell metrics — sync_grid_layout handles them together.
+        self.sync_grid_layout(w, h);
     }
 
     /// Detect and apply color config changes.

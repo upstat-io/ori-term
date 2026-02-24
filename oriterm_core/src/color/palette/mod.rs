@@ -206,6 +206,18 @@ impl Palette {
         self.colors[NamedColor::Cursor as usize]
     }
 
+    /// Look up a color by palette index.
+    ///
+    /// Returns black for out-of-range indices. Used by OSC 4/10/11/12
+    /// color query responses.
+    pub fn color(&self, index: usize) -> Rgb {
+        if index < NUM_COLORS {
+            self.colors[index]
+        } else {
+            Rgb { r: 0, g: 0, b: 0 }
+        }
+    }
+
     /// Set both live and default value for an indexed color.
     ///
     /// Config overrides use this so the config value becomes the baseline

@@ -8,7 +8,6 @@
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 
-#[cfg(target_os = "windows")]
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::widgets::{Widget, WidgetAction};
 
@@ -206,6 +205,47 @@ impl App {
         window.window().set_resize_increments(Some(inc));
     }
 
+    /// Recompute grid layout from current cell metrics and viewport size.
+    ///
+    /// Reads cell metrics from the renderer, caption height from chrome,
+    /// and updates the terminal grid widget, tab grid, PTY dimensions,
+    /// and resize increments. Called after any change to font, DPI, or
+    /// window size.
+    pub(super) fn sync_grid_layout(&mut self, viewport_w: u32, viewport_h: u32) {
+        let (Some(renderer), Some(window)) = (&self.renderer, &self.window) else {
+            return;
+        };
+        let cell = renderer.cell_metrics();
+        let scale = window.scale_factor().factor() as f32;
+
+        let caption_height = self
+            .chrome
+            .as_ref()
+            .map_or(0.0, WindowChromeWidget::caption_height);
+        let caption_px = (caption_height * scale).round() as u32;
+        let grid_h = viewport_h.saturating_sub(caption_px);
+        let cols = cell.columns(viewport_w).max(1);
+        let rows = cell.rows(grid_h).max(1);
+
+        if let Some(grid) = &mut self.terminal_grid {
+            grid.set_cell_metrics(cell.width, cell.height);
+            grid.set_grid_size(cols, rows);
+            grid.set_bounds(oriterm_ui::geometry::Rect::new(
+                0.0,
+                caption_height * scale,
+                cols as f32 * cell.width,
+                rows as f32 * cell.height,
+            ));
+        }
+
+        if let Some(tab) = &self.tab {
+            tab.resize_grid(rows as u16, cols as u16);
+            tab.resize_pty(rows as u16, cols as u16);
+        }
+
+        self.update_resize_increments();
+    }
+
     /// Handle window resize: reconfigure surface, update chrome layout,
     /// resize grid and PTY.
     pub(super) fn handle_resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
@@ -237,46 +277,28 @@ impl App {
             }
         }
 
-        let (Some(gpu), Some(window), Some(renderer)) =
-            (&self.gpu, &mut self.window, &self.renderer)
-        else {
-            return;
-        };
-
-        window.resize_surface(size.width, size.height, gpu);
-        let cell = renderer.cell_metrics();
-        let scale = window.scale_factor().factor() as f32;
+        // Resize GPU surface (scoped to release borrows before sync_grid_layout).
+        {
+            let (Some(gpu), Some(window)) = (&self.gpu, &mut self.window) else {
+                return;
+            };
+            window.resize_surface(size.width, size.height, gpu);
+        }
 
         // Update chrome layout for new window width.
-        let caption_height = if let Some(chrome) = &mut self.chrome {
+        if let (Some(chrome), Some(window)) = (&mut self.chrome, &self.window) {
+            let scale = window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             chrome.set_window_width(logical_w);
-            chrome.caption_height()
-        } else {
-            0.0
-        };
-
-        // Grid viewport excludes caption height. Cell metrics are in physical
-        // pixels (rasterized at physical DPI), so use physical dimensions.
-        let caption_px = (caption_height * scale).round() as u32;
-        let grid_h = size.height.saturating_sub(caption_px);
-        let cols = cell.columns(size.width).max(1);
-        let rows = cell.rows(grid_h).max(1);
-
-        if let Some(grid) = &mut self.terminal_grid {
-            grid.set_cell_metrics(cell.width, cell.height);
-            grid.set_grid_size(cols, rows);
-            grid.set_bounds(oriterm_ui::geometry::Rect::new(
-                0.0,
-                caption_height * scale,
-                cols as f32 * cell.width,
-                rows as f32 * cell.height,
-            ));
         }
+
+        // Recompute grid dimensions, resize terminal + PTY + increments.
+        self.sync_grid_layout(size.width, size.height);
 
         // Update platform hit test rects on Windows.
         #[cfg(target_os = "windows")]
-        if let Some(chrome) = &self.chrome {
+        if let (Some(chrome), Some(window)) = (&self.chrome, &self.window) {
+            let scale = window.scale_factor().factor() as f32;
             oriterm_ui::platform_windows::set_client_rects(
                 window.window(),
                 chrome
@@ -287,18 +309,6 @@ impl App {
             );
         }
 
-        let (r, c) = (rows as u16, cols as u16);
-        if let Some(tab) = &self.tab {
-            // Grid and PTY resize together so the shell always knows the
-            // current dimensions. Desynchronized resize (throttled PTY)
-            // causes the shell to write content at stale dimensions,
-            // producing duplicate/ghost content after reflow.
-            tab.resize_grid(r, c);
-            tab.resize_pty(r, c);
-        }
-
-        // Update resize increments after all borrows are released.
-        self.update_resize_increments();
         self.dirty = true;
     }
 }
