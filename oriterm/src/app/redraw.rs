@@ -3,7 +3,9 @@
 use std::cell::Cell;
 use std::time::Instant;
 
-use oriterm_core::{Column, CursorShape, TermMode};
+use unicode_width::UnicodeWidthChar;
+
+use oriterm_core::{CellFlags, Column, CursorShape, RenderableContent, TermMode};
 
 use oriterm_ui::draw::DrawList;
 use oriterm_ui::theme::UiTheme;
@@ -99,9 +101,15 @@ impl App {
             // access to config — opacity is a window concern, not terminal state).
             frame.palette.opacity = self.config.window.effective_opacity();
 
-            // Mark-mode cursor override: set the override field so the
-            // Prepare phase renders a hollow block at the mark position.
-            // The extracted content.cursor is never mutated.
+            // IME preedit: overlay composition text at the cursor position
+            // (underlined) so it flows through the normal shaping pipeline.
+            if !self.ime_preedit.is_empty() {
+                frame.preedit.clone_from(&self.ime_preedit);
+                let cols = frame.columns();
+                overlay_preedit_cells(&self.ime_preedit, &mut frame.content, cols);
+            }
+
+            // Mark-mode cursor override: hollow block at the mark position.
             frame.mark_cursor = tab.mark_cursor().and_then(|mc| {
                 let (line, col) = mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
                 Some(MarkCursorOverride {
@@ -111,10 +119,7 @@ impl App {
                 })
             });
 
-            // Snapshot selection for rendering. The selection lives on Tab
-            // (not inside Term), so we build the FrameSelection after the
-            // terminal lock is released, using the stable_row_base from
-            // the extracted content.
+            // Snapshot selection for rendering (Tab owns selection, not Term).
             frame.selection = tab
                 .selection()
                 .map(|sel| FrameSelection::new(sel, frame.content.stable_row_base));
@@ -130,18 +135,14 @@ impl App {
                     .map(|(col, line)| (line, col));
             }
 
-            // Cache blinking mode for about_to_wait gating.
-            // Reset blink phase on false→true transition so the
-            // cursor starts visible when blinking is first enabled.
+            // Cache blinking mode; reset on false→true transition.
             let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
             if blinking_now && !self.blinking_active {
                 self.cursor_blink.reset();
             }
             self.blinking_active = blinking_now;
 
-            // Cursor blink: the "off" phase hides the cursor. This flag is
-            // passed to the Prepare phase which gates cursor emission —
-            // the extracted frame is never mutated between Extract and Prepare.
+            // Cursor blink: "off" phase hides cursor for prepare phase.
             let cursor_blink_visible = !blinking_now || self.cursor_blink.is_visible();
 
             // Grid origin from layout bounds. When the layout engine
@@ -176,7 +177,19 @@ impl App {
             renderer.render_to_surface(gpu, window.surface())
         };
 
-        match render_result {
+        self.handle_render_result(render_result);
+
+        // Keep the IME candidate window positioned at the cursor while
+        // composition is active. Called after rendering to avoid borrow
+        // conflicts with the renderer's mutable borrow.
+        if !self.ime_preedit.is_empty() {
+            self.update_ime_cursor_area();
+        }
+    }
+
+    /// Handle the result of a render pass, recovering from surface loss.
+    fn handle_render_result(&mut self, result: Result<(), SurfaceError>) {
+        match result {
             Ok(()) => log::trace!("render ok"),
             Err(SurfaceError::Lost) => {
                 log::warn!("surface lost, reconfiguring");
@@ -232,5 +245,69 @@ impl App {
 
         renderer.append_ui_draw_list(draw_list, scale);
         animations_running.get()
+    }
+}
+
+/// Overlay IME preedit characters into the renderable content at the cursor.
+///
+/// Replaces cells at the cursor position with preedit characters, adding
+/// [`CellFlags::UNDERLINE`] to visually distinguish composition text from
+/// committed text. Wide (CJK) characters occupy two cells; the spacer cell
+/// gets [`CellFlags::WIDE_CHAR_SPACER`]. Characters beyond the grid width
+/// are clipped.
+///
+/// The content's cursor visibility is set to `false` so the prepare phase
+/// does not emit a cursor on top of the preedit text.
+pub(super) fn overlay_preedit_cells(preedit: &str, content: &mut RenderableContent, cols: usize) {
+    if content.cells.is_empty() || cols == 0 {
+        return;
+    }
+
+    let line = content.cursor.line;
+    let start_col = content.cursor.column.0;
+
+    // Hide the terminal cursor while preedit is active.
+    content.cursor.visible = false;
+
+    let mut col = start_col;
+    for ch in preedit.chars() {
+        let w = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if w == 0 {
+            continue;
+        }
+        if col >= cols {
+            break;
+        }
+
+        let idx = line * cols + col;
+        if idx >= content.cells.len() {
+            break;
+        }
+
+        // Preserve the cell's colors but replace character and add underline.
+        let cell = &mut content.cells[idx];
+        cell.ch = ch;
+        cell.flags = (cell.flags
+            - CellFlags::WIDE_CHAR
+            - CellFlags::WIDE_CHAR_SPACER
+            - CellFlags::LEADING_WIDE_CHAR_SPACER)
+            | CellFlags::UNDERLINE;
+        cell.zerowidth.clear();
+
+        if w == 2 {
+            cell.flags |= CellFlags::WIDE_CHAR;
+            // Mark the next cell as a spacer for the wide character.
+            if col + 1 < cols {
+                let spacer_idx = idx + 1;
+                if spacer_idx < content.cells.len() {
+                    let spacer = &mut content.cells[spacer_idx];
+                    spacer.ch = ' ';
+                    spacer.flags = CellFlags::WIDE_CHAR_SPACER;
+                    spacer.zerowidth.clear();
+                }
+            }
+        }
+
+        col += w;
     }
 }

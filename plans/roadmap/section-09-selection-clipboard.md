@@ -16,7 +16,7 @@ sections:
     status: in-progress
   - id: "9.4"
     title: Word Delimiters & Boundaries
-    status: in-progress
+    status: complete
   - id: "9.5"
     title: Copy Operations
     status: in-progress
@@ -28,7 +28,7 @@ sections:
     status: in-progress
   - id: "9.8"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 09: Selection & Clipboard
@@ -205,7 +205,7 @@ Keyboard-driven selection for accessibility and power users, modeled after Windo
   - [x] Clear selection
   - [x] Exit mark mode
 - [x] **Enter** — Copy and exit:
-  - [ ] Copy current selection to clipboard <!-- blocked-by:9.5 -->
+  - [x] Copy current selection to clipboard
   - [x] Exit mark mode
 - [x] **Tests**:
   - [x] Enter mark mode sets flag, exit clears it
@@ -285,13 +285,13 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
   - [x] Handle grapheme clusters: base char + all zerowidth chars from CellExtra
 - [ ] **Clipboard formats** (placed on clipboard simultaneously):
   - [x] `CF_UNICODETEXT` — plain text (always)
-  - [x] `HTML Format` — HTML with inline styles (if CopyFormatting enabled) <!-- blocked-by:13 -->
+  - [x] `HTML Format` — HTML with inline styles (if CopyFormatting enabled)
     - [x] Per-cell foreground/background colors as inline CSS
     - [x] Font name and size
     - [x] Bold rendering for BOLD cells
     - [ ] Underline colors <!-- blocked-by:38 -->
   - [x] ~~`Rich Text Format`~~ — skipped: no reference terminal implements RTF (WezTerm/Ghostty use HTML)
-- [x] **Copy modifiers**: <!-- blocked-by:13 -->
+- [x] **Copy modifiers**:
   - [x] Shift held during copy: collapse multi-line selection to single line (join with spaces)
   - [x] Alt held during copy: force HTML formatting regardless of CopyFormatting setting
 - [x] Selection NOT cleared after copy (user must press Escape or click elsewhere)
@@ -343,8 +343,8 @@ Windows Terminal-style paste with character filtering, line ending normalization
   - [x] Strip ESC (`\x1b`) characters from pasted content within brackets
 - [x] **Multi-line paste warning** (configurable):
   - [x] Detect newlines in pasted content
-  - [ ] Optionally warn user before sending multi-line paste to shell <!-- blocked-by:13 -->
-  - [ ] Configurable: always warn, never warn, warn if > N lines <!-- blocked-by:13 -->
+  - [ ] Optionally warn user before sending multi-line paste to shell
+  - [ ] Configurable: always warn, never warn, warn if > N lines
 - [x] **File drag-and-drop paste**:
   - [x] Handle `WindowEvent::DroppedFile` events
   - [x] Extract file path(s)
@@ -372,8 +372,8 @@ Visual highlighting of selected text during GPU rendering.
 
 - [x] **Selection colors**: configurable selection foreground and background
   - [x] Default: inverted colors (swap fg/bg of selected cells)
-  - [ ] Alternative: user-configured selection_fg / selection_bg from palette <!-- blocked-by:13 -->
-  - [ ] Colors stored in palette semantic slots (see Section 01, 1.3: CellExtra) <!-- blocked-by:13 -->
+  - [ ] Alternative: user-configured selection_fg / selection_bg from palette <!-- blocked-by:25 -->
+  - [ ] Colors stored in palette semantic slots (see Section 01, 1.3: CellExtra) <!-- blocked-by:25 -->
 - [x] **Render approach** (during cell rendering loop): <!-- unblocks:5.13 --><!-- unblocks:6.5 --><!-- unblocks:6.16 -->
   - [x] For each visible cell: check `selection.contains(stable_row, col)`
   - [x] If selected: override fg/bg with selection colors
@@ -416,29 +416,29 @@ Visual highlighting of selected text during GPU rendering.
 
 ## 9.8 Section Completion
 
-- [ ] All 9.1-9.7 items complete
-- [ ] `cargo test -p oriterm_core --target x86_64-pc-windows-gnu` — selection model tests pass
-- [ ] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — clipboard + mouse selection tests pass
-- [ ] `cargo clippy --workspace --target x86_64-pc-windows-gnu` — no warnings
-- [ ] Single click + drag selects text character-by-character
-- [ ] Drag threshold prevents accidental selection on slight mouse movement
-- [ ] Double-click selects words (configurable delimiters)
-- [ ] Triple-click selects full logical lines (follows wraps)
-- [ ] Alt+drag does block/rectangular selection
-- [ ] Shift+click extends existing selection
-- [ ] Keyboard selection with Shift+arrows, Ctrl+Shift+arrows
-- [ ] Ctrl+A selects all
-- [ ] Ctrl+Shift+C copies selection
-- [ ] Ctrl+C smart behavior (copy if selection, SIGINT if not)
-- [ ] CopyOnSelect option (auto-copy on mouse release)
-- [ ] Ctrl+Shift+V pastes from clipboard
-- [ ] Bracketed paste mode wraps pasted text in ESC[200~ / ESC[201~
-- [ ] FilterOnPaste strips/converts special characters
-- [ ] File drag-and-drop auto-quotes paths with spaces
-- [ ] Selection visually highlighted with configurable colors
-- [ ] Wide characters selected as complete units
-- [ ] Soft-wrapped lines joined correctly in copied text
-- [ ] Selection across scrollback works (StableRowIndex survives eviction)
-- [ ] OSC 52 clipboard integration works
+- [ ] All 9.1-9.7 items complete *(blocked: 9.2/9.3/9.5/9.6/9.7 have items pending Sections 13/14/20/23/38)*
+- [x] `cargo test -p oriterm_core --target x86_64-pc-windows-gnu` — selection model tests pass
+- [x] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — clipboard + mouse selection tests pass
+- [x] `cargo clippy --workspace --target x86_64-pc-windows-gnu` — no warnings
+- [x] Single click + drag selects text character-by-character
+- [x] Drag threshold prevents accidental selection on slight mouse movement
+- [x] Double-click selects words (configurable delimiters)
+- [x] Triple-click selects full logical lines (follows wraps)
+- [x] Alt+drag does block/rectangular selection
+- [x] Shift+click extends existing selection
+- [x] Keyboard selection with Shift+arrows, Ctrl+Shift+arrows
+- [x] Ctrl+A selects all
+- [x] Ctrl+Shift+C copies selection
+- [x] Ctrl+C smart behavior (copy if selection, SIGINT if not)
+- [x] CopyOnSelect option (auto-copy on mouse release)
+- [x] Ctrl+Shift+V pastes from clipboard
+- [x] Bracketed paste mode wraps pasted text in ESC[200~ / ESC[201~
+- [x] FilterOnPaste strips/converts special characters
+- [x] File drag-and-drop auto-quotes paths with spaces
+- [x] Selection visually highlighted with configurable colors
+- [x] Wide characters selected as complete units
+- [x] Soft-wrapped lines joined correctly in copied text
+- [x] Selection across scrollback works (StableRowIndex survives eviction)
+- [x] OSC 52 clipboard integration works
 
 **Exit Criteria:** Selection and clipboard works identically to Windows Terminal. Users coming from Windows Terminal should feel completely at home with the selection, copy, and paste behavior.

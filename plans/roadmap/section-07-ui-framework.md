@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "07.12"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 07: 2D UI Framework
@@ -524,20 +524,20 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
 
 ## 07.12 Section Completion
 
-- [ ] All 07.1-07.11 items complete
-- [ ] Drawing primitives render correctly: rects, rounded rects, shadows, text, lines
-- [ ] Layout engine computes correct positions for nested flex containers
-- [ ] Hit testing correctly identifies the widget under the cursor
-- [ ] Focus management: Tab cycles through focusable widgets
-- [ ] Core widgets render and respond to input: Button, Checkbox, Toggle, Slider, TextInput, Dropdown
-- [ ] Overlays render above main content, dismiss on click-outside
-- [ ] Animations interpolate smoothly (no jank, no allocation per frame)
-- [ ] Theme system provides consistent dark/light styling
-- [ ] Terminal grid renders as a widget within the framework
-- [ ] Tab bar renders as a widget within the framework
-- [ ] All widgets are GPU-rendered — no native OS widgets used
-- [ ] Performance: UI framework adds negligible overhead to frame time
-- [ ] No platform-specific code in the UI framework (pure Rust + wgpu)
-- [ ] `cargo clippy -p oriterm_ui` — no warnings
+- [ ] All 07.1-07.11 items complete *(blocked: 07.8/07.9/07.10/07.11 have deferred/blocked items)*
+- [x] Drawing primitives render correctly: rects, rounded rects, shadows, text, lines
+- [x] Layout engine computes correct positions for nested flex containers
+- [x] Hit testing correctly identifies the widget under the cursor
+- [x] Focus management: Tab cycles through focusable widgets
+- [x] Core widgets render and respond to input: Button, Checkbox, Toggle, Slider, TextInput, Dropdown
+- [x] Overlays render above main content, dismiss on click-outside
+- [x] Animations interpolate smoothly (no jank, no allocation per frame)
+- [x] Theme system provides consistent dark/light styling
+- [x] Terminal grid renders as a widget within the framework
+- [x] Tab bar renders as a widget within the framework
+- [x] All widgets are GPU-rendered — no native OS widgets used
+- [x] Performance: UI framework adds negligible overhead to frame time
+- [x] No platform-specific code in the UI framework (pure Rust + wgpu)
+- [x] `cargo clippy -p oriterm_ui` — no warnings
 
 **Exit Criteria:** A complete, lightweight, GPU-rendered UI framework that can build settings panels, context menus, command palette, and any future UI. The terminal grid is just another widget. All rendering is consistent, cross-platform, and fast.

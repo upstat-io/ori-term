@@ -99,6 +99,14 @@ pub(crate) struct App {
 
     // Config file watcher (kept alive for the lifetime of the app).
     _config_monitor: Option<ConfigMonitor>,
+
+    // IME composition state.
+    /// Whether an IME composition session is currently active.
+    ime_active: bool,
+    /// Current IME preedit (composition) text. Empty = no active preedit.
+    ime_preedit: String,
+    /// Cursor byte offset within the preedit text (from winit).
+    ime_preedit_cursor: Option<usize>,
 }
 
 impl App {
@@ -129,6 +137,9 @@ impl App {
             config,
             bindings,
             _config_monitor: monitor,
+            ime_active: false,
+            ime_preedit: String::new(),
+            ime_preedit_cursor: None,
         }
     }
 
@@ -375,9 +386,7 @@ impl ApplicationHandler<TermEvent> for App {
                 self.handle_keyboard_input(&event);
             }
 
-            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
-                self.handle_ime_commit(&text);
-            }
+            WindowEvent::Ime(ime) => self.handle_ime_event(ime),
 
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(window) = &mut self.window {
