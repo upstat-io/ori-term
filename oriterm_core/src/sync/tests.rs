@@ -1,5 +1,7 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use super::{FairMutex, FairMutexGuard};
 
@@ -72,7 +74,7 @@ fn lease_blocks_fair_lock() {
     let mutex = Arc::new(FairMutex::new(0));
 
     // Take a lease — this holds the `next` lock.
-    let _lease = mutex.lease();
+    let lease = mutex.lease();
 
     // Unfair lock should still succeed (bypasses `next`).
     {
@@ -89,13 +91,13 @@ fn lease_blocks_fair_lock() {
     });
 
     // Give the spawned thread time to attempt the lock.
-    thread::sleep(std::time::Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(50));
 
     // The thread should still be running (blocked on `next`).
     assert!(!handle.is_finished());
 
     // Drop the lease — the spawned thread should now proceed.
-    drop(_lease);
+    drop(lease);
 
     let val = handle.join().unwrap();
     assert_eq!(val, 1);
@@ -121,4 +123,309 @@ fn guard_deref_mut() {
     let mut guard: FairMutexGuard<'_, String> = mutex.lock();
     guard.push_str(" world");
     assert_eq!(&*guard, "hello world");
+}
+
+// unlock_fair tests
+
+#[test]
+fn unlock_fair_releases_data() {
+    let mutex = FairMutex::new(42);
+
+    let mut guard = mutex.lock();
+    *guard = 99;
+    FairMutexGuard::unlock_fair(guard);
+
+    // Lock should succeed immediately — both locks released.
+    let guard = mutex.lock();
+    assert_eq!(*guard, 99);
+}
+
+#[test]
+fn unlock_fair_hands_off_to_waiter() {
+    let mutex = Arc::new(FairMutex::new(Vec::<char>::new()));
+
+    // Thread A holds the lock.
+    let mut guard = mutex.lock();
+    guard.push('A');
+
+    // Thread B starts and blocks on lock().
+    let m = Arc::clone(&mutex);
+    let handle = thread::spawn(move || {
+        let mut g = m.lock();
+        g.push('B');
+    });
+
+    // Let thread B park on the fairness gate.
+    thread::sleep(Duration::from_millis(20));
+    assert!(!handle.is_finished());
+
+    // Fair-unlock guarantees B gets the handoff.
+    FairMutexGuard::unlock_fair(guard);
+    handle.join().unwrap();
+
+    let g = mutex.lock();
+    assert_eq!(*g, vec!['A', 'B']);
+}
+
+/// Simulates PTY reader vs render thread contention.
+///
+/// The "reader" runs a tight `lock`/`unlock_fair` loop. The "renderer" runs
+/// a tight `lock`/`drop` loop. Over a fixed time window, both threads must
+/// get substantial access. Without `unlock_fair`, the reader would starve
+/// the renderer through `parking_lot`'s barging behavior.
+#[test]
+fn unlock_fair_prevents_starvation() {
+    let mutex = Arc::new(FairMutex::new(()));
+    let reader_count = Arc::new(AtomicUsize::new(0));
+    let renderer_count = Arc::new(AtomicUsize::new(0));
+    let done = Arc::new(AtomicBool::new(false));
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+
+    // "Reader" thread — tight loop with fair unlock (simulates PTY reader).
+    let mx = Arc::clone(&mutex);
+    let rc = Arc::clone(&reader_count);
+    let dn = Arc::clone(&done);
+    let br = Arc::clone(&barrier);
+    let reader = thread::spawn(move || {
+        br.wait();
+        while !dn.load(Ordering::Relaxed) {
+            let guard = mx.lock();
+            rc.fetch_add(1, Ordering::Relaxed);
+            FairMutexGuard::unlock_fair(guard);
+        }
+    });
+
+    // "Renderer" thread — tight loop with regular drop (simulates render).
+    let mx = Arc::clone(&mutex);
+    let wc = Arc::clone(&renderer_count);
+    let dn = Arc::clone(&done);
+    let br = Arc::clone(&barrier);
+    let renderer = thread::spawn(move || {
+        br.wait();
+        while !dn.load(Ordering::Relaxed) {
+            let guard = mx.lock();
+            wc.fetch_add(1, Ordering::Relaxed);
+            drop(guard);
+        }
+    });
+
+    thread::sleep(Duration::from_millis(200));
+    done.store(true, Ordering::Relaxed);
+
+    reader.join().unwrap();
+    renderer.join().unwrap();
+
+    let rd = reader_count.load(Ordering::Relaxed);
+    let rn = renderer_count.load(Ordering::Relaxed);
+
+    // With fair unlock, the renderer should get at least 20% of total
+    // acquisitions. Without it, the renderer typically gets < 1%.
+    let total = rd + rn;
+    let renderer_pct = if total > 0 { rn * 100 / total } else { 0 };
+    assert!(
+        renderer_pct >= 20,
+        "renderer starved: reader={rd}, renderer={rn} ({renderer_pct}% renderer)",
+    );
+}
+
+/// Measures that `unlock_fair` has negligible overhead vs regular `drop`
+/// when uncontested (single-thread, no waiters).
+#[test]
+fn unlock_fair_uncontested_throughput() {
+    let iterations = 200_000;
+
+    // Regular drop baseline.
+    let mutex_a = FairMutex::new(0u64);
+    let start = Instant::now();
+    for _ in 0..iterations {
+        let mut g = mutex_a.lock();
+        *g += 1;
+    }
+    let drop_elapsed = start.elapsed();
+
+    // Fair unlock.
+    let mutex_b = FairMutex::new(0u64);
+    let start = Instant::now();
+    for _ in 0..iterations {
+        let mut g = mutex_b.lock();
+        *g += 1;
+        FairMutexGuard::unlock_fair(g);
+    }
+    let fair_elapsed = start.elapsed();
+
+    assert_eq!(*mutex_a.lock(), iterations);
+    assert_eq!(*mutex_b.lock(), iterations);
+
+    // Fair unlock should be within 3x of regular drop when uncontested.
+    // In practice they're nearly identical — unlock_fair with no waiters
+    // is just a regular unlock.
+    assert!(
+        fair_elapsed < drop_elapsed * 3,
+        "fair unlock too slow: fair={fair_elapsed:?}, drop={drop_elapsed:?}",
+    );
+}
+
+// Locking strategy comparison
+
+/// Busy-waits for approximately the given duration.
+///
+/// Uses a tight loop checking `Instant::elapsed()` rather than
+/// `thread::sleep` to simulate CPU-bound work (like VTE parsing) without
+/// yielding to the OS scheduler.
+fn busy_wait(duration: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < duration {
+        std::hint::spin_loop();
+    }
+}
+
+/// Results from a contention benchmark run.
+struct ContentionResult {
+    reader_count: usize,
+    renderer_count: usize,
+}
+
+impl ContentionResult {
+    /// Renderer share as a percentage of total acquisitions.
+    fn renderer_pct(&self) -> usize {
+        let total = self.reader_count + self.renderer_count;
+        if total > 0 {
+            self.renderer_count * 100 / total
+        } else {
+            0
+        }
+    }
+
+    /// Renderer lock acquisitions per second.
+    fn renderer_rate(&self, duration: Duration) -> f64 {
+        self.renderer_count as f64 / duration.as_secs_f64()
+    }
+}
+
+/// Runs a contention benchmark: a reader thread and renderer thread compete
+/// for the same `FairMutex` over `duration`. The `reader_body` closure
+/// defines how the reader acquires, holds, and releases the lock.
+fn run_contention_bench<F>(duration: Duration, reader_body: F) -> ContentionResult
+where
+    F: Fn(&FairMutex<()>) + Send + 'static,
+{
+    let mutex = Arc::new(FairMutex::new(()));
+    let reader_count = Arc::new(AtomicUsize::new(0));
+    let renderer_count = Arc::new(AtomicUsize::new(0));
+    let done = Arc::new(AtomicBool::new(false));
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+
+    let mx = Arc::clone(&mutex);
+    let rc = Arc::clone(&reader_count);
+    let dn = Arc::clone(&done);
+    let br = Arc::clone(&barrier);
+    let reader = thread::spawn(move || {
+        br.wait();
+        while !dn.load(Ordering::Relaxed) {
+            reader_body(&mx);
+            rc.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+
+    let mx = Arc::clone(&mutex);
+    let wc = Arc::clone(&renderer_count);
+    let dn = Arc::clone(&done);
+    let br = Arc::clone(&barrier);
+    let renderer = thread::spawn(move || {
+        br.wait();
+        while !dn.load(Ordering::Relaxed) {
+            let guard = mx.lock();
+            wc.fetch_add(1, Ordering::Relaxed);
+            drop(guard);
+        }
+    });
+
+    thread::sleep(duration);
+    done.store(true, Ordering::Relaxed);
+    reader.join().unwrap();
+    renderer.join().unwrap();
+
+    ContentionResult {
+        reader_count: reader_count.load(Ordering::Relaxed),
+        renderer_count: renderer_count.load(Ordering::Relaxed),
+    }
+}
+
+/// Compares contention behavior of two locking strategies.
+///
+/// **Pattern A** (pre-04f58ab baseline): `lease()` + `lock_unfair()` + drop.
+/// The PTY reader holds the fairness gate via a lease, then acquires data
+/// with `lock_unfair`. The renderer uses `lock()` (fair). The lease prevents
+/// the renderer from acquiring the fairness gate during reader work.
+///
+/// **Pattern B** (current, post-04f58ab): `lock()` + `unlock_fair()`.
+/// The PTY reader uses fair locking and explicitly hands off via
+/// `unlock_fair`, giving the renderer a guaranteed turn between each chunk.
+///
+/// Both patterns simulate ~50us of CPU-bound work per lock acquisition
+/// (approximating VTE parsing of a 64KB chunk). The renderer does minimal
+/// work (just a counter increment) to simulate frame-rate polling.
+#[test]
+fn compare_locking_strategies() {
+    let duration = Duration::from_millis(500);
+    let work = Duration::from_micros(50);
+
+    // Pattern A: lease + lock_unfair (baseline).
+    let work_a = work;
+    let result_a = run_contention_bench(duration, move |mutex| {
+        let _lease = mutex.lease();
+        let guard = mutex.lock_unfair();
+        busy_wait(work_a);
+        drop(guard);
+    });
+
+    // Pattern B: lock + unlock_fair (current).
+    let work_b = work;
+    let result_b = run_contention_bench(duration, move |mutex| {
+        let guard = mutex.lock();
+        busy_wait(work_b);
+        FairMutexGuard::unlock_fair(guard);
+    });
+
+    let rate_a = result_a.renderer_rate(duration);
+    let rate_b = result_b.renderer_rate(duration);
+
+    eprintln!();
+    eprintln!(
+        "=== Locking Strategy Comparison ({}ms, {}us work) ===",
+        duration.as_millis(),
+        work.as_micros()
+    );
+    eprintln!();
+    eprintln!("Pattern A (lease + lock_unfair, baseline):");
+    eprintln!("  reader:   {:>8} acquisitions", result_a.reader_count);
+    eprintln!(
+        "  renderer: {:>8} acquisitions ({}% share)",
+        result_a.renderer_count,
+        result_a.renderer_pct()
+    );
+    eprintln!("  renderer rate: {rate_a:.0} locks/sec");
+    eprintln!();
+    eprintln!("Pattern B (lock + unlock_fair, current):");
+    eprintln!("  reader:   {:>8} acquisitions", result_b.reader_count);
+    eprintln!(
+        "  renderer: {:>8} acquisitions ({}% share)",
+        result_b.renderer_count,
+        result_b.renderer_pct()
+    );
+    eprintln!("  renderer rate: {rate_b:.0} locks/sec");
+    eprintln!();
+    if rate_a > 0.0 {
+        eprintln!("Renderer access improvement: {:.1}x", rate_b / rate_a);
+    }
+    eprintln!();
+
+    // Pattern B should give the renderer substantial access. The renderer
+    // gets turns between each reader chunk because `unlock_fair` hands off
+    // the fairness gate.
+    assert!(
+        result_b.renderer_pct() >= 20,
+        "Pattern B renderer share too low: {}% (expected >= 20%)",
+        result_b.renderer_pct(),
+    );
 }

@@ -13,8 +13,9 @@ use std::io::{self, Read};
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
-use oriterm_core::{EventListener, FairMutex, Term};
+use oriterm_core::{EventListener, FairMutex, FairMutexGuard, Term};
 
 use super::Msg;
 
@@ -27,6 +28,27 @@ const MAX_LOCKED_PARSE: usize = 0x1_0000; // 64 KB
 
 /// PTY read buffer size.
 const READ_BUFFER_SIZE: usize = 0x1_0000; // 64 KB
+
+/// Minimum read size to trigger a coalesce delay.
+///
+/// Reads below this threshold are interactive (keystrokes, short prompts)
+/// and skip the delay to preserve low latency. Reads above indicate bulk
+/// output where the renderer needs breathing room.
+const COALESCE_THRESHOLD: usize = 4096;
+
+/// How long the reader pauses after processing a large read.
+///
+/// During flood output the reader's blocking `read()` returns instantly,
+/// so it re-acquires the terminal lock before the renderer's `Wakeup`
+/// event propagates through the winit event loop. Neither `unlock_fair`
+/// nor `yield_now` reliably fix this on Windows — `unlock_fair` only
+/// hands off to threads already parked on the mutex, and `yield_now`
+/// only yields to same-priority threads. A deliberate sleep gives the
+/// renderer time to receive the wakeup, lock the terminal, extract
+/// cells, and release. `WezTerm` uses the same pattern (3 ms coalesce
+/// timer); we use 1 ms for lower latency. On Windows `Sleep(1)` yields
+/// at least one scheduler quantum (~1-15 ms), which is sufficient.
+const COALESCE_DELAY: Duration = Duration::from_millis(1);
 
 /// Coordinates PTY I/O, VTE parsing, and command processing.
 ///
@@ -99,14 +121,28 @@ impl<T: EventListener> PtyEventLoop<T> {
 
             // 3. Lock terminal and parse in bounded chunks.
             self.parse_pty_output(&buf[..n]);
+
+            // 4. Coalesce: yield to the render thread after large reads.
+            //
+            // During flood output read() returns instantly, so the reader
+            // re-locks before the renderer's Wakeup event propagates
+            // through winit. A brief sleep gives the renderer time to
+            // acquire the lock, extract cells, and release — the same
+            // pattern `WezTerm` uses (3 ms coalesce timer). Interactive
+            // reads (keystrokes, short prompts) skip the delay.
+            if n >= COALESCE_THRESHOLD {
+                thread::sleep(COALESCE_DELAY);
+            }
         }
     }
 
     /// Parse PTY output through VTE, updating terminal state.
     ///
-    /// Acquires the `FairMutex` using the lease + `lock_unfair` pattern.
-    /// Parses in chunks of [`MAX_LOCKED_PARSE`] to avoid starving the
-    /// render thread.
+    /// Acquires the `FairMutex` via fair `lock()` and parses in chunks of
+    /// [`MAX_LOCKED_PARSE`]. After each chunk, `unlock_fair()` hands the
+    /// fairness gate directly to the render thread (if waiting), guaranteeing
+    /// it gets the next turn. Without fair unlock, `parking_lot`'s barging
+    /// lets the reader re-acquire before the parked renderer wakes up.
     fn parse_pty_output(&mut self, data: &[u8]) {
         let mut offset = 0;
 
@@ -114,8 +150,7 @@ impl<T: EventListener> PtyEventLoop<T> {
             let chunk_end = (offset + MAX_LOCKED_PARSE).min(data.len());
             let chunk = &data[offset..chunk_end];
 
-            let _lease = self.terminal.lease();
-            let mut term = self.terminal.lock_unfair();
+            let mut term = self.terminal.lock();
             self.processor.advance(&mut *term, chunk);
             let sync_bytes = self.processor.sync_bytes_count();
             if sync_bytes > 0 {
@@ -125,7 +160,9 @@ impl<T: EventListener> PtyEventLoop<T> {
             // pick up partial updates during large output bursts.
             term.event_listener()
                 .send_event(oriterm_core::Event::Wakeup);
-            drop(term);
+            // Fair-unlock hands the fairness gate to the next waiter,
+            // preventing the reader from barging back in.
+            FairMutexGuard::unlock_fair(term);
 
             offset = chunk_end;
         }
