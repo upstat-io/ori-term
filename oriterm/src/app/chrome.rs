@@ -130,6 +130,16 @@ impl App {
             self.dirty = true;
             return true;
         }
+
+        // Caption click that didn't hit a control button — initiate window drag.
+        // On Windows, the WndProc subclass handles WM_NCHITTEST → Caption → drag.
+        // On macOS/Linux, winit's drag_window() triggers the native drag protocol.
+        #[cfg(not(target_os = "windows"))]
+        if button == winit::event::MouseButton::Left && state == ElementState::Pressed {
+            let _ = window.window().drag_window();
+            return true;
+        }
+
         false
     }
 
