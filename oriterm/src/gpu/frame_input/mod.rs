@@ -130,6 +130,12 @@ pub struct FrameInput {
     /// `content.cursor`. Set by the app layer after extraction when mark
     /// mode is active; the extracted content is never mutated.
     pub mark_cursor: Option<MarkCursorOverride>,
+    /// IME preedit (composition) text to render at the cursor position.
+    ///
+    /// Empty string means no active preedit. Set by the app layer after
+    /// extraction from `App::ime_preedit`. The Prepare phase renders these
+    /// characters inline at the cursor with an underline decoration.
+    pub preedit: String,
 }
 
 impl FrameInput {
@@ -219,6 +225,7 @@ impl FrameInput {
             search_matches: Vec::new(),
             hovered_cell: None,
             mark_cursor: None,
+            preedit: String::new(),
         }
     }
 }

@@ -18,6 +18,13 @@ impl App {
     /// 2. Keybinding table lookup.
     /// 3. Normal key encoding to PTY.
     pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent) {
+        // Suppress raw key events during active IME composition.
+        // The IME subsystem sends Ime::Commit when done; raw KeyboardInput
+        // events during composition are intermediate and must not reach the PTY.
+        if self.ime_active && !self.ime_preedit.is_empty() {
+            return;
+        }
+
         // Mark mode: consume ALL key events (including releases) to prevent
         // leaking input to the PTY while navigating.
         if let Some(tab) = &mut self.tab {
@@ -196,6 +203,73 @@ impl App {
         true
     }
 
+    /// Dispatch an IME event: preedit, commit, enabled, or disabled.
+    pub(super) fn handle_ime_event(&mut self, ime: winit::event::Ime) {
+        match ime {
+            winit::event::Ime::Enabled => {
+                self.ime_active = true;
+                self.dirty = true;
+            }
+            winit::event::Ime::Preedit(text, cursor) => {
+                self.ime_preedit = text;
+                self.ime_preedit_cursor = cursor.map(|(start, _)| start);
+                self.update_ime_cursor_area();
+                self.dirty = true;
+            }
+            winit::event::Ime::Commit(text) => {
+                self.ime_preedit.clear();
+                self.ime_preedit_cursor = None;
+                self.ime_active = false;
+                self.handle_ime_commit(&text);
+            }
+            winit::event::Ime::Disabled => {
+                self.ime_active = false;
+                self.ime_preedit.clear();
+                self.ime_preedit_cursor = None;
+                self.dirty = true;
+            }
+        }
+    }
+
+    /// Update the IME candidate window position to match the terminal cursor.
+    ///
+    /// Tells the OS where to place the IME candidate/composition popup so it
+    /// appears near the cursor. Uses 2× cell width for the exclusion zone
+    /// (Alacritty convention — avoids tight exclusion on right edge).
+    pub(super) fn update_ime_cursor_area(&self) {
+        let Some(window) = &self.window else { return };
+        let Some(tab) = &self.tab else { return };
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
+        let Some(grid_widget) = &self.terminal_grid else {
+            return;
+        };
+        let Some(bounds) = grid_widget.bounds() else {
+            return;
+        };
+
+        let metrics = renderer.cell_metrics();
+        let term = tab.terminal().lock();
+        let cursor = term.grid().cursor();
+        let cursor_line = cursor.line();
+        let cursor_col = cursor.col().0;
+        drop(term);
+
+        // Pixel position of the cursor cell, relative to the window.
+        let x = f64::from(bounds.x()) + cursor_col as f64 * f64::from(metrics.width);
+        let y = f64::from(bounds.y()) + cursor_line as f64 * f64::from(metrics.height);
+
+        // Exclusion zone: 2× cell width, 1× cell height.
+        let w = f64::from(metrics.width) * 2.0;
+        let h = f64::from(metrics.height);
+
+        window.window().set_ime_cursor_area(
+            winit::dpi::PhysicalPosition::new(x, y),
+            winit::dpi::PhysicalSize::new(w, h),
+        );
+    }
+
     /// Handle IME commit: send committed text directly to the PTY.
     pub(super) fn handle_ime_commit(&mut self, text: &str) {
         let Some(tab) = &self.tab else { return };
@@ -207,3 +281,6 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -172,7 +172,7 @@ Route keyboard events through keybindings, then through key encoding, then to th
 - [x] `handle_keyboard_input(&mut self, event: &KeyEvent)`
   - [x] Main entry point called from the winit event loop on `WindowEvent::KeyboardInput`
 - [x] **Dispatch priority** (first match wins):
-  1. [ ] Check keybindings table: if key+modifiers match a bound action, execute the action and return <!-- blocked-by:13 -->
+  1. [x] Check keybindings table: if key+modifiers match a bound action, execute the action and return
   2. [x] Check Kitty keyboard mode on active tab:
      - [x] Read `keyboard_mode_stack` from active tab's terminal state
      - [x] If Kitty mode active: call `encode_kitty()`, send result to PTY
@@ -184,26 +184,30 @@ Route keyboard events through keybindings, then through key encoding, then to th
   - [x] On any keypress that sends to PTY: reset cursor blink timer (cursor becomes visible)
 - [x] **Scroll to bottom on input**:
   - [x] If display_offset > 0 (viewing scrollback): scroll to live position on keypress
-- [ ] **Smart Ctrl+C**: <!-- blocked-by:9 -->
-  - [ ] If selection exists and Ctrl+C pressed: copy selection to clipboard, do NOT send SIGINT
-  - [ ] If no selection and Ctrl+C pressed: send `\x03` to PTY
+- [x] **Smart Ctrl+C**:
+  - [x] If selection exists and Ctrl+C pressed: copy selection to clipboard, do NOT send SIGINT
+  - [x] If no selection and Ctrl+C pressed: send `\x03` to PTY
 - [x] **IME handling** (`WindowEvent::Ime`):
   - [x] `Ime::Commit(text)`: send committed text bytes to PTY
-  - [ ] `Ime::Preedit(text, cursor)`: display composition text at cursor position (overlay rendering) <!-- blocked-by:9 -->
-  - [ ] `Ime::Enabled` / `Ime::Disabled`: track IME state, suppress raw key events during composition <!-- blocked-by:9 -->
-  - [ ] Position IME candidate window near terminal cursor (call `window.set_ime_cursor_area()`) <!-- blocked-by:9 -->
-  - [ ] Don't send raw key events to PTY during active IME preedit <!-- blocked-by:9 -->
-- [ ] **Tests** (`oriterm/src/app/input_keyboard.rs` `#[cfg(test)]`):
-  - [ ] Keybinding takes priority over PTY send <!-- blocked-by:13 -->
+  - [x] `Ime::Preedit(text, cursor)`: display composition text at cursor position (overlay rendering)
+  - [x] `Ime::Enabled` / `Ime::Disabled`: track IME state, suppress raw key events during composition
+  - [x] Position IME candidate window near terminal cursor (call `window.set_ime_cursor_area()`)
+  - [x] Don't send raw key events to PTY during active IME preedit
+- [ ] **Tests** (`oriterm/src/app/keyboard_input/tests.rs`):
+  - [ ] Keybinding takes priority over PTY send
   - [x] Kitty mode takes priority over legacy encoding
-  - [ ] Ctrl+C with selection copies, without selection sends `\x03` <!-- blocked-by:9 -->
+  - [ ] Ctrl+C with selection copies, without selection sends `\x03`
   - [x] IME commit sends text to PTY
+  - [x] Preedit overlay replaces cells at cursor with underline
+  - [x] Preedit hides terminal cursor
+  - [x] Wide (CJK) preedit chars set WIDE_CHAR flags
+  - [x] Preedit clips at grid edge
 
 ---
 
 ## 8.4 Section Completion
 
-- [ ] All 8.1-8.3 items complete
+- [ ] All 8.1-8.3 items complete (IME done, 2 test items remaining)
 - [x] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — key encoding tests pass
 - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
 - [x] All printable characters encoded correctly
@@ -215,8 +219,8 @@ Route keyboard events through keybindings, then through key encoding, then to th
 - [x] Numpad keys work in both normal and application keypad modes
 - [x] Kitty keyboard protocol level 1+ supported (all 5 mode flags)
 - [x] Key release/repeat events reported when REPORT_EVENT_TYPES active
-- [ ] Keybinding dispatch has priority over PTY encoding <!-- blocked-by:13 -->
+- [x] Keybinding dispatch has priority over PTY encoding
 - [x] IME commit text reaches PTY
-- [ ] Smart Ctrl+C works (copy if selection, SIGINT if not) <!-- blocked-by:9 -->
+- [x] Smart Ctrl+C works (copy if selection, SIGINT if not)
 
 **Exit Criteria:** All standard terminal applications receive correct key input. vim, tmux, htop, and other apps work with correct modifier handling. Kitty protocol apps (e.g., kitty-based tools) receive properly encoded events.
