@@ -122,15 +122,16 @@ impl<T: EventListener> PtyEventLoop<T> {
             // 3. Lock terminal and parse in bounded chunks.
             self.parse_pty_output(&buf[..n]);
 
-            // 4. Coalesce: yield to the render thread after large reads.
+            // 4. Adaptive coalesce: yield only when the renderer contended.
             //
             // During flood output read() returns instantly, so the reader
             // re-locks before the renderer's Wakeup event propagates
-            // through winit. A brief sleep gives the renderer time to
-            // acquire the lock, extract cells, and release — the same
-            // pattern `WezTerm` uses (3 ms coalesce timer). Interactive
-            // reads (keystrokes, short prompts) skip the delay.
-            if n >= COALESCE_THRESHOLD {
+            // through winit. `take_contended()` checks whether the
+            // renderer blocked on `lock()` since the last check. If so,
+            // a brief sleep gives it time to receive the wakeup, lock
+            // the terminal, extract cells, and release. When there's no
+            // contention the reader runs at full speed.
+            if n >= COALESCE_THRESHOLD && self.terminal.take_contended() {
                 thread::sleep(COALESCE_DELAY);
             }
         }
