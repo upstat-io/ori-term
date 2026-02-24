@@ -6,6 +6,8 @@ use crate::geometry::Logical;
 type Point = crate::geometry::Point<Logical>;
 type Rect = crate::geometry::Rect<Logical>;
 
+use crate::text::{ShapedGlyph, ShapedText};
+
 use super::{Border, DrawCommand, DrawList, RectStyle, Shadow};
 
 // --- RectStyle ---
@@ -208,4 +210,133 @@ fn multiple_commands_preserve_order() {
     assert!(matches!(dl.commands()[0], DrawCommand::Rect { .. }));
     assert!(matches!(dl.commands()[1], DrawCommand::Line { .. }));
     assert!(matches!(dl.commands()[2], DrawCommand::Rect { .. }));
+}
+
+// --- Layer stack ---
+
+#[test]
+fn layer_push_pop_balanced() {
+    let mut dl = DrawList::new();
+    dl.push_layer(Color::WHITE);
+    dl.push_rect(
+        Rect::new(0.0, 0.0, 100.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    dl.pop_layer();
+
+    assert_eq!(dl.len(), 3);
+    assert!(matches!(dl.commands()[0], DrawCommand::PushLayer { .. }));
+    assert!(matches!(dl.commands()[1], DrawCommand::Rect { .. }));
+    assert!(matches!(dl.commands()[2], DrawCommand::PopLayer));
+}
+
+#[test]
+#[should_panic(expected = "pop_layer called with empty layer stack")]
+fn pop_layer_on_empty_panics() {
+    let mut dl = DrawList::new();
+    dl.pop_layer();
+}
+
+#[test]
+fn current_layer_bg_none_when_empty() {
+    let dl = DrawList::new();
+    assert!(dl.current_layer_bg().is_none());
+}
+
+#[test]
+fn current_layer_bg_returns_pushed_color() {
+    let mut dl = DrawList::new();
+    dl.push_layer(Color::rgba(0.2, 0.3, 0.4, 1.0));
+    assert_eq!(
+        dl.current_layer_bg(),
+        Some(&Color::rgba(0.2, 0.3, 0.4, 1.0)),
+    );
+}
+
+#[test]
+fn nested_layers_inner_overrides_outer() {
+    let mut dl = DrawList::new();
+    dl.push_layer(Color::BLACK);
+    assert_eq!(dl.current_layer_bg(), Some(&Color::BLACK));
+
+    dl.push_layer(Color::WHITE);
+    assert_eq!(dl.current_layer_bg(), Some(&Color::WHITE));
+
+    dl.pop_layer();
+    assert_eq!(dl.current_layer_bg(), Some(&Color::BLACK));
+
+    dl.pop_layer();
+    assert!(dl.current_layer_bg().is_none());
+}
+
+/// Helper: build a simple shaped text for layer stack tests.
+fn test_shaped_text() -> ShapedText {
+    ShapedText::new(
+        vec![ShapedGlyph {
+            glyph_id: 42,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        }],
+        7.0,
+        14.0,
+        12.0,
+    )
+}
+
+#[test]
+fn push_text_captures_layer_bg() {
+    let mut dl = DrawList::new();
+    let bg = Color::rgba(0.2, 0.2, 0.2, 1.0);
+    dl.push_layer(bg);
+    dl.push_text(Point::new(0.0, 0.0), test_shaped_text(), Color::WHITE);
+    dl.pop_layer();
+
+    match &dl.commands()[1] {
+        DrawCommand::Text { bg_hint, .. } => {
+            assert_eq!(*bg_hint, Some(bg));
+        }
+        other => panic!("expected Text, got {other:?}"),
+    }
+}
+
+#[test]
+fn push_text_without_layer_has_no_bg() {
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(0.0, 0.0), test_shaped_text(), Color::WHITE);
+
+    match &dl.commands()[0] {
+        DrawCommand::Text { bg_hint, .. } => {
+            assert_eq!(*bg_hint, None);
+        }
+        other => panic!("expected Text, got {other:?}"),
+    }
+}
+
+#[test]
+fn push_text_captures_innermost_layer() {
+    let mut dl = DrawList::new();
+    dl.push_layer(Color::BLACK);
+    dl.push_layer(Color::WHITE);
+    dl.push_text(Point::new(0.0, 0.0), test_shaped_text(), Color::BLACK);
+    dl.pop_layer();
+    dl.pop_layer();
+
+    match &dl.commands()[2] {
+        DrawCommand::Text { bg_hint, .. } => {
+            assert_eq!(*bg_hint, Some(Color::WHITE));
+        }
+        other => panic!("expected Text, got {other:?}"),
+    }
+}
+
+#[test]
+fn clear_resets_layer_stack() {
+    let mut dl = DrawList::new();
+    dl.push_layer(Color::WHITE);
+    dl.clear();
+
+    assert!(dl.current_layer_bg().is_none());
+    assert!(dl.is_empty());
 }

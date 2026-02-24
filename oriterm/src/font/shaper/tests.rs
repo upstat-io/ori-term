@@ -806,14 +806,15 @@ fn ui_shape_sequential_advances() {
 }
 
 #[test]
-fn ui_shape_space_is_advance_only() {
+fn ui_shape_space_has_positive_advance() {
     let fc = test_collection();
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
     super::shape_text_string("A B", &faces, &fc, &mut output, &mut None);
 
     assert_eq!(output.len(), 3, "'A B' → 3 glyphs");
-    assert_eq!(output[1].glyph_id, 0, "space is advance-only (glyph_id=0)");
+    // Space is shaped by rustybuzz (proportional advance), so it gets a
+    // real glyph_id from the font, not the old advance-only sentinel (0).
     assert!(
         output[1].x_advance > 0.0,
         "space should have positive advance"

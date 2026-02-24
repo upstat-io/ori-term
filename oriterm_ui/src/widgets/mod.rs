@@ -9,6 +9,7 @@ pub mod text_measurer;
 
 pub mod button;
 pub mod checkbox;
+pub mod dialog;
 pub mod dropdown;
 pub mod flex;
 pub mod label;

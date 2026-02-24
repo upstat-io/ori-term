@@ -2,6 +2,7 @@
 //!
 //! [`DrawList`] accumulates [`DrawCommand`]s in painter's order. The GPU
 //! converter in oriterm walks the list to emit instance buffer records.
+//! A layer stack tracks background colors for subpixel text compositing.
 
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
@@ -47,6 +48,12 @@ pub enum DrawCommand {
         shaped: ShapedText,
         /// Text color (overrides the color in the original [`TextStyle`]).
         color: Color,
+        /// Background color behind this text, for subpixel compositing.
+        ///
+        /// Captured automatically from the layer stack at push time.
+        /// The GPU subpixel shader needs the actual background color to
+        /// perform per-channel `mix()` correctly.
+        bg_hint: Option<Color>,
     },
     /// Push a clip rectangle onto the clip stack.
     PushClip {
@@ -55,17 +62,33 @@ pub enum DrawCommand {
     },
     /// Pop the most recent clip rectangle from the stack.
     PopClip,
+    /// Push a background layer onto the layer stack.
+    ///
+    /// Widgets that draw a background rect push their bg color here
+    /// so child text commands automatically capture it for subpixel
+    /// compositing.
+    PushLayer {
+        /// Background color for this layer.
+        bg: Color,
+    },
+    /// Pop the most recent layer from the stack.
+    PopLayer,
 }
 
 /// An ordered list of draw commands for a single frame.
 ///
 /// Commands are drawn in push order (painter's algorithm). Clip state is
-/// tracked via `push_clip` / `pop_clip` pairs — the converter enforces
-/// balanced stacks.
+/// tracked via `push_clip` / `pop_clip` pairs. Layer state is tracked via
+/// `push_layer` / `pop_layer` pairs — `push_text` captures the current
+/// layer's background for subpixel compositing.
 pub struct DrawList {
     commands: Vec<DrawCommand>,
     /// Tracks push/pop balance for debug assertions.
     clip_stack_depth: u32,
+    /// Background color stack for subpixel text compositing.
+    bg_stack: Vec<Color>,
+    /// Tracks push/pop balance for debug assertions.
+    layer_stack_depth: u32,
 }
 
 impl DrawList {
@@ -74,6 +97,8 @@ impl DrawList {
         Self {
             commands: Vec::new(),
             clip_stack_depth: 0,
+            bg_stack: Vec::new(),
+            layer_stack_depth: 0,
         }
     }
 
@@ -93,11 +118,18 @@ impl DrawList {
     }
 
     /// Appends a pre-shaped text block.
+    ///
+    /// The background color for subpixel compositing is captured automatically
+    /// from the current layer stack. Widgets that draw text on a solid
+    /// background should wrap in [`push_layer`](Self::push_layer) /
+    /// [`pop_layer`](Self::pop_layer).
     pub fn push_text(&mut self, position: Point, shaped: ShapedText, color: Color) {
+        let bg_hint = self.current_layer_bg().copied();
         self.commands.push(DrawCommand::Text {
             position,
             shaped,
             color,
+            bg_hint,
         });
     }
 
@@ -130,6 +162,37 @@ impl DrawList {
         self.commands.push(DrawCommand::PopClip);
     }
 
+    /// Pushes a background layer. Must be paired with [`pop_layer`](Self::pop_layer).
+    ///
+    /// The `bg` color is captured by subsequent [`push_text`](Self::push_text)
+    /// calls for subpixel compositing. Layers nest — inner layers override
+    /// outer layers.
+    pub fn push_layer(&mut self, bg: Color) {
+        self.layer_stack_depth += 1;
+        self.bg_stack.push(bg);
+        self.commands.push(DrawCommand::PushLayer { bg });
+    }
+
+    /// Pops the most recent background layer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the layer stack is already empty.
+    pub fn pop_layer(&mut self) {
+        assert!(
+            self.layer_stack_depth > 0,
+            "pop_layer called with empty layer stack",
+        );
+        self.layer_stack_depth -= 1;
+        self.bg_stack.pop();
+        self.commands.push(DrawCommand::PopLayer);
+    }
+
+    /// Returns the current layer's background color, if any.
+    pub fn current_layer_bg(&self) -> Option<&Color> {
+        self.bg_stack.last()
+    }
+
     /// Returns the commands in draw order.
     pub fn commands(&self) -> &[DrawCommand] {
         &self.commands
@@ -145,10 +208,12 @@ impl DrawList {
         self.commands.len()
     }
 
-    /// Removes all commands and resets the clip stack, retaining allocated memory.
+    /// Removes all commands and resets all stacks, retaining allocated memory.
     pub fn clear(&mut self) {
         self.commands.clear();
         self.clip_stack_depth = 0;
+        self.bg_stack.clear();
+        self.layer_stack_depth = 0;
     }
 }
 

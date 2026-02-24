@@ -16,6 +16,7 @@ use oriterm_ui::text::ShapedText;
 use super::atlas::{AtlasEntry, AtlasKind};
 use super::instance_writer::{InstanceWriter, ScreenRect};
 use super::prepare::AtlasLookup;
+use super::srgb_f32_to_linear;
 use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subpx_offset};
 
 /// Context for converting [`DrawCommand::Text`] into glyph instances.
@@ -23,7 +24,6 @@ use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subp
 /// Bundles atlas lookup, output writers, and font metrics needed for text
 /// rendering. Pass to [`convert_draw_list`] to enable text command conversion.
 /// When `None` is passed instead, text commands are logged as deferred.
-#[allow(dead_code, reason = "wired when widgets produce DrawLists with text")]
 pub struct TextContext<'a> {
     /// Glyph atlas lookup (shared with the terminal prepare phase).
     pub atlas: &'a dyn AtlasLookup,
@@ -76,9 +76,10 @@ pub fn convert_draw_list(
                 position,
                 shaped,
                 color,
+                bg_hint,
             } => {
                 if let Some(ctx) = text_ctx.as_deref_mut() {
-                    convert_text(*position, shaped, *color, ctx, scale);
+                    convert_text(*position, shaped, *color, *bg_hint, ctx, scale);
                 } else {
                     log::trace!("DrawCommand::Text deferred — no TextContext provided");
                 }
@@ -92,6 +93,8 @@ pub fn convert_draw_list(
             DrawCommand::PopClip => {
                 log::trace!("DrawCommand::PopClip deferred — not yet implemented");
             }
+            // Layer commands are structural — bg is already baked into Text.bg_hint.
+            DrawCommand::PushLayer { .. } | DrawCommand::PopLayer => {}
         }
     }
 }
@@ -117,7 +120,7 @@ fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter, scal
         };
         writer.push_ui_rect(
             shadow_rect.scaled(scale),
-            shadow.color.to_array(),
+            color_to_linear(shadow.color),
             [0.0; 4],
             (uniform_radius(&style.corner_radius) + expand) * scale,
             0.0,
@@ -128,11 +131,11 @@ fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter, scal
     let screen = to_screen_rect(rect).scaled(scale);
     let (border_color, border_width) = style
         .border
-        .map_or(([0.0; 4], 0.0), |b| (b.color.to_array(), b.width));
+        .map_or(([0.0; 4], 0.0), |b| (color_to_linear(b.color), b.width));
 
     writer.push_ui_rect(
         screen,
-        fill.to_array(),
+        color_to_linear(fill),
         border_color,
         uniform_radius(&style.corner_radius) * scale,
         border_width * scale,
@@ -164,7 +167,7 @@ fn convert_line(
         return;
     }
 
-    let fill = color.to_array();
+    let fill = color_to_linear(color);
     let hw = width * 0.5;
 
     // Axis-aligned fast paths: single rect.
@@ -244,18 +247,41 @@ fn to_screen_rect(rect: Rect) -> ScreenRect {
 /// Position computation follows the same pattern as the terminal
 /// [`GlyphEmitter`](super::prepare::GlyphEmitter): bearing offsets place the
 /// glyph bitmap relative to the text origin, and subpixel phase is absorbed.
+/// Convert a text draw command into glyph instances.
+///
+/// The text position is in logical pixels (from widget layout). Glyph
+/// advances, offsets, bearings, and bitmap dimensions are in physical pixels
+/// (from the font collection loaded at physical DPI). We scale the position
+/// to physical at the start, then work entirely in physical pixel space —
+/// no scaling of glyph bitmap dimensions, which would cause blurriness.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "text conversion: position, shaped, color, bg_hint, text context, scale"
+)]
 fn convert_text(
     position: Point,
     shaped: &ShapedText,
     color: Color,
+    bg_hint: Option<Color>,
     ctx: &mut TextContext<'_>,
     scale: f32,
 ) {
     let fg = color_to_rgb(color);
+    let subpixel_bg = bg_hint.map(color_to_rgb);
     let alpha = color.a;
     let baseline = shaped.baseline;
 
-    let mut cursor_x = position.x;
+    // Convert logical position to physical. All subsequent values
+    // (advances, offsets, bearings, bitmap dims) are already physical.
+    //
+    // Round base_y to an integer pixel boundary. baseline and bearing_y
+    // are already integers, so rounding base_y ensures every glyph's
+    // screen rect has integer Y coordinates. Without this, fractional
+    // positions (e.g. from centering a dialog in the viewport) cause the
+    // bilinear atlas sampler to interpolate the bottom row of glyph pixels
+    // with transparent atlas padding, producing a "cut off at bottom" artifact.
+    let mut cursor_x = position.x * scale;
+    let base_y = (position.y * scale).round();
 
     for glyph in &shaped.glyphs {
         let advance = glyph.x_advance;
@@ -279,7 +305,16 @@ fn convert_text(
 
         if let Some(entry) = ctx.atlas.lookup_key(key) {
             emit_text_glyph(
-                cursor_x, position.y, baseline, glyph, entry, fg, alpha, subpx, ctx, scale,
+                cursor_x,
+                base_y,
+                baseline,
+                glyph,
+                entry,
+                fg,
+                subpixel_bg,
+                alpha,
+                subpx,
+                ctx,
             );
         }
 
@@ -288,40 +323,53 @@ fn convert_text(
 }
 
 /// Emit a single text glyph instance, routing by atlas kind.
+///
+/// All coordinates are in physical pixels — no scale factor needed. The
+/// glyph bitmap dimensions come directly from the atlas entry (rasterized
+/// at the font's physical pixel size).
 #[expect(
     clippy::too_many_arguments,
-    reason = "text glyph instance: position components, glyph data, atlas entry, color, scale"
+    reason = "text glyph instance: position components, glyph data, atlas entry, color, bg"
 )]
 fn emit_text_glyph(
     cursor_x: f32,
-    text_y: f32,
+    base_y: f32,
     baseline: f32,
     glyph: &oriterm_ui::text::ShapedGlyph,
     entry: &AtlasEntry,
     fg: oriterm_core::Rgb,
+    subpixel_bg: Option<oriterm_core::Rgb>,
     alpha: f32,
     subpx: u8,
     ctx: &mut TextContext<'_>,
-    scale: f32,
 ) {
     let absorbed = subpx_offset(subpx);
     let gx = cursor_x + glyph.x_offset - absorbed + entry.bearing_x as f32;
-    let gy = text_y + baseline - entry.bearing_y as f32 - glyph.y_offset;
+    let gy = base_y + baseline - entry.bearing_y as f32 - glyph.y_offset;
     let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
+    // All values are physical pixels — no scaling needed.
     let rect = ScreenRect {
         x: gx,
         y: gy,
         w: entry.width as f32,
         h: entry.height as f32,
-    }
-    .scaled(scale);
-
-    let writer = match entry.kind {
-        AtlasKind::Mono => &mut ctx.mono_writer,
-        AtlasKind::Subpixel => &mut ctx.subpixel_writer,
-        AtlasKind::Color => &mut ctx.color_writer,
     };
-    writer.push_glyph(rect, uv, fg, alpha, entry.page);
+
+    match entry.kind {
+        AtlasKind::Subpixel => {
+            if let Some(bg) = subpixel_bg {
+                // Known background — per-channel compositing in the shader.
+                ctx.subpixel_writer
+                    .push_glyph_with_bg(rect, uv, fg, bg, alpha, entry.page);
+            } else {
+                // No background hint — fall back to alpha blending.
+                ctx.subpixel_writer
+                    .push_glyph(rect, uv, fg, alpha, entry.page);
+            }
+        }
+        AtlasKind::Mono => ctx.mono_writer.push_glyph(rect, uv, fg, alpha, entry.page),
+        AtlasKind::Color => ctx.color_writer.push_glyph(rect, uv, fg, alpha, entry.page),
+    }
 }
 
 /// Convert an [`oriterm_ui::color::Color`] (f32 RGBA) to [`oriterm_core::Rgb`] (u8 RGB).
@@ -331,6 +379,20 @@ fn color_to_rgb(c: Color) -> oriterm_core::Rgb {
         g: (c.g * 255.0).round() as u8,
         b: (c.b * 255.0).round() as u8,
     }
+}
+
+/// Convert an sRGB [`Color`] to a linear-light `[f32; 4]` for the GPU.
+///
+/// The `*Srgb` render target applies hardware sRGB encoding on output, so
+/// all colors passed to shaders must be in linear space. UI `Color` values
+/// are stored as sRGB; this decodes each RGB channel while preserving alpha.
+fn color_to_linear(c: Color) -> [f32; 4] {
+    [
+        srgb_f32_to_linear(c.r),
+        srgb_f32_to_linear(c.g),
+        srgb_f32_to_linear(c.b),
+        c.a,
+    ]
 }
 
 /// Pick a uniform radius from the per-corner array.

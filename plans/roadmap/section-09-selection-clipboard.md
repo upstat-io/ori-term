@@ -22,7 +22,7 @@ sections:
     status: in-progress
   - id: "9.6"
     title: Paste Operations
-    status: in-progress
+    status: complete
   - id: "9.7"
     title: Selection Rendering
     status: in-progress
@@ -343,8 +343,8 @@ Windows Terminal-style paste with character filtering, line ending normalization
   - [x] Strip ESC (`\x1b`) characters from pasted content within brackets
 - [x] **Multi-line paste warning** (configurable):
   - [x] Detect newlines in pasted content
-  - [ ] Optionally warn user before sending multi-line paste to shell
-  - [ ] Configurable: always warn, never warn, warn if > N lines
+  - [x] Optionally warn user before sending multi-line paste to shell
+  - [x] Configurable: always warn, never warn, warn if > N lines
 - [x] **File drag-and-drop paste**:
   - [x] Handle `WindowEvent::DroppedFile` events
   - [x] Extract file path(s)

@@ -28,6 +28,10 @@ impl GpuRenderer {
     /// ASCII glyphs, and rebuilds bind groups for the new texture state.
     pub fn set_font_size(&mut self, size_pt: f32, dpi: f32, gpu: &GpuState) {
         self.font_collection.set_size(size_pt, dpi);
+        // Resize UI font at the same physical DPI so overlay text matches.
+        if let Some(ui_fc) = &mut self.ui_font_collection {
+            ui_fc.set_size(11.0, dpi);
+        }
         self.clear_and_recache(gpu);
     }
 
@@ -84,6 +88,11 @@ impl GpuRenderer {
     ) {
         let hinting_changed = self.font_collection.set_hinting(mode);
         let format_changed = self.font_collection.set_format(format);
+        // Keep UI font in sync with the terminal font's rendering settings.
+        if let Some(ui_fc) = &mut self.ui_font_collection {
+            ui_fc.set_hinting(mode);
+            ui_fc.set_format(format);
+        }
         if hinting_changed || format_changed {
             self.clear_and_recache(gpu);
         }

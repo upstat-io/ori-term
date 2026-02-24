@@ -29,6 +29,14 @@ pub(crate) use transparency::apply_transparency;
 /// power curve is applied.
 pub(crate) fn srgb_to_linear(srgb_byte: u8) -> f32 {
     let s = f32::from(srgb_byte) / 255.0;
+    srgb_f32_to_linear(s)
+}
+
+/// Decode an sRGB `f32` (0.0–1.0) to linear-light `f32` (0.0–1.0).
+///
+/// Same transfer function as [`srgb_to_linear`] but for float inputs
+/// (e.g. UI Color components stored as sRGB f32).
+pub(crate) fn srgb_f32_to_linear(s: f32) -> f32 {
     if s <= 0.04045 {
         s / 12.92
     } else {

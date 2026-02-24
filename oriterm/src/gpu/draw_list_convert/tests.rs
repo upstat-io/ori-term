@@ -1271,3 +1271,103 @@ fn scale_factor_one_is_identity() {
     assert_eq!(read_f32(rec, 8), 100.0);
     assert_eq!(read_f32(rec, 12), 50.0);
 }
+
+// --- Layer commands ---
+
+#[test]
+fn layer_commands_are_noop_in_converter() {
+    let mut dl = DrawList::new();
+    dl.push_layer(Color::WHITE);
+    dl.push_rect(
+        Rect::new(0.0, 0.0, 50.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    dl.pop_layer();
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, 1.0);
+
+    // Only the rect should produce an instance; layer commands are no-ops.
+    assert_eq!(writer.len(), 1);
+}
+
+#[test]
+fn text_with_layer_bg_hint_routes_subpixel_with_bg() {
+    // Create a subpixel atlas entry to verify bg routing.
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: TEST_SIZE_Q6,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Ui,
+    };
+    map.insert(
+        key,
+        AtlasEntry {
+            kind: AtlasKind::Subpixel,
+            ..text_entry(42)
+        },
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    // Use layer stack so push_text captures the bg.
+    let mut dl = DrawList::new();
+    dl.push_layer(Color::rgba(0.2, 0.2, 0.2, 1.0));
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    dl.pop_layer();
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+
+    // Subpixel glyph should route to subpixel writer with bg_hint.
+    assert!(mono.is_empty());
+    assert_eq!(subpx.len(), 1, "should route to subpixel writer");
+    assert!(color_w.is_empty());
+}
+
+#[test]
+fn text_without_layer_has_no_bg_hint() {
+    // Verify text drawn without a layer has bg_hint=None.
+    let mut dl = DrawList::new();
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+
+    match &dl.commands()[0] {
+        oriterm_ui::draw::DrawCommand::Text { bg_hint, .. } => {
+            assert!(
+                bg_hint.is_none(),
+                "text outside layer should have no bg_hint"
+            );
+        }
+        _ => panic!("expected Text command"),
+    }
+}

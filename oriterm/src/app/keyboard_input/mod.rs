@@ -6,6 +6,10 @@
 use winit::event::ElementState;
 use winit::keyboard::SmolStr;
 
+use oriterm_ui::input::{Key, Modifiers};
+use oriterm_ui::overlay::OverlayEventResult;
+use oriterm_ui::widgets::WidgetAction;
+
 use super::{App, mark_mode};
 use crate::key_encoding::{self, KeyEventType, KeyInput};
 use crate::keybindings::{self, Action};
@@ -80,9 +84,11 @@ impl ImeState {
 }
 
 impl App {
-    /// Dispatch a keyboard event through mark mode, keybindings, or PTY encoding.
+    /// Dispatch a keyboard event through overlays, mark mode, keybindings,
+    /// or PTY encoding.
     ///
     /// Priority order:
+    /// 0. Modal overlay (if active, consumes ALL key events).
     /// 1. Mark mode (if active, consumes all events).
     /// 2. Keybinding table lookup.
     /// 3. Normal key encoding to PTY.
@@ -91,6 +97,34 @@ impl App {
         // The IME subsystem sends Ime::Commit when done; raw KeyboardInput
         // events during composition are intermediate and must not reach the PTY.
         if self.ime.should_suppress_key() {
+            return;
+        }
+
+        // Modal overlay: intercept keyboard events before anything else.
+        if !self.overlays.is_empty() && event.state == ElementState::Pressed {
+            if let Some(key) = winit_key_to_ui_key(&event.logical_key) {
+                let ui_event = oriterm_ui::input::KeyEvent {
+                    key,
+                    modifiers: Modifiers::NONE,
+                };
+                let scale = self
+                    .window
+                    .as_ref()
+                    .map_or(1.0, |w| w.scale_factor().factor() as f32);
+                let measurer = self
+                    .renderer
+                    .as_ref()
+                    .map(|r| crate::font::UiFontMeasurer::new(r.active_ui_collection(), scale));
+                let measurer: &dyn oriterm_ui::widgets::TextMeasurer = match &measurer {
+                    Some(m) => m,
+                    None => return,
+                };
+                let theme = oriterm_ui::theme::UiTheme::dark();
+                let result = self
+                    .overlays
+                    .process_key_event(ui_event, measurer, &theme, None);
+                self.handle_overlay_result(result);
+            }
             return;
         }
 
@@ -335,6 +369,46 @@ impl App {
             self.cursor_blink.reset();
             self.dirty = true;
         }
+    }
+
+    /// Process the result of routing an event through the overlay manager.
+    pub(super) fn handle_overlay_result(&mut self, result: OverlayEventResult) {
+        match result {
+            OverlayEventResult::Delivered { response, .. } => match response.action {
+                Some(WidgetAction::Clicked(_)) => self.confirm_paste(),
+                Some(WidgetAction::DismissOverlay(_)) => self.cancel_paste(),
+                _ => {
+                    if response.response.is_handled() {
+                        self.dirty = true;
+                    }
+                }
+            },
+            OverlayEventResult::Dismissed(_) => self.cancel_paste(),
+            OverlayEventResult::Blocked | OverlayEventResult::PassThrough => {}
+        }
+    }
+}
+
+/// Convert a winit logical key to an `oriterm_ui` [`Key`].
+///
+/// Returns `None` for keys that the UI framework doesn't handle.
+fn winit_key_to_ui_key(key: &winit::keyboard::Key) -> Option<Key> {
+    use winit::keyboard::{Key as WKey, NamedKey};
+    match key {
+        WKey::Named(NamedKey::Enter) => Some(Key::Enter),
+        WKey::Named(NamedKey::Space) => Some(Key::Space),
+        WKey::Named(NamedKey::Escape) => Some(Key::Escape),
+        WKey::Named(NamedKey::Tab) => Some(Key::Tab),
+        WKey::Named(NamedKey::Backspace) => Some(Key::Backspace),
+        WKey::Named(NamedKey::Delete) => Some(Key::Delete),
+        WKey::Named(NamedKey::Home) => Some(Key::Home),
+        WKey::Named(NamedKey::End) => Some(Key::End),
+        WKey::Named(NamedKey::ArrowUp) => Some(Key::ArrowUp),
+        WKey::Named(NamedKey::ArrowDown) => Some(Key::ArrowDown),
+        WKey::Named(NamedKey::ArrowLeft) => Some(Key::ArrowLeft),
+        WKey::Named(NamedKey::ArrowRight) => Some(Key::ArrowRight),
+        WKey::Character(s) => s.chars().next().map(Key::Character),
+        _ => None,
     }
 }
 

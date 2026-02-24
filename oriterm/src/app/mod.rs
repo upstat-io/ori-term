@@ -12,6 +12,7 @@ mod cursor_blink;
 mod init;
 mod keyboard_input;
 mod mark_mode;
+mod mouse_input;
 mod mouse_report;
 mod mouse_selection;
 mod redraw;
@@ -19,7 +20,7 @@ mod redraw;
 use std::time::Duration;
 
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
@@ -39,6 +40,7 @@ use crate::tab::Tab;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
+use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 /// Default DPI for font rasterization.
@@ -103,6 +105,12 @@ pub(crate) struct App {
 
     // IME composition state machine.
     ime: ImeState,
+
+    // Overlay manager for modal dialogs and popups.
+    overlays: OverlayManager,
+
+    // Text pending paste confirmation (stored while dialog is shown).
+    pending_paste: Option<String>,
 }
 
 impl App {
@@ -134,6 +142,8 @@ impl App {
             bindings,
             _config_monitor: monitor,
             ime: ImeState::new(),
+            overlays: OverlayManager::new(oriterm_ui::geometry::Rect::default()),
+            pending_paste: None,
         }
     }
 
@@ -187,111 +197,6 @@ impl App {
     /// Returns `None` if no tab is present.
     fn terminal_mode(&self) -> Option<TermMode> {
         self.tab.as_ref().map(|t| t.terminal().lock().mode())
-    }
-
-    /// Handle mouse press for selection.
-    fn handle_mouse_press(&mut self) {
-        let pos = self.mouse.cursor_pos();
-        if let (Some(tab), Some(grid), Some(renderer)) =
-            (&mut self.tab, &self.terminal_grid, &self.renderer)
-        {
-            let ctx = mouse_selection::GridCtx {
-                widget: grid,
-                cell: renderer.cell_metrics(),
-                word_delimiters: &self.config.behavior.word_delimiters,
-            };
-            if mouse_selection::handle_press(&mut self.mouse, tab, &ctx, pos, self.modifiers) {
-                self.dirty = true;
-            }
-        }
-    }
-
-    /// Handle mouse drag for selection.
-    fn handle_mouse_drag(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
-        if let (Some(tab), Some(grid), Some(renderer)) =
-            (&mut self.tab, &self.terminal_grid, &self.renderer)
-        {
-            let ctx = mouse_selection::GridCtx {
-                widget: grid,
-                cell: renderer.cell_metrics(),
-                word_delimiters: &self.config.behavior.word_delimiters,
-            };
-            if mouse_selection::handle_drag(&mut self.mouse, tab, &ctx, position) {
-                self.dirty = true;
-            }
-        }
-    }
-
-    /// Handle a mouse button event (left, middle, right).
-    fn handle_mouse_input(&mut self, button: MouseButton, state: ElementState) {
-        // Track button state unconditionally — mouse reporting needs this
-        // for drag/motion events even when the press itself was reported.
-        let pressed = state == ElementState::Pressed;
-        self.mouse.set_button_down(button, pressed);
-
-        // Read terminal mode once (single lock acquisition) and determine
-        // whether mouse events should be reported to the PTY.
-        let report_mode = self
-            .terminal_mode()
-            .filter(|&m| self.should_report_mouse(m));
-
-        match button {
-            MouseButton::Left => {
-                if let Some(mode) = report_mode {
-                    let kind = match state {
-                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
-                        ElementState::Released => mouse_report::MouseEventKind::Release,
-                    };
-                    self.report_mouse_button(mouse_report::MouseButton::Left, kind, mode);
-                } else {
-                    match state {
-                        ElementState::Pressed => self.handle_mouse_press(),
-                        ElementState::Released => {
-                            let had_drag = self.mouse.is_dragging();
-                            mouse_selection::handle_release(&mut self.mouse);
-                            // CopyOnSelect: auto-copy to primary selection after drag.
-                            if had_drag && self.config.behavior.copy_on_select {
-                                self.copy_selection_to_primary();
-                            }
-                        }
-                    }
-                }
-            }
-            MouseButton::Middle => {
-                if let Some(mode) = report_mode {
-                    let kind = match state {
-                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
-                        ElementState::Released => mouse_report::MouseEventKind::Release,
-                    };
-                    self.report_mouse_button(mouse_report::MouseButton::Middle, kind, mode);
-                } else if state == ElementState::Pressed {
-                    self.paste_from_primary();
-                    self.dirty = true;
-                } else {
-                    // Release without reporting: no action needed.
-                }
-            }
-            MouseButton::Right => {
-                if let Some(mode) = report_mode {
-                    let kind = match state {
-                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
-                        ElementState::Released => mouse_report::MouseEventKind::Release,
-                    };
-                    self.report_mouse_button(mouse_report::MouseButton::Right, kind, mode);
-                } else if state == ElementState::Pressed {
-                    let has_sel = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
-                    if has_sel {
-                        self.copy_selection();
-                    } else {
-                        self.paste_from_clipboard();
-                    }
-                    self.dirty = true;
-                } else {
-                    // Release without reporting: no action needed.
-                }
-            }
-            _ => {}
-        }
     }
 
     /// Dispatch a terminal event from the PTY reader thread.
@@ -429,6 +334,10 @@ impl ApplicationHandler<TermEvent> for App {
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
+                // Modal overlay: intercept mouse events.
+                if self.try_overlay_mouse(button, state) {
+                    return;
+                }
                 // Check chrome first — if a control button was clicked,
                 // don't propagate to selection/PTY reporting.
                 if self.try_chrome_mouse(button, state, event_loop) {

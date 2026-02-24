@@ -13,7 +13,11 @@ use oriterm_core::event::ClipboardType;
 use oriterm_core::paste;
 use oriterm_core::selection::{extract_html_with_text, extract_text};
 
+use oriterm_ui::overlay::Placement;
+use oriterm_ui::widgets::dialog::{DialogButton, DialogButtons, DialogWidget};
+
 use super::App;
+use crate::config::PasteWarning;
 
 impl App {
     /// Extract text from the active tab's selection.
@@ -107,8 +111,9 @@ impl App {
 
     /// Paste text from the system clipboard into the active terminal.
     ///
-    /// Applies character filtering (if enabled), line ending normalization,
-    /// ESC stripping (for bracketed paste), and bracketed paste wrapping.
+    /// Checks the `warn_on_paste` config setting and, if a warning is needed,
+    /// shows a confirmation dialog instead of pasting immediately. Bracketed
+    /// paste mode bypasses the warning (the application handles newlines safely).
     pub(super) fn paste_from_clipboard(&mut self) {
         let text = self.clipboard.load(ClipboardType::Clipboard);
         if text.is_empty() {
@@ -116,12 +121,29 @@ impl App {
         }
 
         let newlines = paste::count_newlines(&text);
-        if newlines > 0 {
-            log::debug!("pasting multi-line text ({} lines)", newlines + 1);
-            // TODO(section-13): wire multi-line paste warning config.
-        }
+        let needs_warning = match self.config.behavior.warn_on_paste {
+            PasteWarning::Never => false,
+            PasteWarning::Always => newlines > 0,
+            PasteWarning::Threshold(n) => newlines + 1 >= n as usize,
+        };
 
-        self.write_paste_to_pty(&text);
+        // Bracketed paste = application handles newlines safely (Ghostty pattern).
+        let bracketed = self.tab.as_ref().is_some_and(|tab| {
+            tab.terminal()
+                .lock()
+                .mode()
+                .contains(TermMode::BRACKETED_PASTE)
+        });
+
+        if needs_warning && !bracketed {
+            log::debug!(
+                "paste warning: {} lines, showing confirmation dialog",
+                newlines + 1
+            );
+            self.show_paste_confirmation(text, newlines + 1);
+        } else {
+            self.write_paste_to_pty(&text);
+        }
     }
 
     /// Paste text from the primary selection (X11/Wayland middle-click paste).
@@ -164,8 +186,7 @@ impl App {
             .lock()
             .mode()
             .contains(TermMode::BRACKETED_PASTE);
-        // TODO(section-13): wire FilterOnPaste config setting. Default: enabled.
-        let filter = true;
+        let filter = self.config.behavior.filter_on_paste;
 
         let bytes = paste::prepare_paste(text, bracketed, filter);
         if bytes.is_empty() {
@@ -179,6 +200,39 @@ impl App {
             bytes.len(),
             bracketed
         );
+    }
+
+    /// Show a confirmation dialog before pasting multi-line text.
+    fn show_paste_confirmation(&mut self, text: String, line_count: usize) {
+        let dialog = DialogWidget::new("Confirm Paste")
+            .with_message(format!("Paste {line_count} lines into terminal?"))
+            .with_content(&text)
+            .with_buttons(DialogButtons::OkCancel)
+            .with_ok_label("Paste")
+            .with_cancel_label("Cancel")
+            .with_default_button(DialogButton::Ok);
+
+        self.pending_paste = Some(text);
+        let viewport = self.overlays.viewport();
+        self.overlays
+            .push_modal(Box::new(dialog), viewport, Placement::Center);
+        self.dirty = true;
+    }
+
+    /// Confirm a pending paste: write the stored text to the PTY.
+    pub(super) fn confirm_paste(&mut self) {
+        if let Some(text) = self.pending_paste.take() {
+            self.write_paste_to_pty(&text);
+        }
+        self.overlays.clear_all();
+        self.dirty = true;
+    }
+
+    /// Cancel a pending paste: discard the stored text and dismiss the dialog.
+    pub(super) fn cancel_paste(&mut self) {
+        self.pending_paste = None;
+        self.overlays.clear_all();
+        self.dirty = true;
     }
 }
 

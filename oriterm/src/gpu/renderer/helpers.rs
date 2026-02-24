@@ -84,6 +84,105 @@ pub(super) fn shape_frame(
     }
 }
 
+/// Ensure UI text glyphs from a [`DrawList`] are cached in the appropriate atlas.
+///
+/// Iterates [`DrawCommand::Text`] entries, builds [`RasterKey`]s with
+/// [`FontRealm::Ui`], and rasterizes missing glyphs into mono, subpixel, or
+/// color atlas. Same routing logic as [`ensure_shaped_glyphs_cached`] but
+/// reads glyphs from UI-shaped text rather than the terminal grid.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "three atlases + empty set + fonts + queue + font metrics for glyph routing"
+)]
+pub(super) fn ensure_ui_text_glyphs_cached(
+    draw_list: &oriterm_ui::draw::DrawList,
+    mono_atlas: &mut GlyphAtlas,
+    subpixel_atlas: &mut GlyphAtlas,
+    color_atlas: &mut GlyphAtlas,
+    empty_keys: &mut HashSet<RasterKey>,
+    fonts: &mut FontCollection,
+    queue: &Queue,
+    size_q6: u32,
+    hinted: bool,
+    scale: f32,
+) {
+    let mut text_cmds = 0u32;
+    let mut total_glyphs = 0u32;
+    let mut cached = 0u32;
+    let mut rasterized_ok = 0u32;
+    let mut rasterized_fail = 0u32;
+
+    for cmd in draw_list.commands() {
+        let oriterm_ui::draw::DrawCommand::Text {
+            position, shaped, ..
+        } = cmd
+        else {
+            continue;
+        };
+        text_cmds += 1;
+
+        // Replicate the cursor walk from convert_text so subpixel bins match.
+        // convert_text scales position to physical pixels first, then advances
+        // by physical-pixel glyph advances — we must do the same here.
+        let mut cursor_x = position.x * scale;
+
+        for glyph in &shaped.glyphs {
+            let advance = glyph.x_advance;
+            if glyph.glyph_id == 0 {
+                cursor_x += advance;
+                continue;
+            }
+            total_glyphs += 1;
+            let key = RasterKey {
+                glyph_id: glyph.glyph_id,
+                face_idx: crate::font::FaceIdx(glyph.face_index),
+                size_q6,
+                synthetic: crate::font::SyntheticFlags::NONE,
+                hinted,
+                subpx_x: subpx_bin(cursor_x + glyph.x_offset),
+                font_realm: FontRealm::Ui,
+            };
+            if mono_atlas.lookup_touch(key).is_some()
+                || subpixel_atlas.lookup_touch(key).is_some()
+                || color_atlas.lookup_touch(key).is_some()
+            {
+                cached += 1;
+                cursor_x += advance;
+                continue;
+            }
+            if empty_keys.contains(&key) {
+                cursor_x += advance;
+                continue;
+            }
+            if let Some(rasterized) = fonts.rasterize(key) {
+                rasterized_ok += 1;
+                match rasterized.format {
+                    GlyphFormat::Color => {
+                        color_atlas.insert(key, rasterized, queue);
+                    }
+                    GlyphFormat::SubpixelRgb | GlyphFormat::SubpixelBgr => {
+                        subpixel_atlas.insert(key, rasterized, queue);
+                    }
+                    GlyphFormat::Alpha => {
+                        mono_atlas.insert(key, rasterized, queue);
+                    }
+                }
+            } else {
+                rasterized_fail += 1;
+                empty_keys.insert(key);
+            }
+            cursor_x += advance;
+        }
+    }
+
+    if rasterized_ok > 0 || rasterized_fail > 0 {
+        log::trace!(
+            "UI text cache: cmds={text_cmds} glyphs={total_glyphs} \
+             cached={cached} rasterized={rasterized_ok} failed={rasterized_fail}",
+        );
+    }
+}
+
 /// Ensure all shaped glyphs are cached in the appropriate atlas.
 ///
 /// Routes glyphs by format:

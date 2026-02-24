@@ -20,7 +20,9 @@ use bitflags::bitflags;
 pub(crate) use collection::parse_features;
 pub(crate) use collection::parse_hex_range;
 pub use collection::{FontCollection, FontSet, RasterizedGlyph, size_key};
-pub use shaper::{ShapedGlyph, ShapingRun, build_col_glyph_map, prepare_line, shape_prepared_runs};
+pub use shaper::{
+    ShapedGlyph, ShapingRun, UiFontMeasurer, build_col_glyph_map, prepare_line, shape_prepared_runs,
+};
 
 /// Cell dimensions in pixels, derived from the font metrics.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -321,10 +323,6 @@ pub enum FontRealm {
     #[default]
     Terminal = 0,
     /// UI overlay text (tab bar, labels, dialogs).
-    #[allow(
-        dead_code,
-        reason = "used by draw_list_convert for UI text in Section 07.2"
-    )]
     Ui = 1,
 }
 
@@ -372,10 +370,7 @@ impl RasterKey {
 
     /// Return a copy with the given font realm.
     #[must_use]
-    #[allow(
-        dead_code,
-        reason = "used by draw_list_convert for UI text in Section 07.2"
-    )]
+    #[allow(dead_code, reason = "convenience builder for future callers")]
     pub fn with_realm(mut self, realm: FontRealm) -> Self {
         self.font_realm = realm;
         self

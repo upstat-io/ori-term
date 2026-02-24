@@ -198,7 +198,7 @@ impl Widget for ButtonWidget {
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
         let focused = ctx.focused_widget == Some(self.id);
 
-        // Focus ring (drawn behind the button).
+        // Focus ring (drawn outside the layer).
         if focused {
             let ring_rect = ctx.bounds.inset(Insets::all(-2.0));
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
@@ -207,8 +207,12 @@ impl Widget for ButtonWidget {
             ctx.draw_list.push_rect(ring_rect, ring_style);
         }
 
+        // Layer captures the button bg for subpixel text compositing.
+        let bg = self.current_bg(ctx.now);
+        ctx.draw_list.push_layer(bg);
+
         // Button background with animated hover color.
-        let bg_style = RectStyle::filled(self.current_bg(ctx.now))
+        let bg_style = RectStyle::filled(bg)
             .with_border(self.style.border_width, self.style.border_color)
             .with_radius(self.style.corner_radius);
         ctx.draw_list.push_rect(ctx.bounds, bg_style);
@@ -223,6 +227,8 @@ impl Widget for ButtonWidget {
             ctx.draw_list
                 .push_text(Point::new(x, y), shaped, self.current_fg());
         }
+
+        ctx.draw_list.pop_layer();
 
         // Signal that we need continued redraws while animating.
         if self.hover_progress.is_animating(ctx.now) {
