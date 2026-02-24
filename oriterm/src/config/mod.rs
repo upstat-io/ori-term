@@ -3,8 +3,10 @@
 //! All structs use `#[serde(default)]` so partial TOML files
 //! fill in defaults for missing fields.
 
+mod bell;
 mod io;
 pub(crate) mod monitor;
+mod paste_warning;
 
 pub(crate) use io::config_path;
 
@@ -381,6 +383,8 @@ impl WindowConfig {
     }
 }
 
+pub use paste_warning::PasteWarning;
+
 /// User interaction behavior configuration.
 #[allow(
     clippy::struct_excessive_bools,
@@ -407,6 +411,12 @@ pub struct BehaviorConfig {
     /// characters that are NOT in this set. For example, if `-` is not in the
     /// delimiter set, `hello-world` selects as one word.
     pub word_delimiters: String,
+    /// Filter special characters from pasted text (default: true).
+    pub filter_on_paste: bool,
+    /// Warn before pasting multi-line text.
+    ///
+    /// `"always"` (any newline), `"never"`, or a number N (warn if >= N lines).
+    pub warn_on_paste: PasteWarning,
 }
 
 impl Default for BehaviorConfig {
@@ -417,49 +427,13 @@ impl Default for BehaviorConfig {
             shell_integration: true,
             copy_formatting: false,
             word_delimiters: oriterm_core::DEFAULT_WORD_DELIMITERS.to_owned(),
+            filter_on_paste: true,
+            warn_on_paste: PasteWarning::default(),
         }
     }
 }
 
-/// Visual bell animation curve.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BellAnimation {
-    #[default]
-    EaseOut,
-    Linear,
-    None,
-}
-
-/// Visual bell configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct BellConfig {
-    /// Visual bell animation curve.
-    pub animation: BellAnimation,
-    /// Duration in milliseconds (0 = disabled).
-    pub duration_ms: u16,
-    /// Flash color as "#RRGGBB" hex (default: white).
-    pub color: Option<String>,
-}
-
-impl Default for BellConfig {
-    fn default() -> Self {
-        Self {
-            animation: BellAnimation::default(),
-            duration_ms: 150,
-            color: None,
-        }
-    }
-}
-
-impl BellConfig {
-    /// Returns true when the visual bell is enabled.
-    #[allow(dead_code, reason = "used in bell rendering (Section 24)")]
-    pub fn is_enabled(&self) -> bool {
-        self.duration_ms > 0 && self.animation != BellAnimation::None
-    }
-}
+pub use bell::BellConfig;
 
 /// TOML-serializable keybinding entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]

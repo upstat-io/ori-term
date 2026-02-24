@@ -266,9 +266,13 @@ pub(super) struct FontMetrics {
 
 /// Compute cell metrics from font bytes at the given pixel size.
 ///
-/// Cell height = `ceil(ascent + |descent|)`, cell width = `ceil(advance of 'M')`,
-/// baseline = `ceil(ascent)`. Decoration metrics (underline, strikeout) are
-/// extracted from the font's OS/2 and post tables via swash.
+/// Cell height = `ceil(ascent) + ceil(|descent|)`, cell width = `ceil(advance of 'M')`,
+/// baseline = `ceil(ascent)`. The height uses separately-ceiled ascent and
+/// descent to guarantee enough space below the baseline — `ceil(sum)` can
+/// be 1px short when the fractional parts don't carry across the sum.
+///
+/// Decoration metrics (underline, strikeout) are extracted from the font's
+/// OS/2 and post tables via swash.
 ///
 /// # Panics
 ///
@@ -277,8 +281,8 @@ pub(super) struct FontMetrics {
 pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> FontMetrics {
     let fr = FontRef::from_index(bytes, face_index as usize).expect("pre-validated font");
     let metrics = fr.metrics(&[]).scale(size_px);
-    let cell_height = (metrics.ascent + metrics.descent.abs()).ceil();
     let baseline = metrics.ascent.ceil();
+    let cell_height = baseline + metrics.descent.abs().ceil();
     let gid = fr.charmap().map('M');
     let cell_width = fr
         .glyph_metrics(&[])

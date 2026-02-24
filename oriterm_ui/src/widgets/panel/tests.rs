@@ -68,10 +68,14 @@ fn panel_draws_background_rect() {
     };
     panel.draw(&mut ctx);
 
-    // First command should be the background rect at the panel's bounds.
+    // First command is PushLayer, second is the background rect.
     let cmds = draw_list.commands();
     assert!(!cmds.is_empty(), "panel should produce draw commands");
-    match &cmds[0] {
+    assert!(matches!(
+        cmds[0],
+        crate::draw::DrawCommand::PushLayer { .. }
+    ));
+    match &cmds[1] {
         crate::draw::DrawCommand::Rect { rect, .. } => {
             assert_eq!(*rect, bounds);
         }
@@ -256,8 +260,12 @@ fn panel_with_bg() {
     };
     panel.draw(&mut ctx);
 
-    // First command is the background rect — verify its fill color.
-    match &draw_list.commands()[0] {
+    // First command is PushLayer, second is the background rect.
+    assert!(matches!(
+        draw_list.commands()[0],
+        crate::draw::DrawCommand::PushLayer { .. },
+    ));
+    match &draw_list.commands()[1] {
         crate::draw::DrawCommand::Rect { style, .. } => {
             assert_eq!(style.fill, Some(Color::WHITE));
         }
@@ -283,7 +291,8 @@ fn panel_with_corner_radius() {
     };
     panel.draw(&mut ctx);
 
-    match &draw_list.commands()[0] {
+    // First command is PushLayer, second is the background rect.
+    match &draw_list.commands()[1] {
         crate::draw::DrawCommand::Rect { style, .. } => {
             assert_eq!(style.corner_radius, [20.0; 4]);
         }
@@ -336,8 +345,8 @@ fn panel_with_shadow() {
     };
     panel.draw(&mut ctx);
 
-    // Background rect should have shadow set.
-    match &draw_list.commands()[0] {
+    // First command is PushLayer, second is the background rect.
+    match &draw_list.commands()[1] {
         crate::draw::DrawCommand::Rect { style, .. } => {
             assert!(style.shadow.is_some(), "shadow should be set on panel rect");
             let s = style.shadow.unwrap();

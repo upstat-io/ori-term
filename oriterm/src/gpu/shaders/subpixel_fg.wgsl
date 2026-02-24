@@ -82,9 +82,20 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let g = mix(bg.g, fg.g, mask.g);
     let b = mix(bg.b, fg.b, mask.b);
 
-    // Overall alpha is the maximum channel coverage.
-    let a = max(mask.r, max(mask.g, mask.b)) * fg.a;
+    // When the background color is known (bg.a > 0), compositing is
+    // already complete — output the result directly as opaque. This
+    // avoids the "squared coverage" artifact that occurs when per-channel
+    // composited values are further multiplied by a single alpha channel.
+    if bg.a > 0.001 {
+        return vec4<f32>(r, g, b, 1.0);
+    }
 
-    // Output in premultiplied alpha for correct compositing.
-    return vec4<f32>(r * a, g * a, b * a, a);
+    // Unknown background — fall back to single-alpha blending.
+    // Uses maximum channel coverage as the composite alpha (for the
+    // blend equation's dst factor). The RGB channels are premultiplied
+    // by fg.a only — NOT by the composite alpha — to avoid the
+    // "squared coverage" artifact where mask * max(mask) produces
+    // visibly thinner/darker text than the correct mask * 1.
+    let a = max(mask.r, max(mask.g, mask.b)) * fg.a;
+    return vec4<f32>(r * fg.a, g * fg.a, b * fg.a, a);
 }

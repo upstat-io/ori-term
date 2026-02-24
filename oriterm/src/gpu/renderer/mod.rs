@@ -121,7 +121,6 @@ pub struct GpuRenderer {
     /// UI font collection (proportional sans-serif) for tab bar, labels, and overlays.
     ///
     /// `None` if no UI font was found — falls back to terminal font.
-    #[allow(dead_code, reason = "wired when widgets produce DrawLists with text")]
     ui_font_collection: Option<FontCollection>,
 
     // Per-frame reusable scratch buffers.
@@ -135,6 +134,9 @@ pub struct GpuRenderer {
     color_fg_buffer: Option<Buffer>,
     cursor_buffer: Option<Buffer>,
     ui_rect_buffer: Option<Buffer>,
+    ui_fg_buffer: Option<Buffer>,
+    ui_subpixel_fg_buffer: Option<Buffer>,
+    ui_color_fg_buffer: Option<Buffer>,
 }
 
 impl GpuRenderer {
@@ -217,6 +219,9 @@ impl GpuRenderer {
             color_fg_buffer: None,
             cursor_buffer: None,
             ui_rect_buffer: None,
+            ui_fg_buffer: None,
+            ui_subpixel_fg_buffer: None,
+            ui_color_fg_buffer: None,
         }
     }
 
@@ -230,6 +235,13 @@ impl GpuRenderer {
     /// Primary font family name.
     pub fn family_name(&self) -> &str {
         self.font_collection.family_name()
+    }
+
+    /// Active UI font collection (proportional sans-serif, or terminal font fallback).
+    pub fn active_ui_collection(&self) -> &FontCollection {
+        self.ui_font_collection
+            .as_ref()
+            .unwrap_or(&self.font_collection)
     }
 
     /// Glyph atlas for cache statistics.
@@ -330,6 +342,68 @@ impl GpuRenderer {
         );
     }
 
+    /// Append UI draw commands **with text** from a [`DrawList`].
+    ///
+    /// Unlike [`append_ui_draw_list`](Self::append_ui_draw_list) which defers
+    /// text commands, this method:
+    /// 1. Rasterizes uncached UI text glyphs into atlases.
+    /// 2. Converts text commands with a real [`TextContext`] so glyph
+    ///    instances are emitted into the mono/subpixel/color writers.
+    ///
+    /// Use this for overlays containing visible text (dialog title, message,
+    /// button labels). Call after [`prepare`](Self::prepare) and before
+    /// [`render_frame`](Self::render_frame).
+    pub fn append_ui_draw_list_with_text(
+        &mut self,
+        draw_list: &oriterm_ui::draw::DrawList,
+        scale: f32,
+        gpu: &GpuState,
+    ) {
+        let ui_fc = self
+            .ui_font_collection
+            .as_mut()
+            .unwrap_or(&mut self.font_collection);
+        let size_q6 = crate::font::size_key(ui_fc.size_px());
+        let hinted = ui_fc.hinting_mode().hint_flag();
+
+        helpers::ensure_ui_text_glyphs_cached(
+            draw_list,
+            &mut self.atlas,
+            &mut self.subpixel_atlas,
+            &mut self.color_atlas,
+            &mut self.empty_keys,
+            ui_fc,
+            &gpu.queue,
+            size_q6,
+            hinted,
+            scale,
+        );
+
+        let bridge = CombinedAtlasLookup {
+            mono: &self.atlas,
+            subpixel: &self.subpixel_atlas,
+            color: &self.color_atlas,
+        };
+
+        // Use UI-specific glyph writers so text renders AFTER UI rect
+        // backgrounds (draws 7–9) instead of behind them (draws 2–4).
+        // Per-text bg_hint is baked into each Text command by the layer stack.
+        let mut text_ctx = super::draw_list_convert::TextContext {
+            atlas: &bridge,
+            mono_writer: &mut self.prepared.ui_glyphs,
+            subpixel_writer: &mut self.prepared.ui_subpixel_glyphs,
+            color_writer: &mut self.prepared.ui_color_glyphs,
+            size_q6,
+            hinted,
+        };
+        super::draw_list_convert::convert_draw_list(
+            draw_list,
+            &mut self.prepared.ui_rects,
+            Some(&mut text_ctx),
+            scale,
+        );
+    }
+
     // ── Render phase ──
 
     /// Upload the stored prepared frame to the GPU and execute draw calls.
@@ -426,9 +500,30 @@ impl GpuRenderer {
             self.prepared.ui_rects.as_bytes(),
             "ui_rect_instance_buffer",
         );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.ui_fg_buffer,
+            self.prepared.ui_glyphs.as_bytes(),
+            "ui_fg_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.ui_subpixel_fg_buffer,
+            self.prepared.ui_subpixel_glyphs.as_bytes(),
+            "ui_subpixel_fg_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.ui_color_fg_buffer,
+            self.prepared.ui_color_glyphs.as_bytes(),
+            "ui_color_fg_instance_buffer",
+        );
     }
 
-    /// Record the six draw passes into the render pass.
+    /// Record the nine draw passes into the render pass.
     fn record_draw_passes<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         let uniform_bg = self.uniform_buffer.bind_group();
         let mono_atlas = Some(self.atlas_bind_group.bind_group());
@@ -489,6 +584,33 @@ impl GpuRenderer {
             self.ui_rect_buffer.as_ref(),
             self.prepared.ui_rects.len() as u32,
         );
+        // Draw 7: UI monochrome glyphs (overlay/dialog text, after UI rects).
+        record_draw(
+            pass,
+            &self.fg_pipeline,
+            uniform_bg,
+            mono_atlas,
+            self.ui_fg_buffer.as_ref(),
+            self.prepared.ui_glyphs.len() as u32,
+        );
+        // Draw 8: UI subpixel glyphs (overlay/dialog text, after UI rects).
+        record_draw(
+            pass,
+            &self.subpixel_fg_pipeline,
+            uniform_bg,
+            subpixel_atlas,
+            self.ui_subpixel_fg_buffer.as_ref(),
+            self.prepared.ui_subpixel_glyphs.len() as u32,
+        );
+        // Draw 9: UI color glyphs (overlay/dialog text, after UI rects).
+        record_draw(
+            pass,
+            &self.color_fg_pipeline,
+            uniform_bg,
+            color_atlas,
+            self.ui_color_fg_buffer.as_ref(),
+            self.prepared.ui_color_glyphs.len() as u32,
+        );
     }
 
     /// Acquire a surface texture, render the stored prepared frame, and present.
@@ -529,10 +651,12 @@ fn load_ui_font_collection(terminal_fc: &FontCollection) -> Option<FontCollectio
 
     let discovery = crate::font::discovery::discover_ui_fonts();
     let font_set = FontSet::from_discovery(&discovery).ok()?;
+    // Use the terminal font's physical DPI so UI glyphs are rasterized
+    // at the correct pixel size for the current display scale factor.
     let fc = FontCollection::new(
         font_set,
         11.0,
-        96.0,
+        terminal_fc.dpi(),
         terminal_fc.format(),
         400,
         terminal_fc.hinting_mode(),

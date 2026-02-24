@@ -52,6 +52,10 @@ impl Widget for TextInputWidget {
         } else {
             s.border_color
         };
+
+        // Layer captures the input bg for subpixel text compositing.
+        ctx.draw_list.push_layer(bg);
+
         let bg_style = RectStyle::filled(bg)
             .with_border(s.border_width, border_color)
             .with_radius(s.corner_radius);
@@ -107,6 +111,7 @@ impl Widget for TextInputWidget {
         }
 
         ctx.draw_list.pop_clip();
+        ctx.draw_list.pop_layer();
     }
 
     #[expect(clippy::string_slice, reason = "cursor always on char boundary")]

@@ -251,7 +251,7 @@ impl Widget for DropdownWidget {
         let bounds = ctx.bounds;
         let s = &self.style;
 
-        // Focus ring.
+        // Focus ring (outside the layer).
         if focused {
             let ring = bounds.inset(Insets::all(-2.0));
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
@@ -260,8 +260,12 @@ impl Widget for DropdownWidget {
             ctx.draw_list.push_rect(ring, ring_style);
         }
 
+        // Layer captures the dropdown bg for subpixel text compositing.
+        let bg = self.current_bg();
+        ctx.draw_list.push_layer(bg);
+
         // Background.
-        let bg_style = RectStyle::filled(self.current_bg())
+        let bg_style = RectStyle::filled(bg)
             .with_border(s.border_width, s.border_color)
             .with_radius(s.corner_radius);
         ctx.draw_list.push_rect(bounds, bg_style);
@@ -298,6 +302,8 @@ impl Widget for DropdownWidget {
             1.5,
             ind_color,
         );
+
+        ctx.draw_list.pop_layer();
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {

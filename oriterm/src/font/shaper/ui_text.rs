@@ -42,36 +42,20 @@ pub fn shape_text_string(
         return;
     }
 
-    let cell_w = collection.cell_metrics().width;
     let mut buffer = buffer_slot.take().unwrap_or_default();
 
     let mut run_start: Option<usize> = None;
     let mut run_face = FaceIdx::REGULAR;
 
     for (byte_idx, ch) in text.char_indices() {
-        if ch == ' ' {
-            // Flush current run before the space.
-            if let Some(start) = run_start.take() {
-                buffer = shape_ui_run(
-                    &text[start..byte_idx],
-                    run_face,
-                    faces,
-                    collection,
-                    output,
-                    buffer,
-                );
-            }
-            output.push(UiShapedGlyph {
-                glyph_id: 0,
-                face_index: FaceIdx::REGULAR.0,
-                x_advance: cell_w,
-                x_offset: 0.0,
-                y_offset: 0.0,
-            });
-            continue;
-        }
-
-        let face_idx = collection.resolve(ch, GlyphStyle::Regular).face_idx;
+        // Resolve face for non-space characters. Spaces stay in the
+        // current run so rustybuzz computes the font's actual space
+        // advance (proportional, not monospace cell_w).
+        let face_idx = if ch == ' ' {
+            run_face
+        } else {
+            collection.resolve(ch, GlyphStyle::Regular).face_idx
+        };
 
         if let Some(start) = run_start {
             if face_idx != run_face {
@@ -108,7 +92,6 @@ pub fn shape_text_string(
 ///
 /// `max_width` limits the text width for overflow handling. Pass `f32::INFINITY`
 /// for unconstrained shaping.
-#[allow(dead_code, reason = "public API for widget text rendering")]
 pub fn shape_text(
     text: &str,
     style: &TextStyle,
@@ -149,28 +132,27 @@ fn shape_to_shaped_text(text: &str, collection: &FontCollection) -> ShapedText {
 
 /// Measure text dimensions using the given style.
 ///
-/// Returns [`TextMetrics`] with width, height, and line count. Lighter than
-/// [`shape_text`] when only dimensions are needed (no glyph data).
-#[allow(dead_code, reason = "public API for widget layout")]
+/// Returns [`TextMetrics`] with width, height, and line count. Shapes the
+/// text to compute exact proportional width. For short UI strings (dialog
+/// titles, labels, button text) the cost is negligible.
 pub fn measure_text_styled(
     text: &str,
     _style: &TextStyle,
     collection: &FontCollection,
 ) -> TextMetrics {
-    let width = measure_text(text, collection);
-    let metrics = collection.cell_metrics();
+    let shaped = shape_to_shaped_text(text, collection);
     TextMetrics {
-        width,
-        height: metrics.height,
+        width: shaped.width,
+        height: shaped.height,
         line_count: 1,
     }
 }
 
-/// Measure the total pixel width of a text string.
+/// Measure the total pixel width of a text string using unicode widths.
 ///
 /// Uses `unicode_width * cell_width` for measurement, consistent with
-/// [`truncate_with_ellipsis`]. Exact for monospace fonts. Suitable for
-/// layout of short UI strings (tab titles, labels).
+/// [`truncate_with_ellipsis`]. Exact for monospace fonts.
+#[cfg(test)]
 pub fn measure_text(text: &str, collection: &FontCollection) -> f32 {
     let cell_w = collection.cell_metrics().width;
     text.chars()

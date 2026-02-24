@@ -12,7 +12,7 @@ use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::widgets::{Widget, WidgetAction};
 
 use super::App;
-use super::redraw::NullMeasurer;
+use crate::font::UiFontMeasurer;
 
 /// Scale a logical-pixel rect to physical pixels.
 #[cfg(target_os = "windows")]
@@ -105,10 +105,17 @@ impl App {
             modifiers: oriterm_ui::input::Modifiers::NONE,
         };
         let logical_w = window.size_px().0 as f32 / scale;
-        let measurer = NullMeasurer;
+        let measurer = self
+            .renderer
+            .as_ref()
+            .map(|r| UiFontMeasurer::new(r.active_ui_collection(), scale));
+        let measurer: &dyn oriterm_ui::widgets::TextMeasurer = match &measurer {
+            Some(m) => m,
+            None => return false,
+        };
         let theme = oriterm_ui::theme::UiTheme::dark();
         let ctx = oriterm_ui::widgets::EventCtx {
-            measurer: &measurer,
+            measurer,
             bounds: oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_w, chrome.caption_height()),
             is_focused: false,
             focused_widget: None,
@@ -131,7 +138,14 @@ impl App {
         let Some(chrome) = &mut self.chrome else {
             return;
         };
-        let measurer = NullMeasurer;
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
+        let scale = self
+            .window
+            .as_ref()
+            .map_or(1.0, |w| w.scale_factor().factor() as f32);
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
         let theme = oriterm_ui::theme::UiTheme::dark();
         let ctx = oriterm_ui::widgets::EventCtx {
             measurer: &measurer,
@@ -151,10 +165,13 @@ impl App {
         let (Some(chrome), Some(window)) = (&mut self.chrome, &self.window) else {
             return;
         };
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
         let scale = window.scale_factor().factor() as f32;
         let logical =
             oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
-        let measurer = NullMeasurer;
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
         let theme = oriterm_ui::theme::UiTheme::dark();
         let ctx = oriterm_ui::widgets::EventCtx {
             measurer: &measurer,
@@ -284,6 +301,16 @@ impl App {
             let scale = window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             chrome.set_window_width(logical_w);
+        }
+
+        // Update overlay manager viewport for dialog placement.
+        if let Some(window) = &self.window {
+            let scale = window.scale_factor().factor() as f32;
+            let logical_w = size.width as f32 / scale;
+            let logical_h = size.height as f32 / scale;
+            self.overlays.set_viewport(oriterm_ui::geometry::Rect::new(
+                0.0, 0.0, logical_w, logical_h,
+            ));
         }
 
         // Recompute grid dimensions, resize terminal + PTY + increments.

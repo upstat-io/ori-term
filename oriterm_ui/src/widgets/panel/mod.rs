@@ -167,6 +167,9 @@ impl Widget for PanelWidget {
         // get fresh layout.
         *self.cached_layout.borrow_mut() = None;
 
+        // Layer captures the panel bg for subpixel text compositing.
+        ctx.draw_list.push_layer(self.style.bg);
+
         // Draw panel background.
         let mut rect_style = RectStyle::filled(self.style.bg).with_radius(self.style.corner_radius);
         if self.style.border_width > 0.0 {
@@ -191,6 +194,8 @@ impl Widget for PanelWidget {
             };
             self.child.draw(&mut child_ctx);
         }
+
+        ctx.draw_list.pop_layer();
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {

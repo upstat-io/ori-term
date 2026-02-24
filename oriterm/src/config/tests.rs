@@ -1,5 +1,6 @@
 //! Configuration unit tests.
 
+use super::bell::BellAnimation;
 use super::*;
 
 #[test]

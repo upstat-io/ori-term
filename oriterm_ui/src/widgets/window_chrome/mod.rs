@@ -210,8 +210,11 @@ impl Widget for WindowChromeWidget {
             return;
         }
 
-        // Caption background bar.
+        // Layer captures the caption bg for subpixel title text compositing.
         let bg = self.current_caption_bg();
+        ctx.draw_list.push_layer(bg);
+
+        // Caption background bar.
         let caption_rect = Rect::new(0.0, 0.0, ctx.bounds.width(), self.caption_height());
         ctx.draw_list.push_rect(caption_rect, RectStyle::filled(bg));
 
@@ -226,7 +229,9 @@ impl Widget for WindowChromeWidget {
                 .push_text(Point::new(x, y), shaped, self.caption_fg);
         }
 
-        // Control buttons.
+        ctx.draw_list.pop_layer();
+
+        // Control buttons (outside the caption layer — each button has its own bg).
         for (i, ctrl) in self.controls.iter().enumerate() {
             let ctrl_rect = self.chrome_layout.controls[i].rect;
             let mut child_ctx = DrawCtx {

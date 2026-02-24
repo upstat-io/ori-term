@@ -8,50 +8,20 @@ use unicode_width::UnicodeWidthChar;
 use oriterm_core::{CellFlags, Column, CursorShape, RenderableContent, TermMode};
 
 use oriterm_ui::draw::DrawList;
+use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::widgets::{DrawCtx, Widget};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
+use crate::font::UiFontMeasurer;
+use crate::gpu::state::GpuState;
 use crate::gpu::{
     FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize, extract_frame,
     extract_frame_into,
 };
 use crate::widgets::terminal_grid::TerminalGridWidget;
-
-/// Stub text measurer for chrome drawing (no text measurement needed for
-/// geometric symbols, but the trait is required by `DrawCtx`).
-pub(super) struct NullMeasurer;
-
-impl oriterm_ui::widgets::TextMeasurer for NullMeasurer {
-    fn measure(
-        &self,
-        _text: &str,
-        _style: &oriterm_ui::text::TextStyle,
-        _max_width: f32,
-    ) -> oriterm_ui::text::TextMetrics {
-        oriterm_ui::text::TextMetrics {
-            width: 0.0,
-            height: 0.0,
-            line_count: 0,
-        }
-    }
-
-    fn shape(
-        &self,
-        _text: &str,
-        _style: &oriterm_ui::text::TextStyle,
-        _max_width: f32,
-    ) -> oriterm_ui::text::ShapedText {
-        oriterm_ui::text::ShapedText {
-            glyphs: Vec::new(),
-            width: 0.0,
-            height: 0.0,
-            baseline: 0.0,
-        }
-    }
-}
 
 impl App {
     /// Execute the three-phase rendering pipeline: Extract → Prepare → Render.
@@ -173,6 +143,19 @@ impl App {
                 self.dirty = true;
             }
 
+            // Draw modal overlays (e.g. paste confirmation dialog).
+            let logical_size = (logical_w as f32, h as f32 / scale);
+            if Self::draw_overlays(
+                &mut self.overlays,
+                renderer,
+                &mut self.chrome_draw_list,
+                logical_size,
+                scale,
+                gpu,
+            ) {
+                self.dirty = true;
+            }
+
             renderer.render_to_surface(gpu, window.surface())
         };
 
@@ -223,9 +206,11 @@ impl App {
             return false;
         }
 
+        // Build draw list with real measurer (immutable borrow on renderer
+        // ends after chrome.draw — NLL lets the mutable append follow).
         draw_list.clear();
         let animations_running = Cell::new(false);
-        let measurer = NullMeasurer;
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
         let theme = UiTheme::dark();
         let caption_h = chrome.caption_height();
         let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_width as f32, caption_h);
@@ -240,9 +225,66 @@ impl App {
             theme: &theme,
         };
         chrome.draw(&mut ctx);
+        let animating = animations_running.get();
 
+        // Chrome uses geometric symbols only — no text context needed.
         renderer.append_ui_draw_list(draw_list, scale);
-        animations_running.get()
+        animating
+    }
+
+    /// Draw modal overlays (e.g. paste confirmation dialog).
+    ///
+    /// Overlay coordinates are in logical pixels. The `scale` factor converts
+    /// to physical pixels for the GPU pipeline. Reuses the chrome draw list
+    /// buffer to avoid extra allocation.
+    ///
+    /// Uses [`append_ui_draw_list_with_text`](crate::gpu::GpuRenderer::append_ui_draw_list_with_text)
+    /// so dialog text (title, message, button labels) renders with real glyphs.
+    ///
+    /// Returns `true` if overlays have running animations. Returns `false`
+    /// immediately if no overlays are active.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU state"
+    )]
+    fn draw_overlays(
+        overlays: &mut OverlayManager,
+        renderer: &mut crate::gpu::GpuRenderer,
+        draw_list: &mut DrawList,
+        logical_size: (f32, f32),
+        scale: f32,
+        gpu: &GpuState,
+    ) -> bool {
+        if overlays.is_empty() {
+            return false;
+        }
+
+        // Build draw list with real measurer (immutable borrow on renderer
+        // ends after draw_overlays — NLL lets the mutable append follow).
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let theme = UiTheme::dark();
+
+        overlays.layout_overlays(&measurer, &theme);
+
+        draw_list.clear();
+        let animations_running = Cell::new(false);
+        let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_size.0, logical_size.1);
+        let mut ctx = DrawCtx {
+            measurer: &measurer,
+            draw_list,
+            bounds,
+            focused_widget: None,
+            now: Instant::now(),
+            animations_running: &animations_running,
+            theme: &theme,
+        };
+        overlays.draw_overlays(&mut ctx);
+        let animating = animations_running.get();
+
+        // Overlays contain text — use text-aware conversion to rasterize
+        // and emit glyph instances for titles, messages, and button labels.
+        renderer.append_ui_draw_list_with_text(draw_list, scale, gpu);
+        animating
     }
 }
 

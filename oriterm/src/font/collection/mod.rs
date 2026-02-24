@@ -72,6 +72,7 @@ pub struct FontCollection {
     )]
     cap_height_px: f32,
     // Rasterization
+    dpi: f32,
     format: GlyphFormat,
     hinting: HintingMode,
     glyph_cache: HashMap<RasterKey, RasterizedGlyph>,
@@ -166,6 +167,7 @@ impl FontCollection {
             size_px,
             metrics,
             cap_height_px: primary_cap,
+            dpi,
             format,
             hinting,
             glyph_cache: HashMap::new(),
@@ -189,6 +191,11 @@ impl FontCollection {
     /// Font size in pixels.
     pub fn size_px(&self) -> f32 {
         self.size_px
+    }
+
+    /// DPI used for the current size computation.
+    pub fn dpi(&self) -> f32 {
+        self.dpi
     }
 
     /// Family name of the primary font.
@@ -366,6 +373,7 @@ impl FontCollection {
         }
 
         self.size_px = size_px;
+        self.dpi = dpi;
         self.metrics = CellMetrics::new(
             fm.cell_width,
             fm.cell_height,
