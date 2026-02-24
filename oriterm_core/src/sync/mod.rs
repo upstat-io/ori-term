@@ -5,6 +5,7 @@
 //! lock will alternate access rather than allowing one to monopolize it.
 
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::{Mutex, MutexGuard};
 
@@ -22,6 +23,11 @@ pub struct FairMutex<T> {
     data: Mutex<T>,
     /// Fairness gate — establishes FIFO ordering among fair callers.
     next: Mutex<()>,
+    /// Set when a `lock()` caller had to wait for the fairness gate.
+    /// Cleared by `take_contended()`. The PTY reader checks this to
+    /// decide whether to coalesce (sleep) — only when the renderer
+    /// actually blocked does the reader yield.
+    contended: AtomicBool,
 }
 
 /// RAII guard returned by [`FairMutex::lock`].
@@ -50,18 +56,35 @@ impl<T> FairMutex<T> {
         Self {
             data: Mutex::new(data),
             next: Mutex::new(()),
+            contended: AtomicBool::new(false),
         }
     }
 
     /// Acquires the mutex fairly.
     ///
     /// Blocks until both the fairness gate and data lock are available,
-    /// guaranteeing FIFO ordering among fair callers. The returned guard
-    /// holds both locks until dropped.
+    /// guaranteeing FIFO ordering among fair callers. If the fairness
+    /// gate is already held, sets the `contended` flag before blocking
+    /// so the holder can detect contention via [`take_contended`].
     pub fn lock(&self) -> FairMutexGuard<'_, T> {
-        let next = self.next.lock();
+        let next = if let Some(guard) = self.next.try_lock() {
+            guard
+        } else {
+            self.contended.store(true, Ordering::Release);
+            self.next.lock()
+        };
         let data = self.data.lock();
         FairMutexGuard { data, next }
+    }
+
+    /// Returns `true` if any `lock()` call blocked since the last check,
+    /// and clears the flag.
+    ///
+    /// The PTY reader calls this after each processing cycle to decide
+    /// whether to yield. When the renderer had to wait for the fairness
+    /// gate, this returns `true` once, signaling the reader to coalesce.
+    pub fn take_contended(&self) -> bool {
+        self.contended.swap(false, Ordering::Acquire)
     }
 
     /// Acquires the mutex without fairness.
