@@ -154,9 +154,6 @@ impl App {
             config_reload::resolve_subpixel_mode(&self.config.font, scale_factor).glyph_format();
         renderer.set_hinting_and_format(hinting, format, gpu);
 
-        // Resize increments depend on cell dimensions, which change with DPI.
-        self.update_resize_increments();
-
         // Mark all grid lines dirty so the frame extraction re-reads every
         // cell with the new cell metrics. Without this, the terminal content
         // appears stale until PTY output marks individual lines dirty.
@@ -313,6 +310,13 @@ impl App {
                     tab.write_input(response.as_bytes());
                 }
             }
+            Event::ColorRequest(index, formatter) => {
+                if let Some(tab) = &self.tab {
+                    let color = tab.terminal().lock().palette().color(index);
+                    let response = formatter(color);
+                    tab.write_input(response.as_bytes());
+                }
+            }
             Event::PtyWrite(s) => {
                 if let Some(tab) = &self.tab {
                     tab.write_input(s.as_bytes());
@@ -379,6 +383,7 @@ impl ApplicationHandler<TermEvent> for App {
                 if let Some(window) = &mut self.window {
                     if window.update_scale_factor(scale_factor) {
                         self.handle_dpi_change(scale_factor);
+                        self.update_resize_increments();
                     }
                 }
             }
