@@ -34,7 +34,7 @@ sections:
     status: complete
   - id: "07.10"
     title: Theming & Styling
-    status: in-progress
+    status: complete
   - id: "07.11"
     title: Terminal Grid Widget
     status: complete
@@ -467,7 +467,7 @@ Consistent visual styling across all widgets.
 - [x] `UiTheme::dark() -> Self` — dark theme defaults
 - [x] `UiTheme::light() -> Self` — light theme defaults
 - [x] Theme propagates through the widget tree (widgets inherit from parent unless overridden)
-- [ ] Integrates with Section 03 system theme detection (auto dark/light) <!-- blocked-by:3 -->
+- [x] Integrates with system theme detection (auto dark/light via `resolve_ui_theme`)
 
 ---
 
@@ -524,7 +524,7 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
 
 ## 07.12 Section Completion
 
-- [ ] All 07.1-07.11 items complete *(blocked: 07.8/07.9/07.10/07.11 have deferred/blocked items)*
+- [ ] All 07.1-07.11 items complete *(blocked: 07.8/07.9/07.11 have deferred/blocked items)*
 - [x] Drawing primitives render correctly: rects, rounded rects, shadows, text, lines
 - [x] Layout engine computes correct positions for nested flex containers
 - [x] Hit testing correctly identifies the widget under the cursor

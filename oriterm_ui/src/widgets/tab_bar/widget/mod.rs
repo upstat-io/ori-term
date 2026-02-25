@@ -90,6 +90,13 @@ impl TabBarWidget {
         }
     }
 
+    // --- Theme ---
+
+    /// Updates all theme-derived colors from a new [`UiTheme`].
+    pub fn apply_theme(&mut self, theme: &UiTheme) {
+        self.colors = TabBarColors::from_theme(theme);
+    }
+
     // --- State setters ---
 
     /// Updates the tab list and recomputes layout.

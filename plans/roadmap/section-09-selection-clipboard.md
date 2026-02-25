@@ -10,7 +10,7 @@ sections:
     status: complete
   - id: "9.2"
     title: Mouse Selection
-    status: in-progress
+    status: complete
   - id: "9.3"
     title: Keyboard Selection (Mark Mode)
     status: in-progress
@@ -151,10 +151,10 @@ Windows Terminal-style mouse selection with drag threshold, multi-click modes, a
   - [x] If click is beyond anchor: include clicked cell
   - [x] If click is before anchor: start from clicked position
   - [x] Respect double-wide character boundaries
-- [ ] **Ctrl+click** — Open hyperlink URL: <!-- blocked-by:14 -->
-  - [ ] Check OSC 8 hyperlink on clicked cell (takes priority)
-  - [ ] Fall through to implicit URL detection
-  - [ ] If URL found: open in default browser, consume click
+- [x] **Ctrl+click** — Open hyperlink URL: <!-- blocked-by:14 -->
+  - [x] Check OSC 8 hyperlink on clicked cell (takes priority)
+  - [x] Fall through to implicit URL detection
+  - [x] If URL found: open in default browser, consume click
 - [x] **Auto-scroll during drag** (mouse above/below viewport):
   - [x] When dragging above grid top: scroll viewport up into history (1 line per event)
   - [x] When dragging below grid bottom: scroll viewport down toward live (if display_offset > 0)
@@ -416,7 +416,7 @@ Visual highlighting of selected text during GPU rendering.
 
 ## 9.8 Section Completion
 
-- [ ] All 9.1-9.7 items complete *(blocked: 9.2/9.3/9.5/9.6/9.7 have items pending Sections 13/14/20/23/38)*
+- [ ] All 9.1-9.7 items complete *(blocked: 9.3/9.5/9.7 have items pending Sections 20/23/25/38)*
 - [x] `cargo test -p oriterm_core --target x86_64-pc-windows-gnu` — selection model tests pass
 - [x] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — clipboard + mouse selection tests pass
 - [x] `cargo clippy --workspace --target x86_64-pc-windows-gnu` — no warnings

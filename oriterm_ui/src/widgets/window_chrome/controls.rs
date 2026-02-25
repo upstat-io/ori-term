@@ -108,6 +108,15 @@ impl WindowControlButton {
         self.caption_bg = color;
     }
 
+    /// Updates the button colors from a new theme palette.
+    pub fn set_colors(&mut self, colors: ControlButtonColors) {
+        self.fg = colors.fg;
+        self.bg = colors.bg;
+        self.hover_bg = colors.hover_bg;
+        self.close_hover_bg = colors.close_hover_bg;
+        self.close_pressed_bg = colors.close_pressed_bg;
+    }
+
     /// Returns the current background color with hover interpolation.
     fn current_bg(&self, now: Instant) -> Color {
         if self.pressed {

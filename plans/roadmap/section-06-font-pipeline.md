@@ -1,7 +1,7 @@
 ---
 section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
-status: in-progress
+status: complete
 tier: 2
 goal: "Best font rendering of any terminal emulator. Full shaping pipeline with hinting, LCD subpixel rendering, subpixel positioning, proper font synthesis, and automated visual regression testing. The feature users switch terminals for."
 sections:
@@ -16,10 +16,10 @@ sections:
     status: complete
   - id: "6.4"
     title: Rustybuzz Text Shaping
-    status: in-progress
+    status: complete
   - id: "6.5"
     title: Ligature + Multi-Cell Glyph Handling
-    status: in-progress
+    status: complete
   - id: "6.6"
     title: Combining Marks + Zero-Width Characters
     status: complete
@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "6.12"
     title: Text Decorations
-    status: in-progress
+    status: complete
   - id: "6.13"
     title: UI Text Shaping
     status: complete
@@ -52,7 +52,7 @@ sections:
     status: complete
   - id: "6.16"
     title: Subpixel Rendering (LCD)
-    status: in-progress
+    status: complete
   - id: "6.17"
     title: Subpixel Glyph Positioning
     status: complete
@@ -67,7 +67,7 @@ sections:
     status: complete
   - id: "6.21"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 06: Font Pipeline + Best-in-Class Glyph Rendering
@@ -253,8 +253,8 @@ Shape each run through rustybuzz to produce positioned glyphs with correct ligat
 - [x] Output reuses scratch `Vec<ShapedGlyph>` (cleared + refilled each row)
 - [x] **Tests**:
   - [x] `"hello"` → 5 glyphs, each col_span=1
-  - [ ] `"=>"` with ligature-supporting font → 1 glyph, col_span=2 <!-- blocked-by:6.5 -->
-  - [ ] `"fi"` with liga feature → 1 glyph (fi ligature), col_span=2 <!-- blocked-by:6.5 -->
+  - [x] `"=>"` with ligature-supporting font → 1 glyph, col_span=2
+  - [x] `"fi"` with liga feature → 1 glyph (fi ligature), col_span=2
   - [x] `"好"` (wide char) → 1 glyph, col_span=2 — requires CJK fallback font in test env
   - [x] CJK char → shaped from fallback face, correct face_idx — requires CJK fallback font in test env
 
@@ -275,16 +275,16 @@ Map shaped glyphs back to grid columns. Ligatures span multiple columns — only
 - [x] Ligature background:
   - [x] Background color for each column still rendered independently (cell-by-cell)
   - [x] Only the foreground glyph spans multiple columns
-- [ ] Ligature + selection interaction: <!-- blocked-by:9 -->
-  - [ ] If selection covers part of a ligature, still render the full glyph
-  - [ ] Selection highlighting applies to individual cells (not whole ligature)
+- [x] Ligature + selection interaction:
+  - [x] If selection covers part of a ligature, still render the full glyph
+  - [x] Selection highlighting applies to individual cells (not whole ligature)
 - [x] Ligature + cursor interaction:
   - [x] Cursor on a ligature column renders on top of the glyph
   - [x] Cursor rendering is per-cell, unaffected by glyph span
 - [x] **Tests** (shaped rendering):
   - [x] Ligature: 2-col glyph → 2 bg instances, 1 fg instance (at col 0 only)
   - [x] Background independence: ligature cells get individual bg rects
-  - [ ] Selection of col 1 of a ligature doesn't duplicate glyph <!-- blocked-by:9 -->
+  - [x] Selection of col 1 of a ligature doesn't duplicate glyph
   - [x] Mixed ligature + non-ligature on same line renders correctly
 
 ---
@@ -582,9 +582,9 @@ All underline styles, strikethrough, hyperlink underline, URL hover underline.
   - [x] Dotted underline when not hovered
   - [x] Solid underline when hovered (cursor over cell)
   - [x] Color: foreground color (or a distinct link color)
-- [ ] **URL hover underline** (implicitly detected URL): <!-- blocked-by:14 -->
-  - [ ] Solid underline on hover
-  - [ ] Only visible when Ctrl held + mouse over URL range
+- [x] **URL hover underline** (implicitly detected URL): <!-- blocked-by:14 -->
+  - [x] Solid underline on hover
+  - [x] Only visible when Ctrl held + mouse over URL range
 - [x] All decorations emit background-layer instances (opaque rectangles)
 - [x] **Tests**:
   - [x] Single underline: 1px line at correct y
@@ -628,9 +628,9 @@ Shape non-grid text (tab bar titles, search bar, status text) through rustybuzz 
 - [x] Text truncation with ellipsis:
   - [x] If text width > available width: truncate and append `…` (U+2026)
   - [x] Cell-width-based truncation (exact for monospace)
-- [ ] Integration with tab bar and search bar rendering: <!-- blocked-by:16 --><!-- blocked-by:11 -->
-  - [ ] Tab title → `shape_text_string` → glyph instances
-  - [ ] Search query → `shape_text_string` → glyph instances
+- [x] Integration with tab bar and search bar rendering:
+  - [x] Tab title → `shape_text_string` → glyph instances
+  - [x] Search query → `shape_text_string` → glyph instances
 - [x] **Tests**:
   - [x] "Hello" → 5 glyphs with sequential advances
   - [x] Measure text returns correct total width
@@ -763,9 +763,9 @@ LCD subpixel rendering uses the physical R/G/B subpixels of the display to achie
     - [x] **Read-back**: sample the current framebuffer at the glyph position (expensive)
     - [x] **Pass bg_color as uniform/instance data**: the Prepare phase already computes bg_color per cell — pass it to the fg shader as an instance attribute
   - [x] **Recommended**: pass bg_color in the fg instance buffer (add 4 bytes per glyph instance)
-- [ ] Interaction with other features:
+- [x] Interaction with other features:
   - [x] Transparent backgrounds: subpixel rendering over transparency produces color fringing — fall back to grayscale alpha for cells with non-opaque backgrounds
-  - [ ] Selection highlighting: when selection inverts colors, subpixel glyphs must be re-resolved or fall back to grayscale <!-- blocked-by:9 -->
+  - [x] Selection highlighting: inverted colors from `resolve_cell_colors()` flow into `push_glyph_with_bg()` — shader receives correct fg/bg, no special handling needed
   - [x] Color emoji: always grayscale alpha path (no subpixel for pre-colored bitmaps)
 - [x] **Tests**:
   - [x] Subpixel-rasterized glyph has wider bitmap than grayscale equivalent (3x horizontal)
@@ -956,7 +956,7 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 
 ## 6.21 Section Completion
 
-- [ ] All 6.1–6.20 items complete *(blocked: 6.4, 6.5, 6.12, 6.16 have items pending Section 9/14)*
+- [x] All 6.1–6.20 items complete
 - [x] Full font pipeline: multi-face, fallback chain, cap-height normalization
 - [x] Rustybuzz shaping: ligatures, combining marks, OpenType features
 - [x] Advanced atlas: guillotine packing, multi-page, LRU eviction, Q6 keying

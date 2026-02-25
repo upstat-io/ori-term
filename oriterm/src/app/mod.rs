@@ -145,6 +145,7 @@ impl App {
         let bindings = keybindings::merge_bindings(&config.keybind);
         let monitor = ConfigMonitor::new(event_proxy.clone());
         let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
+        let ui_theme = resolve_ui_theme(&config);
         Self {
             gpu: None,
             renderer: None,
@@ -170,7 +171,7 @@ impl App {
             pending_paste: None,
             url_cache: UrlDetectCache::default(),
             hovered_url: None,
-            ui_theme: UiTheme::dark(),
+            ui_theme,
             last_drag_area_press: None,
         }
     }
@@ -204,6 +205,33 @@ impl App {
             tab.terminal().lock().grid_mut().dirty_mut().mark_all();
         }
 
+        self.dirty = true;
+    }
+
+    /// Handle system dark/light theme change.
+    ///
+    /// Updates the terminal palette and UI chrome colors. Respects
+    /// [`ThemeOverride`]: if the user forced dark/light, the system
+    /// notification is ignored — only `Auto` delegates to the system.
+    fn handle_theme_changed(&mut self, winit_theme: winit::window::Theme) {
+        let system_theme = match winit_theme {
+            winit::window::Theme::Dark => oriterm_core::Theme::Dark,
+            winit::window::Theme::Light => oriterm_core::Theme::Light,
+        };
+        let theme = self.config.colors.resolve_theme(|| system_theme);
+        if let Some(tab) = &self.tab {
+            let mut term = tab.terminal().lock();
+            term.set_theme(theme);
+            config_reload::apply_color_overrides(term.palette_mut(), &self.config.colors);
+        }
+        // Update UI chrome theme (tab bar, window controls).
+        self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
+        if let Some(chrome) = &mut self.chrome {
+            chrome.apply_theme(&self.ui_theme);
+        }
+        if let Some(tab_bar) = &mut self.tab_bar {
+            tab_bar.apply_theme(&self.ui_theme);
+        }
         self.dirty = true;
     }
 
@@ -329,6 +357,28 @@ impl App {
             }
         }
     }
+}
+
+/// Resolve the [`UiTheme`] from config override + system theme.
+///
+/// Maps [`ThemeOverride`] → [`UiTheme`]: `Dark` → `dark()`, `Light` → `light()`,
+/// `Auto` → delegates to the provided system theme (falls back to dark on `Unknown`).
+fn resolve_ui_theme_with(config: &Config, system: oriterm_core::Theme) -> UiTheme {
+    use crate::config::ThemeOverride;
+
+    match config.colors.theme {
+        ThemeOverride::Dark => UiTheme::dark(),
+        ThemeOverride::Light => UiTheme::light(),
+        ThemeOverride::Auto => match system {
+            oriterm_core::Theme::Light => UiTheme::light(),
+            _ => UiTheme::dark(),
+        },
+    }
+}
+
+/// Resolve the [`UiTheme`] at startup by detecting the system theme.
+fn resolve_ui_theme(config: &Config) -> UiTheme {
+    resolve_ui_theme_with(config, crate::platform::theme::system_theme())
 }
 
 /// Convert winit modifier state to `oriterm_ui` modifier bitmask.
@@ -472,21 +522,8 @@ impl ApplicationHandler<TermEvent> for App {
                 self.dirty = true;
             }
 
-            // System dark/light theme changed — rebuild palette with config override.
             WindowEvent::ThemeChanged(winit_theme) => {
-                // Respect ThemeOverride: if the user forced dark/light, ignore
-                // the system notification. Only Auto delegates to the system.
-                let system_theme = match winit_theme {
-                    winit::window::Theme::Dark => oriterm_core::Theme::Dark,
-                    winit::window::Theme::Light => oriterm_core::Theme::Light,
-                };
-                let theme = self.config.colors.resolve_theme(|| system_theme);
-                if let Some(tab) = &self.tab {
-                    let mut term = tab.terminal().lock();
-                    term.set_theme(theme);
-                    config_reload::apply_color_overrides(term.palette_mut(), &self.config.colors);
-                }
-                self.dirty = true;
+                self.handle_theme_changed(winit_theme);
             }
 
             _ => {}
