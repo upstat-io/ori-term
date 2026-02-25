@@ -148,6 +148,11 @@ impl TabBarWidget {
         self.tabs.len()
     }
 
+    /// Current hover hit state.
+    pub fn hover_hit(&self) -> TabBarHit {
+        self.hover_hit
+    }
+
     /// Current tab width lock value, if active.
     pub fn tab_width_lock(&self) -> Option<f32> {
         self.tab_width_lock

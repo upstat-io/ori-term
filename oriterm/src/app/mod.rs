@@ -18,8 +18,9 @@ mod mouse_report;
 mod mouse_selection;
 mod redraw;
 mod search_ui;
+mod tab_bar_input;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -130,6 +131,9 @@ pub(crate) struct App {
     // contexts use a single source of truth. When dynamic theming arrives,
     // only this field and the theme-change handler need updating.
     ui_theme: UiTheme,
+
+    // Timestamp of last left-click in the tab bar drag area (for double-click maximize).
+    last_drag_area_press: Option<Instant>,
 }
 
 impl App {
@@ -167,6 +171,7 @@ impl App {
             url_cache: UrlDetectCache::default(),
             hovered_url: None,
             ui_theme: UiTheme::dark(),
+            last_drag_area_press: None,
         }
     }
 
@@ -405,6 +410,7 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::CursorLeft { .. } => {
                 self.clear_chrome_hover();
+                self.clear_tab_bar_hover();
                 self.clear_url_hover();
                 self.release_tab_width_lock();
             }
@@ -444,6 +450,10 @@ impl ApplicationHandler<TermEvent> for App {
                 // Check chrome first — if a control button was clicked,
                 // don't propagate to selection/PTY reporting.
                 if self.try_chrome_mouse(button, state, event_loop) {
+                    return;
+                }
+                // Tab bar clicks: switch tab, close tab, window controls, drag.
+                if self.try_tab_bar_mouse(button, state, event_loop) {
                     return;
                 }
                 self.handle_mouse_input(button, state);
