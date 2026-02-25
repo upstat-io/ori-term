@@ -840,3 +840,264 @@ fn hit_each_tab_close_button() {
         );
     }
 }
+
+// --- Mutation order independence (High Priority) ---
+
+#[test]
+fn set_active_index_before_tabs_does_not_panic() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_active_index(5);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    assert_eq!(w.tab_count(), 2);
+}
+
+#[test]
+fn set_window_width_before_tabs_does_not_panic() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_window_width(800.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    assert_eq!(w.tab_count(), 1);
+}
+
+#[test]
+fn set_drag_visual_before_tabs_does_not_panic() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_drag_visual(Some((0, 100.0)));
+    w.set_tabs(vec![TabEntry::new("A")]);
+    assert_eq!(w.tab_count(), 1);
+}
+
+#[test]
+fn interleaved_mutations_do_not_corrupt_layout() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_active_index(2);
+    w.set_tabs(vec![
+        TabEntry::new("A"),
+        TabEntry::new("B"),
+        TabEntry::new("C"),
+    ]);
+    w.set_window_width(800.0);
+    w.set_hover_hit(TabBarHit::Tab(1));
+    w.set_active_index(0);
+    w.set_window_width(1200.0);
+    // Layout should reflect final state: 3 tabs, 1200px window.
+    assert_eq!(w.layout().tab_count, 3);
+    assert!((w.layout().window_width - 1200.0).abs() < f32::EPSILON);
+    assert!(w.layout().tab_width >= TAB_MIN_WIDTH);
+}
+
+// --- Out-of-bounds operations (Medium Priority) ---
+
+#[test]
+fn set_active_index_out_of_bounds_does_not_panic() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    w.set_active_index(100);
+    // No panic — index stored for future use.
+}
+
+#[test]
+fn ring_bell_out_of_bounds_is_noop() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    w.ring_bell(99);
+    // No panic — documented no-op.
+}
+
+#[test]
+fn update_tab_title_out_of_bounds_is_noop() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("Original")]);
+    w.update_tab_title(99, "New".into());
+    assert_eq!(w.tab_count(), 1);
+}
+
+// --- Animation offset edge cases (Medium Priority) ---
+
+#[test]
+fn anim_offsets_longer_than_tabs() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    w.set_anim_offsets(vec![10.0, 20.0, 30.0]); // More offsets than tabs.
+    let still = w.decay_tab_animations(1.0 / 60.0);
+    assert!(still, "extra offsets should still decay");
+}
+
+#[test]
+fn anim_offsets_shorter_than_tabs() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![
+        TabEntry::new("A"),
+        TabEntry::new("B"),
+        TabEntry::new("C"),
+    ]);
+    w.set_anim_offsets(vec![10.0]); // Fewer offsets than tabs.
+    let still = w.decay_tab_animations(1.0 / 60.0);
+    assert!(still, "should still decay the one offset");
+}
+
+#[test]
+fn resize_during_animation_preserves_finite_layout() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    w.set_anim_offsets(vec![50.0, -30.0]);
+    // Resize mid-animation.
+    w.set_window_width(800.0);
+    // Layout recomputed; animations still present.
+    let still = w.decay_tab_animations(1.0 / 60.0);
+    assert!(still);
+    assert!(w.layout().tab_width >= TAB_MIN_WIDTH);
+    assert!(w.layout().tabs_end().is_finite());
+}
+
+// --- Degenerate layout inputs (Low Priority) ---
+
+#[test]
+fn layout_with_nan_window_width_does_not_panic() {
+    // Degenerate input — verify no panic, not specific behavior.
+    let layout = TabBarLayout::compute(3, f32::NAN, None);
+    assert_eq!(layout.tab_count, 3);
+    let _ = layout.tab_x(0);
+    let _ = layout.tabs_end();
+}
+
+#[test]
+fn layout_with_infinity_window_width_clamps_to_max() {
+    let layout = TabBarLayout::compute(3, f32::INFINITY, None);
+    assert_eq!(layout.tab_count, 3);
+    // Infinite available space → clamp to TAB_MAX_WIDTH.
+    assert!((layout.tab_width - TAB_MAX_WIDTH).abs() < f32::EPSILON);
+}
+
+#[test]
+fn layout_with_negative_window_width_clamps_to_min() {
+    let layout = TabBarLayout::compute(3, -500.0, None);
+    assert_eq!(layout.tab_count, 3);
+    assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
+}
+
+// --- Very long tab title (Low Priority) ---
+
+#[test]
+fn very_long_tab_title_does_not_panic() {
+    let mut w = TabBarWidget::new(1200.0);
+    let long = "A".repeat(1000);
+    w.set_tabs(vec![TabEntry::new(&long)]);
+    assert_eq!(w.tab_count(), 1);
+    assert!(w.layout().max_text_width() >= 0.0);
+}
+
+// --- Hit testing: single-tab close button ---
+
+#[test]
+fn hit_close_button_on_single_tab() {
+    let layout = TabBarLayout::compute(1, 1200.0, None);
+    let mid_y = TAB_BAR_HEIGHT / 2.0;
+    let tab_right = layout.tab_x(0) + layout.tab_width;
+    let close_center = tab_right - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH / 2.0;
+    assert_eq!(
+        hit::hit_test(close_center, mid_y, &layout),
+        TabBarHit::CloseTab(0)
+    );
+}
+
+// --- Hit testing: control buttons individually ---
+
+#[test]
+fn hit_each_control_button_found_by_scan() {
+    let layout = layout_4_tabs();
+    let mid_y = TAB_BAR_HEIGHT / 2.0;
+    let controls_x = layout.controls_x();
+
+    // Scan the controls zone at 1px intervals to find all three buttons.
+    let mut found_min = false;
+    let mut found_max = false;
+    let mut found_close = false;
+
+    let mut x = controls_x;
+    while x < layout.window_width {
+        match hit::hit_test(x, mid_y, &layout) {
+            TabBarHit::Minimize => found_min = true,
+            TabBarHit::Maximize => found_max = true,
+            TabBarHit::CloseWindow => found_close = true,
+            _ => {}
+        }
+        x += 1.0;
+    }
+
+    assert!(found_min, "minimize not found in controls zone");
+    assert!(found_max, "maximize not found in controls zone");
+    assert!(found_close, "close not found in controls zone");
+}
+
+#[test]
+fn hit_controls_y_edges() {
+    let layout = layout_4_tabs();
+    let controls_center_x = layout.controls_x() + CONTROLS_ZONE_WIDTH / 2.0;
+
+    // y=0 is within the tab bar.
+    let top = hit::hit_test(controls_center_x, 0.0, &layout);
+    assert_ne!(
+        top,
+        TabBarHit::None,
+        "y=0 in controls zone should not be None"
+    );
+
+    // y just inside bottom edge.
+    let bottom = hit::hit_test(controls_center_x, TAB_BAR_HEIGHT - 0.1, &layout);
+    assert_ne!(bottom, TabBarHit::None, "y near bottom should still hit");
+}
+
+// --- Zero tabs: non-button area is DragArea ---
+
+#[test]
+fn zero_tabs_non_button_area_is_drag_area() {
+    let layout = TabBarLayout::compute(0, 1200.0, None);
+    let mid_y = TAB_BAR_HEIGHT / 2.0;
+
+    let mut found_drag = false;
+    let mut x = 0.0;
+    while x < layout.controls_x() {
+        let result = hit::hit_test(x, mid_y, &layout);
+        match result {
+            TabBarHit::DragArea => found_drag = true,
+            TabBarHit::NewTab | TabBarHit::Dropdown => {}
+            other => panic!("unexpected hit {other:?} at x={x} with zero tabs"),
+        }
+        x += 5.0;
+    }
+    assert!(found_drag, "should find drag area with zero tabs");
+}
+
+// --- Rapid tab close: width lock prevents layout shift ---
+
+#[test]
+fn width_lock_prevents_shift_on_tab_removal() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![
+        TabEntry::new("A"),
+        TabEntry::new("B"),
+        TabEntry::new("C"),
+    ]);
+    let locked = w.layout().tab_width;
+    w.set_tab_width_lock(Some(locked));
+
+    // Simulate closing tab B: now 2 tabs.
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("C")]);
+    // Width should still be the locked value, not recomputed for 2 tabs.
+    assert!(
+        (w.layout().tab_width - locked).abs() < f32::EPSILON,
+        "width lock should prevent layout shift on tab removal"
+    );
+}
+
+// --- Large decay dt (frame skip) ---
+
+#[test]
+fn decay_with_large_dt_settles_immediately() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_anim_offsets(vec![100.0, -200.0]);
+    // Simulate a 1-second frame skip (e.g., GPU stall).
+    let still = w.decay_tab_animations(1.0);
+    assert!(!still, "1-second dt should settle all offsets to zero");
+}
