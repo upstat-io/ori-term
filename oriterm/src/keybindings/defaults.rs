@@ -23,7 +23,7 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
     let alt = Modifiers::ALT;
     let cs = ctrl | shift;
 
-    let mut bindings = vec![
+    let bindings = vec![
         // Explicit copy / paste (Ctrl+Shift+C/V).
         bind(ch("c"), cs, Action::Copy),
         bind(ch("v"), cs, Action::Paste),

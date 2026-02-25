@@ -5,6 +5,7 @@
 //! and rasterizes glyphs into bitmaps ready for GPU atlas upload.
 
 mod codepoint_map;
+pub(crate) mod colr_v1;
 mod face;
 mod loading;
 mod metadata;
@@ -22,7 +23,8 @@ use super::{
 use codepoint_map::CodepointMap;
 pub(crate) use codepoint_map::parse_hex_range;
 pub use face::size_key;
-use face::{FaceData, build_face, compute_metrics, rasterize_from_face};
+pub(crate) use face::{FaceData, font_ref};
+use face::{build_face, compute_metrics, rasterize_from_face};
 pub use loading::FontSet;
 pub(crate) use metadata::parse_features;
 use metadata::{
@@ -448,6 +450,21 @@ impl FontCollection {
         let face_vars = face_variations(key.face_idx, key.synthetic, self.weight, &fd.axes);
         let effective_synthetic = key.synthetic - face_vars.suppress_synthetic;
         let subpx_x_offset = super::subpx_offset(key.subpx_x);
+
+        // Try COLR first — handles modern color emoji (Segoe UI Emoji,
+        // Noto Color Emoji v2) via skrifa. Falls through to swash for sbix
+        // and standard outlines.
+        if let Some(colr_glyph) = crate::gpu::colr::try_rasterize_colr_v1(
+            fd,
+            key.glyph_id,
+            size,
+            &face_vars.settings,
+            &mut self.scale_context,
+        ) {
+            self.glyph_cache.insert(key, colr_glyph);
+            return self.glyph_cache.get(&key);
+        }
+
         let glyph = rasterize_from_face(
             fd,
             key.glyph_id,

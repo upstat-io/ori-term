@@ -36,11 +36,11 @@ pub(super) struct AxisInfo {
 /// Raw bytes are kept in [`Arc<Vec<u8>>`] for shared ownership with rustybuzz
 /// faces (Section 6). The `offset` and `cache_key` enable fast transient
 /// [`FontRef`] construction without re-parsing.
-pub(super) struct FaceData {
+pub(crate) struct FaceData {
     /// Raw font file bytes.
-    pub(super) bytes: Arc<Vec<u8>>,
+    pub(crate) bytes: Arc<Vec<u8>>,
     /// Index within a `.ttc` collection file (0 for standalone `.ttf`).
-    pub(super) face_index: u32,
+    pub(crate) face_index: u32,
     /// Byte offset to the font table directory.
     offset: u32,
     /// Unique cache key for [`ScaleContext`] reuse.
@@ -114,7 +114,7 @@ pub(super) fn clamp_to_axis(axes: &[AxisInfo], tag: [u8; 4], value: f32) -> f32 
 /// Create a transient swash [`FontRef`] from stored face data.
 ///
 /// This is cheap (no parsing) because offset and `cache_key` are pre-computed.
-pub(super) fn font_ref(fd: &FaceData) -> FontRef<'_> {
+pub(crate) fn font_ref(fd: &FaceData) -> FontRef<'_> {
     FontRef {
         data: &fd.bytes,
         offset: fd.offset,
