@@ -99,13 +99,13 @@ fn extract_selection_is_none() {
 }
 
 #[test]
-fn extract_search_matches_are_empty() {
+fn extract_search_is_none() {
     let terminal = make_terminal(24, 80);
     let viewport = ViewportSize::new(640, 384);
 
     let frame = extract_frame(&terminal, viewport, CELL);
 
-    assert!(frame.search_matches.is_empty());
+    assert!(frame.search.is_none());
 }
 
 #[test]
@@ -189,16 +189,19 @@ fn extract_into_updates_viewport() {
 }
 
 #[test]
-fn extract_into_clears_search_matches() {
+fn extract_into_clears_search() {
     let terminal = make_terminal(24, 80);
     let viewport = ViewportSize::new(640, 384);
 
     let mut frame = extract_frame(&terminal, viewport, CELL);
-    // Simulate leftover search matches from a previous frame.
-    frame.search_matches.push(());
+    // Simulate leftover search state from a previous frame.
+    frame.search = Some(crate::gpu::FrameSearch::new(
+        &oriterm_core::SearchState::new(),
+        0,
+    ));
 
     extract_frame_into(&terminal, &mut frame, viewport, CELL);
-    assert!(frame.search_matches.is_empty());
+    assert!(frame.search.is_none());
 }
 
 #[test]

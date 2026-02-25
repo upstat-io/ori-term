@@ -111,7 +111,7 @@ fn frame_input_grid_dimensions() {
         cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
         selection: None,
-        search_matches: Vec::new(),
+        search: None,
         hovered_cell: None,
         mark_cursor: None,
     };
@@ -131,7 +131,7 @@ fn frame_input_needs_full_repaint() {
         cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
         selection: None,
-        search_matches: Vec::new(),
+        search: None,
         hovered_cell: None,
         mark_cursor: None,
     };
@@ -150,7 +150,7 @@ fn frame_input_incremental_repaint() {
         cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
         selection: None,
-        search_matches: Vec::new(),
+        search: None,
         hovered_cell: None,
         mark_cursor: None,
     };

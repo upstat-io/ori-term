@@ -19,6 +19,7 @@ pub mod separator;
 pub mod slider;
 pub mod spacer;
 pub mod stack;
+pub mod status_badge;
 pub mod text_input;
 pub mod toggle;
 pub mod window_chrome;

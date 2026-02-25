@@ -1833,6 +1833,7 @@ dependencies = [
  "insta",
  "log",
  "parking_lot",
+ "regex",
  "unicode-width",
  "vte",
 ]

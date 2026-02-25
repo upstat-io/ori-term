@@ -6,13 +6,11 @@
 //! produces a [`PreparedFrame`](super::prepared_frame::PreparedFrame).
 
 use oriterm_core::grid::StableRowIndex;
+use oriterm_core::search::MatchType;
 use oriterm_core::selection::{Selection, SelectionBounds};
-use oriterm_core::{Column, CursorShape, RenderableContent, Rgb};
+use oriterm_core::{Column, CursorShape, RenderableContent, Rgb, SearchMatch, SearchState};
 
 use crate::font::CellMetrics;
-
-/// Placeholder for search match — replaced in Section 11.
-pub type SearchMatch = ();
 
 /// Selection state snapshotted for one frame.
 ///
@@ -41,6 +39,84 @@ impl FrameSelection {
     pub fn contains(&self, viewport_line: usize, col: usize) -> bool {
         let stable = StableRowIndex(self.base_stable + viewport_line as u64);
         self.bounds.contains(stable, col)
+    }
+}
+
+/// Search rendering snapshot for one frame.
+///
+/// Contains the match data and viewport mapping needed to classify cells
+/// for search highlighting. Built from `SearchState` without cloning the
+/// full state — borrows the match list via `Arc` sharing.
+#[derive(Debug)]
+pub struct FrameSearch {
+    /// Matches from the search state (shared, not cloned).
+    matches: std::sync::Arc<[SearchMatch]>,
+    /// Index of the focused match.
+    focused: usize,
+    /// Stable row index of viewport line 0.
+    base_stable: u64,
+    /// Total match count (for search bar "N of M" display).
+    match_count: usize,
+    /// Query string (for search bar display).
+    query: String,
+}
+
+impl FrameSearch {
+    /// Build from an active search state and the viewport's stable row base.
+    pub fn new(state: &SearchState, stable_row_base: u64) -> Self {
+        Self {
+            matches: state.matches().into(),
+            focused: state.focused_index(),
+            base_stable: stable_row_base,
+            match_count: state.matches().len(),
+            query: state.query().to_string(),
+        }
+    }
+
+    /// Classify a visible cell for search match highlighting.
+    pub fn cell_match_type(&self, viewport_line: usize, col: usize) -> MatchType {
+        if self.matches.is_empty() {
+            return MatchType::None;
+        }
+        let stable = StableRowIndex(self.base_stable + viewport_line as u64);
+
+        // Binary search: find first match whose start is beyond (row, col).
+        let idx = self
+            .matches
+            .partition_point(|m| (m.start_row, m.start_col) <= (stable, col));
+
+        let start = idx.saturating_sub(1);
+        let end = (idx + 1).min(self.matches.len());
+
+        for i in start..end {
+            if cell_in_search_match(&self.matches[i], stable, col) {
+                return if i == self.focused {
+                    MatchType::FocusedMatch
+                } else {
+                    MatchType::Match
+                };
+            }
+        }
+        MatchType::None
+    }
+
+    /// Total number of matches.
+    pub fn match_count(&self) -> usize {
+        self.match_count
+    }
+
+    /// 1-based focused match index (for "N of M" display).
+    pub fn focused_display(&self) -> usize {
+        if self.match_count == 0 {
+            0
+        } else {
+            self.focused + 1
+        }
+    }
+
+    /// The current query string.
+    pub fn query(&self) -> &str {
+        &self.query
     }
 }
 
@@ -116,9 +192,8 @@ pub struct FrameInput {
     pub palette: FramePalette,
     /// Active selection for highlight rendering.
     pub selection: Option<FrameSelection>,
-    /// Active search matches (placeholder until Section 11).
-    #[allow(dead_code, reason = "search highlight rendering in Section 11")]
-    pub search_matches: Vec<SearchMatch>,
+    /// Active search state for match highlighting.
+    pub search: Option<FrameSearch>,
     /// Viewport cell under the mouse cursor for hyperlink hover detection.
     ///
     /// `(viewport_line, column)`. Set from mouse state after extraction;
@@ -216,10 +291,27 @@ impl FrameInput {
                 opacity: 1.0,
             },
             selection: None,
-            search_matches: Vec::new(),
+            search: None,
             hovered_cell: None,
             mark_cursor: None,
         }
+    }
+}
+
+/// Check if `(stable_row, col)` falls within a search match span.
+fn cell_in_search_match(m: &SearchMatch, stable_row: StableRowIndex, col: usize) -> bool {
+    if stable_row < m.start_row || stable_row > m.end_row {
+        return false;
+    }
+    if m.start_row == m.end_row {
+        return col >= m.start_col && col <= m.end_col;
+    }
+    if stable_row == m.start_row {
+        col >= m.start_col
+    } else if stable_row == m.end_row {
+        col <= m.end_col
+    } else {
+        true
     }
 }
 

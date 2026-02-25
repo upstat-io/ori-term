@@ -8,8 +8,10 @@ use unicode_width::UnicodeWidthChar;
 use oriterm_core::{CellFlags, Column, CursorShape, RenderableContent, TermMode};
 
 use oriterm_ui::draw::DrawList;
+use oriterm_ui::geometry::Point;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
+use oriterm_ui::widgets::status_badge::StatusBadge;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::widgets::{DrawCtx, Widget};
 
@@ -18,13 +20,17 @@ use super::mouse_selection::{self, GridCtx};
 use crate::font::UiFontMeasurer;
 use crate::gpu::state::GpuState;
 use crate::gpu::{
-    FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize, extract_frame,
+    FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize, extract_frame,
     extract_frame_into,
 };
 use crate::widgets::terminal_grid::TerminalGridWidget;
 
 impl App {
     /// Execute the three-phase rendering pipeline: Extract → Prepare → Render.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "linear three-phase pipeline: Extract → Prepare → Render"
+    )]
     pub(super) fn handle_redraw(&mut self) {
         log::trace!("RedrawRequested");
         let render_result = {
@@ -88,10 +94,10 @@ impl App {
                 })
             });
 
-            // Snapshot selection for rendering (Tab owns selection, not Term).
-            frame.selection = tab
-                .selection()
-                .map(|sel| FrameSelection::new(sel, frame.content.stable_row_base));
+            // Snapshot selection and search for rendering (Tab owns both, not Term).
+            let base = frame.content.stable_row_base;
+            frame.selection = tab.selection().map(|sel| FrameSelection::new(sel, base));
+            frame.search = tab.search().map(|s| FrameSearch::new(s, base));
 
             // Compute hovered cell for hyperlink underline rendering.
             if let Some(grid_widget) = self.terminal_grid.as_ref() {
@@ -154,6 +160,23 @@ impl App {
                 gpu,
             ) {
                 self.dirty = true;
+            }
+
+            // Draw search bar overlay when search is active.
+            if let Some(search) = frame.search.as_ref() {
+                let caption_h = self
+                    .chrome
+                    .as_ref()
+                    .map_or(0.0, WindowChromeWidget::caption_height);
+                Self::draw_search_bar(
+                    search,
+                    renderer,
+                    &mut self.chrome_draw_list,
+                    logical_w as f32,
+                    caption_h,
+                    scale,
+                    gpu,
+                );
             }
 
             renderer.render_to_surface(gpu, window.surface())
@@ -285,6 +308,55 @@ impl App {
         // and emit glyph instances for titles, messages, and button labels.
         renderer.append_ui_draw_list_with_text(draw_list, scale, gpu);
         animating
+    }
+
+    /// Draw the search bar overlay above the grid area.
+    ///
+    /// Shows the current query and match count ("N of M") as a floating
+    /// [`StatusBadge`]. Coordinates are in logical pixels; `scale` converts
+    /// to physical pixels for the GPU pipeline.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "search bar drawing: search state, renderer, draw list, viewport, caption, scale, GPU"
+    )]
+    fn draw_search_bar(
+        search: &FrameSearch,
+        renderer: &mut crate::gpu::GpuRenderer,
+        draw_list: &mut DrawList,
+        logical_width: f32,
+        caption_h: f32,
+        scale: f32,
+        gpu: &GpuState,
+    ) {
+        let query = search.query();
+        let text = if query.is_empty() {
+            String::from("Search: ")
+        } else if search.match_count() == 0 {
+            format!("Search: {query}  No matches")
+        } else {
+            format!(
+                "Search: {query}  {} of {}",
+                search.focused_display(),
+                search.match_count()
+            )
+        };
+
+        let badge = StatusBadge::new(&text);
+
+        // Shape text and measure badge (immutable borrow on renderer ends
+        // after shape — NLL lets the mutable append follow).
+        let max_text_w = logical_width * 0.4;
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let (w, _h) = badge.measure(&measurer, max_text_w);
+
+        // Position: top-right of grid area, inset from edges.
+        let margin = 8.0;
+        let pos = Point::new(logical_width - w - margin, caption_h + margin);
+
+        draw_list.clear();
+        let _ = badge.draw(draw_list, &measurer, pos, max_text_w);
+
+        renderer.append_ui_draw_list_with_text(draw_list, scale, gpu);
     }
 }
 

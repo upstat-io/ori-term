@@ -6,7 +6,7 @@
 use winit::event::ElementState;
 use winit::keyboard::SmolStr;
 
-use oriterm_ui::input::{Key, Modifiers};
+use oriterm_ui::input::Key;
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::WidgetAction;
 
@@ -105,7 +105,7 @@ impl App {
             if let Some(key) = winit_key_to_ui_key(&event.logical_key) {
                 let ui_event = oriterm_ui::input::KeyEvent {
                     key,
-                    modifiers: Modifiers::NONE,
+                    modifiers: super::winit_mods_to_ui(self.modifiers),
                 };
                 let scale = self
                     .window
@@ -125,6 +125,12 @@ impl App {
                     .process_key_event(ui_event, measurer, &theme, None);
                 self.handle_overlay_result(result);
             }
+            return;
+        }
+
+        // Search mode: consume ALL key events while search is active.
+        if self.is_search_active() {
+            self.handle_search_key(event);
             return;
         }
 
@@ -274,6 +280,10 @@ impl App {
                 self.dirty = true;
                 true
             }
+            Action::OpenSearch => {
+                self.open_search();
+                true
+            }
             // Actions for future sections — consume the event but log a stub.
             Action::NewTab
             | Action::CloseTab
@@ -282,7 +292,6 @@ impl App {
             | Action::ZoomIn
             | Action::ZoomOut
             | Action::ZoomReset
-            | Action::OpenSearch
             | Action::PreviousPrompt
             | Action::NextPrompt
             | Action::DuplicateTab
