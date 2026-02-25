@@ -152,6 +152,24 @@ impl WindowChromeWidget {
         self.recompute_layout();
     }
 
+    /// Updates all theme-derived colors from a new [`UiTheme`].
+    pub fn apply_theme(&mut self, theme: &UiTheme) {
+        self.caption_bg = theme.bg_secondary;
+        self.caption_bg_inactive = darken(theme.bg_secondary, 0.3);
+        self.caption_fg = theme.fg_secondary;
+        let colors = ControlButtonColors {
+            fg: theme.fg_primary,
+            bg: Color::TRANSPARENT,
+            hover_bg: theme.bg_hover,
+            close_hover_bg: theme.close_hover_bg,
+            close_pressed_bg: theme.close_pressed_bg,
+        };
+        for ctrl in &mut self.controls {
+            ctrl.set_colors(colors);
+        }
+        self.sync_caption_bg();
+    }
+
     /// Recomputes the chrome layout from current state.
     fn recompute_layout(&mut self) {
         self.chrome_layout =

@@ -2823,3 +2823,58 @@ fn origin_with_logical_viewport_fills_grid_area() {
         "grid fills most of viewport: bottom={bottom_edge}, viewport={logical_h}",
     );
 }
+
+// ── Ligature + selection interaction (Section 6.5) ──
+
+#[test]
+fn shaped_ligature_selection_col1_does_not_duplicate_glyph() {
+    // A 2-column ligature (glyph 100 at cols 0-1) with selection covering
+    // only col 1. The glyph must be emitted exactly once at col 0.
+    // Selection highlighting applies per-cell to backgrounds independently.
+    let size_q6 = 768;
+    let mut input = FrameInput::test_grid(3, 1, "fi ");
+    input.content.cells[0].ch = 'f';
+    input.content.cells[1].ch = 'i';
+    input.content.cursor.visible = false;
+
+    let atlas = key_atlas_with(&[100], size_q6);
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 100,
+        face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
+        col_start: 0,
+        col_span: 2,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let shaped = shaped_one_row(3, &glyphs, size_q6);
+
+    // Select only col 1 (the continuation column of the ligature).
+    input.selection = Some(selection_range(0, 1, 1));
+
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    // 3 bg instances (one per cell), still only 1 fg instance (ligature glyph).
+    assert_counts(&frame, 3, 1, 0);
+
+    // Col 0 (unselected) should have normal bg.
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    assert_eq!(bg0.bg_color, normal_bg, "col 0 should have normal bg");
+
+    // Col 1 (selected continuation) should have inverted bg.
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    let selected_bg = rgb_f32(Rgb {
+        r: 211,
+        g: 215,
+        b: 207,
+    });
+    assert_eq!(
+        bg1.bg_color, selected_bg,
+        "col 1 (ligature continuation) should have selected bg"
+    );
+
+    // Col 2 (space, unselected) should have normal bg.
+    let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
+    assert_eq!(bg2.bg_color, normal_bg, "col 2 should have normal bg");
+}

@@ -1015,6 +1015,62 @@ fn truncate_with_ellipsis_shorter_than_max() {
     );
 }
 
+// ── Ligature Shaping (Section 6.4) ──
+
+#[test]
+fn shape_arrow_ligature_col_span_two() {
+    let fc = test_collection();
+    let cells = make_cells("=>");
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    // Whether "=>" produces a ligature depends on the font. If the font
+    // has a `calt` substitution for "=>", we get 1 glyph with col_span=2.
+    // Otherwise we get 2 separate glyphs with col_span=1 each.
+    if output.len() == 1 {
+        assert_eq!(
+            output[0].col_span, 2,
+            "ligature glyph for '=>' should span 2 columns"
+        );
+        assert_eq!(output[0].col_start, 0, "ligature starts at col 0");
+    } else {
+        // No ligature — font doesn't support it. Verify 2 separate glyphs.
+        assert_eq!(output.len(), 2, "non-ligature: 2 glyphs for '=>'");
+        assert_eq!(output[0].col_span, 1);
+        assert_eq!(output[1].col_span, 1);
+    }
+}
+
+#[test]
+fn shape_fi_ligature_col_span_two() {
+    let fc = test_collection();
+    let cells = make_cells("fi");
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    // "fi" ligature via `liga` feature: 1 glyph with col_span=2 if the font
+    // supports it, otherwise 2 separate glyphs.
+    if output.len() == 1 {
+        assert_eq!(
+            output[0].col_span, 2,
+            "ligature glyph for 'fi' should span 2 columns"
+        );
+        assert_eq!(output[0].col_start, 0, "ligature starts at col 0");
+    } else {
+        assert_eq!(output.len(), 2, "non-ligature: 2 glyphs for 'fi'");
+        assert_eq!(output[0].col_span, 1);
+        assert_eq!(output[1].col_span, 1);
+    }
+}
+
 // ── Subpixel Positioning: UI Text Mixed Phases ──
 
 /// UI text glyphs land at different subpixel phases across a shaped string.
