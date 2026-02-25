@@ -27,14 +27,20 @@ impl App {
         state: ElementState,
         event_loop: &ActiveEventLoop,
     ) -> bool {
-        // Only handle left-click press events.
-        if button != winit::event::MouseButton::Left || state != ElementState::Pressed {
+        // Only handle left-button events.
+        if button != winit::event::MouseButton::Left {
             return false;
         }
 
         let pos = self.mouse.cursor_pos();
         if !self.cursor_in_tab_bar(pos) {
             return false;
+        }
+
+        // Consume release events without action — prevents them from
+        // falling through to the terminal selection handler.
+        if state != ElementState::Pressed {
+            return true;
         }
 
         // Use the hover hit already computed by update_tab_bar_hover.
@@ -100,15 +106,7 @@ impl App {
             // Double-click: toggle maximize. Reset timestamp to prevent
             // a third click from triggering another toggle.
             self.last_drag_area_press = None;
-            if let Some(window) = &mut self.window {
-                let maximized = !window.is_maximized();
-                window.window().set_maximized(maximized);
-                window.set_maximized(maximized);
-                if let Some(chrome) = &mut self.chrome {
-                    chrome.set_maximized(maximized);
-                }
-                self.dirty = true;
-            }
+            self.toggle_maximize();
         } else {
             // Single click: initiate native window drag.
             if let Some(window) = &self.window {

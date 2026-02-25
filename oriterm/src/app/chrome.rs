@@ -42,21 +42,29 @@ impl App {
                 true
             }
             WidgetAction::WindowMaximize => {
-                if let Some(window) = &mut self.window {
-                    let maximized = !window.is_maximized();
-                    window.window().set_maximized(maximized);
-                    window.set_maximized(maximized);
-                    if let Some(chrome) = &mut self.chrome {
-                        chrome.set_maximized(maximized);
-                    }
-                    self.dirty = true;
-                }
+                self.toggle_maximize();
                 true
             }
             WidgetAction::WindowClose => {
                 self.shutdown(0);
             }
             _ => false,
+        }
+    }
+
+    /// Toggle the window between maximized and restored state.
+    ///
+    /// Updates the winit window, the `TermWindow` state, and the chrome
+    /// widget's maximized flag.
+    pub(super) fn toggle_maximize(&mut self) {
+        if let Some(window) = &mut self.window {
+            let maximized = !window.is_maximized();
+            window.window().set_maximized(maximized);
+            window.set_maximized(maximized);
+            if let Some(chrome) = &mut self.chrome {
+                chrome.set_maximized(maximized);
+            }
+            self.dirty = true;
         }
     }
 

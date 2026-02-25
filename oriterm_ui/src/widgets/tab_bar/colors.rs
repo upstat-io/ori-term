@@ -31,8 +31,6 @@ pub struct TabBarColors {
     pub close_fg: Color,
     /// New-tab (+) and dropdown button hover background.
     pub button_hover_bg: Color,
-    /// Small font size for tab titles (points).
-    pub font_size_small: f32,
 }
 
 impl TabBarColors {
@@ -48,7 +46,6 @@ impl TabBarColors {
             separator: theme.border.with_alpha(0.5),
             close_fg: theme.fg_secondary,
             button_hover_bg: theme.bg_hover,
-            font_size_small: theme.font_size_small,
         }
     }
 

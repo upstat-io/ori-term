@@ -23,12 +23,6 @@ pub const CONTROL_BUTTON_WIDTH: f32 = 46.0;
 /// Used by hit testing to determine the draggable edge zone.
 pub const RESIZE_BORDER_WIDTH: f32 = 6.0;
 
-/// Close button hover background color (`#C42B1C` — Windows convention).
-pub const CLOSE_HOVER_COLOR: crate::color::Color = crate::color::Color::hex(0xC4_2B_1C);
-
-/// Close button pressed background color (slightly darker red).
-pub const CLOSE_PRESSED_COLOR: crate::color::Color = crate::color::Color::hex(0xA1_20_12);
-
 /// Symbol stroke width for window control glyphs (logical pixels).
 pub const SYMBOL_STROKE_WIDTH: f32 = 1.0;
 
