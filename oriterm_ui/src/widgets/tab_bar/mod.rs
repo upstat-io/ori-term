@@ -1,12 +1,14 @@
-//! Tab bar widget — layout, colors, and hit testing for the tab strip.
-//!
-//! Provides pure-computation types for tab bar geometry:
+//! Tab bar widget — layout, colors, hit testing, and rendering for the tab strip.
 //!
 //! - [`constants`] — DPI-independent layout dimensions in logical pixels.
 //! - [`TabBarLayout`] — compute tab widths and element positions from
 //!   tab count and window width.
 //! - [`TabBarColors`] — all colors needed for rendering, derived from
 //!   [`UiTheme`](crate::theme::UiTheme).
+//! - [`TabBarHit`] — hit-test result identifying which tab bar element the
+//!   cursor targets.
+//! - [`TabBarWidget`] — rendering widget that draws tabs, buttons, and
+//!   separators into a [`DrawList`](crate::draw::DrawList).
 //!
 //! All coordinates are in logical pixels; the rendering layer applies the
 //! DPI scale factor at the boundary. Follows the same pattern as
@@ -15,10 +17,14 @@
 
 pub mod colors;
 pub mod constants;
+pub mod hit;
 pub mod layout;
+pub mod widget;
 
 pub use colors::TabBarColors;
+pub use hit::TabBarHit;
 pub use layout::TabBarLayout;
+pub use widget::{TabBarWidget, TabEntry};
 
 #[cfg(test)]
 mod tests;

@@ -244,19 +244,18 @@ impl Tab {
     }
 
     /// Last known window title (from OSC 0/2).
-    #[allow(dead_code, reason = "tab bar display in Section 15")]
     pub fn title(&self) -> &str {
         &self.title
     }
 
     /// Whether the bell has fired since the tab was last focused.
-    #[allow(dead_code, reason = "bell indicator in Section 15")]
+    #[allow(dead_code, reason = "bell indicator cleared on tab focus switch")]
     pub fn has_bell(&self) -> bool {
         self.has_bell
     }
 
     /// Clear the bell indicator (call when the tab gains focus).
-    #[allow(dead_code, reason = "bell indicator in Section 15")]
+    #[allow(dead_code, reason = "called on tab switch — single tab for now")]
     pub fn clear_bell(&mut self) {
         self.has_bell = false;
     }

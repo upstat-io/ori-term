@@ -373,3 +373,226 @@ fn inner_padding_fits_within_min_tab_width() {
         "inner padding ({inner}) >= TAB_MIN_WIDTH ({TAB_MIN_WIDTH}), max_text_width would be 0"
     );
 }
+
+// --- TabBarHit ---
+
+use super::hit::TabBarHit;
+
+#[test]
+fn hit_none_is_default() {
+    let hit: TabBarHit = Default::default();
+    assert_eq!(hit, TabBarHit::None);
+}
+
+#[test]
+fn hit_is_tab_matches_body_and_close() {
+    assert!(TabBarHit::Tab(2).is_tab(2));
+    assert!(TabBarHit::CloseTab(2).is_tab(2));
+    assert!(!TabBarHit::Tab(3).is_tab(2));
+    assert!(!TabBarHit::CloseTab(3).is_tab(2));
+    assert!(!TabBarHit::NewTab.is_tab(0));
+    assert!(!TabBarHit::None.is_tab(0));
+}
+
+// --- TabBarWidget ---
+
+use super::widget::{TabBarWidget, TabEntry};
+
+#[test]
+fn widget_new_has_no_tabs() {
+    let w = TabBarWidget::new(1200.0);
+    assert_eq!(w.tab_count(), 0);
+}
+
+#[test]
+fn widget_set_tabs_updates_count() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("Tab 1"), TabEntry::new("Tab 2")]);
+    assert_eq!(w.tab_count(), 2);
+}
+
+#[test]
+fn widget_set_tabs_recomputes_layout() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![
+        TabEntry::new("A"),
+        TabEntry::new("B"),
+        TabEntry::new("C"),
+    ]);
+    assert_eq!(w.layout().tab_count, 3);
+}
+
+#[test]
+fn widget_set_window_width_recomputes_layout() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    let w1 = w.layout().tab_width;
+    w.set_window_width(2000.0);
+    let w2 = w.layout().tab_width;
+    // Wider window = wider tab (clamped at max, but likely different).
+    assert!(w2 >= w1 || (w2 - TAB_MAX_WIDTH).abs() < f32::EPSILON);
+}
+
+#[test]
+fn widget_tab_width_lock_freezes_layout() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let normal = w.layout().tab_width;
+    w.set_tab_width_lock(Some(100.0));
+    assert!((w.layout().tab_width - 100.0).abs() < f32::EPSILON);
+    w.set_tab_width_lock(None);
+    assert!((w.layout().tab_width - normal).abs() < f32::EPSILON);
+}
+
+#[test]
+fn tab_entry_new_sets_title() {
+    let entry = TabEntry::new("hello");
+    assert_eq!(entry.title, "hello");
+    assert!(entry.bell_start.is_none());
+}
+
+#[test]
+fn widget_set_active_index() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    w.set_active_index(1);
+    // No panic, index stored. Widget draw will use this.
+}
+
+#[test]
+fn widget_set_hover_hit() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_hover_hit(TabBarHit::NewTab);
+    // No panic — hover state stored.
+}
+
+#[test]
+fn widget_set_drag_visual() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    w.set_drag_visual(Some((0, 100.0)));
+    // No panic — drag state stored.
+    w.set_drag_visual(None);
+}
+
+#[test]
+fn widget_tabs_mut_allows_bell_update() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    let now = std::time::Instant::now();
+    w.tabs_mut()[0].bell_start = Some(now);
+    assert!(w.tabs_mut()[0].bell_start.is_some());
+}
+
+#[test]
+fn bell_phase_zero_when_no_bell() {
+    let entry = TabEntry::new("test");
+    let now = std::time::Instant::now();
+    let phase = TabBarWidget::bell_phase_for_test(&entry, now);
+    assert!((phase - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn bell_phase_positive_right_after_bell() {
+    let now = std::time::Instant::now();
+    let entry = TabEntry {
+        title: "test".into(),
+        bell_start: Some(now - std::time::Duration::from_millis(100)),
+    };
+    let phase = TabBarWidget::bell_phase_for_test(&entry, now);
+    // Phase should be > 0 shortly after bell fires.
+    assert!(phase > 0.0, "bell phase should be positive, got {phase}");
+}
+
+#[test]
+fn bell_phase_zero_after_duration() {
+    let now = std::time::Instant::now();
+    let entry = TabEntry {
+        title: "test".into(),
+        bell_start: Some(now - std::time::Duration::from_secs(5)),
+    };
+    let phase = TabBarWidget::bell_phase_for_test(&entry, now);
+    assert!((phase - 0.0).abs() < f32::EPSILON);
+}
+
+// --- decay_tab_animations ---
+
+#[test]
+fn decay_animations_empty_offsets() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_anim_offsets(vec![]);
+    assert!(!w.decay_tab_animations(1.0 / 60.0));
+}
+
+#[test]
+fn decay_animations_zeroes_stay_zero() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_anim_offsets(vec![0.0, 0.0, 0.0]);
+    assert!(!w.decay_tab_animations(1.0 / 60.0));
+}
+
+#[test]
+fn decay_animations_nonzero_returns_active() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_anim_offsets(vec![100.0, -50.0]);
+    let still_active = w.decay_tab_animations(1.0 / 60.0);
+    assert!(still_active, "should still be animating after one frame");
+    // Another frame should also still be active (100px takes many frames).
+    let still_active = w.decay_tab_animations(1.0 / 60.0);
+    assert!(still_active, "should still be animating after two frames");
+}
+
+#[test]
+fn decay_animations_settles_to_zero() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_anim_offsets(vec![10.0]);
+    // Simulate many frames (200ms at 60fps = 12 frames).
+    for _ in 0..60 {
+        w.decay_tab_animations(1.0 / 60.0);
+    }
+    // After 1 second, should be fully settled.
+    let still_active = w.decay_tab_animations(1.0 / 60.0);
+    assert!(!still_active, "should be settled after 60 frames");
+}
+
+// --- Button repositioning during drag ---
+
+#[test]
+fn new_tab_button_x_no_drag() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    // Without drag, button X == layout.new_tab_x().
+    let layout_x = w.layout().new_tab_x();
+    assert!((w.test_new_tab_button_x() - layout_x).abs() < f32::EPSILON);
+}
+
+#[test]
+fn new_tab_button_x_follows_drag() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let tab_w = w.layout().tab_width;
+    // Drag tab 0 far to the right, past the normal new_tab_x.
+    let drag_x = w.layout().new_tab_x() + 100.0;
+    w.set_drag_visual(Some((0, drag_x)));
+    let expected = drag_x + tab_w;
+    assert!(
+        (w.test_new_tab_button_x() - expected).abs() < f32::EPSILON,
+        "new tab button should follow drag: got {}, expected {expected}",
+        w.test_new_tab_button_x()
+    );
+}
+
+#[test]
+fn dropdown_button_x_follows_drag() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let tab_w = w.layout().tab_width;
+    let drag_x = w.layout().new_tab_x() + 100.0;
+    w.set_drag_visual(Some((0, drag_x)));
+    let expected = drag_x + tab_w + NEW_TAB_BUTTON_WIDTH;
+    assert!(
+        (w.test_dropdown_button_x() - expected).abs() < f32::EPSILON,
+        "dropdown button should follow drag: got {}, expected {expected}",
+        w.test_dropdown_button_x()
+    );
+}

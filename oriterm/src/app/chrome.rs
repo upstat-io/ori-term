@@ -277,10 +277,10 @@ impl App {
 
     /// Recompute grid layout from current cell metrics and viewport size.
     ///
-    /// Reads cell metrics from the renderer, caption height from chrome,
-    /// and updates the terminal grid widget, tab grid, PTY dimensions,
-    /// and resize increments. Called after any change to font, DPI, or
-    /// window size.
+    /// Reads cell metrics from the renderer, chrome height (caption + tab bar)
+    /// from widgets, and updates the terminal grid widget, tab grid, PTY
+    /// dimensions, and resize increments. Called after any change to font,
+    /// DPI, or window size.
     pub(super) fn sync_grid_layout(&mut self, viewport_w: u32, viewport_h: u32) {
         let (Some(renderer), Some(window)) = (&self.renderer, &self.window) else {
             return;
@@ -292,8 +292,14 @@ impl App {
             .chrome
             .as_ref()
             .map_or(0.0, WindowChromeWidget::caption_height);
-        let caption_px = (caption_height * scale).round() as u32;
-        let grid_h = viewport_h.saturating_sub(caption_px);
+        let tab_bar_h = if self.tab_bar.is_some() {
+            oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+        } else {
+            0.0
+        };
+        let chrome_height = caption_height + tab_bar_h;
+        let chrome_px = (chrome_height * scale).round() as u32;
+        let grid_h = viewport_h.saturating_sub(chrome_px);
         let cols = cell.columns(viewport_w).max(1);
         let rows = cell.rows(grid_h).max(1);
 
@@ -302,7 +308,7 @@ impl App {
             grid.set_grid_size(cols, rows);
             grid.set_bounds(oriterm_ui::geometry::Rect::new(
                 0.0,
-                caption_height * scale,
+                chrome_height * scale,
                 cols as f32 * cell.width,
                 rows as f32 * cell.height,
             ));
@@ -358,11 +364,16 @@ impl App {
             window.resize_surface(size.width, size.height, gpu);
         }
 
-        // Update chrome layout for new window width.
-        if let (Some(chrome), Some(window)) = (&mut self.chrome, &self.window) {
+        // Update chrome and tab bar layout for new window width.
+        if let Some(window) = &self.window {
             let scale = window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
-            chrome.set_window_width(logical_w);
+            if let Some(chrome) = &mut self.chrome {
+                chrome.set_window_width(logical_w);
+            }
+            if let Some(tab_bar) = &mut self.tab_bar {
+                tab_bar.set_window_width(logical_w);
+            }
         }
 
         // Update overlay manager viewport for dialog placement.

@@ -108,27 +108,35 @@ impl App {
             );
         }
 
-        // 9. Compute grid dimensions from viewport, offset by caption height.
-        // Cell metrics are in physical pixels (rasterized at physical DPI),
-        // so divide physical viewport by physical cell size directly.
+        // 9. Create tab bar widget with initial tab entry.
+        let theme = oriterm_ui::theme::UiTheme::dark();
+        let mut tab_bar_widget =
+            oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &theme);
+        tab_bar_widget.set_tabs(vec![oriterm_ui::widgets::tab_bar::TabEntry::new("")]);
+
+        // 10. Compute grid dimensions from viewport, offset by chrome height.
+        // Chrome = caption bar + tab bar. Cell metrics are in physical pixels
+        // (rasterized at physical DPI), so divide physical viewport by physical
+        // cell size directly.
+        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let caption_px = (caption_height * scale).round() as u32;
-        let grid_h = h.saturating_sub(caption_px);
+        let chrome_px = ((caption_height + tab_bar_h) * scale).round() as u32;
+        let grid_h = h.saturating_sub(chrome_px);
         let cols = cell.columns(w).max(1);
         let rows = cell.rows(grid_h).max(1);
 
-        // 10. Create grid widget with cell metrics and initial grid size.
+        // 11. Create grid widget with cell metrics and initial grid size.
         // Bounds are in physical pixels to match the physical viewport.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
         grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
             0.0,
-            caption_height * scale,
+            (caption_height + tab_bar_h) * scale,
             cols as f32 * cell.width,
             rows as f32 * cell.height,
         ));
 
-        // 11. Spawn the terminal tab (PTY + VTE + Term).
+        // 12. Spawn the terminal tab (PTY + VTE + Term).
         let t_tab_start = std::time::Instant::now();
         let tab = self.create_initial_tab(rows, cols)?;
         let t_tab = t_tab_start.elapsed();
@@ -155,6 +163,7 @@ impl App {
         self.tab = Some(tab);
         self.terminal_grid = Some(grid_widget);
         self.chrome = Some(chrome_widget);
+        self.tab_bar = Some(tab_bar_widget);
         self.dirty = true;
         Ok(())
     }
