@@ -1,15 +1,17 @@
-//! COLR v1 paint tree collection via skrifa.
+//! COLR v1 paint tree collection and CPU compositing via skrifa.
 //!
-//! Walks the COLR v1 paint graph and collects [`PaintCommand`]s that the GPU
-//! compositing pipeline ([`ColrRenderer`](crate::gpu::colr::ColrRenderer)) uses
-//! to render color emoji into the color atlas via render-to-texture.
-//!
-//! The [`PaintCollector`] implements skrifa's [`ColorPainter`] trait, recording
-//! each operation (solid fill, gradient, transform, clip, layer) into a flat
-//! command list. CPAL palette colors are resolved at collection time so the GPU
-//! path receives ready-to-use RGBA values.
+//! Walks the COLR v1 paint graph and collects [`PaintCommand`]s, then
+//! composites them on the CPU into premultiplied RGBA bitmaps via
+//! [`try_rasterize_colr_v1`]. The [`PaintCollector`] implements skrifa's
+//! [`ColorPainter`] trait, recording each operation (solid fill, gradient,
+//! transform, clip, layer) into a flat command list. CPAL palette colors are
+//! resolved at collection time so the compositing path receives ready-to-use
+//! RGBA values.
 
+mod compose;
 pub(crate) mod rasterize;
+
+pub(crate) use rasterize::try_rasterize_colr_v1;
 
 use skrifa::GlyphId;
 use skrifa::color::{Brush, ColorPainter, ColorStop, CompositeMode, Extend, Transform};

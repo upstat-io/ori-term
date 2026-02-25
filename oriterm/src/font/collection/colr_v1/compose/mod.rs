@@ -8,9 +8,7 @@ use swash::FontRef;
 use swash::scale::{Render, ScaleContext, Source};
 use swash::zeno::Format;
 
-use crate::font::collection::colr_v1::{
-    ClipBox, PaintCommand, ResolvedBrush, ResolvedColorStop, Rgba,
-};
+use super::{ClipBox, PaintCommand, ResolvedBrush, ResolvedColorStop, Rgba};
 use crate::font::collection::{FaceData, font_ref};
 
 /// Composite all paint commands onto the RGBA bitmap.
@@ -338,3 +336,6 @@ fn lerp_rgba(a: Rgba, b: Rgba, t: f32) -> Rgba {
         a: a.a + (b.a - a.a) * t,
     }
 }
+
+#[cfg(test)]
+mod tests;

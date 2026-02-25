@@ -418,3 +418,117 @@ fn preedit_empty_cells_no_panic() {
     overlay_preedit_cells("A", &mut content, 10);
     assert!(content.cells.is_empty());
 }
+
+// --- Dispatch chain: keybinding priority over PTY ---
+
+/// Verify that bound key combos are intercepted by the keybinding table
+/// before reaching PTY encoding.
+///
+/// In `handle_keyboard_input`, bindings are checked (via `find_binding`)
+/// before `encode_key_to_pty`. When a binding is found and `execute_action`
+/// returns `true`, the method returns early — PTY encoding is never reached.
+#[test]
+fn binding_takes_priority_over_pty_send() {
+    use winit::keyboard::Key;
+
+    use oriterm_core::TermMode;
+
+    use crate::key_encoding::{KeyEventType, KeyInput, Modifiers, encode_key};
+    use crate::keybindings::{self, Action, BindingKey};
+
+    let bindings = keybindings::default_bindings();
+
+    // Ctrl+Shift+C is bound to Copy — execute_action(Copy) always returns
+    // true, so the event is consumed and PTY encoding is skipped.
+    let key_c = BindingKey::Character("c".to_owned());
+    let action =
+        keybindings::find_binding(&bindings, &key_c, Modifiers::CONTROL | Modifiers::SHIFT);
+    assert_eq!(
+        action,
+        Some(&Action::Copy),
+        "Ctrl+Shift+C should bind to Copy (consumes event, PTY skipped)"
+    );
+
+    // Contrast: unbound key 'a' has no binding, so handle_keyboard_input
+    // falls through to encode_key_to_pty, producing PTY output.
+    let key_a = BindingKey::Character("a".to_owned());
+    assert_eq!(
+        keybindings::find_binding(&bindings, &key_a, Modifiers::empty()),
+        None,
+        "bare 'a' should have no binding (falls through to PTY)"
+    );
+
+    // Confirm the unbound key produces PTY bytes via encode_key.
+    let pty_bytes = encode_key(&KeyInput {
+        key: &Key::Character("a".into()),
+        mods: Modifiers::empty(),
+        mode: TermMode::default(),
+        text: Some("a"),
+        location: winit::keyboard::KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+    });
+    assert_eq!(pty_bytes, b"a", "unbound 'a' should encode as PTY output");
+}
+
+// --- Dispatch chain: SmartCopy conditional fallthrough ---
+
+/// Verify that Ctrl+C uses SmartCopy, which conditionally falls through
+/// to PTY encoding when no selection exists.
+///
+/// Dispatch path with no selection:
+///   find_binding(Ctrl+C) → SmartCopy
+///   → execute_action(SmartCopy) returns false (no selection)
+///   → encode_key_to_pty(Ctrl+C) → sends \x03 (ETX/SIGINT)
+///
+/// Dispatch path with selection:
+///   find_binding(Ctrl+C) → SmartCopy
+///   → execute_action(SmartCopy) copies + returns true (event consumed)
+///   → PTY never reached (no SIGINT)
+#[test]
+fn ctrl_c_smart_copy_falls_through_to_pty_without_selection() {
+    use winit::keyboard::Key;
+
+    use oriterm_core::TermMode;
+
+    use crate::key_encoding::{KeyEventType, KeyInput, Modifiers, encode_key};
+    use crate::keybindings::{self, Action, BindingKey};
+
+    let bindings = keybindings::default_bindings();
+
+    // Ctrl+C is bound to SmartCopy — the only action whose execute_action
+    // returns false (when no selection exists), allowing PTY fallthrough.
+    let key_c = BindingKey::Character("c".to_owned());
+    let action = keybindings::find_binding(&bindings, &key_c, Modifiers::CONTROL);
+    assert_eq!(
+        action,
+        Some(&Action::SmartCopy),
+        "Ctrl+C should bind to SmartCopy (conditional consumption)"
+    );
+
+    // When SmartCopy returns false (no selection), handle_keyboard_input
+    // falls through to encode_key_to_pty. Ctrl+C encodes as \x03
+    // (ETX — the byte that triggers SIGINT in the PTY).
+    let pty_bytes = encode_key(&KeyInput {
+        key: &Key::Character("c".into()),
+        mods: Modifiers::CONTROL,
+        mode: TermMode::default(),
+        text: None,
+        location: winit::keyboard::KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+    });
+    assert_eq!(
+        pty_bytes,
+        vec![0x03],
+        "Ctrl+C should encode as \\x03 for PTY (SIGINT)"
+    );
+
+    // Ctrl+Shift+C uses Copy (not SmartCopy) — always consumes, never
+    // falls through. This ensures users have an unconditional copy binding.
+    let copy_action =
+        keybindings::find_binding(&bindings, &key_c, Modifiers::CONTROL | Modifiers::SHIFT);
+    assert_eq!(
+        copy_action,
+        Some(&Action::Copy),
+        "Ctrl+Shift+C should bind to Copy (always consumes)"
+    );
+}

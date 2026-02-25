@@ -23,7 +23,11 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
     let alt = Modifiers::ALT;
     let cs = ctrl | shift;
 
-    let bindings = vec![
+    #[allow(
+        unused_mut,
+        reason = "mut needed for macOS cfg block that extends bindings"
+    )]
+    let mut bindings = vec![
         // Explicit copy / paste (Ctrl+Shift+C/V).
         bind(ch("c"), cs, Action::Copy),
         bind(ch("v"), cs, Action::Paste),

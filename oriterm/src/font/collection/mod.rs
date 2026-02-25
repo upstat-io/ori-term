@@ -454,7 +454,7 @@ impl FontCollection {
         // Try COLR first — handles modern color emoji (Segoe UI Emoji,
         // Noto Color Emoji v2) via skrifa. Falls through to swash for sbix
         // and standard outlines.
-        if let Some(colr_glyph) = crate::gpu::colr::try_rasterize_colr_v1(
+        if let Some(colr_glyph) = colr_v1::try_rasterize_colr_v1(
             fd,
             key.glyph_id,
             size,

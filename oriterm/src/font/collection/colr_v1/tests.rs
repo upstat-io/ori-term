@@ -207,3 +207,45 @@ fn rgba_premultiply() {
     assert!(pm.b.abs() < 0.001);
     assert!((pm.a - 0.5).abs() < 0.001);
 }
+
+#[test]
+fn rgba_premultiply_zero_alpha() {
+    // Transparent pixel: RGB channels must become zero regardless of input.
+    let color = Rgba {
+        r: 1.0,
+        g: 0.5,
+        b: 0.25,
+        a: 0.0,
+    };
+    let pm = color.premultiply();
+    assert!(pm.r.abs() < 0.001);
+    assert!(pm.g.abs() < 0.001);
+    assert!(pm.b.abs() < 0.001);
+    assert!(pm.a.abs() < 0.001);
+}
+
+#[test]
+fn clip_box_zero_area() {
+    // Degenerate clip box where x_min == x_max.
+    let cb = ClipBox {
+        x_min: 10.0,
+        y_min: 5.0,
+        x_max: 10.0,
+        y_max: 5.0,
+    };
+    assert!(cb.width().abs() < 0.001);
+    assert!(cb.height().abs() < 0.001);
+}
+
+#[test]
+fn clip_box_inverted_bounds() {
+    // Inverted bounds (min > max) — width/height should be negative.
+    let cb = ClipBox {
+        x_min: 50.0,
+        y_min: 50.0,
+        x_max: 10.0,
+        y_max: 10.0,
+    };
+    assert!(cb.width() < 0.0);
+    assert!(cb.height() < 0.0);
+}

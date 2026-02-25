@@ -1,7 +1,7 @@
 ---
 section: 8
 title: Keyboard Input
-status: in-progress
+status: complete
 tier: 3
 goal: Legacy + Kitty keyboard encoding, keyboard dispatch, IME support
 sections:
@@ -13,10 +13,10 @@ sections:
     status: complete
   - id: "8.3"
     title: Keyboard Input Dispatch
-    status: in-progress
+    status: complete
   - id: "8.4"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 08: Keyboard Input
@@ -193,10 +193,10 @@ Route keyboard events through keybindings, then through key encoding, then to th
   - [x] `Ime::Enabled` / `Ime::Disabled`: track IME state, suppress raw key events during composition
   - [x] Position IME candidate window near terminal cursor (call `window.set_ime_cursor_area()`)
   - [x] Don't send raw key events to PTY during active IME preedit
-- [ ] **Tests** (`oriterm/src/app/keyboard_input/tests.rs`):
-  - [ ] Keybinding takes priority over PTY send
+- [x] **Tests** (`oriterm/src/app/keyboard_input/tests.rs`):
+  - [x] Keybinding takes priority over PTY send
   - [x] Kitty mode takes priority over legacy encoding
-  - [ ] Ctrl+C with selection copies, without selection sends `\x03`
+  - [x] Ctrl+C with selection copies, without selection sends `\x03`
   - [x] IME commit sends text to PTY
   - [x] Preedit overlay replaces cells at cursor with underline
   - [x] Preedit hides terminal cursor
@@ -207,7 +207,7 @@ Route keyboard events through keybindings, then through key encoding, then to th
 
 ## 8.4 Section Completion
 
-- [ ] All 8.1-8.3 items complete (IME done, 2 test items remaining)
+- [x] All 8.1-8.3 items complete
 - [x] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — key encoding tests pass
 - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
 - [x] All printable characters encoded correctly
