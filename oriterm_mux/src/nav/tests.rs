@@ -171,3 +171,74 @@ fn navigate_from_tiled_to_floating() {
 
     assert_eq!(navigate(&layouts, p(1), Direction::Right), Some(p(2)));
 }
+
+// ── Navigate: uneven splits ──────────────────────────────────────
+
+/// Uneven 60/40 vertical split: pane 1 is wider, pane 2 is narrower.
+fn uneven_split() -> Vec<PaneLayout> {
+    vec![
+        tiled(1, 0.0, 0.0, 600.0, 800.0),
+        tiled(2, 602.0, 0.0, 398.0, 800.0),
+    ]
+}
+
+#[test]
+fn navigate_right_in_uneven_split() {
+    let layouts = uneven_split();
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), Some(p(2)));
+}
+
+#[test]
+fn navigate_left_in_uneven_split() {
+    let layouts = uneven_split();
+    assert_eq!(navigate(&layouts, p(2), Direction::Left), Some(p(1)));
+}
+
+/// Uneven 2x2: top-left is 70% wide, bottom-right is 30% wide.
+#[test]
+fn navigate_in_uneven_2x2_grid() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 700.0, 400.0),
+        tiled(2, 702.0, 0.0, 298.0, 400.0),
+        tiled(3, 0.0, 402.0, 700.0, 398.0),
+        tiled(4, 702.0, 402.0, 298.0, 398.0),
+    ];
+
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), Some(p(2)));
+    assert_eq!(navigate(&layouts, p(1), Direction::Down), Some(p(3)));
+    assert_eq!(navigate(&layouts, p(4), Direction::Up), Some(p(2)));
+    assert_eq!(navigate(&layouts, p(4), Direction::Left), Some(p(3)));
+}
+
+// ── Empty / single-element edge cases ────────────────────────────
+
+#[test]
+fn navigate_empty_layouts_returns_none() {
+    let layouts: Vec<PaneLayout> = vec![];
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), None);
+}
+
+#[test]
+fn cycle_empty_layouts_returns_none() {
+    let layouts: Vec<PaneLayout> = vec![];
+    assert_eq!(cycle(&layouts, p(1), true), None);
+    assert_eq!(cycle(&layouts, p(1), false), None);
+}
+
+#[test]
+fn nearest_pane_empty_layouts_returns_none() {
+    let layouts: Vec<PaneLayout> = vec![];
+    assert_eq!(nearest_pane(&layouts, 500.0, 400.0), None);
+}
+
+#[test]
+fn navigate_from_nonexistent_pane_returns_none() {
+    let layouts = grid_2x2();
+    assert_eq!(navigate(&layouts, p(99), Direction::Right), None);
+}
+
+#[test]
+fn cycle_from_nonexistent_pane_returns_none() {
+    let layouts = grid_2x2();
+    assert_eq!(cycle(&layouts, p(99), true), None);
+}

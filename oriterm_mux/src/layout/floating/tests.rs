@@ -181,3 +181,54 @@ fn panes_sorted_by_z_order() {
         "panes should be sorted by z_order: {z_orders:?}"
     );
 }
+
+// ── Z-order stability across mutations ───────────────────────────
+
+#[test]
+fn floating_z_order_stable_after_add_remove() {
+    // Start with two floating panes.
+    let layer = FloatingLayer::new();
+    let layer = layer.add(floating(1, 0.0, 0.0, 100.0, 100.0, 0));
+    let layer = layer.add(floating(2, 0.0, 0.0, 100.0, 100.0, 5));
+    let layer = layer.add(floating(3, 0.0, 0.0, 100.0, 100.0, 10));
+
+    // Record z-orders.
+    let z_before: Vec<(PaneId, u32)> = layer
+        .panes()
+        .iter()
+        .map(|p| (p.pane_id, p.z_order))
+        .collect();
+
+    // Add and remove a different pane — existing z-orders unchanged.
+    let layer = layer.add(floating(4, 200.0, 200.0, 50.0, 50.0, 7));
+    let layer = layer.remove(p(4));
+
+    let z_after: Vec<(PaneId, u32)> = layer
+        .panes()
+        .iter()
+        .map(|p| (p.pane_id, p.z_order))
+        .collect();
+
+    assert_eq!(z_before, z_after);
+}
+
+#[test]
+fn floating_z_order_stable_after_move_and_resize() {
+    let layer = FloatingLayer::new();
+    let layer = layer.add(floating(1, 0.0, 0.0, 100.0, 100.0, 0));
+    let layer = layer.add(floating(2, 50.0, 50.0, 100.0, 100.0, 1));
+
+    let z_before: Vec<u32> = layer.panes().iter().map(|p| p.z_order).collect();
+
+    // Move and resize pane 1 — z-orders should not change.
+    let layer = layer.move_pane(p(1), 300.0, 300.0);
+    let layer = layer.resize_pane(p(1), 200.0, 200.0);
+
+    let z_after: Vec<u32> = layer.panes().iter().map(|p| p.z_order).collect();
+    assert_eq!(z_before, z_after);
+
+    // Hit test should still respect z-order (pane 2 on top if overlapping).
+    // After move, pane 1 is at (300,300), pane 2 at (50,50) — no overlap.
+    assert_eq!(layer.hit_test(350.0, 350.0), Some(p(1)));
+    assert_eq!(layer.hit_test(75.0, 75.0), Some(p(2)));
+}
