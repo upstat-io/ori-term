@@ -700,3 +700,66 @@ fn visible_text(grid: &Grid, line: usize) -> String {
         .take_while(|&ch| ch != '\0')
         .collect()
 }
+
+// max_scrollback=1 edge case
+
+#[test]
+fn max_scrollback_one_only_retains_latest() {
+    let mut sb = ScrollbackBuffer::new(1);
+
+    for i in 0..100 {
+        sb.push(make_row(&format!("R{i}")));
+    }
+
+    assert_eq!(sb.len(), 1);
+    assert_eq!(row_text(sb.get(0).unwrap()), "R99");
+    assert!(sb.get(1).is_none());
+
+    // Iterator also works with a single slot.
+    let texts: Vec<String> = sb.iter().map(row_text).collect();
+    assert_eq!(texts, vec!["R99"]);
+}
+
+#[test]
+fn max_scrollback_one_pop_push_cycle() {
+    let mut sb = ScrollbackBuffer::new(1);
+    sb.push(make_row("AAA"));
+    assert_eq!(sb.len(), 1);
+
+    let popped = sb.pop_newest().unwrap();
+    assert_eq!(row_text(&popped), "AAA");
+    assert_eq!(sb.len(), 0);
+
+    sb.push(make_row("BBB"));
+    assert_eq!(sb.len(), 1);
+    assert_eq!(row_text(sb.get(0).unwrap()), "BBB");
+}
+
+// pop_newest edge cases
+
+#[test]
+fn pop_newest_empty_returns_none() {
+    let mut sb = ScrollbackBuffer::new(10);
+    assert!(sb.pop_newest().is_none());
+    assert_eq!(sb.len(), 0);
+}
+
+#[test]
+fn pop_newest_until_empty() {
+    let mut sb = ScrollbackBuffer::new(5);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.push(make_row("CCC"));
+
+    // Pop each one, verify ordering.
+    assert_eq!(row_text(&sb.pop_newest().unwrap()), "CCC");
+    assert_eq!(sb.len(), 2);
+    assert_eq!(row_text(&sb.pop_newest().unwrap()), "BBB");
+    assert_eq!(sb.len(), 1);
+    assert_eq!(row_text(&sb.pop_newest().unwrap()), "AAA");
+    assert_eq!(sb.len(), 0);
+
+    // Empty now.
+    assert!(sb.pop_newest().is_none());
+    assert!(sb.is_empty());
+}

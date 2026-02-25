@@ -1,12 +1,18 @@
-//! COLR v1 detection and CPU rasterization entry point.
+//! COLR v1 detection, paint collection, and CPU rasterization.
 //!
-//! Detects COLR v1 glyphs via skrifa, collects paint commands, and provides
-//! the entry point for GPU-composited color emoji rendering.
+//! Detects COLR v1 glyphs via skrifa, collects paint commands, and composites
+//! them on the CPU into premultiplied RGBA bitmaps. The result is inserted
+//! into the glyph cache as a [`RasterizedGlyph`] with [`GlyphFormat::Color`],
+//! indistinguishable from sbix/CBDT color emoji.
+
+use swash::scale::ScaleContext;
 
 use skrifa::instance::Size;
 use skrifa::{FontRef, MetadataProvider};
 
 use super::{ClipBox, ColrV1Glyph, PaintCollector, load_palette};
+use crate::font::GlyphFormat;
+use crate::font::collection::{FaceData, RasterizedGlyph, font_ref};
 
 /// Check whether a font face contains a COLR color glyph (v0 or v1).
 #[allow(
@@ -71,4 +77,89 @@ pub(crate) fn collect_colr_v1(
     }
 
     Some(ColrV1Glyph { commands, clip_box })
+}
+
+/// Try to rasterize a COLR v1 glyph via CPU compositing.
+///
+/// Returns a [`RasterizedGlyph`] with `GlyphFormat::Color` if the glyph has
+/// COLR v1 data, or `None` to fall back to the normal swash path.
+///
+/// The glyph outline for each layer is rasterized via swash (alpha mask only),
+/// then composited with the resolved brush color onto the output RGBA buffer.
+pub(crate) fn try_rasterize_colr_v1(
+    fd: &FaceData,
+    glyph_id: u16,
+    size_px: f32,
+    variations: &[(&str, f32)],
+    ctx: &mut ScaleContext,
+) -> Option<RasterizedGlyph> {
+    let colr = collect_colr_v1(&fd.bytes, fd.face_index, glyph_id, size_px)?;
+    log::debug!(
+        "COLR glyph {glyph_id}: {} commands, clip_box={:?}",
+        colr.commands.len(),
+        colr.clip_box
+    );
+
+    // Determine output dimensions from clip box.
+    let clip = colr.clip_box.unwrap_or_else(|| {
+        // Fallback: estimate from font metrics.
+        estimate_clip_box(fd, glyph_id, size_px)
+    });
+
+    let width = clip.width().ceil() as u32;
+    let height = clip.height().ceil() as u32;
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    // RGBA buffer (premultiplied, initially transparent).
+    let mut bitmap = vec![0u8; (width * height * 4) as usize];
+
+    // Composite each paint command.
+    super::compose::composite_commands(
+        &colr.commands,
+        &mut bitmap,
+        width,
+        height,
+        clip,
+        fd,
+        size_px,
+        variations,
+        ctx,
+    );
+
+    // Bearing: offset from glyph origin to top-left of bitmap.
+    let bearing_x = clip.x_min.floor() as i32;
+    let bearing_y = clip.y_max.ceil() as i32;
+
+    // Advance width from font metrics (matches the swash path in face.rs).
+    let fr = font_ref(fd);
+    let advance = fr.glyph_metrics(&[]).scale(size_px).advance_width(glyph_id);
+
+    Some(RasterizedGlyph {
+        width,
+        height,
+        bearing_x,
+        bearing_y,
+        advance,
+        format: GlyphFormat::Color,
+        bitmap,
+    })
+}
+
+/// Estimate a clip box from font metrics when no COLR v1 clip box is defined.
+///
+/// Uses the glyph advance width and font ascent/descent as a rough bounding
+/// box. Most COLR v1 fonts define clip boxes, so this is a rare fallback.
+fn estimate_clip_box(fd: &FaceData, glyph_id: u16, size_px: f32) -> ClipBox {
+    let fr = font_ref(fd);
+    let metrics = fr.metrics(&[]).scale(size_px);
+    let glyph_metrics = fr.glyph_metrics(&[]).scale(size_px);
+    let advance = glyph_metrics.advance_width(glyph_id);
+    ClipBox {
+        x_min: 0.0,
+        y_min: -metrics.descent.abs(),
+        x_max: advance,
+        y_max: metrics.ascent,
+    }
 }
