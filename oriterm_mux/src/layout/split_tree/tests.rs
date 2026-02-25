@@ -370,3 +370,94 @@ fn split_direction_display() {
     assert_eq!(format!("{}", SplitDirection::Horizontal), "Horizontal");
     assert_eq!(format!("{}", SplitDirection::Vertical), "Vertical");
 }
+
+// ── Deep nesting (5+ levels) ─────────────────────────────────────
+
+/// Build a 6-level deep chain by repeatedly splitting the second child.
+fn deep_chain() -> SplitTree {
+    let mut tree = SplitTree::leaf(p(1));
+    for i in 2..=7 {
+        tree = tree.split_at(p(i - 1), SplitDirection::Vertical, p(i), 0.5);
+    }
+    tree
+}
+
+#[test]
+fn deep_tree_pane_count() {
+    let tree = deep_chain();
+    assert_eq!(tree.pane_count(), 7);
+}
+
+#[test]
+fn deep_tree_depth() {
+    let tree = deep_chain();
+    assert_eq!(tree.depth(), 6);
+}
+
+#[test]
+fn deep_tree_contains_all_panes() {
+    let tree = deep_chain();
+    for i in 1..=7 {
+        assert!(tree.contains(p(i)), "missing pane {i}");
+    }
+}
+
+#[test]
+fn deep_tree_remove_middle_preserves_others() {
+    let tree = deep_chain();
+    let tree = tree.remove(p(4)).expect("should not be None");
+    assert_eq!(tree.pane_count(), 6);
+    assert!(!tree.contains(p(4)));
+    for i in [1, 2, 3, 5, 6, 7] {
+        assert!(tree.contains(p(i)), "missing pane {i}");
+    }
+}
+
+#[test]
+fn deep_tree_swap_leaf_and_deep_leaf() {
+    let tree = deep_chain();
+    let swapped = tree.swap(p(1), p(7));
+    let panes = swapped.panes();
+    // First and last should be swapped.
+    assert_eq!(panes[0], p(7));
+    assert_eq!(*panes.last().unwrap(), p(1));
+}
+
+#[test]
+fn deep_tree_equalize() {
+    let tree = deep_chain();
+    let equalized = tree.equalize();
+    // All panes still present.
+    assert_eq!(equalized.pane_count(), 7);
+    // Check a mid-level pane has ratio 0.5.
+    if let Some((_, ratio)) = equalized.parent_split(p(4)) {
+        assert!((ratio - 0.5).abs() < f32::EPSILON);
+    }
+}
+
+// ── Duplicate pane IDs ───────────────────────────────────────────
+
+#[test]
+fn split_at_with_same_pane_id_creates_two_identical_leaves() {
+    // Unusual but defined: splitting pane 1 and placing "pane 1" as second.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(1), 0.5);
+
+    // Both leaves have pane 1 — pane_count counts leaves, not unique IDs.
+    assert_eq!(tree.pane_count(), 2);
+    assert!(tree.contains(p(1)));
+}
+
+#[test]
+fn split_at_with_existing_pane_id_from_another_leaf() {
+    // Split p1 to get p1|p2, then split p2 with new_pane = p1.
+    // This creates a tree with p1 appearing twice.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(2), SplitDirection::Horizontal, p(1), 0.5);
+
+    // Should have 3 leaves (p1, p2, p1).
+    assert_eq!(tree.pane_count(), 3);
+    let panes = tree.panes();
+    assert_eq!(panes, vec![p(1), p(2), p(1)]);
+}
