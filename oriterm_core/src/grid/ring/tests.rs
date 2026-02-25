@@ -424,7 +424,6 @@ fn drain_oldest_first_usable_after_drain() {
 // pop_newest + push interaction tests
 
 #[test]
-#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
 fn pop_newest_then_push_full_buffer_preserves_new_entry() {
     // Fill to capacity, pop newest, then push a new row.
     // The new row must be retrievable as the newest entry.
@@ -454,7 +453,6 @@ fn pop_newest_then_push_full_buffer_preserves_new_entry() {
 }
 
 #[test]
-#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
 fn pop_newest_twice_then_push_twice_preserves_order() {
     let mut sb = ScrollbackBuffer::new(3);
     sb.push(make_row("AAA"));
@@ -475,7 +473,6 @@ fn pop_newest_twice_then_push_twice_preserves_order() {
 }
 
 #[test]
-#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
 fn pop_newest_then_push_after_wrap_preserves_data() {
     // Buffer wraps (start > 0), then pop + push.
     let mut sb = ScrollbackBuffer::new(3);
@@ -510,7 +507,6 @@ fn pop_newest_then_push_after_wrap_preserves_data() {
 }
 
 #[test]
-#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
 fn pop_newest_then_push_growth_phase_no_placeholder_leak() {
     // Buffer not yet full (growth phase). Pop then push should not
     // leave a placeholder visible at any logical index.
@@ -533,34 +529,34 @@ fn pop_newest_then_push_growth_phase_no_placeholder_leak() {
 }
 
 #[test]
-#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
 fn repeated_pop_push_cycles_preserve_integrity() {
     // Simulate what happens during repeated resize + scroll_up cycles.
+    // Each cycle: pop_newest (row goes back to viewport during grow),
+    // then push (new content scrolls in). Since pop removes the newest
+    // and push refills that same slot, the 4 older entries survive.
     let mut sb = ScrollbackBuffer::new(5);
     for i in 0..5 {
         sb.push(make_row(&format!("R{i}")));
     }
     assert_eq!(sb.len(), 5);
 
-    // Each cycle: pop 1 (resize overflow), then push 1 (new content).
+    // Each cycle: pop newest, then push new content.
     for i in 5..10 {
         sb.pop_newest();
         sb.push(make_row(&format!("R{i}")));
     }
 
     assert_eq!(sb.len(), 5);
-    // Newest should be R9, oldest should be R5.
-    // Each cycle removed the newest and added a new one, so the buffer
-    // should contain R5, R6, R7, R8, R9.
+    // Each cycle replaced the newest slot. The 4 older entries (R0-R3)
+    // were never touched. Only the final push (R9) remains as newest.
     assert_eq!(row_text(sb.get(0).unwrap()), "R9");
-    assert_eq!(row_text(sb.get(1).unwrap()), "R8");
-    assert_eq!(row_text(sb.get(2).unwrap()), "R7");
-    assert_eq!(row_text(sb.get(3).unwrap()), "R6");
-    assert_eq!(row_text(sb.get(4).unwrap()), "R5");
+    assert_eq!(row_text(sb.get(1).unwrap()), "R3");
+    assert_eq!(row_text(sb.get(2).unwrap()), "R2");
+    assert_eq!(row_text(sb.get(3).unwrap()), "R1");
+    assert_eq!(row_text(sb.get(4).unwrap()), "R0");
 }
 
 #[test]
-#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
 fn iter_after_pop_push_matches_get() {
     let mut sb = ScrollbackBuffer::new(3);
     sb.push(make_row("AAA"));
@@ -581,7 +577,6 @@ fn iter_after_pop_push_matches_get() {
 // Grid-level reproduction: resize then scroll_up
 
 #[test]
-#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
 fn scroll_up_after_grow_rows_preserves_scrollback() {
     // Simulate: terminal has full scrollback, then window grows (pop_newest),
     // then new content arrives (scroll_up → push). Scrollback must not

@@ -50,10 +50,16 @@ impl ScrollbackBuffer {
             return Some(row);
         }
 
-        if self.inner.len() < self.max_scrollback {
-            // Growing phase: just append.
-            self.inner.push(row);
-            self.len = self.inner.len();
+        if self.len < self.max_scrollback {
+            if self.len < self.inner.len() {
+                // Placeholder slot from pop_newest — reuse it.
+                let slot = (self.start + self.len) % self.inner.len();
+                self.inner[slot] = row;
+            } else {
+                // True growth phase: extend the vector.
+                self.inner.push(row);
+            }
+            self.len += 1;
             None
         } else {
             // Full: swap in the new row, return the evicted oldest.
