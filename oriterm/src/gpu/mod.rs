@@ -17,7 +17,9 @@ pub(crate) mod transparency;
 
 // Re-exports consumed by App and Window.
 pub(crate) use extract::{extract_frame, extract_frame_into};
-pub(crate) use frame_input::{FrameInput, FrameSelection, MarkCursorOverride, ViewportSize};
+pub(crate) use frame_input::{
+    FrameInput, FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize,
+};
 pub(crate) use renderer::{GpuRenderer, SurfaceError};
 pub(crate) use state::GpuState;
 pub(crate) use transparency::apply_transparency;

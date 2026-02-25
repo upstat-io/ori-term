@@ -55,7 +55,7 @@ pub(crate) fn extract_frame<T: EventListener>(
         cell_size,
         palette,
         selection: None,
-        search_matches: Vec::new(),
+        search: None,
         hovered_cell: None,
         mark_cursor: None,
     }
@@ -94,7 +94,7 @@ pub(crate) fn extract_frame_into<T: EventListener>(
     out.cell_size = cell_size;
     out.palette = palette;
     out.selection = None;
-    out.search_matches.clear();
+    out.search = None;
     out.hovered_cell = None;
     out.mark_cursor = None;
 }

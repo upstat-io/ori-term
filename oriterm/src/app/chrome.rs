@@ -102,7 +102,7 @@ impl App {
         let event = oriterm_ui::input::MouseEvent {
             kind,
             pos: logical_pos,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
+            modifiers: super::winit_mods_to_ui(self.modifiers),
         };
         let logical_w = window.size_px().0 as f32 / scale;
         let measurer = self

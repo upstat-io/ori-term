@@ -36,7 +36,9 @@ pub(super) fn composite_commands(
             PaintCommand::FillGlyph {
                 glyph_id, brush, ..
             } => {
-                let gid = glyph_id.to_u32() as u16;
+                let Some(gid) = u16::try_from(glyph_id.to_u32()).ok() else {
+                    continue;
+                };
                 composite_fill_glyph(
                     bitmap, width, height, clip, fd, gid, size_px, variations, brush, ctx,
                 );

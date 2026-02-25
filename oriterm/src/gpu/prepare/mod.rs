@@ -15,12 +15,33 @@ pub(crate) mod shaped_frame;
 use oriterm_core::{CellFlags, Column, CursorShape, RenderableCell, RenderableCursor, Rgb};
 
 use super::atlas::{AtlasEntry, AtlasKind};
-use super::frame_input::{FrameInput, FramePalette, FrameSelection, MarkCursorOverride};
+use oriterm_core::search::MatchType;
+
+use super::frame_input::{
+    FrameInput, FramePalette, FrameSearch, FrameSelection, MarkCursorOverride,
+};
 use super::prepared_frame::PreparedFrame;
 use crate::font::{FontRealm, GlyphStyle, RasterKey, ShapedGlyph, subpx_bin, subpx_offset};
 use crate::gpu::instance_writer::ScreenRect;
 
 pub(crate) use shaped_frame::ShapedFrame;
+
+/// Match highlight background: yellow-tinted for visibility.
+const SEARCH_MATCH_BG: Rgb = Rgb {
+    r: 100,
+    g: 100,
+    b: 30,
+};
+
+/// Focused match highlight: brighter yellow.
+const SEARCH_FOCUSED_BG: Rgb = Rgb {
+    r: 200,
+    g: 170,
+    b: 40,
+};
+
+/// Focused match foreground: dark for contrast.
+const SEARCH_FOCUSED_FG: Rgb = Rgb { r: 0, g: 0, b: 0 };
 
 /// Abstracts glyph atlas lookup for testability.
 ///
@@ -79,9 +100,14 @@ fn glyph_style(flags: CellFlags) -> GlyphStyle {
 /// - **fg==bg reveal**: if inversion produces matching fg/bg (invisible text),
 ///   falls back to palette defaults — unless the cell has HIDDEN set (SGR 8
 ///   intentionally hides text, and selection should not reveal it).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "cell, selection, search, cursor, blink, palette are all distinct concerns"
+)]
 fn resolve_cell_colors(
     cell: &RenderableCell,
     sel: Option<&FrameSelection>,
+    search: Option<&FrameSearch>,
     cursor: &RenderableCursor,
     cursor_blink_visible: bool,
     palette: &FramePalette,
@@ -90,38 +116,40 @@ fn resolve_cell_colors(
     let row = cell.line;
     let is_wide = cell.flags.contains(CellFlags::WIDE_CHAR);
 
-    // Block cursor cell: skip selection inversion so cursor overlay dominates.
+    // Block cursor cell: skip selection/search inversion so cursor overlay dominates.
     let is_block_cursor_cell = cursor_blink_visible
         && cursor.visible
         && cursor.shape == CursorShape::Block
         && cursor.line == row
         && cursor.column == Column(col);
 
+    // Selection takes priority over search highlighting.
     let selected = !is_block_cursor_cell
         && sel.is_some_and(|s| s.contains(row, col) || (is_wide && s.contains(row, col + 1)));
 
-    if !selected {
-        return (cell.fg, cell.bg);
+    if selected {
+        if cell.flags.contains(CellFlags::INVERSE) {
+            return (palette.background, palette.foreground);
+        }
+        let (sel_fg, sel_bg) = (cell.bg, cell.fg);
+        if sel_fg == sel_bg && !cell.flags.contains(CellFlags::HIDDEN) {
+            return (palette.background, palette.foreground);
+        }
+        return (sel_fg, sel_bg);
     }
 
-    // INVERSE cells: the simple swap undoes the already-applied SGR 7
-    // inversion, making the selected cell look identical to an unselected
-    // normal cell. Fall back to palette defaults for a guaranteed-visible
-    // highlight.
-    if cell.flags.contains(CellFlags::INVERSE) {
-        return (palette.background, palette.foreground);
+    // Search match highlighting (below selection in priority).
+    if !is_block_cursor_cell {
+        if let Some(search) = search {
+            match search.cell_match_type(row, col) {
+                MatchType::FocusedMatch => return (SEARCH_FOCUSED_FG, SEARCH_FOCUSED_BG),
+                MatchType::Match => return (cell.fg, SEARCH_MATCH_BG),
+                MatchType::None => {}
+            }
+        }
     }
 
-    let (sel_fg, sel_bg) = (cell.bg, cell.fg);
-
-    // If inversion produces matching fg/bg, text becomes invisible.
-    // Fall back to palette defaults — unless HIDDEN (SGR 8) is set,
-    // which intentionally hides text even under selection.
-    if sel_fg == sel_bg && !cell.flags.contains(CellFlags::HIDDEN) {
-        return (palette.background, palette.foreground);
-    }
-
-    (sel_fg, sel_bg)
+    (cell.fg, cell.bg)
 }
 
 /// Convert a [`FrameInput`] into a GPU-ready [`PreparedFrame`] using per-cell
@@ -239,6 +267,7 @@ fn fill_frame(
     let baseline = input.cell_size.baseline;
     let (ox, oy) = origin;
     let sel = input.selection.as_ref();
+    let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
     for cell in &input.content.cells {
@@ -254,8 +283,14 @@ fn fill_frame(
         let x = ox + col as f32 * cw;
         let y = oy + cell.line as f32 * ch;
 
-        let (fg, bg) =
-            resolve_cell_colors(cell, sel, &cursor, cursor_blink_visible, &input.palette);
+        let (fg, bg) = resolve_cell_colors(
+            cell,
+            sel,
+            search,
+            &cursor,
+            cursor_blink_visible,
+            &input.palette,
+        );
 
         // Background: wide chars span 2 cell widths.
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
@@ -336,6 +371,10 @@ fn fill_frame(
     clippy::too_many_arguments,
     reason = "origin + cursor blink are pipeline context passed from renderer"
 )]
+#[expect(
+    clippy::too_many_lines,
+    reason = "linear pipeline: bg → decorations → builtins → shaped glyphs → cursors"
+)]
 fn fill_frame_shaped(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
@@ -349,6 +388,7 @@ fn fill_frame_shaped(
     let baseline = input.cell_size.baseline;
     let (ox, oy) = origin;
     let sel = input.selection.as_ref();
+    let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
     for cell in &input.content.cells {
@@ -364,8 +404,14 @@ fn fill_frame_shaped(
         let x = ox + col as f32 * cw;
         let y = oy + row as f32 * ch;
 
-        let (fg, bg) =
-            resolve_cell_colors(cell, sel, &cursor, cursor_blink_visible, &input.palette);
+        let (fg, bg) = resolve_cell_colors(
+            cell,
+            sel,
+            search,
+            &cursor,
+            cursor_blink_visible,
+            &input.palette,
+        );
 
         // Background (identical to unshaped path).
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {

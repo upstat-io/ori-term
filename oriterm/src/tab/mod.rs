@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 use winit::event_loop::EventLoopProxy;
 
 use oriterm_core::{
-    Event, EventListener, FairMutex, Selection, SelectionPoint, StableRowIndex, Term,
+    Event, EventListener, FairMutex, SearchState, Selection, SelectionPoint, StableRowIndex, Term,
 };
 
 pub use mark_cursor::MarkCursor;
@@ -148,6 +148,8 @@ pub struct Tab {
     selection: Option<Selection>,
     /// Mark mode cursor position (keyboard-driven selection).
     mark_cursor: Option<MarkCursor>,
+    /// Active search state, if any (query, matches, navigation).
+    search: Option<SearchState>,
 }
 
 /// Configuration for spawning a new tab.
@@ -222,6 +224,7 @@ impl Tab {
             has_bell: false,
             selection: None,
             mark_cursor: None,
+            search: None,
         })
     }
 
@@ -355,6 +358,33 @@ impl Tab {
     /// Update the mark cursor position.
     pub fn set_mark_cursor(&mut self, cursor: MarkCursor) {
         self.mark_cursor = Some(cursor);
+    }
+
+    /// Active search state, if any.
+    pub fn search(&self) -> Option<&SearchState> {
+        self.search.as_ref()
+    }
+
+    /// Mutable access to the active search state.
+    pub fn search_mut(&mut self) -> Option<&mut SearchState> {
+        self.search.as_mut()
+    }
+
+    /// Activate search, creating a new state if none exists.
+    pub fn open_search(&mut self) {
+        if self.search.is_none() {
+            self.search = Some(SearchState::new());
+        }
+    }
+
+    /// Close search, clearing all state.
+    pub fn close_search(&mut self) {
+        self.search = None;
+    }
+
+    /// Whether search is currently active.
+    pub fn is_search_active(&self) -> bool {
+        self.search.is_some()
     }
 
     /// Send raw bytes to the PTY (keyboard input, escape responses).

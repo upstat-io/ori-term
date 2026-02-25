@@ -16,6 +16,7 @@ mod mouse_input;
 mod mouse_report;
 mod mouse_selection;
 mod redraw;
+mod search_ui;
 
 use std::time::Duration;
 
@@ -254,6 +255,24 @@ impl App {
             }
         }
     }
+}
+
+/// Convert winit modifier state to `oriterm_ui` modifier bitmask.
+fn winit_mods_to_ui(state: ModifiersState) -> oriterm_ui::input::Modifiers {
+    let mut m = oriterm_ui::input::Modifiers::NONE;
+    if state.shift_key() {
+        m = m.union(oriterm_ui::input::Modifiers::SHIFT_ONLY);
+    }
+    if state.control_key() {
+        m = m.union(oriterm_ui::input::Modifiers::CTRL_ONLY);
+    }
+    if state.alt_key() {
+        m = m.union(oriterm_ui::input::Modifiers::ALT_ONLY);
+    }
+    if state.super_key() {
+        m = m.union(oriterm_ui::input::Modifiers::LOGO_ONLY);
+    }
+    m
 }
 
 impl ApplicationHandler<TermEvent> for App {

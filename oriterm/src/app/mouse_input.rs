@@ -35,7 +35,7 @@ impl App {
         let ui_event = oriterm_ui::input::MouseEvent {
             kind,
             pos: logical,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
+            modifiers: super::winit_mods_to_ui(self.modifiers),
         };
         let measurer = self
             .renderer
@@ -74,7 +74,7 @@ impl App {
         let ui_event = oriterm_ui::input::MouseEvent {
             kind: oriterm_ui::input::MouseEventKind::Move,
             pos: logical,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
+            modifiers: super::winit_mods_to_ui(self.modifiers),
         };
         let measurer = self
             .renderer
