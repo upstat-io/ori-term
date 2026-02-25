@@ -13,7 +13,7 @@ sections:
     status: complete
   - id: "16.3"
     title: Tab Bar Hit Testing
-    status: not-started
+    status: in-progress
   - id: "16.4"
     title: Section Completion
     status: not-started
@@ -157,36 +157,36 @@ Map mouse coordinates to tab bar actions. Hit testing determines whether a click
 
 **Reference:** `_old/src/tab_bar.rs`
 
-- [ ] `TabBarHit` enum:
-  - [ ] `Tab(usize)` — clicked on tab at index
-  - [ ] `CloseTab(usize)` — clicked close button on tab at index
-  - [ ] `NewTab` — clicked the "+" button
-  - [ ] `DropdownButton` — clicked the dropdown/settings button
-  - [ ] `Minimize` — clicked window minimize
-  - [ ] `Maximize` — clicked window maximize/restore
-  - [ ] `CloseWindow` — clicked window close
-  - [ ] `DragArea` — clicked empty tab bar area (for window dragging or double-click maximize)
-  - [ ] `None` — click is below tab bar (terminal area)
-- [ ] `hit_test(x: f32, y: f32, layout: &TabBarLayout, scale: f64) -> TabBarHit`
-  - [ ] Priority order (checked first = higher priority):
-    1. [ ] If `y > TAB_BAR_HEIGHT * scale`: return `None` (below tab bar)
-    2. [ ] Check window controls zone (rightmost):
-       - [ ] **Windows**: three `CONTROL_BUTTON_WIDTH` (58px) buttons, right-to-left: Close, Maximize, Minimize
-       - [ ] **Linux/macOS**: three circular buttons (24px diameter, 8px spacing, 12px margins)
-       - [ ] Return `CloseWindow`, `Maximize`, or `Minimize`
-    3. [ ] Check tabs region (starts at `TAB_LEFT_MARGIN * scale`):
-       - [ ] For each tab: check close button rect **first** (inset from right edge)
-       - [ ] Then check tab rect — return `Tab(idx)`
-    4. [ ] Check new-tab button (after last tab)
-    5. [ ] Check dropdown button (after new-tab button)
-    6. [ ] If still within tab bar height: return `DragArea`
-- [ ] Tab bar hover tracking:
-  - [ ] `hover_hit: HashMap<WindowId, TabBarHit>` on App
-  - [ ] Updated on every `CursorMoved` event
-  - [ ] When hover changes: mark `tab_bar_dirty`, request redraw
-  - [ ] Hover entering tab bar: acquire `tab_width_lock`
-  - [ ] Hover leaving tab bar: release `tab_width_lock`
-- [ ] Tab hover preview (Chrome/Windows-style):
+- [x] `TabBarHit` enum:
+  - [x] `Tab(usize)` — clicked on tab at index
+  - [x] `CloseTab(usize)` — clicked close button on tab at index
+  - [x] `NewTab` — clicked the "+" button
+  - [x] `DropdownButton` — clicked the dropdown/settings button (named `Dropdown` in code)
+  - [x] `Minimize` — clicked window minimize
+  - [x] `Maximize` — clicked window maximize/restore
+  - [x] `CloseWindow` — clicked window close
+  - [x] `DragArea` — clicked empty tab bar area (for window dragging or double-click maximize)
+  - [x] `None` — click is below tab bar (terminal area)
+- [x] `hit_test(x: f32, y: f32, layout: &TabBarLayout) -> TabBarHit` (logical pixels, no scale param)
+  - [x] Priority order (checked first = higher priority):
+    1. [x] If `y` outside `0..TAB_BAR_HEIGHT`: return `None` (below/above tab bar)
+    2. [x] Check window controls zone (rightmost):
+       - [x] **Windows**: three `CONTROL_BUTTON_WIDTH` buttons, left-to-right: Minimize, Maximize, Close
+       - [x] **Linux/macOS**: three circular buttons (24px diameter, 8px spacing, 12px margins)
+       - [x] Return `CloseWindow`, `Maximize`, or `Minimize`
+    3. [x] Check tabs region (starts at `TAB_LEFT_MARGIN`):
+       - [x] For each tab: check close button rect **first** (inset from right edge)
+       - [x] Then check tab rect — return `Tab(idx)`
+    4. [x] Check new-tab button (after last tab)
+    5. [x] Check dropdown button (after new-tab button)
+    6. [x] If still within tab bar height: return `DragArea`
+- [x] Tab bar hover tracking:
+  - [x] `hover_hit` on `TabBarWidget` (updated via `set_hover_hit`)
+  - [x] Updated on every `CursorMoved` event (via `update_tab_bar_hover`)
+  - [x] When hover changes: mark dirty, request redraw
+  - [x] Hover entering tab bar: acquire `tab_width_lock`
+  - [x] Hover leaving tab bar: release `tab_width_lock`
+- [ ] Tab hover preview (Chrome/Windows-style): <!-- blocked-by:7 -->
   - [ ] When hovering an inactive tab for > 300ms, show a `TerminalPreviewWidget` overlay
   - [ ] Preview appears below the tab bar, anchored to the hovered tab
   - [ ] Preview shows a live scaled-down render of that tab's terminal content
@@ -194,17 +194,17 @@ Map mouse coordinates to tab bar actions. Hit testing determines whether a click
   - [ ] Fade-in animation (07.9), dismiss on hover leave
   - [ ] Preview updates if the terminal content changes while hovering
   - [ ] No preview for the active tab (it's already visible)
-- [ ] Mouse press dispatch (in `handle_mouse_press`):
-  - [ ] `Tab(idx)`: switch to tab AND create `DragState::Pending` (may become drag or just a click)
-  - [ ] `CloseTab(idx)`: acquire `tab_width_lock`, close tab (lock prevents remaining tabs from expanding, so next close button stays in place)
-  - [ ] `NewTab`: `new_tab_in_window(window_id)`
-  - [ ] `DropdownButton`: build dropdown menu (color scheme selector)
-  - [ ] `Minimize`: `window.set_minimized(true)`
-  - [ ] `Maximize`: toggle `window.set_maximized()`
-  - [ ] `CloseWindow`: close window
-  - [ ] `DragArea`:
-    - [ ] Double-click: toggle maximize
-    - [ ] Single-click: start window drag via `window.drag_window()`
+- [x] Mouse press dispatch (in `try_tab_bar_mouse`):
+  - [x] `Tab(idx)`: consumes click (multi-tab switching deferred to Section 15/30) <!-- blocked-by:30 -->
+  - [x] `CloseTab(idx)`: acquire `tab_width_lock`, close tab
+  - [x] `NewTab`: consumes click (tab creation deferred to Section 15/30) <!-- blocked-by:30 -->
+  - [x] `DropdownButton`: consumes click (dropdown menu deferred to Section 21) <!-- blocked-by:21 -->
+  - [x] `Minimize`: `window.set_minimized(true)`
+  - [x] `Maximize`: toggle `window.set_maximized()`
+  - [x] `CloseWindow`: close window
+  - [x] `DragArea`:
+    - [x] Double-click: toggle maximize (500ms threshold)
+    - [x] Single-click: start window drag via `window.drag_window()`
 
 ---
 

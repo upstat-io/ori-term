@@ -504,7 +504,7 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
   - [x] `is_focusable() → false`
   - [x] Placeholder draw: rounded rectangle with theme background
   - [ ] Renders a terminal at thumbnail resolution to an offscreen texture <!-- deferred: Image pipeline -->
-  - [ ] Displayed in an overlay on tab hover <!-- deferred: overlay wiring -->
+  - [ ] Displayed in an overlay on tab hover <!-- deferred: overlay wiring --><!-- unblocks:16.3 -->
   - [ ] Re-renders only when the source terminal's content is dirty
   - [ ] Rounded corners, subtle shadow, smooth fade-in animation
   - [ ] Used by: tab bar hover, taskbar window preview, window switcher

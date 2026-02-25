@@ -22,7 +22,7 @@ pub mod layout;
 pub mod widget;
 
 pub use colors::TabBarColors;
-pub use hit::TabBarHit;
+pub use hit::{TabBarHit, hit_test};
 pub use layout::TabBarLayout;
 pub use widget::{TabBarWidget, TabEntry};
 

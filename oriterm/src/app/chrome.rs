@@ -224,31 +224,69 @@ impl App {
             && logical_y < caption_h + oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
     }
 
-    /// Update tab width lock based on cursor position.
+    /// Update tab bar hover state and width lock from cursor position.
     ///
-    /// Called from `CursorMoved`. When the cursor enters the tab bar zone
-    /// and no lock is held, computes the current tab width and acquires the
-    /// lock. When the cursor leaves the tab bar zone, releases the lock.
+    /// Called from `CursorMoved`. Computes which tab bar element the cursor
+    /// targets via [`hit_test`](oriterm_ui::widgets::tab_bar::hit_test),
+    /// updates the widget's hover hit (marking dirty on change), and manages
+    /// the tab width lock (acquire on enter, release on leave).
     pub(super) fn update_tab_bar_hover(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
         let in_tab_bar = self.cursor_in_tab_bar(position);
         let locked = self.tab_width_lock().is_some();
 
+        // Manage tab width lock.
         match (in_tab_bar, locked) {
-            // Cursor entered tab bar without a lock — acquire at current width.
             (true, false) => {
-                // The widget already holds a computed layout with the current
-                // tab width. cursor_in_tab_bar() guarantees chrome (and thus
-                // tab_bar) exists, so this always succeeds in this arm.
                 let tab_width = self
                     .tab_bar
                     .as_ref()
                     .map_or(0.0, |tb| tb.layout().tab_width);
                 self.acquire_tab_width_lock(tab_width);
             }
-            // Cursor left tab bar — release lock.
             (false, true) => self.release_tab_width_lock(),
-            // Already locked in tab bar, or outside without lock — no change.
             (true, true) | (false, false) => {}
+        }
+
+        // Compute hit test result.
+        let hit = if in_tab_bar {
+            // Extract immutable data before mutating tab_bar.
+            let geom = self
+                .window
+                .as_ref()
+                .zip(self.chrome.as_ref())
+                .map(|(w, c)| (w.scale_factor().factor() as f32, c.caption_height()));
+            let layout = self.tab_bar.as_ref().map(|tb| *tb.layout());
+
+            match (geom, layout) {
+                (Some((scale, caption_h)), Some(layout)) => {
+                    let x = position.x as f32 / scale;
+                    let y = position.y as f32 / scale - caption_h;
+                    oriterm_ui::widgets::tab_bar::hit_test(x, y, &layout)
+                }
+                _ => oriterm_ui::widgets::tab_bar::TabBarHit::None,
+            }
+        } else {
+            oriterm_ui::widgets::tab_bar::TabBarHit::None
+        };
+
+        // Apply hover hit, redraw on change.
+        if let Some(tab_bar) = &mut self.tab_bar {
+            if tab_bar.hover_hit() != hit {
+                tab_bar.set_hover_hit(hit);
+                self.dirty = true;
+            }
+        }
+    }
+
+    /// Clear tab bar hover state.
+    ///
+    /// Called when the cursor leaves the window to reset hover highlighting.
+    pub(super) fn clear_tab_bar_hover(&mut self) {
+        if let Some(tab_bar) = &mut self.tab_bar {
+            if tab_bar.hover_hit() != oriterm_ui::widgets::tab_bar::TabBarHit::None {
+                tab_bar.set_hover_hit(oriterm_ui::widgets::tab_bar::TabBarHit::None);
+                self.dirty = true;
+            }
         }
     }
 
