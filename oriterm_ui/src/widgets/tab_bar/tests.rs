@@ -1088,3 +1088,52 @@ fn decay_with_large_dt_settles_immediately() {
     let still = w.decay_tab_animations(1.0);
     assert!(!still, "1-second dt should settle all offsets to zero");
 }
+
+// --- Theme wiring (gap analysis) ---
+
+#[test]
+fn apply_theme_changes_colors() {
+    let dark = UiTheme::dark();
+    let light = UiTheme::light();
+
+    let mut w = TabBarWidget::with_theme(1200.0, &dark);
+    w.set_tabs(vec![TabEntry::new("A")]);
+
+    // Verify dark colors initially.
+    let dark_colors = TabBarColors::from_theme(&dark);
+    assert_eq!(w.layout().tab_count, 1);
+
+    // Apply light theme.
+    w.apply_theme(&light);
+
+    let light_colors = TabBarColors::from_theme(&light);
+
+    // Colors should differ between dark and light.
+    assert_ne!(dark_colors.bar_bg, light_colors.bar_bg);
+    assert_ne!(dark_colors.text_fg, light_colors.text_fg);
+}
+
+#[test]
+fn with_theme_light_produces_light_colors() {
+    let light = UiTheme::light();
+    let colors = TabBarColors::from_theme(&light);
+
+    // Verify all color fields correspond to the light theme.
+    assert_eq!(colors.bar_bg, light.bg_secondary);
+    assert_eq!(colors.active_bg, light.bg_primary);
+    assert_eq!(colors.text_fg, light.fg_primary);
+    assert_eq!(colors.inactive_text, light.fg_secondary);
+    assert_eq!(colors.separator, light.border.with_alpha(0.5));
+    assert_eq!(colors.close_fg, light.fg_secondary);
+    assert_eq!(colors.button_hover_bg, light.bg_hover);
+}
+
+#[test]
+fn close_button_colors_theme_invariant() {
+    let dark = UiTheme::dark();
+    let light = UiTheme::light();
+
+    // Close button red should be the same in both themes.
+    assert_eq!(dark.close_hover_bg, light.close_hover_bg);
+    assert_eq!(dark.close_pressed_bg, light.close_pressed_bg);
+}

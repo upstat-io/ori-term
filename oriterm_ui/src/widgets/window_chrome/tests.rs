@@ -1,5 +1,6 @@
 use crate::geometry::{Point, Rect};
 use crate::input::{EventResponse, HoverEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::theme::UiTheme;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{EventCtx, Widget, WidgetAction};
 
@@ -17,7 +18,7 @@ const TEST_WIDTH: f32 = 800.0;
 
 /// Standard button colors for tests.
 fn test_button_colors() -> ControlButtonColors {
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     ControlButtonColors {
         fg: crate::color::Color::WHITE,
         bg: crate::color::Color::TRANSPARENT,
@@ -28,7 +29,7 @@ fn test_button_colors() -> ControlButtonColors {
 }
 
 /// Create an `EventCtx` with standard test dimensions.
-fn make_ctx<'a>(measurer: &'a MockMeasurer, theme: &'a crate::theme::UiTheme) -> EventCtx<'a> {
+fn make_ctx<'a>(measurer: &'a MockMeasurer, theme: &'a UiTheme) -> EventCtx<'a> {
     EventCtx {
         measurer,
         bounds: Rect::new(0.0, 0.0, TEST_WIDTH, CAPTION_HEIGHT),
@@ -195,7 +196,7 @@ fn control_button_hover_sets_pressed() {
     assert!(!btn.is_pressed());
 
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = EventCtx {
         measurer: &measurer,
         bounds: Rect::new(0.0, 0.0, 46.0, 36.0),
@@ -271,7 +272,7 @@ fn chrome_widget_active_inactive() {
 fn click_close_emits_window_close() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -285,7 +286,7 @@ fn click_close_emits_window_close() {
 fn click_maximize_emits_window_maximize() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = maximize_center();
@@ -299,7 +300,7 @@ fn click_maximize_emits_window_maximize() {
 fn click_minimize_emits_window_minimize() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = minimize_center();
@@ -315,7 +316,7 @@ fn click_minimize_emits_window_minimize() {
 fn press_close_release_outside_no_action() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -331,7 +332,7 @@ fn press_close_release_outside_no_action() {
 fn press_minimize_release_on_maximize_no_action() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (min_x, min_y) = minimize_center();
@@ -353,7 +354,7 @@ fn press_minimize_release_on_maximize_no_action() {
 fn hover_enter_close_requests_redraw() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -366,7 +367,7 @@ fn hover_enter_close_requests_redraw() {
 fn hover_move_between_buttons_requests_redraw() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -387,7 +388,7 @@ fn hover_move_between_buttons_requests_redraw() {
 fn hover_same_button_twice_is_noop() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -407,7 +408,7 @@ fn hover_same_button_twice_is_noop() {
 fn hover_leave_to_title_area_requests_redraw() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -429,7 +430,7 @@ fn hover_leave_to_title_area_requests_redraw() {
 fn handle_hover_leave_clears_hovered_control() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     // Hover over close button.
@@ -459,7 +460,7 @@ fn handle_hover_leave_clears_hovered_control() {
 fn handle_hover_leave_without_prior_hover_is_ignored() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     // Leave without ever hovering — should be a no-op.
@@ -476,7 +477,7 @@ fn fullscreen_ignores_mouse_down() {
     chrome.set_fullscreen(true);
 
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -492,7 +493,7 @@ fn fullscreen_ignores_hover() {
     chrome.set_fullscreen(true);
 
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -507,7 +508,7 @@ fn fullscreen_ignores_hover() {
 fn right_click_on_control_ignored() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -526,7 +527,7 @@ fn right_click_on_control_ignored() {
 fn middle_click_on_control_ignored() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     let (cx, cy) = close_center();
@@ -547,7 +548,7 @@ fn middle_click_on_control_ignored() {
 fn click_at_exact_button_left_edge_hits() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     // Close button left edge: x = 800 - 46 = 754.
@@ -566,7 +567,7 @@ fn click_at_exact_button_left_edge_hits() {
 fn click_at_exact_button_right_edge_misses() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     // Close button right edge: x = 800 (half-open, exclusive).
@@ -583,7 +584,7 @@ fn click_at_exact_button_right_edge_misses() {
 fn click_between_maximize_and_close_hits_close() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     // Boundary between maximize and close: x = 800 - 46 = 754.
@@ -600,7 +601,7 @@ fn click_between_maximize_and_close_hits_close() {
 fn click_1px_left_of_minimize_hits_title_area() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     // Minimize left edge: x = 800 - 3*46 = 662. Point at 661.9 misses.
@@ -618,7 +619,7 @@ fn click_1px_left_of_minimize_hits_title_area() {
 fn click_below_caption_height_ignored() {
     let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
     let measurer = MockMeasurer::STANDARD;
-    let theme = crate::theme::UiTheme::dark();
+    let theme = UiTheme::dark();
     let ctx = make_ctx(&measurer, &theme);
 
     // Point below the caption height (bottom edge is exclusive).
@@ -630,4 +631,120 @@ fn click_below_caption_height_ignored() {
         EventResponse::Ignored,
         "point at y == caption_height should miss (half-open)",
     );
+}
+
+// ── Theme wiring (gap analysis) ──
+
+#[test]
+fn with_theme_dark_uses_dark_colors() {
+    let dark = UiTheme::dark();
+    let chrome = WindowChromeWidget::with_theme("test", TEST_WIDTH, &dark);
+    assert_eq!(chrome.test_caption_bg(), dark.bg_secondary);
+    assert_eq!(chrome.test_caption_fg(), dark.fg_secondary);
+}
+
+#[test]
+fn with_theme_light_uses_light_colors() {
+    let light = UiTheme::light();
+    let chrome = WindowChromeWidget::with_theme("test", TEST_WIDTH, &light);
+    assert_eq!(chrome.test_caption_bg(), light.bg_secondary);
+    assert_eq!(chrome.test_caption_fg(), light.fg_secondary);
+}
+
+#[test]
+fn apply_theme_changes_caption_colors() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let dark_bg = chrome.test_caption_bg();
+
+    let light = UiTheme::light();
+    chrome.apply_theme(&light);
+
+    assert_ne!(
+        chrome.test_caption_bg(),
+        dark_bg,
+        "caption bg should change after apply_theme to light",
+    );
+    assert_eq!(chrome.test_caption_bg(), light.bg_secondary);
+    assert_eq!(chrome.test_caption_fg(), light.fg_secondary);
+}
+
+#[test]
+fn apply_theme_preserves_maximized_state() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    chrome.set_maximized(true);
+
+    let light = UiTheme::light();
+    chrome.apply_theme(&light);
+
+    assert!(
+        chrome.test_is_maximized(),
+        "maximized state should survive theme change",
+    );
+    assert_eq!(chrome.caption_height(), CAPTION_HEIGHT_MAXIMIZED);
+}
+
+#[test]
+fn apply_theme_preserves_hover_state() {
+    let mut chrome = WindowChromeWidget::new("test", TEST_WIDTH);
+    let measurer = MockMeasurer::STANDARD;
+    let theme = UiTheme::dark();
+    let ctx = make_ctx(&measurer, &theme);
+
+    // Hover over close button.
+    let (cx, cy) = close_center();
+    chrome.update_hover(Point::new(cx, cy), &ctx);
+    assert!(chrome.test_hovered_control().is_some());
+
+    // Apply new theme — hover index should be preserved.
+    let light = UiTheme::light();
+    chrome.apply_theme(&light);
+
+    assert!(
+        chrome.test_hovered_control().is_some(),
+        "hovered control should survive theme change",
+    );
+}
+
+#[test]
+fn double_theme_switch_returns_to_original() {
+    let dark = UiTheme::dark();
+    let light = UiTheme::light();
+
+    let mut chrome = WindowChromeWidget::with_theme("test", TEST_WIDTH, &dark);
+    let original_bg = chrome.test_caption_bg();
+    let original_fg = chrome.test_caption_fg();
+    let original_inactive = chrome.test_caption_bg_inactive();
+
+    // dark → light → dark.
+    chrome.apply_theme(&light);
+    chrome.apply_theme(&dark);
+
+    assert_eq!(
+        chrome.test_caption_bg(),
+        original_bg,
+        "dark→light→dark should restore caption bg",
+    );
+    assert_eq!(
+        chrome.test_caption_fg(),
+        original_fg,
+        "dark→light→dark should restore caption fg",
+    );
+    assert_eq!(
+        chrome.test_caption_bg_inactive(),
+        original_inactive,
+        "dark→light→dark should restore inactive caption bg",
+    );
+}
+
+#[test]
+fn inactive_caption_bg_differs_from_active() {
+    // Verify the darken() function produces a visible difference.
+    for theme in [UiTheme::dark(), UiTheme::light()] {
+        let chrome = WindowChromeWidget::with_theme("test", TEST_WIDTH, &theme);
+        assert_ne!(
+            chrome.test_caption_bg(),
+            chrome.test_caption_bg_inactive(),
+            "active and inactive caption bg should differ",
+        );
+    }
 }

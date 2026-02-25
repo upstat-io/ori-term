@@ -389,6 +389,36 @@ impl WindowChromeWidget {
     }
 }
 
+// --- Test helpers ---
+
+#[cfg(test)]
+impl WindowChromeWidget {
+    /// Test-only access to the active caption background.
+    pub fn test_caption_bg(&self) -> Color {
+        self.caption_bg
+    }
+
+    /// Test-only access to the inactive caption background.
+    pub fn test_caption_bg_inactive(&self) -> Color {
+        self.caption_bg_inactive
+    }
+
+    /// Test-only access to the caption foreground (title text).
+    pub fn test_caption_fg(&self) -> Color {
+        self.caption_fg
+    }
+
+    /// Test-only access to the hovered control index.
+    pub fn test_hovered_control(&self) -> Option<usize> {
+        self.hovered_control
+    }
+
+    /// Test-only access to the maximized flag.
+    pub fn test_is_maximized(&self) -> bool {
+        self.is_maximized
+    }
+}
+
 /// Darken a color by blending toward black.
 fn darken(color: Color, amount: f32) -> Color {
     Color::lerp(color, Color::BLACK, amount)

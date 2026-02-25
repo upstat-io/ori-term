@@ -399,6 +399,9 @@ fn winit_mods_to_ui(state: ModifiersState) -> oriterm_ui::input::Modifiers {
     m
 }
 
+#[cfg(test)]
+mod tests;
+
 impl ApplicationHandler<TermEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
