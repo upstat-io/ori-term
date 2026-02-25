@@ -10,7 +10,7 @@ sections:
     status: complete
   - id: "16.2"
     title: Tab Bar Rendering
-    status: not-started
+    status: complete
   - id: "16.3"
     title: Tab Bar Hit Testing
     status: not-started
@@ -94,56 +94,58 @@ Compute the pixel layout of tabs in the tab bar. All measurements are DPI-scaled
 
 Render the tab bar as GPU instances. The tab bar is rendered in the overlay pass, after the terminal grid bg+fg passes. The dragged tab is rendered separately in a second overlay pass so it floats above everything.
 
-**File:** `oriterm/src/chrome/tab_bar.rs` (rendering), `oriterm/src/gpu/render_tab_bar.rs`
+**File:** `oriterm_ui/src/widgets/tab_bar/widget/` (TabBarWidget + draw), `oriterm/src/app/redraw.rs` (pipeline integration)
 
 **Reference:** `_old/src/gpu/render_tab_bar.rs`, `_old/src/gpu/render_overlay.rs`
 
-- [ ] `build_tab_bar_instances()` — primary rendering function
-  - [ ] Input: `InstanceWriter` (bg + fg), `FrameParams`, `TabBarColors`, `FontCollection`, `wgpu::Queue`
-  - [ ] Output: populated instance buffers ready for GPU submission
-- [ ] Rendering order (draw order matters for layering):
-  1. [ ] Tab bar background: full-width rectangle across top of window
-  2. [ ] Inactive tabs (drawn first, behind active tab):
-     - [ ] Background rectangle (with hover color if `hover_hit == Tab(idx)`)
-     - [ ] Title text: shaped with UI font collection, truncated with ellipsis if too wide
-     - [ ] Close button: vector x icon (visible on hover only, or always — configurable)
-  3. [ ] Active tab (drawn on top of inactive tabs):
-     - [ ] Background rectangle with **rounded top corners** (radius ~8px x scale)
-     - [ ] Title text: brighter color than inactive
-     - [ ] Close button: always visible
-  4. [ ] Separators: 1px vertical lines between tabs, with **suppression rules**:
-     - [ ] No separator adjacent to active tab (left or right edge)
-     - [ ] No separator adjacent to hovered tab
-     - [ ] No separator adjacent to dragged tab
-  5. [ ] New tab "+" button: after the last tab
-  6. [ ] Dropdown button: after "+" button
-  7. [ ] Window control buttons: rightmost (see section 16)
-- [ ] Bell badge animation:
-  - [ ] `bell_phase: f32` (0.0–1.0) — sine wave pulse
-  - [ ] Inactive tab with bell: `lerp_color(inactive_bg, tab_hover_bg, bell_phase)` — smooth pulsing background
-  - [ ] Phase computed from `bell_start: Option<Instant>` on the tab's terminal state
-  - [ ] Clear badge when tab becomes active
-- [ ] Dragged tab overlay:
-  - [ ] When dragging: the dragged tab is **not rendered in the normal tab bar pass**
-  - [ ] Instead, rendered in a separate overlay pass via `build_dragged_tab_overlay()`
-  - [ ] Rendering:
+**Deviation:** Implemented as `TabBarWidget` (Widget→DrawList→GPU pipeline) rather than `build_tab_bar_instances()` with `InstanceWriter`. The architecture evolved after the plan was written — widgets draw to a `DrawList` in logical pixels, which is converted to GPU instances at the rendering boundary. `drag_visual_x` simplified from `Option<(WindowId, f32)>` to `Option<(usize, f32)>` on the widget (single window). Animation offsets simplified from `HashMap<WindowId, Vec<f32>>` to `Vec<f32>` on the widget. Window control buttons (item 7) already handled by `WindowChromeWidget`.
+
+- [x] `build_tab_bar_instances()` — primary rendering function
+  - [x] Input: `InstanceWriter` (bg + fg), `FrameParams`, `TabBarColors`, `FontCollection`, `wgpu::Queue`
+  - [x] Output: populated instance buffers ready for GPU submission
+- [x] Rendering order (draw order matters for layering):
+  1. [x] Tab bar background: full-width rectangle across top of window
+  2. [x] Inactive tabs (drawn first, behind active tab):
+     - [x] Background rectangle (with hover color if `hover_hit == Tab(idx)`)
+     - [x] Title text: shaped with UI font collection, truncated with ellipsis if too wide
+     - [x] Close button: vector x icon (visible on hover only, or always — configurable)
+  3. [x] Active tab (drawn on top of inactive tabs):
+     - [x] Background rectangle with **rounded top corners** (radius ~8px x scale)
+     - [x] Title text: brighter color than inactive
+     - [x] Close button: always visible
+  4. [x] Separators: 1px vertical lines between tabs, with **suppression rules**:
+     - [x] No separator adjacent to active tab (left or right edge)
+     - [x] No separator adjacent to hovered tab
+     - [x] No separator adjacent to dragged tab
+  5. [x] New tab "+" button: after the last tab
+  6. [x] Dropdown button: after "+" button
+  7. [x] Window control buttons: rightmost (see section 16)
+- [x] Bell badge animation:
+  - [x] `bell_phase: f32` (0.0–1.0) — sine wave pulse
+  - [x] Inactive tab with bell: `lerp_color(inactive_bg, tab_hover_bg, bell_phase)` — smooth pulsing background
+  - [x] Phase computed from `bell_start: Option<Instant>` on the tab's terminal state
+  - [x] Clear badge when tab becomes active
+- [x] Dragged tab overlay:
+  - [x] When dragging: the dragged tab is **not rendered in the normal tab bar pass**
+  - [x] Instead, rendered in a separate overlay pass via `build_dragged_tab_overlay()`
+  - [x] Rendering:
     1. Opaque backing rect (hides underlying text from fg pass)
     2. Rounded tab shape with active background
     3. Tab content (text + close button) at `drag_visual_x` position
-  - [ ] "+" and dropdown buttons reposition during drag: `max(default_x, drag_x + tab_w)` — keeps buttons visible even when dragging far right
-- [ ] `drag_visual_x: Option<(WindowId, f32)>` on App:
-  - [ ] The pixel X position where the dragged tab is drawn
-  - [ ] Separate from the tab's actual index in the vec — allows smooth visual feedback without real-time list manipulation
-  - [ ] Updated on every mouse move during drag
-- [ ] Tab animation offsets:
-  - [ ] `tab_anim_offsets: HashMap<WindowId, Vec<f32>>` — per-tab pixel offsets for smooth transitions
-  - [ ] When tabs reorder during drag: displaced tabs get a non-zero offset that decays to 0 over ~100ms
-  - [ ] `decay_tab_animations(&mut self) -> bool` — returns true if any animation is still active (needs continued rendering)
-  - [ ] Chrome-style behavior: tabs **snap immediately** to new positions during drag. Animation only applies on drag-end.
-- [ ] Tab title rendering: <!-- unblocks:6.13 -->
-  - [ ] Use UI font collection (separate from terminal font, possibly different family/weight)
-  - [ ] `ui_collection.truncate_to_pixel_width(title, max_text_px)` — truncates with `...` (U+2026) if too wide
-  - [ ] Max text width = `tab_width - 2*TAB_PADDING - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD`
+  - [x] "+" and dropdown buttons reposition during drag: `max(default_x, drag_x + tab_w)` — keeps buttons visible even when dragging far right
+- [x] `drag_visual_x: Option<(WindowId, f32)>` on App:
+  - [x] The pixel X position where the dragged tab is drawn
+  - [x] Separate from the tab's actual index in the vec — allows smooth visual feedback without real-time list manipulation
+  - [x] Updated on every mouse move during drag
+- [x] Tab animation offsets:
+  - [x] `tab_anim_offsets: HashMap<WindowId, Vec<f32>>` — per-tab pixel offsets for smooth transitions
+  - [x] When tabs reorder during drag: displaced tabs get a non-zero offset that decays to 0 over ~100ms
+  - [x] `decay_tab_animations(&mut self) -> bool` — returns true if any animation is still active (needs continued rendering)
+  - [x] Chrome-style behavior: tabs **snap immediately** to new positions during drag. Animation only applies on drag-end.
+- [x] Tab title rendering: <!-- unblocks:6.13 -->
+  - [x] Use UI font collection (separate from terminal font, possibly different family/weight)
+  - [x] `ui_collection.truncate_to_pixel_width(title, max_text_px)` — truncates with `...` (U+2026) if too wide
+  - [x] Max text width = `tab_width - 2*TAB_PADDING - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD`
 
 ---
 

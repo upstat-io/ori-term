@@ -163,6 +163,24 @@ impl App {
                 self.dirty = true;
             }
 
+            // Draw tab bar below the chrome caption. Tab bar contains text
+            // (tab titles), so uses the text-aware draw list conversion.
+            let caption_h = self
+                .chrome
+                .as_ref()
+                .map_or(0.0, WindowChromeWidget::caption_height);
+            if Self::draw_tab_bar(
+                self.tab_bar.as_ref(),
+                renderer,
+                &mut self.chrome_draw_list,
+                logical_w as f32,
+                caption_h,
+                scale,
+                gpu,
+            ) {
+                self.dirty = true;
+            }
+
             // Draw modal overlays (e.g. paste confirmation dialog).
             let logical_size = (logical_w as f32, h as f32 / scale);
             if Self::draw_overlays(
@@ -178,16 +196,19 @@ impl App {
 
             // Draw search bar overlay when search is active.
             if let Some(search) = frame.search.as_ref() {
-                let caption_h = self
-                    .chrome
-                    .as_ref()
-                    .map_or(0.0, WindowChromeWidget::caption_height);
+                // Position below all chrome (caption + tab bar).
+                let chrome_h = caption_h
+                    + if self.tab_bar.is_some() {
+                        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+                    } else {
+                        0.0
+                    };
                 Self::draw_search_bar(
                     search,
                     renderer,
                     &mut self.chrome_draw_list,
                     logical_w as f32,
-                    caption_h,
+                    chrome_h,
                     scale,
                     gpu,
                 );
@@ -266,6 +287,59 @@ impl App {
 
         // Chrome uses geometric symbols only — no text context needed.
         renderer.append_ui_draw_list(draw_list, scale);
+        animating
+    }
+
+    /// Draw the tab bar below the window chrome caption.
+    ///
+    /// Tab bar coordinates are in logical pixels, positioned at `y = caption_h`.
+    /// Uses [`append_ui_draw_list_with_text`](crate::gpu::GpuRenderer::append_ui_draw_list_with_text)
+    /// because tab titles are rendered as shaped text.
+    ///
+    /// Returns `true` if the tab bar has running animations (e.g. bell pulse).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "tab bar drawing: widget, renderer, draw list, viewport, caption offset, scale, GPU"
+    )]
+    fn draw_tab_bar(
+        tab_bar: Option<&oriterm_ui::widgets::tab_bar::TabBarWidget>,
+        renderer: &mut crate::gpu::GpuRenderer,
+        draw_list: &mut DrawList,
+        logical_width: f32,
+        caption_h: f32,
+        scale: f32,
+        gpu: &GpuState,
+    ) -> bool {
+        let Some(tab_bar) = tab_bar else {
+            return false;
+        };
+        if tab_bar.tab_count() == 0 {
+            return false;
+        }
+
+        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        let bounds = oriterm_ui::geometry::Rect::new(0.0, caption_h, logical_width, tab_bar_h);
+
+        draw_list.clear();
+        let animations_running = Cell::new(false);
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let theme = UiTheme::dark();
+
+        let mut ctx = DrawCtx {
+            measurer: &measurer,
+            draw_list,
+            bounds,
+            focused_widget: None,
+            now: Instant::now(),
+            animations_running: &animations_running,
+            theme: &theme,
+        };
+        tab_bar.draw(&mut ctx);
+        let animating = animations_running.get();
+
+        // Tab bar contains text — use text-aware conversion to rasterize
+        // tab title glyphs into the UI overlay layer.
+        renderer.append_ui_draw_list_with_text(draw_list, scale, gpu);
         animating
     }
 

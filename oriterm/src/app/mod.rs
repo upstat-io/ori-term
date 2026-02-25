@@ -44,6 +44,7 @@ use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
 use oriterm_ui::overlay::OverlayManager;
+use oriterm_ui::widgets::tab_bar::TabBarWidget;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 /// Default DPI for font rasterization.
@@ -68,6 +69,9 @@ pub(crate) struct App {
 
     // Window chrome widget (title bar + controls).
     chrome: Option<WindowChromeWidget>,
+
+    // Tab bar widget (tab strip rendering).
+    tab_bar: Option<TabBarWidget>,
 
     // Event loop proxy for creating per-tab EventProxy instances.
     event_proxy: EventLoopProxy<TermEvent>,
@@ -143,6 +147,7 @@ impl App {
             tab: None,
             terminal_grid: None,
             chrome: None,
+            tab_bar: None,
             event_proxy,
             frame: None,
             chrome_draw_list: oriterm_ui::draw::DrawList::new(),
@@ -224,12 +229,33 @@ impl App {
     /// Freeze tab widths at `width` to prevent layout jitter.
     pub(super) fn acquire_tab_width_lock(&mut self, width: f32) {
         self.tab_width_lock = Some(width);
+        if let Some(tab_bar) = &mut self.tab_bar {
+            tab_bar.set_tab_width_lock(Some(width));
+        }
+    }
+
+    /// Sync tab bar widget titles from the current tab state.
+    fn sync_tab_bar_titles(&mut self) {
+        let title = self
+            .tab
+            .as_ref()
+            .map(|t| t.title().to_owned())
+            .unwrap_or_default();
+        if let Some(tab_bar) = &mut self.tab_bar {
+            if let Some(entry) = tab_bar.tabs_mut().first_mut() {
+                entry.title = title;
+            }
+        }
+        self.dirty = true;
     }
 
     /// Release the tab width lock, allowing tabs to recompute widths.
     pub(super) fn release_tab_width_lock(&mut self) {
         if self.tab_width_lock.is_some() {
             self.tab_width_lock = None;
+            if let Some(tab_bar) = &mut self.tab_bar {
+                tab_bar.set_tab_width_lock(None);
+            }
             self.dirty = true;
         }
     }
@@ -249,16 +275,25 @@ impl App {
                 if let Some(tab) = &mut self.tab {
                     tab.set_bell();
                 }
+                // Start bell animation on the tab bar (inactive tabs pulse).
+                if let Some(tab_bar) = &mut self.tab_bar {
+                    if let Some(tabs) = tab_bar.tabs_mut().first_mut() {
+                        tabs.bell_start = Some(std::time::Instant::now());
+                    }
+                }
+                self.dirty = true;
             }
             Event::Title(title) => {
                 if let Some(tab) = &mut self.tab {
                     tab.set_title(title);
                 }
+                self.sync_tab_bar_titles();
             }
             Event::ResetTitle => {
                 if let Some(tab) = &mut self.tab {
                     tab.set_title(String::new());
                 }
+                self.sync_tab_bar_titles();
             }
             Event::ClipboardStore(ty, text) => {
                 self.clipboard.store(ty, &text);
