@@ -116,7 +116,7 @@ impl TabBarWidget {
             &tab.title
         };
         let max_w = self.layout.max_text_width();
-        let text_style = TextStyle::new(self.colors.font_size_small, text_color)
+        let text_style = TextStyle::new(ctx.theme.font_size_small, text_color)
             .with_overflow(TextOverflow::Ellipsis);
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
         let text_x = x + TAB_PADDING;
@@ -295,7 +295,7 @@ impl TabBarWidget {
             &tab.title
         };
         let max_w = self.layout.max_text_width();
-        let text_style = TextStyle::new(self.colors.font_size_small, self.colors.text_fg)
+        let text_style = TextStyle::new(ctx.theme.font_size_small, self.colors.text_fg)
             .with_overflow(TextOverflow::Ellipsis);
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
         let text_x = visual_x + TAB_PADDING;

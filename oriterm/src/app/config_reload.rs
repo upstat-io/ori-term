@@ -45,6 +45,18 @@ impl App {
         // Store the new config as current.
         self.config = new_config;
 
+        // Update UI chrome theme if the config override changed.
+        let new_theme = super::resolve_ui_theme(&self.config);
+        if new_theme != self.ui_theme {
+            self.ui_theme = new_theme;
+            if let Some(chrome) = &mut self.chrome {
+                chrome.apply_theme(&self.ui_theme);
+            }
+            if let Some(tab_bar) = &mut self.tab_bar {
+                tab_bar.apply_theme(&self.ui_theme);
+            }
+        }
+
         // Mark everything dirty for redraw.
         self.dirty = true;
 
