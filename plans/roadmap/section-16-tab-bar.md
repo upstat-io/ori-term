@@ -1,13 +1,13 @@
 ---
 section: 16
 title: Tab Bar & Chrome
-status: not-started
+status: in-progress
 tier: 4
 goal: Tab bar layout, rendering, and hit testing with DPI awareness
 sections:
   - id: "16.1"
     title: Tab Bar Layout + Constants
-    status: not-started
+    status: in-progress
   - id: "16.2"
     title: Tab Bar Rendering
     status: not-started
@@ -36,55 +36,57 @@ sections:
 
 Compute the pixel layout of tabs in the tab bar. All measurements are DPI-scaled. The layout is deterministic — given tab count, window width, and scale factor, the output is identical.
 
-**File:** `oriterm/src/chrome/tab_bar.rs`
+**File:** `oriterm_ui/src/widgets/tab_bar/` (constants, layout, colors modules)
 
 **Reference:** `_old/src/tab_bar.rs`
 
-- [ ] Layout constants (all in logical pixels, multiply by `scale_factor` for physical):
-  - [ ] `TAB_BAR_HEIGHT: f32 = 46.0` — full height of the tab bar
-  - [ ] `TAB_MIN_WIDTH: f32 = 80.0` — minimum tab width before they start overlapping
-  - [ ] `TAB_MAX_WIDTH: f32 = 260.0` — maximum tab width (tabs grow to fill available space, clamped here)
-  - [ ] `TAB_LEFT_MARGIN: f32 = 16.0` — padding before the first tab
-  - [ ] `TAB_PADDING: f32 = 8.0` — internal horizontal padding within each tab
-  - [ ] `CLOSE_BUTTON_WIDTH: f32 = 24.0` — clickable area for the x button
-  - [ ] `CLOSE_BUTTON_RIGHT_PAD: f32 = 8.0` — spacing between x button and tab's right edge
-  - [ ] `NEW_TAB_BUTTON_WIDTH: f32 = 38.0` — width of the "+" button
-  - [ ] `DROPDOWN_BUTTON_WIDTH: f32 = 30.0` — width of the dropdown (settings/scheme) button
-  - [ ] `CONTROLS_ZONE_WIDTH` — platform-specific:
-    - [ ] Windows: `174.0` (three 58px buttons: minimize, maximize, close)
-    - [ ] Linux/macOS: `100.0` (three circular buttons with spacing)
-  - [ ] `DRAG_START_THRESHOLD: f32 = 10.0` — pixels of movement before drag begins (matches Chrome's `tab_drag_controller.cc`)
-  - [ ] `TEAR_OFF_THRESHOLD: f32 = 40.0` — pixels outside tab bar before tear-off
-  - [ ] `TEAR_OFF_THRESHOLD_UP: f32 = 15.0` — reduced threshold for upward dragging (more natural for tear-off)
-- [ ] `TabBarLayout` struct:
-  - [ ] `tab_width: f32` — computed width per tab (all tabs same width)
-  - [ ] `tab_count: usize` — number of tabs
-  - [ ] `scale: f64` — DPI scale factor used for this layout
-- [ ] `TabBarLayout::compute(tab_count: usize, window_width: usize, scale: f64, tab_width_lock: Option<usize>) -> Self`
-  - [ ] If `tab_width_lock` is `Some(w)`: use locked width (prevents jitter during rapid close clicks or drag)
-  - [ ] Available width = `window_width - TAB_LEFT_MARGIN*s - NEW_TAB_BUTTON_WIDTH*s - DROPDOWN_BUTTON_WIDTH*s - CONTROLS_ZONE_WIDTH*s`
-  - [ ] `tab_width = (available / tab_count).clamp(TAB_MIN_WIDTH*s, TAB_MAX_WIDTH*s)`
-  - [ ] Return layout struct
-- [ ] `tab_width_lock: Option<(WindowId, usize)>` on App:
+**Deviation:** Layout computes in logical pixels (matching `ChromeLayout` pattern); scale applied at render boundary. Colors use `oriterm_ui::color::Color` (not `[f32; 4]`) and derive from `UiTheme` (not `Palette`), matching existing widget conventions. `window_width: f32` stored instead of `scale: f64` since scale is not needed for logical-pixel layout.
+
+- [x] Layout constants (all in logical pixels, multiply by `scale_factor` for physical):
+  - [x] `TAB_BAR_HEIGHT: f32 = 46.0` — full height of the tab bar
+  - [x] `TAB_MIN_WIDTH: f32 = 80.0` — minimum tab width before they start overlapping
+  - [x] `TAB_MAX_WIDTH: f32 = 260.0` — maximum tab width (tabs grow to fill available space, clamped here)
+  - [x] `TAB_LEFT_MARGIN: f32 = 16.0` — padding before the first tab
+  - [x] `TAB_PADDING: f32 = 8.0` — internal horizontal padding within each tab
+  - [x] `CLOSE_BUTTON_WIDTH: f32 = 24.0` — clickable area for the x button
+  - [x] `CLOSE_BUTTON_RIGHT_PAD: f32 = 8.0` — spacing between x button and tab's right edge
+  - [x] `NEW_TAB_BUTTON_WIDTH: f32 = 38.0` — width of the "+" button
+  - [x] `DROPDOWN_BUTTON_WIDTH: f32 = 30.0` — width of the dropdown (settings/scheme) button
+  - [x] `CONTROLS_ZONE_WIDTH` — platform-specific:
+    - [x] Windows: `174.0` (three 58px buttons: minimize, maximize, close)
+    - [x] Linux/macOS: `100.0` (three circular buttons with spacing)
+  - [x] `DRAG_START_THRESHOLD: f32 = 10.0` — pixels of movement before drag begins (matches Chrome's `tab_drag_controller.cc`)
+  - [x] `TEAR_OFF_THRESHOLD: f32 = 40.0` — pixels outside tab bar before tear-off
+  - [x] `TEAR_OFF_THRESHOLD_UP: f32 = 15.0` — reduced threshold for upward dragging (more natural for tear-off)
+- [x] `TabBarLayout` struct:
+  - [x] `tab_width: f32` — computed width per tab (all tabs same width)
+  - [x] `tab_count: usize` — number of tabs
+  - [x] `window_width: f32` — window width used for layout (replaces `scale: f64` since layout is in logical pixels)
+- [x] `TabBarLayout::compute(tab_count: usize, window_width: f32, tab_width_lock: Option<f32>) -> Self`
+  - [x] If `tab_width_lock` is `Some(w)`: use locked width (prevents jitter during rapid close clicks or drag)
+  - [x] Available width = `window_width - TAB_LEFT_MARGIN - NEW_TAB_BUTTON_WIDTH - DROPDOWN_BUTTON_WIDTH - CONTROLS_ZONE_WIDTH`
+  - [x] `tab_width = (available / tab_count).clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH)`
+  - [x] Return layout struct
+- [ ] `tab_width_lock: Option<f32>` on App:
   - [ ] **Acquired** when: cursor enters tab bar (hovering), prevents tabs from expanding when quickly closing tabs
   - [ ] **Released** when: cursor leaves tab bar, window resizes, tab count changes in ways that invalidate the lock (new tab, drag reorder)
   - [ ] Purpose: If you have 5 tabs and close one, the remaining 4 tabs would normally expand. But if you're rapidly clicking close buttons, the expansion moves the next close button, causing you to miss. The lock freezes tab width during hover, so close buttons don't move.
-- [ ] `TabBarColors` struct — all colors needed for tab bar rendering:
-  - [ ] `bar_bg: [f32; 4]` — tab bar background
-  - [ ] `active_bg: [f32; 4]` — active tab background (rendered with rounded corners)
-  - [ ] `inactive_bg: [f32; 4]` — inactive tab background
-  - [ ] `tab_hover_bg: [f32; 4]` — inactive tab background on hover
-  - [ ] `text_fg: [f32; 4]` — active tab title text
-  - [ ] `inactive_text: [f32; 4]` — inactive tab title text (dimmer)
-  - [ ] `separator: [f32; 4]` — 1px vertical separator between tabs
-  - [ ] `close_fg: [f32; 4]` — close button color (unhovered)
-  - [ ] `button_hover_bg: [f32; 4]` — "+" and dropdown hover background
-  - [ ] `control_hover_bg: [f32; 4]` — window control button hover
-  - [ ] `control_fg: [f32; 4]` — window control icon color
-  - [ ] `control_fg_dim: [f32; 4]` — dimmed window control icon
-  - [ ] `control_close_hover_bg: [f32; 4]` — close button red hover (platform standard)
-  - [ ] `control_close_hover_fg: [f32; 4]` — close button text on red hover (white)
-  - [ ] Derived from palette: `TabBarColors::from_palette(palette: &Palette) -> Self`
+- [x] `TabBarColors` struct — all colors needed for tab bar rendering:
+  - [x] `bar_bg: Color` — tab bar background
+  - [x] `active_bg: Color` — active tab background (rendered with rounded corners)
+  - [x] `inactive_bg: Color` — inactive tab background
+  - [x] `tab_hover_bg: Color` — inactive tab background on hover
+  - [x] `text_fg: Color` — active tab title text
+  - [x] `inactive_text: Color` — inactive tab title text (dimmer)
+  - [x] `separator: Color` — 1px vertical separator between tabs
+  - [x] `close_fg: Color` — close button color (unhovered)
+  - [x] `button_hover_bg: Color` — "+" and dropdown hover background
+  - [x] `control_hover_bg: Color` — window control button hover
+  - [x] `control_fg: Color` — window control icon color
+  - [x] `control_fg_dim: Color` — dimmed window control icon
+  - [x] `control_close_hover_bg: Color` — close button red hover (platform standard)
+  - [x] `control_close_hover_fg: Color` — close button text on red hover (white)
+  - [x] Derived from theme: `TabBarColors::from_theme(theme: &UiTheme) -> Self`
 
 ---
 
