@@ -144,20 +144,23 @@ impl App {
         true
     }
 
-    /// Convert hovered URL segments to viewport-relative coordinates.
+    /// Fill `out` with hovered URL segments in viewport-relative coordinates.
     ///
-    /// Used by the frame extraction to pass hover info to the renderer.
-    /// Returns empty vec if no URL is hovered or segments can't be mapped.
-    pub(super) fn hovered_url_viewport_segments(&self) -> Vec<UrlSegment> {
+    /// Clears `out` and pushes viewport-mapped segments, reusing the Vec's
+    /// existing capacity. Used by the redraw path after frame extraction to
+    /// avoid a per-frame allocation.
+    pub(super) fn fill_hovered_url_viewport_segments(&self, out: &mut Vec<UrlSegment>) {
+        out.clear();
+
         let Some(url) = &self.hovered_url else {
-            return Vec::new();
+            return;
         };
         if url.segments.is_empty() {
             // OSC 8 hyperlink — no implicit segments to render.
-            return Vec::new();
+            return;
         }
         let Some(tab) = &self.tab else {
-            return Vec::new();
+            return;
         };
         let term = tab.terminal().lock();
         let grid = term.grid();
@@ -165,7 +168,6 @@ impl App {
         let display_offset = grid.display_offset();
 
         // Convert absolute rows to viewport lines.
-        let mut viewport_segments = Vec::new();
         for &(abs_row, start_col, end_col) in &url.segments {
             // viewport_line = abs_row - (scrollback_len - display_offset)
             let base = sb_len.saturating_sub(display_offset);
@@ -176,8 +178,7 @@ impl App {
             if vp_line >= grid.lines() {
                 continue; // Below visible viewport.
             }
-            viewport_segments.push((vp_line, start_col, end_col));
+            out.push((vp_line, start_col, end_col));
         }
-        viewport_segments
     }
 }

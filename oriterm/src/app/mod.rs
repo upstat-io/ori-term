@@ -218,6 +218,7 @@ impl App {
                     tab.check_selection_invalidation();
                 }
                 self.url_cache.invalidate();
+                self.hovered_url = None; // Segments contain stale absolute rows.
                 self.dirty = true;
             }
             Event::Bell => {

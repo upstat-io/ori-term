@@ -33,9 +33,16 @@ impl App {
     )]
     pub(super) fn handle_redraw(&mut self) {
         log::trace!("RedrawRequested");
-        // Compute URL hover segments before entering the render block where
-        // self.renderer is borrowed mutably.
-        let url_segments = self.hovered_url_viewport_segments();
+
+        // Compute URL hover segments before the render block (which borrows
+        // self.renderer mutably). Take the Vec from the previous frame to
+        // reuse its capacity, avoiding a per-frame allocation.
+        let mut url_segments = self
+            .frame
+            .as_mut()
+            .map_or_else(Vec::new, |f| std::mem::take(&mut f.hovered_url_segments));
+        self.fill_hovered_url_viewport_segments(&mut url_segments);
+
         let render_result = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw: no gpu");
@@ -114,6 +121,7 @@ impl App {
             }
 
             // Implicit URL hover: viewport-relative segments computed above.
+            // The Vec was taken from the previous frame to reuse capacity.
             frame.hovered_url_segments = url_segments;
 
             // Cache blinking mode; reset on false→true transition.

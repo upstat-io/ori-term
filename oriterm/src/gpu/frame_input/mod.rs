@@ -11,6 +11,7 @@ use oriterm_core::selection::{Selection, SelectionBounds};
 use oriterm_core::{Column, CursorShape, RenderableContent, Rgb, SearchMatch, SearchState};
 
 use crate::font::CellMetrics;
+use crate::url_detect::UrlSegment;
 
 /// Selection state snapshotted for one frame.
 ///
@@ -204,7 +205,7 @@ pub struct FrameInput {
     /// Each entry is `(viewport_line, start_col, end_col)` inclusive. Set when
     /// Ctrl is held and the cursor is over a detected URL. Empty when no
     /// implicit URL is hovered.
-    pub hovered_url_segments: Vec<(usize, usize, usize)>,
+    pub hovered_url_segments: Vec<UrlSegment>,
     /// Mark-mode cursor override.
     ///
     /// When set, the Prepare phase renders this cursor instead of
