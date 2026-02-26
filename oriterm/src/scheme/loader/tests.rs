@@ -204,3 +204,74 @@ fn discover_themes_nonexistent_dir() {
     let themes = super::discover_themes(Path::new("/tmp/__nonexistent_themes_dir_oriterm_test__"));
     assert!(themes.is_empty());
 }
+
+/// `discover_themes` returns empty vec for a directory with no `.toml` files.
+#[test]
+fn discover_themes_empty_dir() {
+    let dir = std::env::temp_dir().join("oriterm_test_discover_empty");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create dir");
+
+    let themes = super::discover_themes(&dir);
+    assert!(themes.is_empty(), "empty dir should yield no themes");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// --- hex format edge cases ---
+
+/// 3-digit hex shorthand (`#FFF`) is rejected — only 6-digit `#RRGGBB` is accepted.
+#[test]
+fn parse_theme_3digit_hex_rejected() {
+    let toml = r##"
+ansi = [
+    "#FFF", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000", "#000000",
+]
+foreground = "#ffffff"
+background = "#000000"
+cursor = "#ffffff"
+"##;
+    let path = Path::new("short-hex.toml");
+    assert!(
+        parse_theme_toml(toml, path).is_none(),
+        "3-digit hex should be rejected"
+    );
+}
+
+/// `0x` prefix hex is rejected — only `#RRGGBB` or bare `RRGGBB` are accepted.
+#[test]
+fn parse_theme_0x_prefix_rejected() {
+    let toml = r##"
+ansi = [
+    "0xFF0000", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000", "#000000",
+]
+foreground = "#ffffff"
+background = "#000000"
+cursor = "#ffffff"
+"##;
+    let path = Path::new("ox-prefix.toml");
+    assert!(
+        parse_theme_toml(toml, path).is_none(),
+        "0x prefix hex should be rejected"
+    );
+}
+
+/// UTF-8 BOM (`\u{FEFF}`) at the start of a theme file.
+#[test]
+fn parse_theme_with_bom() {
+    let toml = format!("\u{FEFF}{VALID_TOML}");
+    let path = Path::new("bom.toml");
+    // BOM may cause TOML parsing to fail. Document whichever behavior occurs.
+    let result = parse_theme_toml(&toml, path);
+    // The TOML crate strips BOM since toml 0.8+, so parsing should succeed.
+    assert!(
+        result.is_some(),
+        "TOML with UTF-8 BOM should parse (toml crate strips BOM)"
+    );
+}
