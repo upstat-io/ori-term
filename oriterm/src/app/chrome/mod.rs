@@ -25,6 +25,16 @@ pub(super) fn scale_rect(r: oriterm_ui::geometry::Rect, scale: f32) -> oriterm_u
     )
 }
 
+/// Compute the grid origin y-coordinate in physical pixels.
+///
+/// Rounds to an integer pixel to prevent fractional origins that cause
+/// visible seams between block character rows on the GPU. Without rounding,
+/// DPI scale factors like 1.25 produce half-pixel boundaries
+/// (e.g. `82.0 * 1.25 = 102.5`) that mis-align cell rows.
+pub(super) fn grid_origin_y(chrome_height_logical: f32, scale: f32) -> f32 {
+    (chrome_height_logical * scale).round()
+}
+
 impl App {
     /// Dispatch a window chrome action to the corresponding window operation.
     ///
@@ -338,7 +348,8 @@ impl App {
             0.0
         };
         let chrome_height = caption_height + tab_bar_h;
-        let chrome_px = (chrome_height * scale).round() as u32;
+        let origin_y = grid_origin_y(chrome_height, scale);
+        let chrome_px = origin_y as u32;
         let grid_h = viewport_h.saturating_sub(chrome_px);
         let cols = cell.columns(viewport_w).max(1);
         let rows = cell.rows(grid_h).max(1);
@@ -348,7 +359,7 @@ impl App {
             grid.set_grid_size(cols, rows);
             grid.set_bounds(oriterm_ui::geometry::Rect::new(
                 0.0,
-                chrome_height * scale,
+                origin_y,
                 cols as f32 * cell.width,
                 rows as f32 * cell.height,
             ));
@@ -448,3 +459,6 @@ impl App {
         self.dirty = true;
     }
 }
+
+#[cfg(test)]
+mod tests;

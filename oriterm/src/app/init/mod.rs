@@ -119,7 +119,8 @@ impl App {
         let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let chrome_px = ((caption_height + tab_bar_h) * scale).round() as u32;
+        let origin_y = super::chrome::grid_origin_y(caption_height + tab_bar_h, scale);
+        let chrome_px = origin_y as u32;
         let grid_h = h.saturating_sub(chrome_px);
         let cols = cell.columns(w).max(1);
         let rows = cell.rows(grid_h).max(1);
@@ -129,7 +130,7 @@ impl App {
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
         grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
             0.0,
-            (caption_height + tab_bar_h) * scale,
+            origin_y,
             cols as f32 * cell.width,
             rows as f32 * cell.height,
         ));

@@ -1,13 +1,13 @@
 //! Grid edge case visual regression tests.
 //!
 //! Tests boundary conditions: wide characters at terminal edge, pure
-//! background cells, and empty grids.
+//! background cells, empty grids, and fractional-origin seam detection.
 
 use oriterm_core::{CellFlags, Rgb};
 
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 
-use super::{compare_with_reference, headless_env, render_to_pixels};
+use super::{compare_with_reference, headless_env, render_to_pixels, render_to_pixels_with_origin};
 
 #[test]
 fn wide_char_at_edge() {
@@ -142,4 +142,134 @@ fn empty_grid() {
     if let Err(msg) = compare_with_reference("empty_grid", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
+}
+
+/// Scan rendered pixels for horizontal seam lines in the grid region.
+///
+/// A seam is a full scanline where every pixel in the grid columns is
+/// near-black (background). Returns the list of y-coordinates with seams.
+fn find_block_seams(
+    pixels: &[u8],
+    viewport_w: u32,
+    viewport_h: u32,
+    origin_y: f32,
+    cell_w: f32,
+    cell_h: f32,
+    cols: usize,
+    rows: usize,
+) -> Vec<u32> {
+    let grid_y_start = origin_y.floor() as u32;
+    let grid_y_end = (origin_y + cell_h * rows as f32).ceil() as u32;
+    let grid_x_end = (cell_w * cols as f32).ceil() as u32;
+    let stride = viewport_w as usize * 4;
+
+    let mut seams = Vec::new();
+    for y in grid_y_start..grid_y_end.min(viewport_h) {
+        let row_start = y as usize * stride;
+        let mut all_dark = true;
+        for x in 0..grid_x_end.min(viewport_w) {
+            let offset = row_start + x as usize * 4;
+            let r = pixels[offset];
+            let g = pixels[offset + 1];
+            let b = pixels[offset + 2];
+            // Threshold: any pixel brighter than 10 means the block was rendered.
+            if r > 10 || g > 10 || b > 10 {
+                all_dark = false;
+                break;
+            }
+        }
+        if all_dark {
+            seams.push(y);
+        }
+    }
+    seams
+}
+
+/// Build a FrameInput filled with full-block characters (█) — white on black.
+fn full_block_input(
+    cols: usize,
+    rows: usize,
+    cell: crate::font::CellMetrics,
+    w: u32,
+    h: u32,
+) -> FrameInput {
+    let block: String = "\u{2588}".repeat(cols).repeat(rows);
+    let mut input = FrameInput::test_grid(cols, rows, &block);
+    input.viewport = ViewportSize::new(w, h);
+    input.cell_size = cell;
+    input.content.cursor.visible = false;
+
+    let fg = Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
+    let bg = Rgb { r: 0, g: 0, b: 0 };
+    for cell_data in &mut input.content.cells {
+        cell_data.fg = fg;
+        cell_data.bg = bg;
+    }
+    input.palette.foreground = fg;
+    input.palette.background = bg;
+    input
+}
+
+/// Prove the bug: a raw fractional y-origin produces visible seams between
+/// adjacent full-block rows.
+///
+/// At 125% DPI with 82px logical chrome, the physical origin is
+/// `82.0 * 1.25 = 102.5` — a half-pixel boundary. Without rounding, the
+/// GPU rasterizes a 1px gap between block rows.
+#[test]
+fn fractional_origin_produces_block_seams() {
+    let Some((gpu, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let cell = renderer.cell_metrics();
+    let cols = 10usize;
+    let rows = 6usize;
+    let origin_y: f32 = 102.5;
+
+    let grid_pixel_h = (cell.height * rows as f32).ceil() as u32;
+    let w = (cell.width * cols as f32).ceil() as u32;
+    let h = origin_y.ceil() as u32 + grid_pixel_h;
+    let input = full_block_input(cols, rows, cell, w, h);
+
+    let pixels = render_to_pixels_with_origin(&gpu, &mut renderer, &input, (0.0, origin_y));
+    let seams = find_block_seams(&pixels, w, h, origin_y, cell.width, cell.height, cols, rows);
+
+    assert!(
+        !seams.is_empty(),
+        "expected seams from fractional origin {origin_y} — if this fails, \
+         the GPU driver may not reproduce the issue (test still valid as guard)",
+    );
+}
+
+/// Sanity baseline: integer y-origin never produces seams.
+#[test]
+fn integer_origin_no_block_seams() {
+    let Some((gpu, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let cell = renderer.cell_metrics();
+    let cols = 10usize;
+    let rows = 6usize;
+    let origin_y: f32 = 102.0;
+
+    let grid_pixel_h = (cell.height * rows as f32).ceil() as u32;
+    let w = (cell.width * cols as f32).ceil() as u32;
+    let h = origin_y as u32 + grid_pixel_h;
+    let input = full_block_input(cols, rows, cell, w, h);
+
+    let pixels = render_to_pixels_with_origin(&gpu, &mut renderer, &input, (0.0, origin_y));
+    let seams = find_block_seams(&pixels, w, h, origin_y, cell.width, cell.height, cols, rows);
+
+    assert!(
+        seams.is_empty(),
+        "seams detected at scanlines {seams:?} — integer origin should never produce seams",
+    );
 }
