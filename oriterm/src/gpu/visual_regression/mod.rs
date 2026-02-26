@@ -100,10 +100,22 @@ pub(super) fn render_to_pixels(
     renderer: &mut GpuRenderer,
     input: &FrameInput,
 ) -> Vec<u8> {
+    render_to_pixels_with_origin(gpu, renderer, input, (0.0, 0.0))
+}
+
+/// Render a `FrameInput` to RGBA pixels with a custom grid origin offset.
+///
+/// The `origin` shifts all cell positions, simulating chrome height.
+pub(super) fn render_to_pixels_with_origin(
+    gpu: &GpuState,
+    renderer: &mut GpuRenderer,
+    input: &FrameInput,
+    origin: (f32, f32),
+) -> Vec<u8> {
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(input, gpu, (0.0, 0.0), true);
+    renderer.prepare(input, gpu, origin, true);
     renderer.render_frame(gpu, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")
