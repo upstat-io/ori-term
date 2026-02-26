@@ -17,7 +17,10 @@ const MAX_UNDO_ENTRIES: usize = 32;
 /// Owns the split tree that arranges panes, a floating layer for overlay
 /// panes, and an undo stack for tree mutations. The active pane tracks
 /// which pane has keyboard focus.
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 #[derive(Debug, Clone)]
 pub struct MuxTab {
     /// Unique tab identifier.
@@ -32,7 +35,10 @@ pub struct MuxTab {
     undo: Vec<SplitTree>,
 }
 
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 impl MuxTab {
     /// Create a new tab with a single pane filling the entire area.
     pub fn new(id: TabId, pane_id: PaneId) -> Self {
@@ -109,7 +115,10 @@ impl MuxTab {
 ///
 /// Tracks which tab is active (has focus). Tab order matches the visual
 /// tab bar order.
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 #[derive(Debug, Clone)]
 pub struct MuxWindow {
     /// Unique window identifier.
@@ -120,7 +129,10 @@ pub struct MuxWindow {
     active_tab_idx: usize,
 }
 
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 impl MuxWindow {
     /// Create a new window with no tabs.
     pub fn new(id: WindowId) -> Self {

@@ -28,7 +28,10 @@ use crate::tab::MarkCursor;
 ///
 /// Duplicated from `tab::Notifier` to keep `pane` independent of `tab`.
 /// Unified when Tab is replaced in Section 31/32.
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub(crate) struct PaneNotifier {
     /// Direct PTY writer — bypasses the reader thread's command channel.
     writer: std::sync::Mutex<Box<dyn io::Write + Send>>,
@@ -36,7 +39,10 @@ pub(crate) struct PaneNotifier {
     tx: mpsc::Sender<Msg>,
 }
 
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 impl PaneNotifier {
     /// Create a new notifier with a direct PTY writer and command channel.
     pub(crate) fn new(writer: Box<dyn io::Write + Send>, tx: mpsc::Sender<Msg>) -> Self {
@@ -69,7 +75,10 @@ impl PaneNotifier {
 ///
 /// Groups all parameters for `Pane::from_parts` to stay under the clippy
 /// argument limit. Produced by `LocalDomain::spawn_pane`.
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub(crate) struct PaneParts {
     /// Unique pane identifier.
     pub(crate) id: PaneId,
@@ -97,7 +106,10 @@ pub(crate) struct PaneParts {
 ///
 /// The atomic `Pane` unit in the mux model — one shell process, one grid,
 /// one PTY connection. Created by `LocalDomain::spawn_pane`.
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub(crate) struct Pane {
     /// Unique pane identifier (from mux allocator).
     id: PaneId,
@@ -133,7 +145,10 @@ pub(crate) struct Pane {
     search: Option<SearchState>,
 }
 
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 impl Pane {
     /// Construct a pane from pre-built parts.
     ///
