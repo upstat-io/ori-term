@@ -35,10 +35,7 @@ impl App {
 
         // Bell config is read from self.config at usage sites, so
         // storing the new config is sufficient. Log if it changed.
-        if new_config.bell.duration_ms != self.config.bell.duration_ms
-            || new_config.bell.animation != self.config.bell.animation
-            || new_config.bell.color != self.config.bell.color
-        {
+        if new_config.bell != self.config.bell {
             log::info!("config reload: bell settings updated");
         }
 

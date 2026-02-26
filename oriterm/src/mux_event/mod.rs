@@ -161,7 +161,7 @@ impl EventListener for MuxEventProxy {
                 // Always mark grid dirty, even when coalesced.
                 self.grid_dirty.store(true, Ordering::Release);
                 // Coalesce: only send if not already pending.
-                if !self.wakeup_pending.swap(true, Ordering::Release) {
+                if !self.wakeup_pending.swap(true, Ordering::AcqRel) {
                     self.send(MuxEvent::PaneOutput(self.pane_id));
                 }
             }

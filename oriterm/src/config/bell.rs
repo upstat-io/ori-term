@@ -13,7 +13,7 @@ pub enum BellAnimation {
 }
 
 /// Visual bell configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BellConfig {
     /// Visual bell animation curve.

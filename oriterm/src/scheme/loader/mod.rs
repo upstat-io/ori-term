@@ -63,10 +63,27 @@ fn load_from_dir(dir: &std::path::Path, name: &str) -> Option<ColorScheme> {
     None
 }
 
+/// Count `*.toml` theme files in a directory without parsing.
+///
+/// Returns the number of `.toml` files present, regardless of validity.
+/// Used for startup logging to avoid allocating full scheme objects.
+pub(super) fn count_themes(dir: &std::path::Path) -> usize {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return 0,
+    };
+
+    entries
+        .flatten()
+        .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("toml"))
+        .count()
+}
+
 /// Discover all valid theme files in a directory.
 ///
 /// Scans `dir` for `*.toml` files, parses each, and returns all that
 /// parse successfully. Invalid files are logged and skipped.
+#[cfg(test)]
 pub(super) fn discover_themes(dir: &std::path::Path) -> Vec<ColorScheme> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,

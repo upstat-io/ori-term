@@ -189,3 +189,99 @@ fn mux_event_debug_format() {
     };
     assert_eq!(format!("{event:?}"), "PaneExited(Pane(3), code=1)");
 }
+
+// --- Gap analysis tests ---
+
+/// When the mpsc receiver is dropped, sending events doesn't panic.
+#[test]
+fn disconnected_receiver_does_not_panic() {
+    let (tx, rx) = mpsc::channel();
+    let wakeup = Arc::new(AtomicBool::new(false));
+    let dirty = Arc::new(AtomicBool::new(false));
+    let winit_proxy = shared_proxy();
+
+    let proxy = MuxEventProxy::new(
+        PaneId::from_raw(1),
+        tx,
+        Arc::clone(&wakeup),
+        Arc::clone(&dirty),
+        winit_proxy,
+    );
+
+    // Drop the receiver to simulate a disconnected channel.
+    drop(rx);
+
+    // All event types should be silently dropped, not panic.
+    proxy.send_event(Event::Wakeup);
+    proxy.send_event(Event::Bell);
+    proxy.send_event(Event::Title("test".to_string()));
+    proxy.send_event(Event::ResetTitle);
+    proxy.send_event(Event::PtyWrite("data".to_string()));
+    proxy.send_event(Event::ChildExit(0));
+
+    // Grid dirty and wakeup should still be set (atomics don't depend on channel).
+    assert!(dirty.load(Ordering::Acquire));
+    assert!(wakeup.load(Ordering::Acquire));
+}
+
+/// Debug format for all MuxEvent variants.
+#[test]
+fn mux_event_debug_all_variants() {
+    let id = PaneId::from_raw(1);
+
+    let cases = [
+        (MuxEvent::PaneOutput(id), "PaneOutput(Pane(1))"),
+        (
+            MuxEvent::PaneExited {
+                pane_id: id,
+                exit_code: 0,
+            },
+            "PaneExited(Pane(1), code=0)",
+        ),
+        (
+            MuxEvent::PaneTitleChanged {
+                pane_id: id,
+                title: "hello".to_string(),
+            },
+            "PaneTitleChanged(Pane(1), \"hello\")",
+        ),
+        (
+            MuxEvent::PaneCwdChanged {
+                pane_id: id,
+                cwd: "/tmp".to_string(),
+            },
+            "PaneCwdChanged(Pane(1), \"/tmp\")",
+        ),
+        (MuxEvent::PaneBell(id), "PaneBell(Pane(1))"),
+        (
+            MuxEvent::PtyWrite {
+                pane_id: id,
+                data: "abc".to_string(),
+            },
+            "PtyWrite(Pane(1), 3 bytes)",
+        ),
+    ];
+
+    for (event, expected) in &cases {
+        assert_eq!(format!("{event:?}"), *expected);
+    }
+
+    // ClipboardStore/Load contain closures — just verify they don't panic.
+    let store = MuxEvent::ClipboardStore {
+        pane_id: id,
+        clipboard_type: oriterm_core::ClipboardType::Clipboard,
+        text: "copied".to_string(),
+    };
+    let dbg = format!("{store:?}");
+    assert!(dbg.contains("ClipboardStore"));
+    assert!(dbg.contains("Clipboard"));
+
+    let load = MuxEvent::ClipboardLoad {
+        pane_id: id,
+        clipboard_type: oriterm_core::ClipboardType::Selection,
+        formatter: Arc::new(|s: &str| s.to_string()),
+    };
+    let dbg = format!("{load:?}");
+    assert!(dbg.contains("ClipboardLoad"));
+    assert!(dbg.contains("Selection"));
+}

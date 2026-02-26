@@ -9,7 +9,7 @@ mod loader;
 
 use oriterm_core::{Palette, Rgb, Theme};
 
-pub(crate) use builtin::BUILTIN_SCHEMES;
+use builtin::BUILTIN_SCHEMES;
 
 /// A resolved color scheme with 16 ANSI colors and semantic colors.
 #[derive(Debug, Clone)]
@@ -31,12 +31,12 @@ pub(crate) struct ColorScheme {
 }
 
 /// A built-in scheme definition (compile-time constant).
-pub(crate) struct BuiltinScheme {
-    pub name: &'static str,
-    pub ansi: [Rgb; 16],
-    pub fg: Rgb,
-    pub bg: Rgb,
-    pub cursor: Rgb,
+struct BuiltinScheme {
+    name: &'static str,
+    ansi: [Rgb; 16],
+    fg: Rgb,
+    bg: Rgb,
+    cursor: Rgb,
 }
 
 impl BuiltinScheme {
@@ -88,7 +88,8 @@ pub(crate) fn resolve_scheme(name: &str) -> Option<ColorScheme> {
 ///
 /// Returns built-in schemes merged with user themes from `config_dir/themes/`.
 /// User themes override built-in schemes with the same name (case-insensitive).
-pub(crate) fn discover_all() -> Vec<ColorScheme> {
+#[cfg(test)]
+fn discover_all() -> Vec<ColorScheme> {
     let mut schemes: Vec<ColorScheme> = BUILTIN_SCHEMES.iter().map(|s| s.to_scheme()).collect();
 
     let user_themes = match crate::config::config_path().parent() {
@@ -109,6 +110,19 @@ pub(crate) fn discover_all() -> Vec<ColorScheme> {
     }
 
     schemes
+}
+
+/// Count available schemes without allocating full objects.
+///
+/// Returns `(builtin_count, user_count)`. User count is the number of
+/// `.toml` files in the themes directory (not validated).
+pub(crate) fn discover_count() -> (usize, usize) {
+    let builtin = BUILTIN_SCHEMES.len();
+    let user = match crate::config::config_path().parent() {
+        Some(dir) => loader::count_themes(&dir.join("themes")),
+        None => 0,
+    };
+    (builtin, user)
 }
 
 /// Parse a conditional scheme string: `"dark:X, light:Y"`.
