@@ -632,7 +632,7 @@ const ANDROMEDA: BuiltinScheme = BuiltinScheme {
 };
 
 /// All built-in color schemes.
-pub(crate) const BUILTIN_SCHEMES: &[&BuiltinScheme] = &[
+pub(super) const BUILTIN_SCHEMES: &[&BuiltinScheme] = &[
     &CATPPUCCIN_MOCHA,
     &CATPPUCCIN_LATTE,
     &CATPPUCCIN_FRAPPE,
