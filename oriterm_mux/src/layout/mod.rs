@@ -5,8 +5,12 @@
 
 pub mod compute;
 pub mod floating;
+pub mod rect;
 pub mod split_tree;
 
-pub use compute::{DividerLayout, LayoutDescriptor, PaneLayout, compute_dividers, compute_layout};
-pub use floating::{FloatingLayer, FloatingPane, Rect};
+pub use compute::{
+    DividerLayout, LayoutDescriptor, PaneLayout, compute_all, compute_dividers, compute_layout,
+};
+pub use floating::{FloatingLayer, FloatingPane};
+pub use rect::Rect;
 pub use split_tree::{SplitDirection, SplitTree};

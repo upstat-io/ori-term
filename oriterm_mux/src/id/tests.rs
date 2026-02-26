@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use super::{IdAllocator, PaneId, SessionId, TabId, WindowId};
+use super::{IdAllocator, MuxId, PaneId, SessionId, TabId, WindowId};
 
 /// Compile-time trait bound checks: all ID types must be `Copy`, `Hash`, `Eq`.
 #[test]
@@ -14,31 +14,48 @@ fn id_types_are_copy_hash_eq() {
 
 #[test]
 fn allocator_starts_at_one() {
-    let mut alloc = IdAllocator::new();
-    assert_eq!(alloc.alloc(), 1);
+    let mut alloc = IdAllocator::<PaneId>::new();
+    assert_eq!(alloc.alloc(), PaneId::from_raw(1));
 }
 
 #[test]
 fn allocator_produces_monotonically_increasing_values() {
-    let mut alloc = IdAllocator::new();
+    let mut alloc = IdAllocator::<PaneId>::new();
     let a = alloc.alloc();
     let b = alloc.alloc();
     let c = alloc.alloc();
-    assert_eq!(a, 1);
-    assert_eq!(b, 2);
-    assert_eq!(c, 3);
-    assert!(a < b);
-    assert!(b < c);
+    assert_eq!(a, PaneId::from_raw(1));
+    assert_eq!(b, PaneId::from_raw(2));
+    assert_eq!(c, PaneId::from_raw(3));
 }
 
 #[test]
 fn allocator_values_are_unique() {
-    let mut alloc = IdAllocator::new();
+    let mut alloc = IdAllocator::<PaneId>::new();
     let mut seen = HashSet::new();
     for _ in 0..1000 {
         let id = alloc.alloc();
         assert!(seen.insert(id), "duplicate ID: {id}");
     }
+}
+
+#[test]
+fn allocator_returns_correct_type() {
+    let mut pane_alloc = IdAllocator::<PaneId>::new();
+    let mut tab_alloc = IdAllocator::<TabId>::new();
+    let mut win_alloc = IdAllocator::<WindowId>::new();
+    let mut sess_alloc = IdAllocator::<SessionId>::new();
+
+    // Each allocator returns its own type — no manual wrapping needed.
+    let pane: PaneId = pane_alloc.alloc();
+    let tab: TabId = tab_alloc.alloc();
+    let win: WindowId = win_alloc.alloc();
+    let sess: SessionId = sess_alloc.alloc();
+
+    assert_eq!(pane.raw(), 1);
+    assert_eq!(tab.raw(), 1);
+    assert_eq!(win.raw(), 1);
+    assert_eq!(sess.raw(), 1);
 }
 
 #[test]
@@ -71,6 +88,18 @@ fn raw_round_trip() {
     assert_eq!(TabId::from_raw(50).raw(), 50);
     assert_eq!(WindowId::from_raw(11).raw(), 11);
     assert_eq!(SessionId::from_raw(77).raw(), 77);
+}
+
+#[test]
+fn mux_id_trait_round_trip() {
+    fn check<T: MuxId + std::fmt::Debug + PartialEq>(val: u64) {
+        let id = T::from_raw(val);
+        assert_eq!(id.raw(), val);
+    }
+    check::<PaneId>(42);
+    check::<TabId>(7);
+    check::<WindowId>(3);
+    check::<SessionId>(1);
 }
 
 /// Different ID types with the same raw value must not be equal.
@@ -107,8 +136,8 @@ fn ids_work_as_hash_keys() {
 
 #[test]
 fn allocator_default_same_as_new() {
-    let mut a = IdAllocator::new();
-    let mut b = IdAllocator::default();
+    let mut a = IdAllocator::<PaneId>::new();
+    let mut b = IdAllocator::<PaneId>::default();
     assert_eq!(a.alloc(), b.alloc());
     assert_eq!(a.alloc(), b.alloc());
 }

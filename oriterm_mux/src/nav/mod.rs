@@ -7,7 +7,6 @@ use std::fmt;
 
 use crate::id::PaneId;
 use crate::layout::compute::PaneLayout;
-use crate::layout::floating::Rect;
 
 /// Direction for spatial navigation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -42,7 +41,7 @@ impl fmt::Display for Direction {
 /// Returns `None` if no pane exists in that direction.
 pub fn navigate(layouts: &[PaneLayout], from: PaneId, direction: Direction) -> Option<PaneId> {
     let from_layout = layouts.iter().find(|l| l.pane_id == from)?;
-    let from_center = rect_center(&from_layout.pixel_rect);
+    let from_center = from_layout.pixel_rect.center();
 
     let mut best: Option<(PaneId, f32)> = None;
 
@@ -50,7 +49,7 @@ pub fn navigate(layouts: &[PaneLayout], from: PaneId, direction: Direction) -> O
         if layout.pane_id == from {
             continue;
         }
-        let candidate_center = rect_center(&layout.pixel_rect);
+        let candidate_center = layout.pixel_rect.center();
 
         // Check if the candidate is in the correct direction.
         let (primary_dist, perp_dist) = match direction {
@@ -141,7 +140,7 @@ pub fn nearest_pane(layouts: &[PaneLayout], x: f32, y: f32) -> Option<PaneId> {
         .iter()
         .rev()
         .filter(|l| l.is_floating)
-        .find(|l| rect_contains(&l.pixel_rect, x, y))
+        .find(|l| l.pixel_rect.contains_point(x, y))
         .map(|l| l.pane_id);
 
     if floating_hit.is_some() {
@@ -152,18 +151,8 @@ pub fn nearest_pane(layouts: &[PaneLayout], x: f32, y: f32) -> Option<PaneId> {
     layouts
         .iter()
         .filter(|l| !l.is_floating)
-        .find(|l| rect_contains(&l.pixel_rect, x, y))
+        .find(|l| l.pixel_rect.contains_point(x, y))
         .map(|l| l.pane_id)
-}
-
-// ── Private helpers ───────────────────────────────────────────────
-
-fn rect_center(r: &Rect) -> (f32, f32) {
-    (r.x + r.width / 2.0, r.y + r.height / 2.0)
-}
-
-fn rect_contains(r: &Rect, px: f32, py: f32) -> bool {
-    px >= r.x && px < r.x + r.width && py >= r.y && py < r.y + r.height
 }
 
 #[cfg(test)]

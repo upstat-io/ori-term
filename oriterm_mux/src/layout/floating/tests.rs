@@ -1,5 +1,6 @@
 use super::{FloatingLayer, FloatingPane};
 use crate::id::PaneId;
+use crate::layout::rect::Rect;
 
 fn p(n: u64) -> PaneId {
     PaneId::from_raw(n)
@@ -8,15 +9,17 @@ fn p(n: u64) -> PaneId {
 fn floating(id: u64, x: f32, y: f32, w: f32, h: f32, z: u32) -> FloatingPane {
     FloatingPane {
         pane_id: p(id),
-        x,
-        y,
-        width: w,
-        height: h,
+        rect: Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
         z_order: z,
     }
 }
 
-// ── Add / Remove / Contains ───────────────────────────────────────
+// ── Add / Remove / Contains
 
 #[test]
 fn empty_layer() {
@@ -56,7 +59,7 @@ fn remove_nonexistent_pane_is_harmless() {
     assert_eq!(layer.panes().len(), 1);
 }
 
-// ── Hit testing ───────────────────────────────────────────────────
+// ── Hit testing
 
 #[test]
 fn hit_test_returns_topmost_pane() {
@@ -90,7 +93,7 @@ fn hit_test_returns_none_outside_all_panes() {
     assert_eq!(layer.hit_test(100.0, 100.0), None);
 }
 
-// ── Raise / Lower ─────────────────────────────────────────────────
+// ── Raise / Lower
 
 #[test]
 fn raise_moves_pane_to_front() {
@@ -116,7 +119,7 @@ fn lower_moves_pane_to_back() {
     assert_eq!(layer.hit_test(50.0, 50.0), Some(p(1)));
 }
 
-// ── Move / Resize ─────────────────────────────────────────────────
+// ── Move / Resize
 
 #[test]
 fn move_pane_updates_position() {
@@ -146,7 +149,7 @@ fn resize_pane_updates_dimensions() {
     assert!((rect.height - 400.0).abs() < f32::EPSILON);
 }
 
-// ── pane_rect ─────────────────────────────────────────────────────
+// ── pane_rect
 
 #[test]
 fn pane_rect_returns_correct_bounds() {
@@ -166,7 +169,7 @@ fn pane_rect_returns_none_for_nonexistent() {
     assert_eq!(layer.pane_rect(p(99)), None);
 }
 
-// ── Z-order invariant ─────────────────────────────────────────────
+// ── Z-order invariant
 
 #[test]
 fn panes_sorted_by_z_order() {
@@ -182,7 +185,7 @@ fn panes_sorted_by_z_order() {
     );
 }
 
-// ── Z-order stability across mutations ───────────────────────────
+// ── Z-order stability across mutations
 
 #[test]
 fn floating_z_order_stable_after_add_remove() {

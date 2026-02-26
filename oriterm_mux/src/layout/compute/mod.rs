@@ -5,7 +5,8 @@
 //! records for split divider rendering.
 
 use crate::id::PaneId;
-use crate::layout::floating::{FloatingLayer, Rect};
+use crate::layout::floating::FloatingLayer;
+use crate::layout::rect::Rect;
 use crate::layout::split_tree::{SplitDirection, SplitTree};
 
 /// Input parameters for layout computation.
@@ -53,6 +54,33 @@ pub struct DividerLayout {
     pub pane_after: PaneId,
 }
 
+/// Accumulator for the recursive tree traversal.
+struct TreeOutput {
+    panes: Vec<PaneLayout>,
+    dividers: Vec<DividerLayout>,
+}
+
+/// Compute both pane layouts and divider layouts in a single tree traversal.
+///
+/// Returns `(pane_layouts, divider_layouts)`. Tiled panes appear first in the
+/// pane list, followed by floating panes.
+pub fn compute_all(
+    tree: &SplitTree,
+    floating: &FloatingLayer,
+    focused: PaneId,
+    desc: &LayoutDescriptor,
+) -> (Vec<PaneLayout>, Vec<DividerLayout>) {
+    let mut out = TreeOutput {
+        panes: Vec::new(),
+        dividers: Vec::new(),
+    };
+
+    compute_tree(tree, desc.available, focused, desc, &mut out);
+    append_floating(floating, focused, desc, &mut out.panes);
+
+    (out.panes, out.dividers)
+}
+
 /// Compute pane layouts from a split tree and floating layer.
 ///
 /// Returns a flat list of `PaneLayout` records — tiled panes first (from the
@@ -63,57 +91,35 @@ pub fn compute_layout(
     focused: PaneId,
     desc: &LayoutDescriptor,
 ) -> Vec<PaneLayout> {
-    let mut layouts = Vec::new();
-
-    // Compute tiled pane layouts from split tree.
-    compute_tiled(tree, desc.available, focused, desc, &mut layouts);
-
-    // Append floating pane layouts.
-    for fp in floating.panes() {
-        let cols = (fp.width / desc.cell_width).floor() as u16;
-        let rows = (fp.height / desc.cell_height).floor() as u16;
-        layouts.push(PaneLayout {
-            pane_id: fp.pane_id,
-            pixel_rect: Rect {
-                x: fp.x,
-                y: fp.y,
-                width: fp.width,
-                height: fp.height,
-            },
-            cols: cols.max(1),
-            rows: rows.max(1),
-            is_focused: fp.pane_id == focused,
-            is_floating: true,
-        });
-    }
-
-    layouts
+    compute_all(tree, floating, focused, desc).0
 }
 
 /// Compute divider layouts from a split tree.
 ///
 /// Returns one `DividerLayout` per internal `Split` node.
 pub fn compute_dividers(tree: &SplitTree, desc: &LayoutDescriptor) -> Vec<DividerLayout> {
-    let mut dividers = Vec::new();
-    compute_dividers_inner(tree, desc.available, desc, &mut dividers);
-    dividers
+    let mut out = TreeOutput {
+        panes: Vec::new(),
+        dividers: Vec::new(),
+    };
+    compute_tree(tree, desc.available, PaneId::from_raw(0), desc, &mut out);
+    out.dividers
 }
 
-// ── Private helpers ───────────────────────────────────────────────
-
-/// Recursively subdivide the available rect according to the split tree.
-fn compute_tiled(
+/// Recursively subdivide the available rect, producing both pane and divider
+/// layouts in a single pass.
+fn compute_tree(
     tree: &SplitTree,
     available: Rect,
     focused: PaneId,
     desc: &LayoutDescriptor,
-    out: &mut Vec<PaneLayout>,
+    out: &mut TreeOutput,
 ) {
     match tree {
         SplitTree::Leaf(pane_id) => {
             let cols = (available.width / desc.cell_width).floor() as u16;
             let rows = (available.height / desc.cell_height).floor() as u16;
-            out.push(PaneLayout {
+            out.panes.push(PaneLayout {
                 pane_id: *pane_id,
                 pixel_rect: snap_to_grid(available, desc.cell_width, desc.cell_height),
                 cols: cols.max(1),
@@ -130,65 +136,59 @@ fn compute_tiled(
         } => {
             let (first_rect, second_rect) =
                 split_rect(available, *direction, *ratio, desc.divider_px);
-
-            // Enforce minimum pane size by clamping.
             let (first_rect, second_rect) =
                 clamp_split(available, *direction, first_rect, second_rect, desc);
 
-            compute_tiled(first, first_rect, focused, desc, out);
-            compute_tiled(second, second_rect, focused, desc, out);
+            // Emit divider between the two child rects.
+            let divider_rect = match direction {
+                SplitDirection::Horizontal => Rect {
+                    x: available.x,
+                    y: first_rect.y + first_rect.height,
+                    width: available.width,
+                    height: desc.divider_px,
+                },
+                SplitDirection::Vertical => Rect {
+                    x: first_rect.x + first_rect.width,
+                    y: available.y,
+                    width: desc.divider_px,
+                    height: available.height,
+                },
+            };
+            out.dividers.push(DividerLayout {
+                rect: divider_rect,
+                direction: *direction,
+                pane_before: rightmost_leaf(first),
+                pane_after: leftmost_leaf(second),
+            });
+
+            compute_tree(first, first_rect, focused, desc, out);
+            compute_tree(second, second_rect, focused, desc, out);
         }
     }
 }
 
-/// Recursively compute divider rects.
-fn compute_dividers_inner(
-    tree: &SplitTree,
-    available: Rect,
+/// Append floating pane layouts to the output list.
+///
+/// Floating pane rects are snapped to the cell grid, matching the tiled pane
+/// contract where `pixel_rect` dimensions are exact multiples of cell size.
+fn append_floating(
+    floating: &FloatingLayer,
+    focused: PaneId,
     desc: &LayoutDescriptor,
-    out: &mut Vec<DividerLayout>,
+    out: &mut Vec<PaneLayout>,
 ) {
-    if let SplitTree::Split {
-        direction,
-        ratio,
-        first,
-        second,
-    } = tree
-    {
-        let (first_rect, second_rect) = split_rect(available, *direction, *ratio, desc.divider_px);
-
-        let (first_rect, second_rect) =
-            clamp_split(available, *direction, first_rect, second_rect, desc);
-
-        // Divider rect sits between the two child rects.
-        let divider_rect = match direction {
-            SplitDirection::Horizontal => Rect {
-                x: available.x,
-                y: first_rect.y + first_rect.height,
-                width: available.width,
-                height: desc.divider_px,
-            },
-            SplitDirection::Vertical => Rect {
-                x: first_rect.x + first_rect.width,
-                y: available.y,
-                width: desc.divider_px,
-                height: available.height,
-            },
-        };
-
-        // Find the nearest leaf on each side for targeting.
-        let pane_before = rightmost_leaf(first);
-        let pane_after = leftmost_leaf(second);
-
-        out.push(DividerLayout {
-            rect: divider_rect,
-            direction: *direction,
-            pane_before,
-            pane_after,
+    for fp in floating.panes() {
+        let snapped = snap_to_grid(fp.rect, desc.cell_width, desc.cell_height);
+        let cols = (snapped.width / desc.cell_width).floor() as u16;
+        let rows = (snapped.height / desc.cell_height).floor() as u16;
+        out.push(PaneLayout {
+            pane_id: fp.pane_id,
+            pixel_rect: snapped,
+            cols: cols.max(1),
+            rows: rows.max(1),
+            is_focused: fp.pane_id == focused,
+            is_floating: true,
         });
-
-        compute_dividers_inner(first, first_rect, desc, out);
-        compute_dividers_inner(second, second_rect, desc, out);
     }
 }
 

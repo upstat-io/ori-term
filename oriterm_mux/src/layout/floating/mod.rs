@@ -7,42 +7,17 @@
 //! return a new layer.
 
 use crate::id::PaneId;
+use crate::layout::rect::Rect;
 
 /// A single floating pane with absolute position and size.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatingPane {
     /// The pane this floating overlay represents.
     pub pane_id: PaneId,
-    /// Logical pixels from left edge of tab area.
-    pub x: f32,
-    /// Logical pixels from top edge of tab area.
-    pub y: f32,
-    /// Logical width in pixels.
-    pub width: f32,
-    /// Logical height in pixels.
-    pub height: f32,
+    /// Position and size in logical pixels within the tab area.
+    pub rect: Rect,
     /// Stacking order. Higher values are closer to the viewer.
     pub z_order: u32,
-}
-
-impl FloatingPane {
-    /// Check whether a point (in logical pixels) is inside this pane.
-    fn contains_point(&self, px: f32, py: f32) -> bool {
-        px >= self.x && px < self.x + self.width && py >= self.y && py < self.y + self.height
-    }
-}
-
-/// Simple axis-aligned rectangle for floating pane bounds.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rect {
-    /// Left edge x coordinate.
-    pub x: f32,
-    /// Top edge y coordinate.
-    pub y: f32,
-    /// Width.
-    pub width: f32,
-    /// Height.
-    pub height: f32,
 }
 
 /// An immutable layer of floating panes, ordered by z-order.
@@ -59,8 +34,6 @@ impl FloatingLayer {
     pub fn new() -> Self {
         Self { panes: Vec::new() }
     }
-
-    // ── Query methods ─────────────────────────────────────────────
 
     /// Check whether this layer contains a pane with the given ID.
     pub fn contains(&self, pane_id: PaneId) -> bool {
@@ -82,12 +55,7 @@ impl FloatingLayer {
         self.panes
             .iter()
             .find(|p| p.pane_id == pane_id)
-            .map(|p| Rect {
-                x: p.x,
-                y: p.y,
-                width: p.width,
-                height: p.height,
-            })
+            .map(|p| p.rect)
     }
 
     /// Find the topmost floating pane at the given point.
@@ -97,11 +65,9 @@ impl FloatingLayer {
         self.panes
             .iter()
             .rev()
-            .find(|p| p.contains_point(x, y))
+            .find(|p| p.rect.contains_point(x, y))
             .map(|p| p.pane_id)
     }
-
-    // ── Immutable mutation methods ────────────────────────────────
 
     /// Add a floating pane. Returns a new layer with the pane inserted at
     /// the correct z-order position.
@@ -133,7 +99,10 @@ impl FloatingLayer {
             .iter()
             .map(|p| {
                 if p.pane_id == pane_id {
-                    FloatingPane { x, y, ..p.clone() }
+                    FloatingPane {
+                        rect: Rect { x, y, ..p.rect },
+                        ..p.clone()
+                    }
                 } else {
                     p.clone()
                 }
@@ -151,8 +120,11 @@ impl FloatingLayer {
             .map(|p| {
                 if p.pane_id == pane_id {
                     FloatingPane {
-                        width,
-                        height,
+                        rect: Rect {
+                            width,
+                            height,
+                            ..p.rect
+                        },
                         ..p.clone()
                     }
                 } else {
@@ -182,7 +154,6 @@ impl FloatingLayer {
                 }
             })
             .collect();
-        // Re-sort to maintain z-order invariant.
         let mut layer = Self { panes };
         layer.panes.sort_by_key(|p| p.z_order);
         layer
