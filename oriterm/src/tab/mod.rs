@@ -50,6 +50,7 @@ impl TabId {
 /// Created per-tab. The PTY reader thread calls
 /// [`EventListener::send_event`] on this to wake the main thread.
 /// Send errors are silently ignored (the window may have closed).
+#[allow(dead_code, reason = "deprecated: being removed in Section 31 Task #6")]
 pub struct EventProxy {
     /// Winit's thread-safe event sender.
     proxy: EventLoopProxy<TermEvent>,
@@ -57,6 +58,7 @@ pub struct EventProxy {
     tab_id: TabId,
 }
 
+#[allow(dead_code, reason = "deprecated: being removed in Section 31 Task #6")]
 impl EventProxy {
     /// Create a new event proxy for the given tab.
     pub fn new(proxy: EventLoopProxy<TermEvent>, tab_id: TabId) -> Self {
@@ -65,11 +67,10 @@ impl EventProxy {
 }
 
 impl EventListener for EventProxy {
-    fn send_event(&self, event: Event) {
-        let _ = self.proxy.send_event(TermEvent::Terminal {
-            tab_id: self.tab_id,
-            event,
-        });
+    fn send_event(&self, _event: Event) {
+        // Deprecated: events now route through MuxEventProxy → MuxEvent channel.
+        // This impl satisfies the EventListener trait for the deprecated Tab type.
+        let _ = self.proxy.send_event(TermEvent::MuxWakeup);
     }
 }
 

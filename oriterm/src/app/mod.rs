@@ -30,7 +30,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
-use oriterm_core::{Event, TermMode};
+use oriterm_core::TermMode;
 use oriterm_mux::{PaneId, WindowId as MuxWindowId};
 
 use self::cursor_blink::CursorBlink;
@@ -87,7 +87,7 @@ pub(crate) struct App {
     // Tab bar widget (tab strip rendering).
     tab_bar: Option<TabBarWidget>,
 
-    // Event loop proxy for creating per-tab EventProxy instances.
+    // Event loop proxy for waking the event loop from background threads.
     event_proxy: EventLoopProxy<TermEvent>,
 
     // Per-frame reusable extraction buffer (lazily initialized on first redraw).
@@ -339,71 +339,6 @@ impl App {
             self.dirty = true;
         }
     }
-
-    /// Dispatch a terminal event from the PTY reader thread.
-    fn handle_terminal_event(&mut self, _event_loop: &ActiveEventLoop, event: Event) {
-        match event {
-            Event::Wakeup => {
-                if let Some(pane) = self.active_pane_mut() {
-                    pane.check_selection_invalidation();
-                }
-                self.url_cache.invalidate();
-                self.hovered_url = None; // Segments contain stale absolute rows.
-                self.dirty = true;
-            }
-            Event::Bell => {
-                if let Some(pane) = self.active_pane_mut() {
-                    pane.set_bell();
-                }
-                // Start bell animation on the tab bar (inactive tabs pulse).
-                if let Some(tab_bar) = &mut self.tab_bar {
-                    tab_bar.ring_bell(0);
-                }
-                self.dirty = true;
-            }
-            Event::Title(title) => {
-                if let Some(pane) = self.active_pane_mut() {
-                    pane.set_title(title);
-                }
-                self.sync_tab_bar_titles();
-            }
-            Event::ResetTitle => {
-                if let Some(pane) = self.active_pane_mut() {
-                    pane.set_title(String::new());
-                }
-                self.sync_tab_bar_titles();
-            }
-            Event::ClipboardStore(ty, text) => {
-                self.clipboard.store(ty, &text);
-            }
-            Event::ClipboardLoad(ty, formatter) => {
-                let text = self.clipboard.load(ty);
-                let response = formatter(&text);
-                if let Some(pane) = self.active_pane() {
-                    pane.write_input(response.as_bytes());
-                }
-            }
-            Event::ColorRequest(index, formatter) => {
-                if let Some(pane) = self.active_pane() {
-                    let color = pane.terminal().lock().palette().color(index);
-                    let response = formatter(color);
-                    pane.write_input(response.as_bytes());
-                }
-            }
-            Event::PtyWrite(s) => {
-                if let Some(pane) = self.active_pane() {
-                    pane.write_input(s.as_bytes());
-                }
-            }
-            Event::ChildExit(code) => {
-                log::info!("child process exited with code {code}");
-                self.shutdown(code);
-            }
-            _ => {
-                log::debug!("unhandled terminal event: {event:?}");
-            }
-        }
-    }
 }
 
 /// Resolve the [`UiTheme`] from config override + system theme.
@@ -580,18 +515,17 @@ impl ApplicationHandler<TermEvent> for App {
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: TermEvent) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: TermEvent) {
         match event {
             TermEvent::ConfigReload => {
                 self.apply_config_reload();
             }
-            TermEvent::Terminal { tab_id: _, event } => {
-                self.handle_terminal_event(event_loop, event);
-            }
             TermEvent::MuxWakeup => {
-                // Mux events are processed in Section 31 when the mux is
-                // wired into App. For now, just mark dirty to trigger a
-                // redraw.
+                // The real work happens in `pump_mux_events()` during
+                // `about_to_wait`. This wakeup ensures the event loop
+                // doesn't sleep past pending mux events. The dirty flag
+                // is a safety net for events (e.g. `ColorRequest`) that
+                // produce a `MuxWakeup` without a corresponding `MuxEvent`.
                 self.dirty = true;
             }
         }
