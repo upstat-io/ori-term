@@ -28,9 +28,14 @@ impl App {
         }
 
         // 3. Handle each notification.
-        //    Take the buffer to avoid borrow conflicts with `self`.
-        let notifications = std::mem::take(&mut self.notification_buf);
-        for notification in notifications {
+        //    Take the buffer to avoid borrow conflicts with `self`, then
+        //    restore it after iteration to preserve Vec capacity across frames.
+        let mut notifications = std::mem::take(&mut self.notification_buf);
+        #[allow(
+            clippy::iter_with_drain,
+            reason = "drain preserves Vec capacity; into_iter drops it"
+        )]
+        for notification in notifications.drain(..) {
             match notification {
                 MuxNotification::PaneDirty(id) => {
                     if let Some(pane) = self.panes.get_mut(&id) {
@@ -88,5 +93,6 @@ impl App {
                 }
             }
         }
+        self.notification_buf = notifications;
     }
 }

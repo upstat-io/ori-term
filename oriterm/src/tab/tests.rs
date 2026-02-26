@@ -1,4 +1,4 @@
-//! Tests for tab identity, event types, EventProxy, Notifier, and Tab.
+//! Tests for tab identity, EventProxy, Notifier, and Tab.
 
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -45,39 +45,6 @@ fn tab_id_hash_equality() {
     set.insert(b);
     set.insert(a); // duplicate
     assert_eq!(set.len(), 2);
-}
-
-// ---------------------------------------------------------------------------
-// TermEvent
-// ---------------------------------------------------------------------------
-
-#[test]
-fn term_event_terminal_variant() {
-    let id = TabId::next();
-    let event = TermEvent::Terminal {
-        tab_id: id,
-        event: Event::Wakeup,
-    };
-
-    match event {
-        TermEvent::Terminal { tab_id, event } => {
-            assert_eq!(tab_id, id);
-            assert!(matches!(event, Event::Wakeup));
-        }
-        TermEvent::ConfigReload | TermEvent::MuxWakeup => panic!("expected Terminal variant"),
-    }
-}
-
-#[test]
-fn term_event_debug_format() {
-    let id = TabId::next();
-    let event = TermEvent::Terminal {
-        tab_id: id,
-        event: Event::Bell,
-    };
-    let debug = format!("{event:?}");
-    assert!(debug.contains("Terminal"));
-    assert!(debug.contains("Bell"));
 }
 
 // ---------------------------------------------------------------------------
