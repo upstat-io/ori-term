@@ -333,3 +333,80 @@ fn all_builtins_produce_valid_palettes() {
         assert!(non_zero, "scheme {name}: palette fg and bg are both black");
     }
 }
+
+// --- conditional parsing edge cases (reference repo gaps) ---
+
+/// Space before colon (`"dark : X"`) is NOT matched — `strip_prefix("dark:")`
+/// requires the colon immediately after "dark". Documents current behavior.
+#[test]
+fn parse_conditional_space_before_colon_not_matched() {
+    // Ghostty handles `"dark : X"` but our parser requires `"dark:X"`.
+    assert!(parse_conditional("dark : Mocha, light : Latte").is_none());
+}
+
+/// Plain scheme name returns the same value regardless of theme state.
+#[test]
+fn resolve_scheme_name_plain_stable_across_themes() {
+    let dark = resolve_scheme_name("Nord", Theme::Dark);
+    let light = resolve_scheme_name("Nord", Theme::Light);
+    let unknown = resolve_scheme_name("Nord", Theme::Unknown);
+    assert_eq!(dark, "Nord");
+    assert_eq!(light, "Nord");
+    assert_eq!(unknown, "Nord");
+}
+
+/// Simulates a live dark→light toggle: same spec, different theme states.
+#[test]
+fn resolve_scheme_name_toggle_dark_then_light() {
+    let spec = "dark:Tokyo Night, light:Tokyo Night Light";
+    let first = resolve_scheme_name(spec, Theme::Dark);
+    assert_eq!(first, "Tokyo Night");
+    let second = resolve_scheme_name(spec, Theme::Light);
+    assert_eq!(second, "Tokyo Night Light");
+}
+
+// --- discover_all invariants ---
+
+/// `discover_all` returns schemes in a stable order (builtins first,
+/// in definition order).
+#[test]
+fn discover_all_stable_ordering() {
+    let first = super::discover_all();
+    let second = super::discover_all();
+    let names_a: Vec<&str> = first.iter().map(|s| s.name.as_str()).collect();
+    let names_b: Vec<&str> = second.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names_a, names_b, "discover_all ordering should be stable");
+}
+
+/// Every scheme name from `discover_all` is resolvable via `resolve_scheme`.
+#[test]
+fn discover_all_roundtrip_resolve() {
+    for scheme in super::discover_all() {
+        assert!(
+            super::resolve_scheme(&scheme.name).is_some(),
+            "discover_all returned '{}' but resolve_scheme can't find it",
+            scheme.name,
+        );
+    }
+}
+
+// --- config overrides scheme ---
+
+/// Explicit config foreground overrides the scheme's foreground.
+#[test]
+fn config_foreground_overrides_scheme() {
+    let mut colors = crate::config::ColorConfig::default();
+    colors.scheme = "Nord".to_owned();
+    colors.foreground = Some("#AABBCC".to_owned());
+
+    let palette = crate::app::config_reload::build_palette_from_config(&colors, Theme::Dark);
+    assert_eq!(
+        palette.foreground(),
+        Rgb {
+            r: 0xAA,
+            g: 0xBB,
+            b: 0xCC
+        },
+        "config foreground should override scheme foreground",
+    );
+}

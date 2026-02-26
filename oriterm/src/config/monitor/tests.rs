@@ -96,3 +96,14 @@ fn is_theme_file_rejects_wrong_dir() {
     let themes = Path::new("/config/themes");
     assert!(!super::is_theme_file(Path::new("/other/nord.toml"), themes,));
 }
+
+#[test]
+fn is_theme_file_rejects_no_extension() {
+    use std::path::Path;
+
+    let themes = Path::new("/config/themes");
+    assert!(
+        !super::is_theme_file(Path::new("/config/themes/mytheme"), themes),
+        "file without extension should be rejected"
+    );
+}
