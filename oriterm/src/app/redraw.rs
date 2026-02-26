@@ -43,6 +43,14 @@ impl App {
             .map_or_else(Vec::new, |f| std::mem::take(&mut f.hovered_url_segments));
         self.fill_hovered_url_viewport_segments(&mut url_segments);
 
+        // Resolve pane ID before the render block: `active_pane_id()` borrows
+        // `&self`, which conflicts with the `&mut self.renderer` inside the
+        // block. `PaneId` is `Copy`, so the borrow ends here.
+        let Some(pane_id) = self.active_pane_id() else {
+            log::warn!("redraw: no active pane");
+            return;
+        };
+
         let render_result = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw: no gpu");
@@ -56,8 +64,8 @@ impl App {
                 log::warn!("redraw: no window");
                 return;
             };
-            let Some(tab) = self.tab.as_ref() else {
-                log::warn!("redraw: no tab");
+            let Some(pane) = self.panes.get(&pane_id) else {
+                log::warn!("redraw: no active pane");
                 return;
             };
 
@@ -74,11 +82,11 @@ impl App {
             // does a fresh allocation; subsequent frames refill in place.
             let frame = match &mut self.frame {
                 Some(existing) => {
-                    extract_frame_into(tab.terminal(), existing, viewport, cell);
+                    extract_frame_into(pane.terminal(), existing, viewport, cell);
                     existing
                 }
                 slot @ None => {
-                    *slot = Some(extract_frame(tab.terminal(), viewport, cell));
+                    *slot = Some(extract_frame(pane.terminal(), viewport, cell));
                     slot.as_mut().expect("just assigned")
                 }
             };
@@ -95,7 +103,7 @@ impl App {
             }
 
             // Mark-mode cursor override: hollow block at the mark position.
-            frame.mark_cursor = tab.mark_cursor().and_then(|mc| {
+            frame.mark_cursor = pane.mark_cursor().and_then(|mc| {
                 let (line, col) = mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
                 Some(MarkCursorOverride {
                     line,
@@ -104,10 +112,10 @@ impl App {
                 })
             });
 
-            // Snapshot selection and search for rendering (Tab owns both, not Term).
+            // Snapshot selection and search for rendering (Pane owns both, not Term).
             let base = frame.content.stable_row_base;
-            frame.selection = tab.selection().map(|sel| FrameSelection::new(sel, base));
-            frame.search = tab.search().map(|s| FrameSearch::new(s, base));
+            frame.selection = pane.selection().map(|sel| FrameSelection::new(sel, base));
+            frame.search = pane.search().map(|s| FrameSearch::new(s, base));
 
             // Compute hovered cell for hyperlink underline rendering.
             if let Some(grid_widget) = self.terminal_grid.as_ref() {

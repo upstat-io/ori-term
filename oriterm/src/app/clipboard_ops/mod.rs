@@ -20,15 +20,15 @@ use super::App;
 use crate::config::PasteWarning;
 
 impl App {
-    /// Extract text from the active tab's selection.
+    /// Extract text from the active pane's selection.
     ///
-    /// Returns `None` if there is no tab, no selection, or the selection is
-    /// empty. Borrow of `self.tab` is confined to this method so callers can
-    /// mutate `self.clipboard` after.
+    /// Returns `None` if there is no active pane, no selection, or the
+    /// selection is empty. Borrow of `self.active_pane()` is confined to
+    /// this method so callers can mutate `self.clipboard` after.
     fn extract_selection_text(&self) -> Option<String> {
-        let tab = self.tab.as_ref()?;
-        let sel = tab.selection()?;
-        let term = tab.terminal().lock();
+        let pane = self.active_pane()?;
+        let sel = pane.selection()?;
+        let term = pane.terminal().lock();
         let text = extract_text(term.grid(), sel);
         (!text.is_empty()).then_some(text)
     }
@@ -76,15 +76,15 @@ impl App {
         true
     }
 
-    /// Extract both HTML and plain text from the active tab's selection.
+    /// Extract both HTML and plain text from the active pane's selection.
     ///
-    /// Returns `None` if there is no tab, no selection, the selection is
-    /// empty, or no renderer is available for font metrics.
+    /// Returns `None` if there is no active pane, no selection, the selection
+    /// is empty, or no renderer is available for font metrics.
     fn extract_selection_html(&self) -> Option<(String, String)> {
-        let tab = self.tab.as_ref()?;
-        let sel = tab.selection()?;
+        let pane = self.active_pane()?;
+        let sel = pane.selection()?;
         let renderer = self.renderer.as_ref()?;
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let (html, text) = extract_html_with_text(
             term.grid(),
             sel,
@@ -128,8 +128,8 @@ impl App {
         };
 
         // Bracketed paste = application handles newlines safely (Ghostty pattern).
-        let bracketed = self.tab.as_ref().is_some_and(|tab| {
-            tab.terminal()
+        let bracketed = self.active_pane().is_some_and(|pane| {
+            pane.terminal()
                 .lock()
                 .mode()
                 .contains(TermMode::BRACKETED_PASTE)
@@ -179,9 +179,11 @@ impl App {
     /// Reads the terminal mode to determine bracketed paste, applies the
     /// full paste processing pipeline, and writes the result to the PTY.
     fn write_paste_to_pty(&self, text: &str) {
-        let Some(tab) = &self.tab else { return };
+        let Some(pane) = self.active_pane() else {
+            return;
+        };
 
-        let bracketed = tab
+        let bracketed = pane
             .terminal()
             .lock()
             .mode()
@@ -193,8 +195,8 @@ impl App {
             return;
         }
 
-        tab.scroll_to_bottom();
-        tab.write_input(&bytes);
+        pane.scroll_to_bottom();
+        pane.write_input(&bytes);
         log::debug!(
             "pasted {} bytes to PTY (bracketed={})",
             bytes.len(),

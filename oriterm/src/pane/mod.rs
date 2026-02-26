@@ -30,10 +30,6 @@ use crate::pty::{Msg, PtyControl, PtyHandle};
 ///
 /// Duplicated from `tab::Notifier` to keep `pane` independent of `tab`.
 /// Unified when Tab is replaced in Section 31/32.
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 pub(crate) struct PaneNotifier {
     /// Direct PTY writer — bypasses the reader thread's command channel.
     writer: std::sync::Mutex<Box<dyn io::Write + Send>>,
@@ -41,10 +37,6 @@ pub(crate) struct PaneNotifier {
     tx: mpsc::Sender<Msg>,
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 impl PaneNotifier {
     /// Create a new notifier with a direct PTY writer and command channel.
     pub(crate) fn new(writer: Box<dyn io::Write + Send>, tx: mpsc::Sender<Msg>) -> Self {
@@ -77,10 +69,6 @@ impl PaneNotifier {
 ///
 /// Groups all parameters for `Pane::from_parts` to stay under the clippy
 /// argument limit. Produced by `LocalDomain::spawn_pane`.
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 pub(crate) struct PaneParts {
     /// Unique pane identifier.
     pub(crate) id: PaneId,
@@ -108,14 +96,11 @@ pub(crate) struct PaneParts {
 ///
 /// The atomic `Pane` unit in the mux model — one shell process, one grid,
 /// one PTY connection. Created by `LocalDomain::spawn_pane`.
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 pub(crate) struct Pane {
     /// Unique pane identifier (from mux allocator).
     id: PaneId,
     /// Which domain spawned this pane.
+    #[allow(dead_code, reason = "read when multi-domain routing is wired to App")]
     domain_id: DomainId,
     /// Shared terminal state (accessed by both render and PTY threads).
     terminal: Arc<FairMutex<Term<MuxEventProxy>>>,
@@ -128,10 +113,12 @@ pub(crate) struct Pane {
     /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
     pty: PtyHandle,
     /// Set by reader thread when new content is available.
+    #[allow(dead_code, reason = "read when render dirty-check is wired to App")]
     grid_dirty: Arc<AtomicBool>,
     /// Coalesces wakeup events from the reader thread.
     wakeup_pending: Arc<AtomicBool>,
     /// Lock-free cache of `TermMode::bits()` for hot-path queries.
+    #[allow(dead_code, reason = "read when mode-cache hot-path is wired to App")]
     mode_cache: Arc<AtomicU32>,
     /// Last known window title (from OSC 0/2).
     title: String,
@@ -147,10 +134,6 @@ pub(crate) struct Pane {
     search: Option<SearchState>,
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 impl Pane {
     /// Construct a pane from pre-built parts.
     ///
@@ -179,11 +162,13 @@ impl Pane {
     // -- Identity --
 
     /// Pane identity.
+    #[allow(dead_code, reason = "used when pane CRUD is fully wired to App")]
     pub(crate) fn id(&self) -> PaneId {
         self.id
     }
 
     /// Which domain spawned this pane.
+    #[allow(dead_code, reason = "used when multi-domain routing is wired to App")]
     pub(crate) fn domain_id(&self) -> DomainId {
         self.domain_id
     }
@@ -191,11 +176,13 @@ impl Pane {
     // -- Lock-free accessors --
 
     /// Whether the pane's grid has new content to render.
+    #[allow(dead_code, reason = "used when render dirty-check is wired to App")]
     pub(crate) fn grid_dirty(&self) -> bool {
         self.grid_dirty.load(Ordering::Acquire)
     }
 
     /// Clear the grid dirty flag after rendering.
+    #[allow(dead_code, reason = "used when render dirty-check is wired to App")]
     pub(crate) fn clear_grid_dirty(&self) {
         self.grid_dirty.store(false, Ordering::Release);
     }
@@ -209,6 +196,7 @@ impl Pane {
     ///
     /// Updated by the reader thread after each VTE chunk; read by the main
     /// thread for mouse reporting and cursor style without locking the terminal.
+    #[allow(dead_code, reason = "used when mode-cache hot-path is wired to App")]
     pub(crate) fn mode(&self) -> u32 {
         self.mode_cache.load(Ordering::Acquire)
     }
@@ -217,6 +205,7 @@ impl Pane {
     ///
     /// Called by the main thread under the terminal lock when processing
     /// wakeup events.
+    #[allow(dead_code, reason = "used when mode-cache hot-path is wired to App")]
     pub(crate) fn refresh_mode_cache(&self) {
         let term = self.terminal.lock();
         self.mode_cache.store(term.mode().bits(), Ordering::Release);
@@ -242,6 +231,7 @@ impl Pane {
     }
 
     /// Current working directory (from OSC 7).
+    #[allow(dead_code, reason = "used when OSC 7 CWD display is wired to App")]
     pub(crate) fn cwd(&self) -> Option<&str> {
         self.cwd.as_deref()
     }
@@ -252,11 +242,13 @@ impl Pane {
     }
 
     /// Whether the bell has fired since the pane was last focused.
+    #[allow(dead_code, reason = "used when bell indicator is wired to App")]
     pub(crate) fn has_bell(&self) -> bool {
         self.has_bell
     }
 
     /// Clear the bell indicator (call when the pane gains focus).
+    #[allow(dead_code, reason = "used when bell indicator is wired to App")]
     pub(crate) fn clear_bell(&mut self) {
         self.has_bell = false;
     }

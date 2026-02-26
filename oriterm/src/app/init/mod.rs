@@ -2,6 +2,7 @@
 
 use winit::event_loop::ActiveEventLoop;
 
+use oriterm_mux::domain::SpawnConfig;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::window::WindowConfig;
 
@@ -9,7 +10,7 @@ use super::{App, DEFAULT_DPI};
 use crate::app::config_reload;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::{GpuRenderer, GpuState};
-use crate::tab::{Tab, TabId};
+use crate::mux::InProcessMux;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
@@ -135,15 +136,15 @@ impl App {
             rows as f32 * cell.height,
         ));
 
-        // 12. Spawn the terminal tab (PTY + VTE + Term).
-        let t_tab_start = std::time::Instant::now();
-        let tab = self.create_initial_tab(rows, cols)?;
-        let t_tab = t_tab_start.elapsed();
+        // 12. Create mux infrastructure (InProcessMux + window + tab + pane).
+        let t_mux_start = std::time::Instant::now();
+        let (mux, mux_window_id) = self.create_initial_mux(rows as u16, cols as u16)?;
+        let t_mux = t_mux_start.elapsed();
 
         let t_total = t_start.elapsed();
         log::info!(
             "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
-             renderer={t_renderer:?} tab={t_tab:?} total={t_total:?}",
+             renderer={t_renderer:?} mux={t_mux:?} total={t_total:?}",
         );
         log::info!(
             "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
@@ -159,7 +160,8 @@ impl App {
         self.gpu = Some(gpu);
         self.renderer = Some(renderer);
         self.window = Some(window);
-        self.tab = Some(tab);
+        self.mux = Some(mux);
+        self.active_window = Some(mux_window_id);
         self.terminal_grid = Some(grid_widget);
         self.chrome = Some(chrome_widget);
         self.tab_bar = Some(tab_bar_widget);
@@ -216,31 +218,45 @@ impl App {
             })
     }
 
-    /// Create the initial terminal tab with scheme-aware palette from config.
-    fn create_initial_tab(
-        &self,
-        rows: usize,
-        cols: usize,
-    ) -> Result<Tab, Box<dyn std::error::Error>> {
-        let tab_id = TabId::next();
+    /// Create the mux, a mux window, and an initial tab with one pane.
+    ///
+    /// Returns the mux and the mux window ID. The pane is stored in `self.panes`.
+    fn create_initial_mux(
+        &mut self,
+        rows: u16,
+        cols: u16,
+    ) -> Result<(InProcessMux, oriterm_mux::WindowId), Box<dyn std::error::Error>> {
+        let mut mux = InProcessMux::new();
+        let window_id = mux.create_window();
+
         let theme = self
             .config
             .colors
             .resolve_theme(crate::platform::theme::system_theme);
-        let tab_cfg = crate::tab::TabConfig {
-            rows: rows as u16,
-            cols: cols as u16,
+
+        let config = SpawnConfig {
+            cols,
+            rows,
             scrollback: self.config.terminal.scrollback,
-            theme,
+            ..SpawnConfig::default()
         };
-        let tab = Tab::new(tab_id, &tab_cfg, self.event_proxy.clone())?;
 
-        // Build palette from color scheme + user overrides.
-        let mut term = tab.terminal().lock();
-        let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
-        *term.palette_mut() = palette;
-        drop(term);
+        let (_tab_id, pane_id, pane) =
+            mux.create_tab(window_id, &config, theme, &self.event_proxy)?;
 
-        Ok(tab)
+        // Apply color scheme + user overrides to the pane's terminal palette.
+        {
+            let mut term = pane.terminal().lock();
+            let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
+            *term.palette_mut() = palette;
+        }
+
+        self.panes.insert(pane_id, pane);
+
+        // Drain setup notifications (not useful at init time).
+        let mut discard = Vec::new();
+        mux.drain_notifications(&mut discard);
+
+        Ok((mux, window_id))
     }
 }

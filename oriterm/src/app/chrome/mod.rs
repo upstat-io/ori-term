@@ -365,9 +365,9 @@ impl App {
             ));
         }
 
-        if let Some(tab) = &self.tab {
-            tab.resize_grid(rows as u16, cols as u16);
-            tab.resize_pty(rows as u16, cols as u16);
+        if let Some(pane) = self.active_pane() {
+            pane.resize_grid(rows as u16, cols as u16);
+            pane.resize_pty(rows as u16, cols as u16);
         }
 
         self.update_resize_increments();

@@ -267,7 +267,9 @@ impl App {
             return;
         };
 
-        let Some(tab) = &self.tab else { return };
+        let Some(pane) = self.active_pane() else {
+            return;
+        };
         let event = MouseEvent {
             button,
             kind,
@@ -278,7 +280,7 @@ impl App {
         let report = encode_mouse_event(&event, mode);
         let bytes = report.as_bytes();
         if !bytes.is_empty() {
-            tab.write_input(bytes);
+            pane.write_input(bytes);
         }
     }
 
@@ -336,8 +338,8 @@ impl App {
         let report = encode_mouse_event(&event, mode);
         let bytes = report.as_bytes();
         if !bytes.is_empty() {
-            if let Some(tab) = &self.tab {
-                tab.write_input(bytes);
+            if let Some(pane) = self.active_pane() {
+                pane.write_input(bytes);
             }
         }
         true
@@ -375,7 +377,9 @@ impl App {
             MouseScrollDelta::PixelDelta(pos) => pos.y > 0.0,
         };
 
-        let Some(tab) = &self.tab else { return };
+        let Some(pane) = self.active_pane() else {
+            return;
+        };
 
         // Tier 1: Mouse reporting.
         if mode.intersects(TermMode::ANY_MOUSE) && !self.modifiers.shift_key() {
@@ -399,7 +403,7 @@ impl App {
                 let report = encode_mouse_event(&event, mode);
                 let bytes = report.as_bytes();
                 if !bytes.is_empty() {
-                    tab.write_input(bytes);
+                    pane.write_input(bytes);
                 }
             }
             self.dirty = true;
@@ -412,7 +416,7 @@ impl App {
         {
             let arrow = if scroll_up { b"\x1bOA" } else { b"\x1bOB" };
             for _ in 0..lines {
-                tab.write_input(arrow);
+                pane.write_input(arrow);
             }
             self.dirty = true;
             return;
@@ -424,7 +428,7 @@ impl App {
         } else {
             -(lines as isize)
         };
-        tab.scroll_display(scroll_delta);
+        pane.scroll_display(scroll_delta);
         self.dirty = true;
     }
 

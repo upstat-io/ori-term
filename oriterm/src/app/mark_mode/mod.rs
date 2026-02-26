@@ -14,7 +14,7 @@ use oriterm_core::selection::word_boundaries;
 use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side, StableRowIndex};
 
 use self::motion::{AbsCursor, GridBounds, WordContext};
-use crate::tab::{MarkCursor, Tab};
+use crate::pane::{MarkCursor, Pane};
 
 /// Result of processing a key event in mark mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +52,7 @@ enum Motion {
 /// Returns [`MarkAction::Handled`] for consumed keys, [`MarkAction::Exit`]
 /// when leaving mark mode, or [`MarkAction::Ignored`] for unrecognized keys.
 pub(crate) fn handle_mark_mode_key(
-    tab: &mut Tab,
+    pane: &mut Pane,
     event: &KeyEvent,
     mods: ModifiersState,
     word_delimiters: &str,
@@ -62,8 +62,8 @@ pub(crate) fn handle_mark_mode_key(
         && mods.shift_key()
         && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
     {
-        tab.clear_selection();
-        tab.exit_mark_mode();
+        pane.clear_selection();
+        pane.exit_mark_mode();
         return MarkAction::Exit { copy: false };
     }
 
@@ -72,7 +72,7 @@ pub(crate) fn handle_mark_mode_key(
         && !mods.shift_key()
         && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyA))
     {
-        select_all(tab);
+        select_all(pane);
         return MarkAction::Handled;
     }
 
@@ -80,17 +80,17 @@ pub(crate) fn handle_mark_mode_key(
     if let Key::Named(named) = &event.logical_key {
         match named {
             NamedKey::Escape => {
-                tab.clear_selection();
-                tab.exit_mark_mode();
+                pane.clear_selection();
+                pane.exit_mark_mode();
                 return MarkAction::Exit { copy: false };
             }
             NamedKey::Enter => {
-                tab.exit_mark_mode();
+                pane.exit_mark_mode();
                 return MarkAction::Exit { copy: true };
             }
             _ => {
                 if let Some(m) = resolve_motion(*named, mods) {
-                    apply_motion(tab, m, mods.shift_key(), word_delimiters);
+                    apply_motion(pane, m, mods.shift_key(), word_delimiters);
                     return MarkAction::Handled;
                 }
             }
@@ -129,14 +129,14 @@ fn resolve_motion(named: NamedKey, mods: ModifiersState) -> Option<Motion> {
 }
 
 /// Apply a cursor motion, optionally extending the selection.
-fn apply_motion(tab: &mut Tab, m: Motion, shift: bool, word_delimiters: &str) {
-    let Some(old_cursor) = tab.mark_cursor() else {
+fn apply_motion(pane: &mut Pane, m: Motion, shift: bool, word_delimiters: &str) {
+    let Some(old_cursor) = pane.mark_cursor() else {
         return;
     };
 
     // Compute the new cursor position under terminal lock.
     let new_cursor = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let Some(abs_row) = old_cursor.row.to_absolute(g) else {
             return;
@@ -180,13 +180,13 @@ fn apply_motion(tab: &mut Tab, m: Motion, shift: bool, word_delimiters: &str) {
 
     // Update selection or clear it.
     if shift {
-        extend_or_create_selection(tab, &old_cursor, &new_cursor);
+        extend_or_create_selection(pane, &old_cursor, &new_cursor);
     } else {
-        tab.clear_selection();
+        pane.clear_selection();
     }
 
-    tab.set_mark_cursor(new_cursor);
-    ensure_visible(tab, &new_cursor);
+    pane.set_mark_cursor(new_cursor);
+    ensure_visible(pane, &new_cursor);
 }
 
 /// Extract word boundary data under terminal lock for pure word motions.
@@ -236,9 +236,13 @@ fn extract_word_context(
 ///
 /// If a selection exists, updates its endpoint. Otherwise creates a new
 /// char-mode selection anchored at `anchor_cursor`.
-fn extend_or_create_selection(tab: &mut Tab, anchor_cursor: &MarkCursor, end_cursor: &MarkCursor) {
+fn extend_or_create_selection(
+    pane: &mut Pane,
+    anchor_cursor: &MarkCursor,
+    end_cursor: &MarkCursor,
+) {
     // Extract anchor from existing selection, or use the old cursor position.
-    let (anchor_row, anchor_col) = tab
+    let (anchor_row, anchor_col) = pane
         .selection()
         .map_or((anchor_cursor.row, anchor_cursor.col), |s| {
             (s.anchor.row, s.anchor.col)
@@ -265,7 +269,7 @@ fn extend_or_create_selection(tab: &mut Tab, anchor_cursor: &MarkCursor, end_cur
         side: end_side,
     };
 
-    tab.set_selection(Selection {
+    pane.set_selection(Selection {
         mode: SelectionMode::Char,
         anchor,
         pivot: anchor,
@@ -274,9 +278,9 @@ fn extend_or_create_selection(tab: &mut Tab, anchor_cursor: &MarkCursor, end_cur
 }
 
 /// Select the entire buffer (scrollback + visible).
-fn select_all(tab: &mut Tab) {
+fn select_all(pane: &mut Pane) {
     let (start_row, end_row, cols) = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let first = StableRowIndex::from_absolute(g, 0);
         let last_abs = g.scrollback().len() + g.lines().saturating_sub(1);
@@ -295,7 +299,7 @@ fn select_all(tab: &mut Tab) {
         side: Side::Right,
     };
 
-    tab.set_selection(Selection {
+    pane.set_selection(Selection {
         mode: SelectionMode::Char,
         anchor,
         pivot: anchor,
@@ -304,9 +308,9 @@ fn select_all(tab: &mut Tab) {
 }
 
 /// Auto-scroll the viewport to keep the mark cursor visible.
-fn ensure_visible(tab: &Tab, cursor: &MarkCursor) {
+fn ensure_visible(pane: &Pane, cursor: &MarkCursor) {
     let delta = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let Some(abs_row) = cursor.row.to_absolute(g) else {
             return;
@@ -329,7 +333,7 @@ fn ensure_visible(tab: &Tab, cursor: &MarkCursor) {
     };
 
     if let Some(d) = delta {
-        tab.scroll_display(d);
+        pane.scroll_display(d);
     }
 }
 

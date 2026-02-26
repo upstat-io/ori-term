@@ -23,10 +23,6 @@ use crate::event::TermEvent;
 ///
 /// Sent over `mpsc::Sender<MuxEvent>`. The mux processes these on the main
 /// thread after a winit wakeup.
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 pub(crate) enum MuxEvent {
     /// Pane has new terminal output — grid is dirty.
     PaneOutput(PaneId),
@@ -45,6 +41,7 @@ pub(crate) enum MuxEvent {
         title: String,
     },
     /// Pane working directory changed (OSC 7).
+    #[allow(dead_code, reason = "constructed when OSC 7 handling is wired to App")]
     PaneCwdChanged {
         /// Which pane changed CWD.
         pane_id: PaneId,
@@ -117,10 +114,6 @@ impl fmt::Debug for MuxEvent {
 /// `Term<MuxEventProxy>`. On each event, maps it to a [`MuxEvent`] and
 /// sends it over mpsc. Wakeup events are coalesced via an atomic flag to
 /// avoid flooding the channel.
-#[allow(
-    dead_code,
-    reason = "consumed by LocalDomain::spawn_pane, wired to App in Section 31.2"
-)]
 pub(crate) struct MuxEventProxy {
     /// Identity of the pane this proxy serves.
     pane_id: PaneId,
@@ -134,10 +127,6 @@ pub(crate) struct MuxEventProxy {
     winit_proxy: EventLoopProxy<TermEvent>,
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed by LocalDomain::spawn_pane, wired to App in Section 31.2"
-)]
 impl MuxEventProxy {
     /// Create a new event proxy for a pane.
     pub(crate) fn new(
@@ -227,7 +216,6 @@ impl EventListener for MuxEventProxy {
 ///
 /// These flow from the mux to the winit event loop after the mux has
 /// processed incoming [`MuxEvent`]s and updated its state.
-#[allow(dead_code, reason = "consumed in Section 31.2 App rewiring")]
 pub(crate) enum MuxNotification {
     /// A pane has new content to render.
     PaneDirty(PaneId),

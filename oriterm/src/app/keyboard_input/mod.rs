@@ -135,29 +135,31 @@ impl App {
 
         // Mark mode: consume ALL key events (including releases) to prevent
         // leaking input to the PTY while navigating.
-        if let Some(tab) = &mut self.tab {
-            if tab.is_mark_mode() {
-                if event.state == ElementState::Pressed {
-                    let action = mark_mode::handle_mark_mode_key(
-                        tab,
-                        event,
-                        self.modifiers,
-                        &self.config.behavior.word_delimiters,
-                    );
-                    match action {
-                        mark_mode::MarkAction::Handled => {
-                            self.dirty = true;
-                        }
-                        mark_mode::MarkAction::Exit { copy } => {
-                            if copy {
-                                self.copy_selection();
+        if let Some(pane_id) = self.active_pane_id() {
+            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                if pane.is_mark_mode() {
+                    if event.state == ElementState::Pressed {
+                        let action = mark_mode::handle_mark_mode_key(
+                            pane,
+                            event,
+                            self.modifiers,
+                            &self.config.behavior.word_delimiters,
+                        );
+                        match action {
+                            mark_mode::MarkAction::Handled => {
+                                self.dirty = true;
                             }
-                            self.dirty = true;
+                            mark_mode::MarkAction::Exit { copy } => {
+                                if copy {
+                                    self.copy_selection();
+                                }
+                                self.dirty = true;
+                            }
+                            mark_mode::MarkAction::Ignored => {}
                         }
-                        mark_mode::MarkAction::Ignored => {}
                     }
+                    return;
                 }
-                return;
             }
         }
 
@@ -183,9 +185,11 @@ impl App {
 
     /// Encode a key event and send the result to the PTY.
     fn encode_key_to_pty(&mut self, event: &winit::event::KeyEvent) {
-        let Some(tab) = &self.tab else { return };
+        let Some(pane) = self.active_pane() else {
+            return;
+        };
 
-        let mode = tab.terminal().lock().mode();
+        let mode = pane.terminal().lock().mode();
 
         let event_type = match (event.state, event.repeat) {
             (ElementState::Released, _) => KeyEventType::Release,
@@ -203,8 +207,8 @@ impl App {
         });
 
         if !bytes.is_empty() {
-            tab.scroll_to_bottom();
-            tab.write_input(&bytes);
+            pane.scroll_to_bottom();
+            pane.write_input(&bytes);
             self.cursor_blink.reset();
             self.dirty = true;
         }
@@ -227,7 +231,7 @@ impl App {
                 true
             }
             Action::SmartCopy => {
-                let has_sel = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
+                let has_sel = self.active_pane().is_some_and(|p| p.selection().is_some());
                 if has_sel {
                     self.copy_selection();
                     self.dirty = true;
@@ -239,15 +243,15 @@ impl App {
             Action::ScrollPageUp => self.execute_scroll(true),
             Action::ScrollPageDown => self.execute_scroll(false),
             Action::ScrollToTop => {
-                if let Some(tab) = &self.tab {
-                    tab.scroll_display(isize::MAX);
+                if let Some(pane) = self.active_pane() {
+                    pane.scroll_display(isize::MAX);
                 }
                 self.dirty = true;
                 true
             }
             Action::ScrollToBottom => {
-                if let Some(tab) = &self.tab {
-                    tab.scroll_to_bottom();
+                if let Some(pane) = self.active_pane() {
+                    pane.scroll_to_bottom();
                 }
                 self.dirty = true;
                 true
@@ -264,16 +268,16 @@ impl App {
                 true
             }
             Action::EnterMarkMode => {
-                if let Some(tab) = &mut self.tab {
-                    tab.enter_mark_mode();
+                if let Some(pane) = self.active_pane_mut() {
+                    pane.enter_mark_mode();
                     self.dirty = true;
                 }
                 true
             }
             Action::SendText(text) => {
-                if let Some(tab) = &self.tab {
-                    tab.scroll_to_bottom();
-                    tab.write_input(text.as_bytes());
+                if let Some(pane) = self.active_pane() {
+                    pane.scroll_to_bottom();
+                    pane.write_input(text.as_bytes());
                     self.cursor_blink.reset();
                 }
                 self.dirty = true;
@@ -304,11 +308,11 @@ impl App {
 
     /// Scroll by one page in the given direction.
     fn execute_scroll(&mut self, up: bool) -> bool {
-        if let Some(tab) = &self.tab {
-            let term = tab.terminal().lock();
+        if let Some(pane) = self.active_pane() {
+            let term = pane.terminal().lock();
             let lines = term.grid().lines() as isize;
             drop(term);
-            tab.scroll_display(if up { lines } else { -lines });
+            pane.scroll_display(if up { lines } else { -lines });
         }
         self.dirty = true;
         true
@@ -370,10 +374,12 @@ impl App {
 
     /// Handle IME commit: send committed text directly to the PTY.
     pub(super) fn handle_ime_commit(&mut self, text: &str) {
-        let Some(tab) = &self.tab else { return };
+        let Some(pane) = self.active_pane() else {
+            return;
+        };
         if !text.is_empty() {
-            tab.scroll_to_bottom();
-            tab.write_input(text.as_bytes());
+            pane.scroll_to_bottom();
+            pane.write_input(text.as_bytes());
             self.cursor_blink.reset();
             self.dirty = true;
         }

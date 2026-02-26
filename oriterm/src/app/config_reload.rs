@@ -157,8 +157,10 @@ impl App {
             return;
         }
 
-        let Some(tab) = &self.tab else { return };
-        let mut term = tab.terminal().lock();
+        let Some(pane) = self.active_pane() else {
+            return;
+        };
+        let mut term = pane.terminal().lock();
 
         // Resolve theme: config override takes priority over system detection.
         let theme = new
@@ -180,8 +182,8 @@ impl App {
     fn apply_cursor_changes(&mut self, new: &Config) {
         if new.terminal.cursor_style != self.config.terminal.cursor_style {
             let shape = new.terminal.cursor_style.to_shape();
-            if let Some(tab) = &self.tab {
-                tab.terminal().lock().set_cursor_shape(shape);
+            if let Some(pane) = self.active_pane() {
+                pane.terminal().lock().set_cursor_shape(shape);
             }
         }
 
@@ -222,8 +224,8 @@ impl App {
     /// marks all lines dirty since existing cells may render differently.
     fn apply_behavior_changes(&self, new: &Config) {
         if new.behavior.bold_is_bright != self.config.behavior.bold_is_bright {
-            if let Some(tab) = &self.tab {
-                tab.terminal().lock().grid_mut().dirty_mut().mark_all();
+            if let Some(pane) = self.active_pane() {
+                pane.terminal().lock().grid_mut().dirty_mut().mark_all();
             }
             log::info!("config reload: bold_is_bright changed");
         }

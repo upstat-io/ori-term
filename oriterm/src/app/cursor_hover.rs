@@ -36,9 +36,13 @@ impl App {
             return no_hit;
         }
 
-        let (Some(tab), Some(grid_widget), Some(renderer)) =
-            (&self.tab, &self.terminal_grid, &self.renderer)
-        else {
+        let Some(pane_id) = self.active_pane_id() else {
+            return no_hit;
+        };
+        let (Some(grid_widget), Some(renderer)) = (&self.terminal_grid, &self.renderer) else {
+            return no_hit;
+        };
+        let Some(pane) = self.panes.get(&pane_id) else {
             return no_hit;
         };
 
@@ -52,7 +56,7 @@ impl App {
             return no_hit;
         };
 
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let grid = term.grid();
         let abs_row = grid.scrollback().len() + line - grid.display_offset();
 
@@ -159,10 +163,10 @@ impl App {
             // OSC 8 hyperlink — no implicit segments to render.
             return;
         }
-        let Some(tab) = &self.tab else {
+        let Some(pane) = self.active_pane() else {
             return;
         };
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let grid = term.grid();
         let sb_len = grid.scrollback().len();
         let display_offset = grid.display_offset();

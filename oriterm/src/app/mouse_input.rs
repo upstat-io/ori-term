@@ -94,33 +94,43 @@ impl App {
     /// Handle mouse press for selection.
     pub(super) fn handle_mouse_press(&mut self) {
         let pos = self.mouse.cursor_pos();
-        if let (Some(tab), Some(grid), Some(renderer)) =
-            (&mut self.tab, &self.terminal_grid, &self.renderer)
-        {
-            let ctx = mouse_selection::GridCtx {
-                widget: grid,
-                cell: renderer.cell_metrics(),
-                word_delimiters: &self.config.behavior.word_delimiters,
-            };
-            if mouse_selection::handle_press(&mut self.mouse, tab, &ctx, pos, self.modifiers) {
-                self.dirty = true;
-            }
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let (Some(grid), Some(renderer)) = (&self.terminal_grid, &self.renderer) else {
+            return;
+        };
+        let ctx = mouse_selection::GridCtx {
+            widget: grid,
+            cell: renderer.cell_metrics(),
+            word_delimiters: &self.config.behavior.word_delimiters,
+        };
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+        if mouse_selection::handle_press(&mut self.mouse, pane, &ctx, pos, self.modifiers) {
+            self.dirty = true;
         }
     }
 
     /// Handle mouse drag for selection.
     pub(super) fn handle_mouse_drag(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
-        if let (Some(tab), Some(grid), Some(renderer)) =
-            (&mut self.tab, &self.terminal_grid, &self.renderer)
-        {
-            let ctx = mouse_selection::GridCtx {
-                widget: grid,
-                cell: renderer.cell_metrics(),
-                word_delimiters: &self.config.behavior.word_delimiters,
-            };
-            if mouse_selection::handle_drag(&mut self.mouse, tab, &ctx, position) {
-                self.dirty = true;
-            }
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let (Some(grid), Some(renderer)) = (&self.terminal_grid, &self.renderer) else {
+            return;
+        };
+        let ctx = mouse_selection::GridCtx {
+            widget: grid,
+            cell: renderer.cell_metrics(),
+            word_delimiters: &self.config.behavior.word_delimiters,
+        };
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+        if mouse_selection::handle_drag(&mut self.mouse, pane, &ctx, position) {
+            self.dirty = true;
         }
     }
 
@@ -185,7 +195,7 @@ impl App {
                     };
                     self.report_mouse_button(mouse_report::MouseButton::Right, kind, mode);
                 } else if state == ElementState::Pressed {
-                    let has_sel = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
+                    let has_sel = self.active_pane().is_some_and(|p| p.selection().is_some());
                     if has_sel {
                         self.copy_selection();
                     } else {
