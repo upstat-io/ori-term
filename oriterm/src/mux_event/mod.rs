@@ -15,7 +15,7 @@ use std::sync::mpsc;
 use winit::event_loop::EventLoopProxy;
 
 use oriterm_core::{ClipboardType, Event, EventListener};
-use oriterm_mux::PaneId;
+use oriterm_mux::{PaneId, TabId, WindowId};
 
 use crate::event::TermEvent;
 
@@ -23,7 +23,10 @@ use crate::event::TermEvent;
 ///
 /// Sent over `mpsc::Sender<MuxEvent>`. The mux processes these on the main
 /// thread after a winit wakeup.
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub(crate) enum MuxEvent {
     /// Pane has new terminal output — grid is dirty.
     PaneOutput(PaneId),
@@ -114,7 +117,10 @@ impl fmt::Debug for MuxEvent {
 /// `Term<MuxEventProxy>`. On each event, maps it to a [`MuxEvent`] and
 /// sends it over mpsc. Wakeup events are coalesced via an atomic flag to
 /// avoid flooding the channel.
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by LocalDomain::spawn_pane, wired to App in Section 31.2"
+)]
 pub(crate) struct MuxEventProxy {
     /// Identity of the pane this proxy serves.
     pane_id: PaneId,
@@ -128,7 +134,10 @@ pub(crate) struct MuxEventProxy {
     winit_proxy: EventLoopProxy<TermEvent>,
 }
 
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by LocalDomain::spawn_pane, wired to App in Section 31.2"
+)]
 impl MuxEventProxy {
     /// Create a new event proxy for a pane.
     pub(crate) fn new(
@@ -218,19 +227,58 @@ impl EventListener for MuxEventProxy {
 ///
 /// These flow from the mux to the winit event loop after the mux has
 /// processed incoming [`MuxEvent`]s and updated its state.
-#[derive(Debug)]
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(dead_code, reason = "consumed in Section 31.2 App rewiring")]
 pub(crate) enum MuxNotification {
     /// A pane has new content to render.
     PaneDirty(PaneId),
     /// A pane was closed (PTY exited, removed from registry).
     PaneClosed(PaneId),
     /// A tab's split tree layout changed.
-    TabLayoutChanged(oriterm_mux::TabId),
+    TabLayoutChanged(TabId),
     /// A window's tab list changed.
-    WindowTabsChanged(oriterm_mux::WindowId),
+    WindowTabsChanged(WindowId),
     /// An alert fired in a pane (bell, urgent notification).
     Alert(PaneId),
+    /// OSC 52 clipboard store request forwarded from a pane.
+    ClipboardStore {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Which clipboard to target.
+        clipboard_type: ClipboardType,
+        /// Text to store.
+        text: String,
+    },
+    /// OSC 52 clipboard load request forwarded from a pane.
+    ClipboardLoad {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Which clipboard to read.
+        clipboard_type: ClipboardType,
+        /// Formats the clipboard text into a PTY response.
+        formatter: Arc<dyn Fn(&str) -> String + Send + Sync>,
+    },
+}
+
+impl fmt::Debug for MuxNotification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PaneDirty(id) => write!(f, "PaneDirty({id})"),
+            Self::PaneClosed(id) => write!(f, "PaneClosed({id})"),
+            Self::TabLayoutChanged(id) => write!(f, "TabLayoutChanged({id})"),
+            Self::WindowTabsChanged(id) => write!(f, "WindowTabsChanged({id})"),
+            Self::Alert(id) => write!(f, "Alert({id})"),
+            Self::ClipboardStore {
+                pane_id,
+                clipboard_type,
+                ..
+            } => write!(f, "ClipboardStore({pane_id}, {clipboard_type:?})"),
+            Self::ClipboardLoad {
+                pane_id,
+                clipboard_type,
+                ..
+            } => write!(f, "ClipboardLoad({pane_id}, {clipboard_type:?})"),
+        }
+    }
 }
 
 #[cfg(test)]

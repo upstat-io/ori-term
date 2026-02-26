@@ -17,6 +17,7 @@ mod font;
 mod gpu;
 mod key_encoding;
 mod keybindings;
+mod mux;
 mod mux_event;
 mod pane;
 mod platform;

@@ -6,7 +6,13 @@
 mod local;
 mod wsl;
 
-#[allow(unused_imports, reason = "wired in Section 31")]
+#[allow(
+    unused_imports,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub(crate) use local::LocalDomain;
-#[allow(unused_imports, reason = "wired in Section 31")]
+#[allow(
+    unused_imports,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub(crate) use wsl::WslDomain;

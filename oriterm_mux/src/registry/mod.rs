@@ -16,7 +16,10 @@ use crate::session::{MuxTab, MuxWindow};
 /// state, PTY handles, etc.) lives in the binary crate. The registry only
 /// tracks identity and ownership.
 #[derive(Debug, Clone)]
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub struct PaneEntry {
     /// Pane identity.
     pub pane: PaneId,
@@ -32,12 +35,18 @@ pub struct PaneEntry {
 /// queries. The registry does not own `Pane` structs — it stores only
 /// metadata entries.
 #[derive(Debug, Default)]
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub struct PaneRegistry {
     entries: HashMap<PaneId, PaneEntry>,
 }
 
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 impl PaneRegistry {
     /// Create an empty registry.
     pub fn new() -> Self {
@@ -86,13 +95,19 @@ impl PaneRegistry {
 /// Provides O(1) lookup by `TabId` and `WindowId`, plus cross-reference
 /// queries to find which window contains a given tab.
 #[derive(Debug, Default)]
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 pub struct SessionRegistry {
     tabs: HashMap<TabId, MuxTab>,
     windows: HashMap<WindowId, MuxWindow>,
 }
 
-#[allow(dead_code, reason = "wired in Section 31")]
+#[allow(
+    dead_code,
+    reason = "consumed by InProcessMux, wired to App in Section 31.2"
+)]
 impl SessionRegistry {
     /// Create an empty registry.
     pub fn new() -> Self {
