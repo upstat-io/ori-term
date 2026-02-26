@@ -18,6 +18,6 @@ pub mod id;
 pub mod layout;
 pub mod nav;
 
-pub use id::{IdAllocator, PaneId, SessionId, TabId, WindowId};
+pub use id::{IdAllocator, MuxId, PaneId, SessionId, TabId, WindowId};
 pub use layout::{SplitDirection, SplitTree};
 pub use nav::Direction;

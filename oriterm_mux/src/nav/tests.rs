@@ -1,7 +1,7 @@
 use super::{Direction, cycle, navigate, nearest_pane};
 use crate::id::PaneId;
 use crate::layout::compute::PaneLayout;
-use crate::layout::floating::Rect;
+use crate::layout::rect::Rect;
 
 fn p(n: u64) -> PaneId {
     PaneId::from_raw(n)

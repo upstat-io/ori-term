@@ -1,6 +1,7 @@
 use super::{LayoutDescriptor, compute_dividers, compute_layout};
 use crate::id::PaneId;
-use crate::layout::floating::{FloatingLayer, FloatingPane, Rect};
+use crate::layout::floating::{FloatingLayer, FloatingPane};
+use crate::layout::rect::Rect;
 use crate::layout::split_tree::{SplitDirection, SplitTree};
 
 fn p(n: u64) -> PaneId {
@@ -209,10 +210,12 @@ fn floating_panes_appended_to_layout() {
     let floating = FloatingLayer::new();
     let floating = floating.add(FloatingPane {
         pane_id: p(2),
-        x: 100.0,
-        y: 100.0,
-        width: 400.0,
-        height: 300.0,
+        rect: Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 400.0,
+            height: 300.0,
+        },
         z_order: 0,
     });
     let desc = standard_desc();
