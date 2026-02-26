@@ -8,8 +8,6 @@
 //! winit bridge), `Notifier` (input → PTY bridge). `TermEvent` lives in
 //! [`crate::event`] to avoid backwards dependencies from non-tab modules.
 
-mod mark_cursor;
-
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -23,7 +21,7 @@ use oriterm_core::{
     Event, EventListener, FairMutex, SearchState, Selection, SelectionPoint, StableRowIndex, Term,
 };
 
-pub use mark_cursor::MarkCursor;
+pub(crate) use crate::pane::MarkCursor;
 
 use crate::event::TermEvent;
 use crate::pty::{Msg, PtyConfig, PtyControl, PtyEventLoop, PtyHandle, spawn_pty};

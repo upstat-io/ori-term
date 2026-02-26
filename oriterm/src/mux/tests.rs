@@ -131,10 +131,7 @@ fn close_active_pane_reassigns_active() {
     let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
 
     // Set p1 as active, then close it.
-    mux.session_mut()
-        .get_tab_mut(tid)
-        .unwrap()
-        .set_active_pane(p1);
+    mux.session.get_tab_mut(tid).unwrap().set_active_pane(p1);
 
     let result = mux.close_pane(p1);
     assert_eq!(result, ClosePaneResult::PaneRemoved);
@@ -285,6 +282,15 @@ fn poll_events_handles_pane_exited() {
     // Tab should still exist with one pane.
     let tab = mux.session().get_tab(tid).unwrap();
     assert_eq!(tab.all_panes().len(), 1);
+
+    // LastWindowClosed must NOT be emitted when panes remain.
+    let notifs = mux.drain_notifications();
+    assert!(
+        !notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::LastWindowClosed)),
+        "unexpected LastWindowClosed notification"
+    );
 }
 
 #[test]
@@ -435,6 +441,15 @@ fn pane_exited_event_triggers_last_window_close() {
     assert!(mux.pane_registry().is_empty());
     assert_eq!(mux.session().tab_count(), 0);
     assert_eq!(mux.session().window_count(), 0);
+
+    // LastWindowClosed notification must be emitted.
+    let notifs = mux.drain_notifications();
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::LastWindowClosed)),
+        "expected LastWindowClosed notification"
+    );
 }
 
 // -- High priority: multiple simultaneous pane exits --

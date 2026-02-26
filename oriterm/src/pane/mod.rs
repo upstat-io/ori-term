@@ -9,6 +9,7 @@
 //! `Pane` is intentionally independent of `Tab` — the mux layer owns panes
 //! directly. `Tab` will be replaced in Section 31/32.
 
+mod mark_cursor;
 mod shutdown;
 
 use std::io;
@@ -20,9 +21,10 @@ use std::thread::JoinHandle;
 use oriterm_core::{FairMutex, SearchState, Selection, SelectionPoint, StableRowIndex, Term};
 use oriterm_mux::{DomainId, PaneId};
 
+pub(crate) use mark_cursor::MarkCursor;
+
 use crate::mux_event::MuxEventProxy;
 use crate::pty::{Msg, PtyControl, PtyHandle};
-use crate::tab::MarkCursor;
 
 /// Sends input to the PTY and commands to the reader thread.
 ///
