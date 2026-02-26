@@ -39,6 +39,14 @@ pub struct WindowId(u64);
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SessionId(u64);
 
+/// Domain identifier for shell-spawning backends.
+///
+/// Each domain represents a distinct environment where shells can be
+/// spawned: local machine, WSL distro, SSH host, serial port, etc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DomainId(u64);
+
 impl fmt::Display for PaneId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Pane({})", self.0)
@@ -63,6 +71,12 @@ impl fmt::Display for SessionId {
     }
 }
 
+impl fmt::Display for DomainId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Domain({})", self.0)
+    }
+}
+
 /// Sealed trait for mux ID newtypes, enabling type-safe allocation.
 ///
 /// This trait is sealed — only the four ID types in this module implement it.
@@ -81,6 +95,7 @@ mod sealed {
     impl Sealed for super::TabId {}
     impl Sealed for super::WindowId {}
     impl Sealed for super::SessionId {}
+    impl Sealed for super::DomainId {}
 }
 
 impl MuxId for PaneId {
@@ -114,6 +129,16 @@ impl MuxId for WindowId {
 }
 
 impl MuxId for SessionId {
+    fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+impl MuxId for DomainId {
     fn from_raw(raw: u64) -> Self {
         Self(raw)
     }
@@ -185,6 +210,22 @@ impl SessionId {
     /// Create a `SessionId` from a raw value.
     ///
     /// Prefer `IdAllocator::<SessionId>::alloc()` for runtime allocation. This
+    /// constructor is for deserialization and test setup — raw values that
+    /// collide with allocator-produced IDs will cause silent bugs.
+    pub fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    /// Return the underlying raw value.
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+impl DomainId {
+    /// Create a `DomainId` from a raw value.
+    ///
+    /// Prefer `IdAllocator::<DomainId>::alloc()` for runtime allocation. This
     /// constructor is for deserialization and test setup — raw values that
     /// collide with allocator-produced IDs will cause silent bugs.
     pub fn from_raw(raw: u64) -> Self {

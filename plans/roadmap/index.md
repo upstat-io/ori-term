@@ -658,7 +658,7 @@ nearest_pane, ray cast, directional movement
 ---
 
 ### Section 30: Pane Extraction + Domain System
-**File:** `section-30-pane-domain.md` | **Tier:** 4M | **Status:** Not Started
+**File:** `section-30-pane-domain.md` | **Tier:** 4M | **Status:** Complete
 
 ```
 Pane, PaneId, pane struct, per-shell state, pane lifecycle
@@ -859,7 +859,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 27 | Command Palette & Quick Terminal | `section-27-command-palette.md` | 7 | Not Started |
 | 28 | Extensibility | `section-28-extensibility.md` | 7 | Not Started |
 | 29 | Mux Crate + Layout Engine | `section-29-mux-layout-engine.md` | 4M | Not Started |
-| 30 | Pane Extraction + Domain System | `section-30-pane-domain.md` | 4M | Not Started |
+| 30 | Pane Extraction + Domain System | `section-30-pane-domain.md` | 4M | Complete |
 | 31 | In-Process Mux + Multi-Pane Rendering | `section-31-in-process-mux.md` | 4M | Not Started |
 | 32 | Tab & Window Management (Mux-Aware) | `section-32-tab-window-mux.md` | 4M | Not Started |
 | 33 | Split Navigation + Floating Panes | `section-33-split-nav-floating.md` | 4M | Not Started |

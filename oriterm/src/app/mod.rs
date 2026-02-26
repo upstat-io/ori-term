@@ -144,14 +144,11 @@ impl App {
     pub(crate) fn new(event_proxy: EventLoopProxy<TermEvent>, config: Config) -> Self {
         let bindings = keybindings::merge_bindings(&config.keybind);
         let monitor = ConfigMonitor::new(event_proxy.clone());
-        let all_schemes = crate::scheme::discover_all();
-        let user_count = all_schemes
-            .len()
-            .saturating_sub(crate::scheme::BUILTIN_SCHEMES.len());
+        let (builtin_count, user_count) = crate::scheme::discover_count();
         log::info!(
             "themes: {} available ({} built-in, {} user)",
-            all_schemes.len(),
-            crate::scheme::BUILTIN_SCHEMES.len(),
+            builtin_count + user_count,
+            builtin_count,
             user_count,
         );
         let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
@@ -552,6 +549,12 @@ impl ApplicationHandler<TermEvent> for App {
             }
             TermEvent::Terminal { tab_id: _, event } => {
                 self.handle_terminal_event(event_loop, event);
+            }
+            TermEvent::MuxWakeup => {
+                // Mux events are processed in Section 31 when the mux is
+                // wired into App. For now, just mark dirty to trigger a
+                // redraw.
+                self.dirty = true;
             }
         }
     }

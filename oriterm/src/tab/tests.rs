@@ -64,7 +64,7 @@ fn term_event_terminal_variant() {
             assert_eq!(tab_id, id);
             assert!(matches!(event, Event::Wakeup));
         }
-        TermEvent::ConfigReload => panic!("expected Terminal variant"),
+        TermEvent::ConfigReload | TermEvent::MuxWakeup => panic!("expected Terminal variant"),
     }
 }
 
