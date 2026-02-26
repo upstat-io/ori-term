@@ -21,10 +21,6 @@ use crate::pty::{PtyConfig, PtyEventLoop, spawn_pty};
 /// The simplest domain — creates a PTY via `portable-pty`, wires up
 /// `MuxEventProxy` as the event listener, and returns a fully assembled
 /// `Pane`.
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 pub(crate) struct LocalDomain {
     /// Domain identity.
     id: DomainId,
@@ -54,10 +50,6 @@ impl Domain for LocalDomain {
     }
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 impl LocalDomain {
     /// Create a new local domain.
     pub(crate) fn new(id: DomainId) -> Self {

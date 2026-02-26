@@ -16,10 +16,12 @@ mod mark_mode;
 mod mouse_input;
 mod mouse_report;
 mod mouse_selection;
+mod mux_pump;
 mod redraw;
 mod search_ui;
 mod tab_bar_input;
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
@@ -29,6 +31,7 @@ use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
 use oriterm_core::{Event, TermMode};
+use oriterm_mux::{PaneId, WindowId as MuxWindowId};
 
 use self::cursor_blink::CursorBlink;
 use self::keyboard_input::ImeState;
@@ -39,7 +42,9 @@ use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
 use crate::gpu::{FrameInput, GpuRenderer, GpuState};
 use crate::keybindings::{self, KeyBinding};
-use crate::tab::Tab;
+use crate::mux::InProcessMux;
+use crate::mux_event::MuxNotification;
+use crate::pane::Pane;
 use crate::url_detect::{DetectedUrl, UrlDetectCache};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
@@ -63,8 +68,15 @@ pub(crate) struct App {
     renderer: Option<GpuRenderer>,
     window: Option<TermWindow>,
 
-    // Terminal state (single tab for now; multi-tab in Section 15).
-    tab: Option<Tab>,
+    // Mux layer (Section 31): owns registries, ID allocators, and domain.
+    mux: Option<InProcessMux>,
+    // Pane store: Pane structs live here, keyed by PaneId.
+    // The mux tracks metadata (PaneEntry); App owns the actual Pane.
+    panes: HashMap<PaneId, Pane>,
+    // Active mux window ID (maps to the single TermWindow for now).
+    active_window: Option<MuxWindowId>,
+    // Double-buffer for mux notifications (avoids per-frame allocation).
+    notification_buf: Vec<MuxNotification>,
 
     // Terminal grid widget (layout + event routing participant).
     terminal_grid: Option<TerminalGridWidget>,
@@ -157,7 +169,10 @@ impl App {
             gpu: None,
             renderer: None,
             window: None,
-            tab: None,
+            mux: None,
+            panes: HashMap::new(),
+            active_window: None,
+            notification_buf: Vec::new(),
             terminal_grid: None,
             chrome: None,
             tab_bar: None,
@@ -208,8 +223,8 @@ impl App {
         // Mark all grid lines dirty so the frame extraction re-reads every
         // cell with the new cell metrics. Without this, the terminal content
         // appears stale until PTY output marks individual lines dirty.
-        if let Some(tab) = &self.tab {
-            tab.terminal().lock().grid_mut().dirty_mut().mark_all();
+        if let Some(pane) = self.active_pane() {
+            pane.terminal().lock().grid_mut().dirty_mut().mark_all();
         }
 
         self.dirty = true;
@@ -226,8 +241,8 @@ impl App {
             winit::window::Theme::Light => oriterm_core::Theme::Light,
         };
         let theme = self.config.colors.resolve_theme(|| system_theme);
-        if let Some(tab) = &self.tab {
-            let mut term = tab.terminal().lock();
+        if let Some(pane) = self.active_pane() {
+            let mut term = pane.terminal().lock();
             term.set_theme(theme);
             let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
             *term.palette_mut() = palette;
@@ -259,9 +274,33 @@ impl App {
 
     /// Read the terminal mode, locking briefly.
     ///
-    /// Returns `None` if no tab is present.
+    /// Returns `None` if no active pane is present.
     fn terminal_mode(&self) -> Option<TermMode> {
-        self.tab.as_ref().map(|t| t.terminal().lock().mode())
+        self.active_pane().map(|p| p.terminal().lock().mode())
+    }
+
+    // -- Mux pane accessors --
+
+    /// The active pane's ID, derived from the mux session model.
+    fn active_pane_id(&self) -> Option<PaneId> {
+        let mux = self.mux.as_ref()?;
+        let win_id = self.active_window?;
+        let win = mux.session().get_window(win_id)?;
+        let tab_id = win.active_tab()?;
+        let tab = mux.session().get_tab(tab_id)?;
+        Some(tab.active_pane())
+    }
+
+    /// Immutable reference to the active pane.
+    fn active_pane(&self) -> Option<&Pane> {
+        let id = self.active_pane_id()?;
+        self.panes.get(&id)
+    }
+
+    /// Mutable reference to the active pane.
+    fn active_pane_mut(&mut self) -> Option<&mut Pane> {
+        let id = self.active_pane_id()?;
+        self.panes.get_mut(&id)
     }
 
     /// Current tab width lock value, if active.
@@ -282,9 +321,8 @@ impl App {
     /// Sync tab bar widget titles from the current tab state.
     fn sync_tab_bar_titles(&mut self) {
         let title = self
-            .tab
-            .as_ref()
-            .map(|t| t.title().to_owned())
+            .active_pane()
+            .map(|p| p.title().to_owned())
             .unwrap_or_default();
         if let Some(tab_bar) = &mut self.tab_bar {
             tab_bar.update_tab_title(0, title);
@@ -306,16 +344,16 @@ impl App {
     fn handle_terminal_event(&mut self, _event_loop: &ActiveEventLoop, event: Event) {
         match event {
             Event::Wakeup => {
-                if let Some(tab) = &mut self.tab {
-                    tab.check_selection_invalidation();
+                if let Some(pane) = self.active_pane_mut() {
+                    pane.check_selection_invalidation();
                 }
                 self.url_cache.invalidate();
                 self.hovered_url = None; // Segments contain stale absolute rows.
                 self.dirty = true;
             }
             Event::Bell => {
-                if let Some(tab) = &mut self.tab {
-                    tab.set_bell();
+                if let Some(pane) = self.active_pane_mut() {
+                    pane.set_bell();
                 }
                 // Start bell animation on the tab bar (inactive tabs pulse).
                 if let Some(tab_bar) = &mut self.tab_bar {
@@ -324,14 +362,14 @@ impl App {
                 self.dirty = true;
             }
             Event::Title(title) => {
-                if let Some(tab) = &mut self.tab {
-                    tab.set_title(title);
+                if let Some(pane) = self.active_pane_mut() {
+                    pane.set_title(title);
                 }
                 self.sync_tab_bar_titles();
             }
             Event::ResetTitle => {
-                if let Some(tab) = &mut self.tab {
-                    tab.set_title(String::new());
+                if let Some(pane) = self.active_pane_mut() {
+                    pane.set_title(String::new());
                 }
                 self.sync_tab_bar_titles();
             }
@@ -341,20 +379,20 @@ impl App {
             Event::ClipboardLoad(ty, formatter) => {
                 let text = self.clipboard.load(ty);
                 let response = formatter(&text);
-                if let Some(tab) = &self.tab {
-                    tab.write_input(response.as_bytes());
+                if let Some(pane) = self.active_pane() {
+                    pane.write_input(response.as_bytes());
                 }
             }
             Event::ColorRequest(index, formatter) => {
-                if let Some(tab) = &self.tab {
-                    let color = tab.terminal().lock().palette().color(index);
+                if let Some(pane) = self.active_pane() {
+                    let color = pane.terminal().lock().palette().color(index);
                     let response = formatter(color);
-                    tab.write_input(response.as_bytes());
+                    pane.write_input(response.as_bytes());
                 }
             }
             Event::PtyWrite(s) => {
-                if let Some(tab) = &self.tab {
-                    tab.write_input(s.as_bytes());
+                if let Some(pane) = self.active_pane() {
+                    pane.write_input(s.as_bytes());
                 }
             }
             Event::ChildExit(code) => {
@@ -560,6 +598,10 @@ impl ApplicationHandler<TermEvent> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Pump mux events: drain PTY reader thread messages and process
+        // resulting notifications before rendering.
+        self.pump_mux_events(event_loop);
+
         // Drive cursor blink timer only when blinking is active.
         if self.blinking_active && self.cursor_blink.update() {
             self.dirty = true;

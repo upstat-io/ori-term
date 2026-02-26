@@ -16,7 +16,7 @@ use oriterm_core::{
 };
 
 use crate::font::CellMetrics;
-use crate::tab::Tab;
+use crate::pane::Pane;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 
 /// Compact bitfield tracking which mouse buttons are currently pressed.
@@ -217,7 +217,7 @@ pub(crate) fn pixel_to_side(pos: PhysicalPosition<f64>, ctx: &GridCtx<'_>) -> Si
 /// Returns `true` if the press was handled (redraw needed).
 pub(crate) fn handle_press(
     mouse: &mut MouseState,
-    tab: &mut Tab,
+    pane: &mut Pane,
     ctx: &GridCtx<'_>,
     pos: PhysicalPosition<f64>,
     modifiers: ModifiersState,
@@ -240,7 +240,7 @@ pub(crate) fn handle_press(
     // Single lock: clamp, compute stable row, and conditionally compute
     // word/line boundaries for multi-click selections.
     let (col, stable_row, word_bounds, line_bounds) = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let c = col.min(g.cols().saturating_sub(1));
         let l = line.min(g.lines().saturating_sub(1));
@@ -275,16 +275,16 @@ pub(crate) fn handle_press(
         stable_row,
         word_bounds,
         line_bounds,
-        existing_mode: tab.selection().map(|s| s.mode),
+        existing_mode: pane.selection().map(|s| s.mode),
     });
 
     match action {
         PressAction::Extend(point) => {
-            tab.update_selection_end(point);
+            pane.update_selection_end(point);
             mouse.drag_active = true;
         }
         PressAction::New(selection) => {
-            tab.set_selection(selection);
+            pane.set_selection(selection);
             if click_count >= 2 {
                 mouse.drag_active = true;
             }
@@ -398,7 +398,7 @@ pub(crate) fn classify_press(input: &PressInput) -> PressAction {
 /// selection changed (redraw needed).
 pub(crate) fn handle_drag(
     mouse: &mut MouseState,
-    tab: &mut Tab,
+    pane: &mut Pane,
     ctx: &GridCtx<'_>,
     pos: PhysicalPosition<f64>,
 ) -> bool {
@@ -422,18 +422,18 @@ pub(crate) fn handle_drag(
     // Try to convert pixel to cell within the grid area.
     if let Some((col, line)) = pixel_to_cell(pos, ctx) {
         let side = pixel_to_side(pos, ctx);
-        update_drag_endpoint(tab, col, line, side, ctx.word_delimiters);
+        update_drag_endpoint(pane, col, line, side, ctx.word_delimiters);
         return true;
     }
 
     // Mouse is outside the grid — handle auto-scroll.
-    handle_auto_scroll(tab, pos, ctx);
+    handle_auto_scroll(pane, pos, ctx);
     true
 }
 
 /// Handle left mouse button release.
 ///
-/// Clears the drag state. The selection (if any) remains on the tab.
+/// Clears the drag state. The selection (if any) remains on the pane.
 pub(crate) fn handle_release(mouse: &mut MouseState) {
     mouse.buttons.set(winit::event::MouseButton::Left, false);
     mouse.drag_active = false;
@@ -441,15 +441,21 @@ pub(crate) fn handle_release(mouse: &mut MouseState) {
 }
 
 /// Update the selection endpoint during drag, respecting mode-aware snapping.
-fn update_drag_endpoint(tab: &mut Tab, col: usize, line: usize, side: Side, word_delimiters: &str) {
+fn update_drag_endpoint(
+    pane: &mut Pane,
+    col: usize,
+    line: usize,
+    side: Side,
+    word_delimiters: &str,
+) {
     // Read selection state before locking the terminal.
-    let (sel_mode, sel_anchor) = match tab.selection() {
+    let (sel_mode, sel_anchor) = match pane.selection() {
         Some(s) => (Some(s.mode), Some(s.anchor)),
         None => (None, None),
     };
 
     let new_end = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let col = col.min(g.cols().saturating_sub(1));
         let line = line.min(g.lines().saturating_sub(1));
@@ -505,7 +511,7 @@ fn update_drag_endpoint(tab: &mut Tab, col: usize, line: usize, side: Side, word
         }
     };
 
-    tab.update_selection_end(new_end);
+    pane.update_selection_end(new_end);
 }
 
 /// Redirect a column to the base cell if it lands on a wide char spacer.
@@ -530,7 +536,7 @@ fn redirect_spacer(grid: &Grid, abs_row: usize, col: usize) -> usize {
 ///
 /// After scrolling, updates the selection endpoint to the visible edge row
 /// at the mouse's X column so the highlight extends with the scroll.
-fn handle_auto_scroll(tab: &mut Tab, pos: PhysicalPosition<f64>, ctx: &GridCtx<'_>) {
+fn handle_auto_scroll(pane: &mut Pane, pos: PhysicalPosition<f64>, ctx: &GridCtx<'_>) {
     let Some(bounds) = ctx.widget.bounds() else {
         return;
     };
@@ -547,10 +553,10 @@ fn handle_auto_scroll(tab: &mut Tab, pos: PhysicalPosition<f64>, ctx: &GridCtx<'
     // Determine scroll direction; bail if mouse is inside the grid or
     // already at the bottom of history.
     if scrolling_up {
-        tab.scroll_display(1);
+        pane.scroll_display(1);
     } else {
         let (lines, offset) = {
-            let term = tab.terminal().lock();
+            let term = pane.terminal().lock();
             let g = term.grid();
             (g.lines(), g.display_offset())
         };
@@ -558,13 +564,13 @@ fn handle_auto_scroll(tab: &mut Tab, pos: PhysicalPosition<f64>, ctx: &GridCtx<'
         if y < grid_bottom || offset == 0 {
             return;
         }
-        tab.scroll_display(-1);
+        pane.scroll_display(-1);
     }
 
     // After scrolling, compute endpoint for the visible edge row.
     let cw = f64::from(ctx.cell.width);
     let endpoint = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let edge_line = if scrolling_up {
             0
@@ -587,7 +593,7 @@ fn handle_auto_scroll(tab: &mut Tab, pos: PhysicalPosition<f64>, ctx: &GridCtx<'
         }
     };
 
-    tab.update_selection_end(endpoint);
+    pane.update_selection_end(endpoint);
 }
 
 #[cfg(test)]

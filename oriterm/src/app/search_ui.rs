@@ -7,28 +7,28 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, NamedKey};
 
 use super::App;
-use crate::tab::Tab;
+use crate::pane::Pane;
 
 impl App {
-    /// Open the search bar for the active tab.
+    /// Open the search bar for the active pane.
     pub(super) fn open_search(&mut self) {
-        if let Some(tab) = &mut self.tab {
-            tab.open_search();
+        if let Some(pane) = self.active_pane_mut() {
+            pane.open_search();
             self.dirty = true;
         }
     }
 
     /// Close the search bar and clear search state.
     pub(super) fn close_search(&mut self) {
-        if let Some(tab) = &mut self.tab {
-            tab.close_search();
+        if let Some(pane) = self.active_pane_mut() {
+            pane.close_search();
             self.dirty = true;
         }
     }
 
     /// Whether search mode is active.
     pub(super) fn is_search_active(&self) -> bool {
-        self.tab.as_ref().is_some_and(Tab::is_search_active)
+        self.active_pane().is_some_and(Pane::is_search_active)
     }
 
     /// Dispatch a key event while search is active.
@@ -45,8 +45,8 @@ impl App {
             }
             Key::Named(NamedKey::Enter) => {
                 let shift = self.modifiers.shift_key();
-                if let Some(tab) = &mut self.tab {
-                    if let Some(search) = tab.search_mut() {
+                if let Some(pane) = self.active_pane_mut() {
+                    if let Some(search) = pane.search_mut() {
                         if shift {
                             search.prev_match();
                         } else {
@@ -58,9 +58,9 @@ impl App {
                 self.dirty = true;
             }
             Key::Named(NamedKey::Backspace) => {
-                if let Some(tab) = &mut self.tab {
-                    let grid_ref = tab.terminal().clone();
-                    if let Some(search) = tab.search_mut() {
+                if let Some(pane) = self.active_pane_mut() {
+                    let grid_ref = pane.terminal().clone();
+                    if let Some(search) = pane.search_mut() {
                         let mut q = search.query().to_string();
                         q.pop();
                         let term = grid_ref.lock();
@@ -71,9 +71,9 @@ impl App {
                 self.dirty = true;
             }
             Key::Character(c) => {
-                if let Some(tab) = &mut self.tab {
-                    let grid_ref = tab.terminal().clone();
-                    if let Some(search) = tab.search_mut() {
+                if let Some(pane) = self.active_pane_mut() {
+                    let grid_ref = pane.terminal().clone();
+                    if let Some(search) = pane.search_mut() {
                         let mut q = search.query().to_string();
                         q.push_str(c);
                         let term = grid_ref.lock();
@@ -91,14 +91,16 @@ impl App {
 
     /// Scroll the viewport to center the focused search match.
     fn scroll_to_search_match(&self) {
-        let Some(tab) = &self.tab else { return };
-        let Some(search) = tab.search() else { return };
+        let Some(pane) = self.active_pane() else {
+            return;
+        };
+        let Some(search) = pane.search() else { return };
         let Some(focused) = search.focused_match() else {
             return;
         };
 
         let stable_row = focused.start_row;
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let grid = term.grid();
 
         let Some(abs_row) = stable_row.to_absolute(grid) else {
@@ -126,7 +128,7 @@ impl App {
         // Scroll to the computed offset.
         let delta = clamped as isize - current_offset as isize;
         if delta != 0 {
-            tab.scroll_display(delta);
+            pane.scroll_display(delta);
         }
     }
 }

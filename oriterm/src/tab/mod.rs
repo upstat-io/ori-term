@@ -33,6 +33,7 @@ use crate::pty::{Msg, PtyConfig, PtyControl, PtyEventLoop, PtyHandle, spawn_pty}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TabId(u64);
 
+#[allow(dead_code, reason = "deprecated: being removed in Section 31 Task #6")]
 impl TabId {
     /// Generate the next unique tab ID.
     ///
@@ -77,6 +78,7 @@ impl EventListener for EventProxy {
 /// Input bytes are written directly to the PTY pipe (avoiding the channel
 /// deadlock where the reader thread blocks on `read()` and never drains
 /// `Msg::Input`). Shutdown commands go through the channel.
+#[allow(dead_code, reason = "deprecated: being removed in Section 31 Task #6")]
 pub struct Notifier {
     /// Direct PTY writer — bypasses the reader thread's command channel.
     writer: std::sync::Mutex<Box<dyn io::Write + Send>>,
@@ -84,6 +86,7 @@ pub struct Notifier {
     tx: mpsc::Sender<Msg>,
 }
 
+#[allow(dead_code, reason = "deprecated: being removed in Section 31 Task #6")]
 impl Notifier {
     /// Create a new notifier with a direct PTY writer and command channel.
     pub fn new(writer: Box<dyn io::Write + Send>, tx: mpsc::Sender<Msg>) -> Self {
@@ -125,6 +128,7 @@ const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// Created via [`Tab::new`], which spawns a PTY process and wires the
 /// full I/O pipeline. Dropping a `Tab` sends a shutdown signal, kills
 /// the child process, and joins the reader thread with a timeout.
+#[allow(dead_code, reason = "deprecated: being removed in Section 31 Task #6")]
 pub struct Tab {
     /// Unique tab identifier.
     id: TabId,
@@ -162,6 +166,7 @@ pub struct TabConfig {
     pub theme: oriterm_core::Theme,
 }
 
+#[allow(dead_code, reason = "deprecated: being removed in Section 31 Task #6")]
 impl Tab {
     /// Spawn a new tab with a live shell process.
     ///

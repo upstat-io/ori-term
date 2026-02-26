@@ -28,7 +28,6 @@ use crate::pane::Pane;
 
 /// Result of closing a single pane.
 #[derive(Debug, PartialEq, Eq)]
-#[allow(dead_code, reason = "wired to App in Section 31.2")]
 pub(crate) enum ClosePaneResult {
     /// Pane removed; its tab still has other panes.
     PaneRemoved,
@@ -48,7 +47,6 @@ pub(crate) enum ClosePaneResult {
 /// Orchestrates pane/tab/window CRUD, owns registries and ID allocators,
 /// and bridges PTY events to GUI notifications. All operations run on the
 /// main thread — no daemon, no IPC.
-#[allow(dead_code, reason = "wired to App in Section 31.2")]
 pub(crate) struct InProcessMux {
     // Registries.
     pane_registry: PaneRegistry,
@@ -74,7 +72,6 @@ pub(crate) struct InProcessMux {
     notifications: Vec<MuxNotification>,
 }
 
-#[allow(dead_code, reason = "wired to App in Section 31.2")]
 impl InProcessMux {
     /// Create a new in-process mux with a local domain.
     pub(crate) fn new() -> Self {
@@ -184,6 +181,7 @@ impl InProcessMux {
     }
 
     /// Look up a pane's metadata entry.
+    #[allow(dead_code, reason = "called when tab CRUD is fully wired to App")]
     pub(crate) fn get_pane_entry(&self, pane_id: PaneId) -> Option<&PaneEntry> {
         self.pane_registry.get(pane_id)
     }
@@ -219,6 +217,7 @@ impl InProcessMux {
     /// Close a tab and all its panes.
     ///
     /// Returns the list of `PaneId`s that the caller should drop from its map.
+    #[allow(dead_code, reason = "called when tab close is wired to App")]
     pub(crate) fn close_tab(&mut self, tab_id: TabId) -> Vec<PaneId> {
         let pane_ids = match self.session.get_tab(tab_id) {
             Some(tab) => tab.all_panes(),
@@ -251,6 +250,7 @@ impl InProcessMux {
     /// Split an existing pane, creating a new pane as its sibling.
     ///
     /// Returns `(PaneId, Pane)` for the newly created pane.
+    #[allow(dead_code, reason = "called when pane splitting is wired to App")]
     #[allow(
         clippy::too_many_arguments,
         reason = "split requires source pane + direction on top of spawn params; \
@@ -320,6 +320,7 @@ impl InProcessMux {
     /// Close a window and all its tabs/panes.
     ///
     /// Returns the list of `PaneId`s that the caller should drop.
+    #[allow(dead_code, reason = "called when window close is wired to App")]
     pub(crate) fn close_window(&mut self, window_id: WindowId) -> Vec<PaneId> {
         let tab_ids = match self.session.get_window(window_id) {
             Some(win) => win.tabs().to_vec(),
@@ -437,16 +438,19 @@ impl InProcessMux {
     }
 
     /// Immutable access to the pane registry.
+    #[allow(dead_code, reason = "used when pane registry queries are wired to App")]
     pub(crate) fn pane_registry(&self) -> &PaneRegistry {
         &self.pane_registry
     }
 
     /// Clone of the event sender for spawning new panes.
+    #[allow(dead_code, reason = "used when dynamic pane spawning is wired to App")]
     pub(crate) fn event_tx(&self) -> &mpsc::Sender<MuxEvent> {
         &self.event_tx
     }
 
     /// Default domain ID for spawning.
+    #[allow(dead_code, reason = "used when multi-domain spawning is wired to App")]
     pub(crate) fn default_domain(&self) -> DomainId {
         self.local_domain.id()
     }

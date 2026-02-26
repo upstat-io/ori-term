@@ -5,7 +5,7 @@ use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side};
 
 use super::motion::{self, AbsCursor, GridBounds};
 use super::{extend_or_create_selection, select_all};
-use crate::tab::MarkCursor;
+use crate::pane::MarkCursor;
 
 // ---------------------------------------------------------------------------
 // GridBounds helpers
@@ -639,34 +639,34 @@ fn selection_equal_at_col_zero_is_empty() {
 // Roadmap checkbox tests (9.3 spec)
 // ---------------------------------------------------------------------------
 // These verify the mark mode state transitions. Tests that require a full
-// Tab with PTY are marked #[ignore] and follow the existing tab test pattern.
+// Pane with PTY are marked #[ignore] and follow the existing pane test pattern.
 
 #[test]
 #[ignore = "requires display server (winit event loop)"]
 fn enter_mark_mode_sets_flag_exit_clears_it() {
-    let mut tab = make_tab(24, 80);
-    assert!(!tab.is_mark_mode());
+    let mut pane = make_pane(24, 80);
+    assert!(!pane.is_mark_mode());
 
-    tab.enter_mark_mode();
-    assert!(tab.is_mark_mode());
-    assert!(tab.mark_cursor().is_some());
+    pane.enter_mark_mode();
+    assert!(pane.is_mark_mode());
+    assert!(pane.mark_cursor().is_some());
 
-    tab.exit_mark_mode();
-    assert!(!tab.is_mark_mode());
-    assert!(tab.mark_cursor().is_none());
+    pane.exit_mark_mode();
+    assert!(!pane.is_mark_mode());
+    assert!(pane.mark_cursor().is_none());
 }
 
 #[test]
 #[ignore = "requires display server (winit event loop)"]
 fn shift_right_extends_selection_by_one_column() {
-    let mut tab = make_tab(24, 80);
-    tab.enter_mark_mode();
-    let old_mc = tab.mark_cursor().expect("mark cursor");
+    let mut pane = make_pane(24, 80);
+    pane.enter_mark_mode();
+    let old_mc = pane.mark_cursor().expect("mark cursor");
     let old_col = old_mc.col;
 
     // Simulate Shift+Right: compute new cursor, then extend selection.
     let new_mc = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let Some(abs_row) = old_mc.row.to_absolute(g) else {
             panic!("row should be valid");
@@ -688,12 +688,12 @@ fn shift_right_extends_selection_by_one_column() {
         }
     };
 
-    extend_or_create_selection(&mut tab, &old_mc, &new_mc);
-    tab.set_mark_cursor(new_mc);
+    extend_or_create_selection(&mut pane, &old_mc, &new_mc);
+    pane.set_mark_cursor(new_mc);
 
-    assert!(tab.selection().is_some(), "selection should exist");
+    assert!(pane.selection().is_some(), "selection should exist");
     assert_eq!(
-        tab.mark_cursor().expect("mark cursor").col,
+        pane.mark_cursor().expect("mark cursor").col,
         old_col + 1,
         "cursor should have moved right by one",
     );
@@ -702,12 +702,12 @@ fn shift_right_extends_selection_by_one_column() {
 #[test]
 #[ignore = "requires display server (winit event loop)"]
 fn ctrl_a_selects_entire_buffer() {
-    let mut tab = make_tab(24, 80);
-    tab.enter_mark_mode();
+    let mut pane = make_pane(24, 80);
+    pane.enter_mark_mode();
 
-    select_all(&mut tab);
+    select_all(&mut pane);
 
-    let sel = tab.selection().expect("selection should exist");
+    let sel = pane.selection().expect("selection should exist");
     assert_eq!(sel.mode, SelectionMode::Char);
     assert_eq!(sel.anchor.col, 0);
     assert_eq!(sel.anchor.side, Side::Left);
@@ -717,25 +717,25 @@ fn ctrl_a_selects_entire_buffer() {
 #[test]
 #[ignore = "requires display server (winit event loop)"]
 fn escape_clears_selection_and_exits_mark_mode() {
-    let mut tab = make_tab(24, 80);
-    tab.enter_mark_mode();
+    let mut pane = make_pane(24, 80);
+    pane.enter_mark_mode();
 
     // Create a selection via extend helper.
-    let old_mc = tab.mark_cursor().expect("mark cursor");
+    let old_mc = pane.mark_cursor().expect("mark cursor");
     let new_mc = MarkCursor {
         row: old_mc.row,
         col: old_mc.col + 1,
     };
-    extend_or_create_selection(&mut tab, &old_mc, &new_mc);
-    tab.set_mark_cursor(new_mc);
-    assert!(tab.selection().is_some());
+    extend_or_create_selection(&mut pane, &old_mc, &new_mc);
+    pane.set_mark_cursor(new_mc);
+    assert!(pane.selection().is_some());
 
     // Simulate Escape: clear selection and exit mark mode.
-    tab.clear_selection();
-    tab.exit_mark_mode();
+    pane.clear_selection();
+    pane.exit_mark_mode();
 
-    assert!(tab.selection().is_none(), "selection should be cleared");
-    assert!(!tab.is_mark_mode(), "mark mode should be exited");
+    assert!(pane.selection().is_none(), "selection should be cleared");
+    assert!(!pane.is_mark_mode(), "mark mode should be exited");
 }
 
 // ---------------------------------------------------------------------------
@@ -747,21 +747,21 @@ fn escape_clears_selection_and_exits_mark_mode() {
 fn auto_scroll_moves_viewport_when_cursor_above() {
     use super::ensure_visible;
 
-    let mut tab = make_tab(24, 80);
-    tab.enter_mark_mode();
+    let mut pane = make_pane(24, 80);
+    pane.enter_mark_mode();
 
     // Scroll the viewport into scrollback, then place cursor above viewport.
     // First we need content in scrollback — write enough to create scrollback.
     let lines: String = (0..50).map(|i| format!("line {i}\r\n")).collect();
-    tab.write_input(lines.as_bytes());
+    pane.write_input(lines.as_bytes());
     std::thread::sleep(std::time::Duration::from_millis(50));
 
     // Scroll up so viewport shows older content.
-    tab.scroll_display(20);
+    pane.scroll_display(20);
 
     // Place mark cursor at the very top of the buffer.
     let top_cursor = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let stable = StableRowIndex::from_absolute(g, 0);
         MarkCursor {
@@ -769,14 +769,14 @@ fn auto_scroll_moves_viewport_when_cursor_above() {
             col: 0,
         }
     };
-    tab.set_mark_cursor(top_cursor);
+    pane.set_mark_cursor(top_cursor);
 
     // ensure_visible should scroll to make the cursor visible.
-    ensure_visible(&tab, &top_cursor);
+    ensure_visible(&pane, &top_cursor);
 
     // Verify the cursor is now within the visible viewport.
     let visible = {
-        let term = tab.terminal().lock();
+        let term = pane.terminal().lock();
         let g = term.grid();
         let Some(abs_row) = top_cursor.row.to_absolute(g) else {
             panic!("row should be valid");
@@ -951,8 +951,8 @@ fn word_right_clamps_at_end_of_buffer() {
 #[test]
 #[ignore = "requires display server (winit event loop)"]
 fn word_left_at_buffer_start_clamps_with_grid() {
-    let tab = make_tab(24, 80);
-    let term = tab.terminal().lock();
+    let pane = make_pane(24, 80);
+    let term = pane.terminal().lock();
     let g = term.grid();
 
     let ctx = super::extract_word_context(g, 0, 0, oriterm_core::DEFAULT_WORD_DELIMITERS);
@@ -964,8 +964,8 @@ fn word_left_at_buffer_start_clamps_with_grid() {
 #[test]
 #[ignore = "requires display server (winit event loop)"]
 fn word_right_at_buffer_end_clamps_with_grid() {
-    let tab = make_tab(24, 80);
-    let term = tab.terminal().lock();
+    let pane = make_pane(24, 80);
+    let term = pane.terminal().lock();
     let g = term.grid();
 
     let total_rows = g.scrollback().len() + g.lines();
@@ -991,17 +991,31 @@ fn word_right_at_buffer_end_clamps_with_grid() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Create a Tab with default settings and a live PTY.
-fn make_tab(rows: u16, cols: u16) -> crate::tab::Tab {
-    use crate::tab::{Tab, TabConfig, TabId};
+/// Create a Pane with default settings and a live PTY.
+fn make_pane(rows: u16, cols: u16) -> crate::pane::Pane {
+    use oriterm_mux::domain::SpawnConfig;
+    use oriterm_mux::{DomainId, PaneId};
 
-    let cfg = TabConfig {
+    use crate::domain::LocalDomain;
+    use crate::mux_event::MuxEvent;
+
+    let domain = LocalDomain::new(DomainId::from_raw(0));
+    let (mux_tx, _mux_rx) = std::sync::mpsc::channel::<MuxEvent>();
+    let config = SpawnConfig {
         rows,
         cols,
         scrollback: 1000,
-        theme: oriterm_core::Theme::default(),
+        ..SpawnConfig::default()
     };
-    Tab::new(TabId::next(), &cfg, test_proxy()).expect("tab creation should succeed")
+    domain
+        .spawn_pane(
+            PaneId::from_raw(0),
+            &config,
+            oriterm_core::Theme::default(),
+            &mux_tx,
+            &test_proxy(),
+        )
+        .expect("pane creation should succeed")
 }
 
 /// Get a cloned winit `EventLoopProxy` for tests.
