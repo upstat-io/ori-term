@@ -332,7 +332,9 @@ impl InProcessMux {
                     self.notifications.push(MuxNotification::PaneDirty(id));
                 }
                 MuxEvent::PaneExited { pane_id, .. } => {
-                    self.close_pane(pane_id);
+                    if self.close_pane(pane_id) == ClosePaneResult::LastWindow {
+                        self.notifications.push(MuxNotification::LastWindowClosed);
+                    }
                 }
                 MuxEvent::PaneTitleChanged { pane_id, title } => {
                     if let Some(pane) = panes.get_mut(&pane_id) {
@@ -391,11 +393,6 @@ impl InProcessMux {
     /// Immutable access to the session registry.
     pub(crate) fn session(&self) -> &SessionRegistry {
         &self.session
-    }
-
-    /// Mutable access to the session registry.
-    pub(crate) fn session_mut(&mut self) -> &mut SessionRegistry {
-        &mut self.session
     }
 
     /// Immutable access to the pane registry.
