@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use super::{IdAllocator, MuxId, PaneId, SessionId, TabId, WindowId};
+use super::{DomainId, IdAllocator, MuxId, PaneId, SessionId, TabId, WindowId};
 
 /// Compile-time trait bound checks: all ID types must be `Copy`, `Hash`, `Eq`.
 #[test]
@@ -10,6 +10,7 @@ fn id_types_are_copy_hash_eq() {
     assert_id_traits::<TabId>();
     assert_id_traits::<WindowId>();
     assert_id_traits::<SessionId>();
+    assert_id_traits::<DomainId>();
 }
 
 #[test]
@@ -45,17 +46,20 @@ fn allocator_returns_correct_type() {
     let mut tab_alloc = IdAllocator::<TabId>::new();
     let mut win_alloc = IdAllocator::<WindowId>::new();
     let mut sess_alloc = IdAllocator::<SessionId>::new();
+    let mut dom_alloc = IdAllocator::<DomainId>::new();
 
     // Each allocator returns its own type — no manual wrapping needed.
     let pane: PaneId = pane_alloc.alloc();
     let tab: TabId = tab_alloc.alloc();
     let win: WindowId = win_alloc.alloc();
     let sess: SessionId = sess_alloc.alloc();
+    let dom: DomainId = dom_alloc.alloc();
 
     assert_eq!(pane.raw(), 1);
     assert_eq!(tab.raw(), 1);
     assert_eq!(win.raw(), 1);
     assert_eq!(sess.raw(), 1);
+    assert_eq!(dom.raw(), 1);
 }
 
 #[test]
@@ -83,11 +87,18 @@ fn display_session_id() {
 }
 
 #[test]
+fn display_domain_id() {
+    let id = DomainId::from_raw(5);
+    assert_eq!(format!("{id}"), "Domain(5)");
+}
+
+#[test]
 fn raw_round_trip() {
     assert_eq!(PaneId::from_raw(99).raw(), 99);
     assert_eq!(TabId::from_raw(50).raw(), 50);
     assert_eq!(WindowId::from_raw(11).raw(), 11);
     assert_eq!(SessionId::from_raw(77).raw(), 77);
+    assert_eq!(DomainId::from_raw(33).raw(), 33);
 }
 
 #[test]
@@ -100,6 +111,7 @@ fn mux_id_trait_round_trip() {
     check::<TabId>(7);
     check::<WindowId>(3);
     check::<SessionId>(1);
+    check::<DomainId>(5);
 }
 
 /// Different ID types with the same raw value must not be equal.
@@ -119,6 +131,9 @@ fn different_id_types_are_not_interchangeable() {
     assert_eq!(tab, TabId::from_raw(1));
     assert_eq!(window, WindowId::from_raw(1));
     assert_eq!(session, SessionId::from_raw(1));
+
+    let domain = DomainId::from_raw(1);
+    assert_eq!(domain, DomainId::from_raw(1));
 }
 
 #[test]

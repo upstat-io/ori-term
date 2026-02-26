@@ -14,10 +14,16 @@
 
 #![deny(unsafe_code)]
 
+pub mod domain;
 pub mod id;
 pub mod layout;
 pub mod nav;
+pub mod registry;
+pub mod session;
 
-pub use id::{IdAllocator, MuxId, PaneId, SessionId, TabId, WindowId};
+pub use domain::{Domain, DomainState, SpawnConfig};
+pub use id::{DomainId, IdAllocator, MuxId, PaneId, SessionId, TabId, WindowId};
 pub use layout::{SplitDirection, SplitTree};
 pub use nav::Direction;
+pub use registry::{PaneEntry, PaneRegistry, SessionRegistry};
+pub use session::{MuxTab, MuxWindow};
