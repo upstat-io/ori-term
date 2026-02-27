@@ -569,6 +569,26 @@ vimium, quick copy, pattern registry
 
 ---
 
+### Section 42: Expose / Overview Mode
+**File:** `section-42-expose-overview.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+expose, overview, Mission Control, thumbnail grid, pane overview
+ExposeMode, ExposePhase, ExposeTile, expose state machine
+Ctrl+Shift+Space, enter expose, exit expose, cancel expose
+thumbnail, ThumbnailCache, offscreen render, RenderTarget, 320x200
+ImagePipeline, textured quad, WGSL, image shader, bind group
+compute_expose_grid, auto-columns, last-row centering, responsive grid
+label_rect, thumbnail label, pane title, hint character, a-z hints
+arrow navigation, grid-aware wrapping, Tab cycling, mouse click
+type-to-filter, filter bar, case-insensitive, substring match
+double-Escape, clear filter, no matches, empty state
+staggered update, round-robin, burst render, selected always updates
+live thumbnails, GPU thumbnails, pane switching, cross-window
+```
+
+---
+
 ### Section 24: Visual Polish
 **File:** `section-24-visual-polish.md` | **Tier:** 6 | **Status:** Not Started
 
@@ -867,6 +887,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 35 | Session Persistence + Remote Domains | `section-35-persistence-remote.md` | 7A | Not Started |
 | 36 | Remote Attach + Network Transport | `section-36-remote-attach.md` | 7A | Not Started |
 | 37 | TUI Client | `section-37-tui-client.md` | 7A | Not Started |
+| 42 | Expose / Overview Mode | `section-42-expose-overview.md` | 5 | Not Started |
 
 ## Tier Summary
 
@@ -878,7 +899,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23, 38-39 | Hardening (terminal modes, performance, protocol extensions, image protocols) |
+| 5 | 22-23, 38-39, 42 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview) |
 | 6 | 24-25 | Polish (visual refinements, themes) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |

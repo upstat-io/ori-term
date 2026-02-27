@@ -129,7 +129,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 
 **Mux event flow (daemon mode):** PTY Reader → `MuxEvent` → MuxServer → `OutputCoalescer` (1ms/16ms/100ms tiered) → push to client via IPC → GUI renders.
 
-## Section Overview (41 Sections, 10 Tiers)
+## Section Overview (42 Sections, 10 Tiers)
 
 ### Tier 0 — Core Library + Cross-Platform Architecture
 | Section | Title | What |
@@ -190,6 +190,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 23 | Performance & Damage Tracking | Damage tracking, ring buffer, parsing optimization, benchmarks |
 | 38 | Terminal Protocol Extensions | Capability reporting (DA, DECRQM, XTGETTCAP), color queries, extended SGR (underline styles/colors), window manipulation, DCS passthrough |
 | 39 | Image Protocols | Kitty Graphics Protocol, Sixel, iTerm2 inline images, GPU compositing |
+| 42 | Expose / Overview Mode | Mission Control-style live thumbnail grid of all panes, type-to-filter, keyboard/mouse navigation |
 
 ### Tier 6 — Polish
 | Section | Title | What |
