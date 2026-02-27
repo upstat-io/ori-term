@@ -3013,3 +3013,340 @@ fn cursor_only_in_focused_pane() {
         "unfocused pane should not add more cursor instances"
     );
 }
+
+// ── Search match highlighting ──
+
+/// Helper: build a `FrameSearch` with a single match at the given viewport
+/// position (`line`, `start_col..=end_col`) with `focused` as the match index.
+fn search_with_match(
+    line: usize,
+    start_col: usize,
+    end_col: usize,
+    focused: usize,
+) -> crate::gpu::frame_input::FrameSearch {
+    use oriterm_core::SearchMatch;
+
+    let m = SearchMatch {
+        start_row: StableRowIndex(line as u64),
+        start_col,
+        end_row: StableRowIndex(line as u64),
+        end_col,
+    };
+    crate::gpu::frame_input::FrameSearch::for_test(vec![m], focused, 0)
+}
+
+#[test]
+fn search_match_highlights_bg() {
+    // A non-focused search match should use SEARCH_MATCH_BG for the bg
+    // and keep the original fg.
+    let match_bg = Rgb {
+        r: 100,
+        g: 100,
+        b: 30,
+    };
+
+    let mut input = FrameInput::test_grid(3, 1, "ABC");
+    // Match on col 1 only, focused index out of range → no focused match.
+    input.search = Some(search_with_match(0, 1, 1, 99));
+    input.content.cursor.visible = false;
+    let atlas = atlas_with(&['A', 'B', 'C']);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Col 0: normal bg.
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg0.bg_color, rgb_f32(input.palette.background));
+
+    // Col 1: search match bg.
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        bg1.bg_color,
+        rgb_f32(match_bg),
+        "match bg should be yellow-tinted"
+    );
+
+    // Col 2: normal bg.
+    let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
+    assert_eq!(bg2.bg_color, rgb_f32(input.palette.background));
+}
+
+#[test]
+fn search_match_preserves_fg() {
+    // Non-focused match keeps the cell's original fg color.
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.search = Some(search_with_match(0, 0, 0, 99));
+    input.content.cursor.visible = false;
+    let fg = input.content.cells[0].fg;
+    let atlas = atlas_with(&['A']);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(
+        glyph.fg_color,
+        rgb_f32(fg),
+        "non-focused match keeps original fg"
+    );
+}
+
+#[test]
+fn search_focused_match_overrides_fg_and_bg() {
+    // The focused match uses SEARCH_FOCUSED_FG and SEARCH_FOCUSED_BG.
+    let focused_fg = Rgb { r: 0, g: 0, b: 0 };
+    let focused_bg = Rgb {
+        r: 200,
+        g: 170,
+        b: 40,
+    };
+
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.search = Some(search_with_match(0, 0, 0, 0)); // focused index = 0
+    input.content.cursor.visible = false;
+    let atlas = atlas_with(&['A']);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let bg = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg.bg_color, rgb_f32(focused_bg), "focused match bg");
+
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(
+        glyph.fg_color,
+        rgb_f32(focused_fg),
+        "focused match fg should be dark"
+    );
+}
+
+#[test]
+fn search_match_skips_block_cursor_cell() {
+    // The cell under a visible block cursor should NOT get search
+    // highlighting — the cursor overlay handles its own visual.
+    let mut input = FrameInput::test_grid(3, 1, "ABC");
+    input.search = Some(search_with_match(0, 0, 2, 99));
+    // Block cursor at col 0.
+    input.content.cursor.column = Column(0);
+    input.content.cursor.line = 0;
+    input.content.cursor.shape = CursorShape::Block;
+    input.content.cursor.visible = true;
+    let atlas = atlas_with(&['A', 'B', 'C']);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let match_bg = Rgb {
+        r: 100,
+        g: 100,
+        b: 30,
+    };
+
+    // Col 0 (under block cursor): normal bg, NOT match bg.
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_ne!(
+        bg0.bg_color,
+        rgb_f32(match_bg),
+        "block cursor cell should skip search highlighting"
+    );
+
+    // Col 1 (not under cursor): match bg.
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(
+        bg1.bg_color,
+        rgb_f32(match_bg),
+        "non-cursor cell should be highlighted"
+    );
+}
+
+#[test]
+fn search_no_match_uses_default_colors() {
+    // When search is active but no cells match, colors are unchanged.
+    let mut input = FrameInput::test_grid(2, 1, "AB");
+    // Match on row 5 (not in our 1-row grid).
+    input.search = Some(search_with_match(5, 0, 0, 0));
+    input.content.cursor.visible = false;
+    let atlas = atlas_with(&['A', 'B']);
+    let bg_color = input.palette.background;
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg0.bg_color, rgb_f32(bg_color));
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(bg1.bg_color, rgb_f32(bg_color));
+}
+
+// ── URL hover underline ──
+
+#[test]
+fn url_hover_produces_cursor_layer_underline() {
+    // Hovering a URL should produce cursor-layer underline rects.
+    let mut input = FrameInput::test_grid(10, 1, "");
+    // URL spans cols 2..5 on line 0.
+    input.hovered_url_segments = vec![(0, 2, 5)];
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // 1 cursor instance for the URL underline (no terminal cursor).
+    assert_eq!(frame.cursors.len(), 1, "should have 1 URL underline rect");
+
+    let ul = nth_instance(frame.cursors.as_bytes(), 0);
+    // x = 2 * 8.0 = 16.0
+    assert_eq!(ul.pos.0, 16.0);
+    // w = (5 - 2 + 1) * 8.0 = 32.0
+    assert_eq!(ul.size.0, 32.0);
+    // h = stroke_size = 1.0
+    assert_eq!(ul.size.1, 1.0);
+}
+
+#[test]
+fn url_hover_multiple_segments() {
+    // A URL wrapping across lines produces multiple segments.
+    let mut input = FrameInput::test_grid(10, 3, "");
+    input.hovered_url_segments = vec![(0, 5, 9), (1, 0, 9), (2, 0, 3)];
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.cursors.len(), 3, "3 URL underline segments");
+}
+
+#[test]
+fn url_hover_empty_segments_no_extra_instances() {
+    // No hovered URL → no extra cursor instances.
+    let mut input = FrameInput::test_grid(10, 1, "");
+    input.hovered_url_segments = Vec::new();
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.cursors.len(), 0, "no URL hover → no cursor instances");
+}
+
+#[test]
+fn url_hover_with_origin_offset() {
+    // URL underline positions should respect the origin offset.
+    let mut input = FrameInput::test_grid(10, 1, "");
+    input.hovered_url_segments = vec![(0, 0, 2)];
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (50.0, 100.0));
+
+    let ul = nth_instance(frame.cursors.as_bytes(), 0);
+    // x = 50.0 + 0 * 8.0 = 50.0
+    assert_eq!(ul.pos.0, 50.0);
+    // y includes origin offset + underline position.
+    assert!(ul.pos.1 > 100.0, "y should be offset from origin");
+}
+
+// ── Mark cursor override ──
+
+#[test]
+fn mark_cursor_overrides_terminal_cursor() {
+    // When mark_cursor is set, it should override the terminal cursor position
+    // and shape (HollowBlock).
+    let mut input = FrameInput::test_grid(10, 5, "");
+    // Terminal cursor at (0, 0) as Block.
+    input.content.cursor.column = Column(0);
+    input.content.cursor.line = 0;
+    input.content.cursor.shape = CursorShape::Block;
+    input.content.cursor.visible = true;
+    // Mark cursor at (3, 5) as HollowBlock.
+    input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
+        line: 3,
+        column: Column(5),
+        shape: CursorShape::HollowBlock,
+    });
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // HollowBlock = 4 cursor instances (top, bottom, left, right).
+    assert_eq!(frame.cursors.len(), 4);
+
+    // All 4 edges should be around col 5, row 3.
+    let top = nth_instance(frame.cursors.as_bytes(), 0);
+    assert_eq!(top.pos, (40.0, 48.0)); // col 5 * 8 = 40, row 3 * 16 = 48
+}
+
+#[test]
+fn mark_cursor_none_uses_terminal_cursor() {
+    // When mark_cursor is None, the terminal cursor is used.
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.cursor.column = Column(7);
+    input.content.cursor.line = 2;
+    input.content.cursor.shape = CursorShape::Block;
+    input.content.cursor.visible = true;
+    input.mark_cursor = None;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.cursors.len(), 1);
+
+    let c = nth_instance(frame.cursors.as_bytes(), 0);
+    assert_eq!(c.pos, (56.0, 32.0)); // col 7 * 8 = 56, row 2 * 16 = 32
+}
+
+#[test]
+fn mark_cursor_is_always_visible() {
+    // Mark cursor overrides visibility — it's always rendered even if the
+    // terminal cursor is hidden.
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.cursor.visible = false; // terminal cursor hidden
+    input.mark_cursor = Some(crate::gpu::frame_input::MarkCursorOverride {
+        line: 1,
+        column: Column(3),
+        shape: CursorShape::HollowBlock,
+    });
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // HollowBlock = 4 cursor instances.
+    assert_eq!(
+        frame.cursors.len(),
+        4,
+        "mark cursor should render even when terminal cursor is hidden"
+    );
+}
+
+// ── Explicit selection colors ──
+
+#[test]
+fn selection_explicit_colors_override_inversion() {
+    // When palette.selection_fg and palette.selection_bg are set,
+    // selected cells use those colors instead of fg/bg inversion.
+    let sel_fg = Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
+    let sel_bg = Rgb {
+        r: 58,
+        g: 61,
+        b: 92,
+    };
+
+    let mut input = FrameInput::test_grid(3, 1, "ABC");
+    input.palette.selection_fg = Some(sel_fg);
+    input.palette.selection_bg = Some(sel_bg);
+    input.selection = Some(selection_range(0, 1, 1));
+    input.content.cursor.visible = false;
+    let atlas = atlas_with(&['A', 'B', 'C']);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Col 1 (selected): should use explicit selection colors.
+    let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(bg1.bg_color, rgb_f32(sel_bg), "explicit selection bg");
+
+    let fg1 = nth_instance(frame.glyphs.as_bytes(), 1);
+    assert_eq!(fg1.fg_color, rgb_f32(sel_fg), "explicit selection fg");
+
+    // Col 0 (not selected): normal colors.
+    let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg0.bg_color, rgb_f32(input.palette.background));
+}

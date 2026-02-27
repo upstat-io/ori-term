@@ -119,6 +119,21 @@ impl FrameSearch {
     pub fn query(&self) -> &str {
         &self.query
     }
+
+    /// Build a test search snapshot from manually constructed matches.
+    ///
+    /// `focused` is the index into `matches` of the focused match.
+    /// `stable_row_base` maps viewport line 0 to stable row coordinates.
+    #[cfg(test)]
+    pub fn for_test(matches: Vec<SearchMatch>, focused: usize, stable_row_base: u64) -> Self {
+        Self {
+            match_count: matches.len(),
+            matches: matches.into(),
+            focused,
+            base_stable: stable_row_base,
+            query: String::from("test"),
+        }
+    }
 }
 
 /// Mark-mode cursor override for the Prepare phase.
