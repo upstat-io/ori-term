@@ -38,7 +38,7 @@ impl InProcessMux {
 
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             self.pane_registry.unregister(pane_id);
-            return Ok((pane_id, pane));
+            return Err(io::Error::other("tab not found after spawn"));
         };
 
         let next_z = tab
@@ -115,17 +115,15 @@ impl InProcessMux {
         let new_layer = tab.floating().remove(pane_id);
         tab.set_floating(new_layer);
 
-        // Find the first tiled pane to split next to.
-        let anchor = tab.tree().panes().into_iter().next();
-        if let Some(anchor_id) = anchor {
-            let new_tree = tab.tree().split_at(
-                anchor_id,
-                oriterm_mux::layout::SplitDirection::Vertical,
-                pane_id,
-                0.5,
-            );
-            tab.set_tree(new_tree);
-        }
+        // Split next to the first tiled pane.
+        let anchor = tab.tree().first_pane();
+        let new_tree = tab.tree().split_at(
+            anchor,
+            oriterm_mux::layout::SplitDirection::Vertical,
+            pane_id,
+            0.5,
+        );
+        tab.set_tree(new_tree);
         tab.set_active_pane(pane_id);
 
         self.notifications
