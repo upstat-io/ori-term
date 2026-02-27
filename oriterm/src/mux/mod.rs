@@ -121,9 +121,6 @@ impl InProcessMux {
             domain: domain_id,
         });
 
-        self.notifications
-            .push(MuxNotification::TabLayoutChanged(tab_id));
-
         Ok((pane_id, pane))
     }
 
@@ -160,15 +157,12 @@ impl InProcessMux {
             // If the closed pane was active, pick the next floating pane or
             // fall back to the first tiled pane.
             if tab.active_pane() == pane_id {
-                let fallback = tab
+                let next = tab
                     .floating()
                     .panes()
                     .last()
-                    .map(|fp| fp.pane_id)
-                    .or_else(|| tab.tree().panes().into_iter().next());
-                if let Some(next) = fallback {
-                    tab.set_active_pane(next);
-                }
+                    .map_or_else(|| tab.tree().first_pane(), |fp| fp.pane_id);
+                tab.set_active_pane(next);
             }
 
             self.notifications
@@ -183,11 +177,9 @@ impl InProcessMux {
             // Pane removed, tab still has panes.
             tab.set_tree(new_tree);
 
-            // If the closed pane was active, pick the first remaining pane.
+            // If the closed pane was active, pick the first tiled pane.
             if tab.active_pane() == pane_id {
-                if let Some(&first) = tab.all_panes().first() {
-                    tab.set_active_pane(first);
-                }
+                tab.set_active_pane(tab.tree().first_pane());
             }
 
             self.notifications
@@ -241,6 +233,8 @@ impl InProcessMux {
             win.add_tab(tab_id);
         }
 
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
         self.notifications
             .push(MuxNotification::WindowTabsChanged(window_id));
 
@@ -354,9 +348,10 @@ impl InProcessMux {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
-        let old_tree = tab.tree().clone();
-        let new_tree = old_tree.resize_toward(pane_id, axis, pane_in_first, delta);
-        if new_tree != old_tree {
+        if let Some(new_tree) = tab
+            .tree()
+            .try_resize_toward(pane_id, axis, pane_in_first, delta)
+        {
             tab.set_tree(new_tree);
             self.notifications
                 .push(MuxNotification::TabLayoutChanged(tab_id));

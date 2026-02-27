@@ -88,6 +88,14 @@ impl SplitTree {
         }
     }
 
+    /// Return the first (leftmost/topmost) pane without allocating.
+    pub fn first_pane(&self) -> PaneId {
+        match self {
+            Self::Leaf(id) => *id,
+            Self::Split { first, .. } => first.first_pane(),
+        }
+    }
+
     /// Return all pane IDs in depth-first order (first child before second).
     pub fn panes(&self) -> Vec<PaneId> {
         let mut result = Vec::with_capacity(self.pane_count());
@@ -378,6 +386,21 @@ impl SplitTree {
         delta: f32,
     ) -> Self {
         self.resize_toward_inner(pane, axis, pane_in_first, delta).0
+    }
+
+    /// Like [`resize_toward`](Self::resize_toward), but returns `Some(new_tree)`
+    /// only when a qualifying split was adjusted, or `None` when no change
+    /// occurred. Avoids the caller needing a clone + `PartialEq` comparison.
+    #[must_use]
+    pub fn try_resize_toward(
+        &self,
+        pane: PaneId,
+        axis: SplitDirection,
+        pane_in_first: bool,
+        delta: f32,
+    ) -> Option<Self> {
+        let (tree, changed) = self.resize_toward_inner(pane, axis, pane_in_first, delta);
+        changed.then_some(tree)
     }
 
     /// Recursively set all split ratios to 0.5 (equal sizing).
