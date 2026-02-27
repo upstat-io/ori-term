@@ -519,6 +519,15 @@ fn action_as_str_roundtrip() {
         Action::MoveTabToNewWindow,
         Action::ToggleFullscreen,
         Action::EnterMarkMode,
+        Action::SplitRight,
+        Action::SplitDown,
+        Action::FocusPaneUp,
+        Action::FocusPaneDown,
+        Action::FocusPaneLeft,
+        Action::FocusPaneRight,
+        Action::NextPane,
+        Action::PrevPane,
+        Action::ClosePane,
         Action::None,
     ];
     for action in &actions {
@@ -526,4 +535,77 @@ fn action_as_str_roundtrip() {
         let parsed = parse_action(s);
         assert_eq!(parsed.as_ref(), Some(action), "roundtrip failed for {s:?}",);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pane default binding tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn split_right_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("o".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::SplitRight),
+    );
+}
+
+#[test]
+fn split_down_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("e".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::SplitDown),
+    );
+}
+
+#[test]
+fn focus_pane_arrow_defaults() {
+    let bindings = default_bindings();
+    let mods = Modifiers::CONTROL | Modifiers::ALT;
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Named(NamedKey::ArrowUp), mods),
+        Some(&Action::FocusPaneUp),
+    );
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Named(NamedKey::ArrowDown), mods),
+        Some(&Action::FocusPaneDown),
+    );
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Named(NamedKey::ArrowLeft), mods),
+        Some(&Action::FocusPaneLeft),
+    );
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Named(NamedKey::ArrowRight), mods),
+        Some(&Action::FocusPaneRight),
+    );
+}
+
+#[test]
+fn cycle_pane_defaults() {
+    let bindings = default_bindings();
+    let mods = Modifiers::CONTROL | Modifiers::ALT;
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Character("[".to_owned()), mods),
+        Some(&Action::PrevPane),
+    );
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Character("]".to_owned()), mods),
+        Some(&Action::NextPane),
+    );
+}
+
+#[test]
+fn close_pane_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("w".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::ClosePane),
+    );
 }

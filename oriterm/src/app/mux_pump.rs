@@ -48,9 +48,13 @@ impl App {
                 MuxNotification::PaneClosed(id) => {
                     // Remove the pane; Drop runs on a background thread.
                     self.panes.remove(&id);
+                    self.pane_cache.remove(id);
                     self.dirty = true;
                 }
                 MuxNotification::TabLayoutChanged(_) => {
+                    // Layout changed (split/close) — pane positions shifted.
+                    self.pane_cache.invalidate_all();
+                    self.resize_all_panes();
                     self.dirty = true;
                 }
                 MuxNotification::WindowTabsChanged(_) => {

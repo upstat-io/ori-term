@@ -134,6 +134,11 @@ impl InstanceWriter {
         self.buf.clear();
     }
 
+    /// Append all instances from `other` into this writer.
+    pub fn extend_from(&mut self, other: &Self) {
+        self.buf.extend_from_slice(&other.buf);
+    }
+
     /// Push a solid-color rectangle instance.
     ///
     /// UV coordinates are zeroed (no texture sampling for rects).

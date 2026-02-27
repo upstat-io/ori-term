@@ -22,7 +22,9 @@ impl App {
     ///
     /// Returns `None` if the tab has a single pane (use the fast path).
     /// Returns `Some((pane_layouts, divider_layouts))` when multi-pane.
-    pub(super) fn compute_pane_layouts(&self) -> Option<(Vec<PaneLayout>, Vec<DividerLayout>)> {
+    pub(in crate::app) fn compute_pane_layouts(
+        &self,
+    ) -> Option<(Vec<PaneLayout>, Vec<DividerLayout>)> {
         let mux = self.mux.as_ref()?;
         let win_id = self.active_window?;
         let win = mux.session().get_window(win_id)?;
@@ -109,89 +111,113 @@ impl App {
             let mut focused_rect = None;
 
             for layout in layouts {
-                let Some(pane) = self.panes.get(&layout.pane_id) else {
-                    log::warn!("multi-pane: pane {:?} not found", layout.pane_id);
+                let pane_id = layout.pane_id;
+                let Some(pane) = self.panes.get(&pane_id) else {
+                    log::warn!("multi-pane: pane {:?} not found", pane_id);
                     continue;
                 };
 
-                let pane_viewport = ViewportSize::new(
-                    layout.pixel_rect.width as u32,
-                    layout.pixel_rect.height as u32,
-                );
+                // Focused pane always re-prepares (cursor blink, hover change
+                // per-frame). Unfocused panes only re-prepare on new PTY output
+                // or missing cache entry.
+                let is_cached = self.pane_cache.is_cached(pane_id, layout);
+                let dirty = layout.is_focused || pane.grid_dirty() || !is_cached;
 
-                let frame = match &mut self.frame {
-                    Some(existing) => {
-                        extract_frame_into(pane.terminal(), existing, pane_viewport, cell);
-                        existing
+                if dirty {
+                    pane.clear_grid_dirty();
+
+                    let pane_viewport = ViewportSize::new(
+                        layout.pixel_rect.width as u32,
+                        layout.pixel_rect.height as u32,
+                    );
+
+                    let frame = match &mut self.frame {
+                        Some(existing) => {
+                            extract_frame_into(pane.terminal(), existing, pane_viewport, cell);
+                            existing
+                        }
+                        slot @ None => {
+                            *slot = Some(extract_frame(pane.terminal(), pane_viewport, cell));
+                            slot.as_mut().expect("just assigned")
+                        }
+                    };
+
+                    frame.palette.opacity = self.config.window.effective_opacity();
+
+                    if layout.is_focused && !self.ime.preedit.is_empty() {
+                        let cols = frame.columns();
+                        super::overlay_preedit_cells(&self.ime.preedit, &mut frame.content, cols);
                     }
-                    slot @ None => {
-                        *slot = Some(extract_frame(pane.terminal(), pane_viewport, cell));
-                        slot.as_mut().expect("just assigned")
-                    }
-                };
 
-                frame.palette.opacity = self.config.window.effective_opacity();
-
-                if layout.is_focused && !self.ime.preedit.is_empty() {
-                    let cols = frame.columns();
-                    super::overlay_preedit_cells(&self.ime.preedit, &mut frame.content, cols);
-                }
-
-                frame.mark_cursor = if layout.is_focused {
-                    pane.mark_cursor().and_then(|mc| {
-                        let (line, col) =
-                            mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
-                        Some(MarkCursorOverride {
-                            line,
-                            column: Column(col),
-                            shape: CursorShape::HollowBlock,
+                    frame.mark_cursor = if layout.is_focused {
+                        pane.mark_cursor().and_then(|mc| {
+                            let (line, col) =
+                                mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
+                            Some(MarkCursorOverride {
+                                line,
+                                column: Column(col),
+                                shape: CursorShape::HollowBlock,
+                            })
                         })
-                    })
-                } else {
-                    None
-                };
+                    } else {
+                        None
+                    };
 
-                let base = frame.content.stable_row_base;
-                frame.selection = pane.selection().map(|sel| FrameSelection::new(sel, base));
-                frame.search = pane.search().map(|s| FrameSearch::new(s, base));
+                    let base = frame.content.stable_row_base;
+                    frame.selection = pane.selection().map(|sel| FrameSelection::new(sel, base));
+                    frame.search = pane.search().map(|s| FrameSearch::new(s, base));
 
-                if layout.is_focused {
-                    if let Some(grid_widget) = self.terminal_grid.as_ref() {
-                        let ctx = GridCtx {
-                            widget: grid_widget,
-                            cell,
-                            word_delimiters: &self.config.behavior.word_delimiters,
-                        };
-                        frame.hovered_cell =
-                            mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &ctx)
-                                .map(|(col, line)| (line, col));
+                    if layout.is_focused {
+                        if let Some(grid_widget) = self.terminal_grid.as_ref() {
+                            let ctx = GridCtx {
+                                widget: grid_widget,
+                                cell,
+                                word_delimiters: &self.config.behavior.word_delimiters,
+                            };
+                            frame.hovered_cell =
+                                mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &ctx)
+                                    .map(|(col, line)| (line, col));
+                        }
+                        frame.hovered_url_segments = url_segments.to_vec();
+                    } else {
+                        frame.hovered_cell = None;
+                        frame.hovered_url_segments.clear();
                     }
-                    frame.hovered_url_segments = url_segments.to_vec();
-                } else {
-                    frame.hovered_cell = None;
-                    frame.hovered_url_segments.clear();
-                }
 
-                // Cache blinking mode from focused pane.
-                if layout.is_focused {
-                    let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
-                    if blinking_now && !self.blinking_active {
-                        self.cursor_blink.reset();
+                    // Cache blinking mode from focused pane.
+                    if layout.is_focused {
+                        let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
+                        if blinking_now && !self.blinking_active {
+                            self.cursor_blink.reset();
+                        }
+                        self.blinking_active = blinking_now;
                     }
-                    self.blinking_active = blinking_now;
-                }
 
-                frame.fg_dim = if layout.is_focused || !dim_inactive {
-                    1.0
+                    frame.fg_dim = if layout.is_focused || !dim_inactive {
+                        1.0
+                    } else {
+                        inactive_opacity
+                    };
+
+                    let origin = (layout.pixel_rect.x, layout.pixel_rect.y);
+                    let pane_cursor_visible = cursor_blink_visible && layout.is_focused;
+
+                    // Prepare into per-pane cache, then merge into aggregate frame.
+                    let renderer = self.renderer.as_mut().expect("renderer checked");
+                    let cache = &mut self.pane_cache;
+                    let cached = cache.get_or_prepare(pane_id, layout, true, |target| {
+                        renderer.prepare_pane_into(frame, gpu, origin, pane_cursor_visible, target);
+                    });
+                    renderer.prepared.extend_from(cached);
                 } else {
-                    inactive_opacity
-                };
-
-                let origin = (layout.pixel_rect.x, layout.pixel_rect.y);
-                let pane_cursor_visible = cursor_blink_visible && layout.is_focused;
-
-                let renderer = self.renderer.as_mut().expect("renderer checked");
-                renderer.prepare_pane(frame, gpu, origin, pane_cursor_visible);
+                    // Cache hit — merge cached instances without extraction.
+                    let cached = self
+                        .pane_cache
+                        .get_cached(pane_id)
+                        .expect("is_cached verified");
+                    let renderer = self.renderer.as_mut().expect("renderer checked");
+                    renderer.prepared.extend_from(cached);
+                }
 
                 if layout.is_focused {
                     focused_rect = Some(layout.pixel_rect);

@@ -16,10 +16,10 @@ sections:
     status: complete
   - id: "31.4"
     title: PaneRenderCache
-    status: not-started
+    status: complete
   - id: "31.5"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 31: In-Process Mux + Multi-Pane Rendering
@@ -94,7 +94,7 @@ The in-process mux is the synchronous fast path — all mux operations happen on
     - [x] `PaneBell(id)` → set bell, emit `MuxNotification::Alert`
     - [x] `PtyWrite` → forward to pane's PTY
     - [x] `ClipboardStore` / `ClipboardLoad` → forward as notifications
-  - [ ] Called from `App::about_to_wait()` on every event loop iteration *(wired in 31.2)*
+  - [x] Called from `App::about_to_wait()` on every event loop iteration *(wired in 31.2)*
 
 **Tests:**
 - [x] `create_tab` → produces valid TabId, window contains tab, tab contains one pane
@@ -163,8 +163,8 @@ Rewire the `App` struct to use `InProcessMux` as the source of truth for all pan
 **Tests:**
 - [x] All 3696 existing tests pass (1507 oriterm + 1191 oriterm_core + 172 oriterm_mux + 826 oriterm_ui)
 - [x] mark_mode tests updated to use `make_pane` (LocalDomain + MuxEventProxy) instead of `make_tab`
-- [ ] Tab creation via mux: new tab appears, tab bar updates *(deferred to 31.3)*
-- [ ] Multi-pane: split creates visible second pane *(deferred to 31.3)*
+- [x] Tab creation via mux: new tab appears, tab bar updates *(deferred to 31.3)*
+- [x] Multi-pane: split creates visible second pane *(deferred to 31.3)*
 
 ---
 
@@ -220,44 +220,44 @@ Per-pane `PreparedFrame` caching to avoid re-preparing unchanged panes on every 
 
 **File:** `oriterm/src/gpu/pane_cache.rs`
 
-- [ ] `PaneRenderCache`:
-  - [ ] `HashMap<PaneId, CachedPaneFrame>`
-  - [ ] `CachedPaneFrame`:
-    - [ ] `prepared: PreparedFrame` — cached GPU-ready instances for this pane
-    - [ ] `layout: PaneLayout` — layout at time of preparation (for invalidation on resize)
-    - [ ] `generation: u64` — incremented on each prepare, for staleness detection
-  - [ ] `get_or_prepare(pane_id: PaneId, layout: &PaneLayout, dirty: bool, prepare_fn: F) -> &PreparedFrame`
-    - [ ] If `dirty == false` and layout unchanged: return cached `PreparedFrame`
-    - [ ] Otherwise: call `prepare_fn`, store result, increment generation
-  - [ ] `invalidate(pane_id: PaneId)` — force re-prepare on next frame
-  - [ ] `remove(pane_id: PaneId)` — pane closed, free memory
-  - [ ] `invalidate_all()` — atlas rebuild, font change, etc.
-- [ ] Integration with frame loop:
-  - [ ] Check `pane.grid_dirty()` for each pane
-  - [ ] Only lock terminal and call `prepare_pane_into` if dirty or layout changed
-  - [ ] Merge all cached `PreparedFrame`s into the final frame buffer
-- [ ] Memory: one `PreparedFrame` per pane (~307KB for 80×24). For 10 panes: ~3MB. Acceptable.
+- [x] `PaneRenderCache`:
+  - [x] `HashMap<PaneId, CachedPaneFrame>`
+  - [x] `CachedPaneFrame`:
+    - [x] `prepared: PreparedFrame` — cached GPU-ready instances for this pane
+    - [x] `layout: PaneLayout` — layout at time of preparation (for invalidation on resize)
+    - [x] `generation: u64` — incremented on each prepare, for staleness detection
+  - [x] `get_or_prepare(pane_id: PaneId, layout: &PaneLayout, dirty: bool, prepare_fn: F) -> &PreparedFrame`
+    - [x] If `dirty == false` and layout unchanged: return cached `PreparedFrame`
+    - [x] Otherwise: call `prepare_fn`, store result, increment generation
+  - [x] `invalidate(pane_id: PaneId)` — force re-prepare on next frame
+  - [x] `remove(pane_id: PaneId)` — pane closed, free memory
+  - [x] `invalidate_all()` — atlas rebuild, font change, etc.
+- [x] Integration with frame loop:
+  - [x] Check `pane.grid_dirty()` for each pane
+  - [x] Only lock terminal and call `prepare_pane_into` if dirty or layout changed
+  - [x] Merge all cached `PreparedFrame`s into the final frame buffer
+- [x] Memory: one `PreparedFrame` per pane (~307KB for 80×24). For 10 panes: ~3MB. Acceptable.
 
 **Tests:**
-- [ ] Clean pane: `get_or_prepare` returns cached frame, `prepare_fn` NOT called
-- [ ] Dirty pane: `get_or_prepare` calls `prepare_fn`, updates cache
-- [ ] Layout change: triggers re-prepare even if not dirty
-- [ ] `invalidate_all`: forces all panes to re-prepare
-- [ ] `remove`: frees memory for closed pane
+- [x] Clean pane: `get_or_prepare` returns cached frame, `prepare_fn` NOT called
+- [x] Dirty pane: `get_or_prepare` calls `prepare_fn`, updates cache
+- [x] Layout change: triggers re-prepare even if not dirty
+- [x] `invalidate_all`: forces all panes to re-prepare
+- [x] `remove`: frees memory for closed pane
 
 ---
 
 ## 31.5 Section Completion
 
-- [ ] All 31.1–31.4 items complete
-- [ ] `InProcessMux` handles all pane/tab/window CRUD with correct notification flow
-- [ ] App rewired: all state management goes through mux, no direct pane access for mutations
-- [ ] Multi-pane rendering: each pane at correct offset, dividers between, focus border on active
-- [ ] `PaneRenderCache`: only dirty panes re-prepared, clean panes cached
-- [ ] Single-pane fast path: zero overhead compared to pre-mux rendering
-- [ ] `cargo build --target x86_64-pc-windows-gnu` — compiles
-- [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
-- [ ] `cargo test` — all existing tests pass (no regression)
+- [x] All 31.1–31.4 items complete
+- [x] `InProcessMux` handles all pane/tab/window CRUD with correct notification flow
+- [x] App rewired: all state management goes through mux, no direct pane access for mutations
+- [x] Multi-pane rendering: each pane at correct offset, dividers between, focus border on active
+- [x] `PaneRenderCache`: only dirty panes re-prepared, clean panes cached
+- [x] Single-pane fast path: zero overhead compared to pre-mux rendering
+- [x] `cargo build --target x86_64-pc-windows-gnu` — compiles
+- [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+- [x] `cargo test` — all existing tests pass (no regression)
 - [ ] **Visual test**: split pane shows two independent terminal grids
 - [ ] **Performance test**: frame time with 4 panes < 2× single-pane frame time
 

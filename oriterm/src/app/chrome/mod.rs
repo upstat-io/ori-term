@@ -365,10 +365,14 @@ impl App {
             ));
         }
 
+        // Single-pane: resize the active pane to fill the grid area.
+        // Multi-pane: resize_all_panes() recomputes layouts and resizes each
+        // pane individually (no-op for single-pane tabs).
         if let Some(pane) = self.active_pane() {
             pane.resize_grid(rows as u16, cols as u16);
             pane.resize_pty(rows as u16, cols as u16);
         }
+        self.resize_all_panes();
 
         self.update_resize_increments();
     }

@@ -54,6 +54,9 @@ impl App {
             }
         }
 
+        // Invalidate pane render cache (font, palette, or opacity may have changed).
+        self.pane_cache.invalidate_all();
+
         // Mark everything dirty for redraw.
         self.dirty = true;
 

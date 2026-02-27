@@ -22,6 +22,7 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
     let shift = Modifiers::SHIFT;
     let alt = Modifiers::ALT;
     let cs = ctrl | shift;
+    let ca = ctrl | alt;
 
     #[allow(
         unused_mut,
@@ -59,6 +60,16 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         bind(named(NamedKey::Enter), alt, Action::ToggleFullscreen),
         // Mark mode (vi-style selection navigation).
         bind(ch("m"), cs, Action::EnterMarkMode),
+        // Pane splitting and navigation (Ghostty-style).
+        bind(ch("o"), cs, Action::SplitRight),
+        bind(ch("e"), cs, Action::SplitDown),
+        bind(named(NamedKey::ArrowUp), ca, Action::FocusPaneUp),
+        bind(named(NamedKey::ArrowDown), ca, Action::FocusPaneDown),
+        bind(named(NamedKey::ArrowLeft), ca, Action::FocusPaneLeft),
+        bind(named(NamedKey::ArrowRight), ca, Action::FocusPaneRight),
+        bind(ch("["), ca, Action::PrevPane),
+        bind(ch("]"), ca, Action::NextPane),
+        bind(ch("w"), cs, Action::ClosePane),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),

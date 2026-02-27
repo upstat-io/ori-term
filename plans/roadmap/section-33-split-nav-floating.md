@@ -1,13 +1,13 @@
 ---
 section: 33
 title: Split Navigation + Floating Panes
-status: not-started
+status: in-progress
 tier: 4M
 goal: Spatial navigation keybinds, divider drag resize, zoom/unzoom, floating pane creation and management, scissored rendering, float-tile toggle, undo/redo split operations
 sections:
   - id: "33.1"
     title: Spatial Navigation Keybinds
-    status: not-started
+    status: in-progress
   - id: "33.2"
     title: Divider Drag Resize
     status: not-started
@@ -27,7 +27,7 @@ sections:
 
 # Section 33: Split Navigation + Floating Panes
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Full split pane interaction: keyboard and mouse navigation, divider resize, zoom/unzoom, floating pane creation/drag/resize with scissored rendering, float↔tile toggle, and undo/redo for split operations.
 
 **Crate:** `oriterm` (input handling, rendering), `oriterm_mux` (tree mutations, undo stack)
@@ -46,41 +46,70 @@ sections:
 
 ## 33.1 Spatial Navigation Keybinds
 
-Keyboard shortcuts for navigating between panes using directional movement and sequential cycling. These keybinds work in both tiled and floating modes.
+Keyboard shortcuts for split creation, directional navigation, sequential cycling, and pane close. Mouse click-to-focus is also included here.
 
-**File:** `oriterm/src/app/input_keyboard.rs`, `oriterm/src/keybindings.rs`
+**Files:** `oriterm/src/keybindings/mod.rs`, `oriterm/src/keybindings/defaults.rs`, `oriterm/src/keybindings/parse.rs`, `oriterm/src/app/pane_ops.rs`, `oriterm/src/app/keyboard_input/mod.rs`, `oriterm/src/mux/mod.rs`, `oriterm/src/app/mux_pump.rs`, `oriterm/src/app/chrome/mod.rs`
 
-- [ ] Default keybindings (configurable):
-  - [ ] `Alt+Arrow` (Up/Down/Left/Right) — move focus to pane in direction
-  - [ ] `Alt+[` / `Alt+]` — cycle focus backward/forward through panes
-  - [ ] `Ctrl+Shift+D` — split horizontal (new pane below current)
-  - [ ] `Ctrl+Shift+E` — split vertical (new pane right of current)
-  - [ ] `Ctrl+W` — close focused pane (not the entire tab)
-- [ ] `Action` enum additions:
-  - [ ] `SplitHorizontal` — split active pane horizontally
-  - [ ] `SplitVertical` — split active pane vertically
-  - [ ] `FocusPaneDirection(Direction)` — navigate to pane in direction
-  - [ ] `CyclePaneForward` / `CyclePaneBackward` — sequential cycle
-  - [ ] `ClosePane` — close the focused pane
-- [ ] Keybind execution:
-  - [ ] `SplitHorizontal` → `mux.split_pane(tab_id, pane_id, Horizontal, config)`
-    - [ ] New pane inherits CWD from focused pane
-  - [ ] `FocusPaneDirection(dir)` → `navigate(layouts, focused, dir)` → update `MuxTab.active_pane`
-  - [ ] `ClosePane` → `mux.close_pane(pane_id)`
-    - [ ] If last pane: close tab (and possibly window/app per Section 32 logic)
-- [ ] Mouse click to focus:
-  - [ ] On `MouseButton::Left` in grid area: hit-test against `PaneLayout` rects
-  - [ ] If clicked pane differs from focused pane: update `MuxTab.active_pane`
-  - [ ] Floating panes take priority in hit-test (higher z_order)
+**Default keybindings** (Ghostty-style):
 
-**Tests:**
-- [ ] `Alt+Right` from left pane focuses right pane
-- [ ] `Alt+Down` from top pane focuses bottom pane
-- [ ] Navigation at boundary: `Alt+Left` from leftmost pane → no change
-- [ ] `Alt+]` cycles through panes in order, wraps at end
-- [ ] `Ctrl+Shift+D` creates horizontal split, new pane receives focus
-- [ ] `Ctrl+W` closes focused pane, focus moves to sibling
-- [ ] `Ctrl+W` on last pane closes the tab
+| Action | Key | Ghostty equivalent |
+|--------|-----|--------------------|
+| `SplitRight` | `Ctrl+Shift+O` | `new_split:right` |
+| `SplitDown` | `Ctrl+Shift+E` | `new_split:down` |
+| `FocusPaneUp` | `Ctrl+Alt+Up` | `goto_split:top` |
+| `FocusPaneDown` | `Ctrl+Alt+Down` | `goto_split:bottom` |
+| `FocusPaneLeft` | `Ctrl+Alt+Left` | `goto_split:left` |
+| `FocusPaneRight` | `Ctrl+Alt+Right` | `goto_split:right` |
+| `PrevPane` | `Ctrl+Alt+[` | `goto_split:previous` |
+| `NextPane` | `Ctrl+Alt+]` | `goto_split:next` |
+| `ClosePane` | `Ctrl+Shift+W` | `close_surface` |
+
+Ghostty uses `Ctrl+Super+[/]` for cycle on Linux — we use `Ctrl+Alt` instead since Super (Windows key) is intercepted by the OS on Windows. All bindings are user-configurable via TOML config.
+
+- [x] `Action` enum variants (9 total):
+  - [x] `SplitRight`, `SplitDown` — split active pane
+  - [x] `FocusPaneUp/Down/Left/Right` — directional navigation
+  - [x] `NextPane`, `PrevPane` — sequential cycling
+  - [x] `ClosePane` — close the focused pane
+- [x] `as_str()` roundtrip: all 9 actions parse/serialize correctly
+- [x] `parse_action()` arms for all 9 actions
+- [x] Default keybindings in `defaults.rs`
+- [x] `InProcessMux::set_active_pane(tab_id, pane_id)` helper
+- [x] `InProcessMux::active_tab_id(window_id)` helper
+- [x] `app/pane_ops.rs` — new module:
+  - [x] `execute_pane_action()` — dispatch hub for pane actions
+  - [x] `split_pane(direction)` — calls `mux.split_pane()`, applies palette, inserts into `self.panes`
+  - [x] `focus_pane_direction(dir)` — `navigate()` + `set_active_pane()`
+  - [x] `cycle_pane(forward)` — `cycle()` + `set_active_pane()`
+  - [x] `close_focused_pane()` — `mux.close_pane()`, notification handles cleanup
+  - [x] `resize_all_panes()` — recompute layouts, resize grid+PTY for each pane
+- [x] `execute_action()` wired in `keyboard_input/mod.rs`
+- [x] Multi-pane resize propagation:
+  - [x] `TabLayoutChanged` notification calls `resize_all_panes()`
+  - [x] `sync_grid_layout()` calls `resize_all_panes()` after window resize
+- [x] `#[allow(dead_code)]` removed from `InProcessMux::split_pane()`
+- [x] Mouse click to focus:
+  - [x] On `MouseButton::Left` in grid area: hit-test via `nearest_pane(layouts, x, y)`
+  - [x] If clicked pane differs from focused pane: call `set_focused_pane()`
+  - [x] Forward the click event to the target pane after focus switch
+  - [x] Floating panes take priority in hit-test (higher z_order)
+
+**Tests (keybindings):**
+- [x] `action_as_str_roundtrip` includes all 9 new actions
+- [x] `split_right_default_binding` — `Alt+Shift+|` → SplitRight
+- [x] `split_down_default_binding` — `Alt+Shift+_` → SplitDown
+- [x] `focus_pane_arrow_defaults` — all 4 directions
+- [x] `cycle_pane_defaults` — `Alt+Shift+{/}` → Prev/NextPane
+- [x] `close_pane_default_binding` — `Ctrl+Shift+W` → ClosePane
+
+**Tests (integration — manual):**
+- [ ] Split right: two panes side-by-side, both functional
+- [ ] Split down: two panes stacked, both functional
+- [ ] Arrow focus: navigate between panes in all 4 directions
+- [ ] Cycle: sequential traversal wraps around
+- [ ] Close non-last pane: remaining pane expands
+- [ ] Close last pane: tab closes
+- [ ] Window resize: all panes resize proportionally
 - [ ] Mouse click on inactive pane: focus switches
 
 ---
@@ -105,7 +134,7 @@ Drag split dividers with the mouse to resize panes. Keyboard resize with modifie
     - [ ] Immutable tree update: push old tree to undo stack
   - [ ] Resize affected panes' PTYs after ratio change
 - [ ] Keyboard resize:
-  - [ ] `Alt+Shift+Arrow` — resize focused pane in direction
+  - [ ] `Ctrl+Alt+Arrow` — resize focused pane in direction (WezTerm: `Ctrl+Alt+Shift+Arrow`, Ghostty macOS: `Cmd+Ctrl+Arrow`)
   - [ ] Find nearest ancestor split matching the arrow direction
   - [ ] Adjust ratio by ±5% per keypress
   - [ ] Clamp and resize PTYs
@@ -252,7 +281,7 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 ## 33.6 Section Completion
 
 - [ ] All 33.1–33.5 items complete
-- [ ] Spatial navigation: `Alt+Arrow` directional, `Alt+[/]` cycling, mouse click
+- [ ] Spatial navigation: `Alt+Shift+Arrow` directional, `Alt+Shift+{/}` cycling, mouse click
 - [ ] Divider drag resize: mouse + keyboard, clamping, PTY resize
 - [ ] Zoom/unzoom: `Ctrl+Shift+Z`, auto-unzoom on split/navigate
 - [ ] Floating panes: create, drag, resize, z-order, scissored rendering, drop shadow

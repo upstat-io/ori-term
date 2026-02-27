@@ -7,6 +7,7 @@ pub(crate) mod draw_list_convert;
 pub(crate) mod extract;
 pub(crate) mod frame_input;
 pub(crate) mod instance_writer;
+pub(crate) mod pane_cache;
 pub(crate) mod pipeline;
 pub(crate) mod prepare;
 pub(crate) mod prepared_frame;
@@ -20,6 +21,7 @@ pub(crate) use extract::{extract_frame, extract_frame_into};
 pub(crate) use frame_input::{
     FrameInput, FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize,
 };
+pub(crate) use pane_cache::PaneRenderCache;
 pub(crate) use renderer::{GpuRenderer, SurfaceError};
 pub(crate) use state::GpuState;
 pub(crate) use transparency::apply_transparency;

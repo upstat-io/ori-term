@@ -55,6 +55,24 @@ pub(crate) enum Action {
     ToggleFullscreen,
     /// Enter vi-style mark/selection mode.
     EnterMarkMode,
+    /// Split the focused pane, placing the new pane to the right.
+    SplitRight,
+    /// Split the focused pane, placing the new pane below.
+    SplitDown,
+    /// Move focus to the pane above.
+    FocusPaneUp,
+    /// Move focus to the pane below.
+    FocusPaneDown,
+    /// Move focus to the pane to the left.
+    FocusPaneLeft,
+    /// Move focus to the pane to the right.
+    FocusPaneRight,
+    /// Cycle to the next pane (sequential order).
+    NextPane,
+    /// Cycle to the previous pane (sequential order).
+    PrevPane,
+    /// Close the focused pane (not the entire tab).
+    ClosePane,
     /// Send literal bytes to the PTY.
     SendText(String),
     /// Explicitly unbinds a default binding.
@@ -92,6 +110,15 @@ impl Action {
             Self::MoveTabToNewWindow => "MoveTabToNewWindow",
             Self::ToggleFullscreen => "ToggleFullscreen",
             Self::EnterMarkMode => "EnterMarkMode",
+            Self::SplitRight => "SplitRight",
+            Self::SplitDown => "SplitDown",
+            Self::FocusPaneUp => "FocusPaneUp",
+            Self::FocusPaneDown => "FocusPaneDown",
+            Self::FocusPaneLeft => "FocusPaneLeft",
+            Self::FocusPaneRight => "FocusPaneRight",
+            Self::NextPane => "NextPane",
+            Self::PrevPane => "PrevPane",
+            Self::ClosePane => "ClosePane",
             Self::SendText(_) => "SendText",
             Self::None => "None",
         }
