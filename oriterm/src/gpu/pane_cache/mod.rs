@@ -63,7 +63,7 @@ impl PaneRenderCache {
                 // Cache miss — re-prepare in place.
                 cached.prepared.clear();
                 prepare_fn(&mut cached.prepared);
-                cached.layout = layout.clone();
+                cached.layout = *layout;
                 &occ.into_mut().prepared
             }
             std::collections::hash_map::Entry::Vacant(vac) => {
@@ -76,7 +76,7 @@ impl PaneRenderCache {
                 prepare_fn(&mut prepared);
                 let cached = vac.insert(CachedPaneFrame {
                     prepared,
-                    layout: layout.clone(),
+                    layout: *layout,
                 });
                 &cached.prepared
             }

@@ -3,6 +3,7 @@
 mod multi_pane;
 
 use std::cell::Cell;
+use std::fmt::Write as _;
 use std::time::Instant;
 
 use unicode_width::UnicodeWidthChar;
@@ -48,7 +49,7 @@ impl App {
         // Multi-pane check: if the active tab has splits, dispatch to the
         // multi-pane renderer which iterates all panes in one GPU frame.
         if let Some((layouts, dividers)) = self.compute_pane_layouts() {
-            self.handle_redraw_multi_pane(&layouts, &dividers, &url_segments);
+            self.handle_redraw_multi_pane(&layouts, &dividers, url_segments);
             return;
         }
 
@@ -60,7 +61,7 @@ impl App {
             return;
         };
 
-        let render_result = {
+        let (render_result, blinking_now) = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw: no gpu");
                 return;
@@ -141,15 +142,15 @@ impl App {
             // The Vec was taken from the previous frame to reuse capacity.
             frame.hovered_url_segments = url_segments;
 
-            // Cache blinking mode; reset on false→true transition.
+            // Capture blinking mode for post-render update. Timer reset
+            // and state mutation are deferred to after GPU submission so that
+            // the render block stays free of blink-state side effects.
             let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
-            if blinking_now && !self.blinking_active {
-                self.cursor_blink.reset();
-            }
-            self.blinking_active = blinking_now;
 
-            // Cursor blink: "off" phase hides cursor for prepare phase.
-            let cursor_blink_visible = !blinking_now || self.cursor_blink.is_visible();
+            // On false→true transition, force cursor visible this frame (the
+            // timer reset hasn't happened yet, so is_visible() may be stale).
+            let cursor_blink_visible =
+                !blinking_now || !self.blinking_active || self.cursor_blink.is_visible();
 
             // Grid origin from layout bounds. When the layout engine
             // positions the grid (e.g. below a tab bar), this shifts all
@@ -227,6 +228,7 @@ impl App {
                     search,
                     renderer,
                     &mut self.chrome_draw_list,
+                    &mut self.search_bar_buf,
                     logical_w as f32,
                     chrome_h,
                     scale,
@@ -234,10 +236,17 @@ impl App {
                 );
             }
 
-            renderer.render_to_surface(gpu, window.surface())
+            let result = renderer.render_to_surface(gpu, window.surface());
+            (result, blinking_now)
         };
 
         self.handle_render_result(render_result);
+
+        // Update blink state after rendering (no state mutation during render).
+        if blinking_now && !self.blinking_active {
+            self.cursor_blink.reset();
+        }
+        self.blinking_active = blinking_now;
 
         // Keep the IME candidate window positioned at the terminal cursor.
         // Called every frame (not just during preedit) so Windows knows the
@@ -429,31 +438,34 @@ impl App {
     /// to physical pixels for the GPU pipeline.
     #[expect(
         clippy::too_many_arguments,
-        reason = "search bar drawing: search state, renderer, draw list, viewport, caption, scale, GPU"
+        reason = "search bar drawing: search state, renderer, draw list, buffer, viewport, caption, scale, GPU"
     )]
     fn draw_search_bar(
         search: &FrameSearch,
         renderer: &mut crate::gpu::GpuRenderer,
         draw_list: &mut DrawList,
+        buf: &mut String,
         logical_width: f32,
         caption_h: f32,
         scale: f32,
         gpu: &GpuState,
     ) {
+        buf.clear();
         let query = search.query();
-        let text = if query.is_empty() {
-            String::from("Search: ")
+        if query.is_empty() {
+            buf.push_str("Search: ");
         } else if search.match_count() == 0 {
-            format!("Search: {query}  No matches")
+            let _ = write!(buf, "Search: {query}  No matches");
         } else {
-            format!(
+            let _ = write!(
+                buf,
                 "Search: {query}  {} of {}",
                 search.focused_display(),
                 search.match_count()
-            )
-        };
+            );
+        }
 
-        let badge = StatusBadge::new(&text);
+        let badge = StatusBadge::new(buf);
 
         // Shape text and measure badge (immutable borrow on renderer ends
         // after shape — NLL lets the mutable append follow).

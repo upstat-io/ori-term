@@ -1834,3 +1834,51 @@ inactive_opacity = 0.5
     assert!((cfg.pane.divider_px - 1.0).abs() < f32::EPSILON);
     assert_eq!(cfg.pane.min_cells, (10, 3));
 }
+
+#[test]
+fn pane_config_color_defaults() {
+    let cfg = PaneConfig::default();
+    assert_eq!(
+        cfg.effective_divider_color(),
+        Rgb {
+            r: 80,
+            g: 80,
+            b: 80
+        }
+    );
+    assert_eq!(
+        cfg.effective_focus_border_color(),
+        Rgb {
+            r: 100,
+            g: 149,
+            b: 237
+        }
+    );
+}
+
+#[test]
+fn pane_config_color_overrides() {
+    let mut cfg = PaneConfig::default();
+    cfg.divider_color = Some("#FF0000".to_owned());
+    cfg.focus_border_color = Some("#00FF00".to_owned());
+    assert_eq!(cfg.effective_divider_color(), Rgb { r: 255, g: 0, b: 0 });
+    assert_eq!(
+        cfg.effective_focus_border_color(),
+        Rgb { r: 0, g: 255, b: 0 }
+    );
+}
+
+#[test]
+fn pane_config_invalid_color_falls_back() {
+    let mut cfg = PaneConfig::default();
+    cfg.divider_color = Some("not-a-color".to_owned());
+    // Falls back to default.
+    assert_eq!(
+        cfg.effective_divider_color(),
+        Rgb {
+            r: 80,
+            g: 80,
+            b: 80
+        }
+    );
+}

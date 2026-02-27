@@ -271,21 +271,13 @@ impl App {
 
             // Dividers between split panes.
             let renderer = self.renderer.as_mut().expect("renderer checked");
-            let divider_color = oriterm_core::Rgb {
-                r: 80,
-                g: 80,
-                b: 80,
-            };
+            let divider_color = self.config.pane.effective_divider_color();
             renderer.append_dividers(dividers, divider_color);
 
             // Focus border on active pane (only when multiple panes visible).
             if layouts.len() > 1 {
                 if let Some(rect) = &focused_rect {
-                    let accent_color = oriterm_core::Rgb {
-                        r: 100,
-                        g: 149,
-                        b: 237,
-                    };
+                    let accent_color = self.config.pane.effective_focus_border_color();
                     renderer.append_focus_border(rect, accent_color);
                 }
             }

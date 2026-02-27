@@ -25,7 +25,7 @@ pub struct LayoutDescriptor {
 }
 
 /// Output per pane from layout computation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PaneLayout {
     /// Which pane this layout describes.
     pub pane_id: PaneId,
@@ -42,7 +42,7 @@ pub struct PaneLayout {
 }
 
 /// Output for divider rendering.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DividerLayout {
     /// Pixel rect for the divider.
     pub rect: Rect,

@@ -29,8 +29,8 @@ pub(super) struct DividerDragState {
     pub initial_ratio: f32,
     /// Mouse position (in the drag axis) when drag started, in physical pixels.
     pub origin_px: f32,
-    /// Total usable size (width for vertical, height for horizontal) minus
-    /// divider thickness, in physical pixels.
+    /// Total usable size (width or height of both panes, excluding divider),
+    /// in physical pixels.
     pub total_px: f32,
 }
 
@@ -87,7 +87,7 @@ impl App {
             if let Some(window) = &self.window {
                 window.window().set_cursor(icon);
             }
-            self.hovering_divider = Some(d.clone());
+            self.hovering_divider = Some(*d);
         } else {
             self.clear_divider_hover();
         }
@@ -110,8 +110,8 @@ impl App {
     /// Returns `true` if a divider drag was started (caller should consume
     /// the click and not forward to selection/reporting).
     pub(super) fn try_start_divider_drag(&mut self) -> bool {
-        let divider = match &self.hovering_divider {
-            Some(d) => d.clone(),
+        let divider = match self.hovering_divider {
+            Some(d) => d,
             None => return false,
         };
 
@@ -127,22 +127,16 @@ impl App {
             return false;
         };
 
-        let (before_size, after_size, divider_size) = match divider.direction {
-            SplitDirection::Vertical => {
-                (b.pixel_rect.width, a.pixel_rect.width, divider.rect.width)
-            }
-            SplitDirection::Horizontal => (
-                b.pixel_rect.height,
-                a.pixel_rect.height,
-                divider.rect.height,
-            ),
+        let (before_size, after_size) = match divider.direction {
+            SplitDirection::Vertical => (b.pixel_rect.width, a.pixel_rect.width),
+            SplitDirection::Horizontal => (b.pixel_rect.height, a.pixel_rect.height),
         };
 
         let usable = before_size + after_size;
         if usable <= 0.0 {
             return false;
         }
-        let total_px = usable + divider_size;
+        let total_px = usable;
         let initial_ratio = before_size / usable;
 
         let pos = self.mouse.cursor_pos();

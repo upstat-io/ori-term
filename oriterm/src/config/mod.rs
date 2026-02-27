@@ -440,7 +440,25 @@ pub struct PaneConfig {
     pub dim_inactive: bool,
     /// Alpha multiplier for inactive pane glyphs (0.0–1.0).
     pub inactive_opacity: f32,
+    /// Divider line color between split panes (hex, e.g. `"#505050"`).
+    pub divider_color: Option<String>,
+    /// Focus border accent color for the active pane (hex, e.g. `"#6495ED"`).
+    pub focus_border_color: Option<String>,
 }
+
+/// Default divider color: neutral gray (`#505050`).
+const DEFAULT_DIVIDER_COLOR: Rgb = Rgb {
+    r: 80,
+    g: 80,
+    b: 80,
+};
+
+/// Default focus border accent: cornflower blue (`#6495ED`).
+const DEFAULT_FOCUS_BORDER_COLOR: Rgb = Rgb {
+    r: 100,
+    g: 149,
+    b: 237,
+};
 
 impl Default for PaneConfig {
     fn default() -> Self {
@@ -449,6 +467,8 @@ impl Default for PaneConfig {
             min_cells: (10, 3),
             dim_inactive: false,
             inactive_opacity: 0.7,
+            divider_color: None,
+            focus_border_color: None,
         }
     }
 }
@@ -457,6 +477,22 @@ impl PaneConfig {
     /// Returns `inactive_opacity` clamped to [0.0, 1.0], defaulting to 0.7 for NaN.
     pub fn effective_inactive_opacity(&self) -> f32 {
         clamp_or_default(self.inactive_opacity, 0.0, 1.0, 0.7)
+    }
+
+    /// Resolved divider color, falling back to the default neutral gray.
+    pub fn effective_divider_color(&self) -> Rgb {
+        self.divider_color
+            .as_deref()
+            .and_then(parse_hex_color)
+            .unwrap_or(DEFAULT_DIVIDER_COLOR)
+    }
+
+    /// Resolved focus border color, falling back to the default cornflower blue.
+    pub fn effective_focus_border_color(&self) -> Rgb {
+        self.focus_border_color
+            .as_deref()
+            .and_then(parse_hex_color)
+            .unwrap_or(DEFAULT_FOCUS_BORDER_COLOR)
     }
 }
 
