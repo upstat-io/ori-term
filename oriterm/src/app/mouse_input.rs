@@ -141,6 +141,14 @@ impl App {
         let pressed = state == ElementState::Pressed;
         self.mouse.set_button_down(button, pressed);
 
+        // Multi-pane click-to-focus: on any press in a multi-pane tab,
+        // hit-test to find the target pane and switch focus if needed.
+        // The click is NOT consumed — it falls through to selection/reporting
+        // so the target pane receives the event.
+        if pressed {
+            self.try_pane_focus_click();
+        }
+
         // Read terminal mode once (single lock acquisition) and determine
         // whether mouse events should be reported to the PTY.
         let report_mode = self

@@ -882,7 +882,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 30 | Pane Extraction + Domain System | `section-30-pane-domain.md` | 4M | Complete |
 | 31 | In-Process Mux + Multi-Pane Rendering | `section-31-in-process-mux.md` | 4M | Not Started |
 | 32 | Tab & Window Management (Mux-Aware) | `section-32-tab-window-mux.md` | 4M | Not Started |
-| 33 | Split Navigation + Floating Panes | `section-33-split-nav-floating.md` | 4M | Not Started |
+| 33 | Split Navigation + Floating Panes | `section-33-split-nav-floating.md` | 4M | In Progress |
 | 34 | IPC Protocol + Daemon Mode | `section-34-ipc-daemon.md` | 7A | Not Started |
 | 35 | Session Persistence + Remote Domains | `section-35-persistence-remote.md` | 7A | Not Started |
 | 36 | Remote Attach + Network Transport | `section-36-remote-attach.md` | 7A | Not Started |

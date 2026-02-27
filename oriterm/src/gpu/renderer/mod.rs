@@ -126,7 +126,11 @@ pub struct GpuRenderer {
 
     // Per-frame reusable scratch buffers.
     shaping: ShapingScratch,
-    prepared: PreparedFrame,
+    /// GPU-ready instances for the current frame.
+    ///
+    /// Exposed to `app::redraw` so the pane render cache can merge cached
+    /// per-pane instances into the aggregate frame.
+    pub(crate) prepared: PreparedFrame,
 
     // Per-frame GPU instance buffers (grow-only, never shrink).
     bg_buffer: Option<Buffer>,

@@ -10,6 +10,7 @@ use oriterm_core::Rgb;
 use super::super::frame_input::FrameInput;
 use super::super::instance_writer::ScreenRect;
 use super::super::prepare;
+use super::super::prepared_frame::PreparedFrame;
 use super::super::state::GpuState;
 use super::{CombinedAtlasLookup, GpuRenderer};
 use crate::gpu::frame_input::ViewportSize;
@@ -22,7 +23,7 @@ use super::helpers;
 impl GpuRenderer {
     /// Begin a multi-pane frame: reset atlases, clear instance buffers, set viewport.
     ///
-    /// Call once before [`prepare_pane`] calls. Sets the viewport and clear
+    /// Call once before [`prepare_pane_into`] calls. Sets the viewport and clear
     /// color for the entire window, then clears all instance buffers so pane
     /// instances can accumulate cleanly.
     pub fn begin_multi_pane_frame(
@@ -40,17 +41,23 @@ impl GpuRenderer {
         self.prepared.set_clear_color(background, opacity);
     }
 
-    /// Shape, cache, and fill one pane into the shared prepared frame.
+    /// Shape, cache, and fill one pane into a separate `PreparedFrame`.
     ///
-    /// Appends instances to `self.prepared` without clearing — call
-    /// [`begin_multi_pane_frame`] once before the first pane. The `origin`
-    /// offset positions this pane's cells at its layout-computed pixel rect.
-    pub fn prepare_pane(
+    /// Fills into `target` (a per-pane cached frame) rather than `self.prepared`.
+    /// The caller merges cached frames into `self.prepared` after all panes are
+    /// prepared. The `origin` offset positions this pane's cells at its
+    /// layout-computed pixel rect.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "pane prepare: input, GPU state, origin offset, cursor flag, target frame"
+    )]
+    pub fn prepare_pane_into(
         &mut self,
         input: &FrameInput,
         gpu: &GpuState,
         origin: (f32, f32),
         cursor_blink_visible: bool,
+        target: &mut PreparedFrame,
     ) {
         // Phase A: Shape all rows for this pane.
         shape_frame(input, &self.font_collection, &mut self.shaping);
@@ -75,7 +82,7 @@ impl GpuRenderer {
             &gpu.queue,
         );
 
-        // Phase C: Fill (append) into the shared prepared frame.
+        // Phase C: Fill into the target prepared frame.
         let bridge = CombinedAtlasLookup {
             mono: &self.atlas,
             subpixel: &self.subpixel_atlas,
@@ -85,7 +92,7 @@ impl GpuRenderer {
             input,
             &bridge,
             &self.shaping.frame,
-            &mut self.prepared,
+            target,
             origin,
             cursor_blink_visible,
         );

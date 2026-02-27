@@ -17,6 +17,7 @@ mod mouse_input;
 mod mouse_report;
 mod mouse_selection;
 mod mux_pump;
+mod pane_ops;
 mod redraw;
 mod search_ui;
 mod tab_bar_input;
@@ -40,7 +41,7 @@ use crate::clipboard::Clipboard;
 use crate::config::Config;
 use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
-use crate::gpu::{FrameInput, GpuRenderer, GpuState};
+use crate::gpu::{FrameInput, GpuRenderer, GpuState, PaneRenderCache};
 use crate::keybindings::{self, KeyBinding};
 use crate::mux::InProcessMux;
 use crate::mux_event::MuxNotification;
@@ -89,6 +90,9 @@ pub(crate) struct App {
 
     // Event loop proxy for waking the event loop from background threads.
     event_proxy: EventLoopProxy<TermEvent>,
+
+    // Per-pane render cache (multi-pane only; skips re-prepare for clean panes).
+    pane_cache: PaneRenderCache,
 
     // Per-frame reusable extraction buffer (lazily initialized on first redraw).
     frame: Option<FrameInput>,
@@ -177,6 +181,7 @@ impl App {
             chrome: None,
             tab_bar: None,
             event_proxy,
+            pane_cache: PaneRenderCache::new(),
             frame: None,
             chrome_draw_list: oriterm_ui::draw::DrawList::new(),
             dirty: false,
@@ -227,6 +232,8 @@ impl App {
             pane.terminal().lock().grid_mut().dirty_mut().mark_all();
         }
 
+        // Invalidate pane render cache (atlas + cell metrics changed).
+        self.pane_cache.invalidate_all();
         self.dirty = true;
     }
 
@@ -256,6 +263,8 @@ impl App {
         if let Some(tab_bar) = &mut self.tab_bar {
             tab_bar.apply_theme(&self.ui_theme);
         }
+        // Invalidate pane render cache (palette colors changed).
+        self.pane_cache.invalidate_all();
         self.dirty = true;
     }
 

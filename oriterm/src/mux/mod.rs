@@ -250,11 +250,9 @@ impl InProcessMux {
     /// Split an existing pane, creating a new pane as its sibling.
     ///
     /// Returns `(PaneId, Pane)` for the newly created pane.
-    #[allow(dead_code, reason = "called when pane splitting is wired to App")]
     #[allow(
         clippy::too_many_arguments,
-        reason = "split requires source pane + direction on top of spawn params; \
-                  grouped into SplitRequest when Section 31.2 wires this into App"
+        reason = "split requires source pane + direction on top of spawn params"
     )]
     pub(crate) fn split_pane(
         &mut self,
@@ -431,6 +429,24 @@ impl InProcessMux {
     }
 
     // -- Accessors --
+
+    /// Active tab ID for a given window.
+    pub(crate) fn active_tab_id(&self, window_id: WindowId) -> Option<TabId> {
+        self.session.get_window(window_id)?.active_tab()
+    }
+
+    /// Change the focused pane within a tab.
+    ///
+    /// Returns `true` if the active pane was changed, `false` if the tab
+    /// was not found.
+    pub(crate) fn set_active_pane(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
+        if let Some(tab) = self.session.get_tab_mut(tab_id) {
+            tab.set_active_pane(pane_id);
+            true
+        } else {
+            false
+        }
+    }
 
     /// Immutable access to the session registry.
     pub(crate) fn session(&self) -> &SessionRegistry {

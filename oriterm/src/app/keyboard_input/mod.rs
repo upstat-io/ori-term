@@ -287,6 +287,19 @@ impl App {
                 self.open_search();
                 true
             }
+            // Pane splitting and navigation (delegated to pane_ops).
+            Action::SplitRight
+            | Action::SplitDown
+            | Action::FocusPaneUp
+            | Action::FocusPaneDown
+            | Action::FocusPaneLeft
+            | Action::FocusPaneRight
+            | Action::NextPane
+            | Action::PrevPane
+            | Action::ClosePane => {
+                self.execute_pane_action(action);
+                true
+            }
             // Actions for future sections — consume the event but log a stub.
             Action::NewTab
             | Action::CloseTab

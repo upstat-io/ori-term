@@ -135,6 +135,23 @@ impl PreparedFrame {
         self.ui_color_glyphs.clear();
     }
 
+    /// Append all instances from `other` into this frame.
+    ///
+    /// Copies instances from each of the nine buffers. Viewport and clear
+    /// color are NOT copied — they belong to the target frame.
+    pub fn extend_from(&mut self, other: &Self) {
+        self.backgrounds.extend_from(&other.backgrounds);
+        self.glyphs.extend_from(&other.glyphs);
+        self.subpixel_glyphs.extend_from(&other.subpixel_glyphs);
+        self.color_glyphs.extend_from(&other.color_glyphs);
+        self.cursors.extend_from(&other.cursors);
+        self.ui_rects.extend_from(&other.ui_rects);
+        self.ui_glyphs.extend_from(&other.ui_glyphs);
+        self.ui_subpixel_glyphs
+            .extend_from(&other.ui_subpixel_glyphs);
+        self.ui_color_glyphs.extend_from(&other.ui_color_glyphs);
+    }
+
     /// Update the clear color (e.g. after a palette change).
     pub fn set_clear_color(&mut self, background: Rgb, opacity: f64) {
         self.clear_color = rgb_to_clear(background, opacity);

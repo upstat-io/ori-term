@@ -113,7 +113,6 @@ pub(crate) struct Pane {
     /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
     pty: PtyHandle,
     /// Set by reader thread when new content is available.
-    #[allow(dead_code, reason = "read when render dirty-check is wired to App")]
     grid_dirty: Arc<AtomicBool>,
     /// Coalesces wakeup events from the reader thread.
     wakeup_pending: Arc<AtomicBool>,
@@ -176,13 +175,11 @@ impl Pane {
     // -- Lock-free accessors --
 
     /// Whether the pane's grid has new content to render.
-    #[allow(dead_code, reason = "used when render dirty-check is wired to App")]
     pub(crate) fn grid_dirty(&self) -> bool {
         self.grid_dirty.load(Ordering::Acquire)
     }
 
     /// Clear the grid dirty flag after rendering.
-    #[allow(dead_code, reason = "used when render dirty-check is wired to App")]
     pub(crate) fn clear_grid_dirty(&self) {
         self.grid_dirty.store(false, Ordering::Release);
     }
