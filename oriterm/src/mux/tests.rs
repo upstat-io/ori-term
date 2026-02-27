@@ -2183,3 +2183,99 @@ fn close_zoomed_pane_clears_zoom() {
     );
     assert_eq!(tab.active_pane(), p2);
 }
+
+#[test]
+fn close_non_zoomed_pane_preserves_zoom() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+
+    // Zoom p1 (the active pane).
+    mux.toggle_zoom(tid);
+    drain(&mut mux);
+
+    // Close p2 (the non-zoomed pane).
+    let result = mux.close_pane(p2);
+    assert_eq!(result, ClosePaneResult::PaneRemoved);
+
+    // Zoom should still be set on p1.
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(
+        tab.zoomed_pane(),
+        Some(p1),
+        "zoom should be preserved when a non-zoomed pane is closed",
+    );
+}
+
+#[test]
+fn unzoom_then_tree_mutation_works() {
+    let (mut mux, _wid, tid, p1, _p2) = two_pane_setup();
+
+    // Zoom, then unzoom (simulates what App does before split).
+    mux.toggle_zoom(tid);
+    mux.unzoom(tid);
+    drain(&mut mux);
+
+    // Manually extend the tree (simulates split result).
+    let p3 = PaneId::from_raw(102);
+    let tab = mux.session.get_tab_mut(tid).unwrap();
+    let new_tree = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(new_tree);
+
+    assert_eq!(
+        tab.zoomed_pane(),
+        None,
+        "zoom should remain cleared after unzoom + split"
+    );
+    assert_eq!(tab.all_panes().len(), 3);
+}
+
+#[test]
+fn toggle_zoom_in_three_pane_tree() {
+    let (mut mux, _wid, tid, _p1, p2) = two_pane_setup();
+
+    // Add a third pane to the tree.
+    let p3 = PaneId::from_raw(102);
+    let did = mux.default_domain();
+    let tab = mux.session.get_tab_mut(tid).unwrap();
+    let new_tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(new_tree);
+    mux.pane_registry.register(PaneEntry {
+        pane: p3,
+        tab: tid,
+        domain: did,
+    });
+
+    // Set active to p2 and zoom.
+    mux.set_active_pane(tid, p2);
+    mux.toggle_zoom(tid);
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(
+        tab.zoomed_pane(),
+        Some(p2),
+        "should zoom the active pane, not the first"
+    );
+    assert_eq!(tab.all_panes().len(), 3, "tree should be unchanged");
+}
+
+#[test]
+fn navigate_after_unzoom_changes_active_pane() {
+    let (mut mux, _wid, tid, _p1, p2) = two_pane_setup();
+
+    // Zoom p1 (active).
+    mux.toggle_zoom(tid);
+    drain(&mut mux);
+
+    // Unzoom (simulates what App does before navigate/cycle).
+    mux.unzoom(tid);
+
+    // After unzoom, changing active pane should work (simulates navigate result).
+    mux.set_active_pane(tid, p2);
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(tab.active_pane(), p2);
+    assert_eq!(
+        tab.zoomed_pane(),
+        None,
+        "zoom should stay cleared after navigate"
+    );
+}

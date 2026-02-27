@@ -156,12 +156,18 @@ pub(crate) fn key_to_binding_key(key: &Key) -> Option<BindingKey> {
     match key {
         Key::Named(n) => Some(BindingKey::Named(*n)),
         Key::Character(s) => {
-            let lower = s.as_str().to_lowercase();
-            if lower.is_empty() {
-                None
+            let b = s.as_bytes();
+            // Fast path: single ASCII byte avoids `to_lowercase` iterator + heap churn.
+            let lower = if b.len() == 1 && b[0].is_ascii() {
+                String::from(b[0].to_ascii_lowercase() as char)
             } else {
-                Some(BindingKey::Character(lower))
-            }
+                let l = s.as_str().to_lowercase();
+                if l.is_empty() {
+                    return None;
+                }
+                l
+            };
+            Some(BindingKey::Character(lower))
         }
         _ => None,
     }

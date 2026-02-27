@@ -353,6 +353,10 @@ impl InProcessMux {
     }
 
     /// Clear zoom on a tab if it is currently zoomed.
+    ///
+    /// Emits `TabLayoutChanged` when zoom was active. For callers that will
+    /// emit their own notification, use [`unzoom_silent`] instead.
+    #[cfg(test)]
     pub(crate) fn unzoom(&mut self, tab_id: TabId) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
@@ -361,6 +365,19 @@ impl InProcessMux {
             tab.set_zoomed_pane(None);
             self.notifications
                 .push(MuxNotification::TabLayoutChanged(tab_id));
+        }
+    }
+
+    /// Clear zoom without emitting a `TabLayoutChanged` notification.
+    ///
+    /// Used by operations that will emit their own layout notification
+    /// after the subsequent mutation, avoiding a redundant recomputation.
+    pub(crate) fn unzoom_silent(&mut self, tab_id: TabId) {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return;
+        };
+        if tab.zoomed_pane().is_some() {
+            tab.set_zoomed_pane(None);
         }
     }
 

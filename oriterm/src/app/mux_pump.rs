@@ -41,8 +41,13 @@ impl App {
                     if let Some(pane) = self.panes.get_mut(&id) {
                         pane.check_selection_invalidation();
                     }
-                    self.url_cache.invalidate();
-                    self.hovered_url = None;
+                    // Only invalidate URL hover when the dirty pane is focused.
+                    // Background shell output in other panes shouldn't kill the
+                    // URL highlight under the cursor.
+                    if self.active_pane_id() == Some(id) {
+                        self.url_cache.invalidate();
+                        self.hovered_url = None;
+                    }
                     self.dirty = true;
                 }
                 MuxNotification::PaneClosed(id) => {

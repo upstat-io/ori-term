@@ -107,7 +107,10 @@ impl App {
 
     /// Move focus to a pane in the given direction.
     pub(super) fn focus_pane_direction(&mut self, direction: Direction) {
-        self.unzoom_if_needed();
+        if self.unzoom_if_needed() {
+            self.pane_cache.invalidate_all();
+            self.resize_all_panes();
+        }
         let layouts = match self.current_pane_layouts() {
             Some(l) => l,
             None => return,
@@ -123,7 +126,10 @@ impl App {
 
     /// Cycle to the next or previous pane.
     pub(super) fn cycle_pane(&mut self, forward: bool) {
-        self.unzoom_if_needed();
+        if self.unzoom_if_needed() {
+            self.pane_cache.invalidate_all();
+            self.resize_all_panes();
+        }
         let layouts = match self.current_pane_layouts() {
             Some(l) => l,
             None => return,
@@ -265,14 +271,26 @@ impl App {
 
     /// Clear zoom on the active tab if currently zoomed.
     ///
-    /// Called at the top of operations that should auto-unzoom (split,
-    /// navigate, cycle, resize, equalize).
-    fn unzoom_if_needed(&mut self) {
+    /// Returns `true` if zoom was actually cleared. Uses `unzoom_silent`
+    /// so callers that will emit their own `TabLayoutChanged` (split,
+    /// resize, equalize) avoid a duplicate notification. Callers that
+    /// don't mutate layout (focus, cycle) must handle the layout change
+    /// themselves when this returns `true`.
+    fn unzoom_if_needed(&mut self) -> bool {
         let Some((tab_id, _)) = self.active_pane_context() else {
-            return;
+            return false;
         };
-        let Some(mux) = &mut self.mux else { return };
-        mux.unzoom(tab_id);
+        let Some(mux) = &mut self.mux else {
+            return false;
+        };
+        let Some(tab) = mux.session().get_tab(tab_id) else {
+            return false;
+        };
+        let was_zoomed = tab.zoomed_pane().is_some();
+        if was_zoomed {
+            mux.unzoom_silent(tab_id);
+        }
+        was_zoomed
     }
 
     /// Set the focused pane in the mux and mark dirty.
