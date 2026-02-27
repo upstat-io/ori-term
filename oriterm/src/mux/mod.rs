@@ -292,12 +292,14 @@ impl InProcessMux {
     ) -> io::Result<(PaneId, Pane)> {
         let (new_pane_id, pane) = self.spawn_pane(tab_id, config, theme, winit_proxy)?;
 
-        if let Some(tab) = self.session.get_tab_mut(tab_id) {
-            let new_tree = tab
-                .tree()
-                .split_at(source_pane, direction, new_pane_id, 0.5);
-            tab.set_tree(new_tree);
-        }
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            self.pane_registry.unregister(new_pane_id);
+            return Err(io::Error::other("tab not found after spawn"));
+        };
+        let new_tree = tab
+            .tree()
+            .split_at(source_pane, direction, new_pane_id, 0.5);
+        tab.set_tree(new_tree);
 
         self.notifications
             .push(MuxNotification::TabLayoutChanged(tab_id));
@@ -322,9 +324,11 @@ impl InProcessMux {
         let new_tree = tab
             .tree()
             .set_divider_ratio(pane_before, pane_after, new_ratio);
-        tab.set_tree(new_tree);
-        self.notifications
-            .push(MuxNotification::TabLayoutChanged(tab_id));
+        if new_tree != *tab.tree() {
+            tab.set_tree(new_tree);
+            self.notifications
+                .push(MuxNotification::TabLayoutChanged(tab_id));
+        }
     }
 
     /// Resize a pane by adjusting the nearest qualifying split border.
@@ -409,9 +413,11 @@ impl InProcessMux {
             return;
         };
         let new_tree = tab.tree().equalize();
-        tab.set_tree(new_tree);
-        self.notifications
-            .push(MuxNotification::TabLayoutChanged(tab_id));
+        if new_tree != *tab.tree() {
+            tab.set_tree(new_tree);
+            self.notifications
+                .push(MuxNotification::TabLayoutChanged(tab_id));
+        }
     }
 
     /// Undo the last split tree mutation on the given tab.
