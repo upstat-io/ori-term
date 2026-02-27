@@ -2002,9 +2002,8 @@ fn equalize_panes_resets_ratio() {
 }
 
 #[test]
-fn equalize_panes_single_pane_emits_notification() {
-    // Equalize doesn't short-circuit on single pane — it still sets the tree
-    // and emits a notification (harmless redundancy, simpler code).
+fn equalize_panes_single_pane_is_noop() {
+    // Single-pane tree is already equalized — no undo entry, no notification.
     let (mut mux, _wid, tid, _pid) = one_pane_setup();
     drain(&mut mux);
 
@@ -2012,10 +2011,8 @@ fn equalize_panes_single_pane_emits_notification() {
 
     let notifs = drain(&mut mux);
     assert!(
-        notifs
-            .iter()
-            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid)),
-        "equalize always emits TabLayoutChanged",
+        notifs.is_empty(),
+        "single-pane equalize should not emit notifications"
     );
 }
 
@@ -2071,6 +2068,116 @@ fn equalize_panes_nonexistent_tab_is_noop() {
 
     let notifs = drain(&mut mux);
     assert!(notifs.is_empty(), "no notifications for nonexistent tab");
+}
+
+// -- Hygiene: leak prevention and no-op guards --
+
+/// Verify that `split_pane`'s error path mirrors `spawn_floating_pane`:
+/// the `else` branch unregisters the pane and returns `Err`. This is a
+/// structural assertion — the actual PTY spawn path can't be exercised in
+/// unit tests, so we verify the code structure is correct by confirming
+/// that a manually registered pane under a nonexistent tab triggers the
+/// invariant violation `debug_assert` in `close_pane`.
+#[test]
+#[should_panic(expected = "tab is missing")]
+fn orphan_pane_under_missing_tab_detected_by_close() {
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+
+    let bogus_tab = TabId::from_raw(999);
+    let orphan = PaneId::from_raw(200);
+
+    // Manually register an orphaned pane (simulates the pre-fix leak).
+    mux.pane_registry.register(PaneEntry {
+        pane: orphan,
+        tab: bogus_tab,
+        domain: did,
+    });
+
+    // close_pane finds the entry but the tab doesn't exist — hits the
+    // debug_assert (registry/session out of sync) and panics in debug builds.
+    mux.close_pane(orphan);
+}
+
+#[test]
+fn set_divider_ratio_same_ratio_no_undo_push() {
+    // Setting the same ratio should not push an undo entry or emit a notification.
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // The setup tree has ratio 0.5. Set it to 0.5 again — no-op.
+    mux.set_divider_ratio(tid, p1, p2, 0.5);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "same ratio should not emit TabLayoutChanged"
+    );
+
+    // Verify no undo entry was pushed: the only undo entry should be from
+    // the two_pane_setup split. One undo should succeed, a second should not.
+    let live: std::collections::HashSet<_> = [p1, p2].into_iter().collect();
+    assert!(
+        mux.undo_split(tid, &live),
+        "setup's undo entry should exist"
+    );
+    drain(&mut mux);
+    assert!(
+        !mux.undo_split(tid, &live),
+        "no second undo entry — same-ratio call was a no-op"
+    );
+}
+
+#[test]
+fn set_divider_ratio_nonexistent_panes_no_undo_push() {
+    // When the pane pair isn't found, set_divider_ratio returns an identical
+    // tree. The equality guard should prevent an undo push.
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    let bogus_a = PaneId::from_raw(999);
+    let bogus_b = PaneId::from_raw(998);
+    mux.set_divider_ratio(tid, bogus_a, bogus_b, 0.7);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "nonexistent pane pair should not emit notification"
+    );
+
+    // Only the setup's undo entry should exist.
+    let live: std::collections::HashSet<_> = [p1, p2].into_iter().collect();
+    assert!(mux.undo_split(tid, &live));
+    drain(&mut mux);
+    assert!(
+        !mux.undo_split(tid, &live),
+        "no extra undo entry from nonexistent pane pair"
+    );
+}
+
+#[test]
+fn equalize_panes_already_equal_no_undo_push() {
+    // When all ratios are already 0.5, equalize should not push undo.
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // two_pane_setup creates a 0.5 split — already equalized.
+    mux.equalize_panes(tid);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "already-equalized tree should not emit notification"
+    );
+
+    // Only the setup's undo entry should exist.
+    let live: std::collections::HashSet<_> = [p1, p2].into_iter().collect();
+    assert!(mux.undo_split(tid, &live));
+    drain(&mut mux);
+    assert!(
+        !mux.undo_split(tid, &live),
+        "no extra undo entry from equalize on already-equal tree"
+    );
 }
 
 // -- Low priority: PaneClosed notification for removed pane --
