@@ -141,6 +141,19 @@ impl App {
         let pressed = state == ElementState::Pressed;
         self.mouse.set_button_down(button, pressed);
 
+        // Floating pane drag: start on left-press over title bar or edge,
+        // finish on left-release when dragging. Takes priority over dividers.
+        if button == MouseButton::Left {
+            let consumed = if pressed {
+                self.try_start_floating_drag()
+            } else {
+                self.try_finish_floating_drag()
+            };
+            if consumed {
+                return;
+            }
+        }
+
         // Divider drag: start on left-press when hovering a divider,
         // finish on left-release when dragging.
         if button == MouseButton::Left {

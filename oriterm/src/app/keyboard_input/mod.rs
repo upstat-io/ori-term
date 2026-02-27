@@ -306,7 +306,9 @@ impl App {
             | Action::ResizePaneLeft
             | Action::ResizePaneRight
             | Action::EqualizePanes
-            | Action::ToggleZoom => {
+            | Action::ToggleZoom
+            | Action::ToggleFloatingPane
+            | Action::ToggleFloatTile => {
                 self.execute_pane_action(action);
                 true
             }

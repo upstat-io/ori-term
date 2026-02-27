@@ -117,6 +117,48 @@ impl GpuRenderer {
         }
     }
 
+    /// Append decoration around a floating pane: drop shadow and border.
+    ///
+    /// The shadow is a semi-transparent rectangle offset 2px down-right,
+    /// drawn into the backgrounds layer. The border is a 1px accent-colored
+    /// frame drawn into the UI rects layer with slight corner radius.
+    pub fn append_floating_decoration(&mut self, rect: &Rect, accent: Rgb) {
+        let shadow_offset = 2.0_f32;
+        let shadow_expand = 4.0_f32;
+
+        // Drop shadow (behind content, in backgrounds layer).
+        self.prepared.backgrounds.push_rect(
+            ScreenRect {
+                x: rect.x - shadow_expand + shadow_offset,
+                y: rect.y - shadow_expand + shadow_offset,
+                w: rect.width + 2.0 * shadow_expand,
+                h: rect.height + 2.0 * shadow_expand,
+            },
+            Rgb { r: 0, g: 0, b: 0 },
+            0.3,
+        );
+
+        // Border (in UI rects layer, renders on top of content).
+        let border_color = [
+            f32::from(accent.r) / 255.0,
+            f32::from(accent.g) / 255.0,
+            f32::from(accent.b) / 255.0,
+            1.0,
+        ];
+        self.prepared.ui_rects.push_ui_rect(
+            ScreenRect {
+                x: rect.x,
+                y: rect.y,
+                w: rect.width,
+                h: rect.height,
+            },
+            [0.0, 0.0, 0.0, 0.0], // transparent fill
+            border_color,
+            2.0, // corner radius
+            1.0, // border width
+        );
+    }
+
     /// Append a 2px focus border around the active pane.
     ///
     /// Draws four thin rectangles (top, bottom, left, right) into the cursor

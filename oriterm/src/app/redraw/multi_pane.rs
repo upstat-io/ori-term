@@ -274,10 +274,15 @@ impl App {
             let divider_color = self.config.pane.effective_divider_color();
             renderer.append_dividers(dividers, divider_color);
 
+            // Floating pane decorations (shadow + border).
+            let accent_color = self.config.pane.effective_focus_border_color();
+            for layout in layouts.iter().filter(|l| l.is_floating) {
+                renderer.append_floating_decoration(&layout.pixel_rect, accent_color);
+            }
+
             // Focus border on active pane (only when multiple panes visible).
             if layouts.len() > 1 {
                 if let Some(rect) = &focused_rect {
-                    let accent_color = self.config.pane.effective_focus_border_color();
                     renderer.append_focus_border(rect, accent_color);
                 }
             }

@@ -12,6 +12,7 @@ mod cursor_blink;
 mod cursor_hover;
 mod divider_drag;
 mod event_loop;
+mod floating_drag;
 mod init;
 mod keyboard_input;
 mod mark_mode;
@@ -147,6 +148,8 @@ pub(crate) struct App {
     hovering_divider: Option<DividerLayout>,
     // Active divider drag state (ratio tracking during drag).
     divider_drag: Option<divider_drag::DividerDragState>,
+    // Active floating pane drag/resize state.
+    floating_drag: Option<floating_drag::FloatingDragState>,
 
     // Active UI theme. Centralized here so all widget creation and event
     // contexts use a single source of truth. When dynamic theming arrives,
@@ -208,6 +211,7 @@ impl App {
             hovered_url: None,
             hovering_divider: None,
             divider_drag: None,
+            floating_drag: None,
             ui_theme,
             search_bar_buf: String::new(),
             last_drag_area_press: None,

@@ -9,6 +9,7 @@
 //! [`MuxNotification`] queue → App drains notifications.
 
 mod event_pump;
+mod floating_ops;
 
 use std::io;
 use std::sync::mpsc;
@@ -149,6 +150,32 @@ impl InProcessMux {
         // Clear zoom if the closed pane was zoomed.
         if tab.zoomed_pane() == Some(pane_id) {
             tab.set_zoomed_pane(None);
+        }
+
+        // Check floating layer first.
+        if tab.floating().contains(pane_id) {
+            let new_floating = tab.floating().remove(pane_id);
+            tab.set_floating(new_floating);
+
+            // If the closed pane was active, pick the next floating pane or
+            // fall back to the first tiled pane.
+            if tab.active_pane() == pane_id {
+                let fallback = tab
+                    .floating()
+                    .panes()
+                    .last()
+                    .map(|fp| fp.pane_id)
+                    .or_else(|| tab.tree().panes().into_iter().next());
+                if let Some(next) = fallback {
+                    tab.set_active_pane(next);
+                }
+            }
+
+            self.notifications
+                .push(MuxNotification::PaneClosed(pane_id));
+            self.notifications
+                .push(MuxNotification::TabLayoutChanged(tab_id));
+            return ClosePaneResult::PaneRemoved;
         }
 
         // Try to remove the pane from the split tree.

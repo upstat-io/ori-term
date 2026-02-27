@@ -171,6 +171,8 @@ pub(crate) fn parse_action(s: &str) -> Option<Action> {
         "ResizePaneRight" => Action::ResizePaneRight,
         "EqualizePanes" => Action::EqualizePanes,
         "ToggleZoom" => Action::ToggleZoom,
+        "ToggleFloatingPane" => Action::ToggleFloatingPane,
+        "ToggleFloatTile" => Action::ToggleFloatTile,
         "None" => Action::None,
         _ => return None,
     })
