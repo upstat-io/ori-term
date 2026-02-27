@@ -544,6 +544,93 @@ fn set_divider_ratio_on_leaf() {
     assert_eq!(updated, tree);
 }
 
+// ── Split ratio boundary values ────────────────────────────────────
+
+#[test]
+fn split_at_with_ratio_zero_clamps_to_minimum() {
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.0);
+
+    // Ratio=0.0 should be clamped to the minimum (0.1), not accepted literally.
+    // A zero ratio would make the first pane invisible — a degenerate layout.
+    if let SplitTree::Split { ratio, .. } = &tree {
+        assert!(
+            (*ratio - 0.1).abs() < f32::EPSILON,
+            "ratio=0.0 should clamp to 0.1, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+
+    // Both panes should still exist in the tree.
+    assert_eq!(tree.pane_count(), 2);
+    assert!(tree.contains(p(1)));
+    assert!(tree.contains(p(2)));
+}
+
+#[test]
+fn split_at_with_ratio_one_clamps_to_maximum() {
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Horizontal, p(2), 1.0);
+
+    // Ratio=1.0 should be clamped to the maximum (0.9), not accepted literally.
+    // A ratio of 1.0 would make the second pane invisible.
+    if let SplitTree::Split { ratio, .. } = &tree {
+        assert!(
+            (*ratio - 0.9).abs() < f32::EPSILON,
+            "ratio=1.0 should clamp to 0.9, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+
+    assert_eq!(tree.pane_count(), 2);
+}
+
+// ── Exhaustive node removal fuzz ──────────────────────────────────
+
+#[test]
+fn remove_every_leaf_no_panic() {
+    // Build a 4-pane tree: (p1 | (p2 / (p3 | p4))).
+    // Removing any leaf should produce a valid tree or None (last pane).
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(2), SplitDirection::Horizontal, p(3), 0.5);
+    let tree = tree.split_at(p(3), SplitDirection::Vertical, p(4), 0.5);
+    assert_eq!(tree.pane_count(), 4);
+
+    // Remove each leaf from a fresh copy and verify no panic.
+    for id in 1..=4 {
+        let result = tree.remove(p(id));
+        let after = result.expect("removing one of 4 panes should not return None");
+        assert_eq!(after.pane_count(), 3);
+        assert!(!after.contains(p(id)));
+        // All other panes still present.
+        for other in 1..=4 {
+            if other != id {
+                assert!(
+                    after.contains(p(other)),
+                    "pane {other} missing after removing {id}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn remove_every_leaf_deep_chain_no_panic() {
+    // Deep chain: p1 → p2 → p3 → p4 → p5 → p6 → p7.
+    let tree = deep_chain();
+    assert_eq!(tree.pane_count(), 7);
+
+    for id in 1..=7 {
+        let result = tree.remove(p(id));
+        let after = result.expect("removing one of 7 panes should not return None");
+        assert_eq!(after.pane_count(), 6, "wrong count after removing p{id}");
+        assert!(!after.contains(p(id)));
+    }
+}
+
 // ── resize_toward ──────────────────────────────────────────────────
 
 #[test]

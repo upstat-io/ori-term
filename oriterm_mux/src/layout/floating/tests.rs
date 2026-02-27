@@ -370,6 +370,52 @@ fn no_snap_when_far_from_edges() {
     assert!((sy - 300.0).abs() < f32::EPSILON);
 }
 
+// ── Z-order compaction on middle close
+
+#[test]
+fn remove_middle_z_order_preserves_relative_order() {
+    // Three floating panes at z=0, z=5, z=10. Remove the middle one (z=5).
+    // The remaining two should maintain their relative order: p1 < p3.
+    let layer = FloatingLayer::new();
+    let layer = layer.add(floating(1, 0.0, 0.0, 100.0, 100.0, 0));
+    let layer = layer.add(floating(2, 50.0, 50.0, 100.0, 100.0, 5));
+    let layer = layer.add(floating(3, 100.0, 100.0, 100.0, 100.0, 10));
+
+    let layer = layer.remove(p(2));
+
+    let panes = layer.panes();
+    assert_eq!(panes.len(), 2);
+    assert_eq!(panes[0].pane_id, p(1));
+    assert_eq!(panes[1].pane_id, p(3));
+    // Relative z-order: p1 < p3.
+    assert!(panes[0].z_order < panes[1].z_order);
+
+    // Hit test in the overlap between p1 and p3: p3 should be on top.
+    // p1 at (0,0)+100x100, p3 at (100,100)+100x100 — no overlap.
+    // Test each separately.
+    assert_eq!(layer.hit_test(50.0, 50.0), Some(p(1)));
+    assert_eq!(layer.hit_test(150.0, 150.0), Some(p(3)));
+}
+
+#[test]
+fn remove_middle_z_order_with_overlap() {
+    // Three fully overlapping panes. Remove the middle one.
+    // Topmost should still be p3, bottommost p1.
+    let layer = FloatingLayer::new();
+    let layer = layer.add(floating(1, 0.0, 0.0, 200.0, 200.0, 0));
+    let layer = layer.add(floating(2, 0.0, 0.0, 200.0, 200.0, 5));
+    let layer = layer.add(floating(3, 0.0, 0.0, 200.0, 200.0, 10));
+
+    let layer = layer.remove(p(2));
+
+    // p3 (z=10) should be on top — hit test returns p3.
+    assert_eq!(layer.hit_test(100.0, 100.0), Some(p(3)));
+
+    // After lowering p3, p1 should be on top.
+    let layer = layer.lower(p(3));
+    assert_eq!(layer.hit_test(100.0, 100.0), Some(p(1)));
+}
+
 #[test]
 fn snap_respects_bounds_offset() {
     let bounds = Rect {

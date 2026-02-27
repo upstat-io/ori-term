@@ -1,0 +1,173 @@
+//! Floating pane operations for `InProcessMux`.
+//!
+//! Spawn, move, resize, raise, and tile/float transitions for floating panes.
+//! Separated from the main CRUD operations to keep `mod.rs` under 500 lines.
+
+use std::io;
+
+use winit::event_loop::EventLoopProxy;
+
+use oriterm_core::Theme;
+use oriterm_mux::domain::SpawnConfig;
+use oriterm_mux::layout::Rect;
+use oriterm_mux::layout::floating::FloatingPane;
+use oriterm_mux::{PaneId, TabId};
+
+use super::InProcessMux;
+use crate::event::TermEvent;
+use crate::mux_event::MuxNotification;
+use crate::pane::Pane;
+
+impl InProcessMux {
+    /// Spawn a new floating pane centered in the available area.
+    ///
+    /// Returns `(PaneId, Pane)` — the caller stores the `Pane` in its own map.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "floating spawn requires tab + config + theme + proxy + available rect"
+    )]
+    pub(crate) fn spawn_floating_pane(
+        &mut self,
+        tab_id: TabId,
+        config: &SpawnConfig,
+        theme: Theme,
+        winit_proxy: &EventLoopProxy<TermEvent>,
+        available: &Rect,
+    ) -> io::Result<(PaneId, Pane)> {
+        let (pane_id, pane) = self.spawn_pane(tab_id, config, theme, winit_proxy)?;
+
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return Ok((pane_id, pane));
+        };
+
+        let next_z = tab
+            .floating()
+            .panes()
+            .iter()
+            .map(|p| p.z_order)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let fp = FloatingPane::centered(pane_id, available, next_z);
+        let new_layer = tab.floating().add(fp);
+        tab.set_floating(new_layer);
+        tab.set_active_pane(pane_id);
+
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+
+        Ok((pane_id, pane))
+    }
+
+    /// Move a tiled pane into the floating layer.
+    ///
+    /// Removes the pane from the split tree and inserts it as a centered
+    /// floating pane. Fails silently if the pane is the last tiled pane
+    /// (must keep at least one in the tree).
+    pub(crate) fn move_pane_to_floating(
+        &mut self,
+        tab_id: TabId,
+        pane_id: PaneId,
+        available: &Rect,
+    ) -> bool {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return false;
+        };
+
+        // Don't allow floating the last tiled pane.
+        let Some(new_tree) = tab.tree().remove(pane_id) else {
+            return false;
+        };
+        tab.set_tree(new_tree);
+
+        let next_z = tab
+            .floating()
+            .panes()
+            .iter()
+            .map(|p| p.z_order)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let fp = FloatingPane::centered(pane_id, available, next_z);
+        let new_layer = tab.floating().add(fp);
+        tab.set_floating(new_layer);
+        tab.set_active_pane(pane_id);
+
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+        true
+    }
+
+    /// Move a floating pane back into the tiled split tree.
+    ///
+    /// Removes the pane from the floating layer and inserts it as a sibling
+    /// of the given tiled pane (or the first tiled pane if none specified).
+    pub(crate) fn move_pane_to_tiled(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return false;
+        };
+
+        if !tab.floating().contains(pane_id) {
+            return false;
+        }
+
+        let new_layer = tab.floating().remove(pane_id);
+        tab.set_floating(new_layer);
+
+        // Find the first tiled pane to split next to.
+        let anchor = tab.tree().panes().into_iter().next();
+        if let Some(anchor_id) = anchor {
+            let new_tree = tab.tree().split_at(
+                anchor_id,
+                oriterm_mux::layout::SplitDirection::Vertical,
+                pane_id,
+                0.5,
+            );
+            tab.set_tree(new_tree);
+        }
+        tab.set_active_pane(pane_id);
+
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+        true
+    }
+
+    /// Move a floating pane to a new position.
+    pub(crate) fn move_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId, x: f32, y: f32) {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return;
+        };
+        let new_layer = tab.floating().move_pane(pane_id, x, y);
+        tab.set_floating(new_layer);
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+    }
+
+    /// Resize a floating pane to new dimensions.
+    pub(crate) fn resize_floating_pane(
+        &mut self,
+        tab_id: TabId,
+        pane_id: PaneId,
+        width: f32,
+        height: f32,
+    ) {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return;
+        };
+        let new_layer = tab.floating().resize_pane(pane_id, width, height);
+        tab.set_floating(new_layer);
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+    }
+
+    /// Bring a floating pane to the front (highest z-order).
+    pub(crate) fn raise_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId) {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return;
+        };
+        let new_layer = tab.floating().raise(pane_id);
+        tab.set_floating(new_layer);
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+    }
+}

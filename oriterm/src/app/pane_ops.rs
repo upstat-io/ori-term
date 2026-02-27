@@ -4,7 +4,7 @@
 //! Each operation reads mux state, calls the appropriate mux method,
 //! then triggers layout recomputation and resize propagation.
 
-use oriterm_mux::layout::SplitDirection;
+use oriterm_mux::layout::{Rect, SplitDirection};
 use oriterm_mux::nav::Direction;
 use oriterm_mux::{PaneId, SpawnConfig, TabId};
 
@@ -33,6 +33,8 @@ impl App {
             Action::ResizePaneRight => self.resize_pane_toward(Direction::Right),
             Action::EqualizePanes => self.equalize_panes(),
             Action::ToggleZoom => self.toggle_zoom(),
+            Action::ToggleFloatingPane => self.toggle_floating_pane(),
+            Action::ToggleFloatTile => self.toggle_float_tile(),
             _ => {}
         }
     }
@@ -196,6 +198,7 @@ impl App {
         };
         if target != current {
             self.set_focused_pane(target);
+            self.raise_if_floating(target);
         }
     }
 
@@ -231,6 +234,127 @@ impl App {
         let Some(mux) = &mut self.mux else { return };
         mux.equalize_panes(tab_id);
         self.dirty = true;
+    }
+
+    /// Toggle floating pane: focus topmost if any exist, else spawn a new one.
+    pub(super) fn toggle_floating_pane(&mut self) {
+        self.unzoom_if_needed();
+        let Some((tab_id, active)) = self.active_pane_context() else {
+            return;
+        };
+
+        // If there are floating panes, toggle focus between float and tile.
+        let has_floating = {
+            let Some(mux) = self.mux.as_ref() else { return };
+            let Some(tab) = mux.session().get_tab(tab_id) else {
+                return;
+            };
+            !tab.floating().is_empty()
+        };
+
+        if has_floating {
+            // If the active pane is floating, focus the first tiled pane.
+            // If the active pane is tiled, focus the topmost floating pane.
+            let target = {
+                let Some(mux) = self.mux.as_ref() else { return };
+                let Some(tab) = mux.session().get_tab(tab_id) else {
+                    return;
+                };
+                if tab.is_floating(active) {
+                    tab.tree().panes().into_iter().next()
+                } else {
+                    tab.floating().panes().last().map(|fp| fp.pane_id)
+                }
+            };
+            if let Some(target) = target {
+                self.set_focused_pane(target);
+            }
+            return;
+        }
+
+        // No floating panes — spawn a new one.
+        let Some(available) = self.grid_available_rect() else {
+            return;
+        };
+
+        let theme = self
+            .config
+            .colors
+            .resolve_theme(crate::platform::theme::system_theme);
+
+        let config = SpawnConfig {
+            cols: 80,
+            rows: 24,
+            scrollback: self.config.terminal.scrollback,
+            ..SpawnConfig::default()
+        };
+
+        let Some(mux) = &mut self.mux else { return };
+        match mux.spawn_floating_pane(tab_id, &config, theme, &self.event_proxy, &available) {
+            Ok((new_pane_id, pane)) => {
+                {
+                    let mut term = pane.terminal().lock();
+                    let palette =
+                        super::config_reload::build_palette_from_config(&self.config.colors, theme);
+                    *term.palette_mut() = palette;
+                }
+                self.panes.insert(new_pane_id, pane);
+                log::info!("spawn floating pane: {new_pane_id:?}");
+            }
+            Err(e) => {
+                log::error!("spawn floating pane failed: {e}");
+            }
+        }
+        self.pane_cache.invalidate_all();
+        self.dirty = true;
+    }
+
+    /// Toggle the focused pane between floating and tiled.
+    pub(super) fn toggle_float_tile(&mut self) {
+        self.unzoom_if_needed();
+        let Some((tab_id, pane_id)) = self.active_pane_context() else {
+            return;
+        };
+
+        let is_floating = {
+            let Some(mux) = self.mux.as_ref() else { return };
+            let Some(tab) = mux.session().get_tab(tab_id) else {
+                return;
+            };
+            tab.is_floating(pane_id)
+        };
+
+        // Compute available rect before borrowing mux mutably.
+        let available = self.grid_available_rect();
+
+        let Some(mux) = &mut self.mux else { return };
+        if is_floating {
+            mux.move_pane_to_tiled(tab_id, pane_id);
+        } else if let Some(ref avail) = available {
+            mux.move_pane_to_floating(tab_id, pane_id, avail);
+        } else {
+            return;
+        }
+        self.pane_cache.invalidate_all();
+        self.dirty = true;
+    }
+
+    /// Raise a floating pane when it receives focus via click.
+    pub(super) fn raise_if_floating(&mut self, pane_id: PaneId) {
+        let Some((tab_id, _)) = self.active_pane_context() else {
+            return;
+        };
+        let is_floating = {
+            let Some(mux) = self.mux.as_ref() else { return };
+            let Some(tab) = mux.session().get_tab(tab_id) else {
+                return;
+            };
+            tab.is_floating(pane_id)
+        };
+        if is_floating {
+            let Some(mux) = &mut self.mux else { return };
+            mux.raise_floating_pane(tab_id, pane_id);
+        }
     }
 
     // -- Private helpers --
@@ -291,6 +415,17 @@ impl App {
             mux.unzoom_silent(tab_id);
         }
         was_zoomed
+    }
+
+    /// Get the available grid area as a mux layout `Rect`.
+    pub(super) fn grid_available_rect(&self) -> Option<Rect> {
+        let bounds = self.terminal_grid.as_ref()?.bounds()?;
+        Some(Rect {
+            x: bounds.x(),
+            y: bounds.y(),
+            width: bounds.width(),
+            height: bounds.height(),
+        })
     }
 
     /// Set the focused pane in the mux and mark dirty.

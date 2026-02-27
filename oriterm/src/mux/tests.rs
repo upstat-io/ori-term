@@ -5,7 +5,9 @@
 //! and build tab/window state to test close, split-tree, and event pump
 //! behaviour in isolation.
 
+use oriterm_mux::layout::Rect;
 use oriterm_mux::layout::SplitDirection;
+use oriterm_mux::layout::floating::FloatingPane;
 use oriterm_mux::registry::PaneEntry;
 use oriterm_mux::session::{MuxTab, MuxWindow};
 use oriterm_mux::{PaneId, TabId, WindowId};
@@ -2278,4 +2280,373 @@ fn navigate_after_unzoom_changes_active_pane() {
         None,
         "zoom should stay cleared after navigate"
     );
+}
+
+// -- Floating pane operations --
+
+/// Helper: one-pane setup with a floating pane added manually.
+fn one_pane_with_floating() -> (InProcessMux, WindowId, TabId, PaneId, PaneId) {
+    let (mut mux, wid, tid, p1) = one_pane_setup();
+    let p2 = PaneId::from_raw(200);
+    let did = mux.default_domain();
+
+    mux.pane_registry.register(PaneEntry {
+        pane: p2,
+        tab: tid,
+        domain: did,
+    });
+
+    let tab = mux.session.get_tab_mut(tid).unwrap();
+    let available = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    let fp = FloatingPane::centered(p2, &available, 1);
+    let new_layer = tab.floating().add(fp);
+    tab.set_floating(new_layer);
+
+    drain(&mut mux);
+
+    (mux, wid, tid, p1, p2)
+}
+
+#[test]
+fn all_panes_includes_floating() {
+    let (_mux, _wid, tid, p1, p2) = one_pane_with_floating();
+    let tab = _mux.session.get_tab(tid).unwrap();
+    let all = tab.all_panes();
+    assert!(all.contains(&p1), "tiled pane should be in all_panes");
+    assert!(all.contains(&p2), "floating pane should be in all_panes");
+    assert_eq!(all.len(), 2);
+}
+
+#[test]
+fn is_floating_true_for_floating_pane() {
+    let (_mux, _wid, tid, p1, p2) = one_pane_with_floating();
+    let tab = _mux.session.get_tab(tid).unwrap();
+    assert!(tab.is_floating(p2));
+    assert!(!tab.is_floating(p1));
+}
+
+#[test]
+fn close_floating_pane_removes_from_layer() {
+    let (mut mux, _wid, tid, _p1, p2) = one_pane_with_floating();
+
+    let result = mux.close_pane(p2);
+    assert_eq!(result, ClosePaneResult::PaneRemoved);
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert!(tab.floating().is_empty(), "floating layer should be empty");
+    assert!(!tab.all_panes().contains(&p2));
+
+    let notes = drain(&mut mux);
+    assert!(
+        notes
+            .iter()
+            .any(|n| matches!(n, MuxNotification::PaneClosed(id) if *id == p2))
+    );
+    assert!(
+        notes
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid))
+    );
+}
+
+#[test]
+fn close_floating_pane_falls_back_to_tiled_active() {
+    let (mut mux, _wid, tid, p1, p2) = one_pane_with_floating();
+
+    // Make the floating pane active.
+    mux.set_active_pane(tid, p2);
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(tab.active_pane(), p2);
+
+    // Close the floating pane — should fall back to tiled pane.
+    mux.close_pane(p2);
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(
+        tab.active_pane(),
+        p1,
+        "active pane should fall back to tiled pane"
+    );
+}
+
+#[test]
+fn move_pane_to_floating_removes_from_tree() {
+    let (mut mux, _wid, tid, _p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    let available = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    let moved = mux.move_pane_to_floating(tid, p2, &available);
+    assert!(moved, "move_pane_to_floating should succeed");
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert!(
+        !tab.tree().panes().contains(&p2),
+        "pane should be removed from tree"
+    );
+    assert!(tab.is_floating(p2), "pane should be in floating layer");
+    assert_eq!(tab.active_pane(), p2, "moved pane should become active");
+
+    let notes = drain(&mut mux);
+    assert!(
+        notes
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid))
+    );
+}
+
+#[test]
+fn move_last_tiled_pane_to_floating_rejected() {
+    let (mut mux, _wid, tid, p1, _p2) = one_pane_with_floating();
+    drain(&mut mux);
+
+    let available = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    // p1 is the only tiled pane — shouldn't allow floating it.
+    let moved = mux.move_pane_to_floating(tid, p1, &available);
+    assert!(!moved, "should not float the last tiled pane");
+}
+
+#[test]
+fn move_pane_to_tiled_removes_from_floating() {
+    let (mut mux, _wid, tid, _p1, p2) = one_pane_with_floating();
+    drain(&mut mux);
+
+    let moved = mux.move_pane_to_tiled(tid, p2);
+    assert!(moved, "move_pane_to_tiled should succeed");
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert!(!tab.is_floating(p2), "pane should no longer be floating");
+    assert!(
+        tab.tree().panes().contains(&p2),
+        "pane should be in the tree"
+    );
+
+    let notes = drain(&mut mux);
+    assert!(
+        notes
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid))
+    );
+}
+
+#[test]
+fn raise_floating_pane_updates_z_order() {
+    let (mut mux, _wid, tid, _p1, p2) = one_pane_with_floating();
+
+    // Add a second floating pane.
+    let p3 = PaneId::from_raw(201);
+    let did = mux.default_domain();
+    mux.pane_registry.register(PaneEntry {
+        pane: p3,
+        tab: tid,
+        domain: did,
+    });
+    {
+        let tab = mux.session.get_tab_mut(tid).unwrap();
+        let available = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+        };
+        let fp = FloatingPane::centered(p3, &available, 2);
+        let new_layer = tab.floating().add(fp);
+        tab.set_floating(new_layer);
+    }
+    drain(&mut mux);
+
+    // p3 is on top (z=2), p2 is below (z=1). Raise p2.
+    mux.raise_floating_pane(tid, p2);
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    let panes = tab.floating().panes();
+    // After raise, p2 should be last (topmost) in z-order.
+    assert_eq!(
+        panes.last().unwrap().pane_id,
+        p2,
+        "raised pane should be topmost"
+    );
+}
+
+// -- High priority: split-while-zoomed backstop --
+
+#[test]
+fn zoom_state_cleared_by_manual_split() {
+    // Zoom a tab, then manually update the tree (simulating what
+    // `mux.split_pane()` does internally). The zoom state should NOT
+    // persist with an invalid tree — this tests the backstop.
+    let (mut mux, _wid, tid, p1, _p2) = two_pane_setup();
+
+    // Zoom p1.
+    mux.set_active_pane(tid, p1);
+    mux.toggle_zoom(tid);
+    assert_eq!(
+        mux.session().get_tab(tid).unwrap().zoomed_pane(),
+        Some(p1),
+        "p1 should be zoomed"
+    );
+
+    // Now unzoom via unzoom_silent (the App-level guard) and split.
+    mux.unzoom_silent(tid);
+    assert_eq!(
+        mux.session().get_tab(tid).unwrap().zoomed_pane(),
+        None,
+        "zoom should be cleared after unzoom_silent"
+    );
+
+    // Manually split the tree (simulating what split_pane does).
+    let p3 = PaneId::from_raw(200);
+    {
+        let tab = mux.session.get_tab_mut(tid).unwrap();
+        let new_tree = tab.tree().split_at(p1, SplitDirection::Vertical, p3, 0.5);
+        tab.set_tree(new_tree);
+    }
+
+    // Verify: zoom is cleared AND the tree is updated.
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.zoomed_pane(), None);
+    assert_eq!(tab.all_panes().len(), 3);
+    assert!(tab.tree().contains(p3));
+}
+
+#[test]
+fn toggle_zoom_on_zoomed_tab_then_split_roundtrip() {
+    // Full roundtrip: zoom → unzoom → split → verify all panes visible.
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+
+    // Zoom.
+    mux.set_active_pane(tid, p1);
+    mux.toggle_zoom(tid);
+    assert!(mux.session().get_tab(tid).unwrap().zoomed_pane().is_some());
+    drain(&mut mux);
+
+    // Unzoom (toggle again).
+    mux.toggle_zoom(tid);
+    assert!(mux.session().get_tab(tid).unwrap().zoomed_pane().is_none());
+
+    // Split p2 — should work correctly on an unzoomed tab.
+    let p3 = PaneId::from_raw(200);
+    {
+        let tab = mux.session.get_tab_mut(tid).unwrap();
+        let new_tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+        tab.set_tree(new_tree);
+    }
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.all_panes().len(), 3);
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p2));
+    assert!(tab.tree().contains(p3));
+    assert_eq!(tab.zoomed_pane(), None);
+}
+
+// -- High priority: navigate-while-zoomed auto-unzoom --
+
+#[test]
+fn unzoom_then_navigate_changes_focus() {
+    // Simulates the full App-level flow: zoom pane → unzoom_silent →
+    // set_active_pane (nav target). Verifies the focus actually moves
+    // to a different pane after unzooming.
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+
+    // Set p1 as active and zoom it.
+    mux.set_active_pane(tid, p1);
+    mux.toggle_zoom(tid);
+    assert_eq!(mux.session().get_tab(tid).unwrap().active_pane(), p1);
+    assert_eq!(mux.session().get_tab(tid).unwrap().zoomed_pane(), Some(p1));
+
+    // Unzoom silently (as focus_pane_direction does).
+    mux.unzoom_silent(tid);
+    assert_eq!(mux.session().get_tab(tid).unwrap().zoomed_pane(), None);
+
+    // Navigate to p2 (simulating directional navigation).
+    mux.set_active_pane(tid, p2);
+    assert_eq!(
+        mux.session().get_tab(tid).unwrap().active_pane(),
+        p2,
+        "focus should move to p2 after unzoom + navigate"
+    );
+}
+
+// -- Medium priority: resize_pane with nonexistent tab is no-op --
+
+#[test]
+fn resize_pane_nonexistent_tab_no_notification() {
+    let mut mux = InProcessMux::new();
+    drain(&mut mux);
+
+    // Resize on a tab that doesn't exist — should not panic or emit.
+    mux.resize_pane(
+        TabId::from_raw(999),
+        PaneId::from_raw(1),
+        SplitDirection::Vertical,
+        true,
+        0.1,
+    );
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "resize on nonexistent tab should emit no notifications"
+    );
+}
+
+#[test]
+fn resize_pane_nonexistent_pane_no_notification() {
+    let (mut mux, _wid, tid, _p1, _p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // Resize a pane that doesn't exist in the tree.
+    mux.resize_pane(
+        tid,
+        PaneId::from_raw(999),
+        SplitDirection::Vertical,
+        true,
+        0.1,
+    );
+
+    // The tree didn't change, so no TabLayoutChanged should be emitted.
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "resize on nonexistent pane should emit no notifications"
+    );
+}
+
+// -- Medium priority: stale registry after partial unregister --
+
+#[test]
+fn close_tab_after_pane_already_unregistered() {
+    // Pane p2 was unregistered (e.g., via a PaneExited event) but the
+    // tree still references it. close_tab should still clean up p1.
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+
+    // Manually unregister p2 (simulates PaneExited processing).
+    mux.pane_registry.unregister(p2);
+    drain(&mut mux);
+
+    // close_tab iterates all_panes() and unregisters them. p2 is already
+    // gone from the registry — unregister returns None, no panic.
+    let closed = mux.close_tab(tid);
+    assert_eq!(closed.len(), 2, "all_panes should list both p1 and p2");
+    assert!(closed.contains(&p1));
+    assert!(closed.contains(&p2));
+
+    // Tab and remaining pane entry should be fully cleaned up.
+    assert!(mux.session().get_tab(tid).is_none());
+    assert!(mux.get_pane_entry(p1).is_none());
 }

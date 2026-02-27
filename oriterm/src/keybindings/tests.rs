@@ -529,6 +529,8 @@ fn action_as_str_roundtrip() {
         Action::PrevPane,
         Action::ClosePane,
         Action::ToggleZoom,
+        Action::ToggleFloatingPane,
+        Action::ToggleFloatTile,
         Action::None,
     ];
     for action in &actions {
@@ -688,4 +690,40 @@ fn resize_bindings_no_collision_with_focus_bindings() {
         find_binding(&bindings, &up_key, resize_mods),
         Some(&Action::ResizePaneUp),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Floating pane default binding tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn toggle_floating_pane_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("p".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::ToggleFloatingPane),
+    );
+}
+
+#[test]
+fn toggle_float_tile_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("g".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::ToggleFloatTile),
+    );
+}
+
+#[test]
+fn floating_actions_roundtrip_through_parse() {
+    let actions = [Action::ToggleFloatingPane, Action::ToggleFloatTile];
+    for action in &actions {
+        let s = action.as_str();
+        let parsed = parse_action(s);
+        assert_eq!(parsed.as_ref(), Some(action), "roundtrip failed for {s:?}");
+    }
 }

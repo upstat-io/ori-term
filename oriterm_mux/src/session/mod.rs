@@ -120,9 +120,23 @@ impl MuxTab {
         }
     }
 
-    /// Collect all pane IDs reachable from the split tree.
+    /// Collect all pane IDs from both the split tree and floating layer.
     pub fn all_panes(&self) -> Vec<PaneId> {
-        self.tree.panes()
+        let mut panes = self.tree.panes();
+        for fp in self.floating.panes() {
+            panes.push(fp.pane_id);
+        }
+        panes
+    }
+
+    /// Replace the floating layer.
+    pub fn set_floating(&mut self, layer: FloatingLayer) {
+        self.floating = layer;
+    }
+
+    /// Check whether a pane is in the floating layer.
+    pub fn is_floating(&self, pane_id: PaneId) -> bool {
+        self.floating.contains(pane_id)
     }
 }
 

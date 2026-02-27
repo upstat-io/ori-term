@@ -122,6 +122,7 @@ impl ApplicationHandler<TermEvent> for App {
                 self.clear_url_hover();
                 self.clear_divider_hover();
                 self.cancel_divider_drag();
+                self.cancel_floating_drag();
                 self.release_tab_width_lock();
             }
 
@@ -133,6 +134,14 @@ impl ApplicationHandler<TermEvent> for App {
                 // Forward move events to overlays for per-widget hover tracking.
                 if self.try_overlay_mouse_move(position) {
                     return;
+                }
+
+                // Floating pane hover/drag: check before divider and terminal.
+                if self.update_floating_hover(position) {
+                    // Only consume if a drag is active; hover just sets cursor.
+                    if self.floating_drag.is_some() {
+                        return;
+                    }
                 }
 
                 // Divider hover/drag: check before terminal mouse handling.

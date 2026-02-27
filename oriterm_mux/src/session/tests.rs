@@ -299,3 +299,132 @@ fn floating_layer_accessible() {
     assert_eq!(tab.floating().panes().len(), 1);
     assert!(tab.floating().contains(PaneId::from_raw(2)));
 }
+
+/// `set_floating()` replaces the entire floating layer.
+#[test]
+fn set_floating_replaces_layer() {
+    let p1 = PaneId::from_raw(1);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    let fp = crate::layout::floating::FloatingPane {
+        pane_id: PaneId::from_raw(2),
+        rect: crate::layout::rect::Rect {
+            x: 10.0,
+            y: 20.0,
+            width: 200.0,
+            height: 100.0,
+        },
+        z_order: 1,
+    };
+    let layer = tab.floating().add(fp);
+    tab.set_floating(layer);
+
+    assert!(tab.floating().contains(PaneId::from_raw(2)));
+    assert_eq!(tab.floating().panes().len(), 1);
+
+    // Replace with empty layer.
+    tab.set_floating(crate::layout::floating::FloatingLayer::new());
+    assert!(tab.floating().is_empty());
+}
+
+/// `is_floating()` returns true only for floating pane IDs.
+#[test]
+fn is_floating_predicate() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    assert!(!tab.is_floating(p1));
+    assert!(!tab.is_floating(p2));
+
+    let fp = crate::layout::floating::FloatingPane {
+        pane_id: p2,
+        rect: crate::layout::rect::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+        },
+        z_order: 0,
+    };
+    tab.set_floating(tab.floating().add(fp));
+
+    assert!(!tab.is_floating(p1));
+    assert!(tab.is_floating(p2));
+}
+
+// --- Multi-step tab removal active index consistency ---
+
+#[test]
+fn multi_step_tab_removal_active_index_stays_valid() {
+    // Create 4 tabs, then remove them in non-sequential order.
+    // Active tab index must stay in-bounds at every step.
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    let t1 = TabId::from_raw(1);
+    let t2 = TabId::from_raw(2);
+    let t3 = TabId::from_raw(3);
+    let t4 = TabId::from_raw(4);
+
+    w.add_tab(t1);
+    w.add_tab(t2);
+    w.add_tab(t3);
+    w.add_tab(t4);
+    w.set_active_tab_idx(2); // t3 is active
+
+    // Remove t2 (before active) — active should shift left to keep t3.
+    assert!(w.remove_tab(t2));
+    assert_eq!(w.tabs(), &[t1, t3, t4]);
+    assert_eq!(w.active_tab(), Some(t3));
+
+    // Remove t1 (before active again) — active shifts left again.
+    assert!(w.remove_tab(t1));
+    assert_eq!(w.tabs(), &[t3, t4]);
+    assert_eq!(w.active_tab(), Some(t3));
+
+    // Active is now at index 0 (t3). Remove t4 (after active) — no shift.
+    assert!(w.remove_tab(t4));
+    assert_eq!(w.tabs(), &[t3]);
+    assert_eq!(w.active_tab(), Some(t3));
+    assert_eq!(w.active_tab_idx(), 0);
+
+    // Remove the last tab.
+    assert!(w.remove_tab(t3));
+    assert!(w.tabs().is_empty());
+    assert!(w.active_tab().is_none());
+}
+
+// --- MuxTab Send+Sync compile-time assertion ---
+
+#[test]
+fn mux_tab_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<MuxTab>();
+    assert_send_sync::<MuxWindow>();
+}
+
+/// `all_panes()` includes both tree and floating panes.
+#[test]
+fn all_panes_includes_floating_panes() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    assert_eq!(tab.all_panes(), vec![p1]);
+
+    let fp = crate::layout::floating::FloatingPane {
+        pane_id: p2,
+        rect: crate::layout::rect::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+        },
+        z_order: 0,
+    };
+    tab.set_floating(tab.floating().add(fp));
+
+    let all = tab.all_panes();
+    assert_eq!(all.len(), 2);
+    assert!(all.contains(&p1));
+    assert!(all.contains(&p2));
+}

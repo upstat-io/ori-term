@@ -85,6 +85,10 @@ pub(crate) enum Action {
     EqualizePanes,
     /// Toggle zoom on the focused pane.
     ToggleZoom,
+    /// Toggle a floating pane: spawn one if none exist, or focus the topmost.
+    ToggleFloatingPane,
+    /// Move the focused pane between floating and tiled.
+    ToggleFloatTile,
     /// Send literal bytes to the PTY.
     SendText(String),
     /// Explicitly unbinds a default binding.
@@ -137,6 +141,8 @@ impl Action {
             Self::ResizePaneRight => "ResizePaneRight",
             Self::EqualizePanes => "EqualizePanes",
             Self::ToggleZoom => "ToggleZoom",
+            Self::ToggleFloatingPane => "ToggleFloatingPane",
+            Self::ToggleFloatTile => "ToggleFloatTile",
             Self::SendText(_) => "SendText",
             Self::None => "None",
         }

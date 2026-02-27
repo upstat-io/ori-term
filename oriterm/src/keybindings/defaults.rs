@@ -90,6 +90,10 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         bind(ch("="), cs, Action::EqualizePanes),
         // Pane zoom toggle.
         bind(ch("z"), cs, Action::ToggleZoom),
+        // Floating pane toggle (spawn or focus).
+        bind(ch("p"), cs, Action::ToggleFloatingPane),
+        // Move focused pane between floating and tiled.
+        bind(ch("g"), cs, Action::ToggleFloatTile),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),
