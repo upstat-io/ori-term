@@ -4,7 +4,7 @@
 //! content into a `DrawCtx` when the layer's `needs_paint` flag is set.
 //! The draw context's bounds are the layer's own bounds (origin at 0,0).
 
-use super::LayerId;
+use crate::geometry::LayerId;
 use crate::widgets::DrawCtx;
 
 /// Provides content for a compositor layer.

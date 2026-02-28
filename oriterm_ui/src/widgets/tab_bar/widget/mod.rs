@@ -135,14 +135,6 @@ impl TabBarWidget {
         self.drag_visual = drag;
     }
 
-    /// Sets per-tab animation offsets.
-    ///
-    /// Each entry is a pixel offset applied to the corresponding tab's X
-    /// position during rendering. Used for smooth tab reorder transitions.
-    pub fn set_anim_offsets(&mut self, offsets: Vec<f32>) {
-        self.anim_offsets = offsets;
-    }
-
     // --- Accessors ---
 
     /// Current computed layout.
@@ -208,7 +200,7 @@ impl TabBarWidget {
     /// per-tab offsets from compositor transforms without allocating. The
     /// caller fills `buf` with compositor-driven offsets, swaps in, and
     /// gets the old buffer back for reuse next frame.
-    pub fn swap_anim_offsets(&mut self, buf: &mut Vec<f32>) {
+    pub(crate) fn swap_anim_offsets(&mut self, buf: &mut Vec<f32>) {
         std::mem::swap(&mut self.anim_offsets, buf);
     }
 }

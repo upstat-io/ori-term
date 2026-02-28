@@ -283,7 +283,7 @@ impl ApplicationHandler<TermEvent> for App {
         }
 
         // Tick compositor animations and clean up fully-faded overlays.
-        {
+        let any_animating = {
             let now = std::time::Instant::now();
             if let Some(ctx) = self.focused_ctx_mut() {
                 let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
@@ -299,9 +299,14 @@ impl ApplicationHandler<TermEvent> for App {
                         .sync_to_widget(count, &ctx.layer_tree, &mut ctx.tab_bar);
                 }
 
-                if animating {
-                    ctx.dirty = true;
-                }
+                animating
+            } else {
+                false
+            }
+        };
+        if any_animating {
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
             }
         }
 

@@ -9,10 +9,10 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::animation::Easing;
-use crate::compositor::Transform2D;
-use crate::compositor::layer::{LayerId, LayerProperties, LayerType};
+use crate::compositor::layer::{LayerProperties, LayerType};
 use crate::compositor::layer_animator::{AnimationParams, LayerAnimator};
 use crate::compositor::layer_tree::LayerTree;
+use crate::geometry::{LayerId, Transform2D};
 
 use super::TabBarWidget;
 

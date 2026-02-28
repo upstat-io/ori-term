@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "43.12"
     title: Smooth Scrolling Integration
-    status: not-started
+    status: complete
   - id: "43.13"
     title: Section Completion
     status: in-progress
@@ -509,11 +509,11 @@ Grid content as a compositor layer with animated Y transform.
 
 **File:** `oriterm/src/app/redraw/mod.rs`, `oriterm/src/gpu/renderer/mod.rs`
 
-- [ ] Grid content rendered into a compositor layer
-- [ ] Keyboard Page-Up/Down → animate layer Y transform (100ms EaseOut)
-- [ ] Mouse wheel → accumulate pixel delta into layer Y transform
-- [ ] Kinetic scroll: track velocity, animate with deceleration (friction 0.95)
-- [ ] Snap: when animation settles within 0.5px of line boundary → snap to line, clear transform
+- [x] Grid content rendered into a compositor layer
+- [x] Keyboard Page-Up/Down → animate layer Y transform (100ms EaseOut)
+- [x] Mouse wheel → accumulate pixel delta into layer Y transform
+- [x] Kinetic scroll: track velocity, animate with deceleration (friction 0.95)
+- [x] Snap: when animation settles within 0.5px of line boundary → snap to line, clear transform
 
 ---
 
@@ -534,12 +534,12 @@ Grid content as a compositor layer with animated Y transform.
 - [x] Lerp impls for Rect, Transform2D, Point, Size
 - [x] Overlay fade-in/fade-out working via compositor
 - [x] Tab sliding working via compositor transforms
-- [ ] Smooth scrolling working via compositor transform  <!-- blocked-by:16 -->
-- [ ] Performance: zero overhead when no layers are animating  <!-- blocked-by:16 -->
+- [x] Smooth scrolling working via compositor transform
+- [x] Performance: zero overhead when no layers are animating
 - [ ] Forward compatibility verified for Sections 16.3, 24, 27.2, 33.4, 39.5, 42
-- [ ] `./clippy-all.sh` — no warnings
-- [ ] `./test-all.sh` — all pass
-- [ ] `./build-all.sh` — cross-compilation succeeds
+- [x] `./clippy-all.sh` — no warnings
+- [x] `./test-all.sh` — all pass
+- [x] `./build-all.sh` — cross-compilation succeeds
 
 ---
 

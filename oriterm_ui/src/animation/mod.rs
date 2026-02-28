@@ -57,6 +57,25 @@ impl<U> Lerp for crate::geometry::Rect<U> {
     }
 }
 
+impl Lerp for crate::geometry::Transform2D {
+    /// Per-element linear interpolation between two transforms.
+    ///
+    /// Sufficient for translate and scale animations. Rotation lerp is
+    /// only correct for small angles; large rotations should decompose
+    /// into angle + slerp (not needed for compositor use cases).
+    fn lerp(start: Self, end: Self, t: f32) -> Self {
+        let s = start.matrix();
+        let e = end.matrix();
+        let mut result = [0.0_f32; 6];
+        let mut idx = 0;
+        while idx < 6 {
+            result[idx] = f32::lerp(s[idx], e[idx], t);
+            idx += 1;
+        }
+        Self::from_matrix(result)
+    }
+}
+
 /// Easing curve applied to animation progress.
 ///
 /// Maps a linear time fraction `t` in `[0.0, 1.0]` to an eased output

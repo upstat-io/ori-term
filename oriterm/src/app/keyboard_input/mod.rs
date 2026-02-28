@@ -247,7 +247,8 @@ impl App {
             let term = pane.terminal().lock();
             let lines = term.grid().lines() as isize;
             drop(term);
-            pane.scroll_display(if up { lines } else { -lines });
+            let scroll_lines = if up { lines } else { -lines };
+            pane.scroll_display(scroll_lines);
         }
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;

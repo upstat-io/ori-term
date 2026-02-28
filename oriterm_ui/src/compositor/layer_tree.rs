@@ -7,10 +7,9 @@
 
 use std::collections::HashMap;
 
-use crate::geometry::Rect;
+use crate::geometry::{LayerId, Rect, Transform2D};
 
-use super::Transform2D;
-use super::layer::{Layer, LayerId, LayerProperties, LayerType};
+use super::layer::{Layer, LayerProperties, LayerType};
 
 /// A tree of compositor layers.
 ///

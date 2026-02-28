@@ -349,32 +349,14 @@ impl App {
     ///
     /// 1. Mouse reporting mode active → send scroll events to PTY.
     /// 2. Alt screen + `ALTERNATE_SCROLL` → send arrow keys to PTY.
-    /// 3. Normal → scroll the viewport.
+    /// 3. Normal → smooth viewport scroll.
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, mode: TermMode) {
-        let lines = match delta {
-            MouseScrollDelta::LineDelta(_, y) => {
-                if y == 0.0 {
-                    return;
-                }
-                (y.abs().ceil() as usize).max(1)
-            }
-            MouseScrollDelta::PixelDelta(pos) => {
-                // Convert pixel delta to lines using cell height.
-                let ch = self
-                    .renderer
-                    .as_ref()
-                    .map_or(16.0, |r| r.cell_metrics().height);
-                let y = pos.y;
-                if y.abs() < f64::from(ch) / 2.0 {
-                    return;
-                }
-                (y.abs() / f64::from(ch)).ceil() as usize
-            }
-        };
-
-        let scroll_up = match delta {
-            MouseScrollDelta::LineDelta(_, y) => y > 0.0,
-            MouseScrollDelta::PixelDelta(pos) => pos.y > 0.0,
+        let cell_height = self
+            .renderer
+            .as_ref()
+            .map_or(16.0, |r| r.cell_metrics().height);
+        let Some((lines, scroll_up)) = parse_wheel_delta(delta, cell_height) else {
+            return;
         };
 
         let Some(pane) = self.active_pane() else {
@@ -426,13 +408,14 @@ impl App {
             return;
         }
 
-        // Tier 3: Normal viewport scroll.
-        let scroll_delta = if scroll_up {
+        // Tier 3: Discrete viewport scroll.
+        let scroll_lines = if scroll_up {
             lines as isize
         } else {
             -(lines as isize)
         };
-        pane.scroll_display(scroll_delta);
+        pane.scroll_display(scroll_lines);
+
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
         }
@@ -507,6 +490,35 @@ impl App {
             ctrl: self.modifiers.control_key(),
         }
     }
+}
+
+/// Parse a mouse wheel delta into `(line_count, scroll_up)`.
+///
+/// Winit's `LineDelta` reports raw notches (1.0 per notch) without applying
+/// the OS scroll lines setting. We multiply by the platform's configured
+/// lines-per-notch (e.g. 3 on Windows) so scrolling respects the user's
+/// system preference.
+///
+/// Returns `None` if the delta is too small to register.
+fn parse_wheel_delta(delta: MouseScrollDelta, cell_height: f32) -> Option<(usize, bool)> {
+    let (lines, scroll_up) = match delta {
+        MouseScrollDelta::LineDelta(_, y) => {
+            if y == 0.0 {
+                return None;
+            }
+            let os_lines = crate::platform::scroll::wheel_scroll_lines() as f32;
+            let scaled = y.abs() * os_lines;
+            ((scaled.ceil() as usize).max(1), y > 0.0)
+        }
+        MouseScrollDelta::PixelDelta(pos) => {
+            let y = pos.y;
+            if y.abs() < f64::from(cell_height) / 2.0 {
+                return None;
+            }
+            ((y.abs() / f64::from(cell_height)).ceil() as usize, y > 0.0)
+        }
+    };
+    Some((lines, scroll_up))
 }
 
 #[cfg(test)]
