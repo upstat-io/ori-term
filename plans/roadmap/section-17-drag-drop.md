@@ -1,13 +1,13 @@
 ---
 section: 17
 title: Drag & Drop
-status: not-started
+status: in-progress
 tier: 4
 goal: Chrome-style tab dragging with tear-off, OS-level drag, and merge detection
 sections:
   - id: "17.1"
     title: Drag State Machine
-    status: not-started
+    status: complete
   - id: "17.2"
     title: OS-Level Drag + Merge
     status: not-started
@@ -18,7 +18,7 @@ sections:
 
 # Section 17: Drag & Drop
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Chrome-style tab dragging with tear-off, OS-level drag, and merge detection. Two-phase drag: within-bar reorder and tear-off to new window. Seamless drag continuation across windows via synthesized mouse events.
 
 **Crate:** `oriterm` (binary only — no core changes)
@@ -37,47 +37,43 @@ Chrome-style tab dragging with two phases: within-bar reorder and tear-off to ne
 
 **Reference:** `_old/src/drag.rs`, `_old/src/app/tab_drag.rs`, `_old/src/app/cursor_hover.rs`
 
-- [ ] `DragState` struct (not an enum — single struct with `DragPhase` enum):
-  - [ ] `tab_id: TabId` — which tab is being dragged
-  - [ ] `source_window: WindowId` — window the drag started in
-  - [ ] `origin: PhysicalPosition<f64>` — initial mouse-down position (for threshold detection)
-  - [ ] `phase: DragPhase` — current phase of the drag
-  - [ ] `mouse_offset_in_tab: f64` — horizontal distance from tab's left edge to cursor at mouse-down. Preserved throughout the entire drag so the tab follows the cursor with the same offset. Example: grab a tab 20px from its left edge — that 20px offset is maintained as you drag.
-- [ ] `DragPhase` enum:
-  - [ ] `Pending` — mouse is down on a tab, haven't moved past threshold yet. If mouse-up arrives in this state, it was a click (switch to tab), not a drag.
-  - [ ] `DraggingInBar` — actively reordering within the tab bar. Visual tab follows cursor, other tabs snap to make room.
-- [ ] State transitions:
-  - [ ] **Mouse down on tab** — create `DragState` with `phase: Pending`, record `origin` and `mouse_offset_in_tab`
-  - [ ] **Mouse move while Pending, distance > `DRAG_START_THRESHOLD` (10px)** — transition to `DraggingInBar`
+- [x] `TabDragState` struct with `DragPhase` enum (`oriterm/src/app/tab_drag/mod.rs`):
+  - [x] `tab_id: TabId` — which tab is being dragged
+  - [x] `original_index / current_index` — for undo and reorder tracking
+  - [x] `origin_x / origin_y` — initial mouse-down position (for threshold detection)
+  - [x] `phase: DragPhase` — current phase of the drag
+  - [x] `mouse_offset_in_tab: f32` — horizontal distance from tab's left edge to cursor at mouse-down
+  - [x] `tab_bar_y / tab_bar_bottom` — bar geometry for tear-off detection
+- [x] `DragPhase` enum:
+  - [x] `Pending` — mouse is down on a tab, haven't moved past threshold yet
+  - [x] `DraggingInBar` — actively reordering within the tab bar
+- [x] State transitions:
+  - [x] **Mouse down on tab** — `try_start_tab_drag()`: create Pending state, acquire width lock
+  - [x] **Mouse move while Pending, distance > `DRAG_START_THRESHOLD` (10px)** — transition to `DraggingInBar`
     - [ ] If single-tab window: skip `DraggingInBar`, go directly to OS-level drag + tear-off (17.2)
-    - [ ] If multi-tab window: enter `DraggingInBar`
-  - [ ] **Mouse move while `DraggingInBar`**:
-    - [ ] Compute `drag_visual_x` from cursor position minus `mouse_offset_in_tab`
-    - [ ] Compute insertion index from **cursor center** (`drag_x + tab_width / 2`), not left edge — creates a natural "sweet spot"
-    - [ ] If index changed: swap tab in `tw.tabs` vec (immediate snap, no dodge animation during drag)
-    - [ ] Store `drag_visual_x` for renderer
-    - [ ] Check tear-off condition:
-      - [ ] Cursor Y distance from tab bar > `TEAR_OFF_THRESHOLD` (40px) for downward/lateral
-      - [ ] Cursor Y distance from tab bar > `TEAR_OFF_THRESHOLD_UP` (15px) for upward — lower threshold because upward tear-off feels more natural
-      - [ ] If tear-off triggered: call `tear_off_tab()` (see 15.2)
-  - [ ] **Mouse up while `DraggingInBar`** — finalize drop:
-    - [ ] Tab is already in the correct position (swapped during drag)
-    - [ ] Clear `drag_visual_x`, clear `DragState`
-    - [ ] Rebuild tab bar cache
-  - [ ] **Mouse up while `Pending`** — was a click, not a drag:
-    - [ ] Tab was already switched to on mouse-down
-    - [ ] Clear `DragState`
-  - [ ] **Escape pressed while dragging** — cancel:
-    - [ ] Return tab to original position in the vec
-    - [ ] Clear `drag_visual_x`, clear `DragState`
-- [ ] `update_drag_in_bar()` — called on every mouse move during `DraggingInBar`:
-  - [ ] Clamp `drag_x` within `[0, max_x]` where `max_x` reserves space for buttons/controls
-  - [ ] Compute insertion index: `((drag_x + tab_w / 2 - left_margin) / tab_w).floor()` clamped to `[0, tab_count - 1]`
-  - [ ] If index differs from current: `tw.tabs.swap(current_idx, new_idx)`, adjust `tw.active_tab`
-  - [ ] Mark `tab_bar_dirty` only if swap occurred
-- [ ] Animation after drag:
-  - [ ] On drag end: displaced tabs get animation offsets that decay to 0 over ~100ms
-  - [ ] `decay_tab_animations() -> bool`: linear interpolation per frame, returns true if any offset is non-zero
+    - [x] If multi-tab window: enter `DraggingInBar`
+  - [x] **Mouse move while `DraggingInBar`**:
+    - [x] Compute `drag_visual_x` from cursor position minus `mouse_offset_in_tab`
+    - [x] Compute insertion index from **cursor center** (`drag_x + tab_width / 2`)
+    - [x] If index changed: `reorder_tab_silent()` — mux reorder + sync without animation
+    - [x] Store drag visual on widget via `set_drag_visual()`
+    - [x] Check tear-off condition (detection only — action deferred to 17.2):
+      - [x] Cursor Y above bar > `TEAR_OFF_THRESHOLD_UP` (15px)
+      - [x] Cursor Y below bar > `TEAR_OFF_THRESHOLD` (40px)
+  - [x] **Mouse up while `DraggingInBar`** — `try_finish_tab_drag()`:
+    - [x] Clear drag visual, start settle animation via `start_tab_reorder_slide()`
+    - [x] Release width lock
+  - [x] **Mouse up while `Pending`** — was a click:
+    - [x] Tab was already switched on mouse-down, release width lock
+  - [x] **Escape pressed while dragging** — `cancel_tab_drag()`:
+    - [x] Restore tab to original position via `reorder_tab_silent()`
+    - [x] Clear drag visual, release width lock
+  - [x] **CursorLeft** — `cancel_tab_drag()`: same as Escape
+- [x] Pure computation helpers (unit tested):
+  - [x] `compute_drag_visual_x()` — clamp to [0, max_x]
+  - [x] `compute_insertion_index()` — center-based, clamped to [0, count-1]
+  - [x] `exceeds_tear_off()` — directional threshold check
+- [x] Post-drag animation via existing `start_tab_reorder_slide()` (compositor-driven)
 
 ---
 

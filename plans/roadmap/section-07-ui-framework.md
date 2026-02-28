@@ -13,7 +13,7 @@ sections:
     status: complete
   - id: "07.3"
     title: Layout Engine
-    status: complete
+    status: in-progress
   - id: "07.4"
     title: Hit Testing & Input Routing
     status: complete
@@ -28,7 +28,7 @@ sections:
     status: complete
   - id: "07.8"
     title: Overlay & Modal System
-    status: complete
+    status: in-progress
   - id: "07.9"
     title: Animation
     status: complete
@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "07.11"
     title: Terminal Grid Widget
-    status: complete
+    status: in-progress
   - id: "07.12"
     title: Section Completion
     status: in-progress
@@ -435,9 +435,8 @@ Smooth transitions for UI state changes.
 - [x] Used for:
   - [x] Toggle switch sliding (150ms `EaseInOut`)
   - [x] Button hover color transitions (100ms `EaseOut`)
-  - [ ] Overlay fade-in/fade-out <!-- blocked-by:overlay-dismiss-state-machine -->
-  - [ ] Tab bar tab sliding <!-- blocked-by:07.11-tab-bar -->
-  - [ ] Scroll position smooth scrolling <!-- blocked-by:keyboard-smooth-scroll -->
+  - [x] Overlay fade-in/fade-out (implemented via compositor `LayerAnimator::animate_opacity`, Section 43.10)
+  - [x] Tab bar tab sliding (implemented via compositor `animate_transform`, Section 43.11)
 
 ---
 

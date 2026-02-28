@@ -53,7 +53,7 @@ impl App {
 
             TabBarHit::Tab(idx) => {
                 self.switch_to_tab_index(idx);
-                // DragState::Pending will be added in Section 17.
+                self.try_start_tab_drag(idx);
                 true
             }
 

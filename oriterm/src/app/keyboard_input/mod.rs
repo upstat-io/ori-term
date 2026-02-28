@@ -95,6 +95,15 @@ impl App {
     /// 2. Keybinding table lookup.
     /// 3. Normal key encoding to PTY.
     pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent) {
+        // Cancel active tab drag on Escape press.
+        if event.state == ElementState::Pressed
+            && event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
+            && self.has_tab_drag()
+        {
+            self.cancel_tab_drag();
+            return;
+        }
+
         // Suppress raw key events during active IME composition.
         // The IME subsystem sends Ime::Commit when done; raw KeyboardInput
         // events during composition are intermediate and must not reach the PTY.
