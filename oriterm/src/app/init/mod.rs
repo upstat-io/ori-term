@@ -1,4 +1,4 @@
-//! One-shot application startup: window → GPU → fonts → renderer → tab.
+//! One-shot application startup: window → GPU → mux → fonts → renderer → tab.
 
 use winit::event_loop::ActiveEventLoop;
 
@@ -6,6 +6,7 @@ use oriterm_mux::domain::SpawnConfig;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::window::WindowConfig;
 
+use super::window_context::WindowContext;
 use super::{App, DEFAULT_DPI};
 use crate::app::config_reload;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
@@ -47,17 +48,22 @@ impl App {
         let gpu = GpuState::new(&window_arc, window_config.transparent)?;
         let t_gpu = t_gpu_start.elapsed();
 
-        // 4. Wrap the same window into TermWindow (creates surface, applies effects).
-        let window = TermWindow::from_window(window_arc, &window_config, &gpu)?;
+        // 4. Create mux infrastructure early (allocators only — no window/GPU deps).
+        //    The mux window ID is needed by TermWindow for the mux↔winit mapping.
+        let mut mux = InProcessMux::new();
+        let mux_window_id = mux.create_window();
 
-        // 5. Join font thread (GPU init + surface setup ran concurrently).
+        // 5. Wrap the same window into TermWindow (creates surface, applies effects).
+        let window = TermWindow::from_window(window_arc, &window_config, &gpu, mux_window_id)?;
+
+        // 6. Join font thread (GPU init + surface setup ran concurrently).
         let (mut font_collection, user_fb_count, t_fonts) = match font_handle.join() {
             Ok(Ok(result)) => result,
             Ok(Err(e)) => return Err(e.into()),
             Err(_) => return Err("font discovery thread panicked".into()),
         };
 
-        // 5b. Rescale fonts to physical DPI so glyph bitmaps match the
+        // 6b. Rescale fonts to physical DPI so glyph bitmaps match the
         // physical surface resolution. At 1.5x scaling: 96 * 1.5 = 144 DPI,
         // producing glyphs that are 1.5x larger in pixels — exactly matching
         // the physical surface. Cell metrics become physical pixels.
@@ -65,7 +71,7 @@ impl App {
         let physical_dpi = DEFAULT_DPI * scale as f32;
         font_collection.set_size(self.config.font.size, physical_dpi);
 
-        // 5c. Adjust hinting and subpixel mode for the actual display scale factor.
+        // 6c. Adjust hinting and subpixel mode for the actual display scale factor.
         // Config overrides take priority over auto-detection.
         let hinting = config_reload::resolve_hinting(&self.config.font, scale);
         font_collection.set_hinting(hinting);
@@ -73,47 +79,19 @@ impl App {
             config_reload::resolve_subpixel_mode(&self.config.font, scale).glyph_format();
         font_collection.set_format(subpixel_format);
 
-        // 5d. Apply font config: features, per-fallback metadata, codepoint map.
+        // 6d. Apply font config: features, per-fallback metadata, codepoint map.
         config_reload::apply_font_config(&mut font_collection, &self.config.font, user_fb_count);
 
-        // 6. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
+        // 7. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
         let t_renderer_start = std::time::Instant::now();
         let renderer = GpuRenderer::new(&gpu, font_collection);
         let t_renderer = t_renderer_start.elapsed();
 
-        // 7. Create window chrome widget (title bar + controls).
+        // 8. Create chrome + tab bar widgets and apply platform effects.
         let (w, h) = window.size_px();
-        let logical_w = w as f32 / window.scale_factor().factor() as f32;
-        let chrome_widget = WindowChromeWidget::with_theme("ori", logical_w, &self.ui_theme);
-        let caption_height = chrome_widget.caption_height();
+        let (chrome_widget, tab_bar_widget, caption_height) = self.create_chrome_widgets(&window);
 
-        // 8. Enable Aero Snap on Windows (installs WndProc subclass).
-        //    All values are in physical pixels — the subclass proc works in
-        //    the physical coordinate space of WM_NCHITTEST cursor positions.
-        #[cfg(target_os = "windows")]
-        {
-            let s = window.scale_factor().factor() as f32;
-            oriterm_ui::platform_windows::enable_snap(
-                window.window(),
-                oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * s,
-                caption_height * s,
-            );
-            oriterm_ui::platform_windows::set_client_rects(
-                window.window(),
-                chrome_widget
-                    .interactive_rects()
-                    .iter()
-                    .map(|r| super::chrome::scale_rect(*r, s))
-                    .collect(),
-            );
-        }
-
-        // 9. Create tab bar widget with initial tab entry.
-        let mut tab_bar_widget =
-            oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &self.ui_theme);
-        tab_bar_widget.set_tabs(vec![oriterm_ui::widgets::tab_bar::TabEntry::new("")]);
-
-        // 10. Compute grid dimensions from viewport, offset by chrome height.
+        // 11. Compute grid dimensions from viewport, offset by chrome height.
         // Chrome = caption bar + tab bar. Cell metrics are in physical pixels
         // (rasterized at physical DPI), so divide physical viewport by physical
         // cell size directly.
@@ -126,7 +104,7 @@ impl App {
         let cols = cell.columns(w).max(1);
         let rows = cell.rows(grid_h).max(1);
 
-        // 11. Create grid widget with cell metrics and initial grid size.
+        // 12. Create grid widget with cell metrics and initial grid size.
         // Bounds are in physical pixels to match the physical viewport.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
         grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
@@ -136,9 +114,9 @@ impl App {
             rows as f32 * cell.height,
         ));
 
-        // 12. Create mux infrastructure (InProcessMux + window + tab + pane).
+        // 13. Create initial tab + pane in the pre-allocated mux window.
         let t_mux_start = std::time::Instant::now();
-        let (mux, mux_window_id) = self.create_initial_mux(rows as u16, cols as u16)?;
+        self.create_initial_tab(&mut mux, mux_window_id, rows as u16, cols as u16)?;
         let t_mux = t_mux_start.elapsed();
 
         let t_total = t_start.elapsed();
@@ -157,15 +135,14 @@ impl App {
         // to an invisible window, so we must be visible first.
         window.set_visible(true);
 
+        let winit_id = window.window_id();
+        let ctx = WindowContext::new(window, chrome_widget, tab_bar_widget, grid_widget);
         self.gpu = Some(gpu);
         self.renderer = Some(renderer);
-        self.window = Some(window);
+        self.windows.insert(winit_id, ctx);
+        self.focused_window_id = Some(winit_id);
         self.mux = Some(mux);
         self.active_window = Some(mux_window_id);
-        self.terminal_grid = Some(grid_widget);
-        self.chrome = Some(chrome_widget);
-        self.tab_bar = Some(tab_bar_widget);
-        self.dirty = true;
         Ok(())
     }
 
@@ -218,17 +195,61 @@ impl App {
             })
     }
 
-    /// Create the mux, a mux window, and an initial tab with one pane.
+    /// Create chrome and tab bar widgets, and apply platform window effects.
     ///
-    /// Returns the mux and the mux window ID. The pane is stored in `self.panes`.
-    fn create_initial_mux(
+    /// Returns `(chrome_widget, tab_bar_widget, caption_height)`.
+    fn create_chrome_widgets(
+        &self,
+        window: &TermWindow,
+    ) -> (
+        WindowChromeWidget,
+        oriterm_ui::widgets::tab_bar::TabBarWidget,
+        f32,
+    ) {
+        let (w, _) = window.size_px();
+        let logical_w = w as f32 / window.scale_factor().factor() as f32;
+        let chrome_widget = WindowChromeWidget::with_theme("ori", logical_w, &self.ui_theme);
+        let caption_height = chrome_widget.caption_height();
+
+        // Enable Aero Snap on Windows (installs WndProc subclass).
+        // All values are in physical pixels — the subclass proc works in
+        // the physical coordinate space of WM_NCHITTEST cursor positions.
+        #[cfg(target_os = "windows")]
+        {
+            let s = window.scale_factor().factor() as f32;
+            oriterm_ui::platform_windows::enable_snap(
+                window.window(),
+                oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * s,
+                caption_height * s,
+            );
+            oriterm_ui::platform_windows::set_client_rects(
+                window.window(),
+                chrome_widget
+                    .interactive_rects()
+                    .iter()
+                    .map(|r| super::chrome::scale_rect(*r, s))
+                    .collect(),
+            );
+        }
+
+        let mut tab_bar_widget =
+            oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &self.ui_theme);
+        tab_bar_widget.set_tabs(vec![oriterm_ui::widgets::tab_bar::TabEntry::new("")]);
+
+        (chrome_widget, tab_bar_widget, caption_height)
+    }
+
+    /// Create an initial tab with one pane in the given mux window.
+    ///
+    /// The mux and window must already be created. The pane is stored in
+    /// `self.panes`. Setup notifications are drained and discarded.
+    fn create_initial_tab(
         &mut self,
+        mux: &mut InProcessMux,
+        window_id: oriterm_mux::WindowId,
         rows: u16,
         cols: u16,
-    ) -> Result<(InProcessMux, oriterm_mux::WindowId), Box<dyn std::error::Error>> {
-        let mut mux = InProcessMux::new();
-        let window_id = mux.create_window();
-
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let theme = self
             .config
             .colors
@@ -253,6 +274,6 @@ impl App {
         let mut discard = Vec::new();
         mux.drain_notifications(&mut discard);
 
-        Ok((mux, window_id))
+        Ok(())
     }
 }

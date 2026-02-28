@@ -26,7 +26,6 @@ use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize, extract_frame,
     extract_frame_into,
 };
-use crate::widgets::terminal_grid::TerminalGridWidget;
 
 impl App {
     /// Execute the three-phase rendering pipeline: Extract → Prepare → Render.
@@ -41,8 +40,8 @@ impl App {
         // self.renderer mutably). Take the Vec from the previous frame to
         // reuse its capacity, avoiding a per-frame allocation.
         let mut url_segments = self
-            .frame
-            .as_mut()
+            .focused_ctx_mut()
+            .and_then(|ctx| ctx.frame.as_mut())
             .map_or_else(Vec::new, |f| std::mem::take(&mut f.hovered_url_segments));
         self.fill_hovered_url_viewport_segments(&mut url_segments);
 
@@ -70,7 +69,10 @@ impl App {
                 log::warn!("redraw: no renderer");
                 return;
             };
-            let Some(window) = self.window.as_ref() else {
+            let Some(ctx) = self
+                .focused_window_id
+                .and_then(|id| self.windows.get_mut(&id))
+            else {
                 log::warn!("redraw: no window");
                 return;
             };
@@ -79,18 +81,18 @@ impl App {
                 return;
             };
 
-            if !window.has_surface_area() {
+            if !ctx.window.has_surface_area() {
                 log::warn!("redraw: no surface area");
                 return;
             }
 
-            let (w, h) = window.size_px();
+            let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
 
             // Reuse the FrameInput allocation across frames. First frame
             // does a fresh allocation; subsequent frames refill in place.
-            let frame = match &mut self.frame {
+            let frame = match &mut ctx.frame {
                 Some(existing) => {
                     extract_frame_into(pane.terminal(), existing, viewport, cell);
                     existing
@@ -128,15 +130,17 @@ impl App {
             frame.search = pane.search().map(|s| FrameSearch::new(s, base));
 
             // Compute hovered cell for hyperlink underline rendering.
-            if let Some(grid_widget) = self.terminal_grid.as_ref() {
-                let ctx = GridCtx {
-                    widget: grid_widget,
-                    cell,
+            let cell_metrics = renderer.cell_metrics();
+            let hovered_cell = {
+                let grid_ctx = GridCtx {
+                    widget: &ctx.terminal_grid,
+                    cell: cell_metrics,
                     word_delimiters: &self.config.behavior.word_delimiters,
                 };
-                frame.hovered_cell = mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &ctx)
-                    .map(|(col, line)| (line, col));
-            }
+                mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &grid_ctx)
+                    .map(|(col, line)| (line, col))
+            };
+            frame.hovered_cell = hovered_cell;
 
             // Implicit URL hover: viewport-relative segments computed above.
             // The Vec was taken from the previous frame to reuse capacity.
@@ -157,10 +161,9 @@ impl App {
             // cell rendering. Both bounds and cell metrics are in physical
             // pixels; the viewport (screen_size uniform) is also physical,
             // so the shader maps physical positions to NDC correctly.
-            let origin = self
+            let origin = ctx
                 .terminal_grid
-                .as_ref()
-                .and_then(TerminalGridWidget::bounds)
+                .bounds()
                 .map_or((0.0, 0.0), |b| (b.x(), b.y()));
 
             renderer.prepare(frame, gpu, origin, cursor_blink_visible);
@@ -168,67 +171,59 @@ impl App {
             // Draw window chrome into the UI rect layer. Chrome widget
             // draws in logical pixels; scale converts to physical pixels
             // for the GPU pipeline (screen_size uniform is physical).
-            let scale = window.scale_factor().factor() as f32;
+            let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
             let chrome_animating = Self::draw_chrome(
-                self.chrome.as_ref(),
+                Some(&ctx.chrome),
                 renderer,
-                &mut self.chrome_draw_list,
+                &mut ctx.chrome_draw_list,
                 logical_w,
                 scale,
                 &self.ui_theme,
             );
             if chrome_animating {
-                self.dirty = true;
+                ctx.dirty = true;
             }
 
             // Draw tab bar below the chrome caption. Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.
-            let caption_h = self
-                .chrome
-                .as_ref()
-                .map_or(0.0, WindowChromeWidget::caption_height);
+            let caption_h = ctx.chrome.caption_height();
             if Self::draw_tab_bar(
-                self.tab_bar.as_ref(),
+                Some(&ctx.tab_bar),
                 renderer,
-                &mut self.chrome_draw_list,
+                &mut ctx.chrome_draw_list,
                 logical_w as f32,
                 caption_h,
                 scale,
                 gpu,
                 &self.ui_theme,
             ) {
-                self.dirty = true;
+                ctx.dirty = true;
             }
 
             // Draw modal overlays (e.g. paste confirmation dialog).
             let logical_size = (logical_w as f32, h as f32 / scale);
             if Self::draw_overlays(
-                &mut self.overlays,
+                &mut ctx.overlays,
                 renderer,
-                &mut self.chrome_draw_list,
+                &mut ctx.chrome_draw_list,
                 logical_size,
                 scale,
                 gpu,
                 &self.ui_theme,
             ) {
-                self.dirty = true;
+                ctx.dirty = true;
             }
 
             // Draw search bar overlay when search is active.
             if let Some(search) = frame.search.as_ref() {
                 // Position below all chrome (caption + tab bar).
-                let chrome_h = caption_h
-                    + if self.tab_bar.is_some() {
-                        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
-                    } else {
-                        0.0
-                    };
+                let chrome_h = caption_h + oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
                 Self::draw_search_bar(
                     search,
                     renderer,
-                    &mut self.chrome_draw_list,
-                    &mut self.search_bar_buf,
+                    &mut ctx.chrome_draw_list,
+                    &mut ctx.search_bar_buf,
                     logical_w as f32,
                     chrome_h,
                     scale,
@@ -236,7 +231,7 @@ impl App {
                 );
             }
 
-            let result = renderer.render_to_surface(gpu, window.surface());
+            let result = renderer.render_to_surface(gpu, ctx.window.surface());
             (result, blinking_now)
         };
 
@@ -261,9 +256,13 @@ impl App {
             Ok(()) => log::trace!("render ok"),
             Err(SurfaceError::Lost) => {
                 log::warn!("surface lost, reconfiguring");
-                if let (Some(window), Some(gpu)) = (self.window.as_mut(), self.gpu.as_ref()) {
-                    let (w, h) = window.size_px();
-                    window.resize_surface(w, h, gpu);
+                let Some(gpu) = self.gpu.as_ref() else { return };
+                if let Some(ctx) = self
+                    .focused_window_id
+                    .and_then(|id| self.windows.get_mut(&id))
+                {
+                    let (w, h) = ctx.window.size_px();
+                    ctx.window.resize_surface(w, h, gpu);
                 }
             }
             Err(e) => log::error!("render error: {e}"),

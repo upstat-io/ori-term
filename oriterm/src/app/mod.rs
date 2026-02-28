@@ -25,85 +25,67 @@ mod redraw;
 mod search_ui;
 mod tab_bar_input;
 mod tab_management;
+pub(crate) mod window_context;
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::ModifiersState;
+use winit::window::WindowId;
 
 use oriterm_core::TermMode;
-use oriterm_mux::layout::DividerLayout;
 use oriterm_mux::{PaneId, WindowId as MuxWindowId};
 
 use self::cursor_blink::CursorBlink;
 use self::keyboard_input::ImeState;
 use self::mouse_selection::MouseState;
+use self::window_context::WindowContext;
 use crate::clipboard::Clipboard;
 use crate::config::Config;
 use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
-use crate::gpu::{FrameInput, GpuRenderer, GpuState, PaneRenderCache};
+use crate::gpu::{GpuRenderer, GpuState};
 use crate::keybindings::{self, KeyBinding};
 use crate::mux::InProcessMux;
 use crate::mux_event::MuxNotification;
 use crate::pane::Pane;
-use crate::url_detect::{DetectedUrl, UrlDetectCache};
-use crate::widgets::terminal_grid::TerminalGridWidget;
-use crate::window::TermWindow;
 
-use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
-use oriterm_ui::widgets::tab_bar::TabBarWidget;
-use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 /// Default DPI for font rasterization.
 const DEFAULT_DPI: f32 = 96.0;
 
 /// Terminal application state and event loop handler.
 ///
-/// Owns all top-level resources: GPU state, renderer, window, and tab.
+/// Owns all top-level resources: GPU state, renderer, windows, and mux.
 /// Implements winit's `ApplicationHandler<TermEvent>` to receive both
 /// window events and terminal events from the PTY reader thread.
+///
+/// Per-window state (widgets, caches, interaction) lives in [`WindowContext`]
+/// inside the `windows` map.
 pub(crate) struct App {
     // GPU + rendering (lazy init on Resumed).
     gpu: Option<GpuState>,
     renderer: Option<GpuRenderer>,
-    window: Option<TermWindow>,
+
+    // Per-window state, keyed by winit WindowId for event routing.
+    windows: HashMap<WindowId, WindowContext>,
+    // Winit ID of the currently focused window (set on Focused(true)).
+    focused_window_id: Option<WindowId>,
 
     // Mux layer (Section 31): owns registries, ID allocators, and domain.
     mux: Option<InProcessMux>,
     // Pane store: Pane structs live here, keyed by PaneId.
     // The mux tracks metadata (PaneEntry); App owns the actual Pane.
     panes: HashMap<PaneId, Pane>,
-    // Active mux window ID (maps to the single TermWindow for now).
+    // Active mux window ID (maps to the focused TermWindow).
     active_window: Option<MuxWindowId>,
     // Double-buffer for mux notifications (avoids per-frame allocation).
     notification_buf: Vec<MuxNotification>,
 
-    // Terminal grid widget (layout + event routing participant).
-    terminal_grid: Option<TerminalGridWidget>,
-
-    // Window chrome widget (title bar + controls).
-    chrome: Option<WindowChromeWidget>,
-
-    // Tab bar widget (tab strip rendering).
-    tab_bar: Option<TabBarWidget>,
-
     // Event loop proxy for waking the event loop from background threads.
     event_proxy: EventLoopProxy<TermEvent>,
-
-    // Per-pane render cache (multi-pane only; skips re-prepare for clean panes).
-    pane_cache: PaneRenderCache,
-
-    // Per-frame reusable extraction buffer (lazily initialized on first redraw).
-    frame: Option<FrameInput>,
-
-    // Reusable draw list for chrome rendering (avoids per-frame allocation).
-    chrome_draw_list: oriterm_ui::draw::DrawList,
-
-    // Redraw coalescing.
-    dirty: bool,
 
     // Keyboard modifier state (updated on ModifiersChanged).
     modifiers: ModifiersState,
@@ -133,37 +115,10 @@ pub(crate) struct App {
     // IME composition state machine.
     ime: ImeState,
 
-    // Overlay manager for modal dialogs and popups.
-    overlays: OverlayManager,
-
-    // Text pending paste confirmation (stored while dialog is shown).
-    pending_paste: Option<String>,
-
-    // URL detection cache (lazily populated per logical line).
-    url_cache: UrlDetectCache,
-
-    // Currently hovered URL (set on Ctrl+mouse move, cleared on Ctrl release).
-    hovered_url: Option<DetectedUrl>,
-
-    // Cached divider layouts for hit testing (invalidated on layout change).
-    cached_dividers: Option<Vec<DividerLayout>>,
-    // Divider currently under the cursor (for hover cursor icon).
-    hovering_divider: Option<DividerLayout>,
-    // Active divider drag state (ratio tracking during drag).
-    divider_drag: Option<divider_drag::DividerDragState>,
-    // Active floating pane drag/resize state.
-    floating_drag: Option<floating_drag::FloatingDragState>,
-
     // Active UI theme. Centralized here so all widget creation and event
     // contexts use a single source of truth. When dynamic theming arrives,
     // only this field and the theme-change handler need updating.
     ui_theme: UiTheme,
-
-    // Reusable buffer for search bar text (avoids per-frame allocation).
-    search_bar_buf: String,
-
-    // Timestamp of last left-click in the tab bar drag area (for double-click maximize).
-    last_drag_area_press: Option<Instant>,
 }
 
 impl App {
@@ -186,19 +141,13 @@ impl App {
         Self {
             gpu: None,
             renderer: None,
-            window: None,
+            windows: HashMap::new(),
+            focused_window_id: None,
             mux: None,
             panes: HashMap::new(),
             active_window: None,
             notification_buf: Vec::new(),
-            terminal_grid: None,
-            chrome: None,
-            tab_bar: None,
             event_proxy,
-            pane_cache: PaneRenderCache::new(),
-            frame: None,
-            chrome_draw_list: oriterm_ui::draw::DrawList::new(),
-            dirty: false,
             modifiers: ModifiersState::empty(),
             cursor_blink: CursorBlink::new(blink_interval),
             blinking_active: false,
@@ -208,18 +157,21 @@ impl App {
             bindings,
             _config_monitor: monitor,
             ime: ImeState::new(),
-            overlays: OverlayManager::new(oriterm_ui::geometry::Rect::default()),
-            pending_paste: None,
-            url_cache: UrlDetectCache::default(),
-            hovered_url: None,
-            cached_dividers: None,
-            hovering_divider: None,
-            divider_drag: None,
-            floating_drag: None,
             ui_theme,
-            search_bar_buf: String::new(),
-            last_drag_area_press: None,
         }
+    }
+
+    // -- Window context accessors --
+
+    /// The focused window's context, if any.
+    fn focused_ctx(&self) -> Option<&WindowContext> {
+        self.focused_window_id.and_then(|id| self.windows.get(&id))
+    }
+
+    /// The focused window's context (mutable), if any.
+    fn focused_ctx_mut(&mut self) -> Option<&mut WindowContext> {
+        self.focused_window_id
+            .and_then(|id| self.windows.get_mut(&id))
     }
 
     /// Re-rasterize fonts and update rendering settings for a new DPI scale.
@@ -252,8 +204,10 @@ impl App {
         }
 
         // Invalidate pane render cache (atlas + cell metrics changed).
-        self.pane_cache.invalidate_all();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.dirty = true;
+        }
     }
 
     /// Handle system dark/light theme change.
@@ -276,15 +230,12 @@ impl App {
         }
         // Update UI chrome theme (tab bar, window controls).
         self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
-        if let Some(chrome) = &mut self.chrome {
-            chrome.apply_theme(&self.ui_theme);
+        for ctx in self.windows.values_mut() {
+            ctx.chrome.apply_theme(&self.ui_theme);
+            ctx.tab_bar.apply_theme(&self.ui_theme);
+            ctx.pane_cache.invalidate_all();
+            ctx.dirty = true;
         }
-        if let Some(tab_bar) = &mut self.tab_bar {
-            tab_bar.apply_theme(&self.ui_theme);
-        }
-        // Invalidate pane render cache (palette colors changed).
-        self.pane_cache.invalidate_all();
-        self.dirty = true;
     }
 
     /// Save pipeline cache and exit the process.
@@ -342,28 +293,40 @@ impl App {
         self.panes.get_mut(&id)
     }
 
+    /// Tab index for a given pane within the active window's tab list.
+    ///
+    /// Traverses pane registry → tab → window tab list to find the position.
+    fn tab_index_for_pane(&self, pane_id: PaneId) -> Option<usize> {
+        let mux = self.mux.as_ref()?;
+        let tab_id = mux.get_pane_entry(pane_id)?.tab;
+        let win_id = self.active_window?;
+        let win = mux.session().get_window(win_id)?;
+        win.tabs().iter().position(|&t| t == tab_id)
+    }
+
     /// Current tab width lock value, if active.
     ///
     /// Delegates to the tab bar widget — the widget is the single source
     /// of truth for this value.
     pub(super) fn tab_width_lock(&self) -> Option<f32> {
-        self.tab_bar.as_ref().and_then(TabBarWidget::tab_width_lock)
+        self.focused_ctx()
+            .and_then(|ctx| ctx.tab_bar.tab_width_lock())
     }
 
     /// Freeze tab widths at `width` to prevent layout jitter.
     pub(super) fn acquire_tab_width_lock(&mut self, width: f32) {
-        if let Some(tab_bar) = &mut self.tab_bar {
-            tab_bar.set_tab_width_lock(Some(width));
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.tab_bar.set_tab_width_lock(Some(width));
         }
     }
 
     /// Release the tab width lock, allowing tabs to recompute widths.
     pub(super) fn release_tab_width_lock(&mut self) {
         if self.tab_width_lock().is_some() {
-            if let Some(tab_bar) = &mut self.tab_bar {
-                tab_bar.set_tab_width_lock(None);
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.tab_bar.set_tab_width_lock(None);
+                ctx.dirty = true;
             }
-            self.dirty = true;
         }
     }
 }

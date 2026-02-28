@@ -45,10 +45,14 @@ impl App {
                     // Background shell output in other panes shouldn't kill the
                     // URL highlight under the cursor.
                     if self.active_pane_id() == Some(id) {
-                        self.url_cache.invalidate();
-                        self.hovered_url = None;
+                        if let Some(ctx) = self.focused_ctx_mut() {
+                            ctx.url_cache.invalidate();
+                            ctx.hovered_url = None;
+                        }
                     }
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.dirty = true;
+                    }
                 }
                 MuxNotification::PaneClosed(id) => {
                     // Remove the pane from the map. Drop (PTY kill + reader
@@ -57,34 +61,48 @@ impl App {
                     if let Some(pane) = self.panes.remove(&id) {
                         std::thread::spawn(move || drop(pane));
                     }
-                    self.pane_cache.remove(id);
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.pane_cache.remove(id);
+                        ctx.dirty = true;
+                    }
                 }
                 MuxNotification::TabLayoutChanged(_) => {
                     // Layout changed (split/close) — pane positions shifted.
-                    self.pane_cache.invalidate_all();
-                    self.cached_dividers = None;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.pane_cache.invalidate_all();
+                        ctx.cached_dividers = None;
+                    }
                     self.resize_all_panes();
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.dirty = true;
+                    }
                 }
                 MuxNotification::FloatingPaneChanged(_) => {
                     // Floating pane moved/resized — positions shifted but
                     // PTY dimensions unchanged. Skip resize_all_panes.
-                    self.pane_cache.invalidate_all();
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.pane_cache.invalidate_all();
+                        ctx.dirty = true;
+                    }
                 }
                 MuxNotification::WindowTabsChanged(_) => {
                     self.sync_tab_bar_from_mux();
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.dirty = true;
+                    }
                 }
                 MuxNotification::Alert(id) => {
                     if let Some(pane) = self.panes.get_mut(&id) {
                         pane.set_bell();
                     }
-                    if let Some(tab_bar) = &mut self.tab_bar {
-                        tab_bar.ring_bell(0);
+                    if let Some(idx) = self.tab_index_for_pane(id) {
+                        if let Some(ctx) = self.focused_ctx_mut() {
+                            ctx.tab_bar.ring_bell(idx);
+                        }
                     }
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.dirty = true;
+                    }
                 }
                 MuxNotification::WindowClosed(_) => {
                     // Single-window for now; no action needed.

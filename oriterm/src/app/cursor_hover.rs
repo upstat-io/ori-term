@@ -39,20 +39,23 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return no_hit;
         };
-        let (Some(grid_widget), Some(renderer)) = (&self.terminal_grid, &self.renderer) else {
+        let Some(renderer) = &self.renderer else {
+            return no_hit;
+        };
+        let Some(ctx) = self.focused_ctx() else {
             return no_hit;
         };
         let Some(pane) = self.panes.get(&pane_id) else {
             return no_hit;
         };
 
-        let ctx = GridCtx {
-            widget: grid_widget,
+        let grid_ctx = GridCtx {
+            widget: &ctx.terminal_grid,
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };
 
-        let Some((col, line)) = mouse_selection::pixel_to_cell(pos, &ctx) else {
+        let Some((col, line)) = mouse_selection::pixel_to_cell(pos, &grid_ctx) else {
             return no_hit;
         };
 
@@ -68,9 +71,17 @@ impl App {
             return no_hit;
         }
 
-        // Implicit URL detection first — it joins wrapped lines and finds
-        // complete URLs even when the emitting program truncated them.
-        let url_hit = self.url_cache.url_at(grid, abs_row, col);
+        // Borrow split: inline window lookup borrows only self.windows,
+        // leaving self.panes available (pane/term still borrowed above).
+        let url_hit = {
+            let Some(ctx) = self
+                .focused_window_id
+                .and_then(|id| self.windows.get_mut(&id))
+            else {
+                return no_hit;
+            };
+            ctx.url_cache.url_at(grid, abs_row, col)
+        };
 
         // OSC 8 hyperlink fallback: only used when implicit detection misses.
         let osc8_url = if url_hit.is_none() {
@@ -106,15 +117,19 @@ impl App {
     /// cursor icon, and requests a redraw if the hover state changed.
     pub(super) fn update_url_hover(&mut self, position: PhysicalPosition<f64>) {
         let result = self.detect_hover_url(position);
-        let prev_url = self.hovered_url.as_ref().map(|u| &u.url);
+        let prev_url = self
+            .focused_ctx()
+            .and_then(|ctx| ctx.hovered_url.as_ref().map(|u| &u.url));
         let new_url = result.url.as_ref().map(|u| &u.url);
 
         if prev_url != new_url {
-            self.hovered_url = result.url;
-            if let Some(window) = &self.window {
-                window.window().set_cursor(result.cursor_icon);
+            if let Some(ctx) = self.focused_ctx() {
+                ctx.window.window().set_cursor(result.cursor_icon);
             }
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.hovered_url = result.url;
+                ctx.dirty = true;
+            }
         }
     }
 
@@ -122,12 +137,17 @@ impl App {
     ///
     /// Called when Ctrl is released or cursor leaves the grid.
     pub(super) fn clear_url_hover(&mut self) {
-        if self.hovered_url.is_some() {
-            self.hovered_url = None;
-            if let Some(window) = &self.window {
-                window.window().set_cursor(CursorIcon::Default);
+        let is_hovered = self
+            .focused_ctx()
+            .is_some_and(|ctx| ctx.hovered_url.is_some());
+        if is_hovered {
+            if let Some(ctx) = self.focused_ctx() {
+                ctx.window.window().set_cursor(CursorIcon::Default);
             }
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.hovered_url = None;
+                ctx.dirty = true;
+            }
         }
     }
 
@@ -139,7 +159,10 @@ impl App {
         if !self.modifiers.control_key() {
             return false;
         }
-        let Some(url) = &self.hovered_url else {
+        let Some(ctx) = self.focused_ctx() else {
+            return false;
+        };
+        let Some(url) = &ctx.hovered_url else {
             return false;
         };
         if let Err(e) = crate::platform::url::open_url(&url.url) {
@@ -156,7 +179,10 @@ impl App {
     pub(super) fn fill_hovered_url_viewport_segments(&self, out: &mut Vec<UrlSegment>) {
         out.clear();
 
-        let Some(url) = &self.hovered_url else {
+        let Some(ctx) = self.focused_ctx() else {
+            return;
+        };
+        let Some(url) = &ctx.hovered_url else {
             return;
         };
         if url.segments.is_empty() {

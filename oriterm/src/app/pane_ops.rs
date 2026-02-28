@@ -10,7 +10,6 @@ use oriterm_mux::{PaneId, SpawnConfig, TabId};
 
 use super::App;
 use crate::keybindings::Action;
-use crate::widgets::terminal_grid::TerminalGridWidget;
 
 /// Per-keypress ratio adjustment for keyboard resize (5%).
 const RESIZE_STEP: f32 = 0.05;
@@ -53,9 +52,11 @@ impl App {
         };
         let Some(mux) = &mut self.mux else { return };
         mux.toggle_zoom(tab_id);
-        self.pane_cache.invalidate_all();
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.dirty = true;
+        }
         self.sync_tab_bar_from_mux();
-        self.dirty = true;
     }
 
     /// Split the focused pane in the given direction.
@@ -102,13 +103,17 @@ impl App {
                 log::error!("split pane failed: {e}");
             }
         }
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     /// Move focus to a pane in the given direction.
     pub(super) fn focus_pane_direction(&mut self, direction: Direction) {
         if self.unzoom_if_needed() {
-            self.pane_cache.invalidate_all();
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.pane_cache.invalidate_all();
+            }
             self.resize_all_panes();
         }
         let layouts = match self.current_pane_layouts() {
@@ -127,7 +132,9 @@ impl App {
     /// Cycle to the next or previous pane.
     pub(super) fn cycle_pane(&mut self, forward: bool) {
         if self.unzoom_if_needed() {
-            self.pane_cache.invalidate_all();
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.pane_cache.invalidate_all();
+            }
             self.resize_all_panes();
         }
         let layouts = match self.current_pane_layouts() {
@@ -163,7 +170,9 @@ impl App {
         }
         let result = mux.close_pane(pane_id);
         log::info!("close pane {pane_id:?}: {result:?}");
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     /// Resize all panes in the active tab to match their computed layouts.
@@ -191,11 +200,10 @@ impl App {
     /// Computes rows/cols from the grid bounds and cell metrics, matching
     /// the same calculation `sync_grid_layout` uses during window resize.
     fn resize_single_pane(&self) {
-        let Some(bounds) = self
-            .terminal_grid
-            .as_ref()
-            .and_then(TerminalGridWidget::bounds)
-        else {
+        let Some(ctx) = self.focused_ctx() else {
+            return;
+        };
+        let Some(bounds) = ctx.terminal_grid.bounds() else {
             return;
         };
         let Some(renderer) = &self.renderer else {
@@ -255,7 +263,9 @@ impl App {
         };
         let Some(mux) = &mut self.mux else { return };
         mux.resize_pane(tab_id, pane_id, axis, pane_in_first, delta);
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     /// Reset all split ratios in the active tab to 0.5.
@@ -266,7 +276,9 @@ impl App {
         };
         let Some(mux) = &mut self.mux else { return };
         mux.equalize_panes(tab_id);
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     /// Toggle floating pane: focus topmost if any exist, else spawn a new one.
@@ -286,7 +298,7 @@ impl App {
                 None
             } else if tab.is_floating(active) {
                 // Active is floating — focus first tiled pane.
-                tab.tree().panes().into_iter().next()
+                Some(tab.tree().first_pane())
             } else {
                 // Active is tiled — focus topmost floating pane.
                 tab.floating().panes().last().map(|fp| fp.pane_id)
@@ -326,8 +338,10 @@ impl App {
                 log::error!("spawn floating pane failed: {e}");
             }
         }
-        self.pane_cache.invalidate_all();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.dirty = true;
+        }
     }
 
     /// Toggle the focused pane between floating and tiled.
@@ -356,8 +370,10 @@ impl App {
         } else {
             return;
         }
-        self.pane_cache.invalidate_all();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.dirty = true;
+        }
     }
 
     /// Undo the last split tree mutation.
@@ -368,8 +384,10 @@ impl App {
         let live_panes = self.live_pane_ids(tab_id);
         let Some(mux) = &mut self.mux else { return };
         if mux.undo_split(tab_id, &live_panes) {
-            self.pane_cache.invalidate_all();
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.pane_cache.invalidate_all();
+                ctx.dirty = true;
+            }
         }
     }
 
@@ -381,8 +399,10 @@ impl App {
         let live_panes = self.live_pane_ids(tab_id);
         let Some(mux) = &mut self.mux else { return };
         if mux.redo_split(tab_id, &live_panes) {
-            self.pane_cache.invalidate_all();
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.pane_cache.invalidate_all();
+                ctx.dirty = true;
+            }
         }
     }
 
@@ -471,7 +491,9 @@ impl App {
         let was_zoomed = tab.zoomed_pane().is_some();
         if was_zoomed {
             mux.unzoom_silent(tab_id);
-            self.cached_dividers = None;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.cached_dividers = None;
+            }
             self.sync_tab_bar_from_mux();
         }
         was_zoomed
@@ -479,7 +501,7 @@ impl App {
 
     /// Get the available grid area as a mux layout `Rect`.
     pub(super) fn grid_available_rect(&self) -> Option<Rect> {
-        let bounds = self.terminal_grid.as_ref()?.bounds()?;
+        let bounds = self.focused_ctx()?.terminal_grid.bounds()?;
         Some(Rect {
             x: bounds.x(),
             y: bounds.y(),
@@ -495,7 +517,9 @@ impl App {
         };
         let Some(mux) = &mut self.mux else { return };
         mux.set_active_pane(tab_id, pane_id);
-        self.pane_cache.invalidate_all();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.dirty = true;
+        }
     }
 }

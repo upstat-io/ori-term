@@ -14,7 +14,9 @@ impl App {
     pub(super) fn open_search(&mut self) {
         if let Some(pane) = self.active_pane_mut() {
             pane.open_search();
-            self.dirty = true;
+        }
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
         }
     }
 
@@ -22,7 +24,9 @@ impl App {
     pub(super) fn close_search(&mut self) {
         if let Some(pane) = self.active_pane_mut() {
             pane.close_search();
-            self.dirty = true;
+        }
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
         }
     }
 
@@ -55,7 +59,9 @@ impl App {
                     }
                 }
                 self.scroll_to_search_match();
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
             Key::Named(NamedKey::Backspace) => {
                 if let Some(pane) = self.active_pane_mut() {
@@ -68,7 +74,9 @@ impl App {
                     }
                 }
                 self.scroll_to_search_match();
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
             Key::Character(c) => {
                 if let Some(pane) = self.active_pane_mut() {
@@ -81,7 +89,9 @@ impl App {
                     }
                 }
                 self.scroll_to_search_match();
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
             _ => {}
         }

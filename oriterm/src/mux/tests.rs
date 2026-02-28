@@ -3857,3 +3857,164 @@ fn close_window_with_queued_events_for_closed_panes() {
     assert_eq!(mux.session().window_count(), 0);
     assert_eq!(mux.session().tab_count(), 0);
 }
+
+// -- cycle_active_tab --
+
+/// Build a mux with one window containing three tabs (single pane each).
+fn three_tab_setup() -> (InProcessMux, WindowId, TabId, TabId, TabId) {
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+
+    let wid = WindowId::from_raw(100);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(101);
+    let t3 = TabId::from_raw(102);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+
+    let mut win = MuxWindow::new(wid);
+    win.add_tab(t1);
+    win.add_tab(t2);
+    win.add_tab(t3);
+    mux.session.add_window(win);
+
+    for (tid, pid) in [(t1, p1), (t2, p2), (t3, p3)] {
+        mux.session.add_tab(MuxTab::new(tid, pid));
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+
+    drain(&mut mux);
+    (mux, wid, t1, t2, t3)
+}
+
+#[test]
+fn cycle_active_tab_forward_wraps() {
+    let (mut mux, wid, t1, t2, t3) = three_tab_setup();
+
+    // Default active is index 0 (t1).
+    assert_eq!(mux.active_tab_id(wid), Some(t1));
+
+    // Cycle forward through all tabs.
+    assert_eq!(mux.cycle_active_tab(wid, 1), Some(t2));
+    assert_eq!(mux.active_tab_id(wid), Some(t2));
+
+    assert_eq!(mux.cycle_active_tab(wid, 1), Some(t3));
+    assert_eq!(mux.active_tab_id(wid), Some(t3));
+
+    // Wrap around to t1.
+    assert_eq!(mux.cycle_active_tab(wid, 1), Some(t1));
+    assert_eq!(mux.active_tab_id(wid), Some(t1));
+}
+
+#[test]
+fn cycle_active_tab_backward_wraps() {
+    let (mut mux, wid, _t1, _t2, t3) = three_tab_setup();
+
+    // Default active is t1 (index 0). Backward wraps to t3.
+    assert_eq!(mux.cycle_active_tab(wid, -1), Some(t3));
+    assert_eq!(mux.active_tab_id(wid), Some(t3));
+}
+
+#[test]
+fn cycle_active_tab_single_tab_returns_none() {
+    let (mut mux, wid, tid, pid) = one_pane_setup();
+    let _ = (tid, pid); // suppress unused warnings
+
+    // Only one tab — cycle should return None.
+    assert_eq!(mux.cycle_active_tab(wid, 1), None);
+    assert_eq!(mux.cycle_active_tab(wid, -1), None);
+}
+
+#[test]
+fn cycle_active_tab_nonexistent_window_returns_none() {
+    let (mut mux, _wid, _, _, _) = three_tab_setup();
+    let stale = WindowId::from_raw(999);
+    assert_eq!(mux.cycle_active_tab(stale, 1), None);
+}
+
+// -- switch_active_tab --
+
+#[test]
+fn switch_active_tab_to_specific_tab() {
+    let (mut mux, wid, _t1, _t2, t3) = three_tab_setup();
+
+    // Default active is t1 (index 0). Switch to t3.
+    assert!(mux.switch_active_tab(wid, t3));
+    assert_eq!(mux.active_tab_id(wid), Some(t3));
+}
+
+#[test]
+fn switch_active_tab_nonexistent_tab_returns_false() {
+    let (mut mux, wid, _t1, _t2, _t3) = three_tab_setup();
+    let stale = TabId::from_raw(999);
+    assert!(!mux.switch_active_tab(wid, stale));
+}
+
+#[test]
+fn switch_active_tab_nonexistent_window_returns_false() {
+    let (mut mux, _wid, _t1, _t2, t3) = three_tab_setup();
+    let stale = WindowId::from_raw(999);
+    assert!(!mux.switch_active_tab(stale, t3));
+}
+
+#[test]
+fn switch_active_tab_to_already_active_is_idempotent() {
+    let (mut mux, wid, t1, _t2, _t3) = three_tab_setup();
+
+    assert_eq!(mux.active_tab_id(wid), Some(t1));
+    assert!(mux.switch_active_tab(wid, t1));
+    assert_eq!(mux.active_tab_id(wid), Some(t1));
+}
+
+// -- reorder_tab --
+
+#[test]
+fn reorder_tab_moves_and_tracks_active() {
+    let (mut mux, wid, t1, t2, t3) = three_tab_setup();
+
+    // Move t1 from position 0 to position 2.
+    assert!(mux.reorder_tab(wid, 0, 2));
+    let win = mux.session().get_window(wid).unwrap();
+    assert_eq!(win.tabs(), &[t2, t3, t1]);
+}
+
+#[test]
+fn reorder_tab_nonexistent_window_returns_false() {
+    let (mut mux, _wid, _, _, _) = three_tab_setup();
+    let stale = WindowId::from_raw(999);
+    assert!(!mux.reorder_tab(stale, 0, 1));
+}
+
+#[test]
+fn reorder_tab_out_of_bounds_returns_false() {
+    let (mut mux, wid, _, _, _) = three_tab_setup();
+    assert!(!mux.reorder_tab(wid, 0, 10));
+    assert!(!mux.reorder_tab(wid, 10, 0));
+}
+
+// -- set_active_pane --
+
+#[test]
+fn set_active_pane_returns_true_for_existing_tab() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    assert!(mux.set_active_pane(tid, p2));
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.active_pane(), p2);
+
+    // Switch back.
+    assert!(mux.set_active_pane(tid, p1));
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.active_pane(), p1);
+}
+
+#[test]
+fn set_active_pane_nonexistent_tab_returns_false() {
+    let (mut mux, _wid, _tid, _p1, _p2) = two_pane_setup();
+    let stale = TabId::from_raw(999);
+    assert!(!mux.set_active_pane(stale, PaneId::from_raw(1)));
+}

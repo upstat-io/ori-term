@@ -18,8 +18,8 @@ impl InProcessMux {
     /// Drain `MuxEvent`s from pane reader threads and emit `MuxNotification`s.
     ///
     /// Called from the App's event loop every iteration. The `panes` map is
-    /// passed so the mux can update pane metadata (title, CWD, bell) and
-    /// write PTY responses without the App needing to know event internals.
+    /// passed so the mux can update pane metadata (title, CWD) and write
+    /// PTY responses without the App needing to know event internals.
     pub(crate) fn poll_events(&mut self, panes: &mut HashMap<PaneId, Pane>) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {

@@ -13,13 +13,10 @@ impl App {
     /// Returns `true` if the overlay consumed the event (caller should return
     /// early). Returns `false` if no overlays are active.
     pub(super) fn try_overlay_mouse(&mut self, button: MouseButton, state: ElementState) -> bool {
-        if self.overlays.is_empty() {
-            return false;
-        }
-        let Some(window) = &self.window else {
-            return false;
+        let scale = match self.focused_ctx() {
+            Some(ctx) if !ctx.overlays.is_empty() => ctx.window.scale_factor().factor() as f32,
+            _ => return false,
         };
-        let scale = window.scale_factor().factor() as f32;
         let pos = self.mouse.cursor_pos();
         let logical = oriterm_ui::geometry::Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
         let mb = match button {
@@ -45,9 +42,18 @@ impl App {
             Some(m) => m,
             None => return true,
         };
-        let result = self
-            .overlays
-            .process_mouse_event(&ui_event, measurer, &self.ui_theme, None);
+        // Borrow split: inline window lookup borrows only self.windows,
+        // leaving self.renderer and self.ui_theme available as disjoint borrows.
+        let result = {
+            let Some(ctx) = self
+                .focused_window_id
+                .and_then(|id| self.windows.get_mut(&id))
+            else {
+                return true;
+            };
+            ctx.overlays
+                .process_mouse_event(&ui_event, measurer, &self.ui_theme, None)
+        };
         self.handle_overlay_result(result);
         true
     }
@@ -61,13 +67,10 @@ impl App {
         &mut self,
         position: winit::dpi::PhysicalPosition<f64>,
     ) -> bool {
-        if self.overlays.is_empty() {
-            return false;
-        }
-        let Some(window) = &self.window else {
-            return false;
+        let scale = match self.focused_ctx() {
+            Some(ctx) if !ctx.overlays.is_empty() => ctx.window.scale_factor().factor() as f32,
+            _ => return false,
         };
-        let scale = window.scale_factor().factor() as f32;
         let logical =
             oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
         let ui_event = oriterm_ui::input::MouseEvent {
@@ -83,12 +86,20 @@ impl App {
             Some(m) => m,
             None => return true,
         };
-        let result = self
-            .overlays
-            .process_mouse_event(&ui_event, measurer, &self.ui_theme, None);
+        let result = {
+            let Some(ctx) = self
+                .focused_window_id
+                .and_then(|id| self.windows.get_mut(&id))
+            else {
+                return true;
+            };
+            ctx.overlays
+                .process_mouse_event(&ui_event, measurer, &self.ui_theme, None)
+        };
         self.handle_overlay_result(result);
         // Only consume if a modal overlay blocked or handled it.
-        self.overlays.has_modal()
+        self.focused_ctx()
+            .is_some_and(|ctx| ctx.overlays.has_modal())
     }
 
     /// Handle mouse press for selection.
@@ -97,11 +108,16 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
-        let (Some(grid), Some(renderer)) = (&self.terminal_grid, &self.renderer) else {
+        // Borrow split: inline window lookup borrows self.windows immutably,
+        // leaving self.panes available for mutable access.
+        let (Some(wctx), Some(renderer)) = (
+            self.focused_window_id.and_then(|id| self.windows.get(&id)),
+            self.renderer.as_ref(),
+        ) else {
             return;
         };
         let ctx = mouse_selection::GridCtx {
-            widget: grid,
+            widget: &wctx.terminal_grid,
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };
@@ -109,7 +125,9 @@ impl App {
             return;
         };
         if mouse_selection::handle_press(&mut self.mouse, pane, &ctx, pos, self.modifiers) {
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
         }
     }
 
@@ -118,11 +136,14 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
-        let (Some(grid), Some(renderer)) = (&self.terminal_grid, &self.renderer) else {
+        let (Some(wctx), Some(renderer)) = (
+            self.focused_window_id.and_then(|id| self.windows.get(&id)),
+            self.renderer.as_ref(),
+        ) else {
             return;
         };
         let ctx = mouse_selection::GridCtx {
-            widget: grid,
+            widget: &wctx.terminal_grid,
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };
@@ -130,7 +151,9 @@ impl App {
             return;
         };
         if mouse_selection::handle_drag(&mut self.mouse, pane, &ctx, position) {
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
         }
     }
 
@@ -216,7 +239,9 @@ impl App {
                     self.report_mouse_button(mouse_report::MouseButton::Middle, kind, mode);
                 } else if state == ElementState::Pressed {
                     self.paste_from_primary();
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.dirty = true;
+                    }
                 } else {
                     // Release without reporting: no action needed.
                 }
@@ -235,7 +260,9 @@ impl App {
                     } else {
                         self.paste_from_clipboard();
                     }
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.dirty = true;
+                    }
                 } else {
                     // Release without reporting: no action needed.
                 }
