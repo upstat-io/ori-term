@@ -8,9 +8,7 @@
 
 use std::time::Duration;
 
-use crate::compositor::Transform2D;
-use crate::compositor::layer::LayerId;
-use crate::geometry::Rect;
+use crate::geometry::{LayerId, Rect, Transform2D};
 
 use super::Easing;
 

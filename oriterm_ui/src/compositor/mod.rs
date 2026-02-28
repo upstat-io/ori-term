@@ -11,11 +11,11 @@ pub mod layer_animator;
 pub mod layer_tree;
 pub mod transform;
 
+pub use crate::geometry::{LayerId, Transform2D};
 pub use delegate::LayerDelegate;
-pub use layer::{Layer, LayerId, LayerProperties, LayerType};
+pub use layer::{Layer, LayerProperties, LayerType};
 pub use layer_animator::{AnimationParams, LayerAnimator, PreemptionStrategy};
 pub use layer_tree::LayerTree;
-pub use transform::Transform2D;
 
 #[cfg(test)]
 mod tests;

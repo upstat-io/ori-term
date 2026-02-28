@@ -25,7 +25,7 @@ use wgpu::{BindGroup, BindGroupLayout, Device};
 use composition_pass::{CompositeLayerDesc, CompositionPass};
 use render_target_pool::{PooledTargetId, RenderTargetPool};
 
-use oriterm_ui::compositor::layer::LayerId;
+use oriterm_ui::geometry::LayerId;
 
 use super::state::GpuState;
 

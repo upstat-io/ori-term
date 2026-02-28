@@ -11,10 +11,8 @@ use std::time::{Duration, Instant};
 
 use crate::animation::group::{AnimationGroup, TransitionTarget};
 use crate::animation::{AnimatableProperty, AnimationDelegate, Easing, Lerp};
-use crate::geometry::Rect;
+use crate::geometry::{LayerId, Rect, Transform2D};
 
-use super::Transform2D;
-use super::layer::LayerId;
 use super::layer_tree::LayerTree;
 
 /// How to handle a new animation when one is already running.
@@ -369,9 +367,13 @@ impl LayerAnimator {
     }
 
     /// Promotes queued transitions into active slots that have freed up.
+    ///
+    /// Uses `swap_remove` to avoid reallocating the queue `Vec` each frame.
+    /// Order within the queue doesn't matter, so O(1) removal is safe.
     fn promote_queued(&mut self, now: Instant) {
-        let queue = std::mem::take(&mut self.queue);
-        for queued in queue {
+        let mut i = 0;
+        while i < self.queue.len() {
+            let queued = &self.queue[i];
             let prop = match queued.kind {
                 TransitionKind::Opacity { .. } => AnimatableProperty::Opacity,
                 TransitionKind::Transform { .. } => AnimatableProperty::Transform,
@@ -379,15 +381,16 @@ impl LayerAnimator {
             };
             let key = (queued.layer_id, prop);
             if let Entry::Vacant(e) = self.transitions.entry(key) {
+                let queued = self.queue.swap_remove(i);
                 e.insert(PropertyTransition {
                     kind: queued.kind,
                     start: now,
                     duration: queued.duration,
                     easing: queued.easing,
                 });
+                // Don't increment — swap_remove moved the last element here.
             } else {
-                // Still occupied — re-queue.
-                self.queue.push(queued);
+                i += 1;
             }
         }
     }

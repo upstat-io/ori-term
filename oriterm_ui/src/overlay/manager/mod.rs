@@ -10,10 +10,11 @@ use std::time::{Duration, Instant};
 
 use crate::animation::Easing;
 use crate::color::Color;
-use crate::compositor::layer::{LayerId, LayerProperties, LayerType};
+use crate::compositor::layer::{LayerProperties, LayerType};
 use crate::compositor::layer_animator::{AnimationParams, LayerAnimator};
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
+use crate::geometry::LayerId;
 use crate::geometry::{Rect, Size};
 use crate::layout::compute_layout;
 use crate::theme::UiTheme;

@@ -585,7 +585,7 @@ fn animation_negative_range() {
 #[test]
 fn group_has_correct_defaults() {
     use super::group::{AnimationGroup, PropertyAnimation, TransitionTarget};
-    use crate::compositor::LayerId;
+    use crate::geometry::LayerId;
 
     let id = LayerId::new(1);
     let group = AnimationGroup {
@@ -625,8 +625,8 @@ fn group_property_animation_per_property_overrides() {
 #[test]
 fn builder_produces_correct_group() {
     use super::builder::AnimationBuilder;
-    use crate::compositor::{LayerId, Transform2D};
     use crate::geometry::Rect;
+    use crate::geometry::{LayerId, Transform2D};
 
     let id = LayerId::new(1);
     let group = AnimationBuilder::new(id)
@@ -649,7 +649,7 @@ fn builder_produces_correct_group() {
 #[test]
 fn builder_default_duration_and_easing() {
     use super::builder::AnimationBuilder;
-    use crate::compositor::LayerId;
+    use crate::geometry::LayerId;
 
     let group = AnimationBuilder::new(LayerId::new(1))
         .opacity(0.0, 1.0)
@@ -667,7 +667,7 @@ fn builder_build_sequence_with_on_end() {
 
     use super::builder::AnimationBuilder;
     use super::sequence::SequenceState;
-    use crate::compositor::LayerId;
+    use crate::geometry::LayerId;
 
     let called = Arc::new(AtomicBool::new(false));
     let called_clone = called.clone();
@@ -701,7 +701,7 @@ fn builder_build_sequence_with_on_end() {
 #[test]
 fn sequence_empty_is_immediately_finished() {
     use super::sequence::{AnimationSequence, SequenceState};
-    use crate::compositor::LayerId;
+    use crate::geometry::LayerId;
 
     let mut seq = AnimationSequence::new(LayerId::new(1), vec![]);
     let now = Instant::now();
@@ -713,7 +713,7 @@ fn sequence_empty_is_immediately_finished() {
 #[test]
 fn sequence_delay_step_pauses() {
     use super::sequence::{AnimationSequence, AnimationStep, SequenceState};
-    use crate::compositor::LayerId;
+    use crate::geometry::LayerId;
 
     let mut seq = AnimationSequence::new(
         LayerId::new(1),
@@ -741,7 +741,7 @@ fn sequence_callback_fires_immediately() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::sequence::{AnimationSequence, AnimationStep};
-    use crate::compositor::LayerId;
+    use crate::geometry::LayerId;
 
     let called = Arc::new(AtomicBool::new(false));
     let called_clone = called.clone();
@@ -768,7 +768,7 @@ fn sequence_steps_execute_in_order() {
 
     use super::group::{AnimationGroup, PropertyAnimation, TransitionTarget};
     use super::sequence::{AnimationSequence, AnimationStep, SequenceState};
-    use crate::compositor::LayerId;
+    use crate::geometry::LayerId;
 
     let counter = Arc::new(AtomicU32::new(0));
     let id = LayerId::new(1);

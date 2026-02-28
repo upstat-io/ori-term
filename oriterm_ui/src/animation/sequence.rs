@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::compositor::layer::LayerId;
+use crate::geometry::LayerId;
 
 use super::group::AnimationGroup;
 

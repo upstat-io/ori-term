@@ -4,7 +4,7 @@
 //! end or are canceled, enabling cleanup (e.g., removing a layer
 //! after a fade-out completes).
 
-use crate::compositor::LayerId;
+use crate::geometry::LayerId;
 
 /// Identifies which layer property is being animated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
