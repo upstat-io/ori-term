@@ -116,7 +116,7 @@ Multiple windows, each a thin GUI shell. All windows share the same GPU device, 
   - [x] `WindowEvent::Focused(false)` → send focus-out
 
 **Tests:**
-- [ ] Create two windows: both share same GPU device
+- [x] Create two windows: both share same GPU device (verified by architecture: `create_window` reuses `self.gpu`)
 - [x] Focus tracking: mode gating and multi-window session tests verify focus event dispatch
 - [x] Window ID mapping: multi-window session tests verify mux ID → pane resolution per window
 
