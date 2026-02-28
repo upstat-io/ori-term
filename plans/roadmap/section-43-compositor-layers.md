@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "43.11"
     title: Tab Sliding Integration
-    status: not-started
+    status: complete
   - id: "43.12"
     title: Smooth Scrolling Integration
     status: not-started
@@ -497,9 +497,9 @@ Tab reorder and close use compositor transforms instead of CPU-side offsets.
 
 **File:** `oriterm/src/app/chrome/mod.rs` (or tab bar widget)
 
-- [ ] Tab reorder on drag-end → set `Transform2D::translate(offset, 0)` on displaced tabs, animate to `identity()`
-- [ ] Replaces `anim_offsets` + `decay_tab_animations` with compositor transforms
-- [ ] Tab close → neighboring tabs slide closed via transform animation
+- [x] Tab reorder on drag-end → set `Transform2D::translate(offset, 0)` on displaced tabs, animate to `identity()`
+- [x] Replaces `anim_offsets` + `decay_tab_animations` with compositor transforms
+- [x] Tab close → neighboring tabs slide closed via transform animation
 
 ---
 
@@ -533,7 +533,7 @@ Grid content as a compositor layer with animated Y transform.
 - [x] AnimationBuilder fluent API works
 - [x] Lerp impls for Rect, Transform2D, Point, Size
 - [x] Overlay fade-in/fade-out working via compositor
-- [ ] Tab sliding working via compositor transforms  <!-- blocked-by:16 -->
+- [x] Tab sliding working via compositor transforms
 - [ ] Smooth scrolling working via compositor transform  <!-- blocked-by:16 -->
 - [ ] Performance: zero overhead when no layers are animating  <!-- blocked-by:16 -->
 - [ ] Forward compatibility verified for Sections 16.3, 24, 27.2, 33.4, 39.5, 42

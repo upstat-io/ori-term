@@ -58,6 +58,9 @@ impl App {
     /// (ConPTY-safe: `process::exit` before dropping panes). Otherwise
     /// pane cleanup happens via `PaneClosed` notifications in `pump_mux_events`.
     pub(super) fn close_tab(&mut self, tab_id: TabId) {
+        // Capture slide animation data before the mutable borrow of mux.
+        let slide_info = self.capture_close_slide_info(tab_id);
+
         let Some(mux) = &mut self.mux else { return };
 
         // Check before closing: if the session has only one tab total,
@@ -73,6 +76,17 @@ impl App {
         }
 
         self.release_tab_width_lock();
+
+        // Sync tab bar immediately so slide animation has correct tab count.
+        self.sync_tab_bar_from_mux();
+
+        // Start slide animation for displaced tabs (skip if last tab).
+        if !is_last {
+            if let Some((closed_idx, tab_width)) = slide_info {
+                self.start_tab_close_slide(closed_idx, tab_width);
+            }
+        }
+
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
         }
@@ -266,20 +280,83 @@ impl App {
     /// Reorder a tab within the active window.
     #[allow(dead_code, reason = "wired to drag-and-drop reorder in Section 17")]
     pub(super) fn move_tab(&mut self, from: usize, to: usize) {
+        // Capture tab width before the mutable mux borrow.
+        let tab_width = self
+            .focused_ctx()
+            .map_or(0.0, |ctx| ctx.tab_bar.layout().tab_width);
+
         let Some(mux) = &mut self.mux else { return };
         let Some(win_id) = self.active_window else {
             return;
         };
+
         if !mux.reorder_tab(win_id, from, to) {
             return;
         }
         self.sync_tab_bar_from_mux();
+
+        // Start slide animation for displaced tabs.
+        self.start_tab_reorder_slide(from, to, tab_width);
+
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
         }
     }
 
     // -- Private helpers --
+
+    /// Captures the tab index and width for a close slide animation.
+    ///
+    /// Returns `None` if the tab or window context cannot be resolved.
+    fn capture_close_slide_info(&self, tab_id: TabId) -> Option<(usize, f32)> {
+        let mux = self.mux.as_ref()?;
+        let win_id = self.active_window?;
+        let win = mux.session().get_window(win_id)?;
+        let idx = win.tabs().iter().position(|&id| id == tab_id)?;
+        let tab_width = self.focused_ctx()?.tab_bar.layout().tab_width;
+        Some((idx, tab_width))
+    }
+
+    /// Starts a close-slide animation and syncs offsets to the widget.
+    fn start_tab_close_slide(&mut self, closed_idx: usize, tab_width: f32) {
+        use oriterm_ui::widgets::tab_bar::slide::SlideContext;
+
+        let now = std::time::Instant::now();
+        let Some(ctx) = self.focused_ctx_mut() else {
+            return;
+        };
+        let tab_count = ctx.tab_bar.tab_count();
+        let mut cx = SlideContext {
+            tree: &mut ctx.layer_tree,
+            animator: &mut ctx.layer_animator,
+            now,
+        };
+        ctx.tab_slide
+            .start_close_slide(closed_idx, tab_width, tab_count, &mut cx);
+        ctx.tab_slide
+            .sync_to_widget(tab_count, &ctx.layer_tree, &mut ctx.tab_bar);
+    }
+
+    /// Starts a reorder-slide animation and syncs offsets to the widget.
+    #[allow(dead_code, reason = "wired to drag-and-drop reorder in Section 17")]
+    fn start_tab_reorder_slide(&mut self, from: usize, to: usize, tab_width: f32) {
+        use oriterm_ui::widgets::tab_bar::slide::SlideContext;
+
+        let now = std::time::Instant::now();
+        let Some(ctx) = self.focused_ctx_mut() else {
+            return;
+        };
+        let tab_count = ctx.tab_bar.tab_count();
+        let mut cx = SlideContext {
+            tree: &mut ctx.layer_tree,
+            animator: &mut ctx.layer_animator,
+            now,
+        };
+        ctx.tab_slide
+            .start_reorder_slide(from, to, tab_width, &mut cx);
+        ctx.tab_slide
+            .sync_to_widget(tab_count, &ctx.layer_tree, &mut ctx.tab_bar);
+    }
 
     /// The active tab ID for the active window.
     fn active_tab_id(&self) -> Option<TabId> {

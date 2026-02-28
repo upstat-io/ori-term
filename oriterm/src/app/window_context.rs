@@ -13,7 +13,7 @@ use oriterm_ui::compositor::layer_tree::LayerTree;
 use oriterm_ui::draw::DrawList;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::overlay::OverlayManager;
-use oriterm_ui::widgets::tab_bar::TabBarWidget;
+use oriterm_ui::widgets::tab_bar::{TabBarWidget, TabSlideState};
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 use super::divider_drag::DividerDragState;
@@ -47,6 +47,7 @@ pub(crate) struct WindowContext {
     // Compositor state.
     pub layer_tree: LayerTree,
     pub layer_animator: LayerAnimator,
+    pub tab_slide: TabSlideState,
 
     // Interaction state.
     pub hovering_divider: Option<DividerLayout>,
@@ -86,6 +87,7 @@ impl WindowContext {
             chrome_draw_list: DrawList::new(),
             layer_tree: LayerTree::new(Rect::default()),
             layer_animator: LayerAnimator::new(),
+            tab_slide: TabSlideState::new(),
             cached_dividers: None,
             hovering_divider: None,
             divider_drag: None,

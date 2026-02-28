@@ -19,11 +19,13 @@ pub mod colors;
 pub mod constants;
 pub mod hit;
 pub mod layout;
+pub mod slide;
 pub mod widget;
 
 pub use colors::TabBarColors;
 pub use hit::{TabBarHit, hit_test};
 pub use layout::TabBarLayout;
+pub use slide::TabSlideState;
 pub use widget::{TabBarWidget, TabEntry};
 
 #[cfg(test)]
