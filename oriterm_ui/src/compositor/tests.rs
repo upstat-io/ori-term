@@ -12,7 +12,7 @@ use crate::animation::group::{AnimationGroup, PropertyAnimation, TransitionTarge
 
 use super::{
     AnimationParams, Layer, LayerAnimator, LayerId, LayerProperties, LayerTree, LayerType,
-    Transform2D,
+    PreemptionStrategy, Transform2D,
 };
 
 // --- Helpers ---
@@ -1268,4 +1268,397 @@ fn builder_group_integrates_with_animator() {
         "opacity should be ~0 at end, got {}",
         props.opacity
     );
+}
+
+// --- Degenerate Transform Applied to Points/Rects ---
+
+#[test]
+fn apply_zero_scale_transform_to_point() {
+    let t = Transform2D::scale(0.0, 0.0);
+    let result = t.apply(Point::new(42.0, 17.0));
+    assert_eq!(result, Point::new(0.0, 0.0));
+}
+
+#[test]
+fn apply_zero_scale_transform_to_rect() {
+    let t = Transform2D::scale(0.0, 0.0);
+    let r = Rect::new(10.0, 20.0, 100.0, 50.0);
+    let result = t.apply_rect(r);
+    // All four corners map to origin, so the AABB has zero area.
+    assert_eq!(result.width(), 0.0);
+    assert_eq!(result.height(), 0.0);
+}
+
+#[test]
+fn apply_near_zero_scale_produces_finite() {
+    let t = Transform2D::scale(f32::MIN_POSITIVE, f32::MIN_POSITIVE);
+    let result = t.apply(Point::new(1.0, 1.0));
+    assert!(result.x.is_finite());
+    assert!(result.y.is_finite());
+}
+
+// --- Transform apply_rect on empty/zero-size rect ---
+
+#[test]
+fn apply_rect_default_empty_rect() {
+    let result = Transform2D::translate(100.0, 200.0).apply_rect(Rect::default());
+    // Default rect is (0,0,0,0). Translate origin → (100,200). Width/height stay 0.
+    assert_eq!(result, Rect::new(100.0, 200.0, 0.0, 0.0));
+}
+
+#[test]
+fn apply_rect_zero_width_height() {
+    let r = Rect::new(50.0, 50.0, 0.0, 0.0);
+    let result = Transform2D::scale(2.0, 3.0).apply_rect(r);
+    assert_eq!(result, Rect::new(100.0, 150.0, 0.0, 0.0));
+}
+
+// --- Transform concat self ---
+
+#[test]
+fn concat_translate_self() {
+    let t = Transform2D::translate(5.0, 10.0);
+    let result = t.concat(&t);
+    assert_eq!(result, Transform2D::translate(10.0, 20.0));
+}
+
+#[test]
+fn concat_scale_self() {
+    let t = Transform2D::scale(2.0, 3.0);
+    let result = t.concat(&t);
+    assert_eq!(result, Transform2D::scale(4.0, 9.0));
+}
+
+#[test]
+fn concat_rotate_self_90() {
+    let t = Transform2D::rotate(FRAC_PI_2);
+    let result = t.concat(&t);
+    // 90° + 90° = 180°.
+    assert_transform_near(result, Transform2D::rotate(PI), 1e-5);
+}
+
+// --- Enqueue Preemption Strategy ---
+
+#[test]
+fn enqueue_strategy_queues_second_animation() {
+    let (mut tree, layer) = make_animator_tree();
+    let mut animator = LayerAnimator::new().with_preemption(PreemptionStrategy::Enqueue);
+    let now = Instant::now();
+
+    // Start first animation.
+    animator.animate_opacity(layer, 0.5, &linear_params(100, &tree, now));
+    assert!(animator.is_animating(layer, AnimatableProperty::Opacity));
+
+    // Start second animation — should be enqueued, not replace.
+    animator.animate_opacity(layer, 0.0, &linear_params(100, &tree, now));
+    assert!(animator.is_any_animating());
+
+    // Tick past first animation's end.
+    let after_first = now + Duration::from_millis(100);
+    animator.tick(&mut tree, after_first);
+    let opacity = tree.get(layer).unwrap().properties().opacity;
+    assert!(
+        (opacity - 0.5).abs() < 0.05,
+        "after first ends, opacity should be ~0.5, got {opacity}"
+    );
+    // Queued animation should now be active.
+    assert!(animator.is_any_animating());
+
+    // Tick past second animation's end.
+    let after_second = after_first + Duration::from_millis(100);
+    let running = animator.tick(&mut tree, after_second);
+    assert!(!running);
+    let opacity = tree.get(layer).unwrap().properties().opacity;
+    assert!(
+        opacity < 0.05,
+        "after second ends, opacity should be ~0.0, got {opacity}"
+    );
+}
+
+// --- LayerAnimator Delegate Callbacks ---
+
+#[test]
+fn delegate_animation_ended_fires() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use crate::animation::AnimationDelegate;
+
+    struct TestDelegate {
+        ended: Arc<AtomicBool>,
+    }
+
+    impl AnimationDelegate for TestDelegate {
+        fn animation_ended(&mut self, _: LayerId, _: AnimatableProperty) {
+            self.ended.store(true, Ordering::Relaxed);
+        }
+        fn animation_canceled(&mut self, _: LayerId, _: AnimatableProperty) {}
+    }
+
+    let (mut tree, layer) = make_animator_tree();
+    let ended = Arc::new(AtomicBool::new(false));
+    let mut animator = LayerAnimator::new().with_delegate(Box::new(TestDelegate {
+        ended: ended.clone(),
+    }));
+    let now = Instant::now();
+
+    animator.animate_opacity(layer, 0.0, &linear_params(100, &tree, now));
+
+    let end = now + Duration::from_millis(100);
+    animator.tick(&mut tree, end);
+    assert!(
+        ended.load(Ordering::Relaxed),
+        "animation_ended should fire when animation completes"
+    );
+}
+
+#[test]
+fn delegate_animation_canceled_fires_on_preemption() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use crate::animation::AnimationDelegate;
+
+    struct TestDelegate {
+        canceled: Arc<AtomicBool>,
+    }
+
+    impl AnimationDelegate for TestDelegate {
+        fn animation_ended(&mut self, _: LayerId, _: AnimatableProperty) {}
+        fn animation_canceled(&mut self, _: LayerId, _: AnimatableProperty) {
+            self.canceled.store(true, Ordering::Relaxed);
+        }
+    }
+
+    let (mut tree, layer) = make_animator_tree();
+    let canceled = Arc::new(AtomicBool::new(false));
+    let mut animator = LayerAnimator::new().with_delegate(Box::new(TestDelegate {
+        canceled: canceled.clone(),
+    }));
+    let now = Instant::now();
+
+    animator.animate_opacity(layer, 0.0, &linear_params(100, &tree, now));
+
+    // Preempt with a new animation (default ReplaceCurrent strategy).
+    let mid = now + Duration::from_millis(50);
+    animator.tick(&mut tree, mid);
+    animator.animate_opacity(layer, 1.0, &linear_params(100, &tree, mid));
+
+    assert!(
+        canceled.load(Ordering::Relaxed),
+        "animation_canceled should fire on preemption"
+    );
+}
+
+// --- Nested Opacity Accumulation Precision ---
+
+#[test]
+fn accumulated_opacity_deep_chain_10_layers() {
+    let mut tree = make_tree();
+    let root = tree.root();
+
+    // Build a chain of 10 layers, each at 0.9 opacity.
+    tree.set_opacity(root, 0.9);
+    let mut current = root;
+    for _ in 0..9 {
+        let child = tree.add(
+            current,
+            LayerType::Group,
+            LayerProperties {
+                opacity: 0.9,
+                ..LayerProperties::default()
+            },
+        );
+        current = child;
+    }
+
+    let acc = tree.accumulated_opacity(current);
+    // 0.9^10 ≈ 0.3486784401.
+    let expected = 0.9_f32.powi(10);
+    assert!(
+        (acc - expected).abs() < 1e-5,
+        "expected 0.9^10 ≈ {expected}, got {acc}"
+    );
+    assert!(acc > 0.0, "deep opacity chain should not underflow to zero");
+}
+
+// --- Layer Reparent Edge Cases ---
+
+#[test]
+fn reparent_to_self_does_not_panic() {
+    let mut tree = make_tree();
+    let root = tree.root();
+    let layer = tree.add(root, LayerType::Textured, LayerProperties::default());
+
+    // Reparent to self should not corrupt the tree.
+    tree.reparent(layer, layer);
+    assert!(tree.get(layer).is_some());
+    assert_eq!(tree.len(), 2);
+}
+
+#[test]
+fn reparent_parent_under_child_does_not_panic() {
+    let mut tree = make_tree();
+    let root = tree.root();
+    let parent = tree.add(root, LayerType::Group, LayerProperties::default());
+    let child = tree.add(parent, LayerType::Textured, LayerProperties::default());
+
+    // Reparent parent under its own child — could create a cycle.
+    // Just verify no panic.
+    tree.reparent(parent, child);
+    assert!(tree.get(parent).is_some());
+    assert!(tree.get(child).is_some());
+}
+
+// --- Stack Above/Below Edge Cases ---
+
+#[test]
+fn stack_above_same_layer_does_not_panic() {
+    let mut tree = make_tree();
+    let root = tree.root();
+    let layer = tree.add(root, LayerType::Textured, LayerProperties::default());
+    let _other = tree.add(root, LayerType::Textured, LayerProperties::default());
+
+    let count_before = tree.get(root).unwrap().children().len();
+    tree.stack_above(layer, layer);
+    let count_after = tree.get(root).unwrap().children().len();
+    assert_eq!(count_before, count_after);
+}
+
+#[test]
+fn stack_above_different_parents_is_noop() {
+    let mut tree = make_tree();
+    let root = tree.root();
+    let group_a = tree.add(root, LayerType::Group, LayerProperties::default());
+    let group_b = tree.add(root, LayerType::Group, LayerProperties::default());
+    let child_a = tree.add(group_a, LayerType::Textured, LayerProperties::default());
+    let child_b = tree.add(group_b, LayerType::Textured, LayerProperties::default());
+
+    // Cross-parent stacking should be a no-op.
+    tree.stack_above(child_a, child_b);
+    assert_eq!(tree.get(child_a).unwrap().parent(), Some(group_a));
+}
+
+#[test]
+fn stack_below_nonexistent_sibling_is_noop() {
+    let mut tree = make_tree();
+    let root = tree.root();
+    let layer = tree.add(root, LayerType::Textured, LayerProperties::default());
+
+    tree.stack_below(layer, LayerId::new(999));
+    assert!(tree.get(layer).is_some());
+}
+
+// --- LayerTree set_* on Nonexistent Layers ---
+
+#[test]
+fn set_opacity_nonexistent_is_noop() {
+    let mut tree = make_tree();
+    tree.set_opacity(LayerId::new(999), 0.5);
+    // No panic; tree unchanged.
+    assert_eq!(tree.len(), 1);
+}
+
+#[test]
+fn set_transform_nonexistent_is_noop() {
+    let mut tree = make_tree();
+    tree.set_transform(LayerId::new(999), Transform2D::translate(10.0, 20.0));
+    assert_eq!(tree.len(), 1);
+}
+
+#[test]
+fn schedule_paint_nonexistent_is_noop() {
+    let mut tree = make_tree();
+    tree.schedule_paint(LayerId::new(999));
+    assert_eq!(tree.len(), 1);
+}
+
+// --- Zero-Duration Animation ---
+
+#[test]
+fn zero_duration_animation_immediately_sets_value() {
+    let (mut tree, layer) = make_animator_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let params = AnimationParams {
+        duration: Duration::ZERO,
+        easing: Easing::Linear,
+        tree: &tree,
+        now,
+    };
+
+    animator.animate_opacity(layer, 0.0, &params);
+
+    let running = animator.tick(&mut tree, now);
+    assert!(!running);
+    let opacity = tree.get(layer).unwrap().properties().opacity;
+    assert!(
+        opacity < 0.01,
+        "zero-duration animation should immediately set target: got {opacity}"
+    );
+}
+
+// --- Animation Group with Empty Animations ---
+
+#[test]
+fn apply_group_empty_animations_is_noop() {
+    let (tree, layer) = make_animator_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let group = AnimationGroup {
+        layer_id: layer,
+        animations: vec![],
+        duration: Duration::from_millis(100),
+        easing: Easing::Linear,
+    };
+
+    animator.apply_group(&group, &tree, now);
+    assert!(!animator.is_any_animating());
+}
+
+// --- Large Tree Traversal ---
+
+#[test]
+fn large_flat_tree_traversal_visits_all() {
+    let mut tree = make_tree();
+    let root = tree.root();
+
+    let mut layer_ids = Vec::with_capacity(50);
+    for _ in 0..50 {
+        let id = tree.add(root, LayerType::Textured, LayerProperties::default());
+        layer_ids.push(id);
+    }
+
+    let order = tree.iter_back_to_front();
+    // 50 children + root = 51.
+    assert_eq!(order.len(), 51);
+
+    for id in &layer_ids {
+        assert!(order.contains(id), "layer {id:?} missing from traversal");
+    }
+    // Root is last (post-order).
+    assert_eq!(*order.last().unwrap(), root);
+}
+
+#[test]
+fn deep_chain_traversal_order() {
+    let mut tree = make_tree();
+    let root = tree.root();
+
+    // Build a deep chain: root → g0 → g1 → ... → g9 → leaf.
+    let mut current = root;
+    for _ in 0..10 {
+        current = tree.add(current, LayerType::Group, LayerProperties::default());
+    }
+    let leaf = tree.add(current, LayerType::Textured, LayerProperties::default());
+
+    let order = tree.iter_back_to_front();
+    // leaf + 10 groups + root = 12.
+    assert_eq!(order.len(), 12);
+    // Leaf (deepest) should be first in back-to-front order.
+    assert_eq!(order[0], leaf);
+    // Root should be last.
+    assert_eq!(*order.last().unwrap(), root);
 }
