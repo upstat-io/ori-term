@@ -188,7 +188,20 @@ impl InProcessMux {
                 .push(MuxNotification::TabLayoutChanged(tab_id));
             ClosePaneResult::PaneRemoved
         } else {
-            // Last pane in the tab — remove the entire tab.
+            // Last pane in the tiled tree — collect floating panes before
+            // removing the tab so their registry entries and notifications
+            // aren't silently dropped.
+            let floating_pane_ids: Vec<PaneId> = self
+                .session
+                .get_tab(tab_id)
+                .map(|tab| tab.floating().panes().iter().map(|fp| fp.pane_id).collect())
+                .unwrap_or_default();
+
+            for &fp_id in &floating_pane_ids {
+                self.pane_registry.unregister(fp_id);
+                self.notifications.push(MuxNotification::PaneClosed(fp_id));
+            }
+
             let window_id = self.session.window_for_tab(tab_id);
             self.session.remove_tab(tab_id);
 
@@ -197,6 +210,7 @@ impl InProcessMux {
 
             if let Some(wid) = window_id {
                 if self.handle_window_after_tab_removal(wid, tab_id) {
+                    self.notifications.push(MuxNotification::LastWindowClosed);
                     return ClosePaneResult::LastWindow;
                 }
             }
@@ -503,7 +517,6 @@ impl InProcessMux {
     /// Close a window and all its tabs/panes.
     ///
     /// Returns the list of `PaneId`s that the caller should drop.
-    #[allow(dead_code, reason = "wired to window lifecycle in Section 32.3")]
     pub(crate) fn close_window(&mut self, window_id: WindowId) -> Vec<PaneId> {
         let tab_ids = match self.session.get_window(window_id) {
             Some(win) => win.tabs().to_vec(),

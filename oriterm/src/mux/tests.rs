@@ -4878,3 +4878,250 @@ fn double_move_tab_round_trip() {
     let tab = mux.session().get_tab(t1).unwrap();
     assert!(tab.tree().contains(p1));
 }
+
+// -- Floating pane cleanup on last tiled pane close --
+
+/// Build a mux with one window, one tab containing 1 tiled pane + N floating panes.
+fn tiled_plus_floating_setup(
+    floating_count: usize,
+) -> (InProcessMux, WindowId, TabId, PaneId, Vec<PaneId>) {
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let tiled = PaneId::from_raw(100);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, tiled);
+    let mut floating_ids = Vec::new();
+    for i in 0..floating_count {
+        let fp_id = PaneId::from_raw(200 + i as u64);
+        floating_ids.push(fp_id);
+        let fp = FloatingPane {
+            pane_id: fp_id,
+            rect: Rect {
+                x: 10.0,
+                y: 10.0,
+                width: 200.0,
+                height: 150.0,
+            },
+            z_order: (i + 1) as u32,
+        };
+        let new_layer = tab.floating().add(fp);
+        tab.set_floating(new_layer);
+    }
+    mux.session.add_tab(tab);
+
+    mux.pane_registry.register(PaneEntry {
+        pane: tiled,
+        tab: tid,
+        domain: did,
+    });
+    for &fp_id in &floating_ids {
+        mux.pane_registry.register(PaneEntry {
+            pane: fp_id,
+            tab: tid,
+            domain: did,
+        });
+    }
+
+    drain(&mut mux);
+    (mux, wid, tid, tiled, floating_ids)
+}
+
+#[test]
+fn close_last_tiled_pane_cleans_up_floating_panes() {
+    let (mut mux, _wid, tid, tiled, floating) = tiled_plus_floating_setup(2);
+
+    let result = mux.close_pane(tiled);
+    assert_eq!(result, ClosePaneResult::LastWindow);
+
+    // All panes should be unregistered.
+    assert!(mux.get_pane_entry(tiled).is_none());
+    for &fp_id in &floating {
+        assert!(
+            mux.get_pane_entry(fp_id).is_none(),
+            "floating pane {fp_id:?} should be unregistered"
+        );
+    }
+    assert!(mux.pane_registry().is_empty());
+
+    // Tab and window should be removed.
+    assert!(mux.session().get_tab(tid).is_none());
+    assert_eq!(mux.session().window_count(), 0);
+}
+
+#[test]
+fn close_last_tiled_pane_emits_pane_closed_for_floating() {
+    let (mut mux, _wid, _tid, tiled, floating) = tiled_plus_floating_setup(2);
+
+    mux.close_pane(tiled);
+
+    let notifs = drain(&mut mux);
+
+    // PaneClosed for the tiled pane.
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::PaneClosed(id) if *id == tiled)),
+        "expected PaneClosed for tiled pane"
+    );
+
+    // PaneClosed for each floating pane.
+    for &fp_id in &floating {
+        assert!(
+            notifs
+                .iter()
+                .any(|n| matches!(n, MuxNotification::PaneClosed(id) if *id == fp_id)),
+            "expected PaneClosed for floating pane {fp_id:?}"
+        );
+    }
+}
+
+#[test]
+fn close_last_tiled_pane_with_floating_emits_last_window_closed_once() {
+    let (mut mux, _wid, _tid, tiled, _floating) = tiled_plus_floating_setup(3);
+
+    let result = mux.close_pane(tiled);
+    assert_eq!(result, ClosePaneResult::LastWindow);
+
+    let notifs = drain(&mut mux);
+    let count = notifs
+        .iter()
+        .filter(|n| matches!(n, MuxNotification::LastWindowClosed))
+        .count();
+    assert_eq!(
+        count, 1,
+        "LastWindowClosed emitted {count} times, expected exactly 1"
+    );
+}
+
+// -- close_pane emits LastWindowClosed internally --
+
+#[test]
+fn close_pane_last_window_emits_notification_internally() {
+    // Verify that close_pane() itself pushes LastWindowClosed — the caller
+    // (event_pump) no longer needs to check the return value for this.
+    let (mut mux, _wid, _tid, pid) = one_pane_setup();
+
+    let result = mux.close_pane(pid);
+    assert_eq!(result, ClosePaneResult::LastWindow);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::LastWindowClosed)),
+        "close_pane should emit LastWindowClosed internally"
+    );
+}
+
+#[test]
+fn pane_exited_last_pane_emits_last_window_closed_exactly_once() {
+    // Regression: when close_pane() pushes LastWindowClosed internally,
+    // the event pump must NOT push a duplicate.
+    let (mut mux, _wid, _tid, pid) = one_pane_setup();
+    let tx = mux.event_tx().clone();
+
+    tx.send(MuxEvent::PaneExited {
+        pane_id: pid,
+        exit_code: 0,
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    let notifs = drain(&mut mux);
+    let count = notifs
+        .iter()
+        .filter(|n| matches!(n, MuxNotification::LastWindowClosed))
+        .count();
+    assert_eq!(
+        count, 1,
+        "LastWindowClosed emitted {count} times via event pump, expected exactly 1"
+    );
+}
+
+#[test]
+fn close_last_tiled_pane_non_last_window_cleans_floating() {
+    // Two windows. Tab in w1 has 1 tiled + 1 floating. Closing the tiled
+    // pane should clean up the floating pane but NOT emit LastWindowClosed.
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+
+    let w1 = WindowId::from_raw(100);
+    let w2 = WindowId::from_raw(200);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(200);
+    let tiled = PaneId::from_raw(100);
+    let floating = PaneId::from_raw(101);
+    let p2 = PaneId::from_raw(200);
+
+    // Window 1: tab with 1 tiled + 1 floating pane.
+    mux.session.add_window(MuxWindow::new(w1));
+    mux.session.get_window_mut(w1).unwrap().add_tab(t1);
+    let mut tab1 = MuxTab::new(t1, tiled);
+    let fp = FloatingPane {
+        pane_id: floating,
+        rect: Rect {
+            x: 10.0,
+            y: 10.0,
+            width: 200.0,
+            height: 150.0,
+        },
+        z_order: 1,
+    };
+    let new_layer = tab1.floating().add(fp);
+    tab1.set_floating(new_layer);
+    mux.session.add_tab(tab1);
+
+    mux.pane_registry.register(PaneEntry {
+        pane: tiled,
+        tab: t1,
+        domain: did,
+    });
+    mux.pane_registry.register(PaneEntry {
+        pane: floating,
+        tab: t1,
+        domain: did,
+    });
+
+    // Window 2: tab with 1 pane.
+    mux.session.add_window(MuxWindow::new(w2));
+    mux.session.get_window_mut(w2).unwrap().add_tab(t2);
+    mux.session.add_tab(MuxTab::new(t2, p2));
+    mux.pane_registry.register(PaneEntry {
+        pane: p2,
+        tab: t2,
+        domain: did,
+    });
+    drain(&mut mux);
+
+    let result = mux.close_pane(tiled);
+    assert_eq!(result, ClosePaneResult::TabClosed { tab_id: t1 });
+
+    // Both tiled and floating panes should be unregistered.
+    assert!(mux.get_pane_entry(tiled).is_none());
+    assert!(mux.get_pane_entry(floating).is_none());
+
+    // Window 2 should be untouched.
+    assert!(mux.get_pane_entry(p2).is_some());
+    assert!(mux.session().get_window(w2).is_some());
+
+    let notifs = drain(&mut mux);
+    assert!(
+        !notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::LastWindowClosed)),
+        "should NOT emit LastWindowClosed — window 2 still exists"
+    );
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::WindowClosed(id) if *id == w1)),
+        "expected WindowClosed(w1)"
+    );
+}
