@@ -57,9 +57,27 @@ pub(super) fn winit_mods_to_ui(state: ModifiersState) -> oriterm_ui::input::Modi
     m
 }
 
+impl App {
+    /// Send a focus-in or focus-out escape sequence to the active pane.
+    ///
+    /// Only sends when the terminal has `FOCUS_IN_OUT` mode enabled (mode 1004).
+    /// Focus-in: `CSI I` (`\x1b[I`), focus-out: `CSI O` (`\x1b[O`).
+    fn send_focus_event(&self, focused: bool) {
+        let Some(pane) = self.active_pane() else {
+            return;
+        };
+        let mode = pane.mode();
+        if mode & oriterm_core::TermMode::FOCUS_IN_OUT.bits() == 0 {
+            return;
+        }
+        let seq = if focused { b"\x1b[I" } else { b"\x1b[O" };
+        pane.write_input(seq);
+    }
+}
+
 impl ApplicationHandler<TermEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if !self.windows.is_empty() {
             return;
         }
         if let Err(e) = self.try_init(event_loop) {
@@ -68,10 +86,14 @@ impl ApplicationHandler<TermEvent> for App {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "event dispatch table — inherently one arm per event variant"
+    )]
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
+        window_id: WindowId,
         event: WindowEvent,
     ) {
         match event {
@@ -101,8 +123,8 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::Ime(ime) => self.handle_ime_event(ime),
 
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                if let Some(window) = &mut self.window {
-                    if window.update_scale_factor(scale_factor) {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    if ctx.window.update_scale_factor(scale_factor) {
                         self.handle_dpi_change(scale_factor);
                         self.update_resize_increments();
                     }
@@ -110,9 +132,22 @@ impl ApplicationHandler<TermEvent> for App {
             }
 
             WindowEvent::Focused(focused) => {
-                if let Some(chrome) = &mut self.chrome {
-                    chrome.set_active(focused);
-                    self.dirty = true;
+                if focused {
+                    // Track which winit window is focused and update the
+                    // mux active_window to match.
+                    self.focused_window_id = Some(window_id);
+                    if let Some(mux_id) = self
+                        .windows
+                        .get(&window_id)
+                        .map(|ctx| ctx.window.mux_window_id())
+                    {
+                        self.active_window = Some(mux_id);
+                    }
+                }
+                self.send_focus_event(focused);
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.chrome.set_active(focused);
+                    ctx.dirty = true;
                 }
             }
 
@@ -139,7 +174,10 @@ impl ApplicationHandler<TermEvent> for App {
                 // Floating pane hover/drag: check before divider and terminal.
                 if self.update_floating_hover(position) {
                     // Only consume if a drag is active; hover just sets cursor.
-                    if self.floating_drag.is_some() {
+                    if self
+                        .focused_ctx()
+                        .is_some_and(|ctx| ctx.floating_drag.is_some())
+                    {
                         return;
                     }
                 }
@@ -194,7 +232,9 @@ impl ApplicationHandler<TermEvent> for App {
             // File drag-and-drop: paste paths into terminal.
             WindowEvent::DroppedFile(path) => {
                 self.paste_dropped_files(&[path]);
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
 
             WindowEvent::ThemeChanged(winit_theme) => {
@@ -216,7 +256,9 @@ impl ApplicationHandler<TermEvent> for App {
                 // doesn't sleep past pending mux events. The dirty flag
                 // is a safety net for events (e.g. `ColorRequest`) that
                 // produce a `MuxWakeup` without a corresponding `MuxEvent`.
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
         }
     }
@@ -228,14 +270,20 @@ impl ApplicationHandler<TermEvent> for App {
 
         // Drive cursor blink timer only when blinking is active.
         if self.blinking_active && self.cursor_blink.update() {
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
         }
 
-        if self.dirty {
+        // Check if any window is dirty and render it.
+        let any_dirty = self.focused_ctx().is_some_and(|ctx| ctx.dirty);
+        if any_dirty {
             // Clear dirty BEFORE rendering so that if handle_redraw sets
             // it back to true (e.g. chrome hover animations in progress),
             // the flag is preserved for the next frame.
-            self.dirty = false;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = false;
+            }
 
             // Render directly instead of deferring via request_redraw().
             // On Windows, request_redraw() maps to WM_PAINT which has

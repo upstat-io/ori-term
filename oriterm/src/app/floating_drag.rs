@@ -27,7 +27,7 @@ const MIN_SIZE_PX: f32 = 100.0;
 
 /// Which edge or corner of a floating pane is being resized.
 #[derive(Debug, Clone, Copy)]
-pub(super) enum ResizeEdge {
+pub(crate) enum ResizeEdge {
     Top,
     Bottom,
     Left,
@@ -40,7 +40,7 @@ pub(super) enum ResizeEdge {
 
 /// Active floating pane drag or resize state.
 #[derive(Debug)]
-pub(super) enum FloatingDragState {
+pub(crate) enum FloatingDragState {
     /// Dragging by the title bar to move the pane.
     Moving {
         pane_id: PaneId,
@@ -136,7 +136,10 @@ impl App {
     /// If a floating drag is active, updates the drag. Returns `true` if
     /// a floating drag is active (caller should skip other mouse handling).
     pub(super) fn update_floating_hover(&mut self, position: PhysicalPosition<f64>) -> bool {
-        if self.floating_drag.is_some() {
+        let has_drag = self
+            .focused_ctx()
+            .is_some_and(|ctx| ctx.floating_drag.is_some());
+        if has_drag {
             self.update_floating_drag(position);
             return true;
         }
@@ -174,8 +177,8 @@ impl App {
                 HitZone::TitleBar => CursorIcon::Grab,
                 HitZone::Interior => CursorIcon::Default,
             };
-            if let Some(window) = &self.window {
-                window.window().set_cursor(icon);
+            if let Some(ctx) = self.focused_ctx() {
+                ctx.window.window().set_cursor(icon);
             }
             true
         } else {
@@ -220,24 +223,28 @@ impl App {
 
         match zone {
             HitZone::TitleBar => {
-                self.floating_drag = Some(FloatingDragState::Moving {
-                    pane_id,
-                    offset_x: px - rect.x,
-                    offset_y: py - rect.y,
-                });
-                if let Some(window) = &self.window {
-                    window.window().set_cursor(CursorIcon::Grabbing);
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.floating_drag = Some(FloatingDragState::Moving {
+                        pane_id,
+                        offset_x: px - rect.x,
+                        offset_y: py - rect.y,
+                    });
+                }
+                if let Some(ctx) = self.focused_ctx() {
+                    ctx.window.window().set_cursor(CursorIcon::Grabbing);
                 }
                 true
             }
             HitZone::Edge(edge) => {
-                self.floating_drag = Some(FloatingDragState::Resizing {
-                    pane_id,
-                    edge,
-                    initial_rect: rect,
-                    origin_x: px,
-                    origin_y: py,
-                });
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.floating_drag = Some(FloatingDragState::Resizing {
+                        pane_id,
+                        edge,
+                        initial_rect: rect,
+                        origin_x: px,
+                        origin_y: py,
+                    });
+                }
                 true
             }
             HitZone::Interior => false,
@@ -249,21 +256,46 @@ impl App {
         let px = position.x as f32;
         let py = position.y as f32;
 
-        let Some(drag) = &self.floating_drag else {
-            return;
-        };
+        // Extract drag data before mutable borrows.
+        let drag_info = self.focused_ctx().and_then(|ctx| {
+            ctx.floating_drag.as_ref().map(|drag| match drag {
+                FloatingDragState::Moving {
+                    pane_id,
+                    offset_x,
+                    offset_y,
+                } => DragInfo::Move {
+                    pane_id: *pane_id,
+                    offset_x: *offset_x,
+                    offset_y: *offset_y,
+                },
+                FloatingDragState::Resizing {
+                    pane_id,
+                    edge,
+                    initial_rect,
+                    origin_x,
+                    origin_y,
+                } => DragInfo::Resize {
+                    pane_id: *pane_id,
+                    edge: *edge,
+                    initial_rect: *initial_rect,
+                    origin_x: *origin_x,
+                    origin_y: *origin_y,
+                },
+            })
+        });
+
+        let Some(drag) = drag_info else { return };
 
         let Some((tab_id, _)) = self.active_pane_context() else {
             return;
         };
 
         match drag {
-            FloatingDragState::Moving {
+            DragInfo::Move {
                 pane_id,
                 offset_x,
                 offset_y,
             } => {
-                let pane_id = *pane_id;
                 let new_x = px - offset_x;
                 let new_y = py - offset_y;
 
@@ -288,18 +320,17 @@ impl App {
 
                 let Some(mux) = &mut self.mux else { return };
                 mux.move_floating_pane(tab_id, pane_id, sx, sy);
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
-            FloatingDragState::Resizing {
+            DragInfo::Resize {
                 pane_id,
                 edge,
-                initial_rect,
+                initial_rect: ir,
                 origin_x,
                 origin_y,
             } => {
-                let pane_id = *pane_id;
-                let edge = *edge;
-                let ir = *initial_rect;
                 let dx = px - origin_x;
                 let dy = py - origin_y;
 
@@ -311,7 +342,9 @@ impl App {
                 } else {
                     mux.resize_floating_pane(tab_id, pane_id, new_rect.width, new_rect.height);
                 }
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
         }
     }
@@ -320,11 +353,15 @@ impl App {
     ///
     /// Returns `true` if a drag was active (caller should consume the release).
     pub(super) fn try_finish_floating_drag(&mut self) -> bool {
-        if self.floating_drag.take().is_some() {
+        let had_drag = self
+            .focused_ctx_mut()
+            .and_then(|ctx| ctx.floating_drag.take())
+            .is_some();
+        if had_drag {
             // Sync PTY dimensions to the new layout.
             self.resize_all_panes();
-            if let Some(window) = &self.window {
-                window.window().set_cursor(CursorIcon::Default);
+            if let Some(ctx) = self.focused_ctx() {
+                ctx.window.window().set_cursor(CursorIcon::Default);
             }
             true
         } else {
@@ -334,10 +371,30 @@ impl App {
 
     /// Cancel any active floating drag.
     pub(super) fn cancel_floating_drag(&mut self) {
-        if self.floating_drag.take().is_some() {
+        let had_drag = self
+            .focused_ctx_mut()
+            .and_then(|ctx| ctx.floating_drag.take())
+            .is_some();
+        if had_drag {
             self.resize_all_panes();
         }
     }
+}
+
+/// Extracted drag info (all `Copy` fields) to break borrow chain.
+enum DragInfo {
+    Move {
+        pane_id: PaneId,
+        offset_x: f32,
+        offset_y: f32,
+    },
+    Resize {
+        pane_id: PaneId,
+        edge: ResizeEdge,
+        initial_rect: Rect,
+        origin_x: f32,
+        origin_y: f32,
+    },
 }
 
 /// Compute the new rect after a resize drag.

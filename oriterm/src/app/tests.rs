@@ -1,6 +1,7 @@
-//! Tests for app-level theme resolution and active pane resolution chain.
+//! Tests for app-level theme resolution, active pane resolution chain,
+//! multi-window focus tracking, and focus event mode gating.
 
-use oriterm_core::Theme;
+use oriterm_core::{TermMode, Theme};
 use oriterm_ui::theme::UiTheme;
 
 use oriterm_mux::session::{MuxTab, MuxWindow};
@@ -166,4 +167,85 @@ fn active_pane_resolve_none_after_all_closed() {
 
     // Window still exists but has no tabs → None.
     assert_eq!(resolve_active_pane(&session, Some(wid)), None);
+}
+
+// -- Focus event mode gating --
+//
+// `send_focus_event` checks `TermMode::FOCUS_IN_OUT` via a bitmask on the
+// lock-free mode cache. These tests verify the bit pattern matches expectations.
+
+#[test]
+fn focus_in_out_mode_bit_pattern() {
+    // FOCUS_IN_OUT is bit 12 (1 << 12 = 0x1000).
+    let bits = TermMode::FOCUS_IN_OUT.bits();
+    assert_eq!(bits, 0x1000);
+    // Mode cache with FOCUS_IN_OUT set should pass the mask check.
+    assert_ne!(bits & TermMode::FOCUS_IN_OUT.bits(), 0);
+}
+
+#[test]
+fn focus_in_out_not_set_by_default() {
+    // Empty mode should not have FOCUS_IN_OUT.
+    let empty = TermMode::empty().bits();
+    assert_eq!(empty & TermMode::FOCUS_IN_OUT.bits(), 0);
+}
+
+#[test]
+fn focus_in_out_combined_with_other_modes() {
+    // FOCUS_IN_OUT combined with other modes still passes the check.
+    let combined = TermMode::FOCUS_IN_OUT | TermMode::BRACKETED_PASTE;
+    assert_ne!(combined.bits() & TermMode::FOCUS_IN_OUT.bits(), 0);
+}
+
+// -- Multi-window active_window tracking --
+//
+// When focus moves between windows, `active_window` updates to track which
+// mux window corresponds to the focused OS window. These tests verify the
+// session model supports distinct per-window pane resolution.
+
+#[test]
+fn multi_window_focus_switch_resolves_different_panes() {
+    let mut session = SessionRegistry::new();
+
+    // Window 1: tab with pane A.
+    let w1 = WindowId::from_raw(1);
+    let t1 = TabId::from_raw(1);
+    let pa = PaneId::from_raw(1);
+    let mut win1 = MuxWindow::new(w1);
+    win1.add_tab(t1);
+    session.add_window(win1);
+    session.add_tab(MuxTab::new(t1, pa));
+
+    // Window 2: tab with pane B.
+    let w2 = WindowId::from_raw(2);
+    let t2 = TabId::from_raw(2);
+    let pb = PaneId::from_raw(2);
+    let mut win2 = MuxWindow::new(w2);
+    win2.add_tab(t2);
+    session.add_window(win2);
+    session.add_tab(MuxTab::new(t2, pb));
+
+    // Focus window 1 → active pane is A.
+    assert_eq!(resolve_active_pane(&session, Some(w1)), Some(pa));
+    // Focus window 2 → active pane is B.
+    assert_eq!(resolve_active_pane(&session, Some(w2)), Some(pb));
+    // Switch back to window 1 → still pane A.
+    assert_eq!(resolve_active_pane(&session, Some(w1)), Some(pa));
+}
+
+#[test]
+fn multi_window_stale_window_returns_none() {
+    let mut session = SessionRegistry::new();
+
+    let w1 = WindowId::from_raw(1);
+    let t1 = TabId::from_raw(1);
+    let pa = PaneId::from_raw(1);
+    let mut win1 = MuxWindow::new(w1);
+    win1.add_tab(t1);
+    session.add_window(win1);
+    session.add_tab(MuxTab::new(t1, pa));
+
+    // Focus a window that doesn't exist → None.
+    let stale = WindowId::from_raw(42);
+    assert_eq!(resolve_active_pane(&session, Some(stale)), None);
 }

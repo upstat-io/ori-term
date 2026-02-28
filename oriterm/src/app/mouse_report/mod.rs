@@ -406,7 +406,9 @@ impl App {
                     pane.write_input(bytes);
                 }
             }
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
             return;
         }
 
@@ -418,7 +420,9 @@ impl App {
             for _ in 0..lines {
                 pane.write_input(arrow);
             }
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
             return;
         }
 
@@ -429,7 +433,9 @@ impl App {
             -(lines as isize)
         };
         pane.scroll_display(scroll_delta);
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     /// Convert the current cursor position to a grid cell.
@@ -444,9 +450,10 @@ impl App {
     /// the nearest edge cell. Returns `None` only if the grid widget or
     /// renderer is missing.
     fn mouse_cell_clamped(&self) -> Option<(usize, usize)> {
-        let (grid, renderer) = (self.terminal_grid.as_ref()?, self.renderer.as_ref()?);
+        let wctx = self.focused_ctx()?;
+        let renderer = self.renderer.as_ref()?;
         let ctx = GridCtx {
-            widget: grid,
+            widget: &wctx.terminal_grid,
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };
@@ -482,9 +489,10 @@ impl App {
 
     /// Convert a pixel position to a grid cell, using grid context.
     fn pixel_to_cell(&self, pos: PhysicalPosition<f64>) -> Option<(usize, usize)> {
-        let (grid, renderer) = (self.terminal_grid.as_ref()?, self.renderer.as_ref()?);
+        let wctx = self.focused_ctx()?;
+        let renderer = self.renderer.as_ref()?;
         let ctx = GridCtx {
-            widget: grid,
+            widget: &wctx.terminal_grid,
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };

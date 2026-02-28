@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 
-use oriterm_ui::widgets::tab_bar::{TabBarHit, TabBarWidget};
+use oriterm_ui::widgets::tab_bar::TabBarHit;
 
 use super::App;
 
@@ -45,9 +45,8 @@ impl App {
 
         // Use the hover hit already computed by update_tab_bar_hover.
         let hit = self
-            .tab_bar
-            .as_ref()
-            .map_or(TabBarHit::None, TabBarWidget::hover_hit);
+            .focused_ctx()
+            .map_or(TabBarHit::None, |ctx| ctx.tab_bar.hover_hit());
 
         match hit {
             TabBarHit::None => false,
@@ -61,8 +60,8 @@ impl App {
             TabBarHit::CloseTab(idx) => {
                 // Acquire width lock for stable close-button targeting
                 // during rapid close clicks.
-                if let Some(tab_bar) = &self.tab_bar {
-                    let w = tab_bar.layout().tab_width;
+                if let Some(ctx) = self.focused_ctx() {
+                    let w = ctx.tab_bar.layout().tab_width;
                     self.acquire_tab_width_lock(w);
                 }
                 self.close_tab_at_index(idx);
@@ -110,19 +109,24 @@ impl App {
     fn handle_tab_bar_drag_area(&mut self) {
         let now = Instant::now();
         let is_double = self
-            .last_drag_area_press
+            .focused_ctx()
+            .and_then(|ctx| ctx.last_drag_area_press)
             .is_some_and(|t| now.duration_since(t) < DOUBLE_CLICK_THRESHOLD);
-        self.last_drag_area_press = Some(now);
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.last_drag_area_press = Some(now);
+        }
 
         if is_double {
             // Double-click: toggle maximize. Reset timestamp to prevent
             // a third click from triggering another toggle.
-            self.last_drag_area_press = None;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.last_drag_area_press = None;
+            }
             self.toggle_maximize();
         } else {
             // Single click: initiate native window drag.
-            if let Some(window) = &self.window {
-                let _ = window.window().drag_window();
+            if let Some(ctx) = self.focused_ctx() {
+                let _ = ctx.window.window().drag_window();
             }
         }
     }

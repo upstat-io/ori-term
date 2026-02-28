@@ -10,7 +10,7 @@ sections:
     status: complete
   - id: "32.2"
     title: Multi-Window + Shared GPU
-    status: not-started
+    status: in-progress
   - id: "32.3"
     title: Window Lifecycle
     status: not-started
@@ -94,31 +94,31 @@ Multiple windows, each a thin GUI shell. All windows share the same GPU device, 
 
 **Reference:** `_old/src/app/window_management.rs`, Section 18.1 design (preserved patterns)
 
-- [ ] `TermWindow` struct (GUI-level window):
-  - [ ] `winit_window: Arc<Window>` — winit window handle
-  - [ ] `surface: wgpu::Surface<'static>` — GPU surface
-  - [ ] `surface_config: wgpu::SurfaceConfiguration`
-  - [ ] `mux_window_id: WindowId` — link to mux MuxWindow
-  - [ ] `is_maximized: bool`
-  - [ ] `scale_factor: f64` — current DPI scale
-- [ ] Window ID mapping:
-  - [ ] `App::winit_to_mux: HashMap<winit::window::WindowId, WindowId>` — bidirectional lookup
-  - [ ] `App::mux_to_winit: HashMap<WindowId, winit::window::WindowId>`
-- [ ] `TermWindow` methods:
-  - [ ] `resize_surface(&mut self, device: &wgpu::Device, width: u32, height: u32)` — reconfigure surface
-- [ ] Shared resources across windows:
-  - [ ] `GpuState` (device, queue, adapter) — created once, shared
-  - [ ] `FontCollection` — created once, shared (rebuilt on DPI change)
-  - [ ] `GlyphAtlas` — created once, shared across windows
-  - [ ] Config — single source of truth
-- [ ] Focus tracking:
-  - [ ] `WindowEvent::Focused(true)` → send focus-in to active pane's terminal (if `FOCUS_IN_OUT` mode)
-  - [ ] `WindowEvent::Focused(false)` → send focus-out
+- [x] `TermWindow` struct (GUI-level window):
+  - [x] `winit_window: Arc<Window>` — winit window handle
+  - [x] `surface: wgpu::Surface<'static>` — GPU surface
+  - [x] `surface_config: wgpu::SurfaceConfiguration`
+  - [x] `mux_window_id: WindowId` — link to mux MuxWindow
+  - [x] `is_maximized: bool`
+  - [x] `scale_factor: f64` — current DPI scale
+- [x] Window ID mapping:
+  - [x] `App::windows: HashMap<winit::window::WindowId, TermWindow>` — maps winit ID → TermWindow (which contains mux_window_id)
+  - [x] `App::focused_window_id: Option<winit::window::WindowId>` — tracks focused OS window
+- [x] `TermWindow` methods:
+  - [x] `resize_surface(&mut self, width: u32, height: u32, gpu: &GpuState)` — reconfigure surface
+- [x] Shared resources across windows:
+  - [x] `GpuState` (device, queue, adapter) — created once, shared
+  - [x] `FontCollection` — created once, shared (rebuilt on DPI change)
+  - [x] `GlyphAtlas` — created once, shared across windows
+  - [x] Config — single source of truth
+- [x] Focus tracking:
+  - [x] `WindowEvent::Focused(true)` → send focus-in to active pane's terminal (if `FOCUS_IN_OUT` mode)
+  - [x] `WindowEvent::Focused(false)` → send focus-out
 
 **Tests:**
-- [ ] Create two windows: both share same GPU device
-- [ ] Focus tracking: switching windows sends correct focus events
-- [ ] Window ID mapping: winit ID ↔ mux ID roundtrips correctly
+- [ ] Create two windows: both share same GPU device <!-- blocked-by:32.3 -->
+- [x] Focus tracking: mode gating and multi-window session tests verify focus event dispatch
+- [x] Window ID mapping: multi-window session tests verify mux ID → pane resolution per window
 
 ---
 

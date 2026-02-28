@@ -101,16 +101,18 @@ impl App {
         }
 
         // Modal overlay: intercept keyboard events before anything else.
-        if !self.overlays.is_empty() && event.state == ElementState::Pressed {
+        let has_overlays = self
+            .focused_ctx()
+            .is_some_and(|ctx| !ctx.overlays.is_empty());
+        if has_overlays && event.state == ElementState::Pressed {
             if let Some(key) = winit_key_to_ui_key(&event.logical_key) {
                 let ui_event = oriterm_ui::input::KeyEvent {
                     key,
                     modifiers: super::winit_mods_to_ui(self.modifiers),
                 };
                 let scale = self
-                    .window
-                    .as_ref()
-                    .map_or(1.0, |w| w.scale_factor().factor() as f32);
+                    .focused_ctx()
+                    .map_or(1.0, |ctx| ctx.window.scale_factor().factor() as f32);
                 let measurer = self
                     .renderer
                     .as_ref()
@@ -119,9 +121,18 @@ impl App {
                     Some(m) => m,
                     None => return,
                 };
-                let result =
-                    self.overlays
-                        .process_key_event(ui_event, measurer, &self.ui_theme, None);
+                // Borrow split: inline window lookup borrows only self.windows,
+                // leaving self.renderer and self.ui_theme available as disjoint borrows.
+                let result = {
+                    let Some(ctx) = self
+                        .focused_window_id
+                        .and_then(|id| self.windows.get_mut(&id))
+                    else {
+                        return;
+                    };
+                    ctx.overlays
+                        .process_key_event(ui_event, measurer, &self.ui_theme, None)
+                };
                 self.handle_overlay_result(result);
             }
             return;
@@ -147,13 +158,17 @@ impl App {
                         );
                         match action {
                             mark_mode::MarkAction::Handled => {
-                                self.dirty = true;
+                                if let Some(ctx) = self.focused_ctx_mut() {
+                                    ctx.dirty = true;
+                                }
                             }
                             mark_mode::MarkAction::Exit { copy } => {
                                 if copy {
                                     self.copy_selection();
                                 }
-                                self.dirty = true;
+                                if let Some(ctx) = self.focused_ctx_mut() {
+                                    ctx.dirty = true;
+                                }
                             }
                             mark_mode::MarkAction::Ignored => {}
                         }
@@ -210,7 +225,9 @@ impl App {
             pane.scroll_to_bottom();
             pane.write_input(&bytes);
             self.cursor_blink.reset();
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
         }
     }
 
@@ -226,19 +243,25 @@ impl App {
         match action {
             Action::Copy => {
                 self.copy_selection();
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
                 true
             }
             Action::Paste | Action::SmartPaste => {
                 self.paste_from_clipboard();
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
                 true
             }
             Action::SmartCopy => {
                 let has_sel = self.active_pane().is_some_and(|p| p.selection().is_some());
                 if has_sel {
                     self.copy_selection();
-                    self.dirty = true;
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.dirty = true;
+                    }
                     true
                 } else {
                     false
@@ -250,14 +273,18 @@ impl App {
                 if let Some(pane) = self.active_pane() {
                     pane.scroll_display(isize::MAX);
                 }
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
                 true
             }
             Action::ScrollToBottom => {
                 if let Some(pane) = self.active_pane() {
                     pane.scroll_to_bottom();
                 }
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
                 true
             }
             Action::ReloadConfig => {
@@ -265,16 +292,18 @@ impl App {
                 true
             }
             Action::ToggleFullscreen => {
-                if let Some(window) = &self.window {
-                    let is_fs = window.is_fullscreen();
-                    window.set_fullscreen(!is_fs);
+                if let Some(ctx) = self.focused_ctx() {
+                    let is_fs = ctx.window.is_fullscreen();
+                    ctx.window.set_fullscreen(!is_fs);
                 }
                 true
             }
             Action::EnterMarkMode => {
                 if let Some(pane) = self.active_pane_mut() {
                     pane.enter_mark_mode();
-                    self.dirty = true;
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
                 }
                 true
             }
@@ -284,7 +313,9 @@ impl App {
                     pane.write_input(text.as_bytes());
                     self.cursor_blink.reset();
                 }
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
                 true
             }
             Action::OpenSearch => {
@@ -359,17 +390,25 @@ impl App {
             drop(term);
             pane.scroll_display(if up { lines } else { -lines });
         }
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
         true
     }
 
     /// Dispatch an IME event: preedit, commit, enabled, or disabled.
     pub(super) fn handle_ime_event(&mut self, ime: winit::event::Ime) {
         match self.ime.handle_event(ime) {
-            ImeEffect::Redraw => self.dirty = true,
+            ImeEffect::Redraw => {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+            }
             ImeEffect::UpdateCursorArea => {
                 self.update_ime_cursor_area();
-                self.dirty = true;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
             ImeEffect::Commit(text) => {
                 self.handle_ime_commit(&text);
@@ -382,20 +421,19 @@ impl App {
     /// Reads cursor position from the extracted frame rather than re-locking
     /// the terminal — this is both cheaper (no mutex acquisition) and more
     /// correct (matches the visual frame just rendered). Before the first
-    /// frame, `self.frame` is `None` and we skip the update.
+    /// frame, `ctx.frame` is `None` and we skip the update.
     ///
     /// Uses 2× cell width for the exclusion zone (Alacritty convention —
     /// avoids tight exclusion on right edge).
     pub(super) fn update_ime_cursor_area(&self) {
-        let Some(window) = &self.window else { return };
-        let Some(frame) = &self.frame else { return };
+        let Some(ctx) = self.focused_ctx() else {
+            return;
+        };
+        let Some(frame) = &ctx.frame else { return };
         let Some(renderer) = &self.renderer else {
             return;
         };
-        let Some(grid_widget) = &self.terminal_grid else {
-            return;
-        };
-        let Some(bounds) = grid_widget.bounds() else {
+        let Some(bounds) = ctx.terminal_grid.bounds() else {
             return;
         };
 
@@ -411,7 +449,7 @@ impl App {
         let w = f64::from(metrics.width) * 2.0;
         let h = f64::from(metrics.height);
 
-        window.window().set_ime_cursor_area(
+        ctx.window.window().set_ime_cursor_area(
             winit::dpi::PhysicalPosition::new(x, y),
             winit::dpi::PhysicalSize::new(w, h),
         );
@@ -426,7 +464,9 @@ impl App {
             pane.scroll_to_bottom();
             pane.write_input(text.as_bytes());
             self.cursor_blink.reset();
-            self.dirty = true;
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
         }
     }
 
@@ -438,7 +478,9 @@ impl App {
                 Some(WidgetAction::DismissOverlay(_)) => self.cancel_paste(),
                 _ => {
                     if response.response.is_handled() {
-                        self.dirty = true;
+                        if let Some(ctx) = self.focused_ctx_mut() {
+                            ctx.dirty = true;
+                        }
                     }
                 }
             },

@@ -214,27 +214,36 @@ impl App {
             .with_cancel_label("Cancel")
             .with_default_button(DialogButton::Ok);
 
-        self.pending_paste = Some(text);
-        let viewport = self.overlays.viewport();
-        self.overlays
-            .push_modal(Box::new(dialog), viewport, Placement::Center);
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pending_paste = Some(text);
+            let viewport = ctx.overlays.viewport();
+            ctx.overlays
+                .push_modal(Box::new(dialog), viewport, Placement::Center);
+            ctx.dirty = true;
+        }
     }
 
     /// Confirm a pending paste: write the stored text to the PTY.
     pub(super) fn confirm_paste(&mut self) {
-        if let Some(text) = self.pending_paste.take() {
+        let text = self
+            .focused_ctx_mut()
+            .and_then(|ctx| ctx.pending_paste.take());
+        if let Some(text) = text {
             self.write_paste_to_pty(&text);
         }
-        self.overlays.clear_all();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.overlays.clear_all();
+            ctx.dirty = true;
+        }
     }
 
     /// Cancel a pending paste: discard the stored text and dismiss the dialog.
     pub(super) fn cancel_paste(&mut self) {
-        self.pending_paste = None;
-        self.overlays.clear_all();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pending_paste = None;
+            ctx.overlays.clear_all();
+            ctx.dirty = true;
+        }
     }
 }
 

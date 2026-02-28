@@ -46,19 +46,17 @@ impl App {
         let new_theme = super::resolve_ui_theme(&self.config);
         if new_theme != self.ui_theme {
             self.ui_theme = new_theme;
-            if let Some(chrome) = &mut self.chrome {
-                chrome.apply_theme(&self.ui_theme);
-            }
-            if let Some(tab_bar) = &mut self.tab_bar {
-                tab_bar.apply_theme(&self.ui_theme);
+            for ctx in self.windows.values_mut() {
+                ctx.chrome.apply_theme(&self.ui_theme);
+                ctx.tab_bar.apply_theme(&self.ui_theme);
             }
         }
 
-        // Invalidate pane render cache (font, palette, or opacity may have changed).
-        self.pane_cache.invalidate_all();
-
-        // Mark everything dirty for redraw.
-        self.dirty = true;
+        // Invalidate pane render cache and mark dirty for redraw.
+        for ctx in self.windows.values_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.dirty = true;
+        }
 
         log::info!("config reload: applied successfully");
     }
@@ -83,9 +81,11 @@ impl App {
 
         // Scoped to release renderer/gpu/window borrows before sync_grid_layout.
         let (w, h) = {
-            let (Some(renderer), Some(gpu), Some(window)) =
-                (&mut self.renderer, &self.gpu, &self.window)
-            else {
+            let (Some(renderer), Some(gpu), Some(ctx)) = (
+                &mut self.renderer,
+                &self.gpu,
+                self.focused_window_id.and_then(|id| self.windows.get(&id)),
+            ) else {
                 return;
             };
 
@@ -108,7 +108,7 @@ impl App {
             let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
 
             // Resolve hinting and subpixel mode: config overrides auto-detection.
-            let scale = window.scale_factor().factor();
+            let scale = ctx.window.scale_factor().factor();
             let hinting = resolve_hinting(&new.font, scale);
             let format = resolve_subpixel_mode(&new.font, scale).glyph_format();
 
@@ -140,7 +140,7 @@ impl App {
                 cell.height,
             );
 
-            let size = window.size_px();
+            let size = ctx.window.size_px();
             renderer.replace_font_collection(collection, gpu);
             size
         };
@@ -211,11 +211,13 @@ impl App {
             return;
         }
 
-        let Some(window) = &self.window else { return };
+        let Some(ctx) = self.focused_ctx() else {
+            return;
+        };
         let opacity = new.window.effective_opacity();
         let blur = new.window.blur && opacity < 1.0;
 
-        window.set_transparency(opacity, blur);
+        ctx.window.set_transparency(opacity, blur);
 
         log::info!("config reload: window opacity={opacity:.2}, blur={blur}",);
     }

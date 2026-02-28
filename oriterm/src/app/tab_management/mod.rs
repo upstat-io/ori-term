@@ -47,7 +47,9 @@ impl App {
             }
         }
         self.release_tab_width_lock();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     /// Close a tab and all its panes.
@@ -71,7 +73,9 @@ impl App {
         }
 
         self.release_tab_width_lock();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     /// Close the currently active tab.
@@ -126,11 +130,13 @@ impl App {
             pane.clear_bell();
         }
 
-        self.pane_cache.invalidate_all();
-        self.cached_dividers = None;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.cached_dividers = None;
+            ctx.dirty = true;
+        }
         self.resize_all_panes();
         self.sync_tab_bar_from_mux();
-        self.dirty = true;
     }
 
     /// Switch to a specific tab by its ID.
@@ -147,11 +153,13 @@ impl App {
             pane.clear_bell();
         }
 
-        self.pane_cache.invalidate_all();
-        self.cached_dividers = None;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.cached_dividers = None;
+            ctx.dirty = true;
+        }
         self.resize_all_panes();
         self.sync_tab_bar_from_mux();
-        self.dirty = true;
     }
 
     /// Switch to a tab by its index in the active window.
@@ -185,7 +193,9 @@ impl App {
             return;
         }
         self.sync_tab_bar_from_mux();
-        self.dirty = true;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     // -- Private helpers --
@@ -199,9 +209,12 @@ impl App {
 
     /// Current grid dimensions (rows, cols) from the grid widget.
     fn current_grid_dims(&self) -> (u16, u16) {
-        self.terminal_grid
-            .as_ref()
-            .map_or((24, 80), |g| (g.rows() as u16, g.cols() as u16))
+        self.focused_ctx().map_or((24, 80), |ctx| {
+            (
+                ctx.terminal_grid.rows() as u16,
+                ctx.terminal_grid.cols() as u16,
+            )
+        })
     }
 
     /// Rebuild the tab bar entries from the mux's window state.
@@ -239,9 +252,9 @@ impl App {
             })
             .collect();
 
-        if let Some(tab_bar) = &mut self.tab_bar {
-            tab_bar.set_tabs(entries);
-            tab_bar.set_active_index(active_idx);
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.tab_bar.set_tabs(entries);
+            ctx.tab_bar.set_active_index(active_idx);
         }
     }
 }

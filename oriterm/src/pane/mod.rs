@@ -117,7 +117,6 @@ pub(crate) struct Pane {
     /// Coalesces wakeup events from the reader thread.
     wakeup_pending: Arc<AtomicBool>,
     /// Lock-free cache of `TermMode::bits()` for hot-path queries.
-    #[allow(dead_code, reason = "read when mode-cache hot-path is wired to App")]
     mode_cache: Arc<AtomicU32>,
     /// Last known window title (from OSC 0/2).
     title: String,
@@ -193,19 +192,8 @@ impl Pane {
     ///
     /// Updated by the reader thread after each VTE chunk; read by the main
     /// thread for mouse reporting and cursor style without locking the terminal.
-    #[allow(dead_code, reason = "used when mode-cache hot-path is wired to App")]
     pub(crate) fn mode(&self) -> u32 {
         self.mode_cache.load(Ordering::Acquire)
-    }
-
-    /// Refresh the mode cache from the terminal (must hold terminal lock).
-    ///
-    /// Called by the main thread under the terminal lock when processing
-    /// wakeup events.
-    #[allow(dead_code, reason = "used when mode-cache hot-path is wired to App")]
-    pub(crate) fn refresh_mode_cache(&self) {
-        let term = self.terminal.lock();
-        self.mode_cache.store(term.mode().bits(), Ordering::Release);
     }
 
     // -- Terminal access --

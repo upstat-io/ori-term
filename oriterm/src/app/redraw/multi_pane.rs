@@ -8,8 +8,6 @@
 use oriterm_core::{Column, CursorShape, TermMode};
 use oriterm_mux::layout::{DividerLayout, LayoutDescriptor, PaneLayout, Rect, compute_all};
 
-use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
-
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 use crate::gpu::{
@@ -37,8 +35,8 @@ impl App {
             return None;
         }
 
-        let grid_widget = self.terminal_grid.as_ref()?;
-        let bounds = grid_widget.bounds()?;
+        let ctx = self.focused_ctx()?;
+        let bounds = ctx.terminal_grid.bounds()?;
         let renderer = self.renderer.as_ref()?;
         let cell = renderer.cell_metrics();
 
@@ -114,19 +112,22 @@ impl App {
                 log::warn!("redraw multi: no renderer");
                 return;
             };
-            let Some(window) = self.window.as_ref() else {
+            let Some(ctx) = self
+                .focused_window_id
+                .and_then(|id| self.windows.get_mut(&id))
+            else {
                 log::warn!("redraw multi: no window");
                 return;
             };
 
-            if !window.has_surface_area() {
+            if !ctx.window.has_surface_area() {
                 return;
             }
 
-            let (w, h) = window.size_px();
+            let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
-            let bg = self
+            let bg = ctx
                 .frame
                 .as_ref()
                 .map_or(oriterm_core::Rgb { r: 0, g: 0, b: 0 }, |f| {
@@ -154,7 +155,7 @@ impl App {
                 // Focused pane always re-prepares (cursor blink, hover change
                 // per-frame). Unfocused panes only re-prepare on new PTY output
                 // or missing cache entry.
-                let is_cached = self.pane_cache.is_cached(pane_id, layout);
+                let is_cached = ctx.pane_cache.is_cached(pane_id, layout);
                 let dirty = layout.is_focused || pane.grid_dirty() || !is_cached;
 
                 if dirty {
@@ -165,7 +166,7 @@ impl App {
                         layout.pixel_rect.height as u32,
                     );
 
-                    let frame = match &mut self.frame {
+                    let frame = match &mut ctx.frame {
                         Some(existing) => {
                             extract_frame_into(pane.terminal(), existing, pane_viewport, cell);
                             existing
@@ -202,16 +203,15 @@ impl App {
                     frame.search = pane.search().map(|s| FrameSearch::new(s, base));
 
                     if layout.is_focused {
-                        if let Some(grid_widget) = self.terminal_grid.as_ref() {
-                            let ctx = GridCtx {
-                                widget: grid_widget,
-                                cell,
-                                word_delimiters: &self.config.behavior.word_delimiters,
-                            };
-                            frame.hovered_cell =
-                                mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &ctx)
-                                    .map(|(col, line)| (line, col));
-                        }
+                        let cell_metrics = renderer.cell_metrics();
+                        let grid_ctx = GridCtx {
+                            widget: &ctx.terminal_grid,
+                            cell: cell_metrics,
+                            word_delimiters: &self.config.behavior.word_delimiters,
+                        };
+                        frame.hovered_cell =
+                            mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &grid_ctx)
+                                .map(|(col, line)| (line, col));
                         frame.hovered_url_segments = std::mem::take(&mut url_segments);
                     } else {
                         frame.hovered_cell = None;
@@ -237,19 +237,24 @@ impl App {
                     let pane_cursor_visible = cursor_blink_visible && layout.is_focused;
 
                     // Prepare into per-pane cache, then merge into aggregate frame.
-                    let renderer = self.renderer.as_mut().expect("renderer checked");
-                    let cache = &mut self.pane_cache;
-                    let cached = cache.get_or_prepare(pane_id, layout, true, |target| {
-                        renderer.prepare_pane_into(frame, gpu, origin, pane_cursor_visible, target);
-                    });
+                    let cached = ctx
+                        .pane_cache
+                        .get_or_prepare(pane_id, layout, true, |target| {
+                            renderer.prepare_pane_into(
+                                frame,
+                                gpu,
+                                origin,
+                                pane_cursor_visible,
+                                target,
+                            );
+                        });
                     renderer.prepared.extend_from(cached);
                 } else {
                     // Cache hit — merge cached instances without extraction.
-                    let cached = self
+                    let cached = ctx
                         .pane_cache
                         .get_cached(pane_id)
                         .expect("is_cached verified");
-                    let renderer = self.renderer.as_mut().expect("renderer checked");
                     renderer.prepared.extend_from(cached);
                 }
 
@@ -263,7 +268,7 @@ impl App {
             // layout order.
             if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
                 if let Some(pane) = self.panes.get(&focused.pane_id) {
-                    if let Some(frame) = self.frame.as_mut() {
+                    if let Some(frame) = ctx.frame.as_mut() {
                         frame.search = pane.search().map(|s| FrameSearch::new(s, focused_base));
                     }
                 }
@@ -288,64 +293,57 @@ impl App {
             }
 
             // Chrome, tab bar, overlays, search bar (shared with single-pane path).
-            let scale = window.scale_factor().factor() as f32;
+            let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
             let chrome_animating = Self::draw_chrome(
-                self.chrome.as_ref(),
+                Some(&ctx.chrome),
                 renderer,
-                &mut self.chrome_draw_list,
+                &mut ctx.chrome_draw_list,
                 logical_w,
                 scale,
                 &self.ui_theme,
             );
             if chrome_animating {
-                self.dirty = true;
+                ctx.dirty = true;
             }
 
-            let caption_h = self
-                .chrome
-                .as_ref()
-                .map_or(0.0, WindowChromeWidget::caption_height);
+            let caption_h = ctx.chrome.caption_height();
             if Self::draw_tab_bar(
-                self.tab_bar.as_ref(),
+                Some(&ctx.tab_bar),
                 renderer,
-                &mut self.chrome_draw_list,
+                &mut ctx.chrome_draw_list,
                 logical_w as f32,
                 caption_h,
                 scale,
                 gpu,
                 &self.ui_theme,
             ) {
-                self.dirty = true;
+                ctx.dirty = true;
             }
 
             let logical_size = (logical_w as f32, h as f32 / scale);
             if Self::draw_overlays(
-                &mut self.overlays,
+                &mut ctx.overlays,
                 renderer,
-                &mut self.chrome_draw_list,
+                &mut ctx.chrome_draw_list,
                 logical_size,
                 scale,
                 gpu,
                 &self.ui_theme,
             ) {
-                self.dirty = true;
+                ctx.dirty = true;
             }
 
             // Search bar from focused pane.
-            if let Some(frame) = self.frame.as_ref() {
+            if let Some(frame) = ctx.frame.as_ref() {
                 if let Some(search) = frame.search.as_ref() {
-                    let chrome_h = caption_h
-                        + if self.tab_bar.is_some() {
-                            oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
-                        } else {
-                            0.0
-                        };
+                    let chrome_h =
+                        caption_h + oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
                     Self::draw_search_bar(
                         search,
                         renderer,
-                        &mut self.chrome_draw_list,
-                        &mut self.search_bar_buf,
+                        &mut ctx.chrome_draw_list,
+                        &mut ctx.search_bar_buf,
                         logical_w as f32,
                         chrome_h,
                         scale,
@@ -354,7 +352,7 @@ impl App {
                 }
             }
 
-            let result = renderer.render_to_surface(gpu, window.surface());
+            let result = renderer.render_to_surface(gpu, ctx.window.surface());
             (result, blinking_now)
         };
 

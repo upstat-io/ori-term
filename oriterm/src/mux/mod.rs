@@ -211,7 +211,6 @@ impl InProcessMux {
     }
 
     /// Look up a pane's metadata entry.
-    #[allow(dead_code, reason = "used for CWD inheritance in Section 32.4")]
     pub(crate) fn get_pane_entry(&self, pane_id: PaneId) -> Option<&PaneEntry> {
         self.pane_registry.get(pane_id)
     }

@@ -19,6 +19,7 @@ use oriterm_ui::scale::ScaleFactor;
 use oriterm_ui::window::WindowConfig;
 
 use oriterm_core::Rgb;
+use oriterm_mux::WindowId as MuxWindowId;
 
 use crate::gpu::{GpuState, apply_transparency};
 
@@ -39,6 +40,8 @@ const DEFAULT_BLUR_TINT: Rgb = Rgb {
 /// window handle and wgpu rendering surface. Does NOT own tabs, content,
 /// or any terminal state — the [`App`] maps windows to tabs.
 pub(crate) struct TermWindow {
+    /// Mux-layer window identity (maps this OS window to the mux session model).
+    mux_window_id: MuxWindowId,
     /// Winit window handle (Arc for wgpu surface lifetime).
     window: Arc<Window>,
     /// wgpu rendering surface bound to this window.
@@ -63,11 +66,12 @@ impl TermWindow {
     /// When `config.transparent` and `config.blur` are both true, platform-specific
     /// vibrancy effects (Acrylic on Windows, vibrancy on macOS, compositor blur on
     /// Linux) are applied.
-    #[allow(dead_code, reason = "multi-window constructor in Section 15")]
+    #[allow(dead_code, reason = "multi-window constructor for new windows")]
     pub(crate) fn new(
         event_loop: &ActiveEventLoop,
         config: &WindowConfig,
         gpu: &GpuState,
+        mux_window_id: MuxWindowId,
     ) -> Result<Self, WindowCreateError> {
         let window = oriterm_ui::window::create_window(event_loop, config)?;
 
@@ -87,6 +91,7 @@ impl TermWindow {
         window.set_ime_purpose(winit::window::ImePurpose::Terminal);
 
         Ok(Self {
+            mux_window_id,
             window,
             surface,
             surface_config,
@@ -105,6 +110,7 @@ impl TermWindow {
         window: Arc<Window>,
         config: &WindowConfig,
         gpu: &GpuState,
+        mux_window_id: MuxWindowId,
     ) -> Result<Self, WindowCreateError> {
         let (surface, surface_config) = gpu.create_surface(&window)?;
 
@@ -120,6 +126,7 @@ impl TermWindow {
         window.set_ime_purpose(winit::window::ImePurpose::Terminal);
 
         Ok(Self {
+            mux_window_id,
             window,
             surface,
             surface_config,
@@ -131,14 +138,17 @@ impl TermWindow {
 
     // Accessors
 
+    /// Returns the mux-layer window identity.
+    pub(crate) fn mux_window_id(&self) -> MuxWindowId {
+        self.mux_window_id
+    }
+
     /// Returns the winit [`WindowId`] for event routing.
-    #[allow(dead_code, reason = "window routing in Section 15")]
     pub(crate) fn window_id(&self) -> WindowId {
         self.window.id()
     }
 
     /// Returns a reference to the underlying winit [`Window`].
-    #[allow(dead_code, reason = "direct window access for later sections")]
     pub(crate) fn window(&self) -> &Window {
         &self.window
     }
