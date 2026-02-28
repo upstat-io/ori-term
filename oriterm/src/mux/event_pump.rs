@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use oriterm_mux::domain::Domain;
 use oriterm_mux::{DomainId, PaneId, SessionRegistry, TabId, WindowId};
 
-use super::{ClosePaneResult, InProcessMux};
+use super::InProcessMux;
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
 
@@ -30,9 +30,7 @@ impl InProcessMux {
                     self.notifications.push(MuxNotification::PaneDirty(id));
                 }
                 MuxEvent::PaneExited { pane_id, .. } => {
-                    if self.close_pane(pane_id) == ClosePaneResult::LastWindow {
-                        self.notifications.push(MuxNotification::LastWindowClosed);
-                    }
+                    self.close_pane(pane_id);
                 }
                 MuxEvent::PaneTitleChanged { pane_id, title } => {
                     if let Some(pane) = panes.get_mut(&pane_id) {
