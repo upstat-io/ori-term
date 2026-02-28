@@ -15,7 +15,8 @@ impl App {
     /// Create a new tab in the given mux window.
     ///
     /// Inherits CWD from the active pane in the current tab. Applies the
-    /// color palette, syncs the tab bar, and clears the width lock.
+    /// color palette and clears the width lock. Tab bar sync happens via
+    /// the `WindowTabsChanged` notification from the mux.
     pub(super) fn new_tab_in_window(&mut self, window_id: MuxWindowId) {
         let cwd = self.active_pane().and_then(|p| p.cwd().map(PathBuf::from));
 
@@ -46,7 +47,6 @@ impl App {
             }
         }
         self.release_tab_width_lock();
-        self.sync_tab_bar_from_mux();
         self.dirty = true;
     }
 
@@ -54,7 +54,7 @@ impl App {
     ///
     /// If this was the last tab in the last window, shuts down immediately
     /// (ConPTY-safe: `process::exit` before dropping panes). Otherwise
-    /// drops panes on background threads.
+    /// pane cleanup happens via `PaneClosed` notifications in `pump_mux_events`.
     pub(super) fn close_tab(&mut self, tab_id: TabId) {
         let Some(mux) = &mut self.mux else { return };
 
@@ -63,23 +63,14 @@ impl App {
         // Pane structs (ConPTY safety on Windows).
         let is_last = mux.session().tab_count() <= 1;
 
-        let pane_ids = mux.close_tab(tab_id);
+        mux.close_tab(tab_id);
 
         if is_last {
             log::info!("last tab closed, shutting down");
             self.shutdown(0);
         }
 
-        // Drop panes on background threads (ConPTY safety).
-        for pid in pane_ids {
-            if let Some(pane) = self.panes.remove(&pid) {
-                self.pane_cache.remove(pid);
-                std::thread::spawn(move || drop(pane));
-            }
-        }
-
         self.release_tab_width_lock();
-        self.sync_tab_bar_from_mux();
         self.dirty = true;
     }
 
