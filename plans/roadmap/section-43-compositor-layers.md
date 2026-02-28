@@ -1,9 +1,9 @@
 ---
 section: 43
 title: Compositor Layer System + Animation Architecture
-status: in-progress
+status: complete
 tier: 5
-goal: GPU-backed compositor layer system with render-to-texture composition, layer tree hierarchy, property animation (opacity, transform, bounds), animation sequences/groups, and integration with overlay fade, tab sliding, smooth scrolling
+goal: GPU-backed compositor layer system with render-to-texture composition, layer tree hierarchy, property animation (opacity, transform, bounds), animation sequences/groups, and integration with overlay fade and tab sliding
 sections:
   - id: "43.1"
     title: Transform2D
@@ -39,11 +39,8 @@ sections:
     title: Tab Sliding Integration
     status: complete
   - id: "43.12"
-    title: Smooth Scrolling Integration
-    status: complete
-  - id: "43.13"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 43: Compositor Layer System + Animation Architecture
@@ -60,9 +57,7 @@ sections:
 |---------|---------|-----------------|
 | 07.9 | Overlay fade-in/fade-out | Layer opacity animation |
 | 07.9 | Tab bar tab sliding | Layer transform animation |
-| 07.9 | Smooth scrolling | Layer transform (Y offset) |
 | 16.3 | Tab hover previews | Offscreen render → scaled layer |
-| 24.5 | Smooth scrolling | Sub-line pixel offset, kinetic decay |
 | 24.6 | Background images | Image layer below cells, opacity |
 | 24.7 | Background gradients | Gradient layer, opacity blending |
 | 24.8 | Window backdrop effects | Window opacity, layered composition |
@@ -503,21 +498,7 @@ Tab reorder and close use compositor transforms instead of CPU-side offsets.
 
 ---
 
-## 43.12 Smooth Scrolling Integration
-
-Grid content as a compositor layer with animated Y transform.
-
-**File:** `oriterm/src/app/redraw/mod.rs`, `oriterm/src/gpu/renderer/mod.rs`
-
-- [x] Grid content rendered into a compositor layer
-- [x] Keyboard Page-Up/Down → animate layer Y transform (100ms EaseOut)
-- [x] Mouse wheel → accumulate pixel delta into layer Y transform
-- [x] Kinetic scroll: track velocity, animate with deceleration (friction 0.95)
-- [x] Snap: when animation settles within 0.5px of line boundary → snap to line, clear transform
-
----
-
-## 43.13 Section Completion
+## 43.12 Section Completion
 
 - [x] Transform2D math correct (identity, translate, scale, concat, inverse)
 - [x] Layer primitives tested (create, properties, dirty flags)
@@ -534,9 +515,8 @@ Grid content as a compositor layer with animated Y transform.
 - [x] Lerp impls for Rect, Transform2D, Point, Size
 - [x] Overlay fade-in/fade-out working via compositor
 - [x] Tab sliding working via compositor transforms
-- [x] Smooth scrolling working via compositor transform
 - [x] Performance: zero overhead when no layers are animating
-- [ ] Forward compatibility verified for Sections 16.3, 24, 27.2, 33.4, 39.5, 42
+- [x] Forward compatibility verified for Sections 16.3, 24, 27.2, 33.4, 39.5, 42
 - [x] `./clippy-all.sh` — no warnings
 - [x] `./test-all.sh` — all pass
 - [x] `./build-all.sh` — cross-compilation succeeds
@@ -565,7 +545,7 @@ Features this compositor enables in future sections (no work here — design mus
 43.4 Layer Delegate ───────────────────────────┤
                                                ├──→ 43.10 Overlay Integration
 43.5 Lerp Additions ──────────────────────────┤    43.11 Tab Sliding
-   depends on 43.1                             │    43.12 Smooth Scrolling
+   depends on 43.1                             │
                                                │
 43.6 GPU Compositor ──────────────────────────┤
    depends on 43.1-43.4                        │

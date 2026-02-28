@@ -277,8 +277,11 @@ impl App {
         self.active_window = Some(new_mux_id);
     }
 
-    /// Reorder a tab within the active window.
-    #[allow(dead_code, reason = "wired to drag-and-drop reorder in Section 17")]
+    /// Reorder a tab within the active window (with animation).
+    #[allow(
+        dead_code,
+        reason = "used by keybinding-driven reorder; drag uses reorder_tab_silent"
+    )]
     pub(super) fn move_tab(&mut self, from: usize, to: usize) {
         // Capture tab width before the mutable mux borrow.
         let tab_width = self
@@ -338,8 +341,7 @@ impl App {
     }
 
     /// Starts a reorder-slide animation and syncs offsets to the widget.
-    #[allow(dead_code, reason = "wired to drag-and-drop reorder in Section 17")]
-    fn start_tab_reorder_slide(&mut self, from: usize, to: usize, tab_width: f32) {
+    pub(super) fn start_tab_reorder_slide(&mut self, from: usize, to: usize, tab_width: f32) {
         use oriterm_ui::widgets::tab_bar::slide::SlideContext;
 
         let now = std::time::Instant::now();

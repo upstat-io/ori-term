@@ -24,6 +24,7 @@ mod pane_ops;
 mod redraw;
 mod search_ui;
 mod tab_bar_input;
+mod tab_drag;
 mod tab_management;
 pub(crate) mod window_context;
 mod window_management;

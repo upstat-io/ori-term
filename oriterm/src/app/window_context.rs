@@ -18,6 +18,7 @@ use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 use super::divider_drag::DividerDragState;
 use super::floating_drag::FloatingDragState;
+use super::tab_drag::TabDragState;
 use crate::gpu::{FrameInput, PaneRenderCache};
 use crate::url_detect::{DetectedUrl, UrlDetectCache};
 use crate::widgets::terminal_grid::TerminalGridWidget;
@@ -53,6 +54,7 @@ pub(crate) struct WindowContext {
     pub hovering_divider: Option<DividerLayout>,
     pub divider_drag: Option<DividerDragState>,
     pub floating_drag: Option<FloatingDragState>,
+    pub tab_drag: Option<TabDragState>,
     pub overlays: OverlayManager,
     pub hovered_url: Option<DetectedUrl>,
     pub url_cache: UrlDetectCache,
@@ -92,6 +94,7 @@ impl WindowContext {
             hovering_divider: None,
             divider_drag: None,
             floating_drag: None,
+            tab_drag: None,
             overlays: OverlayManager::new(Rect::default()),
             hovered_url: None,
             url_cache: UrlDetectCache::default(),

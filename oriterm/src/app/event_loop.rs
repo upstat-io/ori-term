@@ -156,6 +156,7 @@ impl ApplicationHandler<TermEvent> for App {
                 self.clear_tab_bar_hover();
                 self.clear_url_hover();
                 self.clear_divider_hover();
+                self.cancel_tab_drag();
                 self.cancel_divider_drag();
                 self.cancel_floating_drag();
                 self.release_tab_width_lock();
@@ -165,6 +166,11 @@ impl ApplicationHandler<TermEvent> for App {
                 self.mouse.set_cursor_pos(position);
                 self.update_chrome_hover(position);
                 self.update_tab_bar_hover(position);
+
+                // Tab drag: consume all cursor moves when active.
+                if self.update_tab_drag(position) {
+                    return;
+                }
 
                 // Forward move events to overlays for per-widget hover tracking.
                 if self.try_overlay_mouse_move(position) {
@@ -213,6 +219,13 @@ impl ApplicationHandler<TermEvent> for App {
                 // Check chrome first — if a control button was clicked,
                 // don't propagate to selection/PTY reporting.
                 if self.try_chrome_mouse(button, state, event_loop) {
+                    return;
+                }
+                // Tab drag: finish on left-button release.
+                if button == winit::event::MouseButton::Left
+                    && state == winit::event::ElementState::Released
+                    && self.try_finish_tab_drag()
+                {
                     return;
                 }
                 // Tab bar clicks: switch tab, close tab, window controls, drag.

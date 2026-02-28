@@ -195,7 +195,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 ### Tier 6 — Polish
 | Section | Title | What |
 |---------|-------|------|
-| 24 | Visual Polish | Cursor blink, hide-while-typing, smooth scroll, background images, gradients, backdrop effects |
+| 24 | Visual Polish | Cursor blink, hide-while-typing, background images, gradients, backdrop effects |
 | 25 | Theme System | 100+ themes, TOML theme files, discovery, light/dark auto-switch |
 
 ### Tier 7 — Advanced
@@ -227,7 +227,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | **M8: Multiplexing** | 29-33 complete | Split panes, floating panes, multi-tab, multi-window — all through mux layer |
 | **M8b: Chrome** | 16-17, 19-21 complete | Tab bar, drag/drop, event routing, shell integration, menus |
 | **M9: Hardened** | 22-23, 38-39 complete | All terminal modes, protocol extensions, image protocols, performance optimized, damage tracking |
-| **M10: Polished** | 24-25 complete | Cursor blink, smooth scroll, 100+ themes, light/dark auto |
+| **M10: Polished** | 24-25 complete | Cursor blink, 100+ themes, light/dark auto |
 | **M11: Advanced** | 27-28 complete | Command palette, Lua scripting |
 | **M12: Server mode** | 34-35 complete | Daemon keeps sessions alive, session persistence, SSH/WSL domains |
 | **M13: Remote attach** | 36 complete | Connect GUI to remote daemon, SSH tunnel or TLS, bandwidth-aware rendering |

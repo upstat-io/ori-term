@@ -3,7 +3,7 @@ section: 24
 title: Visual Polish
 status: not-started
 tier: 6
-goal: Cursor blinking, hide-while-typing, minimum contrast, HiDPI, smooth scrolling, background images, gradients, backdrop effects
+goal: Cursor blinking, hide-while-typing, minimum contrast, HiDPI, background images, gradients, backdrop effects
 sections:
   - id: "24.1"
     title: Cursor Blinking
@@ -16,9 +16,6 @@ sections:
     status: not-started
   - id: "24.4"
     title: HiDPI & Display Scaling
-    status: not-started
-  - id: "24.5"
-    title: Smooth Scrolling
     status: not-started
   - id: "24.6"
     title: Background Images
@@ -173,37 +170,6 @@ Render correctly on high-DPI displays and handle multi-monitor DPI transitions.
 - [ ] Scale factor change triggers font re-rasterization
 - [ ] Grid dimensions recalculated after DPI change
 - [ ] Window drag across monitors with different DPI works without oscillation
-
----
-
-## 24.5 Smooth Scrolling
-
-Pixel-level smooth scrolling instead of line-level jumps. Mouse wheel currently scrolls 3 lines per tick (instant jump). All scrolling is line-quantized via `Grid.display_offset`.
-
-**File:** `oriterm/src/app.rs` (scroll input), `oriterm/src/gpu/renderer.rs` (render offset)
-
-- [ ] Fractional scroll tracking:
-  - [ ] Add `scroll_pixel_offset: f32` to rendering state (0.0 to cell_height)
-  - [ ] Mouse wheel: accumulate pixel deltas from `MouseScrollDelta::PixelDelta` or convert `LineDelta` to pixels
-  - [ ] When pixel offset accumulates past `cell_height`, decrement `display_offset` and subtract `cell_height` from pixel offset
-- [ ] Render with sub-line offset:
-  - [ ] Shift all cell y-positions by `scroll_pixel_offset`
-  - [ ] Top and bottom rows may be partially visible (clip at grid boundaries)
-  - [ ] Render one extra row above and below for partial visibility
-- [ ] Kinetic scroll (optional):
-  - [ ] On mouse wheel release, continue scrolling with decelerating velocity
-  - [ ] Friction coefficient: velocity *= 0.95 per frame
-  - [ ] Snap to exact line when velocity drops below threshold
-- [ ] Keyboard scroll: instant jump (no animation) -- keep current behavior
-  - [ ] Or: short animation (100ms ease-out) for page jumps
-- [ ] Touchpad support: honor precise pixel deltas from trackpad gestures
-- [ ] Config: `behavior.smooth_scroll = true | false` (default: true)
-
-**Tests:**
-- [ ] Pixel delta accumulation triggers line scroll at cell_height boundary
-- [ ] Sub-line offset renders partial rows correctly
-- [ ] Kinetic scroll decelerates and snaps to whole line
-- [ ] Keyboard scroll bypasses smooth scrolling
 
 ---
 

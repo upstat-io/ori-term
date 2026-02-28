@@ -16,7 +16,7 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 
 | Priority | Section | Reason |
 |----------|---------|--------|
-| 1 | 43 — Compositor Layer System | Unblocks 28 features across 8 sections (overlay fade, tab sliding, smooth scroll, expose mode, etc.) |
+| ~~1~~ | ~~43 — Compositor Layer System~~ | ~~Complete~~ |
 
 ---
 
@@ -392,7 +392,7 @@ tab hover preview, terminal preview, thumbnail, TerminalPreviewWidget, offscreen
 ---
 
 ### Section 17: Drag & Drop
-**File:** `section-17-drag-drop.md` | **Tier:** 4 | **Status:** Not Started
+**File:** `section-17-drag-drop.md` | **Tier:** 4 | **Status:** In Progress (17.1 complete)
 
 ```
 drag, DragState, DragPhase, Pending, DraggingInBar
@@ -620,7 +620,6 @@ PreemptionStrategy, ReplaceCurrent, Enqueue, animation interruption
 Lerp, Rect lerp, Point lerp, Size lerp, Transform2D lerp
 overlay fade, fade-in, fade-out, opacity animation, modal dim
 tab sliding, tab reorder animation, transform animation
-smooth scrolling, kinetic scroll, pixel offset, friction, deceleration
 needs_paint, needs_composite, dirty flags, damage tracking
 accumulated_opacity, accumulated_transform, tree traversal
 performance escape hatch, default properties, zero overhead
@@ -636,7 +635,7 @@ cursor blink, blink timer, DECSCUSR, steady vs blinking
 hide cursor while typing, set_cursor_visible, mouse move restore
 minimum contrast, WCAG 2.0, luminance, shader
 HiDPI, scale_factor, ScaleFactorChanged, DPI-aware
-smooth scrolling, pixel offset, kinetic scroll, trackpad
+visual effects, polish, refinement
 background image, PNG, JPEG, texture, opacity, position
 window shadow, padding, margin, GRID_PADDING
 ```
