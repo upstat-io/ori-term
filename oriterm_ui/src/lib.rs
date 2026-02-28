@@ -6,6 +6,7 @@
 
 pub mod animation;
 pub mod color;
+pub mod compositor;
 pub mod draw;
 pub mod focus;
 pub mod geometry;

@@ -1,37 +1,37 @@
 ---
 section: 43
 title: Compositor Layer System + Animation Architecture
-status: not-started
+status: in-progress
 tier: 5
 goal: GPU-backed compositor layer system with render-to-texture composition, layer tree hierarchy, property animation (opacity, transform, bounds), animation sequences/groups, and integration with overlay fade, tab sliding, smooth scrolling
 sections:
   - id: "43.1"
     title: Transform2D
-    status: not-started
+    status: complete
   - id: "43.2"
     title: Layer Primitives
-    status: not-started
+    status: complete
   - id: "43.3"
     title: Layer Tree
-    status: not-started
+    status: complete
   - id: "43.4"
     title: Layer Delegate
-    status: not-started
+    status: complete
   - id: "43.5"
     title: Lerp Additions
-    status: not-started
+    status: complete
   - id: "43.6"
     title: GPU Compositor
-    status: not-started
+    status: complete
   - id: "43.7"
     title: Layer Animator
-    status: not-started
+    status: complete
   - id: "43.8"
     title: Animation Delegate
-    status: not-started
+    status: complete
   - id: "43.9"
     title: Animation Sequences & Groups
-    status: not-started
+    status: complete
   - id: "43.10"
     title: Overlay Fade Integration
     status: not-started
@@ -43,7 +43,7 @@ sections:
     status: not-started
   - id: "43.13"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 43: Compositor Layer System + Animation Architecture
@@ -112,30 +112,30 @@ pub struct Transform2D {
 }
 ```
 
-- [ ] `Transform2D` struct with `[f32; 6]` matrix
-- [ ] `identity()` — no-op transform
-- [ ] `translate(tx, ty)` — translation
-- [ ] `scale(sx, sy)` — scaling (uniform and non-uniform)
-- [ ] `rotate(radians)` — rotation around origin
-- [ ] `concat(other)` — matrix multiplication (compose transforms)
-- [ ] `pre_translate`, `pre_scale` — apply transform BEFORE self
-- [ ] `apply(Point) -> Point` — transform a point
-- [ ] `apply_rect(Rect) -> Rect` — transform bounding box (axis-aligned result)
-- [ ] `inverse() -> Option<Transform2D>` — inverse for hit-testing through transforms
-- [ ] `is_identity() -> bool` — fast check for performance escape hatch
-- [ ] `to_mat3x2() -> [f32; 6]` — for GPU uniform upload
-- [ ] `Lerp` impl — per-element lerp (sufficient for translate+scale animations)
+- [x] `Transform2D` struct with `[f32; 6]` matrix
+- [x] `identity()` — no-op transform
+- [x] `translate(tx, ty)` — translation
+- [x] `scale(sx, sy)` — scaling (uniform and non-uniform)
+- [x] `rotate(radians)` — rotation around origin
+- [x] `concat(other)` — matrix multiplication (compose transforms)
+- [x] `pre_translate`, `pre_scale` — apply transform BEFORE self
+- [x] `apply(Point) -> Point` — transform a point
+- [x] `apply_rect(Rect) -> Rect` — transform bounding box (axis-aligned result)
+- [x] `inverse() -> Option<Transform2D>` — inverse for hit-testing through transforms
+- [x] `is_identity() -> bool` — fast check for performance escape hatch
+- [x] `to_mat3x2() -> [f32; 6]` — for GPU uniform upload
+- [x] `Lerp` impl — per-element lerp (sufficient for translate+scale animations)
 
 **Tests:**
-- [ ] identity roundtrip
-- [ ] translate
-- [ ] scale
-- [ ] rotate (90°, 180°, 360°)
-- [ ] concat associativity
-- [ ] inverse roundtrip
-- [ ] degenerate (zero scale → no inverse)
-- [ ] `is_identity` true/false
-- [ ] Lerp interpolation
+- [x] identity roundtrip
+- [x] translate
+- [x] scale
+- [x] rotate (90°, 180°, 360°)
+- [x] concat associativity
+- [x] inverse roundtrip
+- [x] degenerate (zero scale → no inverse)
+- [x] `is_identity` true/false
+- [x] Lerp interpolation
 
 ---
 
@@ -173,18 +173,18 @@ pub struct Layer {
 }
 ```
 
-- [ ] `LayerId` — newtype, `Copy + Eq + Hash`, counter-based allocation
-- [ ] `LayerType` — `Textured`, `SolidColor(Color)`, `Group`
-- [ ] `LayerProperties` — bounds, opacity, transform, visible, clip_children
-- [ ] `LayerProperties::default()` — identity transform, opacity 1.0, visible true
-- [ ] `Layer` struct — id, type, properties, parent, children, dirty flags
-- [ ] `Layer::needs_texture()` — true when properties differ from defaults (opacity != 1.0 or transform != identity)
-- [ ] Dirty flag setters mark `needs_composite`
+- [x] `LayerId` — newtype, `Copy + Eq + Hash`, counter-based allocation
+- [x] `LayerType` — `Textured`, `SolidColor(Color)`, `Group`
+- [x] `LayerProperties` — bounds, opacity, transform, visible, clip_children
+- [x] `LayerProperties::default()` — identity transform, opacity 1.0, visible true
+- [x] `Layer` struct — id, type, properties, parent, children, dirty flags
+- [x] `Layer::needs_texture()` — true when properties differ from defaults (opacity != 1.0 or transform != identity)
+- [x] Dirty flag setters mark `needs_composite`
 
 **Tests:**
-- [ ] `LayerId` uniqueness via counter
-- [ ] `LayerProperties::default()` is identity
-- [ ] `needs_texture()` false for defaults, true when opacity < 1.0
+- [x] `LayerId` uniqueness via counter
+- [x] `LayerProperties::default()` is identity
+- [x] `needs_texture()` false for defaults, true when opacity < 1.0
 
 ---
 
@@ -202,34 +202,34 @@ pub struct LayerTree {
 }
 ```
 
-- [ ] `new(viewport: Rect)` — creates tree with root group layer
-- [ ] `add(parent, layer_type, properties) -> LayerId`
-- [ ] `remove(id) -> bool` — removes layer, reparents children to parent
-- [ ] `remove_subtree(id)` — removes layer and all descendants
-- [ ] `get(id) -> Option<&Layer>`, `get_mut(id) -> Option<&mut Layer>`
-- [ ] Property setters: `set_opacity`, `set_transform`, `set_bounds`, `set_visible` — mark `needs_composite`
-- [ ] `schedule_paint(id)` — mark `needs_paint`
-- [ ] Z-order: `stack_above(id, sibling)`, `stack_below(id, sibling)`
-- [ ] `reparent(id, new_parent)` — move layer to different parent
-- [ ] `iter_back_to_front()` — depth-first traversal in paint order
-- [ ] `accumulated_opacity(id) -> f32` — walk ancestors, multiply opacities
-- [ ] `accumulated_transform(id) -> Transform2D` — walk ancestors, concat transforms
-- [ ] `layers_needing_paint() -> Vec<LayerId>` — dirty query
-- [ ] `layers_needing_composite() -> Vec<LayerId>` — dirty query
-- [ ] `clear_dirty_flags()` — after frame
+- [x] `new(viewport: Rect)` — creates tree with root group layer
+- [x] `add(parent, layer_type, properties) -> LayerId`
+- [x] `remove(id) -> bool` — removes layer, reparents children to parent
+- [x] `remove_subtree(id)` — removes layer and all descendants
+- [x] `get(id) -> Option<&Layer>`, `get_mut(id) -> Option<&mut Layer>`
+- [x] Property setters: `set_opacity`, `set_transform`, `set_bounds`, `set_visible` — mark `needs_composite`
+- [x] `schedule_paint(id)` — mark `needs_paint`
+- [x] Z-order: `stack_above(id, sibling)`, `stack_below(id, sibling)`
+- [x] `reparent(id, new_parent)` — move layer to different parent
+- [x] `iter_back_to_front()` — depth-first traversal in paint order
+- [x] `accumulated_opacity(id) -> f32` — walk ancestors, multiply opacities
+- [x] `accumulated_transform(id) -> Transform2D` — walk ancestors, concat transforms
+- [x] `layers_needing_paint() -> Vec<LayerId>` — dirty query
+- [x] `layers_needing_composite() -> Vec<LayerId>` — dirty query
+- [x] `clear_dirty_flags()` — after frame
 
 **Tests:**
-- [ ] add single layer, verify parent-child
-- [ ] add nested layers, verify hierarchy
-- [ ] remove with reparenting
-- [ ] remove_subtree cleans all descendants
-- [ ] z-order: stack_above/stack_below reorder children
-- [ ] reparent moves layer
-- [ ] iter_back_to_front paint order
-- [ ] accumulated_opacity multiplies chain
-- [ ] accumulated_transform concatenates chain
-- [ ] dirty tracking (paint + composite flags)
-- [ ] clear_dirty_flags
+- [x] add single layer, verify parent-child
+- [x] add nested layers, verify hierarchy
+- [x] remove with reparenting
+- [x] remove_subtree cleans all descendants
+- [x] z-order: stack_above/stack_below reorder children
+- [x] reparent moves layer
+- [x] iter_back_to_front paint order
+- [x] accumulated_opacity multiplies chain
+- [x] accumulated_transform concatenates chain
+- [x] dirty tracking (paint + composite flags)
+- [x] clear_dirty_flags
 
 ---
 
@@ -245,9 +245,9 @@ pub trait LayerDelegate {
 }
 ```
 
-- [ ] `LayerDelegate` trait with `paint_layer` method
-- [ ] Documentation: called by compositor when `needs_paint` is true
-- [ ] `DrawCtx` bounds are the layer's own bounds (origin at 0,0)
+- [x] `LayerDelegate` trait with `paint_layer` method
+- [x] Documentation: called by compositor when `needs_paint` is true
+- [x] `DrawCtx` bounds are the layer's own bounds (origin at 0,0)
 
 Future consumers: overlay manager, tab bar widget, terminal grid, search bar, context menu, settings panel, Quick Terminal panel, expose mode thumbnails.
 
@@ -259,16 +259,16 @@ Future consumers: overlay manager, tab bar widget, terminal grid, search bar, co
 
 **File:** `oriterm_ui/src/animation/mod.rs` (or appropriate animation file)
 
-- [ ] `Lerp for Rect` — per-field (x, y, width, height)
-- [ ] `Lerp for Transform2D` — per-element matrix lerp
-- [ ] `Lerp for Point` — per-field (x, y)
-- [ ] `Lerp for Size` — per-field (width, height)
+- [x] `Lerp for Rect` — per-field (x, y, width, height)
+- [x] `Lerp for Transform2D` — per-element matrix lerp
+- [x] `Lerp for Point` — per-field (x, y)
+- [x] `Lerp for Size` — per-field (width, height)
 
 **Tests:**
-- [ ] Rect lerp at 0.0, 0.5, 1.0
-- [ ] Transform2D lerp between translate and identity
-- [ ] Point lerp
-- [ ] Size lerp
+- [x] Rect lerp at 0.0, 0.5, 1.0
+- [x] Transform2D lerp between translate and identity
+- [x] Point lerp
+- [x] Size lerp
 
 ---
 
@@ -293,10 +293,10 @@ struct PoolEntry {
 }
 ```
 
-- [ ] `acquire(device, width, height) -> &TextureView` — allocate or reuse
-- [ ] `release(view)` — return to pool
-- [ ] `trim()` — reclaim unused textures
-- [ ] Sizing: round up to power-of-two buckets (256, 512, 1024, 2048) to maximize reuse
+- [x] `acquire(device, width, height) -> &TextureView` — allocate or reuse
+- [x] `release(view)` — return to pool
+- [x] `trim()` — reclaim unused textures
+- [x] Sizing: round up to power-of-two buckets (256, 512, 1024, 2048) to maximize reuse
 
 ### 43.6b GpuCompositor
 
@@ -316,10 +316,10 @@ Frame workflow:
    - Default properties → render directly (no intermediate texture)
    - Non-default properties → draw textured quad with opacity + transform
 
-- [ ] `GpuCompositor::new()` — create pipeline, sampler, uniform buffer
-- [ ] `paint_dirty_layers()` — render dirty layers to textures
-- [ ] `compose()` — blend all visible layers to screen
-- [ ] Direct-render fast path for layers with default properties
+- [x] `GpuCompositor::new()` — create pipeline, sampler, uniform buffer
+- [x] `paint_dirty_layers()` — render dirty layers to textures
+- [x] `compose()` — blend all visible layers to screen
+- [x] Direct-render fast path for layers with default properties
 
 ### 43.6c Composition Shader
 
@@ -332,8 +332,8 @@ struct LayerUniform {
 }
 ```
 
-- [ ] Vertex shader: generate quad from vertex_index, apply transform + bounds → NDC
-- [ ] Fragment shader: sample layer texture, multiply by layer opacity (premultiplied alpha)
+- [x] Vertex shader: generate quad from vertex_index, apply transform + bounds → NDC
+- [x] Fragment shader: sample layer texture, multiply by layer opacity (premultiplied alpha)
 
 ---
 
@@ -365,30 +365,30 @@ pub struct LayerAnimator {
 }
 ```
 
-- [ ] `animate_opacity(id, target, duration, easing)` — start opacity transition
-- [ ] `animate_transform(id, target, duration, easing)` — start transform transition
-- [ ] `animate_bounds(id, target, duration, easing)` — start bounds transition
-- [ ] `tick(tree: &mut LayerTree, now: Instant) -> bool` — apply current values, return true if animating
-- [ ] `is_animating(id, property) -> bool`
-- [ ] `is_any_animating() -> bool`
-- [ ] `target_opacity(id) -> Option<f32>` — query animation end state
-- [ ] `target_transform(id) -> Option<Transform2D>`
-- [ ] `cancel(id, property)` — stop animation, keep current value
-- [ ] `cancel_all(id)` — stop all animations on a layer
-- [ ] `ReplaceCurrent` preemption: cancel running, start from current interpolated value
-- [ ] `Enqueue` preemption: queue after current finishes
+- [x] `animate_opacity(id, target, duration, easing)` — start opacity transition
+- [x] `animate_transform(id, target, duration, easing)` — start transform transition
+- [x] `animate_bounds(id, target, duration, easing)` — start bounds transition
+- [x] `tick(tree: &mut LayerTree, now: Instant) -> bool` — apply current values, return true if animating
+- [x] `is_animating(id, property) -> bool`
+- [x] `is_any_animating() -> bool`
+- [x] `target_opacity(id) -> Option<f32>` — query animation end state
+- [x] `target_transform(id) -> Option<Transform2D>`
+- [x] `cancel(id, property)` — stop animation, keep current value
+- [x] `cancel_all(id)` — stop all animations on a layer
+- [x] `ReplaceCurrent` preemption: cancel running, start from current interpolated value
+- [x] `Enqueue` preemption: queue after current finishes
 
 `tick()` per frame: walk all transitions → interpolate via `Easing::apply()` + `Lerp` → apply to `LayerTree` → mark `needs_composite` → fire delegate callbacks for ended/canceled → remove finished.
 
 **Tests:**
-- [ ] opacity animation start to end
-- [ ] transform animation start to end
-- [ ] bounds animation start to end
-- [ ] tick advances interpolation correctly
-- [ ] animation completes and is removed
-- [ ] preemption replaces running animation
-- [ ] cancel keeps current value
-- [ ] `is_any_animating()` tracks state
+- [x] opacity animation start to end
+- [x] transform animation start to end
+- [x] bounds animation start to end
+- [x] tick advances interpolation correctly
+- [x] animation completes and is removed
+- [x] preemption replaces running animation
+- [x] cancel keeps current value
+- [x] `is_any_animating()` tracks state
 
 ---
 
@@ -405,9 +405,9 @@ pub trait AnimationDelegate {
 }
 ```
 
-- [ ] `AnimationDelegate` trait
-- [ ] `animation_ended` — fired when animation reaches target
-- [ ] `animation_canceled` — fired when animation is interrupted
+- [x] `AnimationDelegate` trait
+- [x] `animation_ended` — fired when animation reaches target
+- [x] `animation_canceled` — fired when animation is interrupted
 
 Use cases: overlay manager (remove layer after fade-out), expose mode (remove thumbnail after exit animation), Quick Terminal (hide panel after slide-out).
 
@@ -435,10 +435,10 @@ pub enum AnimationStep {
 }
 ```
 
-- [ ] Chain animations end-to-end
-- [ ] `Delay` step for pauses
-- [ ] `Callback` step for side effects between animations
-- [ ] Use case: toast notification — slide in (200ms) → hold (3s) → slide out (150ms) → remove
+- [x] Chain animations end-to-end
+- [x] `Delay` step for pauses
+- [x] `Callback` step for side effects between animations
+- [x] Use case: toast notification — slide in (200ms) → hold (3s) → slide out (150ms) → remove
 
 ### AnimationGroup
 
@@ -449,8 +449,8 @@ pub struct AnimationGroup {
 }
 ```
 
-- [ ] Run multiple property animations in parallel
-- [ ] Use case: overlay appear — opacity 0→1 + scale 0.95→1.0 simultaneously
+- [x] Run multiple property animations in parallel
+- [x] Use case: overlay appear — opacity 0→1 + scale 0.95→1.0 simultaneously
 
 ### AnimationBuilder
 
@@ -464,15 +464,15 @@ AnimationBuilder::new(layer_id)
     .build()  // -> AnimationGroup
 ```
 
-- [ ] Fluent API for creating animations
-- [ ] Default duration and easing overridable per-property
-- [ ] `on_end` callback
+- [x] Fluent API for creating animations
+- [x] Default duration and easing overridable per-property
+- [x] `on_end` callback
 
 **Tests:**
-- [ ] Sequence steps execute in order
-- [ ] Delay pauses between steps
-- [ ] Group runs all transitions in parallel
-- [ ] Builder produces correct AnimationGroup
+- [x] Sequence steps execute in order
+- [x] Delay pauses between steps
+- [x] Group runs all transitions in parallel
+- [x] Builder produces correct AnimationGroup
 
 ---
 
@@ -519,23 +519,23 @@ Grid content as a compositor layer with animated Y transform.
 
 ## 43.13 Section Completion
 
-- [ ] Transform2D math correct (identity, translate, scale, concat, inverse)
-- [ ] Layer primitives tested (create, properties, dirty flags)
-- [ ] Layer tree tested (add, remove, reparent, z-order, accumulated properties)
-- [ ] Layer delegate trait defined and documented
-- [ ] GPU compositor renders layers to textures
-- [ ] Composition pass blends layers with opacity + transform
-- [ ] RenderTargetPool allocates and reuses textures
-- [ ] Layer animator drives property transitions
-- [ ] Animation delegate fires on end/cancel
-- [ ] Animation sequences chain correctly
-- [ ] Animation groups run in parallel
-- [ ] AnimationBuilder fluent API works
-- [ ] Lerp impls for Rect, Transform2D, Point, Size
-- [ ] Overlay fade-in/fade-out working via compositor
-- [ ] Tab sliding working via compositor transforms
-- [ ] Smooth scrolling working via compositor transform
-- [ ] Performance: zero overhead when no layers are animating
+- [x] Transform2D math correct (identity, translate, scale, concat, inverse)
+- [x] Layer primitives tested (create, properties, dirty flags)
+- [x] Layer tree tested (add, remove, reparent, z-order, accumulated properties)
+- [x] Layer delegate trait defined and documented
+- [x] GPU compositor renders layers to textures
+- [x] Composition pass blends layers with opacity + transform
+- [x] RenderTargetPool allocates and reuses textures
+- [x] Layer animator drives property transitions
+- [x] Animation delegate fires on end/cancel
+- [x] Animation sequences chain correctly
+- [x] Animation groups run in parallel
+- [x] AnimationBuilder fluent API works
+- [x] Lerp impls for Rect, Transform2D, Point, Size
+- [ ] Overlay fade-in/fade-out working via compositor  <!-- blocked-by:16 -->
+- [ ] Tab sliding working via compositor transforms  <!-- blocked-by:16 -->
+- [ ] Smooth scrolling working via compositor transform  <!-- blocked-by:16 -->
+- [ ] Performance: zero overhead when no layers are animating  <!-- blocked-by:16 -->
 - [ ] Forward compatibility verified for Sections 16.3, 24, 27.2, 33.4, 39.5, 42
 - [ ] `./clippy-all.sh` — no warnings
 - [ ] `./test-all.sh` — all pass
