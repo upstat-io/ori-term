@@ -45,9 +45,6 @@ impl InProcessMux {
                     }
                 }
                 MuxEvent::PaneBell(id) => {
-                    if let Some(pane) = panes.get_mut(&id) {
-                        pane.set_bell();
-                    }
                     self.notifications.push(MuxNotification::Alert(id));
                 }
                 MuxEvent::PtyWrite { pane_id, data } => {

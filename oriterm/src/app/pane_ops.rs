@@ -276,32 +276,25 @@ impl App {
             return;
         };
 
-        // If there are floating panes, toggle focus between float and tile.
-        let has_floating = {
+        // Single borrow: decide whether to focus an existing pane or spawn new.
+        let focus_target = {
             let Some(mux) = self.mux.as_ref() else { return };
             let Some(tab) = mux.session().get_tab(tab_id) else {
                 return;
             };
-            !tab.floating().is_empty()
+            if tab.floating().is_empty() {
+                None
+            } else if tab.is_floating(active) {
+                // Active is floating — focus first tiled pane.
+                tab.tree().panes().into_iter().next()
+            } else {
+                // Active is tiled — focus topmost floating pane.
+                tab.floating().panes().last().map(|fp| fp.pane_id)
+            }
         };
 
-        if has_floating {
-            // If the active pane is floating, focus the first tiled pane.
-            // If the active pane is tiled, focus the topmost floating pane.
-            let target = {
-                let Some(mux) = self.mux.as_ref() else { return };
-                let Some(tab) = mux.session().get_tab(tab_id) else {
-                    return;
-                };
-                if tab.is_floating(active) {
-                    tab.tree().panes().into_iter().next()
-                } else {
-                    tab.floating().panes().last().map(|fp| fp.pane_id)
-                }
-            };
-            if let Some(target) = target {
-                self.set_focused_pane(target);
-            }
+        if let Some(target) = focus_target {
+            self.set_focused_pane(target);
             return;
         }
 
