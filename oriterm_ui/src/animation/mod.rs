@@ -4,6 +4,16 @@
 //! [`Animation`] (raw `f32` interpolation), and [`AnimatedValue`] (widget-embeddable
 //! wrapper that manages animation lifecycle).
 
+pub mod builder;
+pub mod delegate;
+pub mod group;
+pub mod sequence;
+
+pub use builder::AnimationBuilder;
+pub use delegate::{AnimatableProperty, AnimationDelegate};
+pub use group::{AnimationGroup, PropertyAnimation, TransitionTarget};
+pub use sequence::{AnimationSequence, AnimationStep, SequenceState};
+
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -18,6 +28,32 @@ pub trait Lerp: Copy {
 impl Lerp for f32 {
     fn lerp(a: Self, b: Self, t: f32) -> Self {
         a + (b - a) * t
+    }
+}
+
+impl<U> Lerp for crate::geometry::Point<U> {
+    fn lerp(a: Self, b: Self, t: f32) -> Self {
+        Self::new(f32::lerp(a.x, b.x, t), f32::lerp(a.y, b.y, t))
+    }
+}
+
+impl<U> Lerp for crate::geometry::Size<U> {
+    fn lerp(a: Self, b: Self, t: f32) -> Self {
+        Self::new(
+            f32::lerp(a.width(), b.width(), t),
+            f32::lerp(a.height(), b.height(), t),
+        )
+    }
+}
+
+impl<U> Lerp for crate::geometry::Rect<U> {
+    fn lerp(a: Self, b: Self, t: f32) -> Self {
+        Self::new(
+            f32::lerp(a.x(), b.x(), t),
+            f32::lerp(a.y(), b.y(), t),
+            f32::lerp(a.width(), b.width(), t),
+            f32::lerp(a.height(), b.height(), t),
+        )
     }
 }
 

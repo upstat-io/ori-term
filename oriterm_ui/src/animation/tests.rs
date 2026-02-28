@@ -579,3 +579,295 @@ fn animation_negative_range() {
     );
     assert_eq!(anim.progress(now + Duration::from_millis(200)), 10.0);
 }
+
+// --- AnimationGroup ---
+
+#[test]
+fn group_has_correct_defaults() {
+    use super::group::{AnimationGroup, PropertyAnimation, TransitionTarget};
+    use crate::compositor::LayerId;
+
+    let id = LayerId::new(1);
+    let group = AnimationGroup {
+        layer_id: id,
+        animations: vec![PropertyAnimation {
+            from: Some(TransitionTarget::Opacity(0.0)),
+            target: TransitionTarget::Opacity(1.0),
+            duration: None,
+            easing: None,
+        }],
+        duration: Duration::from_millis(200),
+        easing: Easing::EaseOut,
+    };
+
+    assert_eq!(group.layer_id, id);
+    assert_eq!(group.animations.len(), 1);
+    assert_eq!(group.duration, Duration::from_millis(200));
+}
+
+#[test]
+fn group_property_animation_per_property_overrides() {
+    use super::group::{PropertyAnimation, TransitionTarget};
+
+    let anim = PropertyAnimation {
+        from: Some(TransitionTarget::Opacity(0.0)),
+        target: TransitionTarget::Opacity(1.0),
+        duration: Some(Duration::from_millis(500)),
+        easing: Some(Easing::EaseIn),
+    };
+
+    assert_eq!(anim.duration.unwrap(), Duration::from_millis(500));
+    assert_eq!(anim.easing.unwrap(), Easing::EaseIn);
+}
+
+// --- AnimationBuilder ---
+
+#[test]
+fn builder_produces_correct_group() {
+    use super::builder::AnimationBuilder;
+    use crate::compositor::{LayerId, Transform2D};
+    use crate::geometry::Rect;
+
+    let id = LayerId::new(1);
+    let group = AnimationBuilder::new(id)
+        .duration(Duration::from_millis(150))
+        .easing(Easing::EaseOut)
+        .opacity(0.0, 1.0)
+        .transform(Transform2D::scale(0.95, 0.95), Transform2D::identity())
+        .bounds(
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+            Rect::new(10.0, 10.0, 200.0, 100.0),
+        )
+        .build();
+
+    assert_eq!(group.layer_id, id);
+    assert_eq!(group.animations.len(), 3);
+    assert_eq!(group.duration, Duration::from_millis(150));
+    assert_eq!(group.easing, Easing::EaseOut);
+}
+
+#[test]
+fn builder_default_duration_and_easing() {
+    use super::builder::AnimationBuilder;
+    use crate::compositor::LayerId;
+
+    let group = AnimationBuilder::new(LayerId::new(1))
+        .opacity(0.0, 1.0)
+        .build();
+
+    // Defaults: 200ms, EaseOut.
+    assert_eq!(group.duration, Duration::from_millis(200));
+    assert_eq!(group.easing, Easing::EaseOut);
+}
+
+#[test]
+fn builder_build_sequence_with_on_end() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::builder::AnimationBuilder;
+    use super::sequence::SequenceState;
+    use crate::compositor::LayerId;
+
+    let called = Arc::new(AtomicBool::new(false));
+    let called_clone = called.clone();
+
+    let id = LayerId::new(1);
+    let mut seq = AnimationBuilder::new(id)
+        .opacity(0.0, 1.0)
+        .on_end(move |_| {
+            called_clone.store(true, Ordering::Relaxed);
+        })
+        .build_sequence();
+
+    assert_eq!(seq.layer_id(), id);
+    assert_eq!(seq.state(), SequenceState::Pending);
+
+    // Start: first step is Animate.
+    let now = Instant::now();
+    let group = seq.start(now);
+    assert!(group.is_some());
+
+    // Advance past the animation (pretend it finished).
+    let group = seq.advance(now + Duration::from_secs(1), true);
+    // Callback step fires automatically.
+    assert!(group.is_none());
+    assert!(called.load(Ordering::Relaxed));
+    assert!(seq.is_finished());
+}
+
+// --- AnimationSequence ---
+
+#[test]
+fn sequence_empty_is_immediately_finished() {
+    use super::sequence::{AnimationSequence, SequenceState};
+    use crate::compositor::LayerId;
+
+    let mut seq = AnimationSequence::new(LayerId::new(1), vec![]);
+    let now = Instant::now();
+    let result = seq.start(now);
+    assert!(result.is_none());
+    assert_eq!(seq.state(), SequenceState::Finished);
+}
+
+#[test]
+fn sequence_delay_step_pauses() {
+    use super::sequence::{AnimationSequence, AnimationStep, SequenceState};
+    use crate::compositor::LayerId;
+
+    let mut seq = AnimationSequence::new(
+        LayerId::new(1),
+        vec![AnimationStep::Delay(Duration::from_millis(100))],
+    );
+
+    let now = Instant::now();
+    seq.start(now);
+    assert_eq!(seq.state(), SequenceState::Running(0));
+
+    // Before delay elapses — still on step 0.
+    let result = seq.advance(now + Duration::from_millis(50), false);
+    assert!(result.is_none());
+    assert_eq!(seq.state(), SequenceState::Running(0));
+
+    // After delay elapses — finishes.
+    let result = seq.advance(now + Duration::from_millis(100), false);
+    assert!(result.is_none());
+    assert!(seq.is_finished());
+}
+
+#[test]
+fn sequence_callback_fires_immediately() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::sequence::{AnimationSequence, AnimationStep};
+    use crate::compositor::LayerId;
+
+    let called = Arc::new(AtomicBool::new(false));
+    let called_clone = called.clone();
+
+    let mut seq = AnimationSequence::new(
+        LayerId::new(1),
+        vec![AnimationStep::Callback(Some(Box::new(move |_| {
+            called_clone.store(true, Ordering::Relaxed);
+        })))],
+    );
+
+    let now = Instant::now();
+    seq.start(now);
+
+    // Callback fires during start, then sequence finishes.
+    assert!(called.load(Ordering::Relaxed));
+    assert!(seq.is_finished());
+}
+
+#[test]
+fn sequence_steps_execute_in_order() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use super::group::{AnimationGroup, PropertyAnimation, TransitionTarget};
+    use super::sequence::{AnimationSequence, AnimationStep, SequenceState};
+    use crate::compositor::LayerId;
+
+    let counter = Arc::new(AtomicU32::new(0));
+    let id = LayerId::new(1);
+
+    let c1 = counter.clone();
+    let c2 = counter.clone();
+
+    let group = AnimationGroup {
+        layer_id: id,
+        animations: vec![PropertyAnimation {
+            from: Some(TransitionTarget::Opacity(0.0)),
+            target: TransitionTarget::Opacity(1.0),
+            duration: None,
+            easing: None,
+        }],
+        duration: Duration::from_millis(100),
+        easing: Easing::Linear,
+    };
+
+    let mut seq = AnimationSequence::new(
+        id,
+        vec![
+            AnimationStep::Callback(Some(Box::new(move |_| {
+                c1.store(1, Ordering::Relaxed);
+            }))),
+            AnimationStep::Animate(group),
+            AnimationStep::Callback(Some(Box::new(move |_| {
+                c2.store(2, Ordering::Relaxed);
+            }))),
+        ],
+    );
+
+    let now = Instant::now();
+
+    // Start: fires first callback, then returns animate group.
+    let group_ref = seq.start(now);
+    assert_eq!(counter.load(Ordering::Relaxed), 1);
+    assert!(group_ref.is_some());
+    assert_eq!(seq.state(), SequenceState::Running(1));
+
+    // Advance after animation finishes → fires second callback.
+    let result = seq.advance(now + Duration::from_millis(200), true);
+    assert!(result.is_none());
+    assert_eq!(counter.load(Ordering::Relaxed), 2);
+    assert!(seq.is_finished());
+}
+
+// --- Lerp geometry types ---
+
+#[test]
+fn lerp_point_at_boundaries() {
+    use crate::geometry::Point;
+    let a: Point = Point::new(0.0, 0.0);
+    let b: Point = Point::new(10.0, 20.0);
+    assert_eq!(Point::lerp(a, b, 0.0), a);
+    assert_eq!(Point::lerp(a, b, 1.0), b);
+}
+
+#[test]
+fn lerp_point_at_midpoint() {
+    use crate::geometry::Point;
+    let a: Point = Point::new(0.0, 0.0);
+    let b: Point = Point::new(10.0, 20.0);
+    let mid = Point::lerp(a, b, 0.5);
+    assert_eq!(mid, Point::new(5.0, 10.0));
+}
+
+#[test]
+fn lerp_size_at_boundaries() {
+    use crate::geometry::Size;
+    let a: Size = Size::new(100.0, 200.0);
+    let b: Size = Size::new(300.0, 400.0);
+    assert_eq!(Size::lerp(a, b, 0.0), a);
+    assert_eq!(Size::lerp(a, b, 1.0), b);
+}
+
+#[test]
+fn lerp_size_at_midpoint() {
+    use crate::geometry::Size;
+    let a: Size = Size::new(100.0, 200.0);
+    let b: Size = Size::new(300.0, 400.0);
+    let mid = Size::lerp(a, b, 0.5);
+    assert_eq!(mid, Size::new(200.0, 300.0));
+}
+
+#[test]
+fn lerp_rect_at_boundaries() {
+    use crate::geometry::Rect;
+    let a: Rect = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let b: Rect = Rect::new(10.0, 20.0, 200.0, 100.0);
+    assert_eq!(Rect::lerp(a, b, 0.0), a);
+    assert_eq!(Rect::lerp(a, b, 1.0), b);
+}
+
+#[test]
+fn lerp_rect_at_midpoint() {
+    use crate::geometry::Rect;
+    let a: Rect = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let b: Rect = Rect::new(10.0, 20.0, 200.0, 100.0);
+    let mid = Rect::lerp(a, b, 0.5);
+    assert_eq!(mid, Rect::new(5.0, 10.0, 150.0, 75.0));
+}
