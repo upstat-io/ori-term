@@ -249,3 +249,120 @@ fn multi_window_stale_window_returns_none() {
     let stale = WindowId::from_raw(42);
     assert_eq!(resolve_active_pane(&session, Some(stale)), None);
 }
+
+// -- Window lifecycle: close and focus transfer --
+//
+// These test the session-level logic that `close_window` and
+// `handle_mux_window_closed` rely on: removing a window from the
+// session model, verifying remaining windows resolve correctly,
+// and confirming focus can transfer to a surviving window.
+
+/// Build a two-window session: each window has one tab with one pane.
+fn two_window_session() -> (SessionRegistry, WindowId, WindowId, PaneId, PaneId) {
+    let mut session = SessionRegistry::new();
+
+    let w1 = WindowId::from_raw(1);
+    let t1 = TabId::from_raw(1);
+    let p1 = PaneId::from_raw(1);
+    let mut win1 = MuxWindow::new(w1);
+    win1.add_tab(t1);
+    session.add_window(win1);
+    session.add_tab(MuxTab::new(t1, p1));
+
+    let w2 = WindowId::from_raw(2);
+    let t2 = TabId::from_raw(2);
+    let p2 = PaneId::from_raw(2);
+    let mut win2 = MuxWindow::new(w2);
+    win2.add_tab(t2);
+    session.add_window(win2);
+    session.add_tab(MuxTab::new(t2, p2));
+
+    (session, w1, w2, p1, p2)
+}
+
+#[test]
+fn close_window_focus_transfers_to_remaining() {
+    let (mut session, w1, w2, _p1, p2) = two_window_session();
+
+    // Simulate closing window 1: remove it from the session.
+    session.remove_window(w1);
+
+    // Focus should transfer to window 2.
+    assert_eq!(session.window_count(), 1);
+    assert_eq!(resolve_active_pane(&session, Some(w2)), Some(p2));
+    // Old window no longer resolves.
+    assert_eq!(resolve_active_pane(&session, Some(w1)), None);
+}
+
+#[test]
+fn close_window_cleans_up_tabs() {
+    let (mut session, w1, w2, _p1, p2) = two_window_session();
+
+    // Get tab IDs before close.
+    let t1 = session.get_window(w1).unwrap().tabs()[0];
+    let t2 = session.get_window(w2).unwrap().tabs()[0];
+
+    // Close window 1 — remove its tabs too (mimics mux.close_window).
+    session.remove_tab(t1);
+    session.remove_window(w1);
+
+    // Window 1's tab is gone, window 2's tab still exists.
+    assert!(session.get_tab(t1).is_none());
+    assert!(session.get_tab(t2).is_some());
+    assert_eq!(session.tab_count(), 1);
+
+    // Window 2 still resolves normally.
+    assert_eq!(resolve_active_pane(&session, Some(w2)), Some(p2));
+}
+
+#[test]
+fn close_all_windows_leaves_empty_session() {
+    let (mut session, w1, w2, _p1, _p2) = two_window_session();
+
+    // Close both windows.
+    let t1 = session.get_window(w1).unwrap().tabs()[0];
+    let t2 = session.get_window(w2).unwrap().tabs()[0];
+    session.remove_tab(t1);
+    session.remove_window(w1);
+    session.remove_tab(t2);
+    session.remove_window(w2);
+
+    assert_eq!(session.window_count(), 0);
+    assert_eq!(session.tab_count(), 0);
+    assert_eq!(resolve_active_pane(&session, Some(w1)), None);
+    assert_eq!(resolve_active_pane(&session, Some(w2)), None);
+}
+
+#[test]
+fn multi_window_close_preserves_other_window_tabs() {
+    // Three windows. Close the middle one. Windows 1 and 3 unaffected.
+    let mut session = SessionRegistry::new();
+
+    let ids: Vec<_> = (1..=3)
+        .map(|i| {
+            let w = WindowId::from_raw(i);
+            let t = TabId::from_raw(i);
+            let p = PaneId::from_raw(i);
+            let mut win = MuxWindow::new(w);
+            win.add_tab(t);
+            session.add_window(win);
+            session.add_tab(MuxTab::new(t, p));
+            (w, t, p)
+        })
+        .collect();
+
+    // Close window 2.
+    session.remove_tab(ids[1].1);
+    session.remove_window(ids[1].0);
+
+    assert_eq!(session.window_count(), 2);
+    assert_eq!(
+        resolve_active_pane(&session, Some(ids[0].0)),
+        Some(ids[0].2)
+    );
+    assert_eq!(
+        resolve_active_pane(&session, Some(ids[2].0)),
+        Some(ids[2].2)
+    );
+    assert_eq!(resolve_active_pane(&session, Some(ids[1].0)), None);
+}
