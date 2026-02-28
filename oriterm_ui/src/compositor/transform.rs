@@ -95,6 +95,16 @@ impl Transform2D {
         [[a, b, 0.0], [c, d, 0.0], [tx, ty, 1.0]]
     }
 
+    /// Returns the X translation component (`tx`).
+    pub fn translation_x(self) -> f32 {
+        self.matrix[4]
+    }
+
+    /// Returns the Y translation component (`ty`).
+    pub fn translation_y(self) -> f32 {
+        self.matrix[5]
+    }
+
     // --- Predicates ---
 
     /// Returns `true` if this is the identity transform.

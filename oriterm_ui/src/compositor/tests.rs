@@ -93,6 +93,30 @@ fn default_is_identity() {
     assert_eq!(Transform2D::default(), Transform2D::identity());
 }
 
+// Translation accessors
+
+#[test]
+fn translation_x_identity() {
+    assert_eq!(Transform2D::identity().translation_x(), 0.0);
+}
+
+#[test]
+fn translation_y_identity() {
+    assert_eq!(Transform2D::identity().translation_y(), 0.0);
+}
+
+#[test]
+fn translation_x_from_translate() {
+    let t = Transform2D::translate(42.0, -7.5);
+    assert_eq!(t.translation_x(), 42.0);
+}
+
+#[test]
+fn translation_y_from_translate() {
+    let t = Transform2D::translate(42.0, -7.5);
+    assert_eq!(t.translation_y(), -7.5);
+}
+
 // Translate
 
 #[test]

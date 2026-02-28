@@ -202,35 +202,14 @@ impl TabBarWidget {
         self.drag_visual.is_some_and(|(i, _)| i == index)
     }
 
-    /// Decay tab animation offsets toward zero.
+    /// Swaps the internal animation offset buffer with an external one.
     ///
-    /// Returns `true` if any animation is still active (needs continued
-    /// rendering). Called each frame during the settling phase after a
-    /// drag-end or tab reorder.
-    ///
-    /// Uses exponential decay with a ~50ms half-life, snapping to zero
-    /// when offsets fall below 0.5 logical pixels.
-    pub fn decay_tab_animations(&mut self, dt: f32) -> bool {
-        /// Exponential decay rate (higher = faster settling).
-        /// At 15.0: ~50ms half-life, effectively settled by ~200ms.
-        const DECAY_RATE: f32 = 15.0;
-        /// Snap to zero when offset is smaller than this (logical pixels).
-        const SNAP_THRESHOLD: f32 = 0.5;
-
-        let factor = (-DECAY_RATE * dt).exp();
-        let mut any_active = false;
-        for offset in &mut self.anim_offsets {
-            if *offset == 0.0 {
-                continue;
-            }
-            *offset *= factor;
-            if offset.abs() < SNAP_THRESHOLD {
-                *offset = 0.0;
-            } else {
-                any_active = true;
-            }
-        }
-        any_active
+    /// Used by [`TabSlideState`](super::slide::TabSlideState) to populate
+    /// per-tab offsets from compositor transforms without allocating. The
+    /// caller fills `buf` with compositor-driven offsets, swaps in, and
+    /// gets the old buffer back for reuse next frame.
+    pub fn swap_anim_offsets(&mut self, buf: &mut Vec<f32>) {
+        std::mem::swap(&mut self.anim_offsets, buf);
     }
 }
 

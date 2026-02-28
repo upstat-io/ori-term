@@ -513,46 +513,6 @@ fn bell_phase_zero_after_duration() {
     assert!((phase - 0.0).abs() < f32::EPSILON);
 }
 
-// --- decay_tab_animations ---
-
-#[test]
-fn decay_animations_empty_offsets() {
-    let mut w = TabBarWidget::new(1200.0);
-    w.set_anim_offsets(vec![]);
-    assert!(!w.decay_tab_animations(1.0 / 60.0));
-}
-
-#[test]
-fn decay_animations_zeroes_stay_zero() {
-    let mut w = TabBarWidget::new(1200.0);
-    w.set_anim_offsets(vec![0.0, 0.0, 0.0]);
-    assert!(!w.decay_tab_animations(1.0 / 60.0));
-}
-
-#[test]
-fn decay_animations_nonzero_returns_active() {
-    let mut w = TabBarWidget::new(1200.0);
-    w.set_anim_offsets(vec![100.0, -50.0]);
-    let still_active = w.decay_tab_animations(1.0 / 60.0);
-    assert!(still_active, "should still be animating after one frame");
-    // Another frame should also still be active (100px takes many frames).
-    let still_active = w.decay_tab_animations(1.0 / 60.0);
-    assert!(still_active, "should still be animating after two frames");
-}
-
-#[test]
-fn decay_animations_settles_to_zero() {
-    let mut w = TabBarWidget::new(1200.0);
-    w.set_anim_offsets(vec![10.0]);
-    // Simulate many frames (200ms at 60fps = 12 frames).
-    for _ in 0..60 {
-        w.decay_tab_animations(1.0 / 60.0);
-    }
-    // After 1 second, should be fully settled.
-    let still_active = w.decay_tab_animations(1.0 / 60.0);
-    assert!(!still_active, "should be settled after 60 frames");
-}
-
 // --- Button repositioning during drag ---
 
 #[test]
@@ -899,44 +859,6 @@ fn update_tab_title_out_of_bounds_is_noop() {
     assert_eq!(w.tab_count(), 1);
 }
 
-// --- Animation offset edge cases (Medium Priority) ---
-
-#[test]
-fn anim_offsets_longer_than_tabs() {
-    let mut w = TabBarWidget::new(1200.0);
-    w.set_tabs(vec![TabEntry::new("A")]);
-    w.set_anim_offsets(vec![10.0, 20.0, 30.0]); // More offsets than tabs.
-    let still = w.decay_tab_animations(1.0 / 60.0);
-    assert!(still, "extra offsets should still decay");
-}
-
-#[test]
-fn anim_offsets_shorter_than_tabs() {
-    let mut w = TabBarWidget::new(1200.0);
-    w.set_tabs(vec![
-        TabEntry::new("A"),
-        TabEntry::new("B"),
-        TabEntry::new("C"),
-    ]);
-    w.set_anim_offsets(vec![10.0]); // Fewer offsets than tabs.
-    let still = w.decay_tab_animations(1.0 / 60.0);
-    assert!(still, "should still decay the one offset");
-}
-
-#[test]
-fn resize_during_animation_preserves_finite_layout() {
-    let mut w = TabBarWidget::new(1200.0);
-    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    w.set_anim_offsets(vec![50.0, -30.0]);
-    // Resize mid-animation.
-    w.set_window_width(800.0);
-    // Layout recomputed; animations still present.
-    let still = w.decay_tab_animations(1.0 / 60.0);
-    assert!(still);
-    assert!(w.layout().tab_width >= TAB_MIN_WIDTH);
-    assert!(w.layout().tabs_end().is_finite());
-}
-
 // --- Degenerate layout inputs (Low Priority) ---
 
 #[test]
@@ -1076,17 +998,6 @@ fn width_lock_prevents_shift_on_tab_removal() {
         (w.layout().tab_width - locked).abs() < f32::EPSILON,
         "width lock should prevent layout shift on tab removal"
     );
-}
-
-// --- Large decay dt (frame skip) ---
-
-#[test]
-fn decay_with_large_dt_settles_immediately() {
-    let mut w = TabBarWidget::new(1200.0);
-    w.set_anim_offsets(vec![100.0, -200.0]);
-    // Simulate a 1-second frame skip (e.g., GPU stall).
-    let still = w.decay_tab_animations(1.0);
-    assert!(!still, "1-second dt should settle all offsets to zero");
 }
 
 // --- Theme wiring (gap analysis) ---

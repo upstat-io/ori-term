@@ -289,6 +289,16 @@ impl ApplicationHandler<TermEvent> for App {
                 let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
                 ctx.overlays
                     .cleanup_dismissed(&mut ctx.layer_tree, &ctx.layer_animator);
+
+                // Clean up finished tab slide layers and sync offsets to widget.
+                if ctx.tab_slide.has_active() {
+                    ctx.tab_slide
+                        .cleanup(&mut ctx.layer_tree, &ctx.layer_animator);
+                    let count = ctx.tab_bar.tab_count();
+                    ctx.tab_slide
+                        .sync_to_widget(count, &ctx.layer_tree, &mut ctx.tab_bar);
+                }
+
                 if animating {
                     ctx.dirty = true;
                 }
