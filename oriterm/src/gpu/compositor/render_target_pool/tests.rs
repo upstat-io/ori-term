@@ -21,3 +21,20 @@ fn bucket_minimum_is_256() {
     assert_eq!(round_up_to_bucket(128), 256);
     assert_eq!(round_up_to_bucket(255), 256);
 }
+
+#[test]
+fn bucket_large_dimensions() {
+    assert_eq!(round_up_to_bucket(4096), 4096);
+    assert_eq!(round_up_to_bucket(4097), 8192);
+    assert_eq!(round_up_to_bucket(8192), 8192);
+    assert_eq!(round_up_to_bucket(8193), 16384);
+}
+
+#[test]
+fn bucket_exact_powers_of_two() {
+    // Every exact power of two from 256 up should return itself.
+    for exp in 8..=14 {
+        let val = 1u32 << exp;
+        assert_eq!(round_up_to_bucket(val), val, "2^{exp} = {val}");
+    }
+}

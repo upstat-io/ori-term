@@ -347,6 +347,10 @@ impl LayerTree {
     /// Reorders `id` relative to `sibling`. If `above` is true, `id`
     /// is placed after `sibling`; otherwise before.
     fn reorder_sibling(&mut self, id: LayerId, sibling: LayerId, above: bool) {
+        if id == sibling {
+            return;
+        }
+
         // Find shared parent.
         let parent_id = match self.layers.get(&id).and_then(Layer::parent) {
             Some(pid) => pid,

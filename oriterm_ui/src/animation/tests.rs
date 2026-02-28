@@ -871,3 +871,34 @@ fn lerp_rect_at_midpoint() {
     let mid = Rect::lerp(a, b, 0.5);
     assert_eq!(mid, Rect::new(5.0, 10.0, 150.0, 75.0));
 }
+
+// --- AnimatedValue with EaseInOut easing ---
+
+#[test]
+fn animated_value_ease_in_out_symmetric() {
+    let mut av: AnimatedValue<f32> =
+        AnimatedValue::new(0.0, Duration::from_millis(200), Easing::EaseInOut);
+    let now = Instant::now();
+    av.set(1.0, now);
+
+    // At 25%: should be < 0.5 (slow start).
+    let at_quarter = av.get(now + Duration::from_millis(50));
+    assert!(
+        at_quarter < 0.5,
+        "EaseInOut at 25% should be < 0.5, got {at_quarter}"
+    );
+
+    // At midpoint: should be ~0.5.
+    let at_mid = av.get(now + Duration::from_millis(100));
+    assert!(
+        (at_mid - 0.5).abs() < 0.05,
+        "EaseInOut at 50% should be ~0.5, got {at_mid}"
+    );
+
+    // Symmetry: at_quarter + at_three_quarters ≈ 1.0.
+    let at_three_quarters = av.get(now + Duration::from_millis(150));
+    assert!(
+        (at_quarter + at_three_quarters - 1.0).abs() < 0.05,
+        "EaseInOut should be symmetric: {at_quarter} + {at_three_quarters} ≈ 1.0"
+    );
+}
