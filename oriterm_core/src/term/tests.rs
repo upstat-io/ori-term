@@ -1520,7 +1520,7 @@ fn ris_clears_prompt_state() {
     assert_eq!(term.prompt_state(), super::PromptState::None);
 
     // Manually set prompt state to simulate mid-cycle.
-    *term.prompt_state_mut() = super::PromptState::CommandStart;
+    term.set_prompt_state(super::PromptState::CommandStart);
 
     // RIS should clear everything.
     feed(&mut term, b"\x1bc");
@@ -1535,7 +1535,7 @@ fn ris_clears_prompt_state() {
 #[test]
 fn ris_clears_cwd_and_title_state() {
     let mut term = make_term();
-    *term.cwd_mut() = Some("/home/user".to_string());
+    term.set_cwd(Some("/home/user".to_string()));
     term.set_has_explicit_title(true);
     term.mark_title_dirty();
 

@@ -1,9 +1,11 @@
 //! Raw VTE interceptor for sequences the high-level processor drops.
 //!
-//! The `vte::ansi::Processor` does not route OSC 7, OSC 133, OSC 9/99/777,
+//! The `vte::ansi::Processor` does not route OSC 133, OSC 9/99/777,
 //! or XTVERSION (CSI >q) to `Handler` trait methods. This interceptor uses
 //! a raw `vte::Parser` with a custom `Perform` impl to catch these sequences
-//! before the high-level processor discards them.
+//! before the high-level processor discards them. OSC 7 is also handled here
+//! (with proper URI parsing and percent-decoding) instead of through the
+//! high-level `Handler::set_working_directory`, which stores the raw URI.
 
 use oriterm_core::event::EventListener;
 use oriterm_core::{Notification, PromptState};
@@ -72,7 +74,7 @@ impl<T: EventListener> RawInterceptor<'_, T> {
         let raw_path = parse_osc7_path(uri);
         if !raw_path.is_empty() {
             let path = percent_decode(raw_path).into_owned();
-            *self.term.cwd_mut() = Some(path.clone());
+            self.term.set_cwd(Some(path.clone()));
             self.term.set_has_explicit_title(false);
             self.term.mark_title_dirty();
             self.term
@@ -88,20 +90,20 @@ impl<T: EventListener> RawInterceptor<'_, T> {
         }
         match params[1][0] {
             b'A' => {
-                *self.term.prompt_state_mut() = PromptState::PromptStart;
+                self.term.set_prompt_state(PromptState::PromptStart);
                 self.term.set_prompt_mark_pending(true);
             }
             b'B' => {
-                *self.term.prompt_state_mut() = PromptState::CommandStart;
+                self.term.set_prompt_state(PromptState::CommandStart);
                 self.term.set_command_start_mark_pending(true);
             }
             b'C' => {
-                *self.term.prompt_state_mut() = PromptState::OutputStart;
+                self.term.set_prompt_state(PromptState::OutputStart);
                 self.term.set_command_start(std::time::Instant::now());
                 self.term.set_output_start_mark_pending(true);
             }
             b'D' => {
-                *self.term.prompt_state_mut() = PromptState::None;
+                self.term.set_prompt_state(PromptState::None);
                 if let Some(duration) = self.term.finish_command() {
                     self.term
                         .event_listener()

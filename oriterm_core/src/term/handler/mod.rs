@@ -438,11 +438,6 @@ impl<T: EventListener> Handler for Term<T> {
         self.osc_clipboard_load(clipboard, terminator);
     }
 
-    /// OSC 7: set working directory (shell integration).
-    fn set_working_directory(&mut self, uri: Option<String>) {
-        self.osc_set_working_directory(uri);
-    }
-
     /// OSC 8: set or clear hyperlink.
     fn set_hyperlink(&mut self, hyperlink: Option<VteHyperlink>) {
         self.osc_set_hyperlink(hyperlink);

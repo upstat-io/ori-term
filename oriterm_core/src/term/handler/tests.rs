@@ -2424,32 +2424,8 @@ fn osc1_sets_icon_name_not_title() {
     assert!(events.iter().any(|e| e.contains("IconName")));
 }
 
-#[test]
-fn osc7_sets_working_directory() {
-    let mut t = term();
-    feed(&mut t, b"\x1b]7;file:///home/user/projects\x07");
-
-    assert_eq!(t.cwd(), Some("file:///home/user/projects"));
-}
-
-#[test]
-fn osc7_clears_working_directory() {
-    let mut t = term();
-    feed(&mut t, b"\x1b]7;file:///home/user\x07");
-    assert_eq!(t.cwd(), Some("file:///home/user"));
-
-    // Empty payload clears CWD.
-    feed(&mut t, b"\x1b]7;\x07");
-    assert_eq!(t.cwd(), None);
-}
-
-#[test]
-fn osc7_with_st_terminator() {
-    let mut t = term();
-    feed(&mut t, b"\x1b]7;file:///tmp\x1b\\");
-
-    assert_eq!(t.cwd(), Some("file:///tmp"));
-}
+// OSC 7 is handled by the raw interceptor (oriterm::shell_integration),
+// not by the high-level Handler impl. See shell_integration/tests.rs.
 
 // --- ESC sequence tests ---
 

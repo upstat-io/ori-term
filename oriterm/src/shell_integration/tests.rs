@@ -298,7 +298,7 @@ fn effective_title_prefers_explicit() {
     proc.advance(&mut term, b"\x1b]0;my terminal\x07");
 
     // Also set CWD via raw interceptor.
-    *term.cwd_mut() = Some("/home/user/projects".to_string());
+    term.set_cwd(Some("/home/user/projects".to_string()));
 
     // Explicit title should win.
     assert_eq!(term.effective_title(), "my terminal");
@@ -309,7 +309,7 @@ fn effective_title_falls_back_to_cwd() {
     let mut term = make_term();
 
     // CWD set but no explicit title.
-    *term.cwd_mut() = Some("/home/user/projects".to_string());
+    term.set_cwd(Some("/home/user/projects".to_string()));
     assert!(!term.has_explicit_title());
 
     assert_eq!(term.effective_title(), "projects");
