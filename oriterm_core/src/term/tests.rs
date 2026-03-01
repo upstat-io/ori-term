@@ -1258,3 +1258,250 @@ fn term_resize_with_vte_wrapped_content() {
     assert_eq!(term.grid()[Line(0)][Column(10)].ch, 'k');
     assert_eq!(term.grid()[Line(0)][Column(19)].ch, 't');
 }
+
+// --- Prompt marker tests ---
+
+#[test]
+fn mark_prompt_row_creates_marker_with_prompt_row_only() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    let markers = term.prompt_markers();
+    assert_eq!(markers.len(), 1);
+    assert!(markers[0].command.is_none());
+    assert!(markers[0].output.is_none());
+}
+
+#[test]
+fn mark_command_start_fills_last_marker() {
+    let mut term = make_term();
+    // Mark prompt first.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    // Mark command start.
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+
+    let markers = term.prompt_markers();
+    assert_eq!(markers.len(), 1);
+    assert!(markers[0].command.is_some());
+    assert!(markers[0].output.is_none());
+}
+
+#[test]
+fn mark_output_start_fills_last_marker() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    let markers = term.prompt_markers();
+    assert_eq!(markers.len(), 1);
+    assert!(markers[0].output.is_some());
+}
+
+#[test]
+fn mark_prompt_row_avoids_duplicates() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    // Same row, should not create a duplicate.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    assert_eq!(term.prompt_markers().len(), 1);
+}
+
+#[test]
+fn prune_prompt_markers_removes_evicted() {
+    let mut term = make_term();
+    // Push 3 lines to scrollback so cursor moves.
+    feed(&mut term, b"\r\n\r\n\r\n");
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    let row_before = term.prompt_markers()[0].prompt;
+    assert!(row_before > 0, "prompt row should be > 0 after newlines");
+
+    // Simulate evicting 1 row — all row indices shift down by 1.
+    term.prune_prompt_markers(1);
+
+    let markers = term.prompt_markers();
+    assert_eq!(markers.len(), 1);
+    assert_eq!(markers[0].prompt, row_before - 1);
+}
+
+#[test]
+fn prune_prompt_markers_removes_fully_evicted() {
+    let mut term = make_term();
+    // Marker at the very first row (row 0 in scrollback space).
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    // Evict beyond that row.
+    term.prune_prompt_markers(100);
+
+    assert!(term.prompt_markers().is_empty());
+}
+
+#[test]
+fn prune_prompt_markers_adjusts_all_fields() {
+    let mut term = make_term();
+    // Push a few lines.
+    feed(&mut term, b"\r\n\r\n\r\n\r\n\r\n");
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    // Move cursor down then mark B.
+    feed(&mut term, b"\r\n");
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+    // Move cursor down then mark C.
+    feed(&mut term, b"\r\n");
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    let ps = term.prompt_markers()[0].prompt;
+    let cs = term.prompt_markers()[0].command.unwrap();
+    let os = term.prompt_markers()[0].output.unwrap();
+
+    // Evict 2 rows.
+    term.prune_prompt_markers(2);
+
+    let m = &term.prompt_markers()[0];
+    assert_eq!(m.prompt, ps - 2);
+    assert_eq!(m.command, Some(cs - 2));
+    assert_eq!(m.output, Some(os - 2));
+}
+
+#[test]
+fn command_output_range_returns_correct_bounds() {
+    let mut term = make_term();
+    // Simulate a prompt lifecycle: A at row 0, B at row 0, C at row 1.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+    feed(&mut term, b"\r\n");
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    let output_start = term.prompt_markers()[0].output.unwrap();
+    let range = term.command_output_range(0);
+    assert!(range.is_some());
+    let (start, end) = range.unwrap();
+    assert_eq!(start, output_start);
+    // Last marker: end should be the cursor row.
+    let cursor_row = term.grid().scrollback().len() + term.grid().cursor().line();
+    assert_eq!(end, cursor_row);
+}
+
+#[test]
+fn command_output_range_bounded_by_next_prompt() {
+    let mut term = make_term();
+    // First prompt lifecycle.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+    feed(&mut term, b"\r\n");
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    // Push more lines and create a second prompt.
+    feed(&mut term, b"\r\n\r\n\r\n");
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    let second_prompt_start = term.prompt_markers()[1].prompt;
+    let range = term.command_output_range(0).unwrap();
+    assert_eq!(range.1, second_prompt_start - 1);
+}
+
+#[test]
+fn command_input_range_returns_correct_bounds() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+    feed(&mut term, b"\r\n");
+    term.set_output_start_mark_pending(true);
+    term.mark_output_start_row();
+
+    let cmd_start = term.prompt_markers()[0].command.unwrap();
+    let output_start = term.prompt_markers()[0].output.unwrap();
+    let range = term.command_input_range(0);
+    assert!(range.is_some());
+    let (start, end) = range.unwrap();
+    assert_eq!(start, cmd_start);
+    assert_eq!(end, output_start - 1);
+}
+
+#[test]
+fn range_returns_none_when_no_markers() {
+    let term = make_term();
+    assert!(term.command_output_range(0).is_none());
+    assert!(term.command_input_range(0).is_none());
+}
+
+#[test]
+fn range_returns_none_when_output_start_missing() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    // No C marker.
+    assert!(term.command_output_range(0).is_none());
+}
+
+#[test]
+fn range_returns_none_when_command_start_missing() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    // No B marker.
+    assert!(term.command_input_range(0).is_none());
+}
+
+#[test]
+fn scroll_to_previous_prompt_scrolls_viewport() {
+    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidListener);
+    // Fill scrollback: 30 lines.
+    for _ in 0..30 {
+        feed(&mut term, b"\r\n");
+    }
+    // Mark a prompt partway through.
+    // We need to go back and mark at a known position.
+    // Instead, mark at current position (row 30).
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    // Push more lines.
+    for _ in 0..20 {
+        feed(&mut term, b"\r\n");
+    }
+
+    // Viewport is at bottom. scroll_to_previous_prompt should scroll.
+    let scrolled = term.scroll_to_previous_prompt();
+    assert!(scrolled);
+    assert!(term.grid().display_offset() > 0);
+}
+
+#[test]
+fn scroll_to_next_prompt_scrolls_viewport() {
+    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidListener);
+    // Fill scrollback: 30 lines.
+    for _ in 0..30 {
+        feed(&mut term, b"\r\n");
+    }
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    // Scroll all the way back.
+    term.grid_mut().scroll_display(isize::MAX);
+
+    // Now scroll_to_next_prompt should find the marker.
+    let scrolled = term.scroll_to_next_prompt();
+    assert!(scrolled);
+}

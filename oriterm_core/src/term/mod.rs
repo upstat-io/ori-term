@@ -42,6 +42,21 @@ pub enum PromptState {
     OutputStart,
 }
 
+/// A single prompt lifecycle's boundary rows (absolute row indices).
+///
+/// Associates the OSC 133 sub-marker rows for one prompt: where the prompt
+/// started (A), where the command line started (B), and where command output
+/// started (C). Used for semantic zone navigation and selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptMarker {
+    /// Absolute row where OSC 133;A (prompt start) was received.
+    pub prompt: usize,
+    /// Absolute row where OSC 133;B (command start) was received.
+    pub command: Option<usize>,
+    /// Absolute row where OSC 133;C (output start) was received.
+    pub output: Option<usize>,
+}
+
 /// Desktop notification from the shell (OSC 9/99/777).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notification {
@@ -73,7 +88,8 @@ pub(crate) const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
 #[allow(
     clippy::struct_excessive_bools,
     reason = "terminal state naturally has independent boolean flags \
-              (selection_dirty, prompt_mark_pending, has_explicit_title, title_dirty)"
+              (selection_dirty, prompt_mark_pending, command_start_mark_pending, \
+              output_start_mark_pending, has_explicit_title, title_dirty)"
 )]
 pub struct Term<T: EventListener> {
     /// Primary grid (active when not in alt screen).
@@ -115,10 +131,14 @@ pub struct Term<T: EventListener> {
     /// Set when OSC 133;A arrives — actual grid row marking is deferred
     /// until after both VTE parsers finish processing.
     prompt_mark_pending: bool,
-    /// Absolute row indices where OSC 133;A (prompt start) was received.
-    /// Used for jump-to-prompt navigation and semantic zone detection.
+    /// Prompt lifecycle markers (OSC 133 A/B/C positions).
+    /// Used for jump-to-prompt navigation and semantic zone selection.
     /// Pruned when scrollback eviction removes old rows.
-    prompt_rows: Vec<usize>,
+    prompt_markers: Vec<PromptMarker>,
+    /// Set when OSC 133;B arrives — deferred until after both VTE parsers finish.
+    command_start_mark_pending: bool,
+    /// Set when OSC 133;C arrives — deferred until after both VTE parsers finish.
+    output_start_mark_pending: bool,
     /// Pending desktop notifications collected from OSC 9/99/777.
     pending_notifications: Vec<Notification>,
     /// When OSC 133;C (output start) was received — marks command execution start.
@@ -153,7 +173,9 @@ impl<T: EventListener> Term<T> {
             selection_dirty: false,
             prompt_state: PromptState::None,
             prompt_mark_pending: false,
-            prompt_rows: Vec::new(),
+            prompt_markers: Vec::new(),
+            command_start_mark_pending: false,
+            output_start_mark_pending: false,
             pending_notifications: Vec::new(),
             command_start: None,
             last_command_duration: None,

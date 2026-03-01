@@ -91,10 +91,14 @@ impl<T: EventListener> RawInterceptor<'_, T> {
                 *self.term.prompt_state_mut() = PromptState::PromptStart;
                 self.term.set_prompt_mark_pending(true);
             }
-            b'B' => *self.term.prompt_state_mut() = PromptState::CommandStart,
+            b'B' => {
+                *self.term.prompt_state_mut() = PromptState::CommandStart;
+                self.term.set_command_start_mark_pending(true);
+            }
             b'C' => {
                 *self.term.prompt_state_mut() = PromptState::OutputStart;
                 self.term.set_command_start(std::time::Instant::now());
+                self.term.set_output_start_mark_pending(true);
             }
             b'D' => {
                 *self.term.prompt_state_mut() = PromptState::None;

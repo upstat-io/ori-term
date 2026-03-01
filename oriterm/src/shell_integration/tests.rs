@@ -342,7 +342,7 @@ fn effective_title_empty_fallback() {
 #[test]
 fn mark_prompt_row_records_position() {
     let mut term = make_term();
-    assert!(term.prompt_rows().is_empty());
+    assert!(term.prompt_markers().is_empty());
 
     // Simulate OSC 133;A → prompt_mark_pending = true.
     intercept(&mut term, b"\x1b]133;A\x07");
@@ -351,7 +351,7 @@ fn mark_prompt_row_records_position() {
     // Mark the prompt row (deferred marking).
     term.mark_prompt_row();
     assert!(!term.prompt_mark_pending());
-    assert_eq!(term.prompt_rows(), &[0]); // Cursor at row 0 (scrollback 0 + line 0).
+    assert_eq!(term.prompt_markers()[0].prompt, 0); // Cursor at row 0.
 }
 
 #[test]
@@ -364,11 +364,12 @@ fn mark_prompt_row_avoids_duplicates() {
     term.mark_prompt_row();
 
     // Should not duplicate the same row.
-    assert_eq!(term.prompt_rows(), &[0]);
+    assert_eq!(term.prompt_markers().len(), 1);
+    assert_eq!(term.prompt_markers()[0].prompt, 0);
 }
 
 #[test]
-fn prune_prompt_rows_removes_evicted() {
+fn prune_prompt_markers_removes_evicted() {
     let mut term = make_term();
 
     // Manually insert some prompt rows.
@@ -378,8 +379,8 @@ fn prune_prompt_rows_removes_evicted() {
     term.set_prompt_mark_pending(true);
     // Can't easily move cursor in tests, so test prune directly.
     // Push artificial rows for testing.
-    term.prune_prompt_rows(0); // No-op.
-    assert_eq!(term.prompt_rows().len(), 1);
+    term.prune_prompt_markers(0); // No-op.
+    assert_eq!(term.prompt_markers().len(), 1);
 }
 
 #[test]
@@ -605,7 +606,7 @@ fn prompt_navigation_scrolls_to_previous() {
     // Mark prompt at current position (abs row 0).
     term.set_prompt_mark_pending(true);
     term.mark_prompt_row();
-    assert_eq!(term.prompt_rows(), &[0]);
+    assert_eq!(term.prompt_markers()[0].prompt, 0);
 
     // Write enough lines to push the prompt into scrollback.
     for _ in 0..20 {
@@ -639,7 +640,7 @@ fn prompt_navigation_scrolls_to_next() {
     }
     term.set_prompt_mark_pending(true);
     term.mark_prompt_row();
-    let prompt_row = *term.prompt_rows().last().unwrap();
+    let prompt_row = term.prompt_markers().last().unwrap().prompt;
 
     // Write more content to push the prompt into scrollback.
     for _ in 0..20 {

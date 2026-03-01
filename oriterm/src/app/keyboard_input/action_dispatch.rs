@@ -150,13 +150,44 @@ impl App {
                 self.pending_new_window = true;
                 true
             }
+            Action::PreviousPrompt => {
+                if let Some(pane) = self.active_pane() {
+                    pane.scroll_to_previous_prompt();
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::NextPrompt => {
+                if let Some(pane) = self.active_pane() {
+                    pane.scroll_to_next_prompt();
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::SelectCommandOutput => {
+                if let Some(pane) = self.active_pane_mut() {
+                    pane.select_command_output();
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::SelectCommandInput => {
+                if let Some(pane) = self.active_pane_mut() {
+                    pane.select_command_input();
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
             // Actions for future sections — consume the event but log a stub.
-            Action::ZoomIn
-            | Action::ZoomOut
-            | Action::ZoomReset
-            | Action::PreviousPrompt
-            | Action::NextPrompt
-            | Action::MoveTabToNewWindow => {
+            Action::ZoomIn | Action::ZoomOut | Action::ZoomReset | Action::MoveTabToNewWindow => {
                 log::debug!("keybinding action not yet implemented: {action:?}");
                 true
             }

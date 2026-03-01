@@ -4,12 +4,14 @@
 //! Processes `MuxEvent`s from PTY reader threads via `InProcessMux::poll_events`,
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
+use std::fmt::Write as _;
 use std::time::Duration;
 
 use oriterm_mux::{PaneId, WindowId as MuxWindowId};
 
 use crate::config::NotifyOnCommandFinish;
 use crate::mux_event::MuxNotification;
+use crate::platform::notify;
 
 use super::App;
 
@@ -181,10 +183,41 @@ impl App {
             }
         }
 
-        // OS notification dispatch is platform-specific (stretch goal).
-        // When implemented, it would go here.
+        // Build and dispatch OS notification.
+        let title = self
+            .panes
+            .get(&pane_id)
+            .map_or("Command finished", |p| {
+                let t = p.effective_title();
+                if t.is_empty() { "Command finished" } else { t }
+            })
+            .to_owned();
+        let body = format_duration_body(duration);
+        notify::send(&title, &body);
     }
+}
 
+/// Format a human-readable duration string for notification body.
+///
+/// Examples: `"Completed in 12s"`, `"Completed in 2m 30s"`, `"Completed in 1h 5m"`.
+fn format_duration_body(duration: Duration) -> String {
+    let secs = duration.as_secs();
+    let mut buf = String::from("Completed in ");
+    if secs >= 3600 {
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        let _ = write!(buf, "{h}h {m}m");
+    } else if secs >= 60 {
+        let m = secs / 60;
+        let s = secs % 60;
+        let _ = write!(buf, "{m}m {s}s");
+    } else {
+        let _ = write!(buf, "{secs}s");
+    }
+    buf
+}
+
+impl App {
     /// Handle a mux window being closed by removing its `WindowContext`.
     ///
     /// Scans `self.windows` for the winit ID matching the closed mux window,
@@ -213,3 +246,6 @@ impl App {
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

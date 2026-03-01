@@ -30,6 +30,16 @@ use crate::gpu::instance_writer::ScreenRect;
 
 pub(crate) use shaped_frame::ShapedFrame;
 
+/// Prompt marker bar color: subtle blue accent.
+const PROMPT_MARKER_COLOR: Rgb = Rgb {
+    r: 80,
+    g: 140,
+    b: 220,
+};
+
+/// Prompt marker bar width in pixels.
+const PROMPT_MARKER_WIDTH: f32 = 2.0;
+
 /// Match highlight background: yellow-tinted for visibility.
 const SEARCH_MATCH_BG: Rgb = Rgb {
     r: 100,
@@ -359,6 +369,9 @@ fn fill_frame(
     // Implicit URL hover: one continuous underline rect per segment.
     draw_url_hover_underline(input, frame, ox, oy);
 
+    // Visual prompt markers: thin colored bar at left margin of prompt rows.
+    draw_prompt_markers(input, frame, ox, oy);
+
     // Cursor instances (gated by terminal visibility AND application blink state).
     if cursor.visible && cursor_blink_visible {
         build_cursor(
@@ -502,6 +515,9 @@ pub(crate) fn fill_frame_shaped(
     // Implicit URL hover: one continuous underline rect per segment.
     draw_url_hover_underline(input, frame, ox, oy);
 
+    // Visual prompt markers: thin colored bar at left margin of prompt rows.
+    draw_prompt_markers(input, frame, ox, oy);
+
     // Cursor (gated by terminal visibility AND application blink state).
     if cursor.visible && cursor_blink_visible {
         build_cursor(
@@ -599,6 +615,29 @@ impl GlyphEmitter<'_> {
                 writer.push_glyph_with_bg(rect, uv, fg, bg, self.fg_dim, entry.page);
             }
         }
+    }
+}
+
+/// Draw visual prompt markers as thin colored bars at the left margin.
+///
+/// For each viewport row in `prompt_marker_rows`, emits a 2px-wide
+/// colored rectangle at the left edge of the row. Renders into the
+/// cursor layer so it appears above cell backgrounds.
+fn draw_prompt_markers(input: &FrameInput, frame: &mut PreparedFrame, ox: f32, oy: f32) {
+    if input.prompt_marker_rows.is_empty() {
+        return;
+    }
+    let ch = input.cell_size.height;
+    for &row in &input.prompt_marker_rows {
+        let x = ox;
+        let y = oy + row as f32 * ch;
+        let rect = ScreenRect {
+            x,
+            y,
+            w: PROMPT_MARKER_WIDTH,
+            h: ch,
+        };
+        frame.cursors.push_cursor(rect, PROMPT_MARKER_COLOR, 0.7);
     }
 }
 

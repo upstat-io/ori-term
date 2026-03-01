@@ -18,7 +18,9 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
-use oriterm_core::{FairMutex, SearchState, Selection, SelectionPoint, StableRowIndex, Term};
+use oriterm_core::{
+    FairMutex, SearchState, Selection, SelectionMode, SelectionPoint, Side, StableRowIndex, Term,
+};
 use oriterm_mux::{DomainId, PaneId};
 
 pub(crate) use mark_cursor::MarkCursor;
@@ -433,6 +435,78 @@ impl Pane {
         if let Err(e) = self.pty_control.resize(rows, cols) {
             log::warn!("PTY resize failed: {e}");
         }
+    }
+
+    // -- Prompt navigation --
+
+    /// Scroll to the nearest prompt above the current viewport.
+    ///
+    /// Returns `true` if the viewport was scrolled.
+    pub(crate) fn scroll_to_previous_prompt(&self) -> bool {
+        self.terminal.lock().scroll_to_previous_prompt()
+    }
+
+    /// Scroll to the nearest prompt below the current viewport.
+    ///
+    /// Returns `true` if the viewport was scrolled.
+    pub(crate) fn scroll_to_next_prompt(&self) -> bool {
+        self.terminal.lock().scroll_to_next_prompt()
+    }
+
+    /// Select command output for the prompt nearest to the viewport center.
+    ///
+    /// Returns `true` if a selection was created.
+    pub(crate) fn select_command_output(&mut self) -> bool {
+        let sel = self.build_zone_selection(Term::command_output_range);
+        if let Some(s) = sel {
+            self.selection = Some(s);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Select command input for the prompt nearest to the viewport center.
+    ///
+    /// Returns `true` if a selection was created.
+    pub(crate) fn select_command_input(&mut self) -> bool {
+        let sel = self.build_zone_selection(Term::command_input_range);
+        if let Some(s) = sel {
+            self.selection = Some(s);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Build a line selection from a range-finding function on the terminal.
+    fn build_zone_selection(
+        &self,
+        range_fn: impl FnOnce(&Term<MuxEventProxy>, usize) -> Option<(usize, usize)>,
+    ) -> Option<Selection> {
+        let term = self.terminal.lock();
+        let grid = term.grid();
+        let sb_len = grid.scrollback().len();
+        let viewport_center = sb_len.saturating_sub(grid.display_offset()) + grid.lines() / 2;
+        let (start_row, end_row) = range_fn(&term, viewport_center)?;
+        let start_stable = StableRowIndex::from_absolute(grid, start_row);
+        let end_stable = StableRowIndex::from_absolute(grid, end_row);
+        let anchor = SelectionPoint {
+            row: start_stable,
+            col: 0,
+            side: Side::Left,
+        };
+        let pivot = SelectionPoint {
+            row: end_stable,
+            col: usize::MAX,
+            side: Side::Right,
+        };
+        Some(Selection {
+            mode: SelectionMode::Line,
+            anchor,
+            pivot,
+            end: anchor,
+        })
     }
 }
 

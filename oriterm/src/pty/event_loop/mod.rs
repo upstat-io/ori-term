@@ -172,16 +172,22 @@ impl<T: EventListener> PtyEventLoop<T> {
             self.processor.advance(&mut *term, chunk);
 
             // 3. Deferred prompt marking: if the raw interceptor set
-            //    `prompt_mark_pending`, the cursor is now at the correct
-            //    position after the high-level processor updated it.
+            //    pending flags, the cursor is now at the correct position
+            //    after the high-level processor updated it.
             if term.prompt_mark_pending() {
                 term.mark_prompt_row();
             }
+            if term.command_start_mark_pending() {
+                term.mark_command_start_row();
+            }
+            if term.output_start_mark_pending() {
+                term.mark_output_start_row();
+            }
 
-            // 4. Prune prompt rows invalidated by scrollback eviction.
+            // 4. Prune prompt markers invalidated by scrollback eviction.
             let newly_evicted = term.grid().total_evicted() - evicted_before;
             if newly_evicted > 0 {
-                term.prune_prompt_rows(newly_evicted);
+                term.prune_prompt_markers(newly_evicted);
             }
 
             let sync_bytes = self.processor.sync_bytes_count();

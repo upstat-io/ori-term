@@ -218,6 +218,11 @@ impl App {
                         frame.hovered_url_segments.clear();
                     }
 
+                    // Visual prompt markers: clear if disabled.
+                    if !self.config.behavior.prompt_markers {
+                        frame.prompt_marker_rows.clear();
+                    }
+
                     if layout.is_focused {
                         // Save stable row base for search bar restoration after the loop.
                         focused_base = frame.content.stable_row_base;

@@ -3434,3 +3434,47 @@ fn nonzero_cols_zero_rows_produces_empty_frame() {
     assert_eq!(frame.backgrounds.len(), 0);
     assert_eq!(frame.glyphs.len(), 0);
 }
+
+// ── Prompt marker tests ──
+
+#[test]
+fn prompt_markers_emit_cursor_rects() {
+    let mut input = FrameInput::test_grid(4, 3, "");
+    input.content.cursor.visible = false;
+    input.prompt_marker_rows = vec![0, 2];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Two prompt marker bars should appear in the cursor layer.
+    assert_eq!(frame.cursors.len(), 2, "expected 2 prompt marker rects");
+}
+
+#[test]
+fn prompt_markers_empty_emits_no_rects() {
+    let mut input = FrameInput::test_grid(4, 3, "");
+    input.content.cursor.visible = false;
+    input.prompt_marker_rows = Vec::new();
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(
+        frame.cursors.len(),
+        0,
+        "no prompt markers = no cursor rects"
+    );
+}
+
+#[test]
+fn prompt_markers_with_origin_offset() {
+    let mut input = FrameInput::test_grid(4, 3, "");
+    input.content.cursor.visible = false;
+    input.prompt_marker_rows = vec![1];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (10.0, 20.0));
+
+    // One marker rect at row 1 with origin offset applied.
+    assert_eq!(frame.cursors.len(), 1, "expected 1 prompt marker rect");
+}
