@@ -18,6 +18,9 @@ sections:
     title: Window Controls
     status: not-started
   - id: "21.5"
+    title: Taskbar Jump List & Dock Menu
+    status: not-started
+  - id: "21.6"
     title: Section Completion
     status: not-started
 ---
@@ -215,15 +218,99 @@ Custom window controls for the frameless window, integrated into the tab bar. Pl
 
 ---
 
-## 21.5 Section Completion
+## 21.5 Taskbar Jump List & Dock Menu
+
+OS-level quick-action menus that appear when the user right-clicks the app icon in the Windows taskbar or macOS dock. These provide fast access to common actions (new tab, new window, profiles) without first focusing the app window.
+
+**File:** `oriterm/src/platform/jump_list.rs` (new — Windows), `oriterm/src/platform/dock_menu.rs` (new — macOS)
+
+**Reference:** Windows Terminal `Jumplist.cpp` (COM-based, profile entries), WezTerm `app.rs` (`applicationDockMenu` — "New Window"), Ghostty `AppDelegate.swift` (dock menu — "New Window" + "New Tab")
+
+### Windows — Jump List
+
+Win32 COM API: `ICustomDestinationList` + `IShellLinkW`. Items appear in the taskbar right-click menu and Start menu pin.
+
+- [ ] Jump list initialization on app startup:
+  - [ ] Create `ICustomDestinationList` instance (`CLSID_DestinationList`)
+  - [ ] `BeginList()` → get max slots, removed objects
+  - [ ] Build task collection via `IObjectCollection`
+  - [ ] `CommitList()` to publish
+- [ ] Built-in tasks (always present):
+  - [ ] **New Tab** — launches `ori_term.exe --new-tab` (or reuses running instance via IPC when Section 34 lands)
+  - [ ] **New Window** — launches `ori_term.exe --new-window`
+- [ ] Profile quick-launch entries (when profile system exists):
+  - [ ] One `IShellLinkW` per configured profile
+  - [ ] Display name: profile name (e.g., "PowerShell", "Ubuntu")
+  - [ ] Arguments: `--profile {profile_name}`
+  - [ ] Icon: profile icon path if configured, otherwise app icon
+  - [ ] Grouped under custom "Profiles" category
+- [ ] `IShellLinkW` construction per item:
+  - [ ] `SetPath()` → path to `ori_term.exe`
+  - [ ] `SetArguments()` → command-line args for the action
+  - [ ] `SetDescription()` → tooltip text
+  - [ ] `IPropertyStore::SetValue(PKEY_Title)` → display name
+  - [ ] `IPropertyStore::SetValue(PKEY_AppUserModel_ID)` → app user model ID (for taskbar grouping)
+- [ ] Update triggers:
+  - [ ] On startup (always rebuild)
+  - [ ] On profile add/remove/rename (when profile system exists)
+  - [ ] On config reload (if profile list changed)
+- [ ] Error handling: Jump list APIs may fail (Explorer not running, COM init failure) — log and continue, never crash
+
+### macOS — Dock Menu
+
+Cocoa API: implement `applicationDockMenu(_:)` on `NSApplicationDelegate`, return `NSMenu`.
+
+- [ ] Dock menu setup:
+  - [ ] Implement `applicationDockMenu:` delegate method (via objc2 / cocoa crate)
+  - [ ] Return cached `NSMenu` instance (rebuilt when menu items change)
+- [ ] Menu items:
+  - [ ] **New Window** — `NSMenuItem` with action selector → spawns new window
+  - [ ] **New Tab** — `NSMenuItem` with action selector → adds tab to frontmost window
+  - [ ] Separator
+  - [ ] Profile entries (when profile system exists): one item per profile
+- [ ] Update triggers:
+  - [ ] Rebuild menu on profile change
+  - [ ] Menu is queried lazily by AppKit (no push needed — just update the cached `NSMenu`)
+
+### Linux — Desktop Actions (Static)
+
+`.desktop` file actions — defined at install time, not dynamically updated.
+
+- [ ] `.desktop` file entries:
+  ```ini
+  [Desktop Action new-window]
+  Name=New Window
+  Exec=ori_term --new-window
+
+  [Desktop Action new-tab]
+  Name=New Tab
+  Exec=ori_term --new-tab
+  ```
+- [ ] Reference in main `[Desktop Entry]` section: `Actions=new-window;new-tab;`
+- [ ] No runtime API needed — desktop environments read `.desktop` file at install/login
+- [ ] Dynamic quicklists (Ubuntu Unity `com.canonical.unity.launcher`) — stretch goal, low priority
+
+**Tests:**
+- [ ] Windows: Jump list builds without COM errors (mock `ICustomDestinationList` or integration test)
+- [ ] Windows: correct number of `IShellLinkW` items created for N profiles + 2 built-in tasks
+- [ ] macOS: `NSMenu` returned by dock menu contains expected items
+- [ ] Linux: `.desktop` file validates with `desktop-file-validate`
+- [ ] All platforms: graceful degradation when API unavailable (log warning, no crash)
+
+---
+
+## 21.6 Section Completion
 
 This is the **final feature parity checkpoint**. Completing this section means the rebuild matches the old prototype's full capability.
 
-- [ ] All 21.1–21.4 items complete
+- [ ] All 21.1–21.5 items complete
 - [ ] Context menu: 3 menu types, GPU-rendered, checkmark entries, shadow rendering
 - [ ] Config reload: broadcast to all tabs/windows, font atlas rebuild, grid reflow
 - [ ] Settings UI: separate window, color scheme selector, live preview, persist to config
 - [ ] Window controls: platform-specific rendering, Aero Snap, frameless drag
+- [ ] Jump List (Windows): "New Tab", "New Window", profile entries in taskbar right-click
+- [ ] Dock Menu (macOS): "New Window", "New Tab" in dock right-click
+- [ ] Desktop Actions (Linux): `.desktop` file with new-window/new-tab actions
 - [ ] Tab struct: clean ownership, lock-free mode cache, background thread cleanup
 - [ ] Tab management: create, close, duplicate, cycle, reorder, CWD inheritance
 - [ ] Tab bar layout: DPI-aware, width lock, platform-specific control zone

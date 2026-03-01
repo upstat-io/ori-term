@@ -387,6 +387,7 @@ dragged tab overlay, drag_visual_x, tab animation offsets, decay
 tab bar hit testing, TabBarHit, CloseTab, NewTab, DropdownButton, DragArea
 close button inset, platform-specific controls, Windows rectangular, macOS circular
 tab hover preview, terminal preview, thumbnail, TerminalPreviewWidget, offscreen render
+tab icon, emoji, TabIcon, process icon, OSC 1, icon name, color emoji in tab
 ```
 
 ---
@@ -465,6 +466,10 @@ atlas rebuild, resize all tabs all windows, keybinding rebuild
 settings UI, settings_window, color scheme list, checkmark
 window controls, minimize, maximize, close, platform-specific
 frameless, drag window, Aero Snap, double-click maximize
+jump list, Jump List, ICustomDestinationList, IShellLinkW, taskbar right-click
+dock menu, applicationDockMenu, NSMenu, dock right-click, macOS dock
+desktop actions, .desktop file, Linux quicklist, New Window, New Tab
+profile quick-launch, taskbar integration, start menu
 ```
 
 ---
@@ -636,6 +641,9 @@ hide cursor while typing, set_cursor_visible, mouse move restore
 minimum contrast, WCAG 2.0, luminance, shader
 HiDPI, scale_factor, ScaleFactorChanged, DPI-aware
 visual effects, polish, refinement
+vector icons, tiny_skia, icon rasterization, anti-aliased icons, IconPath, PathCommand
+close button icon, minimize icon, maximize icon, restore icon, chevron icon, plus icon
+jagged lines, staircase, pixel stepping, smooth icons, Chrome-style icons
 background image, PNG, JPEG, texture, opacity, position
 window shadow, padding, margin, GRID_PADDING
 ```

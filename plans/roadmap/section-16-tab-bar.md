@@ -14,6 +14,9 @@ sections:
   - id: "16.3"
     title: Tab Bar Hit Testing
     status: in-progress
+  - id: "16.5"
+    title: Tab Icons & Emoji
+    status: not-started
   - id: "16.4"
     title: Section Completion
     status: in-progress
@@ -208,9 +211,50 @@ Map mouse coordinates to tab bar actions. Hit testing determines whether a click
 
 ---
 
+## 16.5 Tab Icons & Emoji
+
+Render emoji and icon characters in tab titles. The font pipeline already supports color emoji (Section 6.10 — CBDT/CBLC, COLR/CPAL via swash + Segoe UI Emoji / Noto Color Emoji fallback). This subsection wires that capability into the tab bar so that process icons, user-set emoji, and OSC-set icons display correctly next to tab titles.
+
+**File:** `oriterm_ui/src/widgets/tab_bar/widget/draw.rs` (icon rendering), `oriterm_core/src/tab.rs` (icon state)
+
+**Reference:** Windows Terminal profile `"icon"` setting, iTerm2 per-tab icon, OSC 1 (icon name)
+
+- [ ] Per-tab icon state:
+  - [ ] `tab_icon: Option<TabIcon>` on tab metadata
+  - [ ] `TabIcon` enum: `Emoji(String)` (single grapheme cluster), `None`
+  - [ ] Default: `None` (no icon, title only — current behavior)
+- [ ] Icon sources (priority order, highest wins):
+  1. [ ] **OSC 1 (Set Icon Name)**: VTE handler sets `tab_icon` when `OSC 1 ; Pt ST` received — if `Pt` starts with an emoji grapheme, use it as `TabIcon::Emoji`
+  2. [ ] **Profile config**: `[tab] icon = "🐍"` in TOML config per-profile (future, when profiles exist)
+  3. [ ] **Process detection** (stretch goal): detect foreground process name (python → 🐍, node → ⬡, vim → ) — requires shell integration (Section 20) for reliable CWD/process tracking
+- [ ] Tab bar rendering changes:
+  - [ ] When `tab_icon` is `Some(Emoji(s))`:
+    - [ ] Shape the emoji string through the UI font collection (which includes color emoji fallback)
+    - [ ] Render the emoji glyph at the left edge of the tab content area (before the title text)
+    - [ ] Icon width: one cell width (emoji are typically width-2 but rendered at UI font scale)
+    - [ ] Shift title text right by `icon_width + ICON_TEXT_GAP` (4px gap)
+    - [ ] Recalculate max text width to account for icon space
+  - [ ] When `tab_icon` is `None`: current behavior (title only, no shift)
+- [ ] Color emoji atlas integration:
+  - [ ] Emoji glyphs go to color atlas pages (existing path from 6.10)
+  - [ ] Tab bar draw code must use `push_image()` for color emoji (not `push_text()` which applies fg tinting)
+  - [ ] Verify emoji render at UI font scale (not terminal cell scale)
+- [ ] Constants:
+  - [ ] `ICON_TEXT_GAP: f32 = 4.0` — pixels between icon and title text
+  - [ ] `TAB_ICON_SIZE: f32` — derived from UI font metrics (cap height or line height)
+
+**Tests:**
+- [ ] Tab with emoji icon renders icon + title without overlap
+- [ ] Tab without icon renders title at original position (no regression)
+- [ ] OSC 1 with emoji prefix sets `tab_icon`
+- [ ] OSC 1 with plain text (no emoji) does not set icon (title only)
+- [ ] Icon respects DPI scaling
+
+---
+
 ## 16.4 Section Completion
 
-- [ ] All 16.1–16.3 items complete
+- [ ] All 16.1–16.3, 16.5 items complete
 - [x] Tab bar layout: DPI-aware, width lock, platform-specific control zone
 - [x] Tab bar rendering: separators with suppression, bell pulse, dragged tab overlay, animation offsets
 - [x] Hit testing: correct priority order, close button inset, platform-specific controls
