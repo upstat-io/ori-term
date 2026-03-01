@@ -2413,14 +2413,15 @@ fn osc_set_title_none_resets() {
 }
 
 #[test]
-fn osc1_sets_window_title() {
+fn osc1_sets_icon_name_not_title() {
     let (mut t, listener) = term_with_recorder();
-    // OSC 1 (set icon name) — treated the same as set title.
+    // OSC 1 sets icon name only, not window title.
     feed(&mut t, b"\x1b]1;Icon Title\x07");
 
-    assert_eq!(t.title(), "Icon Title");
+    assert!(t.title().is_empty(), "OSC 1 should not change title");
+    assert_eq!(t.icon_name(), "Icon Title");
     let events = listener.events();
-    assert!(events.iter().any(|e| e.contains("Title(Icon Title)")));
+    assert!(events.iter().any(|e| e.contains("IconName")));
 }
 
 #[test]
@@ -4190,5 +4191,65 @@ fn osc4_set_reset_then_verify() {
         t.palette().resolve(vte::ansi::Color::Indexed(3)),
         original,
         "OSC 104 should restore to the original default"
+    );
+}
+
+// --- Icon name (OSC 0/1) tests ---
+
+#[test]
+fn osc_1_sets_icon_name_only() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b]1;\xF0\x9F\x90\x8Dpython\x07");
+    assert_eq!(t.icon_name(), "🐍python");
+    assert!(t.title().is_empty(), "OSC 1 should not change title");
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("IconName")),
+        "OSC 1 should emit IconName event, got: {events:?}",
+    );
+}
+
+#[test]
+fn osc_0_sets_both_title_and_icon_name() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b]0;hello\x07");
+    assert_eq!(t.title(), "hello");
+    assert_eq!(t.icon_name(), "hello");
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("Title")),
+        "OSC 0 should emit Title event, got: {events:?}",
+    );
+    assert!(
+        events.iter().any(|e| e.contains("IconName")),
+        "OSC 0 should emit IconName event, got: {events:?}",
+    );
+}
+
+#[test]
+fn osc_2_does_not_set_icon_name() {
+    let (mut t, _) = term_with_recorder();
+    feed(&mut t, b"\x1b]2;title\x07");
+    assert_eq!(t.title(), "title");
+    assert!(
+        t.icon_name().is_empty(),
+        "OSC 2 should not change icon name"
+    );
+}
+
+#[test]
+fn osc_set_icon_name_none_resets() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b]1;icon\x07");
+    assert_eq!(t.icon_name(), "icon");
+
+    use vte::ansi::Handler;
+    t.set_icon_name(None);
+
+    assert!(t.icon_name().is_empty());
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("ResetIconName")),
+        "set_icon_name(None) should emit ResetIconName, got: {events:?}",
     );
 }

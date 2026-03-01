@@ -46,6 +46,10 @@ pub fn shape_text_string(
         // advance (proportional, not monospace cell_w).
         let face_idx = if ch == ' ' {
             run_face
+        } else if is_likely_emoji(ch) {
+            collection
+                .resolve_prefer_emoji(ch, GlyphStyle::Regular)
+                .face_idx
         } else {
             collection.resolve(ch, GlyphStyle::Regular).face_idx
         };
@@ -218,22 +222,34 @@ fn shape_ui_run(
     mut buffer: rustybuzz::UnicodeBuffer,
 ) -> rustybuzz::UnicodeBuffer {
     let Some(face) = faces.get(face_idx.as_usize()).and_then(|f| f.as_ref()) else {
-        // No face — emit advance-only glyphs based on unicode width.
+        // No rustybuzz face — try cmap + font metrics for each character.
+        // This handles color emoji fonts that ttf-parser can't parse for
+        // shaping but that swash can still rasterize via cmap lookup.
         let cell_w = collection.cell_metrics().width;
         for ch in text.chars() {
-            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
-            if w == 0 {
-                continue;
+            if let Some((gid, advance)) = collection.cmap_glyph(ch, face_idx) {
+                output.push(ShapedGlyph {
+                    glyph_id: gid,
+                    face_index: face_idx.0,
+                    synthetic: 0,
+                    x_advance: advance,
+                    x_offset: 0.0,
+                    y_offset: 0.0,
+                });
+            } else {
+                let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+                if w == 0 {
+                    continue;
+                }
+                output.push(ShapedGlyph {
+                    glyph_id: 0,
+                    face_index: face_idx.0,
+                    synthetic: 0,
+                    x_advance: w as f32 * cell_w,
+                    x_offset: 0.0,
+                    y_offset: 0.0,
+                });
             }
-            let w = w as f32;
-            output.push(ShapedGlyph {
-                glyph_id: 0,
-                face_index: face_idx.0,
-                synthetic: 0,
-                x_advance: w * cell_w,
-                x_offset: 0.0,
-                y_offset: 0.0,
-            });
         }
         return buffer;
     };
@@ -262,4 +278,21 @@ fn shape_ui_run(
     }
 
     glyph_buffer.clear()
+}
+
+/// Whether a codepoint is likely emoji and should prefer emoji font resolution.
+///
+/// Mirrors the ranges in `oriterm_ui::widgets::tab_bar::emoji::is_emoji_presentation`
+/// plus ZWJ and variation selectors used in emoji sequences.
+fn is_likely_emoji(cp: char) -> bool {
+    matches!(cp,
+        '\u{2300}'..='\u{23FF}'
+        | '\u{2600}'..='\u{27BF}'
+        | '\u{2B50}'..='\u{2B55}'
+        | '\u{200D}'
+        | '\u{FE0F}'
+        | '\u{3030}' | '\u{303D}'
+        | '\u{3297}' | '\u{3299}'
+        | '\u{1F100}'..='\u{1FFFF}'
+    )
 }

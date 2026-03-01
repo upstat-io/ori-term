@@ -40,6 +40,13 @@ pub(crate) enum MuxEvent {
         /// New title text.
         title: String,
     },
+    /// Pane icon name changed (OSC 0/1).
+    PaneIconChanged {
+        /// Which pane changed icon name.
+        pane_id: PaneId,
+        /// New icon name text.
+        icon_name: String,
+    },
     /// Pane working directory changed (OSC 7).
     #[allow(dead_code, reason = "constructed when OSC 7 handling is wired to App")]
     PaneCwdChanged {
@@ -86,6 +93,9 @@ impl fmt::Debug for MuxEvent {
             }
             Self::PaneTitleChanged { pane_id, title } => {
                 write!(f, "PaneTitleChanged({pane_id}, {title:?})")
+            }
+            Self::PaneIconChanged { pane_id, icon_name } => {
+                write!(f, "PaneIconChanged({pane_id}, {icon_name:?})")
             }
             Self::PaneCwdChanged { pane_id, cwd } => {
                 write!(f, "PaneCwdChanged({pane_id}, {cwd:?})")
@@ -178,6 +188,18 @@ impl EventListener for MuxEventProxy {
                     title: String::new(),
                 });
             }
+            Event::IconName(name) => {
+                self.send(MuxEvent::PaneIconChanged {
+                    pane_id: self.pane_id,
+                    icon_name: name,
+                });
+            }
+            Event::ResetIconName => {
+                self.send(MuxEvent::PaneIconChanged {
+                    pane_id: self.pane_id,
+                    icon_name: String::new(),
+                });
+            }
             Event::ClipboardStore(clipboard_type, text) => {
                 self.send(MuxEvent::ClipboardStore {
                     pane_id: self.pane_id,
@@ -217,6 +239,8 @@ impl EventListener for MuxEventProxy {
 /// These flow from the mux to the winit event loop after the mux has
 /// processed incoming [`MuxEvent`]s and updated its state.
 pub(crate) enum MuxNotification {
+    /// A pane's title or icon name changed — re-sync tab bar.
+    PaneTitleChanged(PaneId),
     /// A pane has new content to render.
     PaneDirty(PaneId),
     /// A pane was closed (PTY exited, removed from registry).
@@ -256,6 +280,7 @@ pub(crate) enum MuxNotification {
 impl fmt::Debug for MuxNotification {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::PaneTitleChanged(id) => write!(f, "PaneTitleChanged({id})"),
             Self::PaneDirty(id) => write!(f, "PaneDirty({id})"),
             Self::PaneClosed(id) => write!(f, "PaneClosed({id})"),
             Self::TabLayoutChanged(id) => write!(f, "TabLayoutChanged({id})"),

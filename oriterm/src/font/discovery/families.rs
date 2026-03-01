@@ -192,6 +192,10 @@ pub(crate) const DWRITE_FALLBACK_FAMILIES: &[&str] =
 #[cfg(target_os = "windows")]
 pub(crate) const FALLBACK_FONTS: &[FallbackSpec] = &[
     FallbackSpec {
+        name: "Segoe UI Emoji",
+        filenames: &[r"C:\Windows\Fonts\seguiemj.ttf"],
+    },
+    FallbackSpec {
         name: "Segoe UI Symbol",
         filenames: &[r"C:\Windows\Fonts\seguisym.ttf"],
     },
@@ -253,6 +257,10 @@ pub(crate) const PRIMARY_FAMILIES: &[FamilySpec] = &[
 
 #[cfg(target_os = "linux")]
 pub(crate) const FALLBACK_FONTS: &[FallbackSpec] = &[
+    FallbackSpec {
+        name: "Noto Color Emoji",
+        filenames: &["NotoColorEmoji.ttf"],
+    },
     FallbackSpec {
         name: "Noto Sans Mono",
         filenames: &["NotoSansMono-Regular.ttf"],

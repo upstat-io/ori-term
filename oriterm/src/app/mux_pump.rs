@@ -92,7 +92,7 @@ impl App {
                     ctx.dirty = true;
                 }
             }
-            MuxNotification::WindowTabsChanged(_) => {
+            MuxNotification::PaneTitleChanged(_) | MuxNotification::WindowTabsChanged(_) => {
                 self.sync_tab_bar_from_mux();
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;

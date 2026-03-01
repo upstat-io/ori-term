@@ -134,6 +134,24 @@ fn reset_title_maps_to_empty_title() {
 }
 
 #[test]
+fn icon_name_maps_to_pane_icon_changed() {
+    let (proxy, rx, _, _) = test_proxy();
+    proxy.send_event(Event::IconName("🐍python".to_string()));
+    let event = rx.try_recv().unwrap();
+    assert!(
+        matches!(&event, MuxEvent::PaneIconChanged { pane_id, icon_name } if *pane_id == PaneId::from_raw(1) && icon_name == "🐍python")
+    );
+}
+
+#[test]
+fn reset_icon_name_maps_to_empty_icon() {
+    let (proxy, rx, _, _) = test_proxy();
+    proxy.send_event(Event::ResetIconName);
+    let event = rx.try_recv().unwrap();
+    assert!(matches!(&event, MuxEvent::PaneIconChanged { icon_name, .. } if icon_name.is_empty()));
+}
+
+#[test]
 fn pty_write_maps_to_pty_write() {
     let (proxy, rx, _, _) = test_proxy();
     proxy.send_event(Event::PtyWrite("data".to_string()));
@@ -216,6 +234,8 @@ fn disconnected_receiver_does_not_panic() {
     proxy.send_event(Event::Bell);
     proxy.send_event(Event::Title("test".to_string()));
     proxy.send_event(Event::ResetTitle);
+    proxy.send_event(Event::IconName("🐍".to_string()));
+    proxy.send_event(Event::ResetIconName);
     proxy.send_event(Event::PtyWrite("data".to_string()));
     proxy.send_event(Event::ChildExit(0));
 
@@ -244,6 +264,13 @@ fn mux_event_debug_all_variants() {
                 title: "hello".to_string(),
             },
             "PaneTitleChanged(Pane(1), \"hello\")",
+        ),
+        (
+            MuxEvent::PaneIconChanged {
+                pane_id: id,
+                icon_name: "🐍".to_string(),
+            },
+            "PaneIconChanged(Pane(1), \"🐍\")",
         ),
         (
             MuxEvent::PaneCwdChanged {
@@ -298,6 +325,10 @@ fn mux_notification_debug_all_variants() {
     let wid = WindowId::from_raw(3);
 
     let cases: Vec<(MuxNotification, &str)> = vec![
+        (
+            MuxNotification::PaneTitleChanged(pid),
+            "PaneTitleChanged(Pane(1))",
+        ),
         (MuxNotification::PaneDirty(pid), "PaneDirty(Pane(1))"),
         (MuxNotification::PaneClosed(pid), "PaneClosed(Pane(1))"),
         (

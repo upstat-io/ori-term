@@ -33,6 +33,10 @@ pub enum Event {
     Title(String),
     /// Window title reset to default.
     ResetTitle,
+    /// Icon name changed (OSC 0/1).
+    IconName(String),
+    /// Icon name reset to default.
+    ResetIconName,
     /// OSC 52 clipboard store request.
     ClipboardStore(ClipboardType, String),
     /// OSC 52 clipboard load request.
@@ -61,6 +65,8 @@ impl fmt::Debug for Event {
             Self::Bell => write!(f, "Bell"),
             Self::Title(t) => write!(f, "Title({t})"),
             Self::ResetTitle => write!(f, "ResetTitle"),
+            Self::IconName(n) => write!(f, "IconName({n})"),
+            Self::ResetIconName => write!(f, "ResetIconName"),
             Self::ClipboardStore(ty, text) => write!(f, "ClipboardStore({ty:?}, {text})"),
             Self::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
             Self::ColorRequest(idx, _) => write!(f, "ColorRequest({idx})"),

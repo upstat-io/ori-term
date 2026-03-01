@@ -19,22 +19,39 @@ use super::colors::TabBarColors;
 use super::hit::TabBarHit;
 use super::layout::TabBarLayout;
 
+/// Icon type for tab entries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TabIcon {
+    /// Single emoji grapheme cluster.
+    Emoji(String),
+}
+
 /// Per-tab visual state provided by the application layer.
 #[derive(Debug, Clone)]
 pub struct TabEntry {
     /// Tab title (empty string shows "Terminal" as fallback).
     pub title: String,
+    /// Optional icon to show before the title.
+    pub icon: Option<TabIcon>,
     /// When the bell last fired (for pulse animation). `None` if no bell.
     pub bell_start: Option<Instant>,
 }
 
 impl TabEntry {
-    /// Creates a tab entry with the given title and no bell.
+    /// Creates a tab entry with the given title, no icon, and no bell.
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
+            icon: None,
             bell_start: None,
         }
+    }
+
+    /// Sets the tab icon.
+    #[must_use]
+    pub fn with_icon(mut self, icon: Option<TabIcon>) -> Self {
+        self.icon = icon;
+        self
     }
 }
 

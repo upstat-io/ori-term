@@ -32,6 +32,20 @@ impl<T: EventListener> Term<T> {
         self.event_listener.send_event(event);
     }
 
+    /// OSC 0/1: set icon name.
+    pub(super) fn osc_set_icon_name(&mut self, name: Option<String>) {
+        let event = if let Some(n) = name {
+            debug!("Setting icon name to '{n}'");
+            self.icon_name.clone_from(&n);
+            Event::IconName(n)
+        } else {
+            debug!("Resetting icon name");
+            self.icon_name.clear();
+            Event::ResetIconName
+        };
+        self.event_listener.send_event(event);
+    }
+
     /// Push current title onto the title stack (xterm extension).
     pub(super) fn osc_push_title(&mut self) {
         debug!("Pushing title '{}'", self.title);

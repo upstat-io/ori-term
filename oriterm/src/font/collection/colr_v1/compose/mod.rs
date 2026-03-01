@@ -1,24 +1,37 @@
-//! CPU compositing of COLR v1 paint commands into RGBA bitmaps.
+//! CPU compositing of COLR v1 paint commands via tiny-skia.
 //!
-//! Rasterizes each glyph outline via swash and composites the resulting
-//! alpha mask with the resolved brush color onto the output buffer using
-//! `SrcOver` blending.
+//! Uses tiny-skia for proper 2D rendering: path clipping, gradient fills,
+//! transform stacks, and compositing layers. Glyph outlines are extracted
+//! via skrifa's [`OutlinePen`] and converted to tiny-skia paths.
 
-use swash::FontRef;
-use swash::scale::{Render, ScaleContext, Source};
-use swash::zeno::Format;
+use skrifa::color::{CompositeMode, Extend, Transform as ColrTransform};
+use skrifa::instance::{LocationRef, Size};
+use skrifa::outline::OutlinePen;
+use skrifa::{FontRef as SkriFontRef, GlyphId, MetadataProvider};
 
 use super::{ClipBox, PaintCommand, ResolvedBrush, ResolvedColorStop, Rgba};
-use crate::font::collection::{FaceData, font_ref};
+use crate::font::collection::FaceData;
 
-/// Composite all paint commands onto the RGBA bitmap.
+/// Shared compositing context passed to all rendering helpers.
 ///
-/// Commands are replayed in order. `FillGlyph` commands rasterize the
-/// glyph outline as an alpha mask and composite with the brush color.
-/// Transform and clip commands modify the rasterization context.
+/// Bundles bitmap dimensions, scale factor, clip box, and accumulated
+/// transform so they don't need to be passed as individual arguments.
+struct ComposeCtx<'a> {
+    width: u32,
+    height: u32,
+    scale: f32,
+    clip: &'a ClipBox,
+    xf: ColrTransform,
+}
+
+/// Composite all paint commands onto the RGBA bitmap using tiny-skia.
+///
+/// Commands are replayed in order with proper transform stack, clip mask
+/// management via [`tiny_skia::Mask`], and layer compositing via separate
+/// pixmaps.
 #[expect(
     clippy::too_many_arguments,
-    reason = "compositing context: bitmap, dimensions, font data, scale context"
+    reason = "module entry point — all parameters are required by the compositor"
 )]
 pub(super) fn composite_commands(
     commands: &[PaintCommand],
@@ -28,144 +41,339 @@ pub(super) fn composite_commands(
     clip: ClipBox,
     fd: &FaceData,
     size_px: f32,
-    variations: &[(&str, f32)],
-    ctx: &mut ScaleContext,
 ) {
+    let Some(mut pixmap) = tiny_skia::Pixmap::new(width, height) else {
+        return;
+    };
+    let Ok(font) = SkriFontRef::from_index(&fd.bytes, fd.face_index) else {
+        return;
+    };
+    let outlines = font.outline_glyphs();
+    let m = font.metrics(Size::unscaled(), LocationRef::default());
+    let upem = m.units_per_em as f32;
+    let scale = if upem > 0.0 { size_px / upem } else { 1.0 };
+
+    let mut xform_stack = vec![ColrTransform::default()];
+    let mut mask_stack: Vec<Option<tiny_skia::Mask>> = Vec::new();
+    let mut current_mask: Option<tiny_skia::Mask> = None;
+    let mut layer_stack: Vec<(tiny_skia::Pixmap, CompositeMode)> = Vec::new();
+
     for cmd in commands {
+        // Recompute per iteration — transform stack may have changed.
+        let ctx = ComposeCtx {
+            width,
+            height,
+            scale,
+            clip: &clip,
+            xf: accumulated(&xform_stack),
+        };
         match cmd {
-            PaintCommand::FillGlyph {
-                glyph_id, brush, ..
-            } => {
-                let Some(gid) = u16::try_from(glyph_id.to_u32()).ok() else {
-                    continue;
-                };
-                composite_fill_glyph(
-                    bitmap, width, height, clip, fd, gid, size_px, variations, brush, ctx,
+            PaintCommand::PushTransform(t) => {
+                xform_stack.push(ctx.xf * *t);
+            }
+            PaintCommand::PopTransform => {
+                if xform_stack.len() > 1 {
+                    xform_stack.pop();
+                }
+            }
+            PaintCommand::PushClipGlyph(glyph_id) => {
+                mask_stack.push(current_mask.take());
+                current_mask = make_glyph_mask(
+                    &outlines,
+                    *glyph_id,
+                    &ctx,
+                    mask_stack.last().and_then(|m| m.as_ref()),
                 );
             }
+            PaintCommand::PushClipBox(cb) => {
+                mask_stack.push(current_mask.take());
+                current_mask = make_box_mask(cb, &ctx, mask_stack.last().and_then(|m| m.as_ref()));
+            }
+            PaintCommand::PopClip => {
+                current_mask = mask_stack.pop().flatten();
+            }
             PaintCommand::Fill(brush) => {
-                // Fill the entire clip area with the brush (no glyph mask).
-                fill_rect(bitmap, width, height, brush);
+                fill_brush(&mut pixmap, brush, &ctx, None, current_mask.as_ref());
             }
-            // Transform, clip, and layer commands are not yet handled in the
-            // CPU path. Most emoji only use FillGlyph + Solid, so this covers
-            // the common case. Complex compositions will render with slight
-            // artifacts until GPU render-to-texture is added.
-            PaintCommand::PushTransform(_)
-            | PaintCommand::PopTransform
-            | PaintCommand::PushClipGlyph(_)
-            | PaintCommand::PushClipBox(_)
-            | PaintCommand::PopClip
-            | PaintCommand::PushLayer(_)
-            | PaintCommand::PopLayer => {}
+            PaintCommand::FillGlyph {
+                glyph_id,
+                brush,
+                brush_transform,
+            } => {
+                if let Some(path) = glyph_path(&outlines, *glyph_id, &ctx) {
+                    if let Some(paint) = make_paint(brush, &ctx, brush_transform.as_ref()) {
+                        pixmap.fill_path(
+                            &path,
+                            &paint,
+                            tiny_skia::FillRule::Winding,
+                            tiny_skia::Transform::identity(),
+                            current_mask.as_ref(),
+                        );
+                    }
+                }
+            }
+            PaintCommand::PushLayer(mode) => {
+                if let Some(new_px) = tiny_skia::Pixmap::new(width, height) {
+                    let base = std::mem::replace(&mut pixmap, new_px);
+                    layer_stack.push((base, *mode));
+                }
+            }
+            PaintCommand::PopLayer => {
+                if let Some((mut base, mode)) = layer_stack.pop() {
+                    let paint = tiny_skia::PixmapPaint {
+                        blend_mode: to_blend_mode(mode),
+                        ..tiny_skia::PixmapPaint::default()
+                    };
+                    base.draw_pixmap(
+                        0,
+                        0,
+                        pixmap.as_ref(),
+                        &paint,
+                        tiny_skia::Transform::identity(),
+                        None,
+                    );
+                    pixmap = base;
+                }
+            }
         }
+    }
+
+    bitmap.copy_from_slice(pixmap.data());
+}
+
+fn accumulated(stack: &[ColrTransform]) -> ColrTransform {
+    stack.last().copied().unwrap_or_default()
+}
+
+// Outline extraction
+
+/// Extract a glyph outline as a tiny-skia `Path` in bitmap coordinates.
+fn glyph_path(
+    outlines: &skrifa::outline::OutlineGlyphCollection<'_>,
+    glyph_id: GlyphId,
+    ctx: &ComposeCtx<'_>,
+) -> Option<tiny_skia::Path> {
+    let glyph = outlines.get(glyph_id)?;
+    let settings =
+        skrifa::outline::DrawSettings::unhinted(Size::unscaled(), LocationRef::default());
+    let mut pen = SkiaPen::new(ctx.scale, ctx.clip, &ctx.xf);
+    glyph.draw(settings, &mut pen).ok()?;
+    pen.finish()
+}
+
+/// Build a glyph clip mask.
+fn make_glyph_mask(
+    outlines: &skrifa::outline::OutlineGlyphCollection<'_>,
+    glyph_id: GlyphId,
+    ctx: &ComposeCtx<'_>,
+    parent: Option<&tiny_skia::Mask>,
+) -> Option<tiny_skia::Mask> {
+    let path = glyph_path(outlines, glyph_id, ctx)?;
+    let mut mask = tiny_skia::Mask::new(ctx.width, ctx.height)?;
+    mask.fill_path(
+        &path,
+        tiny_skia::FillRule::Winding,
+        true,
+        tiny_skia::Transform::identity(),
+    );
+    if let Some(p) = parent {
+        intersect_masks(&mut mask, p);
+    }
+    Some(mask)
+}
+
+/// Build a clip-box mask.
+fn make_box_mask(
+    cb: &ClipBox,
+    ctx: &ComposeCtx<'_>,
+    parent: Option<&tiny_skia::Mask>,
+) -> Option<tiny_skia::Mask> {
+    let path = box_path(cb, ctx.scale, ctx.clip, &ctx.xf)?;
+    let mut mask = tiny_skia::Mask::new(ctx.width, ctx.height)?;
+    mask.fill_path(
+        &path,
+        tiny_skia::FillRule::Winding,
+        true,
+        tiny_skia::Transform::identity(),
+    );
+    if let Some(p) = parent {
+        intersect_masks(&mut mask, p);
+    }
+    Some(mask)
+}
+
+/// Build a rectangular path from a COLR clip box.
+fn box_path(
+    cb: &ClipBox,
+    scale: f32,
+    clip: &ClipBox,
+    xf: &ColrTransform,
+) -> Option<tiny_skia::Path> {
+    let corners = [
+        (cb.x_min, cb.y_min),
+        (cb.x_max, cb.y_min),
+        (cb.x_max, cb.y_max),
+        (cb.x_min, cb.y_max),
+    ];
+    let mut b = tiny_skia::PathBuilder::new();
+    for (i, &(fx, fy)) in corners.iter().enumerate() {
+        let bx = to_bx(fx, fy, scale, clip, xf);
+        let by = to_by(fx, fy, scale, clip, xf);
+        if i == 0 {
+            b.move_to(bx, by);
+        } else {
+            b.line_to(bx, by);
+        }
+    }
+    b.close();
+    b.finish()
+}
+
+// Coordinate transform
+
+/// Font-unit X → bitmap X.
+fn to_bx(fx: f32, fy: f32, scale: f32, clip: &ClipBox, t: &ColrTransform) -> f32 {
+    scale * (t.xx * fx + t.xy * fy + t.dx) - clip.x_min
+}
+
+/// Font-unit Y → bitmap Y (Y-flipped).
+fn to_by(fx: f32, fy: f32, scale: f32, clip: &ClipBox, t: &ColrTransform) -> f32 {
+    clip.y_max - scale * (t.yx * fx + t.yy * fy + t.dy)
+}
+
+// Outline pen
+
+/// Converts skrifa outline commands to a tiny-skia `PathBuilder`.
+///
+/// Applies the combined COLR transform + scale + Y-flip + bitmap offset
+/// to each point during collection.
+struct SkiaPen {
+    builder: tiny_skia::PathBuilder,
+    scale: f32,
+    clip_x_min: f32,
+    clip_y_max: f32,
+    xx: f32,
+    xy: f32,
+    dx: f32,
+    yx: f32,
+    yy: f32,
+    dy: f32,
+}
+
+impl SkiaPen {
+    fn new(scale: f32, clip: &ClipBox, xf: &ColrTransform) -> Self {
+        Self {
+            builder: tiny_skia::PathBuilder::new(),
+            scale,
+            clip_x_min: clip.x_min,
+            clip_y_max: clip.y_max,
+            xx: xf.xx,
+            xy: xf.xy,
+            dx: xf.dx,
+            yx: xf.yx,
+            yy: xf.yy,
+            dy: xf.dy,
+        }
+    }
+
+    fn bx(&self, fx: f32, fy: f32) -> f32 {
+        self.scale * (self.xx * fx + self.xy * fy + self.dx) - self.clip_x_min
+    }
+
+    fn by(&self, fx: f32, fy: f32) -> f32 {
+        self.clip_y_max - self.scale * (self.yx * fx + self.yy * fy + self.dy)
+    }
+
+    fn finish(self) -> Option<tiny_skia::Path> {
+        self.builder.finish()
     }
 }
 
-/// Rasterize a glyph outline and composite with the brush onto the bitmap.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "rasterization parameters for a single glyph layer"
-)]
-fn composite_fill_glyph(
-    bitmap: &mut [u8],
-    bmp_w: u32,
-    bmp_h: u32,
-    clip: ClipBox,
-    fd: &FaceData,
-    glyph_id: u16,
-    size_px: f32,
-    variations: &[(&str, f32)],
+impl OutlinePen for SkiaPen {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.builder.move_to(self.bx(x, y), self.by(x, y));
+    }
+
+    fn line_to(&mut self, x: f32, y: f32) {
+        self.builder.line_to(self.bx(x, y), self.by(x, y));
+    }
+
+    fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+        self.builder.quad_to(
+            self.bx(cx0, cy0),
+            self.by(cx0, cy0),
+            self.bx(x, y),
+            self.by(x, y),
+        );
+    }
+
+    fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+        self.builder.cubic_to(
+            self.bx(cx0, cy0),
+            self.by(cx0, cy0),
+            self.bx(cx1, cy1),
+            self.by(cx1, cy1),
+            self.bx(x, y),
+            self.by(x, y),
+        );
+    }
+
+    fn close(&mut self) {
+        self.builder.close();
+    }
+}
+
+// Brush / paint
+
+/// Fill the entire pixmap with a brush (respecting current mask).
+fn fill_brush(
+    pixmap: &mut tiny_skia::Pixmap,
     brush: &ResolvedBrush,
-    ctx: &mut ScaleContext,
+    ctx: &ComposeCtx<'_>,
+    brush_xf: Option<&ColrTransform>,
+    mask: Option<&tiny_skia::Mask>,
 ) {
-    let fr = font_ref(fd);
-
-    // Rasterize just the outline (no color sources).
-    let mask = rasterize_outline(&fr, glyph_id, size_px, variations, ctx);
-    let Some(mask) = mask else { return };
-
-    // Position the mask within the bitmap based on bearings and clip origin.
-    let mask_x = mask.placement.left as f32 - clip.x_min;
-    let mask_y = clip.y_max - mask.placement.top as f32;
-
-    let mx = mask_x.round() as i32;
-    let my = mask_y.round() as i32;
-
-    // Composite each mask pixel with the brush color.
-    for row in 0..mask.placement.height {
-        for col in 0..mask.placement.width {
-            let bx = mx + col as i32;
-            let by = my + row as i32;
-            if bx < 0 || by < 0 || bx >= bmp_w as i32 || by >= bmp_h as i32 {
-                continue;
-            }
-            let mask_idx = (row * mask.placement.width + col) as usize;
-            let alpha = mask.data[mask_idx] as f32 / 255.0;
-            if alpha < 1.0 / 255.0 {
-                continue;
-            }
-
-            let color = brush_color_at(brush, bx as f32, by as f32);
-            let src = Rgba {
-                r: color.r * alpha,
-                g: color.g * alpha,
-                b: color.b * alpha,
-                a: color.a * alpha,
-            };
-
-            blend_src_over(bitmap, bmp_w, bx as u32, by as u32, src);
-        }
-    }
+    let Some(paint) = make_paint(brush, ctx, brush_xf) else {
+        return;
+    };
+    let w = pixmap.width() as f32;
+    let h = pixmap.height() as f32;
+    let Some(rect) = tiny_skia::Rect::from_xywh(0.0, 0.0, w, h) else {
+        return;
+    };
+    pixmap.fill_rect(rect, &paint, tiny_skia::Transform::identity(), mask);
 }
 
-/// Fill the entire bitmap with a brush (no glyph mask).
-fn fill_rect(bitmap: &mut [u8], width: u32, height: u32, brush: &ResolvedBrush) {
-    for y in 0..height {
-        for x in 0..width {
-            let color = brush_color_at(brush, x as f32, y as f32);
-            blend_src_over(bitmap, width, x, y, color);
-        }
-    }
-}
-
-/// Rasterize a glyph outline as an alpha mask via swash.
-fn rasterize_outline(
-    fr: &FontRef<'_>,
-    glyph_id: u16,
-    size_px: f32,
-    variations: &[(&str, f32)],
-    ctx: &mut ScaleContext,
-) -> Option<swash::scale::image::Image> {
-    let builder = ctx.builder(*fr).size(size_px).hint(true);
-    let mut scaler = if variations.is_empty() {
-        builder.build()
+/// Convert a resolved brush to a tiny-skia `Paint`.
+fn make_paint(
+    brush: &ResolvedBrush,
+    ctx: &ComposeCtx<'_>,
+    brush_xf: Option<&ColrTransform>,
+) -> Option<tiny_skia::Paint<'static>> {
+    let t = if let Some(bt) = brush_xf {
+        ctx.xf * *bt
     } else {
-        builder.variations(variations).build()
+        ctx.xf
     };
 
-    let mut render = Render::new(&[Source::Outline]);
-    render.format(Format::Alpha);
-    render.render(&mut scaler, glyph_id)
-}
-
-/// Get the brush color at a given pixel position.
-///
-/// For solid brushes, returns the single color. For gradients, evaluates
-/// the gradient at the given position.
-fn brush_color_at(brush: &ResolvedBrush, px: f32, py: f32) -> Rgba {
-    match brush {
-        ResolvedBrush::Solid(color) => *color,
+    let shader = match brush {
+        ResolvedBrush::Solid(rgba) => tiny_skia::Shader::SolidColor(rgba_to_color(rgba)),
         ResolvedBrush::LinearGradient {
             p0,
             p1,
             stops,
             extend,
-            ..
         } => {
-            let param = linear_gradient_t(*p0, *p1, px, py);
-            let param = apply_extend(param, *extend);
-            sample_stops(stops, param)
+            let start = pt(p0[0], p0[1], ctx.scale, ctx.clip, &t);
+            let end = pt(p1[0], p1[1], ctx.scale, ctx.clip, &t);
+            let gs = to_grad_stops(stops)?;
+            tiny_skia::LinearGradient::new(
+                start,
+                end,
+                gs,
+                to_spread(*extend),
+                tiny_skia::Transform::identity(),
+            )?
         }
         ResolvedBrush::RadialGradient {
             c0,
@@ -175,9 +383,23 @@ fn brush_color_at(brush: &ResolvedBrush, px: f32, py: f32) -> Rgba {
             stops,
             extend,
         } => {
-            let param = radial_gradient_t(*c0, *r0, *c1, *r1, px, py);
-            let param = apply_extend(param, *extend);
-            sample_stops(stops, param)
+            // tiny-skia RadialGradient: (focal_point, center, radius).
+            // Map COLR two-circle model: c0/r0 = focal, c1/r1 = enclosing.
+            // tiny-skia always uses a point focal — log when r0 > 0.
+            if *r0 > 0.0 {
+                log::trace!("radial gradient start radius {r0} approximated as point focal");
+            }
+            let focal = pt(c0[0], c0[1], ctx.scale, ctx.clip, &t);
+            let center = pt(c1[0], c1[1], ctx.scale, ctx.clip, &t);
+            let gs = to_grad_stops(stops)?;
+            tiny_skia::RadialGradient::new(
+                focal,
+                center,
+                r1 * ctx.scale,
+                gs,
+                to_spread(*extend),
+                tiny_skia::Transform::identity(),
+            )?
         }
         ResolvedBrush::SweepGradient {
             center,
@@ -186,156 +408,143 @@ fn brush_color_at(brush: &ResolvedBrush, px: f32, py: f32) -> Rgba {
             stops,
             extend,
         } => {
-            let param = sweep_gradient_t(*center, *start_angle, *end_angle, px, py);
-            let param = apply_extend(param, *extend);
-            sample_stops(stops, param)
+            // tiny-skia 0.11 has no SweepGradient. Sample the midpoint color
+            // of the gradient as an approximation.
+            log::trace!(
+                "sweep gradient ({start_angle}°..{end_angle}°) at ({},{}) \
+                 extend={extend:?}: approximated as solid",
+                center[0],
+                center[1],
+            );
+            let color = sweep_midpoint_color(stops);
+            tiny_skia::Shader::SolidColor(color)
         }
-    }
+    };
+
+    Some(tiny_skia::Paint {
+        anti_alias: true,
+        shader,
+        ..tiny_skia::Paint::default()
+    })
 }
 
-/// `SrcOver` blend: composite `src` onto `dst` in the bitmap.
-fn blend_src_over(bitmap: &mut [u8], width: u32, bx: u32, by: u32, src: Rgba) {
-    let idx = ((by * width + bx) * 4) as usize;
-    let dst_r = bitmap[idx] as f32 / 255.0;
-    let dst_g = bitmap[idx + 1] as f32 / 255.0;
-    let dst_b = bitmap[idx + 2] as f32 / 255.0;
-    let dst_a = bitmap[idx + 3] as f32 / 255.0;
-
-    let inv_sa = 1.0 - src.a;
-    let out_r = src.r + dst_r * inv_sa;
-    let out_g = src.g + dst_g * inv_sa;
-    let out_b = src.b + dst_b * inv_sa;
-    let out_a = src.a + dst_a * inv_sa;
-
-    bitmap[idx] = (out_r * 255.0).round().clamp(0.0, 255.0) as u8;
-    bitmap[idx + 1] = (out_g * 255.0).round().clamp(0.0, 255.0) as u8;
-    bitmap[idx + 2] = (out_b * 255.0).round().clamp(0.0, 255.0) as u8;
-    bitmap[idx + 3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
+/// Transform a font-unit point to a tiny-skia Point in bitmap coordinates.
+fn pt(fx: f32, fy: f32, scale: f32, clip: &ClipBox, t: &ColrTransform) -> tiny_skia::Point {
+    tiny_skia::Point::from_xy(to_bx(fx, fy, scale, clip, t), to_by(fx, fy, scale, clip, t))
 }
 
-// ── Gradient evaluation ──
-
-/// Linear gradient parameter at point `(px, py)`.
-fn linear_gradient_t(p0: [f32; 2], p1: [f32; 2], px: f32, py: f32) -> f32 {
-    let dx = p1[0] - p0[0];
-    let dy = p1[1] - p0[1];
-    let len_sq = dx * dx + dy * dy;
-    if len_sq < 0.0001 {
-        return 0.0;
-    }
-    ((px - p0[0]) * dx + (py - p0[1]) * dy) / len_sq
-}
-
-/// Radial gradient parameter at point `(px, py)`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "radial gradient defined by two circles (center + radius each) plus eval point"
-)]
-fn radial_gradient_t(
-    center0: [f32; 2],
-    radius0: f32,
-    center1: [f32; 2],
-    radius1: f32,
-    px: f32,
-    py: f32,
-) -> f32 {
-    let dcx = center1[0] - center0[0];
-    let dcy = center1[1] - center0[1];
-    let dr = radius1 - radius0;
-    let dpx = px - center0[0];
-    let dpy = py - center0[1];
-
-    let coeff_a = dcx * dcx + dcy * dcy - dr * dr;
-    let coeff_b = 2.0 * (dpx * dcx + dpy * dcy - radius0 * dr);
-    let coeff_c = dpx * dpx + dpy * dpy - radius0 * radius0;
-
-    let disc = coeff_b * coeff_b - 4.0 * coeff_a * coeff_c;
-    if disc < 0.0 {
-        return 0.0;
-    }
-    let sqrt_disc = disc.sqrt();
-    if coeff_a.abs() < 0.0001 {
-        if coeff_b.abs() < 0.0001 {
-            return 0.0;
-        }
-        return -coeff_c / coeff_b;
-    }
-    let t1 = (-coeff_b + sqrt_disc) / (2.0 * coeff_a);
-    let t2 = (-coeff_b - sqrt_disc) / (2.0 * coeff_a);
-    let t_max = t1.max(t2);
-    let t_min = t1.min(t2);
-    if radius0 + t_max * dr >= 0.0 {
-        t_max
+/// Un-premultiply and convert to tiny-skia `Color`.
+///
+/// Clamps un-premultiplied components to `0.0..=1.0` because
+/// `tiny_skia::Color::from_rgba` rejects out-of-range values entirely
+/// (returns `None`), and floating-point arithmetic can produce values
+/// like `1.0000001` from valid premultiplied input.
+fn rgba_to_color(c: &Rgba) -> tiny_skia::Color {
+    if c.a > 0.0 {
+        let inv = 1.0 / c.a;
+        tiny_skia::Color::from_rgba(
+            (c.r * inv).clamp(0.0, 1.0),
+            (c.g * inv).clamp(0.0, 1.0),
+            (c.b * inv).clamp(0.0, 1.0),
+            c.a.clamp(0.0, 1.0),
+        )
+        .unwrap_or(tiny_skia::Color::TRANSPARENT)
     } else {
-        t_min
+        tiny_skia::Color::TRANSPARENT
     }
 }
 
-/// Sweep gradient parameter at point `(px, py)`.
-fn sweep_gradient_t(center: [f32; 2], start_angle: f32, end_angle: f32, px: f32, py: f32) -> f32 {
-    let dx = px - center[0];
-    let dy = -(py - center[1]); // flip Y for screen coords
-    let mut angle = dy.atan2(dx).to_degrees();
-    if angle < 0.0 {
-        angle += 360.0;
-    }
-    let range = end_angle - start_angle;
-    if range.abs() < 0.0001 {
-        return 0.0;
-    }
-    (angle - start_angle) / range
+/// Convert resolved gradient stops to tiny-skia stops.
+fn to_grad_stops(stops: &[ResolvedColorStop]) -> Option<Vec<tiny_skia::GradientStop>> {
+    let v: Vec<_> = stops
+        .iter()
+        .map(|s| tiny_skia::GradientStop::new(s.offset.clamp(0.0, 1.0), rgba_to_color(&s.color)))
+        .collect();
+    // tiny-skia requires at least 2 stops.
+    if v.len() >= 2 { Some(v) } else { None }
 }
 
-/// Apply extend mode (pad, repeat, reflect) to a gradient parameter.
-fn apply_extend(t: f32, extend: skrifa::color::Extend) -> f32 {
-    use skrifa::color::Extend;
-    match extend {
-        Extend::Repeat => t - t.floor(),
-        Extend::Reflect => {
-            let period = t - 2.0 * (t * 0.5).floor();
-            if period > 1.0 { 2.0 - period } else { period }
-        }
-        // Pad + any future variants added to this non-exhaustive enum.
-        _ => t.clamp(0.0, 1.0),
-    }
-}
-
-/// Sample the color stop array at parameter t.
-fn sample_stops(stops: &[ResolvedColorStop], t: f32) -> Rgba {
+/// Sample the midpoint color of gradient stops for sweep gradient fallback.
+fn sweep_midpoint_color(stops: &[ResolvedColorStop]) -> tiny_skia::Color {
     if stops.is_empty() {
-        return Rgba {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 0.0,
-        };
+        return tiny_skia::Color::TRANSPARENT;
     }
-    if stops.len() == 1 || t <= stops[0].offset {
-        return stops[0].color;
+    if stops.len() == 1 {
+        return rgba_to_color(&stops[0].color);
     }
-    for window in stops.windows(2) {
-        let prev = &window[0];
-        let curr = &window[1];
-        if t <= curr.offset {
-            let range = curr.offset - prev.offset;
+    // Find the pair of stops around t=0.5 and interpolate.
+    for w in stops.windows(2) {
+        if 0.5 <= w[1].offset {
+            let range = w[1].offset - w[0].offset;
             let frac = if range > 0.0001 {
-                (t - prev.offset) / range
+                (0.5 - w[0].offset) / range
             } else {
                 0.0
             };
-            return lerp_rgba(prev.color, curr.color, frac);
+            let a = &w[0].color;
+            let b = &w[1].color;
+            let mid = Rgba {
+                r: a.r + (b.r - a.r) * frac,
+                g: a.g + (b.g - a.g) * frac,
+                b: a.b + (b.b - a.b) * frac,
+                a: a.a + (b.a - a.a) * frac,
+            };
+            return rgba_to_color(&mid);
         }
     }
-    stops[stops.len() - 1].color
+    rgba_to_color(&stops.last().unwrap().color)
 }
 
-/// Linear interpolation between two RGBA colors.
-fn lerp_rgba(a: Rgba, b: Rgba, t: f32) -> Rgba {
-    Rgba {
-        r: a.r + (b.r - a.r) * t,
-        g: a.g + (b.g - a.g) * t,
-        b: a.b + (b.b - a.b) * t,
-        a: a.a + (b.a - a.a) * t,
+fn to_spread(extend: Extend) -> tiny_skia::SpreadMode {
+    match extend {
+        Extend::Repeat => tiny_skia::SpreadMode::Repeat,
+        Extend::Reflect => tiny_skia::SpreadMode::Reflect,
+        _ => tiny_skia::SpreadMode::Pad,
+    }
+}
+
+// Mask helpers
+
+/// AND-intersect two masks (pixel-wise alpha multiply).
+fn intersect_masks(mask: &mut tiny_skia::Mask, parent: &tiny_skia::Mask) {
+    for (m, &p) in mask.data_mut().iter_mut().zip(parent.data().iter()) {
+        *m = ((u16::from(*m) * u16::from(p)) / 255) as u8;
+    }
+}
+
+// Blend mode mapping
+
+/// Map COLR composite mode to tiny-skia blend mode.
+fn to_blend_mode(mode: CompositeMode) -> tiny_skia::BlendMode {
+    match mode {
+        CompositeMode::Clear => tiny_skia::BlendMode::Clear,
+        CompositeMode::Src => tiny_skia::BlendMode::Source,
+        CompositeMode::Dest => tiny_skia::BlendMode::Destination,
+        CompositeMode::DestOver => tiny_skia::BlendMode::DestinationOver,
+        CompositeMode::SrcIn => tiny_skia::BlendMode::SourceIn,
+        CompositeMode::DestIn => tiny_skia::BlendMode::DestinationIn,
+        CompositeMode::SrcOut => tiny_skia::BlendMode::SourceOut,
+        CompositeMode::DestOut => tiny_skia::BlendMode::DestinationOut,
+        CompositeMode::SrcAtop => tiny_skia::BlendMode::SourceAtop,
+        CompositeMode::DestAtop => tiny_skia::BlendMode::DestinationAtop,
+        CompositeMode::Xor => tiny_skia::BlendMode::Xor,
+        CompositeMode::Plus => tiny_skia::BlendMode::Plus,
+        CompositeMode::Screen => tiny_skia::BlendMode::Screen,
+        CompositeMode::Overlay => tiny_skia::BlendMode::Overlay,
+        CompositeMode::Darken => tiny_skia::BlendMode::Darken,
+        CompositeMode::Lighten => tiny_skia::BlendMode::Lighten,
+        CompositeMode::ColorDodge => tiny_skia::BlendMode::ColorDodge,
+        CompositeMode::ColorBurn => tiny_skia::BlendMode::ColorBurn,
+        CompositeMode::HardLight => tiny_skia::BlendMode::HardLight,
+        CompositeMode::SoftLight => tiny_skia::BlendMode::SoftLight,
+        CompositeMode::Difference => tiny_skia::BlendMode::Difference,
+        CompositeMode::Exclusion => tiny_skia::BlendMode::Exclusion,
+        CompositeMode::Multiply => tiny_skia::BlendMode::Multiply,
+        CompositeMode::HslHue => tiny_skia::BlendMode::Hue,
+        CompositeMode::HslSaturation => tiny_skia::BlendMode::Saturation,
+        CompositeMode::HslColor => tiny_skia::BlendMode::Color,
+        CompositeMode::HslLuminosity => tiny_skia::BlendMode::Luminosity,
+        _ => tiny_skia::BlendMode::SourceOver,
     }
 }
 
