@@ -64,8 +64,11 @@ pub struct PtyEventLoop<T: EventListener> {
     reader: Box<dyn Read + Send>,
     /// Command receiver (shutdown from main thread).
     rx: mpsc::Receiver<Msg>,
-    /// VTE parser state machine.
+    /// High-level VTE parser (routes to `Handler` trait methods).
     processor: vte::ansi::Processor,
+    /// Raw VTE parser for shell integration sequences (OSC 7, 133, etc.)
+    /// that the high-level processor drops.
+    raw_parser: vte::Parser,
 }
 
 impl<T: EventListener> PtyEventLoop<T> {
@@ -80,6 +83,7 @@ impl<T: EventListener> PtyEventLoop<T> {
             reader,
             rx,
             processor: vte::ansi::Processor::new(),
+            raw_parser: vte::Parser::new(),
         }
     }
 
@@ -145,6 +149,8 @@ impl<T: EventListener> PtyEventLoop<T> {
     /// it gets the next turn. Without fair unlock, `parking_lot`'s barging
     /// lets the reader re-acquire before the parked renderer wakes up.
     fn parse_pty_output(&mut self, data: &[u8]) {
+        use crate::shell_integration::interceptor::RawInterceptor;
+
         let mut offset = 0;
 
         while offset < data.len() {
@@ -152,7 +158,32 @@ impl<T: EventListener> PtyEventLoop<T> {
             let chunk = &data[offset..chunk_end];
 
             let mut term = self.terminal.lock();
+
+            let evicted_before = term.grid().total_evicted();
+
+            // 1. Raw interceptor catches OSC 7, 133, 9/99/777, XTVERSION
+            //    before the high-level processor discards them.
+            {
+                let mut interceptor = RawInterceptor::new(&mut *term);
+                self.raw_parser.advance(&mut interceptor, chunk);
+            }
+
+            // 2. High-level processor handles all standard VTE sequences.
             self.processor.advance(&mut *term, chunk);
+
+            // 3. Deferred prompt marking: if the raw interceptor set
+            //    `prompt_mark_pending`, the cursor is now at the correct
+            //    position after the high-level processor updated it.
+            if term.prompt_mark_pending() {
+                term.mark_prompt_row();
+            }
+
+            // 4. Prune prompt rows invalidated by scrollback eviction.
+            let newly_evicted = term.grid().total_evicted() - evicted_before;
+            if newly_evicted > 0 {
+                term.prune_prompt_rows(newly_evicted);
+            }
+
             let sync_bytes = self.processor.sync_bytes_count();
             if sync_bytes > 0 {
                 log::warn!("sync buffer: {sync_bytes} bytes pending");

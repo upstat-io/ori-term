@@ -32,6 +32,7 @@ impl App {
             cols,
             rows,
             scrollback: self.config.terminal.scrollback,
+            shell_integration: self.config.behavior.shell_integration,
             cwd,
             ..SpawnConfig::default()
         };
@@ -403,7 +404,9 @@ impl App {
                 let tab = mux.session().get_tab(tab_id);
                 let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
                 let pane = pane_id.and_then(|pid| self.panes.get(&pid));
-                let mut title = pane.map(|p| p.title().to_owned()).unwrap_or_default();
+                let mut title = pane
+                    .map(|p| p.effective_title().to_owned())
+                    .unwrap_or_default();
                 let icon = pane
                     .and_then(|p| p.icon_name())
                     .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
@@ -461,7 +464,9 @@ impl App {
                 let tab = mux.session().get_tab(tab_id);
                 let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
                 let pane = pane_id.and_then(|pid| self.panes.get(&pid));
-                let mut title = pane.map(|p| p.title().to_owned()).unwrap_or_default();
+                let mut title = pane
+                    .map(|p| p.effective_title().to_owned())
+                    .unwrap_or_default();
                 let icon = pane
                     .and_then(|p| p.icon_name())
                     .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);

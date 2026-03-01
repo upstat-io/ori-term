@@ -50,6 +50,16 @@ impl InProcessMux {
                     if let Some(pane) = panes.get_mut(&pane_id) {
                         pane.set_cwd(cwd);
                     }
+                    // CWD affects effective_title() — refresh tab bar.
+                    self.notifications
+                        .push(MuxNotification::PaneTitleChanged(pane_id));
+                }
+                MuxEvent::CommandComplete { pane_id, duration } => {
+                    if let Some(pane) = panes.get_mut(&pane_id) {
+                        pane.set_last_command_duration(duration);
+                    }
+                    self.notifications
+                        .push(MuxNotification::CommandComplete { pane_id, duration });
                 }
                 MuxEvent::PaneBell(id) => {
                     self.notifications.push(MuxNotification::Alert(id));

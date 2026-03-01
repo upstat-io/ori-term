@@ -59,6 +59,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 [dev-dependencies]
 anyhow = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
+tempfile = "3"
 
 [lints]
 workspace = true

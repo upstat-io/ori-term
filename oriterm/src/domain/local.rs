@@ -83,6 +83,7 @@ impl LocalDomain {
             shell: config.shell.clone(),
             working_dir: config.cwd.clone(),
             env: config.env.clone(),
+            shell_integration: config.shell_integration,
         };
         let mut pty = spawn_pty(&pty_config)?;
 

@@ -23,6 +23,7 @@ mod pane;
 mod platform;
 mod pty;
 mod scheme;
+mod shell_integration;
 mod tab;
 mod url_detect;
 mod widgets;

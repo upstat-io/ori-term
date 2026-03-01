@@ -71,6 +71,7 @@ fn spawn_config_custom_values() {
         cwd: Some("/tmp".into()),
         env: vec![("FOO".to_string(), "bar".to_string())],
         scrollback: 50_000,
+        shell_integration: true,
     };
     assert_eq!(cfg.cols, 120);
     assert_eq!(cfg.rows, 40);
@@ -104,6 +105,7 @@ fn spawn_config_clone_independence() {
         cwd: Some("/home".into()),
         env: vec![("FOO".to_string(), "bar".to_string())],
         scrollback: 5000,
+        shell_integration: true,
     };
     let mut cfg2 = cfg1.clone();
     cfg2.cols = 80;

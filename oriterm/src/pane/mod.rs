@@ -124,6 +124,11 @@ pub(crate) struct Pane {
     icon_name: Option<String>,
     /// Current working directory (from OSC 7).
     cwd: Option<String>,
+    /// Whether the current title was explicitly set via OSC 0/2.
+    /// When `false`, `effective_title()` prefers CWD-based title.
+    has_explicit_title: bool,
+    /// Duration of the last completed command (from OSC 133 C→D timing).
+    last_command_duration: Option<std::time::Duration>,
     /// Bell indicator (set on bell event, cleared on focus).
     has_bell: bool,
     /// Active text selection, if any.
@@ -153,6 +158,8 @@ impl Pane {
             title: String::new(),
             icon_name: None,
             cwd: None,
+            has_explicit_title: false,
+            last_command_duration: None,
             has_bell: false,
             selection: None,
             mark_cursor: None,
@@ -208,13 +215,9 @@ impl Pane {
 
     // -- Title / CWD / Bell --
 
-    /// Last known window title (from OSC 0/2).
-    pub(crate) fn title(&self) -> &str {
-        &self.title
-    }
-
-    /// Set the pane title.
+    /// Set the pane title (from OSC 0/2 via `MuxEvent::PaneTitleChanged`).
     pub(crate) fn set_title(&mut self, title: String) {
+        self.has_explicit_title = !title.is_empty();
         self.title = title;
     }
 
@@ -232,15 +235,43 @@ impl Pane {
         }
     }
 
+    /// Resolved display title with 3-source priority:
+    /// 1. Explicit title from OSC 0/2.
+    /// 2. Short path from CWD (last component).
+    /// 3. Fallback to raw title (may be empty).
+    pub(crate) fn effective_title(&self) -> &str {
+        if self.has_explicit_title {
+            return &self.title;
+        }
+        if let Some(ref cwd) = self.cwd {
+            return cwd_short_path(cwd);
+        }
+        &self.title
+    }
+
     /// Current working directory (from OSC 7).
-    #[allow(dead_code, reason = "used when OSC 7 CWD display is wired to App")]
     pub(crate) fn cwd(&self) -> Option<&str> {
         self.cwd.as_deref()
     }
 
-    /// Set the current working directory.
+    /// Set the current working directory (clears explicit title flag).
     pub(crate) fn set_cwd(&mut self, cwd: String) {
+        self.has_explicit_title = false;
         self.cwd = Some(cwd);
+    }
+
+    /// Duration of the last completed command.
+    #[allow(
+        dead_code,
+        reason = "read when command notification UI is wired to App"
+    )]
+    pub(crate) fn last_command_duration(&self) -> Option<std::time::Duration> {
+        self.last_command_duration
+    }
+
+    /// Store the duration of a completed command.
+    pub(crate) fn set_last_command_duration(&mut self, duration: std::time::Duration) {
+        self.last_command_duration = Some(duration);
     }
 
     /// Whether the bell has fired since the pane was last focused.
@@ -403,6 +434,20 @@ impl Pane {
             log::warn!("PTY resize failed: {e}");
         }
     }
+}
+
+/// Extract the last path component from a CWD path for tab display.
+///
+/// - `/home/user/projects` → `projects`
+/// - `/` → `/`
+/// - `~` passthrough (shouldn't occur from OSC 7, but handle gracefully).
+fn cwd_short_path(cwd: &str) -> &str {
+    if cwd == "/" {
+        return cwd;
+    }
+    // Strip trailing slash then take last component.
+    let trimmed = cwd.strip_suffix('/').unwrap_or(cwd);
+    trimmed.rsplit('/').next().unwrap_or(cwd)
 }
 
 #[cfg(test)]

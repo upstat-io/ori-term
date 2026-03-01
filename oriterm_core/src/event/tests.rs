@@ -134,6 +134,8 @@ fn all_event_variants_constructible() {
         Event::ColorRequest(0, Arc::new(|_| String::new())),
         Event::PtyWrite(String::new()),
         Event::CursorBlinkingChange,
+        Event::Cwd("/tmp".to_string()),
+        Event::CommandComplete(std::time::Duration::from_secs(5)),
         Event::MouseCursorDirty,
         Event::ChildExit(0),
     ];

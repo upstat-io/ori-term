@@ -47,6 +47,7 @@ impl App {
             cols: cols as u16,
             rows: rows as u16,
             scrollback: self.config.terminal.scrollback,
+            shell_integration: self.config.behavior.shell_integration,
             ..oriterm_mux::domain::SpawnConfig::default()
         };
         let tab_result = mux.create_tab(mux_window_id, &spawn_config, theme, &self.event_proxy);

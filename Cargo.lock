@@ -1814,6 +1814,7 @@ dependencies = [
  "signal-hook",
  "skrifa 0.40.0",
  "swash",
+ "tempfile",
  "tiny-skia",
  "toml",
  "unicode-segmentation",

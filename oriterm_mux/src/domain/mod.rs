@@ -38,6 +38,8 @@ pub struct SpawnConfig {
     pub env: Vec<(String, String)>,
     /// Scrollback buffer size in lines.
     pub scrollback: usize,
+    /// Enable shell integration (inject scripts for OSC 133/7 support).
+    pub shell_integration: bool,
 }
 
 impl Default for SpawnConfig {
@@ -49,6 +51,7 @@ impl Default for SpawnConfig {
             cwd: None,
             env: Vec::new(),
             scrollback: 10_000,
+            shell_integration: true,
         }
     }
 }

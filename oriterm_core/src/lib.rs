@@ -35,7 +35,8 @@ pub use selection::{
 };
 pub use sync::{FairMutex, FairMutexGuard};
 pub use term::{
-    DamageLine, RenderableCell, RenderableContent, RenderableCursor, Term, TermDamage, TermMode,
+    DamageLine, Notification, PromptState, RenderableCell, RenderableContent, RenderableCursor,
+    Term, TermDamage, TermMode,
 };
 pub use theme::Theme;
 pub use unicode::is_emoji_presentation;

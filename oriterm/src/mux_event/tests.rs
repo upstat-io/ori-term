@@ -134,6 +134,27 @@ fn reset_title_maps_to_empty_title() {
 }
 
 #[test]
+fn cwd_maps_to_pane_cwd_changed() {
+    let (proxy, rx, _, _) = test_proxy();
+    proxy.send_event(Event::Cwd("/home/user".to_string()));
+    let event = rx.try_recv().unwrap();
+    assert!(
+        matches!(&event, MuxEvent::PaneCwdChanged { pane_id, cwd } if *pane_id == PaneId::from_raw(1) && cwd == "/home/user")
+    );
+}
+
+#[test]
+fn command_complete_maps_to_command_complete() {
+    let (proxy, rx, _, _) = test_proxy();
+    let dur = std::time::Duration::from_secs(15);
+    proxy.send_event(Event::CommandComplete(dur));
+    let event = rx.try_recv().unwrap();
+    assert!(
+        matches!(event, MuxEvent::CommandComplete { pane_id, duration } if pane_id == PaneId::from_raw(1) && duration == dur)
+    );
+}
+
+#[test]
 fn icon_name_maps_to_pane_icon_changed() {
     let (proxy, rx, _, _) = test_proxy();
     proxy.send_event(Event::IconName("🐍python".to_string()));
@@ -279,6 +300,13 @@ fn mux_event_debug_all_variants() {
             },
             "PaneCwdChanged(Pane(1), \"/tmp\")",
         ),
+        (
+            MuxEvent::CommandComplete {
+                pane_id: id,
+                duration: std::time::Duration::from_secs(15),
+            },
+            "CommandComplete(Pane(1), 15s)",
+        ),
         (MuxEvent::PaneBell(id), "PaneBell(Pane(1))"),
         (
             MuxEvent::PtyWrite {
@@ -348,6 +376,13 @@ fn mux_notification_debug_all_variants() {
             "WindowClosed(Window(3))",
         ),
         (MuxNotification::Alert(pid), "Alert(Pane(1))"),
+        (
+            MuxNotification::CommandComplete {
+                pane_id: pid,
+                duration: std::time::Duration::from_secs(30),
+            },
+            "CommandComplete(Pane(1), 30s)",
+        ),
         (MuxNotification::LastWindowClosed, "LastWindowClosed"),
     ];
 
