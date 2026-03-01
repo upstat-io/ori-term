@@ -1052,3 +1052,374 @@ fn ui_text_mixed_subpixel_phases() {
         fc.cell_metrics().width,
     );
 }
+
+// ── Attribute-Based Run Splitting ──
+
+#[test]
+fn prepare_line_bold_splits_run() {
+    let fc = test_collection();
+
+    // "aB" where B is bold — different GlyphStyle → potentially different face/synthetic.
+    let cells = vec![
+        Cell {
+            ch: 'a',
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'B',
+            flags: CellFlags::BOLD,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    // Bold resolves to a different GlyphStyle (Bold vs Regular), which may
+    // map to a different face_idx or synthetic flags. Either way, the run
+    // should split at the attribute boundary.
+    assert!(
+        runs.len() >= 2,
+        "bold cell should cause run split: got {} run(s)",
+        runs.len(),
+    );
+    assert_eq!(runs[0].text, "a");
+    assert_eq!(runs[1].text, "B");
+}
+
+#[test]
+fn prepare_line_italic_splits_run() {
+    let fc = test_collection();
+
+    let cells = vec![
+        Cell {
+            ch: 'x',
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'y',
+            flags: CellFlags::ITALIC,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    assert!(
+        runs.len() >= 2,
+        "italic cell should cause run split: got {} run(s)",
+        runs.len(),
+    );
+}
+
+#[test]
+fn prepare_line_same_style_merges() {
+    let fc = test_collection();
+
+    // Two bold cells should merge into a single run.
+    let cells = vec![
+        Cell {
+            ch: 'A',
+            flags: CellFlags::BOLD,
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'B',
+            flags: CellFlags::BOLD,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    assert_eq!(runs.len(), 1, "same style should merge into one run");
+    assert_eq!(runs[0].text, "AB");
+}
+
+#[test]
+fn prepare_line_bold_regular_bold_three_runs() {
+    let fc = test_collection();
+
+    // "AbC" where A and C are bold, b is regular → 3 runs.
+    let cells = vec![
+        Cell {
+            ch: 'A',
+            flags: CellFlags::BOLD,
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'b',
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'C',
+            flags: CellFlags::BOLD,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    assert!(
+        runs.len() >= 3,
+        "bold-regular-bold should produce 3 runs: got {}",
+        runs.len(),
+    );
+}
+
+// ── VS15 Text Presentation ──
+
+#[test]
+fn measure_text_vs15_zero_width() {
+    // VS15 (U+FE0E) is a zero-width variation selector (text presentation).
+    let fc = test_collection();
+    let width = super::measure_text("\u{FE0E}", &fc);
+    assert!(
+        width.abs() < f32::EPSILON,
+        "VS15 alone should have zero width",
+    );
+}
+
+#[test]
+fn prepare_line_vs15_in_zerowidth() {
+    // VS15 stored in zerowidth should NOT trigger emoji fallback path
+    // (only VS16 does). The base character should be shaped normally.
+    let fc = test_collection();
+    let cells = vec![
+        Cell {
+            ch: '\u{270C}', // Victory hand
+            extra: Some(Arc::new(CellExtra {
+                underline_color: None,
+                hyperlink: None,
+                zerowidth: vec!['\u{FE0E}'], // VS15 — text presentation
+            })),
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'a',
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    // Should produce at least one run containing the victory hand.
+    let has_victory = runs.iter().any(|r| r.text.contains('\u{270C}'));
+    assert!(has_victory, "victory hand should appear in a run");
+
+    // VS15 should also be in the run text (passed to shaper for font handling).
+    let has_vs15 = runs.iter().any(|r| r.text.contains('\u{FE0E}'));
+    assert!(has_vs15, "VS15 should be passed to shaper");
+}
+
+// ── Emoji Interleaved with ASCII ──
+
+#[test]
+fn prepare_line_emoji_ascii_splits_runs() {
+    // "A😃D" — emoji resolves to a different face (emoji fallback) than ASCII.
+    let fc = test_collection();
+    let cells = vec![
+        Cell {
+            ch: 'A',
+            ..Cell::default()
+        },
+        Cell {
+            ch: '\u{1F603}', // 😃
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'D',
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    // The emoji should resolve to a different face (emoji fallback) than 'A'/'D'.
+    // If no emoji font is available, both may resolve to the same face (.notdef).
+    // Either way, verify no panic and that runs are produced.
+    assert!(!runs.is_empty(), "should produce at least one run");
+
+    // Check that run text contains 'A', the emoji, and 'D'.
+    let all_text: String = runs.iter().map(|r| r.text.as_str()).collect();
+    assert!(all_text.contains('A'));
+    assert!(all_text.contains('\u{1F603}'));
+    assert!(all_text.contains('D'));
+
+    // If emoji font is available, there should be at least 2 runs (ASCII vs emoji face).
+    if runs.len() >= 2 {
+        // Verify face indices differ between ASCII and emoji runs.
+        let ascii_run = runs.iter().find(|r| r.text.contains('A')).unwrap();
+        let emoji_run = runs.iter().find(|r| r.text.contains('\u{1F603}')).unwrap();
+        assert_ne!(
+            ascii_run.face_idx, emoji_run.face_idx,
+            "emoji should use different face than ASCII",
+        );
+    }
+}
+
+// ── ZWJ + Skin-Tone → Single Output Glyph ──
+
+#[test]
+fn shape_zwj_skin_tone_collapses() {
+    // 👍🏽 = U+1F44D (thumbs up) + U+1F3FD (medium skin tone)
+    // If an emoji font is available, these should shape into 1 glyph.
+    let fc = test_collection();
+    let cells = vec![
+        Cell {
+            ch: '\u{1F44D}',
+            flags: CellFlags::WIDE_CHAR,
+            extra: Some(Arc::new(CellExtra {
+                underline_color: None,
+                hyperlink: None,
+                zerowidth: vec!['\u{1F3FD}'],
+            })),
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
+
+    // Should produce at least 1 glyph, no panics.
+    assert!(!output.is_empty(), "should produce at least 1 glyph");
+
+    // If an emoji font collapses the sequence, expect 1 glyph.
+    // If no emoji font, expect 1–2 glyphs (base + modifier separately).
+    // Both outcomes are valid; key invariant is no crash.
+    if output[0].glyph_id != 0 && output.len() == 1 {
+        // Emoji font collapsed ZWJ+skin-tone to single glyph — expected.
+        assert_eq!(col_starts[0], 0);
+    }
+}
+
+// ── VS16 on Non-Emoji-Default Char ──
+
+#[test]
+fn prepare_line_vs16_on_copyright_symbol() {
+    // © (U+00A9) is not emoji-default. With VS16, it should trigger
+    // resolve_prefer_emoji, potentially selecting an emoji font face.
+    let fc = test_collection();
+    let cells = vec![
+        Cell {
+            ch: '\u{00A9}', // ©
+            extra: Some(Arc::new(CellExtra {
+                underline_color: None,
+                hyperlink: None,
+                zerowidth: vec!['\u{FE0F}'], // VS16
+            })),
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'x',
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    // © should appear in a run.
+    let has_copyright = runs.iter().any(|r| r.text.contains('\u{00A9}'));
+    assert!(has_copyright, "copyright should appear in a run");
+
+    // VS16 should be in run text (passed to shaper).
+    let has_vs16 = runs.iter().any(|r| r.text.contains('\u{FE0F}'));
+    assert!(has_vs16, "VS16 should be passed to shaper");
+
+    // If an emoji font is available, © with VS16 may use a different face
+    // than 'x'. Both outcomes are valid.
+}
+
+#[test]
+fn measure_text_vs16_copyright_width() {
+    // © (U+00A9) has unicode width 1. VS16 (U+FE0F) has width 0.
+    // "©\u{FE0F}" should measure as 1 cell.
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let width = super::measure_text("\u{00A9}\u{FE0F}", &fc);
+    let expected = 1.0 * cell_w;
+    assert!(
+        (width - expected).abs() < f32::EPSILON,
+        "© + VS16 should be 1 cell wide: {width} vs {expected}",
+    );
+}
+
+// ── Korean Jamo Decomposed Sequence ──
+
+#[test]
+fn measure_text_korean_jamo_decomposed() {
+    // Decomposed Hangul: U+1112 (ㅎ) + U+1161 (ㅏ) + U+11AB (ㄴ) = 한
+    // As separate codepoints, unicode-width gives width 2 for leading Jamo
+    // consonant, and 0 for vowel/trailing Jamo. Total should be 2 cells.
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let width = super::measure_text("\u{1112}\u{1161}\u{11AB}", &fc);
+
+    // The individual Jamo codepoints: U+1112 = width 2 (Hangul Jamo),
+    // U+1161 = width 0 (medial vowel), U+11AB = width 0 (final consonant).
+    let expected = 2.0 * cell_w;
+    assert!(
+        (width - expected).abs() < f32::EPSILON,
+        "decomposed Jamo should be 2 cells: {width} vs {expected}",
+    );
+}
+
+// ── Private Use Area ──
+
+#[test]
+fn measure_text_pua_codepoint_width_one() {
+    // U+F005 (PUA — commonly Nerd Font star icon) should be width 1.
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let width = super::measure_text("\u{F005}", &fc);
+    let expected = 1.0 * cell_w;
+    assert!(
+        (width - expected).abs() < f32::EPSILON,
+        "PUA U+F005 should be 1 cell: {width} vs {expected}",
+    );
+}
+
+#[test]
+fn measure_text_pua_supplementary_width_one() {
+    // U+F0001 (Supplementary PUA-A) — should also be width 1.
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let width = super::measure_text("\u{F0001}", &fc);
+    let expected = 1.0 * cell_w;
+    assert!(
+        (width - expected).abs() < f32::EPSILON,
+        "supplementary PUA U+F0001 should be 1 cell: {width} vs {expected}",
+    );
+}
+
+// ── Flag Tag Sequences ──
+
+#[test]
+fn measure_text_flag_tag_sequence() {
+    // England flag: 🏴 U+1F3F4, then tag characters U+E0067 U+E0062 U+E0065
+    // U+E006E U+E0067, then cancel tag U+E007F.
+    // unicode-width: 🏴 (U+1F3F4) = width 2, tag chars = width 0 each.
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let flag = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}";
+    let width = super::measure_text(flag, &fc);
+    let expected = 2.0 * cell_w;
+    assert!(
+        (width - expected).abs() < f32::EPSILON,
+        "flag tag sequence should be 2 cells: {width} vs {expected}",
+    );
+}

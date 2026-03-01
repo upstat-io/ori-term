@@ -3344,3 +3344,93 @@ fn selection_explicit_colors_override_inversion() {
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
     assert_eq!(bg0.bg_color, rgb_f32(input.palette.background));
 }
+
+// ── Empty cells still produce bg instances ──
+
+#[test]
+fn null_char_cell_produces_bg_only() {
+    // A cell with '\0' should produce a BG instance but no FG instance,
+    // same as a space cell.
+    let mut input = FrameInput::test_grid(2, 1, "");
+    input.content.cells[0].ch = '\0';
+    input.content.cells[1].ch = '\0';
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(
+        frame.backgrounds.len(),
+        2,
+        "2 bg instances for 2 null cells"
+    );
+    assert_eq!(frame.glyphs.len(), 0, "no fg instances for null cells");
+}
+
+#[test]
+fn cells_with_custom_bg_produce_bg_instances() {
+    // Cells that are spaces but have non-default background should still
+    // produce BG instances with the correct color.
+    let mut input = FrameInput::test_grid(3, 1, "");
+    let custom_bg = Rgb {
+        r: 100,
+        g: 50,
+        b: 200,
+    };
+    for cell in &mut input.content.cells {
+        cell.bg = custom_bg;
+    }
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.backgrounds.len(), 3);
+    for i in 0..3 {
+        let bg = nth_instance(frame.backgrounds.as_bytes(), i);
+        assert_eq!(
+            bg.bg_color,
+            rgb_f32(custom_bg),
+            "cell {i} should have custom bg color",
+        );
+    }
+}
+
+// ── Zero-size viewport ──
+
+#[test]
+fn zero_cols_zero_rows_produces_empty_frame() {
+    let mut input = FrameInput::test_grid(0, 0, "");
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.backgrounds.len(), 0);
+    assert_eq!(frame.glyphs.len(), 0);
+    assert_eq!(frame.cursors.len(), 0);
+}
+
+#[test]
+fn zero_cols_nonzero_rows_produces_empty_frame() {
+    let mut input = FrameInput::test_grid(0, 5, "");
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.backgrounds.len(), 0);
+    assert_eq!(frame.glyphs.len(), 0);
+}
+
+#[test]
+fn nonzero_cols_zero_rows_produces_empty_frame() {
+    let mut input = FrameInput::test_grid(80, 0, "");
+    input.content.cursor.visible = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.backgrounds.len(), 0);
+    assert_eq!(frame.glyphs.len(), 0);
+}
