@@ -45,6 +45,7 @@ fn shaped_glyph_construction() {
     let g = ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.5,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -70,6 +71,7 @@ fn shaped_text_with_glyphs() {
         ShapedGlyph {
             glyph_id: 10,
             face_index: 0,
+            synthetic: 0,
             x_advance: 8.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -77,6 +79,7 @@ fn shaped_text_with_glyphs() {
         ShapedGlyph {
             glyph_id: 20,
             face_index: 0,
+            synthetic: 0,
             x_advance: 8.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -148,6 +151,7 @@ fn shaped_glyph_zero_advance() {
     let g = ShapedGlyph {
         glyph_id: 100,
         face_index: 1,
+        synthetic: 0,
         x_advance: 0.0,
         x_offset: 2.0,
         y_offset: -3.0,

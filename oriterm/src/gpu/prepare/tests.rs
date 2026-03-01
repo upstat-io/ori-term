@@ -8,12 +8,13 @@ use super::{
     AtlasLookup, ShapedFrame, prepare_frame, prepare_frame_into, prepare_frame_shaped,
     prepare_frame_shaped_into,
 };
-use crate::font::{FaceIdx, FontRealm, GlyphStyle, RasterKey, ShapedGlyph, SyntheticFlags};
+use crate::font::{FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
 use crate::gpu::frame_input::{FrameInput, FrameSelection, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
 use crate::gpu::prepared_frame::PreparedFrame;
 use crate::gpu::srgb_to_linear;
+use oriterm_ui::text::ShapedGlyph;
 
 // ── Test atlas ──
 
@@ -888,11 +889,16 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
 }
 
 /// Build a ShapedFrame for a 1-row grid from a slice of ShapedGlyphs.
-fn shaped_one_row(cols: usize, glyphs: &[ShapedGlyph], size_q6: u32) -> ShapedFrame {
+fn shaped_one_row(
+    cols: usize,
+    glyphs: &[ShapedGlyph],
+    col_starts: &[usize],
+    size_q6: u32,
+) -> ShapedFrame {
     let mut sf = ShapedFrame::new(cols, size_q6);
     let mut col_map = Vec::new();
-    crate::font::build_col_glyph_map(glyphs, cols, &mut col_map);
-    sf.push_row(glyphs, &col_map);
+    crate::font::build_col_glyph_map(col_starts, cols, &mut col_map);
+    sf.push_row(glyphs, col_starts, &col_map);
     sf
 }
 
@@ -904,14 +910,14 @@ fn shaped_single_glyph_one_bg_one_fg() {
 
     let glyphs = vec![ShapedGlyph {
         glyph_id: 42,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 1,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 0.0,
         y_offset: 0.0,
     }];
-    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(3, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 3 bg instances (one per cell), 1 fg instance (shaped glyph at col 0), 1 cursor.
@@ -931,14 +937,14 @@ fn shaped_ligature_one_fg_two_bg() {
     let atlas = key_atlas_with(&[100], size_q6);
     let glyphs = vec![ShapedGlyph {
         glyph_id: 100,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 2, // ligature spans 2 columns
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 0.0,
         y_offset: 0.0,
     }];
-    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let col_starts = vec![0]; // ligature starts at col 0, spans 2 columns via col_map
+    let shaped = shaped_one_row(3, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 3 bg (per-cell), 1 fg (single ligature glyph at col 0), 1 cursor.
@@ -960,24 +966,23 @@ fn shaped_combining_marks_two_fg_instances() {
     let glyphs = vec![
         ShapedGlyph {
             glyph_id: 50,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 51,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0, // same col — combining mark
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 2.0,
             y_offset: 3.0,
         },
     ];
-    let shaped = shaped_one_row(2, &glyphs, size_q6);
+    let col_starts = vec![0, 0]; // both at col 0 — combining mark
+    let shaped = shaped_one_row(2, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 2 bg (per-cell), 2 fg (base + combining mark), 1 cursor.
@@ -1010,14 +1015,14 @@ fn shaped_offset_applied_to_glyph_position() {
 
     let glyphs = vec![ShapedGlyph {
         glyph_id: 60,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 1,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 1.5,
         y_offset: 2.0,
     }];
-    let shaped = shaped_one_row(1, &glyphs, size_q6);
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 1);
@@ -1042,33 +1047,31 @@ fn shaped_backgrounds_independent_of_glyphs() {
     let glyphs = vec![
         ShapedGlyph {
             glyph_id: 100,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 2,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 101,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 2,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 102,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 3,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
     ];
-    let shaped = shaped_one_row(4, &glyphs, size_q6);
+    let col_starts = vec![0, 2, 3];
+    let shaped = shaped_one_row(4, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 4 bg instances (one per cell), 3 fg instances (ligature + 2 normal).
@@ -1091,14 +1094,14 @@ fn shaped_missing_glyph_in_atlas_skips_fg() {
 
     let glyphs = vec![ShapedGlyph {
         glyph_id: 99,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 1,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 0.0,
         y_offset: 0.0,
     }];
-    let shaped = shaped_one_row(1, &glyphs, size_q6);
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 1 bg, 0 fg (atlas miss), 1 cursor.
@@ -1115,11 +1118,12 @@ fn shaped_empty_glyphs_produces_bg_only() {
     let shaped = ShapedFrame::new(3, size_q6);
     // Push an empty row (no glyphs).
     let empty_glyphs: Vec<ShapedGlyph> = Vec::new();
+    let empty_col_starts: Vec<usize> = Vec::new();
     let mut col_map = Vec::new();
-    crate::font::build_col_glyph_map(&empty_glyphs, 3, &mut col_map);
+    crate::font::build_col_glyph_map(&empty_col_starts, 3, &mut col_map);
 
     let mut sf = shaped;
-    sf.push_row(&empty_glyphs, &col_map);
+    sf.push_row(&empty_glyphs, &empty_col_starts, &col_map);
     let frame = prepare_frame_shaped(&input, &atlas, &sf, (0.0, 0.0));
 
     assert_counts(&frame, 3, 0, 1);
@@ -1163,14 +1167,14 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
 
     let glyphs = vec![ShapedGlyph {
         glyph_id: 200,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 1,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 0.0,
         y_offset: 0.0,
     }];
-    let shaped = shaped_one_row(1, &glyphs, size_q6);
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // Monochrome glyphs should be empty — the color glyph went to color_glyphs.
@@ -1240,33 +1244,31 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
     let glyphs = vec![
         ShapedGlyph {
             glyph_id: 10,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 200,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 1,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 11,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 2,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
     ];
-    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let col_starts = vec![0, 1, 2];
+    let shaped = shaped_one_row(3, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 2, "2 mono glyphs in monochrome buffer");
@@ -1284,33 +1286,31 @@ fn shaped_into_matches_shaped() {
     let glyphs = vec![
         ShapedGlyph {
             glyph_id: 100,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 2,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 101,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 2,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 102,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 3,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
     ];
-    let shaped = shaped_one_row(4, &glyphs, size_q6);
+    let col_starts = vec![0, 2, 3];
+    let shaped = shaped_one_row(4, &glyphs, &col_starts, size_q6);
 
     let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
@@ -1332,25 +1332,26 @@ fn shaped_into_reuses_allocation() {
 
     // Build shaped data for 50 glyphs.
     let glyphs: Vec<ShapedGlyph> = (0..50)
-        .map(|i| ShapedGlyph {
+        .map(|_| ShapedGlyph {
             glyph_id: 42,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: i % 10,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         })
         .collect();
+    let col_starts: Vec<usize> = (0..50).map(|i| i % 10).collect();
     let atlas = key_atlas_with(&[42], size_q6);
 
     // Build shaped frame with all 5 rows.
     let mut sf = ShapedFrame::new(10, size_q6);
     for row_start in (0..50).step_by(10) {
         let row_glyphs = &glyphs[row_start..row_start + 10];
+        let row_col_starts = &col_starts[row_start..row_start + 10];
         let mut col_map = Vec::new();
-        crate::font::build_col_glyph_map(row_glyphs, 10, &mut col_map);
-        sf.push_row(row_glyphs, &col_map);
+        crate::font::build_col_glyph_map(row_col_starts, 10, &mut col_map);
+        sf.push_row(row_glyphs, row_col_starts, &col_map);
     }
 
     // First prepare.
@@ -1362,14 +1363,14 @@ fn shaped_into_reuses_allocation() {
     let small = FrameInput::test_grid(2, 1, "A ");
     let small_glyphs = vec![ShapedGlyph {
         glyph_id: 42,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 1,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 0.0,
         y_offset: 0.0,
     }];
-    let small_shaped = shaped_one_row(2, &small_glyphs, size_q6);
+    let small_col_starts = vec![0];
+    let small_shaped = shaped_one_row(2, &small_glyphs, &small_col_starts, size_q6);
     prepare_frame_shaped_into(&small, &atlas, &small_shaped, &mut frame, (0.0, 0.0), true);
 
     assert_eq!(frame.backgrounds.len(), 2);
@@ -1587,14 +1588,14 @@ fn subpixel_glyph_routes_to_subpixel_buffer() {
 
     let glyphs = vec![ShapedGlyph {
         glyph_id: 42,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 1,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 0.0,
         y_offset: 0.0,
     }];
-    let shaped = shaped_one_row(1, &glyphs, size_q6);
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     assert_eq!(
@@ -1671,33 +1672,31 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
     let glyphs = vec![
         ShapedGlyph {
             glyph_id: 10,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 20,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 1,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 30,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 2,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
     ];
-    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let col_starts = vec![0, 1, 2];
+    let shaped = shaped_one_row(3, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     assert_eq!(frame.glyphs.len(), 1, "1 mono glyph");
@@ -1721,24 +1720,23 @@ fn shaped_frame_smaller_than_viewport_skips_excess_cells() {
     let glyphs = vec![
         ShapedGlyph {
             glyph_id: 10,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 11,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 1,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
     ];
-    let shaped = shaped_one_row(2, &glyphs, size_q6);
+    let col_starts = vec![0, 1];
+    let shaped = shaped_one_row(2, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // All 4 cells produce backgrounds.
@@ -1758,14 +1756,14 @@ fn shaped_frame_fewer_rows_than_viewport_skips_excess_rows() {
     // Only 1 row in the shaped frame.
     let glyphs = vec![ShapedGlyph {
         glyph_id: 10,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 1,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 0.0,
         y_offset: 0.0,
     }];
-    let shaped = shaped_one_row(2, &glyphs, size_q6);
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(2, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // 6 backgrounds (2 cols * 3 rows).
@@ -1788,42 +1786,39 @@ fn shaped_frame_larger_than_viewport_no_panic() {
     let glyphs = vec![
         ShapedGlyph {
             glyph_id: 10,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 11,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 1,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 12,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 2,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 13,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 3,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
     ];
-    let shaped = shaped_one_row(4, &glyphs, size_q6);
+    let col_starts = vec![0, 1, 2, 3];
+    let shaped = shaped_one_row(4, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     // Only 2 backgrounds (viewport is 2×1).
@@ -1900,24 +1895,23 @@ fn origin_offset_shaped_shifts_all_instances() {
     let glyphs = vec![
         ShapedGlyph {
             glyph_id: 10,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
         ShapedGlyph {
             glyph_id: 11,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 1,
-            col_span: 1,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         },
     ];
-    let shaped = shaped_one_row(2, &glyphs, size_q6);
+    let col_starts = vec![0, 1];
+    let shaped = shaped_one_row(2, &glyphs, &col_starts, size_q6);
     let frame = prepare_frame_shaped(&input, &atlas, &shaped, (100.0, 200.0));
 
     // Backgrounds shifted by origin.
@@ -2840,14 +2834,14 @@ fn shaped_ligature_selection_col1_does_not_duplicate_glyph() {
     let atlas = key_atlas_with(&[100], size_q6);
     let glyphs = vec![ShapedGlyph {
         glyph_id: 100,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 2,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 0.0,
         x_offset: 0.0,
         y_offset: 0.0,
     }];
-    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let col_starts = vec![0]; // ligature starts at col 0
+    let shaped = shaped_one_row(3, &glyphs, &col_starts, size_q6);
 
     // Select only col 1 (the continuation column of the ligature).
     input.selection = Some(selection_range(0, 1, 1));

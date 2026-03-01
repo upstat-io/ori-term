@@ -16,7 +16,7 @@ use super::{CombinedAtlasLookup, GpuRenderer};
 use crate::gpu::frame_input::ViewportSize;
 use oriterm_mux::layout::{DividerLayout, Rect};
 
-use helpers::{ensure_shaped_glyphs_cached, shape_frame};
+use helpers::{ensure_glyphs_cached, grid_raster_keys, shape_frame};
 
 use super::helpers;
 
@@ -63,8 +63,11 @@ impl GpuRenderer {
         shape_frame(input, &self.font_collection, &mut self.shaping);
 
         // Phase B: Ensure shaped glyphs cached.
-        ensure_shaped_glyphs_cached(
-            &self.shaping.frame,
+        ensure_glyphs_cached(
+            grid_raster_keys(
+                &self.shaping.frame,
+                self.font_collection.hinting_mode().hint_flag(),
+            ),
             &mut self.atlas,
             &mut self.subpixel_atlas,
             &mut self.color_atlas,

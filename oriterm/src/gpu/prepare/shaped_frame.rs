@@ -5,7 +5,7 @@
 //! per frame by the renderer, consumed by the prepare phase to emit glyph
 //! instances from shaped data instead of per-cell character lookups.
 
-use crate::font::ShapedGlyph;
+use oriterm_ui::text::ShapedGlyph;
 
 /// Pre-shaped glyph data for all visible rows.
 ///
@@ -16,7 +16,9 @@ use crate::font::ShapedGlyph;
 pub(crate) struct ShapedFrame {
     /// Flat buffer of all shaped glyphs, rows concatenated.
     glyphs: Vec<ShapedGlyph>,
-    /// `row_spans[row] = (start, end)` indices into `glyphs`.
+    /// Parallel array: `col_starts[i]` is the grid column for `glyphs[i]`.
+    col_starts: Vec<usize>,
+    /// `row_spans[row] = (start, end)` indices into `glyphs` and `col_starts`.
     row_spans: Vec<(usize, usize)>,
     /// Flat col-to-glyph map: `col_maps[row * cols + col] = Option<usize>`
     /// where the `usize` is **relative** to the row's span start.
@@ -34,6 +36,7 @@ impl ShapedFrame {
     pub fn new(cols: usize, size_q6: u32) -> Self {
         Self {
             glyphs: Vec::new(),
+            col_starts: Vec::new(),
             row_spans: Vec::new(),
             col_maps: Vec::new(),
             cols,
@@ -42,13 +45,24 @@ impl ShapedFrame {
         }
     }
 
-    /// Append a shaped row's glyphs and column map.
+    /// Append a shaped row's glyphs, `col_starts`, and column map.
     ///
-    /// `glyphs` are the shaped output for one row. `col_map` maps columns
-    /// to indices within `glyphs` (produced by [`build_col_glyph_map`]).
+    /// `glyphs` and `col_starts` are parallel arrays from the shaper.
+    /// `col_map` maps columns to indices within `glyphs` (produced by
+    /// [`build_col_glyph_map`]).
     ///
     /// [`build_col_glyph_map`]: crate::font::build_col_glyph_map
-    pub fn push_row(&mut self, glyphs: &[ShapedGlyph], col_map: &[Option<usize>]) {
+    pub fn push_row(
+        &mut self,
+        glyphs: &[ShapedGlyph],
+        col_starts_row: &[usize],
+        col_map: &[Option<usize>],
+    ) {
+        debug_assert_eq!(
+            glyphs.len(),
+            col_starts_row.len(),
+            "glyphs and col_starts must have same length",
+        );
         debug_assert_eq!(
             col_map.len(),
             self.cols,
@@ -57,6 +71,7 @@ impl ShapedFrame {
 
         let start = self.glyphs.len();
         self.glyphs.extend_from_slice(glyphs);
+        self.col_starts.extend_from_slice(col_starts_row);
         let end = self.glyphs.len();
         self.row_spans.push((start, end));
         self.col_maps.extend_from_slice(col_map);
@@ -66,6 +81,12 @@ impl ShapedFrame {
     pub fn row_glyphs(&self, row: usize) -> &[ShapedGlyph] {
         let (start, end) = self.row_spans[row];
         &self.glyphs[start..end]
+    }
+
+    /// Col-start slice for a given row (parallel to `row_glyphs`).
+    pub fn row_col_starts(&self, row: usize) -> &[usize] {
+        let (start, end) = self.row_spans[row];
+        &self.col_starts[start..end]
     }
 
     /// Column-to-glyph index for a given row and column.
@@ -108,6 +129,7 @@ impl ShapedFrame {
     /// `cols` and `size_q6` are updated to match the new frame's parameters.
     pub fn clear(&mut self, cols: usize, size_q6: u32, hinted: bool) {
         self.glyphs.clear();
+        self.col_starts.clear();
         self.row_spans.clear();
         self.col_maps.clear();
         self.cols = cols;

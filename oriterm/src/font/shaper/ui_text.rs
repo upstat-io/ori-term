@@ -2,27 +2,20 @@
 //!
 //! Tab bar titles, search bar content, and overlays need text that isn't
 //! tied to grid columns. This module provides [`shape_text_string`] to shape
-//! arbitrary strings into [`UiShapedGlyph`]s with `x_advance` positioning,
+//! arbitrary strings into [[`ShapedGlyph`]]s with `x_advance` positioning,
 //! plus [`measure_text`], [`shape_text`], and [`truncate_with_ellipsis`] for layout.
 
 use std::borrow::Cow;
 
-use oriterm_ui::text::{
-    self as ui_text, FontWeight, ShapedText, TextMetrics, TextOverflow, TextStyle,
-};
+use oriterm_ui::text::{FontWeight, ShapedGlyph, ShapedText, TextMetrics, TextOverflow, TextStyle};
 
 use crate::font::collection::FontCollection;
 use crate::font::{FaceIdx, GlyphStyle};
 
-/// Re-export of [`oriterm_ui::text::ShapedGlyph`] for UI text rendering.
-///
-/// Uses pixel-based `x_advance` positioning instead of grid column mapping.
-pub type UiShapedGlyph = ui_text::ShapedGlyph;
-
 /// Shape a plain text string for UI rendering (tab titles, search bar, overlays).
 ///
 /// Segments text into runs by font face, shapes each run through rustybuzz,
-/// and emits [`UiShapedGlyph`]s with pixel-based `x_advance` positioning.
+/// and emits [[`ShapedGlyph`]]s with pixel-based `x_advance` positioning.
 /// Spaces produce advance-only glyphs (`glyph_id=0`) at cell width.
 ///
 /// Pass `buffer_slot` to persist the rustybuzz buffer across frames.
@@ -34,7 +27,7 @@ pub fn shape_text_string(
     text: &str,
     faces: &[Option<rustybuzz::Face<'_>>],
     collection: &FontCollection,
-    output: &mut Vec<UiShapedGlyph>,
+    output: &mut Vec<ShapedGlyph>,
     buffer_slot: &mut Option<rustybuzz::UnicodeBuffer>,
 ) {
     output.clear();
@@ -221,7 +214,7 @@ fn shape_ui_run(
     face_idx: FaceIdx,
     faces: &[Option<rustybuzz::Face<'_>>],
     collection: &FontCollection,
-    output: &mut Vec<UiShapedGlyph>,
+    output: &mut Vec<ShapedGlyph>,
     mut buffer: rustybuzz::UnicodeBuffer,
 ) -> rustybuzz::UnicodeBuffer {
     let Some(face) = faces.get(face_idx.as_usize()).and_then(|f| f.as_ref()) else {
@@ -233,9 +226,10 @@ fn shape_ui_run(
                 continue;
             }
             let w = w as f32;
-            output.push(UiShapedGlyph {
+            output.push(ShapedGlyph {
                 glyph_id: 0,
                 face_index: face_idx.0,
+                synthetic: 0,
                 x_advance: w * cell_w,
                 x_offset: 0.0,
                 y_offset: 0.0,
@@ -257,9 +251,10 @@ fn shape_ui_run(
     let scale = eff_size / upem;
 
     for (info, pos) in infos.iter().zip(positions.iter()) {
-        output.push(UiShapedGlyph {
+        output.push(ShapedGlyph {
             glyph_id: info.glyph_id as u16,
             face_index: face_idx.0,
+            synthetic: 0,
             x_advance: pos.x_advance as f32 * scale,
             x_offset: pos.x_offset as f32 * scale,
             y_offset: pos.y_offset as f32 * scale,

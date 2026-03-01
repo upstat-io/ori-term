@@ -16,7 +16,7 @@ use super::super::frame_input::FrameInput;
 use super::super::prepare::ShapedFrame;
 use crate::font::{
     FontCollection, FontRealm, GlyphFormat, GlyphStyle, RasterKey, build_col_glyph_map,
-    prepare_line, shape_prepared_runs, size_key, subpx_bin,
+    prepare_line, shape_prepared_runs, size_key,
 };
 
 /// Reusable per-frame scratch buffers for the shaping pipeline.
@@ -29,7 +29,9 @@ pub(super) struct ShapingScratch {
     /// Shaping run segments for the current row.
     runs: Vec<crate::font::ShapingRun>,
     /// Shaped glyphs for the current row.
-    glyphs: Vec<crate::font::ShapedGlyph>,
+    glyphs: Vec<oriterm_ui::text::ShapedGlyph>,
+    /// Parallel `col_starts` for the current row.
+    col_starts: Vec<usize>,
     /// Column-to-glyph map for the current row.
     col_map: Vec<Option<usize>>,
     /// Rustybuzz buffer reused across frames to avoid per-frame allocation.
@@ -42,6 +44,7 @@ impl ShapingScratch {
             frame: ShapedFrame::new(0, 0),
             runs: Vec::new(),
             glyphs: Vec::new(),
+            col_starts: Vec::new(),
             col_map: Vec::new(),
             unicode_buffer: None,
         }
@@ -77,113 +80,17 @@ pub(super) fn shape_frame(
             &faces,
             fonts,
             &mut scratch.glyphs,
+            &mut scratch.col_starts,
             &mut scratch.unicode_buffer,
         );
-        build_col_glyph_map(&scratch.glyphs, cols, &mut scratch.col_map);
-        scratch.frame.push_row(&scratch.glyphs, &scratch.col_map);
+        build_col_glyph_map(&scratch.col_starts, cols, &mut scratch.col_map);
+        scratch
+            .frame
+            .push_row(&scratch.glyphs, &scratch.col_starts, &scratch.col_map);
     }
 }
 
-/// Ensure UI text glyphs from a [`DrawList`] are cached in the appropriate atlas.
-///
-/// Iterates [`DrawCommand::Text`] entries, builds [`RasterKey`]s with
-/// [`FontRealm::Ui`], and rasterizes missing glyphs into mono, subpixel, or
-/// color atlas. Same routing logic as [`ensure_shaped_glyphs_cached`] but
-/// reads glyphs from UI-shaped text rather than the terminal grid.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "three atlases + empty set + fonts + queue + font metrics for glyph routing"
-)]
-pub(super) fn ensure_ui_text_glyphs_cached(
-    draw_list: &oriterm_ui::draw::DrawList,
-    mono_atlas: &mut GlyphAtlas,
-    subpixel_atlas: &mut GlyphAtlas,
-    color_atlas: &mut GlyphAtlas,
-    empty_keys: &mut HashSet<RasterKey>,
-    fonts: &mut FontCollection,
-    queue: &Queue,
-    size_q6: u32,
-    hinted: bool,
-    scale: f32,
-) {
-    let mut text_cmds = 0u32;
-    let mut total_glyphs = 0u32;
-    let mut cached = 0u32;
-    let mut rasterized_ok = 0u32;
-    let mut rasterized_fail = 0u32;
-
-    for cmd in draw_list.commands() {
-        let oriterm_ui::draw::DrawCommand::Text {
-            position, shaped, ..
-        } = cmd
-        else {
-            continue;
-        };
-        text_cmds += 1;
-
-        // Replicate the cursor walk from convert_text so subpixel bins match.
-        // convert_text scales position to physical pixels first, then advances
-        // by physical-pixel glyph advances — we must do the same here.
-        let mut cursor_x = position.x * scale;
-
-        for glyph in &shaped.glyphs {
-            let advance = glyph.x_advance;
-            if glyph.glyph_id == 0 {
-                cursor_x += advance;
-                continue;
-            }
-            total_glyphs += 1;
-            let key = RasterKey {
-                glyph_id: glyph.glyph_id,
-                face_idx: crate::font::FaceIdx(glyph.face_index),
-                size_q6,
-                synthetic: crate::font::SyntheticFlags::NONE,
-                hinted,
-                subpx_x: subpx_bin(cursor_x + glyph.x_offset),
-                font_realm: FontRealm::Ui,
-            };
-            if mono_atlas.lookup_touch(key).is_some()
-                || subpixel_atlas.lookup_touch(key).is_some()
-                || color_atlas.lookup_touch(key).is_some()
-            {
-                cached += 1;
-                cursor_x += advance;
-                continue;
-            }
-            if empty_keys.contains(&key) {
-                cursor_x += advance;
-                continue;
-            }
-            if let Some(rasterized) = fonts.rasterize(key) {
-                rasterized_ok += 1;
-                match rasterized.format {
-                    GlyphFormat::Color => {
-                        color_atlas.insert(key, rasterized, queue);
-                    }
-                    GlyphFormat::SubpixelRgb | GlyphFormat::SubpixelBgr => {
-                        subpixel_atlas.insert(key, rasterized, queue);
-                    }
-                    GlyphFormat::Alpha => {
-                        mono_atlas.insert(key, rasterized, queue);
-                    }
-                }
-            } else {
-                rasterized_fail += 1;
-                empty_keys.insert(key);
-            }
-            cursor_x += advance;
-        }
-    }
-
-    if rasterized_ok > 0 || rasterized_fail > 0 {
-        log::trace!(
-            "UI text cache: cmds={text_cmds} glyphs={total_glyphs} \
-             cached={cached} rasterized={rasterized_ok} failed={rasterized_fail}",
-        );
-    }
-}
-
-/// Ensure all shaped glyphs are cached in the appropriate atlas.
+/// Ensure all glyphs from the given keys are cached in the appropriate atlas.
 ///
 /// Routes glyphs by format:
 /// - [`GlyphFormat::Color`] → `color_atlas`.
@@ -193,12 +100,18 @@ pub(super) fn ensure_ui_text_glyphs_cached(
 /// `empty_keys` is a cross-atlas set of keys known to produce zero-size
 /// glyphs. A glyph that fails rasterization produces no bitmap regardless
 /// of target atlas, so this set is shared across all three.
+///
+/// Callers build [`RasterKey`] iterators from their specific context:
+/// - Grid caller: iterates `ShapedFrame::all_glyphs()`, builds keys with
+///   [`FontRealm::Terminal`] and `subpx_bin(glyph.x_offset)`.
+/// - UI caller: iterates `DrawList` text commands, builds keys with
+///   [`FontRealm::Ui`] and `subpx_bin(cursor_x + glyph.x_offset)`.
 #[expect(
     clippy::too_many_arguments,
     reason = "three atlases + empty set + fonts + queue for glyph routing"
 )]
-pub(super) fn ensure_shaped_glyphs_cached(
-    shaped: &ShapedFrame,
+pub(super) fn ensure_glyphs_cached(
+    keys: impl Iterator<Item = RasterKey>,
     mono_atlas: &mut GlyphAtlas,
     subpixel_atlas: &mut GlyphAtlas,
     color_atlas: &mut GlyphAtlas,
@@ -206,19 +119,7 @@ pub(super) fn ensure_shaped_glyphs_cached(
     fonts: &mut FontCollection,
     queue: &Queue,
 ) {
-    let size_q6 = shaped.size_q6();
-    let hinted = fonts.hinting_mode().hint_flag();
-    for glyph in shaped.all_glyphs() {
-        let key = RasterKey {
-            glyph_id: glyph.glyph_id,
-            face_idx: glyph.face_idx,
-            size_q6,
-            synthetic: glyph.synthetic,
-            hinted,
-            subpx_x: subpx_bin(glyph.x_offset),
-            font_realm: FontRealm::Terminal,
-        };
-        // Check all three atlases for cache hit.
+    for key in keys {
         if mono_atlas.lookup_touch(key).is_some()
             || subpixel_atlas.lookup_touch(key).is_some()
             || color_atlas.lookup_touch(key).is_some()
@@ -244,6 +145,64 @@ pub(super) fn ensure_shaped_glyphs_cached(
             empty_keys.insert(key);
         }
     }
+}
+
+/// Build [`RasterKey`] iterator from shaped terminal frame glyphs.
+///
+/// `hinted` should be `fonts.hinting_mode().hint_flag()` — passed as a
+/// value so the caller can release the `FontCollection` borrow before
+/// passing `&mut fonts` to [`ensure_glyphs_cached`].
+pub(super) fn grid_raster_keys(
+    shaped: &ShapedFrame,
+    hinted: bool,
+) -> impl Iterator<Item = RasterKey> + '_ {
+    let size_q6 = shaped.size_q6();
+    shaped.all_glyphs().iter().map(move |glyph| RasterKey {
+        glyph_id: glyph.glyph_id,
+        face_idx: crate::font::FaceIdx(glyph.face_index),
+        size_q6,
+        synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
+        hinted,
+        subpx_x: crate::font::subpx_bin(glyph.x_offset),
+        font_realm: FontRealm::Terminal,
+    })
+}
+
+/// Build [`RasterKey`] iterator from UI draw list text commands.
+pub(super) fn ui_text_raster_keys(
+    draw_list: &oriterm_ui::draw::DrawList,
+    size_q6: u32,
+    hinted: bool,
+    scale: f32,
+) -> Vec<RasterKey> {
+    let mut keys = Vec::new();
+    for cmd in draw_list.commands() {
+        let oriterm_ui::draw::DrawCommand::Text {
+            position, shaped, ..
+        } = cmd
+        else {
+            continue;
+        };
+        let mut cursor_x = position.x * scale;
+        for glyph in &shaped.glyphs {
+            let advance = glyph.x_advance;
+            if glyph.glyph_id == 0 {
+                cursor_x += advance;
+                continue;
+            }
+            keys.push(RasterKey {
+                glyph_id: glyph.glyph_id,
+                face_idx: crate::font::FaceIdx(glyph.face_index),
+                size_q6,
+                synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
+                hinted,
+                subpx_x: crate::font::subpx_bin(cursor_x + glyph.x_offset),
+                font_realm: FontRealm::Ui,
+            });
+            cursor_x += advance;
+        }
+    }
+    keys
 }
 
 /// Ensure a GPU buffer exists, is large enough, and upload `data` to it.

@@ -275,6 +275,7 @@ fn test_shaped_text() -> ShapedText {
         vec![ShapedGlyph {
             glyph_id: 42,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,

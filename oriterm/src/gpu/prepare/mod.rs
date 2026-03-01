@@ -21,7 +21,11 @@ use super::frame_input::{
     FrameInput, FramePalette, FrameSearch, FrameSelection, MarkCursorOverride,
 };
 use super::prepared_frame::PreparedFrame;
-use crate::font::{FontRealm, GlyphStyle, RasterKey, ShapedGlyph, subpx_bin, subpx_offset};
+use oriterm_ui::text::ShapedGlyph;
+
+use crate::font::{
+    FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags, subpx_bin, subpx_offset,
+};
 use crate::gpu::instance_writer::ScreenRect;
 
 pub(crate) use shaped_frame::ShapedFrame;
@@ -482,6 +486,7 @@ pub(crate) fn fill_frame_shaped(
         }
         if let Some(start_idx) = shaped.col_map(row, col) {
             let row_glyphs = shaped.row_glyphs(row);
+            let row_col_starts = shaped.row_col_starts(row);
             GlyphEmitter {
                 baseline,
                 size_q6: shaped.size_q6(),
@@ -490,7 +495,7 @@ pub(crate) fn fill_frame_shaped(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, start_idx, col, x, y, fg, bg);
+            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
         }
     }
 
@@ -540,11 +545,12 @@ impl GlyphEmitter<'_> {
     /// - `Color` → `frame.color_glyphs` (RGBA atlas, rendered as-is).
     #[expect(
         clippy::too_many_arguments,
-        reason = "per-cell shaped glyph params: glyph source, grid column, screen position, color"
+        reason = "per-cell shaped glyph params: glyph source, col_starts, grid column, screen position, color"
     )]
     fn emit(
         &mut self,
         row_glyphs: &[ShapedGlyph],
+        col_starts: &[usize],
         start_idx: usize,
         col: usize,
         x: f32,
@@ -553,9 +559,9 @@ impl GlyphEmitter<'_> {
         bg: Rgb,
     ) {
         let mut is_first = true;
-        for sg in row_glyphs.get(start_idx..).unwrap_or_default() {
+        for (sg, &cs) in row_glyphs[start_idx..].iter().zip(&col_starts[start_idx..]) {
             // Stop at the first glyph in a different column (combining marks are contiguous).
-            if !is_first && sg.col_start != col {
+            if !is_first && cs != col {
                 break;
             }
             is_first = false;
@@ -563,9 +569,9 @@ impl GlyphEmitter<'_> {
             let subpx = subpx_bin(sg.x_offset);
             let key = RasterKey {
                 glyph_id: sg.glyph_id,
-                face_idx: sg.face_idx,
+                face_idx: FaceIdx(sg.face_index),
                 size_q6: self.size_q6,
-                synthetic: sg.synthetic,
+                synthetic: SyntheticFlags::from_bits_truncate(sg.synthetic),
                 hinted: self.hinted,
                 subpx_x: subpx,
                 font_realm: FontRealm::Terminal,

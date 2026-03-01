@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use oriterm_core::{Cell, CellExtra, CellFlags};
 
-use super::{prepare_line, shape_prepared_runs};
+use super::{build_col_glyph_map, prepare_line, shape_prepared_runs};
 use crate::font::collection::FontCollection;
-use crate::font::{FaceIdx, FontSet, GlyphFormat, HintingMode, SyntheticFlags, subpx_bin};
+use crate::font::{FaceIdx, FontSet, GlyphFormat, HintingMode, subpx_bin};
 
 // ── Helpers ──
 
@@ -274,11 +274,11 @@ fn shape_hello_produces_five_glyphs() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     assert_eq!(output.len(), 5, "5 glyphs for 'Hello'");
     for g in &output {
-        assert_eq!(g.col_span, 1, "each ASCII glyph spans 1 column");
         assert_ne!(g.glyph_id, 0, "glyph ID should not be .notdef for ASCII");
     }
 }
@@ -292,12 +292,13 @@ fn shape_preserves_column_positions() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     // "A" and "B" merge into one run "AB" with byte_to_col=[0, 2].
     assert_eq!(output.len(), 2);
-    assert_eq!(output[0].col_start, 0, "'A' at column 0");
-    assert_eq!(output[1].col_start, 2, "'B' at column 2 (space skipped)");
+    assert_eq!(col_starts[0], 0, "'A' at column 0");
+    assert_eq!(col_starts[1], 2, "'B' at column 2 (space skipped)");
 }
 
 #[test]
@@ -305,7 +306,8 @@ fn shape_empty_runs_produces_no_output() {
     let fc = test_collection();
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&[], &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&[], &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     assert!(output.is_empty());
 }
@@ -316,16 +318,17 @@ fn shape_reuses_scratch_buffer() {
     let faces = fc.create_shaping_faces();
     let mut runs = Vec::new();
     let mut output = Vec::new();
+    let mut col_starts = Vec::new();
 
     let cells = make_cells("AB");
     prepare_line(&cells, cells.len(), &fc, &mut runs);
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
     assert_eq!(output.len(), 2);
 
     // Re-shape a different line — output should be replaced.
     let cells2 = make_cells("X");
     prepare_line(&cells2, cells2.len(), &fc, &mut runs);
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
     assert_eq!(output.len(), 1, "output should be cleared on re-shape");
 }
 
@@ -353,16 +356,19 @@ fn shape_wide_char_col_span_two() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     // Should produce exactly 1 glyph for the wide character.
     assert_eq!(output.len(), 1, "wide char should produce 1 glyph");
-    assert_eq!(output[0].col_start, 0);
+    assert_eq!(col_starts[0], 0);
 
-    // If a CJK fallback font is available, the advance width ≈ 2× cell width → col_span=2.
-    // Without fallback, .notdef glyph may have different advance — both are valid.
+    // If a CJK fallback font is available, verify the col_map reflects 2-column span.
     if output[0].glyph_id != 0 {
-        assert_eq!(output[0].col_span, 2, "CJK glyph should span 2 columns");
+        let mut map = Vec::new();
+        build_col_glyph_map(&col_starts, cells.len(), &mut map);
+        assert!(map[0].is_some(), "col 0 should have glyph");
+        assert_eq!(map[1], None, "col 1 is continuation of wide char");
     }
 }
 
@@ -388,17 +394,18 @@ fn shape_cjk_uses_fallback_face() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     assert_eq!(output.len(), 1);
 
     // If system has CJK fallback, glyph should come from a fallback face.
     // If no fallback installed, glyph_id will be 0 (.notdef) — both are valid.
     if output[0].glyph_id != 0 {
+        let fi = FaceIdx(output[0].face_index);
         assert!(
-            output[0].face_idx.is_fallback(),
-            "CJK char should be shaped from fallback face (got {:?})",
-            output[0].face_idx,
+            fi.is_fallback(),
+            "CJK char should be shaped from fallback face (got {fi:?})",
         );
     }
 }
@@ -433,26 +440,25 @@ fn shape_ascii_cjk_ascii_column_positions() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     assert_eq!(output.len(), 3, "'A好B' should produce 3 glyphs");
-    assert_eq!(output[0].col_start, 0, "'A' at column 0");
+    assert_eq!(col_starts[0], 0, "'A' at column 0");
 
-    // CJK char at col 1. If fallback is available, col_span=2.
-    let cjk = output
+    // CJK char at col 1.
+    let cjk_idx = col_starts
         .iter()
-        .find(|g| g.col_start == 1)
+        .position(|&c| c == 1)
         .expect("CJK glyph at col 1");
-    if cjk.glyph_id != 0 {
-        assert_eq!(cjk.col_span, 2, "CJK glyph should span 2 columns");
+    if output[cjk_idx].glyph_id != 0 {
+        let mut map = Vec::new();
+        build_col_glyph_map(&col_starts, cells.len(), &mut map);
+        assert_eq!(map[2], None, "col 2 is continuation of CJK wide char");
     }
 
     // 'B' at col 3 (after the 2-column wide char).
-    let b = output
-        .iter()
-        .find(|g| g.col_start == 3)
-        .expect("'B' at col 3");
-    assert_eq!(b.col_span, 1, "'B' spans 1 column");
+    assert!(col_starts.iter().any(|&c| c == 3), "'B' should be at col 3",);
 }
 
 #[test]
@@ -488,19 +494,12 @@ fn shape_consecutive_cjk_column_positions() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     assert_eq!(output.len(), 2, "two CJK chars should produce 2 glyphs");
-    assert_eq!(output[0].col_start, 0, "first CJK at col 0");
-    assert_eq!(output[1].col_start, 2, "second CJK at col 2");
-
-    // If CJK fallback available, both span 2 columns.
-    if output[0].glyph_id != 0 {
-        assert_eq!(output[0].col_span, 2, "first CJK spans 2 columns");
-    }
-    if output[1].glyph_id != 0 {
-        assert_eq!(output[1].col_span, 2, "second CJK spans 2 columns");
-    }
+    assert_eq!(col_starts[0], 0, "first CJK at col 0");
+    assert_eq!(col_starts[1], 2, "second CJK at col 2");
 }
 
 #[test]
@@ -537,13 +536,10 @@ fn shape_ideographic_space_wide() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     assert_eq!(output.len(), 1, "ideographic space should produce 1 glyph");
-    assert!(
-        output[0].col_span >= 1,
-        "ideographic space col_span should be at least 1",
-    );
 }
 
 #[test]
@@ -569,11 +565,11 @@ fn shape_wide_char_notdef_graceful() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     // Regardless of font coverage: valid output, no panic.
     assert_eq!(output.len(), 1, "should produce exactly 1 glyph");
-    assert!(output[0].col_span >= 1, "col_span must be at least 1");
 }
 
 // ── Phase 3: Column ↔ Glyph Mapping ──
@@ -604,20 +600,18 @@ fn col_glyph_map_wide_char_pipeline() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     let mut map = Vec::new();
-    super::build_col_glyph_map(&output, cells.len(), &mut map);
+    build_col_glyph_map(&col_starts, cells.len(), &mut map);
 
     assert_eq!(map.len(), 3);
     // Col 0: wide char glyph.
     assert!(map[0].is_some(), "col 0 should have the wide char glyph");
 
-    // Col 1: continuation of wide char — None if col_span=2, Some if col_span=1 (.notdef).
-    let cjk_glyph = &output[map[0].unwrap()];
-    if cjk_glyph.col_span == 2 {
-        assert_eq!(map[1], None, "col 1 is continuation of wide char");
-    }
+    // Col 1: continuation of wide char (no glyph starts here).
+    assert_eq!(map[1], None, "col 1 is continuation of wide char");
 
     // Col 2: 'B'.
     assert!(map[2].is_some(), "col 2 should have 'B' glyph");
@@ -632,10 +626,11 @@ fn col_glyph_map_simple_ascii() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     let mut map = Vec::new();
-    super::build_col_glyph_map(&output, cells.len(), &mut map);
+    build_col_glyph_map(&col_starts, cells.len(), &mut map);
 
     assert_eq!(map.len(), 3);
     // Each column maps to its glyph.
@@ -653,10 +648,11 @@ fn col_glyph_map_with_spaces() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     let mut map = Vec::new();
-    super::build_col_glyph_map(&output, cells.len(), &mut map);
+    build_col_glyph_map(&col_starts, cells.len(), &mut map);
 
     assert_eq!(map.len(), 3);
     // 'A' at col 0, space at col 1 (no glyph), 'B' at col 2.
@@ -668,7 +664,8 @@ fn col_glyph_map_with_spaces() {
 #[test]
 fn col_glyph_map_empty_line() {
     let mut map = Vec::new();
-    super::build_col_glyph_map(&[], 5, &mut map);
+    let col_starts: Vec<usize> = Vec::new();
+    build_col_glyph_map(&col_starts, 5, &mut map);
 
     assert_eq!(map.len(), 5);
     assert!(map.iter().all(|e| e.is_none()));
@@ -679,20 +676,13 @@ fn col_glyph_map_reuses_buffer() {
     let mut map = Vec::new();
 
     // First call.
-    super::build_col_glyph_map(&[], 3, &mut map);
+    let empty: Vec<usize> = Vec::new();
+    build_col_glyph_map(&empty, 3, &mut map);
     assert_eq!(map.len(), 3);
 
     // Second call with different size.
-    let glyphs = vec![super::ShapedGlyph {
-        glyph_id: 42,
-        face_idx: FaceIdx::REGULAR,
-        synthetic: SyntheticFlags::NONE,
-        col_start: 0,
-        col_span: 1,
-        x_offset: 0.0,
-        y_offset: 0.0,
-    }];
-    super::build_col_glyph_map(&glyphs, 5, &mut map);
+    let col_starts = vec![0];
+    build_col_glyph_map(&col_starts, 5, &mut map);
     assert_eq!(map.len(), 5);
     assert_eq!(map[0], Some(0));
     assert!(map[1..].iter().all(|e| e.is_none()));
@@ -702,38 +692,11 @@ fn col_glyph_map_reuses_buffer() {
 fn col_glyph_map_first_wins_for_combining_marks() {
     // Two glyphs at the same col_start: base char (glyph 50) and combining mark (glyph 51).
     // build_col_glyph_map should store the FIRST glyph's index.
-    let glyphs = vec![
-        super::ShapedGlyph {
-            glyph_id: 50,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 1,
-            x_offset: 0.0,
-            y_offset: 0.0,
-        },
-        super::ShapedGlyph {
-            glyph_id: 51,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0, // same column — combining mark
-            col_span: 1,
-            x_offset: 1.5,
-            y_offset: 3.0,
-        },
-        super::ShapedGlyph {
-            glyph_id: 52,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 1,
-            col_span: 1,
-            x_offset: 0.0,
-            y_offset: 0.0,
-        },
-    ];
+    // Two glyphs at col 0 (base + combining mark), one at col 1.
+    let col_starts = vec![0, 0, 1];
 
     let mut map = Vec::new();
-    super::build_col_glyph_map(&glyphs, 2, &mut map);
+    build_col_glyph_map(&col_starts, 2, &mut map);
 
     // First-wins: col 0 points to glyph 0 (the base), not glyph 1 (the combining mark).
     assert_eq!(map[0], Some(0), "first-wins: base glyph claims col 0");
@@ -742,30 +705,12 @@ fn col_glyph_map_first_wins_for_combining_marks() {
 
 #[test]
 fn col_glyph_map_ligature_span() {
-    // Simulate a ligature spanning 2 columns.
-    let glyphs = vec![
-        super::ShapedGlyph {
-            glyph_id: 100,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 0,
-            col_span: 2, // ligature spans cols 0-1
-            x_offset: 0.0,
-            y_offset: 0.0,
-        },
-        super::ShapedGlyph {
-            glyph_id: 101,
-            face_idx: FaceIdx::REGULAR,
-            synthetic: SyntheticFlags::NONE,
-            col_start: 2,
-            col_span: 1,
-            x_offset: 0.0,
-            y_offset: 0.0,
-        },
-    ];
+    // Simulate a ligature spanning 2 columns: one glyph at col 0, next at col 2.
+    // Col 1 has no glyph (continuation of ligature).
+    let col_starts = vec![0, 2];
 
     let mut map = Vec::new();
-    super::build_col_glyph_map(&glyphs, 3, &mut map);
+    build_col_glyph_map(&col_starts, 3, &mut map);
 
     assert_eq!(map[0], Some(0), "ligature starts at col 0");
     assert_eq!(map[1], None, "col 1 is continuation of ligature");
@@ -1026,22 +971,21 @@ fn shape_arrow_ligature_col_span_two() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
     // Whether "=>" produces a ligature depends on the font. If the font
     // has a `calt` substitution for "=>", we get 1 glyph with col_span=2.
     // Otherwise we get 2 separate glyphs with col_span=1 each.
     if output.len() == 1 {
-        assert_eq!(
-            output[0].col_span, 2,
-            "ligature glyph for '=>' should span 2 columns"
-        );
-        assert_eq!(output[0].col_start, 0, "ligature starts at col 0");
+        // Ligature: single glyph at col 0, col 1 should be None in the map.
+        assert_eq!(col_starts[0], 0, "ligature starts at col 0");
+        let mut map = Vec::new();
+        build_col_glyph_map(&col_starts, cells.len(), &mut map);
+        assert_eq!(map[1], None, "col 1 is continuation of ligature");
     } else {
         // No ligature — font doesn't support it. Verify 2 separate glyphs.
         assert_eq!(output.len(), 2, "non-ligature: 2 glyphs for '=>'");
-        assert_eq!(output[0].col_span, 1);
-        assert_eq!(output[1].col_span, 1);
     }
 }
 
@@ -1054,20 +998,18 @@ fn shape_fi_ligature_col_span_two() {
 
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut col_starts, &mut None);
 
-    // "fi" ligature via `liga` feature: 1 glyph with col_span=2 if the font
-    // supports it, otherwise 2 separate glyphs.
+    // "fi" ligature via `liga` feature: 1 glyph if the font supports it,
+    // otherwise 2 separate glyphs.
     if output.len() == 1 {
-        assert_eq!(
-            output[0].col_span, 2,
-            "ligature glyph for 'fi' should span 2 columns"
-        );
-        assert_eq!(output[0].col_start, 0, "ligature starts at col 0");
+        assert_eq!(col_starts[0], 0, "ligature starts at col 0");
+        let mut map = Vec::new();
+        build_col_glyph_map(&col_starts, cells.len(), &mut map);
+        assert_eq!(map[1], None, "col 1 is continuation of ligature");
     } else {
         assert_eq!(output.len(), 2, "non-ligature: 2 glyphs for 'fi'");
-        assert_eq!(output[0].col_span, 1);
-        assert_eq!(output[1].col_span, 1);
     }
 }
 
