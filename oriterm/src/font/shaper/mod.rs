@@ -18,6 +18,7 @@ pub use ui_measurer::UiFontMeasurer;
 use ui_text::{measure_text, shape_text_string, truncate_with_ellipsis};
 
 use oriterm_core::{Cell, CellFlags, RenderableCell};
+use oriterm_ui::text::ShapedGlyph;
 
 use super::collection::FontCollection;
 use super::{FaceIdx, GlyphStyle, SyntheticFlags};
@@ -85,32 +86,6 @@ pub struct ShapingRun {
     ///
     /// Critical for mapping rustybuzz cluster indices back to grid positions.
     pub(super) byte_to_col: Vec<usize>,
-}
-
-/// A shaped glyph positioned on the grid.
-///
-/// Produced by [`shape_prepared_runs`]. Each glyph occupies one or more grid
-/// columns (ligatures span multiple).
-#[derive(Debug, Clone, Copy)]
-pub struct ShapedGlyph {
-    /// Glyph ID within the font face (post-shaping, NOT codepoint).
-    pub glyph_id: u16,
-    /// Which font face this was shaped from.
-    pub face_idx: FaceIdx,
-    /// Synthetic transformations to apply at rasterization time.
-    pub synthetic: SyntheticFlags,
-    /// First grid column this glyph occupies.
-    pub col_start: usize,
-    /// Number of grid columns (1 = normal, 2+ = ligature or wide char).
-    #[allow(
-        dead_code,
-        reason = "informational field consumed by tests and diagnostics"
-    )]
-    pub col_span: usize,
-    /// Shaper X positioning offset in pixels.
-    pub x_offset: f32,
-    /// Shaper Y positioning offset in pixels.
-    pub y_offset: f32,
 }
 
 /// Variation Selector 16: forces emoji presentation (U+FE0F).
@@ -249,24 +224,32 @@ fn append_cell_to_run<C: ShapableCell>(run: &mut ShapingRun, cell: &C, col: usiz
 
 /// Shape pre-segmented runs using pre-created rustybuzz faces.
 ///
-/// Clears and fills `output`. Faces should be created once per frame via
+/// Clears and fills `output` and `col_starts`. `col_starts` is a parallel
+/// array (same length as `output`) mapping each glyph to its starting grid
+/// column. Faces should be created once per frame via
 /// [`FontCollection::create_shaping_faces`].
 ///
 /// Reuses a single `UnicodeBuffer` across all runs to avoid per-run heap
 /// allocation. The buffer is returned from each `GlyphBuffer::clear()`.
 /// Pass `buffer_slot` to persist the buffer across frames — the first call
 /// allocates, subsequent calls reuse the existing capacity.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "parallel col_starts output added for unified ShapedGlyph"
+)]
 pub fn shape_prepared_runs(
     runs: &[ShapingRun],
     faces: &[Option<rustybuzz::Face<'_>>],
     collection: &FontCollection,
     output: &mut Vec<ShapedGlyph>,
+    col_starts: &mut Vec<usize>,
     buffer_slot: &mut Option<rustybuzz::UnicodeBuffer>,
 ) {
     output.clear();
+    col_starts.clear();
     let mut buffer = buffer_slot.take().unwrap_or_default();
     for run in runs {
-        buffer = shape_run(run, faces, collection, output, buffer);
+        buffer = shape_run(run, faces, collection, output, col_starts, buffer);
     }
     *buffer_slot = Some(buffer);
 }
@@ -275,16 +258,21 @@ pub fn shape_prepared_runs(
 ///
 /// Returns the `UnicodeBuffer` for reuse by the next run. When a face is
 /// missing, the buffer is returned unchanged (unshaped fallback path).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "parallel col_starts output added for unified ShapedGlyph"
+)]
 fn shape_run(
     run: &ShapingRun,
     faces: &[Option<rustybuzz::Face<'_>>],
     collection: &FontCollection,
     output: &mut Vec<ShapedGlyph>,
+    col_starts: &mut Vec<usize>,
     mut buffer: rustybuzz::UnicodeBuffer,
 ) -> rustybuzz::UnicodeBuffer {
     let face_i = run.face_idx.as_usize();
     let Some(face) = faces.get(face_i).and_then(|f| f.as_ref()) else {
-        emit_unshaped_fallback(run, output);
+        emit_unshaped_fallback(run, output, col_starts);
         return buffer;
     };
 
@@ -299,7 +287,6 @@ fn shape_run(
     let upem = face.units_per_em() as f32;
     let eff_size = collection.effective_size(run.face_idx);
     let scale = eff_size / upem;
-    let cell_w = collection.cell_metrics().width;
 
     for (info, pos) in infos.iter().zip(positions.iter()) {
         let cluster = info.cluster as usize;
@@ -311,22 +298,19 @@ fn shape_run(
             .copied()
             .unwrap_or(run.col_start);
 
-        // Compute col_span from advance width.
-        let advance_px = pos.x_advance as f32 * scale;
-        let col_span = (advance_px / cell_w).round().max(1.0) as usize;
-
+        let x_advance = pos.x_advance as f32 * scale;
         let x_offset = pos.x_offset as f32 * scale;
         let y_offset = pos.y_offset as f32 * scale;
 
         output.push(ShapedGlyph {
             glyph_id: info.glyph_id as u16,
-            face_idx: run.face_idx,
-            synthetic: run.synthetic,
-            col_start: col,
-            col_span,
+            face_index: run.face_idx.0,
+            synthetic: run.synthetic.bits(),
+            x_advance,
             x_offset,
             y_offset,
         });
+        col_starts.push(col);
     }
 
     // Return the cleared buffer for reuse by the next run.
@@ -334,7 +318,11 @@ fn shape_run(
 }
 
 /// Fallback for when no rustybuzz face is available — emit one glyph per char.
-fn emit_unshaped_fallback(run: &ShapingRun, output: &mut Vec<ShapedGlyph>) {
+fn emit_unshaped_fallback(
+    run: &ShapingRun,
+    output: &mut Vec<ShapedGlyph>,
+    col_starts: &mut Vec<usize>,
+) {
     let mut col = run.col_start;
     for ch in run.text.chars() {
         let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
@@ -343,20 +331,20 @@ fn emit_unshaped_fallback(run: &ShapingRun, output: &mut Vec<ShapedGlyph>) {
         }
         output.push(ShapedGlyph {
             glyph_id: 0,
-            face_idx: run.face_idx,
-            synthetic: run.synthetic,
-            col_start: col,
-            col_span: w,
+            face_index: run.face_idx.0,
+            synthetic: run.synthetic.bits(),
+            x_advance: 0.0,
             x_offset: 0.0,
             y_offset: 0.0,
         });
+        col_starts.push(col);
         col += w;
     }
 }
 
 // ── Phase 3: Column ↔ Glyph Mapping ──
 
-/// Build a column-to-glyph map from shaped output.
+/// Build a column-to-glyph map from shaped output and parallel `col_starts`.
 ///
 /// Clears and fills `map_out` with `cols` entries. Each entry is either:
 /// - `Some(glyph_index)` — the **first** glyph that starts at this column
@@ -369,15 +357,14 @@ fn emit_unshaped_fallback(run: &ShapingRun, output: &mut Vec<ShapedGlyph>) {
 ///
 /// The renderer uses this map to decide: render the glyph at `Some` columns
 /// (plus any combining marks that follow), skip `None` columns.
-pub fn build_col_glyph_map(glyphs: &[ShapedGlyph], cols: usize, map_out: &mut Vec<Option<usize>>) {
+pub fn build_col_glyph_map(col_starts: &[usize], cols: usize, map_out: &mut Vec<Option<usize>>) {
     map_out.clear();
     map_out.resize(cols, None);
 
-    for (i, glyph) in glyphs.iter().enumerate() {
-        if glyph.col_start < cols && map_out[glyph.col_start].is_none() {
-            map_out[glyph.col_start] = Some(i);
+    for (i, &cs) in col_starts.iter().enumerate() {
+        if cs < cols && map_out[cs].is_none() {
+            map_out[cs] = Some(i);
         }
-        // Continuation columns (col_start+1 .. col_start+col_span) stay None.
     }
 }
 

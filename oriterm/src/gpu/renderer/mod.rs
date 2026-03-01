@@ -33,8 +33,8 @@ use super::state::GpuState;
 use crate::font::{CellMetrics, FontCollection, GlyphFormat, RasterKey};
 use crate::gpu::frame_input::ViewportSize;
 use helpers::{
-    ShapingScratch, ensure_shaped_glyphs_cached, pre_cache_atlas, record_draw, shape_frame,
-    upload_buffer,
+    ShapingScratch, ensure_glyphs_cached, grid_raster_keys, pre_cache_atlas, record_draw,
+    shape_frame, ui_text_raster_keys, upload_buffer,
 };
 
 // ── Error type ──
@@ -286,8 +286,11 @@ impl GpuRenderer {
         shape_frame(input, &self.font_collection, &mut self.shaping);
 
         // Phase B: Ensure shaped glyphs cached (routes to mono, subpixel, or color atlas).
-        ensure_shaped_glyphs_cached(
-            &self.shaping.frame,
+        ensure_glyphs_cached(
+            grid_raster_keys(
+                &self.shaping.frame,
+                self.font_collection.hinting_mode().hint_flag(),
+            ),
             &mut self.atlas,
             &mut self.subpixel_atlas,
             &mut self.color_atlas,
@@ -378,17 +381,15 @@ impl GpuRenderer {
         let size_q6 = crate::font::size_key(ui_fc.size_px());
         let hinted = ui_fc.hinting_mode().hint_flag();
 
-        helpers::ensure_ui_text_glyphs_cached(
-            draw_list,
+        let keys = ui_text_raster_keys(draw_list, size_q6, hinted, scale);
+        ensure_glyphs_cached(
+            keys.into_iter(),
             &mut self.atlas,
             &mut self.subpixel_atlas,
             &mut self.color_atlas,
             &mut self.empty_keys,
             ui_fc,
             &gpu.queue,
-            size_q6,
-            hinted,
-            scale,
         );
 
         let bridge = CombinedAtlasLookup {

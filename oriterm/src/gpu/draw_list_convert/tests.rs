@@ -306,6 +306,7 @@ fn text_without_context_is_noop() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -329,6 +330,7 @@ fn text_single_glyph_produces_one_instance() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -384,6 +386,7 @@ fn text_spaces_are_advance_only() {
         ShapedGlyph {
             glyph_id: 65,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -391,6 +394,7 @@ fn text_spaces_are_advance_only() {
         ShapedGlyph {
             glyph_id: 0,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -398,6 +402,7 @@ fn text_spaces_are_advance_only() {
         ShapedGlyph {
             glyph_id: 66,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -441,6 +446,7 @@ fn text_mixed_with_rects() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -520,6 +526,7 @@ fn text_atlas_miss_skips_glyph() {
         ShapedGlyph {
             glyph_id: 42,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -527,6 +534,7 @@ fn text_atlas_miss_skips_glyph() {
         ShapedGlyph {
             glyph_id: 99,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -588,6 +596,7 @@ fn text_color_glyph_routes_to_color_writer() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 50,
         face_index: 0,
+        synthetic: 0,
         x_advance: 16.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -907,6 +916,7 @@ fn text_subpixel_glyph_routes_to_subpixel_writer() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -947,6 +957,7 @@ fn text_many_glyphs_cursor_accumulates() {
         .map(|&id| ShapedGlyph {
             glyph_id: id,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -989,6 +1000,7 @@ fn text_two_commands_independent_cursors() {
     let st1 = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -996,6 +1008,7 @@ fn text_two_commands_independent_cursors() {
     let st2 = shaped_text(vec![ShapedGlyph {
         glyph_id: 43,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -1060,6 +1073,7 @@ fn text_negative_bearing_extends_left() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -1099,6 +1113,7 @@ fn text_all_spaces_produces_no_glyph_instances() {
         ShapedGlyph {
             glyph_id: 0,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -1106,6 +1121,7 @@ fn text_all_spaces_produces_no_glyph_instances() {
         ShapedGlyph {
             glyph_id: 0,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -1113,6 +1129,7 @@ fn text_all_spaces_produces_no_glyph_instances() {
         ShapedGlyph {
             glyph_id: 0,
             face_index: 0,
+            synthetic: 0,
             x_advance: 7.0,
             x_offset: 0.0,
             y_offset: 0.0,
@@ -1163,6 +1180,7 @@ fn text_fractional_position_applies_subpixel_phase() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -1320,6 +1338,7 @@ fn text_with_layer_bg_hint_routes_subpixel_with_bg() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -1355,6 +1374,7 @@ fn text_without_layer_has_no_bg_hint() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -1502,6 +1522,7 @@ fn opacity_applies_to_text_glyph_alpha() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,
@@ -1607,6 +1628,7 @@ fn opacity_applies_to_text_with_bg_hint() {
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
+        synthetic: 0,
         x_advance: 7.0,
         x_offset: 0.0,
         y_offset: 0.0,

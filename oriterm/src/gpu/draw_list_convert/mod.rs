@@ -312,7 +312,7 @@ fn convert_text(
             glyph_id: glyph.glyph_id,
             face_idx: FaceIdx(glyph.face_index),
             size_q6: ctx.size_q6,
-            synthetic: SyntheticFlags::NONE,
+            synthetic: SyntheticFlags::from_bits_truncate(glyph.synthetic),
             hinted: ctx.hinted,
             subpx_x: subpx,
             font_realm: FontRealm::Ui,

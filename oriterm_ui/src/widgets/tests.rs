@@ -55,6 +55,7 @@ impl TextMeasurer for MockMeasurer {
             .map(|(i, _)| ShapedGlyph {
                 glyph_id: (i as u16) + 1,
                 face_index: 0,
+                synthetic: 0,
                 x_advance: self.char_width,
                 x_offset: 0.0,
                 y_offset: 0.0,

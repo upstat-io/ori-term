@@ -106,11 +106,11 @@ impl TextStyle {
     }
 }
 
-/// A shaped glyph for UI text rendering.
+/// A shaped glyph — unified output for both terminal grid and UI text.
 ///
 /// Output of the shaping pipeline, input to the GPU renderer. Uses pixel-based
-/// `x_advance` positioning instead of grid column mapping — suitable for
-/// proportional and variable-width fonts.
+/// `x_advance` positioning. Grid-column mapping is a terminal-specific concern
+/// stored in parallel arrays outside this type.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShapedGlyph {
     /// Glyph ID within the font face (0 for advance-only entries like spaces).
@@ -118,6 +118,8 @@ pub struct ShapedGlyph {
     /// Font face index as a raw `u16`. Avoids dependency on `oriterm`'s
     /// `FaceIdx` type — the renderer maps this back.
     pub face_index: u16,
+    /// `SyntheticFlags` bits (0 = none, 1 = bold, 2 = italic).
+    pub synthetic: u8,
     /// Horizontal advance in pixels (cursor moves right by this amount).
     pub x_advance: f32,
     /// Shaper X offset from the glyph origin in pixels.
