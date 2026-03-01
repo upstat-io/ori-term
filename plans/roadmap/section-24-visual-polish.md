@@ -17,6 +17,9 @@ sections:
   - id: "24.4"
     title: HiDPI & Display Scaling
     status: not-started
+  - id: "24.5"
+    title: Vector Icon Pipeline (tiny_skia)
+    status: not-started
   - id: "24.6"
     title: Background Images
     status: not-started
@@ -173,6 +176,64 @@ Render correctly on high-DPI displays and handle multi-monitor DPI transitions.
 
 ---
 
+## 24.5 Vector Icon Pipeline (tiny_skia)
+
+Replace jagged geometric-primitive icons with properly anti-aliased vector path rasterization. Currently, diagonal lines (close X, chevron) are decomposed into pixel-stepping rectangles in `gpu/draw_list_convert/mod.rs`, producing visible staircase artifacts. This section introduces `tiny_skia` (pure-Rust Skia subset, ~50KB) to rasterize icon paths into bitmaps at the exact DPI, cached in the glyph atlas alongside font glyphs.
+
+**File:** `oriterm_ui/src/icons/mod.rs` (new — icon path definitions), `oriterm/src/gpu/icon_rasterizer.rs` (new — tiny_skia rasterization + atlas caching), `oriterm_ui/src/widgets/tab_bar/widget/draw.rs` (consume icon textures), `oriterm_ui/src/widgets/window_chrome/controls.rs` (consume icon textures)
+
+**Reference:** WezTerm `customglyph.rs` (Poly/PolyCommand system), Chromium `components/vector_icons/` (.icon format → Skia paths)
+
+**Dependency:** `tiny-skia` crate (pure Rust, no system deps, ~50KB, MIT)
+
+- [ ] Icon path data structures:
+  - [ ] `PathCommand` enum: `MoveTo(f32, f32)`, `LineTo(f32, f32)`, `CubicTo(f32, f32, f32, f32, f32, f32)`, `Close`
+  - [ ] `IconPath` struct: `commands: &'static [PathCommand]`, `style: IconStyle`
+  - [ ] `IconStyle` enum: `Stroke(f32)` (line width), `Fill`
+  - [ ] All coordinates normalized 0.0–1.0 (scaled to target pixel size at rasterization time)
+- [ ] Static icon definitions (`&'static` slices, zero runtime allocation):
+  - [ ] `ICON_CLOSE`: two diagonal lines forming × (tab close button)
+  - [ ] `ICON_PLUS`: two perpendicular lines forming + (new tab button)
+  - [ ] `ICON_CHEVRON_DOWN`: two lines forming ▾ (dropdown button)
+  - [ ] `ICON_MINIMIZE`: single horizontal line ─ (window control)
+  - [ ] `ICON_MAXIMIZE`: square outline □ (window control)
+  - [ ] `ICON_RESTORE`: two overlapping rectangles ⧉ (window control, maximized state)
+  - [ ] `ICON_WINDOW_CLOSE`: two diagonal lines × (window close, slightly different proportions than tab close)
+- [ ] tiny_skia rasterization:
+  - [ ] `rasterize_icon(icon: &IconPath, size_px: u32, color: Color) -> Vec<u8>` (RGBA8 bitmap)
+  - [ ] Build `tiny_skia::Path` from `PathCommand` sequence (scale 0.0–1.0 coords → `size_px`)
+  - [ ] For `Stroke`: use `tiny_skia::Stroke` with round caps and round joins
+  - [ ] For `Fill`: use `tiny_skia::FillRule::Winding`
+  - [ ] Anti-aliasing enabled (tiny_skia's default — analytic AA, no MSAA needed)
+  - [ ] Return RGBA8 pixmap data ready for atlas upload
+- [ ] Atlas integration:
+  - [ ] Icon bitmaps cached in the existing glyph atlas (grayscale pages, same as text)
+  - [ ] Cache key: `(IconId, size_px, color_hash)` — re-rasterize on DPI change or theme change
+  - [ ] `IconCache` struct: `HashMap<(IconId, u32), AtlasRegion>` — maps icon+size to atlas UV coords
+  - [ ] On DPI scale change: invalidate icon cache, re-rasterize at new physical size
+  - [ ] On theme color change: invalidate icon cache (icon color changed)
+- [ ] Widget integration — tab bar:
+  - [ ] `draw.rs`: replace `push_line()` calls for close ×, + button, and chevron with `push_image()` referencing cached atlas region
+  - [ ] Icon size derived from tab bar constants (e.g., `CLOSE_BUTTON_WIDTH * scale_factor`)
+  - [ ] Hover color change: cache both normal and hover-color variants, or tint in shader
+- [ ] Widget integration — window chrome:
+  - [ ] `controls.rs`: replace `push_line()` calls for minimize, maximize, restore, close with `push_image()` referencing cached atlas regions
+  - [ ] Maximize/restore: swap icon based on `is_maximized` state
+  - [ ] Close button hover: white icon on red background (cache white variant)
+- [ ] Remove old line-stepping code:
+  - [ ] Remove icon-specific `push_line()` calls from `draw.rs` and `controls.rs`
+  - [ ] The general `push_line()` / `convert_line()` infrastructure remains (used elsewhere)
+
+**Tests:**
+- [ ] Rasterize close icon at 16px, 24px, 32px — output is non-empty RGBA8 with correct dimensions
+- [ ] Rasterize at different sizes produces different pixel data (not just scaled)
+- [ ] Icon cache returns same atlas region for same key (cache hit)
+- [ ] DPI change invalidates cache, produces new regions
+- [ ] Visual regression: screenshot comparison of new icons vs reference (Chrome-style × and +)
+- [ ] No jagged diagonals visible at 1.0x, 1.25x, 1.5x, 2.0x scale factors
+
+---
+
 ## 24.6 Background Images
 
 Display a background image behind the terminal grid.
@@ -300,14 +361,15 @@ Platform-specific compositor effects: Acrylic/Mica on Windows, blur on macOS/Lin
 
 ## 24.9 Section Completion
 
-- [ ] All 24.1-24.8 items complete
+- [ ] All 24.1-24.8 items complete (including 24.5)
 - [ ] Cursor blinks at configured rate for blinking styles
 - [ ] Cursor blink resets on keypress
 - [ ] Mouse cursor hides when typing, reappears on move
 - [ ] Minimum contrast enforces readable text (WCAG 2.0 in shader)
 - [ ] HiDPI displays render crisp text at correct scale
 - [ ] Moving between monitors with different DPI works
-- [ ] Smooth scrolling feels natural with mouse wheel
+- [ ] Vector icons (close ×, +, chevron, minimize, maximize, restore, window close) render with smooth anti-aliasing at all DPI scales
+- [ ] No jagged staircase artifacts on diagonal lines in any icon
 - [ ] Background images render behind terminal content
 - [ ] All features configurable and hot-reloadable
 
