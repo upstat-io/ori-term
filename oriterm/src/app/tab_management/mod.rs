@@ -402,17 +402,31 @@ impl App {
             .map(|&tab_id| {
                 let tab = mux.session().get_tab(tab_id);
                 let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-                let title = pane_id
+                let mut title = pane_id
                     .and_then(|pid| self.panes.get(&pid))
                     .map(|p| p.title().to_owned())
                     .unwrap_or_default();
+                let icon = pane_id
+                    .and_then(|pid| self.panes.get(&pid))
+                    .and_then(|p| p.icon_name())
+                    .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
+                // Strip leading emoji from title when it matches the icon
+                // (OSC 0 sets both title and icon_name to the same string).
+                if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
+                    let stripped = title
+                        .strip_prefix(e.as_str())
+                        .map(|r| r.trim_start().to_owned());
+                    if let Some(s) = stripped {
+                        title = s;
+                    }
+                }
                 let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());
                 let display = if is_zoomed {
                     format!("{title} [Z]")
                 } else {
                     title
                 };
-                oriterm_ui::widgets::tab_bar::TabEntry::new(display)
+                oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon)
             })
             .collect();
 
@@ -449,17 +463,31 @@ impl App {
             .map(|&tab_id| {
                 let tab = mux.session().get_tab(tab_id);
                 let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-                let title = pane_id
+                let mut title = pane_id
                     .and_then(|pid| self.panes.get(&pid))
                     .map(|p| p.title().to_owned())
                     .unwrap_or_default();
+                let icon = pane_id
+                    .and_then(|pid| self.panes.get(&pid))
+                    .and_then(|p| p.icon_name())
+                    .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
+                // Strip leading emoji from title when it matches the icon
+                // (OSC 0 sets both title and icon_name to the same string).
+                if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
+                    let stripped = title
+                        .strip_prefix(e.as_str())
+                        .map(|r| r.trim_start().to_owned());
+                    if let Some(s) = stripped {
+                        title = s;
+                    }
+                }
                 let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());
                 let display = if is_zoomed {
                     format!("{title} [Z]")
                 } else {
                     title
                 };
-                oriterm_ui::widgets::tab_bar::TabEntry::new(display)
+                oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon)
             })
             .collect();
 

@@ -398,6 +398,11 @@ impl<T: EventListener> Handler for Term<T> {
         self.osc_set_title(title);
     }
 
+    /// OSC 0/1: set icon name.
+    fn set_icon_name(&mut self, name: Option<String>) {
+        self.osc_set_icon_name(name);
+    }
+
     /// Push current title onto the title stack.
     fn push_title(&mut self) {
         self.osc_push_title();

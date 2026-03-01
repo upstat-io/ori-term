@@ -22,6 +22,9 @@ pub const TAB_TOP_MARGIN: f32 = 8.0;
 /// Internal horizontal padding within each tab.
 pub const TAB_PADDING: f32 = 8.0;
 
+/// Gap between icon and title text inside a tab.
+pub const ICON_TEXT_GAP: f32 = 4.0;
+
 /// Clickable area width for the tab close (x) button.
 pub const CLOSE_BUTTON_WIDTH: f32 = 24.0;
 

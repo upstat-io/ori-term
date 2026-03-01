@@ -14,11 +14,11 @@ use crate::layout::LayoutBox;
 use crate::text::{TextOverflow, TextStyle};
 
 use super::super::constants::{
-    CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH,
-    TAB_BAR_HEIGHT, TAB_PADDING, TAB_TOP_MARGIN,
+    CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, DROPDOWN_BUTTON_WIDTH, ICON_TEXT_GAP,
+    NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_PADDING, TAB_TOP_MARGIN,
 };
 use super::super::hit::TabBarHit;
-use super::{TabBarWidget, TabEntry};
+use super::{TabBarWidget, TabEntry, TabIcon};
 
 use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
@@ -104,22 +104,36 @@ impl TabBarWidget {
         ctx.draw_list.push_layer(bg);
         ctx.draw_list.push_rect(tab_rect, style);
 
-        // Title text.
+        // Title text (with optional icon prefix).
         let text_color = if strip.active {
             self.colors.text_fg
         } else {
             self.colors.inactive_text
         };
+
+        // Icon rendering: shape and draw emoji before the title.
+        let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
+            let icon_style = TextStyle::new(ctx.theme.font_size_small, text_color);
+            let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
+            let icon_x = x + TAB_PADDING;
+            let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;
+            ctx.draw_list
+                .push_text(Point::new(icon_x, icon_y), icon_shaped.clone(), text_color);
+            icon_shaped.width + ICON_TEXT_GAP
+        } else {
+            0.0
+        };
+
         let title = if tab.title.is_empty() {
             "Terminal"
         } else {
             &tab.title
         };
-        let max_w = self.layout.max_text_width();
+        let max_w = (self.layout.max_text_width() - text_offset).max(0.0);
         let text_style = TextStyle::new(ctx.theme.font_size_small, text_color)
             .with_overflow(TextOverflow::Ellipsis);
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
-        let text_x = x + TAB_PADDING;
+        let text_x = x + TAB_PADDING + text_offset;
         let text_y = strip.y + (strip.h - shaped.height) / 2.0;
         ctx.draw_list
             .push_text(Point::new(text_x, text_y), shaped, text_color);
@@ -288,17 +302,32 @@ impl TabBarWidget {
         ctx.draw_list.push_layer(self.colors.active_bg);
         ctx.draw_list.push_rect(tab_rect, style);
 
-        // Title text.
+        // Title text (with optional icon prefix).
+        let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
+            let icon_style = TextStyle::new(ctx.theme.font_size_small, self.colors.text_fg);
+            let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
+            let icon_x = visual_x + TAB_PADDING;
+            let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;
+            ctx.draw_list.push_text(
+                Point::new(icon_x, icon_y),
+                icon_shaped.clone(),
+                self.colors.text_fg,
+            );
+            icon_shaped.width + ICON_TEXT_GAP
+        } else {
+            0.0
+        };
+
         let title = if tab.title.is_empty() {
             "Terminal"
         } else {
             &tab.title
         };
-        let max_w = self.layout.max_text_width();
+        let max_w = (self.layout.max_text_width() - text_offset).max(0.0);
         let text_style = TextStyle::new(ctx.theme.font_size_small, self.colors.text_fg)
             .with_overflow(TextOverflow::Ellipsis);
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
-        let text_x = visual_x + TAB_PADDING;
+        let text_x = visual_x + TAB_PADDING + text_offset;
         let text_y = strip.y + (strip.h - shaped.height) / 2.0;
         ctx.draw_list
             .push_text(Point::new(text_x, text_y), shaped, self.colors.text_fg);

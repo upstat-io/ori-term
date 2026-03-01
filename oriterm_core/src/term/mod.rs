@@ -56,8 +56,10 @@ pub struct Term<T: EventListener> {
     theme: Theme,
     /// Character set translation state (G0–G3).
     charset: CharsetState,
-    /// Window title (set by OSC 0/1/2).
+    /// Window title (set by OSC 0/2).
     title: String,
+    /// Icon name (set by OSC 0/1).
+    icon_name: String,
     /// Current working directory (set by OSC 7 shell integration).
     cwd: Option<String>,
     /// Pushed title stack (xterm extension). Capped at [`TITLE_STACK_MAX_DEPTH`].
@@ -89,6 +91,7 @@ impl<T: EventListener> Term<T> {
             theme,
             charset: CharsetState::default(),
             title: String::new(),
+            icon_name: String::new(),
             cwd: None,
             title_stack: VecDeque::new(),
             cursor_shape: CursorShape::default(),
@@ -173,6 +176,11 @@ impl<T: EventListener> Term<T> {
     /// Current window title.
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    /// Current icon name (set by OSC 0/1).
+    pub fn icon_name(&self) -> &str {
+        &self.icon_name
     }
 
     /// Current working directory (set by OSC 7).

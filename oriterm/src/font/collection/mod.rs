@@ -304,6 +304,35 @@ impl FontCollection {
         faces
     }
 
+    /// Look up a glyph ID and advance width directly from the cmap table.
+    ///
+    /// Bypasses rustybuzz shaping, returning the raw cmap glyph ID and advance
+    /// from swash metrics. Used when rustybuzz cannot create a `Face` for a
+    /// font (e.g. some color emoji fonts) — the cmap ID is sufficient for
+    /// simple characters and single-codepoint emoji.
+    ///
+    /// Returns `None` if the face doesn't exist or the character isn't covered.
+    pub fn cmap_glyph(&self, ch: char, face_idx: FaceIdx) -> Option<(u16, f32)> {
+        let fd = self.face_data(face_idx)?;
+        let gid = face::glyph_id(fd, ch);
+        if gid == 0 {
+            return None;
+        }
+        let size = effective_size_for(face_idx, self.size_px, &self.fallback_meta);
+        let fr = font_ref(fd);
+        let advance = fr.glyph_metrics(&[]).scale(size).advance_width(gid);
+        Some((gid, advance))
+    }
+
+    /// Access face data by index (0–3 = primary, 4+ = fallback).
+    fn face_data(&self, face_idx: FaceIdx) -> Option<&FaceData> {
+        if let Some(fb_i) = face_idx.fallback_index() {
+            self.fallbacks.get(fb_i)
+        } else {
+            self.primary.get(face_idx.as_usize())?.as_ref()
+        }
+    }
+
     // ── Configuration setters ──
 
     /// Replace collection-wide OpenType features.
@@ -454,13 +483,7 @@ impl FontCollection {
         // Try COLR first — handles modern color emoji (Segoe UI Emoji,
         // Noto Color Emoji v2) via skrifa. Falls through to swash for sbix
         // and standard outlines.
-        if let Some(colr_glyph) = colr_v1::try_rasterize_colr_v1(
-            fd,
-            key.glyph_id,
-            size,
-            &face_vars.settings,
-            &mut self.scale_context,
-        ) {
+        if let Some(colr_glyph) = colr_v1::try_rasterize_colr_v1(fd, key.glyph_id, size) {
             self.glyph_cache.insert(key, colr_glyph);
             return self.glyph_cache.get(&key);
         }

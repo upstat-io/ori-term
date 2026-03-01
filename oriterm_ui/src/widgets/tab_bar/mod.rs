@@ -17,16 +17,18 @@
 
 pub mod colors;
 pub mod constants;
+pub mod emoji;
 pub mod hit;
 pub mod layout;
 pub mod slide;
 pub mod widget;
 
 pub use colors::TabBarColors;
+pub use emoji::extract_emoji_icon;
 pub use hit::{TabBarHit, hit_test};
 pub use layout::TabBarLayout;
 pub use slide::TabSlideState;
-pub use widget::{TabBarWidget, TabEntry};
+pub use widget::{TabBarWidget, TabEntry, TabIcon};
 
 #[cfg(test)]
 mod tests;

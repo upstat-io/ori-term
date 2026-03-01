@@ -495,6 +495,7 @@ fn bell_phase_positive_right_after_bell() {
     let now = std::time::Instant::now();
     let entry = TabEntry {
         title: "test".into(),
+        icon: None,
         bell_start: Some(now - std::time::Duration::from_millis(100)),
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
@@ -507,6 +508,7 @@ fn bell_phase_zero_after_duration() {
     let now = std::time::Instant::now();
     let entry = TabEntry {
         title: "test".into(),
+        icon: None,
         bell_start: Some(now - std::time::Duration::from_secs(5)),
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);

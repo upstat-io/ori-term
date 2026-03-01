@@ -36,6 +36,15 @@ impl InProcessMux {
                     if let Some(pane) = panes.get_mut(&pane_id) {
                         pane.set_title(title);
                     }
+                    self.notifications
+                        .push(MuxNotification::PaneTitleChanged(pane_id));
+                }
+                MuxEvent::PaneIconChanged { pane_id, icon_name } => {
+                    if let Some(pane) = panes.get_mut(&pane_id) {
+                        pane.set_icon_name(icon_name);
+                    }
+                    self.notifications
+                        .push(MuxNotification::PaneTitleChanged(pane_id));
                 }
                 MuxEvent::PaneCwdChanged { pane_id, cwd } => {
                     if let Some(pane) = panes.get_mut(&pane_id) {

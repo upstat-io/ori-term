@@ -193,11 +193,12 @@ pub fn discover_ui_fonts() -> DiscoveryResult {
 fn try_ui_fonts_with_index(index: &HashMap<String, PathBuf>) -> Option<DiscoveryResult> {
     let lookup = |name: &str| index.get(name).cloned();
     let primary = try_families_from_specs(UI_FONT_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
-    let fallbacks = Vec::new(); // UI text doesn't need glyph fallbacks.
+    let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
     log::info!(
-        "UI font discovery: found {:?} (origin={:?})",
+        "UI font discovery: found {:?} (origin={:?}, {} fallbacks)",
         primary.family_name,
         primary.origin,
+        fallbacks.len(),
     );
     Some(DiscoveryResult { primary, fallbacks })
 }
@@ -210,11 +211,12 @@ fn try_ui_fonts() -> Option<DiscoveryResult> {
         path.exists().then_some(path)
     };
     let primary = try_families_from_specs(UI_FONT_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
-    let fallbacks = Vec::new();
+    let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
     log::info!(
-        "UI font discovery: found {:?} (origin={:?})",
+        "UI font discovery: found {:?} (origin={:?}, {} fallbacks)",
         primary.family_name,
         primary.origin,
+        fallbacks.len(),
     );
     Some(DiscoveryResult { primary, fallbacks })
 }

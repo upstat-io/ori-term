@@ -44,6 +44,18 @@ fn event_reset_title() {
 }
 
 #[test]
+fn event_icon_name() {
+    let event = Event::IconName("🐍python".to_string());
+    assert_eq!(format!("{event:?}"), "IconName(🐍python)");
+}
+
+#[test]
+fn event_reset_icon_name() {
+    let event = Event::ResetIconName;
+    assert_eq!(format!("{event:?}"), "ResetIconName");
+}
+
+#[test]
 fn event_clipboard_store() {
     let event = Event::ClipboardStore(ClipboardType::Clipboard, "data".to_string());
     assert_eq!(format!("{event:?}"), "ClipboardStore(Clipboard, data)");
@@ -115,6 +127,8 @@ fn all_event_variants_constructible() {
         Event::Bell,
         Event::Title(String::new()),
         Event::ResetTitle,
+        Event::IconName(String::new()),
+        Event::ResetIconName,
         Event::ClipboardStore(ClipboardType::Clipboard, String::new()),
         Event::ClipboardLoad(ClipboardType::Selection, Arc::new(|s: &str| s.to_string())),
         Event::ColorRequest(0, Arc::new(|_| String::new())),

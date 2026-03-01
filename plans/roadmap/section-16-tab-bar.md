@@ -16,7 +16,7 @@ sections:
     status: in-progress
   - id: "16.5"
     title: Tab Icons & Emoji
-    status: not-started
+    status: complete
   - id: "16.4"
     title: Section Completion
     status: in-progress
@@ -219,36 +219,33 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 
 **Reference:** Windows Terminal profile `"icon"` setting, iTerm2 per-tab icon, OSC 1 (icon name)
 
-- [ ] Per-tab icon state:
-  - [ ] `tab_icon: Option<TabIcon>` on tab metadata
-  - [ ] `TabIcon` enum: `Emoji(String)` (single grapheme cluster), `None`
-  - [ ] Default: `None` (no icon, title only — current behavior)
-- [ ] Icon sources (priority order, highest wins):
-  1. [ ] **OSC 1 (Set Icon Name)**: VTE handler sets `tab_icon` when `OSC 1 ; Pt ST` received — if `Pt` starts with an emoji grapheme, use it as `TabIcon::Emoji`
+- [x] Per-tab icon state:
+  - [x] `icon: Option<TabIcon>` on `TabEntry` (`oriterm_ui/src/widgets/tab_bar/widget/mod.rs`)
+  - [x] `TabIcon` enum: `Emoji(String)` (single grapheme cluster)
+  - [x] Default: `None` (no icon, title only — current behavior)
+  - [x] `with_icon()` builder method on `TabEntry`
+- [x] Icon sources (priority order, highest wins):
+  1. [x] **OSC 1 (Set Icon Name)**: VTE handler differentiated from OSC 0/2. `set_icon_name()` added to Handler trait. `Term.icon_name` field stores it. `Event::IconName`/`Event::ResetIconName` flow through mux pipeline to `Pane.icon_name`. `extract_emoji_icon()` detects leading emoji grapheme.
   2. [ ] **Profile config**: `[tab] icon = "🐍"` in TOML config per-profile (future, when profiles exist)
-  3. [ ] **Process detection** (stretch goal): detect foreground process name (python → 🐍, node → ⬡, vim → ) — requires shell integration (Section 20) for reliable CWD/process tracking
-- [ ] Tab bar rendering changes:
-  - [ ] When `tab_icon` is `Some(Emoji(s))`:
-    - [ ] Shape the emoji string through the UI font collection (which includes color emoji fallback)
-    - [ ] Render the emoji glyph at the left edge of the tab content area (before the title text)
-    - [ ] Icon width: one cell width (emoji are typically width-2 but rendered at UI font scale)
-    - [ ] Shift title text right by `icon_width + ICON_TEXT_GAP` (4px gap)
-    - [ ] Recalculate max text width to account for icon space
-  - [ ] When `tab_icon` is `None`: current behavior (title only, no shift)
-- [ ] Color emoji atlas integration:
-  - [ ] Emoji glyphs go to color atlas pages (existing path from 6.10)
-  - [ ] Tab bar draw code must use `push_image()` for color emoji (not `push_text()` which applies fg tinting)
-  - [ ] Verify emoji render at UI font scale (not terminal cell scale)
-- [ ] Constants:
-  - [ ] `ICON_TEXT_GAP: f32 = 4.0` — pixels between icon and title text
-  - [ ] `TAB_ICON_SIZE: f32` — derived from UI font metrics (cap height or line height)
+  3. [ ] **Process detection** (stretch goal): detect foreground process name — requires shell integration (Section 20)
+- [x] Tab bar rendering changes:
+  - [x] When `tab.icon` is `Some(Emoji(s))`: shape emoji through UI font, render before title, shift title right by `icon_width + ICON_TEXT_GAP`
+  - [x] When `tab.icon` is `None`: current behavior (title only, no shift)
+  - [x] Same logic applied in both `draw_tab()` and `draw_dragged_tab_overlay()`
+- [x] Color emoji atlas integration:
+  - [x] Uses `push_text()` — color emoji automatically routed through color atlas pipeline when the glyph is rasterized (AtlasKind::Color detection in draw list converter)
+- [x] Constants:
+  - [x] `ICON_TEXT_GAP: f32 = 4.0` — pixels between icon and title text
+- [x] **Bonus fix**: Title changes (OSC 0/2) now emit `MuxNotification::PaneTitleChanged` to re-sync tab bar (previously only `set_title()` was called but no notification was emitted)
 
 **Tests:**
-- [ ] Tab with emoji icon renders icon + title without overlap
-- [ ] Tab without icon renders title at original position (no regression)
-- [ ] OSC 1 with emoji prefix sets `tab_icon`
-- [ ] OSC 1 with plain text (no emoji) does not set icon (title only)
-- [ ] Icon respects DPI scaling
+- [x] VTE: OSC 0 calls both `set_title` and `set_icon_name` (VTE crate + handler tests)
+- [x] VTE: OSC 1 calls only `set_icon_name` (VTE crate + handler tests)
+- [x] VTE: OSC 2 calls only `set_title` (VTE crate + handler tests)
+- [x] Emoji detection: `extract_emoji_icon("🐍python")` → `Some(Emoji("🐍"))`
+- [x] Emoji detection: plain text, empty, flags, ZWJ sequences
+- [x] Event pipeline: `IconName`/`ResetIconName` events + `PaneIconChanged` mux event
+- [x] `MuxNotification::PaneTitleChanged` debug format
 
 ---
 

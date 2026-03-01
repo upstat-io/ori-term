@@ -496,6 +496,9 @@ pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>) {}
 
+    /// OSC 1: set icon name.
+    fn set_icon_name(&mut self, _: Option<String>) {}
+
     /// OSC 7: set working directory (shell integration).
     fn set_working_directory(&mut self, _: Option<String>) {}
 
@@ -1352,17 +1355,28 @@ where
         }
 
         match params[0] {
-            // Set window title (0 = icon + title, 1 = icon, 2 = title).
+            // Set window title and/or icon name.
             b"0" | b"1" | b"2" => {
                 if params.len() >= 2 {
-                    let title = params[1..]
+                    let text = params[1..]
                         .iter()
                         .flat_map(|x| str::from_utf8(x))
                         .collect::<Vec<&str>>()
                         .join(";")
                         .trim()
                         .to_owned();
-                    self.handler.set_title(Some(title));
+                    match params[0] {
+                        b"0" => {
+                            self.handler.set_title(Some(text.clone()));
+                            self.handler.set_icon_name(Some(text));
+                        }
+                        b"1" => {
+                            self.handler.set_icon_name(Some(text));
+                        }
+                        _ => {
+                            self.handler.set_title(Some(text));
+                        }
+                    }
                     return;
                 }
                 unhandled(params);
@@ -2074,6 +2088,8 @@ mod tests {
         identity_reported: bool,
         color: Option<Rgb>,
         reset_colors: Vec<usize>,
+        title: Option<String>,
+        icon_name: Option<String>,
     }
 
     impl Handler for MockHandler {
@@ -2105,6 +2121,14 @@ mod tests {
         fn reset_color(&mut self, index: usize) {
             self.reset_colors.push(index)
         }
+
+        fn set_title(&mut self, title: Option<String>) {
+            self.title = title;
+        }
+
+        fn set_icon_name(&mut self, name: Option<String>) {
+            self.icon_name = name;
+        }
     }
 
     impl Default for MockHandler {
@@ -2116,6 +2140,8 @@ mod tests {
                 identity_reported: false,
                 color: None,
                 reset_colors: Vec::new(),
+                title: None,
+                icon_name: None,
             }
         }
     }
@@ -2482,5 +2508,40 @@ mod tests {
         let rgb1 = Rgb { r: 0x12, g: 0x34, b: 0x56 };
         let rgb2 = Rgb { r: 0xFE, g: 0xDC, b: 0xBA };
         assert!((rgb1.contrast(rgb2) - 9.786_558_997_257_74).abs() < f64::EPSILON);
+    }
+
+    // --- OSC title/icon dispatch tests ---
+
+    #[test]
+    fn osc_0_sets_both_title_and_icon_name() {
+        // OSC 0 ; text ST
+        let bytes: &[u8] = b"\x1b]0;hello\x1b\\";
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+        parser.advance(&mut handler, bytes);
+        assert_eq!(handler.title.as_deref(), Some("hello"));
+        assert_eq!(handler.icon_name.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn osc_1_sets_only_icon_name() {
+        // OSC 1 ; text ST
+        let bytes: &[u8] = b"\x1b]1;icon\x1b\\";
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+        parser.advance(&mut handler, bytes);
+        assert_eq!(handler.title, None);
+        assert_eq!(handler.icon_name.as_deref(), Some("icon"));
+    }
+
+    #[test]
+    fn osc_2_sets_only_title() {
+        // OSC 2 ; text ST
+        let bytes: &[u8] = b"\x1b]2;title\x1b\\";
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+        parser.advance(&mut handler, bytes);
+        assert_eq!(handler.title.as_deref(), Some("title"));
+        assert_eq!(handler.icon_name, None);
     }
 }

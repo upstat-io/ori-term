@@ -1,342 +1,189 @@
-//! Tests for CPU compositing, gradient evaluation, blending, and color sampling.
+//! Tests for tiny-skia COLR v1 compositing helpers.
 
-use skrifa::color::Extend;
+use skrifa::color::{CompositeMode, Transform as ColrTransform};
 
-use super::super::{ResolvedBrush, ResolvedColorStop, Rgba};
-use super::{apply_extend, blend_src_over, fill_rect, lerp_rgba, linear_gradient_t, sample_stops};
+use super::super::{ClipBox, Rgba};
+use super::{intersect_masks, rgba_to_color, to_blend_mode, to_bx, to_by};
 
-const EPS: f32 = 0.001;
+const EPS: f32 = 0.01;
 
-/// Assert two Rgba values are approximately equal.
-fn assert_rgba_eq(actual: Rgba, expected: Rgba, msg: &str) {
-    assert!(
-        (actual.r - expected.r).abs() < EPS
-            && (actual.g - expected.g).abs() < EPS
-            && (actual.b - expected.b).abs() < EPS
-            && (actual.a - expected.a).abs() < EPS,
-        "{msg}: expected ({:.3},{:.3},{:.3},{:.3}), got ({:.3},{:.3},{:.3},{:.3})",
-        expected.r,
-        expected.g,
-        expected.b,
-        expected.a,
-        actual.r,
-        actual.g,
-        actual.b,
-        actual.a,
-    );
-}
-
-// ── blend_src_over ──
+// Coordinate transform
 
 #[test]
-fn blend_src_over_zero_alpha_leaves_background() {
-    // Premultiplied transparent source (all channels zero) over opaque pixel
-    // should leave the background unchanged. In premultiplied alpha, a=0
-    // implies r=g=b=0 (the only valid premultiplied encoding of transparent).
-    let mut bitmap = [255u8, 200, 100, 255]; // opaque pixel
-    let src = Rgba {
+fn identity_transform_at_origin() {
+    let clip = ClipBox {
+        x_min: 0.0,
+        y_min: 0.0,
+        x_max: 100.0,
+        y_max: 100.0,
+    };
+    let xf = ColrTransform::default(); // identity
+    let scale = 1.0;
+
+    // Font-unit (50, 50) → bitmap (50, 50) with Y-flip.
+    let bx = to_bx(50.0, 50.0, scale, &clip, &xf);
+    let by = to_by(50.0, 50.0, scale, &clip, &xf);
+    assert!((bx - 50.0).abs() < EPS, "bx={bx}");
+    assert!((by - 50.0).abs() < EPS, "by={by}");
+}
+
+#[test]
+fn identity_transform_with_offset_clip() {
+    let clip = ClipBox {
+        x_min: 10.0,
+        y_min: -5.0,
+        x_max: 110.0,
+        y_max: 95.0,
+    };
+    let xf = ColrTransform::default();
+    let scale = 1.0;
+
+    // Font (50, 50) → bitmap (50-10, 95-50) = (40, 45).
+    let bx = to_bx(50.0, 50.0, scale, &clip, &xf);
+    let by = to_by(50.0, 50.0, scale, &clip, &xf);
+    assert!((bx - 40.0).abs() < EPS, "bx={bx}");
+    assert!((by - 45.0).abs() < EPS, "by={by}");
+}
+
+#[test]
+fn scaled_transform() {
+    let clip = ClipBox {
+        x_min: 0.0,
+        y_min: 0.0,
+        x_max: 32.0,
+        y_max: 32.0,
+    };
+    let xf = ColrTransform::default();
+    // scale = 32/1000 (e.g. 32px at 1000 upem)
+    let scale = 32.0 / 1000.0;
+
+    // Font (500, 500) → bitmap (500*0.032, 32-500*0.032) = (16, 16).
+    let bx = to_bx(500.0, 500.0, scale, &clip, &xf);
+    let by = to_by(500.0, 500.0, scale, &clip, &xf);
+    assert!((bx - 16.0).abs() < EPS, "bx={bx}");
+    assert!((by - 16.0).abs() < EPS, "by={by}");
+}
+
+#[test]
+fn colr_translation_transform() {
+    let clip = ClipBox {
+        x_min: 0.0,
+        y_min: 0.0,
+        x_max: 100.0,
+        y_max: 100.0,
+    };
+    let mut xf = ColrTransform::default();
+    xf.dx = 200.0;
+    xf.dy = 100.0;
+    let scale = 0.1; // 10% scale
+
+    // Font (0, 0) + translate (200, 100) → pixel (20, 10)
+    // bitmap_x = 0.1*(200) - 0 = 20
+    // bitmap_y = 100 - 0.1*(100) = 90
+    let bx = to_bx(0.0, 0.0, scale, &clip, &xf);
+    let by = to_by(0.0, 0.0, scale, &clip, &xf);
+    assert!((bx - 20.0).abs() < EPS, "bx={bx}");
+    assert!((by - 90.0).abs() < EPS, "by={by}");
+}
+
+// rgba_to_color
+
+#[test]
+fn transparent_black_stays_transparent() {
+    let c = rgba_to_color(&Rgba {
         r: 0.0,
         g: 0.0,
         b: 0.0,
         a: 0.0,
-    };
-    blend_src_over(&mut bitmap, 1, 0, 0, src);
-
-    assert_eq!(bitmap, [255, 200, 100, 255]);
+    });
+    assert!((c.alpha() - 0.0).abs() < EPS);
 }
 
 #[test]
-fn blend_src_over_full_alpha_replaces_background() {
-    // Fully opaque red over any background should produce red.
-    let mut bitmap = [0u8, 255, 0, 255]; // opaque green
-    let src = Rgba {
-        r: 1.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    blend_src_over(&mut bitmap, 1, 0, 0, src);
-
-    assert_eq!(bitmap[0], 255); // red
-    assert_eq!(bitmap[1], 0); // green gone
-    assert_eq!(bitmap[2], 0); // blue
-    assert_eq!(bitmap[3], 255); // opaque
-}
-
-#[test]
-fn blend_src_over_half_alpha() {
-    // 50% opaque red over opaque black → RGB(128, 0, 0).
-    let mut bitmap = [0u8, 0, 0, 255]; // opaque black
-    let src = Rgba {
+fn opaque_premultiplied_unpremultiplies() {
+    // Premultiplied: r=0.5, a=0.5 → unpremultiplied: r=1.0, a=0.5.
+    let c = rgba_to_color(&Rgba {
         r: 0.5,
         g: 0.0,
         b: 0.0,
         a: 0.5,
-    };
-    blend_src_over(&mut bitmap, 1, 0, 0, src);
-
-    // src_over: out = src + dst * (1 - src.a)
-    // out_r = 0.5 + 0 * 0.5 = 0.5 → 128
-    // out_a = 0.5 + 1.0 * 0.5 = 1.0 → 255
-    assert_eq!(bitmap[0], 128);
-    assert_eq!(bitmap[3], 255);
-}
-
-// ── sample_stops ──
-
-#[test]
-fn sample_stops_empty_returns_transparent() {
-    let result = sample_stops(&[], 0.5);
-    assert_rgba_eq(
-        result,
-        Rgba {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 0.0,
-        },
-        "empty stops",
-    );
+    });
+    assert!((c.red() - 1.0).abs() < EPS, "red={}", c.red());
+    assert!((c.alpha() - 0.5).abs() < EPS, "alpha={}", c.alpha());
 }
 
 #[test]
-fn sample_stops_single_returns_that_color() {
-    let stops = [ResolvedColorStop {
-        offset: 0.5,
-        color: Rgba {
-            r: 1.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        },
-    }];
-    // Any t value should return the single stop color.
-    for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let result = sample_stops(&stops, t);
-        assert_rgba_eq(
-            result,
-            Rgba {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
-            &format!("single stop at t={t}"),
-        );
-    }
-}
-
-#[test]
-fn sample_stops_at_exact_boundaries() {
-    let red = Rgba {
-        r: 1.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    let blue = Rgba {
-        r: 0.0,
-        g: 0.0,
-        b: 1.0,
-        a: 1.0,
-    };
-    let stops = [
-        ResolvedColorStop {
-            offset: 0.0,
-            color: red,
-        },
-        ResolvedColorStop {
-            offset: 1.0,
-            color: blue,
-        },
-    ];
-
-    // At t=0.0 → first stop (red).
-    assert_rgba_eq(sample_stops(&stops, 0.0), red, "t=0.0");
-    // At t=1.0 → last stop (blue).
-    assert_rgba_eq(sample_stops(&stops, 1.0), blue, "t=1.0");
-    // At t=0.5 → midpoint interpolation.
-    let mid = sample_stops(&stops, 0.5);
-    assert!((mid.r - 0.5).abs() < EPS, "midpoint red channel");
-    assert!((mid.b - 0.5).abs() < EPS, "midpoint blue channel");
-}
-
-#[test]
-fn sample_stops_before_first_returns_first() {
-    let stops = [
-        ResolvedColorStop {
-            offset: 0.25,
-            color: Rgba {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
-        },
-        ResolvedColorStop {
-            offset: 0.75,
-            color: Rgba {
-                r: 0.0,
-                g: 1.0,
-                b: 0.0,
-                a: 1.0,
-            },
-        },
-    ];
-    // t < first stop offset → return first stop color.
-    let result = sample_stops(&stops, 0.0);
-    assert!((result.r - 1.0).abs() < EPS, "before first stop");
-}
-
-#[test]
-fn sample_stops_after_last_returns_last() {
-    let stops = [
-        ResolvedColorStop {
-            offset: 0.0,
-            color: Rgba {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
-        },
-        ResolvedColorStop {
-            offset: 0.5,
-            color: Rgba {
-                r: 0.0,
-                g: 1.0,
-                b: 0.0,
-                a: 1.0,
-            },
-        },
-    ];
-    // t > last stop offset → return last stop color.
-    let result = sample_stops(&stops, 0.9);
-    assert!((result.g - 1.0).abs() < EPS, "after last stop");
-}
-
-// ── apply_extend ──
-
-#[test]
-fn extend_pad_clamps_to_0_1() {
-    assert!((apply_extend(-0.5, Extend::Pad) - 0.0).abs() < EPS);
-    assert!((apply_extend(0.5, Extend::Pad) - 0.5).abs() < EPS);
-    assert!((apply_extend(1.5, Extend::Pad) - 1.0).abs() < EPS);
-}
-
-#[test]
-fn extend_repeat_wraps() {
-    assert!((apply_extend(0.0, Extend::Repeat) - 0.0).abs() < EPS);
-    assert!((apply_extend(0.5, Extend::Repeat) - 0.5).abs() < EPS);
-    assert!((apply_extend(1.3, Extend::Repeat) - 0.3).abs() < EPS);
-    assert!((apply_extend(2.7, Extend::Repeat) - 0.7).abs() < EPS);
-    assert!((apply_extend(-0.3, Extend::Repeat) - 0.7).abs() < EPS);
-}
-
-#[test]
-fn extend_reflect_mirrors() {
-    assert!((apply_extend(0.3, Extend::Reflect) - 0.3).abs() < EPS);
-    assert!((apply_extend(1.3, Extend::Reflect) - 0.7).abs() < EPS);
-    assert!((apply_extend(2.3, Extend::Reflect) - 0.3).abs() < EPS);
-    // Negative values.
-    assert!((apply_extend(-0.3, Extend::Reflect) - 0.3).abs() < EPS);
-}
-
-// ── linear_gradient_t ──
-
-#[test]
-fn linear_gradient_degenerate_line_returns_zero() {
-    // p0 == p1 (zero-length line) should return 0.0, not NaN.
-    let t = linear_gradient_t([5.0, 5.0], [5.0, 5.0], 10.0, 10.0);
-    assert!((t - 0.0).abs() < EPS);
-    assert!(!t.is_nan());
-}
-
-#[test]
-fn linear_gradient_horizontal() {
-    // Horizontal gradient from x=0 to x=100. Point at x=50 → t=0.5.
-    let t = linear_gradient_t([0.0, 0.0], [100.0, 0.0], 50.0, 0.0);
-    assert!((t - 0.5).abs() < EPS);
-}
-
-// ── lerp_rgba ──
-
-#[test]
-fn lerp_rgba_at_zero_returns_a() {
-    let a = Rgba {
-        r: 1.0,
-        g: 0.0,
-        b: 0.5,
-        a: 0.8,
-    };
-    let b = Rgba {
-        r: 0.0,
-        g: 1.0,
-        b: 0.0,
-        a: 0.2,
-    };
-    assert_rgba_eq(lerp_rgba(a, b, 0.0), a, "lerp t=0");
-}
-
-#[test]
-fn lerp_rgba_at_one_returns_b() {
-    let a = Rgba {
-        r: 1.0,
-        g: 0.0,
-        b: 0.5,
-        a: 0.8,
-    };
-    let b = Rgba {
-        r: 0.0,
-        g: 1.0,
-        b: 0.0,
-        a: 0.2,
-    };
-    assert_rgba_eq(lerp_rgba(a, b, 1.0), b, "lerp t=1");
-}
-
-// ── fill_rect ──
-
-#[test]
-fn fill_rect_solid_fills_entire_bitmap() {
-    let mut bitmap = vec![0u8; 2 * 2 * 4]; // 2x2 RGBA
-    let brush = ResolvedBrush::Solid(Rgba {
-        r: 1.0,
-        g: 0.0,
-        b: 0.0,
+fn fully_opaque_passes_through() {
+    let c = rgba_to_color(&Rgba {
+        r: 0.3,
+        g: 0.6,
+        b: 0.9,
         a: 1.0,
     });
-    fill_rect(&mut bitmap, 2, 2, &brush);
-
-    // All 4 pixels should be opaque red.
-    for pixel in bitmap.chunks_exact(4) {
-        assert_eq!(pixel, [255, 0, 0, 255]);
-    }
+    assert!((c.red() - 0.3).abs() < EPS);
+    assert!((c.green() - 0.6).abs() < EPS);
+    assert!((c.blue() - 0.9).abs() < EPS);
+    assert!((c.alpha() - 1.0).abs() < EPS);
 }
 
-// ── Radial gradient degenerate ──
+// intersect_masks
 
 #[test]
-fn radial_gradient_coincident_circles_returns_zero() {
-    use super::radial_gradient_t;
-
-    // Both circles are identical — degenerate case.
-    let t = radial_gradient_t([50.0, 50.0], 10.0, [50.0, 50.0], 10.0, 60.0, 60.0);
-    // Should not be NaN or infinity.
-    assert!(t.is_finite(), "coincident circles should produce finite t");
+fn intersect_opaque_with_opaque_stays_opaque() {
+    let mut mask = tiny_skia::Mask::new(2, 2).unwrap();
+    mask.data_mut().fill(255);
+    let parent = {
+        let mut p = tiny_skia::Mask::new(2, 2).unwrap();
+        p.data_mut().fill(255);
+        p
+    };
+    intersect_masks(&mut mask, &parent);
+    assert!(mask.data().iter().all(|&b| b == 255));
 }
 
-// ── Sweep gradient 360 degrees ──
+#[test]
+fn intersect_with_transparent_clears() {
+    let mut mask = tiny_skia::Mask::new(2, 2).unwrap();
+    mask.data_mut().fill(255);
+    let parent = tiny_skia::Mask::new(2, 2).unwrap(); // all zeros
+    intersect_masks(&mut mask, &parent);
+    assert!(mask.data().iter().all(|&b| b == 0));
+}
 
 #[test]
-fn sweep_gradient_full_circle() {
-    use super::sweep_gradient_t;
+fn intersect_half_alpha() {
+    let mut mask = tiny_skia::Mask::new(1, 1).unwrap();
+    mask.data_mut()[0] = 200;
+    let mut parent = tiny_skia::Mask::new(1, 1).unwrap();
+    parent.data_mut()[0] = 128;
+    intersect_masks(&mut mask, &parent);
+    // (200 * 128) / 255 ≈ 100.
+    let result = mask.data()[0];
+    assert!((result as i32 - 100).abs() <= 1, "got {result}");
+}
 
-    // Full 360-degree sweep. Point at 90 degrees should be t=0.25.
-    let center = [50.0, 50.0];
-    let t = sweep_gradient_t(center, 0.0, 360.0, 100.0, 50.0); // right of center → 0°
-    assert!((t - 0.0).abs() < 0.05, "0° should be ~0.0, got {t}");
+// to_blend_mode
 
-    let t = sweep_gradient_t(center, 0.0, 360.0, 50.0, 0.0); // top → 90°
-    assert!((t - 0.25).abs() < 0.05, "90° should be ~0.25, got {t}");
+#[test]
+fn src_over_maps_correctly() {
+    assert!(matches!(
+        to_blend_mode(CompositeMode::SrcOver),
+        tiny_skia::BlendMode::SourceOver
+    ));
+}
+
+#[test]
+fn multiply_maps_correctly() {
+    assert!(matches!(
+        to_blend_mode(CompositeMode::Multiply),
+        tiny_skia::BlendMode::Multiply
+    ));
+}
+
+#[test]
+fn screen_maps_correctly() {
+    assert!(matches!(
+        to_blend_mode(CompositeMode::Screen),
+        tiny_skia::BlendMode::Screen
+    ));
 }

@@ -120,6 +120,8 @@ pub(crate) struct Pane {
     mode_cache: Arc<AtomicU32>,
     /// Last known window title (from OSC 0/2).
     title: String,
+    /// Icon name (from OSC 0/1) for tab icons.
+    icon_name: Option<String>,
     /// Current working directory (from OSC 7).
     cwd: Option<String>,
     /// Bell indicator (set on bell event, cleared on focus).
@@ -149,6 +151,7 @@ impl Pane {
             wakeup_pending: parts.wakeup_pending,
             mode_cache: parts.mode_cache,
             title: String::new(),
+            icon_name: None,
             cwd: None,
             has_bell: false,
             selection: None,
@@ -213,6 +216,20 @@ impl Pane {
     /// Set the pane title.
     pub(crate) fn set_title(&mut self, title: String) {
         self.title = title;
+    }
+
+    /// Icon name (from OSC 0/1) for tab icon detection.
+    pub(crate) fn icon_name(&self) -> Option<&str> {
+        self.icon_name.as_deref()
+    }
+
+    /// Set the icon name.
+    pub(crate) fn set_icon_name(&mut self, name: String) {
+        if name.is_empty() {
+            self.icon_name = None;
+        } else {
+            self.icon_name = Some(name);
+        }
     }
 
     /// Current working directory (from OSC 7).

@@ -1,11 +1,9 @@
 //! COLR v1 detection, paint collection, and CPU rasterization.
 //!
 //! Detects COLR v1 glyphs via skrifa, collects paint commands, and composites
-//! them on the CPU into premultiplied RGBA bitmaps. The result is inserted
-//! into the glyph cache as a [`RasterizedGlyph`] with [`GlyphFormat::Color`],
-//! indistinguishable from sbix/CBDT color emoji.
-
-use swash::scale::ScaleContext;
+//! them on the CPU via tiny-skia into premultiplied RGBA bitmaps. The result
+//! is inserted into the glyph cache as a [`RasterizedGlyph`] with
+//! [`GlyphFormat::Color`], indistinguishable from sbix/CBDT color emoji.
 
 use skrifa::instance::Size;
 use skrifa::{FontRef, MetadataProvider};
@@ -35,8 +33,8 @@ pub(crate) fn has_colr(font_bytes: &[u8], face_index: u32, glyph_id: u16) -> boo
 /// optional clip box (in font units, unscaled).
 ///
 /// `size_px` is used to compute the clip box in pixel coordinates. The paint
-/// commands themselves operate in font units — the caller applies a
-/// `size_px / upem` scaling transform before GPU compositing.
+/// commands themselves operate in font units — the compositor applies a
+/// `size_px / upem` scaling transform during rendering.
 pub(crate) fn collect_colr_v1(
     font_bytes: &[u8],
     face_index: u32,
@@ -82,16 +80,14 @@ pub(crate) fn collect_colr_v1(
 /// Try to rasterize a COLR v1 glyph via CPU compositing.
 ///
 /// Returns a [`RasterizedGlyph`] with `GlyphFormat::Color` if the glyph has
-/// COLR v1 data, or `None` to fall back to the normal swash path.
+/// COLR data, or `None` to fall back to the normal swash path.
 ///
-/// The glyph outline for each layer is rasterized via swash (alpha mask only),
-/// then composited with the resolved brush color onto the output RGBA buffer.
+/// Glyph outlines are extracted via skrifa and composited with tiny-skia,
+/// which provides proper path clipping, gradient fills, and layer compositing.
 pub(crate) fn try_rasterize_colr_v1(
     fd: &FaceData,
     glyph_id: u16,
     size_px: f32,
-    variations: &[(&str, f32)],
-    ctx: &mut ScaleContext,
 ) -> Option<RasterizedGlyph> {
     let colr = collect_colr_v1(&fd.bytes, fd.face_index, glyph_id, size_px)?;
     log::debug!(
@@ -115,7 +111,7 @@ pub(crate) fn try_rasterize_colr_v1(
     // RGBA buffer (premultiplied, initially transparent).
     let mut bitmap = vec![0u8; (width * height * 4) as usize];
 
-    // Composite each paint command.
+    // Composite paint commands via tiny-skia.
     super::compose::composite_commands(
         &colr.commands,
         &mut bitmap,
@@ -124,9 +120,16 @@ pub(crate) fn try_rasterize_colr_v1(
         clip,
         fd,
         size_px,
-        variations,
-        ctx,
     );
+
+    // If the compositor produced a blank bitmap (all bytes zero), fall
+    // through to swash. Swash can still render the glyph via COLR v0
+    // BaseGlyph records (backwards-compatible) or other color sources
+    // (CBDT/sbix).
+    if bitmap.iter().all(|&b| b == 0) {
+        log::debug!("COLR glyph {glyph_id}: blank bitmap, falling through to swash");
+        return None;
+    }
 
     // Bearing: offset from glyph origin to top-left of bitmap.
     let bearing_x = clip.x_min.floor() as i32;

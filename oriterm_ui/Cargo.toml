@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 log = "0.4"
 smallvec = "1"
+unicode-segmentation = "1.12"
 winit = "0.30"
 
 [target.'cfg(windows)'.dependencies]
