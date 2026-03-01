@@ -4,7 +4,7 @@
 //! limit. These methods manage prompt state (OSC 133), CWD (OSC 7),
 //! title resolution, notifications, and prompt-based navigation.
 
-use super::{Notification, PromptState, Term, cwd_short_path};
+use super::{Notification, PromptMarker, PromptState, Term, cwd_short_path};
 use crate::event::EventListener;
 
 impl<T: EventListener> Term<T> {
@@ -30,7 +30,7 @@ impl<T: EventListener> Term<T> {
         self.prompt_mark_pending = pending;
     }
 
-    /// Record the current cursor row as a prompt line.
+    /// Record the current cursor row as a prompt line (OSC 133;A).
     ///
     /// Called after both VTE parsers finish processing a chunk, when
     /// `prompt_mark_pending` is `true`. Uses the cursor row from the
@@ -42,34 +42,146 @@ impl<T: EventListener> Term<T> {
         self.prompt_mark_pending = false;
         let abs_row = self.grid.scrollback().len() + self.grid.cursor().line();
         // Avoid duplicate entries (e.g. shell redrawing prompt on resize).
-        if self.prompt_rows.last() != Some(&abs_row) {
-            self.prompt_rows.push(abs_row);
+        if self
+            .prompt_markers
+            .last()
+            .is_some_and(|m| m.prompt == abs_row)
+        {
+            return;
+        }
+        self.prompt_markers.push(PromptMarker {
+            prompt: abs_row,
+            command: None,
+            output: None,
+        });
+    }
+
+    /// Record the current cursor row as a command start (OSC 133;B).
+    ///
+    /// Fills `command_start` on the most recent prompt marker.
+    pub fn mark_command_start_row(&mut self) {
+        if !self.command_start_mark_pending {
+            return;
+        }
+        self.command_start_mark_pending = false;
+        let abs_row = self.grid.scrollback().len() + self.grid.cursor().line();
+        if let Some(marker) = self.prompt_markers.last_mut() {
+            marker.command = Some(abs_row);
         }
     }
 
-    /// Absolute row indices of prompt lines (OSC 133;A positions).
-    pub fn prompt_rows(&self) -> &[usize] {
-        &self.prompt_rows
+    /// Record the current cursor row as output start (OSC 133;C).
+    ///
+    /// Fills `output` on the most recent prompt marker.
+    pub fn mark_output_start_row(&mut self) {
+        if !self.output_start_mark_pending {
+            return;
+        }
+        self.output_start_mark_pending = false;
+        let abs_row = self.grid.scrollback().len() + self.grid.cursor().line();
+        if let Some(marker) = self.prompt_markers.last_mut() {
+            marker.output = Some(abs_row);
+        }
     }
 
-    /// Prune prompt rows evicted from scrollback.
+    /// Whether OSC 133;B was received and hasn't been marked yet.
+    pub fn command_start_mark_pending(&self) -> bool {
+        self.command_start_mark_pending
+    }
+
+    /// Set/clear the command-start-mark-pending flag.
+    pub fn set_command_start_mark_pending(&mut self, pending: bool) {
+        self.command_start_mark_pending = pending;
+    }
+
+    /// Whether OSC 133;C was received and hasn't been marked yet.
+    pub fn output_start_mark_pending(&self) -> bool {
+        self.output_start_mark_pending
+    }
+
+    /// Set/clear the output-start-mark-pending flag.
+    pub fn set_output_start_mark_pending(&mut self, pending: bool) {
+        self.output_start_mark_pending = pending;
+    }
+
+    /// All prompt lifecycle markers.
+    pub fn prompt_markers(&self) -> &[PromptMarker] {
+        &self.prompt_markers
+    }
+
+    /// Prune prompt markers evicted from scrollback.
     ///
     /// When scrollback lines are evicted (the buffer is full and new lines
-    /// push old ones out), prompt row indices below the eviction threshold
-    /// become invalid and must be removed. Remaining indices are shifted
-    /// down by the eviction count.
-    pub fn prune_prompt_rows(&mut self, evicted: usize) {
+    /// push old ones out), markers with `prompt_start` below the eviction
+    /// threshold are removed. Remaining row indices are shifted down.
+    pub fn prune_prompt_markers(&mut self, evicted: usize) {
         if evicted == 0 {
             return;
         }
-        self.prompt_rows.retain_mut(|row| {
-            if *row < evicted {
+        self.prompt_markers.retain_mut(|marker| {
+            if marker.prompt < evicted {
                 false
             } else {
-                *row -= evicted;
+                marker.prompt -= evicted;
+                if let Some(ref mut cr) = marker.command {
+                    *cr = cr.saturating_sub(evicted);
+                }
+                if let Some(ref mut or) = marker.output {
+                    *or = or.saturating_sub(evicted);
+                }
                 true
             }
         });
+    }
+
+    /// Find the output range for the prompt nearest to `near_row`.
+    ///
+    /// Returns `(output_start_row, end_row)` where `end_row` is one before
+    /// the next prompt's `prompt_start`, or the current cursor row if this
+    /// is the last marker.
+    pub fn command_output_range(&self, near_row: usize) -> Option<(usize, usize)> {
+        let marker = self.find_nearest_marker(near_row)?;
+        let output_row = marker.output?;
+        let idx = self
+            .prompt_markers
+            .iter()
+            .position(|m| std::ptr::eq(m, marker))?;
+        let end = if idx + 1 < self.prompt_markers.len() {
+            self.prompt_markers[idx + 1].prompt.saturating_sub(1)
+        } else {
+            // Last marker: end at the current cursor row.
+            self.grid.scrollback().len() + self.grid.cursor().line()
+        };
+        if end < output_row {
+            return None;
+        }
+        Some((output_row, end))
+    }
+
+    /// Find the command input range for the prompt nearest to `near_row`.
+    ///
+    /// Returns `(command_start_row, end_row)` where `end_row` is one before
+    /// `output_start`, or one before the next prompt if no output marker.
+    pub fn command_input_range(&self, near_row: usize) -> Option<(usize, usize)> {
+        let marker = self.find_nearest_marker(near_row)?;
+        let cmd_row = marker.command?;
+        let end = if let Some(or) = marker.output {
+            or.saturating_sub(1)
+        } else {
+            let idx = self
+                .prompt_markers
+                .iter()
+                .position(|m| std::ptr::eq(m, marker))?;
+            if idx + 1 < self.prompt_markers.len() {
+                self.prompt_markers[idx + 1].prompt.saturating_sub(1)
+            } else {
+                self.grid.scrollback().len() + self.grid.cursor().line()
+            }
+        };
+        if end < cmd_row {
+            return None;
+        }
+        Some((cmd_row, end))
     }
 
     // -- Command timing --
@@ -159,7 +271,7 @@ impl<T: EventListener> Term<T> {
     /// Returns `true` if the viewport was scrolled, `false` if there are no
     /// prompts above (no-op).
     pub fn scroll_to_previous_prompt(&mut self) -> bool {
-        if self.prompt_rows.is_empty() {
+        if self.prompt_markers.is_empty() {
             return false;
         }
         // Current viewport top in absolute row coordinates.
@@ -167,11 +279,12 @@ impl<T: EventListener> Term<T> {
         let viewport_top = sb_len.saturating_sub(self.grid.display_offset());
         // Find the last prompt row strictly above viewport top.
         let target = self
-            .prompt_rows
+            .prompt_markers
             .iter()
             .rev()
-            .find(|&&row| row < viewport_top);
-        if let Some(&row) = target {
+            .find(|m| m.prompt < viewport_top);
+        if let Some(marker) = target {
+            let row = marker.prompt;
             self.scroll_to_absolute_row(row);
             true
         } else {
@@ -184,14 +297,18 @@ impl<T: EventListener> Term<T> {
     /// Returns `true` if the viewport was scrolled, `false` if there are no
     /// prompts below (no-op).
     pub fn scroll_to_next_prompt(&mut self) -> bool {
-        if self.prompt_rows.is_empty() {
+        if self.prompt_markers.is_empty() {
             return false;
         }
         let sb_len = self.grid.scrollback().len();
         // Current viewport bottom in absolute row coordinates.
         let viewport_bottom = sb_len.saturating_sub(self.grid.display_offset()) + self.grid.lines();
-        let target = self.prompt_rows.iter().find(|&&row| row >= viewport_bottom);
-        if let Some(&row) = target {
+        let target = self
+            .prompt_markers
+            .iter()
+            .find(|m| m.prompt >= viewport_bottom);
+        if let Some(marker) = target {
+            let row = marker.prompt;
             self.scroll_to_absolute_row(row);
             true
         } else {
@@ -214,5 +331,15 @@ impl<T: EventListener> Term<T> {
             let delta = clamped as isize - self.grid.display_offset() as isize;
             self.grid.scroll_display(delta);
         }
+    }
+
+    /// Find the prompt marker whose zone contains `near_row`.
+    ///
+    /// Returns the last marker whose `prompt_start <= near_row`.
+    fn find_nearest_marker(&self, near_row: usize) -> Option<&PromptMarker> {
+        self.prompt_markers
+            .iter()
+            .rev()
+            .find(|m| m.prompt <= near_row)
     }
 }

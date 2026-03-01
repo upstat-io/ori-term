@@ -1,7 +1,7 @@
 ---
 section: 20
 title: Shell Integration
-status: in-progress
+status: complete
 tier: 4
 goal: Shell detection, injection, OSC 7/133 handling, two-parser strategy, prompt state machine
 sections:
@@ -37,21 +37,21 @@ sections:
     status: complete
   - id: "20.11"
     title: Notification Handling
-    status: in-progress
+    status: complete
   - id: "20.12"
     title: Semantic Zone Navigation
-    status: in-progress
+    status: complete
   - id: "20.13"
     title: Command Completion Notifications
-    status: in-progress
+    status: complete
   - id: "20.14"
     title: Section Completion
-    status: not-started
+    status: complete
 ---
 
 # Section 20: Shell Integration
 
-**Status:** 🚧 In Progress
+**Status:** ✅ Complete
 **Goal:** Detect the user's shell and inject integration scripts that enable CWD tracking, prompt markers, and notifications. Five shell injection mechanisms, each with different approaches. WSL is a special case (launcher, not shell).
 
 **Crate:** `oriterm` (binary only — no core changes)
@@ -225,7 +225,7 @@ Collect notifications from OSC 9/99/777 sequences and forward them to the OS not
 
 - [x] `pending_notifications: Vec<Notification>` — drained by main thread on each Wakeup
 - [x] `Notification { title: String, body: String }`
-- [ ] OS notification dispatch (platform-specific, stretch goal)
+- [x] OS notification dispatch (platform-specific, stretch goal)
 
 ---
 
@@ -238,9 +238,9 @@ Expose prompt markers (OSC 133) as user-facing navigation features — jump betw
 **Reference:** WezTerm `ScrollToPrompt`, Ghostty `scroll-to-prompt`
 
 - [x] **Prompt line tracking:**
-  - [x] Store prompt positions in grid: `prompt_rows: Vec<usize>` (absolute row indices where OSC 133;A was received)
-  - [x] Updated by the prompt state machine (Section 20.8) — when `PromptStart` received, record cursor row
-  - [x] Pruned on scrollback eviction (remove rows that fell off the top)
+  - [x] Store prompt positions in grid: `prompt_markers: Vec<PromptMarker>` (absolute row indices for OSC 133 A/B/C)
+  - [x] Updated by the prompt state machine (Section 20.8) — when markers received, record cursor row (deferred)
+  - [x] Pruned on scrollback eviction (remove markers that fell off the top)
 - [x] **Jump to prompt:**
   - [x] `PreviousPrompt` action (default: `Ctrl+Shift+ArrowUp`):
     - [x] Find nearest prompt row ABOVE current viewport top (or vi cursor if in vi mode)
@@ -249,23 +249,23 @@ Expose prompt markers (OSC 133) as user-facing navigation features — jump betw
     - [x] Find nearest prompt row BELOW current position
     - [x] Scroll viewport to center that prompt row
   - [x] Wrap: at first/last prompt, stop (don't wrap around)
-- [ ] **Select command output:**
-  - [ ] `SelectCommandOutput` action (default: unbound, available via command palette):
-    - [ ] From current prompt row, find the next prompt row
-    - [ ] Select all rows between `OutputStart` (OSC 133;C) and next `PromptStart` (OSC 133;A)
-    - [ ] Creates a standard selection (Section 09 model) over the output region
-  - [ ] `SelectCommandInput` action:
-    - [ ] Select text between `CommandStart` (OSC 133;B) and `OutputStart` (OSC 133;C)
-    - [ ] Selects just the typed command (useful for copying commands)
-- [ ] **Visual prompt markers** (optional):
-  - [ ] Subtle left-margin indicator at prompt lines (thin colored bar, 2px)
-  - [ ] Config: `behavior.prompt_markers = true | false` (default: false)
+- [x] **Select command output:**
+  - [x] `SelectCommandOutput` action (default: unbound, available via command palette):
+    - [x] From current prompt row, find the next prompt row
+    - [x] Select all rows between `OutputStart` (OSC 133;C) and next `PromptStart` (OSC 133;A)
+    - [x] Creates a standard selection (Section 09 model) over the output region
+  - [x] `SelectCommandInput` action:
+    - [x] Select text between `CommandStart` (OSC 133;B) and `OutputStart` (OSC 133;C)
+    - [x] Selects just the typed command (useful for copying commands)
+- [x] **Visual prompt markers** (optional):
+  - [x] Subtle left-margin indicator at prompt lines (thin colored bar, 2px)
+  - [x] Config: `behavior.prompt_markers = true | false` (default: false)
 - [x] Graceful fallback: if no shell integration / no OSC 133 data, navigation actions are no-ops
 - [x] **Tests:**
   - [x] Prompt rows recorded on OSC 133;A
-  - [ ] PreviousPrompt scrolls to correct row
-  - [ ] NextPrompt scrolls forward correctly
-  - [ ] SelectCommandOutput creates selection over correct range
+  - [x] PreviousPrompt scrolls to correct row
+  - [x] NextPrompt scrolls forward correctly
+  - [x] SelectCommandOutput creates selection over correct range
   - [x] No prompts: navigation is no-op (no crash)
 
 ---
@@ -290,11 +290,11 @@ Desktop notification when a long-running command finishes in an unfocused tab/wi
     - [x] `unfocused` — only when pane is not focused (default)
     - [x] `always` — always notify, even if focused
   - [x] Config: `behavior.notify_command_threshold_secs = 10` — minimum duration to trigger
-- [ ] **Notification dispatch:**
+- [x] **Notification dispatch:**
   - [x] Emit `Notification` (reuse Section 20.11 notification system)
-  - [ ] Title: `"Command finished"` or pane title
-  - [ ] Body: `"<command> completed in <duration>"` (command text from shell integration if available)
-  - [ ] Platform-specific: Windows toast, macOS NSUserNotification, Linux D-Bus notification
+  - [x] Title: `"Command finished"` or pane title
+  - [x] Body: `"<command> completed in <duration>"` (command text from shell integration if available)
+  - [x] Platform-specific: Windows toast, macOS NSUserNotification, Linux D-Bus notification
 - [x] **Tab bell integration:**
   - [x] Optionally flash the tab bar for the completed tab (reuse bell pulse)
   - [x] Config: `behavior.notify_command_bell = true | false` (default: true)
@@ -309,19 +309,19 @@ Desktop notification when a long-running command finishes in an unfocused tab/wi
 
 ## 20.14 Section Completion
 
-- [ ] All 20.1–20.13 items complete
-- [ ] Shell detection identifies all five shell types correctly
-- [ ] Injection mechanisms set correct environment variables per shell
-- [ ] Integration scripts emit proper OSC 7, OSC 133, and notification sequences
-- [ ] Version stamping prevents stale scripts
-- [ ] Two-parser strategy catches all custom sequences without dropping standard VTE output
-- [ ] CWD tracking updates tab bar title correctly
-- [ ] Tab title resolution follows 3-source priority (explicit → CWD → fallback)
-- [ ] Prompt state machine transitions correctly through all OSC 133 sub-params with deferred marking
-- [ ] Keyboard mode stack swaps correctly on primary ↔ alt screen transitions
-- [ ] XTVERSION response is correct and flushed outside terminal lock
-- [ ] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — clean build
-- [ ] `cargo clippy -p oriterm -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
-- [ ] `cargo test -p oriterm_core` — all tests pass
+- [x] All 20.1–20.13 items complete
+- [x] Shell detection identifies all five shell types correctly
+- [x] Injection mechanisms set correct environment variables per shell
+- [x] Integration scripts emit proper OSC 7, OSC 133, and notification sequences
+- [x] Version stamping prevents stale scripts
+- [x] Two-parser strategy catches all custom sequences without dropping standard VTE output
+- [x] CWD tracking updates tab bar title correctly
+- [x] Tab title resolution follows 3-source priority (explicit → CWD → fallback)
+- [x] Prompt state machine transitions correctly through all OSC 133 sub-params with deferred marking
+- [x] Keyboard mode stack swaps correctly on primary ↔ alt screen transitions
+- [x] XTVERSION response is correct and flushed outside terminal lock
+- [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — clean build
+- [x] `cargo clippy -p oriterm -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
+- [x] `cargo test -p oriterm_core` — all tests pass
 
 **Exit Criteria:** Shell integration works for all five shell types. CWD tracking, prompt marking, and notifications function correctly. The two-parser strategy catches all custom OSC sequences. Title resolution follows the correct priority chain. Keyboard mode stacks swap cleanly on alt screen transitions.

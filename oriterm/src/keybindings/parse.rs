@@ -152,6 +152,8 @@ pub(crate) fn parse_action(s: &str) -> Option<Action> {
         "ReloadConfig" => Action::ReloadConfig,
         "PreviousPrompt" => Action::PreviousPrompt,
         "NextPrompt" => Action::NextPrompt,
+        "SelectCommandOutput" => Action::SelectCommandOutput,
+        "SelectCommandInput" => Action::SelectCommandInput,
         "DuplicateTab" => Action::DuplicateTab,
         "NewWindow" => Action::NewWindow,
         "MoveTabToNewWindow" => Action::MoveTabToNewWindow,

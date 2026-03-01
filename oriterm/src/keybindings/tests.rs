@@ -515,6 +515,8 @@ fn action_as_str_roundtrip() {
         Action::ReloadConfig,
         Action::PreviousPrompt,
         Action::NextPrompt,
+        Action::SelectCommandOutput,
+        Action::SelectCommandInput,
         Action::DuplicateTab,
         Action::NewWindow,
         Action::MoveTabToNewWindow,
@@ -762,4 +764,26 @@ fn undo_redo_actions_roundtrip_through_parse() {
         let parsed = parse_action(s);
         assert_eq!(parsed.as_ref(), Some(action), "roundtrip failed for {s:?}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// SelectCommandOutput / SelectCommandInput parse roundtrip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn select_command_output_roundtrip() {
+    assert_eq!(
+        parse_action("SelectCommandOutput"),
+        Some(Action::SelectCommandOutput),
+    );
+    assert_eq!(Action::SelectCommandOutput.as_str(), "SelectCommandOutput");
+}
+
+#[test]
+fn select_command_input_roundtrip() {
+    assert_eq!(
+        parse_action("SelectCommandInput"),
+        Some(Action::SelectCommandInput),
+    );
+    assert_eq!(Action::SelectCommandInput.as_str(), "SelectCommandInput");
 }

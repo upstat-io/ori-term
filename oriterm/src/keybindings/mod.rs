@@ -47,6 +47,10 @@ pub(crate) enum Action {
     PreviousPrompt,
     /// Navigate to next prompt mark (OSC 133;A).
     NextPrompt,
+    /// Select the output of the command at or near the viewport (OSC 133;C→A).
+    SelectCommandOutput,
+    /// Select the input of the command at or near the viewport (OSC 133;B→C).
+    SelectCommandInput,
     /// Duplicate the current tab (spawn new tab with same CWD).
     DuplicateTab,
     /// Open a new window with a fresh tab.
@@ -128,6 +132,8 @@ impl Action {
             Self::ReloadConfig => "ReloadConfig",
             Self::PreviousPrompt => "PreviousPrompt",
             Self::NextPrompt => "NextPrompt",
+            Self::SelectCommandOutput => "SelectCommandOutput",
+            Self::SelectCommandInput => "SelectCommandInput",
             Self::DuplicateTab => "DuplicateTab",
             Self::NewWindow => "NewWindow",
             Self::MoveTabToNewWindow => "MoveTabToNewWindow",

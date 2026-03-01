@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use oriterm_core::{EventListener, FairMutex, Term};
+use oriterm_core::{EventListener, FairMutex, RenderableContent, Term};
 
 use super::frame_input::{FrameInput, FramePalette, ViewportSize};
 use crate::font::CellMetrics;
@@ -37,6 +37,7 @@ pub(crate) fn extract_frame<T: EventListener>(
     // Snapshot all rendering data under lock.
     let content = term.renderable_content();
     let palette = extract_palette(&term);
+    let prompt_marker_rows = extract_prompt_marker_rows(&term, &content);
 
     // Release lock immediately — no terminal access after this point.
     drop(term);
@@ -60,6 +61,7 @@ pub(crate) fn extract_frame<T: EventListener>(
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
         fg_dim: 1.0,
+        prompt_marker_rows,
     }
 }
 
@@ -81,6 +83,7 @@ pub(crate) fn extract_frame_into<T: EventListener>(
 
     term.renderable_content_into(&mut out.content);
     let palette = extract_palette(&term);
+    extract_prompt_marker_rows_into(&term, &out.content, &mut out.prompt_marker_rows);
 
     drop(term);
     let lock_released = Instant::now();
@@ -116,6 +119,60 @@ fn extract_palette<T: EventListener>(term: &Term<T>) -> FramePalette {
         opacity: 1.0,
         selection_fg: palette.selection_fg(),
         selection_bg: palette.selection_bg(),
+    }
+}
+
+/// Extract viewport-relative prompt marker rows from the terminal.
+///
+/// Scans the terminal's prompt markers and returns the viewport line index
+/// for each marker whose prompt row falls within the visible range.
+fn extract_prompt_marker_rows<T: EventListener>(
+    term: &Term<T>,
+    content: &RenderableContent,
+) -> Vec<usize> {
+    let markers = term.prompt_markers();
+    if markers.is_empty() {
+        return Vec::new();
+    }
+    let grid = term.grid();
+    let sb_len = grid.scrollback().len();
+    let offset = content.display_offset;
+    let lines = grid.lines();
+    // Absolute row of the topmost visible line.
+    let viewport_top = sb_len.saturating_sub(offset);
+    let viewport_bottom = viewport_top + lines;
+
+    let mut rows = Vec::new();
+    for marker in markers {
+        if marker.prompt >= viewport_top && marker.prompt < viewport_bottom {
+            rows.push(marker.prompt - viewport_top);
+        }
+    }
+    rows
+}
+
+/// Extract visible prompt marker rows, reusing an existing `Vec` allocation.
+fn extract_prompt_marker_rows_into<T: EventListener>(
+    term: &Term<T>,
+    content: &RenderableContent,
+    out: &mut Vec<usize>,
+) {
+    out.clear();
+    let markers = term.prompt_markers();
+    if markers.is_empty() {
+        return;
+    }
+    let grid = term.grid();
+    let sb_len = grid.scrollback().len();
+    let offset = content.display_offset;
+    let lines = grid.lines();
+    let viewport_top = sb_len.saturating_sub(offset);
+    let viewport_bottom = viewport_top + lines;
+
+    for marker in markers {
+        if marker.prompt >= viewport_top && marker.prompt < viewport_bottom {
+            out.push(marker.prompt - viewport_top);
+        }
     }
 }
 

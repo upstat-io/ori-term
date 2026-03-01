@@ -58,6 +58,11 @@ pub struct BehaviorConfig {
     pub notify_command_threshold_secs: u64,
     /// Flash the tab bar when a long-running command completes (reuses bell pulse).
     pub notify_command_bell: bool,
+    /// Show visual prompt markers in the left margin at prompt lines (OSC 133;A).
+    ///
+    /// When `true`, a thin colored bar is drawn at the left edge of each prompt
+    /// line. Requires shell integration to be active. Default: `false`.
+    pub prompt_markers: bool,
 }
 
 impl Default for BehaviorConfig {
@@ -73,6 +78,7 @@ impl Default for BehaviorConfig {
             notify_on_command_finish: NotifyOnCommandFinish::default(),
             notify_command_threshold_secs: 10,
             notify_command_bell: true,
+            prompt_markers: false,
         }
     }
 }

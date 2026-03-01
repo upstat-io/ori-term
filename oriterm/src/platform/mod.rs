@@ -5,6 +5,7 @@
 //! behind a shared interface.
 
 pub mod config_paths;
+pub mod notify;
 pub mod scroll;
 pub mod shutdown;
 pub mod theme;

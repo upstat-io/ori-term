@@ -237,6 +237,13 @@ pub struct FrameInput {
     /// alpha proportionally for unfocused panes. Set by the multi-pane
     /// render path; single-pane rendering always uses 1.0.
     pub fg_dim: f32,
+    /// Viewport-relative line indices that have a prompt marker (OSC 133;A).
+    ///
+    /// Populated during extraction when shell integration is active. The
+    /// Prepare phase draws a thin colored bar at the left margin for each
+    /// listed row. Empty when prompt markers are disabled or no markers are
+    /// visible in the current viewport.
+    pub prompt_marker_rows: Vec<usize>,
 }
 
 impl FrameInput {
@@ -330,6 +337,7 @@ impl FrameInput {
             hovered_url_segments: Vec::new(),
             mark_cursor: None,
             fg_dim: 1.0,
+            prompt_marker_rows: Vec::new(),
         }
     }
 }

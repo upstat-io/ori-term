@@ -146,6 +146,11 @@ impl App {
             // The Vec was taken from the previous frame to reuse capacity.
             frame.hovered_url_segments = url_segments;
 
+            // Visual prompt markers: clear extracted rows if the feature is disabled.
+            if !self.config.behavior.prompt_markers {
+                frame.prompt_marker_rows.clear();
+            }
+
             // Capture blinking mode for post-render update. Timer reset
             // and state mutation are deferred to after GPU submission so that
             // the render block stays free of blink-state side effects.
