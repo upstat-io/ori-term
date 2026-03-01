@@ -19,11 +19,10 @@ impl<T: EventListener> Term<T> {
 
         self.selection_dirty = true;
 
-        // If in alt screen, swap back to primary first so the grid references
-        // are correct after reset.
-        if self.mode.contains(TermMode::ALT_SCREEN) {
-            self.swap_alt();
-        }
+        // Clear alt-screen flag without swapping — both grids are reset
+        // immediately after, so cursor save/restore and dirty marking from
+        // swap_alt() would be wasted work.
+        self.mode.remove(TermMode::ALT_SCREEN);
 
         self.grid_mut().reset();
         self.alt_grid.reset();
@@ -32,6 +31,7 @@ impl<T: EventListener> Term<T> {
         self.palette = crate::color::Palette::for_theme(self.theme);
         self.cursor_shape = crate::grid::CursorShape::default();
         self.title.clear();
+        self.icon_name.clear();
         self.title_stack.clear();
         self.cwd = None;
         self.keyboard_mode_stack.clear();

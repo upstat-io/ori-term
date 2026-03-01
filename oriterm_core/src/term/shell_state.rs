@@ -15,9 +15,9 @@ impl<T: EventListener> Term<T> {
         self.prompt_state
     }
 
-    /// Mutable reference to prompt state (for raw interceptor).
-    pub fn prompt_state_mut(&mut self) -> &mut PromptState {
-        &mut self.prompt_state
+    /// Set the prompt state (for raw interceptor).
+    pub fn set_prompt_state(&mut self, state: PromptState) {
+        self.prompt_state = state;
     }
 
     /// Whether OSC 133;A was received and the prompt row hasn't been marked yet.
@@ -245,9 +245,9 @@ impl<T: EventListener> Term<T> {
         self.title_dirty = true;
     }
 
-    /// Mutable reference to CWD (for raw interceptor).
-    pub fn cwd_mut(&mut self) -> &mut Option<String> {
-        &mut self.cwd
+    /// Set the current working directory (for raw interceptor).
+    pub fn set_cwd(&mut self, cwd: Option<String>) {
+        self.cwd = cwd;
     }
 
     /// Resolved display title with 3-source priority:
