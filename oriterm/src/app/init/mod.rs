@@ -269,6 +269,7 @@ impl App {
             cols,
             rows,
             scrollback: self.config.terminal.scrollback,
+            shell_integration: self.config.behavior.shell_integration,
             ..SpawnConfig::default()
         };
 

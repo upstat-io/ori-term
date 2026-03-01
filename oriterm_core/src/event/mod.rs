@@ -52,6 +52,10 @@ pub enum Event {
     PtyWrite(String),
     /// Cursor blink state toggled via DECSET/DECRST.
     CursorBlinkingChange,
+    /// Current working directory changed (OSC 7 via raw interceptor).
+    Cwd(String),
+    /// A command completed (OSC 133;D) with the given duration since OSC 133;C.
+    CommandComplete(std::time::Duration),
     /// Mouse cursor shape may need update (e.g. hover over hyperlink).
     MouseCursorDirty,
     /// Child process exited with the given status code.
@@ -71,6 +75,8 @@ impl fmt::Debug for Event {
             Self::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
             Self::ColorRequest(idx, _) => write!(f, "ColorRequest({idx})"),
             Self::PtyWrite(text) => write!(f, "PtyWrite({text})"),
+            Self::Cwd(path) => write!(f, "Cwd({path})"),
+            Self::CommandComplete(d) => write!(f, "CommandComplete({d:?})"),
             Self::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
             Self::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             Self::ChildExit(code) => write!(f, "ChildExit({code})"),

@@ -209,5 +209,46 @@ pub(super) fn apply_inverse(fg: Rgb, bg: Rgb, flags: CellFlags) -> (Rgb, Rgb) {
     }
 }
 
+/// Collect damage information from the grid's dirty tracker.
+pub(super) fn collect_damage(
+    grid: &crate::grid::Grid,
+    lines: usize,
+    cols: usize,
+) -> (bool, Vec<DamageLine>) {
+    let dirty = grid.dirty();
+
+    // Fast path: tracker explicitly flagged all-dirty (resize, alt swap).
+    // Avoids building a Vec that would be immediately discarded.
+    if dirty.is_all_dirty() {
+        return (true, Vec::new());
+    }
+
+    // Fast path: nothing dirty — skip the per-line scan entirely.
+    if !dirty.is_any_dirty() {
+        return (false, Vec::new());
+    }
+
+    // Slow path: check individual bits (handles mark_range covering all lines).
+    let mut all_dirty = true;
+    let mut damage = Vec::with_capacity(lines);
+    for line in 0..lines {
+        if dirty.is_dirty(line) {
+            damage.push(DamageLine {
+                line,
+                left: Column(0),
+                right: Column(cols.saturating_sub(1)),
+            });
+        } else {
+            all_dirty = false;
+        }
+    }
+
+    if all_dirty && !damage.is_empty() {
+        (true, Vec::new())
+    } else {
+        (false, damage)
+    }
+}
+
 #[cfg(test)]
 mod tests;

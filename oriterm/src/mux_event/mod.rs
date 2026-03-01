@@ -48,12 +48,18 @@ pub(crate) enum MuxEvent {
         icon_name: String,
     },
     /// Pane working directory changed (OSC 7).
-    #[allow(dead_code, reason = "constructed when OSC 7 handling is wired to App")]
     PaneCwdChanged {
         /// Which pane changed CWD.
         pane_id: PaneId,
         /// New working directory path.
         cwd: String,
+    },
+    /// A command completed in a pane (OSC 133;D) with the given duration.
+    CommandComplete {
+        /// Which pane completed a command.
+        pane_id: PaneId,
+        /// Time elapsed between OSC 133;C and OSC 133;D.
+        duration: std::time::Duration,
     },
     /// Bell fired in a pane.
     PaneBell(PaneId),
@@ -99,6 +105,9 @@ impl fmt::Debug for MuxEvent {
             }
             Self::PaneCwdChanged { pane_id, cwd } => {
                 write!(f, "PaneCwdChanged({pane_id}, {cwd:?})")
+            }
+            Self::CommandComplete { pane_id, duration } => {
+                write!(f, "CommandComplete({pane_id}, {duration:?})")
             }
             Self::PaneBell(id) => write!(f, "PaneBell({id})"),
             Self::PtyWrite { pane_id, data } => {
@@ -220,6 +229,18 @@ impl EventListener for MuxEventProxy {
                     data,
                 });
             }
+            Event::Cwd(cwd) => {
+                self.send(MuxEvent::PaneCwdChanged {
+                    pane_id: self.pane_id,
+                    cwd,
+                });
+            }
+            Event::CommandComplete(duration) => {
+                self.send(MuxEvent::CommandComplete {
+                    pane_id: self.pane_id,
+                    duration,
+                });
+            }
             Event::ChildExit(code) => {
                 self.send(MuxEvent::PaneExited {
                     pane_id: self.pane_id,
@@ -253,6 +274,13 @@ pub(crate) enum MuxNotification {
     WindowTabsChanged(WindowId),
     /// An alert fired in a pane (bell, urgent notification).
     Alert(PaneId),
+    /// A long-running command completed in a pane.
+    CommandComplete {
+        /// Which pane completed a command.
+        pane_id: PaneId,
+        /// Command execution duration.
+        duration: std::time::Duration,
+    },
     /// A window was closed (but other windows remain).
     WindowClosed(WindowId),
     /// The last window was closed — application should exit.
@@ -288,6 +316,9 @@ impl fmt::Debug for MuxNotification {
             Self::WindowTabsChanged(id) => write!(f, "WindowTabsChanged({id})"),
             Self::WindowClosed(id) => write!(f, "WindowClosed({id})"),
             Self::Alert(id) => write!(f, "Alert({id})"),
+            Self::CommandComplete { pane_id, duration } => {
+                write!(f, "CommandComplete({pane_id}, {duration:?})")
+            }
             Self::LastWindowClosed => write!(f, "LastWindowClosed"),
             Self::ClipboardStore {
                 pane_id,

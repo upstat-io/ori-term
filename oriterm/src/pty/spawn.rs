@@ -1,7 +1,7 @@
 //! PTY spawning, shell detection, and environment setup.
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 
@@ -85,6 +85,8 @@ pub struct PtyConfig {
     pub working_dir: Option<PathBuf>,
     /// Additional environment variables to set in the child.
     pub env: Vec<(String, String)>,
+    /// Enable shell integration (inject scripts for OSC 133/7 support).
+    pub shell_integration: bool,
 }
 
 impl Default for PtyConfig {
@@ -95,6 +97,7 @@ impl Default for PtyConfig {
             shell: None,
             working_dir: None,
             env: Vec::new(),
+            shell_integration: true,
         }
     }
 }
@@ -232,12 +235,50 @@ pub(crate) fn build_command(config: &PtyConfig) -> CommandBuilder {
         cmd.env(key, value);
     }
 
+    // Shell integration: detect shell, write scripts, configure injection.
+    if config.shell_integration {
+        inject_shell_integration(&mut cmd, shell, config.working_dir.as_deref());
+    }
+
     // Propagate terminal + user variables across the Win32/WSL boundary.
     // Without WSLENV, tools running inside WSL won't see these env vars.
     #[cfg(windows)]
     build_wslenv(&mut cmd, config);
 
     cmd
+}
+
+/// Detect the shell and inject integration scripts if supported.
+fn inject_shell_integration(
+    cmd: &mut CommandBuilder,
+    shell_program: &str,
+    working_dir: Option<&Path>,
+) {
+    use crate::shell_integration::{detect_shell, ensure_scripts_on_disk, setup_injection};
+
+    let Some(shell) = detect_shell(shell_program) else {
+        log::info!("shell_integration: unknown shell '{shell_program}', skipping injection");
+        return;
+    };
+
+    // Write scripts next to the executable.
+    let base = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    let integration_dir = match ensure_scripts_on_disk(&base) {
+        Ok(dir) => dir,
+        Err(e) => {
+            log::warn!("shell_integration: failed to write scripts: {e}");
+            return;
+        }
+    };
+
+    let cwd = working_dir.and_then(|p| p.to_str());
+    if let Some(extra_arg) = setup_injection(cmd, shell, &integration_dir, cwd) {
+        cmd.arg(extra_arg);
+    }
 }
 
 /// Build the `WSLENV` value that propagates env vars across the Win32/WSL boundary.

@@ -4,8 +4,11 @@
 //! Processes `MuxEvent`s from PTY reader threads via `InProcessMux::poll_events`,
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
-use oriterm_mux::WindowId as MuxWindowId;
+use std::time::Duration;
 
+use oriterm_mux::{PaneId, WindowId as MuxWindowId};
+
+use crate::config::NotifyOnCommandFinish;
 use crate::mux_event::MuxNotification;
 
 use super::App;
@@ -98,6 +101,9 @@ impl App {
                     ctx.dirty = true;
                 }
             }
+            MuxNotification::CommandComplete { pane_id, duration } => {
+                self.handle_command_complete(pane_id, duration);
+            }
             MuxNotification::Alert(id) => {
                 if let Some(pane) = self.panes.get_mut(&id) {
                     pane.set_bell();
@@ -137,6 +143,46 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Handle a command completing in a pane.
+    ///
+    /// Checks config threshold and focus state to decide whether to flash
+    /// the tab bar (bell pulse) and/or log the completion.
+    fn handle_command_complete(&mut self, pane_id: PaneId, duration: Duration) {
+        let behavior = &self.config.behavior;
+        let threshold = Duration::from_secs(behavior.notify_command_threshold_secs);
+        if duration < threshold {
+            return;
+        }
+
+        let mode = behavior.notify_on_command_finish;
+        if mode == NotifyOnCommandFinish::Never {
+            return;
+        }
+
+        let is_focused = self.active_pane_id() == Some(pane_id);
+        if mode == NotifyOnCommandFinish::Unfocused && is_focused {
+            return;
+        }
+
+        log::info!(
+            "command completed in {pane_id} after {:.1}s",
+            duration.as_secs_f64()
+        );
+
+        // Flash the tab bar (reuse bell pulse) if configured.
+        if behavior.notify_command_bell {
+            if let Some(idx) = self.tab_index_for_pane(pane_id) {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.tab_bar.ring_bell(idx);
+                    ctx.dirty = true;
+                }
+            }
+        }
+
+        // OS notification dispatch is platform-specific (stretch goal).
+        // When implemented, it would go here.
     }
 
     /// Handle a mux window being closed by removing its `WindowContext`.

@@ -9,6 +9,7 @@ pub mod charset;
 mod handler;
 pub mod mode;
 pub mod renderable;
+mod shell_state;
 
 pub use charset::CharsetState;
 pub use mode::TermMode;
@@ -23,6 +24,32 @@ use crate::event::EventListener;
 use crate::grid::{CursorShape, Grid};
 use crate::index::{Column, Line};
 use crate::theme::Theme;
+
+/// Shell integration prompt lifecycle state.
+///
+/// Tracks transitions from OSC 133 sub-parameters:
+/// `None` → `PromptStart` (A) → `CommandStart` (B) → `OutputStart` (C) → `None` (D).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PromptState {
+    /// No prompt activity or command completed (after D marker).
+    #[default]
+    None,
+    /// Prompt is being displayed (after A marker).
+    PromptStart,
+    /// User is typing a command (after B marker).
+    CommandStart,
+    /// Command output is being produced (after C marker).
+    OutputStart,
+}
+
+/// Desktop notification from the shell (OSC 9/99/777).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notification {
+    /// Notification title (may be empty for OSC 9/99).
+    pub title: String,
+    /// Notification body text.
+    pub body: String,
+}
 
 /// Maximum depth for title stack (xterm push/pop title).
 ///
@@ -43,6 +70,11 @@ pub(crate) const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
 /// `T: EventListener` so tests can use `VoidListener` while the real app
 /// routes events through winit.
 #[derive(Debug)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "terminal state naturally has independent boolean flags \
+              (selection_dirty, prompt_mark_pending, has_explicit_title, title_dirty)"
+)]
 pub struct Term<T: EventListener> {
     /// Primary grid (active when not in alt screen).
     grid: Grid,
@@ -78,6 +110,26 @@ pub struct Term<T: EventListener> {
     /// erase, insert/delete, scroll). Checked by the owning layer to decide
     /// whether to clear an active selection.
     selection_dirty: bool,
+    /// Shell integration prompt lifecycle state (OSC 133).
+    prompt_state: PromptState,
+    /// Set when OSC 133;A arrives — actual grid row marking is deferred
+    /// until after both VTE parsers finish processing.
+    prompt_mark_pending: bool,
+    /// Absolute row indices where OSC 133;A (prompt start) was received.
+    /// Used for jump-to-prompt navigation and semantic zone detection.
+    /// Pruned when scrollback eviction removes old rows.
+    prompt_rows: Vec<usize>,
+    /// Pending desktop notifications collected from OSC 9/99/777.
+    pending_notifications: Vec<Notification>,
+    /// When OSC 133;C (output start) was received — marks command execution start.
+    command_start: Option<std::time::Instant>,
+    /// Duration of the last completed command (OSC 133;D − OSC 133;C).
+    last_command_duration: Option<std::time::Duration>,
+    /// Whether the current title was explicitly set via OSC 0/2.
+    /// When `false`, the tab bar should prefer CWD-based title.
+    has_explicit_title: bool,
+    /// Title dirty flag — set when CWD or explicit title changes.
+    title_dirty: bool,
 }
 
 impl<T: EventListener> Term<T> {
@@ -99,6 +151,14 @@ impl<T: EventListener> Term<T> {
             inactive_keyboard_mode_stack: VecDeque::new(),
             event_listener: listener,
             selection_dirty: false,
+            prompt_state: PromptState::None,
+            prompt_mark_pending: false,
+            prompt_rows: Vec::new(),
+            pending_notifications: Vec::new(),
+            command_start: None,
+            last_command_duration: None,
+            has_explicit_title: false,
+            title_dirty: false,
         }
     }
 
@@ -173,7 +233,7 @@ impl<T: EventListener> Term<T> {
         self.grid_mut().dirty_mut().mark_all();
     }
 
-    /// Current window title.
+    /// Current window title (raw OSC 0/2 value).
     pub fn title(&self) -> &str {
         &self.title
     }
@@ -187,6 +247,9 @@ impl<T: EventListener> Term<T> {
     pub fn cwd(&self) -> Option<&str> {
         self.cwd.as_deref()
     }
+
+    // Shell integration methods (prompt state, CWD, title resolution,
+    // notifications, prompt navigation) are in `shell_state.rs`.
 
     /// Current cursor shape.
     pub fn cursor_shape(&self) -> CursorShape {
@@ -330,7 +393,7 @@ impl<T: EventListener> Term<T> {
             visible: cursor_visible,
         };
 
-        let (all_dirty, damage) = collect_damage(grid, lines, cols);
+        let (all_dirty, damage) = renderable::collect_damage(grid, lines, cols);
         out.display_offset = offset;
         let base_abs = grid.scrollback().len().saturating_sub(offset);
         out.stable_row_base = grid.total_evicted() as u64 + base_abs as u64;
@@ -410,41 +473,16 @@ impl<T: EventListener> Term<T> {
     }
 }
 
-/// Collect damage information from the grid's dirty tracker.
-fn collect_damage(grid: &Grid, lines: usize, cols: usize) -> (bool, Vec<DamageLine>) {
-    let dirty = grid.dirty();
-
-    // Fast path: tracker explicitly flagged all-dirty (resize, alt swap).
-    // Avoids building a Vec that would be immediately discarded.
-    if dirty.is_all_dirty() {
-        return (true, Vec::new());
+/// Extract the last path component from a CWD path for tab display.
+///
+/// - `/home/user/projects` → `projects`
+/// - `/` → `/`
+fn cwd_short_path(cwd: &str) -> &str {
+    if cwd == "/" {
+        return cwd;
     }
-
-    // Fast path: nothing dirty — skip the per-line scan entirely.
-    if !dirty.is_any_dirty() {
-        return (false, Vec::new());
-    }
-
-    // Slow path: check individual bits (handles mark_range covering all lines).
-    let mut all_dirty = true;
-    let mut damage = Vec::with_capacity(lines);
-    for line in 0..lines {
-        if dirty.is_dirty(line) {
-            damage.push(DamageLine {
-                line,
-                left: Column(0),
-                right: Column(cols.saturating_sub(1)),
-            });
-        } else {
-            all_dirty = false;
-        }
-    }
-
-    if all_dirty && !damage.is_empty() {
-        (true, Vec::new())
-    } else {
-        (false, damage)
-    }
+    let trimmed = cwd.strip_suffix('/').unwrap_or(cwd);
+    trimmed.rsplit('/').next().unwrap_or(cwd)
 }
 
 #[cfg(test)]

@@ -23,10 +23,14 @@ impl<T: EventListener> Term<T> {
         let event = if let Some(t) = title {
             debug!("Setting title to '{t}'");
             self.title.clone_from(&t);
+            self.has_explicit_title = true;
+            self.title_dirty = true;
             Event::Title(t)
         } else {
             debug!("Resetting title");
             self.title.clear();
+            self.has_explicit_title = false;
+            self.title_dirty = true;
             Event::ResetTitle
         };
         self.event_listener.send_event(event);
