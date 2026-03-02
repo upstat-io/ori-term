@@ -137,6 +137,10 @@ pub(crate) struct App {
     // Processed in `about_to_wait` where the event loop is available.
     pending_new_window: bool,
 
+    // Deferred move-tab-to-new-window request. Stores the tab index to
+    // resolve when `ActiveEventLoop` is available in `about_to_wait`.
+    pending_move_tab_to_window: Option<usize>,
+
     // Pending tear-off state. Set by `tear_off_tab()`, consumed by
     // `check_torn_off_merge()` in `about_to_wait`.
     #[cfg(target_os = "windows")]
@@ -193,6 +197,7 @@ impl App {
             ime: ImeState::new(),
             ui_theme,
             pending_new_window: false,
+            pending_move_tab_to_window: None,
             #[cfg(target_os = "windows")]
             torn_off_pending: None,
             merge_drag_suppress_release: false,

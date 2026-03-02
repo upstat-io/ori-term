@@ -40,74 +40,73 @@ sections:
 
 GPU-rendered context menus (not OS native) for consistent cross-platform styling. Three distinct menu types depending on what was right-clicked.
 
-**File:** `oriterm/src/chrome/context_menu.rs`
+**File:** `oriterm_ui/src/widgets/menu/mod.rs` (MenuWidget), `oriterm/src/app/context_menu/mod.rs` (ContextAction, ContextMenuState, builders)
 
 **Reference:** `_old/src/context_menu.rs`, `_old/src/gpu/render_overlay.rs`
 
-- [ ] `MenuOverlay` struct:
-  - [ ] `entries: Vec<MenuEntry>` — menu items
-  - [ ] `position: (f32, f32)` — absolute pixel position (top-left corner)
-  - [ ] `hovered: Option<usize>` — currently hovered entry index (None if not hovering any item)
-  - [ ] `width: f32` — computed menu width
-  - [ ] `height: f32` — computed menu height
-  - [ ] `scale: f32` — DPI scale factor
-- [ ] `MenuEntry` enum:
-  - [ ] `Item { label: String, action: ContextAction }` — clickable item
-  - [ ] `Check { label: String, checked: bool, action: ContextAction }` — item with checkmark indicator
-  - [ ] `Separator` — horizontal line divider
-- [ ] Three menu contexts:
-  1. [ ] **Tab context menu** (right-click on a tab):
-     - [ ] Close Tab
-     - [ ] Duplicate Tab
-     - [ ] Move to New Window
-  2. [ ] **Grid context menu** (right-click in terminal area):
-     - [ ] Copy (enabled only if selection exists)
-     - [ ] Paste
-     - [ ] Select All
-     - [ ] Separator
-     - [ ] New Tab
-     - [ ] Close Tab
-     - [ ] Separator
-     - [ ] Settings
-  3. [ ] **Dropdown menu** (click dropdown button in tab bar):
-     - [ ] Settings (opens settings window)
-     - [ ] Separator
-     - [ ] Color scheme selector: list all built-in schemes with `Check` entries (active scheme has checkmark)
-- [ ] Layout calculation:
-  - [ ] Measure max label width using UI font collection
-  - [ ] If any `Check` entry exists: add checkmark icon width + gap
-  - [ ] `width = max_label_width + 2 * ITEM_PADDING_X + MENU_EXTRA_WIDTH`, clamped to `MENU_MIN_WIDTH`
-  - [ ] `height = 2 * MENU_PADDING_Y + sum(entry_height for each entry)`
-  - [ ] Entry heights: `ITEM_HEIGHT` for Item/Check, `SEPARATOR_HEIGHT` for Separator
-- [ ] Hit testing:
-  - [ ] `hit_test(x: f32, y: f32) -> Option<usize>`
-  - [ ] Check if point is within menu rect
-  - [ ] Iterate entries, accumulate Y offset
-  - [ ] Return entry index if clickable (skip separators)
-  - [ ] Return None if outside or on separator
-- [ ] Dismiss conditions:
-  - [ ] Click outside menu rect
-  - [ ] Escape key
-  - [ ] Any action selected and executed
-- [ ] GPU rendering (overlay pass, topmost):
-  - [ ] Shadow rectangle (2px offset down-right, rounded corners, semi-transparent)
-  - [ ] Menu background rectangle (rounded corners)
-  - [ ] Per-entry:
-    - [ ] **Item**: text label at `ITEM_PADDING_X` from left
-    - [ ] **Check**: checkmark icon (if checked) + label indented past icon
-    - [ ] **Separator**: horizontal line with left/right margins
-    - [ ] Hover highlight: rounded rectangle with inset, lighter background
-- [ ] Menu constants:
-  - [ ] `MENU_PADDING_Y: f32` — vertical padding inside menu
-  - [ ] `ITEM_PADDING_X: f32` — horizontal padding for labels
-  - [ ] `SEPARATOR_MARGIN_X: f32` — left/right margin for separator lines
-  - [ ] `SEPARATOR_THICKNESS: f32` — separator line height
-  - [ ] `ITEM_HEIGHT: f32` — height per clickable item
-  - [ ] `MENU_MIN_WIDTH: f32` — minimum menu width
-  - [ ] `MENU_EXTRA_WIDTH: f32` — extra padding for checkmark column
-  - [ ] `MENU_RADIUS: f32` — corner radius for menu shape
-  - [ ] `ITEM_HOVER_INSET: f32` — inset of hover highlight from menu edges
-  - [ ] `ITEM_HOVER_RADIUS: f32` — corner radius for hover highlight
+- [x] `MenuWidget` struct (plan called this `MenuOverlay` — position/size managed by overlay system):
+  - [x] `entries: Vec<MenuEntry>` — menu items
+  - [x] Position managed by overlay anchoring (not stored on widget — cleaner separation)
+  - [x] `hovered: Option<usize>` — currently hovered entry index (None if not hovering any item)
+  - [x] Width/height computed dynamically in `layout()` and `total_height()` (not cached — correct for overlay resizing)
+  - [x] Scale handled by overlay system (DPI-independent widget)
+- [x] `MenuEntry` enum:
+  - [x] `Item { label: String }` — clickable item (action decoupled via `ContextMenuState`)
+  - [x] `Check { label: String, checked: bool }` — item with checkmark indicator (action decoupled)
+  - [x] `Separator` — horizontal line divider
+- [x] `ContextAction` enum + `ContextMenuState` — maps entry indices to actions (cleaner than embedding actions in entries)
+- [x] Three menu contexts:
+  1. [x] **Tab context menu** (right-click on a tab):
+     - [x] Close Tab
+     - [x] Duplicate Tab
+     - [x] Move to New Window
+  2. [x] **Grid context menu** (right-click in terminal area):
+     - [x] Copy (enabled only if selection exists)
+     - [x] Paste
+     - [x] Select All
+     - [x] Separator
+     - [x] New Tab
+     - [x] Close Tab
+     - [x] Separator
+     - [x] Settings
+  3. [x] **Dropdown menu** (click dropdown button in tab bar):
+     - [x] Settings (opens settings window)
+     - [x] Separator
+     - [x] Color scheme selector: list all built-in schemes with `Check` entries (active scheme has checkmark)
+- [x] Layout calculation:
+  - [x] Measure max label width using UI font collection
+  - [x] If any `Check` entry exists: add checkmark icon width + gap
+  - [x] `width = max_label_width + 2 * ITEM_PADDING_X + MENU_EXTRA_WIDTH`, clamped to `MENU_MIN_WIDTH`
+  - [x] `height = 2 * MENU_PADDING_Y + sum(entry_height for each entry)`
+  - [x] Entry heights: `ITEM_HEIGHT` for Item/Check, `SEPARATOR_HEIGHT` for Separator
+- [x] Hit testing:
+  - [x] `entry_at_y(y: f32) -> Option<usize>` (overlay handles bounds check, widget does Y mapping)
+  - [x] Iterate entries, accumulate Y offset
+  - [x] Return entry index if clickable (skip separators)
+  - [x] Return None if outside or on separator
+- [x] Dismiss conditions:
+  - [x] Click outside menu rect (overlay system)
+  - [x] Escape key (`WidgetAction::DismissOverlay`)
+  - [x] Any action selected and executed (`WidgetAction::Selected`)
+- [x] GPU rendering (overlay pass, topmost):
+  - [x] Shadow rectangle (2px offset down-right, rounded corners, semi-transparent)
+  - [x] Menu background rectangle (rounded corners, border)
+  - [x] Per-entry:
+    - [x] **Item**: text label at left margin from left
+    - [x] **Check**: checkmark icon (if checked) + label indented past icon
+    - [x] **Separator**: horizontal line with left/right margins
+    - [x] Hover highlight: rounded rectangle with inset, lighter background
+- [x] Menu style constants (in `MenuStyle` struct, derived from `UiTheme`):
+  - [x] `padding_y: f32` — vertical padding inside menu
+  - [x] `padding_x: f32` — horizontal padding for labels
+  - [x] `hover_inset: f32` doubles as separator margin (separator drawn between hover insets)
+  - [x] `separator_height: f32` — separator entry height
+  - [x] `item_height: f32` — height per clickable item
+  - [x] `min_width: f32` — minimum menu width
+  - [x] `extra_width: f32` — extra padding for checkmark column
+  - [x] `corner_radius: f32` — corner radius for menu shape
+  - [x] `hover_inset: f32` — inset of hover highlight from menu edges
+  - [x] `hover_radius: f32` — corner radius for hover highlight
 
 ---
 
