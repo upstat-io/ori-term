@@ -103,6 +103,15 @@ fn pane_ids_empty() {
     assert!(client.pane_ids().is_empty());
 }
 
+// -- Send compile check --
+
+/// `MuxClient` satisfies `Send` (prevents accidental `Rc`/`Cell` additions).
+#[test]
+fn mux_client_is_send() {
+    fn assert_send<T: Send>() {}
+    assert_send::<MuxClient>();
+}
+
 // -- Transport tests (Unix only, using UnixStream::pair) --
 
 #[cfg(unix)]
@@ -463,6 +472,280 @@ mod transport_tests {
         // Clean up: server thread will exit when stream drops.
         drop(transport);
         let _ = server_handle.join();
+    }
+
+    /// Sequence number wraps from u32::MAX to 1, skipping 0.
+    #[test]
+    fn seq_wraparound_skips_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("wrap.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+
+        let received_seqs = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seqs = received_seqs.clone();
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Handshake.
+            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                hello.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                },
+            )
+            .unwrap();
+
+            // Read 3 requests, record their seqs, respond to each.
+            for _ in 0..3 {
+                let frame = ProtocolCodec::decode_frame(&mut stream).unwrap();
+                seqs.lock().unwrap().push(frame.seq);
+                ProtocolCodec::encode_frame(
+                    &mut stream,
+                    frame.seq,
+                    &MuxPdu::WindowCreated {
+                        window_id: WindowId::from_raw(1),
+                    },
+                )
+                .unwrap();
+            }
+            stream
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
+
+        // Set next_seq near wraparound point.
+        transport.test_set_next_seq(u32::MAX - 1);
+
+        // Three RPCs: seqs should be MAX-1, MAX, 1 (skipping 0).
+        transport.rpc(MuxPdu::CreateWindow).unwrap();
+        transport.rpc(MuxPdu::CreateWindow).unwrap();
+        transport.rpc(MuxPdu::CreateWindow).unwrap();
+
+        let _s = server.join().unwrap();
+
+        let seqs = received_seqs.lock().unwrap();
+        assert_eq!(*seqs, vec![u32::MAX - 1, u32::MAX, 1]);
+    }
+
+    /// RPC on a dead transport returns `NotConnected` immediately.
+    #[test]
+    fn rpc_on_dead_transport() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("dead.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Handshake only, then drop.
+            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                hello.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                },
+            )
+            .unwrap();
+            drop(stream);
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
+
+        server.join().unwrap();
+
+        // Wait for reader thread to detect EOF.
+        std::thread::sleep(Duration::from_millis(100));
+
+        assert!(!transport.is_alive());
+
+        let result = transport.rpc(MuxPdu::CreateWindow);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
+    }
+
+    /// Notification arrives during an active RPC — both are correctly routed.
+    #[test]
+    fn notification_during_rpc() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("interleave.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+
+        let wakeup_count = Arc::new(AtomicUsize::new(0));
+        let wc = wakeup_count.clone();
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Handshake.
+            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                hello.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                },
+            )
+            .unwrap();
+
+            // Read the RPC request.
+            let req = ProtocolCodec::decode_frame(&mut stream).unwrap();
+
+            // Send a notification BEFORE the RPC response.
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                0,
+                &MuxPdu::NotifyPaneOutput {
+                    pane_id: PaneId::from_raw(42),
+                },
+            )
+            .unwrap();
+
+            // Now send the RPC response.
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                req.seq,
+                &MuxPdu::WindowCreated {
+                    window_id: WindowId::from_raw(5),
+                },
+            )
+            .unwrap();
+
+            // Keep alive briefly.
+            std::thread::sleep(Duration::from_millis(200));
+            stream
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            wc.fetch_add(1, Ordering::Relaxed);
+        });
+        let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
+
+        // RPC should succeed despite interleaved notification.
+        let resp = transport.rpc(MuxPdu::CreateWindow).unwrap();
+        assert!(matches!(
+            resp,
+            MuxPdu::WindowCreated { window_id } if window_id == WindowId::from_raw(5)
+        ));
+
+        // Notification should be in the buffer.
+        std::thread::sleep(Duration::from_millis(50));
+        let mut notifications = Vec::new();
+        transport.poll_notifications(&mut notifications);
+        assert!(
+            notifications.iter().any(
+                |n| matches!(n, MuxNotification::PaneDirty(id) if *id == PaneId::from_raw(42))
+            )
+        );
+
+        let _s = server.join().unwrap();
+    }
+
+    /// Unknown PDU from daemon kills the transport.
+    #[test]
+    fn unknown_pdu_kills_transport() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("bogus.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Handshake.
+            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                hello.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                },
+            )
+            .unwrap();
+
+            // Send a frame with an unknown msg type.
+            let header = crate::protocol::FrameHeader {
+                msg_type: 0xFFFF,
+                seq: 0,
+                payload_len: 0,
+            };
+            stream.write_all(&header.encode()).unwrap();
+
+            // Keep alive briefly.
+            std::thread::sleep(Duration::from_millis(200));
+            stream
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let transport = ClientTransport::connect(&sock, wakeup).unwrap();
+
+        // Wait for reader thread to hit the unknown PDU error.
+        std::thread::sleep(Duration::from_millis(100));
+
+        assert!(!transport.is_alive(), "transport should die on unknown PDU");
+
+        let _s = server.join().unwrap();
+    }
+
+    /// Burst of 10 notifications arrive in FIFO order.
+    #[test]
+    fn notification_burst_ordering() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("burst.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Handshake.
+            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                hello.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                },
+            )
+            .unwrap();
+
+            // Send 10 notifications in rapid succession.
+            for i in 1..=10u64 {
+                ProtocolCodec::encode_frame(
+                    &mut stream,
+                    0,
+                    &MuxPdu::NotifyPaneOutput {
+                        pane_id: PaneId::from_raw(i),
+                    },
+                )
+                .unwrap();
+            }
+
+            // Keep alive.
+            std::thread::sleep(Duration::from_millis(200));
+            stream
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let transport = ClientTransport::connect(&sock, wakeup).unwrap();
+
+        // Wait for all notifications to arrive.
+        std::thread::sleep(Duration::from_millis(150));
+
+        let mut notifications = Vec::new();
+        transport.poll_notifications(&mut notifications);
+        assert_eq!(notifications.len(), 10, "expected 10 notifications");
+
+        // Verify FIFO ordering.
+        for (i, notif) in notifications.iter().enumerate() {
+            let expected_id = PaneId::from_raw((i + 1) as u64);
+            assert!(
+                matches!(notif, MuxNotification::PaneDirty(id) if *id == expected_id),
+                "notification {i} should be PaneDirty({expected_id:?}), got {notif:?}"
+            );
+        }
+
+        let _s = server.join().unwrap();
     }
 
     /// Error response from daemon is surfaced as io::Error.

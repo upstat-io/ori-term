@@ -860,6 +860,28 @@ fn decode_empty_payload_for_pdu_with_fields() {
     );
 }
 
+// -- Variable-length payload boundary tests --
+
+#[test]
+fn roundtrip_boundary_payload_sizes() {
+    // Test at sizes that could trip length encoding boundaries.
+    let sizes = [0, 1, 127, 128, 255, 256, 1024, 65535, 65536];
+    for &size in &sizes {
+        let data = vec![b'X'; size];
+        let pdu = MuxPdu::Input {
+            pane_id: PaneId::from_raw(1),
+            data,
+        };
+        let frame = roundtrip(1, pdu);
+        match frame.pdu {
+            MuxPdu::Input { data, .. } => {
+                assert_eq!(data.len(), size, "payload roundtrip failed at size {size}");
+            }
+            other => panic!("expected Input at size={size}, got {other:?}"),
+        }
+    }
+}
+
 // -- Wire byte pinning --
 
 #[test]
