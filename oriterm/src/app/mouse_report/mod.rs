@@ -331,7 +331,6 @@ impl App {
         if self.mouse.last_reported_cell() == Some((col, line)) {
             return false;
         }
-        self.mouse.set_last_reported_cell(Some((col, line)));
 
         // Drag (button held) uses the actual button code; mode 1003 motion
         // without a button uses None (code 3+32 = 35).
@@ -357,6 +356,7 @@ impl App {
         if !bytes.is_empty() {
             if let Some(pane) = self.active_pane() {
                 pane.write_input(bytes);
+                self.mouse.set_last_reported_cell(Some((col, line)));
             }
         }
         true
@@ -398,10 +398,10 @@ impl App {
                 mods: self.mouse_modifiers(),
             };
 
-            for _ in 0..lines {
-                let report = encode_mouse_event(&event, mode);
-                let bytes = report.as_bytes();
-                if !bytes.is_empty() {
+            let report = encode_mouse_event(&event, mode);
+            let bytes = report.as_bytes();
+            if !bytes.is_empty() {
+                for _ in 0..lines {
                     pane.write_input(bytes);
                 }
             }
