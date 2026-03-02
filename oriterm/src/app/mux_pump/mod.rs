@@ -1,7 +1,7 @@
 //! Mux event pump — drains PTY events and handles mux notifications.
 //!
 //! Called once per event loop iteration in `about_to_wait`, before rendering.
-//! Processes `MuxEvent`s from PTY reader threads via `InProcessMux::poll_events`,
+//! Processes `MuxEvent`s from PTY reader threads via `MuxBackend::poll_events`,
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
 use std::fmt::Write as _;
@@ -24,7 +24,7 @@ impl App {
         let Some(mux) = &mut self.mux else { return };
 
         // 1. Process incoming MuxEvents from PTY reader threads.
-        mux.poll_events(&mut self.panes);
+        mux.poll_events();
 
         // 2. Drain notifications into our reusable buffer.
         mux.drain_notifications(&mut self.notification_buf);
@@ -50,7 +50,7 @@ impl App {
     fn handle_mux_notification(&mut self, notification: MuxNotification) {
         match notification {
             MuxNotification::PaneDirty(id) => {
-                if let Some(pane) = self.panes.get_mut(&id) {
+                if let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(id)) {
                     pane.check_selection_invalidation();
                 }
                 // Only invalidate URL hover when the dirty pane is focused.
@@ -67,10 +67,10 @@ impl App {
                 }
             }
             MuxNotification::PaneClosed(id) => {
-                // Remove the pane from the map. Drop (PTY kill + reader
+                // Remove the pane from the backend. Drop (PTY kill + reader
                 // thread join + child reap) runs on a background thread
                 // to avoid blocking the event loop.
-                if let Some(pane) = self.panes.remove(&id) {
+                if let Some(pane) = self.mux.as_mut().and_then(|m| m.remove_pane(id)) {
                     std::thread::spawn(move || drop(pane));
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
@@ -107,7 +107,7 @@ impl App {
                 self.handle_command_complete(pane_id, duration);
             }
             MuxNotification::Alert(id) => {
-                if let Some(pane) = self.panes.get_mut(&id) {
+                if let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(id)) {
                     pane.set_bell();
                 }
                 if let Some(idx) = self.tab_index_for_pane(id) {
@@ -140,7 +140,7 @@ impl App {
             } => {
                 let text = self.clipboard.load(clipboard_type);
                 let response = formatter(&text);
-                if let Some(pane) = self.panes.get(&pane_id) {
+                if let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) {
                     pane.write_input(response.as_bytes());
                 }
             }
@@ -185,8 +185,9 @@ impl App {
 
         // Build and dispatch OS notification.
         let title = self
-            .panes
-            .get(&pane_id)
+            .mux
+            .as_ref()
+            .and_then(|m| m.pane(pane_id))
             .map_or("Command finished", |p| {
                 let t = p.effective_title();
                 if t.is_empty() { "Command finished" } else { t }

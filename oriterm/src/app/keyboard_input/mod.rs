@@ -166,7 +166,7 @@ impl App {
         // Mark mode: consume ALL key events (including releases) to prevent
         // leaking input to the PTY while navigating.
         if let Some(pane_id) = self.active_pane_id() {
-            if let Some(pane) = self.panes.get_mut(&pane_id) {
+            if let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(pane_id)) {
                 if pane.is_mark_mode() {
                     if event.state == ElementState::Pressed {
                         let action = mark_mode::handle_mark_mode_key(

@@ -53,7 +53,7 @@ use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
 use crate::gpu::{GpuRenderer, GpuState};
 use crate::keybindings::{self, KeyBinding};
-use oriterm_mux::in_process::InProcessMux;
+use oriterm_mux::backend::MuxBackend;
 use oriterm_mux::mux_event::MuxNotification;
 use oriterm_mux::pane::Pane;
 
@@ -86,18 +86,13 @@ pub(crate) struct App {
     // Winit ID of the currently focused window (set on Focused(true)).
     focused_window_id: Option<WindowId>,
 
-    // Mux layer (Section 31): owns registries, ID allocators, and domain.
-    mux: Option<InProcessMux>,
-    // Pane store: Pane structs live here, keyed by PaneId.
-    // The mux tracks metadata (PaneEntry); App owns the actual Pane.
-    panes: HashMap<PaneId, Pane>,
+    // Mux backend (Section 44.3): abstracts in-process vs daemon mux access.
+    // Owns pane structs (embedded) or proxies IPC (client).
+    mux: Option<Box<dyn MuxBackend>>,
     // Active mux window ID (maps to the focused TermWindow).
     active_window: Option<MuxWindowId>,
     // Double-buffer for mux notifications (avoids per-frame allocation).
     notification_buf: Vec<MuxNotification>,
-
-    // Wakeup callback for mux event proxies (decoupled from winit for testability).
-    mux_wakeup: Arc<dyn Fn() + Send + Sync>,
 
     // Keyboard modifier state (updated on ModifiersChanged).
     modifiers: ModifiersState,
@@ -176,16 +171,15 @@ impl App {
         let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = event_proxy.send_event(TermEvent::MuxWakeup);
         });
+        let mux = oriterm_mux::EmbeddedMux::new(mux_wakeup);
         Self {
             gpu: None,
             renderer: None,
             windows: HashMap::new(),
             focused_window_id: None,
-            mux: None,
-            panes: HashMap::new(),
+            mux: Some(Box::new(mux)),
             active_window: None,
             notification_buf: Vec::new(),
-            mux_wakeup,
             modifiers: ModifiersState::empty(),
             cursor_blink: CursorBlink::new(blink_interval),
             blinking_active: false,
@@ -287,17 +281,6 @@ impl App {
         }
     }
 
-    /// Apply the color palette from the current config to a pane's terminal.
-    ///
-    /// Builds the palette from the config's color scheme and user overrides,
-    /// then writes it into the pane's terminal. Used after spawning a new
-    /// pane (tab create, split, floating).
-    fn apply_palette_to_pane(&self, pane: &Pane, theme: oriterm_core::Theme) {
-        let mut term = pane.terminal().lock();
-        let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
-        *term.palette_mut() = palette;
-    }
-
     /// Read the terminal mode, locking briefly.
     ///
     /// Returns `None` if no active pane is present.
@@ -321,7 +304,7 @@ impl App {
         let tab_id = win.active_tab()?;
         let tab = mux.session().get_tab(tab_id)?;
         let pane_id = tab.active_pane();
-        self.panes.get(&pane_id)
+        mux.pane(pane_id)
     }
 
     /// The active pane's ID, derived from the mux session model.
@@ -337,13 +320,13 @@ impl App {
     /// Immutable reference to the active pane.
     fn active_pane(&self) -> Option<&Pane> {
         let id = self.active_pane_id()?;
-        self.panes.get(&id)
+        self.mux.as_ref()?.pane(id)
     }
 
     /// Mutable reference to the active pane.
     fn active_pane_mut(&mut self) -> Option<&mut Pane> {
         let id = self.active_pane_id()?;
-        self.panes.get_mut(&id)
+        self.mux.as_mut()?.pane_mut(id)
     }
 
     /// Tab index for a given pane within the active window's tab list.
@@ -382,6 +365,16 @@ impl App {
             }
         }
     }
+}
+
+/// Apply the color palette to a pane's terminal without borrowing `App`.
+///
+/// Free function taking `&Config` directly, safe to call while `self.mux`
+/// is mutably borrowed (no `&self` conflict).
+fn apply_palette(config: &Config, pane: &Pane, theme: oriterm_core::Theme) {
+    let mut term = pane.terminal().lock();
+    let palette = config_reload::build_palette_from_config(&config.colors, theme);
+    *term.palette_mut() = palette;
 }
 
 use event_loop::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};

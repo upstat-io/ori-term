@@ -147,7 +147,7 @@ impl App {
 
             for layout in layouts {
                 let pane_id = layout.pane_id;
-                let Some(pane) = self.panes.get(&pane_id) else {
+                let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) else {
                     log::warn!("multi-pane: pane {:?} not found", pane_id);
                     continue;
                 };
@@ -272,7 +272,7 @@ impl App {
             // may have been overwritten by a non-focused dirty pane later in
             // layout order.
             if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
-                if let Some(pane) = self.panes.get(&focused.pane_id) {
+                if let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(focused.pane_id)) {
                     if let Some(frame) = ctx.frame.as_mut() {
                         frame.search = pane.search().map(|s| FrameSearch::new(s, focused_base));
                     }

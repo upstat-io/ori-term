@@ -50,14 +50,13 @@ impl App {
             shell_integration: self.config.behavior.shell_integration,
             ..oriterm_mux::domain::SpawnConfig::default()
         };
-        let tab_result = mux.create_tab(mux_window_id, &spawn_config, theme, &self.mux_wakeup);
+        let tab_result = mux.create_tab(mux_window_id, &spawn_config, theme);
         match tab_result {
-            Ok((_tab_id, pane_id, pane)) => {
-                self.apply_palette_to_pane(&pane, theme);
-                self.panes.insert(pane_id, pane);
-                if let Some(mux) = self.mux.as_mut() {
-                    mux.discard_notifications();
+            Ok((_tab_id, pane_id)) => {
+                if let Some(pane) = mux.pane(pane_id) {
+                    super::apply_palette(&self.config, pane, theme);
                 }
+                mux.discard_notifications();
             }
             Err(e) => {
                 log::error!("failed to create initial tab for new window: {e}");
@@ -189,9 +188,11 @@ impl App {
         };
 
         // Drop panes on background threads to avoid blocking the event loop.
-        for id in pane_ids {
-            if let Some(pane) = self.panes.remove(&id) {
-                std::thread::spawn(move || drop(pane));
+        if let Some(mux) = &mut self.mux {
+            for id in pane_ids {
+                if let Some(pane) = mux.remove_pane(id) {
+                    std::thread::spawn(move || drop(pane));
+                }
             }
         }
 
@@ -280,7 +281,7 @@ impl App {
         for notification in notifications.drain(..) {
             if let oriterm_mux::mux_event::MuxNotification::PaneClosed(id) = notification {
                 // Panes already removed above — just clean up caches.
-                if let Some(pane) = self.panes.remove(&id) {
+                if let Some(pane) = self.mux.as_mut().and_then(|m| m.remove_pane(id)) {
                     std::thread::spawn(move || drop(pane));
                 }
                 for ctx in self.windows.values_mut() {

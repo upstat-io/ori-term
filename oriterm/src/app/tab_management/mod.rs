@@ -38,10 +38,11 @@ impl App {
         };
 
         let Some(mux) = &mut self.mux else { return };
-        match mux.create_tab(window_id, &config, theme, &self.mux_wakeup) {
-            Ok((_tab_id, pane_id, pane)) => {
-                self.apply_palette_to_pane(&pane, theme);
-                self.panes.insert(pane_id, pane);
+        match mux.create_tab(window_id, &config, theme) {
+            Ok((_tab_id, pane_id)) => {
+                if let Some(pane) = mux.pane(pane_id) {
+                    super::apply_palette(&self.config, pane, theme);
+                }
                 log::info!("new tab with pane {pane_id:?} in window {window_id:?}");
             }
             Err(e) => {
@@ -285,7 +286,7 @@ impl App {
             if let Some(mux) = &mut self.mux {
                 let pane_ids = mux.close_tab(initial);
                 for pid in pane_ids {
-                    if let Some(pane) = self.panes.remove(&pid) {
+                    if let Some(pane) = mux.remove_pane(pid) {
                         std::thread::spawn(move || drop(pane));
                     }
                 }
@@ -424,7 +425,7 @@ impl App {
             .map(|&tab_id| {
                 let tab = mux.session().get_tab(tab_id);
                 let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-                let pane = pane_id.and_then(|pid| self.panes.get(&pid));
+                let pane = pane_id.and_then(|pid| mux.pane(pid));
                 let mut title = pane
                     .map(|p| p.effective_title().to_owned())
                     .unwrap_or_default();
@@ -484,7 +485,7 @@ impl App {
             .map(|&tab_id| {
                 let tab = mux.session().get_tab(tab_id);
                 let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-                let pane = pane_id.and_then(|pid| self.panes.get(&pid));
+                let pane = pane_id.and_then(|pid| mux.pane(pid));
                 let mut title = pane
                     .map(|p| p.effective_title().to_owned())
                     .unwrap_or_default();

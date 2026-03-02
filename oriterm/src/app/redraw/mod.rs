@@ -76,7 +76,7 @@ impl App {
                 log::warn!("redraw: no window");
                 return;
             };
-            let Some(pane) = self.panes.get(&pane_id) else {
+            let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) else {
                 log::warn!("redraw: no active pane");
                 return;
             };

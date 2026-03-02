@@ -87,17 +87,11 @@ impl App {
         };
 
         let Some(mux) = &mut self.mux else { return };
-        match mux.split_pane(
-            tab_id,
-            source_pane_id,
-            direction,
-            &config,
-            theme,
-            &self.mux_wakeup,
-        ) {
-            Ok((new_pane_id, pane)) => {
-                self.apply_palette_to_pane(&pane, theme);
-                self.panes.insert(new_pane_id, pane);
+        match mux.split_pane(tab_id, source_pane_id, direction, &config, theme) {
+            Ok(new_pane_id) => {
+                if let Some(pane) = mux.pane(new_pane_id) {
+                    super::apply_palette(&self.config, pane, theme);
+                }
                 log::info!("split pane: {source_pane_id:?} -> {new_pane_id:?} ({direction:?})");
             }
             Err(e) => {
@@ -188,8 +182,9 @@ impl App {
             self.resize_single_pane();
             return;
         };
+        let Some(mux) = self.mux.as_ref() else { return };
         for layout in &layouts {
-            if let Some(pane) = self.panes.get(&layout.pane_id) {
+            if let Some(pane) = mux.pane(layout.pane_id) {
                 pane.resize_grid(layout.rows, layout.cols);
                 pane.resize_pty(layout.rows, layout.cols);
             }
@@ -330,10 +325,11 @@ impl App {
         };
 
         let Some(mux) = &mut self.mux else { return };
-        match mux.spawn_floating_pane(tab_id, &config, theme, &self.mux_wakeup, &available) {
-            Ok((new_pane_id, pane)) => {
-                self.apply_palette_to_pane(&pane, theme);
-                self.panes.insert(new_pane_id, pane);
+        match mux.spawn_floating_pane(tab_id, &config, theme, &available) {
+            Ok(new_pane_id) => {
+                if let Some(pane) = mux.pane(new_pane_id) {
+                    super::apply_palette(&self.config, pane, theme);
+                }
                 log::info!("spawn floating pane: {new_pane_id:?}");
             }
             Err(e) => {
@@ -442,7 +438,7 @@ impl App {
     /// Uses half the source pane's dimensions in the split direction.
     /// The actual size is refined when layout computes the real rects.
     fn estimate_split_size(&self, source: PaneId, direction: SplitDirection) -> (u16, u16) {
-        let Some(pane) = self.panes.get(&source) else {
+        let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(source)) else {
             return (24, 80);
         };
         let term = pane.terminal().lock();
