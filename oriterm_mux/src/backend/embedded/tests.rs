@@ -457,3 +457,145 @@ fn pane_entry_gone_after_close() {
     // p1 should still have an entry.
     assert!(mux.get_pane_entry(p1).is_some());
 }
+
+// -- Send compile check --
+
+/// `EmbeddedMux` satisfies `Send` (prevents accidental `Rc`/`Cell` additions).
+#[test]
+fn embedded_mux_is_send() {
+    fn assert_send<T: Send>() {}
+    assert_send::<EmbeddedMux>();
+}
+
+/// `is_daemon_mode` returns false for embedded backend.
+#[test]
+fn is_not_daemon_mode() {
+    let mux = EmbeddedMux::new(test_wakeup());
+    assert!(!mux.is_daemon_mode());
+}
+
+// -- Cycle wrap-around (trait interface) --
+
+/// `cycle_active_tab` forward wraps from last tab to first.
+#[test]
+fn cycle_forward_wraps_to_first() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let wid = WindowId::from_raw(100);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(101);
+    let t3 = TabId::from_raw(102);
+    mux.mux.inject_test_tab(wid, t1, PaneId::from_raw(100));
+    mux.mux.inject_test_tab(wid, t2, PaneId::from_raw(101));
+    mux.mux.inject_test_tab(wid, t3, PaneId::from_raw(102));
+
+    // Switch to last tab.
+    mux.switch_active_tab(wid, t3);
+
+    // Cycle forward → wraps to t1.
+    assert_eq!(mux.cycle_active_tab(wid, 1), Some(t1));
+    assert_eq!(mux.active_tab_id(wid), Some(t1));
+}
+
+/// `cycle_active_tab` backward wraps from first tab to last.
+#[test]
+fn cycle_backward_wraps_to_last() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let wid = WindowId::from_raw(100);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(101);
+    let t3 = TabId::from_raw(102);
+    mux.mux.inject_test_tab(wid, t1, PaneId::from_raw(100));
+    mux.mux.inject_test_tab(wid, t2, PaneId::from_raw(101));
+    mux.mux.inject_test_tab(wid, t3, PaneId::from_raw(102));
+
+    // Active is t1 (index 0). Cycle backward → wraps to t3.
+    assert_eq!(mux.cycle_active_tab(wid, -1), Some(t3));
+    assert_eq!(mux.active_tab_id(wid), Some(t3));
+}
+
+// -- move_tab_to_window edge cases --
+
+/// `move_tab_to_window` with nonexistent tab returns false.
+#[test]
+fn move_nonexistent_tab_returns_false() {
+    let (mut mux, _wid, _tid, _pid) = one_pane_setup();
+    let fake_tab = TabId::from_raw(999);
+    let fake_dest = WindowId::from_raw(999);
+    assert!(!mux.move_tab_to_window(fake_tab, fake_dest));
+}
+
+/// `move_tab_to_window` with nonexistent dest window returns false.
+#[test]
+fn move_tab_to_nonexistent_window_returns_false() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let w1 = WindowId::from_raw(100);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(101);
+    mux.mux.inject_test_tab(w1, t1, PaneId::from_raw(100));
+    mux.mux.inject_test_tab(w1, t2, PaneId::from_raw(101));
+
+    let fake_dest = WindowId::from_raw(999);
+    assert!(!mux.move_tab_to_window(t1, fake_dest));
+}
+
+// -- close_pane cascade --
+
+/// `close_pane` on the sole pane cascades: removes tab, window, emits
+/// `LastWindowClosed`.
+#[test]
+fn close_pane_cascade_to_last_window() {
+    use crate::in_process::ClosePaneResult;
+
+    let (mut mux, wid, tid, pid) = one_pane_setup();
+    let result = mux.close_pane(pid);
+    assert_eq!(result, ClosePaneResult::LastWindow);
+
+    // Tab and window should be gone.
+    assert!(mux.session().get_tab(tid).is_none());
+    assert!(mux.session().get_window(wid).is_none());
+
+    // Notifications: PaneClosed + LastWindowClosed.
+    let notes = drain(&mut mux);
+    assert!(
+        notes
+            .iter()
+            .any(|n| matches!(n, MuxNotification::PaneClosed(id) if *id == pid))
+    );
+    assert!(
+        notes
+            .iter()
+            .any(|n| matches!(n, MuxNotification::LastWindowClosed))
+    );
+}
+
+// -- switch_active_tab edge case --
+
+/// `switch_active_tab` to nonexistent tab returns false.
+#[test]
+fn switch_nonexistent_tab_returns_false() {
+    let (mut mux, wid, _tid, _pid) = one_pane_setup();
+    let stale = TabId::from_raw(999);
+    assert!(!mux.switch_active_tab(wid, stale));
+}
+
+// -- Reorder with 4+ tabs --
+
+/// `reorder_tab` with 4 tabs: move index 3 to index 1.
+#[test]
+fn reorder_four_tabs() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let wid = WindowId::from_raw(100);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(101);
+    let t3 = TabId::from_raw(102);
+    let t4 = TabId::from_raw(103);
+    mux.mux.inject_test_tab(wid, t1, PaneId::from_raw(100));
+    mux.mux.inject_test_tab(wid, t2, PaneId::from_raw(101));
+    mux.mux.inject_test_tab(wid, t3, PaneId::from_raw(102));
+    mux.mux.inject_test_tab(wid, t4, PaneId::from_raw(103));
+
+    // Move t4 (index 3) to index 1.
+    assert!(mux.reorder_tab(wid, 3, 1));
+    let win = mux.session().get_window(wid).unwrap();
+    assert_eq!(win.tabs(), &[t1, t4, t2, t3]);
+}

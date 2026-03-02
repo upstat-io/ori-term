@@ -209,6 +209,14 @@ impl ClientTransport {
     }
 }
 
+#[cfg(test)]
+impl ClientTransport {
+    /// Set the next sequence number for testing wraparound behavior.
+    pub(super) fn test_set_next_seq(&mut self, val: u32) {
+        self.next_seq = val;
+    }
+}
+
 impl Drop for ClientTransport {
     fn drop(&mut self) {
         // Close the send channel first so the reader thread sees
