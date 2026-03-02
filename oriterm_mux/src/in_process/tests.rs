@@ -5211,3 +5211,100 @@ fn close_last_tiled_pane_non_last_window_cleans_floating() {
         "expected WindowClosed(w1)"
     );
 }
+
+// -- poll_events: CommandComplete end-to-end --
+
+#[test]
+fn poll_events_command_complete_emits_notification() {
+    let (mut mux, _wid, _tid, pid) = one_pane_setup();
+    let tx = mux.event_tx().clone();
+
+    let dur = std::time::Duration::from_secs(42);
+    tx.send(MuxEvent::CommandComplete {
+        pane_id: pid,
+        duration: dur,
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.iter().any(
+            |n| matches!(n, MuxNotification::CommandComplete { pane_id, duration } if *pane_id == pid && *duration == dur)
+        ),
+        "expected CommandComplete notification with correct pane_id and duration"
+    );
+}
+
+#[test]
+fn poll_events_command_complete_missing_pane_no_panic() {
+    let mut mux = InProcessMux::new();
+    let tx = mux.event_tx().clone();
+
+    // Send event for a pane not in the map — should not panic.
+    tx.send(MuxEvent::CommandComplete {
+        pane_id: PaneId::from_raw(999),
+        duration: std::time::Duration::from_secs(5),
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    // Notification should still be emitted even when pane isn't in the map.
+    let notifs = drain(&mut mux);
+    assert!(notifs.iter().any(
+        |n| matches!(n, MuxNotification::CommandComplete { pane_id, .. } if *pane_id == PaneId::from_raw(999))
+    ));
+}
+
+// -- poll_events: PaneIconChanged end-to-end --
+
+#[test]
+fn poll_events_icon_changed_emits_title_notification() {
+    let (mut mux, _wid, _tid, pid) = one_pane_setup();
+    let tx = mux.event_tx().clone();
+
+    tx.send(MuxEvent::PaneIconChanged {
+        pane_id: pid,
+        icon_name: "\u{1f40d}python".to_string(),
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    // PaneIconChanged maps to PaneTitleChanged notification (refreshes tab bar).
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::PaneTitleChanged(id) if *id == pid)),
+        "expected PaneTitleChanged notification for icon change"
+    );
+}
+
+#[test]
+fn poll_events_icon_changed_missing_pane_no_panic() {
+    let mut mux = InProcessMux::new();
+    let tx = mux.event_tx().clone();
+
+    tx.send(MuxEvent::PaneIconChanged {
+        pane_id: PaneId::from_raw(999),
+        icon_name: "icon".to_string(),
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.iter().any(
+            |n| matches!(n, MuxNotification::PaneTitleChanged(id) if *id == PaneId::from_raw(999))
+        ),
+        "expected PaneTitleChanged even when pane is missing from map"
+    );
+}

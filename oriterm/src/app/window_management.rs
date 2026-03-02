@@ -56,15 +56,13 @@ impl App {
                 self.apply_palette_to_pane(&pane, theme);
                 self.panes.insert(pane_id, pane);
                 if let Some(mux) = self.mux.as_mut() {
-                    let mut discard = Vec::new();
-                    mux.drain_notifications(&mut discard);
+                    mux.discard_notifications();
                 }
             }
             Err(e) => {
                 log::error!("failed to create initial tab for new window: {e}");
                 mux.close_window(mux_window_id);
-                let mut discard = Vec::new();
-                mux.drain_notifications(&mut discard);
+                mux.discard_notifications();
                 self.windows.remove(&winit_id);
                 return None;
             }
@@ -124,8 +122,7 @@ impl App {
             Err(e) => {
                 log::error!("failed to create window: {e}");
                 mux.close_window(mux_window_id);
-                let mut discard = Vec::new();
-                mux.drain_notifications(&mut discard);
+                mux.discard_notifications();
                 return None;
             }
         };
@@ -230,8 +227,7 @@ impl App {
             let mux_wid = ctx.window.mux_window_id();
             if let Some(mux) = &mut self.mux {
                 mux.close_window(mux_wid);
-                let mut discard = Vec::new();
-                mux.drain_notifications(&mut discard);
+                mux.discard_notifications();
             }
         }
 

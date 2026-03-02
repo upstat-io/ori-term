@@ -675,3 +675,294 @@ fn floating_pane_above_minimum_is_unchanged() {
     assert_eq!(float_layout.cols, 30);
     assert_eq!(float_layout.rows, 10);
 }
+
+// ── Exact pixel values (WezTerm-style pinned assertions) ────────
+
+#[test]
+fn vertical_split_50_50_exact_pixel_values() {
+    // Available: 1000x800, cell: 10x20, divider: 2px.
+    // Usable width: 1000 - 2 = 998.
+    // First: floor(998 * 0.5) = 499. Second: 998 - 499 = 499.
+    // After snap_to_grid: floor(499/10) = 49 cols each → 490px each.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    let l1 = layouts.iter().find(|l| l.pane_id == p(1)).unwrap();
+    let l2 = layouts.iter().find(|l| l.pane_id == p(2)).unwrap();
+
+    // Pane 1: x=0, width=490 (49 cols), height=800 (40 rows).
+    assert!((l1.pixel_rect.x).abs() < f32::EPSILON);
+    assert!((l1.pixel_rect.y).abs() < f32::EPSILON);
+    assert!((l1.pixel_rect.width - 490.0).abs() < f32::EPSILON);
+    assert!((l1.pixel_rect.height - 800.0).abs() < f32::EPSILON);
+    assert_eq!(l1.cols, 49);
+    assert_eq!(l1.rows, 40);
+
+    // Pane 2: x = 499 + 2(divider) = 501, width=490, height=800.
+    assert!((l2.pixel_rect.x - 501.0).abs() < f32::EPSILON);
+    assert!((l2.pixel_rect.y).abs() < f32::EPSILON);
+    assert!((l2.pixel_rect.width - 490.0).abs() < f32::EPSILON);
+    assert!((l2.pixel_rect.height - 800.0).abs() < f32::EPSILON);
+    assert_eq!(l2.cols, 49);
+    assert_eq!(l2.rows, 40);
+}
+
+#[test]
+fn vertical_split_70_30_exact_pixel_values() {
+    // Usable width: 998. First: floor(998 * 0.7) = floor(698.6) = 698.
+    // Second: 998 - 698 = 300.
+    // Snap: first = floor(698/10) = 69 cols → 690px.
+    //        second = floor(300/10) = 30 cols → 300px.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.7);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    let l1 = layouts.iter().find(|l| l.pane_id == p(1)).unwrap();
+    let l2 = layouts.iter().find(|l| l.pane_id == p(2)).unwrap();
+
+    assert!((l1.pixel_rect.width - 690.0).abs() < f32::EPSILON);
+    assert_eq!(l1.cols, 69);
+    assert!((l2.pixel_rect.width - 300.0).abs() < f32::EPSILON);
+    assert_eq!(l2.cols, 30);
+    assert!((l2.pixel_rect.x - 700.0).abs() < f32::EPSILON); // 698 + 2
+}
+
+#[test]
+fn horizontal_split_50_50_exact_pixel_values() {
+    // Usable height: 800 - 2 = 798. First: floor(798 * 0.5) = 399.
+    // Second: 798 - 399 = 399.
+    // Snap: floor(399/20) = 19 rows each → 380px each.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Horizontal, p(2), 0.5);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    let l1 = layouts.iter().find(|l| l.pane_id == p(1)).unwrap();
+    let l2 = layouts.iter().find(|l| l.pane_id == p(2)).unwrap();
+
+    assert!((l1.pixel_rect.height - 380.0).abs() < f32::EPSILON);
+    assert_eq!(l1.rows, 19);
+    assert!((l1.pixel_rect.width - 1000.0).abs() < f32::EPSILON);
+    assert_eq!(l1.cols, 100);
+
+    assert!((l2.pixel_rect.height - 380.0).abs() < f32::EPSILON);
+    assert_eq!(l2.rows, 19);
+    assert!((l2.pixel_rect.y - 401.0).abs() < f32::EPSILON); // 399 + 2
+}
+
+#[test]
+fn nested_split_exact_pixel_values() {
+    // p1 | (p2 / p3): vertical 50/50 then horizontal 50/50 on right.
+    // Vertical: usable 998, first=499, second=499. Snap: 490px each.
+    // Horizontal on right (h=800): usable 798, first=399, second=399. Snap: 380px each.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(2), SplitDirection::Horizontal, p(3), 0.5);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    let l1 = layouts.iter().find(|l| l.pane_id == p(1)).unwrap();
+    let l2 = layouts.iter().find(|l| l.pane_id == p(2)).unwrap();
+    let l3 = layouts.iter().find(|l| l.pane_id == p(3)).unwrap();
+
+    // p1: full left column, 490px wide, 800px tall.
+    assert!((l1.pixel_rect.width - 490.0).abs() < f32::EPSILON);
+    assert!((l1.pixel_rect.height - 800.0).abs() < f32::EPSILON);
+    assert_eq!(l1.cols, 49);
+    assert_eq!(l1.rows, 40);
+
+    // p2: top-right, 490px wide, 380px tall.
+    assert_eq!(l2.cols, 49);
+    assert_eq!(l2.rows, 19);
+    assert!((l2.pixel_rect.width - 490.0).abs() < f32::EPSILON);
+    assert!((l2.pixel_rect.height - 380.0).abs() < f32::EPSILON);
+
+    // p3: bottom-right, same width as p2.
+    assert_eq!(l3.cols, 49);
+    assert_eq!(l3.rows, 19);
+    assert!((l3.pixel_rect.width - 490.0).abs() < f32::EPSILON);
+    assert!((l3.pixel_rect.height - 380.0).abs() < f32::EPSILON);
+    assert!(l3.pixel_rect.y > l2.pixel_rect.y);
+}
+
+#[test]
+fn resize_propagates_exact_pixel_values() {
+    // Start with 50/50 vertical, resize to 70/30, verify exact pixel change.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    // Before: each pane is 490px wide (49 cols).
+    let before = compute_layout(&tree, &floating, p(1), &desc);
+    let l1_before = before.iter().find(|l| l.pane_id == p(1)).unwrap();
+    assert!((l1_before.pixel_rect.width - 490.0).abs() < f32::EPSILON);
+
+    // After resize to 0.7: first = 690px (69 cols), second = 300px (30 cols).
+    let tree = tree.set_divider_ratio(p(1), p(2), 0.7);
+    let after = compute_layout(&tree, &floating, p(1), &desc);
+    let l1_after = after.iter().find(|l| l.pane_id == p(1)).unwrap();
+    let l2_after = after.iter().find(|l| l.pane_id == p(2)).unwrap();
+
+    assert!((l1_after.pixel_rect.width - 690.0).abs() < f32::EPSILON);
+    assert_eq!(l1_after.cols, 69);
+    assert!((l2_after.pixel_rect.width - 300.0).abs() < f32::EPSILON);
+    assert_eq!(l2_after.cols, 30);
+}
+
+// ── Layout offset invariant (no overlap, no boundary violation) ──
+
+/// Assert that no two tiled pane rects overlap and none extends past the
+/// container boundary. This is the exact invariant tmux's
+/// `layout_fix_offsets()` enforces.
+fn assert_no_overlap_or_boundary_violation(layouts: &[super::PaneLayout], container: &Rect) {
+    let tiled: Vec<_> = layouts.iter().filter(|l| !l.is_floating).collect();
+
+    // No pane extends past the container boundary.
+    for l in &tiled {
+        let r = &l.pixel_rect;
+        assert!(
+            r.x >= container.x - f32::EPSILON,
+            "pane {:?} left edge {:.1} < container {:.1}",
+            l.pane_id,
+            r.x,
+            container.x,
+        );
+        assert!(
+            r.y >= container.y - f32::EPSILON,
+            "pane {:?} top edge {:.1} < container {:.1}",
+            l.pane_id,
+            r.y,
+            container.y,
+        );
+        assert!(
+            r.x + r.width <= container.x + container.width + 1.0,
+            "pane {:?} right edge {:.1} > container right {:.1}",
+            l.pane_id,
+            r.x + r.width,
+            container.x + container.width,
+        );
+        assert!(
+            r.y + r.height <= container.y + container.height + 1.0,
+            "pane {:?} bottom edge {:.1} > container bottom {:.1}",
+            l.pane_id,
+            r.y + r.height,
+            container.y + container.height,
+        );
+    }
+
+    // No two tiled panes overlap.
+    for i in 0..tiled.len() {
+        for j in (i + 1)..tiled.len() {
+            let a = &tiled[i].pixel_rect;
+            let b = &tiled[j].pixel_rect;
+            let overlap_x = a.x < b.x + b.width && b.x < a.x + a.width;
+            let overlap_y = a.y < b.y + b.height && b.y < a.y + a.height;
+            assert!(
+                !(overlap_x && overlap_y),
+                "panes {:?} and {:?} overlap: ({:.1},{:.1} {:.1}x{:.1}) vs ({:.1},{:.1} {:.1}x{:.1})",
+                tiled[i].pane_id,
+                tiled[j].pane_id,
+                a.x,
+                a.y,
+                a.width,
+                a.height,
+                b.x,
+                b.y,
+                b.width,
+                b.height,
+            );
+        }
+    }
+}
+
+#[test]
+fn no_overlap_single_vertical_split() {
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    assert_no_overlap_or_boundary_violation(&layouts, &desc.available);
+}
+
+#[test]
+fn no_overlap_nested_l_shape() {
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(2), SplitDirection::Horizontal, p(3), 0.5);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    assert_no_overlap_or_boundary_violation(&layouts, &desc.available);
+}
+
+#[test]
+fn no_overlap_four_pane_grid() {
+    // (p1/p2) | (p3/p4) — vertical split then horizontal on each side.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(3), 0.5);
+    let tree = tree.split_at(p(1), SplitDirection::Horizontal, p(2), 0.5);
+    let tree = tree.split_at(p(3), SplitDirection::Horizontal, p(4), 0.5);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    assert_eq!(layouts.len(), 4);
+    assert_no_overlap_or_boundary_violation(&layouts, &desc.available);
+}
+
+#[test]
+fn no_overlap_after_resize_extreme_ratio() {
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.set_divider_ratio(p(1), p(2), 0.95);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    assert_no_overlap_or_boundary_violation(&layouts, &desc.available);
+}
+
+#[test]
+fn no_overlap_deep_chain_of_splits() {
+    // 5 panes in a chain: p1 | p2 | p3 | p4 | p5.
+    let mut tree = SplitTree::leaf(p(1));
+    for i in 2..=5 {
+        tree = tree.split_at(p(i - 1), SplitDirection::Vertical, p(i), 0.5);
+    }
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    assert_eq!(layouts.len(), 5);
+    assert_no_overlap_or_boundary_violation(&layouts, &desc.available);
+}
+
+#[test]
+fn no_overlap_after_remove_and_resize() {
+    // Build 4-pane grid, remove one, resize, verify invariant still holds.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(3), 0.5);
+    let tree = tree.split_at(p(1), SplitDirection::Horizontal, p(2), 0.5);
+    let tree = tree.split_at(p(3), SplitDirection::Horizontal, p(4), 0.5);
+
+    // Remove p2 → tree collapses.
+    let tree = tree.remove(p(2)).unwrap();
+    // Resize the remaining split.
+    let tree = tree.set_divider_ratio(p(1), p(3), 0.7);
+    let floating = FloatingLayer::new();
+    let desc = standard_desc();
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    assert_no_overlap_or_boundary_violation(&layouts, &desc.available);
+}

@@ -1,10 +1,42 @@
-use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
 
+use crate::{MuxPdu, ProtocolCodec};
+
 use super::MuxServer;
+use super::frame_io::FrameReader;
 use super::ipc::IpcListener;
 use super::pid_file::{PidFile, read_pid};
+
+/// Helper: create a server, connect a client, and accept it.
+fn server_with_client() -> (tempfile::TempDir, MuxServer, UnixStream) {
+    let dir = tempfile::tempdir().unwrap();
+    let sock_path = dir.path().join("test.sock");
+    let pid_path = dir.path().join("test.pid");
+    let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
+
+    let client = UnixStream::connect(&sock_path).unwrap();
+
+    let mut events = mio::Events::with_capacity(16);
+    server
+        .poll
+        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
+        .unwrap();
+    server.accept_connections().unwrap();
+
+    (dir, server, client)
+}
+
+/// Helper: send a PDU to a stream and flush.
+fn send_pdu(stream: &mut UnixStream, seq: u32, pdu: &MuxPdu) {
+    ProtocolCodec::encode_frame(stream, seq, pdu).unwrap();
+}
+
+/// Helper: read a response PDU from a stream.
+fn recv_pdu(stream: &mut UnixStream) -> (u32, MuxPdu) {
+    let frame = ProtocolCodec::decode_frame(stream).unwrap();
+    (frame.seq, frame.pdu)
+}
 
 // -- PID file tests --
 
@@ -158,29 +190,6 @@ fn server_accepts_client_connection() {
 }
 
 #[test]
-fn server_version_handshake_placeholder() {
-    let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("handshake.sock");
-    let pid_path = dir.path().join("handshake.pid");
-
-    let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
-
-    // Connect and send a greeting.
-    let mut client = UnixStream::connect(&sock_path).unwrap();
-    client.write_all(b"hello").unwrap();
-
-    // Run one poll cycle.
-    let mut events = mio::Events::with_capacity(16);
-    server
-        .poll
-        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
-        .unwrap();
-    server.accept_connections().unwrap();
-
-    assert_eq!(server.client_count(), 1);
-}
-
-#[test]
 fn server_cleans_up_on_drop() {
     let dir = tempfile::tempdir().unwrap();
     let sock_path = dir.path().join("cleanup.sock");
@@ -233,4 +242,305 @@ fn server_multiple_clients() {
     server.accept_connections().unwrap();
 
     assert_eq!(server.client_count(), 3);
+}
+
+// -- FrameReader tests --
+
+#[test]
+fn frame_reader_empty_returns_none() {
+    let mut reader = FrameReader::new();
+    assert!(reader.try_decode().is_none());
+}
+
+#[test]
+fn frame_reader_partial_header_returns_none() {
+    let mut reader = FrameReader::new();
+    // Only 5 bytes (less than 10-byte header).
+    reader.extend(&[0x01, 0x01, 0x00, 0x00, 0x00]);
+    assert!(reader.try_decode().is_none());
+}
+
+#[test]
+fn frame_reader_complete_frame() {
+    let mut reader = FrameReader::new();
+
+    // Encode a Hello PDU.
+    let pdu = MuxPdu::Hello { pid: 42 };
+    let mut buf = Vec::new();
+    ProtocolCodec::encode_frame(&mut buf, 1, &pdu).unwrap();
+
+    reader.extend(&buf);
+    let frame = reader.try_decode().unwrap().unwrap();
+    assert_eq!(frame.seq, 1);
+    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 42 });
+
+    // No more frames.
+    assert!(reader.try_decode().is_none());
+}
+
+#[test]
+fn frame_reader_multiple_frames_in_one_read() {
+    let mut reader = FrameReader::new();
+
+    let mut buf = Vec::new();
+    ProtocolCodec::encode_frame(&mut buf, 1, &MuxPdu::Hello { pid: 1 }).unwrap();
+    ProtocolCodec::encode_frame(&mut buf, 2, &MuxPdu::CreateWindow).unwrap();
+    ProtocolCodec::encode_frame(&mut buf, 3, &MuxPdu::ListWindows).unwrap();
+
+    reader.extend(&buf);
+
+    let f1 = reader.try_decode().unwrap().unwrap();
+    assert_eq!(f1.seq, 1);
+    assert_eq!(f1.pdu, MuxPdu::Hello { pid: 1 });
+
+    let f2 = reader.try_decode().unwrap().unwrap();
+    assert_eq!(f2.seq, 2);
+    assert_eq!(f2.pdu, MuxPdu::CreateWindow);
+
+    let f3 = reader.try_decode().unwrap().unwrap();
+    assert_eq!(f3.seq, 3);
+    assert_eq!(f3.pdu, MuxPdu::ListWindows);
+
+    assert!(reader.try_decode().is_none());
+}
+
+#[test]
+fn frame_reader_partial_payload_waits() {
+    let mut reader = FrameReader::new();
+
+    let pdu = MuxPdu::Hello { pid: 99 };
+    let mut full = Vec::new();
+    ProtocolCodec::encode_frame(&mut full, 5, &pdu).unwrap();
+
+    // Feed just the header + half the payload.
+    let split_at = 10 + (full.len() - 10) / 2;
+    reader.extend(&full[..split_at]);
+    assert!(reader.try_decode().is_none());
+
+    // Feed the rest.
+    reader.extend(&full[split_at..]);
+    let frame = reader.try_decode().unwrap().unwrap();
+    assert_eq!(frame.seq, 5);
+    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 99 });
+}
+
+#[test]
+fn frame_reader_unknown_msg_type_returns_error() {
+    let mut reader = FrameReader::new();
+
+    // Construct a header with an invalid message type.
+    let mut buf = [0u8; 10];
+    buf[0..2].copy_from_slice(&0xFFFFu16.to_le_bytes()); // bad msg type
+    buf[2..6].copy_from_slice(&1u32.to_le_bytes()); // seq
+    buf[6..10].copy_from_slice(&0u32.to_le_bytes()); // payload_len = 0
+
+    reader.extend(&buf);
+    let result = reader.try_decode().unwrap();
+    assert!(result.is_err());
+}
+
+#[test]
+fn frame_reader_eof_handling() {
+    // Verify that an EOF read (0 bytes) leaves the reader's buffer
+    // empty — try_decode should still return None.
+    let mut reader = FrameReader::new();
+    reader.extend(&[]); // Simulate a 0-byte read.
+    assert!(reader.try_decode().is_none());
+}
+
+// -- Hello handshake roundtrip --
+
+#[test]
+fn hello_handshake_roundtrip() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Client sends Hello.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 42 });
+
+    // Server polls and dispatches.
+    let mut events = mio::Events::with_capacity(16);
+    server
+        .poll
+        .poll(&mut events, Some(std::time::Duration::from_millis(100)))
+        .unwrap();
+    for event in &events {
+        match event.token() {
+            super::LISTENER => server.accept_connections().unwrap(),
+            super::WAKER => {}
+            token => server.handle_client_event(token),
+        }
+    }
+
+    // Client reads the HelloAck.
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 1);
+    match resp {
+        MuxPdu::HelloAck { client_id } => {
+            // Client ID should be valid (non-zero).
+            assert_ne!(client_id.raw(), 0);
+        }
+        other => panic!("expected HelloAck, got {other:?}"),
+    }
+}
+
+// -- CreateWindow roundtrip --
+
+#[test]
+fn create_window_roundtrip() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Create a window.
+    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+    match resp {
+        MuxPdu::WindowCreated { window_id } => {
+            assert_ne!(window_id.raw(), 0);
+        }
+        other => panic!("expected WindowCreated, got {other:?}"),
+    }
+}
+
+// -- ListWindows --
+
+#[test]
+fn list_windows_empty_then_one() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // List windows (should be empty).
+    send_pdu(&mut client, 2, &MuxPdu::ListWindows);
+    poll_and_dispatch(&mut server);
+    let (_, resp) = recv_pdu(&mut client);
+    match resp {
+        MuxPdu::WindowList { windows } => {
+            assert!(windows.is_empty());
+        }
+        other => panic!("expected WindowList, got {other:?}"),
+    }
+
+    // Create a window and list again.
+    send_pdu(&mut client, 3, &MuxPdu::CreateWindow);
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    send_pdu(&mut client, 4, &MuxPdu::ListWindows);
+    poll_and_dispatch(&mut server);
+    let (_, resp) = recv_pdu(&mut client);
+    match resp {
+        MuxPdu::WindowList { windows } => {
+            assert_eq!(windows.len(), 1);
+        }
+        other => panic!("expected WindowList, got {other:?}"),
+    }
+}
+
+// -- Disconnect cleans up state --
+
+#[test]
+fn disconnect_removes_client() {
+    let (_dir, mut server, client) = server_with_client();
+    assert_eq!(server.client_count(), 1);
+
+    // Drop the client to trigger EOF.
+    drop(client);
+
+    // Poll to detect disconnect.
+    poll_and_dispatch(&mut server);
+
+    assert_eq!(server.client_count(), 0);
+}
+
+// -- Fire-and-forget messages --
+
+#[test]
+fn input_is_fire_and_forget() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Send Input (fire-and-forget) — pane doesn't exist, but no error returned.
+    send_pdu(
+        &mut client,
+        0,
+        &MuxPdu::Input {
+            pane_id: crate::PaneId::from_raw(999),
+            data: b"hello".to_vec(),
+        },
+    );
+    poll_and_dispatch(&mut server);
+
+    // Verify the server is still alive by sending another request.
+    send_pdu(&mut client, 2, &MuxPdu::ListWindows);
+    poll_and_dispatch(&mut server);
+    let (seq, _) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+}
+
+// -- Unexpected PDU from client --
+
+#[test]
+fn unexpected_pdu_returns_error() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Send a response PDU (which is invalid from a client).
+    send_pdu(&mut client, 1, &MuxPdu::TabClosed);
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 1);
+    match resp {
+        MuxPdu::Error { message } => {
+            assert!(message.contains("unexpected"));
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+// -- ReadStatus from empty stream --
+
+#[test]
+fn frame_reader_no_data_returns_none() {
+    let mut reader = FrameReader::new();
+    // FrameReader with no data returns None.
+    assert!(reader.try_decode().is_none());
+    // Extending with empty slice is a no-op.
+    reader.extend(&[]);
+    assert!(reader.try_decode().is_none());
+}
+
+/// Helper: run one poll cycle and dispatch all events.
+fn poll_and_dispatch(server: &mut MuxServer) {
+    let mut events = mio::Events::with_capacity(16);
+    server
+        .poll
+        .poll(&mut events, Some(std::time::Duration::from_millis(100)))
+        .unwrap();
+    for event in &events {
+        match event.token() {
+            super::LISTENER => server.accept_connections().unwrap(),
+            super::WAKER => {}
+            token => server.handle_client_event(token),
+        }
+    }
+    server.drain_mux_events();
 }

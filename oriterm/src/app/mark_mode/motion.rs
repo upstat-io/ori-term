@@ -19,7 +19,7 @@ pub(crate) struct GridBounds {
 
 /// Absolute cursor position for motion arithmetic.
 ///
-/// Converted from/to [`super::super::tab::MarkCursor`] (which uses
+/// Converted from/to [`oriterm_mux::pane::MarkCursor`] (which uses
 /// `StableRowIndex`) under terminal lock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AbsCursor {

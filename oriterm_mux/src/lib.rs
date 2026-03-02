@@ -21,6 +21,7 @@ pub mod layout;
 pub mod mux_event;
 pub mod nav;
 pub mod pane;
+pub mod protocol;
 pub mod pty;
 pub mod registry;
 #[cfg(unix)]
@@ -35,6 +36,10 @@ pub use layout::{SplitDirection, SplitTree};
 pub use mux_event::{MuxEvent, MuxEventProxy, MuxNotification};
 pub use nav::Direction;
 pub use pane::Pane;
+pub use protocol::{
+    DecodeError, DecodedFrame, FrameHeader, MsgType, MuxPdu, MuxTabInfo, MuxWindowInfo,
+    PaneSnapshot, ProtocolCodec, WireCell, WireColor, WireCursor, WireRgb,
+};
 pub use pty::{ExitStatus, PtyConfig, PtyControl, PtyHandle, spawn_pty};
 pub use registry::{PaneEntry, PaneRegistry, SessionRegistry};
 pub use session::{MuxTab, MuxWindow};
