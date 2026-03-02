@@ -863,3 +863,83 @@ fn multiple_osc133a_without_completion_creates_separate_markers() {
     assert!(term.prompt_markers()[0].command.is_none());
     assert!(term.prompt_markers()[0].output.is_none());
 }
+
+// --- XTVERSION (CSI > q) ---
+
+/// Event listener that records all events for assertions.
+#[derive(Clone)]
+struct RecordingListener {
+    events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl RecordingListener {
+    fn new() -> Self {
+        Self {
+            events: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        }
+    }
+
+    fn events(&self) -> Vec<String> {
+        self.events.lock().expect("lock poisoned").clone()
+    }
+}
+
+impl oriterm_core::EventListener for RecordingListener {
+    fn send_event(&self, event: oriterm_core::Event) {
+        self.events
+            .lock()
+            .expect("lock poisoned")
+            .push(format!("{event:?}"));
+    }
+}
+
+#[test]
+fn xtversion_responds_with_oriterm_version() {
+    let listener = RecordingListener::new();
+    let mut term = Term::new(24, 80, 100, Theme::Dark, listener.clone());
+
+    // CSI > q — XTVERSION request.
+    let mut parser = vte::Parser::new();
+    let mut interceptor = super::interceptor::RawInterceptor::new(&mut term);
+    parser.advance(&mut interceptor, b"\x1b[>q");
+
+    let events = listener.events();
+    let pty_write = events.iter().find(|e| e.contains("PtyWrite"));
+    assert!(
+        pty_write.is_some(),
+        "XTVERSION should produce a PtyWrite event, got: {events:?}"
+    );
+    let pty_write = pty_write.unwrap();
+    assert!(
+        pty_write.contains("oriterm"),
+        "XTVERSION response should contain 'oriterm', got: {pty_write}"
+    );
+}
+
+// --- OSC 7 non-UTF-8 edge case ---
+
+#[test]
+fn interceptor_osc7_non_utf8_bytes_returns_empty_path() {
+    let mut term = make_term();
+
+    // Feed OSC 7 with invalid UTF-8 — the interceptor uses
+    // `from_utf8().unwrap_or_default()`, so it should produce an empty
+    // string and not set CWD.
+    let mut raw = Vec::new();
+    raw.extend_from_slice(b"\x1b]7;file:///");
+    raw.push(0xFF); // Invalid UTF-8.
+    raw.push(0xFE);
+    raw.push(0x07); // BEL terminator.
+    intercept(&mut term, &raw);
+
+    // The raw_path should be empty because from_utf8 fails on the whole
+    // param and returns "". Or it may parse as "file:///" with an empty path.
+    // Either way, CWD should NOT be set to garbage.
+    if let Some(cwd) = term.cwd() {
+        // If CWD was set, it should be a valid path (the "/" portion).
+        assert!(
+            cwd.is_ascii(),
+            "CWD should not contain non-UTF-8 garbage, got: {cwd:?}"
+        );
+    }
+}

@@ -43,8 +43,9 @@ paths:
 - **State transitions are explicit**: Drag state machine (`Pending → DraggingInBar → TornOff`) uses enum variants, not boolean flags.
 - **Redraw requests are coalesced**: Multiple state changes in one event batch should produce one redraw, not N redraws.
 
-## Platform Abstraction
+## Platform & External Resource Abstraction
 
 - **`#[cfg()]` at module level, not inline**: Platform differences go in dedicated files (`clipboard.rs` with `#[cfg(windows)]`/`#[cfg(not(windows))]`), not scattered `#[cfg()]` blocks inside functions.
 - **Shared interface, platform implementation**: Common trait or function signature, platform-specific body.
 - **No `cfg` in business logic**: Grid, VTE handler, selection, search — these must be platform-independent.
+- **No concrete external-resource types in logic layers**: Structs that perform logic (event routing, state management, command dispatch) must not embed concrete types that require runtime resources — display servers (`EventLoopProxy`, `Window`), GPU contexts (`wgpu::Device`), file handles, network sockets, etc. Accept callbacks (`Arc<dyn Fn() + Send + Sync>`), traits, or channels instead. The litmus test: if a type can't be constructed in a headless `#[test]` without `#[ignore]`, `OnceLock<EventLoop>`, or platform `#[cfg]` gymnastics, the boundary is wrong. The concrete resource type belongs at the wiring layer (e.g., `App::new`), not in the logic layer it's injected into.

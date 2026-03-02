@@ -378,3 +378,159 @@ fn mux_notification_debug_all_variants() {
     assert!(dbg.contains("ClipboardLoad"));
     assert!(dbg.contains("Selection"));
 }
+
+// --- Concurrent wakeup coalescing ---
+
+#[test]
+fn concurrent_wakeup_coalescing_does_not_lose_events() {
+    let (tx, rx) = mpsc::channel();
+    let wakeup = Arc::new(AtomicBool::new(false));
+    let dirty = Arc::new(AtomicBool::new(false));
+    let wakeup_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let wakeup_count2 = Arc::clone(&wakeup_count);
+    let wakeup_fn: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        wakeup_count2.fetch_add(1, Ordering::Relaxed);
+    });
+
+    let proxy = MuxEventProxy::new(
+        PaneId::from_raw(1),
+        tx,
+        Arc::clone(&wakeup),
+        Arc::clone(&dirty),
+        wakeup_fn,
+    );
+    let proxy = Arc::new(proxy);
+
+    // Spawn multiple threads that all send Wakeup concurrently.
+    let threads: Vec<_> = (0..10)
+        .map(|_| {
+            let p = Arc::clone(&proxy);
+            std::thread::spawn(move || {
+                p.send_event(Event::Wakeup);
+            })
+        })
+        .collect();
+
+    for t in threads {
+        t.join().unwrap();
+    }
+
+    // Grid dirty must be set.
+    assert!(dirty.load(Ordering::Acquire));
+    // Wakeup pending must be set.
+    assert!(wakeup.load(Ordering::Acquire));
+    // At least 1 PaneOutput should have been sent (coalescing may reduce count).
+    let mut count = 0;
+    while rx.try_recv().is_ok() {
+        count += 1;
+    }
+    assert!(
+        count >= 1,
+        "at least one PaneOutput should be sent, got {count}"
+    );
+    // Wakeup function should have been called at least once.
+    assert!(wakeup_count.load(Ordering::Relaxed) >= 1);
+}
+
+// --- Non-routed events (wakeup-only) ---
+
+#[test]
+fn color_request_wakes_event_loop_without_mux_event() {
+    let (tx, rx) = mpsc::channel();
+    let wakeup = Arc::new(AtomicBool::new(false));
+    let dirty = Arc::new(AtomicBool::new(false));
+    let woke = Arc::new(AtomicBool::new(false));
+    let woke2 = Arc::clone(&woke);
+    let wakeup_fn: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        woke2.store(true, Ordering::Release);
+    });
+
+    let proxy = MuxEventProxy::new(
+        PaneId::from_raw(1),
+        tx,
+        Arc::clone(&wakeup),
+        Arc::clone(&dirty),
+        wakeup_fn,
+    );
+
+    let formatter = Arc::new(|_: oriterm_core::color::Rgb| String::new());
+    proxy.send_event(Event::ColorRequest(42, formatter));
+
+    // Should wake the event loop.
+    assert!(
+        woke.load(Ordering::Acquire),
+        "ColorRequest should wake event loop"
+    );
+    // Should NOT send a MuxEvent.
+    assert!(
+        rx.try_recv().is_err(),
+        "ColorRequest should not produce a MuxEvent"
+    );
+    // Should NOT set grid dirty.
+    assert!(
+        !dirty.load(Ordering::Acquire),
+        "ColorRequest should not set grid dirty"
+    );
+}
+
+#[test]
+fn cursor_blinking_change_wakes_event_loop_without_mux_event() {
+    let (tx, rx) = mpsc::channel();
+    let wakeup = Arc::new(AtomicBool::new(false));
+    let dirty = Arc::new(AtomicBool::new(false));
+    let woke = Arc::new(AtomicBool::new(false));
+    let woke2 = Arc::clone(&woke);
+    let wakeup_fn: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        woke2.store(true, Ordering::Release);
+    });
+
+    let proxy = MuxEventProxy::new(
+        PaneId::from_raw(1),
+        tx,
+        Arc::clone(&wakeup),
+        Arc::clone(&dirty),
+        wakeup_fn,
+    );
+
+    proxy.send_event(Event::CursorBlinkingChange);
+
+    assert!(
+        woke.load(Ordering::Acquire),
+        "CursorBlinkingChange should wake event loop"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "CursorBlinkingChange should not produce a MuxEvent"
+    );
+}
+
+#[test]
+fn mouse_cursor_dirty_wakes_event_loop_without_mux_event() {
+    let (tx, rx) = mpsc::channel();
+    let wakeup = Arc::new(AtomicBool::new(false));
+    let dirty = Arc::new(AtomicBool::new(false));
+    let woke = Arc::new(AtomicBool::new(false));
+    let woke2 = Arc::clone(&woke);
+    let wakeup_fn: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        woke2.store(true, Ordering::Release);
+    });
+
+    let proxy = MuxEventProxy::new(
+        PaneId::from_raw(1),
+        tx,
+        Arc::clone(&wakeup),
+        Arc::clone(&dirty),
+        wakeup_fn,
+    );
+
+    proxy.send_event(Event::MouseCursorDirty);
+
+    assert!(
+        woke.load(Ordering::Acquire),
+        "MouseCursorDirty should wake event loop"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "MouseCursorDirty should not produce a MuxEvent"
+    );
+}

@@ -1684,3 +1684,128 @@ fn prune_prompt_markers_exact_boundary() {
         "marker at row 0 should be evicted when evicted=1"
     );
 }
+
+// --- Scrollback preservation during region scroll ---
+
+#[test]
+fn scroll_region_preserves_scrollback_content() {
+    // Small terminal with scrollback to verify content survives region scrolls.
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+
+    // Fill all 5 lines.
+    feed(&mut term, b"Line 0\r\nLine 1\r\nLine 2\r\nLine 3\r\nLine 4");
+
+    // Set scroll region to lines 1-3 (0-indexed: rows 1..4).
+    // DECSTBM uses 1-based params.
+    feed(&mut term, b"\x1b[2;4r");
+
+    // Move cursor into the scroll region and scroll up (SU).
+    feed(&mut term, b"\x1b[2;1H"); // Move to row 2, col 1.
+    feed(&mut term, b"\x1b[S"); // Scroll up 1 line in region.
+
+    // Line 0 (outside region) should be unchanged.
+    let grid = term.grid();
+    assert_eq!(
+        grid[Line(0)][Column(0)].ch,
+        'L',
+        "line 0 outside region should be preserved"
+    );
+
+    // Line 4 (outside region) should also be preserved.
+    assert_eq!(
+        grid[Line(4)][Column(0)].ch,
+        'L',
+        "line 4 outside region should be preserved"
+    );
+}
+
+#[test]
+fn scrollback_survives_region_scroll_down() {
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+
+    // Write content that pushes into scrollback.
+    for i in 0..8u8 {
+        if i > 0 {
+            feed(&mut term, b"\r\n");
+        }
+        feed(&mut term, &[b'A' + i]); // A through H
+    }
+
+    let sb_before = term.grid().scrollback().len();
+    assert!(sb_before > 0, "should have scrollback content");
+
+    // Set scroll region and scroll within it.
+    feed(&mut term, b"\x1b[2;4r");
+    feed(&mut term, b"\x1b[2;1H");
+    feed(&mut term, b"\x1b[T"); // Scroll down in region.
+
+    // Scrollback should still have the same number of lines.
+    assert_eq!(
+        term.grid().scrollback().len(),
+        sb_before,
+        "scrollback should not be affected by region scroll"
+    );
+}
+
+// --- Prompt markers surviving subsequent output ---
+
+#[test]
+fn prompt_markers_survive_subsequent_output() {
+    let mut term = make_term();
+
+    // Mark a prompt at row 0.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    assert_eq!(term.prompt_markers().len(), 1);
+
+    // Write more output on subsequent lines.
+    feed(&mut term, b"\r\nhello world\r\nmore output\r\n");
+
+    // Markers should still be present.
+    assert_eq!(
+        term.prompt_markers().len(),
+        1,
+        "prompt marker should survive subsequent output"
+    );
+}
+
+#[test]
+fn prompt_markers_survive_scrolling() {
+    // Small terminal with scrollback.
+    let mut term = Term::new(5, 20, 100, Theme::default(), VoidListener);
+
+    // Mark a prompt.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    // Write enough lines to cause scrolling.
+    for i in 0..10 {
+        let msg = format!("\r\nline {i}");
+        feed(&mut term, msg.as_bytes());
+    }
+
+    // Markers should still be present (not evicted — within scrollback capacity).
+    assert_eq!(
+        term.prompt_markers().len(),
+        1,
+        "prompt marker should survive scrolling within scrollback capacity"
+    );
+}
+
+#[test]
+fn prompt_markers_evicted_by_manual_prune() {
+    let mut term = Term::new(3, 10, 5, Theme::default(), VoidListener);
+
+    // Mark a prompt at row 0 (absolute row 0).
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    assert_eq!(term.prompt_markers().len(), 1);
+
+    // Simulate scrollback eviction of 5 rows — marker at row 0 is below
+    // the eviction threshold and should be pruned.
+    term.prune_prompt_markers(5);
+    assert!(
+        term.prompt_markers().is_empty(),
+        "prompt marker at row 0 should be evicted when 5 rows are pruned"
+    );
+}

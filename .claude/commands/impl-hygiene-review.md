@@ -91,9 +91,11 @@ Follow the data from producer to consumer:
 - [ ] State transitions use enums, not booleans?
 - [ ] Redraw requests coalesced?
 
-**Platform Abstraction:**
+**Platform & External Resource Abstraction:**
 - [ ] `#[cfg()]` at module level, not scattered inline?
 - [ ] Grid, VTE handler, selection, search are platform-independent?
+- [ ] Logic-layer structs free of concrete external-resource types? (no `EventLoopProxy`, `Window`, `wgpu::Device`, etc. embedded in types that do routing/dispatch/state — use callbacks, traits, or channels instead)
+- [ ] Concrete resource types wired only at the composition root? (`App::new`, entry point — not threaded through intermediate layers)
 
 ### Step 5: Compile Findings
 
