@@ -4229,3 +4229,167 @@ fn osc_set_icon_name_none_resets() {
         "set_icon_name(None) should emit ResetIconName, got: {events:?}",
     );
 }
+
+// --- Wide character (CJK) placement ---
+
+#[test]
+fn wide_char_occupies_two_cells_with_spacer() {
+    let mut t = term();
+    // U+4E16 '世' is a CJK character with display width 2.
+    feed(&mut t, "世".as_bytes());
+
+    let grid = t.grid();
+    let line = crate::index::Line(0);
+    assert_eq!(grid[line][Column(0)].ch, '世');
+    assert!(
+        grid[line][Column(0)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR),
+        "base cell should have WIDE_CHAR flag"
+    );
+    assert_eq!(grid[line][Column(1)].ch, ' ');
+    assert!(
+        grid[line][Column(1)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER),
+        "next cell should be WIDE_CHAR_SPACER"
+    );
+    // Cursor should advance by 2.
+    assert_eq!(grid.cursor().col(), Column(2));
+}
+
+#[test]
+fn multiple_wide_chars_place_correctly() {
+    let mut t = term();
+    // '世界' — two CJK chars, each width 2.
+    feed(&mut t, "世界".as_bytes());
+
+    let grid = t.grid();
+    let line = crate::index::Line(0);
+    assert_eq!(grid[line][Column(0)].ch, '世');
+    assert_eq!(grid[line][Column(2)].ch, '界');
+    assert_eq!(grid.cursor().col(), Column(4));
+}
+
+#[test]
+fn wide_char_at_last_column_wraps_to_next_line() {
+    // 10-column terminal: wide char at col 9 can't fit, wraps.
+    let mut t = Term::new(5, 10, 0, Theme::default(), crate::event::VoidListener);
+    // Fill to col 9 (last column).
+    feed(&mut t, b"123456789");
+    assert_eq!(t.grid().cursor().col(), Column(9));
+
+    // Write a wide char — doesn't fit in 1 remaining column.
+    feed(&mut t, "世".as_bytes());
+
+    let grid = t.grid();
+    // Col 9 should be a LEADING_WIDE_CHAR_SPACER (padding before wrap).
+    assert!(
+        grid[crate::index::Line(0)][Column(9)]
+            .flags
+            .contains(crate::cell::CellFlags::LEADING_WIDE_CHAR_SPACER),
+        "boundary cell should be LEADING_WIDE_CHAR_SPACER"
+    );
+    // Wide char should be on the next line, col 0.
+    assert_eq!(grid[crate::index::Line(1)][Column(0)].ch, '世');
+    assert!(
+        grid[crate::index::Line(1)][Column(0)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+    assert_eq!(grid.cursor().col(), Column(2));
+    assert_eq!(grid.cursor().line(), 1);
+}
+
+#[test]
+fn wide_char_on_single_column_grid_is_skipped() {
+    // Width-2 char on a 1-column grid — can never fit.
+    let mut t = Term::new(5, 1, 0, Theme::default(), crate::event::VoidListener);
+    feed(&mut t, "世".as_bytes());
+
+    // Cursor shouldn't have moved (char was skipped).
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+// --- Line wrap at column boundary ---
+
+#[test]
+fn printing_past_last_column_wraps_to_next_line() {
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    feed(&mut t, b"ABCDE");
+    // After writing 5 chars in a 5-col grid, cursor is at col 5 (wrap-pending).
+    assert_eq!(t.grid().cursor().col(), Column(5));
+
+    // Next char triggers wrap.
+    feed(&mut t, b"F");
+    let grid = t.grid();
+    assert_eq!(grid.cursor().line(), 1);
+    assert_eq!(grid.cursor().col(), Column(1));
+    assert_eq!(grid[crate::index::Line(1)][Column(0)].ch, 'F');
+    // First line should have WRAP flag on last cell.
+    assert!(
+        grid[crate::index::Line(0)][Column(4)]
+            .flags
+            .contains(crate::cell::CellFlags::WRAP)
+    );
+}
+
+#[test]
+fn wrap_pending_cleared_by_cursor_movement() {
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    feed(&mut t, b"ABCDE");
+    // Wrap pending — cursor at col 5 (one past last).
+    assert_eq!(t.grid().cursor().col(), Column(5));
+
+    // CUB (cursor back 1) clamps to last column first, then moves back by 1.
+    feed(&mut t, b"\x1b[D");
+    assert_eq!(t.grid().cursor().col(), Column(4));
+    assert_eq!(t.grid().cursor().line(), 0);
+
+    // Another CUB moves further back.
+    feed(&mut t, b"\x1b[D");
+    assert_eq!(t.grid().cursor().col(), Column(3));
+}
+
+// --- RIS grid content verification ---
+
+#[test]
+fn ris_clears_grid_content() {
+    let mut t = term();
+    feed(&mut t, b"Hello, World!");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'H');
+
+    // RIS (ESC c).
+    feed(&mut t, b"\x1bc");
+
+    // Grid should be cleared — all cells should be default (space or null).
+    let grid = t.grid();
+    for col in 0..80 {
+        let ch = grid[crate::index::Line(0)][Column(col)].ch;
+        assert!(
+            ch == ' ' || ch == '\0',
+            "cell at col {col} should be blank after RIS, got {ch:?}"
+        );
+    }
+    // Cursor should be at origin.
+    assert_eq!(grid.cursor().col(), Column(0));
+    assert_eq!(grid.cursor().line(), 0);
+}
+
+#[test]
+fn ris_clears_all_visible_lines() {
+    let mut t = term();
+    // Write content on multiple lines.
+    feed(&mut t, b"Line 0\r\nLine 1\r\nLine 2");
+
+    feed(&mut t, b"\x1bc");
+
+    let grid = t.grid();
+    for line in 0..3 {
+        let ch = grid[crate::index::Line(line)][Column(0)].ch;
+        assert!(
+            ch == ' ' || ch == '\0',
+            "line {line} col 0 should be blank after RIS, got {ch:?}"
+        );
+    }
+}
