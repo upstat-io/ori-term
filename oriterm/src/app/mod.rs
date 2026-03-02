@@ -8,6 +8,7 @@
 mod chrome;
 mod clipboard_ops;
 pub(crate) mod config_reload;
+mod context_menu;
 mod cursor_blink;
 mod cursor_hover;
 mod divider_drag;

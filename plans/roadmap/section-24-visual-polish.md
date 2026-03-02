@@ -30,6 +30,9 @@ sections:
     title: Window Backdrop Effects
     status: not-started
   - id: "24.9"
+    title: Scrollable Menus
+    status: not-started
+  - id: "24.10"
     title: Section Completion
     status: not-started
 ---
@@ -359,9 +362,24 @@ Platform-specific compositor effects: Acrylic/Mica on Windows, blur on macOS/Lin
 
 ---
 
-## 24.9 Section Completion
+## 24.9 Scrollable Menus
 
-- [ ] All 24.1-24.8 items complete (including 24.5)
+Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g., 50+ theme entries in the dropdown) don't overflow the window.
+
+**File:** `oriterm_ui/src/widgets/menu/mod.rs`
+
+- [ ] `max_height: Option<f32>` on `MenuStyle` (default: None = unlimited)
+- [ ] When content height exceeds `max_height`: clip entries, show vertical scrollbar
+- [ ] Scrollbar: thin track on right edge, thumb sized proportionally to visible/total ratio
+- [ ] Mouse wheel scrolls menu content
+- [ ] Keyboard navigation auto-scrolls to keep hovered item visible
+- [ ] Scroll position resets to top when menu opens
+
+---
+
+## 24.10 Section Completion
+
+- [ ] All 24.1-24.9 items complete
 - [ ] Cursor blinks at configured rate for blinking styles
 - [ ] Cursor blink resets on keypress
 - [ ] Mouse cursor hides when typing, reappears on move

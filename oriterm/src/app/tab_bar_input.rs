@@ -1,6 +1,6 @@
 //! Tab bar mouse click dispatch.
 //!
-//! Routes left-click presses in the tab bar zone to the appropriate action
+//! Routes mouse clicks in the tab bar zone to the appropriate action
 //! based on the [`TabBarHit`](oriterm_ui::widgets::tab_bar::TabBarHit) at
 //! the cursor position.
 
@@ -9,9 +9,14 @@ use std::time::{Duration, Instant};
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 
+use oriterm_ui::overlay::Placement;
+use oriterm_ui::widgets::menu::{MenuStyle, MenuWidget};
 use oriterm_ui::widgets::tab_bar::TabBarHit;
+use oriterm_ui::widgets::tab_bar::constants::{
+    DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_TOP_MARGIN,
+};
 
-use super::App;
+use super::{App, context_menu};
 
 /// Time window for two clicks to count as a double-click.
 const DOUBLE_CLICK_THRESHOLD: Duration = Duration::from_millis(500);
@@ -27,13 +32,13 @@ impl App {
         state: ElementState,
         event_loop: &ActiveEventLoop,
     ) -> bool {
-        // Only handle left-button events.
-        if button != winit::event::MouseButton::Left {
+        let pos = self.mouse.cursor_pos();
+        if !self.cursor_in_tab_bar(pos) {
             return false;
         }
 
-        let pos = self.mouse.cursor_pos();
-        if !self.cursor_in_tab_bar(pos) {
+        // Only handle left-button events.
+        if button != winit::event::MouseButton::Left {
             return false;
         }
 
@@ -75,8 +80,10 @@ impl App {
                 true
             }
 
-            // Dropdown menu (Section 21): no-op for now.
-            TabBarHit::Dropdown => true,
+            TabBarHit::Dropdown => {
+                self.open_dropdown_menu();
+                true
+            }
 
             TabBarHit::Minimize => {
                 let action = oriterm_ui::widgets::WidgetAction::WindowMinimize;
@@ -100,6 +107,43 @@ impl App {
                 self.handle_tab_bar_drag_area();
                 true
             }
+        }
+    }
+
+    /// Open the dropdown menu below the dropdown button.
+    fn open_dropdown_menu(&mut self) {
+        let active_scheme = self.config.colors.scheme.clone();
+        let names = crate::scheme::builtin_names();
+        let (entries, state) = context_menu::build_dropdown_menu(&active_scheme, &names);
+        let style = MenuStyle::from_theme(&self.ui_theme);
+        let widget = MenuWidget::new(entries).with_style(style);
+
+        // Anchor to the dropdown button rect.
+        let anchor = self
+            .focused_ctx()
+            .map(|ctx| {
+                let dx = ctx.tab_bar.layout().dropdown_x();
+                oriterm_ui::geometry::Rect::new(
+                    dx,
+                    TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
+                    DROPDOWN_BUTTON_WIDTH,
+                    TAB_TOP_MARGIN,
+                )
+            })
+            .unwrap_or_default();
+        let now = Instant::now();
+
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.context_menu = Some(state);
+            ctx.overlays.push_overlay(
+                Box::new(widget),
+                anchor,
+                Placement::Below,
+                &mut ctx.layer_tree,
+                &mut ctx.layer_animator,
+                now,
+            );
+            ctx.dirty = true;
         }
     }
 
