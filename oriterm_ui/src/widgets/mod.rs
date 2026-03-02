@@ -13,6 +13,7 @@ pub mod dialog;
 pub mod dropdown;
 pub mod flex;
 pub mod label;
+pub mod menu;
 pub mod panel;
 pub mod scroll;
 pub mod separator;

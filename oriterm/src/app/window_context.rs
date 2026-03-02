@@ -16,6 +16,7 @@ use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::widgets::tab_bar::{TabBarWidget, TabSlideState};
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
+use super::context_menu::ContextMenuState;
 use super::divider_drag::DividerDragState;
 use super::floating_drag::FloatingDragState;
 use super::tab_drag::TabDragState;
@@ -56,6 +57,7 @@ pub(crate) struct WindowContext {
     pub floating_drag: Option<FloatingDragState>,
     pub tab_drag: Option<TabDragState>,
     pub overlays: OverlayManager,
+    pub context_menu: Option<ContextMenuState>,
     pub hovered_url: Option<DetectedUrl>,
     pub url_cache: UrlDetectCache,
     pub pending_paste: Option<String>,
@@ -96,6 +98,7 @@ impl WindowContext {
             floating_drag: None,
             tab_drag: None,
             overlays: OverlayManager::new(Rect::default()),
+            context_menu: None,
             hovered_url: None,
             url_cache: UrlDetectCache::default(),
             pending_paste: None,

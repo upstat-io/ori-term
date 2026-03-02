@@ -177,7 +177,7 @@ Complete reference of every DECSET/DECRST private mode.
 | 1 | DECCKM (app cursor keys) | [x] |
 | 6 | DECOM (origin mode) | [x] |
 | 7 | DECAWM (auto-wrap) | [x] |
-| 9 | X10 Mouse | [ ] |
+| 9 | X10 Mouse | [x] |
 | 12 | ATT610 (cursor blinking) | [x] |
 | 25 | DECTCEM (show cursor) | [x] |
 | 45 | Reverse Wraparound | [x] |

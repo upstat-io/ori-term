@@ -63,8 +63,7 @@ pub(crate) fn find_builtin(name: &str) -> Option<ColorScheme> {
 }
 
 /// All built-in scheme names, in definition order.
-#[cfg(test)]
-fn builtin_names() -> Vec<&'static str> {
+pub(crate) fn builtin_names() -> Vec<&'static str> {
     BUILTIN_SCHEMES.iter().map(|s| s.name).collect()
 }
 

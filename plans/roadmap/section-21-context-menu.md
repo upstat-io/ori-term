@@ -1,13 +1,13 @@
 ---
 section: 21
 title: Context Menu & Window Controls
-status: not-started
+status: in-progress
 tier: 4
 goal: GPU-rendered context menus, config reload broadcasting, settings UI, window controls
 sections:
   - id: "21.1"
     title: Context Menu
-    status: not-started
+    status: complete
   - id: "21.2"
     title: Config Reload Broadcasting
     status: not-started
@@ -142,6 +142,10 @@ When the config file changes (detected by file watcher), changes must be applied
   - [ ] Store new config: `self.config = new_config`
   - [ ] Mark `tab_bar_dirty = true`, all grids dirty
   - [ ] Request redraw on all windows
+- [ ] `Config::save()` — persist config changes to disk:
+  - [ ] Write current config to TOML file at `config_path()`
+  - [ ] Used by dropdown menu scheme selection (and future settings UI) to persist user choices
+  - [ ] Handle write errors gracefully (log warning, don't crash)
 
 ---
 

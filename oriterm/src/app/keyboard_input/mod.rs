@@ -12,7 +12,7 @@ use oriterm_ui::input::Key;
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::WidgetAction;
 
-use super::{App, mark_mode};
+use super::{App, context_menu, mark_mode};
 use crate::key_encoding::{self, KeyEventType, KeyInput};
 use crate::keybindings;
 
@@ -344,7 +344,13 @@ impl App {
         match result {
             OverlayEventResult::Delivered { response, .. } => match response.action {
                 Some(WidgetAction::Clicked(_)) => self.confirm_paste(),
-                Some(WidgetAction::DismissOverlay(_)) => self.cancel_paste(),
+                Some(WidgetAction::DismissOverlay(_)) => {
+                    self.dismiss_context_menu();
+                    self.cancel_paste();
+                }
+                Some(WidgetAction::Selected { index, .. }) => {
+                    self.dispatch_context_action(index);
+                }
                 _ => {
                     if response.response.is_handled() {
                         if let Some(ctx) = self.focused_ctx_mut() {
@@ -353,8 +359,60 @@ impl App {
                     }
                 }
             },
-            OverlayEventResult::Dismissed(_) => self.cancel_paste(),
+            OverlayEventResult::Dismissed(_) => {
+                self.dismiss_context_menu();
+                self.cancel_paste();
+            }
             OverlayEventResult::Blocked | OverlayEventResult::PassThrough => {}
+        }
+    }
+
+    /// Dispatch a context menu selection by index.
+    fn dispatch_context_action(&mut self, index: usize) {
+        // Resolve the action from the context menu state.
+        let action = self
+            .focused_ctx()
+            .and_then(|ctx| ctx.context_menu.as_ref())
+            .and_then(|cm| cm.resolve(index))
+            .cloned();
+
+        // Dismiss the menu overlay.
+        self.dismiss_context_menu();
+
+        let Some(action) = action else {
+            return;
+        };
+
+        match action {
+            context_menu::ContextAction::SelectScheme(name) => {
+                if let Some(scheme) = crate::scheme::resolve_scheme(&name) {
+                    let palette = crate::scheme::palette_from_scheme(&scheme);
+                    if let Some(pane) = self.active_pane() {
+                        let mut term = pane.terminal().lock();
+                        *term.palette_mut() = palette;
+                        term.grid_mut().dirty_mut().mark_all();
+                    }
+                    self.config.colors.scheme = name;
+                    log::info!("dropdown menu: switched to scheme '{}'", scheme.name);
+                }
+            }
+            context_menu::ContextAction::Settings => {
+                log::debug!("settings action not yet implemented");
+            }
+        }
+
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
+    }
+
+    /// Clear context menu state and dismiss all overlays.
+    fn dismiss_context_menu(&mut self) {
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.context_menu = None;
+            ctx.overlays
+                .clear_all(&mut ctx.layer_tree, &mut ctx.layer_animator);
+            ctx.dirty = true;
         }
     }
 }
