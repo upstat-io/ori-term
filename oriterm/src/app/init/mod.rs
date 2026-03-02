@@ -281,9 +281,8 @@ impl App {
 
         self.panes.insert(pane_id, pane);
 
-        // Drain setup notifications (not useful at init time).
-        let mut discard = Vec::new();
-        mux.drain_notifications(&mut discard);
+        // Discard setup notifications (not useful at init time).
+        mux.discard_notifications();
 
         Ok(())
     }

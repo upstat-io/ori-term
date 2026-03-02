@@ -105,6 +105,11 @@ impl InProcessMux {
         std::mem::swap(&mut self.notifications, out);
     }
 
+    /// Discard all pending notifications without draining to an external buffer.
+    pub fn discard_notifications(&mut self) {
+        self.notifications.clear();
+    }
+
     // -- Accessors --
 
     /// Active tab ID for a given window.

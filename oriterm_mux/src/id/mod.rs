@@ -11,16 +11,14 @@ use std::marker::PhantomData;
 /// Globally unique pane identifier.
 ///
 /// Each pane represents one shell process with its own terminal state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PaneId(u64);
 
 /// Globally unique tab identifier.
 ///
 /// A tab is a layout container that holds one or more panes arranged in a
 /// split tree, plus an optional floating pane layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TabId(u64);
 
 /// Mux-level window identifier.
@@ -28,31 +26,27 @@ pub struct TabId(u64);
 /// This is the mux layer's own window identity, distinct from the platform
 /// window ID (e.g., `winit::window::WindowId`). The GUI layer maintains a
 /// bidirectional mapping between the two.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct WindowId(u64);
 
 /// Session identifier for persistence and restore.
 ///
 /// A session groups windows, tabs, and panes into a restorable unit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SessionId(u64);
 
 /// Domain identifier for shell-spawning backends.
 ///
 /// Each domain represents a distinct environment where shells can be
 /// spawned: local machine, WSL distro, SSH host, serial port, etc.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct DomainId(u64);
 
 /// Client connection identifier.
 ///
 /// Each window process that connects to the mux daemon receives a unique
 /// `ClientId` for the duration of its connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClientId(u64);
 
 impl fmt::Display for PaneId {

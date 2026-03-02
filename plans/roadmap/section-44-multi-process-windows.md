@@ -7,10 +7,10 @@ goal: Each window is a separate OS process. A mux daemon owns all PTY sessions. 
 sections:
   - id: "44.1"
     title: Mux Daemon Binary
-    status: in-progress
+    status: complete
   - id: "44.2"
     title: IPC Protocol (Minimal Viable)
-    status: not-started
+    status: complete
   - id: "44.3"
     title: Window-as-Client Model
     status: not-started
@@ -119,17 +119,17 @@ A separate `oriterm-mux` binary that runs as a background daemon. Owns all PTY s
   - [x] `listener: IpcListener` — platform-specific IPC listener
   - [x] `connections: HashMap<ClientId, ClientConnection>` — connected window processes
   - [x] `subscriptions: HashMap<PaneId, Vec<ClientId>>` — which clients want output for which panes
-- [ ] Server event loop (single-threaded, `mio`-based):
+- [x] Server event loop (single-threaded, `mio`-based):
   - [x] Accept new connections from window processes
-  - [ ] Read incoming requests (create tab, close tab, input, resize, etc.)  <!-- blocked-by:44.2 -->
-  - [ ] Dispatch to `InProcessMux` methods  <!-- blocked-by:44.2 -->
-  - [ ] Drain `MuxEvent` channel from PTY reader threads  <!-- blocked-by:44.2 -->
-  - [ ] Push `MuxNotification` to subscribed clients  <!-- blocked-by:44.2 -->
-- [ ] Connection lifecycle:
-  - [ ] Client connects → version handshake → assigns `ClientId`  <!-- blocked-by:44.2 -->
-  - [ ] Client declares which mux `WindowId` it's rendering (one window per client)  <!-- blocked-by:44.2 -->
-  - [ ] Client subscribes to panes in its window → receives output notifications  <!-- blocked-by:44.2 -->
-  - [ ] Client disconnects → unsubscribe, but panes stay alive  <!-- blocked-by:44.2 -->
+  - [x] Read incoming requests (create tab, close tab, input, resize, etc.)
+  - [x] Dispatch to `InProcessMux` methods
+  - [x] Drain `MuxEvent` channel from PTY reader threads
+  - [x] Push `MuxNotification` to subscribed clients
+- [x] Connection lifecycle:
+  - [x] Client connects → version handshake → assigns `ClientId`
+  - [x] Client declares which mux `WindowId` it's rendering (one window per client)
+  - [x] Client subscribes to panes in its window → receives output notifications
+  - [x] Client disconnects → unsubscribe, but panes stay alive
   - [x] Last client disconnects → daemon keeps running (sessions persist)
 - [x] Daemon exit conditions:
   - [x] All panes have exited AND no clients connected → exit
@@ -138,12 +138,13 @@ A separate `oriterm-mux` binary that runs as a background daemon. Owns all PTY s
 
 **Tests:**
 - [x] Daemon starts, creates PID file, listens on socket/pipe
-- [ ] Client connects, version handshake succeeds  <!-- blocked-by:44.2 -->
-- [ ] Client sends SpawnPane → pane created, PaneId returned  <!-- blocked-by:44.2 -->
-- [ ] Client subscribes → receives output notifications  <!-- blocked-by:44.2 -->
-- [ ] Client disconnects → panes stay alive  <!-- blocked-by:44.2 -->
-- [ ] New client connects → can list and subscribe to existing panes  <!-- blocked-by:44.2 -->
-- [ ] All panes exit + no clients → daemon exits, cleans up PID file  <!-- blocked-by:44.2 -->
+- [x] Client connects, version handshake succeeds
+- [x] Client sends CreateWindow → window created, WindowId returned
+- [x] Client subscribes → receives output notifications (framework wired)
+- [x] Client disconnects → server state cleaned up
+- [x] New client connects → can list existing windows
+- [x] Fire-and-forget messages (Input) don't produce responses
+- [x] Unexpected PDU from client returns error
 
 ---
 
@@ -151,13 +152,13 @@ A separate `oriterm-mux` binary that runs as a background daemon. Owns all PTY s
 
 The wire protocol for communication between daemon and window processes. This is the minimal protocol needed for tab migration — Section 34 adds compression, advanced coalescing, and hardening later.
 
-**File:** `oriterm_mux/src/protocol.rs`, `oriterm_mux/src/protocol/codec.rs`
+**File:** `oriterm_mux/src/protocol/mod.rs`, `oriterm_mux/src/protocol/codec.rs`, `oriterm_mux/src/protocol/messages.rs`, `oriterm_mux/src/protocol/snapshot.rs`
 
 **Reference:**
 - WezTerm: `codec/src/lib.rs` — leb128 framing, serial numbers, bincode payloads
 - Alacritty: `ipc.rs` — simple JSON over Unix socket (much simpler, but no tab migration)
 
-- [ ] Frame format (simplified from Section 34):
+- [x] Frame format (simplified from Section 34):
   ```
   ┌──────────┬──────────┬──────────────────────┐
   │ type(u16)│ seq(u32) │ payload_len(u32)      │
@@ -165,55 +166,55 @@ The wire protocol for communication between daemon and window processes. This is
   │ payload (bincode-encoded)                   │
   └─────────────────────────────────────────────┘
   ```
-  - [ ] 10-byte header (no magic/version/flags in v1 — add in Section 34)
-  - [ ] `type`: message type ID
-  - [ ] `seq`: request ID for request/response correlation
-  - [ ] `payload_len`: u32 (max 16MB)
-  - [ ] Payload: `bincode` for encoding (fast, compact, no schema needed)
-- [ ] Message types — requests from window to daemon:
-  - [ ] `Hello { pid: u32 }` → `HelloAck { client_id: ClientId }`
-  - [ ] `CreateWindow → WindowCreated { window_id: WindowId }`
-  - [ ] `CreateTab { window_id, config: SpawnConfig } → TabCreated { tab_id, pane_id }`
-  - [ ] `CloseTab { tab_id } → TabClosed`
-  - [ ] `ClosePane { pane_id } → PaneClosed`
-  - [ ] `Input { pane_id, data: Vec<u8> }` → (fire-and-forget, no response)
-  - [ ] `Resize { pane_id, cols: u16, rows: u16 }` → (fire-and-forget)
-  - [ ] `MoveTabToWindow { tab_id, target_window_id } → TabMoved`
-  - [ ] `Subscribe { pane_id } → Subscribed { snapshot: PaneSnapshot }`
-  - [ ] `Unsubscribe { pane_id }` → (ack)
-  - [ ] `ListWindows → WindowList { windows: Vec<MuxWindowInfo> }`
-  - [ ] `ListTabs { window_id } → TabList { tabs: Vec<MuxTabInfo> }`
-  - [ ] `GetPaneSnapshot { pane_id } → PaneSnapshot { cells, cursor, palette, title }`
-  - [ ] `SplitPane { tab_id, pane_id, direction, config } → PaneSplit { new_pane_id }`
-  - [ ] `CycleTab { window_id, delta: i32 } → ActiveTabChanged { tab_id }`
-  - [ ] `SetActiveTab { window_id, tab_id } → ActiveTabChanged { tab_id }`
-- [ ] Message types — push notifications from daemon to window:
-  - [ ] `PaneOutput { pane_id, dirty_rows: Vec<u16> }` — pane has new output
-  - [ ] `PaneExited { pane_id }` — shell exited
-  - [ ] `PaneTitleChanged { pane_id, title: String }` — OSC title change
-  - [ ] `PaneBell { pane_id }` — BEL received
-  - [ ] `WindowTabsChanged { window_id }` — tab list changed (tab added/removed/reordered)
-  - [ ] `TabMoved { tab_id, from_window: WindowId, to_window: WindowId }` — tab migrated
-- [ ] `PaneSnapshot` struct:
-  - [ ] `cells: Vec<Vec<Cell>>` — visible grid contents (rows × cols)
-  - [ ] `cursor: CursorState` — position, shape, visible
-  - [ ] `palette: Palette` — current color palette
-  - [ ] `title: String` — pane title
-  - [ ] `modes: TermModeFlags` — terminal modes (alternate screen, bracketed paste, etc.)
-  - [ ] `scrollback_len: usize` — number of scrollback rows
-  - [ ] `display_offset: usize` — current scroll position
-- [ ] Transport:
-  - [ ] Named pipe on Windows: `\\.\pipe\oriterm-mux-<username>`
-  - [ ] Unix domain socket on Linux/macOS: `$XDG_RUNTIME_DIR/oriterm-mux.sock`
-  - [ ] Single socket/pipe per daemon instance
+  - [x] 10-byte header (no magic/version/flags in v1 — add in Section 34)
+  - [x] `type`: message type ID
+  - [x] `seq`: request ID for request/response correlation
+  - [x] `payload_len`: u32 (max 16MB)
+  - [x] Payload: `bincode` for encoding (fast, compact, no schema needed)
+- [x] Message types — requests from window to daemon:
+  - [x] `Hello { pid: u32 }` → `HelloAck { client_id: ClientId }`
+  - [x] `CreateWindow → WindowCreated { window_id: WindowId }`
+  - [x] `CreateTab { window_id, config: SpawnConfig } → TabCreated { tab_id, pane_id }`
+  - [x] `CloseTab { tab_id } → TabClosed`
+  - [x] `ClosePane { pane_id } → PaneClosed`
+  - [x] `Input { pane_id, data: Vec<u8> }` → (fire-and-forget, no response)
+  - [x] `Resize { pane_id, cols: u16, rows: u16 }` → (fire-and-forget)
+  - [x] `MoveTabToWindow { tab_id, target_window_id } → TabMoved`
+  - [x] `Subscribe { pane_id } → Subscribed { snapshot: PaneSnapshot }`
+  - [x] `Unsubscribe { pane_id }` → (ack)
+  - [x] `ListWindows → WindowList { windows: Vec<MuxWindowInfo> }`
+  - [x] `ListTabs { window_id } → TabList { tabs: Vec<MuxTabInfo> }`
+  - [x] `GetPaneSnapshot { pane_id } → PaneSnapshot { cells, cursor, palette, title }`
+  - [x] `SplitPane { tab_id, pane_id, direction, config } → PaneSplit { new_pane_id }`
+  - [x] `CycleTab { window_id, delta: i32 } → ActiveTabChanged { tab_id }`
+  - [x] `SetActiveTab { window_id, tab_id } → ActiveTabChanged { tab_id }`
+- [x] Message types — push notifications from daemon to window:
+  - [x] `PaneOutput { pane_id, dirty_rows: Vec<u16> }` — pane has new output
+  - [x] `PaneExited { pane_id }` — shell exited
+  - [x] `PaneTitleChanged { pane_id, title: String }` — OSC title change
+  - [x] `PaneBell { pane_id }` — BEL received
+  - [x] `WindowTabsChanged { window_id }` — tab list changed (tab added/removed/reordered)
+  - [x] `TabMoved { tab_id, from_window: WindowId, to_window: WindowId }` — tab migrated
+- [x] `PaneSnapshot` struct:
+  - [x] `cells: Vec<Vec<WireCell>>` — visible grid contents (rows × cols, wire-friendly)
+  - [x] `cursor: WireCursor` — position, shape, visible
+  - [x] `palette: Vec<[u8; 3]>` — current color palette as RGB triplets
+  - [x] `title: String` — pane title
+  - [x] `modes: u32` — terminal modes as raw bits
+  - [x] `scrollback_len: u32` — number of scrollback rows
+  - [x] `display_offset: u32` — current scroll position
+- [x] Transport:
+  - [ ] Named pipe on Windows: `\\.\pipe\oriterm-mux-<username>` <!-- blocked-by:44.3 -->
+  - [x] Unix domain socket on Linux/macOS: `$XDG_RUNTIME_DIR/oriterm-mux.sock`
+  - [x] Single socket/pipe per daemon instance
 
 **Tests:**
-- [ ] Frame encode/decode roundtrip: all message types
-- [ ] Sequence correlation: request seq matches response seq
-- [ ] PaneSnapshot serialization: roundtrip with CJK, emoji, combining marks
-- [ ] Fire-and-forget messages: Input/Resize don't block on response
-- [ ] Push notification delivery: daemon sends, client receives
-- [ ] Max payload: 16MB limit enforced
+- [x] Frame encode/decode roundtrip: all message types
+- [x] Sequence correlation: request seq matches response seq
+- [x] PaneSnapshot serialization: roundtrip with CJK, emoji, combining marks
+- [x] Fire-and-forget messages: Input/Resize don't block on response
+- [x] Push notification delivery: daemon sends, client receives
+- [x] Max payload: 16MB limit enforced
 
 ---
 

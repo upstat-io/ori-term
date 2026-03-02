@@ -263,3 +263,125 @@ fn wslenv_user_env_special_values_are_keys_not_values() {
     );
     assert!(result.contains("X11_DISPLAY"), "mixed key: {result}");
 }
+
+// ---------------------------------------------------------------------------
+// User env overrides builtins
+// ---------------------------------------------------------------------------
+
+#[test]
+fn build_command_user_env_overrides_builtins() {
+    // User sets TERM=dumb — should override the default xterm-256color.
+    let config = PtyConfig {
+        env: vec![("TERM".into(), "dumb".into())],
+        shell_integration: false,
+        ..Default::default()
+    };
+    let cmd = build_command(&config);
+
+    assert_eq!(
+        cmd.get_env("TERM").and_then(|v| v.to_str()),
+        Some("dumb"),
+        "user TERM override should take precedence",
+    );
+    // Other builtins should still be set.
+    assert_eq!(
+        cmd.get_env("COLORTERM").and_then(|v| v.to_str()),
+        Some("truecolor"),
+    );
+}
+
+#[test]
+fn build_command_multiple_user_env_vars() {
+    let config = PtyConfig {
+        env: vec![("FOO".into(), "bar".into()), ("BAZ".into(), "qux".into())],
+        shell_integration: false,
+        ..Default::default()
+    };
+    let cmd = build_command(&config);
+
+    assert_eq!(cmd.get_env("FOO").and_then(|v| v.to_str()), Some("bar"),);
+    assert_eq!(cmd.get_env("BAZ").and_then(|v| v.to_str()), Some("qux"),);
+    // Builtins still present.
+    assert_eq!(
+        cmd.get_env("TERM").and_then(|v| v.to_str()),
+        Some("xterm-256color"),
+    );
+}
+
+#[test]
+fn build_command_empty_env_list_leaves_builtins() {
+    let config = PtyConfig {
+        env: Vec::new(),
+        shell_integration: false,
+        ..Default::default()
+    };
+    let cmd = build_command(&config);
+
+    assert_eq!(
+        cmd.get_env("TERM").and_then(|v| v.to_str()),
+        Some("xterm-256color"),
+    );
+    assert_eq!(
+        cmd.get_env("COLORTERM").and_then(|v| v.to_str()),
+        Some("truecolor"),
+    );
+    assert_eq!(
+        cmd.get_env("TERM_PROGRAM").and_then(|v| v.to_str()),
+        Some("oriterm"),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// WSLENV flag collision
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wslenv_flag_collision_existing_has_flags_user_omits() {
+    // Existing WSLENV has FOO/pu (with flags). User provides plain FOO.
+    // The dedup should match FOO (case-insensitive, flag-stripped) and NOT
+    // add a duplicate.
+    let result = compute_wslenv("FOO/pu", &["FOO"]);
+    // Only builtins should be added (FOO already present via existing).
+    if let Some(ref r) = result {
+        let count = r
+            .split(':')
+            .filter(|s| s.eq_ignore_ascii_case("FOO") || s.starts_with("FOO/"))
+            .count();
+        assert_eq!(count, 1, "FOO should appear exactly once: {r}");
+    }
+    // Original entry with flags should be preserved.
+    if let Some(ref r) = result {
+        assert!(
+            r.contains("FOO/pu"),
+            "original flags must be preserved: {r}"
+        );
+    }
+}
+
+#[test]
+fn wslenv_flag_collision_existing_plain_user_same() {
+    // Both existing and user have the same key without flags.
+    let result = compute_wslenv("FOO", &["FOO"]);
+    if let Some(ref r) = result {
+        let count = r.split(':').filter(|s| *s == "FOO").count();
+        assert_eq!(count, 1, "FOO should appear exactly once: {r}");
+    }
+}
+
+#[test]
+fn wslenv_flag_collision_mixed_case_with_flags() {
+    // Existing: "Foo/p" (mixed-case with flags). User: "FOO" (uppercase, no flags).
+    // Dedup extracts "Foo" (before the /), uppercases to "FOO" → match.
+    let result = compute_wslenv("Foo/p", &["FOO"]);
+    if let Some(ref r) = result {
+        let count = r
+            .split(':')
+            .filter(|s| s.eq_ignore_ascii_case("FOO") || s.starts_with("Foo/"))
+            .count();
+        assert_eq!(count, 1, "FOO should not be duplicated: {r}");
+        assert!(
+            r.contains("Foo/p"),
+            "original mixed-case entry preserved: {r}"
+        );
+    }
+}

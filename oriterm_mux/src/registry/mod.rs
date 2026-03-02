@@ -172,6 +172,11 @@ impl SessionRegistry {
         self.windows.len()
     }
 
+    /// Iterate over all windows.
+    pub fn windows(&self) -> &HashMap<WindowId, MuxWindow> {
+        &self.windows
+    }
+
     /// True when this pane is the only pane across all tabs and windows.
     pub fn is_last_pane(&self, pane_id: PaneId) -> bool {
         if self.tabs.len() != 1 {

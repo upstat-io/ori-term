@@ -1,0 +1,765 @@
+//! Tests for the IPC wire protocol.
+
+use std::io::Cursor;
+
+use super::codec::{DecodeError, DecodedFrame, ProtocolCodec};
+use super::messages::{MsgType, MuxPdu};
+use super::snapshot::{
+    MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireCell, WireColor, WireCursor, WireRgb,
+};
+use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
+use crate::id::{ClientId, PaneId, TabId, WindowId};
+use crate::layout::SplitDirection;
+
+// -- FrameHeader tests --
+
+#[test]
+fn header_roundtrip() {
+    let header = FrameHeader {
+        msg_type: 0x0103,
+        seq: 42,
+        payload_len: 1024,
+    };
+    let encoded = header.encode();
+    assert_eq!(encoded.len(), HEADER_LEN);
+    let decoded = FrameHeader::decode(&encoded);
+    assert_eq!(header, decoded);
+}
+
+#[test]
+fn header_zero_values() {
+    let header = FrameHeader {
+        msg_type: 0,
+        seq: 0,
+        payload_len: 0,
+    };
+    let decoded = FrameHeader::decode(&header.encode());
+    assert_eq!(header, decoded);
+}
+
+#[test]
+fn header_max_values() {
+    let header = FrameHeader {
+        msg_type: u16::MAX,
+        seq: u32::MAX,
+        payload_len: u32::MAX,
+    };
+    let decoded = FrameHeader::decode(&header.encode());
+    assert_eq!(header, decoded);
+}
+
+// -- MsgType tests --
+
+#[test]
+fn msg_type_roundtrip_all() {
+    let types = [
+        MsgType::Hello,
+        MsgType::CreateWindow,
+        MsgType::CreateTab,
+        MsgType::CloseTab,
+        MsgType::ClosePane,
+        MsgType::Input,
+        MsgType::Resize,
+        MsgType::MoveTabToWindow,
+        MsgType::Subscribe,
+        MsgType::Unsubscribe,
+        MsgType::ListWindows,
+        MsgType::ListTabs,
+        MsgType::GetPaneSnapshot,
+        MsgType::SplitPane,
+        MsgType::CycleTab,
+        MsgType::SetActiveTab,
+        MsgType::HelloAck,
+        MsgType::WindowCreated,
+        MsgType::TabCreated,
+        MsgType::TabClosed,
+        MsgType::PaneClosedAck,
+        MsgType::TabMovedAck,
+        MsgType::Subscribed,
+        MsgType::Unsubscribed,
+        MsgType::WindowList,
+        MsgType::TabList,
+        MsgType::PaneSnapshotResp,
+        MsgType::PaneSplit,
+        MsgType::ActiveTabChanged,
+        MsgType::Error,
+        MsgType::NotifyPaneOutput,
+        MsgType::NotifyPaneExited,
+        MsgType::NotifyPaneTitleChanged,
+        MsgType::NotifyPaneBell,
+        MsgType::NotifyWindowTabsChanged,
+        MsgType::NotifyTabMoved,
+    ];
+    for t in types {
+        let raw = t as u16;
+        let back = MsgType::from_u16(raw)
+            .unwrap_or_else(|| panic!("MsgType::from_u16(0x{raw:04X}) returned None for {t:?}"));
+        assert_eq!(t, back);
+    }
+}
+
+#[test]
+fn msg_type_unknown_returns_none() {
+    assert!(MsgType::from_u16(0x0000).is_none());
+    assert!(MsgType::from_u16(0xFFFF).is_none());
+    assert!(MsgType::from_u16(0x0400).is_none());
+}
+
+// -- Frame encode/decode roundtrip tests --
+
+/// Encode a PDU, then decode it, asserting equality.
+fn roundtrip(seq: u32, pdu: MuxPdu) -> DecodedFrame {
+    let mut buf = Vec::new();
+    ProtocolCodec::encode_frame(&mut buf, seq, &pdu).expect("encode");
+
+    let mut reader = Cursor::new(buf);
+    let frame = ProtocolCodec::decode_frame(&mut reader).expect("decode");
+
+    assert_eq!(frame.seq, seq);
+    assert_eq!(frame.pdu, pdu);
+    frame
+}
+
+#[test]
+fn roundtrip_hello() {
+    roundtrip(1, MuxPdu::Hello { pid: 12345 });
+}
+
+#[test]
+fn roundtrip_hello_ack() {
+    roundtrip(
+        1,
+        MuxPdu::HelloAck {
+            client_id: ClientId::from_raw(7),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_create_window() {
+    roundtrip(2, MuxPdu::CreateWindow);
+}
+
+#[test]
+fn roundtrip_create_tab() {
+    roundtrip(
+        3,
+        MuxPdu::CreateTab {
+            window_id: WindowId::from_raw(1),
+            shell: Some("/bin/bash".into()),
+            cwd: Some("/home/user".into()),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_create_tab_defaults() {
+    roundtrip(
+        4,
+        MuxPdu::CreateTab {
+            window_id: WindowId::from_raw(1),
+            shell: None,
+            cwd: None,
+        },
+    );
+}
+
+#[test]
+fn roundtrip_close_tab() {
+    roundtrip(
+        5,
+        MuxPdu::CloseTab {
+            tab_id: TabId::from_raw(3),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_close_pane() {
+    roundtrip(
+        6,
+        MuxPdu::ClosePane {
+            pane_id: PaneId::from_raw(4),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_input_fire_and_forget() {
+    let pdu = MuxPdu::Input {
+        pane_id: PaneId::from_raw(1),
+        data: b"hello world\r".to_vec(),
+    };
+    assert!(pdu.is_fire_and_forget());
+    roundtrip(0, pdu);
+}
+
+#[test]
+fn roundtrip_resize_fire_and_forget() {
+    let pdu = MuxPdu::Resize {
+        pane_id: PaneId::from_raw(1),
+        cols: 120,
+        rows: 40,
+    };
+    assert!(pdu.is_fire_and_forget());
+    roundtrip(0, pdu);
+}
+
+#[test]
+fn roundtrip_move_tab() {
+    roundtrip(
+        7,
+        MuxPdu::MoveTabToWindow {
+            tab_id: TabId::from_raw(2),
+            target_window_id: WindowId::from_raw(5),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_subscribe() {
+    roundtrip(
+        8,
+        MuxPdu::Subscribe {
+            pane_id: PaneId::from_raw(1),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_unsubscribe() {
+    roundtrip(
+        9,
+        MuxPdu::Unsubscribe {
+            pane_id: PaneId::from_raw(1),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_list_windows() {
+    roundtrip(10, MuxPdu::ListWindows);
+}
+
+#[test]
+fn roundtrip_list_tabs() {
+    roundtrip(
+        11,
+        MuxPdu::ListTabs {
+            window_id: WindowId::from_raw(1),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_get_pane_snapshot() {
+    roundtrip(
+        12,
+        MuxPdu::GetPaneSnapshot {
+            pane_id: PaneId::from_raw(1),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_split_pane() {
+    roundtrip(
+        13,
+        MuxPdu::SplitPane {
+            tab_id: TabId::from_raw(1),
+            pane_id: PaneId::from_raw(1),
+            direction: SplitDirection::Vertical,
+            shell: None,
+            cwd: None,
+        },
+    );
+}
+
+#[test]
+fn roundtrip_cycle_tab() {
+    roundtrip(
+        14,
+        MuxPdu::CycleTab {
+            window_id: WindowId::from_raw(1),
+            delta: -1,
+        },
+    );
+}
+
+#[test]
+fn roundtrip_set_active_tab() {
+    roundtrip(
+        15,
+        MuxPdu::SetActiveTab {
+            window_id: WindowId::from_raw(1),
+            tab_id: TabId::from_raw(3),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_error_response() {
+    roundtrip(
+        99,
+        MuxPdu::Error {
+            message: "pane not found".into(),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_window_list() {
+    roundtrip(
+        16,
+        MuxPdu::WindowList {
+            windows: vec![
+                MuxWindowInfo {
+                    window_id: WindowId::from_raw(1),
+                    tab_count: 3,
+                    active_tab_id: TabId::from_raw(2),
+                },
+                MuxWindowInfo {
+                    window_id: WindowId::from_raw(2),
+                    tab_count: 1,
+                    active_tab_id: TabId::from_raw(4),
+                },
+            ],
+        },
+    );
+}
+
+#[test]
+fn roundtrip_tab_list() {
+    roundtrip(
+        17,
+        MuxPdu::TabList {
+            tabs: vec![MuxTabInfo {
+                tab_id: TabId::from_raw(1),
+                active_pane_id: PaneId::from_raw(1),
+                pane_count: 2,
+                title: "vim".into(),
+            }],
+        },
+    );
+}
+
+#[test]
+fn roundtrip_tab_created() {
+    roundtrip(
+        18,
+        MuxPdu::TabCreated {
+            tab_id: TabId::from_raw(5),
+            pane_id: PaneId::from_raw(9),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_unit_responses() {
+    roundtrip(19, MuxPdu::TabClosed);
+    roundtrip(20, MuxPdu::PaneClosedAck);
+    roundtrip(21, MuxPdu::TabMovedAck);
+    roundtrip(22, MuxPdu::Unsubscribed);
+}
+
+#[test]
+fn roundtrip_active_tab_changed() {
+    roundtrip(
+        23,
+        MuxPdu::ActiveTabChanged {
+            tab_id: TabId::from_raw(7),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_pane_split() {
+    roundtrip(
+        24,
+        MuxPdu::PaneSplit {
+            new_pane_id: PaneId::from_raw(10),
+        },
+    );
+}
+
+// -- Notification roundtrips --
+
+#[test]
+fn roundtrip_notify_pane_output() {
+    let pdu = MuxPdu::NotifyPaneOutput {
+        pane_id: PaneId::from_raw(1),
+        dirty_rows: vec![0, 5, 23],
+    };
+    assert!(pdu.is_notification());
+    roundtrip(0, pdu);
+}
+
+#[test]
+fn roundtrip_notify_pane_exited() {
+    let pdu = MuxPdu::NotifyPaneExited {
+        pane_id: PaneId::from_raw(2),
+    };
+    assert!(pdu.is_notification());
+    roundtrip(0, pdu);
+}
+
+#[test]
+fn roundtrip_notify_title_changed() {
+    roundtrip(
+        0,
+        MuxPdu::NotifyPaneTitleChanged {
+            pane_id: PaneId::from_raw(1),
+            title: "vim main.rs".into(),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_notify_bell() {
+    roundtrip(
+        0,
+        MuxPdu::NotifyPaneBell {
+            pane_id: PaneId::from_raw(1),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_notify_window_tabs_changed() {
+    roundtrip(
+        0,
+        MuxPdu::NotifyWindowTabsChanged {
+            window_id: WindowId::from_raw(1),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_notify_tab_moved() {
+    roundtrip(
+        0,
+        MuxPdu::NotifyTabMoved {
+            tab_id: TabId::from_raw(3),
+            from_window: WindowId::from_raw(1),
+            to_window: WindowId::from_raw(2),
+        },
+    );
+}
+
+// -- PaneSnapshot roundtrip --
+
+fn sample_snapshot() -> PaneSnapshot {
+    PaneSnapshot {
+        cells: vec![
+            vec![
+                WireCell {
+                    ch: 'A',
+                    fg: WireColor::Named(7),
+                    bg: WireColor::Named(0),
+                    flags: 0,
+                    zerowidth: vec![],
+                },
+                WireCell {
+                    ch: '你',
+                    fg: WireColor::Rgb(WireRgb {
+                        r: 255,
+                        g: 128,
+                        b: 0,
+                    }),
+                    bg: WireColor::Indexed(236),
+                    flags: 0x0100, // WIDE_CHAR
+                    zerowidth: vec![],
+                },
+            ],
+            vec![WireCell {
+                ch: 'e',
+                fg: WireColor::Named(2),
+                bg: WireColor::Named(0),
+                flags: 0x0001 | 0x0004,      // BOLD | ITALIC
+                zerowidth: vec!['\u{0301}'], // combining acute accent
+            }],
+        ],
+        cursor: WireCursor {
+            col: 5,
+            row: 0,
+            shape: 0,
+            visible: true,
+        },
+        palette: (0..270).map(|i| [(i % 256) as u8, 0, 0]).collect(),
+        title: "bash — ~/projects".into(),
+        modes: 0x0201, // SHOW_CURSOR | ALT_SCREEN
+        scrollback_len: 1500,
+        display_offset: 0,
+    }
+}
+
+#[test]
+fn roundtrip_pane_snapshot() {
+    let snapshot = sample_snapshot();
+    roundtrip(
+        30,
+        MuxPdu::PaneSnapshotResp {
+            snapshot: snapshot.clone(),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_subscribed_with_snapshot() {
+    let snapshot = sample_snapshot();
+    roundtrip(31, MuxPdu::Subscribed { snapshot });
+}
+
+#[test]
+fn snapshot_with_cjk_emoji_combining() {
+    let snapshot = PaneSnapshot {
+        cells: vec![vec![
+            // CJK wide char.
+            WireCell {
+                ch: '漢',
+                fg: WireColor::Named(7),
+                bg: WireColor::Named(0),
+                flags: 0x0100,
+                zerowidth: vec![],
+            },
+            // Emoji (🦀).
+            WireCell {
+                ch: '🦀',
+                fg: WireColor::Rgb(WireRgb {
+                    r: 255,
+                    g: 69,
+                    b: 0,
+                }),
+                bg: WireColor::Named(0),
+                flags: 0x0100,
+                zerowidth: vec![],
+            },
+            // Combining marks (e + combining acute + combining tilde).
+            WireCell {
+                ch: 'e',
+                fg: WireColor::Named(7),
+                bg: WireColor::Named(0),
+                flags: 0,
+                zerowidth: vec!['\u{0301}', '\u{0303}'],
+            },
+        ]],
+        cursor: WireCursor {
+            col: 0,
+            row: 0,
+            shape: 2,
+            visible: true,
+        },
+        palette: vec![[0, 0, 0]; 270],
+        title: "unicode test 🚀".into(),
+        modes: 0,
+        scrollback_len: 0,
+        display_offset: 0,
+    };
+
+    roundtrip(32, MuxPdu::PaneSnapshotResp { snapshot });
+}
+
+// -- Sequence correlation tests --
+
+#[test]
+fn sequence_correlation() {
+    let mut buf = Vec::new();
+    ProtocolCodec::encode_frame(&mut buf, 100, &MuxPdu::Hello { pid: 1 }).unwrap();
+    ProtocolCodec::encode_frame(
+        &mut buf,
+        100,
+        &MuxPdu::HelloAck {
+            client_id: ClientId::from_raw(1),
+        },
+    )
+    .unwrap();
+    ProtocolCodec::encode_frame(&mut buf, 101, &MuxPdu::CreateWindow).unwrap();
+
+    let mut reader = Cursor::new(buf);
+    let f1 = ProtocolCodec::decode_frame(&mut reader).unwrap();
+    let f2 = ProtocolCodec::decode_frame(&mut reader).unwrap();
+    let f3 = ProtocolCodec::decode_frame(&mut reader).unwrap();
+
+    // Request and response share the same seq.
+    assert_eq!(f1.seq, 100);
+    assert_eq!(f2.seq, 100);
+    // Different request has a different seq.
+    assert_eq!(f3.seq, 101);
+}
+
+// -- Fire-and-forget tests --
+
+#[test]
+fn fire_and_forget_no_block() {
+    let mut buf = Vec::new();
+    // Fire-and-forget messages use seq=0.
+    ProtocolCodec::encode_frame(
+        &mut buf,
+        0,
+        &MuxPdu::Input {
+            pane_id: PaneId::from_raw(1),
+            data: b"ls\r".to_vec(),
+        },
+    )
+    .unwrap();
+    ProtocolCodec::encode_frame(
+        &mut buf,
+        0,
+        &MuxPdu::Resize {
+            pane_id: PaneId::from_raw(1),
+            cols: 80,
+            rows: 24,
+        },
+    )
+    .unwrap();
+
+    let mut reader = Cursor::new(buf);
+    let f1 = ProtocolCodec::decode_frame(&mut reader).unwrap();
+    let f2 = ProtocolCodec::decode_frame(&mut reader).unwrap();
+
+    assert_eq!(f1.seq, 0);
+    assert_eq!(f2.seq, 0);
+    assert!(f1.pdu.is_fire_and_forget());
+    assert!(f2.pdu.is_fire_and_forget());
+}
+
+// -- Push notification delivery --
+
+#[test]
+fn notification_delivery() {
+    let mut buf = Vec::new();
+    let notifications = vec![
+        MuxPdu::NotifyPaneOutput {
+            pane_id: PaneId::from_raw(1),
+            dirty_rows: vec![0, 1, 2],
+        },
+        MuxPdu::NotifyPaneExited {
+            pane_id: PaneId::from_raw(2),
+        },
+        MuxPdu::NotifyPaneTitleChanged {
+            pane_id: PaneId::from_raw(1),
+            title: "new title".into(),
+        },
+    ];
+
+    for n in &notifications {
+        ProtocolCodec::encode_frame(&mut buf, 0, n).unwrap();
+    }
+
+    let mut reader = Cursor::new(buf);
+    for expected in &notifications {
+        let frame = ProtocolCodec::decode_frame(&mut reader).unwrap();
+        assert_eq!(frame.seq, 0);
+        assert!(frame.pdu.is_notification());
+        assert_eq!(&frame.pdu, expected);
+    }
+}
+
+// -- Error condition tests --
+
+#[test]
+fn decode_payload_too_large() {
+    // Craft a header with payload_len > MAX_PAYLOAD.
+    let header = FrameHeader {
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: MAX_PAYLOAD + 1,
+    };
+    let mut buf = header.encode().to_vec();
+    // Append some dummy payload bytes.
+    buf.extend_from_slice(&[0u8; 64]);
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    assert!(matches!(err, DecodeError::PayloadTooLarge(_)));
+}
+
+#[test]
+fn decode_unknown_msg_type() {
+    let header = FrameHeader {
+        msg_type: 0xFFFF,
+        seq: 1,
+        payload_len: 0,
+    };
+    let buf = header.encode().to_vec();
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    assert!(matches!(err, DecodeError::UnknownMsgType(0xFFFF)));
+}
+
+#[test]
+fn decode_truncated_header() {
+    let buf = vec![0u8; 5]; // Only 5 bytes, header needs 10.
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    assert!(matches!(err, DecodeError::Io(_)));
+}
+
+#[test]
+fn decode_truncated_payload() {
+    let header = FrameHeader {
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: 100,
+    };
+    let mut buf = header.encode().to_vec();
+    buf.extend_from_slice(&[0u8; 10]); // Only 10 bytes, claims 100.
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    assert!(matches!(err, DecodeError::Io(_)));
+}
+
+// -- Multiple frames in a stream --
+
+#[test]
+fn multiple_frames_sequential() {
+    let mut buf = Vec::new();
+    let pdus = vec![
+        (1, MuxPdu::Hello { pid: 1000 }),
+        (
+            1,
+            MuxPdu::HelloAck {
+                client_id: ClientId::from_raw(1),
+            },
+        ),
+        (2, MuxPdu::CreateWindow),
+        (
+            2,
+            MuxPdu::WindowCreated {
+                window_id: WindowId::from_raw(1),
+            },
+        ),
+        (
+            3,
+            MuxPdu::CreateTab {
+                window_id: WindowId::from_raw(1),
+                shell: None,
+                cwd: None,
+            },
+        ),
+        (
+            3,
+            MuxPdu::TabCreated {
+                tab_id: TabId::from_raw(1),
+                pane_id: PaneId::from_raw(1),
+            },
+        ),
+    ];
+
+    for (seq, pdu) in &pdus {
+        ProtocolCodec::encode_frame(&mut buf, *seq, pdu).unwrap();
+    }
+
+    let mut reader = Cursor::new(buf);
+    for (expected_seq, expected_pdu) in &pdus {
+        let frame = ProtocolCodec::decode_frame(&mut reader).unwrap();
+        assert_eq!(frame.seq, *expected_seq);
+        assert_eq!(&frame.pdu, expected_pdu);
+    }
+
+    // Stream exhausted — next decode should fail with UnexpectedEof.
+    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    assert!(matches!(err, DecodeError::Io(_)));
+}
