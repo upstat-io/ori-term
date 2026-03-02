@@ -37,6 +37,19 @@ impl App {
             return false;
         }
 
+        // Right-click on a tab opens the tab context menu.
+        if button == winit::event::MouseButton::Right && state == ElementState::Pressed {
+            let hit = self
+                .focused_ctx()
+                .map_or(TabBarHit::None, |ctx| ctx.tab_bar.hover_hit());
+            if let TabBarHit::Tab(idx) = hit {
+                self.open_tab_context_menu(idx);
+                return true;
+            }
+            // Right-click elsewhere in the tab bar is consumed without action.
+            return true;
+        }
+
         // Only handle left-button events.
         if button != winit::event::MouseButton::Left {
             return false;
@@ -107,6 +120,42 @@ impl App {
                 self.handle_tab_bar_drag_area();
                 true
             }
+        }
+    }
+
+    /// Open the tab right-click context menu below the clicked tab.
+    fn open_tab_context_menu(&mut self, tab_index: usize) {
+        let (entries, state) = context_menu::build_tab_context_menu(tab_index);
+        let style = MenuStyle::from_theme(&self.ui_theme);
+        let widget = MenuWidget::new(entries).with_style(style);
+
+        // Anchor to the right-clicked tab rect.
+        let anchor = self
+            .focused_ctx()
+            .map(|ctx| {
+                let layout = ctx.tab_bar.layout();
+                let tx = layout.tab_x(tab_index);
+                oriterm_ui::geometry::Rect::new(
+                    tx,
+                    TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
+                    layout.tab_width,
+                    TAB_TOP_MARGIN,
+                )
+            })
+            .unwrap_or_default();
+        let now = Instant::now();
+
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.context_menu = Some(state);
+            ctx.overlays.push_overlay(
+                Box::new(widget),
+                anchor,
+                Placement::Below,
+                &mut ctx.layer_tree,
+                &mut ctx.layer_animator,
+                now,
+            );
+            ctx.dirty = true;
         }
     }
 

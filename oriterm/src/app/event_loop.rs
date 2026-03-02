@@ -308,6 +308,22 @@ impl ApplicationHandler<TermEvent> for App {
             self.create_window(event_loop);
         }
 
+        // Process deferred move-tab-to-new-window (context menu action).
+        if let Some(tab_index) = self.pending_move_tab_to_window.take() {
+            // Resolve tab index to TabId.
+            let tab_id = {
+                let mux = self.mux.as_ref();
+                let win_id = self.active_window;
+                mux.zip(win_id).and_then(|(m, wid)| {
+                    let win = m.session().get_window(wid)?;
+                    win.tabs().get(tab_index).copied()
+                })
+            };
+            if let Some(tab_id) = tab_id {
+                self.move_tab_to_new_window(tab_id, event_loop);
+            }
+        }
+
         // Check for completed OS-level tab drag (tear-off + merge).
         #[cfg(target_os = "windows")]
         self.check_torn_off_merge();

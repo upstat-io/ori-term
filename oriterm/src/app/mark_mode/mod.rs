@@ -278,7 +278,7 @@ fn extend_or_create_selection(
 }
 
 /// Select the entire buffer (scrollback + visible).
-fn select_all(pane: &mut Pane) {
+pub(super) fn select_all(pane: &mut Pane) {
     let (start_row, end_row, cols) = {
         let term = pane.terminal().lock();
         let g = term.grid();

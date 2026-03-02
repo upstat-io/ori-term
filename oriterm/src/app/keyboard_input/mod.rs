@@ -399,6 +399,35 @@ impl App {
             context_menu::ContextAction::Settings => {
                 log::debug!("settings action not yet implemented");
             }
+            context_menu::ContextAction::CloseTab(idx) => {
+                self.close_tab_at_index(idx);
+            }
+            context_menu::ContextAction::DuplicateTab(_idx) => {
+                // Duplicate creates a new tab in the same window (inherits CWD
+                // from the active pane — same as the keyboard shortcut).
+                if let Some(win_id) = self.active_window {
+                    self.new_tab_in_window(win_id);
+                }
+            }
+            context_menu::ContextAction::MoveToNewWindow(idx) => {
+                self.move_tab_to_new_window_deferred(idx);
+            }
+            context_menu::ContextAction::Copy => {
+                self.copy_selection();
+            }
+            context_menu::ContextAction::Paste => {
+                self.paste_from_clipboard();
+            }
+            context_menu::ContextAction::SelectAll => {
+                if let Some(pane) = self.active_pane_mut() {
+                    mark_mode::select_all(pane);
+                }
+            }
+            context_menu::ContextAction::NewTab => {
+                if let Some(win_id) = self.active_window {
+                    self.new_tab_in_window(win_id);
+                }
+            }
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {

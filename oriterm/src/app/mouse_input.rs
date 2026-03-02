@@ -3,9 +3,15 @@
 //! Routes mouse button presses and releases through overlays, chrome,
 //! PTY mouse reporting, and selection.
 
+use std::time::Instant;
+
 use winit::event::{ElementState, MouseButton};
 
-use super::{App, mouse_report, mouse_selection};
+use oriterm_ui::geometry::{Point, Rect};
+use oriterm_ui::overlay::Placement;
+use oriterm_ui::widgets::menu::{MenuStyle, MenuWidget};
+
+use super::{App, context_menu, mouse_report, mouse_selection};
 
 impl App {
     /// Route a mouse event through the overlay manager.
@@ -18,7 +24,7 @@ impl App {
             _ => return false,
         };
         let pos = self.mouse.cursor_pos();
-        let logical = oriterm_ui::geometry::Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
+        let logical = Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
         let mb = match button {
             MouseButton::Left => oriterm_ui::input::MouseButton::Left,
             MouseButton::Right => oriterm_ui::input::MouseButton::Right,
@@ -44,7 +50,7 @@ impl App {
         };
         // Borrow split: inline window lookup borrows only self.windows,
         // leaving self.renderer and self.ui_theme available as disjoint borrows.
-        let now = std::time::Instant::now();
+        let now = Instant::now();
         let result = {
             let Some(ctx) = self
                 .focused_window_id
@@ -79,8 +85,7 @@ impl App {
             Some(ctx) if !ctx.overlays.is_empty() => ctx.window.scale_factor().factor() as f32,
             _ => return false,
         };
-        let logical =
-            oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
+        let logical = Point::new(position.x as f32 / scale, position.y as f32 / scale);
         let ui_event = oriterm_ui::input::MouseEvent {
             kind: oriterm_ui::input::MouseEventKind::Move,
             pos: logical,
@@ -94,7 +99,7 @@ impl App {
             Some(m) => m,
             None => return true,
         };
-        let now = std::time::Instant::now();
+        let now = Instant::now();
         let result = {
             let Some(ctx) = self
                 .focused_window_id
@@ -116,6 +121,35 @@ impl App {
         // Only consume if a modal overlay blocked or handled it.
         self.focused_ctx()
             .is_some_and(|ctx| ctx.overlays.has_modal())
+    }
+
+    /// Open the grid right-click context menu at the cursor position.
+    fn open_grid_context_menu(&mut self) {
+        let has_sel = self.active_pane().is_some_and(|p| p.selection().is_some());
+        let (entries, state) = context_menu::build_grid_context_menu(has_sel);
+        let style = MenuStyle::from_theme(&self.ui_theme);
+        let widget = MenuWidget::new(entries).with_style(style);
+
+        // Convert cursor position to logical pixels for overlay placement.
+        let pos = self.mouse.cursor_pos();
+        let scale = self
+            .focused_ctx()
+            .map_or(1.0, |ctx| ctx.window.scale_factor().factor() as f32);
+        let logical = Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
+        let now = Instant::now();
+
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.context_menu = Some(state);
+            ctx.overlays.push_overlay(
+                Box::new(widget),
+                Rect::default(),
+                Placement::AtPoint(logical),
+                &mut ctx.layer_tree,
+                &mut ctx.layer_animator,
+                now,
+            );
+            ctx.dirty = true;
+        }
     }
 
     /// Handle mouse press for selection.
@@ -270,15 +304,7 @@ impl App {
                     };
                     self.report_mouse_button(mouse_report::MouseButton::Right, kind, mode);
                 } else if state == ElementState::Pressed {
-                    let has_sel = self.active_pane().is_some_and(|p| p.selection().is_some());
-                    if has_sel {
-                        self.copy_selection();
-                    } else {
-                        self.paste_from_clipboard();
-                    }
-                    if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.dirty = true;
-                    }
+                    self.open_grid_context_menu();
                 } else {
                     // Release without reporting: no action needed.
                 }

@@ -230,6 +230,14 @@ impl App {
         }
     }
 
+    /// Defers a move-tab-to-new-window request.
+    ///
+    /// Resolves the tab index to a `TabId` and stores it for processing
+    /// in `about_to_wait` where `ActiveEventLoop` is available.
+    pub(super) fn move_tab_to_new_window_deferred(&mut self, tab_index: usize) {
+        self.pending_move_tab_to_window = Some(tab_index);
+    }
+
     /// Move a tab to a new window.
     ///
     /// Creates a new window, then moves the tab there. Refuses if the tab
