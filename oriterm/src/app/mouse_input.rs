@@ -159,7 +159,7 @@ impl App {
             return;
         };
         // Borrow split: inline window lookup borrows self.windows immutably,
-        // leaving self.panes available for mutable access.
+        // leaving self.mux available for mutable pane access.
         let (Some(wctx), Some(renderer)) = (
             self.focused_window_id.and_then(|id| self.windows.get(&id)),
             self.renderer.as_ref(),
@@ -171,7 +171,7 @@ impl App {
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };
-        let Some(pane) = self.panes.get_mut(&pane_id) else {
+        let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(pane_id)) else {
             return;
         };
         if mouse_selection::handle_press(&mut self.mouse, pane, &ctx, pos, self.modifiers) {
@@ -197,7 +197,7 @@ impl App {
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };
-        let Some(pane) = self.panes.get_mut(&pane_id) else {
+        let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(pane_id)) else {
             return;
         };
         if mouse_selection::handle_drag(&mut self.mouse, pane, &ctx, position) {

@@ -45,7 +45,7 @@ impl App {
         let Some(ctx) = self.focused_ctx() else {
             return no_hit;
         };
-        let Some(pane) = self.panes.get(&pane_id) else {
+        let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) else {
             return no_hit;
         };
 
@@ -72,7 +72,7 @@ impl App {
         }
 
         // Borrow split: inline window lookup borrows only self.windows,
-        // leaving self.panes available (pane/term still borrowed above).
+        // leaving self.mux available (pane/term still borrowed above).
         let url_hit = {
             let Some(ctx) = self
                 .focused_window_id

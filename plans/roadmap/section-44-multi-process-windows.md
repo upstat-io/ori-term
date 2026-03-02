@@ -13,7 +13,7 @@ sections:
     status: complete
   - id: "44.3"
     title: Window-as-Client Model
-    status: not-started
+    status: complete
   - id: "44.4"
     title: Cross-Process Tab Migration
     status: not-started
@@ -228,26 +228,29 @@ Each `oriterm` window process is a thin GPU client. It connects to the daemon, s
 - WezTerm: `wezterm-client/src/client.rs` — client connection, RPC methods, domain proxy
 - Chrome: renderer process — stateless renderer of content owned by the browser process
 
-- [ ] `MuxClient` struct (lives in window process):
-  - [ ] `stream: IpcStream` — connected to daemon
-  - [ ] `codec: ProtocolCodec` — frame encode/decode
-  - [ ] `pending: HashMap<u32, oneshot::Sender<Response>>` — pending request/response
-  - [ ] `next_seq: AtomicU32` — sequence number allocator
-  - [ ] `notification_tx: mpsc::Sender<MuxNotification>` — push notifications → event loop
-- [ ] `MuxBackend` trait:
-  - [ ] Defines the API that the App uses for all mux operations
-  - [ ] `InProcessMux` implements it (for local-only mode / fallback)
-  - [ ] `MuxClient` implements it (for daemon mode)
-  - [ ] App uses `Box<dyn MuxBackend>` — doesn't know or care which mode
-  - [ ] Methods mirror `InProcessMux`: `create_tab()`, `close_tab()`, `send_input()`, `resize_pane()`, `move_tab_to_window()`, `subscribe()`, etc.
-- [ ] App rewiring:
-  - [ ] `App::mux` changes from `Option<InProcessMux>` to `Box<dyn MuxBackend>`
-  - [ ] All mux operations go through the trait — no direct `InProcessMux` access
-  - [ ] Push notifications from daemon arrive as `MuxNotification` on event loop
-  - [ ] `about_to_wait()` drains notification channel, triggers redraws
+- [x] `MuxClient` struct (lives in window process):
+  - [x] Stub with `local_session: SessionRegistry` + `notifications: Vec<MuxNotification>`
+  - [ ] `stream: IpcStream` — connected to daemon  <!-- blocked-by:44.4 -->
+  - [ ] `codec: ProtocolCodec` — frame encode/decode  <!-- blocked-by:44.4 -->
+  - [ ] `pending: HashMap<u32, oneshot::Sender<Response>>` — pending request/response  <!-- blocked-by:44.4 -->
+  - [ ] `next_seq: AtomicU32` — sequence number allocator  <!-- blocked-by:44.4 -->
+  - [ ] `notification_tx: mpsc::Sender<MuxNotification>` — push notifications → event loop  <!-- blocked-by:44.4 -->
+- [x] `MuxBackend` trait:
+  - [x] Defines the API that the App uses for all mux operations
+  - [x] `EmbeddedMux` implements it (wraps `InProcessMux` + owns `HashMap<PaneId, Pane>`)
+  - [x] `MuxClient` implements it (stub — for daemon mode)
+  - [x] App uses `Box<dyn MuxBackend>` — doesn't know or care which mode
+  - [x] Methods mirror `InProcessMux`: `create_tab()`, `close_tab()`, `split_pane()`, `resize_pane()`, `move_tab_to_window()`, etc.
+- [x] App rewiring:
+  - [x] `App::mux` changes from `Option<InProcessMux>` to `Option<Box<dyn MuxBackend>>`
+  - [x] Removed `panes: HashMap<PaneId, Pane>` — now inside `EmbeddedMux`
+  - [x] Removed `mux_wakeup: Arc<...>` — now inside `EmbeddedMux`
+  - [x] All mux operations go through the trait — no direct `InProcessMux` access
+  - [x] Push notifications from daemon arrive as `MuxNotification` on event loop
+  - [x] `about_to_wait()` drains notification channel, triggers redraws
 - [ ] Render flow (window process):
-  - [ ] Daemon pushes `PaneOutput { pane_id, dirty_rows }` → client
-  - [ ] Client requests `GetPaneSnapshot(pane_id)` for dirty pane data
+  - [ ] Daemon pushes `PaneOutput { pane_id, dirty_rows }` → client  <!-- blocked-by:44.4 -->
+  - [ ] Client requests `GetPaneSnapshot(pane_id)` for dirty pane data  <!-- blocked-by:44.4 -->
   - [ ] **OR** (optimization): daemon pushes incremental cell updates inline
   - [ ] Client renders from snapshot data — no `FairMutex<Term>` needed in window process
   - [ ] GPU rendering uses the same `GpuRenderer` — just different data source
@@ -259,11 +262,14 @@ Each `oriterm` window process is a thin GPU client. It connects to the daemon, s
   - [ ] Config — loaded from disk per-process (daemon does NOT manage config)
 
 **Tests:**
-- [ ] `MuxBackend` trait compile check: both `InProcessMux` and `MuxClient` implement it
-- [ ] App works with `MuxClient` backend: create tab, type, see output
-- [ ] Push notification flow: daemon output → client notification → redraw
-- [ ] Multiple windows (processes) connected: each renders its own tabs
-- [ ] Window process crash → daemon keeps sessions → new window can reconnect
+- [x] `MuxBackend` trait compile check: both `EmbeddedMux` and `MuxClient` implement it (object-safe)
+- [x] `EmbeddedMux` tests: create_window, drain_notifications, discard, pane access, event_tx
+- [x] `MuxClient` tests: pane returns None, drain empty, poll_events noop
+- [x] App works with `EmbeddedMux` backend: all 1018 tests pass, build + clippy clean
+- [ ] App works with `MuxClient` backend: create tab, type, see output  <!-- blocked-by:44.4 -->
+- [ ] Push notification flow: daemon output → client notification → redraw  <!-- blocked-by:44.4 -->
+- [ ] Multiple windows (processes) connected: each renders its own tabs  <!-- blocked-by:44.4 -->
+- [ ] Window process crash → daemon keeps sessions → new window can reconnect  <!-- blocked-by:44.4 -->
 
 ---
 

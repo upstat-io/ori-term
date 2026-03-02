@@ -14,6 +14,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod backend;
 pub mod domain;
 pub mod id;
 pub mod in_process;
@@ -29,6 +30,7 @@ pub mod server;
 pub mod session;
 pub mod shell_integration;
 
+pub use backend::{EmbeddedMux, MuxBackend, MuxClient};
 pub use domain::{Domain, DomainState, SpawnConfig};
 pub use id::{ClientId, DomainId, IdAllocator, MuxId, PaneId, SessionId, TabId, WindowId};
 pub use in_process::{ClosePaneResult, InProcessMux};

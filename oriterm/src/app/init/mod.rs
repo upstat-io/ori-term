@@ -13,7 +13,6 @@ use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::{GpuRenderer, GpuState};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
-use oriterm_mux::in_process::InProcessMux;
 
 impl App {
     /// Run the one-shot startup sequence: window → GPU → fonts → renderer → tab.
@@ -48,9 +47,9 @@ impl App {
         let gpu = GpuState::new(&window_arc, window_config.transparent)?;
         let t_gpu = t_gpu_start.elapsed();
 
-        // 4. Create mux infrastructure early (allocators only — no window/GPU deps).
-        //    The mux window ID is needed by TermWindow for the mux↔winit mapping.
-        let mut mux = InProcessMux::new();
+        // 4. Allocate a mux window early (ID needed by TermWindow for mapping).
+        //    The mux backend was already created in App::new().
+        let mux = self.mux.as_mut().expect("mux backend must exist at init");
         let mux_window_id = mux.create_window();
 
         // 5. Wrap the same window into TermWindow (creates surface, applies effects).
@@ -116,7 +115,7 @@ impl App {
 
         // 13. Create initial tab + pane in the pre-allocated mux window.
         let t_mux_start = std::time::Instant::now();
-        self.create_initial_tab(&mut mux, mux_window_id, rows as u16, cols as u16)?;
+        self.create_initial_tab(mux_window_id, rows as u16, cols as u16)?;
         let t_mux = t_mux_start.elapsed();
 
         let t_total = t_start.elapsed();
@@ -151,7 +150,6 @@ impl App {
         self.renderer = Some(renderer);
         self.windows.insert(winit_id, ctx);
         self.focused_window_id = Some(winit_id);
-        self.mux = Some(mux);
         self.active_window = Some(mux_window_id);
         Ok(())
     }
@@ -251,11 +249,10 @@ impl App {
 
     /// Create an initial tab with one pane in the given mux window.
     ///
-    /// The mux and window must already be created. The pane is stored in
-    /// `self.panes`. Setup notifications are drained and discarded.
+    /// The mux backend and window must already exist. The pane is stored
+    /// inside the backend. Setup notifications are drained and discarded.
     pub(super) fn create_initial_tab(
         &mut self,
-        mux: &mut InProcessMux,
         window_id: oriterm_mux::WindowId,
         rows: u16,
         cols: u16,
@@ -273,13 +270,13 @@ impl App {
             ..SpawnConfig::default()
         };
 
-        let (_tab_id, pane_id, pane) =
-            mux.create_tab(window_id, &config, theme, &self.mux_wakeup)?;
+        let mux = self.mux.as_mut().expect("mux backend must exist");
+        let (_tab_id, pane_id) = mux.create_tab(window_id, &config, theme)?;
 
         // Apply color scheme + user overrides to the pane's terminal palette.
-        self.apply_palette_to_pane(&pane, theme);
-
-        self.panes.insert(pane_id, pane);
+        if let Some(pane) = mux.pane(pane_id) {
+            super::apply_palette(&self.config, pane, theme);
+        }
 
         // Discard setup notifications (not useful at init time).
         mux.discard_notifications();
