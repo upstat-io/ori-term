@@ -39,6 +39,7 @@ pub enum MsgType {
     CloseWindow = 0x0111,
     ClaimWindow = 0x0112,
     Ping = 0x0113,
+    Shutdown = 0x0114,
 
     // Responses (daemon → window).
     HelloAck = 0x0201,
@@ -57,6 +58,7 @@ pub enum MsgType {
     WindowClosed = 0x020E,
     WindowClaimed = 0x020F,
     PingAck = 0x0210,
+    ShutdownAck = 0x0211,
     Error = 0x02FF,
 
     // Push notifications (daemon → window).
@@ -91,6 +93,7 @@ impl MsgType {
             0x0111 => Some(Self::CloseWindow),
             0x0112 => Some(Self::ClaimWindow),
             0x0113 => Some(Self::Ping),
+            0x0114 => Some(Self::Shutdown),
             0x0201 => Some(Self::HelloAck),
             0x0202 => Some(Self::WindowCreated),
             0x0203 => Some(Self::TabCreated),
@@ -107,6 +110,7 @@ impl MsgType {
             0x020E => Some(Self::WindowClosed),
             0x020F => Some(Self::WindowClaimed),
             0x0210 => Some(Self::PingAck),
+            0x0211 => Some(Self::ShutdownAck),
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),
@@ -263,6 +267,10 @@ pub enum MuxPdu {
     /// Liveness check. The daemon replies with [`PingAck`](Self::PingAck).
     Ping,
 
+    /// Request graceful daemon shutdown. The daemon replies with
+    /// [`ShutdownAck`](Self::ShutdownAck) and then exits.
+    Shutdown,
+
     // -- Responses (daemon → window) --
     /// Handshake acknowledgment.
     HelloAck {
@@ -348,6 +356,9 @@ pub enum MuxPdu {
     /// Reply to a [`Ping`](Self::Ping) request.
     PingAck,
 
+    /// Acknowledgment that the daemon will shut down.
+    ShutdownAck,
+
     /// Error response for a failed request.
     Error {
         /// Human-readable error description.
@@ -421,6 +432,7 @@ impl MuxPdu {
             Self::CloseWindow { .. } => MsgType::CloseWindow,
             Self::ClaimWindow { .. } => MsgType::ClaimWindow,
             Self::Ping => MsgType::Ping,
+            Self::Shutdown => MsgType::Shutdown,
             Self::HelloAck { .. } => MsgType::HelloAck,
             Self::WindowCreated { .. } => MsgType::WindowCreated,
             Self::TabCreated { .. } => MsgType::TabCreated,
@@ -437,6 +449,7 @@ impl MuxPdu {
             Self::WindowClosed { .. } => MsgType::WindowClosed,
             Self::WindowClaimed => MsgType::WindowClaimed,
             Self::PingAck => MsgType::PingAck,
+            Self::ShutdownAck => MsgType::ShutdownAck,
             Self::Error { .. } => MsgType::Error,
             Self::NotifyPaneOutput { .. } => MsgType::NotifyPaneOutput,
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,

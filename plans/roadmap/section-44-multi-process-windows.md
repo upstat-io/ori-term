@@ -133,7 +133,7 @@ A separate `oriterm-mux` binary that runs as a background daemon. Owns all PTY s
   - [x] Last client disconnects → daemon keeps running (sessions persist)
 - [x] Daemon exit conditions:
   - [x] All panes have exited AND no clients connected → exit
-  - [ ] Explicit `--stop` command sent via IPC  <!-- blocked-by:44.2 -->
+  - [x] Explicit `--stop` command sent via IPC
   - [x] SIGTERM/SIGINT
 
 **Tests:**
@@ -204,7 +204,7 @@ The wire protocol for communication between daemon and window processes. This is
   - [x] `scrollback_len: u32` — number of scrollback rows
   - [x] `display_offset: u32` — current scroll position
 - [x] Transport:
-  - [ ] Named pipe on Windows: `\\.\pipe\oriterm-mux-<username>` <!-- blocked-by:44.3 -->
+  - [ ] Named pipe on Windows: `\\.\pipe\oriterm-mux-<username>` <!-- deferred: Windows platform support -->
   - [x] Unix domain socket on Linux/macOS: `$XDG_RUNTIME_DIR/oriterm-mux.sock`
   - [x] Single socket/pipe per daemon instance
 
@@ -230,11 +230,11 @@ Each `oriterm` window process is a thin GPU client. It connects to the daemon, s
 
 - [x] `MuxClient` struct (lives in window process):
   - [x] Stub with `local_session: SessionRegistry` + `notifications: Vec<MuxNotification>`
-  - [ ] `stream: IpcStream` — connected to daemon  <!-- blocked-by:44.4 -->
-  - [ ] `codec: ProtocolCodec` — frame encode/decode  <!-- blocked-by:44.4 -->
-  - [ ] `pending: HashMap<u32, oneshot::Sender<Response>>` — pending request/response  <!-- blocked-by:44.4 -->
-  - [ ] `next_seq: AtomicU32` — sequence number allocator  <!-- blocked-by:44.4 -->
-  - [ ] `notification_tx: mpsc::Sender<MuxNotification>` — push notifications → event loop  <!-- blocked-by:44.4 -->
+  - [x] `stream: IpcStream` — connected to daemon  <!-- encapsulated in ClientTransport -->
+  - [x] `codec: ProtocolCodec` — frame encode/decode  <!-- encapsulated in ClientTransport -->
+  - [x] `pending: HashMap<u32, oneshot::Sender<Response>>` — pending request/response  <!-- encapsulated in ClientTransport -->
+  - [x] `next_seq: AtomicU32` — sequence number allocator  <!-- encapsulated in ClientTransport -->
+  - [x] `notification_tx: mpsc::Sender<MuxNotification>` — push notifications → event loop  <!-- encapsulated in ClientTransport -->
 - [x] `MuxBackend` trait:
   - [x] Defines the API that the App uses for all mux operations
   - [x] `EmbeddedMux` implements it (wraps `InProcessMux` + owns `HashMap<PaneId, Pane>`)
@@ -249,27 +249,27 @@ Each `oriterm` window process is a thin GPU client. It connects to the daemon, s
   - [x] Push notifications from daemon arrive as `MuxNotification` on event loop
   - [x] `about_to_wait()` drains notification channel, triggers redraws
 - [ ] Render flow (window process):
-  - [ ] Daemon pushes `PaneOutput { pane_id, dirty_rows }` → client  <!-- blocked-by:44.4 -->
-  - [ ] Client requests `GetPaneSnapshot(pane_id)` for dirty pane data  <!-- blocked-by:44.4 -->
+  - [ ] Daemon pushes `PaneOutput { pane_id, dirty_rows }` → client
+  - [ ] Client requests `GetPaneSnapshot(pane_id)` for dirty pane data
   - [ ] **OR** (optimization): daemon pushes incremental cell updates inline
   - [ ] Client renders from snapshot data — no `FairMutex<Term>` needed in window process
   - [ ] GPU rendering uses the same `GpuRenderer` — just different data source
-- [ ] Per-window process state:
-  - [ ] `GpuState` — per-process (each window has its own GPU context)
-  - [ ] `GpuRenderer` — per-process
-  - [ ] `FontCollection` + `GlyphAtlas` — per-process
-  - [ ] `WindowContext` — per-process (one window per process)
-  - [ ] Config — loaded from disk per-process (daemon does NOT manage config)
+- [x] Per-window process state:
+  - [x] `GpuState` — per-process (each window has its own GPU context)
+  - [x] `GpuRenderer` — per-process
+  - [x] `FontCollection` + `GlyphAtlas` — per-process
+  - [x] `WindowContext` — per-process (one window per process)
+  - [x] Config — loaded from disk per-process (daemon does NOT manage config)
 
 **Tests:**
 - [x] `MuxBackend` trait compile check: both `EmbeddedMux` and `MuxClient` implement it (object-safe)
 - [x] `EmbeddedMux` tests: create_window, drain_notifications, discard, pane access, event_tx
 - [x] `MuxClient` tests: pane returns None, drain empty, poll_events noop
 - [x] App works with `EmbeddedMux` backend: all 1018 tests pass, build + clippy clean
-- [ ] App works with `MuxClient` backend: create tab, type, see output  <!-- blocked-by:44.4 -->
-- [ ] Push notification flow: daemon output → client notification → redraw  <!-- blocked-by:44.4 -->
-- [ ] Multiple windows (processes) connected: each renders its own tabs  <!-- blocked-by:44.4 -->
-- [ ] Window process crash → daemon keeps sessions → new window can reconnect  <!-- blocked-by:44.4 -->
+- [ ] App works with `MuxClient` backend: create tab, type, see output  <!-- requires e2e infrastructure -->
+- [ ] Push notification flow: daemon output → client notification → redraw  <!-- requires e2e infrastructure -->
+- [ ] Multiple windows (processes) connected: each renders its own tabs  <!-- requires e2e infrastructure -->
+- [ ] Window process crash → daemon keeps sessions → new window can reconnect  <!-- requires e2e infrastructure -->
 
 ---
 
@@ -344,14 +344,14 @@ The daemon starts automatically when the first window launches. Subsequent windo
 - [x] Subsequent window launch:
   - [x] `oriterm` starts → check for running daemon → daemon found
   - [x] Connect → `CreateWindow` → `CreateTab` → render
-  - [ ] CLI shortcut: `oriterm --new-window` (default behavior when daemon running)
+  - [x] CLI shortcut: `oriterm --new-window` (default behavior when daemon running)
 - [x] `oriterm --connect <socket> --window <window_id>`:
   - [x] Used by cross-process tab migration
   - [x] Connect to specified daemon socket
   - [x] Claim specified window ID (don't create new one)
   - [x] Subscribe to panes in that window → render
 - [x] Discovery mechanism:
-  - [ ] **Windows**: Named pipe with well-known name `\\.\pipe\oriterm-mux-<username>`
+  - [ ] **Windows**: Named pipe with well-known name `\\.\pipe\oriterm-mux-<username>` <!-- deferred: Windows platform support -->
   - [x] **Linux/macOS**: Unix socket at `$XDG_RUNTIME_DIR/oriterm-mux.sock`
   - [x] PID file validation: if PID file exists but process is dead → stale, clean up and start fresh
 - [x] Daemon health check:

@@ -88,7 +88,9 @@ fn msg_type_roundtrip_all() {
         MsgType::ActiveTabChanged,
         MsgType::WindowClosed,
         MsgType::WindowClaimed,
+        MsgType::Shutdown,
         MsgType::PingAck,
+        MsgType::ShutdownAck,
         MsgType::Error,
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
@@ -441,6 +443,16 @@ fn roundtrip_ping() {
 #[test]
 fn roundtrip_ping_ack() {
     roundtrip(29, MuxPdu::PingAck);
+}
+
+#[test]
+fn roundtrip_shutdown() {
+    roundtrip(30, MuxPdu::Shutdown);
+}
+
+#[test]
+fn roundtrip_shutdown_ack() {
+    roundtrip(31, MuxPdu::ShutdownAck);
 }
 
 // -- Notification roundtrips --

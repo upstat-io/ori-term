@@ -142,11 +142,17 @@ fn run_daemon() {
     }
 }
 
-/// Stop a running daemon by sending SIGTERM.
+/// Stop a running daemon via IPC shutdown, falling back to SIGTERM.
 #[cfg(unix)]
 fn run_stop() {
-    use oriterm_mux::server::{pid_file_path, read_pid};
+    use oriterm_mux::server::{pid_file_path, read_pid, socket_path};
 
+    // Try IPC shutdown first.
+    if try_ipc_shutdown(&socket_path()) {
+        return;
+    }
+
+    // Fall back to SIGTERM via PID file.
     let path = pid_file_path();
     let pid = match read_pid(&path) {
         Ok(p) => p,
@@ -156,7 +162,6 @@ fn run_stop() {
         }
     };
 
-    // Send SIGTERM to the daemon process.
     // SAFETY: `kill` is a standard POSIX function. Sending SIGTERM to a
     // process we own is safe. If the PID is stale, kill returns ESRCH.
     #[allow(unsafe_code, reason = "kill(2) requires unsafe")]
@@ -168,6 +173,59 @@ fn run_stop() {
         let err = std::io::Error::last_os_error();
         eprintln!("failed to stop daemon (pid={pid}): {err}");
         std::process::exit(1);
+    }
+}
+
+/// Attempt graceful shutdown via IPC: Hello handshake then Shutdown PDU.
+///
+/// Returns `true` if the daemon acknowledged the shutdown.
+#[cfg(unix)]
+fn try_ipc_shutdown(sock: &std::path::Path) -> bool {
+    use std::net::Shutdown;
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    use oriterm_mux::{MuxPdu, ProtocolCodec};
+
+    let mut stream = match UnixStream::connect(sock) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+
+    let timeout = Some(Duration::from_secs(5));
+    let _ = stream.set_read_timeout(timeout);
+    let _ = stream.set_write_timeout(timeout);
+
+    // Hello handshake.
+    if ProtocolCodec::encode_frame(
+        &mut stream,
+        1,
+        &MuxPdu::Hello {
+            pid: std::process::id(),
+        },
+    )
+    .is_err()
+    {
+        return false;
+    }
+
+    match ProtocolCodec::new().decode_frame(&mut stream) {
+        Ok(f) if matches!(f.pdu, MuxPdu::HelloAck { .. }) => {}
+        _ => return false,
+    }
+
+    // Send Shutdown request.
+    if ProtocolCodec::encode_frame(&mut stream, 2, &MuxPdu::Shutdown).is_err() {
+        return false;
+    }
+
+    match ProtocolCodec::new().decode_frame(&mut stream) {
+        Ok(f) if matches!(f.pdu, MuxPdu::ShutdownAck) => {
+            let _ = stream.shutdown(Shutdown::Both);
+            eprintln!("daemon shutdown acknowledged via IPC");
+            true
+        }
+        _ => false,
     }
 }
 

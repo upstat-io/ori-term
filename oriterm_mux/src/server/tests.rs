@@ -1649,3 +1649,38 @@ fn notification_pdu_from_client_returns_error() {
         "notification from client should be rejected: {resp:?}"
     );
 }
+
+/// Shutdown via IPC sets the server's shutdown flag.
+#[test]
+fn shutdown_via_ipc_sets_flag() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Shutdown flag should be false initially.
+    assert!(
+        !server.shutdown_flag().load(Ordering::Acquire),
+        "shutdown flag should be false before Shutdown PDU"
+    );
+
+    // Send Shutdown request.
+    send_pdu(&mut client, 2, &MuxPdu::Shutdown);
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+    assert!(
+        matches!(resp, MuxPdu::ShutdownAck),
+        "expected ShutdownAck, got {resp:?}"
+    );
+
+    // Shutdown flag should now be set.
+    assert!(
+        server.shutdown_flag().load(Ordering::Acquire),
+        "shutdown flag should be true after ShutdownAck"
+    );
+}
