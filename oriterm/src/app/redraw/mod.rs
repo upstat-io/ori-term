@@ -21,7 +21,7 @@ use crate::font::UiFontMeasurer;
 use crate::gpu::state::GpuState;
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize, extract_frame,
-    extract_frame_from_snapshot, extract_frame_into,
+    extract_frame_from_snapshot, extract_frame_from_snapshot_into, extract_frame_into,
 };
 
 impl App {
@@ -94,7 +94,14 @@ impl App {
                     log::warn!("redraw: no snapshot for pane {pane_id:?}");
                     return;
                 };
-                ctx.frame = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
+                match &mut ctx.frame {
+                    Some(existing) => {
+                        extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
+                    }
+                    slot @ None => {
+                        *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
+                    }
+                }
                 mux.clear_pane_snapshot_dirty(pane_id);
             } else {
                 let Some(pane) = mux.pane(pane_id) else {

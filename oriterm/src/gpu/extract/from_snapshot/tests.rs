@@ -8,7 +8,8 @@ use crate::gpu::frame_input::ViewportSize;
 
 use super::{
     PALETTE_BACKGROUND, PALETTE_CURSOR, PALETTE_FOREGROUND, extract_frame_from_snapshot,
-    snapshot_palette, snapshot_to_renderable,
+    extract_frame_from_snapshot_into, snapshot_palette, snapshot_to_renderable,
+    snapshot_to_renderable_into,
 };
 
 /// Build a minimal test snapshot with 2×2 cells.
@@ -387,6 +388,96 @@ fn wide_char_flag_preserved() {
     let content = snapshot_to_renderable(&snap);
     assert!(content.cells[0].flags.contains(CellFlags::WIDE_CHAR));
     assert_eq!(content.cells[0].ch, '漢');
+}
+
+// -- _into variants: allocation-reusing equivalence tests --
+
+#[test]
+fn renderable_into_matches_fresh() {
+    let snap = test_snapshot();
+
+    let fresh = snapshot_to_renderable(&snap);
+    let mut reused = snapshot_to_renderable(&snap);
+    // Mutate to prove `_into` overwrites everything.
+    reused.display_offset = 999;
+    reused.stable_row_base = 42;
+    reused.all_dirty = false;
+    reused.mode = TermMode::empty();
+
+    snapshot_to_renderable_into(&snap, &mut reused);
+
+    assert_eq!(fresh.cells.len(), reused.cells.len());
+    for (a, b) in fresh.cells.iter().zip(reused.cells.iter()) {
+        assert_eq!(a.line, b.line);
+        assert_eq!(a.column, b.column);
+        assert_eq!(a.ch, b.ch);
+        assert_eq!(a.fg, b.fg);
+        assert_eq!(a.bg, b.bg);
+        assert_eq!(a.flags, b.flags);
+        assert_eq!(a.underline_color, b.underline_color);
+        assert_eq!(a.has_hyperlink, b.has_hyperlink);
+        assert_eq!(a.zerowidth, b.zerowidth);
+    }
+    assert_eq!(fresh.cursor.line, reused.cursor.line);
+    assert_eq!(fresh.cursor.column, reused.cursor.column);
+    assert_eq!(fresh.cursor.shape, reused.cursor.shape);
+    assert_eq!(fresh.cursor.visible, reused.cursor.visible);
+    assert_eq!(fresh.display_offset, reused.display_offset);
+    assert_eq!(fresh.stable_row_base, reused.stable_row_base);
+    assert_eq!(fresh.mode, reused.mode);
+    assert_eq!(fresh.all_dirty, reused.all_dirty);
+    assert_eq!(fresh.damage.len(), reused.damage.len());
+}
+
+#[test]
+fn extract_into_matches_fresh() {
+    let snap = test_snapshot();
+    let viewport = ViewportSize::new(160, 320);
+    let cell = test_cell_metrics();
+
+    let fresh = extract_frame_from_snapshot(&snap, viewport, cell);
+
+    // Seed with a different snapshot to prove _into overwrites correctly.
+    let mut reused = extract_frame_from_snapshot(&snap, ViewportSize::new(1, 1), cell);
+    reused.fg_dim = 0.5;
+    reused.hovered_url_segments.push((0, 0, 10));
+    reused.prompt_marker_rows.push(99);
+
+    extract_frame_from_snapshot_into(&snap, &mut reused, viewport, cell);
+
+    assert_eq!(fresh.viewport, reused.viewport);
+    assert_eq!(fresh.cell_size, reused.cell_size);
+    assert_eq!(fresh.content.cells.len(), reused.content.cells.len());
+    assert!(reused.selection.is_none());
+    assert!(reused.search.is_none());
+    assert!(reused.hovered_cell.is_none());
+    assert!(reused.hovered_url_segments.is_empty());
+    assert!(reused.mark_cursor.is_none());
+    assert_eq!(reused.fg_dim, 1.0);
+    assert!(reused.prompt_marker_rows.is_empty());
+    assert_eq!(fresh.palette.foreground, reused.palette.foreground);
+    assert_eq!(fresh.palette.background, reused.palette.background);
+    assert_eq!(fresh.palette.cursor_color, reused.palette.cursor_color);
+}
+
+#[test]
+fn extract_into_preserves_capacity() {
+    let snap = test_snapshot();
+    let viewport = ViewportSize::new(160, 320);
+    let cell = test_cell_metrics();
+
+    // First extraction allocates.
+    let mut frame = extract_frame_from_snapshot(&snap, viewport, cell);
+    let cells_cap = frame.content.cells.capacity();
+    assert!(cells_cap >= 4, "should have allocated for 4 cells");
+
+    // Second extraction into the same frame reuses allocations.
+    extract_frame_from_snapshot_into(&snap, &mut frame, viewport, cell);
+    assert!(
+        frame.content.cells.capacity() >= cells_cap,
+        "capacity should not shrink"
+    );
+    assert_eq!(frame.content.cells.len(), 4);
 }
 
 // -- Large snapshot through extract_frame_from_snapshot --
