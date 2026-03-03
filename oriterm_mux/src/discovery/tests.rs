@@ -147,3 +147,62 @@ fn ensure_daemon_with_existing_daemon() {
 
     assert!(Path::new(sock.as_path()).exists());
 }
+
+/// Multiple socket files: one live listener, one stale file.
+///
+/// Discovery building blocks should distinguish live from dead sockets.
+/// `probe_daemon` succeeds for the live one, fails for the stale one.
+#[test]
+fn multiple_sockets_dead_pruning() {
+    let dir = tempfile::tempdir().unwrap();
+    let live_sock = dir.path().join("live.sock");
+    let stale_sock = dir.path().join("stale.sock");
+
+    // Bind a live listener.
+    let _listener = UnixListener::bind(&live_sock).unwrap();
+
+    // Create a stale socket file (regular file, not a real listener).
+    std::fs::File::create(&stale_sock).unwrap();
+
+    // Live socket is reachable.
+    assert!(probe_daemon(&live_sock), "live socket should be reachable");
+
+    // Stale file is not reachable.
+    assert!(
+        !probe_daemon(&stale_sock),
+        "stale socket file should not be reachable"
+    );
+
+    // Both files exist.
+    assert!(live_sock.exists());
+    assert!(stale_sock.exists());
+}
+
+/// `validate_pid_file` handles PID files with trailing whitespace/newline.
+///
+/// PID files written by other processes may include `\n` or spaces.
+#[test]
+fn validate_pid_file_trailing_whitespace() {
+    use crate::server::read_pid;
+
+    let dir = tempfile::tempdir().unwrap();
+    let sock_path = dir.path().join("test.sock");
+
+    // PID with trailing newline.
+    let pid_newline = dir.path().join("newline.pid");
+    std::fs::write(&pid_newline, format!("{}\n", std::process::id())).unwrap();
+    assert_eq!(read_pid(&pid_newline).unwrap(), std::process::id());
+    assert!(validate_pid_file(&pid_newline, &sock_path));
+
+    // PID with trailing spaces.
+    let pid_spaces = dir.path().join("spaces.pid");
+    std::fs::write(&pid_spaces, format!("{}  ", std::process::id())).unwrap();
+    assert_eq!(read_pid(&pid_spaces).unwrap(), std::process::id());
+    assert!(validate_pid_file(&pid_spaces, &sock_path));
+
+    // PID with leading and trailing whitespace.
+    let pid_both = dir.path().join("both.pid");
+    std::fs::write(&pid_both, format!("  {} \n", std::process::id())).unwrap();
+    assert_eq!(read_pid(&pid_both).unwrap(), std::process::id());
+    assert!(validate_pid_file(&pid_both, &sock_path));
+}
