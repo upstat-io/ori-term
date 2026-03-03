@@ -16,7 +16,9 @@ use std::time::Instant;
 
 use oriterm_core::{EventListener, FairMutex, RenderableContent, Term};
 
-pub(crate) use self::from_snapshot::extract_frame_from_snapshot;
+pub(crate) use self::from_snapshot::{
+    extract_frame_from_snapshot, extract_frame_from_snapshot_into,
+};
 
 use super::frame_input::{FrameInput, FramePalette, ViewportSize};
 use crate::font::CellMetrics;

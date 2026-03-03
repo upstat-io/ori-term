@@ -12,7 +12,7 @@ use super::App;
 use super::mouse_selection::{self, GridCtx};
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame,
-    extract_frame_from_snapshot, extract_frame_into,
+    extract_frame_from_snapshot, extract_frame_from_snapshot_into, extract_frame_into,
 };
 
 impl App {
@@ -181,8 +181,23 @@ impl App {
                             mux.refresh_pane_snapshot(pane_id);
                         }
                         if let Some(snapshot) = mux.pane_snapshot(pane_id) {
-                            ctx.frame =
-                                Some(extract_frame_from_snapshot(snapshot, pane_viewport, cell));
+                            match &mut ctx.frame {
+                                Some(existing) => {
+                                    extract_frame_from_snapshot_into(
+                                        snapshot,
+                                        existing,
+                                        pane_viewport,
+                                        cell,
+                                    );
+                                }
+                                slot @ None => {
+                                    *slot = Some(extract_frame_from_snapshot(
+                                        snapshot,
+                                        pane_viewport,
+                                        cell,
+                                    ));
+                                }
+                            }
                         } else {
                             log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
                             continue;

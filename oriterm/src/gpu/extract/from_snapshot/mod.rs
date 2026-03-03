@@ -85,6 +85,64 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
     }
 }
 
+/// Refill an existing [`RenderableContent`] from a [`PaneSnapshot`], reusing allocations.
+///
+/// Clears and repopulates `out.cells` and `out.damage` without freeing their
+/// backing storage, avoiding per-frame allocation churn.
+fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableContent) {
+    out.cells.clear();
+    let total_cells: usize = snapshot.cells.iter().map(Vec::len).sum();
+    out.cells
+        .reserve(total_cells.saturating_sub(out.cells.capacity()));
+
+    for (line, row) in snapshot.cells.iter().enumerate() {
+        for (col_idx, wire) in row.iter().enumerate() {
+            out.cells.push(RenderableCell {
+                line,
+                column: Column(col_idx),
+                ch: wire.ch,
+                fg: wire_rgb_to_rgb(wire.fg),
+                bg: wire_rgb_to_rgb(wire.bg),
+                flags: CellFlags::from_bits_truncate(wire.flags),
+                underline_color: wire.underline_color.map(wire_rgb_to_rgb),
+                has_hyperlink: wire.has_hyperlink,
+                zerowidth: wire.zerowidth.clone(),
+            });
+        }
+    }
+
+    out.cursor = wire_cursor_to_renderable(snapshot.cursor);
+    out.display_offset = snapshot.display_offset as usize;
+    out.stable_row_base = 0;
+    out.mode = TermMode::from_bits_truncate(snapshot.modes);
+    out.all_dirty = true;
+    out.damage.clear();
+}
+
+/// Refill an existing [`FrameInput`] from a [`PaneSnapshot`], reusing allocations.
+///
+/// Like [`extract_frame_from_snapshot`] but refills `out` in place, reusing
+/// the `Vec` allocations inside `out.content`. Avoids per-frame allocation
+/// for the `cells` and `damage` vectors.
+pub(crate) fn extract_frame_from_snapshot_into(
+    snapshot: &PaneSnapshot,
+    out: &mut FrameInput,
+    viewport: ViewportSize,
+    cell_size: CellMetrics,
+) {
+    snapshot_to_renderable_into(snapshot, &mut out.content);
+    out.viewport = viewport;
+    out.cell_size = cell_size;
+    out.palette = snapshot_palette(snapshot);
+    out.selection = None;
+    out.search = None;
+    out.hovered_cell = None;
+    out.hovered_url_segments.clear();
+    out.mark_cursor = None;
+    out.fg_dim = 1.0;
+    out.prompt_marker_rows.clear();
+}
+
 /// Convert a [`WireCursorShape`] to a [`CursorShape`].
 fn wire_shape_to_cursor(shape: WireCursorShape) -> CursorShape {
     match shape {
