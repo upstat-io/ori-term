@@ -120,7 +120,9 @@ fn roundtrip(seq: u32, pdu: MuxPdu) -> DecodedFrame {
     ProtocolCodec::encode_frame(&mut buf, seq, &pdu).expect("encode");
 
     let mut reader = Cursor::new(buf);
-    let frame = ProtocolCodec::decode_frame(&mut reader).expect("decode");
+    let frame = ProtocolCodec::new()
+        .decode_frame(&mut reader)
+        .expect("decode");
 
     assert_eq!(frame.seq, seq);
     assert_eq!(frame.pdu, pdu);
@@ -634,9 +636,10 @@ fn sequence_correlation() {
     ProtocolCodec::encode_frame(&mut buf, 101, &MuxPdu::CreateWindow).unwrap();
 
     let mut reader = Cursor::new(buf);
-    let f1 = ProtocolCodec::decode_frame(&mut reader).unwrap();
-    let f2 = ProtocolCodec::decode_frame(&mut reader).unwrap();
-    let f3 = ProtocolCodec::decode_frame(&mut reader).unwrap();
+    let mut codec = ProtocolCodec::new();
+    let f1 = codec.decode_frame(&mut reader).unwrap();
+    let f2 = codec.decode_frame(&mut reader).unwrap();
+    let f3 = codec.decode_frame(&mut reader).unwrap();
 
     // Request and response share the same seq.
     assert_eq!(f1.seq, 100);
@@ -672,8 +675,9 @@ fn fire_and_forget_no_block() {
     .unwrap();
 
     let mut reader = Cursor::new(buf);
-    let f1 = ProtocolCodec::decode_frame(&mut reader).unwrap();
-    let f2 = ProtocolCodec::decode_frame(&mut reader).unwrap();
+    let mut codec = ProtocolCodec::new();
+    let f1 = codec.decode_frame(&mut reader).unwrap();
+    let f2 = codec.decode_frame(&mut reader).unwrap();
 
     assert_eq!(f1.seq, 0);
     assert_eq!(f2.seq, 0);
@@ -705,7 +709,7 @@ fn notification_delivery() {
 
     let mut reader = Cursor::new(buf);
     for expected in &notifications {
-        let frame = ProtocolCodec::decode_frame(&mut reader).unwrap();
+        let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
         assert_eq!(frame.seq, 0);
         assert!(frame.pdu.is_notification());
         assert_eq!(&frame.pdu, expected);
@@ -727,7 +731,7 @@ fn decode_payload_too_large() {
     buf.extend_from_slice(&[0u8; 64]);
 
     let mut reader = Cursor::new(buf);
-    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::PayloadTooLarge(_)));
 }
 
@@ -741,7 +745,7 @@ fn decode_unknown_msg_type() {
     let buf = header.encode().to_vec();
 
     let mut reader = Cursor::new(buf);
-    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::UnknownMsgType(0xFFFF)));
 }
 
@@ -749,7 +753,7 @@ fn decode_unknown_msg_type() {
 fn decode_truncated_header() {
     let buf = vec![0u8; 5]; // Only 5 bytes, header needs 10.
     let mut reader = Cursor::new(buf);
-    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::Io(_)));
 }
 
@@ -764,7 +768,7 @@ fn decode_truncated_payload() {
     buf.extend_from_slice(&[0u8; 10]); // Only 10 bytes, claims 100.
 
     let mut reader = Cursor::new(buf);
-    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::Io(_)));
 }
 
@@ -813,13 +817,13 @@ fn multiple_frames_sequential() {
 
     let mut reader = Cursor::new(buf);
     for (expected_seq, expected_pdu) in &pdus {
-        let frame = ProtocolCodec::decode_frame(&mut reader).unwrap();
+        let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
         assert_eq!(frame.seq, *expected_seq);
         assert_eq!(&frame.pdu, expected_pdu);
     }
 
     // Stream exhausted — next decode should fail with UnexpectedEof.
-    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::Io(_)));
 }
 
@@ -890,7 +894,7 @@ fn decode_garbage_payload_returns_deserialize_error() {
     buf.extend_from_slice(&garbage);
 
     let mut reader = Cursor::new(buf);
-    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(
         matches!(err, DecodeError::Deserialize(_)),
         "expected Deserialize error, got {err:?}"
@@ -909,7 +913,7 @@ fn decode_empty_payload_for_pdu_with_fields() {
     let buf = header.encode().to_vec();
 
     let mut reader = Cursor::new(buf);
-    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(
         matches!(err, DecodeError::Deserialize(_)),
         "expected Deserialize error for empty payload, got {err:?}"
@@ -950,7 +954,7 @@ fn wire_bytes_stable_for_hello() {
 
     // Decode back to verify.
     let mut reader = Cursor::new(&buf);
-    let frame = ProtocolCodec::decode_frame(&mut reader).unwrap();
+    let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
     assert_eq!(frame.seq, 1);
     assert_eq!(frame.pdu, MuxPdu::Hello { pid: 42 });
 
@@ -975,7 +979,7 @@ fn theme_to_wire_dark() {
     use super::messages::theme_to_wire;
     use oriterm_core::Theme;
 
-    assert_eq!(theme_to_wire(Theme::Dark), Some("dark".to_owned()));
+    assert_eq!(theme_to_wire(Theme::Dark), Some("dark"));
 }
 
 #[test]
@@ -983,7 +987,7 @@ fn theme_to_wire_light() {
     use super::messages::theme_to_wire;
     use oriterm_core::Theme;
 
-    assert_eq!(theme_to_wire(Theme::Light), Some("light".to_owned()));
+    assert_eq!(theme_to_wire(Theme::Light), Some("light"));
 }
 
 #[test]

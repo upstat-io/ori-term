@@ -49,7 +49,7 @@ impl App {
 
         // 4. Allocate a mux window early (ID needed by TermWindow for mapping).
         //    In daemon mode, the window may already be claimed via `--window`.
-        let mux = self.mux.as_mut().expect("mux backend must exist at init");
+        let mux = self.mux.as_mut().ok_or("mux backend missing at init")?;
         let is_daemon = mux.is_daemon_mode();
         let mux_window_id = if let Some(claimed) = self.active_window {
             // Daemon mode with a pre-claimed window ID.
@@ -286,7 +286,7 @@ impl App {
             ..SpawnConfig::default()
         };
 
-        let mux = self.mux.as_mut().expect("mux backend must exist");
+        let mux = self.mux.as_mut().ok_or("mux backend missing")?;
         let (_tab_id, pane_id) = mux.create_tab(window_id, &config, theme)?;
 
         // Apply color scheme + user overrides to the pane's terminal palette.

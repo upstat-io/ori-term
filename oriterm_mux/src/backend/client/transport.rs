@@ -77,12 +77,14 @@ impl ClientTransport {
         ProtocolCodec::encode_frame(&mut stream, 1, &MuxPdu::Hello { pid })?;
 
         // Read HelloAck (blocking, no timeout — daemon should respond quickly).
-        let frame = ProtocolCodec::decode_frame(&mut stream).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::ConnectionRefused,
-                format!("handshake failed: {e}"),
-            )
-        })?;
+        let frame = ProtocolCodec::new()
+            .decode_frame(&mut stream)
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::ConnectionRefused,
+                    format!("handshake failed: {e}"),
+                )
+            })?;
 
         let client_id = match frame.pdu {
             MuxPdu::HelloAck { client_id } => client_id,
@@ -259,6 +261,7 @@ fn reader_loop(
     }
 
     let mut pending: HashMap<u32, mpsc::Sender<MuxPdu>> = HashMap::new();
+    let mut codec = ProtocolCodec::new();
 
     // Health-check ping state.
     let mut last_ping_sent = Instant::now();
@@ -309,7 +312,7 @@ fn reader_loop(
         }
 
         // 3. Attempt to read a frame (may timeout after READ_POLL_INTERVAL).
-        match ProtocolCodec::decode_frame(&mut stream) {
+        match codec.decode_frame(&mut stream) {
             Ok(DecodedFrame { seq, pdu }) => {
                 // Check if this is a PingAck for our health check.
                 if outstanding_ping_seq == Some(seq) && pdu == MuxPdu::PingAck {

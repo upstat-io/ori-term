@@ -469,11 +469,12 @@ impl MuxPdu {
 /// Convert a [`Theme`] to its wire representation.
 ///
 /// Returns `Some("dark")` or `Some("light")`, or `None` for
-/// [`Theme::Unknown`] (server uses its default).
-pub(crate) fn theme_to_wire(theme: Theme) -> Option<String> {
+/// [`Theme::Unknown`] (server uses its default). Callers `.map(str::to_owned)`
+/// at the serialization boundary when building PDU fields.
+pub(crate) fn theme_to_wire(theme: Theme) -> Option<&'static str> {
     match theme {
-        Theme::Dark => Some("dark".to_owned()),
-        Theme::Light => Some("light".to_owned()),
+        Theme::Dark => Some("dark"),
+        Theme::Light => Some("light"),
         Theme::Unknown => None,
     }
 }

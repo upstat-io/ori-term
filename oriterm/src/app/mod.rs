@@ -414,6 +414,23 @@ impl App {
         win.tabs().iter().position(|&t| t == tab_id)
     }
 
+    /// Drain the notification buffer and invoke `handler` on each notification.
+    ///
+    /// Takes the buffer from `self` to avoid borrow conflicts (the handler
+    /// gets `&mut Self` without conflicting with the buffer), then restores
+    /// it afterward to preserve `Vec` capacity across frames.
+    fn with_drained_notifications(&mut self, mut handler: impl FnMut(&mut Self, MuxNotification)) {
+        let mut buf = std::mem::take(&mut self.notification_buf);
+        #[allow(
+            clippy::iter_with_drain,
+            reason = "drain preserves Vec capacity; into_iter drops it"
+        )]
+        for n in buf.drain(..) {
+            handler(self, n);
+        }
+        self.notification_buf = buf;
+    }
+
     /// Current tab width lock value, if active.
     ///
     /// Delegates to the tab bar widget — the widget is the single source
@@ -439,6 +456,14 @@ impl App {
             }
         }
     }
+}
+
+/// Drop a pane on a background thread to avoid blocking the event loop.
+///
+/// Pane destruction involves PTY kill, reader thread join, and child reap —
+/// all potentially blocking. This moves the drop to a dedicated thread.
+fn defer_pane_drop(pane: Pane) {
+    std::thread::spawn(move || drop(pane));
 }
 
 /// Apply the color palette to a pane's terminal without borrowing `App`.

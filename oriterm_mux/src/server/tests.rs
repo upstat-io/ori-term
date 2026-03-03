@@ -34,7 +34,7 @@ fn send_pdu(stream: &mut UnixStream, seq: u32, pdu: &MuxPdu) {
 
 /// Helper: read a response PDU from a stream.
 fn recv_pdu(stream: &mut UnixStream) -> (u32, MuxPdu) {
-    let frame = ProtocolCodec::decode_frame(stream).unwrap();
+    let frame = ProtocolCodec::new().decode_frame(stream).unwrap();
     (frame.seq, frame.pdu)
 }
 

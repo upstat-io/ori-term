@@ -207,7 +207,7 @@ impl App {
         if let Some(mux) = &mut self.mux {
             for id in pane_ids {
                 if let Some(pane) = mux.remove_pane(id) {
-                    std::thread::spawn(move || drop(pane));
+                    super::defer_pane_drop(pane);
                 }
             }
         }
@@ -289,24 +289,18 @@ impl App {
             return;
         }
 
-        let mut notifications = std::mem::take(&mut self.notification_buf);
-        #[allow(
-            clippy::iter_with_drain,
-            reason = "drain preserves Vec capacity; into_iter drops it"
-        )]
-        for notification in notifications.drain(..) {
+        self.with_drained_notifications(|this, notification| {
             if let oriterm_mux::mux_event::MuxNotification::PaneClosed(id) = notification {
                 // Panes already removed above — just clean up caches.
-                if let Some(pane) = self.mux.as_mut().and_then(|m| m.remove_pane(id)) {
-                    std::thread::spawn(move || drop(pane));
+                if let Some(pane) = this.mux.as_mut().and_then(|m| m.remove_pane(id)) {
+                    super::defer_pane_drop(pane);
                 }
-                for ctx in self.windows.values_mut() {
+                for ctx in this.windows.values_mut() {
                     ctx.pane_cache.remove(id);
                 }
             }
             // Other notifications (WindowClosed, LastWindowClosed, etc.)
             // are handled by the caller or are no-ops during close.
-        }
-        self.notification_buf = notifications;
+        });
     }
 }

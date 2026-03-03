@@ -40,17 +40,7 @@ impl App {
         }
 
         // 3. Handle each notification.
-        //    Take the buffer to avoid borrow conflicts with `self`, then
-        //    restore it after iteration to preserve Vec capacity across frames.
-        let mut notifications = std::mem::take(&mut self.notification_buf);
-        #[allow(
-            clippy::iter_with_drain,
-            reason = "drain preserves Vec capacity; into_iter drops it"
-        )]
-        for notification in notifications.drain(..) {
-            self.handle_mux_notification(notification);
-        }
-        self.notification_buf = notifications;
+        self.with_drained_notifications(Self::handle_mux_notification);
     }
 
     /// Process a single mux notification.
@@ -78,7 +68,7 @@ impl App {
                 // thread join + child reap) runs on a background thread
                 // to avoid blocking the event loop.
                 if let Some(pane) = self.mux.as_mut().and_then(|m| m.remove_pane(id)) {
-                    std::thread::spawn(move || drop(pane));
+                    super::defer_pane_drop(pane);
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.pane_cache.remove(id);

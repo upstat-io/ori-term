@@ -213,7 +213,9 @@ impl App {
         // `drag_window()` enters the OS modal move loop — blocks until
         // mouse-up or merge detection releases capture.
         if let Some(ctx) = self.windows.get(&winit_id) {
-            let _ = ctx.window.window().drag_window();
+            if let Err(e) = ctx.window.window().drag_window() {
+                log::warn!("drag_window failed: {e}");
+            }
         }
     }
 

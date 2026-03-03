@@ -101,7 +101,7 @@ impl MuxBackend for MuxClient {
             window_id,
             shell: config.shell.clone(),
             cwd: config.cwd.as_ref().map(|p| p.display().to_string()),
-            theme: theme_to_wire(theme),
+            theme: theme_to_wire(theme).map(str::to_owned),
         };
 
         match self.rpc(pdu)? {
@@ -274,7 +274,7 @@ impl MuxBackend for MuxClient {
             direction: dir,
             shell: config.shell.clone(),
             cwd: config.cwd.as_ref().map(|p| p.display().to_string()),
-            theme: theme_to_wire(theme),
+            theme: theme_to_wire(theme).map(str::to_owned),
         };
 
         match self.rpc(pdu)? {
