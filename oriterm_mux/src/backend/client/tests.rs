@@ -237,7 +237,7 @@ mod transport_tests {
         let pdu = MuxPdu::CreateWindow;
         ProtocolCodec::encode_frame(&mut a, 7, &pdu).unwrap();
 
-        let frame = ProtocolCodec::decode_frame(&mut b).unwrap();
+        let frame = ProtocolCodec::new().decode_frame(&mut b).unwrap();
         assert_eq!(frame.seq, 7);
         assert!(matches!(frame.pdu, MuxPdu::CreateWindow));
     }
@@ -260,8 +260,8 @@ mod transport_tests {
         )
         .unwrap();
 
-        let f1 = ProtocolCodec::decode_frame(&mut b).unwrap();
-        let f2 = ProtocolCodec::decode_frame(&mut b).unwrap();
+        let f1 = ProtocolCodec::new().decode_frame(&mut b).unwrap();
+        let f2 = ProtocolCodec::new().decode_frame(&mut b).unwrap();
 
         assert_eq!(f1.seq, 1);
         assert!(matches!(f1.pdu, MuxPdu::CreateWindow));
@@ -286,7 +286,7 @@ mod transport_tests {
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Read Hello.
-            let frame = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let frame = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             assert!(matches!(frame.pdu, MuxPdu::Hello { .. }));
             // Write HelloAck.
             ProtocolCodec::encode_frame(
@@ -321,7 +321,7 @@ mod transport_tests {
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -332,7 +332,7 @@ mod transport_tests {
             .unwrap();
 
             // Read CreateWindow request.
-            let req = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             assert!(matches!(req.pdu, MuxPdu::CreateWindow));
 
             // Reply with WindowCreated.
@@ -373,7 +373,7 @@ mod transport_tests {
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -431,7 +431,7 @@ mod transport_tests {
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -466,7 +466,7 @@ mod transport_tests {
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -477,7 +477,7 @@ mod transport_tests {
             .unwrap();
 
             // Read the request but never respond — let client timeout.
-            let _req = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let _req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             // Keep connection alive while client waits (just past the 5s RPC timeout).
             std::thread::sleep(Duration::from_secs(6));
             stream
@@ -509,7 +509,7 @@ mod transport_tests {
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -521,7 +521,7 @@ mod transport_tests {
 
             // Read 3 requests, record their seqs, respond to each.
             for _ in 0..3 {
-                let frame = ProtocolCodec::decode_frame(&mut stream).unwrap();
+                let frame = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
                 seqs.lock().unwrap().push(frame.seq);
                 ProtocolCodec::encode_frame(
                     &mut stream,
@@ -562,7 +562,7 @@ mod transport_tests {
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake only, then drop.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -602,7 +602,7 @@ mod transport_tests {
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -613,7 +613,7 @@ mod transport_tests {
             .unwrap();
 
             // Read the RPC request.
-            let req = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
 
             // Send a notification BEFORE the RPC response.
             ProtocolCodec::encode_frame(
@@ -677,7 +677,7 @@ mod transport_tests {
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -721,7 +721,7 @@ mod transport_tests {
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -780,7 +780,7 @@ mod transport_tests {
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -791,7 +791,7 @@ mod transport_tests {
             .unwrap();
 
             // Read request, respond with Error.
-            let req = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 req.seq,
@@ -835,7 +835,7 @@ mod transport_tests {
         std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             // Handshake.
-            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -856,7 +856,7 @@ mod transport_tests {
         let sock = dir.path().join("claim.sock");
 
         let server = fake_server(&sock, |stream| {
-            let req = ProtocolCodec::decode_frame(stream).unwrap();
+            let req = ProtocolCodec::new().decode_frame(stream).unwrap();
             assert!(matches!(req.pdu, MuxPdu::ClaimWindow { .. }));
             ProtocolCodec::encode_frame(stream, req.seq, &MuxPdu::WindowClaimed).unwrap();
 
@@ -890,7 +890,7 @@ mod transport_tests {
         let t2 = crate::TabId::from_raw(20);
 
         let server = fake_server(&sock, move |stream| {
-            let req = ProtocolCodec::decode_frame(stream).unwrap();
+            let req = ProtocolCodec::new().decode_frame(stream).unwrap();
             assert!(matches!(req.pdu, MuxPdu::ListTabs { .. }));
             ProtocolCodec::encode_frame(
                 stream,

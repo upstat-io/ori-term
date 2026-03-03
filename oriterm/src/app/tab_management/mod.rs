@@ -297,8 +297,15 @@ impl App {
         // It connects to the same daemon socket and claims the window ID.
         #[cfg(unix)]
         {
+            let exe = match std::env::current_exe() {
+                Ok(p) => p,
+                Err(e) => {
+                    log::error!("move_tab_to_new_window_daemon: cannot determine exe path: {e}");
+                    return;
+                }
+            };
             let socket_path = oriterm_mux::server::socket_path();
-            match std::process::Command::new(std::env::current_exe().unwrap_or_default())
+            match std::process::Command::new(exe)
                 .arg("--connect")
                 .arg(&socket_path)
                 .arg("--window")
@@ -356,7 +363,7 @@ impl App {
                 let pane_ids = mux.close_tab(initial);
                 for pid in pane_ids {
                     if let Some(pane) = mux.remove_pane(pid) {
-                        std::thread::spawn(move || drop(pane));
+                        super::defer_pane_drop(pane);
                     }
                 }
             }

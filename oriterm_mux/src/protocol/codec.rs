@@ -66,15 +66,36 @@ impl From<bincode::Error> for DecodeError {
     }
 }
 
-/// Stateless codec for encoding and decoding framed protocol messages.
+/// Codec for encoding and decoding framed protocol messages.
 ///
 /// Encoding is straightforward (serialize + write header + payload).
 /// Decoding reads the full header then the full payload from the stream,
 /// blocking until complete. For non-blocking streams, callers should ensure
 /// the stream is readable before calling `decode_frame`.
-pub struct ProtocolCodec;
+///
+/// The codec reuses a single payload buffer across `decode_frame` calls,
+/// growing to the high-water mark and staying there. This avoids per-frame
+/// allocation on the reader hot path.
+pub struct ProtocolCodec {
+    /// Reusable payload buffer for decoding. Grows to the largest frame
+    /// seen and stays allocated across calls.
+    decode_buf: Vec<u8>,
+}
+
+impl Default for ProtocolCodec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ProtocolCodec {
+    /// Create a new codec with an empty decode buffer.
+    pub fn new() -> Self {
+        Self {
+            decode_buf: Vec::new(),
+        }
+    }
+
     /// Encode a PDU and write it as a framed message.
     ///
     /// Writes the 10-byte header followed by the bincode payload atomically
@@ -109,8 +130,9 @@ impl ProtocolCodec {
     ///
     /// Blocks until the full header and payload are read. Returns
     /// `DecodeError::Io` with `UnexpectedEof` if the stream closes
-    /// mid-frame.
-    pub fn decode_frame<R: Read>(reader: &mut R) -> Result<DecodedFrame, DecodeError> {
+    /// mid-frame. Reuses an internal buffer that grows to the high-water
+    /// mark, avoiding per-frame allocation.
+    pub fn decode_frame<R: Read>(&mut self, reader: &mut R) -> Result<DecodedFrame, DecodeError> {
         // Read the 10-byte header.
         let mut hdr_buf = [0u8; HEADER_LEN];
         reader.read_exact(&mut hdr_buf)?;
@@ -126,12 +148,15 @@ impl ProtocolCodec {
             return Err(DecodeError::UnknownMsgType(header.msg_type));
         }
 
-        // Read the payload.
-        let mut payload = vec![0u8; header.payload_len as usize];
-        reader.read_exact(&mut payload)?;
+        // Read the payload into the reusable buffer. `resize` only
+        // allocates when the frame is larger than any previously seen;
+        // smaller frames reuse the existing capacity.
+        let len = header.payload_len as usize;
+        self.decode_buf.resize(len, 0);
+        reader.read_exact(&mut self.decode_buf[..len])?;
 
         // Deserialize the PDU from bincode.
-        let pdu: MuxPdu = bincode::deserialize(&payload)?;
+        let pdu: MuxPdu = bincode::deserialize(&self.decode_buf[..len])?;
 
         Ok(DecodedFrame {
             seq: header.seq,
