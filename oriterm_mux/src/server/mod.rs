@@ -26,7 +26,7 @@ use mio::{Events, Interest, Poll, Token, Waker};
 
 use crate::id::ClientId;
 use crate::pane::Pane;
-use crate::{IdAllocator, InProcessMux, MuxNotification, MuxPdu, PaneId, WindowId};
+use crate::{DecodedFrame, IdAllocator, InProcessMux, MuxNotification, MuxPdu, PaneId, WindowId};
 
 use self::frame_io::{ReadStatus, send_frame};
 use self::notify::TargetClients;
@@ -265,7 +265,11 @@ impl MuxServer {
             return;
         }
 
-        // Decode and dispatch all complete frames.
+        self.dispatch_frames(client_id);
+    }
+
+    /// Decode and dispatch all complete frames from a client's buffer.
+    fn dispatch_frames(&mut self, client_id: ClientId) {
         loop {
             let frame = {
                 let Some(conn) = self.connections.get_mut(&client_id) else {
@@ -279,75 +283,80 @@ impl MuxServer {
             };
 
             match decode_result {
-                Ok(decoded) => {
-                    let seq = decoded.seq;
-                    let is_sub_change = matches!(
-                        &decoded.pdu,
-                        MuxPdu::Subscribe { .. } | MuxPdu::Unsubscribe { .. }
-                    );
-                    self.scratch_panes.clear();
-                    let Some(conn) = self.connections.get_mut(&client_id) else {
-                        return;
-                    };
-                    let prev_window = conn.window_id();
-                    let response = dispatch::dispatch_request(
-                        &mut self.mux,
-                        &mut self.panes,
-                        conn,
-                        decoded.pdu,
-                        &self.wakeup,
-                        &mut self.scratch_panes,
-                    );
-
-                    // Purge stale subscriptions for closed panes.
-                    if !self.scratch_panes.is_empty() {
-                        self.purge_closed_pane_subscriptions();
-                    }
-
-                    // Sync subscription tracking (only on subscription changes).
-                    if is_sub_change {
-                        self.sync_subscriptions(client_id);
-                    }
-
-                    // Update window→client reverse index on ClaimWindow.
-                    if matches!(&response, Some(MuxPdu::WindowClaimed)) {
-                        if let Some(old) = prev_window {
-                            self.window_to_client.remove(&old);
-                        }
-                        if let Some(c) = self.connections.get(&client_id) {
-                            if let Some(wid) = c.window_id() {
-                                self.window_to_client.insert(wid, client_id);
-                            }
-                        }
-                    }
-
-                    if let Some(resp_pdu) = response {
-                        let Some(conn) = self.connections.get_mut(&client_id) else {
-                            return;
-                        };
-                        if let Err(e) = send_frame(conn.stream_mut(), seq, &resp_pdu) {
-                            log::warn!("write error to client {client_id}: {e}");
-                            self.disconnect_client(client_id);
-                            return;
-                        }
-                    }
-                }
+                Ok(decoded) => self.handle_decoded_frame(client_id, decoded),
                 Err(e) => {
                     log::warn!("decode error from client {client_id}: {e}");
-                    // Try to send an error response. If we don't know the seq,
-                    // use 0.
                     let err_pdu = MuxPdu::Error {
                         message: format!("decode error: {e}"),
                     };
                     if let Some(conn) = self.connections.get_mut(&client_id) {
                         let _ = send_frame(conn.stream_mut(), 0, &err_pdu);
                     }
-                    // Fatal decode errors disconnect the client.
                     if is_fatal_decode_error(&e) {
                         self.disconnect_client(client_id);
                         return;
                     }
                 }
+            }
+        }
+    }
+
+    /// Handle a single successfully decoded frame from a client.
+    fn handle_decoded_frame(&mut self, client_id: ClientId, decoded: DecodedFrame) {
+        let seq = decoded.seq;
+        let is_sub_change = matches!(
+            &decoded.pdu,
+            MuxPdu::Subscribe { .. } | MuxPdu::Unsubscribe { .. }
+        );
+        self.scratch_panes.clear();
+        let Some(conn) = self.connections.get_mut(&client_id) else {
+            return;
+        };
+        let prev_window = conn.window_id();
+        let response = dispatch::dispatch_request(
+            &mut self.mux,
+            &mut self.panes,
+            conn,
+            decoded.pdu,
+            &self.wakeup,
+            &mut self.scratch_panes,
+        );
+
+        // Purge stale subscriptions for closed panes.
+        if !self.scratch_panes.is_empty() {
+            self.purge_closed_pane_subscriptions();
+        }
+
+        // Sync subscription tracking (only on subscription changes).
+        if is_sub_change {
+            self.sync_subscriptions(client_id);
+        }
+
+        // Update window→client reverse index on ClaimWindow.
+        if matches!(&response, Some(MuxPdu::WindowClaimed)) {
+            if let Some(old) = prev_window {
+                self.window_to_client.remove(&old);
+            }
+            if let Some(c) = self.connections.get(&client_id) {
+                if let Some(wid) = c.window_id() {
+                    self.window_to_client.insert(wid, client_id);
+                }
+            }
+        }
+
+        if let Some(resp_pdu) = response {
+            let is_shutdown = matches!(resp_pdu, MuxPdu::ShutdownAck);
+            let Some(conn) = self.connections.get_mut(&client_id) else {
+                return;
+            };
+            if let Err(e) = send_frame(conn.stream_mut(), seq, &resp_pdu) {
+                log::warn!("write error to client {client_id}: {e}");
+                self.disconnect_client(client_id);
+                return;
+            }
+            if is_shutdown {
+                log::info!("shutdown flag set via IPC");
+                self.shutdown.store(true, Ordering::Release);
             }
         }
     }

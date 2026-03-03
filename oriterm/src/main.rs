@@ -39,6 +39,10 @@ fn main() {
     init_logger();
     install_panic_hook();
 
+    if args.new_window {
+        log::info!("--new-window requested");
+    }
+
     #[cfg(unix)]
     if let Err(e) = oriterm_mux::pty::signal::init() {
         log::warn!("failed to register SIGCHLD handler: {e}");

@@ -38,6 +38,10 @@ pub(crate) struct Cli {
     /// instead of creating a new one.
     #[arg(long, requires = "connect")]
     pub window: Option<u64>,
+
+    /// Open a new window (default when daemon is running).
+    #[arg(long)]
+    pub new_window: bool,
 }
 
 /// Diagnostic subcommands that run headlessly.

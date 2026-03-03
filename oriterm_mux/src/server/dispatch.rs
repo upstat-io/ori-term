@@ -134,6 +134,11 @@ pub fn dispatch_request(
 
         MuxPdu::Ping => Some(MuxPdu::PingAck),
 
+        MuxPdu::Shutdown => {
+            log::info!("shutdown requested by client {}", conn.id());
+            Some(MuxPdu::ShutdownAck)
+        }
+
         MuxPdu::MoveTabToWindow {
             tab_id,
             target_window_id,

@@ -1,8 +1,9 @@
 //! Tests for CLI subcommands.
 
+use clap::Parser;
 use clap_complete::Shell;
 
-use super::{format_action, format_binding, format_binding_key, generate_completions};
+use super::{Cli, format_action, format_binding, format_binding_key, generate_completions};
 use crate::config::{self, Config};
 use crate::key_encoding::Modifiers;
 use crate::keybindings::{Action, BindingKey, KeyBinding};
@@ -509,4 +510,16 @@ fn format_binding_with_send_text_action() {
         "should contain SendText prefix: {s}"
     );
     assert!(s.contains("->"), "should contain arrow separator: {s}");
+}
+
+#[test]
+fn new_window_flag_parses() {
+    let cli = Cli::try_parse_from(["oriterm", "--new-window"]).unwrap();
+    assert!(cli.new_window);
+}
+
+#[test]
+fn new_window_flag_defaults_to_false() {
+    let cli = Cli::try_parse_from(["oriterm"]).unwrap();
+    assert!(!cli.new_window);
 }
