@@ -90,8 +90,6 @@ pub(crate) struct App {
     // Mux backend (Section 44.3): abstracts in-process vs daemon mux access.
     // Owns pane structs (embedded) or proxies IPC (client).
     mux: Option<Box<dyn MuxBackend>>,
-    // Wakeup callback for mux backends (shared across fallback transitions).
-    mux_wakeup: Arc<dyn Fn() + Send + Sync>,
     // Active mux window ID (maps to the focused TermWindow).
     active_window: Option<MuxWindowId>,
     // Double-buffer for mux notifications (avoids per-frame allocation).
@@ -204,7 +202,6 @@ impl App {
             windows: HashMap::new(),
             focused_window_id: None,
             mux,
-            mux_wakeup,
             active_window: None,
             notification_buf: Vec::new(),
             modifiers: ModifiersState::empty(),
@@ -262,7 +259,6 @@ impl App {
             windows: HashMap::new(),
             focused_window_id: None,
             mux: Some(Box::new(mux)),
-            mux_wakeup,
             active_window: None,
             notification_buf: Vec::new(),
             modifiers: ModifiersState::empty(),

@@ -41,19 +41,8 @@ pub fn build_snapshot_into(
     out: &mut PaneSnapshot,
     render_buf: &mut RenderableContent,
 ) {
-    let lock_start = std::time::Instant::now();
     let term = pane.terminal().lock();
-    let lock_elapsed = lock_start.elapsed();
-    let build_start = std::time::Instant::now();
     build_snapshot_inner_into(&term, pane, out, render_buf);
-    let build_elapsed = build_start.elapsed();
-    if lock_elapsed.as_millis() > 2 || build_elapsed.as_millis() > 2 {
-        log::warn!(
-            "[DIAG] build_snapshot_into: lock={:?} build={:?}",
-            lock_elapsed,
-            build_elapsed,
-        );
-    }
 }
 
 /// Shared allocation-reusing snapshot logic.

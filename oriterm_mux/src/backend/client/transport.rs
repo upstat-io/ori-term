@@ -7,9 +7,9 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -18,6 +18,7 @@ use oriterm_ipc::ClientStream;
 use crate::id::ClientId;
 use crate::mux_event::MuxNotification;
 use crate::protocol::{DecodedFrame, MuxPdu, ProtocolCodec};
+use crate::{PaneId, PaneSnapshot};
 
 use super::notification::pdu_to_notification;
 
@@ -63,6 +64,9 @@ pub(super) struct ClientTransport {
     client_id: ClientId,
     /// Set to `false` when the reader thread exits.
     alive: Arc<AtomicBool>,
+    /// Shared snapshot slot: reader thread inserts pushed snapshots,
+    /// main thread takes them at render time. Bounds memory to `O(num_panes)`.
+    pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
 }
 
 impl ClientTransport {
@@ -106,27 +110,47 @@ impl ClientTransport {
             path.display()
         );
 
+        // Advertise capabilities (fire-and-forget, no ack expected).
+        let cap_seq = 2; // seq 1 was Hello; we'll start RPC seqs from 3.
+        ProtocolCodec::encode_frame(
+            &mut stream,
+            cap_seq,
+            &MuxPdu::SetCapabilities {
+                flags: crate::protocol::messages::CAP_SNAPSHOT_PUSH,
+            },
+        )?;
+
         // Set up channels.
         let (send_tx, send_rx) = mpsc::channel::<SendRequest>();
         let (notif_tx, notif_rx) = mpsc::channel::<MuxNotification>();
         let alive = Arc::new(AtomicBool::new(true));
         let alive_flag = alive.clone();
+        let pushed_snapshots = Arc::new(Mutex::new(HashMap::new()));
+        let pushed_snapshots_reader = Arc::clone(&pushed_snapshots);
 
         // Spawn reader thread.
         let handle = std::thread::Builder::new()
             .name("mux-client-reader".into())
             .spawn(move || {
-                reader_loop(stream, send_rx, notif_tx, wakeup, alive_flag);
+                reader_loop(
+                    stream,
+                    send_rx,
+                    notif_tx,
+                    wakeup,
+                    alive_flag,
+                    pushed_snapshots_reader,
+                );
             })
             .map_err(|e| io::Error::other(format!("failed to spawn reader thread: {e}")))?;
 
         Ok(Self {
             send_tx: Some(send_tx),
             notif_rx,
-            next_seq: 2, // seq 1 was used for Hello
+            next_seq: 3, // seq 1 = Hello, seq 2 = SetCapabilities
             reader_handle: Some(handle),
             client_id,
             alive,
+            pushed_snapshots,
         })
     }
 
@@ -147,24 +171,20 @@ impl ClientTransport {
         }
 
         let seq = self.alloc_seq();
-        let pdu_type = pdu.msg_type();
         let (reply_tx, reply_rx) = mpsc::channel();
 
         let tx = self
             .send_tx
             .as_ref()
             .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "transport shut down"))?;
-        let send_start = Instant::now();
         tx.send(SendRequest {
             seq,
             pdu,
             reply_tx: Some(reply_tx),
         })
         .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "reader thread gone"))?;
-        let send_elapsed = send_start.elapsed();
 
-        let wait_start = Instant::now();
-        let result = match reply_rx.recv_timeout(RPC_TIMEOUT) {
+        match reply_rx.recv_timeout(RPC_TIMEOUT) {
             Ok(MuxPdu::Error { message }) => Err(io::Error::other(message)),
             Ok(response) => Ok(response),
             Err(mpsc::RecvTimeoutError::Timeout) => Err(io::Error::new(
@@ -175,16 +195,7 @@ impl ClientTransport {
                 io::ErrorKind::BrokenPipe,
                 "reply channel disconnected",
             )),
-        };
-        let wait_elapsed = wait_start.elapsed();
-        if wait_elapsed.as_millis() > 5 {
-            log::warn!(
-                "[DIAG] transport.rpc seq={seq} type={pdu_type:?}: \
-                 send={send_elapsed:?} wait={wait_elapsed:?} ok={}",
-                result.is_ok()
-            );
         }
-        result
     }
 
     /// Send a message without waiting for a response.
@@ -211,6 +222,28 @@ impl ClientTransport {
         while let Ok(n) = self.notif_rx.try_recv() {
             out.push(n);
         }
+    }
+
+    /// Take a pushed snapshot for a specific pane, if one exists.
+    ///
+    /// Called at render time (not poll time) so that bare-dirty
+    /// invalidations arriving between poll and render are respected.
+    pub(super) fn take_pushed_snapshot(&self, pane_id: PaneId) -> Option<PaneSnapshot> {
+        self.pushed_snapshots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&pane_id)
+    }
+
+    /// Remove any pushed snapshot for a pane (fire-and-forget invalidation).
+    ///
+    /// Called by fire-and-forget mutation methods so that a stale push
+    /// from before the mutation is not used on the next render.
+    pub(super) fn invalidate_pushed_snapshot(&self, pane_id: PaneId) {
+        self.pushed_snapshots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&pane_id);
     }
 
     /// Whether the reader thread is still running.
@@ -250,6 +283,43 @@ impl Drop for ClientTransport {
     }
 }
 
+/// Dispatch a received notification PDU.
+///
+/// `NotifyPaneSnapshot` and `NotifyPaneOutput` are intercepted here
+/// (stored/invalidated in the shared snapshot map). Other notifications
+/// go through [`pdu_to_notification`].
+fn dispatch_notification(
+    pdu: MuxPdu,
+    pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
+    notif_tx: &mpsc::Sender<MuxNotification>,
+    wakeup: &dyn Fn(),
+) {
+    match pdu {
+        MuxPdu::NotifyPaneSnapshot { pane_id, snapshot } => {
+            pushed_snapshots
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(pane_id, snapshot);
+            let _ = notif_tx.send(MuxNotification::PaneDirty(pane_id));
+            (wakeup)();
+        }
+        MuxPdu::NotifyPaneOutput { pane_id } => {
+            pushed_snapshots
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&pane_id);
+            let _ = notif_tx.send(MuxNotification::PaneDirty(pane_id));
+            (wakeup)();
+        }
+        other => {
+            if let Some(notif) = pdu_to_notification(other) {
+                let _ = notif_tx.send(notif);
+                (wakeup)();
+            }
+        }
+    }
+}
+
 /// Background reader thread event loop.
 ///
 /// Owns the IPC stream. Drains outbound requests from the send channel,
@@ -257,6 +327,7 @@ impl Drop for ClientTransport {
 /// dispatches them to the correct reply channel or notification channel.
 #[allow(
     clippy::needless_pass_by_value,
+    clippy::too_many_arguments,
     reason = "ownership required — values are moved into the spawned thread"
 )]
 fn reader_loop(
@@ -265,6 +336,7 @@ fn reader_loop(
     notif_tx: mpsc::Sender<MuxNotification>,
     wakeup: Arc<dyn Fn() + Send + Sync>,
     alive: Arc<AtomicBool>,
+    pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
 ) {
     // Set read timeout so we can interleave reads with send-channel drains.
     if let Err(e) = stream.set_read_timeout(Some(READ_POLL_INTERVAL)) {
@@ -334,23 +406,18 @@ fn reader_loop(
                 }
 
                 if seq == 0 || pdu.is_notification() {
-                    // Push notification from daemon.
-                    if let Some(notif) = pdu_to_notification(pdu) {
-                        let _ = notif_tx.send(notif);
-                        (wakeup)();
-                    }
+                    dispatch_notification(pdu, &pushed_snapshots, &notif_tx, &*wakeup);
                 } else if let Some(reply_tx) = pending.remove(&seq) {
-                    // Response to a pending RPC.
-                    log::trace!(
-                        "[DIAG] reader_loop: forwarding response seq={seq}, pending_left={}",
-                        pending.len()
-                    );
                     let _ = reply_tx.send(pdu);
                 } else {
                     log::warn!(
                         "mux-client-reader: no pending request for seq={seq}, dropping response"
                     );
                 }
+            }
+            Err(crate::protocol::DecodeError::UnknownMsgType(t)) => {
+                log::warn!("mux-client-reader: unknown msg_type 0x{t:04x}, skipping");
+                // Stream is aligned (codec consumed the full frame). Continue.
             }
             Err(crate::protocol::DecodeError::Io(ref e))
                 if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>

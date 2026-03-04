@@ -39,6 +39,7 @@ pub fn dispatch_request(
     closed_panes: &mut Vec<PaneId>,
     snapshot_cache: &mut HashMap<PaneId, PaneSnapshot>,
     render_buf: &mut RenderableContent,
+    immediate_push: &mut Vec<PaneId>,
 ) -> Option<MuxPdu> {
     match pdu {
         MuxPdu::Hello { pid } => {
@@ -129,6 +130,7 @@ pub fn dispatch_request(
             if let Some(pane) = panes.get(&pane_id) {
                 pane.resize_grid(rows, cols);
                 pane.resize_pty(rows, cols);
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -136,6 +138,7 @@ pub fn dispatch_request(
         MuxPdu::ScrollDisplay { pane_id, delta } => {
             if let Some(pane) = panes.get(&pane_id) {
                 pane.scroll_display(delta as isize);
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -143,6 +146,7 @@ pub fn dispatch_request(
         MuxPdu::ScrollToBottom { pane_id } => {
             if let Some(pane) = panes.get(&pane_id) {
                 pane.scroll_to_bottom();
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -179,6 +183,8 @@ pub fn dispatch_request(
                     );
                 }
                 term.grid_mut().dirty_mut().mark_all();
+                drop(term);
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -193,6 +199,7 @@ pub fn dispatch_request(
                     _ => CursorShape::Block,
                 };
                 pane.terminal().lock().set_cursor_shape(core_shape);
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -200,6 +207,7 @@ pub fn dispatch_request(
         MuxPdu::MarkAllDirty { pane_id } => {
             if let Some(pane) = panes.get(&pane_id) {
                 pane.terminal().lock().grid_mut().dirty_mut().mark_all();
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -207,6 +215,7 @@ pub fn dispatch_request(
         MuxPdu::OpenSearch { pane_id } => {
             if let Some(pane) = panes.get_mut(&pane_id) {
                 pane.open_search();
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -214,6 +223,7 @@ pub fn dispatch_request(
         MuxPdu::CloseSearch { pane_id } => {
             if let Some(pane) = panes.get_mut(&pane_id) {
                 pane.close_search();
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -225,6 +235,7 @@ pub fn dispatch_request(
                     let term = grid_ref.lock();
                     search.set_query(query, term.grid());
                 }
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -234,6 +245,7 @@ pub fn dispatch_request(
                 if let Some(search) = pane.search_mut() {
                     search.next_match();
                 }
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
         }
@@ -243,8 +255,15 @@ pub fn dispatch_request(
                 if let Some(search) = pane.search_mut() {
                     search.prev_match();
                 }
+                immediate_push.push(pane_id);
             }
             None // Fire-and-forget.
+        }
+
+        MuxPdu::SetCapabilities { flags } => {
+            conn.set_capabilities(flags);
+            log::info!("client {} capabilities: 0x{flags:08x}", conn.id());
+            None // Fire-and-forget — no ack.
         }
 
         MuxPdu::ClaimWindow { window_id } => {
@@ -306,25 +325,11 @@ pub fn dispatch_request(
 
         MuxPdu::GetPaneSnapshot { pane_id } => match panes.get(&pane_id) {
             Some(pane) => {
-                let snap_start = std::time::Instant::now();
                 let cached = snapshot_cache.entry(pane_id).or_default();
                 snapshot::build_snapshot_into(pane, cached, render_buf);
-                let snap_elapsed = snap_start.elapsed();
-                let clone_start = std::time::Instant::now();
-                let resp = MuxPdu::PaneSnapshotResp {
+                Some(MuxPdu::PaneSnapshotResp {
                     snapshot: cached.clone(),
-                };
-                let clone_elapsed = clone_start.elapsed();
-                if snap_elapsed.as_millis() > 2 || clone_elapsed.as_millis() > 2 {
-                    log::warn!(
-                        "[DIAG] server GetPaneSnapshot: build={:?} clone={:?} rows={} cols={}",
-                        snap_elapsed,
-                        clone_elapsed,
-                        cached.cells.len(),
-                        cached.cols,
-                    );
-                }
-                Some(resp)
+                })
             }
             None => Some(MuxPdu::Error {
                 message: format!("pane not found: {pane_id}"),

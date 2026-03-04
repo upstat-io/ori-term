@@ -32,6 +32,8 @@ pub struct ClientConnection {
     window_id: Option<WindowId>,
     /// Panes this client is subscribed to for push notifications.
     subscribed_panes: HashSet<PaneId>,
+    /// Protocol capabilities advertised by the client.
+    capabilities: u32,
 }
 
 impl ClientConnection {
@@ -45,6 +47,7 @@ impl ClientConnection {
             frame_writer: FrameWriter::new(),
             window_id: None,
             subscribed_panes: HashSet::new(),
+            capabilities: 0,
         }
     }
 
@@ -74,20 +77,8 @@ impl ClientConnection {
     /// in the write buffer. The caller should register `WRITABLE` interest
     /// when [`has_pending_writes`] returns `true`.
     pub fn queue_frame(&mut self, seq: u32, pdu: &MuxPdu) -> std::io::Result<()> {
-        let start = std::time::Instant::now();
         self.frame_writer.queue(seq, pdu)?;
-        let queue_elapsed = start.elapsed();
-        let flush_start = std::time::Instant::now();
-        let result = self.frame_writer.flush_to(&mut self.stream);
-        let flush_elapsed = flush_start.elapsed();
-        if queue_elapsed.as_millis() > 1 || flush_elapsed.as_millis() > 1 {
-            log::warn!(
-                "[DIAG] queue_frame seq={seq}: serialize={:?} flush={:?}",
-                queue_elapsed,
-                flush_elapsed,
-            );
-        }
-        result
+        self.frame_writer.flush_to(&mut self.stream)
     }
 
     /// Flush any buffered outgoing data to the stream.
@@ -128,5 +119,20 @@ impl ClientConnection {
     /// All pane IDs this client is subscribed to.
     pub fn subscribed_panes(&self) -> &HashSet<PaneId> {
         &self.subscribed_panes
+    }
+
+    /// Set protocol capabilities advertised by the client.
+    pub fn set_capabilities(&mut self, flags: u32) {
+        self.capabilities = flags;
+    }
+
+    /// Whether the client advertised a given capability flag.
+    pub fn has_capability(&self, flag: u32) -> bool {
+        self.capabilities & flag != 0
+    }
+
+    /// Number of bytes buffered but not yet flushed to the stream.
+    pub fn pending_write_bytes(&self) -> usize {
+        self.frame_writer.pending_bytes()
     }
 }

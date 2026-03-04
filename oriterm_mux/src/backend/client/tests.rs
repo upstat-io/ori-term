@@ -369,16 +369,25 @@ mod transport_tests {
     use super::super::notification::pdu_to_notification;
     use super::super::transport::ClientTransport;
 
+    /// Consume the `SetCapabilities` frame that the client sends after Hello.
+    ///
+    /// Test servers must call this after writing `HelloAck` to stay in sync
+    /// with the client's handshake sequence.
+    fn consume_set_capabilities(stream: &mut UnixStream) {
+        let _ = ProtocolCodec::new().decode_frame(stream);
+    }
+
     // -- Notification conversion tests --
 
-    /// `NotifyPaneOutput` converts to `PaneDirty`.
+    /// `NotifyPaneOutput` is handled in the reader loop, not `pdu_to_notification`.
     #[test]
-    fn notify_pane_output() {
+    fn notify_pane_output_handled_in_reader_loop() {
         let pdu = MuxPdu::NotifyPaneOutput {
             pane_id: PaneId::from_raw(1),
         };
-        let notif = pdu_to_notification(pdu).unwrap();
-        assert!(matches!(notif, MuxNotification::PaneDirty(id) if id == PaneId::from_raw(1)));
+        // NotifyPaneOutput is intercepted in the reader loop (dispatch_notification),
+        // so pdu_to_notification returns None for it.
+        assert!(pdu_to_notification(pdu).is_none());
     }
 
     /// `NotifyPaneExited` converts to `PaneClosed`.
@@ -516,6 +525,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
             stream
         });
 
@@ -549,6 +559,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             // Read CreateWindow request.
             let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
@@ -601,6 +612,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             // Push a notification (seq=0).
             ProtocolCodec::encode_frame(
@@ -659,6 +671,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             // Drop the stream immediately to simulate disconnect.
             drop(stream);
@@ -694,6 +707,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             // Read the request but never respond — let client timeout.
             let _req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
@@ -737,6 +751,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             // Read 3 requests, record their seqs, respond to each.
             for _ in 0..3 {
@@ -790,6 +805,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
             drop(stream);
         });
 
@@ -830,6 +846,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             // Read the RPC request.
             let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
@@ -884,9 +901,9 @@ mod transport_tests {
         let _s = server.join().unwrap();
     }
 
-    /// Unknown PDU from daemon kills the transport.
+    /// Unknown PDU from daemon is skipped (forward-compat), transport stays alive.
     #[test]
-    fn unknown_pdu_kills_transport() {
+    fn unknown_pdu_skipped() {
         use std::io::Write;
 
         let dir = tempfile::tempdir().unwrap();
@@ -905,14 +922,16 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
-            // Send a frame with an unknown msg type.
+            // Send a frame with an unknown msg type + 4-byte payload.
             let header = crate::protocol::FrameHeader {
                 msg_type: 0xFFFF,
                 seq: 0,
-                payload_len: 0,
+                payload_len: 4,
             };
             stream.write_all(&header.encode()).unwrap();
+            stream.write_all(&[0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
 
             // Keep alive briefly.
             std::thread::sleep(Duration::from_millis(200));
@@ -922,10 +941,10 @@ mod transport_tests {
         let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
         let transport = ClientTransport::connect(&sock, wakeup).unwrap();
 
-        // Wait for reader thread to hit the unknown PDU error.
+        // Wait for reader thread to skip the unknown PDU.
         std::thread::sleep(Duration::from_millis(100));
 
-        assert!(!transport.is_alive(), "transport should die on unknown PDU");
+        assert!(transport.is_alive(), "transport should survive unknown PDU");
 
         let _s = server.join().unwrap();
     }
@@ -949,6 +968,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             // Send 10 notifications in rapid succession.
             for i in 1..=10u64 {
@@ -1008,6 +1028,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             // Read request, respond with Error.
             let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
@@ -1063,6 +1084,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
+            consume_set_capabilities(&mut stream);
 
             handler(&mut stream);
         })

@@ -13,6 +13,9 @@ use crate::layout::SplitDirection;
 
 use super::snapshot::{MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireSelection};
 
+/// Client supports receiving `NotifyPaneSnapshot` pushed snapshots.
+pub const CAP_SNAPSHOT_PUSH: u32 = 1;
+
 /// Message type IDs for the wire header.
 ///
 /// Ranges: `0x01xx` = requests, `0x02xx` = responses, `0x03xx` = notifications.
@@ -53,6 +56,7 @@ pub enum MsgType {
     SearchPrevMatch = 0x011F,
     ExtractText = 0x0120,
     ExtractHtml = 0x0121,
+    SetCapabilities = 0x0122,
 
     // Responses (daemon → window).
     HelloAck = 0x0201,
@@ -84,6 +88,7 @@ pub enum MsgType {
     NotifyPaneBell = 0x0304,
     NotifyWindowTabsChanged = 0x0305,
     NotifyTabMoved = 0x0306,
+    NotifyPaneSnapshot = 0x0307,
 }
 
 impl MsgType {
@@ -123,6 +128,7 @@ impl MsgType {
             0x011F => Some(Self::SearchPrevMatch),
             0x0120 => Some(Self::ExtractText),
             0x0121 => Some(Self::ExtractHtml),
+            0x0122 => Some(Self::SetCapabilities),
             0x0201 => Some(Self::HelloAck),
             0x0202 => Some(Self::WindowCreated),
             0x0203 => Some(Self::TabCreated),
@@ -150,6 +156,7 @@ impl MsgType {
             0x0304 => Some(Self::NotifyPaneBell),
             0x0305 => Some(Self::NotifyWindowTabsChanged),
             0x0306 => Some(Self::NotifyTabMoved),
+            0x0307 => Some(Self::NotifyPaneSnapshot),
             _ => None,
         }
     }
@@ -564,6 +571,25 @@ pub enum MuxPdu {
         /// Window the tab arrived in.
         to_window: WindowId,
     },
+
+    /// Client advertises protocol capabilities. Fire-and-forget.
+    ///
+    /// Sent after `HelloAck`. Server records flags on the connection.
+    SetCapabilities {
+        /// Bitmask of capability flags (e.g. [`CAP_SNAPSHOT_PUSH`]).
+        flags: u32,
+    },
+
+    /// Server-pushed pane snapshot (proactive, throttled to ~60fps).
+    ///
+    /// Only sent to clients that advertised [`CAP_SNAPSHOT_PUSH`].
+    NotifyPaneSnapshot {
+        /// Pane this snapshot belongs to.
+        pane_id: PaneId,
+        /// Full pane state snapshot.
+        snapshot: PaneSnapshot,
+    },
+    // Wire-compat: append-only — new variants must go at the end.
 }
 
 impl MuxPdu {
@@ -630,6 +656,8 @@ impl MuxPdu {
             Self::NotifyPaneBell { .. } => MsgType::NotifyPaneBell,
             Self::NotifyWindowTabsChanged { .. } => MsgType::NotifyWindowTabsChanged,
             Self::NotifyTabMoved { .. } => MsgType::NotifyTabMoved,
+            Self::SetCapabilities { .. } => MsgType::SetCapabilities,
+            Self::NotifyPaneSnapshot { .. } => MsgType::NotifyPaneSnapshot,
         }
     }
 
@@ -649,6 +677,7 @@ impl MuxPdu {
                 | Self::SearchSetQuery { .. }
                 | Self::SearchNextMatch { .. }
                 | Self::SearchPrevMatch { .. }
+                | Self::SetCapabilities { .. }
         )
     }
 
@@ -662,6 +691,7 @@ impl MuxPdu {
                 | Self::NotifyPaneBell { .. }
                 | Self::NotifyWindowTabsChanged { .. }
                 | Self::NotifyTabMoved { .. }
+                | Self::NotifyPaneSnapshot { .. }
         )
     }
 }

@@ -143,8 +143,12 @@ impl ProtocolCodec {
             return Err(DecodeError::PayloadTooLarge(header.payload_len));
         }
 
-        // Validate message type (for early rejection).
+        // Validate message type. Read and discard the payload for unknown
+        // types to keep the stream aligned for the next frame.
         if super::messages::MsgType::from_u16(header.msg_type).is_none() {
+            let len = header.payload_len as usize;
+            self.decode_buf.resize(len, 0);
+            reader.read_exact(&mut self.decode_buf[..len])?;
             return Err(DecodeError::UnknownMsgType(header.msg_type));
         }
 

@@ -38,10 +38,7 @@ impl MuxBackend for MuxClient {
         // Scan buffered notifications to mark panes dirty for rendering.
         for notif in &self.notifications {
             if let MuxNotification::PaneDirty(pane_id) = notif {
-                log::info!("[DIAG] poll_events: PaneDirty({pane_id})");
                 self.dirty_panes.insert(*pane_id);
-            } else {
-                log::info!("[DIAG] poll_events: {notif:?}");
             }
         }
     }
@@ -428,6 +425,7 @@ impl MuxBackend for MuxClient {
                 cols,
                 rows,
             });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -450,6 +448,7 @@ impl MuxBackend for MuxClient {
                 theme: theme_str,
                 palette_rgb,
             });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -467,6 +466,7 @@ impl MuxBackend for MuxClient {
                 pane_id,
                 shape: wire,
             });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -474,6 +474,7 @@ impl MuxBackend for MuxClient {
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::MarkAllDirty { pane_id });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -481,6 +482,7 @@ impl MuxBackend for MuxClient {
     fn open_search(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::OpenSearch { pane_id });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -488,6 +490,7 @@ impl MuxBackend for MuxClient {
     fn close_search(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::CloseSearch { pane_id });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -495,6 +498,7 @@ impl MuxBackend for MuxClient {
     fn search_set_query(&mut self, pane_id: PaneId, query: String) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::SearchSetQuery { pane_id, query });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -502,6 +506,7 @@ impl MuxBackend for MuxClient {
     fn search_next_match(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::SearchNextMatch { pane_id });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -509,6 +514,7 @@ impl MuxBackend for MuxClient {
     fn search_prev_match(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::SearchPrevMatch { pane_id });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -572,6 +578,7 @@ impl MuxBackend for MuxClient {
                 pane_id,
                 delta: wire_delta,
             });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -579,6 +586,7 @@ impl MuxBackend for MuxClient {
     fn scroll_to_bottom(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::ScrollToBottom { pane_id });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
     }
@@ -591,6 +599,9 @@ impl MuxBackend for MuxClient {
             Ok(MuxPdu::ScrollToPromptAck { scrolled }) => {
                 if scrolled {
                     self.dirty_panes.insert(pane_id);
+                    if let Some(transport) = &self.transport {
+                        transport.invalidate_pushed_snapshot(pane_id);
+                    }
                 }
                 scrolled
             }
@@ -613,6 +624,9 @@ impl MuxBackend for MuxClient {
             Ok(MuxPdu::ScrollToPromptAck { scrolled }) => {
                 if scrolled {
                     self.dirty_panes.insert(pane_id);
+                    if let Some(transport) = &self.transport {
+                        transport.invalidate_pushed_snapshot(pane_id);
+                    }
                 }
                 scrolled
             }
@@ -714,24 +728,20 @@ impl MuxBackend for MuxClient {
     }
 
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot> {
-        let rpc_start = std::time::Instant::now();
-        let result = self.rpc(MuxPdu::GetPaneSnapshot { pane_id });
-        let rpc_elapsed = rpc_start.elapsed();
-        if rpc_elapsed.as_millis() > 5 {
-            log::warn!(
-                "[DIAG] GetPaneSnapshot RPC took {:?} (ok={})",
-                rpc_elapsed,
-                result.is_ok()
-            );
+        // Try server-pushed snapshot first (checked at render time, not poll
+        // time, so bare-dirty invalidations between poll and render are respected).
+        let pushed = self
+            .transport
+            .as_ref()
+            .and_then(|t| t.take_pushed_snapshot(pane_id));
+        if let Some(snapshot) = pushed {
+            self.pane_snapshots.insert(pane_id, snapshot);
+            return self.pane_snapshots.get(&pane_id);
         }
-        match result {
+
+        // Fallback: synchronous RPC (no pushed snapshot available).
+        match self.rpc(MuxPdu::GetPaneSnapshot { pane_id }) {
             Ok(MuxPdu::PaneSnapshotResp { snapshot }) => {
-                let rows = snapshot.cells.len();
-                let cols = snapshot.cols;
-                log::trace!(
-                    "[DIAG] snapshot received: {rows}x{cols}, rpc={:?}",
-                    rpc_elapsed
-                );
                 self.pane_snapshots.insert(pane_id, snapshot);
                 self.pane_snapshots.get(&pane_id)
             }
@@ -740,10 +750,7 @@ impl MuxBackend for MuxClient {
                 None
             }
             Err(e) => {
-                log::error!(
-                    "refresh_pane_snapshot: RPC failed after {:?}: {e}",
-                    rpc_elapsed
-                );
+                log::error!("refresh_pane_snapshot: RPC failed: {e}");
                 None
             }
         }
