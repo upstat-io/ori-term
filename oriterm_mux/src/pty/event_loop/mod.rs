@@ -197,16 +197,7 @@ impl<T: EventListener> PtyEventLoop<T> {
         // Parse a bounded chunk, then release lock/lease so snapshot and
         // render paths are not starved under sustained floods.
         let parse_len = data.len().min(MAX_LOCKED_PARSE);
-        let parse_start = std::time::Instant::now();
         self.parse_chunk(&mut *term, &data[..parse_len]);
-        let parse_elapsed = parse_start.elapsed();
-        if parse_elapsed.as_millis() > 5 {
-            log::warn!(
-                "[DIAG] PTY parse_chunk: {:?} for {} bytes",
-                parse_elapsed,
-                parse_len,
-            );
-        }
 
         // Notify the renderer.
         let sync_bytes = self.processor.sync_bytes_count();

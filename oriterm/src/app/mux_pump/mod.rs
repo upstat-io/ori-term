@@ -31,23 +31,13 @@ impl App {
         }
 
         // 1. Process incoming MuxEvents from PTY reader threads.
-        let poll_start = std::time::Instant::now();
         mux.poll_events();
-        let poll_elapsed = poll_start.elapsed();
-        if poll_elapsed.as_millis() > 2 {
-            log::warn!("[DIAG] mux.poll_events() took {:?}", poll_elapsed);
-        }
 
         // 2. Drain notifications into our reusable buffer.
         mux.drain_notifications(&mut self.notification_buf);
         if self.notification_buf.is_empty() {
             return;
         }
-
-        log::info!(
-            "[DIAG] pump: {} notifications drained",
-            self.notification_buf.len()
-        );
 
         // 3. Handle each notification.
         self.with_drained_notifications(Self::handle_mux_notification);
@@ -247,18 +237,14 @@ fn format_duration_body(duration: Duration) -> String {
 }
 
 impl App {
-    /// Handle daemon disconnect: fall back to embedded mode.
+    /// Handle daemon disconnect by closing the window.
     ///
-    /// When the daemon connection is lost, swap the backend to
-    /// `EmbeddedMux` so the window stays alive in single-process mode.
-    /// Existing pane state is lost (daemon owned it), but the window
-    /// remains usable for new tabs.
-    fn handle_daemon_disconnect(&mut self) {
-        log::warn!("falling back to embedded mode after daemon disconnect");
-
-        // Drop the dead client backend and replace with embedded.
-        let mux = oriterm_mux::EmbeddedMux::new(self.mux_wakeup.clone());
-        self.mux = Some(Box::new(mux));
+    /// When the daemon connection is lost the terminal state is gone —
+    /// the daemon owned all panes. Closing is the honest response; it
+    /// matches how `tmux` clients exit when the server dies.
+    fn handle_daemon_disconnect(&self) {
+        log::warn!("daemon connection lost, closing window");
+        self.exit_app();
     }
 
     /// Handle a mux window being closed by removing its `WindowContext`.

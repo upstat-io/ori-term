@@ -14,9 +14,10 @@ mod frame_io;
 mod ipc;
 mod notify;
 mod pid_file;
+mod push;
 pub(crate) mod snapshot;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Read};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -100,6 +101,14 @@ pub struct MuxServer {
     scratch_clients: Vec<ClientId>,
     /// Reusable scratch buffer for collecting pane IDs during dispatch.
     scratch_panes: Vec<PaneId>,
+    /// Reusable scratch buffer for panes needing immediate snapshot push.
+    scratch_immediate_push: Vec<PaneId>,
+
+    // Server-push state.
+    /// Per-pane timestamp of last snapshot push.
+    last_snapshot_push: HashMap<PaneId, Instant>,
+    /// Panes with deferred pushes (per-client tracking).
+    pending_push: HashMap<PaneId, HashSet<ClientId>>,
 
     // Snapshot cache (allocation reuse for GetPaneSnapshot).
     /// Cached snapshots keyed by pane ID — buffers are reused across frames.
@@ -153,6 +162,9 @@ impl MuxServer {
             notification_buf: Vec::new(),
             scratch_clients: Vec::new(),
             scratch_panes: Vec::new(),
+            scratch_immediate_push: Vec::new(),
+            last_snapshot_push: HashMap::new(),
+            pending_push: HashMap::new(),
             snapshot_cache: HashMap::new(),
             render_buf: RenderableContent::default(),
         })
@@ -193,38 +205,23 @@ impl MuxServer {
         );
 
         while !self.shutdown.load(Ordering::Acquire) {
-            self.poll
-                .poll(&mut events, Some(Duration::from_millis(100)))?;
+            let timeout = if self.pending_push.is_empty() {
+                Duration::from_millis(100)
+            } else {
+                push::SNAPSHOT_PUSH_INTERVAL // 16ms — retries fire promptly.
+            };
+            self.poll.poll(&mut events, Some(timeout))?;
 
             for event in &events {
                 match event.token() {
                     LISTENER => self.accept_connections()?,
                     WAKER => { /* MuxEvent arrived — handled below */ }
-                    token => {
-                        let client_start = Instant::now();
-                        self.handle_client_event(token);
-                        let client_elapsed = client_start.elapsed();
-                        if client_elapsed.as_millis() > 5 {
-                            log::warn!(
-                                "[DIAG] server handle_client_event took {:?}",
-                                client_elapsed
-                            );
-                        }
-                    }
+                    token => self.handle_client_event(token),
                 }
             }
 
             // Drain `MuxEvent`s from PTY reader threads.
-            let drain_start = Instant::now();
             self.drain_mux_events();
-            let drain_elapsed = drain_start.elapsed();
-            let notif_count = self.notification_buf.len();
-            if notif_count > 0 || drain_elapsed.as_millis() > 2 {
-                log::info!(
-                    "[DIAG] server drain_mux_events: {notif_count} notifs, took {:?}",
-                    drain_elapsed
-                );
-            }
 
             // Check exit condition: all panes exited + no clients.
             if self.should_exit() {
@@ -337,13 +334,17 @@ impl MuxServer {
             match decode_result {
                 Ok(decoded) => self.handle_decoded_frame(client_id, decoded),
                 Err(e) => {
-                    log::warn!("decode error from client {client_id}: {e}");
-                    let err_pdu = MuxPdu::Error {
-                        message: format!("decode error: {e}"),
-                    };
-                    if let Some(conn) = self.connections.get_mut(&client_id) {
-                        let _ = conn.queue_frame(0, &err_pdu);
-                        self.update_write_interest(client_id);
+                    if matches!(e, crate::DecodeError::UnknownMsgType(_)) {
+                        log::debug!("unknown msg_type from client {client_id}, skipping");
+                    } else {
+                        log::warn!("decode error from client {client_id}: {e}");
+                        let err_pdu = MuxPdu::Error {
+                            message: format!("decode error: {e}"),
+                        };
+                        if let Some(conn) = self.connections.get_mut(&client_id) {
+                            let _ = conn.queue_frame(0, &err_pdu);
+                            self.update_write_interest(client_id);
+                        }
                     }
                     if is_fatal_decode_error(&e) {
                         self.disconnect_client(client_id);
@@ -356,7 +357,6 @@ impl MuxServer {
 
     /// Handle a single successfully decoded frame from a client.
     fn handle_decoded_frame(&mut self, client_id: ClientId, decoded: DecodedFrame) {
-        let dispatch_start = Instant::now();
         log::trace!(
             "{client_id}: dispatch seq={} pdu={:?}",
             decoded.seq,
@@ -367,7 +367,12 @@ impl MuxServer {
             &decoded.pdu,
             MuxPdu::Subscribe { .. } | MuxPdu::Unsubscribe { .. }
         );
+        let unsub_pane = match &decoded.pdu {
+            MuxPdu::Unsubscribe { pane_id } => Some(*pane_id),
+            _ => None,
+        };
         self.scratch_panes.clear();
+        self.scratch_immediate_push.clear();
         let Some(conn) = self.connections.get_mut(&client_id) else {
             return;
         };
@@ -381,6 +386,7 @@ impl MuxServer {
             &mut self.scratch_panes,
             &mut self.snapshot_cache,
             &mut self.render_buf,
+            &mut self.scratch_immediate_push,
         );
 
         // Purge stale subscriptions for closed panes.
@@ -391,6 +397,35 @@ impl MuxServer {
         // Sync subscription tracking (only on subscription changes).
         if is_sub_change {
             self.sync_subscriptions(client_id);
+        }
+
+        // Immediate push for fire-and-forget mutations that change visible state.
+        if !self.scratch_immediate_push.is_empty() {
+            let now = Instant::now();
+            for &push_pane_id in &self.scratch_immediate_push {
+                push::push_or_defer_pane(
+                    now,
+                    push_pane_id,
+                    &mut self.last_snapshot_push,
+                    &self.subscriptions,
+                    &mut self.connections,
+                    &self.panes,
+                    &mut self.snapshot_cache,
+                    &mut self.render_buf,
+                    &mut self.pending_push,
+                    &mut self.scratch_clients,
+                );
+            }
+        }
+
+        // Prune pending_push on Unsubscribe.
+        if let Some(unsub_pid) = unsub_pane {
+            if let Some(deferred) = self.pending_push.get_mut(&unsub_pid) {
+                deferred.remove(&client_id);
+                if deferred.is_empty() {
+                    self.pending_push.remove(&unsub_pid);
+                }
+            }
         }
 
         // Update window→client reverse index on ClaimWindow.
@@ -421,46 +456,67 @@ impl MuxServer {
                 self.shutdown.store(true, Ordering::Release);
             }
         }
-
-        let dispatch_elapsed = dispatch_start.elapsed();
-        if dispatch_elapsed.as_millis() > 2 {
-            log::warn!(
-                "[DIAG] server handle_decoded_frame seq={seq} total={:?}",
-                dispatch_elapsed,
-            );
-        }
     }
 
     /// Drain `MuxEvent`s from PTY reader threads and push notifications.
+    ///
+    /// Three-phase processing:
+    /// 1. Trailing-edge flush — retry deferred pushes from previous cycles.
+    /// 2. Route new notifications — `PaneDirty` triggers snapshot push
+    ///    (or deferral); other notifications use existing routing.
+    /// 3. Update write interests for connections with pending data.
     fn drain_mux_events(&mut self) {
         self.mux.poll_events(&mut self.panes);
         self.mux.drain_notifications(&mut self.notification_buf);
+        let now = Instant::now();
 
+        // Phase 1: Trailing-edge flush — retry deferred pushes.
+        push::trailing_edge_flush(
+            now,
+            &mut self.pending_push,
+            &mut self.last_snapshot_push,
+            &self.subscriptions,
+            &mut self.connections,
+            &self.panes,
+            &mut self.snapshot_cache,
+            &mut self.render_buf,
+        );
+
+        // Phase 2: Route new notifications.
         for notif in &self.notification_buf {
-            let Some((target, pdu)) = notify::notification_to_pdu(notif, &self.panes) else {
-                continue;
-            };
-
-            match target {
-                TargetClients::PaneSubscribers(pane_id) => {
-                    let Some(subs) = self.subscriptions.get(&pane_id) else {
-                        continue;
-                    };
-                    self.scratch_clients.clear();
-                    self.scratch_clients.extend_from_slice(subs);
-                    for &cid in &self.scratch_clients {
-                        if let Some(conn) = self.connections.get_mut(&cid) {
-                            if let Err(e) = conn.queue_frame(0, &pdu) {
-                                log::warn!("notification write error to {cid}: {e}");
+            if let MuxNotification::PaneDirty(pane_id) = notif {
+                push::push_or_defer_pane(
+                    now,
+                    *pane_id,
+                    &mut self.last_snapshot_push,
+                    &self.subscriptions,
+                    &mut self.connections,
+                    &self.panes,
+                    &mut self.snapshot_cache,
+                    &mut self.render_buf,
+                    &mut self.pending_push,
+                    &mut self.scratch_clients,
+                );
+            } else {
+                let Some((target, pdu)) = notify::notification_to_pdu(notif, &self.panes) else {
+                    continue;
+                };
+                match target {
+                    TargetClients::PaneSubscribers(pane_id) => {
+                        if let Some(subs) = self.subscriptions.get(&pane_id) {
+                            self.scratch_clients.clear();
+                            self.scratch_clients.extend_from_slice(subs);
+                            for &cid in &self.scratch_clients {
+                                if let Some(conn) = self.connections.get_mut(&cid) {
+                                    let _ = conn.queue_frame(0, &pdu);
+                                }
                             }
                         }
                     }
-                }
-                TargetClients::WindowClient(window_id) => {
-                    if let Some(&cid) = self.window_to_client.get(&window_id) {
-                        if let Some(conn) = self.connections.get_mut(&cid) {
-                            if let Err(e) = conn.queue_frame(0, &pdu) {
-                                log::warn!("notification write error to {cid}: {e}");
+                    TargetClients::WindowClient(window_id) => {
+                        if let Some(&cid) = self.window_to_client.get(&window_id) {
+                            if let Some(conn) = self.connections.get_mut(&cid) {
+                                let _ = conn.queue_frame(0, &pdu);
                             }
                         }
                     }
@@ -468,8 +524,20 @@ impl MuxServer {
             }
         }
 
-        // Update write interests for any connections with pending data.
-        // Collect IDs first to avoid borrow conflict with `update_write_interest`.
+        // Post-pass: Clean up per-pane state for closed panes.
+        for notif in &self.notification_buf {
+            if let MuxNotification::PaneClosed(pane_id) = notif {
+                self.snapshot_cache.remove(pane_id);
+                self.last_snapshot_push.remove(pane_id);
+                self.pending_push.remove(pane_id);
+                self.subscriptions.remove(pane_id);
+                for conn in self.connections.values_mut() {
+                    conn.unsubscribe(*pane_id);
+                }
+            }
+        }
+
+        // Phase 3: Update write interests for connections with pending data.
         let pending: Vec<_> = self
             .connections
             .values()
@@ -524,6 +592,8 @@ impl MuxServer {
             for &pid in &closed_panes {
                 self.panes.remove(&pid);
                 self.snapshot_cache.remove(&pid);
+                self.last_snapshot_push.remove(&pid);
+                self.pending_push.remove(&pid);
                 self.subscriptions.remove(&pid);
                 // Remove from all other clients' subscription sets.
                 for other_conn in self.connections.values_mut() {
@@ -544,6 +614,12 @@ impl MuxServer {
             client_id,
             conn.subscribed_panes(),
         );
+
+        // Remove disconnecting client from all pending_push sets.
+        self.pending_push.retain(|_pane_id, deferred| {
+            deferred.remove(&client_id);
+            !deferred.is_empty()
+        });
 
         log::info!("client {client_id} fully disconnected");
     }
@@ -582,6 +658,9 @@ impl MuxServer {
     fn purge_closed_pane_subscriptions(&mut self) {
         for &pane_id in &self.scratch_panes {
             self.subscriptions.remove(&pane_id);
+            self.snapshot_cache.remove(&pane_id);
+            self.last_snapshot_push.remove(&pane_id);
+            self.pending_push.remove(&pane_id);
         }
         for conn in self.connections.values_mut() {
             for &pane_id in &self.scratch_panes {
@@ -612,10 +691,7 @@ impl MuxServer {
 
 /// Whether a decode error should cause the client to be disconnected.
 fn is_fatal_decode_error(err: &crate::DecodeError) -> bool {
-    matches!(
-        err,
-        crate::DecodeError::PayloadTooLarge(_) | crate::DecodeError::UnknownMsgType(_)
-    )
+    matches!(err, crate::DecodeError::PayloadTooLarge(_))
 }
 
 #[cfg(test)]

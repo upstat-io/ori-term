@@ -97,6 +97,9 @@ impl MuxClient {
     pub(crate) fn remove_snapshot(&mut self, pane_id: PaneId) {
         self.pane_snapshots.remove(&pane_id);
         self.dirty_panes.remove(&pane_id);
+        if let Some(transport) = &self.transport {
+            transport.invalidate_pushed_snapshot(pane_id);
+        }
     }
 
     /// Subscribe to a pane and cache the initial snapshot from the response.

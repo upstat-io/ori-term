@@ -91,17 +91,8 @@ impl App {
             // Extract phase: always snapshot-based (both embedded and daemon).
             let snap_is_none = mux.pane_snapshot(pane_id).is_none();
             let snap_dirty = mux.is_pane_snapshot_dirty(pane_id);
-            let snap_needed = snap_is_none || snap_dirty;
-            log::info!(
-                "[DIAG] redraw: pane={pane_id:?} snap_none={snap_is_none} snap_dirty={snap_dirty} snap_needed={snap_needed}"
-            );
-            if snap_needed {
-                let snap_start = Instant::now();
+            if snap_is_none || snap_dirty {
                 mux.refresh_pane_snapshot(pane_id);
-                let snap_elapsed = snap_start.elapsed();
-                if snap_elapsed.as_millis() > 5 {
-                    log::warn!("[DIAG] refresh_pane_snapshot took {:?}", snap_elapsed);
-                }
             }
             let Some(snapshot) = mux.pane_snapshot(pane_id) else {
                 log::warn!("redraw: no snapshot for pane {pane_id:?}");

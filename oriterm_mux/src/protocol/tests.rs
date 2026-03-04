@@ -72,6 +72,8 @@ fn msg_type_roundtrip_all() {
         MsgType::CloseWindow,
         MsgType::ClaimWindow,
         MsgType::Ping,
+        MsgType::Shutdown,
+        MsgType::SetCapabilities,
         MsgType::HelloAck,
         MsgType::WindowCreated,
         MsgType::TabCreated,
@@ -87,7 +89,6 @@ fn msg_type_roundtrip_all() {
         MsgType::ActiveTabChanged,
         MsgType::WindowClosed,
         MsgType::WindowClaimed,
-        MsgType::Shutdown,
         MsgType::PingAck,
         MsgType::ShutdownAck,
         MsgType::Error,
@@ -97,6 +98,7 @@ fn msg_type_roundtrip_all() {
         MsgType::NotifyPaneBell,
         MsgType::NotifyWindowTabsChanged,
         MsgType::NotifyTabMoved,
+        MsgType::NotifyPaneSnapshot,
     ];
     for t in types {
         let raw = t as u16;
@@ -1134,3 +1136,64 @@ fn roundtrip_large_pane_snapshot() {
         other => panic!("expected PaneSnapshotResp, got {other:?}"),
     }
 }
+
+// -- SetCapabilities roundtrip --
+
+#[test]
+fn roundtrip_set_capabilities() {
+    use super::messages::CAP_SNAPSHOT_PUSH;
+    let pdu = MuxPdu::SetCapabilities {
+        flags: CAP_SNAPSHOT_PUSH,
+    };
+    assert!(pdu.is_fire_and_forget());
+    roundtrip(2, pdu);
+}
+
+// -- NotifyPaneSnapshot roundtrip --
+
+#[test]
+fn roundtrip_notify_pane_snapshot() {
+    let snapshot = sample_snapshot();
+    let pdu = MuxPdu::NotifyPaneSnapshot {
+        pane_id: PaneId::from_raw(3),
+        snapshot,
+    };
+    assert!(pdu.is_notification());
+    roundtrip(0, pdu);
+}
+
+// -- Forward-compat: ProtocolCodec skips unknown msg_type, stream stays aligned --
+
+#[test]
+fn forward_compat_codec_skips_unknown_and_stays_aligned() {
+    use std::io::Write;
+
+    let mut buf = Vec::new();
+
+    // Frame 1: unknown msg_type 0xFFFF with 100-byte payload.
+    let header1 = FrameHeader {
+        msg_type: 0xFFFF,
+        seq: 0,
+        payload_len: 100,
+    };
+    buf.write_all(&header1.encode()).unwrap();
+    buf.extend_from_slice(&[0xAB; 100]);
+
+    // Frame 2: valid Ping.
+    ProtocolCodec::encode_frame(&mut buf, 42, &MuxPdu::Ping).unwrap();
+
+    let mut reader = Cursor::new(buf);
+    let mut codec = ProtocolCodec::new();
+
+    // First decode: UnknownMsgType (payload consumed).
+    let err = codec.decode_frame(&mut reader).unwrap_err();
+    assert!(matches!(err, DecodeError::UnknownMsgType(0xFFFF)));
+
+    // Second decode: valid Ping (stream aligned).
+    let frame = codec.decode_frame(&mut reader).unwrap();
+    assert_eq!(frame.seq, 42);
+    assert!(matches!(frame.pdu, MuxPdu::Ping));
+}
+
+// FrameReader forward-compat tests live in `server/tests.rs` where FrameReader
+// is accessible (it's a private server submodule).

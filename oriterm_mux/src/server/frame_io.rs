@@ -68,9 +68,14 @@ impl FrameReader {
             return Some(Err(DecodeError::PayloadTooLarge(header.payload_len)));
         }
 
-        // Validate message type.
+        // Validate message type. Wait for the full frame to be buffered,
+        // then drain all of it to keep the stream aligned.
         if MsgType::from_u16(header.msg_type).is_none() {
-            self.buf.drain(..HEADER_LEN);
+            let total = HEADER_LEN + header.payload_len as usize;
+            if self.buf.len() < total {
+                return None; // Not enough data yet — wait for full frame.
+            }
+            self.buf.drain(..total);
             return Some(Err(DecodeError::UnknownMsgType(header.msg_type)));
         }
 
@@ -161,5 +166,10 @@ impl FrameWriter {
     /// Whether there is unsent data in the buffer.
     pub fn has_pending(&self) -> bool {
         !self.buf.is_empty()
+    }
+
+    /// Number of bytes buffered but not yet written.
+    pub fn pending_bytes(&self) -> usize {
+        self.buf.len()
     }
 }

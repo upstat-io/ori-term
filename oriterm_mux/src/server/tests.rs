@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 
 use oriterm_ipc::ClientStream;
 
-use crate::{MuxPdu, ProtocolCodec};
+use crate::{FrameHeader, MuxPdu, ProtocolCodec};
 
 use super::MuxServer;
 use super::frame_io::FrameReader;
@@ -1856,4 +1856,64 @@ fn server_init_unwritable_pid_path_returns_error() {
     let bad_pid = std::path::PathBuf::from("/dev/null/nested/test.pid");
     let result = MuxServer::with_paths(&sock_path, &bad_pid);
     assert!(result.is_err(), "should fail with unwritable PID path");
+}
+
+// -- FrameReader forward-compat tests --
+
+/// Unknown msg_type with payload: full frame consumed, stream stays aligned.
+#[test]
+fn frame_reader_forward_compat_skips_unknown_and_stays_aligned() {
+    let mut data = Vec::new();
+
+    // Frame 1: unknown msg_type 0xFFFF with 8-byte payload.
+    let header1 = FrameHeader {
+        msg_type: 0xFFFF,
+        seq: 0,
+        payload_len: 8,
+    };
+    data.extend_from_slice(&header1.encode());
+    data.extend_from_slice(&[0xDE; 8]);
+
+    // Frame 2: valid Ping.
+    ProtocolCodec::encode_frame(&mut data, 99, &MuxPdu::Ping).unwrap();
+
+    let mut reader = FrameReader::new();
+    reader.extend(&data);
+
+    // First decode: UnknownMsgType.
+    let err = reader.try_decode().unwrap().unwrap_err();
+    assert!(matches!(err, crate::DecodeError::UnknownMsgType(0xFFFF)));
+
+    // Second decode: valid Ping (stream aligned).
+    let frame = reader.try_decode().unwrap().unwrap();
+    assert_eq!(frame.seq, 99);
+    assert!(matches!(frame.pdu, MuxPdu::Ping));
+}
+
+/// FrameReader waits for full unknown frame before draining.
+#[test]
+fn frame_reader_forward_compat_waits_for_full_unknown_frame() {
+    let header = FrameHeader {
+        msg_type: 0xFFFF,
+        seq: 0,
+        payload_len: 20,
+    };
+
+    let mut reader = FrameReader::new();
+
+    // Feed only the header.
+    reader.extend(&header.encode());
+    assert!(reader.try_decode().is_none(), "should wait for payload");
+
+    // Feed partial payload (10 of 20 bytes).
+    reader.extend(&[0u8; 10]);
+    assert!(
+        reader.try_decode().is_none(),
+        "should wait for full payload"
+    );
+
+    // Feed remaining 10 bytes.
+    reader.extend(&[0u8; 10]);
+    let err = reader.try_decode().unwrap().unwrap_err();
+    assert!(matches!(err, crate::DecodeError::UnknownMsgType(0xFFFF)));
 }
