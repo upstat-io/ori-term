@@ -18,4 +18,8 @@ pub(crate) enum TermEvent {
     /// Sent by [`MuxEventProxy`](oriterm_mux::mux_event::MuxEventProxy) to wake
     /// the winit event loop when pane events arrive over the mpsc channel.
     MuxWakeup,
+    /// Create a new window (keybinding action deferred to event loop).
+    CreateWindow,
+    /// Move a tab to a new window (context menu action deferred to event loop).
+    MoveTabToNewWindow(usize),
 }

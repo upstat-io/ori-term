@@ -27,10 +27,14 @@ impl WindowRenderer {
     /// then clears all GPU atlases, re-populates the appropriate atlas with
     /// ASCII glyphs, and rebuilds bind groups for the new texture state.
     pub fn set_font_size(&mut self, size_pt: f32, dpi: f32, gpu: &GpuState) {
-        self.font_collection.set_size(size_pt, dpi);
+        if let Err(e) = self.font_collection.set_size(size_pt, dpi) {
+            log::error!("font set_size failed: {e}");
+        }
         // Resize UI font at the same physical DPI so overlay text matches.
         if let Some(ui_fc) = &mut self.ui_font_collection {
-            ui_fc.set_size(11.0, dpi);
+            if let Err(e) = ui_fc.set_size(11.0, dpi) {
+                log::error!("UI font set_size failed: {e}");
+            }
         }
         self.clear_and_recache(gpu);
     }

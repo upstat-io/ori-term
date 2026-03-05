@@ -20,6 +20,53 @@ use crate::{
     WireCursor, WireCursorShape, WireRgb, WireSearchMatch,
 };
 
+/// Cached snapshots with reusable allocation buffers.
+///
+/// Encapsulates the per-pane snapshot cache and the shared
+/// [`RenderableContent`] scratch buffer used during snapshot building.
+/// The server layer interacts with this type instead of touching
+/// `RenderableContent` directly.
+pub(crate) struct SnapshotCache {
+    /// Per-pane cached snapshots — buffers reused across frames.
+    cache: HashMap<PaneId, PaneSnapshot>,
+    /// Shared scratch buffer for `Term::renderable_content_into()`.
+    render_buf: RenderableContent,
+}
+
+impl SnapshotCache {
+    /// Create an empty cache.
+    pub fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+            render_buf: RenderableContent::default(),
+        }
+    }
+
+    /// Build a snapshot for a pane, reusing cached allocations.
+    ///
+    /// Returns a reference to the cached snapshot. The underlying `Vec`
+    /// buffers keep their capacity across calls.
+    pub fn build(&mut self, pane_id: PaneId, pane: &Pane) -> &PaneSnapshot {
+        let cached = self.cache.entry(pane_id).or_default();
+        let term = pane.terminal().lock();
+        build_snapshot_inner_into(&term, pane, cached, &mut self.render_buf);
+        // SAFETY: `entry().or_default()` guarantees the key exists.
+        &self.cache[&pane_id]
+    }
+
+    /// Clone the cached snapshot for a pane (for sending over IPC).
+    ///
+    /// Builds a fresh snapshot if none is cached.
+    pub fn build_clone(&mut self, pane_id: PaneId, pane: &Pane) -> PaneSnapshot {
+        self.build(pane_id, pane).clone()
+    }
+
+    /// Remove a pane's cached snapshot.
+    pub fn remove(&mut self, pane_id: PaneId) {
+        self.cache.remove(&pane_id);
+    }
+}
+
 /// Build a full snapshot of a pane's visible state.
 ///
 /// Blocks on the terminal lock. The PTY reader uses a fairness-gate

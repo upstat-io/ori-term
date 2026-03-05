@@ -84,7 +84,9 @@ impl App {
         // the physical surface. Cell metrics become physical pixels.
         let scale = window.scale_factor().factor();
         let physical_dpi = DEFAULT_DPI * scale as f32;
-        font_collection.set_size(self.config.font.size, physical_dpi);
+        if let Err(e) = font_collection.set_size(self.config.font.size, physical_dpi) {
+            log::error!("font set_size failed: {e}");
+        }
 
         // 6c. Adjust hinting and subpixel mode for the actual display scale factor.
         // Config overrides take priority over auto-detection.

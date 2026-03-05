@@ -23,7 +23,7 @@ use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 const HOVER_DURATION: Duration = Duration::from_millis(100);
 
 /// Visual style for a [`ButtonWidget`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ButtonStyle {
     /// Text color.
     pub fg: Color,

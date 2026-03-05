@@ -25,17 +25,13 @@ use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Token, Waker};
 
-use oriterm_core::RenderableContent;
-
 use crate::id::ClientId;
 use crate::pane::Pane;
-use crate::{
-    DecodedFrame, IdAllocator, InProcessMux, MuxNotification, MuxPdu, PaneId, PaneSnapshot,
-    WindowId,
-};
+use crate::{DecodedFrame, IdAllocator, InProcessMux, MuxNotification, MuxPdu, PaneId, WindowId};
 
 use self::frame_io::ReadStatus;
 use self::notify::TargetClients;
+use self::snapshot::SnapshotCache;
 
 pub use connection::ClientConnection;
 pub use ipc::{IpcListener, IpcStream, socket_path};
@@ -111,10 +107,9 @@ pub struct MuxServer {
     pending_push: HashMap<PaneId, HashSet<ClientId>>,
 
     // Snapshot cache (allocation reuse for GetPaneSnapshot).
-    /// Cached snapshots keyed by pane ID — buffers are reused across frames.
-    snapshot_cache: HashMap<PaneId, PaneSnapshot>,
-    /// Shared renderable-content buffer for snapshot building.
-    render_buf: RenderableContent,
+    /// Cached snapshots with shared render buffer — encapsulates
+    /// `RenderableContent` so the server layer never touches it directly.
+    snapshot_cache: SnapshotCache,
 }
 
 impl MuxServer {
@@ -165,8 +160,7 @@ impl MuxServer {
             scratch_immediate_push: Vec::new(),
             last_snapshot_push: HashMap::new(),
             pending_push: HashMap::new(),
-            snapshot_cache: HashMap::new(),
-            render_buf: RenderableContent::default(),
+            snapshot_cache: SnapshotCache::new(),
         })
     }
 
@@ -384,17 +378,15 @@ impl MuxServer {
         let Some(conn) = self.connections.get_mut(&client_id) else {
             return;
         };
-        let response = dispatch::dispatch_request(
-            &mut self.mux,
-            &mut self.panes,
-            conn,
-            decoded.pdu,
-            &self.wakeup,
-            &mut self.scratch_panes,
-            &mut self.snapshot_cache,
-            &mut self.render_buf,
-            &mut self.scratch_immediate_push,
-        );
+        let mut ctx = dispatch::DispatchContext {
+            mux: &mut self.mux,
+            panes: &mut self.panes,
+            wakeup: &self.wakeup,
+            closed_panes: &mut self.scratch_panes,
+            snapshot_cache: &mut self.snapshot_cache,
+            immediate_push: &mut self.scratch_immediate_push,
+        };
+        let response = dispatch::dispatch_request(&mut ctx, conn, decoded.pdu);
 
         // Purge stale subscriptions for closed panes.
         if !self.scratch_panes.is_empty() {
@@ -409,19 +401,17 @@ impl MuxServer {
         // Immediate push for fire-and-forget mutations that change visible state.
         if !self.scratch_immediate_push.is_empty() {
             let now = Instant::now();
+            let mut push_ctx = push::PushContext {
+                last_snapshot_push: &mut self.last_snapshot_push,
+                subscriptions: &self.subscriptions,
+                connections: &mut self.connections,
+                panes: &self.panes,
+                snapshot_cache: &mut self.snapshot_cache,
+                pending_push: &mut self.pending_push,
+                scratch: &mut self.scratch_clients,
+            };
             for &push_pane_id in &self.scratch_immediate_push {
-                push::push_or_defer_pane(
-                    now,
-                    push_pane_id,
-                    &mut self.last_snapshot_push,
-                    &self.subscriptions,
-                    &mut self.connections,
-                    &self.panes,
-                    &mut self.snapshot_cache,
-                    &mut self.render_buf,
-                    &mut self.pending_push,
-                    &mut self.scratch_clients,
-                );
+                push::push_or_defer_pane(&mut push_ctx, now, push_pane_id);
             }
         }
 
@@ -483,32 +473,32 @@ impl MuxServer {
         let now = Instant::now();
 
         // Phase 1: Trailing-edge flush — retry deferred pushes.
-        push::trailing_edge_flush(
-            now,
-            &mut self.pending_push,
-            &mut self.last_snapshot_push,
-            &self.subscriptions,
-            &mut self.connections,
-            &self.panes,
-            &mut self.snapshot_cache,
-            &mut self.render_buf,
-        );
+        {
+            let mut push_ctx = push::PushContext {
+                last_snapshot_push: &mut self.last_snapshot_push,
+                subscriptions: &self.subscriptions,
+                connections: &mut self.connections,
+                panes: &self.panes,
+                snapshot_cache: &mut self.snapshot_cache,
+                pending_push: &mut self.pending_push,
+                scratch: &mut self.scratch_clients,
+            };
+            push::trailing_edge_flush(&mut push_ctx, now);
+        }
 
         // Phase 2: Route new notifications.
         for notif in &self.notification_buf {
             if let MuxNotification::PaneDirty(pane_id) = notif {
-                push::push_or_defer_pane(
-                    now,
-                    *pane_id,
-                    &mut self.last_snapshot_push,
-                    &self.subscriptions,
-                    &mut self.connections,
-                    &self.panes,
-                    &mut self.snapshot_cache,
-                    &mut self.render_buf,
-                    &mut self.pending_push,
-                    &mut self.scratch_clients,
-                );
+                let mut push_ctx = push::PushContext {
+                    last_snapshot_push: &mut self.last_snapshot_push,
+                    subscriptions: &self.subscriptions,
+                    connections: &mut self.connections,
+                    panes: &self.panes,
+                    snapshot_cache: &mut self.snapshot_cache,
+                    pending_push: &mut self.pending_push,
+                    scratch: &mut self.scratch_clients,
+                };
+                push::push_or_defer_pane(&mut push_ctx, now, *pane_id);
             } else {
                 let Some((target, pdu)) =
                     notify::notification_to_pdu(notif, &self.panes, self.mux.session())
@@ -541,7 +531,7 @@ impl MuxServer {
         // Post-pass: Clean up per-pane state for closed panes.
         for notif in &self.notification_buf {
             if let MuxNotification::PaneClosed(pane_id) = notif {
-                self.snapshot_cache.remove(pane_id);
+                self.snapshot_cache.remove(*pane_id);
                 self.last_snapshot_push.remove(pane_id);
                 self.pending_push.remove(pane_id);
                 self.subscriptions.remove(pane_id);
@@ -620,7 +610,7 @@ impl MuxServer {
                 if let Some(p) = pane {
                     std::thread::spawn(move || drop(p));
                 }
-                self.snapshot_cache.remove(&pid);
+                self.snapshot_cache.remove(pid);
                 self.last_snapshot_push.remove(&pid);
                 self.pending_push.remove(&pid);
                 self.subscriptions.remove(&pid);
@@ -686,7 +676,7 @@ impl MuxServer {
     fn purge_closed_pane_subscriptions(&mut self) {
         for &pane_id in &self.scratch_panes {
             self.subscriptions.remove(&pane_id);
-            self.snapshot_cache.remove(&pane_id);
+            self.snapshot_cache.remove(pane_id);
             self.last_snapshot_push.remove(&pane_id);
             self.pending_push.remove(&pane_id);
         }

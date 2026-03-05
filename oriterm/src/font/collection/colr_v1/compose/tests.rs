@@ -3,7 +3,8 @@
 use skrifa::color::{CompositeMode, Transform as ColrTransform};
 
 use super::super::{ClipBox, Rgba};
-use super::{intersect_masks, rgba_to_color, to_blend_mode, to_bx, to_by};
+use super::brush::{rgba_to_color, to_blend_mode};
+use super::{intersect_masks, to_bx, to_by};
 
 const EPS: f32 = 0.01;
 

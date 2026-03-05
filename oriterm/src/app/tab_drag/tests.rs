@@ -140,6 +140,7 @@ fn drag_state_construction() {
         mouse_offset_in_tab: 25.0,
         tab_bar_y: 10.0,
         tab_bar_bottom: 10.0 + TAB_BAR_HEIGHT,
+        suppress_next_release: false,
     };
     assert_eq!(state.phase, DragPhase::Pending);
     assert_eq!(state.original_index, 2);
@@ -250,6 +251,7 @@ fn cancel_pending_is_noop() {
         mouse_offset_in_tab: 25.0,
         tab_bar_y: 10.0,
         tab_bar_bottom: 10.0 + TAB_BAR_HEIGHT,
+        suppress_next_release: false,
     };
     // Pending phase with same indices → no undo needed.
     assert_eq!(state.original_index, state.current_index);
@@ -269,6 +271,7 @@ fn cancel_dragging_with_swaps_needs_undo() {
         mouse_offset_in_tab: 25.0,
         tab_bar_y: 10.0,
         tab_bar_bottom: 10.0 + TAB_BAR_HEIGHT,
+        suppress_next_release: false,
     };
     // This is the condition checked in cancel_tab_drag.
     assert_eq!(state.phase, DragPhase::DraggingInBar);
@@ -288,6 +291,7 @@ fn cancel_dragging_no_swap_no_undo() {
         mouse_offset_in_tab: 25.0,
         tab_bar_y: 10.0,
         tab_bar_bottom: 10.0 + TAB_BAR_HEIGHT,
+        suppress_next_release: false,
     };
     assert_eq!(state.phase, DragPhase::DraggingInBar);
     assert_eq!(state.original_index, state.current_index);

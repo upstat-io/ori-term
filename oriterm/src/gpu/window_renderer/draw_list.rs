@@ -55,9 +55,10 @@ impl WindowRenderer {
         let size_q6 = size_key(ui_fc.size_px());
         let hinted = ui_fc.hinting_mode().hint_flag();
 
-        let keys = ui_text_raster_keys(draw_list, size_q6, hinted, scale);
+        self.ui_raster_keys.clear();
+        ui_text_raster_keys(draw_list, size_q6, hinted, scale, &mut self.ui_raster_keys);
         ensure_glyphs_cached(
-            keys.into_iter(),
+            self.ui_raster_keys.iter().copied(),
             &mut self.atlas,
             &mut self.subpixel_atlas,
             &mut self.color_atlas,
@@ -112,9 +113,10 @@ impl WindowRenderer {
         let size_q6 = size_key(ui_fc.size_px());
         let hinted = ui_fc.hinting_mode().hint_flag();
 
-        let keys = ui_text_raster_keys(draw_list, size_q6, hinted, scale);
+        self.ui_raster_keys.clear();
+        ui_text_raster_keys(draw_list, size_q6, hinted, scale, &mut self.ui_raster_keys);
         ensure_glyphs_cached(
-            keys.into_iter(),
+            self.ui_raster_keys.iter().copied(),
             &mut self.atlas,
             &mut self.subpixel_atlas,
             &mut self.color_atlas,

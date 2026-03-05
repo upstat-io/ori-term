@@ -93,8 +93,8 @@ impl DialogWidget {
     /// Defaults: `OkCancel` buttons, "OK"/"Cancel" labels, `Ok` as default.
     pub fn new(title: impl Into<String>) -> Self {
         let style = DialogStyle::default();
-        let ok_button = ButtonWidget::new("OK").with_style(style.primary_button.clone());
-        let cancel_button = ButtonWidget::new("Cancel").with_style(style.secondary_button.clone());
+        let ok_button = ButtonWidget::new("OK").with_style(style.primary_button);
+        let cancel_button = ButtonWidget::new("Cancel").with_style(style.secondary_button);
 
         Self {
             id: WidgetId::next(),
@@ -152,8 +152,7 @@ impl DialogWidget {
     #[must_use]
     pub fn with_ok_label(mut self, label: impl Into<String>) -> Self {
         self.ok_label = label.into();
-        self.ok_button =
-            ButtonWidget::new(&self.ok_label).with_style(self.style.primary_button.clone());
+        self.ok_button = ButtonWidget::new(&self.ok_label).with_style(self.style.primary_button);
         self
     }
 
@@ -162,7 +161,7 @@ impl DialogWidget {
     pub fn with_cancel_label(mut self, label: impl Into<String>) -> Self {
         self.cancel_label = label.into();
         self.cancel_button =
-            ButtonWidget::new(&self.cancel_label).with_style(self.style.secondary_button.clone());
+            ButtonWidget::new(&self.cancel_label).with_style(self.style.secondary_button);
         self
     }
 
@@ -196,14 +195,8 @@ impl DialogWidget {
     /// Rebuild button styles after `default_button` or style changes.
     fn rebuild_button_styles(&mut self) {
         let (ok_style, cancel_style) = match self.default_button {
-            DialogButton::Ok => (
-                self.style.primary_button.clone(),
-                self.style.secondary_button.clone(),
-            ),
-            DialogButton::Cancel => (
-                self.style.secondary_button.clone(),
-                self.style.primary_button.clone(),
-            ),
+            DialogButton::Ok => (self.style.primary_button, self.style.secondary_button),
+            DialogButton::Cancel => (self.style.secondary_button, self.style.primary_button),
         };
         self.ok_button = ButtonWidget::new(&self.ok_label).with_style(ok_style);
         self.cancel_button = ButtonWidget::new(&self.cancel_label).with_style(cancel_style);

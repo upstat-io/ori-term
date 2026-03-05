@@ -130,6 +130,9 @@ pub(crate) struct App {
     // System clipboard for copy/paste.
     clipboard: Clipboard,
 
+    // Event proxy for sending deferred actions through the event loop.
+    event_proxy: EventLoopProxy<TermEvent>,
+
     // User configuration (loaded from TOML, hot-reloaded on file change).
     config: Config,
 
@@ -147,22 +150,10 @@ pub(crate) struct App {
     // only this field and the theme-change handler need updating.
     ui_theme: UiTheme,
 
-    // Deferred window creation request. Set by keybinding actions that
-    // need `ActiveEventLoop` (which keyboard input handlers lack).
-    // Processed in `about_to_wait` where the event loop is available.
-    pending_new_window: bool,
-
-    // Deferred move-tab-to-new-window request. Stores the tab index to
-    // resolve when `ActiveEventLoop` is available in `about_to_wait`.
-    pending_move_tab_to_window: Option<usize>,
-
     // Pending tear-off state. Set by `tear_off_tab()`, consumed by
     // `check_torn_off_merge()` in `about_to_wait`.
     #[cfg(target_os = "windows")]
     torn_off_pending: Option<tab_drag::TornOffPending>,
-
-    // Suppress the stale WM_LBUTTONUP after a live merge.
-    merge_drag_suppress_release: bool,
 
     // Frame budget: time of last render to enforce FRAME_BUDGET spacing.
     last_render: Instant,
@@ -187,8 +178,9 @@ impl App {
         let monitor = ConfigMonitor::new(event_proxy.clone());
         let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
         let ui_theme = resolve_ui_theme(&config);
+        let proxy_for_mux = event_proxy.clone();
         let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let _ = event_proxy.send_event(TermEvent::MuxWakeup);
+            let _ = proxy_for_mux.send_event(TermEvent::MuxWakeup);
         });
 
         let mux: Option<Box<dyn MuxBackend>> =
@@ -224,16 +216,15 @@ impl App {
             pane_selections: HashMap::new(),
             mark_cursors: HashMap::new(),
             clipboard: Clipboard::new(),
+            event_proxy,
             config,
             bindings,
             _config_monitor: monitor,
             ime: ImeState::new(),
             ui_theme,
-            pending_new_window: false,
-            pending_move_tab_to_window: None,
             #[cfg(target_os = "windows")]
             torn_off_pending: None,
-            merge_drag_suppress_release: false,
+
             last_render: Instant::now(),
             perf: PerfStats::new(),
         };
@@ -262,8 +253,9 @@ impl App {
         );
         let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
         let ui_theme = resolve_ui_theme(&config);
+        let proxy_for_mux = event_proxy.clone();
         let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let _ = event_proxy.send_event(TermEvent::MuxWakeup);
+            let _ = proxy_for_mux.send_event(TermEvent::MuxWakeup);
         });
         let mux = oriterm_mux::EmbeddedMux::new(mux_wakeup.clone());
         Self {
@@ -284,16 +276,15 @@ impl App {
             pane_selections: HashMap::new(),
             mark_cursors: HashMap::new(),
             clipboard: Clipboard::new(),
+            event_proxy,
             config,
             bindings,
             _config_monitor: monitor,
             ime: ImeState::new(),
             ui_theme,
-            pending_new_window: false,
-            pending_move_tab_to_window: None,
             #[cfg(target_os = "windows")]
             torn_off_pending: None,
-            merge_drag_suppress_release: false,
+
             last_render: Instant::now(),
             perf: PerfStats::new(),
         }
