@@ -28,7 +28,7 @@ pub const MIN_FLOATING_PANE_CELLS: (u16, u16) = (20, 5);
 const SNAP_THRESHOLD_PX: f32 = 10.0;
 
 /// A single floating pane with absolute position and size.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FloatingPane {
     /// The pane this floating overlay represents.
     pub pane_id: PaneId,
@@ -64,7 +64,7 @@ impl FloatingPane {
 ///
 /// Structural methods (add, remove, raise, lower) return a new layer.
 /// Hot-path methods (move, resize) have in-place `_mut` variants.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct FloatingLayer {
     /// Panes ordered by ascending z-order (front-most last).
     panes: Vec<FloatingPane>,

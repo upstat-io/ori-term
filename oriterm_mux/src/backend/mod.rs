@@ -370,6 +370,27 @@ pub trait MuxBackend {
 
     // -- Snapshot access --
 
+    /// Swap the cached [`RenderableContent`] for a pane into `target`.
+    ///
+    /// In embedded mode, [`refresh_pane_snapshot`](Self::refresh_pane_snapshot)
+    /// captures the `RenderableContent` extracted from the terminal. This
+    /// method swaps it directly into the caller's `FrameInput.content`,
+    /// bypassing the `RenderableContent → WireCell → RenderableContent`
+    /// round-trip that the snapshot path requires.
+    ///
+    /// Returns `true` if the swap succeeded (embedded mode). Returns `false`
+    /// in daemon mode (caller must use `pane_snapshot()` + conversion).
+    ///
+    /// The swap reuses Vec allocations: `target.cells` gets the fresh data
+    /// while the old allocation goes back to the cache for the next frame.
+    fn swap_renderable_content(
+        &mut self,
+        _pane_id: PaneId,
+        _target: &mut oriterm_core::RenderableContent,
+    ) -> bool {
+        false
+    }
+
     /// Cached snapshot for a pane.
     ///
     /// Returns the most recently cached snapshot, or `None` if no snapshot

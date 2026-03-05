@@ -154,7 +154,7 @@ pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryRe
 /// monospace font is better than nothing).
 ///
 /// This function always succeeds — the embedded fallback guarantees a result.
-#[allow(dead_code, reason = "wired when GpuRenderer loads UI fonts")]
+#[allow(dead_code, reason = "wired when WindowRenderer loads UI fonts")]
 pub fn discover_ui_fonts() -> DiscoveryResult {
     // Build the font index once for directory-scanning platforms.
     #[cfg(any(target_os = "linux", target_os = "macos"))]

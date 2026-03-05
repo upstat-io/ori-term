@@ -29,7 +29,7 @@ fn set_wide_char(input: &mut FrameInput, cols: usize, row: usize, col: usize, ch
 
 #[test]
 fn ascii_regular() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -46,7 +46,7 @@ fn ascii_regular() {
     input.cell_size = cell;
     input.content.cursor.visible = false;
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("ascii_regular", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -54,7 +54,7 @@ fn ascii_regular() {
 
 #[test]
 fn ascii_bold_italic() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -85,7 +85,7 @@ fn ascii_bold_italic() {
         input.content.cells[3 * cols + col].flags = CellFlags::BOLD | CellFlags::ITALIC;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("ascii_bold_italic", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -93,7 +93,7 @@ fn ascii_bold_italic() {
 
 #[test]
 fn ligatures() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -110,7 +110,7 @@ fn ligatures() {
     input.cell_size = cell;
     input.content.cursor.visible = false;
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("ligatures", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -118,7 +118,7 @@ fn ligatures() {
 
 #[test]
 fn box_drawing() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -136,7 +136,7 @@ fn box_drawing() {
     input.cell_size = cell;
     input.content.cursor.visible = false;
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("box_drawing", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -144,7 +144,7 @@ fn box_drawing() {
 
 #[test]
 fn block_elements() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -161,7 +161,7 @@ fn block_elements() {
     input.cell_size = cell;
     input.content.cursor.visible = false;
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("block_elements", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -169,7 +169,7 @@ fn block_elements() {
 
 #[test]
 fn braille() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -186,7 +186,7 @@ fn braille() {
     input.cell_size = cell;
     input.content.cursor.visible = false;
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("braille", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -194,7 +194,7 @@ fn braille() {
 
 #[test]
 fn cjk_notdef() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -220,7 +220,7 @@ fn cjk_notdef() {
         col += 2;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("cjk_notdef", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -228,7 +228,7 @@ fn cjk_notdef() {
 
 #[test]
 fn combining_marks() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -268,7 +268,7 @@ fn combining_marks() {
         }
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("combining_marks", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -276,7 +276,7 @@ fn combining_marks() {
 
 #[test]
 fn powerline() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -297,7 +297,7 @@ fn powerline() {
     input.cell_size = cell;
     input.content.cursor.visible = false;
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("powerline", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -305,7 +305,7 @@ fn powerline() {
 
 #[test]
 fn mixed_styles() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -334,7 +334,7 @@ fn mixed_styles() {
         input.content.cells[col].flags = CellFlags::BOLD | CellFlags::ITALIC;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("mixed_styles", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -347,11 +347,11 @@ fn mixed_styles() {
 /// version as a golden image for regression tracking.
 #[test]
 fn hinted_vs_unhinted() {
-    let Some((gpu_hint, mut renderer_hint)) = headless_env() else {
+    let Some((gpu_hint, pipelines_hint, mut renderer_hint)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
-    let Some((gpu_none, mut renderer_none)) = headless_env_with_hinting(
+    let Some((gpu_none, pipelines_none, mut renderer_none)) = headless_env_with_hinting(
         TEST_FONT_SIZE_PT,
         TEST_DPI,
         GlyphFormat::Alpha,
@@ -374,7 +374,7 @@ fn hinted_vs_unhinted() {
     input_h.viewport = ViewportSize::new(w_h, h_h);
     input_h.cell_size = cell_hint;
     input_h.content.cursor.visible = false;
-    let pixels_hinted = render_to_pixels(&gpu_hint, &mut renderer_hint, &input_h);
+    let pixels_hinted = render_to_pixels(&gpu_hint, &pipelines_hint, &mut renderer_hint, &input_h);
 
     // Unhinted render.
     let w_n = (cell_none.width * cols as f32).ceil() as u32;
@@ -383,7 +383,8 @@ fn hinted_vs_unhinted() {
     input_n.viewport = ViewportSize::new(w_n, h_n);
     input_n.cell_size = cell_none;
     input_n.content.cursor.visible = false;
-    let pixels_unhinted = render_to_pixels(&gpu_none, &mut renderer_none, &input_n);
+    let pixels_unhinted =
+        render_to_pixels(&gpu_none, &pipelines_none, &mut renderer_none, &input_n);
 
     // Both should render non-empty output.
     assert!(
@@ -415,11 +416,11 @@ fn hinted_vs_unhinted() {
 /// golden image for regression tracking.
 #[test]
 fn subpixel_vs_grayscale() {
-    let Some((gpu_gray, mut renderer_gray)) = headless_env() else {
+    let Some((gpu_gray, pipelines_gray, mut renderer_gray)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
-    let Some((gpu_sub, mut renderer_sub)) =
+    let Some((gpu_sub, pipelines_sub, mut renderer_sub)) =
         headless_env_full(TEST_FONT_SIZE_PT, TEST_DPI, GlyphFormat::SubpixelRgb)
     else {
         eprintln!("skipped: no GPU adapter available for subpixel env");
@@ -439,7 +440,7 @@ fn subpixel_vs_grayscale() {
     input_g.viewport = ViewportSize::new(w_g, h_g);
     input_g.cell_size = cell_gray;
     input_g.content.cursor.visible = false;
-    let pixels_gray = render_to_pixels(&gpu_gray, &mut renderer_gray, &input_g);
+    let pixels_gray = render_to_pixels(&gpu_gray, &pipelines_gray, &mut renderer_gray, &input_g);
 
     // Subpixel render.
     let w_s = (cell_sub.width * cols as f32).ceil() as u32;
@@ -448,7 +449,7 @@ fn subpixel_vs_grayscale() {
     input_s.viewport = ViewportSize::new(w_s, h_s);
     input_s.cell_size = cell_sub;
     input_s.content.cursor.visible = false;
-    let pixels_subpx = render_to_pixels(&gpu_sub, &mut renderer_sub, &input_s);
+    let pixels_subpx = render_to_pixels(&gpu_sub, &pipelines_sub, &mut renderer_sub, &input_s);
 
     // Both should render non-empty output.
     assert!(

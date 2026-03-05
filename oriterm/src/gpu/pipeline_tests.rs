@@ -93,8 +93,9 @@ fn subpixel_blend_semitransparent_fg() {
 }
 
 use super::frame_input::{FrameInput, ViewportSize};
-use super::renderer::GpuRenderer;
+use super::pipelines::GpuPipelines;
 use super::state::GpuState;
+use super::window_renderer::WindowRenderer;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 
 /// Default font weight for tests.
@@ -107,8 +108,9 @@ const TEST_DPI: f32 = 96.0;
 /// Attempt to create a full headless rendering environment.
 ///
 /// Returns `None` if no GPU adapter or fonts are available.
-fn headless_env() -> Option<(GpuState, GpuRenderer)> {
+fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
+    let pipelines = GpuPipelines::new(&gpu);
     let font_set = FontSet::load(None, TEST_FONT_WEIGHT).ok()?;
     let font_collection = FontCollection::new(
         font_set,
@@ -119,8 +121,8 @@ fn headless_env() -> Option<(GpuState, GpuRenderer)> {
         HintingMode::Full,
     )
     .ok()?;
-    let renderer = GpuRenderer::new(&gpu, font_collection);
-    Some((gpu, renderer))
+    let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
+    Some((gpu, pipelines, renderer))
 }
 
 // ── Pipeline smoke tests ──
@@ -137,7 +139,7 @@ fn headless_gpu_adapter_found() {
 
 #[test]
 fn pipeline_creation_succeeds() {
-    let Some((_gpu, _renderer)) = headless_env() else {
+    let Some((_gpu, _pipelines, _renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter or fonts available");
         return;
     };
@@ -146,7 +148,7 @@ fn pipeline_creation_succeeds() {
 
 #[test]
 fn offscreen_render_target_creates() {
-    let Some((gpu, _renderer)) = headless_env() else {
+    let Some((gpu, _pipelines, _renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter or fonts available");
         return;
     };
@@ -158,7 +160,7 @@ fn offscreen_render_target_creates() {
 
 #[test]
 fn frame_renders_without_errors() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter or fonts available");
         return;
     };
@@ -166,8 +168,8 @@ fn frame_renders_without_errors() {
     let target = gpu.create_render_target(640, 384);
     let input = FrameInput::test_grid(80, 24, "Hello, World!");
 
-    renderer.prepare(&input, &gpu, (0.0, 0.0), true);
-    renderer.render_frame(&gpu, target.view());
+    renderer.prepare(&input, &gpu, (0.0, 0.0), true, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
 
     // No panic or GPU validation error = success.
 }
@@ -178,7 +180,7 @@ fn wgpu_validation_layer_enabled_in_tests() {
     // We do this by confirming that the headless GPU initializes without
     // validation errors — the validation layer catches API misuse at
     // runtime when the `debug_assertions` cfg is set.
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter or fonts available");
         return;
     };
@@ -186,8 +188,8 @@ fn wgpu_validation_layer_enabled_in_tests() {
     let target = gpu.create_render_target(64, 64);
     let input = FrameInput::test_grid(8, 4, "test");
 
-    renderer.prepare(&input, &gpu, (0.0, 0.0), true);
-    renderer.render_frame(&gpu, target.view());
+    renderer.prepare(&input, &gpu, (0.0, 0.0), true, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
 
     // wgpu validation errors cause panics in debug mode, so reaching
     // here confirms the validation layer accepted our API usage.
@@ -197,7 +199,7 @@ fn wgpu_validation_layer_enabled_in_tests() {
 
 #[test]
 fn render_colored_cell_correct_bg_color() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter or fonts available");
         return;
     };
@@ -217,8 +219,8 @@ fn render_colored_cell_correct_bg_color() {
     input.cell_size = cell_metrics;
 
     let target = gpu.create_render_target(cw, ch);
-    renderer.prepare(&input, &gpu, (0.0, 0.0), true);
-    renderer.render_frame(&gpu, target.view());
+    renderer.prepare(&input, &gpu, (0.0, 0.0), true, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
         .read_render_target(&target)
@@ -244,7 +246,7 @@ fn render_colored_cell_correct_bg_color() {
 
 #[test]
 fn render_text_produces_nonzero_alpha_in_glyph_region() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter or fonts available");
         return;
     };
@@ -270,8 +272,8 @@ fn render_text_produces_nonzero_alpha_in_glyph_region() {
     input.palette.background = Rgb { r: 0, g: 0, b: 0 };
 
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(&input, &gpu, (0.0, 0.0), true);
-    renderer.render_frame(&gpu, target.view());
+    renderer.prepare(&input, &gpu, (0.0, 0.0), true, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
         .read_render_target(&target)
@@ -295,7 +297,7 @@ fn render_text_produces_nonzero_alpha_in_glyph_region() {
 
 #[test]
 fn render_cursor_pixels_at_expected_position() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter or fonts available");
         return;
     };
@@ -329,8 +331,8 @@ fn render_cursor_pixels_at_expected_position() {
     }
 
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(&input, &gpu, (0.0, 0.0), true);
-    renderer.render_frame(&gpu, target.view());
+    renderer.prepare(&input, &gpu, (0.0, 0.0), true, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
         .read_render_target(&target)
@@ -370,7 +372,7 @@ fn render_cursor_pixels_at_expected_position() {
 
 #[test]
 fn full_pipeline_extract_prepare_render_readback() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter or fonts available");
         return;
     };
@@ -387,9 +389,9 @@ fn full_pipeline_extract_prepare_render_readback() {
 
     let target = gpu.create_render_target(w, h);
 
-    // Run the full pipeline via GpuRenderer (ensure_glyphs_cached + prepare + render).
-    renderer.prepare(&input, &gpu, (0.0, 0.0), true);
-    renderer.render_frame(&gpu, target.view());
+    // Run the full pipeline via WindowRenderer (ensure_glyphs_cached + prepare + render).
+    renderer.prepare(&input, &gpu, (0.0, 0.0), true, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
 
     // Readback and verify basic sanity.
     let pixels = gpu

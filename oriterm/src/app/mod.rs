@@ -53,7 +53,8 @@ use crate::clipboard::Clipboard;
 use crate::config::Config;
 use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
-use crate::gpu::{GpuRenderer, GpuState};
+use crate::font::FontSet;
+use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
 use crate::keybindings::{self, KeyBinding};
 use oriterm_mux::backend::MuxBackend;
 use oriterm_mux::mux_event::MuxNotification;
@@ -63,11 +64,13 @@ use oriterm_ui::theme::UiTheme;
 /// Default DPI for font rasterization.
 const DEFAULT_DPI: f32 = 96.0;
 
-/// Minimum time between renders (~120 FPS cap).
+/// Minimum time between renders (~60 FPS cap).
 ///
 /// Prevents burning CPU when PTY output is continuous. The event loop
 /// defers rendering until this budget has elapsed since the last frame.
-const FRAME_BUDGET: Duration = Duration::from_millis(8);
+/// 16ms matches the typical 60 Hz display refresh — sufficient for a
+/// terminal and leaves ample time for event processing between frames.
+const FRAME_BUDGET: Duration = Duration::from_millis(16);
 
 /// Terminal application state and event loop handler.
 ///
@@ -80,7 +83,14 @@ const FRAME_BUDGET: Duration = Duration::from_millis(8);
 pub(crate) struct App {
     // GPU + rendering (lazy init on Resumed).
     gpu: Option<GpuState>,
-    renderer: Option<GpuRenderer>,
+    /// Shared stateless GPU pipelines and bind group layouts.
+    pipelines: Option<GpuPipelines>,
+    /// Cached font set with user fallbacks pre-applied (cloned per new window).
+    font_set: Option<FontSet>,
+    /// Cached UI font set (avoids re-discovery per window).
+    ui_font_set: Option<FontSet>,
+    /// Number of user-configured fallbacks loaded (for `apply_font_config`).
+    user_fb_count: usize,
 
     // Per-window state, keyed by winit WindowId for event routing.
     windows: HashMap<WindowId, WindowContext>,
@@ -198,7 +208,10 @@ impl App {
 
         let mut app = Self {
             gpu: None,
-            renderer: None,
+            pipelines: None,
+            font_set: None,
+            ui_font_set: None,
+            user_fb_count: 0,
             windows: HashMap::new(),
             focused_window_id: None,
             mux,
@@ -255,7 +268,10 @@ impl App {
         let mux = oriterm_mux::EmbeddedMux::new(mux_wakeup.clone());
         Self {
             gpu: None,
-            renderer: None,
+            pipelines: None,
+            font_set: None,
+            ui_font_set: None,
+            user_fb_count: 0,
             windows: HashMap::new(),
             focused_window_id: None,
             mux: Some(Box::new(mux)),
@@ -296,17 +312,38 @@ impl App {
             .and_then(|id| self.windows.get_mut(&id))
     }
 
+    /// The focused window's renderer, if any.
+    fn focused_renderer(&self) -> Option<&WindowRenderer> {
+        self.focused_window_id
+            .and_then(|id| self.windows.get(&id))
+            .and_then(|ctx| ctx.renderer.as_ref())
+    }
+
+    /// Mark all windows as needing a redraw.
+    ///
+    /// Used when mux notifications (PTY output, layout changes) may affect
+    /// any window — not just the focused one. In multi-window setups, pane
+    /// output in the unfocused window must still trigger a render.
+    fn mark_all_windows_dirty(&mut self) {
+        for ctx in self.windows.values_mut() {
+            ctx.dirty = true;
+        }
+    }
+
     /// Re-rasterize fonts and update rendering settings for a new DPI scale.
     ///
     /// Called when the window moves between monitors with different scale
     /// factors. Recalculates font size at physical DPI, updates hinting
     /// and subpixel mode, and clears/recaches glyph atlases.
     ///
-    /// `winit_id` identifies the window whose DPI changed. Font
-    /// re-rasterization affects the shared renderer (all windows share one),
-    /// but cache invalidation and dirty marking target only this window.
+    /// `winit_id` identifies the window whose DPI changed. Only that
+    /// window's renderer is affected — other windows keep their DPI.
     fn handle_dpi_change(&mut self, winit_id: WindowId, scale_factor: f64) {
-        let (Some(renderer), Some(gpu)) = (&mut self.renderer, &self.gpu) else {
+        let Some(gpu) = &self.gpu else { return };
+        let Some(ctx) = self.windows.get_mut(&winit_id) else {
+            return;
+        };
+        let Some(renderer) = ctx.renderer.as_mut() else {
             return;
         };
         let scale = scale_factor as f32;
@@ -322,6 +359,9 @@ impl App {
             config_reload::resolve_subpixel_mode(&self.config.font, scale_factor).glyph_format();
         renderer.set_hinting_and_format(hinting, format, gpu);
 
+        ctx.pane_cache.invalidate_all();
+        ctx.dirty = true;
+
         // Mark all grid lines dirty so the frame extraction re-reads every
         // cell with the new cell metrics. Without this, the terminal content
         // appears stale until PTY output marks individual lines dirty.
@@ -329,12 +369,6 @@ impl App {
             if let Some(mux) = self.mux.as_mut() {
                 mux.mark_all_dirty(pane_id);
             }
-        }
-
-        // Invalidate pane render cache (atlas + cell metrics changed).
-        if let Some(ctx) = self.windows.get_mut(&winit_id) {
-            ctx.pane_cache.invalidate_all();
-            ctx.dirty = true;
         }
     }
 

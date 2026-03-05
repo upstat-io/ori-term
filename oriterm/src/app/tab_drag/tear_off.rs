@@ -20,18 +20,11 @@ use crate::app::App;
 impl App {
     /// Tear off the currently dragged tab into a new window.
     ///
-    /// Extracts the drag state, creates a bare window, moves the tab via mux,
-    /// positions the window under the cursor, and starts an OS drag session.
-    /// In daemon mode, delegates to `move_tab_to_new_window_daemon` because
-    /// the new window is a separate OS process.
+    /// Chrome-style in-process tear-off: creates a bare window, moves the tab
+    /// via mux, pre-renders both windows, positions under the cursor, then
+    /// enters the OS modal drag loop. Works for both embedded and daemon mode
+    /// since `create_window_bare` handles daemon RPC transparently.
     pub(super) fn tear_off_tab(&mut self, event_loop: &ActiveEventLoop) {
-        // Daemon mode: the new window is a separate process, so OS-level
-        // drag doesn't apply. Delegate to the daemon-mode code path.
-        if self.mux.as_ref().is_some_and(|m| m.is_daemon_mode()) {
-            self.tear_off_tab_daemon();
-            return;
-        }
-
         // Extract drag state from the source window.
         let (tab_id, mouse_offset, origin_y, source_winit_id) = {
             let Some(ctx) = self.focused_ctx_mut() else {
@@ -83,14 +76,6 @@ impl App {
         self.sync_tab_bar_for_window(source_winit_id);
         self.sync_tab_bar_for_window(new_winit_id);
 
-        // Render the source window so its surface shows the updated tab
-        // bar. The OS drag blocks the event loop, and `about_to_wait`
-        // only renders the focused window — so if the new window steals
-        // focus during `set_visible`, the source surface would otherwise
-        // show stale content (the torn tab still present) until it
-        // regains focus.
-        self.handle_redraw();
-
         // Compute grab offset: where the cursor anchors to the new window.
         let (grab_offset, screen_pos) = {
             let Some(ctx) = self.windows.get(&new_winit_id) else {
@@ -105,7 +90,8 @@ impl App {
             ((grab_x, grab_y), (pos_x, pos_y))
         };
 
-        // Position the new window so the cursor is at the grab offset.
+        // Position the new window BEFORE rendering — Chrome pattern: set
+        // bounds before show to prevent wrong-position flash.
         if let Some(ctx) = self.windows.get(&new_winit_id) {
             ctx.window
                 .window()
@@ -115,26 +101,29 @@ impl App {
                 ));
         }
 
-        // Clear surface with background color before showing.
-        let theme = self
-            .config
-            .colors
-            .resolve_theme(crate::platform::theme::system_theme);
-        let palette =
-            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
-        let opacity = self.config.window.effective_opacity();
-        if let Some(gpu) = self.gpu.as_ref() {
-            if let Some(ctx) = self.windows.get(&new_winit_id) {
-                gpu.clear_surface(ctx.window.surface(), palette.background(), opacity);
-            }
+        // Pre-render the new window with full content (tab bar + terminal).
+        // Chrome pattern: attach tabs and render before show so the window
+        // appears with correct content instantly, not a gray/empty flash.
+        {
+            let saved_focused = self.focused_window_id;
+            let saved_active = self.active_window;
+            self.focused_window_id = Some(new_winit_id);
+            self.active_window = Some(new_mux_wid);
+            self.handle_redraw();
+            self.focused_window_id = saved_focused;
+            self.active_window = saved_active;
         }
 
-        // Show new window, then re-render source (z-order).
+        // Render the source window (tab bar now shows the torn tab removed).
+        // Must happen before the OS drag blocks the event loop.
+        self.handle_redraw();
+
+        // Chrome pattern: disable DWM transition animations around Show
+        // to prevent the OS fade-in, giving instantaneous appearance.
         if let Some(ctx) = self.windows.get(&new_winit_id) {
+            platform_windows::set_transitions_enabled(ctx.window.window(), false);
             ctx.window.set_visible(true);
-        }
-        if let Some(ctx) = self.windows.get_mut(&source_winit_id) {
-            ctx.dirty = true;
+            platform_windows::set_transitions_enabled(ctx.window.window(), true);
         }
 
         // If source window is now empty, remove it.
@@ -153,30 +142,6 @@ impl App {
 
         // Start OS drag on the new window.
         self.begin_os_tab_drag(new_winit_id, tab_id, mouse_offset, grab_offset);
-    }
-
-    /// Daemon-mode tear-off: consume drag state and delegate to `move_tab_to_new_window_daemon`.
-    ///
-    /// In daemon mode the new window is a separate OS process, so the
-    /// in-process OS drag and merge flow doesn't apply.
-    fn tear_off_tab_daemon(&mut self) {
-        let Some(ctx) = self.focused_ctx_mut() else {
-            return;
-        };
-        let drag = ctx.tab_drag.take();
-        ctx.tab_bar.set_drag_visual(None);
-        ctx.dirty = true;
-
-        let Some(d) = drag else { return };
-        self.release_tab_width_lock();
-
-        let is_last = self
-            .mux
-            .as_ref()
-            .is_some_and(|m| m.session().tab_count() <= 1);
-        if !is_last {
-            self.move_tab_to_new_window_daemon(d.tab_id);
-        }
     }
 
     /// Configure and start an OS-level drag session.

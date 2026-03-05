@@ -6,10 +6,10 @@
 use crate::font::{FontCollection, GlyphFormat, HintingMode};
 use crate::gpu::state::GpuState;
 
-use super::GpuRenderer;
+use super::WindowRenderer;
 use super::helpers::pre_cache_atlas;
 
-impl GpuRenderer {
+impl WindowRenderer {
     // ── Font configuration ──
 
     /// Replace the entire font collection (family, weight, features changed).

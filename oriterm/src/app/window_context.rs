@@ -6,6 +6,7 @@
 
 use std::time::Instant;
 
+use oriterm_mux::id::PaneId;
 use oriterm_mux::layout::DividerLayout;
 
 use oriterm_ui::compositor::layer_animator::LayerAnimator;
@@ -20,7 +21,7 @@ use super::context_menu::ContextMenuState;
 use super::divider_drag::DividerDragState;
 use super::floating_drag::FloatingDragState;
 use super::tab_drag::TabDragState;
-use crate::gpu::{FrameInput, PaneRenderCache};
+use crate::gpu::{FrameInput, PaneRenderCache, WindowRenderer};
 use crate::url_detect::{DetectedUrl, UrlDetectCache};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
@@ -33,6 +34,9 @@ pub(crate) struct WindowContext {
     // Core window handle.
     pub window: TermWindow,
 
+    // Per-window GPU renderer (owns fonts, atlases, shaping, instance buffers).
+    pub renderer: Option<WindowRenderer>,
+
     // Widget layer.
     pub chrome: WindowChromeWidget,
     pub tab_bar: TabBarWidget,
@@ -42,6 +46,10 @@ pub(crate) struct WindowContext {
     pub pane_cache: PaneRenderCache,
     pub frame: Option<FrameInput>,
     pub chrome_draw_list: DrawList,
+    /// Pane rendered in the previous single-pane frame. Used to detect
+    /// tab switches / tear-off so `renderable_cache` contamination from
+    /// `swap_renderable_content` is flushed with a forced refresh.
+    pub last_rendered_pane: Option<PaneId>,
 
     // Layout caches.
     pub cached_dividers: Option<Vec<DividerLayout>>,
@@ -80,15 +88,18 @@ impl WindowContext {
         chrome: WindowChromeWidget,
         tab_bar: TabBarWidget,
         terminal_grid: TerminalGridWidget,
+        renderer: Option<WindowRenderer>,
     ) -> Self {
         Self {
             window,
+            renderer,
             chrome,
             tab_bar,
             terminal_grid,
             pane_cache: PaneRenderCache::new(),
             frame: None,
             chrome_draw_list: DrawList::new(),
+            last_rendered_pane: None,
             layer_tree: LayerTree::new(Rect::default()),
             layer_animator: LayerAnimator::new(),
             tab_slide: TabSlideState::new(),

@@ -10,6 +10,8 @@ use super::snapshot::{
 use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
 use crate::id::{ClientId, DomainId, PaneId, TabId, WindowId};
 use crate::layout::SplitDirection;
+use crate::layout::floating::FloatingLayer;
+use crate::layout::split_tree::SplitTree;
 
 // -- FrameHeader tests --
 
@@ -353,6 +355,9 @@ fn roundtrip_tab_list() {
                 active_pane_id: PaneId::from_raw(1),
                 pane_count: 2,
                 title: "vim".into(),
+                tree: SplitTree::leaf(PaneId::from_raw(1)),
+                floating: FloatingLayer::new(),
+                zoomed_pane: None,
             }],
         },
     );

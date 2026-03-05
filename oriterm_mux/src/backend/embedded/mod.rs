@@ -8,10 +8,11 @@
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
-use oriterm_core::Theme;
 use oriterm_core::selection::{self, Selection};
+use oriterm_core::{RenderableContent, Theme};
 
 use super::MuxBackend;
 use crate::domain::SpawnConfig;
@@ -20,7 +21,7 @@ use crate::layout::{Rect, SplitDirection};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
 use crate::registry::{PaneEntry, SessionRegistry};
-use crate::server::snapshot::build_snapshot;
+use crate::server::snapshot::build_snapshot_into;
 use crate::{DomainId, PaneId, PaneSnapshot, TabId, WindowId};
 
 /// In-process mux backend for single-process mode.
@@ -30,28 +31,54 @@ use crate::{DomainId, PaneId, PaneSnapshot, TabId, WindowId};
 pub struct EmbeddedMux {
     mux: InProcessMux,
     panes: HashMap<PaneId, Pane>,
-    wakeup: Arc<dyn Fn() + Send + Sync>,
+    /// Coalesced wakeup closure — wraps the raw wakeup with an [`AtomicBool`]
+    /// guard so that only one `PostMessage` is issued per poll cycle.
+    guarded_wakeup: Arc<dyn Fn() + Send + Sync>,
+    /// Coalescing flag cleared in [`poll_events`](MuxBackend::poll_events).
+    wakeup_pending: Arc<AtomicBool>,
     snapshot_cache: HashMap<PaneId, PaneSnapshot>,
     snapshot_dirty: HashSet<PaneId>,
+    /// Per-pane [`RenderableContent`] cache, filled by
+    /// [`refresh_pane_snapshot`](MuxBackend::refresh_pane_snapshot) and
+    /// consumed by [`swap_renderable_content`](MuxBackend::swap_renderable_content).
+    ///
+    /// Bypasses the `RenderableContent → WireCell → RenderableContent` round-trip
+    /// that the snapshot path requires for daemon mode IPC. Vec allocations are
+    /// reused across frames via [`std::mem::swap`].
+    renderable_cache: HashMap<PaneId, RenderableContent>,
 }
 
 impl EmbeddedMux {
     /// Create a new embedded backend.
     ///
     /// `wakeup` is called by PTY reader threads to wake the event loop.
+    /// The closure is wrapped with an [`AtomicBool`] guard so that only
+    /// one wakeup is posted per poll cycle during flood output.
     pub fn new(wakeup: Arc<dyn Fn() + Send + Sync>) -> Self {
+        let wakeup_pending = Arc::new(AtomicBool::new(false));
+        let guarded_wakeup = {
+            let pending = wakeup_pending.clone();
+            Arc::new(move || {
+                if !pending.swap(true, Ordering::Release) {
+                    (wakeup)();
+                }
+            }) as Arc<dyn Fn() + Send + Sync>
+        };
         Self {
             mux: InProcessMux::new(),
             panes: HashMap::new(),
-            wakeup,
+            guarded_wakeup,
+            wakeup_pending,
             snapshot_cache: HashMap::new(),
             snapshot_dirty: HashSet::new(),
+            renderable_cache: HashMap::new(),
         }
     }
 }
 
 impl MuxBackend for EmbeddedMux {
     fn poll_events(&mut self) {
+        self.wakeup_pending.store(false, Ordering::Release);
         self.mux.poll_events(&mut self.panes);
 
         // Mark panes dirty when the PTY reader thread has set grid_dirty.
@@ -103,7 +130,7 @@ impl MuxBackend for EmbeddedMux {
     ) -> io::Result<(TabId, PaneId)> {
         let (tab_id, pane_id, pane) =
             self.mux
-                .create_tab(window_id, config, theme, &self.wakeup)?;
+                .create_tab(window_id, config, theme, &self.guarded_wakeup)?;
         self.panes.insert(pane_id, pane);
         Ok((tab_id, pane_id))
     }
@@ -142,7 +169,7 @@ impl MuxBackend for EmbeddedMux {
     ) -> io::Result<PaneId> {
         let (pane_id, pane) =
             self.mux
-                .split_pane(tab_id, source, dir, config, theme, &self.wakeup)?;
+                .split_pane(tab_id, source, dir, config, theme, &self.guarded_wakeup)?;
         self.panes.insert(pane_id, pane);
         Ok(pane_id)
     }
@@ -199,7 +226,7 @@ impl MuxBackend for EmbeddedMux {
     ) -> io::Result<PaneId> {
         let (pane_id, pane) =
             self.mux
-                .spawn_floating_pane(tab_id, config, theme, &self.wakeup, available)?;
+                .spawn_floating_pane(tab_id, config, theme, &self.guarded_wakeup, available)?;
         self.panes.insert(pane_id, pane);
         Ok(pane_id)
     }
@@ -395,6 +422,7 @@ impl MuxBackend for EmbeddedMux {
         if let Some(pane) = self.panes.remove(&pane_id) {
             self.snapshot_cache.remove(&pane_id);
             self.snapshot_dirty.remove(&pane_id);
+            self.renderable_cache.remove(&pane_id);
             // Drop on a background thread to avoid blocking the event loop.
             // Pane destruction involves PTY kill, reader thread join, and child reap.
             std::thread::spawn(move || drop(pane));
@@ -425,6 +453,22 @@ impl MuxBackend for EmbeddedMux {
         false
     }
 
+    fn swap_renderable_content(&mut self, pane_id: PaneId, target: &mut RenderableContent) -> bool {
+        let Some(cached) = self.renderable_cache.get_mut(&pane_id) else {
+            return false;
+        };
+        // Swap Vec allocations for zero-allocation steady state: target
+        // gets fresh data, cached receives the old allocation for next frame.
+        std::mem::swap(&mut target.cells, &mut cached.cells);
+        std::mem::swap(&mut target.damage, &mut cached.damage);
+        target.cursor = cached.cursor;
+        target.display_offset = cached.display_offset;
+        target.stable_row_base = cached.stable_row_base;
+        target.mode = cached.mode;
+        target.all_dirty = cached.all_dirty;
+        true
+    }
+
     fn pane_snapshot(&self, pane_id: PaneId) -> Option<&PaneSnapshot> {
         self.snapshot_cache.get(&pane_id)
     }
@@ -435,8 +479,13 @@ impl MuxBackend for EmbeddedMux {
 
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot> {
         let pane = self.panes.get(&pane_id)?;
-        let snapshot = build_snapshot(pane);
-        self.snapshot_cache.insert(pane_id, snapshot);
+        let snapshot = self.snapshot_cache.entry(pane_id).or_default();
+        let render_buf = self.renderable_cache.entry(pane_id).or_default();
+        // Full snapshot build: fills cells (for tests, text extraction) AND
+        // caches the RenderableContent in render_buf for swap_renderable_content().
+        // The render path uses swap to bypass the WireCell → RenderableCell
+        // conversion; other code reads snapshot.cells directly.
+        build_snapshot_into(pane, snapshot, render_buf);
         self.snapshot_dirty.remove(&pane_id);
         self.snapshot_cache.get(&pane_id)
     }

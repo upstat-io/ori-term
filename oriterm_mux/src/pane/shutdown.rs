@@ -1,58 +1,29 @@
 //! Pane shutdown and cleanup.
 //!
-//! Implements `Drop` for [`Pane`] following the same pattern as
-//! `tab::Tab::drop`: signal shutdown, kill the child process to unblock
-//! pending PTY reads, then join the reader thread with a timeout.
-
-use std::time::{Duration, Instant};
-
-use crate::PaneId;
+//! Implements `Drop` for [`Pane`] with non-blocking cleanup: signals the
+//! writer thread, kills the child process, and detaches thread handles.
+//! The threads exit promptly on their own (writer on `Shutdown` message,
+//! reader on EOF from the killed child). This avoids blocking the server
+//! event loop during tab/window close operations.
 
 use super::Pane;
 
-/// Maximum time to wait for the reader thread during drop.
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// Poll interval while waiting for the reader thread to finish.
-const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(10);
-
 impl Drop for Pane {
     fn drop(&mut self) {
-        // 1. Signal the writer thread to stop (sets the shutdown flag for the
-        //    reader thread too).
+        // 1. Signal the writer thread to stop.
         self.notifier.shutdown();
 
         // 2. Kill the child process to unblock any pending PTY read.
         let _ = self.pty.kill();
 
-        // 3. Join both threads with a shared timeout.
-        let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
-        Self::join_thread(&mut self.writer_thread, "writer", self.id, deadline);
-        Self::join_thread(&mut self.reader_thread, "reader", self.id, deadline);
-
-        // 4. Reap the child process.
+        // 3. Reap the child (blocking — but callers drop panes on background
+        //    threads, so this doesn't block the event loop). Ensures the
+        //    child process is fully terminated before PTY handles are closed,
+        //    preventing rogue shell processes.
         let _ = self.pty.wait();
-    }
-}
 
-impl Pane {
-    /// Join a thread handle with a deadline, logging warnings on timeout or panic.
-    fn join_thread(
-        slot: &mut Option<std::thread::JoinHandle<()>>,
-        name: &str,
-        pane_id: PaneId,
-        deadline: Instant,
-    ) {
-        let Some(handle) = slot.take() else { return };
-        while !handle.is_finished() {
-            if Instant::now() >= deadline {
-                log::warn!("pane {pane_id}: {name} thread did not exit in time");
-                return;
-            }
-            std::thread::sleep(SHUTDOWN_POLL_INTERVAL);
-        }
-        if let Err(_payload) = handle.join() {
-            log::warn!("pane {pane_id}: {name} thread panicked");
-        }
+        // Thread handles are dropped without joining (detached). Both
+        // threads exit promptly: writer on Shutdown message, reader on
+        // EOF from the killed child process.
     }
 }

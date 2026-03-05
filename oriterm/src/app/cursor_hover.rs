@@ -11,6 +11,7 @@ use winit::window::CursorIcon;
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
+use crate::gpu::WindowRenderer;
 use crate::url_detect::{DetectedUrl, UrlSegment};
 
 /// Result of hover URL detection at the current cursor position.
@@ -40,16 +41,16 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return no_hit;
         };
-        let Some(renderer) = &self.renderer else {
+        let Some(ctx) = self.focused_ctx() else {
             return no_hit;
         };
-        let Some(ctx) = self.focused_ctx() else {
+        let Some(cell) = ctx.renderer.as_ref().map(WindowRenderer::cell_metrics) else {
             return no_hit;
         };
 
         let grid_ctx = GridCtx {
             widget: &ctx.terminal_grid,
-            cell: renderer.cell_metrics(),
+            cell,
             word_delimiters: &self.config.behavior.word_delimiters,
         };
 

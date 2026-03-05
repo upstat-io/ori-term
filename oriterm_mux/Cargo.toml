@@ -13,7 +13,7 @@ oriterm_core = { path = "../oriterm_core" }
 oriterm_ipc = { path = "../oriterm_ipc" }
 parking_lot = "0.12"
 portable-pty = "0.9.0"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 vte = { version = "0.15.0", features = ["ansi"] }
 
 [target.'cfg(unix)'.dependencies]

@@ -134,27 +134,23 @@ impl App {
             pos: logical_pos,
             modifiers: super::winit_mods_to_ui(self.modifiers),
         };
-        let measurer = self
-            .renderer
-            .as_ref()
-            .map(|r| UiFontMeasurer::new(r.active_ui_collection(), scale));
-        let measurer: &dyn oriterm_ui::widgets::TextMeasurer = match &measurer {
-            Some(m) => m,
-            None => return false,
+        let Some(ctx) = self
+            .focused_window_id
+            .and_then(|id| self.windows.get_mut(&id))
+        else {
+            return false;
         };
+        let Some(renderer) = ctx.renderer.as_ref() else {
+            return false;
+        };
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
         let ctx_widget = oriterm_ui::widgets::EventCtx {
             measurer,
             bounds: oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_w, caption_height),
             is_focused: false,
             focused_widget: None,
             theme: &self.ui_theme,
-        };
-
-        let Some(ctx) = self
-            .focused_window_id
-            .and_then(|id| self.windows.get_mut(&id))
-        else {
-            return false;
         };
         let resp = ctx.chrome.handle_mouse(&event, &ctx_widget);
         if resp.response != oriterm_ui::input::EventResponse::Ignored {
@@ -186,12 +182,16 @@ impl App {
 
     /// Clear chrome hover state when the cursor leaves the window.
     pub(super) fn clear_chrome_hover(&mut self) {
-        let Some(renderer) = &self.renderer else {
+        let Some(ctx) = self
+            .focused_window_id
+            .and_then(|id| self.windows.get_mut(&id))
+        else {
             return;
         };
-        let scale = self
-            .focused_ctx()
-            .map_or(1.0, |ctx| ctx.window.scale_factor().factor() as f32);
+        let Some(renderer) = ctx.renderer.as_ref() else {
+            return;
+        };
+        let scale = ctx.window.scale_factor().factor() as f32;
         let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
         let ctx_widget = oriterm_ui::widgets::EventCtx {
             measurer: &measurer,
@@ -199,12 +199,6 @@ impl App {
             is_focused: false,
             focused_widget: None,
             theme: &self.ui_theme,
-        };
-        let Some(ctx) = self
-            .focused_window_id
-            .and_then(|id| self.windows.get_mut(&id))
-        else {
-            return;
         };
         let resp = ctx
             .chrome
@@ -216,12 +210,16 @@ impl App {
 
     /// Update chrome hover state from a cursor position (physical pixels).
     pub(super) fn update_chrome_hover(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
-        let Some(renderer) = &self.renderer else {
+        let Some(ctx) = self
+            .focused_window_id
+            .and_then(|id| self.windows.get_mut(&id))
+        else {
             return;
         };
-        let scale = self
-            .focused_ctx()
-            .map_or(1.0, |ctx| ctx.window.scale_factor().factor() as f32);
+        let Some(renderer) = ctx.renderer.as_ref() else {
+            return;
+        };
+        let scale = ctx.window.scale_factor().factor() as f32;
         let logical =
             oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
         let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
@@ -231,12 +229,6 @@ impl App {
             is_focused: false,
             focused_widget: None,
             theme: &self.ui_theme,
-        };
-        let Some(ctx) = self
-            .focused_window_id
-            .and_then(|id| self.windows.get_mut(&id))
-        else {
-            return;
         };
         let resp = ctx.chrome.update_hover(logical, &ctx_widget);
         if resp.response == oriterm_ui::input::EventResponse::RequestRedraw {
@@ -353,7 +345,10 @@ impl App {
         if !self.config.window.resize_increments {
             return;
         }
-        let (Some(renderer), Some(ctx)) = (&self.renderer, self.windows.get(&winit_id)) else {
+        let Some(ctx) = self.windows.get(&winit_id) else {
+            return;
+        };
+        let Some(renderer) = ctx.renderer.as_ref() else {
             return;
         };
         let cell = renderer.cell_metrics();
@@ -377,10 +372,10 @@ impl App {
         viewport_w: u32,
         viewport_h: u32,
     ) {
-        let Some(renderer) = &self.renderer else {
+        let Some(ctx) = self.windows.get(&winit_id) else {
             return;
         };
-        let Some(ctx) = self.windows.get(&winit_id) else {
+        let Some(renderer) = ctx.renderer.as_ref() else {
             return;
         };
         let cell = renderer.cell_metrics();

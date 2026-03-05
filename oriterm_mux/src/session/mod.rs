@@ -156,6 +156,14 @@ impl MuxTab {
         false
     }
 
+    /// Replace the split tree without pushing onto the undo stack.
+    ///
+    /// Used for server-driven layout updates and optimistic local updates
+    /// that will be overwritten by the authoritative server state.
+    pub fn replace_layout(&mut self, tree: SplitTree) {
+        self.tree = tree;
+    }
+
     /// Collect all pane IDs from both the split tree and floating layer.
     pub fn all_panes(&self) -> Vec<PaneId> {
         let mut panes = self.tree.panes();

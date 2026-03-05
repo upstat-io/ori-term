@@ -165,7 +165,7 @@ fn wire_cursor_to_renderable(wire: oriterm_mux::WireCursor) -> RenderableCursor 
 }
 
 /// Extract [`FramePalette`] from the snapshot's 270-entry palette array.
-fn snapshot_palette(snapshot: &PaneSnapshot) -> FramePalette {
+pub(crate) fn snapshot_palette(snapshot: &PaneSnapshot) -> FramePalette {
     let get = |idx: usize| -> Rgb {
         snapshot
             .palette

@@ -63,8 +63,10 @@ impl App {
     /// Close a tab and all its panes.
     ///
     /// If this was the last tab in the last window, shuts down immediately
-    /// (ConPTY-safe: `process::exit` before dropping panes). Otherwise
-    /// pane cleanup happens via `PaneClosed` notifications in `pump_mux_events`.
+    /// (ConPTY-safe: `process::exit` before dropping panes). If this was the
+    /// last tab in a non-last window, the empty window is closed too.
+    /// Otherwise pane cleanup happens via `PaneClosed` notifications in
+    /// `pump_mux_events`.
     pub(super) fn close_tab(&mut self, tab_id: TabId) {
         // Capture slide animation data before the mutable borrow of mux.
         let slide_info = self.capture_close_slide_info(tab_id);
@@ -76,6 +78,9 @@ impl App {
         // Pane structs (ConPTY safety on Windows).
         let is_last = mux.session().tab_count() <= 1;
 
+        // Track which window owns this tab so we can detect empty windows.
+        let owner_window = mux.session().window_for_tab(tab_id);
+
         // Pane cleanup is deferred to `PaneClosed` notifications in
         // `pump_mux_events` — the returned IDs are intentionally unused here.
         let _pane_ids = mux.close_tab(tab_id);
@@ -83,6 +88,20 @@ impl App {
         if is_last {
             log::info!("last tab closed, shutting down");
             self.exit_app();
+        }
+
+        // If the owning window is now empty (last tab in a non-last window),
+        // close it. This handles torn-off windows and multi-window setups.
+        if let Some(win_id) = owner_window {
+            let window_empty = self
+                .mux
+                .as_ref()
+                .and_then(|m| m.session().get_window(win_id))
+                .is_some_and(|w| w.tabs().is_empty());
+            if window_empty {
+                self.close_empty_mux_window(win_id);
+                return;
+            }
         }
 
         // Width lock is NOT released here. It persists for Chrome-style
@@ -94,10 +113,8 @@ impl App {
         self.sync_tab_bar_from_mux();
 
         // Start slide animation for displaced tabs (skip if last tab).
-        if !is_last {
-            if let Some((closed_idx, tab_width)) = slide_info {
-                self.start_tab_close_slide(closed_idx, tab_width);
-            }
+        if let Some((closed_idx, tab_width)) = slide_info {
+            self.start_tab_close_slide(closed_idx, tab_width);
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
@@ -312,13 +329,12 @@ impl App {
                 }
             };
             let socket_path = oriterm_mux::server::socket_path();
-            match std::process::Command::new(exe)
-                .arg("--connect")
+            let mut cmd = std::process::Command::new(exe);
+            cmd.arg("--connect")
                 .arg(&socket_path)
                 .arg("--window")
-                .arg(new_window_id.raw().to_string())
-                .spawn()
-            {
+                .arg(new_window_id.raw().to_string());
+            match cmd.spawn() {
                 Ok(child) => {
                     log::info!(
                         "spawned new window process (pid={}) for {new_window_id}",

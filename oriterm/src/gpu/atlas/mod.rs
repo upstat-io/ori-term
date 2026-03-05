@@ -248,7 +248,7 @@ impl GlyphAtlas {
     /// before calling this method.
     ///
     /// This unifies the lookup-rasterize-insert pattern used by
-    /// [`ensure_glyphs_cached`](crate::gpu::renderer::GpuRenderer::ensure_glyphs_cached).
+    /// [`ensure_glyphs_cached`](crate::gpu::window_renderer::helpers::ensure_glyphs_cached).
     #[allow(dead_code, reason = "convenience API for later integration")]
     pub fn get_or_insert(
         &mut self,

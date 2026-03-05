@@ -1090,7 +1090,7 @@ fn disconnect_after_claim_cleans_up() {
     let has_claim = server
         .connections
         .values()
-        .any(|c| c.window_id() == Some(w1));
+        .any(|c| c.window_ids().contains(&w1));
     assert!(has_claim, "client should have claimed w1");
 
     // Disconnect.

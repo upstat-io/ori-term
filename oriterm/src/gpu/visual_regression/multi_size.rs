@@ -15,7 +15,7 @@ fn ascii_multi_size() {
     let rows = 1;
 
     for size_pt in [10.0f32, 14.0, 20.0] {
-        let Some((gpu, mut renderer)) = headless_env_with_config(size_pt, 96.0) else {
+        let Some((gpu, pipelines, mut renderer)) = headless_env_with_config(size_pt, 96.0) else {
             eprintln!("skipped: no GPU adapter available");
             return;
         };
@@ -30,7 +30,7 @@ fn ascii_multi_size() {
         input.content.cursor.visible = false;
 
         let name = format!("ascii_{size_pt:.0}pt_96dpi");
-        let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+        let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
         if let Err(msg) = compare_with_reference(&name, &pixels, w, h) {
             panic!("visual regression ({name}): {msg}");
         }
@@ -44,7 +44,7 @@ fn ascii_multi_dpi() {
     let rows = 1;
 
     for dpi in [96.0f32, 192.0] {
-        let Some((gpu, mut renderer)) = headless_env_with_config(14.0, dpi) else {
+        let Some((gpu, pipelines, mut renderer)) = headless_env_with_config(14.0, dpi) else {
             eprintln!("skipped: no GPU adapter available");
             return;
         };
@@ -59,7 +59,7 @@ fn ascii_multi_dpi() {
         input.content.cursor.visible = false;
 
         let name = format!("ascii_14pt_{dpi:.0}dpi");
-        let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+        let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
         if let Err(msg) = compare_with_reference(&name, &pixels, w, h) {
             panic!("visual regression ({name}): {msg}");
         }

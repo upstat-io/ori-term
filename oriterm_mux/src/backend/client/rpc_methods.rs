@@ -32,7 +32,23 @@ use super::MuxClient;
 impl MuxBackend for MuxClient {
     fn poll_events(&mut self) {
         if let Some(transport) = &self.transport {
+            transport.clear_wakeup_pending();
             transport.poll_notifications(&mut self.notifications);
+        }
+
+        // Collect tab layout change IDs before processing (avoids borrow conflict).
+        let layout_tabs: Vec<TabId> = self
+            .notifications
+            .iter()
+            .filter_map(|n| match n {
+                MuxNotification::TabLayoutChanged(tid) => Some(*tid),
+                _ => None,
+            })
+            .collect();
+
+        // Apply server-pushed layout updates.
+        for tid in layout_tabs {
+            self.apply_layout_update(tid);
         }
 
         // Scan buffered notifications to mark panes dirty for rendering.
@@ -155,7 +171,9 @@ impl MuxBackend for MuxClient {
                     .unwrap_or_default();
 
                 for &pid in &pane_ids {
-                    self.unsubscribe_pane(pid);
+                    // Local-only cleanup — the server already removed subscriptions
+                    // when it closed the tab, so no Unsubscribe RPC needed.
+                    self.remove_snapshot(pid);
                     self.pane_registry.unregister(pid);
                 }
 
@@ -308,6 +326,12 @@ impl MuxBackend for MuxClient {
                 // Subscribe to the new pane and cache its initial snapshot.
                 self.subscribe_pane(new_pane_id);
 
+                // Optimistic local update (TabLayoutChanged will overwrite).
+                if let Some(tab) = self.local_session.get_tab_mut(tab_id) {
+                    let new_tree = tab.tree().split_at(source, dir, new_pane_id, 0.5);
+                    tab.replace_layout(new_tree);
+                }
+
                 Ok(new_pane_id)
             }
             other => Err(io::Error::other(format!(
@@ -319,7 +343,9 @@ impl MuxBackend for MuxClient {
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
         match self.rpc(MuxPdu::ClosePane { pane_id }) {
             Ok(MuxPdu::PaneClosedAck) => {
-                self.unsubscribe_pane(pane_id);
+                // Local-only cleanup — the server already removed subscriptions
+                // when it closed the pane, so no Unsubscribe RPC needed.
+                self.remove_snapshot(pane_id);
                 self.pane_registry.unregister(pane_id);
                 ClosePaneResult::PaneRemoved
             }
@@ -387,14 +413,37 @@ impl MuxBackend for MuxClient {
 
     fn spawn_floating_pane(
         &mut self,
-        _tab_id: TabId,
-        _config: &SpawnConfig,
-        _theme: Theme,
-        _available: &Rect,
+        tab_id: TabId,
+        config: &SpawnConfig,
+        theme: Theme,
+        available: &Rect,
     ) -> io::Result<PaneId> {
-        Err(io::Error::other(
-            "spawn_floating_pane: not yet supported in daemon mode",
-        ))
+        let pdu = MuxPdu::SpawnFloatingPane {
+            tab_id,
+            shell: config.shell.clone(),
+            cwd: config.cwd.as_ref().map(|p| p.display().to_string()),
+            theme: theme_to_wire(theme).map(str::to_owned),
+            available: *available,
+        };
+
+        match self.rpc(pdu)? {
+            MuxPdu::FloatingPaneSpawned {
+                new_pane_id,
+                domain_id,
+            } => {
+                self.pane_registry.register(PaneEntry {
+                    pane: new_pane_id,
+                    tab: tab_id,
+                    domain: domain_id,
+                });
+                self.subscribe_pane(new_pane_id);
+                log::info!("spawned floating pane {new_pane_id} in {tab_id}");
+                Ok(new_pane_id)
+            }
+            other => Err(io::Error::other(format!(
+                "spawn_floating_pane: unexpected response: {other:?}"
+            ))),
+        }
     }
 
     fn move_pane_to_floating(
@@ -669,19 +718,13 @@ impl MuxBackend for MuxClient {
         match self.rpc(MuxPdu::ClaimWindow { window_id })? {
             MuxPdu::WindowClaimed => {
                 log::info!("claimed {window_id} on daemon");
-
-                // Subscribe to all panes in all tabs of this window.
-                if let Some(win) = self.local_session.get_window(window_id) {
-                    let tab_ids: Vec<TabId> = win.tabs().to_vec();
-                    for tab_id in tab_ids {
-                        if let Some(tab) = self.local_session.get_tab(tab_id) {
-                            for pane_id in tab.all_panes() {
-                                self.subscribe_pane(pane_id);
-                            }
-                        }
-                    }
+                // Ensure window exists in local_session (may not if spawned
+                // via --window flag, which skips create_window).
+                if self.local_session.get_window(window_id).is_none() {
+                    self.local_session.add_window(MuxWindow::new(window_id));
                 }
-
+                // Populate local_session from server state, subscribe to panes.
+                self.refresh_window_tabs(window_id);
                 Ok(())
             }
             other => Err(io::Error::other(format!(
@@ -693,9 +736,29 @@ impl MuxBackend for MuxClient {
     fn refresh_window_tabs(&mut self, window_id: WindowId) {
         match self.rpc(MuxPdu::ListTabs { window_id }) {
             Ok(MuxPdu::TabList { tabs }) => {
+                let tab_ids: Vec<TabId> = tabs.iter().map(|t| t.tab_id).collect();
+
+                // Create MuxTabs from server data and subscribe to all panes.
+                for info in &tabs {
+                    let mut tab = MuxTab::new(info.tab_id, info.active_pane_id);
+                    tab.replace_layout(info.tree.clone());
+                    tab.set_floating(info.floating.clone());
+                    tab.set_zoomed_pane(info.zoomed_pane);
+
+                    // Register and subscribe to all panes in this tab.
+                    for pid in tab.all_panes() {
+                        self.pane_registry.register(PaneEntry {
+                            pane: pid,
+                            tab: info.tab_id,
+                            domain: DomainId::from_raw(0),
+                        });
+                        self.subscribe_pane(pid);
+                    }
+
+                    self.local_session.add_tab(tab);
+                }
+
                 if let Some(win) = self.local_session.get_window_mut(window_id) {
-                    // Replace the window's tab list with the server-authoritative data.
-                    let tab_ids: Vec<TabId> = tabs.iter().map(|t| t.tab_id).collect();
                     win.replace_tabs(&tab_ids);
                 }
                 log::debug!("refreshed tabs for {window_id}: {} tabs", tabs.len());

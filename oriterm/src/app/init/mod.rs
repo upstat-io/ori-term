@@ -10,7 +10,7 @@ use super::window_context::WindowContext;
 use super::{App, DEFAULT_DPI};
 use crate::app::config_reload;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
-use crate::gpu::{GpuRenderer, GpuState};
+use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
@@ -19,6 +19,10 @@ impl App {
     ///
     /// Returns `Err` with a displayable message on any failure. The caller
     /// logs the error and exits the event loop.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one-shot startup sequence: window → GPU → fonts → renderer → tab → show"
+    )]
     pub(super) fn try_init(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -93,19 +97,51 @@ impl App {
         // 6d. Apply font config: features, per-fallback metadata, codepoint map.
         config_reload::apply_font_config(&mut font_collection, &self.config.font, user_fb_count);
 
-        // 7. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
+        // 7a. Create shared pipelines (once).
         let t_renderer_start = std::time::Instant::now();
-        let renderer = GpuRenderer::new(&gpu, font_collection);
+        let pipelines = GpuPipelines::new(&gpu);
+
+        // 7b. Cache FontSet for new windows. Re-load from config (the
+        // font_set was consumed when creating font_collection above).
+        let cached_font_set = {
+            let mut fs = FontSet::load(
+                self.config.font.family.as_deref(),
+                self.config.font.effective_weight(),
+            )?;
+            let user_fb_families: Vec<&str> = self
+                .config
+                .font
+                .fallback
+                .iter()
+                .map(|f| f.family.as_str())
+                .collect();
+            fs.prepend_user_fallbacks(&user_fb_families);
+            fs
+        };
+
+        // 7c. UI font discovery + cache.
+        let ui_font_set = discover_ui_font_set();
+        let ui_fc = ui_font_set.as_ref().and_then(|fs| {
+            FontCollection::new(
+                fs.clone(),
+                11.0,
+                physical_dpi,
+                subpixel_format,
+                400,
+                hinting,
+            )
+            .ok()
+        });
+
+        // 7d. Create per-window renderer.
+        let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_fc);
         let t_renderer = t_renderer_start.elapsed();
 
         // 8. Create chrome + tab bar widgets and apply platform effects.
         let (w, h) = window.size_px();
         let (chrome_widget, tab_bar_widget, caption_height) = self.create_chrome_widgets(&window);
 
-        // 11. Compute grid dimensions from viewport, offset by chrome height.
-        // Chrome = caption bar + tab bar. Cell metrics are in physical pixels
-        // (rasterized at physical DPI), so divide physical viewport by physical
-        // cell size directly.
+        // 9. Compute grid dimensions from viewport, offset by chrome height.
         let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
@@ -115,8 +151,7 @@ impl App {
         let cols = cell.columns(w).max(1);
         let rows = cell.rows(grid_h).max(1);
 
-        // 12. Create grid widget with cell metrics and initial grid size.
-        // Bounds are in physical pixels to match the physical viewport.
+        // 10. Create grid widget with cell metrics and initial grid size.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
         grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
             0.0,
@@ -125,8 +160,7 @@ impl App {
             rows as f32 * cell.height,
         ));
 
-        // 13. Create initial tab + pane (skip if daemon mode with a claimed window
-        //     — the daemon already owns the tabs).
+        // 11. Create initial tab + pane (skip if daemon mode with a claimed window).
         let t_mux_start = std::time::Instant::now();
         let is_claimed = is_daemon && self.active_window.is_some();
         if !is_claimed {
@@ -146,24 +180,28 @@ impl App {
             self.config.font.size,
         );
 
-        // Render a clear frame with the theme's background color before
-        // showing the window. This prevents the white/gray flash that occurs
-        // when the compositor displays an uninitialized framebuffer.
+        // Clear frame with theme background before showing (prevents white flash).
         let theme = self
             .config
             .colors
             .resolve_theme(crate::platform::theme::system_theme);
         let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
         gpu.clear_surface(window.surface(), palette.background(), opacity);
-
-        // Show window — winit won't deliver RedrawRequested to an invisible
-        // window, so we must be visible before storing state.
         window.set_visible(true);
 
         let winit_id = window.window_id();
-        let ctx = WindowContext::new(window, chrome_widget, tab_bar_widget, grid_widget);
+        let ctx = WindowContext::new(
+            window,
+            chrome_widget,
+            tab_bar_widget,
+            grid_widget,
+            Some(renderer),
+        );
         self.gpu = Some(gpu);
-        self.renderer = Some(renderer);
+        self.pipelines = Some(pipelines);
+        self.font_set = Some(cached_font_set);
+        self.ui_font_set = ui_font_set;
+        self.user_fb_count = user_fb_count;
         self.windows.insert(winit_id, ctx);
         self.focused_window_id = Some(winit_id);
         self.active_window = Some(mux_window_id);
@@ -299,4 +337,13 @@ impl App {
 
         Ok(())
     }
+}
+
+/// Discover the system UI font (proportional sans-serif) for tab bar and overlays.
+///
+/// Returns `None` if no suitable font is found — the terminal font is used
+/// as a fallback in that case.
+fn discover_ui_font_set() -> Option<FontSet> {
+    let discovery = crate::font::discovery::discover_ui_fonts();
+    FontSet::from_discovery(&discovery).ok()
 }

@@ -12,6 +12,8 @@ use oriterm_core::grid::StableRowIndex;
 use oriterm_core::selection::{Selection, SelectionMode, SelectionPoint};
 
 use crate::id::{PaneId, TabId, WindowId};
+use crate::layout::floating::FloatingLayer;
+use crate::layout::split_tree::SplitTree;
 
 /// RGB color on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,7 +301,7 @@ pub struct MuxWindowInfo {
 }
 
 /// Summary info for a mux tab (used in `ListTabs` response).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MuxTabInfo {
     /// Tab identity.
     pub tab_id: TabId,
@@ -309,4 +311,10 @@ pub struct MuxTabInfo {
     pub pane_count: u32,
     /// Tab title (derived from the active pane's title).
     pub title: String,
+    /// Current split tree layout.
+    pub tree: SplitTree,
+    /// Floating pane layer.
+    pub floating: FloatingLayer,
+    /// Pane currently zoomed to fill the tab, if any.
+    pub zoomed_pane: Option<PaneId>,
 }

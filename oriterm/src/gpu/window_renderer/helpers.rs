@@ -1,7 +1,7 @@
 //! Free functions for the shaping pipeline and GPU buffer management.
 //!
 //! These are free functions (not methods) so the borrow checker can see
-//! that different fields of [`GpuRenderer`](super::GpuRenderer) are
+//! that different fields of [`WindowRenderer`](super::WindowRenderer) are
 //! borrowed independently — e.g. `font_collection` immutably while
 //! `scratch` is borrowed mutably.
 
@@ -21,7 +21,7 @@ use crate::font::{
 
 /// Reusable per-frame scratch buffers for the shaping pipeline.
 ///
-/// Stored on [`GpuRenderer`](super::GpuRenderer) and cleared each frame to
+/// Stored on [`WindowRenderer`](super::WindowRenderer) and cleared each frame to
 /// avoid per-frame allocation of the shaping intermediaries and output.
 pub(super) struct ShapingScratch {
     /// Shaped frame output (glyph positions + col maps).
@@ -275,7 +275,7 @@ pub(super) fn record_draw(
 /// Pre-cache printable ASCII glyphs (Regular + Bold) into the given atlas.
 ///
 /// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has
-/// a real Bold face. Used by both `GpuRenderer::new()` and `clear_and_recache()`.
+/// a real Bold face. Used by both `WindowRenderer::new()` and `clear_and_recache()`.
 pub(super) fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, queue: &Queue) {
     let size_q6 = size_key(fc.size_px());
     let hinted = fc.hinting_mode().hint_flag();

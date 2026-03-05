@@ -28,8 +28,9 @@ use image::{ImageBuffer, Rgba, RgbaImage};
 use oriterm_core::{CellFlags, Column, CursorShape, Rgb};
 
 use super::frame_input::{FrameInput, ViewportSize};
-use super::renderer::GpuRenderer;
+use super::pipelines::GpuPipelines;
 use super::state::GpuState;
+use super::window_renderer::WindowRenderer;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 
 /// Per-channel tolerance for pixel comparison. Accounts for anti-aliasing
@@ -54,12 +55,15 @@ pub(super) fn reference_dir() -> PathBuf {
 ///
 /// Uses `FontSet::embedded()` for deterministic output regardless of system
 /// fonts. Returns `None` if no GPU adapter is available.
-pub(super) fn headless_env() -> Option<(GpuState, GpuRenderer)> {
+pub(super) fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     headless_env_with_config(TEST_FONT_SIZE_PT, TEST_DPI)
 }
 
 /// Headless rendering environment with configurable font size and DPI.
-pub(super) fn headless_env_with_config(size_pt: f32, dpi: f32) -> Option<(GpuState, GpuRenderer)> {
+pub(super) fn headless_env_with_config(
+    size_pt: f32,
+    dpi: f32,
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     headless_env_full(size_pt, dpi, GlyphFormat::Alpha)
 }
 
@@ -68,7 +72,7 @@ pub(super) fn headless_env_full(
     size_pt: f32,
     dpi: f32,
     format: GlyphFormat,
-) -> Option<(GpuState, GpuRenderer)> {
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     headless_env_with_hinting(size_pt, dpi, format, HintingMode::Full)
 }
 
@@ -79,8 +83,9 @@ pub(super) fn headless_env_with_hinting(
     dpi: f32,
     format: GlyphFormat,
     hinting: HintingMode,
-) -> Option<(GpuState, GpuRenderer)> {
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
+    let pipelines = GpuPipelines::new(&gpu);
     let font_collection = FontCollection::new(
         FontSet::embedded(),
         size_pt,
@@ -90,17 +95,18 @@ pub(super) fn headless_env_with_hinting(
         hinting,
     )
     .ok()?;
-    let renderer = GpuRenderer::new(&gpu, font_collection);
-    Some((gpu, renderer))
+    let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
+    Some((gpu, pipelines, renderer))
 }
 
 /// Render a `FrameInput` to RGBA pixels via the headless pipeline.
 pub(super) fn render_to_pixels(
     gpu: &GpuState,
-    renderer: &mut GpuRenderer,
+    pipelines: &GpuPipelines,
+    renderer: &mut WindowRenderer,
     input: &FrameInput,
 ) -> Vec<u8> {
-    render_to_pixels_with_origin(gpu, renderer, input, (0.0, 0.0))
+    render_to_pixels_with_origin(gpu, pipelines, renderer, input, (0.0, 0.0))
 }
 
 /// Render a `FrameInput` to RGBA pixels with a custom grid origin offset.
@@ -108,15 +114,16 @@ pub(super) fn render_to_pixels(
 /// The `origin` shifts all cell positions, simulating chrome height.
 pub(super) fn render_to_pixels_with_origin(
     gpu: &GpuState,
-    renderer: &mut GpuRenderer,
+    pipelines: &GpuPipelines,
+    renderer: &mut WindowRenderer,
     input: &FrameInput,
     origin: (f32, f32),
 ) -> Vec<u8> {
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(input, gpu, origin, true);
-    renderer.render_frame(gpu, target.view());
+    renderer.prepare(input, gpu, origin, true, true);
+    renderer.render_frame(gpu, pipelines, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")
 }
@@ -265,7 +272,7 @@ pub(super) fn pixel_diff(
 
 #[test]
 fn basic_grid() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -288,7 +295,7 @@ fn basic_grid() {
     input.cell_size = cell;
     input.content.cursor.visible = false;
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("basic_grid", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -296,7 +303,7 @@ fn basic_grid() {
 
 #[test]
 fn colors_16() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -381,7 +388,7 @@ fn colors_16() {
         input.content.cells[row1_idx].ch = '#';
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("colors_16", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -389,7 +396,7 @@ fn colors_16() {
 
 #[test]
 fn cursor_shapes() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -422,7 +429,7 @@ fn cursor_shapes() {
         };
 
         let name = format!("cursor_{shape:?}").to_lowercase();
-        let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+        let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
         if let Err(msg) = compare_with_reference(&name, &pixels, w, h) {
             panic!("visual regression ({name}): {msg}");
         }
@@ -431,7 +438,7 @@ fn cursor_shapes() {
 
 #[test]
 fn bold_italic() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -458,7 +465,7 @@ fn bold_italic() {
         input.content.cells[3 * cols + col].flags = CellFlags::BOLD | CellFlags::ITALIC;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("bold_italic", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }

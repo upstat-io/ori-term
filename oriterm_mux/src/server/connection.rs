@@ -1,8 +1,9 @@
 //! Client connection tracking.
 //!
-//! Each window process that connects to the daemon is tracked as a
+//! Each GUI process that connects to the daemon is tracked as a
 //! [`ClientConnection`] with a unique [`ClientId`] and the mio [`Token`]
-//! used for event dispatching.
+//! used for event dispatching. A single connection may own multiple mux
+//! windows (e.g., after a tab tear-off creates a second OS window).
 
 use std::collections::HashSet;
 
@@ -16,7 +17,7 @@ use crate::MuxPdu;
 use super::frame_io::{FrameReader, FrameWriter};
 use super::ipc::IpcStream;
 
-/// A connected window process.
+/// A connected GUI process.
 pub struct ClientConnection {
     /// Unique connection identifier.
     id: ClientId,
@@ -28,12 +29,14 @@ pub struct ClientConnection {
     frame_reader: FrameReader,
     /// Non-blocking frame writer buffering outgoing frames.
     frame_writer: FrameWriter,
-    /// Which mux window this client renders (set after handshake).
-    window_id: Option<WindowId>,
+    /// Mux windows this client renders (supports multi-window via tear-off).
+    window_ids: HashSet<WindowId>,
     /// Panes this client is subscribed to for push notifications.
     subscribed_panes: HashSet<PaneId>,
     /// Protocol capabilities advertised by the client.
     capabilities: u32,
+    /// Windows created by this connection (for orphan cleanup on disconnect).
+    created_windows: Vec<WindowId>,
 }
 
 impl ClientConnection {
@@ -45,9 +48,10 @@ impl ClientConnection {
             token,
             frame_reader: FrameReader::new(),
             frame_writer: FrameWriter::new(),
-            window_id: None,
+            window_ids: HashSet::new(),
             subscribed_panes: HashSet::new(),
             capabilities: 0,
+            created_windows: Vec::new(),
         }
     }
 
@@ -91,14 +95,19 @@ impl ClientConnection {
         self.frame_writer.has_pending()
     }
 
-    /// Which mux window this client is rendering.
-    pub fn window_id(&self) -> Option<WindowId> {
-        self.window_id
+    /// All mux windows this client renders.
+    pub fn window_ids(&self) -> &HashSet<WindowId> {
+        &self.window_ids
     }
 
-    /// Set the window this client renders (after handshake).
-    pub fn set_window_id(&mut self, id: WindowId) {
-        self.window_id = Some(id);
+    /// Register a window this client renders (after `ClaimWindow`).
+    pub fn add_window_id(&mut self, id: WindowId) {
+        self.window_ids.insert(id);
+    }
+
+    /// Unregister a window (after `CloseWindow`).
+    pub fn remove_window_id(&mut self, id: WindowId) {
+        self.window_ids.remove(&id);
     }
 
     /// Add a pane subscription.
@@ -129,6 +138,16 @@ impl ClientConnection {
     /// Whether the client advertised a given capability flag.
     pub fn has_capability(&self, flag: u32) -> bool {
         self.capabilities & flag != 0
+    }
+
+    /// Record that this connection created a window (for orphan cleanup).
+    pub fn track_created_window(&mut self, window_id: WindowId) {
+        self.created_windows.push(window_id);
+    }
+
+    /// Windows created by this connection.
+    pub fn created_windows(&self) -> &[WindowId] {
+        &self.created_windows
     }
 
     /// Number of bytes buffered but not yet flushed to the stream.

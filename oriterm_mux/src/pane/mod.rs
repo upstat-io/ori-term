@@ -107,9 +107,17 @@ pub struct Pane {
     notifier: PaneNotifier,
     /// PTY control handle for resize operations.
     pty_control: PtyControl,
-    /// PTY reader thread join handle.
+    /// PTY reader thread join handle (detached on drop).
+    #[allow(
+        dead_code,
+        reason = "holds JoinHandle for thread lifetime — detached on drop"
+    )]
     reader_thread: Option<JoinHandle<()>>,
-    /// PTY writer thread join handle.
+    /// PTY writer thread join handle (detached on drop).
+    #[allow(
+        dead_code,
+        reason = "holds JoinHandle for thread lifetime — detached on drop"
+    )]
     writer_thread: Option<JoinHandle<()>>,
     /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
     pty: PtyHandle,

@@ -12,6 +12,7 @@ use oriterm_ui::overlay::Placement;
 use oriterm_ui::widgets::menu::{MenuStyle, MenuWidget};
 
 use super::{App, context_menu, mouse_report, mouse_selection};
+use crate::gpu::WindowRenderer;
 
 impl App {
     /// Route a mouse event through the overlay manager.
@@ -40,16 +41,6 @@ impl App {
             pos: logical,
             modifiers: super::winit_mods_to_ui(self.modifiers),
         };
-        let measurer = self
-            .renderer
-            .as_ref()
-            .map(|r| crate::font::UiFontMeasurer::new(r.active_ui_collection(), scale));
-        let measurer: &dyn oriterm_ui::widgets::TextMeasurer = match &measurer {
-            Some(m) => m,
-            None => return true,
-        };
-        // Borrow split: inline window lookup borrows only self.windows,
-        // leaving self.renderer and self.ui_theme available as disjoint borrows.
         let now = Instant::now();
         let result = {
             let Some(ctx) = self
@@ -58,6 +49,11 @@ impl App {
             else {
                 return true;
             };
+            let Some(renderer) = ctx.renderer.as_ref() else {
+                return true;
+            };
+            let measurer = crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
             ctx.overlays.process_mouse_event(
                 &ui_event,
                 measurer,
@@ -91,14 +87,6 @@ impl App {
             pos: logical,
             modifiers: super::winit_mods_to_ui(self.modifiers),
         };
-        let measurer = self
-            .renderer
-            .as_ref()
-            .map(|r| crate::font::UiFontMeasurer::new(r.active_ui_collection(), scale));
-        let measurer: &dyn oriterm_ui::widgets::TextMeasurer = match &measurer {
-            Some(m) => m,
-            None => return true,
-        };
         let now = Instant::now();
         let result = {
             let Some(ctx) = self
@@ -107,6 +95,11 @@ impl App {
             else {
                 return true;
             };
+            let Some(renderer) = ctx.renderer.as_ref() else {
+                return true;
+            };
+            let measurer = crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
             ctx.overlays.process_mouse_event(
                 &ui_event,
                 measurer,
@@ -161,15 +154,15 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
-        let (Some(wctx), Some(renderer)) = (
-            self.focused_window_id.and_then(|id| self.windows.get(&id)),
-            self.renderer.as_ref(),
-        ) else {
+        let Some(wctx) = self.focused_window_id.and_then(|id| self.windows.get(&id)) else {
+            return;
+        };
+        let Some(cell) = wctx.renderer.as_ref().map(WindowRenderer::cell_metrics) else {
             return;
         };
         let ctx = mouse_selection::GridCtx {
             widget: &wctx.terminal_grid,
-            cell: renderer.cell_metrics(),
+            cell,
             word_delimiters: &self.config.behavior.word_delimiters,
         };
 
@@ -214,15 +207,15 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
-        let (Some(wctx), Some(renderer)) = (
-            self.focused_window_id.and_then(|id| self.windows.get(&id)),
-            self.renderer.as_ref(),
-        ) else {
+        let Some(wctx) = self.focused_window_id.and_then(|id| self.windows.get(&id)) else {
+            return;
+        };
+        let Some(cell) = wctx.renderer.as_ref().map(WindowRenderer::cell_metrics) else {
             return;
         };
         let ctx = mouse_selection::GridCtx {
             widget: &wctx.terminal_grid,
-            cell: renderer.cell_metrics(),
+            cell,
             word_delimiters: &self.config.behavior.word_delimiters,
         };
 
