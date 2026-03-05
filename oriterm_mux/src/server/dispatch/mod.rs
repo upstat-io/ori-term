@@ -1,23 +1,28 @@
 //! Request dispatch for the mux server.
 //!
 //! Matches incoming [`MuxPdu`] request variants and calls the appropriate
-//! [`InProcessMux`] methods, returning response PDUs. This module also
-//! provides snapshot building utilities that convert internal terminal
-//! state into wire-friendly types.
+//! [`InProcessMux`] methods, returning response PDUs.
+
+mod helpers;
+
+pub(crate) use helpers::parse_theme;
+pub use helpers::remove_client_subscriptions;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use oriterm_core::selection::{extract_html_with_text, extract_text};
-use oriterm_core::{CursorShape, Rgb, Theme};
+use oriterm_core::{CursorShape, Rgb};
 
 use crate::domain::SpawnConfig;
 use crate::pane::Pane;
-use crate::{ClientId, InProcessMux, MuxPdu, PaneId};
+use crate::{InProcessMux, MuxPdu, PaneId};
 
 use super::connection::ClientConnection;
 use super::snapshot::{self, SnapshotCache};
+
+use self::helpers::drop_pane_background;
 
 /// Shared context for request dispatch.
 ///
@@ -469,44 +474,6 @@ pub fn dispatch_request(
             Some(MuxPdu::Error {
                 message: "unexpected PDU type from client".to_string(),
             })
-        }
-    }
-}
-
-/// Drop a pane on a background thread to avoid blocking the server event loop.
-///
-/// `Pane::drop` signals shutdown and kills the child process, but the field
-/// destructors (especially `PtyHandle.child`) can block on Windows/ConPTY
-/// cleanup. Spawning a thread ensures the server responds to RPCs promptly.
-fn drop_pane_background(pane: Option<Pane>) {
-    if let Some(pane) = pane {
-        std::thread::spawn(move || drop(pane));
-    }
-}
-
-/// Parse a wire theme string into a [`Theme`].
-///
-/// `None` or unrecognized strings default to [`Theme::Dark`].
-pub(crate) fn parse_theme(s: Option<&str>) -> Theme {
-    match s {
-        Some("light") => Theme::Light,
-        _ => Theme::Dark,
-    }
-}
-
-/// Remove all pane subscriptions from the global subscriptions map for a
-/// disconnecting client.
-pub fn remove_client_subscriptions(
-    subscriptions: &mut HashMap<PaneId, Vec<ClientId>>,
-    client_id: ClientId,
-    subscribed_panes: &std::collections::HashSet<PaneId>,
-) {
-    for pane_id in subscribed_panes {
-        if let Some(subs) = subscriptions.get_mut(pane_id) {
-            subs.retain(|&c| c != client_id);
-            if subs.is_empty() {
-                subscriptions.remove(pane_id);
-            }
         }
     }
 }

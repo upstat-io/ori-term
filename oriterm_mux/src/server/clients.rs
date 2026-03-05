@@ -1,0 +1,391 @@
+//! Client connection lifecycle — accept, read, dispatch, disconnect.
+//!
+//! Extracted from the server event loop to keep `mod.rs` focused on
+//! the mio poll loop and mux-event draining.
+
+use std::io::{self, Read};
+use std::time::Instant;
+
+use mio::{Interest, Token};
+
+use crate::id::ClientId;
+use crate::{DecodedFrame, MuxPdu, WindowId};
+
+use super::connection::ClientConnection;
+use super::frame_io::ReadStatus;
+use super::{MuxServer, dispatch, push};
+
+impl MuxServer {
+    /// Accept pending connections from the IPC listener.
+    pub(super) fn accept_connections(&mut self) -> io::Result<()> {
+        loop {
+            match self.listener.accept() {
+                Ok(mut stream) => {
+                    let id = self.client_alloc.alloc();
+                    let token = Token(self.next_token);
+                    self.next_token += 1;
+
+                    self.poll
+                        .registry()
+                        .register(&mut stream, token, Interest::READABLE)?;
+
+                    let conn = ClientConnection::new(id, stream, token);
+                    self.connections.insert(id, conn);
+                    self.token_to_client.insert(token, id);
+                    self.had_client = true;
+                    log::info!("client {id} connected");
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    /// Handle a readable/writable event from a connected client.
+    pub(super) fn handle_client_event(&mut self, token: Token) {
+        let Some(&client_id) = self.token_to_client.get(&token) else {
+            log::warn!("event for unknown token {}", token.0);
+            return;
+        };
+
+        // Flush any pending writes first (writable event or combined event).
+        {
+            let Some(conn) = self.connections.get_mut(&client_id) else {
+                return;
+            };
+            if conn.has_pending_writes() {
+                log::trace!("{client_id}: flushing pending writes");
+                if let Err(e) = conn.flush_writes() {
+                    log::warn!("flush error for client {client_id}: {e}");
+                    self.disconnect_client(client_id);
+                    return;
+                }
+                self.update_write_interest(client_id);
+            }
+        }
+
+        // Read available bytes from the stream into the frame reader.
+        let read_status = {
+            let Some(conn) = self.connections.get_mut(&client_id) else {
+                return;
+            };
+            let mut tmp = [0u8; 4096];
+            match conn.stream_mut().read(&mut tmp) {
+                Ok(0) => ReadStatus::Closed,
+                Ok(n) => {
+                    log::trace!("{client_id}: read {n} bytes");
+                    conn.frame_reader_mut().extend(&tmp[..n]);
+                    ReadStatus::GotData
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    log::trace!("{client_id}: read WouldBlock");
+                    ReadStatus::WouldBlock
+                }
+                Err(e) => {
+                    log::warn!("read error from client {client_id}: {e}");
+                    self.disconnect_client(client_id);
+                    return;
+                }
+            }
+        };
+
+        if read_status == ReadStatus::Closed {
+            log::info!("client {client_id} disconnected (EOF)");
+            self.disconnect_client(client_id);
+            return;
+        }
+
+        self.dispatch_frames(client_id);
+    }
+
+    /// Decode and dispatch all complete frames from a client's buffer.
+    fn dispatch_frames(&mut self, client_id: ClientId) {
+        loop {
+            let frame = {
+                let Some(conn) = self.connections.get_mut(&client_id) else {
+                    return;
+                };
+                conn.frame_reader_mut().try_decode()
+            };
+
+            let Some(decode_result) = frame else {
+                break; // No more complete frames.
+            };
+
+            match decode_result {
+                Ok(decoded) => self.handle_decoded_frame(client_id, decoded),
+                Err(e) => {
+                    if matches!(e, crate::DecodeError::UnknownMsgType(_)) {
+                        log::debug!("unknown msg_type from client {client_id}, skipping");
+                    } else {
+                        log::warn!("decode error from client {client_id}: {e}");
+                        let err_pdu = MuxPdu::Error {
+                            message: format!("decode error: {e}"),
+                        };
+                        if let Some(conn) = self.connections.get_mut(&client_id) {
+                            let _ = conn.queue_frame(0, &err_pdu);
+                            self.update_write_interest(client_id);
+                        }
+                    }
+                    if is_fatal_decode_error(&e) {
+                        self.disconnect_client(client_id);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Handle a single successfully decoded frame from a client.
+    fn handle_decoded_frame(&mut self, client_id: ClientId, decoded: DecodedFrame) {
+        log::trace!(
+            "{client_id}: dispatch seq={} pdu={:?}",
+            decoded.seq,
+            decoded.pdu
+        );
+        let seq = decoded.seq;
+        let is_sub_change = matches!(
+            &decoded.pdu,
+            MuxPdu::Subscribe { .. } | MuxPdu::Unsubscribe { .. }
+        );
+        let unsub_pane = match &decoded.pdu {
+            MuxPdu::Unsubscribe { pane_id } => Some(*pane_id),
+            _ => None,
+        };
+        let claimed_wid = match &decoded.pdu {
+            MuxPdu::ClaimWindow { window_id } => Some(*window_id),
+            _ => None,
+        };
+        let closed_wid = match &decoded.pdu {
+            MuxPdu::CloseWindow { window_id } => Some(*window_id),
+            _ => None,
+        };
+        self.scratch_panes.clear();
+        self.scratch_immediate_push.clear();
+        let Some(conn) = self.connections.get_mut(&client_id) else {
+            return;
+        };
+        let mut ctx = dispatch::DispatchContext {
+            mux: &mut self.mux,
+            panes: &mut self.panes,
+            wakeup: &self.wakeup,
+            closed_panes: &mut self.scratch_panes,
+            snapshot_cache: &mut self.snapshot_cache,
+            immediate_push: &mut self.scratch_immediate_push,
+        };
+        let response = dispatch::dispatch_request(&mut ctx, conn, decoded.pdu);
+
+        // Purge stale subscriptions for closed panes.
+        if !self.scratch_panes.is_empty() {
+            self.purge_closed_pane_subscriptions();
+        }
+
+        // Sync subscription tracking (only on subscription changes).
+        if is_sub_change {
+            self.sync_subscriptions(client_id);
+        }
+
+        // Immediate push for fire-and-forget mutations that change visible state.
+        if !self.scratch_immediate_push.is_empty() {
+            let now = Instant::now();
+            let mut push_ctx = push::PushContext {
+                last_snapshot_push: &mut self.last_snapshot_push,
+                subscriptions: &self.subscriptions,
+                connections: &mut self.connections,
+                panes: &self.panes,
+                snapshot_cache: &mut self.snapshot_cache,
+                pending_push: &mut self.pending_push,
+                scratch: &mut self.scratch_clients,
+            };
+            for &push_pane_id in &self.scratch_immediate_push {
+                push::push_or_defer_pane(&mut push_ctx, now, push_pane_id);
+            }
+        }
+
+        // Prune pending_push on Unsubscribe.
+        if let Some(unsub_pid) = unsub_pane {
+            if let Some(deferred) = self.pending_push.get_mut(&unsub_pid) {
+                deferred.remove(&client_id);
+                if deferred.is_empty() {
+                    self.pending_push.remove(&unsub_pid);
+                }
+            }
+        }
+
+        // Update window→client reverse index on ClaimWindow.
+        if let Some(wid) = claimed_wid {
+            if matches!(&response, Some(MuxPdu::WindowClaimed)) {
+                self.window_to_client.insert(wid, client_id);
+            }
+        }
+
+        // Update window→client reverse index on CloseWindow.
+        if let Some(wid) = closed_wid {
+            if matches!(&response, Some(MuxPdu::WindowClosed { .. })) {
+                self.window_to_client.remove(&wid);
+                if let Some(c) = self.connections.get_mut(&client_id) {
+                    c.remove_window_id(wid);
+                }
+            }
+        }
+
+        if let Some(resp_pdu) = response {
+            let is_shutdown = matches!(resp_pdu, MuxPdu::ShutdownAck);
+            let Some(conn) = self.connections.get_mut(&client_id) else {
+                return;
+            };
+            if let Err(e) = conn.queue_frame(seq, &resp_pdu) {
+                log::warn!("write error to client {client_id}: {e}");
+                self.disconnect_client(client_id);
+                return;
+            }
+            self.update_write_interest(client_id);
+            if is_shutdown {
+                log::info!("shutdown flag set via IPC");
+                self.shutdown
+                    .store(true, std::sync::atomic::Ordering::Release);
+            }
+        }
+    }
+
+    /// Add or remove `WRITABLE` interest based on pending write buffer.
+    ///
+    /// Called after `queue_frame` or `flush_writes` to ensure the event loop
+    /// delivers writable events only when needed.
+    pub(super) fn update_write_interest(&mut self, client_id: ClientId) {
+        let Some(conn) = self.connections.get_mut(&client_id) else {
+            return;
+        };
+        let interest = if conn.has_pending_writes() {
+            Interest::READABLE | Interest::WRITABLE
+        } else {
+            Interest::READABLE
+        };
+        let token = conn.token();
+        let _ = self
+            .poll
+            .registry()
+            .reregister(conn.stream_mut(), token, interest);
+    }
+
+    /// Disconnect a client, cleaning up all associated state.
+    ///
+    /// Closes any window the client owned (the GUI process is gone, so the
+    /// window's panes are orphaned). This allows `should_exit()` to fire
+    /// when the last client disconnects.
+    pub(super) fn disconnect_client(&mut self, client_id: ClientId) {
+        let Some(mut conn) = self.connections.remove(&client_id) else {
+            return;
+        };
+
+        // Deregister from mio.
+        let _ = self.poll.registry().deregister(conn.stream_mut());
+
+        // Remove token mapping.
+        self.token_to_client.remove(&conn.token());
+
+        // Close all windows this client owned (GUI is gone → panes orphaned).
+        // Also close any unclaimed windows this client created.
+        let mut windows_to_close: Vec<WindowId> = Vec::new();
+        for &wid in conn.window_ids() {
+            windows_to_close.push(wid);
+        }
+        // Add any windows created by this client that were never claimed.
+        for &wid in conn.created_windows() {
+            if !conn.window_ids().contains(&wid) && !windows_to_close.contains(&wid) {
+                windows_to_close.push(wid);
+            }
+        }
+        for wid in &windows_to_close {
+            self.window_to_client.remove(wid);
+            let closed_panes = self.mux.close_window(*wid);
+            for &pid in &closed_panes {
+                // Drop pane on a background thread — PTY cleanup can block.
+                let pane = self.panes.remove(&pid);
+                if let Some(p) = pane {
+                    std::thread::spawn(move || drop(p));
+                }
+                self.snapshot_cache.remove(pid);
+                self.last_snapshot_push.remove(&pid);
+                self.pending_push.remove(&pid);
+                self.subscriptions.remove(&pid);
+                for other_conn in self.connections.values_mut() {
+                    other_conn.unsubscribe(pid);
+                }
+            }
+            if !closed_panes.is_empty() {
+                log::info!(
+                    "closed {wid} owned by {client_id}, {} panes removed",
+                    closed_panes.len()
+                );
+            }
+        }
+
+        // Clean up subscription state.
+        dispatch::remove_client_subscriptions(
+            &mut self.subscriptions,
+            client_id,
+            conn.subscribed_panes(),
+        );
+
+        // Remove disconnecting client from all pending_push sets.
+        self.pending_push.retain(|_pane_id, deferred| {
+            deferred.remove(&client_id);
+            !deferred.is_empty()
+        });
+
+        log::info!("client {client_id} fully disconnected");
+    }
+
+    /// Sync per-connection subscription state to the global subscriptions map.
+    ///
+    /// Called after dispatch to ensure the global map stays in sync with
+    /// per-connection tracking.
+    fn sync_subscriptions(&mut self, client_id: ClientId) {
+        let Some(conn) = self.connections.get(&client_id) else {
+            return;
+        };
+        for &pane_id in conn.subscribed_panes() {
+            let subs = self.subscriptions.entry(pane_id).or_default();
+            if !subs.contains(&client_id) {
+                subs.push(client_id);
+            }
+        }
+        // Remove entries where the client unsubscribed.
+        self.scratch_panes.clear();
+        self.scratch_panes
+            .extend(conn.subscribed_panes().iter().copied());
+        self.subscriptions.retain(|pane_id, subs| {
+            if !self.scratch_panes.contains(pane_id) {
+                subs.retain(|&c| c != client_id);
+            }
+            !subs.is_empty()
+        });
+    }
+
+    /// Purge subscription entries for panes that have been removed.
+    ///
+    /// Reads closed pane IDs from `scratch_panes` (filled by dispatch),
+    /// removes them from the global subscription map and all connections'
+    /// subscribed-pane sets, then clears `scratch_panes`.
+    fn purge_closed_pane_subscriptions(&mut self) {
+        for &pane_id in &self.scratch_panes {
+            self.subscriptions.remove(&pane_id);
+            self.snapshot_cache.remove(pane_id);
+            self.last_snapshot_push.remove(&pane_id);
+            self.pending_push.remove(&pane_id);
+        }
+        for conn in self.connections.values_mut() {
+            for &pane_id in &self.scratch_panes {
+                conn.unsubscribe(pane_id);
+            }
+        }
+        self.scratch_panes.clear();
+    }
+}
+
+/// Whether a decode error should cause the client to be disconnected.
+fn is_fatal_decode_error(err: &crate::DecodeError) -> bool {
+    matches!(err, crate::DecodeError::PayloadTooLarge(_))
+}

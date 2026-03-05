@@ -10,34 +10,30 @@
 
 #![allow(unsafe_code)]
 
+mod subclass;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use windows_sys::Win32::Foundation::{HWND, LRESULT, POINT, RECT};
+use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Dwm::{
     DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED, DwmExtendFrameIntoClientArea,
     DwmGetWindowAttribute, DwmSetWindowAttribute,
 };
-use windows_sys::Win32::Graphics::Gdi::InvalidateRect;
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
-use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
+use windows_sys::Win32::UI::Shell::SetWindowSubclass;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, HTBOTTOM,
-    HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT,
-    HTTOPRIGHT, IsZoomed, KillTimer, NCCALCSIZE_PARAMS, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
-    SW_HIDE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE,
-    WM_EXITSIZEMOVE, WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_TIMER, WS_CAPTION,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_THICKFRAME,
+    GWL_STYLE, GetCursorPos, GetWindowLongPtrW, SW_SHOW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_THICKFRAME,
 };
 
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
 
-use crate::geometry::{Point, Rect, Size};
-use crate::hit_test::{self, HitTestResult, ResizeDirection};
+use crate::geometry::Rect;
 
 const SUBCLASS_ID: usize = 0xBEEF;
 
@@ -164,12 +160,19 @@ pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
             os_drag: Mutex::new(None),
         });
         let data_ptr = Box::into_raw(data);
-        SetWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID, data_ptr as usize);
+        SetWindowSubclass(
+            hwnd,
+            Some(subclass::subclass_proc),
+            SUBCLASS_ID,
+            data_ptr as usize,
+        );
 
         // Register pointer for lookup by set_client_rects / set_chrome_metrics.
-        if let Ok(mut map) = snap_ptrs().lock() {
-            map.insert(hwnd as usize, data_ptr as usize);
-        }
+        let mut map = snap_ptrs().lock().unwrap_or_else(|e| {
+            log::warn!("snap_ptrs mutex poisoned: {e}");
+            e.into_inner()
+        });
+        map.insert(hwnd as usize, data_ptr as usize);
     }
 }
 
@@ -180,9 +183,11 @@ pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
 /// changes (resize, tab add/remove).
 pub fn set_client_rects(window: &Window, rects: Vec<Rect>) {
     if let Some(data) = snap_data_for_window(window) {
-        if let Ok(mut lock) = data.interactive_rects.lock() {
-            *lock = rects;
-        }
+        let mut lock = data.interactive_rects.lock().unwrap_or_else(|e| {
+            log::warn!("interactive_rects mutex poisoned: {e}");
+            e.into_inner()
+        });
+        *lock = rects;
     }
 }
 
@@ -208,14 +213,16 @@ pub fn get_current_dpi(window: &Window) -> Option<f64> {
 /// cursor-based merges. Call before `window.drag_window()`.
 pub fn begin_os_drag(window: &Window, config: OsDragConfig) {
     if let Some(data) = snap_data_for_window(window) {
-        if let Ok(mut lock) = data.os_drag.lock() {
-            *lock = Some(OsDragState {
-                grab_offset: config.grab_offset,
-                merge_rects: config.merge_rects,
-                skip_remaining: config.skip_count,
-                result: None,
-            });
-        }
+        let mut lock = data.os_drag.lock().unwrap_or_else(|e| {
+            log::warn!("os_drag mutex poisoned: {e}");
+            e.into_inner()
+        });
+        *lock = Some(OsDragState {
+            grab_offset: config.grab_offset,
+            merge_rects: config.merge_rects,
+            skip_remaining: config.skip_count,
+            result: None,
+        });
     }
 }
 
@@ -224,7 +231,10 @@ pub fn begin_os_drag(window: &Window, config: OsDragConfig) {
 /// Returns `None` if no drag session is active or it hasn't completed yet.
 pub fn take_os_drag_result(window: &Window) -> Option<OsDragResult> {
     let data = snap_data_for_window(window)?;
-    let mut lock = data.os_drag.lock().ok()?;
+    let mut lock = data.os_drag.lock().unwrap_or_else(|e| {
+        log::warn!("os_drag mutex poisoned: {e}");
+        e.into_inner()
+    });
     let state = lock.as_mut()?;
     let result = state.result.take()?;
     *lock = None;
@@ -237,12 +247,14 @@ pub fn take_os_drag_result(window: &Window) -> Option<OsDragResult> {
 /// factor). Call from the resize handler when a DPI change is detected.
 pub fn set_chrome_metrics(window: &Window, border_width: f32, caption_height: f32) {
     if let Some(data) = snap_data_for_window(window) {
-        if let Ok(mut lock) = data.border_width.lock() {
-            *lock = border_width;
-        }
-        if let Ok(mut lock) = data.caption_height.lock() {
-            *lock = caption_height;
-        }
+        *data.border_width.lock().unwrap_or_else(|e| {
+            log::warn!("border_width mutex poisoned: {e}");
+            e.into_inner()
+        }) = border_width;
+        *data.caption_height.lock().unwrap_or_else(|e| {
+            log::warn!("caption_height mutex poisoned: {e}");
+            e.into_inner()
+        }) = caption_height;
     }
 }
 
@@ -331,7 +343,10 @@ fn snap_ptrs() -> &'static Mutex<HashMap<usize, usize>> {
 fn snap_data_for_window(window: &Window) -> Option<&'static SnapData> {
     let hwnd = hwnd_from_window(window)?;
     let ptr = {
-        let map = snap_ptrs().lock().ok()?;
+        let map = snap_ptrs().lock().unwrap_or_else(|e| {
+            log::warn!("snap_ptrs mutex poisoned: {e}");
+            e.into_inner()
+        });
         *map.get(&(hwnd as usize))?
     };
     Some(unsafe { &*(ptr as *const SnapData) })
@@ -343,235 +358,5 @@ fn hwnd_from_window(window: &Window) -> Option<HWND> {
     match handle.as_raw() {
         RawWindowHandle::Win32(h) => Some(h.hwnd.get() as HWND),
         _ => None,
-    }
-}
-
-fn get_x_lparam(lp: isize) -> i32 {
-    i32::from((lp & 0xFFFF) as i16)
-}
-
-fn get_y_lparam(lp: isize) -> i32 {
-    i32::from(((lp >> 16) & 0xFFFF) as i16)
-}
-
-/// Maps a [`HitTestResult`] to a Windows HT constant.
-fn map_hit_result(result: HitTestResult) -> LRESULT {
-    (match result {
-        HitTestResult::Client => HTCLIENT,
-        HitTestResult::Caption => HTCAPTION,
-        HitTestResult::ResizeBorder(dir) => match dir {
-            ResizeDirection::Top => HTTOP,
-            ResizeDirection::Bottom => HTBOTTOM,
-            ResizeDirection::Left => HTLEFT,
-            ResizeDirection::Right => HTRIGHT,
-            ResizeDirection::TopLeft => HTTOPLEFT,
-            ResizeDirection::TopRight => HTTOPRIGHT,
-            ResizeDirection::BottomLeft => HTBOTTOMLEFT,
-            ResizeDirection::BottomRight => HTBOTTOMRIGHT,
-        },
-    }) as LRESULT
-}
-
-// --- Message handlers (extracted from subclass_proc for clarity) -----------
-
-/// Handles `WM_NCHITTEST` by delegating to [`hit_test::hit_test()`].
-///
-/// All coordinates are in physical pixels — the cursor position from
-/// `lparam`, the window rect from `GetWindowRect`, and the stored
-/// `border_width`/`caption_height`/`interactive_rects` (set via
-/// [`enable_snap()`] and [`set_client_rects()`]) are all physical.
-fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
-    let cursor_x = get_x_lparam(lparam);
-    let cursor_y = get_y_lparam(lparam);
-
-    // Window rect in screen coordinates (physical pixels).
-    let mut rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    unsafe { GetWindowRect(hwnd, &raw mut rect) };
-
-    // Client-relative physical coordinates.
-    let point = Point::new((cursor_x - rect.left) as f32, (cursor_y - rect.top) as f32);
-
-    // Physical window size from the actual window rect.
-    let window_size = Size::new(
-        (rect.right - rect.left) as f32,
-        (rect.bottom - rect.top) as f32,
-    );
-
-    let is_maximized = unsafe { IsZoomed(hwnd) != 0 };
-
-    let border_width = data.border_width.lock().map(|g| *g).unwrap_or(0.0);
-    let caption_height = data.caption_height.lock().map(|g| *g).unwrap_or(0.0);
-    let rects_lock = data.interactive_rects.lock();
-    let rects: &[Rect] = rects_lock.as_ref().map(|g| g.as_slice()).unwrap_or(&[]);
-    let chrome = hit_test::WindowChrome {
-        window_size,
-        border_width,
-        caption_height,
-        interactive_rects: rects,
-        is_maximized,
-    };
-    let result = hit_test::hit_test(point, &chrome);
-
-    map_hit_result(result)
-}
-
-/// Handles `WM_MOVING`: position correction + cursor-based merge detection.
-///
-/// Modifies the proposed rect via `lparam` for position correction.
-/// If a merge is detected, hides the window and releases capture.
-/// Caller always calls `DefSubclassProc` afterward.
-fn handle_moving(hwnd: HWND, lparam: isize, data: &SnapData) {
-    let Ok(mut lock) = data.os_drag.lock() else {
-        return;
-    };
-    let Some(state) = lock.as_mut() else {
-        return;
-    };
-
-    let proposed = unsafe { &mut *(lparam as *mut RECT) };
-    let w = proposed.right - proposed.left;
-    let h = proposed.bottom - proposed.top;
-
-    // Always correct position: window origin = cursor - grab_offset.
-    let mut pt = POINT { x: 0, y: 0 };
-    unsafe { GetCursorPos(&raw mut pt) };
-    let (gx, gy) = state.grab_offset;
-    proposed.left = pt.x - gx;
-    proposed.top = pt.y - gy;
-    proposed.right = proposed.left + w;
-    proposed.bottom = proposed.top + h;
-
-    // Skip merge check during cooldown (position still corrected).
-    if state.skip_remaining > 0 {
-        state.skip_remaining -= 1;
-        return;
-    }
-
-    // Cursor-based merge detection (Chrome's DoesTabStripContain pattern).
-    for &[cl, ct, cr, ctb] in &state.merge_rects {
-        if pt.x >= cl && pt.x < cr && pt.y >= ct && pt.y < ctb {
-            state.result = Some(OsDragResult::MergeDetected {
-                cursor: (pt.x, pt.y),
-            });
-            // Hide window + release capture to end the move loop.
-            unsafe {
-                ShowWindow(hwnd, SW_HIDE);
-                ReleaseCapture();
-            }
-            return;
-        }
-    }
-}
-
-// --- Subclass procedure ----------------------------------------------------
-
-/// `WndProc` subclass callback installed by [`enable_snap()`].
-///
-/// `ref_data` is a valid `*const SnapData` allocated in `enable_snap` and
-/// freed in the `WM_NCDESTROY` handler.
-unsafe extern "system" fn subclass_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: usize,
-    lparam: isize,
-    _uid: usize,
-    ref_data: usize,
-) -> LRESULT {
-    unsafe {
-        let data = &*(ref_data as *const SnapData);
-
-        match msg {
-            // Return 0 so the entire window is client area (no OS frame).
-            // When maximized, inset by frame thickness to prevent
-            // adjacent-monitor bleed (Chrome's GetClientAreaInsets pattern).
-            WM_NCCALCSIZE if wparam == 1 => {
-                if IsZoomed(hwnd) != 0 {
-                    let params = &mut *(lparam as *mut NCCALCSIZE_PARAMS);
-                    let fx = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                    let fy = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                    params.rgrc[0].left += fx;
-                    params.rgrc[0].top += fy;
-                    params.rgrc[0].right -= fx;
-                    params.rgrc[0].bottom -= fy;
-                }
-                0
-            }
-
-            WM_NCHITTEST => handle_nchittest(hwnd, lparam, data),
-
-            WM_DPICHANGED => {
-                // HIWORD(wParam) = new Y-axis DPI.
-                let new_dpi = ((wparam >> 16) & 0xFFFF) as u32;
-                data.last_dpi.store(new_dpi, Ordering::Relaxed);
-
-                // Apply OS-suggested rect to prevent DPI oscillation.
-                let suggested = &*(lparam as *const RECT);
-                SetWindowPos(
-                    hwnd,
-                    std::ptr::null_mut(),
-                    suggested.left,
-                    suggested.top,
-                    suggested.right - suggested.left,
-                    suggested.bottom - suggested.top,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-                0
-            }
-
-            WM_ENTERSIZEMOVE => {
-                IN_MODAL_LOOP.store(true, Ordering::Relaxed);
-                SetTimer(hwnd, MODAL_TIMER_ID, MODAL_TIMER_MS, None);
-                DefSubclassProc(hwnd, msg, wparam, lparam)
-            }
-
-            WM_TIMER if wparam == MODAL_TIMER_ID => {
-                // Invalidate all windows so the modal message pump
-                // generates WM_PAINT → RedrawRequested for each.
-                if let Ok(map) = snap_ptrs().lock() {
-                    for &hwnd_key in map.keys() {
-                        InvalidateRect(hwnd_key as HWND, std::ptr::null(), 0);
-                    }
-                }
-                0
-            }
-
-            WM_MOVING => {
-                handle_moving(hwnd, lparam, data);
-                DefSubclassProc(hwnd, msg, wparam, lparam)
-            }
-
-            WM_EXITSIZEMOVE => {
-                KillTimer(hwnd, MODAL_TIMER_ID);
-                IN_MODAL_LOOP.store(false, Ordering::Relaxed);
-                if let Ok(mut lock) = data.os_drag.lock() {
-                    if let Some(state) = lock.as_mut() {
-                        if state.result.is_none() {
-                            let mut pt = POINT { x: 0, y: 0 };
-                            GetCursorPos(&raw mut pt);
-                            state.result = Some(OsDragResult::DragEnded {
-                                cursor: (pt.x, pt.y),
-                            });
-                        }
-                    }
-                }
-                DefSubclassProc(hwnd, msg, wparam, lparam)
-            }
-
-            WM_NCDESTROY => {
-                RemoveWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID);
-                if let Ok(mut map) = snap_ptrs().lock() {
-                    map.remove(&(hwnd as usize));
-                }
-                drop(Box::from_raw(ref_data as *mut SnapData));
-                DefSubclassProc(hwnd, msg, wparam, lparam)
-            }
-
-            _ => DefSubclassProc(hwnd, msg, wparam, lparam),
-        }
     }
 }
