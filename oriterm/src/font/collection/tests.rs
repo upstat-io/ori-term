@@ -383,7 +383,7 @@ fn size_key_fractional() {
 
 #[test]
 fn cap_height_positive() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
     assert!(
         m.cap_height > 0.0,
         "cap height should be positive for embedded font"
@@ -394,8 +394,8 @@ fn cap_height_positive() {
 
 #[test]
 fn compute_metrics_stable() {
-    let m1 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
-    let m2 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    let m1 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m2 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
     assert!(
         (m1.cell_width - m2.cell_width).abs() < f32::EPSILON
             && (m1.cell_height - m2.cell_height).abs() < f32::EPSILON
@@ -406,7 +406,7 @@ fn compute_metrics_stable() {
 
 #[test]
 fn compute_metrics_positive() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
     assert!(m.cell_width > 0.0, "cell width must be positive");
     assert!(m.cell_height > 0.0, "cell height must be positive");
     assert!(m.baseline > 0.0, "baseline must be positive");
@@ -418,7 +418,7 @@ fn compute_metrics_positive() {
 
 #[test]
 fn compute_metrics_decoration_fields() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
     assert!(m.stroke_size > 0.0, "stroke_size must be positive");
     assert!(m.stroke_size.is_finite(), "stroke_size must be finite");
     assert!(
@@ -990,7 +990,7 @@ fn set_size_recomputes_metrics() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let old_metrics = fc.cell_metrics();
 
-    fc.set_size(18.0, 96.0);
+    fc.set_size(18.0, 96.0).unwrap();
     let new_metrics = fc.cell_metrics();
 
     assert_ne!(
@@ -1019,7 +1019,7 @@ fn set_size_clears_cache() {
         "cache should have entries after rasterize"
     );
 
-    fc.set_size(18.0, 96.0);
+    fc.set_size(18.0, 96.0).unwrap();
     assert_eq!(fc.cache_len(), 0, "set_size should clear the glyph cache",);
 }
 
@@ -1028,7 +1028,7 @@ fn set_size_updates_size_px() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let expected = 18.0 * 96.0 / 72.0;
 
-    fc.set_size(18.0, 96.0);
+    fc.set_size(18.0, 96.0).unwrap();
     assert!(
         (fc.size_px() - expected).abs() < f32::EPSILON,
         "size_px should reflect new size (expected {expected}, got {})",

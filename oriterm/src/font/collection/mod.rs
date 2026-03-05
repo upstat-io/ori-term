@@ -116,7 +116,8 @@ impl FontCollection {
                 .ok_or_else(|| FontError::InvalidFont("Regular font is invalid".into()))?;
 
         // Compute metrics from Regular.
-        let font_metrics = compute_metrics(&font_set.regular.data, font_set.regular.index, size_px);
+        let font_metrics = compute_metrics(&font_set.regular.data, font_set.regular.index, size_px)
+            .ok_or_else(|| FontError::InvalidFont("Regular font metrics unavailable".into()))?;
         let primary_cap = font_metrics.cap_height;
 
         // Validate optional primary variants.
@@ -138,7 +139,8 @@ impl FontCollection {
         let mut fallback_meta = Vec::new();
         for fd in &font_set.fallbacks {
             if let Some(face) = build_face(Arc::clone(&fd.data), fd.index) {
-                let fb_metrics = compute_metrics(&fd.data, fd.index, size_px);
+                let fb_metrics =
+                    compute_metrics(&fd.data, fd.index, size_px).unwrap_or(font_metrics);
                 let scale_factor = if fb_metrics.cap_height > 0.0 && primary_cap > 0.0 {
                     primary_cap / fb_metrics.cap_height
                 } else {
@@ -380,17 +382,20 @@ impl FontCollection {
     /// recalculates cap-height normalization for fallback fonts, and clears
     /// the glyph cache. The caller (`WindowRenderer::set_font_size`) is
     /// responsible for re-populating the atlas afterward.
-    pub fn set_size(&mut self, size_pt: f32, dpi: f32) {
+    pub fn set_size(&mut self, size_pt: f32, dpi: f32) -> Result<(), FontError> {
         let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
 
         // Recompute metrics from Regular face.
-        let regular = self.primary[0].as_ref().expect("Regular face required");
-        let fm = compute_metrics(&regular.bytes, regular.face_index, size_px);
+        let regular = self.primary[0]
+            .as_ref()
+            .ok_or_else(|| FontError::InvalidFont("Regular face required".into()))?;
+        let fm = compute_metrics(&regular.bytes, regular.face_index, size_px)
+            .ok_or_else(|| FontError::InvalidFont("Regular font metrics unavailable".into()))?;
         let primary_cap = fm.cap_height;
 
         // Recalculate cap-height normalization for fallbacks.
         for (fb, meta) in self.fallbacks.iter().zip(self.fallback_meta.iter_mut()) {
-            let fb_m = compute_metrics(&fb.bytes, fb.face_index, size_px);
+            let fb_m = compute_metrics(&fb.bytes, fb.face_index, size_px).unwrap_or(fm);
             meta.scale_factor = if fb_m.cap_height > 0.0 && primary_cap > 0.0 {
                 primary_cap / fb_m.cap_height
             } else {
@@ -410,6 +415,7 @@ impl FontCollection {
         );
         self.cap_height_px = primary_cap;
         self.glyph_cache.clear();
+        Ok(())
     }
 
     /// Change hinting mode and clear the glyph cache.

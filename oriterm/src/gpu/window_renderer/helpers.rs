@@ -168,14 +168,17 @@ pub(super) fn grid_raster_keys(
     })
 }
 
-/// Build [`RasterKey`] iterator from UI draw list text commands.
+/// Collect [`RasterKey`]s from UI draw list text commands into `keys`.
+///
+/// The caller owns the buffer and should `clear()` before calling.
+/// Reusing the same `Vec` across frames avoids per-frame allocation.
 pub(super) fn ui_text_raster_keys(
     draw_list: &oriterm_ui::draw::DrawList,
     size_q6: u32,
     hinted: bool,
     scale: f32,
-) -> Vec<RasterKey> {
-    let mut keys = Vec::new();
+    keys: &mut Vec<RasterKey>,
+) {
     for cmd in draw_list.commands() {
         let oriterm_ui::draw::DrawCommand::Text {
             position, shaped, ..
@@ -202,7 +205,6 @@ pub(super) fn ui_text_raster_keys(
             cursor_x += advance;
         }
     }
-    keys
 }
 
 /// Ensure a GPU buffer exists, is large enough, and upload `data` to it.

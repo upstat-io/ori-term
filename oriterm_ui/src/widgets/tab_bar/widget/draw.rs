@@ -132,9 +132,10 @@ impl TabBarWidget {
             let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
             let icon_x = x + TAB_PADDING;
             let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;
+            let icon_w = icon_shaped.width;
             ctx.draw_list
-                .push_text(Point::new(icon_x, icon_y), icon_shaped.clone(), color);
-            icon_shaped.width + ICON_TEXT_GAP
+                .push_text(Point::new(icon_x, icon_y), icon_shaped, color);
+            icon_w + ICON_TEXT_GAP
         } else {
             0.0
         };

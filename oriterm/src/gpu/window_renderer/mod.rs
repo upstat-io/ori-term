@@ -112,6 +112,7 @@ pub struct WindowRenderer {
     ui_font_collection: Option<FontCollection>,
 
     // Per-frame reusable scratch buffers.
+    ui_raster_keys: Vec<RasterKey>,
     shaping: ShapingScratch,
     /// GPU-ready instances for the current frame.
     ///
@@ -188,6 +189,7 @@ impl WindowRenderer {
             empty_keys: HashSet::new(),
             font_collection,
             ui_font_collection,
+            ui_raster_keys: Vec::new(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             bg_buffer: None,

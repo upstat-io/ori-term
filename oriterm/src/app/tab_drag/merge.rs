@@ -212,7 +212,7 @@ impl App {
             (idx, lx, ly, cap)
         };
 
-        // Create drag state.
+        // Create drag state (suppress_next_release absorbs stale WM_LBUTTONUP).
         let state = TabDragState {
             tab_id,
             original_index: tab_index,
@@ -223,6 +223,7 @@ impl App {
             mouse_offset_in_tab: mouse_offset,
             tab_bar_y: caption_h,
             tab_bar_bottom: caption_h + TAB_BAR_HEIGHT,
+            suppress_next_release: true,
         };
 
         // Install drag state on target window.
@@ -247,8 +248,5 @@ impl App {
             let tw = ctx.tab_bar.layout().tab_width;
             self.acquire_tab_width_lock(tw);
         }
-
-        // Suppress stale WM_LBUTTONUP.
-        self.merge_drag_suppress_release = true;
     }
 }

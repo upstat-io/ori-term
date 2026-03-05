@@ -298,10 +298,21 @@ impl ApplicationHandler<TermEvent> for App {
                 // Suppress stale WM_LBUTTONUP after live merge.
                 if button == winit::event::MouseButton::Left
                     && state == winit::event::ElementState::Released
-                    && self.merge_drag_suppress_release
                 {
-                    self.merge_drag_suppress_release = false;
-                    return;
+                    let suppress = self
+                        .focused_ctx_mut()
+                        .and_then(|ctx| ctx.tab_drag.as_mut())
+                        .is_some_and(|drag| {
+                            if drag.suppress_next_release {
+                                drag.suppress_next_release = false;
+                                true
+                            } else {
+                                false
+                            }
+                        });
+                    if suppress {
+                        return;
+                    }
                 }
                 // Tab drag: finish on left-button release.
                 if button == winit::event::MouseButton::Left
@@ -340,7 +351,7 @@ impl ApplicationHandler<TermEvent> for App {
         }
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: TermEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: TermEvent) {
         match event {
             TermEvent::ConfigReload => {
                 self.apply_config_reload();
@@ -353,34 +364,27 @@ impl ApplicationHandler<TermEvent> for App {
                 // dirty — PTY output may come from any pane in any window.
                 self.mark_all_windows_dirty();
             }
+            TermEvent::CreateWindow => {
+                self.create_window(event_loop);
+            }
+            TermEvent::MoveTabToNewWindow(tab_index) => {
+                let tab_id = {
+                    let mux = self.mux.as_ref();
+                    let win_id = self.active_window;
+                    mux.zip(win_id).and_then(|(m, wid)| {
+                        let win = m.session().get_window(wid)?;
+                        win.tabs().get(tab_index).copied()
+                    })
+                };
+                if let Some(tab_id) = tab_id {
+                    self.move_tab_to_new_window(tab_id, event_loop);
+                }
+            }
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         self.perf.record_tick();
-
-        // Process deferred window creation (keybinding actions lack
-        // ActiveEventLoop access; the flag is set in execute_action).
-        if self.pending_new_window {
-            self.pending_new_window = false;
-            self.create_window(event_loop);
-        }
-
-        // Process deferred move-tab-to-new-window (context menu action).
-        if let Some(tab_index) = self.pending_move_tab_to_window.take() {
-            // Resolve tab index to TabId.
-            let tab_id = {
-                let mux = self.mux.as_ref();
-                let win_id = self.active_window;
-                mux.zip(win_id).and_then(|(m, wid)| {
-                    let win = m.session().get_window(wid)?;
-                    win.tabs().get(tab_index).copied()
-                })
-            };
-            if let Some(tab_id) = tab_id {
-                self.move_tab_to_new_window(tab_id, event_loop);
-            }
-        }
 
         // Check for completed OS-level tab drag (tear-off + merge).
         #[cfg(target_os = "windows")]

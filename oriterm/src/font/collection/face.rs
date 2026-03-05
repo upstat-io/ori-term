@@ -247,6 +247,7 @@ pub(super) fn embolden_strength(cell_height: f32) -> f32 {
 const SYNTHETIC_ITALIC_ANGLE: f32 = 14.0;
 
 /// Computed font metrics for cell layout and text decorations.
+#[derive(Clone, Copy)]
 pub(super) struct FontMetrics {
     pub cell_width: f32,
     pub cell_height: f32,
@@ -274,12 +275,9 @@ pub(super) struct FontMetrics {
 /// Decoration metrics (underline, strikeout) are extracted from the font's
 /// OS/2 and post tables via swash.
 ///
-/// # Panics
-///
-/// Panics if `bytes` does not contain a valid font at `face_index`.
-/// Callers must validate before calling.
-pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> FontMetrics {
-    let fr = FontRef::from_index(bytes, face_index as usize).expect("pre-validated font");
+/// Returns `None` if `bytes` does not contain a valid font at `face_index`.
+pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> Option<FontMetrics> {
+    let fr = FontRef::from_index(bytes, face_index as usize)?;
     let metrics = fr.metrics(&[]).scale(size_px);
     let baseline = metrics.ascent.ceil();
     let cell_height = baseline + metrics.descent.abs().ceil();
@@ -304,7 +302,7 @@ pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> Fo
     let stroke_size = metrics.stroke_size;
     let strikeout_offset = metrics.strikeout_offset;
 
-    FontMetrics {
+    Some(FontMetrics {
         cell_width,
         cell_height,
         baseline,
@@ -312,7 +310,7 @@ pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> Fo
         underline_offset,
         stroke_size,
         strikeout_offset,
-    }
+    })
 }
 
 /// Convert a font size in pixels to 26.6 fixed-point for use as a cache key.

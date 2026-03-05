@@ -39,10 +39,8 @@ impl<T: EventListener> Term<T> {
 
         // Shell integration state.
         self.prompt_state = PromptState::None;
-        self.prompt_mark_pending = false;
+        self.pending_marks = crate::term::PendingMarks::empty();
         self.prompt_markers.clear();
-        self.command_start_mark_pending = false;
-        self.output_start_mark_pending = false;
         self.pending_notifications.clear();
         self.command_start = None;
         self.last_command_duration = None;

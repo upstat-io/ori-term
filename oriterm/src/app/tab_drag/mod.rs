@@ -51,6 +51,11 @@ pub(crate) struct TabDragState {
     pub tab_bar_y: f32,
     /// Tab bar bottom edge in logical pixels.
     pub tab_bar_bottom: f32,
+    /// Absorb the next mouse-up without finishing the drag.
+    ///
+    /// Set after a live merge (OS modal drag loop consumes the real
+    /// button-down, so the first `WM_LBUTTONUP` is stale).
+    pub suppress_next_release: bool,
 }
 
 /// Pending tear-off state for OS-level drag.
@@ -164,6 +169,7 @@ impl App {
             mouse_offset_in_tab: offset,
             tab_bar_y: caption_h,
             tab_bar_bottom: caption_h + TAB_BAR_HEIGHT,
+            suppress_next_release: false,
         };
 
         if let Some(ctx) = self.focused_ctx_mut() {

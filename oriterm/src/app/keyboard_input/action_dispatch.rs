@@ -155,8 +155,9 @@ impl App {
                 true
             }
             Action::NewWindow => {
-                // Deferred: needs `ActiveEventLoop`, processed in `about_to_wait`.
-                self.pending_new_window = true;
+                let _ = self
+                    .event_proxy
+                    .send_event(crate::event::TermEvent::CreateWindow);
                 true
             }
             Action::PreviousPrompt => {

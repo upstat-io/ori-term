@@ -2,7 +2,7 @@
 
 use oriterm_core::TermMode;
 
-use super::{
+use super::encode::{
     MouseButton, MouseEvent, MouseEventKind, MouseModifiers, apply_modifiers, button_code,
     encode_mouse_event, encode_normal, encode_sgr, encode_utf8,
 };

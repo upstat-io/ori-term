@@ -4,7 +4,7 @@
 //! limit. These methods manage prompt state (OSC 133), CWD (OSC 7),
 //! title resolution, notifications, and prompt-based navigation.
 
-use super::{Notification, PromptMarker, PromptState, Term, cwd_short_path};
+use super::{Notification, PendingMarks, PromptMarker, PromptState, Term, cwd_short_path};
 use crate::event::EventListener;
 
 impl<T: EventListener> Term<T> {
@@ -22,12 +22,12 @@ impl<T: EventListener> Term<T> {
 
     /// Whether OSC 133;A was received and the prompt row hasn't been marked yet.
     pub fn prompt_mark_pending(&self) -> bool {
-        self.prompt_mark_pending
+        self.pending_marks.contains(PendingMarks::PROMPT)
     }
 
     /// Set/clear the prompt-mark-pending flag.
     pub fn set_prompt_mark_pending(&mut self, pending: bool) {
-        self.prompt_mark_pending = pending;
+        self.pending_marks.set(PendingMarks::PROMPT, pending);
     }
 
     /// Record the current cursor row as a prompt line (OSC 133;A).
@@ -36,10 +36,10 @@ impl<T: EventListener> Term<T> {
     /// `prompt_mark_pending` is `true`. Uses the cursor row from the
     /// high-level processor (which is at the correct position).
     pub fn mark_prompt_row(&mut self) {
-        if !self.prompt_mark_pending {
+        if !self.pending_marks.contains(PendingMarks::PROMPT) {
             return;
         }
-        self.prompt_mark_pending = false;
+        self.pending_marks.remove(PendingMarks::PROMPT);
         let abs_row = self.grid.scrollback().len() + self.grid.cursor().line();
         // Avoid duplicate entries (e.g. shell redrawing prompt on resize).
         if self
@@ -60,10 +60,10 @@ impl<T: EventListener> Term<T> {
     ///
     /// Fills `command_start` on the most recent prompt marker.
     pub fn mark_command_start_row(&mut self) {
-        if !self.command_start_mark_pending {
+        if !self.pending_marks.contains(PendingMarks::COMMAND_START) {
             return;
         }
-        self.command_start_mark_pending = false;
+        self.pending_marks.remove(PendingMarks::COMMAND_START);
         let abs_row = self.grid.scrollback().len() + self.grid.cursor().line();
         if let Some(marker) = self.prompt_markers.last_mut() {
             marker.command = Some(abs_row);
@@ -74,10 +74,10 @@ impl<T: EventListener> Term<T> {
     ///
     /// Fills `output` on the most recent prompt marker.
     pub fn mark_output_start_row(&mut self) {
-        if !self.output_start_mark_pending {
+        if !self.pending_marks.contains(PendingMarks::OUTPUT_START) {
             return;
         }
-        self.output_start_mark_pending = false;
+        self.pending_marks.remove(PendingMarks::OUTPUT_START);
         let abs_row = self.grid.scrollback().len() + self.grid.cursor().line();
         if let Some(marker) = self.prompt_markers.last_mut() {
             marker.output = Some(abs_row);
@@ -86,22 +86,22 @@ impl<T: EventListener> Term<T> {
 
     /// Whether OSC 133;B was received and hasn't been marked yet.
     pub fn command_start_mark_pending(&self) -> bool {
-        self.command_start_mark_pending
+        self.pending_marks.contains(PendingMarks::COMMAND_START)
     }
 
     /// Set/clear the command-start-mark-pending flag.
     pub fn set_command_start_mark_pending(&mut self, pending: bool) {
-        self.command_start_mark_pending = pending;
+        self.pending_marks.set(PendingMarks::COMMAND_START, pending);
     }
 
     /// Whether OSC 133;C was received and hasn't been marked yet.
     pub fn output_start_mark_pending(&self) -> bool {
-        self.output_start_mark_pending
+        self.pending_marks.contains(PendingMarks::OUTPUT_START)
     }
 
     /// Set/clear the output-start-mark-pending flag.
     pub fn set_output_start_mark_pending(&mut self, pending: bool) {
-        self.output_start_mark_pending = pending;
+        self.pending_marks.set(PendingMarks::OUTPUT_START, pending);
     }
 
     /// All prompt lifecycle markers.
