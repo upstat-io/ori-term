@@ -148,6 +148,63 @@ impl MuxClient {
             .is_some_and(ClientTransport::is_alive)
     }
 
+    /// Apply server-pushed layout updates for a set of tabs.
+    ///
+    /// For each `TabLayoutChanged(tab_id)` notification, takes the pushed
+    /// layout data and updates the local session. Subscribes to new panes
+    /// and unsubscribes from removed panes.
+    fn apply_layout_update(&mut self, tab_id: crate::TabId) {
+        let update = self
+            .transport
+            .as_ref()
+            .and_then(|t| t.take_pushed_layout(tab_id));
+        let Some(update) = update else {
+            return;
+        };
+
+        // Collect old pane IDs before updating.
+        let old_panes: HashSet<PaneId> = self
+            .local_session
+            .get_tab(tab_id)
+            .map(|tab| tab.all_panes().into_iter().collect())
+            .unwrap_or_default();
+
+        // Update local session with server-authoritative layout.
+        if let Some(tab) = self.local_session.get_tab_mut(tab_id) {
+            tab.replace_layout(update.tree);
+            tab.set_floating(update.floating);
+            tab.set_active_pane(update.active_pane);
+            tab.set_zoomed_pane(update.zoomed_pane);
+        }
+
+        // Collect new pane IDs after updating.
+        let new_panes: HashSet<PaneId> = self
+            .local_session
+            .get_tab(tab_id)
+            .map(|tab| tab.all_panes().into_iter().collect())
+            .unwrap_or_default();
+
+        // Subscribe to newly added panes.
+        for &pid in &new_panes {
+            if !old_panes.contains(&pid) {
+                self.pane_registry.register(crate::registry::PaneEntry {
+                    pane: pid,
+                    tab: tab_id,
+                    domain: crate::DomainId::from_raw(0),
+                });
+                self.subscribe_pane(pid);
+            }
+        }
+
+        // Unsubscribe from removed panes.
+        for &pid in &old_panes {
+            if !new_panes.contains(&pid) {
+                self.unsubscribe_pane(pid);
+                self.pane_registry.unregister(pid);
+            }
+        }
+    }
+
     /// Send an RPC request to the daemon and return the response.
     fn rpc(&mut self, pdu: MuxPdu) -> io::Result<MuxPdu> {
         self.transport

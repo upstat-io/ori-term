@@ -371,12 +371,19 @@ impl MuxServer {
             MuxPdu::Unsubscribe { pane_id } => Some(*pane_id),
             _ => None,
         };
+        let claimed_wid = match &decoded.pdu {
+            MuxPdu::ClaimWindow { window_id } => Some(*window_id),
+            _ => None,
+        };
+        let closed_wid = match &decoded.pdu {
+            MuxPdu::CloseWindow { window_id } => Some(*window_id),
+            _ => None,
+        };
         self.scratch_panes.clear();
         self.scratch_immediate_push.clear();
         let Some(conn) = self.connections.get_mut(&client_id) else {
             return;
         };
-        let prev_window = conn.window_id();
         let response = dispatch::dispatch_request(
             &mut self.mux,
             &mut self.panes,
@@ -429,13 +436,18 @@ impl MuxServer {
         }
 
         // Update window→client reverse index on ClaimWindow.
-        if matches!(&response, Some(MuxPdu::WindowClaimed)) {
-            if let Some(old) = prev_window {
-                self.window_to_client.remove(&old);
+        if let Some(wid) = claimed_wid {
+            if matches!(&response, Some(MuxPdu::WindowClaimed)) {
+                self.window_to_client.insert(wid, client_id);
             }
-            if let Some(c) = self.connections.get(&client_id) {
-                if let Some(wid) = c.window_id() {
-                    self.window_to_client.insert(wid, client_id);
+        }
+
+        // Update window→client reverse index on CloseWindow.
+        if let Some(wid) = closed_wid {
+            if matches!(&response, Some(MuxPdu::WindowClosed { .. })) {
+                self.window_to_client.remove(&wid);
+                if let Some(c) = self.connections.get_mut(&client_id) {
+                    c.remove_window_id(wid);
                 }
             }
         }
@@ -498,7 +510,9 @@ impl MuxServer {
                     &mut self.scratch_clients,
                 );
             } else {
-                let Some((target, pdu)) = notify::notification_to_pdu(notif, &self.panes) else {
+                let Some((target, pdu)) =
+                    notify::notification_to_pdu(notif, &self.panes, self.mux.session())
+                else {
                     continue;
                 };
                 match target {
@@ -585,17 +599,31 @@ impl MuxServer {
         // Remove token mapping.
         self.token_to_client.remove(&conn.token());
 
-        // Close the window this client owned (GUI is gone → panes are orphaned).
-        if let Some(wid) = conn.window_id() {
-            self.window_to_client.remove(&wid);
-            let closed_panes = self.mux.close_window(wid);
+        // Close all windows this client owned (GUI is gone → panes orphaned).
+        // Also close any unclaimed windows this client created.
+        let mut windows_to_close: Vec<WindowId> = Vec::new();
+        for &wid in conn.window_ids() {
+            windows_to_close.push(wid);
+        }
+        // Add any windows created by this client that were never claimed.
+        for &wid in conn.created_windows() {
+            if !conn.window_ids().contains(&wid) && !windows_to_close.contains(&wid) {
+                windows_to_close.push(wid);
+            }
+        }
+        for wid in &windows_to_close {
+            self.window_to_client.remove(wid);
+            let closed_panes = self.mux.close_window(*wid);
             for &pid in &closed_panes {
-                self.panes.remove(&pid);
+                // Drop pane on a background thread — PTY cleanup can block.
+                let pane = self.panes.remove(&pid);
+                if let Some(p) = pane {
+                    std::thread::spawn(move || drop(p));
+                }
                 self.snapshot_cache.remove(&pid);
                 self.last_snapshot_push.remove(&pid);
                 self.pending_push.remove(&pid);
                 self.subscriptions.remove(&pid);
-                // Remove from all other clients' subscription sets.
                 for other_conn in self.connections.values_mut() {
                     other_conn.unsubscribe(pid);
                 }

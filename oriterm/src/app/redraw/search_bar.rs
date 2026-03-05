@@ -23,7 +23,7 @@ impl App {
     )]
     pub(in crate::app::redraw) fn draw_search_bar(
         search: &FrameSearch,
-        renderer: &mut crate::gpu::GpuRenderer,
+        renderer: &mut crate::gpu::WindowRenderer,
         draw_list: &mut DrawList,
         buf: &mut String,
         logical_width: f32,

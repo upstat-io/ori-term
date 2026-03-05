@@ -1,7 +1,8 @@
 //! Window lifecycle: create, close, and exit.
 //!
 //! Coordinates OS window creation/destruction with the mux layer.
-//! All windows share a single GPU device, renderer, and font collection.
+//! All windows share a single GPU device and pipeline set; each window
+//! owns its own renderer, font collection, and glyph atlases.
 
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
@@ -17,26 +18,31 @@ use crate::window::TermWindow;
 impl App {
     /// Create a new terminal window with an initial tab and pane.
     ///
-    /// Reuses the existing GPU device, renderer, and mux. Creates a new winit
-    /// window with its own surface, chrome/tab bar widgets, and mux window.
-    /// An initial tab with one pane is spawned in the new window.
+    /// Reuses the existing GPU device, pipelines, and mux. Creates a new winit
+    /// window with its own surface, renderer, chrome/tab bar widgets, and mux
+    /// window. An initial tab with one pane is spawned in the new window.
     ///
     /// Returns the winit [`WindowId`] of the new window, or `None` on failure.
     pub(super) fn create_window(&mut self, event_loop: &ActiveEventLoop) -> Option<WindowId> {
         let (winit_id, mux_window_id) = self.create_window_bare(event_loop)?;
 
-        // Create initial tab + pane.
-        let renderer = self.renderer.as_ref()?;
-        let (w, h) = self.windows.get(&winit_id)?.window.size_px();
-        let cell = renderer.cell_metrics();
-        let scale = self.windows.get(&winit_id)?.window.scale_factor().factor() as f32;
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-        let caption_h = self.windows.get(&winit_id)?.chrome.caption_height();
-        let origin_y = super::chrome::grid_origin_y(caption_h + tab_bar_h, scale);
-        let chrome_px = origin_y as u32;
-        let grid_h = h.saturating_sub(chrome_px);
-        let cols = cell.columns(w).max(1);
-        let rows = cell.rows(grid_h).max(1);
+        // Extract geometry from the new window's per-window renderer
+        // (scoped to release the borrow before mux operations).
+        let (cols, rows) = {
+            let ctx = self.windows.get(&winit_id)?;
+            let renderer = ctx.renderer.as_ref()?;
+            let (w, h) = ctx.window.size_px();
+            let cell = renderer.cell_metrics();
+            let scale = ctx.window.scale_factor().factor() as f32;
+            let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+            let caption_h = ctx.chrome.caption_height();
+            let origin_y = super::chrome::grid_origin_y(caption_h + tab_bar_h, scale);
+            let chrome_px = origin_y as u32;
+            let grid_h = h.saturating_sub(chrome_px);
+            let cols = cell.columns(w).max(1);
+            let rows = cell.rows(grid_h).max(1);
+            (cols, rows)
+        };
 
         let mux = self.mux.as_mut()?;
         let theme = self
@@ -92,9 +98,9 @@ impl App {
     /// Create an OS window without spawning any tabs.
     ///
     /// Allocates a mux window ID, creates the OS window + GPU surface,
-    /// chrome/tab bar widgets, and grid widget. The window starts hidden.
-    /// The caller is responsible for moving or creating tabs, clearing the
-    /// surface, and showing the window.
+    /// per-window renderer, chrome/tab bar widgets, and grid widget. The
+    /// window starts hidden. The caller is responsible for moving or
+    /// creating tabs, clearing the surface, and showing the window.
     ///
     /// Returns `(winit_id, mux_window_id)` or `None` on failure.
     pub(super) fn create_window_bare(
@@ -102,7 +108,8 @@ impl App {
         event_loop: &ActiveEventLoop,
     ) -> Option<(WindowId, MuxWindowId)> {
         let gpu = self.gpu.as_ref()?;
-        let renderer = self.renderer.as_ref()?;
+        let pipelines = self.pipelines.as_ref()?;
+        let font_set = self.font_set.as_ref()?.clone();
         let mux = self.mux.as_mut()?;
 
         let opacity = self.config.window.effective_opacity();
@@ -136,8 +143,11 @@ impl App {
             Ok(w) => w,
             Err(e) => {
                 log::error!("failed to create window: {e}");
-                mux.close_window(mux_window_id);
-                mux.discard_notifications();
+                // mux borrow from above ended (NLL); re-borrow for cleanup.
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.close_window(mux_window_id);
+                    mux.discard_notifications();
+                }
                 return None;
             }
         };
@@ -145,7 +155,15 @@ impl App {
         // Chrome + tab bar widgets.
         let (chrome_widget, tab_bar_widget, caption_height) = self.create_chrome_widgets(&window);
 
-        // Compute grid dimensions.
+        let Some(renderer) = self.create_window_renderer(&window, gpu, pipelines, font_set) else {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.close_window(mux_window_id);
+                mux.discard_notifications();
+            }
+            return None;
+        };
+
+        // Compute grid dimensions from per-window cell metrics.
         let (w, h) = window.size_px();
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
@@ -166,7 +184,13 @@ impl App {
         ));
 
         let winit_id = window.window_id();
-        let ctx = WindowContext::new(window, chrome_widget, tab_bar_widget, grid_widget);
+        let ctx = WindowContext::new(
+            window,
+            chrome_widget,
+            tab_bar_widget,
+            grid_widget,
+            Some(renderer),
+        );
         self.windows.insert(winit_id, ctx);
 
         log::info!(
@@ -175,6 +199,56 @@ impl App {
         );
 
         Some((winit_id, mux_window_id))
+    }
+
+    /// Build a per-window renderer for the given window's DPI and font config.
+    fn create_window_renderer(
+        &self,
+        window: &TermWindow,
+        gpu: &crate::gpu::GpuState,
+        pipelines: &crate::gpu::GpuPipelines,
+        font_set: crate::font::FontSet,
+    ) -> Option<crate::gpu::WindowRenderer> {
+        let scale = window.scale_factor().factor() as f32;
+        let physical_dpi = super::DEFAULT_DPI * scale;
+        let hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
+        let format =
+            super::config_reload::resolve_subpixel_mode(&self.config.font, f64::from(scale))
+                .glyph_format();
+        let weight = self.config.font.effective_weight();
+
+        let mut font_collection = match crate::font::FontCollection::new(
+            font_set,
+            self.config.font.size,
+            physical_dpi,
+            format,
+            weight,
+            hinting,
+        ) {
+            Ok(fc) => fc,
+            Err(e) => {
+                log::error!("failed to create font collection for new window: {e}");
+                return None;
+            }
+        };
+        super::config_reload::apply_font_config(
+            &mut font_collection,
+            &self.config.font,
+            self.user_fb_count,
+        );
+
+        // UI font from cached FontSet (no re-discovery per window).
+        let ui_fc = self.ui_font_set.as_ref().and_then(|fs| {
+            crate::font::FontCollection::new(fs.clone(), 11.0, physical_dpi, format, 400, hinting)
+                .ok()
+        });
+
+        Some(crate::gpu::WindowRenderer::new(
+            gpu,
+            pipelines,
+            font_collection,
+            ui_fc,
+        ))
     }
 
     /// Close a single window.
@@ -228,6 +302,56 @@ impl App {
 
         // Drain any mux notifications generated by the close.
         self.pump_close_notifications();
+    }
+
+    /// Close a window whose last tab was just closed.
+    ///
+    /// Resolves the mux window ID to a winit window ID. If this is the last
+    /// OS window, exits the process. Otherwise closes the mux window (which
+    /// has no tabs/panes left) and removes the OS window.
+    pub(super) fn close_empty_mux_window(&mut self, mux_window_id: MuxWindowId) {
+        // If this is the only OS window, exit.
+        if self.windows.len() <= 1 {
+            self.exit_app();
+        }
+
+        // Find the winit window that renders this mux window.
+        let winit_id = self
+            .windows
+            .iter()
+            .find(|(_, ctx)| ctx.window.mux_window_id() == mux_window_id)
+            .map(|(&id, _)| id);
+
+        let Some(winit_id) = winit_id else {
+            // No OS window for this mux window (daemon mode, rendered by
+            // another process). Close the mux window to avoid orphans.
+            if let Some(mux) = &mut self.mux {
+                mux.close_window(mux_window_id);
+                mux.discard_notifications();
+            }
+            return;
+        };
+
+        // Close the (empty) mux window.
+        if let Some(mux) = &mut self.mux {
+            mux.close_window(mux_window_id);
+            mux.discard_notifications();
+        }
+
+        // Remove the OS window.
+        self.windows.remove(&winit_id);
+
+        if self.focused_window_id == Some(winit_id) {
+            self.focused_window_id = self.windows.keys().next().copied();
+            self.active_window = self
+                .focused_window_id
+                .and_then(|id| self.windows.get(&id).map(|ctx| ctx.window.mux_window_id()));
+        }
+
+        log::info!(
+            "empty window closed: {winit_id:?} (mux {mux_window_id:?}), {} remaining",
+            self.windows.len()
+        );
     }
 
     /// Remove a window from the App without closing mux resources.

@@ -42,6 +42,10 @@ pub struct GpuState {
     surface_alpha_mode: wgpu::CompositeAlphaMode,
     /// Whether the backend supports `view_formats` for sRGB reinterpretation.
     supports_view_formats: bool,
+    /// Presentation mode negotiated with the surface. Prefers non-blocking
+    /// modes (`Mailbox`) over vsync-blocking (`Fifo`) to keep the event
+    /// loop responsive during rendering.
+    present_mode: wgpu::PresentMode,
     /// Vulkan pipeline cache (compiled shaders cached to disk across sessions).
     pub(super) pipeline_cache: Option<wgpu::PipelineCache>,
     pipeline_cache_path: Option<PathBuf>,
@@ -125,6 +129,7 @@ impl GpuState {
             self.render_format,
             self.surface_alpha_mode,
             self.supports_view_formats,
+            self.present_mode,
             size.width,
             size.height,
         );
@@ -236,6 +241,7 @@ impl GpuState {
         let downlevel = adapter.get_downlevel_capabilities();
         let (surface_format, render_format) = select_formats(&caps)?;
         let surface_alpha_mode = select_alpha_mode(&caps);
+        let present_mode = select_present_mode(&caps);
         let supports_view_formats = downlevel
             .flags
             .contains(wgpu::DownlevelFlags::SURFACE_VIEW_FORMATS);
@@ -247,6 +253,7 @@ impl GpuState {
             render_format,
             surface_alpha_mode,
             supports_view_formats,
+            present_mode,
             size.width,
             size.height,
         );
@@ -260,7 +267,7 @@ impl GpuState {
         log::info!(
             "GPU: adapter={}, backend={:?}, surface={surface_format:?}, \
              render={render_format:?}, alpha={surface_alpha_mode:?} (available: {:?}), \
-             transparency={}, view_formats={}",
+             present={present_mode:?}, transparency={}, view_formats={}",
             info.name,
             info.backend,
             caps.alpha_modes,
@@ -291,6 +298,7 @@ impl GpuState {
             render_format,
             surface_alpha_mode,
             supports_view_formats,
+            present_mode,
             pipeline_cache,
             pipeline_cache_path,
         })
@@ -330,6 +338,7 @@ impl GpuState {
             render_format,
             surface_alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             supports_view_formats: false,
+            present_mode: wgpu::PresentMode::Fifo,
             pipeline_cache,
             pipeline_cache_path,
         })
@@ -438,19 +447,43 @@ fn select_alpha_mode(caps: &wgpu::SurfaceCapabilities) -> wgpu::CompositeAlphaMo
     }
 }
 
+/// Select the best non-blocking present mode from surface capabilities.
+///
+/// Prefers `Mailbox` (non-blocking, no tearing, latest frame always shown)
+/// over `Fifo` (vsync-blocking, freezes event loop for up to one refresh
+/// interval). Falls back to `Fifo` which is universally supported.
+fn select_present_mode(caps: &wgpu::SurfaceCapabilities) -> wgpu::PresentMode {
+    let modes = &caps.present_modes;
+
+    // Mailbox: non-blocking, replaces queued frame with latest.
+    // Keeps the event loop free to process input events immediately.
+    if modes.contains(&wgpu::PresentMode::Mailbox) {
+        return wgpu::PresentMode::Mailbox;
+    }
+
+    // Immediate: non-blocking, may tear. Acceptable fallback.
+    if modes.contains(&wgpu::PresentMode::Immediate) {
+        return wgpu::PresentMode::Immediate;
+    }
+
+    // Fifo is always supported per the spec.
+    wgpu::PresentMode::Fifo
+}
+
 /// Build a [`wgpu::SurfaceConfiguration`] from the resolved GPU parameters.
 ///
 /// Single source of truth for surface config — called from both `try_init()`
 /// (initial probe) and `create_surface()` (per-window).
 #[expect(
     clippy::too_many_arguments,
-    reason = "wgpu SurfaceConfiguration: format, alpha mode, viewport dimensions"
+    reason = "wgpu SurfaceConfiguration: format, alpha mode, present mode, viewport dimensions"
 )]
 fn build_surface_config(
     surface_format: wgpu::TextureFormat,
     render_format: wgpu::TextureFormat,
     alpha_mode: wgpu::CompositeAlphaMode,
     supports_view_formats: bool,
+    present_mode: wgpu::PresentMode,
     width: u32,
     height: u32,
 ) -> wgpu::SurfaceConfiguration {
@@ -466,7 +499,7 @@ fn build_surface_config(
         format: surface_format,
         width: width.max(1),
         height: height.max(1),
-        present_mode: wgpu::PresentMode::Fifo,
+        present_mode,
         alpha_mode,
         view_formats,
         desired_maximum_frame_latency: 2,

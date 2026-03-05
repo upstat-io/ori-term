@@ -16,9 +16,11 @@ use std::time::{Duration, Instant};
 use oriterm_ipc::ClientStream;
 
 use crate::id::ClientId;
+use crate::layout::floating::FloatingLayer;
+use crate::layout::split_tree::SplitTree;
 use crate::mux_event::MuxNotification;
 use crate::protocol::{DecodedFrame, MuxPdu, ProtocolCodec};
-use crate::{PaneId, PaneSnapshot};
+use crate::{PaneId, PaneSnapshot, TabId};
 
 use super::notification::pdu_to_notification;
 
@@ -44,6 +46,18 @@ struct SendRequest {
     reply_tx: Option<mpsc::Sender<MuxPdu>>,
 }
 
+/// Server-pushed tab layout update data.
+pub(super) struct TabLayoutUpdate {
+    /// Current split tree.
+    pub tree: SplitTree,
+    /// Current floating layer.
+    pub floating: FloatingLayer,
+    /// Currently focused pane.
+    pub active_pane: PaneId,
+    /// Zoomed pane, if any.
+    pub zoomed_pane: Option<PaneId>,
+}
+
 /// IPC transport to the mux daemon.
 ///
 /// Manages a background reader thread that owns the stream. The main thread
@@ -67,6 +81,13 @@ pub(super) struct ClientTransport {
     /// Shared snapshot slot: reader thread inserts pushed snapshots,
     /// main thread takes them at render time. Bounds memory to `O(num_panes)`.
     pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
+    /// Shared layout slot: reader thread inserts pushed layouts,
+    /// main thread takes them when processing notifications.
+    pushed_layouts: Arc<Mutex<HashMap<TabId, TabLayoutUpdate>>>,
+    /// Coalescing flag: prevents redundant `PostMessage` wakeup syscalls
+    /// during flood output. Set by the guarded wakeup closure, cleared
+    /// by [`clear_wakeup_pending`](Self::clear_wakeup_pending) in `poll_events`.
+    wakeup_pending: Arc<AtomicBool>,
 }
 
 impl ClientTransport {
@@ -127,6 +148,21 @@ impl ClientTransport {
         let alive_flag = alive.clone();
         let pushed_snapshots = Arc::new(Mutex::new(HashMap::new()));
         let pushed_snapshots_reader = Arc::clone(&pushed_snapshots);
+        let pushed_layouts: Arc<Mutex<HashMap<TabId, TabLayoutUpdate>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let pushed_layouts_reader = Arc::clone(&pushed_layouts);
+
+        // Wrap wakeup with coalescing flag to prevent redundant PostMessage
+        // syscalls during flood output (hundreds per second → at most one).
+        let wakeup_pending = Arc::new(AtomicBool::new(false));
+        let guarded_wakeup = {
+            let pending = wakeup_pending.clone();
+            Arc::new(move || {
+                if !pending.swap(true, Ordering::Release) {
+                    (wakeup)();
+                }
+            }) as Arc<dyn Fn() + Send + Sync>
+        };
 
         // Spawn reader thread.
         let handle = std::thread::Builder::new()
@@ -136,9 +172,10 @@ impl ClientTransport {
                     stream,
                     send_rx,
                     notif_tx,
-                    wakeup,
+                    guarded_wakeup,
                     alive_flag,
                     pushed_snapshots_reader,
+                    pushed_layouts_reader,
                 );
             })
             .map_err(|e| io::Error::other(format!("failed to spawn reader thread: {e}")))?;
@@ -151,6 +188,8 @@ impl ClientTransport {
             client_id,
             alive,
             pushed_snapshots,
+            pushed_layouts,
+            wakeup_pending,
         })
     }
 
@@ -246,9 +285,24 @@ impl ClientTransport {
             .remove(&pane_id);
     }
 
+    /// Take a pushed layout update for a specific tab, if one exists.
+    pub(super) fn take_pushed_layout(&self, tab_id: TabId) -> Option<TabLayoutUpdate> {
+        self.pushed_layouts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&tab_id)
+    }
+
     /// Whether the reader thread is still running.
     pub(super) fn is_alive(&self) -> bool {
         self.alive.load(Ordering::Acquire)
+    }
+
+    /// Clear the wakeup-pending flag so the next notification posts a wakeup.
+    ///
+    /// Called at the start of `poll_events` on the main thread.
+    pub(super) fn clear_wakeup_pending(&self) {
+        self.wakeup_pending.store(false, Ordering::Release);
     }
 
     /// Allocate the next sequence number.
@@ -291,6 +345,7 @@ impl Drop for ClientTransport {
 fn dispatch_notification(
     pdu: MuxPdu,
     pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
+    pushed_layouts: &Mutex<HashMap<TabId, TabLayoutUpdate>>,
     notif_tx: &mpsc::Sender<MuxNotification>,
     wakeup: &dyn Fn(),
 ) {
@@ -309,6 +364,28 @@ fn dispatch_notification(
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .remove(&pane_id);
             let _ = notif_tx.send(MuxNotification::PaneDirty(pane_id));
+            (wakeup)();
+        }
+        MuxPdu::NotifyTabLayoutChanged {
+            tab_id,
+            tree,
+            floating,
+            active_pane,
+            zoomed_pane,
+        } => {
+            pushed_layouts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(
+                    tab_id,
+                    TabLayoutUpdate {
+                        tree,
+                        floating,
+                        active_pane,
+                        zoomed_pane,
+                    },
+                );
+            let _ = notif_tx.send(MuxNotification::TabLayoutChanged(tab_id));
             (wakeup)();
         }
         other => {
@@ -337,6 +414,7 @@ fn reader_loop(
     wakeup: Arc<dyn Fn() + Send + Sync>,
     alive: Arc<AtomicBool>,
     pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
+    pushed_layouts: Arc<Mutex<HashMap<TabId, TabLayoutUpdate>>>,
 ) {
     // Set read timeout so we can interleave reads with send-channel drains.
     if let Err(e) = stream.set_read_timeout(Some(READ_POLL_INTERVAL)) {
@@ -406,7 +484,13 @@ fn reader_loop(
                 }
 
                 if seq == 0 || pdu.is_notification() {
-                    dispatch_notification(pdu, &pushed_snapshots, &notif_tx, &*wakeup);
+                    dispatch_notification(
+                        pdu,
+                        &pushed_snapshots,
+                        &pushed_layouts,
+                        &notif_tx,
+                        &*wakeup,
+                    );
                 } else if let Some(reply_tx) = pending.remove(&seq) {
                     let _ = reply_tx.send(pdu);
                 } else {

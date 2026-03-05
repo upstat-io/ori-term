@@ -63,6 +63,9 @@ impl App {
 
     /// Detect and apply font changes (family, size, weight, features, fallback,
     /// hinting, subpixel mode, variations, codepoint map).
+    ///
+    /// Iterates ALL windows — each may have a different DPI scale factor,
+    /// so each gets its own `FontCollection` at the correct physical DPI.
     fn apply_font_changes(&mut self, new: &Config) {
         let old = &self.config.font;
         let font_changed = (new.font.size - old.size).abs() > f32::EPSILON
@@ -79,78 +82,83 @@ impl App {
             return;
         }
 
-        // Scoped to release renderer/gpu/window borrows before sync_grid_layout.
-        let (w, h) = {
-            let (Some(renderer), Some(gpu), Some(ctx)) = (
-                &mut self.renderer,
-                &self.gpu,
-                self.focused_window_id.and_then(|id| self.windows.get(&id)),
-            ) else {
+        let weight = new.font.effective_weight();
+        let mut font_set = match FontSet::load(new.font.family.as_deref(), weight) {
+            Ok(fs) => fs,
+            Err(e) => {
+                log::warn!("config reload: font load failed: {e}");
                 return;
+            }
+        };
+
+        // Prepend user-configured fallback fonts before system fallbacks.
+        let user_fb_families: Vec<&str> = new
+            .font
+            .fallback
+            .iter()
+            .map(|f| f.family.as_str())
+            .collect();
+        let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
+
+        // Update cached font set on App for future window creation.
+        self.font_set = Some(font_set.clone());
+        self.user_fb_count = user_fb_count;
+
+        let Some(gpu) = &self.gpu else { return };
+
+        // Iterate ALL windows — each may have a different DPI.
+        for ctx in self.windows.values_mut() {
+            let Some(renderer) = ctx.renderer.as_mut() else {
+                continue;
             };
-
-            let weight = new.font.effective_weight();
-            let mut font_set = match FontSet::load(new.font.family.as_deref(), weight) {
-                Ok(fs) => fs,
-                Err(e) => {
-                    log::warn!("config reload: font load failed: {e}");
-                    return;
-                }
-            };
-
-            // Prepend user-configured fallback fonts before system fallbacks.
-            let user_fb_families: Vec<&str> = new
-                .font
-                .fallback
-                .iter()
-                .map(|f| f.family.as_str())
-                .collect();
-            let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
-
-            // Resolve hinting and subpixel mode: config overrides auto-detection.
             let scale = ctx.window.scale_factor().factor();
             let hinting = resolve_hinting(&new.font, scale);
             let format = resolve_subpixel_mode(&new.font, scale).glyph_format();
+            let physical_dpi = DEFAULT_DPI * scale as f32;
 
-            let scale = scale as f32;
-            let physical_dpi = DEFAULT_DPI * scale;
-            let mut collection = match FontCollection::new(
-                font_set,
+            let fc = match FontCollection::new(
+                font_set.clone(),
                 new.font.size,
                 physical_dpi,
                 format,
                 weight,
                 hinting,
             ) {
-                Ok(fc) => fc,
+                Ok(mut fc) => {
+                    apply_font_config(&mut fc, &new.font, user_fb_count);
+                    fc
+                }
                 Err(e) => {
-                    log::warn!("config reload: font collection failed: {e}");
-                    return;
+                    log::warn!("config reload: font collection failed for window: {e}");
+                    continue;
                 }
             };
 
-            // Apply all font config settings.
-            apply_font_config(&mut collection, &new.font, user_fb_count);
-
-            let cell = collection.cell_metrics();
+            let cell = fc.cell_metrics();
             log::info!(
                 "config reload: font size={:.1}, cell={}x{}",
                 new.font.size,
                 cell.width,
                 cell.height,
             );
-
-            let size = ctx.window.size_px();
-            renderer.replace_font_collection(collection, gpu);
-            size
-        };
+            renderer.replace_font_collection(fc, gpu);
+        }
 
         // Grid dimensions, terminal widget, PTY, and resize increments all
         // depend on cell metrics — sync_grid_layout handles them together.
-        let Some(winit_id) = self.focused_window_id else {
-            return;
-        };
-        self.sync_grid_layout(winit_id, w, h);
+        // Collect window IDs + sizes first (can't call &mut self methods
+        // while iterating self.windows).
+        let window_sizes: Vec<_> = self
+            .windows
+            .iter()
+            .map(|(&id, ctx)| {
+                let (w, h) = ctx.window.size_px();
+                (id, w, h)
+            })
+            .collect();
+        for (winit_id, w, h) in window_sizes {
+            self.sync_grid_layout(winit_id, w, h);
+        }
     }
 
     /// Detect and apply color config changes.

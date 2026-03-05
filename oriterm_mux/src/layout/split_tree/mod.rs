@@ -46,7 +46,7 @@ impl fmt::Display for SplitDirection {
 ///
 /// Every mutation method returns a new tree (COW via `Arc`).
 /// History of previous trees enables undo/redo.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SplitTree {
     /// A single pane occupying the entire area.
     Leaf(PaneId),

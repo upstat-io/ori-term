@@ -387,8 +387,7 @@ impl App {
     /// 3. Normal → smooth viewport scroll.
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, mode: TermMode) {
         let cell_height = self
-            .renderer
-            .as_ref()
+            .focused_renderer()
             .map_or(16.0, |r| r.cell_metrics().height);
         let Some((lines, scroll_up)) = parse_wheel_delta(delta, cell_height) else {
             return;
@@ -471,10 +470,10 @@ impl App {
     /// renderer is missing.
     fn mouse_cell_clamped(&self) -> Option<(usize, usize)> {
         let wctx = self.focused_ctx()?;
-        let renderer = self.renderer.as_ref()?;
+        let cell = wctx.renderer.as_ref()?.cell_metrics();
         let ctx = GridCtx {
             widget: &wctx.terminal_grid,
-            cell: renderer.cell_metrics(),
+            cell,
             word_delimiters: &self.config.behavior.word_delimiters,
         };
         let pos = self.mouse.cursor_pos();
@@ -510,10 +509,10 @@ impl App {
     /// Convert a pixel position to a grid cell, using grid context.
     fn pixel_to_cell(&self, pos: PhysicalPosition<f64>) -> Option<(usize, usize)> {
         let wctx = self.focused_ctx()?;
-        let renderer = self.renderer.as_ref()?;
+        let cell = wctx.renderer.as_ref()?.cell_metrics();
         let ctx = GridCtx {
             widget: &wctx.terminal_grid,
-            cell: renderer.cell_metrics(),
+            cell,
             word_delimiters: &self.config.behavior.word_delimiters,
         };
         mouse_selection::pixel_to_cell(pos, &ctx)

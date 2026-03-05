@@ -121,19 +121,6 @@ impl App {
                     key,
                     modifiers: super::winit_mods_to_ui(self.modifiers),
                 };
-                let scale = self
-                    .focused_ctx()
-                    .map_or(1.0, |ctx| ctx.window.scale_factor().factor() as f32);
-                let measurer = self
-                    .renderer
-                    .as_ref()
-                    .map(|r| crate::font::UiFontMeasurer::new(r.active_ui_collection(), scale));
-                let measurer: &dyn oriterm_ui::widgets::TextMeasurer = match &measurer {
-                    Some(m) => m,
-                    None => return,
-                };
-                // Borrow split: inline window lookup borrows only self.windows,
-                // leaving self.renderer and self.ui_theme available as disjoint borrows.
                 let now = std::time::Instant::now();
                 let result = {
                     let Some(ctx) = self
@@ -142,9 +129,15 @@ impl App {
                     else {
                         return;
                     };
+                    let scale = ctx.window.scale_factor().factor() as f32;
+                    let Some(renderer) = ctx.renderer.as_ref() else {
+                        return;
+                    };
+                    let measurer =
+                        crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
                     ctx.overlays.process_key_event(
                         ui_event,
-                        measurer,
+                        &measurer,
                         &self.ui_theme,
                         None,
                         &ctx.layer_tree,
@@ -355,7 +348,7 @@ impl App {
             return;
         };
         let Some(frame) = &ctx.frame else { return };
-        let Some(renderer) = &self.renderer else {
+        let Some(renderer) = ctx.renderer.as_ref() else {
             return;
         };
         let Some(bounds) = ctx.terminal_grid.bounds() else {

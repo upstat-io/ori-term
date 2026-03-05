@@ -8,6 +8,9 @@ use super::super::FontError;
 use super::super::discovery::{self, FontOrigin};
 
 /// Raw font bytes and collection index (pre-validation).
+///
+/// Cheap to clone: font bytes are `Arc`-shared, index is `Copy`.
+#[derive(Clone)]
 pub(super) struct FontData {
     /// Font file bytes shared via `Arc` for rustybuzz face creation.
     pub(super) data: Arc<Vec<u8>>,
@@ -19,6 +22,9 @@ pub(super) struct FontData {
 ///
 /// Constructed by [`FontSet::load`] from discovery results. Passed to
 /// [`FontCollection::new`] for validation and metrics computation.
+///
+/// Cheap to clone: each [`FontData`] shares font bytes via `Arc`.
+#[derive(Clone)]
 pub struct FontSet {
     /// Human-readable family name.
     pub(super) family_name: String,

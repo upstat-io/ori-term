@@ -11,7 +11,7 @@ use super::{compare_with_reference, headless_env, render_to_pixels};
 
 #[test]
 fn underline_styles() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -56,7 +56,7 @@ fn underline_styles() {
         input.content.cells[4 * cols + col].flags = CellFlags::DASHED_UNDERLINE;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("underline_styles", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -64,7 +64,7 @@ fn underline_styles() {
 
 #[test]
 fn strikethrough() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -89,7 +89,7 @@ fn strikethrough() {
         input.content.cells[cols + col].flags = CellFlags::STRIKETHROUGH;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("strikethrough", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -97,7 +97,7 @@ fn strikethrough() {
 
 #[test]
 fn underline_with_strikethrough() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -118,7 +118,7 @@ fn underline_with_strikethrough() {
         input.content.cells[col].flags = CellFlags::UNDERLINE | CellFlags::STRIKETHROUGH;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("underline_with_strikethrough", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -126,7 +126,7 @@ fn underline_with_strikethrough() {
 
 #[test]
 fn bold_strikethrough() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -147,7 +147,7 @@ fn bold_strikethrough() {
         input.content.cells[col].flags = CellFlags::BOLD | CellFlags::STRIKETHROUGH;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("bold_strikethrough", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -155,7 +155,7 @@ fn bold_strikethrough() {
 
 #[test]
 fn underline_color() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -186,7 +186,7 @@ fn underline_color() {
         input.content.cells[cols + col].underline_color = Some(red);
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("underline_color", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -194,7 +194,7 @@ fn underline_color() {
 
 #[test]
 fn dim_text() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -226,7 +226,7 @@ fn dim_text() {
         input.content.cells[cols + col].fg = dim_fg;
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("dim_text", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -234,7 +234,7 @@ fn dim_text() {
 
 #[test]
 fn inverse_video() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -262,7 +262,7 @@ fn inverse_video() {
         std::mem::swap(&mut cell.fg, &mut cell.bg);
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("inverse_video", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }

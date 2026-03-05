@@ -14,7 +14,7 @@ use super::App;
 use super::mouse_selection::{self, GridCtx};
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
-    extract_frame_from_snapshot_into,
+    extract_frame_from_snapshot_into, snapshot_palette,
 };
 
 impl App {
@@ -39,8 +39,7 @@ impl App {
 
         let ctx = self.focused_ctx()?;
         let bounds = ctx.terminal_grid.bounds()?;
-        let renderer = self.renderer.as_ref()?;
-        let cell = renderer.cell_metrics();
+        let cell = ctx.renderer.as_ref()?.cell_metrics();
 
         // Zoomed: single pane fills the entire available area.
         if let Some(zoomed_id) = tab.zoomed_pane() {
@@ -106,7 +105,7 @@ impl App {
         mut url_segments: Vec<crate::url_detect::UrlSegment>,
     ) {
         // Copy per-pane selections and mark cursors before the render block
-        // (where self.renderer is mutably borrowed, preventing &self borrows).
+        // (where ctx.renderer is mutably borrowed, preventing &self borrows).
         let pane_sels: HashMap<_, _> = layouts
             .iter()
             .filter_map(|l| {
@@ -127,8 +126,8 @@ impl App {
                 log::warn!("redraw multi: no gpu");
                 return;
             };
-            let Some(renderer) = self.renderer.as_mut() else {
-                log::warn!("redraw multi: no renderer");
+            let Some(pipelines) = self.pipelines.as_ref() else {
+                log::warn!("redraw multi: no pipelines");
                 return;
             };
             let Some(ctx) = self
@@ -138,10 +137,19 @@ impl App {
                 log::warn!("redraw multi: no window");
                 return;
             };
+            let Some(renderer) = ctx.renderer.as_mut() else {
+                log::warn!("redraw multi: no renderer");
+                return;
+            };
 
             if !ctx.window.has_surface_area() {
                 return;
             }
+
+            // Multi-pane: clear single-pane tracking so switching back to
+            // a single-pane tab forces a content refresh (prevents stale
+            // renderable_cache contamination from the swap path).
+            ctx.last_rendered_pane = None;
 
             let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
@@ -184,30 +192,58 @@ impl App {
                         layout.pixel_rect.height as u32,
                     );
 
-                    // Extract phase: always snapshot-based.
+                    // Extract phase: refresh snapshot if needed.
                     let mux = self.mux.as_mut().expect("mux checked");
-                    if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
+                    let content_refreshed =
+                        mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id);
+                    if content_refreshed {
                         mux.refresh_pane_snapshot(pane_id);
                     }
+
+                    // Fast path (embedded): swap RenderableContent directly,
+                    // bypassing WireCell round-trip. Only attempt when content
+                    // was refreshed — stale cache entries from prior iterations
+                    // would contaminate the frame otherwise.
+                    let swapped = content_refreshed
+                        && ctx
+                            .frame
+                            .as_mut()
+                            .is_some_and(|f| mux.swap_renderable_content(pane_id, &mut f.content));
+
                     let Some(snapshot) = mux.pane_snapshot(pane_id) else {
                         log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
-                        // Retry next tick instead of dropping into a visually
-                        // stalled state after a transient snapshot miss.
                         ctx.dirty = true;
                         continue;
                     };
-                    match &mut ctx.frame {
-                        Some(existing) => {
-                            extract_frame_from_snapshot_into(
-                                snapshot,
-                                existing,
-                                pane_viewport,
-                                cell,
-                            );
-                        }
-                        slot @ None => {
-                            *slot =
-                                Some(extract_frame_from_snapshot(snapshot, pane_viewport, cell));
+                    if swapped {
+                        let frame = ctx.frame.as_mut().expect("frame exists when swapped");
+                        frame.viewport = pane_viewport;
+                        frame.cell_size = cell;
+                        frame.palette = snapshot_palette(snapshot);
+                        frame.selection = None;
+                        frame.search = None;
+                        frame.hovered_cell = None;
+                        frame.hovered_url_segments.clear();
+                        frame.mark_cursor = None;
+                        frame.fg_dim = 1.0;
+                        frame.prompt_marker_rows.clear();
+                    } else {
+                        match &mut ctx.frame {
+                            Some(existing) => {
+                                extract_frame_from_snapshot_into(
+                                    snapshot,
+                                    existing,
+                                    pane_viewport,
+                                    cell,
+                                );
+                            }
+                            slot @ None => {
+                                *slot = Some(extract_frame_from_snapshot(
+                                    snapshot,
+                                    pane_viewport,
+                                    cell,
+                                ));
+                            }
                         }
                     }
                     mux.clear_pane_snapshot_dirty(pane_id);
@@ -325,7 +361,6 @@ impl App {
             }
 
             // Dividers between split panes.
-            let renderer = self.renderer.as_mut().expect("renderer checked");
             let divider_color = self.config.pane.effective_divider_color();
             renderer.append_dividers(dividers, divider_color);
 
@@ -403,7 +438,7 @@ impl App {
                 }
             }
 
-            let result = renderer.render_to_surface(gpu, ctx.window.surface());
+            let result = renderer.render_to_surface(gpu, pipelines, ctx.window.surface());
             (result, blinking_now)
         };
 

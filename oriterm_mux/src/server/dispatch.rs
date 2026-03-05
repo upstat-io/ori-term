@@ -51,6 +51,7 @@ pub fn dispatch_request(
 
         MuxPdu::CreateWindow => {
             let window_id = mux.create_window();
+            conn.track_created_window(window_id);
             log::debug!("created {window_id}");
             Some(MuxPdu::WindowCreated { window_id })
         }
@@ -87,7 +88,7 @@ pub fn dispatch_request(
         MuxPdu::CloseTab { tab_id } => {
             let removed = mux.close_tab(tab_id);
             for &pid in &removed {
-                panes.remove(&pid);
+                drop_pane_background(panes.remove(&pid));
                 snapshot_cache.remove(&pid);
             }
             closed_panes.extend_from_slice(&removed);
@@ -97,7 +98,7 @@ pub fn dispatch_request(
 
         MuxPdu::ClosePane { pane_id } => {
             mux.close_pane(pane_id);
-            panes.remove(&pane_id);
+            drop_pane_background(panes.remove(&pane_id));
             snapshot_cache.remove(&pane_id);
             closed_panes.push(pane_id);
             log::debug!("closed {pane_id}");
@@ -107,7 +108,7 @@ pub fn dispatch_request(
         MuxPdu::CloseWindow { window_id } => {
             let pane_ids = mux.close_window(window_id);
             for &pid in &pane_ids {
-                panes.remove(&pid);
+                drop_pane_background(panes.remove(&pid));
                 snapshot_cache.remove(&pid);
             }
             closed_panes.extend_from_slice(&pane_ids);
@@ -267,7 +268,7 @@ pub fn dispatch_request(
         }
 
         MuxPdu::ClaimWindow { window_id } => {
-            conn.set_window_id(window_id);
+            conn.add_window_id(window_id);
             log::info!("client {} claimed {window_id}", conn.id());
             Some(MuxPdu::WindowClaimed)
         }
@@ -335,6 +336,35 @@ pub fn dispatch_request(
                 message: format!("pane not found: {pane_id}"),
             }),
         },
+
+        MuxPdu::SpawnFloatingPane {
+            tab_id,
+            shell,
+            cwd,
+            theme,
+            available,
+        } => {
+            let config = SpawnConfig {
+                shell,
+                cwd: cwd.map(PathBuf::from),
+                ..SpawnConfig::default()
+            };
+            let theme = parse_theme(theme.as_deref());
+            match mux.spawn_floating_pane(tab_id, &config, theme, wakeup, &available) {
+                Ok((new_pane_id, pane)) => {
+                    panes.insert(new_pane_id, pane);
+                    let domain_id = mux.default_domain();
+                    log::debug!("spawned floating pane {new_pane_id} in {tab_id}");
+                    Some(MuxPdu::FloatingPaneSpawned {
+                        new_pane_id,
+                        domain_id,
+                    })
+                }
+                Err(e) => Some(MuxPdu::Error {
+                    message: format!("spawn_floating_pane failed: {e}"),
+                }),
+            }
+        }
 
         MuxPdu::SplitPane {
             tab_id,
@@ -429,6 +459,17 @@ pub fn dispatch_request(
                 message: "unexpected PDU type from client".to_string(),
             })
         }
+    }
+}
+
+/// Drop a pane on a background thread to avoid blocking the server event loop.
+///
+/// `Pane::drop` signals shutdown and kills the child process, but the field
+/// destructors (especially `PtyHandle.child`) can block on Windows/ConPTY
+/// cleanup. Spawning a thread ensures the server responds to RPCs promptly.
+fn drop_pane_background(pane: Option<Pane>) {
+    if let Some(pane) = pane {
+        std::thread::spawn(move || drop(pane));
     }
 }
 

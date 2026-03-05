@@ -11,7 +11,7 @@ use super::{compare_with_reference, headless_env, render_to_pixels, render_to_pi
 
 #[test]
 fn wide_char_at_edge() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -47,7 +47,7 @@ fn wide_char_at_edge() {
     // Last column gets a narrow char (wide char wouldn't fit).
     input.content.cells[cols + 79].ch = 'X';
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("wide_char_at_edge", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -55,7 +55,7 @@ fn wide_char_at_edge() {
 
 #[test]
 fn background_only() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -113,7 +113,7 @@ fn background_only() {
         input.content.cells[cols + col].fg = Rgb { r: 0, g: 0, b: 0 };
     }
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("background_only", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -121,7 +121,7 @@ fn background_only() {
 
 #[test]
 fn empty_grid() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -138,7 +138,7 @@ fn empty_grid() {
     input.cell_size = cell;
     input.content.cursor.visible = false;
 
-    let pixels = render_to_pixels(&gpu, &mut renderer, &input);
+    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
     if let Err(msg) = compare_with_reference("empty_grid", &pixels, w, h) {
         panic!("visual regression: {msg}");
     }
@@ -222,7 +222,7 @@ fn full_block_input(
 /// GPU rasterizes a 1px gap between block rows.
 #[test]
 fn fractional_origin_produces_block_seams() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -237,7 +237,8 @@ fn fractional_origin_produces_block_seams() {
     let h = origin_y.ceil() as u32 + grid_pixel_h;
     let input = full_block_input(cols, rows, cell, w, h);
 
-    let pixels = render_to_pixels_with_origin(&gpu, &mut renderer, &input, (0.0, origin_y));
+    let pixels =
+        render_to_pixels_with_origin(&gpu, &pipelines, &mut renderer, &input, (0.0, origin_y));
     let seams = find_block_seams(&pixels, w, h, origin_y, cell.width, cell.height, cols, rows);
 
     assert!(
@@ -250,7 +251,7 @@ fn fractional_origin_produces_block_seams() {
 /// Sanity baseline: integer y-origin never produces seams.
 #[test]
 fn integer_origin_no_block_seams() {
-    let Some((gpu, mut renderer)) = headless_env() else {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
@@ -265,7 +266,8 @@ fn integer_origin_no_block_seams() {
     let h = origin_y as u32 + grid_pixel_h;
     let input = full_block_input(cols, rows, cell, w, h);
 
-    let pixels = render_to_pixels_with_origin(&gpu, &mut renderer, &input, (0.0, origin_y));
+    let pixels =
+        render_to_pixels_with_origin(&gpu, &pipelines, &mut renderer, &input, (0.0, origin_y));
     let seams = find_block_seams(&pixels, w, h, origin_y, cell.width, cell.height, cols, rows);
 
     assert!(

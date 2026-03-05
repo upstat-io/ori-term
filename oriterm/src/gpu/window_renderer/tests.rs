@@ -1,4 +1,4 @@
-//! Unit tests for the GPU renderer.
+//! Unit tests for the per-window renderer.
 //!
 //! These tests verify `SurfaceError` display formatting.
 //! Full GPU integration tests (headless render + readback) live in Section 5.13.

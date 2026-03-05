@@ -200,7 +200,7 @@ impl App {
         let Some(bounds) = ctx.terminal_grid.bounds() else {
             return;
         };
-        let Some(renderer) = &self.renderer else {
+        let Some(renderer) = ctx.renderer.as_ref() else {
             return;
         };
         let cell = renderer.cell_metrics();

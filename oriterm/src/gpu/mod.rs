@@ -10,22 +10,26 @@ pub(crate) mod frame_input;
 pub(crate) mod instance_writer;
 pub(crate) mod pane_cache;
 pub(crate) mod pipeline;
+pub(crate) mod pipelines;
 pub(crate) mod prepare;
 pub(crate) mod prepared_frame;
 pub(crate) mod render_target;
-pub(crate) mod renderer;
 pub(crate) mod state;
 pub(crate) mod transparency;
+pub(crate) mod window_renderer;
 
 // Re-exports consumed by App and Window.
-pub(crate) use extract::{extract_frame_from_snapshot, extract_frame_from_snapshot_into};
+pub(crate) use extract::{
+    extract_frame_from_snapshot, extract_frame_from_snapshot_into, snapshot_palette,
+};
 pub(crate) use frame_input::{
     FrameInput, FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize,
 };
 pub(crate) use pane_cache::PaneRenderCache;
-pub(crate) use renderer::{GpuRenderer, SurfaceError};
+pub(crate) use pipelines::GpuPipelines;
 pub(crate) use state::GpuState;
 pub(crate) use transparency::apply_transparency;
+pub(crate) use window_renderer::{SurfaceError, WindowRenderer};
 
 /// Decode a single sRGB byte (0–255) to a linear-light `f32` (0.0–1.0).
 ///

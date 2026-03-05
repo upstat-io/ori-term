@@ -60,9 +60,8 @@ impl App {
                         ctx.hovered_url = None;
                     }
                 }
-                if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
-                }
+                // Mark all windows dirty — the pane may be in any window.
+                self.mark_all_windows_dirty();
             }
             MuxNotification::PaneClosed(id) => {
                 // Clean up client-side state for this pane.
@@ -74,35 +73,31 @@ impl App {
                 if let Some(mux) = self.mux.as_mut() {
                     mux.cleanup_closed_pane(id);
                 }
-                if let Some(ctx) = self.focused_ctx_mut() {
+                for ctx in self.windows.values_mut() {
                     ctx.pane_cache.remove(id);
                     ctx.dirty = true;
                 }
             }
             MuxNotification::TabLayoutChanged(_) => {
                 // Layout changed (split/close) — pane positions shifted.
-                if let Some(ctx) = self.focused_ctx_mut() {
+                for ctx in self.windows.values_mut() {
                     ctx.pane_cache.invalidate_all();
                     ctx.cached_dividers = None;
                 }
                 self.resize_all_panes();
-                if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
-                }
+                self.mark_all_windows_dirty();
             }
             MuxNotification::FloatingPaneChanged(_) => {
                 // Floating pane moved/resized — positions shifted but
                 // PTY dimensions unchanged. Skip resize_all_panes.
-                if let Some(ctx) = self.focused_ctx_mut() {
+                for ctx in self.windows.values_mut() {
                     ctx.pane_cache.invalidate_all();
                     ctx.dirty = true;
                 }
             }
             MuxNotification::PaneTitleChanged(_) => {
                 self.sync_tab_bar_from_mux();
-                if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
-                }
+                self.mark_all_windows_dirty();
             }
             MuxNotification::WindowTabsChanged(window_id) => {
                 // In daemon mode, another client may have moved a tab to/from
@@ -114,9 +109,7 @@ impl App {
                     }
                 }
                 self.sync_tab_bar_from_mux();
-                if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
-                }
+                self.mark_all_windows_dirty();
             }
             MuxNotification::CommandComplete { pane_id, duration } => {
                 self.handle_command_complete(pane_id, duration);
@@ -130,9 +123,7 @@ impl App {
                         ctx.tab_bar.ring_bell(idx);
                     }
                 }
-                if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
-                }
+                self.mark_all_windows_dirty();
             }
             MuxNotification::WindowClosed(mux_wid) => {
                 self.handle_mux_window_closed(mux_wid);

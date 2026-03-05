@@ -2,7 +2,9 @@
 
 use wgpu::{CompositeAlphaMode, SurfaceCapabilities, TextureFormat, TextureUsages};
 
-use super::{build_surface_config, select_alpha_mode, select_formats};
+use wgpu::PresentMode;
+
+use super::{build_surface_config, select_alpha_mode, select_formats, select_present_mode};
 
 fn caps_with_formats(formats: Vec<TextureFormat>) -> SurfaceCapabilities {
     SurfaceCapabilities {
@@ -162,6 +164,7 @@ fn build_surface_config_sets_view_formats_when_needed() {
         TextureFormat::Bgra8UnormSrgb,
         CompositeAlphaMode::Opaque,
         true,
+        PresentMode::Fifo,
         800,
         600,
     );
@@ -179,6 +182,7 @@ fn build_surface_config_skips_view_formats_when_unsupported() {
         TextureFormat::Bgra8UnormSrgb,
         CompositeAlphaMode::Opaque,
         false,
+        PresentMode::Fifo,
         800,
         600,
     );
@@ -193,6 +197,7 @@ fn build_surface_config_no_view_formats_when_formats_match() {
         TextureFormat::Bgra8UnormSrgb,
         CompositeAlphaMode::PreMultiplied,
         true,
+        PresentMode::Fifo,
         1920,
         1080,
     );
@@ -208,12 +213,55 @@ fn build_surface_config_clamps_zero_dimensions() {
         TextureFormat::Bgra8UnormSrgb,
         CompositeAlphaMode::Opaque,
         false,
+        PresentMode::Fifo,
         0,
         0,
     );
 
     assert_eq!(config.width, 1);
     assert_eq!(config.height, 1);
+}
+
+// --- Present mode selection ---
+
+#[test]
+fn select_present_mode_prefers_mailbox() {
+    let caps = SurfaceCapabilities {
+        formats: vec![],
+        present_modes: vec![
+            PresentMode::Fifo,
+            PresentMode::Mailbox,
+            PresentMode::Immediate,
+        ],
+        alpha_modes: vec![CompositeAlphaMode::Opaque],
+        usages: TextureUsages::RENDER_ATTACHMENT,
+    };
+
+    assert_eq!(select_present_mode(&caps), PresentMode::Mailbox);
+}
+
+#[test]
+fn select_present_mode_falls_back_to_immediate() {
+    let caps = SurfaceCapabilities {
+        formats: vec![],
+        present_modes: vec![PresentMode::Fifo, PresentMode::Immediate],
+        alpha_modes: vec![CompositeAlphaMode::Opaque],
+        usages: TextureUsages::RENDER_ATTACHMENT,
+    };
+
+    assert_eq!(select_present_mode(&caps), PresentMode::Immediate);
+}
+
+#[test]
+fn select_present_mode_falls_back_to_fifo() {
+    let caps = SurfaceCapabilities {
+        formats: vec![],
+        present_modes: vec![PresentMode::Fifo],
+        alpha_modes: vec![CompositeAlphaMode::Opaque],
+        usages: TextureUsages::RENDER_ATTACHMENT,
+    };
+
+    assert_eq!(select_present_mode(&caps), PresentMode::Fifo);
 }
 
 // --- Cache directory ---

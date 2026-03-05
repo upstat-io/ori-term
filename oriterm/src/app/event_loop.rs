@@ -6,7 +6,7 @@
 
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
@@ -62,6 +62,49 @@ impl App {
     ///
     /// Only sends when the terminal has `FOCUS_IN_OUT` mode enabled (mode 1004).
     /// Focus-in: `CSI I` (`\x1b[I`), focus-out: `CSI O` (`\x1b[O`).
+    /// Pump mux events and render all dirty windows during a Win32 modal loop.
+    ///
+    /// During modal move/resize, `about_to_wait` never fires. A `SetTimer`
+    /// in the `WndProc` ticks at 60 FPS, generating `RedrawRequested` via
+    /// `InvalidateRect`. This method substitutes for `about_to_wait`'s
+    /// render loop: pump mux events, then render every dirty window using
+    /// the same focus-swapping pattern.
+    #[cfg(target_os = "windows")]
+    fn modal_loop_render(&mut self) {
+        self.pump_mux_events();
+
+        let dirty_ids: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter(|(_, ctx)| ctx.dirty)
+            .map(|(&id, _)| id)
+            .collect();
+        if dirty_ids.is_empty() {
+            return;
+        }
+
+        let saved_focused = self.focused_window_id;
+        let saved_active = self.active_window;
+
+        for wid in dirty_ids {
+            if let Some(ctx) = self.windows.get_mut(&wid) {
+                ctx.dirty = false;
+            }
+            let mux_wid = self.windows.get(&wid).map(|ctx| ctx.window.mux_window_id());
+            self.focused_window_id = Some(wid);
+            self.active_window = mux_wid;
+            self.handle_redraw();
+        }
+
+        self.focused_window_id = saved_focused;
+        self.active_window = saved_active;
+        self.last_render = std::time::Instant::now();
+    }
+
+    /// Send a focus-in or focus-out escape sequence to the active pane.
+    ///
+    /// Only sends when the terminal has `FOCUS_IN_OUT` mode enabled (mode 1004).
+    /// Focus-in: `CSI I` (`\x1b[I`), focus-out: `CSI O` (`\x1b[O`).
     fn send_focus_event(&mut self, focused: bool) {
         let Some(pane_id) = self.active_pane_id() else {
             return;
@@ -82,6 +125,11 @@ impl ApplicationHandler<TermEvent> for App {
         if !self.windows.is_empty() {
             return;
         }
+        // Unregister raw input devices (WM_INPUT). winit defaults to
+        // WhenFocused, which floods the message queue with mouse raw input
+        // at 125-1000 Hz — stalling the render loop during flood output.
+        // Terminals only need cooked WindowEvent variants.
+        event_loop.listen_device_events(DeviceEvents::Never);
         if let Err(e) = self.try_init(event_loop) {
             log::error!("startup failed: {e}");
             event_loop.exit();
@@ -107,7 +155,18 @@ impl ApplicationHandler<TermEvent> for App {
                 self.handle_resize(window_id, size);
             }
 
-            WindowEvent::RedrawRequested => self.handle_redraw(),
+            WindowEvent::RedrawRequested => {
+                // During Win32 modal move/resize loops, about_to_wait never
+                // fires. A SetTimer ticks at 60 FPS, generating
+                // RedrawRequested via InvalidateRect. Pump mux events and
+                // render all windows here instead.
+                #[cfg(target_os = "windows")]
+                if oriterm_ui::platform_windows::in_modal_loop() {
+                    self.modal_loop_render();
+                    return;
+                }
+                self.handle_redraw();
+            }
 
             WindowEvent::ModifiersChanged(mods) => {
                 let prev_ctrl = self.modifiers.control_key();
@@ -290,12 +349,9 @@ impl ApplicationHandler<TermEvent> for App {
                 self.perf.record_wakeup();
                 // The real work happens in `pump_mux_events()` during
                 // `about_to_wait`. This wakeup ensures the event loop
-                // doesn't sleep past pending mux events. The dirty flag
-                // is a safety net for events (e.g. `ColorRequest`) that
-                // produce a `MuxWakeup` without a corresponding `MuxEvent`.
-                if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
-                }
+                // doesn't sleep past pending mux events. Mark ALL windows
+                // dirty — PTY output may come from any pane in any window.
+                self.mark_all_windows_dirty();
             }
         }
     }
@@ -370,25 +426,36 @@ impl ApplicationHandler<TermEvent> for App {
         }
 
         // Check if any window is dirty and render it, subject to frame budget.
-        let any_dirty = self.focused_ctx().is_some_and(|ctx| ctx.dirty);
+        let any_dirty = self.windows.values().any(|ctx| ctx.dirty);
         let now = std::time::Instant::now();
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
         if any_dirty && budget_elapsed {
-            // Clear dirty BEFORE rendering so that if handle_redraw sets
-            // it back to true (e.g. chrome hover animations in progress),
-            // the flag is preserved for the next frame.
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = false;
+            // Render all dirty windows. Each render temporarily swaps
+            // `focused_window_id`/`active_window` so `handle_redraw`
+            // targets the correct window (same pattern as `tear_off_tab`).
+            let dirty_winit_ids: Vec<WindowId> = self
+                .windows
+                .iter()
+                .filter(|(_, ctx)| ctx.dirty)
+                .map(|(&id, _)| id)
+                .collect();
+
+            let saved_focused = self.focused_window_id;
+            let saved_active = self.active_window;
+
+            for wid in dirty_winit_ids {
+                if let Some(ctx) = self.windows.get_mut(&wid) {
+                    ctx.dirty = false;
+                }
+                let mux_wid = self.windows.get(&wid).map(|ctx| ctx.window.mux_window_id());
+                self.focused_window_id = Some(wid);
+                self.active_window = mux_wid;
+                self.handle_redraw();
             }
 
-            // Render directly instead of deferring via request_redraw().
-            // On Windows, request_redraw() maps to WM_PAINT which has
-            // lower priority than input messages (WM_MOUSEMOVE). Rapid
-            // mouse movement delays painting indefinitely, causing visible
-            // lag for hover effects. Rendering here — at the end of the
-            // event batch — ensures the frame reflects the latest state.
-            self.handle_redraw();
+            self.focused_window_id = saved_focused;
+            self.active_window = saved_active;
             self.last_render = std::time::Instant::now();
             self.perf.record_render();
         }
@@ -400,8 +467,9 @@ impl ApplicationHandler<TermEvent> for App {
         // active or for the next blink toggle. The default ControlFlow::Wait
         // lets the event loop sleep indefinitely when nothing is animating.
         let has_animations = self
-            .focused_ctx()
-            .is_some_and(|ctx| ctx.layer_animator.is_any_animating());
+            .windows
+            .values()
+            .any(|ctx| ctx.layer_animator.is_any_animating());
         if any_dirty && !budget_elapsed {
             // Dirty but budget not yet elapsed — wake up when budget allows.
             let remaining =

@@ -7,5 +7,5 @@
 mod from_snapshot;
 
 pub(crate) use self::from_snapshot::{
-    extract_frame_from_snapshot, extract_frame_from_snapshot_into,
+    extract_frame_from_snapshot, extract_frame_from_snapshot_into, snapshot_palette,
 };

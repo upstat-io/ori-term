@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use crate::pane::Pane;
+use crate::registry::SessionRegistry;
 use crate::{MuxNotification, MuxPdu, PaneId, WindowId};
 
 /// Which clients should receive a notification.
@@ -18,11 +19,12 @@ pub enum TargetClients {
 
 /// Convert a mux notification into a target + PDU pair for IPC dispatch.
 ///
-/// Returns `None` for notifications that aren't pushed over IPC (layout
-/// changes, clipboard operations, etc.).
+/// Returns `None` for notifications that aren't pushed over IPC (clipboard
+/// operations, command completions, etc.).
 pub fn notification_to_pdu(
     notif: &MuxNotification,
     panes: &HashMap<PaneId, Pane>,
+    session: &SessionRegistry,
 ) -> Option<(TargetClients, MuxPdu)> {
     match notif {
         MuxNotification::PaneDirty(pane_id) => Some((
@@ -61,15 +63,38 @@ pub fn notification_to_pdu(
             },
         )),
 
+        MuxNotification::TabLayoutChanged(tab_id)
+        | MuxNotification::FloatingPaneChanged(tab_id) => tab_layout_changed_pdu(*tab_id, session),
+
         // Notifications not pushed over IPC.
-        MuxNotification::TabLayoutChanged(_)
-        | MuxNotification::FloatingPaneChanged(_)
-        | MuxNotification::CommandComplete { .. }
+        MuxNotification::CommandComplete { .. }
         | MuxNotification::WindowClosed(_)
         | MuxNotification::LastWindowClosed
         | MuxNotification::ClipboardStore { .. }
         | MuxNotification::ClipboardLoad { .. } => None,
     }
+}
+
+/// Build a `NotifyTabLayoutChanged` PDU for a tab.
+///
+/// Looks up the tab's current layout from the session and determines the
+/// owning window for client routing.
+fn tab_layout_changed_pdu(
+    tab_id: crate::TabId,
+    session: &SessionRegistry,
+) -> Option<(TargetClients, MuxPdu)> {
+    let tab = session.get_tab(tab_id)?;
+    let window_id = session.window_for_tab(tab_id)?;
+    Some((
+        TargetClients::WindowClient(window_id),
+        MuxPdu::NotifyTabLayoutChanged {
+            tab_id,
+            tree: tab.tree().clone(),
+            floating: tab.floating().clone(),
+            active_pane: tab.active_pane(),
+            zoomed_pane: tab.zoomed_pane(),
+        },
+    ))
 }
 
 #[cfg(test)]

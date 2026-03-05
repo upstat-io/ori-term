@@ -98,6 +98,21 @@ fn build_snapshot_inner_into(
     // Truncate extra rows from a previous larger grid.
     out.cells.truncate(row_idx);
 
+    fill_snapshot_metadata(term, pane, render_buf, out);
+}
+
+/// Fill all snapshot fields except `cells` from terminal state.
+///
+/// Shared by [`build_snapshot_inner_into`] (which also fills cells) and
+/// [`build_snapshot_metadata_into`] (which skips cell conversion).
+fn fill_snapshot_metadata(
+    term: &Term<MuxEventProxy>,
+    pane: &Pane,
+    render_buf: &RenderableContent,
+    out: &mut PaneSnapshot,
+) {
+    let grid = term.grid();
+
     // Cursor.
     out.cursor = WireCursor {
         col: u16::try_from(render_buf.cursor.column.0).unwrap_or(u16::MAX),
@@ -131,7 +146,7 @@ fn build_snapshot_inner_into(
     out.scrollback_len = u32::try_from(grid.scrollback().len()).unwrap_or(u32::MAX);
     out.display_offset = u32::try_from(render_buf.display_offset).unwrap_or(u32::MAX);
     out.stable_row_base = render_buf.stable_row_base;
-    out.cols = cols as u16;
+    out.cols = grid.cols() as u16;
 
     // Search state.
     if let Some(search) = pane.search() {
@@ -353,6 +368,9 @@ pub fn build_tab_list(
                 active_pane_id,
                 pane_count,
                 title,
+                tree: tab.tree().clone(),
+                floating: tab.floating().clone(),
+                zoomed_pane: tab.zoomed_pane(),
             })
         })
         .collect()

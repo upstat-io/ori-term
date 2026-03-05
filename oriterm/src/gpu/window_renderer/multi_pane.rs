@@ -12,7 +12,7 @@ use super::super::instance_writer::ScreenRect;
 use super::super::prepare;
 use super::super::prepared_frame::PreparedFrame;
 use super::super::state::GpuState;
-use super::{CombinedAtlasLookup, GpuRenderer};
+use super::{CombinedAtlasLookup, WindowRenderer};
 use crate::gpu::frame_input::ViewportSize;
 use oriterm_mux::layout::{DividerLayout, Rect};
 
@@ -20,7 +20,7 @@ use helpers::{ensure_glyphs_cached, grid_raster_keys, shape_frame};
 
 use super::helpers;
 
-impl GpuRenderer {
+impl WindowRenderer {
     /// Begin a multi-pane frame: reset atlases, clear instance buffers, set viewport.
     ///
     /// Call once before [`prepare_pane_into`] calls. Sets the viewport and clear

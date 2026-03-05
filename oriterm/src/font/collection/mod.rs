@@ -195,11 +195,6 @@ impl FontCollection {
         self.size_px
     }
 
-    /// DPI used for the current size computation.
-    pub fn dpi(&self) -> f32 {
-        self.dpi
-    }
-
     /// Family name of the primary font.
     pub fn family_name(&self) -> &str {
         &self.family_name
@@ -383,7 +378,7 @@ impl FontCollection {
     ///
     /// Recomputes cell metrics from the Regular face at the new size,
     /// recalculates cap-height normalization for fallback fonts, and clears
-    /// the glyph cache. The caller (`GpuRenderer::set_font_size`) is
+    /// the glyph cache. The caller (`WindowRenderer::set_font_size`) is
     /// responsible for re-populating the atlas afterward.
     pub fn set_size(&mut self, size_pt: f32, dpi: f32) {
         let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
@@ -419,7 +414,7 @@ impl FontCollection {
 
     /// Change hinting mode and clear the glyph cache.
     ///
-    /// No-ops if the mode is unchanged. The caller (`GpuRenderer::set_hinting_mode`)
+    /// No-ops if the mode is unchanged. The caller (`WindowRenderer::set_hinting_mode`)
     /// is responsible for clearing GPU atlases and re-populating afterward.
     ///
     /// Returns `true` if the mode actually changed.
@@ -435,7 +430,7 @@ impl FontCollection {
     /// Change rasterization format and clear the glyph cache.
     ///
     /// No-ops if the format is unchanged. The caller
-    /// (`GpuRenderer::set_glyph_format`) is responsible for clearing GPU
+    /// (`WindowRenderer::set_glyph_format`) is responsible for clearing GPU
     /// atlases and re-populating afterward.
     ///
     /// Returns `true` if the format actually changed.

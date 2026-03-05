@@ -11,24 +11,26 @@
 #![allow(unsafe_code)]
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{HWND, LRESULT, POINT, RECT};
 use windows_sys::Win32::Graphics::Dwm::{
-    DWMWA_EXTENDED_FRAME_BOUNDS, DwmExtendFrameIntoClientArea, DwmGetWindowAttribute,
+    DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED, DwmExtendFrameIntoClientArea,
+    DwmGetWindowAttribute, DwmSetWindowAttribute,
 };
+use windows_sys::Win32::Graphics::Gdi::InvalidateRect;
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWL_STYLE, GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, HTBOTTOM,
     HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT,
-    HTTOPRIGHT, IsZoomed, NCCALCSIZE_PARAMS, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE,
-    SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_DPICHANGED, WM_EXITSIZEMOVE, WM_MOVING,
-    WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-    WS_THICKFRAME,
+    HTTOPRIGHT, IsZoomed, KillTimer, NCCALCSIZE_PARAMS, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
+    SW_HIDE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE,
+    WM_EXITSIZEMOVE, WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_TIMER, WS_CAPTION,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_THICKFRAME,
 };
 
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -38,6 +40,21 @@ use crate::geometry::{Point, Rect, Size};
 use crate::hit_test::{self, HitTestResult, ResizeDirection};
 
 const SUBCLASS_ID: usize = 0xBEEF;
+
+/// Timer ID for the modal move/resize loop render tick.
+const MODAL_TIMER_ID: usize = 0xCAFE;
+
+/// Timer interval during modal loop (~60 FPS).
+const MODAL_TIMER_MS: u32 = 16;
+
+/// Set while a Win32 modal move/resize loop is active.
+///
+/// During modal loops (`DragWindow`/`ResizeWindow`), the winit event loop
+/// is blocked — `about_to_wait` never fires. A `SetTimer` ticks at 60 FPS,
+/// invalidating all windows to generate `RedrawRequested` events inside
+/// the modal message pump. The app's `RedrawRequested` handler checks this
+/// flag to pump mux events and render all windows.
+static IN_MODAL_LOOP: AtomicBool = AtomicBool::new(false);
 
 /// Configuration for an OS drag session, passed to [`begin_os_drag()`].
 pub struct OsDragConfig {
@@ -276,6 +293,34 @@ pub fn release_mouse_capture() {
     unsafe { ReleaseCapture() };
 }
 
+/// Whether a Win32 modal move/resize loop is currently active.
+///
+/// Used by the event loop's `RedrawRequested` handler to substitute for
+/// `about_to_wait` (which doesn't fire during the modal loop).
+pub fn in_modal_loop() -> bool {
+    IN_MODAL_LOOP.load(Ordering::Relaxed)
+}
+
+/// Disable or enable DWM window transition animations.
+///
+/// Chrome pattern: wrap `set_visible(true)` with `set_transitions_enabled(false/true)`
+/// to prevent the OS fade-in animation during tab tear-off. This gives an
+/// instantaneous window appearance instead of a distracting transition.
+pub fn set_transitions_enabled(window: &Window, enabled: bool) {
+    let Some(hwnd) = hwnd_from_window(window) else {
+        return;
+    };
+    let value: i32 = i32::from(!enabled);
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TRANSITIONS_FORCEDISABLED as u32,
+            (&raw const value).cast(),
+            size_of::<i32>() as u32,
+        );
+    }
+}
+
 // --- Private helpers -------------------------------------------------------
 
 fn snap_ptrs() -> &'static Mutex<HashMap<usize, usize>> {
@@ -478,12 +523,31 @@ unsafe extern "system" fn subclass_proc(
                 0
             }
 
+            WM_ENTERSIZEMOVE => {
+                IN_MODAL_LOOP.store(true, Ordering::Relaxed);
+                SetTimer(hwnd, MODAL_TIMER_ID, MODAL_TIMER_MS, None);
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+
+            WM_TIMER if wparam == MODAL_TIMER_ID => {
+                // Invalidate all windows so the modal message pump
+                // generates WM_PAINT → RedrawRequested for each.
+                if let Ok(map) = snap_ptrs().lock() {
+                    for &hwnd_key in map.keys() {
+                        InvalidateRect(hwnd_key as HWND, std::ptr::null(), 0);
+                    }
+                }
+                0
+            }
+
             WM_MOVING => {
                 handle_moving(hwnd, lparam, data);
                 DefSubclassProc(hwnd, msg, wparam, lparam)
             }
 
             WM_EXITSIZEMOVE => {
+                KillTimer(hwnd, MODAL_TIMER_ID);
+                IN_MODAL_LOOP.store(false, Ordering::Relaxed);
                 if let Ok(mut lock) = data.os_drag.lock() {
                     if let Some(state) = lock.as_mut() {
                         if state.result.is_none() {

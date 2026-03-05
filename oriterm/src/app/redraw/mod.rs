@@ -21,7 +21,7 @@ use crate::font::UiFontMeasurer;
 use crate::gpu::state::GpuState;
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize,
-    extract_frame_from_snapshot, extract_frame_from_snapshot_into,
+    extract_frame_from_snapshot, extract_frame_from_snapshot_into, snapshot_palette,
 };
 
 impl App {
@@ -34,7 +34,7 @@ impl App {
         log::trace!("RedrawRequested");
 
         // Compute URL hover segments before the render block (which borrows
-        // self.renderer mutably). Take the Vec from the previous frame to
+        // ctx.renderer mutably). Take the Vec from the previous frame to
         // reuse its capacity, avoiding a per-frame allocation.
         let mut url_segments = self
             .focused_ctx_mut()
@@ -50,14 +50,14 @@ impl App {
         }
 
         // Resolve pane ID before the render block: `active_pane_id()` borrows
-        // `&self`, which conflicts with the `&mut self.renderer` inside the
+        // `&self`, which conflicts with the `&mut ctx.renderer` inside the
         // block. `PaneId` is `Copy`, so the borrow ends here.
         let Some(pane_id) = self.active_pane_id() else {
             log::warn!("redraw: no active pane");
             return;
         };
 
-        // Copy selection before the render block (where self.renderer is
+        // Copy selection before the render block (where ctx.renderer is
         // mutably borrowed, preventing immutable self borrows).
         let pane_sel = self.pane_selection(pane_id).copied();
         let pane_mc = self.pane_mark_cursor(pane_id);
@@ -67,8 +67,8 @@ impl App {
                 log::warn!("redraw: no gpu");
                 return;
             };
-            let Some(renderer) = self.renderer.as_mut() else {
-                log::warn!("redraw: no renderer");
+            let Some(pipelines) = self.pipelines.as_ref() else {
+                log::warn!("redraw: no pipelines");
                 return;
             };
             let Some(ctx) = self
@@ -76,6 +76,10 @@ impl App {
                 .and_then(|id| self.windows.get_mut(&id))
             else {
                 log::warn!("redraw: no window");
+                return;
+            };
+            let Some(renderer) = ctx.renderer.as_mut() else {
+                log::warn!("redraw: no renderer");
                 return;
             };
             if !ctx.window.has_surface_area() {
@@ -88,25 +92,54 @@ impl App {
             let cell = renderer.cell_metrics();
             let mux = self.mux.as_mut().expect("mux checked at pane_id");
 
-            // Extract phase: always snapshot-based (both embedded and daemon).
+            // Extract phase: refresh snapshot if needed.
+            // Detect tab switch / tear-off: when the rendered pane changes,
+            // force a refresh to flush stale `renderable_cache` entries left
+            // by the previous `swap_renderable_content` cycle.
+            let pane_changed = ctx.last_rendered_pane != Some(pane_id);
+            ctx.last_rendered_pane = Some(pane_id);
             let snap_is_none = mux.pane_snapshot(pane_id).is_none();
             let snap_dirty = mux.is_pane_snapshot_dirty(pane_id);
-            if snap_is_none || snap_dirty {
+            let content_changed = snap_is_none || snap_dirty || pane_changed;
+            if content_changed {
                 mux.refresh_pane_snapshot(pane_id);
             }
+
+            // Fast path (embedded): swap RenderableContent directly from
+            // the terminal, bypassing the WireCell round-trip. Only attempt
+            // when content was refreshed — stale cache entries from prior
+            // tab switches would contaminate the frame otherwise.
+            let swapped = content_changed
+                && ctx
+                    .frame
+                    .as_mut()
+                    .is_some_and(|f| mux.swap_renderable_content(pane_id, &mut f.content));
+
             let Some(snapshot) = mux.pane_snapshot(pane_id) else {
                 log::warn!("redraw: no snapshot for pane {pane_id:?}");
-                // Keep trying on subsequent ticks. Without this, a transient
-                // snapshot miss can clear `dirty` and stall visible updates.
                 ctx.dirty = true;
                 return;
             };
-            match &mut ctx.frame {
-                Some(existing) => {
-                    extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
-                }
-                slot @ None => {
-                    *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
+            if swapped {
+                let frame = ctx.frame.as_mut().expect("frame exists when swapped");
+                frame.viewport = viewport;
+                frame.cell_size = cell;
+                frame.palette = snapshot_palette(snapshot);
+                frame.selection = None;
+                frame.search = None;
+                frame.hovered_cell = None;
+                frame.hovered_url_segments.clear();
+                frame.mark_cursor = None;
+                frame.fg_dim = 1.0;
+                frame.prompt_marker_rows.clear();
+            } else {
+                match &mut ctx.frame {
+                    Some(existing) => {
+                        extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
+                    }
+                    slot @ None => {
+                        *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
+                    }
                 }
             }
             mux.clear_pane_snapshot_dirty(pane_id);
@@ -188,7 +221,7 @@ impl App {
                 .bounds()
                 .map_or((0.0, 0.0), |b| (b.x(), b.y()));
 
-            renderer.prepare(frame, gpu, origin, cursor_blink_visible);
+            renderer.prepare(frame, gpu, origin, cursor_blink_visible, content_changed);
 
             // Draw window chrome into the UI rect layer. Chrome widget
             // draws in logical pixels; scale converts to physical pixels
@@ -254,7 +287,7 @@ impl App {
                 );
             }
 
-            let result = renderer.render_to_surface(gpu, ctx.window.surface());
+            let result = renderer.render_to_surface(gpu, pipelines, ctx.window.surface());
             (result, blinking_now)
         };
 
@@ -307,7 +340,7 @@ impl App {
     )]
     fn draw_chrome(
         chrome: Option<&WindowChromeWidget>,
-        renderer: &mut crate::gpu::GpuRenderer,
+        renderer: &mut crate::gpu::WindowRenderer,
         draw_list: &mut DrawList,
         logical_width: u32,
         scale: f32,
@@ -348,7 +381,7 @@ impl App {
     /// Draw the tab bar below the window chrome caption.
     ///
     /// Tab bar coordinates are in logical pixels, positioned at `y = caption_h`.
-    /// Uses [`append_ui_draw_list_with_text`](crate::gpu::GpuRenderer::append_ui_draw_list_with_text)
+    /// Uses [`append_ui_draw_list_with_text`](crate::gpu::WindowRenderer::append_ui_draw_list_with_text)
     /// because tab titles are rendered as shaped text.
     ///
     /// Returns `true` if the tab bar has running animations (e.g. bell pulse).
@@ -358,7 +391,7 @@ impl App {
     )]
     fn draw_tab_bar(
         tab_bar: Option<&oriterm_ui::widgets::tab_bar::TabBarWidget>,
-        renderer: &mut crate::gpu::GpuRenderer,
+        renderer: &mut crate::gpu::WindowRenderer,
         draw_list: &mut DrawList,
         logical_width: f32,
         caption_h: f32,
@@ -411,7 +444,7 @@ impl App {
     )]
     fn draw_overlays(
         overlays: &mut OverlayManager,
-        renderer: &mut crate::gpu::GpuRenderer,
+        renderer: &mut crate::gpu::WindowRenderer,
         draw_list: &mut DrawList,
         logical_size: (f32, f32),
         scale: f32,

@@ -10,6 +10,8 @@ use oriterm_core::Theme;
 
 use crate::id::{ClientId, DomainId, PaneId, TabId, WindowId};
 use crate::layout::SplitDirection;
+use crate::layout::floating::FloatingLayer;
+use crate::layout::split_tree::SplitTree;
 
 use super::snapshot::{MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireSelection};
 
@@ -57,6 +59,7 @@ pub enum MsgType {
     ExtractText = 0x0120,
     ExtractHtml = 0x0121,
     SetCapabilities = 0x0122,
+    SpawnFloatingPane = 0x0123,
 
     // Responses (daemon → window).
     HelloAck = 0x0201,
@@ -79,6 +82,7 @@ pub enum MsgType {
     ScrollToPromptAck = 0x0212,
     ExtractTextResp = 0x0213,
     ExtractHtmlResp = 0x0214,
+    FloatingPaneSpawned = 0x0215,
     Error = 0x02FF,
 
     // Push notifications (daemon → window).
@@ -89,6 +93,7 @@ pub enum MsgType {
     NotifyWindowTabsChanged = 0x0305,
     NotifyTabMoved = 0x0306,
     NotifyPaneSnapshot = 0x0307,
+    NotifyTabLayoutChanged = 0x0308,
 }
 
 impl MsgType {
@@ -129,6 +134,7 @@ impl MsgType {
             0x0120 => Some(Self::ExtractText),
             0x0121 => Some(Self::ExtractHtml),
             0x0122 => Some(Self::SetCapabilities),
+            0x0123 => Some(Self::SpawnFloatingPane),
             0x0201 => Some(Self::HelloAck),
             0x0202 => Some(Self::WindowCreated),
             0x0203 => Some(Self::TabCreated),
@@ -149,6 +155,7 @@ impl MsgType {
             0x0212 => Some(Self::ScrollToPromptAck),
             0x0213 => Some(Self::ExtractTextResp),
             0x0214 => Some(Self::ExtractHtmlResp),
+            0x0215 => Some(Self::FloatingPaneSpawned),
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),
@@ -157,6 +164,7 @@ impl MsgType {
             0x0305 => Some(Self::NotifyWindowTabsChanged),
             0x0306 => Some(Self::NotifyTabMoved),
             0x0307 => Some(Self::NotifyPaneSnapshot),
+            0x0308 => Some(Self::NotifyTabLayoutChanged),
             _ => None,
         }
     }
@@ -167,7 +175,7 @@ impl MsgType {
 /// Each variant carries its own data. The bincode encoding includes the
 /// enum discriminant, so the `msg_type` in the frame header is redundant
 /// for deserialization but useful for pre-routing and debugging.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MuxPdu {
     // -- Requests (window → daemon) --
     /// Client handshake. Sent immediately after connecting.
@@ -411,8 +419,22 @@ pub enum MuxPdu {
         selection: WireSelection,
         /// Font family name for the HTML wrapper.
         font_family: String,
-        /// Font size in points × 100 (for `MuxPdu: Eq` compliance).
+        /// Font size in points × 100 (integer for deterministic comparison).
         font_size_x100: u16,
+    },
+
+    /// Spawn a floating pane in a tab.
+    SpawnFloatingPane {
+        /// Tab to spawn the floating pane in.
+        tab_id: TabId,
+        /// Shell program override.
+        shell: Option<String>,
+        /// Working directory override.
+        cwd: Option<String>,
+        /// Color theme.
+        theme: Option<String>,
+        /// Available area for centering the floating pane.
+        available: crate::layout::Rect,
     },
 
     // -- Responses (daemon → window) --
@@ -523,6 +545,14 @@ pub enum MuxPdu {
         text: String,
     },
 
+    /// New floating pane spawned.
+    FloatingPaneSpawned {
+        /// ID of the newly created floating pane.
+        new_pane_id: PaneId,
+        /// Domain that owns the pane.
+        domain_id: DomainId,
+    },
+
     /// Error response for a failed request.
     Error {
         /// Human-readable error description.
@@ -589,6 +619,23 @@ pub enum MuxPdu {
         /// Full pane state snapshot.
         snapshot: PaneSnapshot,
     },
+    /// Server-pushed tab layout update (split tree + floating + zoom state).
+    ///
+    /// Sent when the tab's split tree or floating layer changes on the server
+    /// (split, close pane, zoom, floating pane add/remove). The client updates
+    /// its local session and subscribes/unsubscribes panes as needed.
+    NotifyTabLayoutChanged {
+        /// Tab whose layout changed.
+        tab_id: TabId,
+        /// Current split tree.
+        tree: SplitTree,
+        /// Current floating layer.
+        floating: FloatingLayer,
+        /// Currently focused pane.
+        active_pane: PaneId,
+        /// Zoomed pane, if any.
+        zoomed_pane: Option<PaneId>,
+    },
     // Wire-compat: append-only — new variants must go at the end.
 }
 
@@ -629,6 +676,7 @@ impl MuxPdu {
             Self::SearchPrevMatch { .. } => MsgType::SearchPrevMatch,
             Self::ExtractText { .. } => MsgType::ExtractText,
             Self::ExtractHtml { .. } => MsgType::ExtractHtml,
+            Self::SpawnFloatingPane { .. } => MsgType::SpawnFloatingPane,
             Self::HelloAck { .. } => MsgType::HelloAck,
             Self::WindowCreated { .. } => MsgType::WindowCreated,
             Self::TabCreated { .. } => MsgType::TabCreated,
@@ -649,6 +697,7 @@ impl MuxPdu {
             Self::ScrollToPromptAck { .. } => MsgType::ScrollToPromptAck,
             Self::ExtractTextResp { .. } => MsgType::ExtractTextResp,
             Self::ExtractHtmlResp { .. } => MsgType::ExtractHtmlResp,
+            Self::FloatingPaneSpawned { .. } => MsgType::FloatingPaneSpawned,
             Self::Error { .. } => MsgType::Error,
             Self::NotifyPaneOutput { .. } => MsgType::NotifyPaneOutput,
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,
@@ -658,6 +707,7 @@ impl MuxPdu {
             Self::NotifyTabMoved { .. } => MsgType::NotifyTabMoved,
             Self::SetCapabilities { .. } => MsgType::SetCapabilities,
             Self::NotifyPaneSnapshot { .. } => MsgType::NotifyPaneSnapshot,
+            Self::NotifyTabLayoutChanged { .. } => MsgType::NotifyTabLayoutChanged,
         }
     }
 
@@ -692,6 +742,7 @@ impl MuxPdu {
                 | Self::NotifyWindowTabsChanged { .. }
                 | Self::NotifyTabMoved { .. }
                 | Self::NotifyPaneSnapshot { .. }
+                | Self::NotifyTabLayoutChanged { .. }
         )
     }
 }

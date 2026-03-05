@@ -80,7 +80,7 @@ impl App {
     fn extract_selection_html(&mut self) -> Option<(String, String)> {
         let pane_id = self.active_pane_id()?;
         let sel = self.pane_selection(pane_id).copied()?;
-        let family = self.renderer.as_ref()?.family_name().to_string();
+        let family = self.focused_renderer()?.family_name().to_string();
         let font_size = self.config.font.size;
         let mux = self.mux.as_mut()?;
         mux.extract_html(pane_id, &sel, &family, font_size)
