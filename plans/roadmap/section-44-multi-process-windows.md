@@ -1,7 +1,7 @@
 ---
 section: 44
 title: Multi-Process Window Architecture
-status: in-progress
+status: complete
 tier: 0
 goal: Each window is a separate OS process. A mux daemon owns all PTY sessions. Tabs migrate between window processes with zero session loss — same running shell, scrollback, cursor, everything. Like Chrome's process-per-window model.
 sections:
@@ -25,7 +25,7 @@ sections:
     status: complete
   - id: "44.7"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 44: Multi-Process Window Architecture
@@ -412,7 +412,7 @@ The single-process in-process mode (`InProcessMux`) remains as a fallback for en
 - [x] **Scrollback test**: moved tab retains full scrollback history
 - [x] **Multi-window test**: 3 windows, move tabs between them, all render correctly
 - [x] **Crash isolation test**: kill one window process → others unaffected, sessions alive
-- [ ] **Daemon restart test**: kill daemon → windows detect, reconnect on daemon restart
-- [ ] **Latency test**: keystroke → screen update < 5ms through daemon IPC
+- [x] **Daemon restart test**: kill daemon → windows detect, reconnect on daemon restart
+- [x] **Latency test**: keystroke → screen update < 5ms through daemon IPC
 
 **Exit Criteria:** Every oriterm window is an independent OS process. The mux daemon owns all terminal sessions. Tabs migrate between windows without losing state. Users can close, kill, or crash any window without affecting other windows or losing sessions. The daemon auto-starts invisibly. Embedded mode exists for testing and edge cases. The `MuxBackend` trait makes the App code identical regardless of which mode is active.

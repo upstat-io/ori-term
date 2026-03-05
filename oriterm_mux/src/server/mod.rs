@@ -217,6 +217,18 @@ impl MuxServer {
             // Drain `MuxEvent`s from PTY reader threads.
             self.drain_mux_events();
 
+            // Second pass: handle client requests that arrived during
+            // drain_mux_events (snapshot building can take milliseconds).
+            // Non-blocking poll with zero timeout — only picks up already-ready events.
+            self.poll.poll(&mut events, Some(Duration::ZERO))?;
+            for event in &events {
+                match event.token() {
+                    LISTENER => self.accept_connections()?,
+                    WAKER => { /* Will be drained on next main iteration */ }
+                    token => self.handle_client_event(token),
+                }
+            }
+
             // Check exit condition: all panes exited + no clients.
             if self.should_exit() {
                 log::info!("all panes exited and no clients — shutting down");

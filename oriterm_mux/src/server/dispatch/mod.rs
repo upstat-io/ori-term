@@ -341,7 +341,7 @@ pub fn dispatch_request(
 
         MuxPdu::GetPaneSnapshot { pane_id } => match ctx.panes.get(&pane_id) {
             Some(pane) => {
-                let snap = ctx.snapshot_cache.build_clone(pane_id, pane);
+                let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
                 Some(MuxPdu::PaneSnapshotResp { snapshot: snap })
             }
             None => Some(MuxPdu::Error {

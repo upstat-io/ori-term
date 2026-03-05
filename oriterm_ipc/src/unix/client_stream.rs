@@ -1,6 +1,7 @@
 //! Client-side blocking IPC stream (Unix domain socket).
 
 use std::io;
+use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
@@ -35,6 +36,12 @@ impl ClientStream {
     )]
     pub fn set_write_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         self.0.set_write_timeout(timeout)
+    }
+}
+
+impl AsRawFd for ClientStream {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
     }
 }
 
