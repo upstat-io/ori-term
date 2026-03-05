@@ -1,17 +1,16 @@
 //! Config file change monitor — watches TOML and sends reload events.
 
+use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use notify::{RecursiveMode, Watcher};
-use winit::event_loop::EventLoopProxy;
 
 use super::config_path;
-use crate::event::TermEvent;
 
-/// Watches the config file and themes directory for changes, sending
-/// `TermEvent::ConfigReload` through the event loop proxy on modification.
+/// Watches the config file and themes directory for changes, invoking
+/// the `on_change` callback on modification.
 ///
 /// Dropping the monitor signals the watcher thread to exit and joins it.
 ///
@@ -32,7 +31,7 @@ impl ConfigMonitor {
     ///
     /// Returns `None` if the parent directory doesn't exist or the
     /// watcher cannot be created.
-    pub(crate) fn new(proxy: EventLoopProxy<TermEvent>) -> Option<Self> {
+    pub(crate) fn new(on_change: Arc<dyn Fn() + Send + Sync>) -> Option<Self> {
         let path = config_path();
         let parent = path.parent()?.to_path_buf();
 
@@ -82,7 +81,13 @@ impl ConfigMonitor {
         let thread = std::thread::Builder::new()
             .name("config-watcher".into())
             .spawn(move || {
-                Self::watch_loop(&config_file, &themes_dir, &proxy, &notify_rx, &shutdown_rx);
+                Self::watch_loop(
+                    &config_file,
+                    &themes_dir,
+                    &*on_change,
+                    &notify_rx,
+                    &shutdown_rx,
+                );
             })
             .ok()?;
 
@@ -97,7 +102,7 @@ impl ConfigMonitor {
     fn watch_loop(
         config_file: &std::path::Path,
         themes_dir: &std::path::Path,
-        proxy: &EventLoopProxy<TermEvent>,
+        on_change: &dyn Fn(),
         notify_rx: &mpsc::Receiver<Result<notify::Event, notify::Error>>,
         shutdown_rx: &mpsc::Receiver<()>,
     ) {
@@ -136,10 +141,7 @@ impl ConfigMonitor {
             }
 
             log::info!("config_monitor: change detected, sending reload event");
-            if proxy.send_event(TermEvent::ConfigReload).is_err() {
-                // Event loop closed — exit the watcher thread.
-                return;
-            }
+            (on_change)();
         }
     }
 }
