@@ -61,6 +61,17 @@ impl SnapshotCache {
         self.build(pane_id, pane).clone()
     }
 
+    /// Build a snapshot and move it out of the cache.
+    ///
+    /// Avoids the `clone()` in [`build_clone`] by taking ownership via
+    /// `mem::take`. The cache entry is left empty (default) — the next
+    /// `build` call will re-populate it (losing one frame of allocation
+    /// reuse, which is acceptable for the synchronous RPC path).
+    pub fn build_and_take(&mut self, pane_id: PaneId, pane: &Pane) -> PaneSnapshot {
+        self.build(pane_id, pane);
+        std::mem::take(self.cache.get_mut(&pane_id).expect("just built"))
+    }
+
     /// Remove a pane's cached snapshot.
     pub fn remove(&mut self, pane_id: PaneId) {
         self.cache.remove(&pane_id);

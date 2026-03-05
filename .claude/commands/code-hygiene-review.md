@@ -8,6 +8,9 @@ allowed-tools: Read, Grep, Glob, Bash, Task, Edit, Write
 
 Review code for hygiene violations against `.claude/rules/code-hygiene.md` and fix them.
 
+**Code Hygiene Rules** (`.claude/rules/code-hygiene.md`):
+@.claude/rules/code-hygiene.md
+
 **Hygiene is NOT refactoring.** No behavior changes, no API changes, no moving things between modules. Just making existing code clean:
 - Dead code, unused imports, stale comments
 - Naming inconsistencies

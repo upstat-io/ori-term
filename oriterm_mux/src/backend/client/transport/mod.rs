@@ -4,6 +4,11 @@
 //! A background reader thread owns the stream and multiplexes outbound
 //! requests with inbound responses and push notifications.
 
+// Platform FFI for self-pipe wakeup (pipe2, poll, read, write, close).
+#![allow(unsafe_code)]
+
+mod reader;
+
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
@@ -11,7 +16,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+#[cfg(unix)]
+use std::os::fd::RawFd;
 
 use oriterm_ipc::ClientStream;
 
@@ -19,16 +27,17 @@ use crate::id::ClientId;
 use crate::layout::floating::FloatingLayer;
 use crate::layout::split_tree::SplitTree;
 use crate::mux_event::MuxNotification;
-use crate::protocol::{DecodedFrame, MuxPdu, ProtocolCodec};
+use crate::protocol::{MuxPdu, ProtocolCodec};
 use crate::{PaneId, PaneSnapshot, TabId};
-
-use super::notification::pdu_to_notification;
 
 /// RPC timeout for blocking responses.
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Read timeout on the socket for interleaving reads with send-channel drains.
-const READ_POLL_INTERVAL: Duration = Duration::from_millis(10);
+///
+/// 1ms keeps RPC round-trips fast (sub-2ms median) at negligible CPU cost
+/// for a single reader thread (~1000 polls/s when idle).
+const READ_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
 /// Interval between health-check pings.
 ///
@@ -88,6 +97,10 @@ pub(super) struct ClientTransport {
     /// during flood output. Set by the guarded wakeup closure, cleared
     /// by [`clear_wakeup_pending`](Self::clear_wakeup_pending) in `poll_events`.
     wakeup_pending: Arc<AtomicBool>,
+    /// Write end of the self-pipe used to wake the reader thread instantly
+    /// when an outbound request is queued (Unix only).
+    #[cfg(unix)]
+    wake_write: RawFd,
 }
 
 impl ClientTransport {
@@ -164,11 +177,26 @@ impl ClientTransport {
             }) as Arc<dyn Fn() + Send + Sync>
         };
 
+        // Create self-pipe for waking the reader thread on outbound requests.
+        #[cfg(unix)]
+        let (wake_read, wake_write) = {
+            let mut fds = [0i32; 2];
+            let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) };
+            if ret != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            #[expect(
+                clippy::tuple_array_conversions,
+                reason = "pipe2 returns [i32; 2], need (RawFd, RawFd)"
+            )]
+            (fds[0], fds[1])
+        };
+
         // Spawn reader thread.
         let handle = std::thread::Builder::new()
             .name("mux-client-reader".into())
             .spawn(move || {
-                reader_loop(
+                reader::reader_loop(
                     stream,
                     send_rx,
                     notif_tx,
@@ -176,7 +204,13 @@ impl ClientTransport {
                     alive_flag,
                     pushed_snapshots_reader,
                     pushed_layouts_reader,
+                    #[cfg(unix)]
+                    wake_read,
                 );
+                #[cfg(unix)]
+                unsafe {
+                    libc::close(wake_read);
+                }
             })
             .map_err(|e| io::Error::other(format!("failed to spawn reader thread: {e}")))?;
 
@@ -190,6 +224,8 @@ impl ClientTransport {
             pushed_snapshots,
             pushed_layouts,
             wakeup_pending,
+            #[cfg(unix)]
+            wake_write,
         })
     }
 
@@ -222,6 +258,7 @@ impl ClientTransport {
             reply_tx: Some(reply_tx),
         })
         .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "reader thread gone"))?;
+        self.signal_wake();
 
         match reply_rx.recv_timeout(RPC_TIMEOUT) {
             Ok(MuxPdu::Error { message }) => Err(io::Error::other(message)),
@@ -253,6 +290,7 @@ impl ClientTransport {
                 pdu,
                 reply_tx: None,
             });
+            self.signal_wake();
         }
     }
 
@@ -305,6 +343,20 @@ impl ClientTransport {
         self.wakeup_pending.store(false, Ordering::Release);
     }
 
+    /// Write a byte to the self-pipe to wake the reader thread immediately.
+    #[cfg(unix)]
+    fn signal_wake(&self) {
+        unsafe {
+            libc::write(self.wake_write, [1u8].as_ptr().cast(), 1);
+        }
+    }
+
+    /// No-op on non-Unix platforms (reader uses timeout-based polling).
+    #[cfg(not(unix))]
+    fn signal_wake(&self) {
+        let _ = self;
+    }
+
     /// Allocate the next sequence number.
     fn alloc_seq(&mut self) -> u32 {
         let seq = self.next_seq;
@@ -331,195 +383,14 @@ impl Drop for ClientTransport {
         // `Disconnected` on `try_recv` and exits. This must happen before
         // joining, because Rust drops fields *after* `Drop::drop` returns.
         self.send_tx.take();
+        // Signal the wake pipe to unblock the reader thread from poll(2).
+        self.signal_wake();
         if let Some(handle) = self.reader_handle.take() {
             let _ = handle.join();
         }
-    }
-}
-
-/// Dispatch a received notification PDU.
-///
-/// `NotifyPaneSnapshot` and `NotifyPaneOutput` are intercepted here
-/// (stored/invalidated in the shared snapshot map). Other notifications
-/// go through [`pdu_to_notification`].
-fn dispatch_notification(
-    pdu: MuxPdu,
-    pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
-    pushed_layouts: &Mutex<HashMap<TabId, TabLayoutUpdate>>,
-    notif_tx: &mpsc::Sender<MuxNotification>,
-    wakeup: &dyn Fn(),
-) {
-    match pdu {
-        MuxPdu::NotifyPaneSnapshot { pane_id, snapshot } => {
-            pushed_snapshots
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(pane_id, snapshot);
-            let _ = notif_tx.send(MuxNotification::PaneDirty(pane_id));
-            (wakeup)();
-        }
-        MuxPdu::NotifyPaneOutput { pane_id } => {
-            pushed_snapshots
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .remove(&pane_id);
-            let _ = notif_tx.send(MuxNotification::PaneDirty(pane_id));
-            (wakeup)();
-        }
-        MuxPdu::NotifyTabLayoutChanged {
-            tab_id,
-            tree,
-            floating,
-            active_pane,
-            zoomed_pane,
-        } => {
-            pushed_layouts
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(
-                    tab_id,
-                    TabLayoutUpdate {
-                        tree,
-                        floating,
-                        active_pane,
-                        zoomed_pane,
-                    },
-                );
-            let _ = notif_tx.send(MuxNotification::TabLayoutChanged(tab_id));
-            (wakeup)();
-        }
-        other => {
-            if let Some(notif) = pdu_to_notification(other) {
-                let _ = notif_tx.send(notif);
-                (wakeup)();
-            }
-        }
-    }
-}
-
-/// Background reader thread event loop.
-///
-/// Owns the IPC stream. Drains outbound requests from the send channel,
-/// writes them to the stream, reads responses and notifications, and
-/// dispatches them to the correct reply channel or notification channel.
-#[allow(
-    clippy::needless_pass_by_value,
-    clippy::too_many_arguments,
-    reason = "ownership required — values are moved into the spawned thread"
-)]
-fn reader_loop(
-    mut stream: ClientStream,
-    send_rx: mpsc::Receiver<SendRequest>,
-    notif_tx: mpsc::Sender<MuxNotification>,
-    wakeup: Arc<dyn Fn() + Send + Sync>,
-    alive: Arc<AtomicBool>,
-    pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
-    pushed_layouts: Arc<Mutex<HashMap<TabId, TabLayoutUpdate>>>,
-) {
-    // Set read timeout so we can interleave reads with send-channel drains.
-    if let Err(e) = stream.set_read_timeout(Some(READ_POLL_INTERVAL)) {
-        log::error!("mux-client-reader: failed to set read timeout: {e}");
-        alive.store(false, Ordering::Release);
-        return;
-    }
-
-    let mut pending: HashMap<u32, mpsc::Sender<MuxPdu>> = HashMap::new();
-    let mut codec = ProtocolCodec::new();
-
-    // Health-check ping state.
-    let mut last_ping_sent = Instant::now();
-    let mut outstanding_ping_seq: Option<u32> = None;
-    // Ping seqs count down from u32::MAX to avoid colliding with RPC seqs.
-    let mut ping_seq_counter = u32::MAX;
-
-    loop {
-        // 1. Drain outbound requests.
-        loop {
-            match send_rx.try_recv() {
-                Ok(req) => {
-                    if let Some(reply_tx) = req.reply_tx {
-                        pending.insert(req.seq, reply_tx);
-                    }
-                    if let Err(e) = ProtocolCodec::encode_frame(&mut stream, req.seq, &req.pdu) {
-                        log::error!("mux-client-reader: write error: {e}");
-                        alive.store(false, Ordering::Release);
-                        return;
-                    }
-                }
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    // Transport dropped — shut down.
-                    alive.store(false, Ordering::Release);
-                    return;
-                }
-            }
-        }
-
-        // 2. Health-check ping.
-        if last_ping_sent.elapsed() >= PING_INTERVAL {
-            if let Some(_seq) = outstanding_ping_seq {
-                // Previous ping unanswered — daemon is unresponsive.
-                log::warn!("mux-client-reader: ping timeout, marking connection dead");
-                alive.store(false, Ordering::Release);
-                return;
-            }
-            let seq = ping_seq_counter;
-            ping_seq_counter = ping_seq_counter.wrapping_sub(1);
-            if let Err(e) = ProtocolCodec::encode_frame(&mut stream, seq, &MuxPdu::Ping) {
-                log::error!("mux-client-reader: ping write error: {e}");
-                alive.store(false, Ordering::Release);
-                return;
-            }
-            outstanding_ping_seq = Some(seq);
-            last_ping_sent = Instant::now();
-        }
-
-        // 3. Attempt to read a frame (may timeout after READ_POLL_INTERVAL).
-        match codec.decode_frame(&mut stream) {
-            Ok(DecodedFrame { seq, pdu }) => {
-                // Check if this is a PingAck for our health check.
-                if outstanding_ping_seq == Some(seq) && pdu == MuxPdu::PingAck {
-                    outstanding_ping_seq = None;
-                    continue;
-                }
-
-                if seq == 0 || pdu.is_notification() {
-                    dispatch_notification(
-                        pdu,
-                        &pushed_snapshots,
-                        &pushed_layouts,
-                        &notif_tx,
-                        &*wakeup,
-                    );
-                } else if let Some(reply_tx) = pending.remove(&seq) {
-                    let _ = reply_tx.send(pdu);
-                } else {
-                    log::warn!(
-                        "mux-client-reader: no pending request for seq={seq}, dropping response"
-                    );
-                }
-            }
-            Err(crate::protocol::DecodeError::UnknownMsgType(t)) => {
-                log::warn!("mux-client-reader: unknown msg_type 0x{t:04x}, skipping");
-                // Stream is aligned (codec consumed the full frame). Continue.
-            }
-            Err(crate::protocol::DecodeError::Io(ref e))
-                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
-            {
-                // Normal timeout — loop back to drain send channel.
-            }
-            Err(crate::protocol::DecodeError::Io(ref e))
-                if e.kind() == io::ErrorKind::UnexpectedEof =>
-            {
-                log::info!("mux-client-reader: daemon disconnected (EOF)");
-                alive.store(false, Ordering::Release);
-                return;
-            }
-            Err(e) => {
-                log::error!("mux-client-reader: decode error: {e}");
-                alive.store(false, Ordering::Release);
-                return;
-            }
+        #[cfg(unix)]
+        unsafe {
+            libc::close(self.wake_write);
         }
     }
 }

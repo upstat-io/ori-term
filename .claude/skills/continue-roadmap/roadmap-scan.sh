@@ -9,6 +9,39 @@ set -euo pipefail
 
 ROADMAP_DIR="${1:-plans/roadmap}"
 
+# ── Detect reroutes from plans/*/index.md frontmatter ──
+reroute_found=0
+for plan_index in plans/*/index.md; do
+    [[ -f "$plan_index" ]] || continue
+    plan_dir=$(dirname "$plan_index")
+    [[ "$plan_dir" == "$ROADMAP_DIR" ]] && continue
+    [[ "$plan_dir" == "plans/_template" ]] && continue
+
+    reroute=$(awk '/^---$/{n++; next} n==1 && /^reroute:/{sub(/^reroute: */,""); print; exit}' "$plan_index")
+    parallel=$(awk '/^---$/{n++; next} n==1 && /^parallel:/{sub(/^parallel: */,""); print; exit}' "$plan_index")
+    rstatus=$(awk '/^---$/{n++; next} n==1 && /^status:/{sub(/^status: */,""); print; exit}' "$plan_index")
+    rname=$(awk '/^---$/{n++; next} n==1 && /^full_name:/{sub(/^full_name: */,""); gsub(/"/, ""); print; exit}' "$plan_index")
+    rorder=$(awk '/^---$/{n++; next} n==1 && /^order:/{sub(/^order: */,""); print; exit}' "$plan_index")
+
+    if [[ "$reroute" == "true" && -n "$rstatus" && "$rstatus" != "resolved" ]]; then
+        if [[ "$reroute_found" -eq 0 ]]; then
+            echo "=== REROUTES ==="
+            reroute_found=1
+        fi
+        label="reroute"
+        [[ "$rstatus" == "active" ]] && label="ACTIVE reroute"
+        [[ "$rstatus" == "queued" ]] && label="queued reroute"
+        echo "  [${label}] ${rname:-$(basename "$plan_dir")} — ${plan_dir}/ (order: ${rorder:-999})"
+    elif [[ "$parallel" == "true" && -n "$rstatus" && "$rstatus" != "resolved" ]]; then
+        if [[ "$reroute_found" -eq 0 ]]; then
+            echo "=== REROUTES ==="
+            reroute_found=1
+        fi
+        echo "  [parallel] ${rname:-$(basename "$plan_dir")} — ${plan_dir}/ (${rstatus})"
+    fi
+done
+[[ "$reroute_found" -gt 0 ]] && echo ""
+
 # ── Helper: find section file by section number ──
 find_section_file() {
     local sid="$1"

@@ -26,6 +26,45 @@ Use `plans/roadmap/index.md` to find sections by keyword. The index contains sea
 
 ## Workflow
 
+### Step 0: Check for Active Reroute
+
+The scanner automatically detects reroutes from `plans/*/index.md` frontmatter. Each plan's `index.md` may have:
+
+```yaml
+reroute: true       # or parallel: true
+name: "Short Name"
+full_name: "Full Plan Name"
+status: active       # active | queued | resolved
+order: 1             # queue priority (lower = promoted first, default 999)
+```
+
+The scanner outputs an `=== REROUTES ===` block at the top with `[ACTIVE reroute]` and `[queued reroute]` lines (if any exist).
+
+**If an ACTIVE reroute exists:**
+
+1. **Read the rerouted plan** — its `index.md` and `00-overview.md`
+2. **Run the scanner on the rerouted plan**:
+   ```bash
+   .claude/skills/continue-roadmap/roadmap-scan.sh plans/<rerouted-plan>
+   ```
+3. **Follow the rerouted plan's execution order** — use the plan's recommended section order, not the roadmap's
+4. **Present the rerouted plan status** to the user, making clear this is a reroute from the main roadmap
+5. **When the rerouted plan is complete** — update its frontmatter `status: resolved`, then promote queued reroutes (see below)
+
+**When an ACTIVE reroute completes (promotion protocol):**
+
+1. Update the completed plan's frontmatter: `status: resolved`
+2. If queued reroutes exist, pick the one with the lowest `order` value:
+   - Update its frontmatter: `status: active`
+   - Inform the user that the next reroute has been promoted to active
+3. If no queued reroute exists, inform the user that normal roadmap work resumes
+
+**Active parallel plans** (`parallel: true`) run alongside the roadmap — they don't block normal work. Only `reroute: true` plans with `status: active` take priority.
+
+**Do NOT skip reroutes.** They exist because continuing normal roadmap work without completing the rerouted plan would compound architectural debt.
+
+**Do NOT skip the queue.** Queued reroutes must complete before resuming normal roadmap work.
+
 ### Step 1: Run the Scanner
 
 Run the roadmap scanner script to get current status:
@@ -35,6 +74,7 @@ Run the roadmap scanner script to get current status:
 ```
 
 This outputs:
+- Reroute status block (if any active/queued reroutes detected from `plans/*/index.md` frontmatter)
 - One line per section: `[done]` or `[open]` with progress stats
 - Detail block for the **first incomplete section**: subsection statuses (with blocked counts), first 5 **unblocked** items, blocker summary, and blocker chain
 

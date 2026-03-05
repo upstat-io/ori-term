@@ -141,6 +141,20 @@ impl MuxClient {
         self.transport.as_ref().map(ClientTransport::client_id)
     }
 
+    /// Send a Ping RPC and wait for `PingAck`. Returns the round-trip duration.
+    ///
+    /// Measures raw IPC overhead with zero payload (no snapshot building,
+    /// no serialization of grid data). Used for latency diagnostics.
+    pub fn ping_rpc(&mut self) -> io::Result<std::time::Duration> {
+        let start = std::time::Instant::now();
+        match self.rpc(MuxPdu::Ping)? {
+            MuxPdu::PingAck => Ok(start.elapsed()),
+            other => Err(io::Error::other(format!(
+                "ping_rpc: unexpected response: {other:?}"
+            ))),
+        }
+    }
+
     /// Whether the daemon connection is alive.
     pub fn is_connected(&self) -> bool {
         self.transport

@@ -1,7 +1,7 @@
 ---
 name: impl-hygiene-review
 description: Review implementation hygiene at module boundaries — plumbing quality and file organization.
-allowed-tools: Read, Grep, Glob, Task, Bash, EnterPlanMode
+allowed-tools: Read, Grep, Glob, Agent, Bash, Skill
 ---
 
 # Implementation Hygiene Review
@@ -29,14 +29,20 @@ Review implementation hygiene against `.claude/rules/impl-hygiene.md` and genera
 
 **Commit scoping procedure:**
 1. Use `git diff --name-only HEAD~N..HEAD` (or appropriate range) to get the list of changed `.rs` files
-2. Expand to include the full module(s) those files belong to (e.g., if `oriterm/src/gpu/atlas.rs` was touched, include all of `oriterm/src/gpu/`)
+2. Expand to include the full module(s) those files belong to (e.g., if `src/gpu/atlas.rs` was touched, include all of `src/gpu/`)
 3. Proceed with the standard review process using those modules as the target
 
 ## Execution
 
 ### Step 1: Load Rules
 
-Read `.claude/rules/impl-hygiene.md` to have the full rule set in context.
+The full rule set is embedded below (source of truth files — do not maintain separate copies):
+
+**Implementation Hygiene Rules** (`.claude/rules/impl-hygiene.md`):
+@.claude/rules/impl-hygiene.md
+
+**Code Hygiene Rules** (`.claude/rules/code-hygiene.md`):
+@.claude/rules/code-hygiene.md
 
 ### Step 2: Load Plan Context
 
@@ -59,30 +65,52 @@ Plan context does NOT suppress or deprioritize findings. Instead, it **annotates
 
 **Example annotation:**
 ```
-3. **[DRIFT]** `oriterm/src/gpu/renderer.rs:142` — Missing atlas invalidation for new glyph variant
+3. **[DRIFT]** `src/gpu/renderer.rs:142` — Missing atlas invalidation for new glyph variant
    -> covered by plans/gpu_refactor/ (Section 3: Atlas Overhaul)
 ```
 
 This ensures the review adds value by distinguishing "known debt being addressed" from "unknown debt needing attention."
 
-### Step 3: Map the Boundary
+### Step 3: Identify Review Targets
 
-Identify the module boundary being reviewed:
+Determine the distinct modules or boundaries to review based on the target scope from Step 1:
+
+1. List the modules (directories/file groups) in scope
+2. Identify which boundaries exist between them (e.g., app<>tab, tab<>gpu, grid<>term_handler)
+3. Group modules into **review units** — each review unit is either:
+   - A single module (for internal review)
+   - A pair of modules sharing a boundary (for boundary review)
+   - Closely related modules that should be reviewed together
+
+Each review unit will be reviewed by a **separate Agent** in the next step.
+
+### Step 4: Review Each Target (Separate Agent Per Review Unit)
+
+For **each review unit** identified in Step 3, spawn a **separate Agent** (using the Agent tool). Each agent receives:
+
+1. **The full rule set** — both hygiene rules and code hygiene rules (from Step 1)
+2. **Plan context summary** — which plans are active and relevant (from Step 2)
+3. **The specific module(s)/boundary** to review
+4. **The audit checklist** (below)
+
+Each agent performs the following work within its review unit:
+
+#### 4a. Map the Boundary
+
 1. What types cross the boundary? (cells, grid state, render params, events)
 2. What functions form the interface? (entry points, draw calls, event handlers)
 3. What data flows across? (grid cells, palette colors, font metrics, input events)
 
-For each module in the target, read the key files to understand the public API surface.
+Read key files to understand the public API surface.
 
-### Step 4: Trace Data Flow
+#### 4b. Trace Data Flow
 
-Follow the data from producer to consumer:
 1. **Read the producer's output types** — What does the upstream module emit?
 2. **Read the consumer's input handling** — How does the downstream module receive and process it?
 3. **Check the boundary types** — Are they minimal? Do they carry unnecessary baggage?
 4. **Check ownership** — Is data moved, borrowed, or cloned? Are clones necessary?
 
-### Step 5: Audit Each Rule Category
+#### 4c. Audit Each Rule Category
 
 **Module Boundary Discipline:**
 - [ ] Data flows one way? (no callbacks to earlier layer, no reaching back)
@@ -143,45 +171,66 @@ Follow the data from producer to consumer:
 - [ ] Directory structure mirrors the logical module structure?
 - [ ] Files touched by these commits that were already over 500 lines — were they split?
 
-### Step 6: Compile Findings
+**Naming, Comments, Visibility, Style:**
+- [ ] Verb-prefix conventions used? (render_, draw_, handle_, encode_)
+- [ ] No decorative banners, no commented-out code, no bare TODOs?
+- [ ] Functions < 100 lines? Nesting depth <= 4?
+- [ ] pub(crate)/pub(super) used appropriately? No dead pub items?
 
-Organize findings by boundary/interface, categorized as:
+#### 4d. Return Findings
 
-- **LEAK** — Data or control flow crossing a boundary it shouldn't (layer bleeding, backward reference, panic on user input)
-- **DRIFT** — Registration data present in one location but missing from a parallel location that must stay in sync (e.g., enum variant added but match arm / handler / mapping not updated)
-- **GAP** — Feature supported in one module but blocked or missing in another, breaking end-to-end functionality (e.g., VTE handler parses an escape but grid ignores it)
-- **BLOAT** — File exceeds 500-line production limit, mixes multiple responsibilities, or lacks submodule structure. Bloated files obscure internal boundaries and make drift/leak detection harder. Include: current line count, identified responsibilities, and concrete extraction targets.
-- **WASTE** — Unnecessary allocation, clone, or transformation at boundary (extra copy, redundant resolution, per-frame allocation)
-- **EXPOSURE** — Internal state leaking through boundary types (app state in render params, grid internals in input handler)
-- **NOTE** — Observation, not actionable (acceptable tradeoff, documented exception)
+Each agent must return its findings as a structured list using the categories from `.claude/rules/impl-hygiene.md` (LEAK, DRIFT, GAP, WASTE, EXPOSURE, BLOAT, NOTE) with their default severity levels. Every finding must include `file:line`, the boundary it violates, and a concrete fix.
 
-### Step 7: Generate Plan
+**Parallelization:** Review agents for independent modules/boundaries should be spawned in parallel. Only serialize agents that share a boundary (e.g., if reviewing app<>tab, don't also spawn a separate app-only and tab-only agent).
 
-Use **EnterPlanMode** to create a fix plan. The plan should:
+### Step 5: Compile Findings
 
-1. List every LEAK, DRIFT, GAP, BLOAT, WASTE, and EXPOSURE finding with `file:line` references
-2. Group by boundary (e.g., "app<>tab", "tab<>gpu", "grid<>term_handler")
-3. Estimate scope: "N boundaries, ~M findings"
-4. Order: leaks first (layer bleeding), then drift (sync), then gaps (feature coverage), then bloat (file organization), then waste (perf), then exposure (encapsulation)
+Collect the findings returned by all review agents. Deduplicate any findings that overlap at shared boundaries. Organize findings by boundary/interface and present them to the user.
 
-### Plan Format
+### Step 6: Generate Plan (Separate Agent)
+
+Spawn a **separate Agent** to generate the fix plan. This agent should use `/create-plan` (via the **Skill** tool). Pass it:
+
+1. **All compiled findings** from Step 5
+2. **The plan name**: `hygiene-{target-short-name}` (e.g., `hygiene-gpu`, `hygiene-grid-vte`, `hygiene-last-commit`)
+
+The agent should create a plan that:
+
+1. Lists every LEAK, DRIFT, GAP, WASTE, EXPOSURE, and BLOAT finding with `file:line` references
+2. Groups by boundary (e.g., "app<>tab", "tab<>gpu", "grid<>term_handler")
+3. Estimates scope: "N boundaries, ~M findings"
+4. Orders: leaks first (layer bleeding), then drift (sync), then gaps (feature coverage), then bloat (file organization), then waste (perf), then exposure (encapsulation)
+
+The **final section** of the plan must be a cleanup step:
+
+```markdown
+## Cleanup
+
+- [ ] Run `./test-all.sh` to verify no behavior changes
+- [ ] Run `./clippy-all.sh` to verify no regressions
+- [ ] Run `./build-all.sh` to verify cross-compilation
+- [ ] Delete this plan directory: `rm -rf plans/hygiene-{name}/`
+```
+
+Hygiene fix plans are disposable — they exist to track the fixes, then get deleted when complete.
+
+### Plan Section Format
+
+Each section groups findings by boundary:
 
 ```
-## Implementation Hygiene Review: {target}
+## {Boundary: Module A -> Module B}
 
-**Scope:** N boundaries reviewed, ~M findings (X leak, Y drift, Z gap, W bloat, V waste, U exposure)
+**Interface types:** {list types crossing this boundary}
+**Entry points:** {list key functions}
 
 ### Active Plan Context
 
 {List each plan file read and its relevance. If a plan has a reroute/suspension, note it here.}
-- `plans/gpu_refactor/` — Active: renderer architecture overhaul
-- `plans/roadmap/section-12-mux.md` — Recently modified, covers mux boundary changes
+- `plans/gpu_refactor/` — Active reroute: renderer architecture overhaul
 - (none) — if no plan files were found
 
-### {Boundary: Module A -> Module B}
-
-**Interface types:** {list types crossing this boundary}
-**Entry points:** {list key functions}
+### Findings
 
 1. **[LEAK]** `file:line` — {description}
 2. **[DRIFT]** `file:line` — {description}
@@ -189,25 +238,8 @@ Use **EnterPlanMode** to create a fix plan. The plan should:
 3. **[DRIFT] [PLANNED]** `file:line` — {description}
    -> fix described in plans/{plan}/{section}.md
 4. **[GAP]** `file:line` — {description}
-5. **[BLOAT]** `file:line` — {description}
-6. **[WASTE]** `file:line` — {description}
-7. **[EXPOSURE]** `file:line` — {description}
-...
-
-### {Next Boundary}
-...
-
-### Execution Order
-
-1. Layer bleeding fixes (may require interface changes)
-2. Registration drift fixes (add missing mappings, centralize parallel lists)
-3. Gap fixes (unblock end-to-end feature paths)
-4. File organization fixes (split bloated files into submodules — pure refactor, no logic changes)
-5. Error handling fixes (may add error variants)
-6. Ownership/allocation fixes (perf, no API change)
-7. Encapsulation fixes (minimize boundary types)
-8. Run `./test-all.sh` to verify no behavior changes
-9. Run `./clippy-all.sh` to verify no regressions
+5. **[WASTE]** `file:line` — {description}
+6. **[EXPOSURE]** `file:line` — {description}
 ```
 
 ## Important Rules
@@ -219,4 +251,4 @@ Use **EnterPlanMode** to create a fix plan. The plan should:
 5. **Understand before flagging** — Some apparent violations are intentional (e.g., `app.rs` coordinating between tabs and windows is orchestration, not layer bleeding)
 6. **Be specific** — Every finding must have `file:line`, the boundary it violates, and a concrete fix
 7. **Compare to reference terminals** — When in doubt, check how Alacritty/WezTerm/Ghostty handle the same boundary at `~/projects/reference_repos/console_repos/`
-8. **Minimum 20 findings** — Do your best to find at least 20 genuine issues. Dig deep, read broadly, trace more paths. Do NOT fabricate, exaggerate, or inflate findings to hit this number — every finding must be real and verifiable. If the target area genuinely has fewer than 20 issues, report what you find honestly and note the shortfall.
+8. **Finding targets** — Scale with scope. Single boundary or single module: **20**. Multi-module or last N commits spanning multiple modules: **30**. Full project: **40**. Dig deep, read broadly, trace more paths. Do NOT fabricate, exaggerate, or inflate findings to hit the target — every finding must be real and verifiable. If the target area genuinely has fewer issues, report what you find honestly and note the shortfall.
