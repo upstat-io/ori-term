@@ -117,8 +117,11 @@ impl App {
             tab.set_tree(new_tree);
         }
         if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.cached_dividers = None;
             ctx.dirty = true;
         }
+        self.resize_all_panes();
     }
 
     /// Move focus to a pane in the given direction.
