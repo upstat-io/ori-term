@@ -379,25 +379,11 @@ impl App {
             // Chrome, tab bar, overlays, search bar (shared with single-pane path).
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
-            let chrome_animating = Self::draw_chrome(
-                Some(&ctx.chrome),
-                renderer,
-                &mut ctx.chrome_draw_list,
-                logical_w,
-                scale,
-                &self.ui_theme,
-            );
-            if chrome_animating {
-                ctx.dirty = true;
-            }
-
-            let caption_h = ctx.chrome.caption_height();
             if Self::draw_tab_bar(
                 Some(&ctx.tab_bar),
                 renderer,
                 &mut ctx.chrome_draw_list,
                 logical_w as f32,
-                caption_h,
                 scale,
                 gpu,
                 &self.ui_theme,
@@ -422,8 +408,7 @@ impl App {
             // Search bar from focused pane.
             if let Some(frame) = ctx.frame.as_ref() {
                 if let Some(search) = frame.search.as_ref() {
-                    let chrome_h =
-                        caption_h + oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                    let chrome_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
                     Self::draw_search_bar(
                         search,
                         renderer,

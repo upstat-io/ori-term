@@ -206,13 +206,12 @@ impl ApplicationHandler<TermEvent> for App {
                 }
                 self.send_focus_event(focused);
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.chrome.set_active(focused);
+                    ctx.tab_bar.set_active(focused);
                     ctx.dirty = true;
                 }
             }
 
             WindowEvent::CursorLeft { .. } => {
-                self.clear_chrome_hover();
                 self.clear_tab_bar_hover();
                 self.clear_url_hover();
                 self.clear_divider_hover();
@@ -225,7 +224,6 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::CursorMoved { position, .. } => {
                 self.perf.record_cursor_move();
                 self.mouse.set_cursor_pos(position);
-                self.update_chrome_hover(position);
                 self.update_tab_bar_hover(position);
 
                 // Tab drag: consume all cursor moves when active.
@@ -262,7 +260,7 @@ impl ApplicationHandler<TermEvent> for App {
                 // Skip terminal mouse handling when the cursor is in the
                 // chrome caption area. This avoids acquiring the terminal
                 // lock on every cursor move over the title bar.
-                if !self.cursor_in_chrome(position) {
+                if !self.cursor_in_tab_bar(position) {
                     if let Some(mode) = self.terminal_mode() {
                         if self.report_mouse_motion(position, mode) {
                             return;
@@ -287,11 +285,6 @@ impl ApplicationHandler<TermEvent> for App {
 
                 // Modal overlay: intercept mouse events.
                 if self.try_overlay_mouse(button, state) {
-                    return;
-                }
-                // Check chrome first — if a control button was clicked,
-                // don't propagate to selection/PTY reporting.
-                if self.try_chrome_mouse(button, state, event_loop) {
                     return;
                 }
                 // Suppress stale WM_LBUTTONUP after live merge.

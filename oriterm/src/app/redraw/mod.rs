@@ -213,32 +213,15 @@ impl App {
 
             renderer.prepare(frame, gpu, origin, cursor_blink_visible, content_changed);
 
-            // Draw window chrome into the UI rect layer. Chrome widget
-            // draws in logical pixels; scale converts to physical pixels
-            // for the GPU pipeline (screen_size uniform is physical).
+            // Draw tab bar (unified chrome bar). Tab bar contains text
+            // (tab titles), so uses the text-aware draw list conversion.
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
-            let chrome_animating = Self::draw_chrome(
-                Some(&ctx.chrome),
-                renderer,
-                &mut ctx.chrome_draw_list,
-                logical_w,
-                scale,
-                &self.ui_theme,
-            );
-            if chrome_animating {
-                ctx.dirty = true;
-            }
-
-            // Draw tab bar below the chrome caption. Tab bar contains text
-            // (tab titles), so uses the text-aware draw list conversion.
-            let caption_h = ctx.chrome.caption_height();
             if Self::draw_tab_bar(
                 Some(&ctx.tab_bar),
                 renderer,
                 &mut ctx.chrome_draw_list,
                 logical_w as f32,
-                caption_h,
                 scale,
                 gpu,
                 &self.ui_theme,
@@ -264,7 +247,7 @@ impl App {
             // Draw search bar overlay when search is active.
             if let Some(search) = frame.search.as_ref() {
                 // Position below all chrome (caption + tab bar).
-                let chrome_h = caption_h + oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                let chrome_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
                 Self::draw_search_bar(
                     search,
                     renderer,

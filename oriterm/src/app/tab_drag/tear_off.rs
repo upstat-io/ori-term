@@ -71,9 +71,11 @@ impl App {
         // Drain mux notifications from the move.
         self.pump_mux_events();
 
-        // Sync tab bars on both windows.
+        // Sync tab bars on both windows and refresh platform hit test rects.
         self.sync_tab_bar_for_window(source_winit_id);
         self.sync_tab_bar_for_window(new_winit_id);
+        self.refresh_platform_rects(source_winit_id);
+        self.refresh_platform_rects(new_winit_id);
 
         // Compute grab offset: where the cursor anchors to the new window.
         let (grab_offset, screen_pos) = {

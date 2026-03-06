@@ -31,6 +31,9 @@ impl App {
 
         self.release_tab_width_lock();
         self.sync_tab_bar_from_mux();
+        if let Some(wid) = self.focused_window_id {
+            self.refresh_platform_rects(wid);
+        }
 
         // Resize panes in the moved tab to fit the destination window.
         self.resize_all_panes();
@@ -134,6 +137,9 @@ impl App {
         // Sync tab bars for the source window.
         self.release_tab_width_lock();
         self.sync_tab_bar_from_mux();
+        if let Some(wid) = self.focused_window_id {
+            self.refresh_platform_rects(wid);
+        }
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
         }
@@ -190,6 +196,10 @@ impl App {
         // Sync tab bars: old window lost a tab, new window gained one.
         self.sync_tab_bar_from_mux();
         self.sync_tab_bar_for_window(new_winit_id);
+        if let Some(wid) = self.focused_window_id {
+            self.refresh_platform_rects(wid);
+        }
+        self.refresh_platform_rects(new_winit_id);
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
         }
@@ -217,6 +227,9 @@ impl App {
         }
 
         self.sync_tab_bar_from_mux();
+        if let Some(wid) = self.focused_window_id {
+            self.refresh_platform_rects(wid);
+        }
 
         // Start slide animation for displaced tabs.
         self.start_tab_reorder_slide(from, to, tab_width);

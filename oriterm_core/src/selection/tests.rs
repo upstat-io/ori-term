@@ -1757,3 +1757,38 @@ fn block_mode_extract_text_wide_char_at_block_edge() {
     // Row 1: Y(1), Z(2), W(3) → "YZW".
     assert_eq!(extract_text(&grid, &sel), "漢B\nYZW");
 }
+
+#[test]
+fn extract_text_skips_kitty_placeholder() {
+    use crate::image::KITTY_PLACEHOLDER;
+
+    let mut grid = Grid::new(1, 20);
+    write_str(&mut grid, 0, "AB");
+    // Write placeholder chars at cols 2 and 3.
+    grid.move_to(0, Column(2));
+    grid.put_char(KITTY_PLACEHOLDER);
+    grid.put_char(KITTY_PLACEHOLDER);
+    grid.move_to(0, Column(4));
+    grid.put_char('C');
+
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(0),
+            col: 4,
+            side: Side::Right,
+        },
+    };
+    // Placeholder chars should be skipped entirely.
+    assert_eq!(extract_text(&grid, &sel), "ABC");
+}

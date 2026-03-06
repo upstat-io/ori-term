@@ -22,6 +22,7 @@ use super::{Term, TermMode};
 mod dcs;
 mod esc;
 mod helpers;
+mod image;
 mod modes;
 mod osc;
 mod sgr;
@@ -45,12 +46,14 @@ impl<T: EventListener> Handler for Term<T> {
             return;
         }
 
+        let prev = self.grid().total_evicted();
         let insert = self.mode.contains(TermMode::INSERT);
         let grid = self.grid_mut();
         if insert {
             grid.insert_blank(width);
         }
         grid.put_char(c);
+        self.prune_images_if_evicted(prev);
     }
 
     /// Move cursor left by one column, with reverse wraparound (mode 45).
@@ -74,12 +77,14 @@ impl<T: EventListener> Handler for Term<T> {
     fn linefeed(&mut self) {
         self.selection_dirty = true;
         let lnm = self.mode.contains(TermMode::LINE_FEED_NEW_LINE);
+        let prev = self.grid().total_evicted();
         let grid = self.grid_mut();
         if lnm {
             grid.next_line();
         } else {
             grid.linefeed();
         }
+        self.prune_images_if_evicted(prev);
     }
 
     /// Move cursor to column 0.
@@ -177,6 +182,7 @@ impl<T: EventListener> Handler for Term<T> {
             ClearMode::Saved => DisplayEraseMode::Scrollback,
         };
         self.grid_mut().erase_display(erase);
+        self.clear_images_after_ed(&mode);
     }
 
     /// EL: erase in line.
@@ -188,11 +194,13 @@ impl<T: EventListener> Handler for Term<T> {
             LineClearMode::All => LineEraseMode::All,
         };
         self.grid_mut().erase_line(erase);
+        self.clear_images_after_el(&mode);
     }
 
     /// ECH: erase characters (replace with blanks, no shift).
     fn erase_chars(&mut self, count: usize) {
         self.selection_dirty = true;
+        self.clear_images_after_ech(count);
         self.grid_mut().erase_chars(count);
     }
 
@@ -223,7 +231,9 @@ impl<T: EventListener> Handler for Term<T> {
     /// SU: scroll up (content moves up, blank lines at bottom).
     fn scroll_up(&mut self, count: usize) {
         self.selection_dirty = true;
+        let prev = self.grid().total_evicted();
         self.grid_mut().scroll_up(count);
+        self.prune_images_if_evicted(prev);
     }
 
     /// SD: scroll down (content moves down, blank lines at top).
@@ -241,7 +251,9 @@ impl<T: EventListener> Handler for Term<T> {
     /// NEL: next line (carriage return + linefeed).
     fn newline(&mut self) {
         self.selection_dirty = true;
+        let prev = self.grid().total_evicted();
         self.grid_mut().next_line();
+        self.prune_images_if_evicted(prev);
     }
 
     /// CHT: cursor forward tabulation.
@@ -476,6 +488,31 @@ impl<T: EventListener> Handler for Term<T> {
     /// CSI 14 t: report text area size in pixels.
     fn text_area_size_pixels(&mut self) {
         self.dcs_text_area_size_pixels();
+    }
+
+    /// APC: dispatch Application Program Command.
+    fn apc_dispatch(&mut self, payload: &[u8]) {
+        self.handle_apc_dispatch(payload);
+    }
+
+    /// DCS sixel start: begin accumulating sixel data.
+    fn sixel_start(&mut self, params: &[u16]) {
+        self.handle_sixel_start(params);
+    }
+
+    /// DCS sixel data: feed one byte to the sixel parser.
+    fn sixel_put(&mut self, byte: u8) {
+        self.handle_sixel_put(byte);
+    }
+
+    /// DCS sixel end: finalize sixel image and place it.
+    fn sixel_end(&mut self) {
+        self.handle_sixel_end();
+    }
+
+    /// OSC 1337 File=: iTerm2 inline image protocol.
+    fn iterm2_file(&mut self, params: &[&[u8]]) {
+        self.handle_iterm2_file(params);
     }
 }
 

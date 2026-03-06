@@ -49,13 +49,15 @@ impl<T: EventListener> Term<T> {
         self.toggle_alt_common();
     }
 
-    /// Common alt screen toggle: flip flag, swap keyboard stacks, mark dirty.
+    /// Common alt screen toggle: flip flag, swap keyboard stacks, swap
+    /// image caches, mark dirty.
     fn toggle_alt_common(&mut self) {
         self.mode.toggle(TermMode::ALT_SCREEN);
         std::mem::swap(
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
+        std::mem::swap(&mut self.image_cache, &mut self.alt_image_cache);
         self.grid_mut().dirty_mut().mark_all();
     }
 }

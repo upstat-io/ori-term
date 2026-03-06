@@ -68,6 +68,13 @@ pub const CONTROLS_ZONE_WIDTH: f32 = CONTROL_BUTTON_MARGIN
     + 2.0 * CONTROL_BUTTON_SPACING
     + CONTROL_BUTTON_MARGIN;
 
+/// Width reserved for macOS traffic light buttons (close/minimize/maximize).
+///
+/// Apple's traffic lights: 14px circles, 6px apart, 20px left margin, 20px right
+/// margin = 76px total. WezTerm uses ~80px. We use 76px to match Apple's geometry.
+#[cfg(target_os = "macos")]
+pub const MACOS_TRAFFIC_LIGHT_WIDTH: f32 = 76.0;
+
 /// Pixels of mouse movement before a tab drag begins.
 ///
 /// Matches Chrome's `tab_drag_controller.cc`.

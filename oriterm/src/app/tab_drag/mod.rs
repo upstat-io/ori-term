@@ -125,13 +125,12 @@ impl App {
         let pos = self.mouse.cursor_pos();
 
         // Extract layout data and compute logical coordinates.
-        let (scale, tab_width, caption_h, tab_id) = {
+        let (scale, tab_width, tab_id) = {
             let Some(ctx) = self.focused_ctx() else {
                 return false;
             };
             let scale = ctx.window.scale_factor().factor() as f32;
             let tw = ctx.tab_bar.layout().tab_width;
-            let caption_h = ctx.chrome.caption_height();
 
             // Resolve the session TabId from the index.
             let Some(win_id) = self.active_window else {
@@ -143,7 +142,7 @@ impl App {
             let Some(&tid) = win.tabs().get(tab_index) else {
                 return false;
             };
-            (scale, tw, caption_h, tid)
+            (scale, tw, tid)
         };
 
         let logical_x = pos.x as f32 / scale;
@@ -164,8 +163,8 @@ impl App {
             origin_y: logical_y,
             phase: DragPhase::Pending,
             mouse_offset_in_tab: offset,
-            tab_bar_y: caption_h,
-            tab_bar_bottom: caption_h + TAB_BAR_HEIGHT,
+            tab_bar_y: 0.0,
+            tab_bar_bottom: TAB_BAR_HEIGHT,
             suppress_next_release: false,
         };
 
@@ -346,6 +345,10 @@ impl App {
                         drag.current_index,
                         tab_width,
                     );
+                    // Tab order changed — refresh platform hit test rects.
+                    if let Some(wid) = self.focused_window_id {
+                        self.refresh_platform_rects(wid);
+                    }
                 }
                 self.release_tab_width_lock();
             }

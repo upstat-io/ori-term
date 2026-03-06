@@ -192,3 +192,51 @@ fn multiple_interactive_rects() {
     let point = Point::new(750.0, 20.0);
     assert_eq!(hit_test(point, &chrome), HitTestResult::Client);
 }
+
+/// Tab-bar-shaped interactive rects: tabs + buttons + controls.
+///
+/// Simulates the unified chrome where interactive rects include tab rects,
+/// new-tab button, dropdown button, and 3 control buttons.
+#[test]
+fn tab_bar_shaped_interactive_rects() {
+    // 3 tabs at 150px each starting at x=16, plus new-tab, dropdown, 3 controls.
+    let tab_width = 150.0;
+    let caption_h = 46.0;
+    let mut rects = Vec::new();
+
+    // Tab rects.
+    for i in 0..3 {
+        rects.push(Rect::new(
+            16.0 + i as f32 * tab_width,
+            0.0,
+            tab_width,
+            caption_h,
+        ));
+    }
+    // New-tab button.
+    rects.push(Rect::new(466.0, 0.0, 38.0, caption_h));
+    // Dropdown button.
+    rects.push(Rect::new(504.0, 0.0, 30.0, caption_h));
+    // 3 control buttons (right-aligned).
+    rects.push(Rect::new(662.0, 0.0, 46.0, caption_h));
+    rects.push(Rect::new(708.0, 0.0, 46.0, caption_h));
+    rects.push(Rect::new(754.0, 0.0, 46.0, caption_h));
+
+    let chrome = standard_chrome(&rects, false);
+
+    // Click on tab 1 body → Client (interactive rect).
+    let tab1_center = Point::new(16.0 + tab_width * 1.5, 20.0);
+    assert_eq!(hit_test(tab1_center, &chrome), HitTestResult::Client);
+
+    // Click between tabs and controls (gap) → Caption (draggable).
+    let gap = Point::new(600.0, 20.0);
+    assert_eq!(hit_test(gap, &chrome), HitTestResult::Caption);
+
+    // Click on a control button → Client.
+    let control = Point::new(730.0, 20.0);
+    assert_eq!(hit_test(control, &chrome), HitTestResult::Client);
+
+    // Click below the tab bar → Client (grid area).
+    let below = Point::new(400.0, 300.0);
+    assert_eq!(hit_test(below, &chrome), HitTestResult::Client);
+}

@@ -239,6 +239,19 @@ fn parse_number(input: &[u8]) -> Option<u8> {
     Some(num)
 }
 
+/// Maximum APC payload size (32 MiB). Prevents OOM from malicious input.
+const MAX_APC_LEN: usize = 32 * 1024 * 1024;
+
+/// Tracks the active DCS sequence type for `put`/`unhook` dispatch.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum DcsState {
+    /// No active DCS sequence (or an unrecognized one).
+    #[default]
+    None,
+    /// Active sixel sequence (DCS action `q`).
+    Sixel,
+}
+
 /// Internal state for VTE processor.
 #[derive(Debug, Default)]
 struct ProcessorState<T: Timeout> {
@@ -247,6 +260,12 @@ struct ProcessorState<T: Timeout> {
 
     /// State for synchronized terminal updates.
     sync_state: SyncState<T>,
+
+    /// Buffer for accumulating APC payload bytes across `advance` calls.
+    apc_buf: Vec<u8>,
+
+    /// Active DCS sequence type for routing `put`/`unhook` calls.
+    dcs_state: DcsState,
 }
 
 #[derive(Debug)]
@@ -744,6 +763,31 @@ pub trait Handler {
 
     // Set SCP control.
     fn set_scp(&mut self, _char_path: ScpCharPath, _update_mode: ScpUpdateMode) {}
+
+    /// Called when a DCS sixel sequence begins (DCS with action `q`).
+    ///
+    /// `params` contains P1/P2/P3 from the DCS introducer.
+    fn sixel_start(&mut self, _params: &[u16]) {}
+
+    /// Called for each byte of sixel data within an active DCS sixel sequence.
+    fn sixel_put(&mut self, _byte: u8) {}
+
+    /// Called when the DCS sixel sequence ends (ST terminator).
+    fn sixel_end(&mut self) {}
+
+    /// Dispatch an APC (Application Program Command) sequence.
+    ///
+    /// The `payload` contains the raw bytes between `ESC _` and `ST`.
+    /// The first byte typically identifies the command type (e.g., `G` for
+    /// Kitty graphics protocol).
+    fn apc_dispatch(&mut self, _payload: &[u8]) {}
+
+    /// Handle an iTerm2 image protocol sequence (OSC 1337 File=...).
+    ///
+    /// `params` are the raw OSC params after `1337`, with the VTE parser
+    /// having split on `;`. The first param starts with `File=` and the
+    /// last param contains `:<base64-data>` after the final key=value pair.
+    fn iterm2_file(&mut self, _params: &[&[u8]]) {}
 }
 
 bitflags! {
@@ -936,6 +980,8 @@ impl PrivateMode {
             1049 => Self::Named(NamedPrivateMode::SwapScreenAndSetRestoreCursor),
             2004 => Self::Named(NamedPrivateMode::BracketedPaste),
             2026 => Self::Named(NamedPrivateMode::SyncUpdate),
+            80 => Self::Named(NamedPrivateMode::SixelScrolling),
+            8452 => Self::Named(NamedPrivateMode::SixelCursorRight),
             _ => Self::Unknown(mode),
         }
     }
@@ -999,6 +1045,17 @@ pub enum NamedPrivateMode {
     BracketedPaste = 2004,
     /// The mode is handled automatically by [`Processor`].
     SyncUpdate = 2026,
+    /// DECSDM — sixel scrolling mode (DEC VT340).
+    ///
+    /// When set (DECSET 80): sixel images scroll when they reach the bottom
+    /// of the screen. When reset: images display at the home position without
+    /// scrolling. Default: set.
+    SixelScrolling = 80,
+    /// Sixel cursor right mode (xterm extension).
+    ///
+    /// When set: after sixel display, cursor moves to the right of the image.
+    /// When reset: cursor moves below the image.
+    SixelCursorRight = 8452,
 }
 
 /// Mode for clearing line.
@@ -1343,20 +1400,58 @@ where
 
     #[inline]
     fn hook(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char) {
-        debug!(
-            "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
-            params, intermediates, ignore, action
-        );
+        match action {
+            'q' if intermediates.is_empty() => {
+                // DCS with action 'q' = sixel introducer.
+                let flat: Vec<u16> = params.iter().flat_map(|sub| sub.iter().copied()).collect();
+                self.handler.sixel_start(&flat);
+                self.state.dcs_state = DcsState::Sixel;
+            },
+            _ => {
+                debug!(
+                    "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
+                    params, intermediates, ignore, action
+                );
+                self.state.dcs_state = DcsState::None;
+            },
+        }
     }
 
     #[inline]
     fn put(&mut self, byte: u8) {
-        debug!("[unhandled put] byte={:?}", byte);
+        match self.state.dcs_state {
+            DcsState::Sixel => self.handler.sixel_put(byte),
+            DcsState::None => debug!("[unhandled put] byte={:?}", byte),
+        }
     }
 
     #[inline]
     fn unhook(&mut self) {
-        debug!("[unhandled unhook]");
+        match self.state.dcs_state {
+            DcsState::Sixel => self.handler.sixel_end(),
+            DcsState::None => debug!("[unhandled unhook]"),
+        }
+        self.state.dcs_state = DcsState::None;
+    }
+
+    #[inline]
+    fn apc_start(&mut self) {
+        self.state.apc_buf.clear();
+    }
+
+    #[inline]
+    fn apc_put(&mut self, byte: u8) {
+        if self.state.apc_buf.len() < MAX_APC_LEN {
+            self.state.apc_buf.push(byte);
+        }
+    }
+
+    #[inline]
+    fn apc_end(&mut self) {
+        let payload = mem::take(&mut self.state.apc_buf);
+        if !payload.is_empty() {
+            self.handler.apc_dispatch(&payload);
+        }
     }
 
     #[inline]
@@ -1584,6 +1679,15 @@ where
 
             // Reset text cursor color.
             b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
+
+            // iTerm2 proprietary sequences.
+            b"1337" => {
+                if params.len() >= 2 && params[1].starts_with(b"File=") {
+                    self.handler.iterm2_file(&params[1..]);
+                } else {
+                    unhandled(params);
+                }
+            },
 
             _ => unhandled(params),
         }

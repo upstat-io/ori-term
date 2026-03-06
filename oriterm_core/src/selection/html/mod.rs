@@ -10,6 +10,7 @@ use std::fmt::Write;
 use crate::cell::CellFlags;
 use crate::color::Palette;
 use crate::grid::Grid;
+use crate::image::KITTY_PLACEHOLDER;
 use crate::index::Column;
 
 use vte::ansi::{Color, NamedColor, Rgb};
@@ -207,6 +208,9 @@ fn append_html_cells(
         if cell.flags.contains(CellFlags::HIDDEN) {
             continue;
         }
+        if cell.ch == KITTY_PLACEHOLDER {
+            continue;
+        }
 
         let style = CellStyle::from_cell(cell, ctx);
         let ch = if cell.ch == '\0' { ' ' } else { cell.ch };
@@ -262,6 +266,9 @@ fn append_cells_dual(
             .flags
             .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
         {
+            continue;
+        }
+        if cell.ch == KITTY_PLACEHOLDER {
             continue;
         }
 

@@ -3,7 +3,6 @@
 use winit::event_loop::ActiveEventLoop;
 
 use oriterm_mux::domain::SpawnConfig;
-use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::window::WindowConfig;
 
 use super::window_context::WindowContext;
@@ -134,15 +133,15 @@ impl App {
         let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_fc);
         let t_renderer = t_renderer_start.elapsed();
 
-        // 8. Create chrome + tab bar widgets and apply platform effects.
+        // 8. Create tab bar widget and apply platform effects.
         let (w, h) = window.size_px();
-        let (chrome_widget, tab_bar_widget, caption_height) = self.create_chrome_widgets(&window);
+        let tab_bar_widget = self.create_tab_bar_widget(&window);
 
         // 9. Compute grid dimensions from viewport, offset by chrome height.
         let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let origin_y = super::chrome::grid_origin_y(caption_height + tab_bar_h, scale);
+        let origin_y = super::chrome::grid_origin_y(tab_bar_h, scale);
         let chrome_px = origin_y as u32;
         let grid_h = h.saturating_sub(chrome_px);
         let cols = cell.columns(w).max(1);
@@ -173,7 +172,7 @@ impl App {
         );
         log::info!(
             "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
-             caption={caption_height}px, font={} {:.1}pt",
+             chrome={tab_bar_h}px, font={} {:.1}pt",
             renderer.family_name(),
             self.config.font.size,
         );
@@ -188,13 +187,7 @@ impl App {
         window.set_visible(true);
 
         let winit_id = window.window_id();
-        let ctx = WindowContext::new(
-            window,
-            chrome_widget,
-            tab_bar_widget,
-            grid_widget,
-            Some(renderer),
-        );
+        let ctx = WindowContext::new(window, tab_bar_widget, grid_widget, Some(renderer));
         self.gpu = Some(gpu);
         self.pipelines = Some(pipelines);
         self.font_set = Some(cached_font_set);
@@ -255,21 +248,15 @@ impl App {
             })
     }
 
-    /// Create chrome and tab bar widgets, and apply platform window effects.
+    /// Create a tab bar widget and apply platform window effects.
     ///
-    /// Returns `(chrome_widget, tab_bar_widget, caption_height)`.
-    pub(super) fn create_chrome_widgets(
+    /// The tab bar is the sole chrome bar (unified tab-in-titlebar).
+    pub(super) fn create_tab_bar_widget(
         &self,
         window: &TermWindow,
-    ) -> (
-        WindowChromeWidget,
-        oriterm_ui::widgets::tab_bar::TabBarWidget,
-        f32,
-    ) {
+    ) -> oriterm_ui::widgets::tab_bar::TabBarWidget {
         let (w, _) = window.size_px();
         let logical_w = w as f32 / window.scale_factor().factor() as f32;
-        let chrome_widget = WindowChromeWidget::with_theme("ori", logical_w, &self.ui_theme);
-        let caption_height = chrome_widget.caption_height();
 
         // Enable Aero Snap on Windows (installs WndProc subclass).
         // All values are in physical pixels — the subclass proc works in
@@ -277,18 +264,11 @@ impl App {
         #[cfg(target_os = "windows")]
         {
             let s = window.scale_factor().factor() as f32;
+            let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
             oriterm_ui::platform_windows::enable_snap(
                 window.window(),
                 oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * s,
-                caption_height * s,
-            );
-            oriterm_ui::platform_windows::set_client_rects(
-                window.window(),
-                chrome_widget
-                    .interactive_rects()
-                    .iter()
-                    .map(|r| super::chrome::scale_rect(*r, s))
-                    .collect(),
+                tab_bar_h * s,
             );
         }
 
@@ -296,7 +276,21 @@ impl App {
             oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &self.ui_theme);
         tab_bar_widget.set_tabs(vec![oriterm_ui::widgets::tab_bar::TabEntry::new("")]);
 
-        (chrome_widget, tab_bar_widget, caption_height)
+        // Set initial platform hit test rects from the tab bar.
+        #[cfg(target_os = "windows")]
+        {
+            let s = window.scale_factor().factor() as f32;
+            oriterm_ui::platform_windows::set_client_rects(
+                window.window(),
+                tab_bar_widget
+                    .interactive_rects()
+                    .iter()
+                    .map(|r| super::chrome::scale_rect(*r, s))
+                    .collect(),
+            );
+        }
+
+        tab_bar_widget
     }
 
     /// Create an initial tab with one pane in the given mux window.

@@ -78,8 +78,8 @@ fn insertion_index_zero_width() {
 
 #[test]
 fn tear_off_above_bar_within_threshold() {
-    let bar_y = 10.0;
-    let bar_bottom = bar_y + TAB_BAR_HEIGHT;
+    let bar_y = 0.0;
+    let bar_bottom = TAB_BAR_HEIGHT;
     // Just at the threshold edge (not exceeded).
     let cursor_y = bar_y - TEAR_OFF_THRESHOLD_UP;
     assert!(!exceeds_tear_off(cursor_y, bar_y, bar_bottom));
@@ -87,8 +87,8 @@ fn tear_off_above_bar_within_threshold() {
 
 #[test]
 fn tear_off_above_bar_exceeds_threshold() {
-    let bar_y = 10.0;
-    let bar_bottom = bar_y + TAB_BAR_HEIGHT;
+    let bar_y = 0.0;
+    let bar_bottom = TAB_BAR_HEIGHT;
     // One pixel beyond.
     let cursor_y = bar_y - TEAR_OFF_THRESHOLD_UP - 1.0;
     assert!(exceeds_tear_off(cursor_y, bar_y, bar_bottom));
@@ -96,24 +96,24 @@ fn tear_off_above_bar_exceeds_threshold() {
 
 #[test]
 fn tear_off_below_bar_within_threshold() {
-    let bar_y = 10.0;
-    let bar_bottom = bar_y + TAB_BAR_HEIGHT;
+    let bar_y = 0.0;
+    let bar_bottom = TAB_BAR_HEIGHT;
     let cursor_y = bar_bottom + TEAR_OFF_THRESHOLD;
     assert!(!exceeds_tear_off(cursor_y, bar_y, bar_bottom));
 }
 
 #[test]
 fn tear_off_below_bar_exceeds_threshold() {
-    let bar_y = 10.0;
-    let bar_bottom = bar_y + TAB_BAR_HEIGHT;
+    let bar_y = 0.0;
+    let bar_bottom = TAB_BAR_HEIGHT;
     let cursor_y = bar_bottom + TEAR_OFF_THRESHOLD + 1.0;
     assert!(exceeds_tear_off(cursor_y, bar_y, bar_bottom));
 }
 
 #[test]
 fn tear_off_within_bar_never_exceeds() {
-    let bar_y = 10.0;
-    let bar_bottom = bar_y + TAB_BAR_HEIGHT;
+    let bar_y = 0.0;
+    let bar_bottom = TAB_BAR_HEIGHT;
     // Dead center of bar.
     assert!(!exceeds_tear_off(
         bar_y + TAB_BAR_HEIGHT / 2.0,
@@ -138,8 +138,8 @@ fn drag_state_construction() {
         origin_y: 30.0,
         phase: DragPhase::Pending,
         mouse_offset_in_tab: 25.0,
-        tab_bar_y: 10.0,
-        tab_bar_bottom: 10.0 + TAB_BAR_HEIGHT,
+        tab_bar_y: 0.0,
+        tab_bar_bottom: TAB_BAR_HEIGHT,
         suppress_next_release: false,
     };
     assert_eq!(state.phase, DragPhase::Pending);
@@ -249,8 +249,8 @@ fn cancel_pending_is_noop() {
         origin_y: 30.0,
         phase: DragPhase::Pending,
         mouse_offset_in_tab: 25.0,
-        tab_bar_y: 10.0,
-        tab_bar_bottom: 10.0 + TAB_BAR_HEIGHT,
+        tab_bar_y: 0.0,
+        tab_bar_bottom: TAB_BAR_HEIGHT,
         suppress_next_release: false,
     };
     // Pending phase with same indices → no undo needed.
@@ -269,8 +269,8 @@ fn cancel_dragging_with_swaps_needs_undo() {
         origin_y: 30.0,
         phase: DragPhase::DraggingInBar,
         mouse_offset_in_tab: 25.0,
-        tab_bar_y: 10.0,
-        tab_bar_bottom: 10.0 + TAB_BAR_HEIGHT,
+        tab_bar_y: 0.0,
+        tab_bar_bottom: TAB_BAR_HEIGHT,
         suppress_next_release: false,
     };
     // This is the condition checked in cancel_tab_drag.
@@ -289,8 +289,8 @@ fn cancel_dragging_no_swap_no_undo() {
         origin_y: 30.0,
         phase: DragPhase::DraggingInBar,
         mouse_offset_in_tab: 25.0,
-        tab_bar_y: 10.0,
-        tab_bar_bottom: 10.0 + TAB_BAR_HEIGHT,
+        tab_bar_y: 0.0,
+        tab_bar_bottom: TAB_BAR_HEIGHT,
         suppress_next_release: false,
     };
     assert_eq!(state.phase, DragPhase::DraggingInBar);
@@ -363,8 +363,8 @@ fn two_tab_reorder_just_before_center_stays() {
 #[test]
 fn tear_off_cursor_returns_to_bar_after_exceeding() {
     // Cursor exceeds threshold upward, then returns inside bar.
-    let bar_y = 10.0;
-    let bar_bottom = bar_y + TAB_BAR_HEIGHT;
+    let bar_y = 0.0;
+    let bar_bottom = TAB_BAR_HEIGHT;
 
     // Step 1: exceeded.
     assert!(exceeds_tear_off(

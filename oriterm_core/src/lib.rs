@@ -11,6 +11,7 @@ pub mod cell;
 pub mod color;
 pub mod event;
 pub mod grid;
+pub mod image;
 pub mod index;
 pub mod paste;
 pub mod search;
@@ -26,6 +27,7 @@ pub use event::{ClipboardType, Event, EventListener, VoidListener};
 pub use grid::{
     Cursor, CursorShape, DisplayEraseMode, Grid, LineEraseMode, Row, StableRowIndex, TabClearMode,
 };
+pub use image::{ImageCache, ImageData, ImageError, ImageId, ImagePlacement};
 pub use index::{Boundary, Column, Direction, Line, Point, Side};
 pub use search::text::extract_row_text;
 pub use search::{MatchType, SearchMatch, SearchState};

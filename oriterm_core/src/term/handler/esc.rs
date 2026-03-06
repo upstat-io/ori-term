@@ -48,6 +48,10 @@ impl<T: EventListener> Term<T> {
         self.title_dirty = true;
         self.saved_private_modes.clear();
 
+        // Image caches.
+        self.image_cache.clear();
+        self.alt_image_cache.clear();
+
         self.event_listener.send_event(Event::ResetTitle);
     }
 }
