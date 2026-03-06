@@ -7,6 +7,7 @@
 use crate::cell::CellFlags;
 use crate::grid::Grid;
 use crate::grid::Row;
+use crate::image::KITTY_PLACEHOLDER;
 use crate::index::Column;
 
 use super::{Selection, SelectionMode};
@@ -89,6 +90,10 @@ fn append_cells(buf: &mut String, row: &Row, col_start: usize, col_end: usize) {
             .flags
             .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
         {
+            continue;
+        }
+        // Skip Kitty virtual placeholder chars (image placeholders).
+        if cell.ch == KITTY_PLACEHOLDER {
             continue;
         }
         let c = if cell.ch == '\0' { ' ' } else { cell.ch };

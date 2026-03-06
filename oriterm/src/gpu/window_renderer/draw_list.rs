@@ -7,33 +7,9 @@ use crate::font::size_key;
 use super::helpers::{ensure_glyphs_cached, ui_text_raster_keys};
 
 impl WindowRenderer {
-    /// Append UI rect draw commands from a [`DrawList`] into the prepared frame.
-    ///
-    /// Converts rect and line commands to GPU instances via
-    /// [`convert_draw_list`]. Text commands are deferred (no text context
-    /// provided) — chrome uses geometric symbols, not font glyphs.
-    ///
-    /// Call this after [`prepare`](Self::prepare) and before
-    /// [`render_frame`](Self::render_frame).
-    pub fn append_ui_draw_list(
-        &mut self,
-        draw_list: &oriterm_ui::draw::DrawList,
-        scale: f32,
-        opacity: f32,
-    ) {
-        super::super::draw_list_convert::convert_draw_list(
-            draw_list,
-            &mut self.prepared.ui_rects,
-            None,
-            scale,
-            opacity,
-        );
-    }
-
     /// Append UI draw commands **with text** from a [`DrawList`].
     ///
-    /// Unlike [`append_ui_draw_list`](Self::append_ui_draw_list) which defers
-    /// text commands, this method:
+    /// This method:
     /// 1. Rasterizes uncached UI text glyphs into atlases.
     /// 2. Converts text commands with a real [`TextContext`] so glyph
     ///    instances are emitted into the mono/subpixel/color writers.

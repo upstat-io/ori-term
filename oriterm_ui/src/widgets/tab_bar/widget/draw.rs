@@ -456,6 +456,9 @@ impl Widget for TabBarWidget {
         // 6. Dropdown button: after "+" button.
         self.draw_dropdown_button(ctx, &strip);
 
+        // 6.5. Window control buttons (minimize, maximize, close).
+        self.draw_window_controls(ctx);
+
         // 7. Dragged tab overlay (floats above everything).
         strip.text_color = self.colors.text_fg;
         self.draw_dragged_tab_overlay(ctx, &strip);

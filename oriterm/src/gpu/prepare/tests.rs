@@ -2744,15 +2744,15 @@ fn oversized_viewport_causes_cells_to_underfill() {
 
 #[test]
 fn chrome_origin_aligns_when_viewport_is_logical() {
-    // Simulates chrome (caption_height = 36 logical) with grid below.
-    // Viewport must be logical so that chrome and grid NDC match.
-    let caption_height = 36.0_f32;
+    // Simulates chrome (caption_height = 46 logical, unified tab bar) with
+    // grid below. Viewport must be logical so that chrome and grid NDC match.
+    let caption_height = 46.0_f32;
     let scale = 1.25_f32;
 
     // Logical viewport: 1016×640.
     let logical_h = 640_u32;
 
-    // Chrome bar bottom in NDC (logical coords): 36 / 640 = 0.05625.
+    // Chrome bar bottom in NDC (logical coords): 46 / 640 = 0.071875.
     let chrome_bottom_ndc = caption_height / logical_h as f32;
 
     // Grid origin = caption_height in logical coords.
@@ -2767,12 +2767,12 @@ fn chrome_origin_aligns_when_viewport_is_logical() {
     // Now demonstrate the mismatch with physical viewport.
     let physical_h = (logical_h as f32 * scale).round() as u32; // 800
 
-    // Chrome draws at physical pixels: 36 * 1.25 = 45.
+    // Chrome draws at physical pixels: 46 * 1.25 = 57.5.
     let chrome_bottom_physical_ndc = (caption_height * scale) / physical_h as f32;
-    // Grid origin in logical: 36 / 800 = 0.045.
+    // Grid origin in logical: 46 / 800 = 0.0575.
     let grid_top_physical_ndc = caption_height / physical_h as f32;
 
-    // Mismatch: chrome (0.05625) > grid (0.045) — grid starts ABOVE chrome!
+    // Mismatch: chrome (0.071875) > grid (0.0575) — grid starts ABOVE chrome!
     assert!(
         chrome_bottom_physical_ndc > grid_top_physical_ndc,
         "physical viewport mismatch: chrome={chrome_bottom_physical_ndc}, grid={grid_top_physical_ndc}",
@@ -2781,12 +2781,12 @@ fn chrome_origin_aligns_when_viewport_is_logical() {
 
 #[test]
 fn origin_with_logical_viewport_fills_grid_area() {
-    // After chrome: grid starts at y=caption_height, viewport is logical.
-    // Cells should fill from caption to bottom of logical viewport.
-    let caption_height = 36.0_f32;
+    // After chrome: grid starts at y=caption_height (unified tab bar),
+    // viewport is logical. Cells should fill from caption to bottom.
+    let caption_height = 46.0_f32;
     let cell_h = 16.0_f32;
     let logical_h = 640_u32;
-    let grid_h = logical_h as f32 - caption_height; // 604
+    let grid_h = logical_h as f32 - caption_height; // 594
     let rows = (grid_h / cell_h).floor() as usize; // 37
 
     let mut input = FrameInput::test_grid(10, rows, "");
@@ -2802,14 +2802,14 @@ fn origin_with_logical_viewport_fills_grid_area() {
         "first row at caption height"
     );
 
-    // Last row: y = 36 + 36*16 = 36 + 576 = 612.
-    // Bottom edge: 612 + 16 = 628.
+    // Last row: y = 46 + 36*16 = 46 + 576 = 622.
+    // Bottom edge: 622 + 16 = 638.
     let last_row_idx = (rows - 1) * 10; // First cell of last row
     let last_bg = nth_instance(frame.backgrounds.as_bytes(), last_row_idx);
     let bottom_edge = last_bg.pos.1 + last_bg.size.1;
 
-    // Bottom edge (628) < viewport (640): grid doesn't quite reach bottom
-    // (because 604/16 = 37.75, we only get 37 rows). This is normal —
+    // Bottom edge (638) < viewport (640): grid doesn't quite reach bottom
+    // (because 594/16 = 37.125, we only get 37 rows). This is normal —
     // there's a small gap at the bottom. But it's close.
     assert!(bottom_edge <= logical_h as f32, "grid fits within viewport");
     assert!(

@@ -45,6 +45,13 @@ const MAX_INTERMEDIATES: usize = 2;
 const MAX_OSC_PARAMS: usize = 16;
 const MAX_OSC_RAW: usize = 1024;
 
+/// Maximum OSC buffer size for `std` builds (64 MiB).
+///
+/// Prevents OOM from malicious input while supporting large payloads
+/// like iTerm2 image protocol (OSC 1337).
+#[cfg(feature = "std")]
+const MAX_OSC_RAW_STD: usize = 64 * 1024 * 1024;
+
 /// Parser for raw _VTE_ protocol which delegates actions to a [`Perform`]
 ///
 /// [`Perform`]: trait.Perform.html
@@ -180,6 +187,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             State::EscapeIntermediate => self.advance_esc_intermediate(performer, byte),
             State::OscString => self.advance_osc_string(performer, byte),
             State::SosPmApcString => self.anywhere(performer, byte),
+            State::ApcString => self.advance_apc_string(performer, byte),
             State::Ground => unreachable!(),
         }
     }
@@ -374,7 +382,11 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.osc_num_params = 0;
                 self.state = State::OscString
             },
-            0x5E..=0x5F => self.state = State::SosPmApcString,
+            0x5E => self.state = State::SosPmApcString,
+            0x5F => {
+                performer.apc_start();
+                self.state = State::ApcString
+            },
             0x60..=0x7E => {
                 performer.esc_dispatch(self.intermediates(), self.ignoring, byte);
                 self.state = State::Ground
@@ -428,9 +440,41 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                         return;
                     }
                 }
+                #[cfg(feature = "std")]
+                {
+                    if self.osc_raw.len() >= MAX_OSC_RAW_STD {
+                        return;
+                    }
+                }
                 self.action_osc_put_param()
             },
             _ => self.action_osc_put(byte),
+        }
+    }
+
+    #[inline(always)]
+    fn advance_apc_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        match byte {
+            // Printable + C0 controls (except terminators): pass through.
+            0x00..=0x17 | 0x19 | 0x1C..=0x7F => performer.apc_put(byte),
+            // CAN/SUB: cancel APC, return to ground.
+            0x18 | 0x1A => {
+                performer.apc_end();
+                performer.execute(byte);
+                self.state = State::Ground
+            },
+            // ESC: could be ST (`ESC \`) or a new sequence.
+            0x1B => {
+                performer.apc_end();
+                self.reset_params();
+                self.state = State::Escape
+            },
+            // C1 ST (0x9C): terminate APC.
+            0x9C => {
+                performer.apc_end();
+                self.state = State::Ground
+            },
+            _ => (),
         }
     }
 
@@ -545,6 +589,12 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         #[cfg(not(feature = "std"))]
         {
             if self.osc_raw.is_full() {
+                return;
+            }
+        }
+        #[cfg(feature = "std")]
+        {
+            if self.osc_raw.len() >= MAX_OSC_RAW_STD {
                 return;
             }
         }
@@ -744,6 +794,7 @@ enum State {
     EscapeIntermediate,
     OscString,
     SosPmApcString,
+    ApcString,
     #[default]
     Ground,
 }
@@ -811,6 +862,15 @@ pub trait Perform {
     /// subsequent characters were ignored.
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
 
+    /// Called when an APC sequence begins (`ESC _`).
+    fn apc_start(&mut self) {}
+
+    /// Called for each byte in the APC string body.
+    fn apc_put(&mut self, _byte: u8) {}
+
+    /// Called when the APC string is terminated (ST or cancel).
+    fn apc_end(&mut self) {}
+
     /// Whether the parser should terminate prematurely.
     ///
     /// This can be used in conjunction with
@@ -857,6 +917,9 @@ mod tests {
         Print(char),
         Execute(u8),
         DcsUnhook,
+        ApcStart,
+        ApcPut(u8),
+        ApcEnd,
     }
 
     impl Perform for Dispatcher {
@@ -896,6 +959,18 @@ mod tests {
 
         fn execute(&mut self, byte: u8) {
             self.dispatched.push(Sequence::Execute(byte));
+        }
+
+        fn apc_start(&mut self) {
+            self.dispatched.push(Sequence::ApcStart);
+        }
+
+        fn apc_put(&mut self, byte: u8) {
+            self.dispatched.push(Sequence::ApcPut(byte));
+        }
+
+        fn apc_end(&mut self) {
+            self.dispatched.push(Sequence::ApcEnd);
         }
     }
 
@@ -1524,6 +1599,94 @@ mod tests {
         assert_eq!(dispatcher.dispatched[8], Sequence::Execute(158));
         assert_eq!(dispatcher.dispatched[9], Sequence::Execute(159));
         assert_eq!(dispatcher.dispatched[10], Sequence::Print('a'));
+    }
+
+    #[test]
+    fn parse_apc_st_terminated() {
+        // ESC _ G payload ESC \ (APC with Kitty-style 'G' command).
+        const INPUT: &[u8] = b"\x1b_Gf=32;AAAA\x1b\\";
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        parser.advance(&mut dispatcher, INPUT);
+
+        // ApcStart, then 'G','f','=','3','2',';','A','A','A','A' as ApcPut, then ApcEnd.
+        assert_eq!(dispatcher.dispatched[0], Sequence::ApcStart);
+        for (i, &byte) in b"Gf=32;AAAA".iter().enumerate() {
+            assert_eq!(dispatcher.dispatched[1 + i], Sequence::ApcPut(byte));
+        }
+        assert_eq!(dispatcher.dispatched[11], Sequence::ApcEnd);
+        // ESC \ triggers ApcEnd then esc_dispatch for '\'.
+        assert_eq!(dispatcher.dispatched[12], Sequence::Esc(Vec::new(), false, b'\\'));
+    }
+
+    #[test]
+    fn parse_apc_c1_st_terminated() {
+        // ESC _ payload 0x9C (C1 ST terminator).
+        const INPUT: &[u8] = b"\x1b_hello\x9c";
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        parser.advance(&mut dispatcher, INPUT);
+
+        assert_eq!(dispatcher.dispatched[0], Sequence::ApcStart);
+        for (i, &byte) in b"hello".iter().enumerate() {
+            assert_eq!(dispatcher.dispatched[1 + i], Sequence::ApcPut(byte));
+        }
+        assert_eq!(dispatcher.dispatched[6], Sequence::ApcEnd);
+        assert_eq!(dispatcher.dispatched.len(), 7);
+    }
+
+    #[test]
+    fn parse_apc_cancel() {
+        // ESC _ payload CAN (0x18) — cancels APC.
+        const INPUT: &[u8] = b"\x1b_data\x18";
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        parser.advance(&mut dispatcher, INPUT);
+
+        assert_eq!(dispatcher.dispatched[0], Sequence::ApcStart);
+        for (i, &byte) in b"data".iter().enumerate() {
+            assert_eq!(dispatcher.dispatched[1 + i], Sequence::ApcPut(byte));
+        }
+        assert_eq!(dispatcher.dispatched[5], Sequence::ApcEnd);
+        assert_eq!(dispatcher.dispatched[6], Sequence::Execute(0x18));
+    }
+
+    #[test]
+    fn parse_apc_empty() {
+        // ESC _ ESC \ (empty APC string).
+        const INPUT: &[u8] = b"\x1b_\x1b\\";
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        parser.advance(&mut dispatcher, INPUT);
+
+        assert_eq!(dispatcher.dispatched[0], Sequence::ApcStart);
+        assert_eq!(dispatcher.dispatched[1], Sequence::ApcEnd);
+        assert_eq!(dispatcher.dispatched[2], Sequence::Esc(Vec::new(), false, b'\\'));
+    }
+
+    #[test]
+    fn sos_pm_still_discards() {
+        // ESC X (SOS) and ESC ^ (PM) should still discard data (no APC callbacks).
+        const SOS: &[u8] = b"\x1bXdata\x1b\\";
+        const PM: &[u8] = b"\x1b^data\x1b\\";
+
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        parser.advance(&mut dispatcher, SOS);
+        // SOS goes to SosPmApcString which calls anywhere() — discards data.
+        // ESC causes transition to Escape, then '\' dispatches.
+        assert_eq!(dispatcher.dispatched.len(), 1);
+        assert_eq!(dispatcher.dispatched[0], Sequence::Esc(Vec::new(), false, b'\\'));
+
+        dispatcher.dispatched.clear();
+        parser.advance(&mut dispatcher, PM);
+        assert_eq!(dispatcher.dispatched.len(), 1);
+        assert_eq!(dispatcher.dispatched[0], Sequence::Esc(Vec::new(), false, b'\\'));
     }
 
     #[test]

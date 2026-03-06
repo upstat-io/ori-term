@@ -25,28 +25,36 @@ pub struct TabBarLayout {
     pub tab_count: usize,
     /// Window width used for this layout computation.
     pub window_width: f32,
+    /// Extra left margin for platform chrome (macOS traffic lights).
+    pub left_inset: f32,
 }
 
 impl TabBarLayout {
     /// Compute tab bar layout from tab count and window width.
     ///
-    /// If `tab_width_lock` is `Some(w)`, that width is used directly —
-    /// prevents tab widths from shifting during rapid close clicks or drag
-    /// (the next close button stays in place). Otherwise, tab width is
-    /// computed from available space and clamped to
-    /// `[TAB_MIN_WIDTH, TAB_MAX_WIDTH]`.
-    pub fn compute(tab_count: usize, window_width: f32, tab_width_lock: Option<f32>) -> Self {
+    /// `left_inset` reserves extra space on the left for platform chrome
+    /// (macOS traffic lights = 76px; Windows/Linux = 0). If `tab_width_lock`
+    /// is `Some(w)`, that width is used directly — prevents tab widths from
+    /// shifting during rapid close clicks or drag.
+    pub fn compute(
+        tab_count: usize,
+        window_width: f32,
+        tab_width_lock: Option<f32>,
+        left_inset: f32,
+    ) -> Self {
         if let Some(locked) = tab_width_lock {
             return Self {
                 tab_width: locked,
                 tab_count,
                 window_width,
+                left_inset,
             };
         }
 
         // Available space = window width minus reserved zones.
         let available = (window_width
             - TAB_LEFT_MARGIN
+            - left_inset
             - NEW_TAB_BUTTON_WIDTH
             - DROPDOWN_BUTTON_WIDTH
             - CONTROLS_ZONE_WIDTH)
@@ -62,12 +70,13 @@ impl TabBarLayout {
             tab_width,
             tab_count,
             window_width,
+            left_inset,
         }
     }
 
     /// X coordinate of the right edge of the last tab.
     pub fn tabs_end(&self) -> f32 {
-        TAB_LEFT_MARGIN + self.tab_count as f32 * self.tab_width
+        TAB_LEFT_MARGIN + self.left_inset + self.tab_count as f32 * self.tab_width
     }
 
     /// X coordinate of the new-tab (+) button.
@@ -87,7 +96,7 @@ impl TabBarLayout {
 
     /// Left X coordinate of the tab at the given index.
     pub fn tab_x(&self, index: usize) -> f32 {
-        TAB_LEFT_MARGIN + index as f32 * self.tab_width
+        TAB_LEFT_MARGIN + self.left_inset + index as f32 * self.tab_width
     }
 
     /// Maximum text width within a tab (total width minus padding and close button).
@@ -100,10 +109,11 @@ impl TabBarLayout {
     ///
     /// Uses half-open intervals: tab `i` owns `[tab_x(i), tab_x(i+1))`.
     pub fn tab_index_at(&self, x: f32) -> Option<usize> {
-        if self.tab_count == 0 || x < TAB_LEFT_MARGIN || x >= self.tabs_end() {
+        let left = TAB_LEFT_MARGIN + self.left_inset;
+        if self.tab_count == 0 || x < left || x >= self.tabs_end() {
             return None;
         }
-        let index = ((x - TAB_LEFT_MARGIN) / self.tab_width) as usize;
+        let index = ((x - left) / self.tab_width) as usize;
         Some(index.min(self.tab_count - 1))
     }
 }

@@ -58,8 +58,11 @@ impl<T: EventListener> Term<T> {
     pub(super) fn status_identify_terminal(&mut self, intermediate: Option<char>) {
         match intermediate {
             None => {
-                // DA1: report VT220 with ANSI color.
-                let response = "\x1b[?6c".to_string();
+                // DA1: report VT220 with ANSI color + sixel graphics.
+                // Attributes: 6 = ANSI color, 4 = sixel graphics.
+                // Kitty graphics has no DA attribute — programs detect
+                // it via the `a=q` query mechanism instead.
+                let response = "\x1b[?6;4c".to_string();
                 self.event_listener.send_event(Event::PtyWrite(response));
             }
             Some('>') => {

@@ -68,6 +68,10 @@ bitflags! {
         const MOUSE_URXVT            = 1 << 25;
         /// Mode 9 — X10 mouse reporting (press only, no modifiers).
         const MOUSE_X10              = 1 << 26;
+        /// Mode 80 — sixel scrolling (DECSDM). Default: on.
+        const SIXEL_SCROLLING        = 1 << 27;
+        /// Mode 8452 — sixel cursor right (xterm extension). Default: off.
+        const SIXEL_CURSOR_RIGHT     = 1 << 28;
 
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()
@@ -89,7 +93,7 @@ bitflags! {
 
 impl Default for TermMode {
     fn default() -> Self {
-        Self::SHOW_CURSOR | Self::LINE_WRAP | Self::ALTERNATE_SCROLL
+        Self::SHOW_CURSOR | Self::LINE_WRAP | Self::ALTERNATE_SCROLL | Self::SIXEL_SCROLLING
     }
 }
 

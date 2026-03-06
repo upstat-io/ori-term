@@ -5,10 +5,11 @@
 
 use std::cmp;
 
-use vte::ansi::NamedPrivateMode;
+use vte::ansi::{ClearMode, LineClearMode, NamedPrivateMode};
 
 use crate::cell::CellFlags;
 use crate::event::EventListener;
+use crate::grid::StableRowIndex;
 use crate::index::{Column, Line};
 use crate::term::{Term, TermMode};
 
@@ -43,6 +44,8 @@ pub(super) fn named_private_mode_number(mode: NamedPrivateMode) -> u16 {
         NamedPrivateMode::SwapScreenAndSetRestoreCursor => 1049,
         NamedPrivateMode::BracketedPaste => 2004,
         NamedPrivateMode::SyncUpdate => 2026,
+        NamedPrivateMode::SixelScrolling => 80,
+        NamedPrivateMode::SixelCursorRight => 8452,
     }
 }
 
@@ -70,6 +73,8 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::BracketedPaste => Some(TermMode::BRACKETED_PASTE),
         NamedPrivateMode::SyncUpdate => Some(TermMode::SYNC_UPDATE),
         NamedPrivateMode::AlternateScroll => Some(TermMode::ALTERNATE_SCROLL),
+        NamedPrivateMode::SixelScrolling => Some(TermMode::SIXEL_SCROLLING),
+        NamedPrivateMode::SixelCursorRight => Some(TermMode::SIXEL_CURSOR_RIGHT),
         NamedPrivateMode::SaveCursor | NamedPrivateMode::ColumnMode => None,
     }
 }
@@ -138,5 +143,97 @@ impl<T: EventListener> Term<T> {
         let line = cmp::min(line + offset, max_line);
         let col = Column(col.min(grid.cols().saturating_sub(1)));
         grid.move_to(line, col);
+    }
+
+    /// Convert a grid line (0-based visible row) to a `StableRowIndex`.
+    fn grid_line_stable(&self, line: usize) -> StableRowIndex {
+        let grid = self.grid();
+        let base = grid.total_evicted() as u64 + grid.scrollback().len() as u64;
+        StableRowIndex(base + line as u64)
+    }
+
+    /// After ED (erase in display): remove image placements in the erased
+    /// region. Grid is image-unaware; `Term` coordinates between Grid and
+    /// `ImageCache`.
+    pub(super) fn clear_images_after_ed(&mut self, mode: &ClearMode) {
+        let grid = self.grid();
+        let cl = grid.cursor().line();
+        let cc = grid.cursor().col().0;
+        let lines = grid.lines();
+
+        match mode {
+            ClearMode::Below => {
+                let top = self.grid_line_stable(cl);
+                self.image_cache_mut()
+                    .remove_placements_in_region(top, top, Some(cc), None);
+                if cl + 1 < lines {
+                    let next = self.grid_line_stable(cl + 1);
+                    let bot = self.grid_line_stable(lines - 1);
+                    self.image_cache_mut()
+                        .remove_placements_in_region(next, bot, None, None);
+                }
+            }
+            ClearMode::Above => {
+                let top = self.grid_line_stable(cl);
+                self.image_cache_mut()
+                    .remove_placements_in_region(top, top, None, Some(cc));
+                if cl > 0 {
+                    let first = self.grid_line_stable(0);
+                    let prev = self.grid_line_stable(cl - 1);
+                    self.image_cache_mut()
+                        .remove_placements_in_region(first, prev, None, None);
+                }
+            }
+            ClearMode::All => {
+                let first = self.grid_line_stable(0);
+                let last = self.grid_line_stable(lines.saturating_sub(1));
+                self.image_cache_mut()
+                    .remove_placements_in_region(first, last, None, None);
+            }
+            ClearMode::Saved => {} // Scrollback clearing not yet implemented.
+        }
+    }
+
+    /// After EL (erase in line): remove image placements on the erased
+    /// portion of the cursor line.
+    pub(super) fn clear_images_after_el(&mut self, mode: &LineClearMode) {
+        let grid = self.grid();
+        let cl = grid.cursor().line();
+        let cc = grid.cursor().col().0;
+
+        let (left, right) = match mode {
+            LineClearMode::Right => (Some(cc), None),
+            LineClearMode::Left => (None, Some(cc)),
+            LineClearMode::All => (None, None),
+        };
+        let row = self.grid_line_stable(cl);
+        self.image_cache_mut()
+            .remove_placements_in_region(row, row, left, right);
+    }
+
+    /// After ECH (erase characters): remove image placements in the erased
+    /// cell range on the cursor line.
+    pub(super) fn clear_images_after_ech(&mut self, count: usize) {
+        let grid = self.grid();
+        let cl = grid.cursor().line();
+        let cc = grid.cursor().col().0;
+        let cols = grid.cols();
+
+        let end = (cc + count).min(cols);
+        if end > cc {
+            let row = self.grid_line_stable(cl);
+            self.image_cache_mut()
+                .remove_placements_in_region(row, row, Some(cc), Some(end - 1));
+        }
+    }
+
+    /// Check if scrollback evicted rows since `prev_evicted` and prune
+    /// image placements that fell off.
+    pub(super) fn prune_images_if_evicted(&mut self, prev_evicted: usize) {
+        let new_evicted = self.grid().total_evicted();
+        if new_evicted > prev_evicted {
+            self.image_cache_mut()
+                .prune_scrollback(StableRowIndex(new_evicted as u64));
+        }
     }
 }

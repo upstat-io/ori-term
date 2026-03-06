@@ -35,8 +35,7 @@ impl App {
             let cell = renderer.cell_metrics();
             let scale = ctx.window.scale_factor().factor() as f32;
             let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-            let caption_h = ctx.chrome.caption_height();
-            let origin_y = super::chrome::grid_origin_y(caption_h + tab_bar_h, scale);
+            let origin_y = super::chrome::grid_origin_y(tab_bar_h, scale);
             let chrome_px = origin_y as u32;
             let grid_h = h.saturating_sub(chrome_px);
             let cols = cell.columns(w).max(1);
@@ -143,7 +142,7 @@ impl App {
         };
 
         // Chrome + tab bar widgets.
-        let (chrome_widget, tab_bar_widget, caption_height) = self.create_chrome_widgets(&window);
+        let tab_bar_widget = self.create_tab_bar_widget(&window);
 
         let Some(renderer) = self.create_window_renderer(&window, gpu, pipelines, font_set) else {
             self.session.remove_window(session_wid);
@@ -155,7 +154,7 @@ impl App {
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
         let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-        let origin_y = super::chrome::grid_origin_y(caption_height + tab_bar_h, scale);
+        let origin_y = super::chrome::grid_origin_y(tab_bar_h, scale);
         let chrome_px = origin_y as u32;
         let grid_h = h.saturating_sub(chrome_px);
         let cols = cell.columns(w).max(1);
@@ -171,13 +170,7 @@ impl App {
         ));
 
         let winit_id = window.window_id();
-        let ctx = WindowContext::new(
-            window,
-            chrome_widget,
-            tab_bar_widget,
-            grid_widget,
-            Some(renderer),
-        );
+        let ctx = WindowContext::new(window, tab_bar_widget, grid_widget, Some(renderer));
         self.windows.insert(winit_id, ctx);
 
         log::info!(

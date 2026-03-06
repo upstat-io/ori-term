@@ -52,9 +52,8 @@ impl App {
         let cell = renderer.cell_metrics();
         let scale = ctx.window.scale_factor().factor() as f32;
 
-        let caption_height = ctx.chrome.caption_height();
         let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-        let chrome_height = caption_height + tab_bar_h;
+        let chrome_height = tab_bar_h;
         let origin_y = grid_origin_y(chrome_height, scale);
         let chrome_px = origin_y as u32;
         let grid_h = viewport_h.saturating_sub(chrome_px);
@@ -118,10 +117,7 @@ impl App {
                 self.handle_dpi_change(winit_id, new_scale);
                 // Update SnapData chrome metrics for the new physical DPI.
                 let s = new_scale as f32;
-                let caption_h = self
-                    .windows
-                    .get(&winit_id)
-                    .map_or(0.0, |ctx| ctx.chrome.caption_height());
+                let caption_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
                 if let Some(ctx) = self.windows.get(&winit_id) {
                     oriterm_ui::platform_windows::set_chrome_metrics(
                         ctx.window.window(),
@@ -145,7 +141,6 @@ impl App {
         if let Some(ctx) = self.windows.get_mut(&winit_id) {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
-            ctx.chrome.set_window_width(logical_w);
             ctx.tab_bar.set_window_width(logical_w);
         }
 
@@ -162,19 +157,7 @@ impl App {
         // Recompute grid dimensions, resize terminal + PTY + increments.
         self.sync_grid_layout(winit_id, size.width, size.height);
 
-        // Update platform hit test rects on Windows.
-        #[cfg(target_os = "windows")]
-        if let Some(ctx) = self.windows.get(&winit_id) {
-            let scale = ctx.window.scale_factor().factor() as f32;
-            oriterm_ui::platform_windows::set_client_rects(
-                ctx.window.window(),
-                ctx.chrome
-                    .interactive_rects()
-                    .iter()
-                    .map(|r| super::scale_rect(*r, scale))
-                    .collect(),
-            );
-        }
+        self.refresh_platform_rects(winit_id);
 
         if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.url_cache.invalidate();
@@ -182,4 +165,29 @@ impl App {
             ctx.dirty = true;
         }
     }
+
+    /// Refresh platform hit test rects from the tab bar's interactive rects.
+    ///
+    /// Must be called after any tab mutation (add, remove, reorder, tear-off)
+    /// so the OS hit test layer matches the current tab bar layout.
+    /// On non-Windows platforms this is a no-op.
+    #[cfg(target_os = "windows")]
+    pub(in crate::app) fn refresh_platform_rects(&self, winit_id: WindowId) {
+        if let Some(ctx) = self.windows.get(&winit_id) {
+            let scale = ctx.window.scale_factor().factor() as f32;
+            oriterm_ui::platform_windows::set_client_rects(
+                ctx.window.window(),
+                ctx.tab_bar
+                    .interactive_rects()
+                    .iter()
+                    .map(|r| super::scale_rect(*r, scale))
+                    .collect(),
+            );
+        }
+    }
+
+    /// No-op on non-Windows platforms.
+    #[cfg(not(target_os = "windows"))]
+    #[expect(clippy::unused_self, reason = "platform parity with Windows variant")]
+    pub(in crate::app) fn refresh_platform_rects(&self, _winit_id: WindowId) {}
 }

@@ -8,14 +8,23 @@
 //! The widget implements [`Widget`] for draw integration. Event handling
 //! stubs are provided here; full hit-test dispatch is Section 16.3.
 
+mod controls_draw;
 mod draw;
 
 use std::time::Instant;
 
+use crate::animation::Lerp;
+use crate::color::Color;
+use crate::geometry::{Point, Rect};
+use crate::input::{HoverEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
+use crate::widgets::window_chrome::controls::{ControlButtonColors, WindowControlButton};
+use crate::widgets::window_chrome::layout::ControlKind;
+use crate::widgets::{EventCtx, Widget, WidgetResponse};
 
 use super::colors::TabBarColors;
+use super::constants::{DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT};
 use super::hit::TabBarHit;
 use super::layout::TabBarLayout;
 
@@ -82,6 +91,14 @@ pub struct TabBarWidget {
 
     // Per-tab animation offsets for smooth transitions (pixels).
     anim_offsets: Vec<f32>,
+
+    // Window control buttons: [minimize, maximize/restore, close].
+    controls: [WindowControlButton; 3],
+    /// Index of the currently hovered control button (`None` if not hovering).
+    hovered_control: Option<usize>,
+
+    /// Extra left margin for platform chrome (macOS traffic lights).
+    left_inset: f32,
 }
 
 impl TabBarWidget {
@@ -92,7 +109,11 @@ impl TabBarWidget {
 
     /// Creates a new tab bar widget with colors from the given theme.
     pub fn with_theme(window_width: f32, theme: &UiTheme) -> Self {
-        let layout = TabBarLayout::compute(0, window_width, None);
+        let layout = TabBarLayout::compute(0, window_width, None, 0.0);
+        let caption_bg = theme.bg_secondary;
+        let ctrl_colors = control_colors_from_theme(theme);
+        let controls = create_controls(ctrl_colors, caption_bg);
+
         Self {
             id: WidgetId::next(),
             tabs: Vec::new(),
@@ -104,6 +125,9 @@ impl TabBarWidget {
             hover_hit: TabBarHit::None,
             drag_visual: None,
             anim_offsets: Vec::new(),
+            controls,
+            hovered_control: None,
+            left_inset: 0.0,
         }
     }
 
@@ -112,6 +136,12 @@ impl TabBarWidget {
     /// Updates all theme-derived colors from a new [`UiTheme`].
     pub fn apply_theme(&mut self, theme: &UiTheme) {
         self.colors = TabBarColors::from_theme(theme);
+        let ctrl_colors = control_colors_from_theme(theme);
+        let caption_bg = theme.bg_secondary;
+        for ctrl in &mut self.controls {
+            ctrl.set_colors(ctrl_colors);
+            ctrl.set_caption_bg(caption_bg);
+        }
     }
 
     // --- State setters ---
@@ -136,6 +166,14 @@ impl TabBarWidget {
     /// Sets the tab width lock (freezes widths during hover).
     pub fn set_tab_width_lock(&mut self, lock: Option<f32>) {
         self.tab_width_lock = lock;
+        self.recompute_layout();
+    }
+
+    /// Sets the left inset for platform chrome (macOS traffic lights).
+    ///
+    /// On macOS: `MACOS_TRAFFIC_LIGHT_WIDTH` (76px). On Windows/Linux: 0.
+    pub fn set_left_inset(&mut self, inset: f32) {
+        self.left_inset = inset;
         self.recompute_layout();
     }
 
@@ -193,12 +231,175 @@ impl TabBarWidget {
         }
     }
 
+    // --- Window control state ---
+
+    /// Sets the maximized state on all control buttons.
+    ///
+    /// The maximize/restore button changes symbol (□ vs ⧉).
+    pub fn set_maximized(&mut self, maximized: bool) {
+        for ctrl in &mut self.controls {
+            ctrl.set_maximized(maximized);
+        }
+    }
+
+    /// Sets the active/focused state.
+    ///
+    /// Adjusts the caption background color on control buttons: active
+    /// windows use `bar_bg`, inactive windows use a darkened variant.
+    pub fn set_active(&mut self, active: bool) {
+        let caption_bg = if active {
+            self.colors.bar_bg
+        } else {
+            Color::lerp(self.colors.bar_bg, Color::BLACK, 0.3)
+        };
+        for ctrl in &mut self.controls {
+            ctrl.set_caption_bg(caption_bg);
+        }
+    }
+
+    /// Returns all interactive rects in logical pixels.
+    ///
+    /// Includes tab rects, new-tab button, dropdown button, and the three
+    /// control buttons. The platform layer scales these to physical pixels
+    /// and uses them for `WM_NCHITTEST` — points inside are `HTCLIENT`
+    /// (clickable), everything else is `HTCAPTION` (draggable).
+    pub fn interactive_rects(&self) -> Vec<Rect> {
+        let mut rects = Vec::with_capacity(self.tabs.len() + 5);
+        // Tab rects.
+        for i in 0..self.tabs.len() {
+            let x = self.layout.tab_x(i);
+            rects.push(Rect::new(x, 0.0, self.layout.tab_width, TAB_BAR_HEIGHT));
+        }
+        // New-tab button.
+        let ntx = self.layout.new_tab_x();
+        rects.push(Rect::new(ntx, 0.0, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT));
+        // Dropdown button.
+        let ddx = self.layout.dropdown_x();
+        rects.push(Rect::new(ddx, 0.0, DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT));
+        // Control buttons.
+        for i in 0..3 {
+            rects.push(self.control_rect(i));
+        }
+        rects
+    }
+
+    /// Updates hover state for control buttons based on cursor position.
+    ///
+    /// Routes `HoverEvent::Enter`/`Leave` to the appropriate
+    /// [`WindowControlButton`] so animation transitions play correctly.
+    pub fn update_control_hover(&mut self, pos: Point, ctx: &EventCtx<'_>) -> WidgetResponse {
+        let new_idx = (0..3).find(|&i| self.control_rect(i).contains(pos));
+
+        if new_idx == self.hovered_control {
+            return WidgetResponse::ignored();
+        }
+
+        // Leave old control.
+        let left = if let Some(old) = self.hovered_control {
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: self.control_rect(old),
+                is_focused: false,
+                focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
+            };
+            self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
+            true
+        } else {
+            false
+        };
+
+        // Enter new control.
+        let entered = if let Some(new) = new_idx {
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: self.control_rect(new),
+                is_focused: false,
+                focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
+            };
+            self.controls[new].handle_hover(HoverEvent::Enter, &child_ctx);
+            true
+        } else {
+            false
+        };
+
+        self.hovered_control = new_idx;
+
+        if left || entered {
+            WidgetResponse::redraw()
+        } else {
+            WidgetResponse::ignored()
+        }
+    }
+
+    /// Clears control button hover state (e.g. when cursor leaves the tab bar).
+    pub fn clear_control_hover(&mut self, ctx: &EventCtx<'_>) {
+        if let Some(old) = self.hovered_control.take() {
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: self.control_rect(old),
+                is_focused: false,
+                focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
+            };
+            self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
+        }
+    }
+
+    /// Routes a mouse event to the appropriate control button.
+    ///
+    /// On button down: sets pressed state on the hovered control.
+    /// On button up: releases the pressed control and emits the action.
+    pub fn handle_control_mouse(
+        &mut self,
+        event: &MouseEvent,
+        ctx: &EventCtx<'_>,
+    ) -> WidgetResponse {
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let idx = (0..3).find(|&i| self.control_rect(i).contains(event.pos));
+                if let Some(i) = idx {
+                    let child_ctx = EventCtx {
+                        measurer: ctx.measurer,
+                        bounds: self.control_rect(i),
+                        is_focused: false,
+                        focused_widget: ctx.focused_widget,
+                        theme: ctx.theme,
+                    };
+                    return self.controls[i].handle_mouse(event, &child_ctx);
+                }
+                WidgetResponse::ignored()
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                for i in 0..3 {
+                    if self.controls[i].is_pressed() {
+                        let child_ctx = EventCtx {
+                            measurer: ctx.measurer,
+                            bounds: self.control_rect(i),
+                            is_focused: false,
+                            focused_widget: ctx.focused_widget,
+                            theme: ctx.theme,
+                        };
+                        return self.controls[i].handle_mouse(event, &child_ctx);
+                    }
+                }
+                WidgetResponse::ignored()
+            }
+            _ => WidgetResponse::ignored(),
+        }
+    }
+
     // --- Private helpers ---
 
     /// Recomputes layout from current state.
     fn recompute_layout(&mut self) {
-        self.layout =
-            TabBarLayout::compute(self.tabs.len(), self.window_width, self.tab_width_lock);
+        self.layout = TabBarLayout::compute(
+            self.tabs.len(),
+            self.window_width,
+            self.tab_width_lock,
+            self.left_inset,
+        );
     }
 
     /// Returns the animation offset for a tab, or 0.0 if none.
@@ -220,6 +421,30 @@ impl TabBarWidget {
     pub(crate) fn swap_anim_offsets(&mut self, buf: &mut Vec<f32>) {
         std::mem::swap(&mut self.anim_offsets, buf);
     }
+}
+
+// --- Free functions ---
+
+/// Builds [`ControlButtonColors`] from a [`UiTheme`].
+fn control_colors_from_theme(theme: &UiTheme) -> ControlButtonColors {
+    ControlButtonColors {
+        fg: theme.fg_primary,
+        bg: Color::TRANSPARENT,
+        hover_bg: theme.bg_hover,
+        close_hover_bg: theme.close_hover_bg,
+        close_pressed_bg: theme.close_pressed_bg,
+    }
+}
+
+/// Creates the three control buttons with initial colors and caption bg.
+fn create_controls(colors: ControlButtonColors, caption_bg: Color) -> [WindowControlButton; 3] {
+    let mut min_btn = WindowControlButton::new(ControlKind::Minimize, colors);
+    min_btn.set_caption_bg(caption_bg);
+    let mut max_btn = WindowControlButton::new(ControlKind::MaximizeRestore, colors);
+    max_btn.set_caption_bg(caption_bg);
+    let mut close_btn = WindowControlButton::new(ControlKind::Close, colors);
+    close_btn.set_caption_bg(caption_bg);
+    [min_btn, max_btn, close_btn]
 }
 
 // --- Test helpers ---

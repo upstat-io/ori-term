@@ -85,6 +85,12 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::AlternateScroll => {
                 self.mode.insert(TermMode::ALTERNATE_SCROLL);
             }
+            NamedPrivateMode::SixelScrolling => {
+                self.mode.insert(TermMode::SIXEL_SCROLLING);
+            }
+            NamedPrivateMode::SixelCursorRight => {
+                self.mode.insert(TermMode::SIXEL_CURSOR_RIGHT);
+            }
             NamedPrivateMode::ColumnMode => {
                 debug!("Ignoring DECSET for unimplemented mode {named:?}");
             }
@@ -144,6 +150,12 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::SyncUpdate => self.mode.remove(TermMode::SYNC_UPDATE),
             NamedPrivateMode::AlternateScroll => {
                 self.mode.remove(TermMode::ALTERNATE_SCROLL);
+            }
+            NamedPrivateMode::SixelScrolling => {
+                self.mode.remove(TermMode::SIXEL_SCROLLING);
+            }
+            NamedPrivateMode::SixelCursorRight => {
+                self.mode.remove(TermMode::SIXEL_CURSOR_RIGHT);
             }
             NamedPrivateMode::ColumnMode => {
                 debug!("Ignoring DECRST for unimplemented mode {named:?}");

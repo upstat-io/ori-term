@@ -11,6 +11,7 @@ mod handler;
 pub mod mode;
 pub mod renderable;
 mod shell_state;
+mod snapshot;
 
 pub use charset::CharsetState;
 pub use mode::TermMode;
@@ -22,8 +23,9 @@ use vte::ansi::KeyboardModes;
 
 use crate::color::Palette;
 use crate::event::EventListener;
-use crate::grid::{CursorShape, Grid};
-use crate::index::{Column, Line};
+use crate::grid::{CursorShape, Grid, StableRowIndex};
+use crate::image::ImageCache;
+use crate::image::sixel::SixelParser;
 use crate::theme::Theme;
 
 /// Shell integration prompt lifecycle state.
@@ -165,6 +167,18 @@ pub struct Term<T: EventListener> {
     title_dirty: bool,
     /// XTSAVE/XTRESTORE: saved private mode values (single save per mode).
     saved_private_modes: HashMap<u16, bool>,
+    /// Image cache for the primary screen.
+    image_cache: ImageCache,
+    /// Image cache for the alternate screen.
+    alt_image_cache: ImageCache,
+    /// In-progress chunked Kitty image transmission.
+    loading_image: Option<crate::image::kitty::LoadingImage>,
+    /// In-progress sixel image (active during DCS sixel sequence).
+    sixel_parser: Option<SixelParser>,
+    /// Cell width in pixels (set by GUI after font metrics are known).
+    cell_pixel_width: u16,
+    /// Cell height in pixels (set by GUI after font metrics are known).
+    cell_pixel_height: u16,
 }
 
 impl<T: EventListener> Term<T> {
@@ -195,6 +209,12 @@ impl<T: EventListener> Term<T> {
             has_explicit_title: false,
             title_dirty: false,
             saved_private_modes: HashMap::new(),
+            image_cache: ImageCache::new(),
+            alt_image_cache: ImageCache::new(),
+            loading_image: None,
+            sixel_parser: None,
+            cell_pixel_width: 8,
+            cell_pixel_height: 16,
         }
     }
 
@@ -248,6 +268,30 @@ impl<T: EventListener> Term<T> {
     /// Mutable reference to the color palette (for config overrides).
     pub fn palette_mut(&mut self) -> &mut Palette {
         &mut self.palette
+    }
+
+    /// Reference to the active screen's image cache.
+    pub fn image_cache(&self) -> &ImageCache {
+        if self.mode.contains(TermMode::ALT_SCREEN) {
+            &self.alt_image_cache
+        } else {
+            &self.image_cache
+        }
+    }
+
+    /// Mutable reference to the active screen's image cache.
+    pub fn image_cache_mut(&mut self) -> &mut ImageCache {
+        if self.mode.contains(TermMode::ALT_SCREEN) {
+            &mut self.alt_image_cache
+        } else {
+            &mut self.image_cache
+        }
+    }
+
+    /// Set cell pixel dimensions (called by GUI after font metrics are known).
+    pub fn set_cell_dimensions(&mut self, width: u16, height: u16) {
+        self.cell_pixel_width = width;
+        self.cell_pixel_height = height;
     }
 
     /// Current color theme.
@@ -314,147 +358,8 @@ impl<T: EventListener> Term<T> {
         &self.keyboard_mode_stack
     }
 
-    /// Extract a complete rendering snapshot.
-    ///
-    /// Convenience wrapper that allocates a fresh [`RenderableContent`] and
-    /// fills it. For hot-path rendering, prefer [`renderable_content_into`]
-    /// with a reused buffer to avoid per-frame allocation.
-    ///
-    /// This is a pure read — dirty state is **not** cleared. Callers must
-    /// drain dirty state separately via `grid_mut().dirty_mut().drain()`
-    /// after consuming the snapshot.
-    ///
-    /// [`renderable_content_into`]: Self::renderable_content_into
-    pub fn renderable_content(&self) -> RenderableContent {
-        let grid = self.grid();
-        let mut out = RenderableContent {
-            cells: Vec::with_capacity(grid.lines() * grid.cols()),
-            cursor: RenderableCursor {
-                line: 0,
-                column: Column(0),
-                shape: CursorShape::default(),
-                visible: false,
-            },
-            display_offset: 0,
-            stable_row_base: 0,
-            mode: TermMode::empty(),
-            all_dirty: false,
-            damage: Vec::new(),
-        };
-        self.renderable_content_into(&mut out);
-        out
-    }
-
-    /// Fill an existing [`RenderableContent`] with the current terminal state.
-    ///
-    /// Clears `out` and refills it, reusing the underlying `Vec` allocations.
-    /// The renderer should keep a single `RenderableContent` and pass it each
-    /// frame to avoid the ~`lines * cols * 56` byte allocation that
-    /// [`renderable_content`] performs.
-    ///
-    /// This is a pure read — dirty state is **not** cleared. Callers must
-    /// drain dirty state separately via `grid_mut().dirty_mut().drain()`
-    /// after consuming the snapshot.
-    ///
-    /// [`renderable_content`]: Self::renderable_content
-    pub fn renderable_content_into(&self, out: &mut RenderableContent) {
-        out.cells.clear();
-        out.damage.clear();
-
-        let grid = self.grid();
-        let raw_offset = grid.display_offset();
-        debug_assert!(
-            raw_offset <= grid.scrollback().len(),
-            "display_offset ({raw_offset}) must be <= scrollback.len() ({})",
-            grid.scrollback().len(),
-        );
-        let offset = raw_offset.min(grid.scrollback().len());
-        let lines = grid.lines();
-        let cols = grid.cols();
-        let palette = &self.palette;
-
-        for vis_line in 0..lines {
-            // Top `offset` lines come from scrollback; the rest from the grid.
-            let row = if vis_line < offset {
-                let sb_idx = offset - 1 - vis_line;
-                match grid.scrollback().get(sb_idx) {
-                    Some(row) => row,
-                    None => continue,
-                }
-            } else {
-                let grid_line = vis_line - offset;
-                &grid[Line(grid_line as i32)]
-            };
-
-            for col_idx in 0..cols {
-                let col = Column(col_idx);
-                let cell = &row[col];
-
-                let fg = renderable::resolve_fg(cell.fg, cell.flags, palette);
-                let bg = renderable::resolve_bg(cell.bg, palette);
-                let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
-
-                let (underline_color, has_hyperlink, zerowidth) = match cell.extra.as_ref() {
-                    Some(e) => (
-                        e.underline_color.map(|c| palette.resolve(c)),
-                        e.hyperlink.is_some(),
-                        e.zerowidth.clone(),
-                    ),
-                    None => (None, false, Vec::new()),
-                };
-
-                out.cells.push(RenderableCell {
-                    line: vis_line,
-                    column: col,
-                    ch: cell.ch,
-                    fg,
-                    bg,
-                    flags: cell.flags,
-                    underline_color,
-                    has_hyperlink,
-                    zerowidth,
-                });
-            }
-        }
-
-        // Cursor is visible when SHOW_CURSOR is set and we're at the live view.
-        let cursor_visible = self.mode.contains(TermMode::SHOW_CURSOR)
-            && offset == 0
-            && self.cursor_shape != CursorShape::Hidden;
-
-        out.cursor = RenderableCursor {
-            line: grid.cursor().line(),
-            column: grid.cursor().col(),
-            shape: self.cursor_shape,
-            visible: cursor_visible,
-        };
-
-        out.all_dirty = renderable::collect_damage(grid, lines, cols, &mut out.damage);
-        out.display_offset = offset;
-        let base_abs = grid.scrollback().len().saturating_sub(offset);
-        out.stable_row_base = grid.total_evicted() as u64 + base_abs as u64;
-        out.mode = self.mode;
-    }
-
-    /// Drain damage from the active grid.
-    ///
-    /// Returns a [`TermDamage`] iterator that yields dirty lines and clears
-    /// marks as it goes. Check [`TermDamage::is_all_dirty`] first — when true,
-    /// repaint everything and drop the iterator (which clears remaining marks).
-    pub fn damage(&mut self) -> TermDamage<'_> {
-        let grid = self.grid_mut();
-        let cols = grid.cols();
-        let all_dirty = grid.dirty().is_all_dirty();
-        TermDamage::new(grid.dirty_mut().drain(), cols, all_dirty)
-    }
-
-    /// Clear all damage marks without reading them.
-    ///
-    /// Called when the renderer wants to discard pending damage (e.g. after
-    /// a full repaint that doesn't need per-line tracking).
-    pub fn reset_damage(&mut self) {
-        self.grid_mut().dirty_mut().drain().for_each(drop);
-    }
+    // Rendering snapshot methods (renderable_content, renderable_content_into,
+    // damage, reset_damage) are in `snapshot.rs`.
 
     /// Resize the terminal to new dimensions.
     ///
@@ -469,11 +374,24 @@ impl<T: EventListener> Term<T> {
             return;
         }
 
-        // Primary grid: reflow enabled.
+        // Primary grid: reflow enabled. Prune image placements if rows evicted.
+        let prev_primary = self.grid.total_evicted();
         self.grid.resize(new_lines, new_cols, true);
+        let new_primary = self.grid.total_evicted();
+        if new_primary > prev_primary {
+            self.image_cache
+                .prune_scrollback(StableRowIndex(new_primary as u64));
+        }
 
         // Alternate grid: no reflow (apps like vim handle their own layout).
+        // Alt grid has 0 scrollback capacity, so every scroll evicts.
+        let prev_alt = self.alt_grid.total_evicted();
         self.alt_grid.resize(new_lines, new_cols, false);
+        let new_alt = self.alt_grid.total_evicted();
+        if new_alt > prev_alt {
+            self.alt_image_cache
+                .prune_scrollback(StableRowIndex(new_alt as u64));
+        }
 
         // Mark selection dirty since cell positions changed.
         // Note: both grids are already fully marked dirty by

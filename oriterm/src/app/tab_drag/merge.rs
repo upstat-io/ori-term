@@ -94,8 +94,9 @@ impl App {
             }
             self.focused_window_id = Some(target_wid);
 
-            // Sync tab bars.
+            // Sync tab bars and refresh platform hit test rects.
             self.sync_tab_bar_for_window(target_wid);
+            self.refresh_platform_rects(target_wid);
 
             // Resize panes in the moved tab to fit the target window.
             self.resize_all_panes();
@@ -180,7 +181,7 @@ impl App {
         cursor: (i32, i32),
         mouse_offset: f32,
     ) {
-        let (tab_index, logical_x, logical_y, caption_h) = {
+        let (tab_index, logical_x, logical_y) = {
             let Some(ctx) = self.windows.get(&target_wid) else {
                 return;
             };
@@ -203,8 +204,7 @@ impl App {
                     .unwrap_or(0)
             };
 
-            let cap = ctx.chrome.caption_height();
-            (idx, lx, ly, cap)
+            (idx, lx, ly)
         };
 
         // Create drag state (suppress_next_release absorbs stale WM_LBUTTONUP).
@@ -216,8 +216,8 @@ impl App {
             origin_y: logical_y,
             phase: DragPhase::DraggingInBar,
             mouse_offset_in_tab: mouse_offset,
-            tab_bar_y: caption_h,
-            tab_bar_bottom: caption_h + TAB_BAR_HEIGHT,
+            tab_bar_y: 0.0,
+            tab_bar_bottom: TAB_BAR_HEIGHT,
             suppress_next_release: true,
         };
 

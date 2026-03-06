@@ -16,7 +16,6 @@ use oriterm_ui::draw::DrawList;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::widgets::tab_bar::{TabBarWidget, TabSlideState};
-use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 use super::context_menu::ContextMenuState;
 use super::divider_drag::DividerDragState;
@@ -39,7 +38,6 @@ pub(crate) struct WindowContext {
     pub(super) renderer: Option<WindowRenderer>,
 
     // Widget layer.
-    pub(super) chrome: WindowChromeWidget,
     pub(super) tab_bar: TabBarWidget,
     pub(super) terminal_grid: TerminalGridWidget,
 
@@ -82,11 +80,10 @@ pub(crate) struct WindowContext {
 impl WindowContext {
     /// Create a new window context from its constituent parts.
     ///
-    /// The `window`, `chrome`, `tab_bar`, and `terminal_grid` are created
-    /// during init; all other fields start at their defaults.
+    /// The `window`, `tab_bar`, and `terminal_grid` are created during init;
+    /// all other fields start at their defaults.
     pub fn new(
         window: TermWindow,
-        chrome: WindowChromeWidget,
         tab_bar: TabBarWidget,
         terminal_grid: TerminalGridWidget,
         renderer: Option<WindowRenderer>,
@@ -94,7 +91,6 @@ impl WindowContext {
         Self {
             window,
             renderer,
-            chrome,
             tab_bar,
             terminal_grid,
             pane_cache: PaneRenderCache::new(),

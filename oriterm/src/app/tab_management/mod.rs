@@ -69,6 +69,9 @@ impl App {
 
         self.release_tab_width_lock();
         self.sync_tab_bar_from_mux();
+        if let Some(wid) = self.focused_window_id {
+            self.refresh_platform_rects(wid);
+        }
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
         }
@@ -130,6 +133,9 @@ impl App {
         }
 
         self.sync_tab_bar_from_mux();
+        if let Some(wid) = self.focused_window_id {
+            self.refresh_platform_rects(wid);
+        }
 
         // Start slide animation for displaced tabs (skip if last tab).
         if let Some((closed_idx, tab_width)) = slide_info {

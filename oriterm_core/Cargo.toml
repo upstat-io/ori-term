@@ -5,9 +5,14 @@ edition = "2024"
 description = "Core terminal emulation data structures and logic for oriterm"
 license = "MIT"
 
+[features]
+default = ["image-protocol"]
+image-protocol = ["dep:image"]
+
 [dependencies]
 base64 = "0.22"
 bitflags = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
 log = "0.4"
 parking_lot = "0.12"
 regex = "1"
