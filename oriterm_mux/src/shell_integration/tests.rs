@@ -591,12 +591,12 @@ fn interceptor_osc99_kitty_notification() {
 
 #[test]
 fn ensure_scripts_nonexistent_parent_returns_error() {
-    // Use /dev/null (Unix) or NUL (Windows) as a parent — both are device
-    // files that cannot contain child directories.
+    // Unix: /dev/null is a file, so /dev/null/child fails in create_dir_all.
+    // Windows: path with reserved characters (`<>`) is always invalid.
     #[cfg(unix)]
     let bad = Path::new("/dev/null/shell-int");
     #[cfg(windows)]
-    let bad = Path::new(r"\\.\NUL\shell-int");
+    let bad = Path::new(r"C:\<invalid>\shell-int");
     let result = ensure_scripts_on_disk(bad);
     assert!(result.is_err());
 }
