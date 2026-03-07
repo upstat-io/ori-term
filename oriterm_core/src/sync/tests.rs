@@ -450,11 +450,16 @@ fn take_contended_cleared_after_read() {
         let _g = m.lock();
     });
 
-    // Let the spawned thread park on the fairness gate.
-    thread::sleep(Duration::from_millis(20));
-
-    // First take should return true (thread blocked).
-    assert!(mutex.take_contended());
+    // Poll until the spawned thread has parked on the fairness gate.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if mutex.take_contended() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "contended flag never set");
+        thread::sleep(Duration::from_millis(10));
+    }
+    // take_contended already returned true and cleared the flag above.
     // Second take should return false (flag cleared).
     assert!(!mutex.take_contended());
 
@@ -495,13 +500,18 @@ fn take_contended_set_on_blocked_lock() {
         let _g = m.lock();
     });
 
-    // Let thread B attempt the lock and park.
-    thread::sleep(Duration::from_millis(20));
-
-    assert!(
-        mutex.take_contended(),
-        "contended should be true when a lock() caller blocked"
-    );
+    // Poll until thread B has attempted the lock and set contended.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if mutex.take_contended() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "contended should be true when a lock() caller blocked"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
 
     drop(guard);
     handle.join().unwrap();
@@ -517,8 +527,14 @@ fn take_contended_resets_per_contention_event() {
     let h1 = thread::spawn(move || {
         let _g = m.lock();
     });
-    thread::sleep(Duration::from_millis(20));
-    assert!(mutex.take_contended());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if mutex.take_contended() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "round 1: contended not set");
+        thread::sleep(Duration::from_millis(10));
+    }
     drop(guard);
     h1.join().unwrap();
 
@@ -531,11 +547,17 @@ fn take_contended_resets_per_contention_event() {
     let h2 = thread::spawn(move || {
         let _g = m.lock();
     });
-    thread::sleep(Duration::from_millis(50));
-    assert!(
-        mutex.take_contended(),
-        "contended should be re-set on new contention"
-    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if mutex.take_contended() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "contended should be re-set on new contention"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
     drop(guard);
     h2.join().unwrap();
 }
