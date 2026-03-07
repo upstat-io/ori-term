@@ -4,11 +4,14 @@
 //! `Term`: visible cells with resolved colors, cursor state, and damage info.
 //! Extracted under lock, consumed without lock — no back-references into `Term`.
 
+use std::sync::Arc;
+
 use vte::ansi::Color;
 
 use crate::cell::CellFlags;
 use crate::color::{Palette, Rgb, dim_rgb};
 use crate::grid::{CursorShape, DirtyIter};
+use crate::image::ImageId;
 use crate::index::Column;
 use crate::term::mode::TermMode;
 
@@ -62,6 +65,53 @@ pub struct DamageLine {
     pub right: Column,
 }
 
+/// An image placement ready for GPU rendering.
+///
+/// Positions are in viewport pixel coordinates. UV coordinates are
+/// normalized (0.0–1.0) within the source image. Built from
+/// [`ImagePlacement`](crate::image::ImagePlacement) during snapshot extraction.
+#[derive(Debug, Clone)]
+pub struct RenderablePlacement {
+    /// Image ID for GPU texture lookup.
+    pub image_id: ImageId,
+    /// Viewport X position in pixels (top-left corner).
+    pub viewport_x: f32,
+    /// Viewport Y position in pixels (top-left corner).
+    pub viewport_y: f32,
+    /// Display width in pixels.
+    pub display_width: f32,
+    /// Display height in pixels.
+    pub display_height: f32,
+    /// UV source rect origin X (0.0–1.0).
+    pub source_x: f32,
+    /// UV source rect origin Y (0.0–1.0).
+    pub source_y: f32,
+    /// UV source rect width (0.0–1.0).
+    pub source_w: f32,
+    /// UV source rect height (0.0–1.0).
+    pub source_h: f32,
+    /// Layer ordering: negative = below text, positive = above text.
+    pub z_index: i32,
+    /// Opacity for fade transitions (default 1.0).
+    pub opacity: f32,
+}
+
+/// Decoded image pixel data for GPU texture upload.
+///
+/// The `Arc` clone is cheap (refcount increment, no data copy). The GPU
+/// layer deduplicates uploads by `ImageId`.
+#[derive(Debug, Clone)]
+pub struct RenderableImageData {
+    /// Image ID matching [`RenderablePlacement::image_id`].
+    pub id: ImageId,
+    /// Decoded RGBA pixel data.
+    pub data: Arc<Vec<u8>>,
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+}
+
 /// Complete renderer snapshot extracted from `Term`.
 ///
 /// Contains everything the GPU renderer needs for one frame. Extracted
@@ -86,6 +136,20 @@ pub struct RenderableContent {
     pub all_dirty: bool,
     /// Per-line damage (empty when `all_dirty` is true).
     pub damage: Vec<DamageLine>,
+    /// Image placements visible in the current viewport.
+    pub images: Vec<RenderablePlacement>,
+    /// Decoded pixel data for all images referenced by `images`.
+    ///
+    /// Always populated (not just on dirty) because viewport scrolling
+    /// may bring previously off-screen images into view without
+    /// `ImageCache::dirty` being set. The GPU layer deduplicates uploads
+    /// by `ImageId`.
+    pub image_data: Vec<RenderableImageData>,
+    /// Whether the image cache has changed since the last frame.
+    ///
+    /// Set from `ImageCache::take_dirty()`. The GPU layer uses this to
+    /// know when to re-upload textures.
+    pub images_dirty: bool,
 }
 
 impl Default for RenderableContent {
@@ -103,6 +167,9 @@ impl Default for RenderableContent {
             mode: TermMode::empty(),
             all_dirty: false,
             damage: Vec::new(),
+            images: Vec::new(),
+            image_data: Vec::new(),
+            images_dirty: false,
         }
     }
 }
@@ -116,10 +183,13 @@ impl RenderableContent {
     pub fn clear(&mut self) {
         self.cells.clear();
         self.damage.clear();
+        self.images.clear();
+        self.image_data.clear();
         self.display_offset = 0;
         self.stable_row_base = 0;
         self.mode = TermMode::empty();
         self.all_dirty = false;
+        self.images_dirty = false;
         self.cursor = RenderableCursor {
             line: 0,
             column: Column(0),

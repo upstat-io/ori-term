@@ -1809,3 +1809,120 @@ fn prompt_markers_evicted_by_manual_prune() {
         "prompt marker at row 0 should be evicted when 5 rows are pruned"
     );
 }
+
+// ── Image scrolling ──
+
+use crate::grid::StableRowIndex;
+use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, PlacementSizing};
+use crate::term::renderable::RenderableContent;
+use std::sync::Arc;
+
+/// Store a 2×2 RGBA test image and place it at the given cell row/col.
+fn place_test_image(
+    term: &mut Term<VoidListener>,
+    stable_row: u64,
+    col: usize,
+    rows: usize,
+    cols: usize,
+) -> ImageId {
+    let id = term.image_cache_mut().next_image_id();
+    let data = ImageData {
+        id,
+        width: 2,
+        height: 2,
+        data: Arc::new(vec![255; 16]), // 2×2 RGBA
+        format: ImageFormat::Rgba,
+        source: ImageSource::Direct,
+        last_accessed: 0,
+    };
+    term.image_cache_mut().store(data).unwrap();
+    term.image_cache_mut().place(ImagePlacement {
+        image_id: id,
+        placement_id: None,
+        source_x: 0,
+        source_y: 0,
+        source_w: 0,
+        source_h: 0,
+        cell_col: col,
+        cell_row: StableRowIndex(stable_row),
+        cols,
+        rows,
+        z_index: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        sizing: PlacementSizing::CellCount,
+    });
+    id
+}
+
+#[test]
+fn image_scrolls_with_display_offset() {
+    // 4 lines, 10 cols, 10 scrollback.
+    let mut term = Term::new(4, 10, 10, Theme::default(), VoidListener);
+    term.set_cell_dimensions(8, 16);
+
+    // Place image at stable row 0 (first visible line at start).
+    place_test_image(&mut term, 0, 0, 1, 2);
+
+    // Before scrolling: image at viewport Y = 0.
+    let mut out = RenderableContent::default();
+    term.renderable_content_into(&mut out);
+    assert_eq!(out.images.len(), 1, "image should be visible");
+    assert_eq!(out.images[0].viewport_y, 0.0);
+
+    // Scroll down by writing enough lines to push content into scrollback.
+    feed(&mut term, b"\n\n\n\n"); // 4 newlines push row 0 into scrollback
+    term.renderable_content_into(&mut out);
+    // Image at stable row 0 is now above the viewport — not visible.
+    assert!(out.images.is_empty(), "image should scroll out of viewport");
+
+    // Scroll back up (set display_offset to bring old rows into view).
+    term.grid_mut().scroll_display(4);
+    term.renderable_content_into(&mut out);
+    assert_eq!(out.images.len(), 1, "image visible after scroll back");
+    assert_eq!(out.images[0].viewport_y, 0.0, "image at top of viewport");
+}
+
+#[test]
+fn image_partially_above_viewport_has_negative_y() {
+    // 4 lines, 10 cols, 20 scrollback.
+    let mut term = Term::new(4, 10, 20, Theme::default(), VoidListener);
+    term.set_cell_dimensions(8, 16);
+
+    // Place a 3-row tall image at stable row 0.
+    place_test_image(&mut term, 0, 0, 3, 2);
+
+    // Feed 6 newlines: 3 to reach bottom, 3 more to scroll 3 rows into scrollback.
+    feed(&mut term, b"\n\n\n\n\n\n");
+
+    // Scroll back 2 rows: display_offset=2, stable_row_base = 0+3-2 = 1.
+    // Image at stable row 0 starts 1 row ABOVE the viewport.
+    term.grid_mut().scroll_display(2);
+    let mut out = RenderableContent::default();
+    term.renderable_content_into(&mut out);
+
+    // Image spans stable rows 0-2, viewport starts at stable row 1 →
+    // visible (bottom portion), but top is above viewport.
+    assert_eq!(out.images.len(), 1, "multi-row image partially visible");
+    assert!(
+        out.images[0].viewport_y < 0.0,
+        "image starting above viewport should have negative Y, got {}",
+        out.images[0].viewport_y,
+    );
+    assert_eq!(out.images[0].viewport_y, -16.0);
+}
+
+#[test]
+fn image_at_viewport_bottom_visible() {
+    let mut term = Term::new(4, 10, 10, Theme::default(), VoidListener);
+    term.set_cell_dimensions(8, 16);
+
+    // Place image at stable row 3 (last visible line).
+    place_test_image(&mut term, 3, 0, 1, 2);
+
+    let mut out = RenderableContent::default();
+    term.renderable_content_into(&mut out);
+    assert_eq!(out.images.len(), 1);
+    // Row 3 * 16px = 48.0.
+    assert_eq!(out.images[0].viewport_y, 48.0);
+}

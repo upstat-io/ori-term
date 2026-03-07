@@ -12,9 +12,12 @@ pub mod kitty;
 pub mod sixel;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 pub use cache::ImageCache;
-pub use decode::{ImageFormat, decode_to_rgba, detect_format, rgb_to_rgba};
+pub use decode::{
+    GifFrames, ImageFormat, decode_gif_frames, decode_to_rgba, detect_format, rgb_to_rgba,
+};
 
 use crate::grid::StableRowIndex;
 
@@ -65,6 +68,30 @@ pub struct ImageData {
     pub last_accessed: u64,
 }
 
+/// How a placement's display dimensions are determined on resize.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlacementSizing {
+    /// Display size = `cols * cell_width` × `rows * cell_height`.
+    ///
+    /// Scales proportionally when cell dimensions change (e.g. font
+    /// size change). Used when the protocol explicitly specifies cell
+    /// counts (Kitty `c=`/`r=`, iTerm2 cell-count mode).
+    CellCount,
+
+    /// Display size is fixed at these pixel dimensions.
+    ///
+    /// `cols`/`rows` are recomputed via `ImageCache::update_cell_coverage`
+    /// when cell dimensions change so viewport intersection and region
+    /// queries remain correct. Used for Sixel, Kitty auto-sized, and
+    /// iTerm2 pixel/auto/percent modes.
+    FixedPixels {
+        /// Display width in pixels.
+        width: u32,
+        /// Display height in pixels.
+        height: u32,
+    },
+}
+
 /// A placed instance of an image on the terminal grid.
 #[derive(Debug, Clone)]
 pub struct ImagePlacement {
@@ -94,6 +121,8 @@ pub struct ImagePlacement {
     pub cell_x_offset: u16,
     /// Sub-cell pixel offset (Kitty `Y=` param).
     pub cell_y_offset: u16,
+    /// How display dimensions are determined on resize.
+    pub sizing: PlacementSizing,
 }
 
 /// Errors from image operations.
@@ -121,6 +150,100 @@ impl std::fmt::Display for ImageError {
 }
 
 impl std::error::Error for ImageError {}
+
+/// Kitty frame composition mode (`X=` key in `a=f` commands).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompositionMode {
+    /// Alpha-blend new frame data over the previous frame.
+    AlphaBlend,
+    /// New frame data overwrites the target region entirely.
+    Overwrite,
+}
+
+/// Minimum frame duration for animated images (60fps cap).
+///
+/// Prevents abusive GIFs with 0ms or 10ms frame durations from burning
+/// CPU/GPU. Matches `WezTerm`'s approach.
+const MIN_FRAME_DURATION: Duration = Duration::from_millis(16);
+
+/// Per-image animation state for multi-frame images (GIF, Kitty animated).
+///
+/// Stored in `ImageCache::animations` keyed by `ImageId`. Multiple
+/// placements of the same image share one animation state (same frame
+/// displayed everywhere).
+#[derive(Debug, Clone)]
+pub struct AnimationState {
+    /// Index of the currently displayed frame.
+    pub current_frame: usize,
+    /// Duration for each frame (0-indexed, parallel to frame data).
+    pub frame_durations: Vec<Duration>,
+    /// Total number of frames.
+    pub total_frames: usize,
+    /// Number of loops (None = infinite).
+    pub loop_count: Option<u32>,
+    /// Number of complete loops performed so far.
+    pub loops_completed: u32,
+    /// Whether animation is paused (Kitty `a=s`).
+    pub paused: bool,
+}
+
+impl AnimationState {
+    /// Create a new animation state.
+    pub fn new(frame_durations: Vec<Duration>, loop_count: Option<u32>) -> Self {
+        let total_frames = frame_durations.len();
+        Self {
+            current_frame: 0,
+            frame_durations,
+            total_frames,
+            loop_count,
+            loops_completed: 0,
+            paused: false,
+        }
+    }
+
+    /// Duration of the current frame (clamped to minimum).
+    pub fn current_duration(&self) -> Duration {
+        self.frame_durations
+            .get(self.current_frame)
+            .copied()
+            .unwrap_or(MIN_FRAME_DURATION)
+            .max(MIN_FRAME_DURATION)
+    }
+
+    /// Advance to the next frame. Returns `true` if the frame changed.
+    ///
+    /// Handles loop counting and stops at the final frame when loops
+    /// are exhausted.
+    pub fn advance(&mut self) -> bool {
+        if self.paused || self.total_frames <= 1 {
+            return false;
+        }
+
+        let next = self.current_frame + 1;
+        if next >= self.total_frames {
+            // Looped back to start.
+            if let Some(max_loops) = self.loop_count {
+                self.loops_completed += 1;
+                if self.loops_completed >= max_loops {
+                    return false; // All loops complete.
+                }
+            }
+            self.current_frame = 0;
+        } else {
+            self.current_frame = next;
+        }
+        true
+    }
+
+    /// Whether the animation has finished all its loops.
+    pub fn is_finished(&self) -> bool {
+        if let Some(max_loops) = self.loop_count {
+            self.loops_completed >= max_loops
+        } else {
+            false // Infinite loop.
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests;

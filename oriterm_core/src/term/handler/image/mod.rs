@@ -5,6 +5,7 @@
 
 mod iterm2;
 mod kitty;
+mod kitty_animation;
 mod sixel;
 
 use log::debug;

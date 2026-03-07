@@ -27,7 +27,7 @@ pub use event::{ClipboardType, Event, EventListener, VoidListener};
 pub use grid::{
     Cursor, CursorShape, DisplayEraseMode, Grid, LineEraseMode, Row, StableRowIndex, TabClearMode,
 };
-pub use image::{ImageCache, ImageData, ImageError, ImageId, ImagePlacement};
+pub use image::{ImageCache, ImageData, ImageError, ImageId, ImagePlacement, PlacementSizing};
 pub use index::{Boundary, Column, Direction, Line, Point, Side};
 pub use search::text::extract_row_text;
 pub use search::{MatchType, SearchMatch, SearchState};
@@ -38,7 +38,7 @@ pub use selection::{
 pub use sync::{FairMutex, FairMutexGuard, FairMutexLease};
 pub use term::{
     DamageLine, Notification, PromptMarker, PromptState, RenderableCell, RenderableContent,
-    RenderableCursor, Term, TermDamage, TermMode,
+    RenderableCursor, RenderableImageData, RenderablePlacement, Term, TermDamage, TermMode,
 };
 pub use theme::Theme;
 pub use unicode::is_emoji_presentation;

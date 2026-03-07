@@ -32,6 +32,9 @@ fn empty_content() -> RenderableContent {
         mode: TermMode::empty(),
         all_dirty: true,
         damage: Vec::new(),
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     }
 }
 

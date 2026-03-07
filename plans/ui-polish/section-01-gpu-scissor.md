@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: GPU Scissor Rect Support
-status: not-started
+status: complete
 goal: "PushClip/PopClip commands in DrawList produce GPU scissor rect changes during rendering"
 inspired_by:
   - "Chrome compositor clip regions"
@@ -10,16 +10,16 @@ depends_on: []
 sections:
   - id: "01.1"
     title: "Clip State in convert_draw_list"
-    status: not-started
+    status: complete
   - id: "01.2"
     title: "Scissor Rect Encoding"
-    status: not-started
+    status: complete
   - id: "01.3"
     title: "Tests"
-    status: not-started
+    status: complete
   - id: "01.4"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 01: GPU Scissor Rect Support
@@ -57,18 +57,18 @@ The challenge: `convert_draw_list` currently produces a flat stream of instance 
 
 Use a `ClipSegment` side-channel that records (instance_offset, scissor_rect) pairs alongside the instance buffer stream. During `record_draw_passes`, the render pass consults these segments to call `set_scissor_rect` at the right points and split draw calls into sub-ranges. This avoids restructuring the render pipeline while adding clip support.
 
-- [ ] Add `ClipSegment` struct: `{ instance_offset: u32, rect: Option<[u32; 4]> }` — `None` means reset to full viewport
-- [ ] Add `clip_out: &mut TierClips` output parameter to `convert_draw_list` (callers pass reusable storage; cleared at start of each call). The `TierClips` struct holds 4 `Vec<ClipSegment>` — one per writer (rects, mono, subpixel, color). When `text_ctx` is `None`, only the rects Vec is populated.
-- [ ] Track a `clip_stack: &mut Vec<Rect>` parameter to `convert_draw_list` (caller provides reusable storage; cleared at start of each call — avoids per-frame allocation in the render path)
-- [ ] On `PushClip { rect }`:
+- [x] Add `ClipSegment` struct: `{ instance_offset: u32, rect: Option<[u32; 4]> }` — `None` means reset to full viewport
+- [x] Add `clip_out: &mut TierClips` output parameter to `convert_draw_list` (callers pass reusable storage; cleared at start of each call). The `TierClips` struct holds 4 `Vec<ClipSegment>` — one per writer (rects, mono, subpixel, color). When `text_ctx` is `None`, only the rects Vec is populated.
+- [x] Track a `clip_stack: &mut Vec<Rect>` parameter to `convert_draw_list` (caller provides reusable storage; cleared at start of each call — avoids per-frame allocation in the render path)
+- [x] On `PushClip { rect }`:
   - Scale rect by `scale` factor and convert to physical pixels
   - Intersect with current clip (top of stack, or viewport if empty) — clips nest
   - Push intersected rect onto stack
   - Emit a `ClipSegment` at current instance offset with the new scissor rect
-- [ ] On `PopClip`:
+- [x] On `PopClip`:
   - Pop the stack
   - Emit a `ClipSegment` at current instance offset with the new top (or `None` for full viewport)
-- [ ] Remove the `log::trace!` no-op handling for `PushClip`/`PopClip`
+- [x] Remove the `log::trace!` no-op handling for `PushClip`/`PopClip`
 
 ```rust
 /// A clip state change at a specific point in the instance stream.
@@ -102,36 +102,21 @@ The `record_draw_passes` method must consume `ClipSegment`s to set scissor rects
 
 **Recommended path:** Option (a) — more code but cleanly composable.
 
-- [ ] Add per-tier clip segment storage to `PreparedFrame`:
-  ```rust
-  /// Clip segments for the chrome tier (draws 6–9), one per writer.
-  pub ui_clips: TierClips,
-  /// Clip segments for the overlay tier (draws 10–13), one per writer.
-  pub overlay_clips: TierClips,
-  ```
-- [ ] Define `TierClips` to hold 4 parallel clip segment vectors:
-  ```rust
-  /// Clip segments for all 4 writers in a tier.
-  pub struct TierClips {
-      pub rects: Vec<ClipSegment>,
-      pub mono: Vec<ClipSegment>,
-      pub subpixel: Vec<ClipSegment>,
-      pub color: Vec<ClipSegment>,
-  }
-  ```
-- [ ] Update `PreparedFrame::new()`, `clear()`, and `extend_from()` to handle the new fields
-- [ ] Update `append_ui_draw_list_with_text` and `append_overlay_draw_list_with_text` in `draw_list.rs` to pass clip segment vectors and reusable `clip_stack` to `convert_draw_list` and store results in `PreparedFrame`
-- [ ] Add reusable `clip_stack: Vec<Rect>` field to `WindowRenderer` (not per-call allocation)
-- [ ] Modify `convert_draw_list` to accept `clip_segments: &mut TierClips`, `clip_stack: &mut Vec<Rect>` and emit segments into ALL active writers when a clip change occurs
-- [ ] In `record_draw_passes`, for the chrome tier (draws 6–9) and overlay tier (draws 10–13):
+- [x] Add per-tier clip segment storage to `PreparedFrame`: `ui_clips: TierClips` and `overlay_clips: TierClips`
+- [x] Define `TierClips` to hold 4 parallel clip segment vectors (rects, mono, subpixel, color)
+- [x] Update `PreparedFrame::new()`, `clear()`, and `extend_from()` to handle the new fields
+- [x] Update `append_ui_draw_list_with_text` and `append_overlay_draw_list_with_text` in `draw_list.rs` to pass clip segment vectors and reusable `clip_stack` to `convert_draw_list` and store results in `PreparedFrame`
+- [x] Add reusable `clip_stack: Vec<Rect>` field to `WindowRenderer` (not per-call allocation)
+- [x] Modify `convert_draw_list` to accept `ClipContext` (wraps `TierClips` + `clip_stack` + viewport dims) and emit segments into ALL active writers when a clip change occurs
+- [x] In `record_draw_passes`, for the chrome tier (draws 6–9) and overlay tier (draws 10–13):
   - Replace each `record_draw()` call with `record_draw_clipped()` that iterates the tier's clip segments for that writer
   - Between each segment boundary, call `pass.set_scissor_rect(x, y, w, h)` and issue `pass.draw(0..4, start..end)` for the instance range
   - After the tier, reset scissor to full viewport
-- [ ] Refactor `record_draw` in `helpers.rs` to support instance sub-ranges: add `record_draw_range(pass, pipeline, bg, atlas, buffer, start, end)` or add optional `ClipSegment` slice parameter
-- [ ] Consider a `DrawBindings` struct to reduce parameter count on `record_draw_clipped` (9 params violates "> 3 params → config struct" guideline)
-- [ ] Terminal tier (draws 1–5) does NOT need clip support — grid cells are always aligned to the cell grid
-- [ ] Ensure `set_scissor_rect` coordinates are clamped to surface dimensions (wgpu panics on out-of-bounds)
-- [ ] Reset scissor rect to full viewport between tiers to prevent cross-tier clip leakage
+- [x] Add `record_draw_clipped` in `helpers.rs` — sets pipeline/bind groups, iterates clip segments with sub-range draws, resets scissor after
+- [x] `record_draw_clipped` uses `#[expect(clippy::too_many_arguments)]` (9 params — GPU render pass plumbing)
+- [x] Terminal tier (draws 1–5) does NOT need clip support — grid cells are always aligned to the cell grid
+- [x] Ensure `set_scissor_rect` coordinates are clamped to surface dimensions (wgpu panics on out-of-bounds)
+- [x] Reset scissor rect to full viewport between tiers to prevent cross-tier clip leakage
 
 ```rust
 // In record_draw_passes, for a clipped draw call:
@@ -192,40 +177,41 @@ fn record_draw_clipped<'a>(
 
 **File(s):** `oriterm/src/gpu/draw_list_convert/tests.rs`
 
-- [ ] Update `clip_commands_are_noop` test → rename to `clip_commands_produce_segments`
+- [x] Update `clip_commands_are_noop` test → renamed to `clip_commands_without_context_are_noop` + added `clip_commands_produce_segments`
   - Verify that `PushClip` + rect + `PopClip` produces 2 `ClipSegment`s (enter + exit)
   - Verify the rect instance is still emitted (clip doesn't suppress content)
-- [ ] Test nested clips: `PushClip(A)` → `PushClip(B)` → rect → `PopClip` → `PopClip`
+- [x] Test nested clips: `nested_clips_intersect` — `PushClip(A)` → `PushClip(B)` → rect → `PopClip` → `PopClip`
   - Inner clip should be intersection of A and B
   - After inner pop, clip reverts to A
   - After outer pop, clip is `None` (full viewport)
-- [ ] Test clip with scale factor: push clip in logical pixels, verify segment rect is in physical pixels
-- [ ] Test empty clip (zero-area intersection): content inside should still be emitted (GPU discards via scissor, not CPU-side filtering)
-- [ ] Test clip with text content: build a `DrawList` with `PushClip` → rect + text glyph → `PopClip`, pass through `convert_draw_list` with a `text_ctx`, verify `ClipSegment`s are emitted into all active writers (rects, mono, subpixel, color) at the correct instance offsets for each writer
-- [ ] Test unbalanced clips: extra `PopClip` without matching `PushClip` must not panic (pop on empty stack → no-op or log warning)
-- [ ] Test clip rect clamping: clip rect extending beyond surface dimensions (e.g. negative x, width exceeding viewport) must be clamped to `[0, 0, viewport_w, viewport_h]`
-- [ ] Test scroll widget integration: `ScrollWidget` already emits `PushClip`/`PopClip` — verify its draw list produces valid `ClipSegment`s (existing scroll tests in `oriterm_ui/src/widgets/scroll/tests.rs` verify balanced clip commands; add a test that feeds the resulting draw list through `convert_draw_list` and checks segments)
+- [x] Test clip with scale factor: `clip_with_scale_factor` — push clip in logical pixels, verify segment rect is in physical pixels
+- [x] Test empty clip (zero-area intersection): `empty_clip_intersection_still_emits_content` — content inside should still be emitted (GPU discards via scissor, not CPU-side filtering)
+- [x] Test clip with text content: build a `DrawList` with `PushClip` → rect + text glyph → `PopClip`, pass through `convert_draw_list` with a `text_ctx`, verify `ClipSegment`s are emitted into all active writers (rects, mono, subpixel, color) at the correct instance offsets for each writer
+- [x] Unbalanced clips: `DrawList::pop_clip()` panics on empty stack (UI layer enforces balanced clips). Converter has its own guard via `log::warn`. Not testable through DrawList API.
+- [x] Test clip rect clamping: `clip_clamped_to_viewport` — clip rect extending beyond surface dimensions clamped to `[0, 0, viewport_w, viewport_h]`
+- [x] Test push/pop restores: `clip_push_pop_restores_full_viewport` — verifies pop restores None (full viewport)
+- [x] Test scroll widget integration: `ScrollWidget` already emits `PushClip`/`PopClip` — verify its draw list produces valid `ClipSegment`s
 
 ---
 
 ## 01.4 Completion Checklist
 
-- [ ] `ClipSegment` and `TierClips` extracted into `draw_list_convert/clip.rs` (keeps `mod.rs` under 500 lines)
-- [ ] `clip_stack` is reusable storage (field on `WindowRenderer`), not per-call allocation
-- [ ] `PushClip`/`PopClip` in `DrawList` produce `ClipSegment`s in `convert_draw_list`
-- [ ] Clip segments emitted into all 4 writers (rects, mono, subpixel, color) at correct offsets
-- [ ] `record_draw_passes` applies scissor rects from segments with per-writer draw splitting
-- [ ] `record_draw_clipped` (or equivalent) issues `pass.draw(0..4, start..end)` sub-ranges
-- [ ] Nested clips correctly intersect
-- [ ] Scale factor correctly applied to clip rects
-- [ ] Scissor rects clamped to surface dimensions
-- [ ] Scissor rects reset between tiers (chrome → overlay) to prevent cross-tier leakage
-- [ ] Unbalanced `PopClip` (empty stack) handled gracefully (no panic)
-- [ ] Old no-op test updated to verify new behavior
-- [ ] `append_ui_draw_list_with_text` and `append_overlay_draw_list_with_text` pass/store clip segments
-- [ ] `PreparedFrame` updated with `TierClips` fields + `new()`, `clear()`, `extend_from()`
-- [ ] `./clippy-all.sh` — no warnings
-- [ ] `./test-all.sh` — all pass
-- [ ] `./build-all.sh` — cross-compilation succeeds
+- [x] `ClipSegment`, `TierClips`, `ClipContext`, and clip functions extracted into `draw_list_convert/clip.rs` (keeps `mod.rs` at 453 lines)
+- [x] `clip_stack` is reusable storage (field on `WindowRenderer`), not per-call allocation
+- [x] `PushClip`/`PopClip` in `DrawList` produce `ClipSegment`s in `convert_draw_list`
+- [x] Clip segments emitted into all 4 writers (rects, mono, subpixel, color) at correct offsets
+- [x] `record_draw_passes` applies scissor rects from segments with per-writer draw splitting
+- [x] `record_draw_clipped` issues `pass.draw(0..4, start..end)` sub-ranges with scissor rect changes
+- [x] Nested clips correctly intersect
+- [x] Scale factor correctly applied to clip rects
+- [x] Scissor rects clamped to surface dimensions
+- [x] Scissor rects reset between tiers (chrome → overlay) — `record_draw_clipped` resets to full viewport after last segment
+- [x] Unbalanced `PopClip` (empty stack) handled gracefully (log::warn + no-op in converter; DrawList itself panics)
+- [x] Old no-op test renamed + new tests added (9 clip tests total)
+- [x] `append_ui_draw_list_with_text` and `append_overlay_draw_list_with_text` pass/store clip segments
+- [x] `PreparedFrame` updated with `TierClips` fields + `new()`, `clear()`, `extend_from()`
+- [x] `./clippy-all.sh` — no warnings
+- [x] `./test-all.sh` — all pass
+- [x] `./build-all.sh` — cross-compilation succeeds
 
 **Exit Criteria:** A `DrawList` with `push_clip(rect)` → `push_rect(...)` → `pop_clip()` correctly clips the rect to the clip bounds when rendered. Verified by unit tests on `ClipSegment` output and by visual confirmation that tab content no longer bleeds through adjacent tabs (after Section 02 adds the clip calls).

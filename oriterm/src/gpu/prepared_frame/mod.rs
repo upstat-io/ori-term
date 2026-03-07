@@ -8,10 +8,39 @@
 //! glyphs → overlay subpixel glyphs → overlay color glyphs.
 
 use oriterm_core::Rgb;
+use oriterm_core::image::ImageId;
 
+use super::draw_list_convert::TierClips;
 use super::frame_input::ViewportSize;
 use super::instance_writer::InstanceWriter;
 use super::srgb_to_linear;
+
+/// A single image quad ready for GPU rendering.
+///
+/// Each image maps to one draw call because each has its own texture.
+#[derive(Debug, Clone, Copy)]
+pub struct ImageQuad {
+    /// Image ID for texture lookup in [`ImageTextureCache`](super::image_render::ImageTextureCache).
+    pub image_id: ImageId,
+    /// Pixel position (top-left corner).
+    pub x: f32,
+    /// Pixel position (top-left corner).
+    pub y: f32,
+    /// Pixel width.
+    pub w: f32,
+    /// Pixel height.
+    pub h: f32,
+    /// UV source rect origin.
+    pub uv_x: f32,
+    /// UV source rect origin.
+    pub uv_y: f32,
+    /// UV source rect width.
+    pub uv_w: f32,
+    /// UV source rect height.
+    pub uv_h: f32,
+    /// Opacity (0.0–1.0).
+    pub opacity: f32,
+}
 
 /// GPU-ready frame data produced by the Prepare phase.
 ///
@@ -52,6 +81,14 @@ pub struct PreparedFrame {
     pub overlay_subpixel_glyphs: InstanceWriter,
     /// Overlay color glyph instances (drawn after overlay rects).
     pub overlay_color_glyphs: InstanceWriter,
+    /// Clip segments for the chrome tier (draws 6–9), one per writer.
+    pub ui_clips: TierClips,
+    /// Clip segments for the overlay tier (draws 10–13), one per writer.
+    pub overlay_clips: TierClips,
+    /// Image quads below text (`z_index` < 0).
+    pub image_quads_below: Vec<ImageQuad>,
+    /// Image quads above text (`z_index` >= 0).
+    pub image_quads_above: Vec<ImageQuad>,
     /// Viewport pixel dimensions for uniform buffer update.
     pub viewport: ViewportSize,
     /// Window clear color (alpha-premultiplied).
@@ -75,6 +112,10 @@ impl PreparedFrame {
             overlay_glyphs: InstanceWriter::new(),
             overlay_subpixel_glyphs: InstanceWriter::new(),
             overlay_color_glyphs: InstanceWriter::new(),
+            ui_clips: TierClips::default(),
+            overlay_clips: TierClips::default(),
+            image_quads_below: Vec::new(),
+            image_quads_above: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -107,6 +148,10 @@ impl PreparedFrame {
             overlay_glyphs: InstanceWriter::new(),
             overlay_subpixel_glyphs: InstanceWriter::new(),
             overlay_color_glyphs: InstanceWriter::new(),
+            ui_clips: TierClips::default(),
+            overlay_clips: TierClips::default(),
+            image_quads_below: Vec::new(),
+            image_quads_above: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -163,6 +208,10 @@ impl PreparedFrame {
         self.overlay_glyphs.clear();
         self.overlay_subpixel_glyphs.clear();
         self.overlay_color_glyphs.clear();
+        self.ui_clips.clear();
+        self.overlay_clips.clear();
+        self.image_quads_below.clear();
+        self.image_quads_above.clear();
     }
 
     /// Append all instances from `other` into this frame.
@@ -186,6 +235,28 @@ impl PreparedFrame {
             .extend_from(&other.overlay_subpixel_glyphs);
         self.overlay_color_glyphs
             .extend_from(&other.overlay_color_glyphs);
+        self.ui_clips.extend_from(
+            &other.ui_clips,
+            [
+                self.ui_rects.len() as u32,
+                self.ui_glyphs.len() as u32,
+                self.ui_subpixel_glyphs.len() as u32,
+                self.ui_color_glyphs.len() as u32,
+            ],
+        );
+        self.overlay_clips.extend_from(
+            &other.overlay_clips,
+            [
+                self.overlay_rects.len() as u32,
+                self.overlay_glyphs.len() as u32,
+                self.overlay_subpixel_glyphs.len() as u32,
+                self.overlay_color_glyphs.len() as u32,
+            ],
+        );
+        self.image_quads_below
+            .extend_from_slice(&other.image_quads_below);
+        self.image_quads_above
+            .extend_from_slice(&other.image_quads_above);
     }
 
     /// Update the clear color (e.g. after a palette change).

@@ -7,6 +7,7 @@
 
 use std::time::Instant;
 
+use crate::animation::Lerp;
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
@@ -26,16 +27,16 @@ use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 // Drawing constants (logical pixels).
 
 /// Corner radius for the active tab's top-left and top-right corners.
-const ACTIVE_TAB_RADIUS: f32 = 8.0;
+pub(super) const ACTIVE_TAB_RADIUS: f32 = 8.0;
 
 /// Corner radius for hover backgrounds on buttons and close targets.
 const BUTTON_HOVER_RADIUS: f32 = 4.0;
 
 /// Inset from close button edges to the × crosshair center.
-const CLOSE_ICON_INSET: f32 = 7.0;
+pub(super) const CLOSE_ICON_INSET: f32 = 7.0;
 
 /// Line thickness for icon strokes (× close, + new tab, ▾ dropdown).
-const ICON_STROKE_WIDTH: f32 = 1.5;
+pub(super) const ICON_STROKE_WIDTH: f32 = 1.5;
 
 /// Half-arm length of the + icon in the new-tab button.
 const PLUS_ARM: f32 = 6.0;
@@ -56,17 +57,17 @@ const BELL_DURATION_SECS: f32 = 3.0;
 const BELL_FREQUENCY_HZ: f32 = 2.0;
 
 /// Tab strip geometry and per-tab draw state passed to drawing helpers.
-struct TabStrip {
+pub(super) struct TabStrip {
     /// Y coordinate of the tab tops (after top margin).
-    y: f32,
+    pub(super) y: f32,
     /// Height of each tab (bar height minus top margin).
-    h: f32,
+    pub(super) h: f32,
     /// Whether the current tab being drawn is the active tab.
-    active: bool,
+    pub(super) active: bool,
     /// Bell animation phase for the current tab (0.0 if none).
-    bell: f32,
+    pub(super) bell: f32,
     /// Title/icon text color for the current tab.
-    text_color: Color,
+    pub(super) text_color: Color,
 }
 
 // --- Drawing helpers ---
@@ -79,17 +80,19 @@ impl TabBarWidget {
     fn draw_tab(&self, ctx: &mut DrawCtx<'_>, index: usize, strip: &TabStrip) {
         let tab = &self.tabs[index];
         let x = self.layout.tab_x(index) + self.anim_offset(index);
-        let tab_rect = Rect::new(x, strip.y, self.layout.tab_width, strip.h);
+        let tab_rect = Rect::new(x, strip.y, self.layout.tab_width_at(index), strip.h);
 
-        // Background color: active > bell pulse > hover > inactive.
+        // Background color: active > bell pulse > animated hover blend.
         let bg = if strip.active {
             self.colors.active_bg
         } else if strip.bell > 0.0 {
             self.colors.bell_pulse(strip.bell)
-        } else if self.hover_hit.is_tab(index) {
-            self.colors.tab_hover_bg
         } else {
-            self.colors.inactive_bg
+            let hover_t = self
+                .hover_progress
+                .get(index)
+                .map_or(0.0, |p| p.get(ctx.now));
+            Color::lerp(self.colors.inactive_bg, self.colors.tab_hover_bg, hover_t)
         };
 
         // Active tab gets rounded top corners.
@@ -104,18 +107,39 @@ impl TabBarWidget {
             RectStyle::filled(bg)
         };
 
+        // Width multiplier — content fades in faster than width expands.
+        let width_t = self
+            .width_multipliers
+            .get(index)
+            .map_or(1.0, |m| m.get(ctx.now));
+        let content_opacity = (width_t * 2.0).min(1.0);
+
+        // Clip tab content to its bounds — prevents overflow into adjacent tabs.
+        ctx.draw_list.push_clip(tab_rect);
         ctx.draw_list.push_layer(bg);
         ctx.draw_list.push_rect(tab_rect, style);
 
-        self.draw_tab_label(ctx, tab, x, strip);
+        // Only draw content when somewhat visible.
+        if content_opacity > 0.01 {
+            self.draw_tab_label(ctx, tab, x, strip);
 
-        // Close button: always visible on active, hover-only on inactive.
-        let show_close = strip.active || self.hover_hit.is_tab(index);
-        if show_close {
-            self.draw_close_button(ctx, index, x, strip);
+            // Close button: always visible on active, animated fade on inactive.
+            if strip.active {
+                self.draw_close_button(ctx, index, x, strip, content_opacity);
+            } else {
+                let opacity = self
+                    .close_btn_opacity
+                    .get(index)
+                    .map_or(0.0, |o| o.get(ctx.now));
+                let opacity = opacity * content_opacity;
+                if opacity > 0.01 {
+                    self.draw_close_button(ctx, index, x, strip, opacity);
+                }
+            }
         }
 
         ctx.draw_list.pop_layer();
+        ctx.draw_list.pop_clip();
     }
 
     /// Draws the icon (if any) and title text for a tab at the given X position.
@@ -123,7 +147,13 @@ impl TabBarWidget {
     /// Shared between [`draw_tab`] (normal tabs) and [`draw_dragged_tab_overlay`]
     /// (floating drag overlay) — the only differences are position and color.
     /// Text color comes from `strip.text_color`.
-    fn draw_tab_label(&self, ctx: &mut DrawCtx<'_>, tab: &TabEntry, x: f32, strip: &TabStrip) {
+    pub(super) fn draw_tab_label(
+        &self,
+        ctx: &mut DrawCtx<'_>,
+        tab: &TabEntry,
+        x: f32,
+        strip: &TabStrip,
+    ) {
         let color = strip.text_color;
 
         // Icon rendering: shape and draw emoji before the title.
@@ -155,16 +185,28 @@ impl TabBarWidget {
             .push_text(Point::new(text_x, text_y), shaped, color);
     }
 
-    /// Draws the close (×) button for a tab.
-    fn draw_close_button(&self, ctx: &mut DrawCtx<'_>, index: usize, tab_x: f32, strip: &TabStrip) {
-        let cx = tab_x + self.layout.tab_width - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH;
+    /// Draws the close (×) button for a tab with the given opacity.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "close button draw: self + ctx + index + tab_x + strip + opacity"
+    )]
+    fn draw_close_button(
+        &self,
+        ctx: &mut DrawCtx<'_>,
+        index: usize,
+        tab_x: f32,
+        strip: &TabStrip,
+        opacity: f32,
+    ) {
+        let cx =
+            tab_x + self.layout.tab_width_at(index) - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH;
         let cy = strip.y + (strip.h - CLOSE_BUTTON_WIDTH) / 2.0;
         let btn = Rect::new(cx, cy, CLOSE_BUTTON_WIDTH, CLOSE_BUTTON_WIDTH);
 
         // Hover highlight on the close button.
         if self.hover_hit == TabBarHit::CloseTab(index) {
-            let style =
-                RectStyle::filled(self.colors.button_hover_bg).with_radius(BUTTON_HOVER_RADIUS);
+            let style = RectStyle::filled(self.colors.button_hover_bg.with_alpha(opacity))
+                .with_radius(BUTTON_HOVER_RADIUS);
             ctx.draw_list.push_rect(btn, style);
         }
 
@@ -173,7 +215,7 @@ impl TabBarWidget {
         let y1 = cy + CLOSE_ICON_INSET;
         let x2 = cx + CLOSE_BUTTON_WIDTH - CLOSE_ICON_INSET;
         let y2 = cy + CLOSE_BUTTON_WIDTH - CLOSE_ICON_INSET;
-        let fg = self.colors.close_fg;
+        let fg = self.colors.close_fg.with_alpha(opacity);
         ctx.draw_list.push_line(
             Point::new(x1, y1),
             Point::new(x2, y2),
@@ -277,70 +319,6 @@ impl TabBarWidget {
             fg,
         );
     }
-
-    /// Draws the dragged tab as a floating overlay.
-    ///
-    /// Called separately from the main tab bar pass. The dragged tab is
-    /// excluded from normal rendering and drawn here with an opaque backing
-    /// rect so it floats above everything.
-    fn draw_dragged_tab_overlay(&self, ctx: &mut DrawCtx<'_>, strip: &TabStrip) {
-        let Some((index, visual_x)) = self.drag_visual else {
-            return;
-        };
-        if index >= self.tabs.len() {
-            return;
-        }
-
-        let tab = &self.tabs[index];
-        let w = self.layout.tab_width;
-
-        // Opaque backing rect (hides underlying content from the fg pass).
-        let backing = Rect::new(visual_x, strip.y, w, strip.h);
-        ctx.draw_list
-            .push_rect(backing, RectStyle::filled(self.colors.bar_bg));
-
-        // Rounded tab shape with active background.
-        let tab_rect = Rect::new(visual_x, strip.y, w, strip.h);
-        let style = RectStyle::filled(self.colors.active_bg).with_per_corner_radius(
-            ACTIVE_TAB_RADIUS,
-            ACTIVE_TAB_RADIUS,
-            0.0,
-            0.0,
-        );
-        ctx.draw_list.push_layer(self.colors.active_bg);
-        ctx.draw_list.push_rect(tab_rect, style);
-
-        self.draw_tab_label(ctx, tab, visual_x, strip);
-
-        // Close button (always visible on dragged tab).
-        self.draw_close_icon(ctx, visual_x, strip);
-
-        ctx.draw_list.pop_layer();
-    }
-
-    /// Draws the × icon at a given tab X position (no hover — for drag overlay).
-    fn draw_close_icon(&self, ctx: &mut DrawCtx<'_>, tab_x: f32, strip: &TabStrip) {
-        let cx = tab_x + self.layout.tab_width - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH;
-        let cy = strip.y + (strip.h - CLOSE_BUTTON_WIDTH) / 2.0;
-
-        let x1 = cx + CLOSE_ICON_INSET;
-        let y1 = cy + CLOSE_ICON_INSET;
-        let x2 = cx + CLOSE_BUTTON_WIDTH - CLOSE_ICON_INSET;
-        let y2 = cy + CLOSE_BUTTON_WIDTH - CLOSE_ICON_INSET;
-        let fg = self.colors.close_fg;
-        ctx.draw_list.push_line(
-            Point::new(x1, y1),
-            Point::new(x2, y2),
-            ICON_STROKE_WIDTH,
-            fg,
-        );
-        ctx.draw_list.push_line(
-            Point::new(x1, y2),
-            Point::new(x2, y1),
-            ICON_STROKE_WIDTH,
-            fg,
-        );
-    }
 }
 
 // --- Free functions used by both drawing and tests ---
@@ -371,8 +349,8 @@ pub(super) fn bell_phase(tab: &TabEntry, now: Instant) -> f32 {
 /// right to stay visible: `max(default_x, drag_x + tab_width)`.
 pub(super) fn new_tab_button_x(widget: &TabBarWidget) -> f32 {
     let default_x = widget.layout.new_tab_x();
-    if let Some((_, drag_x)) = widget.drag_visual {
-        default_x.max(drag_x + widget.layout.tab_width)
+    if let Some((idx, drag_x)) = widget.drag_visual {
+        default_x.max(drag_x + widget.layout.tab_width_at(idx))
     } else {
         default_x
     }
@@ -381,8 +359,8 @@ pub(super) fn new_tab_button_x(widget: &TabBarWidget) -> f32 {
 /// X position of the dropdown button, adjusted for drag.
 pub(super) fn dropdown_button_x(widget: &TabBarWidget) -> f32 {
     let default_x = widget.layout.dropdown_x();
-    if let Some((_, drag_x)) = widget.drag_visual {
-        default_x.max(drag_x + widget.layout.tab_width + NEW_TAB_BUTTON_WIDTH)
+    if let Some((idx, drag_x)) = widget.drag_visual {
+        default_x.max(drag_x + widget.layout.tab_width_at(idx) + NEW_TAB_BUTTON_WIDTH)
     } else {
         default_x
     }
@@ -445,6 +423,17 @@ impl Widget for TabBarWidget {
             strip.bell = 0.0;
             strip.text_color = self.colors.text_fg;
             self.draw_tab(ctx, self.active_index, &strip);
+        }
+
+        // 3.5. Request continued redraws if any animation is running.
+        let hover_animating = self.hover_progress.iter().any(|p| p.is_animating(ctx.now));
+        let close_animating = self
+            .close_btn_opacity
+            .iter()
+            .any(|o| o.is_animating(ctx.now));
+        let width_animating = self.has_width_animation(ctx.now);
+        if hover_animating || close_animating || width_animating {
+            ctx.animations_running.set(true);
         }
 
         // 4. Separators: 1px vertical lines between tabs.

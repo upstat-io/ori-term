@@ -107,3 +107,71 @@ pub fn decode_to_rgba(data: &[u8]) -> Result<(Vec<u8>, u32, u32), super::ImageEr
         "image-protocol feature not enabled".to_string(),
     ))
 }
+
+/// Decoded GIF animation frames.
+pub struct GifFrames {
+    /// Width of the animation canvas.
+    pub width: u32,
+    /// Height of the animation canvas.
+    pub height: u32,
+    /// RGBA pixel data for each frame.
+    pub frames: Vec<Vec<u8>>,
+    /// Duration of each frame.
+    pub durations: Vec<std::time::Duration>,
+    /// Number of loops (None = infinite, Some(0) = infinite per GIF spec).
+    pub loop_count: Option<u32>,
+}
+
+/// Decode a GIF into individual animation frames.
+///
+/// Returns `None` if the data is not a GIF or has only one frame
+/// (single-frame GIFs should use `decode_to_rgba` instead).
+#[cfg(feature = "image-protocol")]
+pub fn decode_gif_frames(data: &[u8]) -> Option<GifFrames> {
+    use image::AnimationDecoder;
+    use image::codecs::gif::GifDecoder;
+    use std::io::Cursor;
+    use std::time::Duration;
+
+    let decoder = GifDecoder::new(Cursor::new(data)).ok()?;
+    let frames: Vec<image::Frame> = decoder.into_frames().filter_map(Result::ok).collect();
+
+    if frames.len() <= 1 {
+        return None;
+    }
+
+    let width = frames[0].buffer().width();
+    let height = frames[0].buffer().height();
+
+    let mut rgba_frames = Vec::with_capacity(frames.len());
+    let mut durations = Vec::with_capacity(frames.len());
+
+    for frame in &frames {
+        let buf = frame.buffer();
+        // Resize frame to canvas size if needed (some GIFs have variable frame sizes).
+        if buf.width() == width && buf.height() == height {
+            rgba_frames.push(buf.as_raw().clone());
+        } else {
+            let resized = image::imageops::resize(buf, width, height, image::imageops::Nearest);
+            rgba_frames.push(resized.into_raw());
+        }
+
+        let (numer, denom) = frame.delay().numer_denom_ms();
+        let ms = if denom > 0 { numer / denom } else { 100 };
+        durations.push(Duration::from_millis(u64::from(ms)));
+    }
+
+    Some(GifFrames {
+        width,
+        height,
+        frames: rgba_frames,
+        durations,
+        loop_count: None, // GIF89a loop count not easily accessible via image crate.
+    })
+}
+
+/// Stub when `image-protocol` feature is disabled.
+#[cfg(not(feature = "image-protocol"))]
+pub fn decode_gif_frames(_data: &[u8]) -> Option<GifFrames> {
+    None
+}

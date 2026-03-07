@@ -100,6 +100,7 @@ impl App {
         let new_pane_id = match mux.spawn_pane(&config, theme) {
             Ok(pid) => {
                 mux.set_pane_theme(pid, theme, palette);
+                mux.set_image_config(pid, self.config.terminal.image_config());
                 log::info!("split pane: {source_pane_id:?} -> {pid:?} ({direction:?})");
                 pid
             }

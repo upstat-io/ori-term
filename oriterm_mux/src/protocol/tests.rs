@@ -76,6 +76,7 @@ fn msg_type_roundtrip_all() {
         MsgType::SetCapabilities,
         MsgType::SpawnPane,
         MsgType::ListPanes,
+        MsgType::SetImageConfig,
         MsgType::HelloAck,
         MsgType::PaneClosedAck,
         MsgType::Subscribed,
@@ -964,6 +965,35 @@ fn roundtrip_large_pane_snapshot() {
         }
         other => panic!("expected PaneSnapshotResp, got {other:?}"),
     }
+}
+
+// -- SetImageConfig roundtrip --
+
+#[test]
+fn roundtrip_set_image_config() {
+    let pdu = MuxPdu::SetImageConfig {
+        pane_id: PaneId::from_raw(3),
+        enabled: true,
+        memory_limit: 320_000_000,
+        max_single: 64_000_000,
+        animation_enabled: true,
+    };
+    assert!(pdu.is_fire_and_forget());
+    roundtrip(40, pdu);
+}
+
+#[test]
+fn roundtrip_set_image_config_disabled() {
+    roundtrip(
+        41,
+        MuxPdu::SetImageConfig {
+            pane_id: PaneId::from_raw(1),
+            enabled: false,
+            memory_limit: 0,
+            max_single: 0,
+            animation_enabled: false,
+        },
+    );
 }
 
 // -- SetCapabilities roundtrip --

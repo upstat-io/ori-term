@@ -324,6 +324,9 @@ impl App {
         // Apply color scheme + user overrides to the pane's terminal palette.
         mux.set_pane_theme(pane_id, theme, palette);
 
+        // Apply image protocol config.
+        mux.set_image_config(pane_id, self.config.terminal.image_config());
+
         // Discard setup notifications (not useful at init time).
         mux.discard_notifications();
 

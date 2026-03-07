@@ -5,8 +5,9 @@ use wgpu::{
     RenderPassDescriptor, StoreOp, TextureView, TextureViewDescriptor,
 };
 
+use super::super::pipeline::IMAGE_INSTANCE_STRIDE;
 use super::super::state::GpuState;
-use super::helpers::{record_draw, upload_buffer};
+use super::helpers::{record_draw, record_draw_clipped, upload_buffer};
 use super::{SurfaceError, WindowRenderer};
 use crate::gpu::pipelines::GpuPipelines;
 
@@ -27,6 +28,9 @@ impl WindowRenderer {
 
         // Upload instance data to GPU buffers.
         self.upload_instance_buffers(device, queue);
+
+        // Upload image instance data (shared buffer for all image quads).
+        self.upload_image_instances(device, queue);
 
         // Encode render commands.
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -156,15 +160,54 @@ impl WindowRenderer {
         );
     }
 
-    /// Record the thirteen draw passes into the render pass.
+    /// Upload image quad instances to a shared GPU buffer.
     ///
-    /// Three tiers in painter's order:
-    /// - Terminal (draws 1–5): cell backgrounds, glyphs, cursors
+    /// Each image quad is 36 bytes. All quads (below + above text) are packed
+    /// into a single buffer. Individual draw calls index into this buffer
+    /// with vertex buffer offsets.
+    fn upload_image_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let below = &self.prepared.image_quads_below;
+        let above = &self.prepared.image_quads_above;
+        let total = below.len() + above.len();
+        if total == 0 {
+            return;
+        }
+
+        let stride = IMAGE_INSTANCE_STRIDE as usize;
+        let data_size = total * stride;
+        let mut data = Vec::with_capacity(data_size);
+
+        for quad in below.iter().chain(above.iter()) {
+            data.extend_from_slice(&quad.x.to_le_bytes());
+            data.extend_from_slice(&quad.y.to_le_bytes());
+            data.extend_from_slice(&quad.w.to_le_bytes());
+            data.extend_from_slice(&quad.h.to_le_bytes());
+            data.extend_from_slice(&quad.uv_x.to_le_bytes());
+            data.extend_from_slice(&quad.uv_y.to_le_bytes());
+            data.extend_from_slice(&quad.uv_w.to_le_bytes());
+            data.extend_from_slice(&quad.uv_h.to_le_bytes());
+            data.extend_from_slice(&quad.opacity.to_le_bytes());
+        }
+
+        upload_buffer(
+            device,
+            queue,
+            &mut self.image_instance_buffer,
+            &data,
+            "image_instance_buffer",
+        );
+    }
+
+    /// Record all draw passes into the render pass.
+    ///
+    /// Four tiers in painter's order:
+    /// - Terminal (draws 1–5): cell backgrounds, images below text, glyphs, cursors
     /// - Chrome (draws 6–9): UI rects + chrome text (tab bar, search bar)
     /// - Overlay (draws 10–13): overlay rects + overlay text (context menus)
+    /// - Images above text are drawn after glyphs but before cursors.
     #[expect(
         clippy::too_many_lines,
-        reason = "GPU draw dispatch table: 13 sequential record_draw calls across 3 tiers"
+        reason = "GPU draw dispatch table: draw calls across multiple tiers + image passes"
     )]
     fn record_draw_passes<'a>(
         pipelines: &'a GpuPipelines,
@@ -177,7 +220,7 @@ impl WindowRenderer {
         let color = Some(renderer.color_atlas_bind_group.bind_group());
         let p = &renderer.prepared;
 
-        // Terminal tier (draws 1–5).
+        // Terminal tier: backgrounds.
         record_draw(
             pass,
             &pipelines.bg_pipeline,
@@ -186,6 +229,17 @@ impl WindowRenderer {
             renderer.bg_buffer.as_ref(),
             p.backgrounds.len() as u32,
         );
+
+        // Images below text (z_index < 0).
+        Self::record_image_draws(
+            pipelines,
+            renderer,
+            pass,
+            &p.image_quads_below,
+            0, // buffer offset: below quads come first
+        );
+
+        // Terminal tier: text glyphs.
         record_draw(
             pass,
             &pipelines.fg_pipeline,
@@ -210,6 +264,17 @@ impl WindowRenderer {
             renderer.color_fg_buffer.as_ref(),
             p.color_glyphs.len() as u32,
         );
+
+        // Images above text (z_index >= 0).
+        Self::record_image_draws(
+            pipelines,
+            renderer,
+            pass,
+            &p.image_quads_above,
+            p.image_quads_below.len(), // buffer offset: above quads start after below
+        );
+
+        // Cursors (on top of images and text).
         record_draw(
             pass,
             &pipelines.bg_pipeline,
@@ -219,73 +284,137 @@ impl WindowRenderer {
             p.cursors.len() as u32,
         );
 
-        // Chrome tier (draws 6–9).
-        record_draw(
+        let vw = p.viewport.width;
+        let vh = p.viewport.height;
+
+        // Chrome tier (draws 6–9) — with scissor rect clipping.
+        record_draw_clipped(
             pass,
             &pipelines.ui_rect_pipeline,
             bg,
             None,
             renderer.ui_rect_buffer.as_ref(),
             p.ui_rects.len() as u32,
+            &p.ui_clips.rects,
+            vw,
+            vh,
         );
-        record_draw(
+        record_draw_clipped(
             pass,
             &pipelines.fg_pipeline,
             bg,
             mono,
             renderer.ui_fg_buffer.as_ref(),
             p.ui_glyphs.len() as u32,
+            &p.ui_clips.mono,
+            vw,
+            vh,
         );
-        record_draw(
+        record_draw_clipped(
             pass,
             &pipelines.subpixel_fg_pipeline,
             bg,
             sub,
             renderer.ui_subpixel_fg_buffer.as_ref(),
             p.ui_subpixel_glyphs.len() as u32,
+            &p.ui_clips.subpixel,
+            vw,
+            vh,
         );
-        record_draw(
+        record_draw_clipped(
             pass,
             &pipelines.color_fg_pipeline,
             bg,
             color,
             renderer.ui_color_fg_buffer.as_ref(),
             p.ui_color_glyphs.len() as u32,
+            &p.ui_clips.color,
+            vw,
+            vh,
         );
 
-        // Overlay tier (draws 10–13).
-        record_draw(
+        // Overlay tier (draws 10–13) — with scissor rect clipping.
+        record_draw_clipped(
             pass,
             &pipelines.ui_rect_pipeline,
             bg,
             None,
             renderer.overlay_rect_buffer.as_ref(),
             p.overlay_rects.len() as u32,
+            &p.overlay_clips.rects,
+            vw,
+            vh,
         );
-        record_draw(
+        record_draw_clipped(
             pass,
             &pipelines.fg_pipeline,
             bg,
             mono,
             renderer.overlay_fg_buffer.as_ref(),
             p.overlay_glyphs.len() as u32,
+            &p.overlay_clips.mono,
+            vw,
+            vh,
         );
-        record_draw(
+        record_draw_clipped(
             pass,
             &pipelines.subpixel_fg_pipeline,
             bg,
             sub,
             renderer.overlay_subpixel_fg_buffer.as_ref(),
             p.overlay_subpixel_glyphs.len() as u32,
+            &p.overlay_clips.subpixel,
+            vw,
+            vh,
         );
-        record_draw(
+        record_draw_clipped(
             pass,
             &pipelines.color_fg_pipeline,
             bg,
             color,
             renderer.overlay_color_fg_buffer.as_ref(),
             p.overlay_color_glyphs.len() as u32,
+            &p.overlay_clips.color,
+            vw,
+            vh,
         );
+    }
+
+    /// Record per-image draw calls for a set of image quads.
+    ///
+    /// Each image requires its own draw call because each has a unique
+    /// texture bind group. `buffer_offset` is the starting index into the
+    /// shared image instance buffer.
+    fn record_image_draws<'a>(
+        pipelines: &'a GpuPipelines,
+        renderer: &'a Self,
+        pass: &mut wgpu::RenderPass<'a>,
+        quads: &[super::super::prepared_frame::ImageQuad],
+        buffer_offset: usize,
+    ) {
+        if quads.is_empty() {
+            return;
+        }
+        let Some(buf) = renderer.image_instance_buffer.as_ref() else {
+            return;
+        };
+
+        let stride = IMAGE_INSTANCE_STRIDE;
+
+        pass.set_pipeline(&pipelines.image_pipeline);
+        pass.set_bind_group(0, renderer.uniform_buffer.bind_group(), &[]);
+
+        for (i, quad) in quads.iter().enumerate() {
+            let Some(bind_group) = renderer.image_texture_cache.get_bind_group(quad.image_id)
+            else {
+                continue;
+            };
+
+            let byte_offset = ((buffer_offset + i) as u64) * stride;
+            pass.set_bind_group(1, bind_group, &[]);
+            pass.set_vertex_buffer(0, buf.slice(byte_offset..byte_offset + stride));
+            pass.draw(0..4, 0..1);
+        }
     }
 
     /// Acquire a surface texture, render the stored prepared frame, and present.

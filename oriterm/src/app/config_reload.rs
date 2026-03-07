@@ -31,6 +31,7 @@ impl App {
         self.apply_cursor_changes(&new_config);
         self.apply_window_changes(&new_config);
         self.apply_behavior_changes(&new_config);
+        self.apply_image_changes(&new_config);
         self.apply_keybinding_changes(&new_config);
 
         // Bell config is read from self.config at usage sites, so
@@ -242,6 +243,42 @@ impl App {
             }
             log::info!("config reload: bold_is_bright changed");
         }
+    }
+
+    /// Detect and apply image protocol config changes.
+    ///
+    /// Updates CPU-side limits on the mux backend and GPU texture cache
+    /// limits on each window renderer.
+    fn apply_image_changes(&mut self, new: &Config) {
+        let changed = new.terminal.image_config() != self.config.terminal.image_config()
+            || new.terminal.image_gpu_memory_limit != self.config.terminal.image_gpu_memory_limit;
+
+        if !changed {
+            return;
+        }
+
+        // CPU-side: propagate enable/disable + memory limits to all panes.
+        if let Some(mux) = self.mux.as_mut() {
+            for pane_id in mux.pane_ids() {
+                mux.set_image_config(pane_id, new.terminal.image_config());
+            }
+        }
+
+        // GPU-side: update texture cache limit on each window renderer.
+        for ctx in self.windows.values_mut() {
+            if let Some(renderer) = ctx.renderer.as_mut() {
+                renderer.set_image_gpu_memory_limit(new.terminal.image_gpu_memory_limit);
+            }
+        }
+
+        log::info!(
+            "config reload: image protocol={}, mem={}MB, gpu={}MB, max_single={}MB, animation={}",
+            new.terminal.image_protocol,
+            new.terminal.image_memory_limit / 1_000_000,
+            new.terminal.image_gpu_memory_limit / 1_000_000,
+            new.terminal.image_max_single_size / 1_000_000,
+            new.terminal.image_animation,
+        );
     }
 
     /// Rebuild keybinding table from new config.

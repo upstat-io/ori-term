@@ -11,12 +11,15 @@ use log::warn;
 use crate::event::EventListener;
 use crate::grid::StableRowIndex;
 use crate::image::sixel::SixelParser;
-use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource};
+use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, PlacementSizing};
 use crate::term::{Term, TermMode};
 
 impl<T: EventListener> Term<T> {
     /// Begin a sixel sequence: create parser from DCS params.
     pub(in crate::term::handler) fn handle_sixel_start(&mut self, params: &[u16]) {
+        if !self.image_protocol_enabled {
+            return;
+        }
         self.sixel_parser = Some(SixelParser::new(params));
     }
 
@@ -90,6 +93,10 @@ impl<T: EventListener> Term<T> {
             z_index: 0,
             cell_x_offset: 0,
             cell_y_offset: 0,
+            sizing: PlacementSizing::FixedPixels {
+                width: w,
+                height: h,
+            },
         };
 
         self.image_cache_mut().place(placement);

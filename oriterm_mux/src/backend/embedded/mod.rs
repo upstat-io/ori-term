@@ -14,7 +14,7 @@ use std::sync::mpsc;
 use oriterm_core::selection::{self, Selection};
 use oriterm_core::{RenderableContent, Theme};
 
-use super::MuxBackend;
+use super::{ImageConfig, MuxBackend};
 use crate::domain::SpawnConfig;
 use crate::in_process::{ClosePaneResult, InProcessMux};
 use crate::mux_event::{MuxEvent, MuxNotification};
@@ -147,6 +147,15 @@ impl MuxBackend for EmbeddedMux {
             pane.terminal().lock().grid_mut().dirty_mut().mark_all();
         }
         self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            let mut term = pane.terminal().lock();
+            term.set_image_protocol_enabled(config.enabled);
+            term.set_image_limits(config.memory_limit, config.max_single);
+            term.set_image_animation_enabled(config.animation_enabled);
+        }
     }
 
     fn open_search(&mut self, pane_id: PaneId) {

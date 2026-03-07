@@ -1,6 +1,7 @@
 //! Kitty graphics protocol handler.
 //!
 //! Handles APC `G` commands: transmit, place, delete, query.
+//! Animation (`a=f`, `a=a`) is in sibling `kitty_animation.rs`.
 
 use std::sync::Arc;
 
@@ -11,22 +12,27 @@ use crate::grid::StableRowIndex;
 use crate::image::kitty::{
     KittyAction, KittyCommand, KittyTransmission, LoadingImage, parse_kitty_command,
 };
-use crate::image::{ImageData, ImageId, ImagePlacement, ImageSource, decode_to_rgba, rgb_to_rgba};
+use crate::image::{
+    ImageData, ImageId, ImagePlacement, ImageSource, PlacementSizing, decode_to_rgba, rgb_to_rgba,
+};
 use crate::term::Term;
 
 /// Parameters for storing an image via Kitty protocol.
-struct KittyStoreParams {
-    image_id: u32,
-    payload: Vec<u8>,
-    format: u32,
-    width: u32,
-    height: u32,
-    transmission: KittyTransmission,
+pub(super) struct KittyStoreParams {
+    pub(super) image_id: u32,
+    pub(super) payload: Vec<u8>,
+    pub(super) format: u32,
+    pub(super) width: u32,
+    pub(super) height: u32,
+    pub(super) transmission: KittyTransmission,
 }
 
 impl<T: EventListener> Term<T> {
     /// Parse and execute a Kitty graphics command.
     pub(super) fn handle_kitty_graphics(&mut self, data: &[u8]) {
+        if !self.image_protocol_enabled {
+            return;
+        }
         let cmd = match parse_kitty_command(data) {
             Ok(cmd) => cmd,
             Err(e) => {
@@ -41,9 +47,8 @@ impl<T: EventListener> Term<T> {
             KittyAction::TransmitAndPlace => self.kitty_transmit_and_place(cmd),
             KittyAction::Place => self.kitty_place(&cmd),
             KittyAction::Delete => self.kitty_delete(&cmd),
-            KittyAction::Frame | KittyAction::Animate => {
-                debug!("kitty animation not yet implemented");
-            }
+            KittyAction::Frame => self.kitty_frame(cmd),
+            KittyAction::Animate => self.kitty_animate(&cmd),
         }
     }
 
@@ -96,7 +101,7 @@ impl<T: EventListener> Term<T> {
     }
 
     /// Finalize payload from accumulated chunks or single command.
-    fn kitty_finalize_payload(&mut self, cmd: &KittyCommand) -> KittyStoreParams {
+    pub(super) fn kitty_finalize_payload(&mut self, cmd: &KittyCommand) -> KittyStoreParams {
         let (payload, format, width, height, transmission) =
             if let Some(mut loading) = self.loading_image.take() {
                 loading.payload.extend_from_slice(&cmd.payload);
@@ -240,7 +245,7 @@ impl<T: EventListener> Term<T> {
     }
 
     /// Accumulate a chunk for multi-part transmission.
-    fn kitty_accumulate_chunk(&mut self, cmd: KittyCommand) {
+    pub(super) fn kitty_accumulate_chunk(&mut self, cmd: KittyCommand) {
         let max_bytes = self.image_cache().max_single_image_bytes();
 
         if let Some(ref mut loading) = self.loading_image {
@@ -298,7 +303,7 @@ impl<T: EventListener> Term<T> {
     }
 
     /// Decode pixel data from format code to RGBA.
-    fn kitty_decode_pixels(
+    pub(super) fn kitty_decode_pixels(
         payload: Vec<u8>,
         format: u32,
         width: u32,
@@ -400,6 +405,10 @@ impl<T: EventListener> Term<T> {
         let cell_w = self.cell_pixel_width.max(1) as u32;
         let cell_h = self.cell_pixel_height.max(1) as u32;
 
+        // Explicit c=/r= → cell-count sizing (scales with cell dimensions).
+        // Otherwise → fixed-pixel sizing (image keeps its pixel dimensions).
+        let explicit_cells = cmd.display_cols.is_some() || cmd.display_rows.is_some();
+
         let cols = cmd
             .display_cols
             .unwrap_or_else(|| if img_w > 0 { img_w.div_ceil(cell_w) } else { 1 })
@@ -408,6 +417,15 @@ impl<T: EventListener> Term<T> {
             .display_rows
             .unwrap_or_else(|| if img_h > 0 { img_h.div_ceil(cell_h) } else { 1 })
             as usize;
+
+        let sizing = if explicit_cells {
+            PlacementSizing::CellCount
+        } else {
+            PlacementSizing::FixedPixels {
+                width: cols as u32 * cell_w,
+                height: rows as u32 * cell_h,
+            }
+        };
 
         let placement = ImagePlacement {
             image_id: ImageId(image_id),
@@ -423,6 +441,7 @@ impl<T: EventListener> Term<T> {
             z_index: cmd.z_index,
             cell_x_offset: cmd.cell_x_offset as u16,
             cell_y_offset: cmd.cell_y_offset as u16,
+            sizing,
         };
 
         self.image_cache_mut().place(placement);
@@ -436,7 +455,7 @@ impl<T: EventListener> Term<T> {
     }
 
     /// Send a Kitty graphics response.
-    fn kitty_respond(&self, image_id: u32, quiet: u8, msg: &str) {
+    pub(super) fn kitty_respond(&self, image_id: u32, quiet: u8, msg: &str) {
         if quiet >= 2 {
             return;
         }

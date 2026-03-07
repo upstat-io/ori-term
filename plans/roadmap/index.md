@@ -727,6 +727,22 @@ Chrome model, process isolation, crash isolation, session persistence
 
 ---
 
+### Section 45: Security Hardening
+**File:** `section-45-security-hardening.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+security, hardening, clipboard security, OSC 52 security, clipboard policy
+focus-gated clipboard, clipboard_control, clipboard_write, clipboard_read
+paste confirmation, multi-line paste, paste injection, bracketed paste safety
+dangerous paste, sudo detection, curl pipe sh, paste warning
+escape sequence sandboxing, file access restriction, path traversal
+resource limits, image count limit, payload size limit
+window title sanitize, OSC 0 sanitize, OSC 7 validate
+clipboard_max_size, primary_write, primary_read, ask policy, deny policy
+```
+
+---
+
 ### Section 29: Mux Crate + Layout Engine
 **File:** `section-29-mux-layout-engine.md` | **Tier:** 4M | **Status:** Not Started
 
@@ -957,6 +973,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 42 | Expose / Overview Mode | `section-42-expose-overview.md` | 5 | Not Started |
 | 43 | Compositor Layer System + Animation Architecture | `section-43-compositor-layers.md` | 5 | Not Started |
 | **44** | **Multi-Process Window Architecture** | **`section-44-multi-process-windows.md`** | **0 (BLOCKER)** | **Not Started** |
+| 45 | Security Hardening | `section-45-security-hardening.md` | 5 | Not Started |
 
 ## Tier Summary
 
@@ -968,7 +985,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23, 38-39, 42-43 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers) |
+| 5 | 22-23, 38-39, 42-43, 45 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security) |
 | 6 | 24-25 | Polish (visual refinements, themes) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |

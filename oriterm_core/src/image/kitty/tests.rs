@@ -6,6 +6,7 @@ use vte::ansi::Processor;
 
 use super::parse::{KittyAction, KittyError, KittyTransmission, parse_kitty_command};
 use crate::event::{Event, EventListener};
+use crate::image::ImageId;
 use crate::term::Term;
 use crate::theme::Theme;
 
@@ -392,4 +393,133 @@ fn handler_unicode_placeholder_place_skips() {
     let place = kitty_apc("a=p,i=1,U=1,q=2");
     feed(&mut term, &place);
     assert_eq!(term.image_cache().placement_count(), 0);
+}
+
+// --- Animation tests ---
+
+#[test]
+fn handler_frame_adds_animation() {
+    let (mut term, _listener) = term_with_recorder();
+
+    // Transmit a 1x1 RGBA image.
+    let transmit = kitty_apc("a=t,i=1,f=32,s=1,v=1,q=2;AAAAAA==");
+    feed(&mut term, &transmit);
+    assert_eq!(term.image_cache().image_count(), 1);
+    assert!(term.image_cache().animation_state(ImageId(1)).is_none());
+
+    // Add a frame (a=f) — promotes image to animated.
+    // z=100 → 100ms gap, X=1 → overwrite composition.
+    let frame = kitty_apc("a=f,i=1,f=32,s=1,v=1,z=100,X=1,q=2;AAAAAA==");
+    feed(&mut term, &frame);
+
+    let state = term.image_cache().animation_state(ImageId(1));
+    assert!(state.is_some(), "image should now be animated");
+    assert_eq!(state.unwrap().total_frames, 2);
+}
+
+#[test]
+fn handler_frame_adds_multiple_frames() {
+    let (mut term, _listener) = term_with_recorder();
+
+    let transmit = kitty_apc("a=t,i=1,f=32,s=1,v=1,q=2;AAAAAA==");
+    feed(&mut term, &transmit);
+
+    // Add 3 more frames.
+    for _ in 0..3 {
+        let frame = kitty_apc("a=f,i=1,f=32,s=1,v=1,z=50,q=2;AAAAAA==");
+        feed(&mut term, &frame);
+    }
+
+    let state = term
+        .image_cache()
+        .animation_state(ImageId(1))
+        .expect("animated");
+    assert_eq!(state.total_frames, 4);
+}
+
+#[test]
+fn handler_frame_nonexistent_image_enoent() {
+    let (mut term, listener) = term_with_recorder();
+
+    let frame = kitty_apc("a=f,i=999,f=32,s=1,v=1,q=0;AAAAAA==");
+    feed(&mut term, &frame);
+
+    let writes = listener.pty_writes();
+    assert!(!writes.is_empty());
+    assert!(writes.last().unwrap().contains("ENOENT"), "expected ENOENT");
+}
+
+#[test]
+fn handler_animate_stop_and_run() {
+    let (mut term, _listener) = term_with_recorder();
+
+    // Set up an animated image.
+    let transmit = kitty_apc("a=t,i=1,f=32,s=1,v=1,q=2;AAAAAA==");
+    feed(&mut term, &transmit);
+    let frame = kitty_apc("a=f,i=1,f=32,s=1,v=1,z=50,q=2;AAAAAA==");
+    feed(&mut term, &frame);
+
+    // Stop animation (s=1).
+    let stop = kitty_apc("a=a,i=1,s=1,q=2");
+    feed(&mut term, &stop);
+    assert!(
+        term.image_cache()
+            .animation_state(ImageId(1))
+            .unwrap()
+            .paused
+    );
+
+    // Run animation (s=3).
+    let run = kitty_apc("a=a,i=1,s=3,q=2");
+    feed(&mut term, &run);
+    assert!(
+        !term
+            .image_cache()
+            .animation_state(ImageId(1))
+            .unwrap()
+            .paused
+    );
+}
+
+#[test]
+fn handler_animate_set_loops() {
+    let (mut term, _listener) = term_with_recorder();
+
+    let transmit = kitty_apc("a=t,i=1,f=32,s=1,v=1,q=2;AAAAAA==");
+    feed(&mut term, &transmit);
+    let frame = kitty_apc("a=f,i=1,f=32,s=1,v=1,z=50,q=2;AAAAAA==");
+    feed(&mut term, &frame);
+
+    // Set loop count to 5 (v=5).
+    let animate = kitty_apc("a=a,i=1,v=5,q=2");
+    feed(&mut term, &animate);
+
+    let state = term
+        .image_cache()
+        .animation_state(ImageId(1))
+        .expect("animated");
+    assert_eq!(state.loop_count, Some(5));
+}
+
+#[test]
+fn handler_animate_set_current_frame() {
+    let (mut term, _listener) = term_with_recorder();
+
+    let transmit = kitty_apc("a=t,i=1,f=32,s=1,v=1,q=2;AAAAAA==");
+    feed(&mut term, &transmit);
+    // Add 2 more frames (total 3).
+    for _ in 0..2 {
+        let frame = kitty_apc("a=f,i=1,f=32,s=1,v=1,z=50,q=2;AAAAAA==");
+        feed(&mut term, &frame);
+    }
+
+    // Jump to frame 2 (c=2, 1-based → internal frame index 1).
+    let animate = kitty_apc("a=a,i=1,c=2,q=2");
+    feed(&mut term, &animate);
+
+    let state = term
+        .image_cache()
+        .animation_state(ImageId(1))
+        .expect("animated");
+    assert_eq!(state.current_frame, 1);
 }

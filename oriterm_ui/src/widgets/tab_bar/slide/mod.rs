@@ -16,8 +16,15 @@ use crate::geometry::{LayerId, Transform2D};
 
 use super::TabBarWidget;
 
-/// Slide animation duration.
-const SLIDE_DURATION: Duration = Duration::from_millis(150);
+/// Compute slide duration proportional to pixel distance.
+///
+/// Base: 80ms. Scales up to 200ms for large distances (5+ tab widths).
+/// Clamped to [80ms, 200ms] range.
+fn slide_duration(distance_px: f32, tab_width: f32) -> Duration {
+    let slots = (distance_px.abs() / tab_width).max(1.0);
+    let ms = 80.0 + slots * 25.0;
+    Duration::from_millis(ms.clamp(80.0, 200.0) as u64)
+}
 
 /// Bundles the compositor state needed to start a slide animation.
 pub struct SlideContext<'a> {
@@ -73,7 +80,8 @@ impl TabSlideState {
         self.cancel_all(cx.tree, cx.animator);
 
         // Tabs at closed_idx..tab_count need to slide left from +tab_width.
-        self.create_slide_layers(closed_idx..tab_count, tab_width, cx);
+        let duration = slide_duration(tab_width, tab_width);
+        self.create_slide_layers(closed_idx..tab_count, tab_width, duration, cx);
     }
 
     /// Starts a reorder-slide animation.
@@ -102,7 +110,9 @@ impl TabSlideState {
             (to + 1..from + 1, -tab_width)
         };
 
-        self.create_slide_layers(range, offset, cx);
+        let distance = (to as f32 - from as f32).abs() * tab_width;
+        let duration = slide_duration(distance, tab_width);
+        self.create_slide_layers(range, offset, duration, cx);
     }
 
     /// Removes finished animation layers from the tree.
@@ -162,6 +172,7 @@ impl TabSlideState {
         &mut self,
         range: std::ops::Range<usize>,
         offset: f32,
+        duration: Duration,
         cx: &mut SlideContext<'_>,
     ) {
         let root = cx.tree.root();
@@ -175,7 +186,7 @@ impl TabSlideState {
                 },
             );
             let params = AnimationParams {
-                duration: SLIDE_DURATION,
+                duration,
                 easing: Easing::EaseOut,
                 tree: cx.tree,
                 now: cx.now,

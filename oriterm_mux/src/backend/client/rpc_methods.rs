@@ -10,7 +10,7 @@ use oriterm_core::Theme;
 use oriterm_core::selection::Selection;
 
 use crate::PaneSnapshot;
-use crate::backend::MuxBackend;
+use crate::backend::{ImageConfig, MuxBackend};
 use crate::domain::SpawnConfig;
 use crate::in_process::ClosePaneResult;
 use crate::mux_event::{MuxEvent, MuxNotification};
@@ -150,6 +150,18 @@ impl MuxBackend for MuxClient {
             transport.invalidate_pushed_snapshot(pane_id);
         }
         self.dirty_panes.insert(pane_id);
+    }
+
+    fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SetImageConfig {
+                pane_id,
+                enabled: config.enabled,
+                memory_limit: config.memory_limit as u64,
+                max_single: config.max_single as u64,
+                animation_enabled: config.animation_enabled,
+            });
+        }
     }
 
     fn open_search(&mut self, pane_id: PaneId) {

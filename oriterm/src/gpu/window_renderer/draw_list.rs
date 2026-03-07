@@ -13,6 +13,8 @@ impl WindowRenderer {
     /// 1. Rasterizes uncached UI text glyphs into atlases.
     /// 2. Converts text commands with a real [`TextContext`] so glyph
     ///    instances are emitted into the mono/subpixel/color writers.
+    /// 3. Processes `PushClip`/`PopClip` commands into [`ClipSegment`]s
+    ///    stored in `prepared.ui_clips`.
     ///
     /// Use this for overlays containing visible text (dialog title, message,
     /// button labels). Call after [`prepare`](Self::prepare) and before
@@ -49,6 +51,10 @@ impl WindowRenderer {
             color: &self.color_atlas,
         };
 
+        let vp = &self.prepared.viewport;
+        let vw = vp.width;
+        let vh = vp.height;
+
         // Use UI-specific glyph writers so text renders AFTER UI rect
         // backgrounds (draws 7–9) instead of behind them (draws 2–4).
         // Per-text bg_hint is baked into each Text command by the layer stack.
@@ -60,10 +66,17 @@ impl WindowRenderer {
             size_q6,
             hinted,
         };
+        let mut clip_ctx = super::super::draw_list_convert::ClipContext {
+            clips: &mut self.prepared.ui_clips,
+            stack: &mut self.clip_stack,
+            viewport_w: vw,
+            viewport_h: vh,
+        };
         super::super::draw_list_convert::convert_draw_list(
             draw_list,
             &mut self.prepared.ui_rects,
             Some(&mut text_ctx),
+            Some(&mut clip_ctx),
             scale,
             opacity,
         );
@@ -107,6 +120,10 @@ impl WindowRenderer {
             color: &self.color_atlas,
         };
 
+        let vp = &self.prepared.viewport;
+        let vw = vp.width;
+        let vh = vp.height;
+
         let mut text_ctx = super::super::draw_list_convert::TextContext {
             atlas: &bridge,
             mono_writer: &mut self.prepared.overlay_glyphs,
@@ -115,10 +132,17 @@ impl WindowRenderer {
             size_q6,
             hinted,
         };
+        let mut clip_ctx = super::super::draw_list_convert::ClipContext {
+            clips: &mut self.prepared.overlay_clips,
+            stack: &mut self.clip_stack,
+            viewport_w: vw,
+            viewport_h: vh,
+        };
         super::super::draw_list_convert::convert_draw_list(
             draw_list,
             &mut self.prepared.overlay_rects,
             Some(&mut text_ctx),
+            Some(&mut clip_ctx),
             scale,
             opacity,
         );

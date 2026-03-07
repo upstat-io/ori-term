@@ -82,6 +82,9 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
         mode: TermMode::from_bits_truncate(snapshot.modes),
         all_dirty: true,
         damage: Vec::new(),
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     }
 }
 
@@ -117,6 +120,9 @@ fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableCont
     out.mode = TermMode::from_bits_truncate(snapshot.modes);
     out.all_dirty = true;
     out.damage.clear();
+    out.images.clear();
+    out.image_data.clear();
+    out.images_dirty = false;
 }
 
 /// Refill an existing [`FrameInput`] from a [`PaneSnapshot`], reusing allocations.
