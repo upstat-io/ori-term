@@ -8,8 +8,8 @@ use wgpu::{BindGroupLayout, RenderPipeline};
 
 use super::pipeline::{
     create_atlas_bind_group_layout, create_bg_pipeline, create_color_fg_pipeline,
-    create_fg_pipeline, create_subpixel_fg_pipeline, create_ui_rect_pipeline,
-    create_uniform_bind_group_layout,
+    create_fg_pipeline, create_image_pipeline, create_image_texture_bind_group_layout,
+    create_subpixel_fg_pipeline, create_ui_rect_pipeline, create_uniform_bind_group_layout,
 };
 use super::state::GpuState;
 
@@ -25,10 +25,13 @@ pub struct GpuPipelines {
     pub(crate) subpixel_fg_pipeline: RenderPipeline,
     pub(crate) color_fg_pipeline: RenderPipeline,
     pub(crate) ui_rect_pipeline: RenderPipeline,
+    pub(crate) image_pipeline: RenderPipeline,
     /// Layout for the per-window uniform bind group (`screen_size`).
     pub(crate) uniform_layout: BindGroupLayout,
     /// Layout for the per-window atlas bind groups (texture + sampler).
     pub(crate) atlas_layout: BindGroupLayout,
+    /// Layout for per-image texture bind groups (`texture_2d` + sampler).
+    pub(crate) image_texture_layout: BindGroupLayout,
 }
 
 impl GpuPipelines {
@@ -37,6 +40,7 @@ impl GpuPipelines {
         let device = &gpu.device;
         let uniform_layout = create_uniform_bind_group_layout(device);
         let atlas_layout = create_atlas_bind_group_layout(device);
+        let image_texture_layout = create_image_texture_bind_group_layout(device);
 
         Self {
             bg_pipeline: create_bg_pipeline(gpu, &uniform_layout),
@@ -44,8 +48,10 @@ impl GpuPipelines {
             subpixel_fg_pipeline: create_subpixel_fg_pipeline(gpu, &uniform_layout, &atlas_layout),
             color_fg_pipeline: create_color_fg_pipeline(gpu, &uniform_layout, &atlas_layout),
             ui_rect_pipeline: create_ui_rect_pipeline(gpu, &uniform_layout),
+            image_pipeline: create_image_pipeline(gpu, &uniform_layout, &image_texture_layout),
             uniform_layout,
             atlas_layout,
+            image_texture_layout,
         }
     }
 }

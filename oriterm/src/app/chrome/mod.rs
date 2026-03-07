@@ -6,6 +6,8 @@
 
 mod resize;
 
+use std::time::Instant;
+
 use winit::event_loop::ActiveEventLoop;
 
 use oriterm_ui::widgets::WidgetAction;
@@ -121,7 +123,7 @@ impl App {
             let geom = self
                 .focused_ctx()
                 .map(|ctx| ctx.window.scale_factor().factor() as f32);
-            let layout = self.focused_ctx().map(|ctx| *ctx.tab_bar.layout());
+            let layout = self.focused_ctx().map(|ctx| ctx.tab_bar.layout().clone());
 
             match (geom, layout) {
                 (Some(scale), Some(layout)) => {
@@ -174,7 +176,7 @@ impl App {
         // Apply hover hit, redraw on change.
         if let Some(ctx) = self.focused_ctx_mut() {
             if ctx.tab_bar.hover_hit() != hit {
-                ctx.tab_bar.set_hover_hit(hit);
+                ctx.tab_bar.set_hover_hit(hit, Instant::now());
                 ctx.dirty = true;
             }
         }
@@ -192,8 +194,10 @@ impl App {
         };
         let had_hover = ctx.tab_bar.hover_hit() != oriterm_ui::widgets::tab_bar::TabBarHit::None;
         if had_hover {
-            ctx.tab_bar
-                .set_hover_hit(oriterm_ui::widgets::tab_bar::TabBarHit::None);
+            ctx.tab_bar.set_hover_hit(
+                oriterm_ui::widgets::tab_bar::TabBarHit::None,
+                Instant::now(),
+            );
         }
         // Clear control button hover animation.
         if let Some(renderer) = ctx.renderer.as_ref() {

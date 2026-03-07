@@ -4945,7 +4945,7 @@ fn unknown_decrst_mode_is_silently_ignored() {
 // --- Image clearing on erase operations ---
 
 use crate::grid::StableRowIndex;
-use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource};
+use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, PlacementSizing};
 
 /// Create a test image and placement at the given grid position.
 fn place_test_image(t: &mut Term<crate::event::VoidListener>, col: usize, row: usize) -> ImageId {
@@ -4976,6 +4976,7 @@ fn place_test_image(t: &mut Term<crate::event::VoidListener>, col: usize, row: u
         z_index: 0,
         cell_x_offset: 0,
         cell_y_offset: 0,
+        sizing: PlacementSizing::CellCount,
     };
     t.image_cache_mut().place(placement);
     id

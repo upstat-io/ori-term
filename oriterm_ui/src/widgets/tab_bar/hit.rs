@@ -44,6 +44,14 @@ impl TabBarHit {
         matches!(self, Self::Tab(i) | Self::CloseTab(i) if *i == index)
     }
 
+    /// Returns the tab index if the hit targets a tab (body or close button).
+    pub fn tab_index(&self) -> Option<usize> {
+        match self {
+            Self::Tab(i) | Self::CloseTab(i) => Some(*i),
+            _ => None,
+        }
+    }
+
     /// Whether the hit targets any window control button.
     pub fn is_window_control(&self) -> bool {
         matches!(self, Self::Minimize | Self::Maximize | Self::CloseWindow)
@@ -75,7 +83,7 @@ pub fn hit_test(x: f32, y: f32, layout: &TabBarLayout) -> TabBarHit {
 
     // Tab strip: close button checked first (higher priority than tab body).
     if let Some(idx) = layout.tab_index_at(x) {
-        let tab_right = layout.tab_x(idx) + layout.tab_width;
+        let tab_right = layout.tab_x(idx) + layout.tab_width_at(idx);
         let close_left = tab_right - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD;
         let close_right = tab_right - CLOSE_BUTTON_RIGHT_PAD;
         if x >= close_left && x < close_right {

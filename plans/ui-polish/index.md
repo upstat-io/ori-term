@@ -2,7 +2,7 @@
 reroute: true
 name: "UI Polish"
 full_name: "2D Framework Polish: Z-Index, Clipping, Animation Quality"
-status: queued
+status: resolved
 order: 1
 ---
 
@@ -21,7 +21,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: GPU Scissor Rect Support
-**File:** `section-01-gpu-scissor.md` | **Status:** Not Started
+**File:** `section-01-gpu-scissor.md` | **Status:** Complete
 
 ```
 scissor, clip, PushClip, PopClip, clip_stack, set_scissor_rect
@@ -35,7 +35,7 @@ draw_list_convert/clip.rs, DrawBindings
 ---
 
 ### Section 02: Tab Bar Clipping
-**File:** `section-02-tab-clipping.md` | **Status:** Not Started
+**File:** `section-02-tab-clipping.md` | **Status:** Complete
 
 ```
 tab show-through, tab bleed, tab overlap, z-index, z-order
@@ -46,7 +46,7 @@ tab bar draw order, painter's algorithm, tab stacking
 ---
 
 ### Section 03: Color Lerp & Animated Hover
-**File:** `section-03-color-animation.md` | **Status:** Not Started
+**File:** `section-03-color-animation.md` | **Status:** Complete
 
 ```
 Color lerp, Lerp for Color, AnimatedValue<f32>, AnimatedValue<Color>
@@ -59,7 +59,7 @@ widget/animation.rs, set_hover_hit
 ---
 
 ### Section 04: Tab Open/Close Animations
-**File:** `section-04-tab-lifecycle-anim.md` | **Status:** Not Started
+**File:** `section-04-tab-lifecycle-anim.md` | **Status:** Complete
 **Note:** Soft dependency on Section 03 — the `widget/animation.rs` extraction in Section 03 must complete first to keep `widget/mod.rs` under 500 lines.
 
 ```
@@ -75,7 +75,7 @@ TabBarLayout Copy removal, non-Copy layout
 ---
 
 ### Section 05: Dragged Tab Elevation
-**File:** `section-05-drag-elevation.md` | **Status:** Not Started
+**File:** `section-05-drag-elevation.md` | **Status:** Complete
 
 ```
 drag overlay, backing rect hack, drop shadow, elevation
@@ -87,7 +87,7 @@ widget/drag_draw.rs (if draw.rs exceeds 500 lines)
 ---
 
 ### Section 06: Verification
-**File:** `section-06-verification.md` | **Status:** Not Started
+**File:** `section-06-verification.md` | **Status:** Complete
 
 ```
 visual regression, test matrix, animation test, performance

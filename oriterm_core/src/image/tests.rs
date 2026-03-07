@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::grid::StableRowIndex;
 
 use super::{
-    ImageCache, ImageData, ImageError, ImageFormat, ImageId, ImagePlacement, ImageSource,
+    AnimationState, ImageCache, ImageData, ImageError, ImageFormat, ImageId, ImagePlacement,
+    ImageSource, PlacementSizing,
     decode::{detect_format, rgb_to_rgba},
 };
 
@@ -36,6 +38,7 @@ fn make_placement(image_id: u32, col: usize, row: u64) -> ImagePlacement {
         z_index: 0,
         cell_x_offset: 0,
         cell_y_offset: 0,
+        sizing: PlacementSizing::CellCount,
     }
 }
 
@@ -459,4 +462,265 @@ fn viewport_query_with_multi_row_placement() {
     // Query entirely below.
     let v = cache.placements_in_viewport(StableRowIndex(110), StableRowIndex(120));
     assert!(v.is_empty());
+}
+
+// -- PlacementSizing --
+
+#[test]
+fn update_cell_coverage_recalculates_fixed_pixel_placements() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 512)).unwrap();
+
+    // 200×100 pixel image at 10px × 20px cells → 20 cols × 5 rows.
+    let mut p = make_placement(1, 0, 0);
+    p.sizing = PlacementSizing::FixedPixels {
+        width: 200,
+        height: 100,
+    };
+    p.cols = 20; // 200 / 10
+    p.rows = 5; // 100 / 20
+    cache.place(p);
+    cache.take_dirty(); // Clear dirty flag.
+
+    // Simulate cell dimension change: 20px × 25px.
+    cache.update_cell_coverage(20, 25);
+
+    let placements = cache.placements_in_viewport(StableRowIndex(0), StableRowIndex(10));
+    assert_eq!(placements.len(), 1);
+    assert_eq!(placements[0].cols, 10); // 200 / 20 = 10
+    assert_eq!(placements[0].rows, 4); // 100 / 25 = 4
+    assert!(cache.is_dirty());
+}
+
+#[test]
+fn update_cell_coverage_does_not_change_cell_count_placements() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 512)).unwrap();
+
+    let p = make_placement(1, 0, 0); // CellCount sizing, cols=10, rows=5.
+    cache.place(p);
+    cache.take_dirty();
+
+    cache.update_cell_coverage(20, 25);
+
+    let placements = cache.placements_in_viewport(StableRowIndex(0), StableRowIndex(10));
+    assert_eq!(placements.len(), 1);
+    assert_eq!(placements[0].cols, 10); // Unchanged.
+    assert_eq!(placements[0].rows, 5); // Unchanged.
+    assert!(!cache.is_dirty());
+}
+
+#[test]
+fn fixed_pixel_placement_viewport_correct_after_resize() {
+    let mut cache = ImageCache::new();
+    cache.store(make_image(1, 512)).unwrap();
+
+    // 80×48 pixel image at 8px × 16px cells → 10 cols × 3 rows.
+    let mut p = make_placement(1, 0, 5);
+    p.sizing = PlacementSizing::FixedPixels {
+        width: 80,
+        height: 48,
+    };
+    p.cols = 10;
+    p.rows = 3;
+    cache.place(p);
+
+    // Before resize: rows 5..7 visible in viewport 0..10.
+    let v = cache.placements_in_viewport(StableRowIndex(0), StableRowIndex(10));
+    assert_eq!(v.len(), 1);
+
+    // Cell size doubles: 16px × 32px → 5 cols × 2 rows.
+    cache.update_cell_coverage(16, 32);
+
+    let v = cache.placements_in_viewport(StableRowIndex(0), StableRowIndex(10));
+    assert_eq!(v.len(), 1);
+    assert_eq!(v[0].cols, 5); // 80 / 16
+    assert_eq!(v[0].rows, 2); // 48 / 32 = 1.5, ceil = 2
+
+    // Row coverage now 5..6 instead of 5..7.
+    // Query 7..10 should NOT find it.
+    let v = cache.placements_in_viewport(StableRowIndex(7), StableRowIndex(10));
+    assert!(v.is_empty());
+}
+
+// -- AnimationState --
+
+#[test]
+fn animation_state_advance_cycles_frames() {
+    let durations = vec![Duration::from_millis(100); 3];
+    let mut state = AnimationState::new(durations, None);
+
+    assert_eq!(state.current_frame, 0);
+    assert!(state.advance());
+    assert_eq!(state.current_frame, 1);
+    assert!(state.advance());
+    assert_eq!(state.current_frame, 2);
+    // Wraps to 0.
+    assert!(state.advance());
+    assert_eq!(state.current_frame, 0);
+}
+
+#[test]
+fn animation_state_loop_count_stops() {
+    let durations = vec![Duration::from_millis(50); 2];
+    let mut state = AnimationState::new(durations, Some(2));
+
+    // Loop 1: 0 → 1 → 0.
+    assert!(state.advance()); // 0 → 1
+    assert!(state.advance()); // 1 → wrap → 0 (loop 1 complete)
+    assert_eq!(state.loops_completed, 1);
+    assert_eq!(state.current_frame, 0);
+
+    // Loop 2: 0 → 1 → done (can't wrap again).
+    assert!(state.advance()); // 0 → 1
+    assert!(!state.advance()); // 1 → wrap attempt → loops exhausted
+    assert_eq!(state.loops_completed, 2);
+    assert!(state.is_finished());
+}
+
+#[test]
+fn animation_state_single_frame_no_advance() {
+    let mut state = AnimationState::new(vec![Duration::from_millis(100)], None);
+    assert!(!state.advance()); // Single frame = no animation.
+}
+
+#[test]
+fn animation_state_paused_no_advance() {
+    let mut state = AnimationState::new(vec![Duration::from_millis(100); 3], None);
+    state.paused = true;
+    assert!(!state.advance());
+    assert_eq!(state.current_frame, 0);
+}
+
+// -- ImageCache animation --
+
+/// Helper: make fake RGBA frame data.
+fn make_frame(id: u8, bytes: usize) -> Arc<Vec<u8>> {
+    Arc::new(vec![id; bytes])
+}
+
+#[test]
+fn store_animated_sets_first_frame() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(1, 64), make_frame(2, 64), make_frame(3, 64)];
+    let durations = vec![Duration::from_millis(100); 3];
+    let img = make_image(1, 64);
+
+    cache.store_animated(img, frames, durations, None).unwrap();
+
+    let stored = cache.get(ImageId(1)).unwrap();
+    assert_eq!(stored.data[0], 1, "initial data should be frame 0");
+    assert!(cache.has_animations());
+    assert!(cache.animation_state(ImageId(1)).is_some());
+}
+
+#[test]
+fn advance_animations_switches_frame() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64), make_frame(30, 64)];
+    let durations = vec![Duration::from_millis(50); 3];
+    let img = make_image(1, 64);
+
+    cache.store_animated(img, frames, durations, None).unwrap();
+    cache.place(make_placement(1, 0, 0));
+    cache.take_dirty();
+
+    let now = Instant::now();
+    let later = now + Duration::from_millis(60); // Past first frame duration.
+
+    // First call initializes frame_start; no advance yet (elapsed=0).
+    let _ = cache.advance_animations(now, StableRowIndex(0), StableRowIndex(10));
+    assert_eq!(cache.get(ImageId(1)).unwrap().data[0], 10);
+
+    // After 60ms (> 50ms frame duration), should advance to frame 1.
+    let _ = cache.advance_animations(later, StableRowIndex(0), StableRowIndex(10));
+    assert_eq!(cache.get(ImageId(1)).unwrap().data[0], 20);
+    assert!(cache.is_dirty());
+}
+
+#[test]
+fn advance_animations_only_viewport_images() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64)];
+    let durations = vec![Duration::from_millis(50); 2];
+    let img = make_image(1, 64);
+
+    cache.store_animated(img, frames, durations, None).unwrap();
+    // Place image at row 100 (far from viewport 0..10).
+    cache.place(make_placement(1, 0, 100));
+    cache.take_dirty();
+
+    let now = Instant::now();
+    let later = now + Duration::from_millis(60);
+
+    let _ = cache.advance_animations(now, StableRowIndex(0), StableRowIndex(10));
+    let _ = cache.advance_animations(later, StableRowIndex(0), StableRowIndex(10));
+
+    // Should NOT have advanced — image is outside viewport.
+    assert_eq!(cache.get(ImageId(1)).unwrap().data[0], 10);
+    assert!(!cache.is_dirty());
+}
+
+#[test]
+fn advance_animations_returns_deadline() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64)];
+    let durations = vec![Duration::from_millis(100); 2];
+    let img = make_image(1, 64);
+
+    cache.store_animated(img, frames, durations, None).unwrap();
+    cache.place(make_placement(1, 0, 0));
+
+    let now = Instant::now();
+    let deadline = cache.advance_animations(now, StableRowIndex(0), StableRowIndex(10));
+
+    assert!(deadline.is_some());
+    // Deadline should be ~100ms from now (clamped by MIN_FRAME_DURATION).
+    let dl = deadline.unwrap();
+    assert!(dl > now);
+    assert!(dl <= now + Duration::from_millis(200));
+}
+
+#[test]
+fn set_animation_disabled_resets_to_frame_zero() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64), make_frame(30, 64)];
+    let durations = vec![Duration::from_millis(50); 3];
+    let img = make_image(1, 64);
+
+    cache.store_animated(img, frames, durations, None).unwrap();
+    cache.place(make_placement(1, 0, 0));
+    cache.take_dirty();
+
+    // Advance to frame 1.
+    let now = Instant::now();
+    let _ = cache.advance_animations(now, StableRowIndex(0), StableRowIndex(10));
+    let later = now + Duration::from_millis(60);
+    let _ = cache.advance_animations(later, StableRowIndex(0), StableRowIndex(10));
+    assert_eq!(cache.get(ImageId(1)).unwrap().data[0], 20);
+
+    // Disable animation — should reset to frame 0.
+    cache.set_animation_enabled(false);
+    assert_eq!(cache.get(ImageId(1)).unwrap().data[0], 10);
+    assert!(cache.is_dirty());
+
+    // Advance should return None when disabled.
+    let much_later = later + Duration::from_millis(100);
+    let deadline = cache.advance_animations(much_later, StableRowIndex(0), StableRowIndex(10));
+    assert!(deadline.is_none());
+}
+
+#[test]
+fn remove_animated_image_cleans_up_state() {
+    let mut cache = ImageCache::new();
+    let frames = vec![make_frame(10, 64), make_frame(20, 64)];
+    let durations = vec![Duration::from_millis(100); 2];
+    let img = make_image(1, 64);
+
+    cache.store_animated(img, frames, durations, None).unwrap();
+    assert!(cache.has_animations());
+
+    cache.remove_image(ImageId(1));
+    assert!(!cache.has_animations());
+    assert!(cache.animation_state(ImageId(1)).is_none());
 }

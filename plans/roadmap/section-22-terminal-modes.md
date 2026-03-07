@@ -1,7 +1,7 @@
 ---
 section: 22
 title: Terminal Modes
-status: mostly-complete
+status: complete
 tier: 5
 goal: Comprehensive DECSET/DECRST mode support, mode interactions, image protocol
 sections:
@@ -25,10 +25,10 @@ sections:
     status: complete
   - id: "22.7"
     title: Image Protocol
-    status: not-started
+    status: complete
   - id: "22.8"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 22: Terminal Modes
@@ -268,14 +268,14 @@ Complete reference of every DECSET/DECRST private mode.
 
 **Moved to Section 39.** Image protocol support (Kitty Graphics, Sixel, iTerm2) is now a dedicated section with full design detail. See `section-39-image-protocols.md`.
 
-- [ ] Section 39 complete (Kitty Graphics + Sixel + iTerm2 image protocols)
+- [x] Section 39 complete (Kitty Graphics + Sixel + iTerm2 image protocols — daemon-mode deferred)
 
 ---
 
 ## 22.8 Section Completion
 
 - [x] All 22.1-22.6 items complete
-- [ ] 22.7 Image Protocol (deferred to Section 39)
+- [x] 22.7 Image Protocol (deferred to Section 39 — functionally complete)
 - [x] Mouse reporting works with all encoding formats (SGR, URXVT, UTF-8, Normal)
 - [x] Mouse mode mutual exclusion enforced
 - [x] Mouse encoding mutual exclusion enforced

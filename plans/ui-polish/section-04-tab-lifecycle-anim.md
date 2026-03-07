@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: Tab Open/Close Animations
-status: not-started
+status: complete
 goal: "Tab open expands from zero width with opacity fade-in; tab close shrinks to zero with opacity fade-out; slide duration scales with distance"
 inspired_by:
   - "Chrome tab open/close width animation"
@@ -10,22 +10,22 @@ depends_on: []  # soft dependency on 03 (file-size split), not a hard API depend
 sections:
   - id: "04.1"
     title: "Tab Width Animation State"
-    status: not-started
+    status: complete
   - id: "04.2"
     title: "Tab Open Animation"
-    status: not-started
+    status: complete
   - id: "04.3"
     title: "Tab Close Animation"
-    status: not-started
+    status: complete
   - id: "04.4"
     title: "Dynamic Slide Duration"
-    status: not-started
+    status: complete
   - id: "04.5"
     title: "Tests"
-    status: not-started
+    status: complete
   - id: "04.6"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 04: Tab Open/Close Animations
@@ -53,8 +53,8 @@ Chrome handles this by treating the closing tab as a special "phantom" slot that
 
 Add per-tab animated width multiplier. The multiplier goes from 0.0 (collapsed) to 1.0 (full width). The layout uses `tab_width * multiplier` for each tab's allocated space.
 
-- [ ] Add `width_multipliers: Vec<AnimatedValue<f32>>` to `TabBarWidget` — one per tab, initialized to 1.0
-- [ ] Resize `width_multipliers` in `set_tabs()` to match tab count (new entries initialized to 1.0 — new tabs appear at full width by default; `animate_tab_open` is called separately to override)
+- [x] Add `width_multipliers: Vec<AnimatedValue<f32>>` to `TabBarWidget` — one per tab, initialized to 1.0
+- [x] Resize `width_multipliers` in `set_tabs()` to match tab count (new entries initialized to 1.0 — new tabs appear at full width by default; `animate_tab_open` is called separately to override)
 
 **Layout API changes required:**
 
@@ -68,18 +68,18 @@ The current `TabBarLayout` assumes uniform tab widths: `tab_x(i) = left_margin +
 
 **BREAKING CHANGE:** `TabBarLayout` currently derives `Copy` (`#[derive(Debug, Clone, Copy, PartialEq)]`). Adding `Vec` fields removes `Copy`. The `derive(Copy)` must be removed, and all sites that copy `TabBarLayout` by value must switch to `Clone` or borrow. Audit all consumers before proceeding.
 
-- [ ] Remove `Copy` from `TabBarLayout`'s derive list — it can no longer be `Copy` with `Vec` fields
-- [ ] Audit and fix all `TabBarLayout` consumers that relied on implicit `Copy` semantics
-- [ ] Add `tab_positions: Vec<f32>` field to `TabBarLayout` — pre-computed cumulative X positions
-- [ ] Add `per_tab_widths: Vec<f32>` field to `TabBarLayout` — the effective width of each tab (`tab_width * multiplier`)
-- [ ] Change `TabBarLayout::compute()` to accept `width_multipliers: Option<&[f32]>` — when provided, compute per-tab positions as cumulative sums: `tab_x[0] = left_margin`, `tab_x[i+1] = tab_x[i] + tab_width * multipliers[i]`
-- [ ] Update `tab_x(index)` to read from `tab_positions[index]` instead of computing `left + index * width`
-- [ ] Update `tabs_end()` to use `tab_positions[last] + per_tab_widths[last]` (or `left_margin` if empty)
-- [ ] Update `tab_index_at(x)` to use binary search over `tab_positions` instead of division
-- [ ] Update `max_text_width()` to accept an index parameter or use minimum tab width
-- [ ] Verify `tab_width_lock` interaction: if lock is active, multipliers should be ignored (locked width takes precedence)
-- [ ] In `draw()`, compute current multipliers from `AnimatedValue::get(ctx.now)` and recompute layout with overrides
-- [ ] When multipliers are all 1.0, skip the override path (zero overhead when idle)
+- [x] Remove `Copy` from `TabBarLayout`'s derive list — it can no longer be `Copy` with `Vec` fields
+- [x] Audit and fix all `TabBarLayout` consumers that relied on implicit `Copy` semantics
+- [x] Add `tab_positions: Vec<f32>` field to `TabBarLayout` — pre-computed cumulative X positions
+- [x] Add `per_tab_widths: Vec<f32>` field to `TabBarLayout` — the effective width of each tab (`tab_width * multiplier`)
+- [x] Change `TabBarLayout::compute()` to accept `width_multipliers: Option<&[f32]>` — when provided, compute per-tab positions as cumulative sums: `tab_x[0] = left_margin`, `tab_x[i+1] = tab_x[i] + tab_width * multipliers[i]`
+- [x] Update `tab_x(index)` to read from `tab_positions[index]` instead of computing `left + index * width`
+- [x] Update `tabs_end()` to use `tab_positions[last] + per_tab_widths[last]` (or `left_margin` if empty)
+- [x] Update `tab_index_at(x)` to use binary search over `tab_positions` instead of division
+- [x] Update `max_text_width()` to accept an index parameter or use minimum tab width
+- [x] Verify `tab_width_lock` interaction: if lock is active, multipliers should be ignored (locked width takes precedence)
+- [x] In `draw()`, compute current multipliers from `AnimatedValue::get(ctx.now)` and recompute layout with overrides
+- [x] When multipliers are all 1.0, skip the override path (zero overhead when idle)
 
 **Design decision — per-tab multiplier vs phantom slot:**
 
@@ -105,12 +105,12 @@ Track a "closing slot" with its own animated width. More complex state managemen
 
 When a tab is added, animate its width from 0 to full.
 
-- [ ] Add `animate_tab_open(&mut self, index: usize, now: Instant)` method:
+- [x] Add `animate_tab_open(&mut self, index: usize, now: Instant)` method:
   - Set `width_multipliers[index]` to a new `AnimatedValue<f32>` with initial value 0.0
   - Call `.set(1.0, now)` to start the animation (200ms, `EaseOut`)
-- [ ] Call `animate_tab_open` from the app layer when a new tab is created — calling protocol: `set_tabs(new_tabs)` (initializes new entries at 1.0) → `animate_tab_open(new_index, now)` (overrides to start from 0.0)
-- [ ] Audit all `set_tabs()` call sites in `oriterm/src/app/` to add `animate_tab_open` calls where appropriate (new tab creation, NOT on reorder or title update)
-- [ ] In `draw_tab()`, modulate the tab's content opacity by the multiplier (fading in as it expands):
+- [x] Call `animate_tab_open` from the app layer when a new tab is created — calling protocol: `set_tabs(new_tabs)` (initializes new entries at 1.0) → `animate_tab_open(new_index, now)` (overrides to start from 0.0)
+- [x] Audit all `set_tabs()` call sites in `oriterm/src/app/` to add `animate_tab_open` calls where appropriate (new tab creation, NOT on reorder or title update)
+- [x] In `draw_tab()`, modulate the tab's content opacity by the multiplier (fading in as it expands):
   ```rust
   let width_t = self.width_multipliers.get(index)
       .map(|m| m.get(ctx.now))
@@ -118,7 +118,7 @@ When a tab is added, animate its width from 0 to full.
   // Content opacity fades in faster than width expands
   let content_opacity = (width_t * 2.0).min(1.0);
   ```
-- [ ] Set `ctx.animations_running` when any width multiplier is animating
+- [x] Set `ctx.animations_running` when any width multiplier is animating
 
 ---
 
@@ -128,13 +128,13 @@ When a tab is added, animate its width from 0 to full.
 
 When a tab is closed, animate its width from full to zero, then remove it.
 
-- [ ] Add `animate_tab_close(&mut self, index: usize, now: Instant)` method:
+- [x] Add `animate_tab_close(&mut self, index: usize, now: Instant)` method:
   - Call `width_multipliers[index].set(0.0, now)` (150ms, `EaseOut`)
   - Mark the tab as "closing": add `closing_tabs: Vec<bool>` to `TabBarWidget` (parallel Vec, resized in `set_tabs()`)
-- [ ] During draw, skip interaction for closing tabs (no hover, no click): check `closing_tabs[i]` before processing hover/click
-- [ ] After the animation completes (multiplier reaches ~0.0), the app layer removes the tab from the data model by calling `set_tabs()` with the updated list
-- [ ] Add `closing_complete(&self, now: Instant) -> Option<usize>` method — returns the index of the first tab whose close animation has finished (`width_multipliers[i].get(now) < 0.01 && closing_tabs[i]`). The app layer polls this during redraw and calls `set_tabs()` to remove the finished tab.
-- [ ] Coordinate with `TabSlideState`: the position slide for neighboring tabs should start AFTER the tab is removed (sequential flow, not simultaneous)
+- [x] During draw, skip interaction for closing tabs (no hover, no click): check `closing_tabs[i]` before processing hover/click
+- [x] After the animation completes (multiplier reaches ~0.0), the app layer removes the tab from the data model by calling `set_tabs()` with the updated list
+- [x] Add `closing_complete(&self, now: Instant) -> Option<usize>` method — returns the index of the first tab whose close animation has finished (`width_multipliers[i].get(now) < 0.01 && closing_tabs[i]`). The app layer polls this during redraw and calls `set_tabs()` to remove the finished tab.
+- [x] Coordinate with `TabSlideState`: the position slide for neighboring tabs should start AFTER the tab is removed (sequential flow, not simultaneous)
 
 **Co-implementation requirement with TabSlideState:**
 The close slide (`start_close_slide`) currently runs AFTER the tab is already removed from the widget state. With width animation, the flow becomes:
@@ -153,7 +153,7 @@ This is sequential, not simultaneous. The width shrink replaces the need for nei
 
 Replace the fixed 150ms slide duration with distance-proportional timing.
 
-- [ ] Replace `const SLIDE_DURATION: Duration = Duration::from_millis(150)` with a function:
+- [x] Replace `const SLIDE_DURATION: Duration = Duration::from_millis(150)` with a function:
   ```rust
   /// Compute slide duration proportional to pixel distance.
   ///
@@ -165,8 +165,8 @@ Replace the fixed 150ms slide duration with distance-proportional timing.
       Duration::from_millis(ms.clamp(80.0, 200.0) as u64)
   }
   ```
-- [ ] Update `create_slide_layers` to accept duration parameter
-- [ ] Update `start_close_slide` and `start_reorder_slide` to compute duration from distance
+- [x] Update `create_slide_layers` to accept duration parameter
+- [x] Update `start_close_slide` and `start_reorder_slide` to compute duration from distance
 
 ---
 
@@ -174,37 +174,37 @@ Replace the fixed 150ms slide duration with distance-proportional timing.
 
 **File(s):** `oriterm_ui/src/widgets/tab_bar/tests.rs`, `oriterm_ui/src/widgets/tab_bar/slide/tests.rs`
 
-- [ ] Test open width multiplier: call `animate_tab_open(index, now)`, verify `width_multipliers[index].get(now)` is 0.0 at `t=0`, mid-value at `t=100ms`, and 1.0 at `t=200ms+`
-- [ ] Test close width multiplier: call `animate_tab_close(index, now)`, verify `width_multipliers[index].get(now)` is 1.0 at `t=0`, mid-value at `t=75ms`, and ~0.0 at `t=150ms+`
-- [ ] Test layout with width overrides: call `compute()` with `width_multipliers: Some(&[1.0, 0.5, 1.0])`, verify `tab_x(1)` equals `left + tab_width` and `tab_x(2)` equals `left + tab_width + tab_width * 0.5` (cumulative sums, not `index * width`)
-- [ ] Test `slide_duration()`: 1 slot → 105ms, 3 slots → 155ms, 10 slots → capped at 200ms
-- [ ] Test `tab_x()` with multipliers: tab 0 at 0.5 multiplier → tab 1 starts at `left + tab_width * 0.5` (not `left + tab_width`)
-- [ ] Test `tab_index_at()` with multipliers: binary search correctly finds tab under cursor when widths are non-uniform
-- [ ] Test `tabs_end()` with multipliers: returns correct total width accounting for all per-tab widths
-- [ ] Test `closing_complete()`: returns `None` when animation in progress, `Some(index)` when finished
-- [ ] Test `set_tabs()` resizes `width_multipliers` and `closing_tabs` correctly
-- [ ] Test `tab_width_lock` interaction with multipliers: lock takes precedence, multipliers ignored
+- [x] Test open width multiplier: call `animate_tab_open(index, now)`, verify `width_multipliers[index].get(now)` is 0.0 at `t=0`, mid-value at `t=100ms`, and 1.0 at `t=200ms+`
+- [x] Test close width multiplier: call `animate_tab_close(index, now)`, verify `width_multipliers[index].get(now)` is 1.0 at `t=0`, mid-value at `t=75ms`, and ~0.0 at `t=150ms+`
+- [x] Test layout with width overrides: call `compute()` with `width_multipliers: Some(&[1.0, 0.5, 1.0])`, verify `tab_x(1)` equals `left + tab_width` and `tab_x(2)` equals `left + tab_width + tab_width * 0.5` (cumulative sums, not `index * width`)
+- [x] Test `slide_duration()`: 1 slot → 105ms, 3 slots → 155ms, 10 slots → capped at 200ms
+- [x] Test `tab_x()` with multipliers: tab 0 at 0.5 multiplier → tab 1 starts at `left + tab_width * 0.5` (not `left + tab_width`)
+- [x] Test `tab_index_at()` with multipliers: binary search correctly finds tab under cursor when widths are non-uniform
+- [x] Test `tabs_end()` with multipliers: returns correct total width accounting for all per-tab widths
+- [x] Test `closing_complete()`: returns `None` when animation in progress, `Some(index)` when finished
+- [x] Test `set_tabs()` resizes `width_multipliers` and `closing_tabs` correctly
+- [x] Test `tab_width_lock` interaction with multipliers: lock takes precedence, multipliers ignored
 
 ---
 
 ## 04.6 Completion Checklist
 
-- [ ] `Copy` derive removed from `TabBarLayout`; all consumers updated
-- [ ] `width_multipliers` tracks per-tab animated width
-- [ ] Tab open expands from 0→1 width over ~200ms
-- [ ] Tab close shrinks from 1→0 width over ~150ms
-- [ ] Content opacity fades with width animation
-- [ ] Layout recomputes with width overrides during animation
-- [ ] `TabBarLayout` stores `tab_positions: Vec<f32>` and `per_tab_widths: Vec<f32>`
-- [ ] `tab_x()`, `tabs_end()`, `new_tab_x()`, `dropdown_x()`, `tab_index_at()` updated for variable widths
-- [ ] `closing_tabs: Vec<bool>` tracks closing state per tab
-- [ ] `closing_complete()` returns index of finished close animations
-- [ ] `set_tabs()` resizes all parallel Vecs (`width_multipliers`, `closing_tabs`, `hover_progress`, `close_btn_opacity`)
-- [ ] `tab_width_lock` + multipliers interaction defined and tested
-- [ ] Slide duration proportional to distance (80–200ms range)
-- [ ] Zero overhead when no animations are running
-- [ ] `./clippy-all.sh` — no warnings
-- [ ] `./test-all.sh` — all pass
-- [ ] `./build-all.sh` — cross-compilation succeeds
+- [x] `Copy` derive removed from `TabBarLayout`; all consumers updated
+- [x] `width_multipliers` tracks per-tab animated width
+- [x] Tab open expands from 0→1 width over ~200ms
+- [x] Tab close shrinks from 1→0 width over ~150ms
+- [x] Content opacity fades with width animation
+- [x] Layout recomputes with width overrides during animation
+- [x] `TabBarLayout` stores `tab_positions: Vec<f32>` and `per_tab_widths: Vec<f32>`
+- [x] `tab_x()`, `tabs_end()`, `new_tab_x()`, `dropdown_x()`, `tab_index_at()` updated for variable widths
+- [x] `closing_tabs: Vec<bool>` tracks closing state per tab
+- [x] `closing_complete()` returns index of finished close animations
+- [x] `set_tabs()` resizes all parallel Vecs (`width_multipliers`, `closing_tabs`, `hover_progress`, `close_btn_opacity`)
+- [x] `tab_width_lock` + multipliers interaction defined and tested
+- [x] Slide duration proportional to distance (80–200ms range)
+- [x] Zero overhead when no animations are running
+- [x] `./clippy-all.sh` — no warnings
+- [x] `./test-all.sh` — all pass
+- [x] `./build-all.sh` — cross-compilation succeeds
 
 **Exit Criteria:** Opening a new tab shows a smooth width expansion from zero with content fading in. Closing a tab shows a smooth width collapse with content fading out, followed by neighbors sliding to fill the gap. The slide speed feels proportional to the distance moved.

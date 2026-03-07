@@ -1,10 +1,14 @@
 //! Image cache with LRU eviction and configurable memory limits.
 
+mod animation;
+
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Instant;
 
 use crate::grid::StableRowIndex;
 
-use super::{ImageData, ImageError, ImageId, ImagePlacement};
+use super::{AnimationState, ImageData, ImageError, ImageId, ImagePlacement, PlacementSizing};
 
 /// Default memory limit for decoded image data (320 MB, matching Ghostty).
 const DEFAULT_MEMORY_LIMIT: usize = 320 * 1_000_000;
@@ -24,21 +28,29 @@ const AUTO_ID_START: u32 = 2_147_483_647;
 /// automatically.
 pub struct ImageCache {
     /// Image data store keyed by image ID.
-    images: HashMap<ImageId, ImageData>,
+    pub(super) images: HashMap<ImageId, ImageData>,
     /// Active placements sorted by row for efficient viewport queries.
-    placements: Vec<ImagePlacement>,
+    pub(super) placements: Vec<ImagePlacement>,
     /// Total bytes of decoded image data currently stored.
     memory_used: usize,
     /// Configurable maximum memory for decoded image data.
     memory_limit: usize,
     /// Reject single images exceeding this size.
-    max_single_image_bytes: usize,
+    pub(super) max_single_image_bytes: usize,
     /// Monotonic ID allocator for auto-assigned images.
     next_id: u32,
     /// Monotonic counter bumped on each image access (LRU ordering).
     access_counter: u64,
     /// Set when placements/images change; caller clears via `take_dirty()`.
-    dirty: bool,
+    pub(super) dirty: bool,
+    /// Per-image animation state for multi-frame images.
+    pub(super) animations: HashMap<ImageId, AnimationState>,
+    /// All decoded frames for animated images (frame 0 is also in `ImageData.data`).
+    pub(super) animation_frames: HashMap<ImageId, Vec<Arc<Vec<u8>>>>,
+    /// When each animated image's current frame started displaying.
+    pub(super) frame_starts: HashMap<ImageId, Instant>,
+    /// Whether animation is enabled (from config).
+    pub(super) animation_enabled: bool,
 }
 
 impl ImageCache {
@@ -53,6 +65,10 @@ impl ImageCache {
             next_id: AUTO_ID_START,
             access_counter: 0,
             dirty: false,
+            animations: HashMap::new(),
+            animation_frames: HashMap::new(),
+            frame_starts: HashMap::new(),
+            animation_enabled: true,
         }
     }
 
@@ -147,6 +163,9 @@ impl ImageCache {
         if let Some(img) = self.images.remove(&id) {
             self.memory_used = self.memory_used.saturating_sub(img.data.len());
             self.placements.retain(|p| p.image_id != id);
+            self.animations.remove(&id);
+            self.animation_frames.remove(&id);
+            self.frame_starts.remove(&id);
             self.dirty = true;
         }
     }
@@ -289,6 +308,9 @@ impl ImageCache {
         }
         self.images.clear();
         self.placements.clear();
+        self.animations.clear();
+        self.animation_frames.clear();
+        self.frame_starts.clear();
         self.memory_used = 0;
     }
 
@@ -307,6 +329,27 @@ impl ImageCache {
     /// Get image data by ID without updating access counter.
     pub fn get_no_touch(&self, id: ImageId) -> Option<&ImageData> {
         self.images.get(&id)
+    }
+
+    /// Recalculate `cols`/`rows` for `FixedPixels` placements.
+    ///
+    /// Called when cell pixel dimensions change (font size, zoom) so
+    /// viewport intersection and region queries use correct cell counts.
+    pub fn update_cell_coverage(&mut self, cell_w: u16, cell_h: u16) {
+        let cw = cell_w.max(1) as usize;
+        let ch = cell_h.max(1) as usize;
+
+        for p in &mut self.placements {
+            if let PlacementSizing::FixedPixels { width, height } = p.sizing {
+                let new_cols = (width as usize).div_ceil(cw);
+                let new_rows = (height as usize).div_ceil(ch);
+                if p.cols != new_cols || p.rows != new_rows {
+                    p.cols = new_cols;
+                    p.rows = new_rows;
+                    self.dirty = true;
+                }
+            }
+        }
     }
 
     /// Evict least-recently-used images until under memory limit.
@@ -383,6 +426,10 @@ impl std::fmt::Debug for ImageCache {
             .field("next_id", &self.next_id)
             .field("access_counter", &self.access_counter)
             .field("dirty", &self.dirty)
+            .field("animations", &self.animations.len())
+            .field("animation_frames", &self.animation_frames.len())
+            .field("frame_starts", &self.frame_starts.len())
+            .field("animation_enabled", &self.animation_enabled)
             .finish()
     }
 }

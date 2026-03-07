@@ -7,6 +7,7 @@ pub(crate) mod compositor;
 pub(crate) mod draw_list_convert;
 pub(crate) mod extract;
 pub(crate) mod frame_input;
+pub(crate) mod image_render;
 pub(crate) mod instance_writer;
 pub(crate) mod pane_cache;
 pub(crate) mod pipeline;

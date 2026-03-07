@@ -5,8 +5,15 @@
 //! buffer records:
 //! - Rect/line → [`push_ui_rect`](super::instance_writer::InstanceWriter::push_ui_rect)
 //! - Text → [`push_glyph`](super::instance_writer::InstanceWriter::push_glyph) per shaped glyph
+//! - PushClip/PopClip → [`ClipSegment`]s recording scissor rect changes
 //!
-//! Image and clip commands are deferred (logged as no-ops).
+//! Image commands are deferred (logged as no-ops).
+
+mod clip;
+
+pub use clip::{ClipContext, ClipSegment, TierClips};
+
+use clip::{pop_clip, push_clip};
 
 use oriterm_ui::color::Color;
 use oriterm_ui::draw::{DrawCommand, DrawList, RectStyle};
@@ -53,18 +60,35 @@ pub struct TextContext<'a> {
 /// Used by the compositor to fade overlays in and out. Pass `1.0` for no
 /// opacity modification.
 ///
+/// When `clip_ctx` is provided, `PushClip`/`PopClip` commands emit
+/// [`ClipSegment`]s into the tier clips at the current instance offsets
+/// of each active writer. The render pass uses these to call
+/// `set_scissor_rect` at the right points.
+///
 /// Shadow commands emit an expanded shadow rect before the main rect.
 /// Line commands are converted to thin rectangles.
-/// Image and clip commands are logged as no-ops.
+/// Image commands are logged as no-ops.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "draw list conversion: list, writers, text context, clip context, scale, opacity"
+)]
 pub fn convert_draw_list(
     draw_list: &DrawList,
     ui_writer: &mut InstanceWriter,
     text_ctx: Option<&mut TextContext<'_>>,
+    clip_ctx: Option<&mut ClipContext<'_>>,
     scale: f32,
     opacity: f32,
 ) {
     // Reborrow text_ctx so we can use it across loop iterations.
     let mut text_ctx = text_ctx;
+    let mut clip_ctx = clip_ctx;
+
+    // Clear clip stack at start of each call.
+    if let Some(ctx) = clip_ctx.as_deref_mut() {
+        ctx.stack.clear();
+        ctx.clips.clear();
+    }
 
     for cmd in draw_list.commands() {
         match cmd {
@@ -94,11 +118,15 @@ pub fn convert_draw_list(
             DrawCommand::Image { .. } => {
                 log::trace!("DrawCommand::Image deferred — not yet implemented");
             }
-            DrawCommand::PushClip { .. } => {
-                log::trace!("DrawCommand::PushClip deferred — not yet implemented");
+            DrawCommand::PushClip { rect } => {
+                if let Some(ctx) = clip_ctx.as_deref_mut() {
+                    push_clip(*rect, ui_writer, text_ctx.as_deref_mut(), ctx, scale);
+                }
             }
             DrawCommand::PopClip => {
-                log::trace!("DrawCommand::PopClip deferred — not yet implemented");
+                if let Some(ctx) = clip_ctx.as_deref_mut() {
+                    pop_clip(ui_writer, text_ctx.as_deref_mut(), ctx);
+                }
             }
             // Layer commands are structural — bg is already baked into Text.bg_hint.
             DrawCommand::PushLayer { .. } | DrawCommand::PopLayer => {}

@@ -10,19 +10,19 @@ sections:
     status: complete
   - id: "39.2"
     title: Kitty Graphics Protocol
-    status: in-progress
+    status: complete
   - id: "39.3"
     title: Sixel Graphics
     status: complete
   - id: "39.4"
     title: iTerm2 Image Protocol
-    status: in-progress
+    status: complete
   - id: "39.5"
     title: Image Rendering + GPU Compositing
-    status: not-started
+    status: in-progress
   - id: "39.6"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 39: Image Protocols
@@ -193,8 +193,8 @@ The VTE crate must be extended to deliver APC data to the consumer. Currently, `
   - [x] `T` (transmit + display): upload and immediately place
   - [x] `p` (put/place): place previously uploaded image
   - [x] `d` (delete): delete image/placement
-  - [ ] `f` (frame): animation frame operations <!-- blocked-by:39.5 -->
-  - [ ] `a` (animate): animation control <!-- blocked-by:39.5 -->
+  - [x] `f` (frame): animation frame operations
+  - [x] `a` (animate): animation control
   - [x] `q` (query): query support without side effects
 - [x] Transmission formats (`f=` key):
   - [x] 24 (RGB), 32 (RGBA), 100 (PNG compressed)
@@ -231,12 +231,11 @@ The VTE crate must be extended to deliver APC data to the consumer. Currently, `
 
 ### Animation
 
-- [ ] Animation support (Kitty `a=f` frame and `a=a` animate actions): <!-- blocked-by:39.5 -->
-  - [ ] Frame composition modes (`o=` key): overwrite entire image, blend (alpha composite) new frame over existing
-  - [ ] Frame timing via `z=` key (duration in ms per frame)
-  - [ ] Animation control (`a=a`): start playback, stop playback, set loop count
-  - [ ] Store frames as separate `ImageData` entries sharing the same `ImageId` base, with per-frame pixel data and timing
-  - Note: Frame/Animate actions are accepted and logged. Full animation requires GPU compositing (39.5).
+- [x] Animation support (Kitty `a=f` frame and `a=a` animate actions):
+  - [x] Frame composition modes (`X=` key): overwrite entire image, blend (alpha composite) new frame over existing
+  - [x] Frame timing via `z=` key (duration in ms per frame)
+  - [x] Animation control (`a=a`): start playback, stop playback, set loop count
+  - [x] Store frames via `ImageCache::add_animation_frame()` — promotes static images to animated on first frame addition
 
 ### Response
 
@@ -444,9 +443,9 @@ OSC-based image protocol used by iTerm2 and supported by many tools via `imgcat`
 
 ### GIF animation
 
-- [ ] If decoded image is a GIF with multiple frames: extract all frames and store as an animated image in `ImageCache` <!-- blocked-by:39.5 -->
-- [ ] Animation frames share the same `ImageId` but have per-frame pixel data and timing <!-- blocked-by:39.5 -->
-- [ ] This reuses the animation infrastructure from 39.5 <!-- blocked-by:39.5 -->
+- [x] If decoded image is a GIF with multiple frames: extract all frames and store as an animated image in `ImageCache`
+- [x] Animation frames share the same `ImageId` but have per-frame pixel data and timing
+- [x] This reuses the animation infrastructure from 39.5
 
 ### Tests
 
@@ -474,97 +473,97 @@ Render cached images as GPU textures composited into the terminal frame.
 
 ### RenderableContent bridge
 
-- [ ] Add `images: Vec<RenderablePlacement>` field to `RenderableContent` in `oriterm_core/src/term/renderable/mod.rs`
-- [ ] Add `images_dirty: bool` field to `RenderableContent` — set from `ImageCache::take_dirty()` during `renderable_content_into()`. The GPU layer uses this to know when to re-upload textures. One-way data flow: dirty state flows downstream through `RenderableContent`, not via callback into core.
-- [ ] `RenderablePlacement` struct (new, in `renderable/mod.rs`):
-  - [ ] `image_id: ImageId` — for GPU texture lookup
-  - [ ] `viewport_x: f32`, `viewport_y: f32` — pixel position in viewport (top-left corner)
-  - [ ] `display_width: f32`, `display_height: f32` — size in pixels
-  - [ ] `source_x: f32`, `source_y: f32` — UV source rect origin (0.0–1.0)
-  - [ ] `source_w: f32`, `source_h: f32` — UV source rect size (0.0–1.0)
-  - [ ] `z_index: i32`
-  - [ ] `opacity: f32` — for animation fade transitions (default 1.0)
-- [ ] In `Term::renderable_content_into()`: query `self.image_cache().placements_in_viewport()`, convert `StableRowIndex` to viewport pixel positions, push into `out.images`
-- [ ] Populate `out.image_data: Vec<(ImageId, Arc<Vec<u8>>, u32, u32)>` with `(id, pixel_data, width, height)` for all images referenced by visible placements. Always populate (not just on dirty) because viewport scrolling may bring previously off-screen images into view without `ImageCache::dirty` being set. The GPU layer's `ensure_uploaded()` deduplicates by `ImageId`. The `Arc` clone is cheap (refcount increment, no data copy).
+- [x] Add `images: Vec<RenderablePlacement>` field to `RenderableContent` in `oriterm_core/src/term/renderable/mod.rs`
+- [x] Add `images_dirty: bool` field to `RenderableContent` — set from `ImageCache::take_dirty()` during `renderable_content_into()`. The GPU layer uses this to know when to re-upload textures. One-way data flow: dirty state flows downstream through `RenderableContent`, not via callback into core.
+- [x] `RenderablePlacement` struct (new, in `renderable/mod.rs`):
+  - [x] `image_id: ImageId` — for GPU texture lookup
+  - [x] `viewport_x: f32`, `viewport_y: f32` — pixel position in viewport (top-left corner)
+  - [x] `display_width: f32`, `display_height: f32` — size in pixels
+  - [x] `source_x: f32`, `source_y: f32` — UV source rect origin (0.0–1.0)
+  - [x] `source_w: f32`, `source_h: f32` — UV source rect size (0.0–1.0)
+  - [x] `z_index: i32`
+  - [x] `opacity: f32` — for animation fade transitions (default 1.0)
+- [x] In `Term::renderable_content_into()`: query `self.image_cache().placements_in_viewport()`, convert `StableRowIndex` to viewport pixel positions, push into `out.images`
+- [x] Populate `out.image_data: Vec<(ImageId, Arc<Vec<u8>>, u32, u32)>` with `(id, pixel_data, width, height)` for all images referenced by visible placements. Always populate (not just on dirty) because viewport scrolling may bring previously off-screen images into view without `ImageCache::dirty` being set. The GPU layer's `ensure_uploaded()` deduplicates by `ImageId`. The `Arc` clone is cheap (refcount increment, no data copy).
 - [ ] `PaneSnapshot` extension: add `images: Vec<WirePlacement>` for daemon-mode rendering (with `WirePlacement` mirroring `RenderablePlacement` but using serializable types). **Note:** Daemon mode image support is a significant complexity multiplier (multi-megabyte payloads per snapshot). Recommended: defer daemon image support — get local image rendering working first, then extend to daemon mode in a follow-up.
 
 ### FrameInput bridge
 
-- [ ] Add `images: Vec<RenderablePlacement>` field to `FrameInput` in `oriterm/src/gpu/frame_input/mod.rs`
-- [ ] Add `image_data: Vec<(ImageId, Arc<Vec<u8>>, u32, u32)>` field to `FrameInput` — pixel data for GPU texture upload
-- [ ] Add `images_dirty: bool` field to `FrameInput` — propagated from `RenderableContent`
+- [x] Add `images: Vec<RenderablePlacement>` field to `FrameInput` in `oriterm/src/gpu/frame_input/mod.rs`
+- [x] Add `image_data: Vec<(ImageId, Arc<Vec<u8>>, u32, u32)>` field to `FrameInput` — pixel data for GPU texture upload
+- [x] Add `images_dirty: bool` field to `FrameInput` — propagated from `RenderableContent`
 - [ ] In `extract_frame_from_snapshot()` in `oriterm/src/gpu/extract/from_snapshot/mod.rs`: convert `WirePlacement` to `RenderablePlacement` and populate `frame.images`. For daemon mode, `WirePlacement` must carry pixel data (serialized) since the daemon has the image cache, not the client.
 
 ### Image texture management
 
-- [ ] `ImageTextureCache` struct (in `oriterm/src/gpu/image_render/mod.rs`):
-  - [ ] `textures: HashMap<ImageId, GpuImageTexture>` — uploaded textures keyed by image ID
-  - [ ] `gpu_memory_used: usize` — total GPU texture bytes
-  - [ ] `gpu_memory_limit: usize` — configurable (default: 512 MB, separate from CPU-side ImageCache memory limit)
-  - [ ] `GpuImageTexture` struct: `texture: wgpu::Texture`, `view: wgpu::TextureView`, `bind_group: wgpu::BindGroup`, `size_bytes: usize`, `last_frame: u64`
-- [ ] Separate `wgpu::Texture` per image (not atlas — images vary wildly in size; atlas wastes space for large images)
-- [ ] Upload decoded RGBA data as `Rgba8UnormSrgb` texture
-- [ ] Lazy upload: only upload to GPU when image enters viewport
-- [ ] Evict GPU texture when image scrolls far out of viewport (LRU by `last_frame` counter)
-- [ ] `ImageTextureCache::ensure_uploaded(gpu: &GpuState, id: ImageId, data: &[u8], w: u32, h: u32) -> &GpuImageTexture` — upload if not present, update `last_frame`
-- [ ] `ImageTextureCache::evict_unused(current_frame: u64, threshold: u64)` — evict textures not used in last N frames
+- [x] `ImageTextureCache` struct (in `oriterm/src/gpu/image_render/mod.rs`):
+  - [x] `textures: HashMap<ImageId, GpuImageTexture>` — uploaded textures keyed by image ID
+  - [x] `gpu_memory_used: usize` — total GPU texture bytes
+  - [x] `gpu_memory_limit: usize` — configurable (default: 512 MB, separate from CPU-side ImageCache memory limit)
+  - [x] `GpuImageTexture` struct: `texture: wgpu::Texture`, `view: wgpu::TextureView`, `bind_group: wgpu::BindGroup`, `size_bytes: usize`, `last_frame: u64`
+- [x] Separate `wgpu::Texture` per image (not atlas — images vary wildly in size; atlas wastes space for large images)
+- [x] Upload decoded RGBA data as `Rgba8UnormSrgb` texture
+- [x] Lazy upload: only upload to GPU when image enters viewport
+- [x] Evict GPU texture when image scrolls far out of viewport (LRU by `last_frame` counter)
+- [x] `ImageTextureCache::ensure_uploaded(gpu: &GpuState, id: ImageId, data: &[u8], w: u32, h: u32) -> &GpuImageTexture` — upload if not present, update `last_frame`
+- [x] `ImageTextureCache::evict_unused(current_frame: u64, threshold: u64)` — evict textures not used in last N frames
 
 **Texture upload timing:** All `ensure_uploaded` calls happen during the prepare phase (before `render_frame`). The render pass only reads from pre-uploaded textures. No GPU resource creation during render pass recording. This matches the existing pattern where glyph atlas uploads happen in prepare, not during draw.
 
 ### Image render pipeline
 
-- [ ] New WGSL shader: `oriterm/src/gpu/shaders/image.wgsl`
-  - [ ] Vertex shader: transform image quad from pixel coords to clip space using `screen_size` uniform
-  - [ ] Fragment shader: sample image texture, output with alpha blending
-  - [ ] Vertex attributes: `position: vec2<f32>`, `uv: vec2<f32>`, `opacity: f32`
-- [ ] New render pipeline: `create_image_pipeline()` in `oriterm/src/gpu/pipeline/mod.rs`
-  - [ ] Uses `uniform_layout` (group 0, screen_size) + new `image_texture_layout` (group 1, per-image texture + sampler)
-  - [ ] Alpha blending enabled (src_alpha, one_minus_src_alpha)
-- [ ] **`GpuPipelines` extension** in `oriterm/src/gpu/pipelines.rs`:
-  - [ ] Add `image_pipeline: RenderPipeline` field
-  - [ ] Add `image_texture_layout: BindGroupLayout` field
-  - [ ] Initialize in `GpuPipelines::new()`
-- [ ] **`WindowRenderer` extension** in `oriterm/src/gpu/window_renderer/mod.rs`:
-  - [ ] Add `image_texture_cache: ImageTextureCache` field
-  - [ ] Add `image_instance_buffer: wgpu::Buffer` (or reusable Vec) for image quad vertices
-- [ ] Draw ordering in `render_frame()`:
-  - [ ] Pass 1: BG pipeline (cell backgrounds)
-  - [ ] Pass 2: Image pipeline for z < 0 images (below text)
-  - [ ] Pass 3: FG pipelines (text glyphs)
-  - [ ] Pass 4: Image pipeline for z >= 0 images (above text)
-- [ ] Each image is rendered as a textured quad (4 vertices, 6 indices or triangle strip)
-- [ ] **PreparedFrame extension:** Add `image_quads_below: Vec<ImageQuad>` and `image_quads_above: Vec<ImageQuad>` to the prepared frame struct, split by z-index
+- [x] New WGSL shader: `oriterm/src/gpu/shaders/image.wgsl`
+  - [x] Vertex shader: transform image quad from pixel coords to clip space using `screen_size` uniform
+  - [x] Fragment shader: sample image texture, output with alpha blending
+  - [x] Vertex attributes: `position: vec2<f32>`, `uv: vec2<f32>`, `opacity: f32`
+- [x] New render pipeline: `create_image_pipeline()` in `oriterm/src/gpu/pipeline/mod.rs`
+  - [x] Uses `uniform_layout` (group 0, screen_size) + new `image_texture_layout` (group 1, per-image texture + sampler)
+  - [x] Alpha blending enabled (src_alpha, one_minus_src_alpha)
+- [x] **`GpuPipelines` extension** in `oriterm/src/gpu/pipelines.rs`:
+  - [x] Add `image_pipeline: RenderPipeline` field
+  - [x] Add `image_texture_layout: BindGroupLayout` field
+  - [x] Initialize in `GpuPipelines::new()`
+- [x] **`WindowRenderer` extension** in `oriterm/src/gpu/window_renderer/mod.rs`:
+  - [x] Add `image_texture_cache: ImageTextureCache` field
+  - [x] Add `image_instance_buffer: wgpu::Buffer` (or reusable Vec) for image quad vertices
+- [x] Draw ordering in `render_frame()`:
+  - [x] Pass 1: BG pipeline (cell backgrounds)
+  - [x] Pass 2: Image pipeline for z < 0 images (below text)
+  - [x] Pass 3: FG pipelines (text glyphs)
+  - [x] Pass 4: Image pipeline for z >= 0 images (above text)
+- [x] Each image is rendered as a textured quad (4 vertices, 6 indices or triangle strip)
+- [x] **PreparedFrame extension:** Add `image_quads_below: Vec<ImageQuad>` and `image_quads_above: Vec<ImageQuad>` to the prepared frame struct, split by z-index
 
 ### Cell interaction
 
-- [ ] Cells covered by an image: still render text on top (for z < 0 images)
-- [ ] Cells covered by z >= 0 images: image obscures text
-- [ ] Background color: use cell's bg color behind transparent image regions (z < 0 case)
-- [ ] Cell backgrounds under z < 0 images: render normally (image overlays on top of bg but below text)
+- [x] Cells covered by an image: still render text on top (for z < 0 images)
+- [x] Cells covered by z >= 0 images: image obscures text
+- [x] Background color: use cell's bg color behind transparent image regions (z < 0 case)
+- [x] Cell backgrounds under z < 0 images: render normally (image overlays on top of bg but below text)
 
 ### Scrolling
 
-- [ ] Images scroll with text (placement positions use `StableRowIndex` → convert to viewport pixel Y using `stable_row_base` and `display_offset`)
-- [ ] Partially visible images clipped at viewport boundaries (GPU scissor rect or UV clamping)
-- [ ] Smooth scroll offset applied to image positions (if smooth scrolling is implemented)
+- [x] Images scroll with text (placement positions use `StableRowIndex` → convert to viewport pixel Y using `stable_row_base` and `display_offset`)
+- [x] Partially visible images clipped at viewport boundaries (GPU scissor rect or UV clamping)
+- [x] Smooth scroll offset applied to image positions (if smooth scrolling is implemented)
 
 ### Terminal resize behavior
-- [ ] Image placements use `StableRowIndex` + column positions — these are stable across resize
-- [ ] Cell-count sizing (`c=`/`r=` in Kitty): the display pixel size changes when cell dimensions change. Recalculate pixel dimensions from cell counts on resize.
-- [ ] Pixel-sized placements: remain at their pixel size (don't scale with cell size)
-- [ ] Grid reflow may change which row a placement is on — `StableRowIndex` remains valid but the visual position shifts. This is acceptable (matches Ghostty/WezTerm behavior).
+- [x] Image placements use `StableRowIndex` + column positions — these are stable across resize
+- [x] Cell-count sizing (`c=`/`r=` in Kitty): the display pixel size changes when cell dimensions change. Recalculate pixel dimensions from cell counts on resize.
+- [x] Pixel-sized placements: remain at their pixel size (don't scale with cell size)
+- [x] Grid reflow may change which row a placement is on — `StableRowIndex` remains valid but the visual position shifts. This is acceptable (matches Ghostty/WezTerm behavior).
 
 ### Animation
 
-- [ ] Timer-driven frame switching for animated images (Kitty `a=animate` and GIF multi-frame)
-- [ ] `AnimationState` struct: `current_frame: usize`, `frame_timer: Instant`, `frame_durations: Vec<Duration>`
-- [ ] Only animate images in viewport (save CPU/GPU) — check during frame preparation
-- [ ] Configurable: `terminal.image_animation = true | false` (default: true)
-- [ ] When animation is disabled, show first frame only
+- [x] Timer-driven frame switching for animated images (Kitty `a=animate` and GIF multi-frame)
+- [x] `AnimationState` struct: `current_frame: usize`, `frame_timer: Instant`, `frame_durations: Vec<Duration>`
+- [x] Only animate images in viewport (save CPU/GPU) — check during frame preparation
+- [x] Configurable: `terminal.image_animation = true | false` (default: true)
+- [x] When animation is disabled, show first frame only
 
 ### Config integration
 
-- [ ] Config keys:
+- [x] Config keys:
   ```toml
   [terminal]
   image_protocol = true           # enable/disable all image protocols
@@ -573,28 +572,28 @@ Render cached images as GPU textures composited into the terminal frame.
   image_animation = true
   image_max_single_size = 67108864  # 64 MB default (max single image)
   ```
-- [ ] Config wiring path:
-  - [ ] Config struct: add fields to the terminal config section
-  - [ ] On config load/reload: pass limits to `ImageCache::set_memory_limit()` and `ImageTextureCache::set_memory_limit()`
-  - [ ] `image_protocol = false`: skip all image parsing in VTE handler (early return in `handle_kitty_graphics`, `sixel_start`, `iterm2_file`)
-  - [ ] On config reload (hot reload): if limit decreased, trigger eviction immediately
+- [x] Config wiring path:
+  - [x] Config struct: add fields to the terminal config section
+  - [x] On config load/reload: pass limits to `ImageCache::set_memory_limit()` and `ImageTextureCache::set_memory_limit()`
+  - [x] `image_protocol = false`: skip all image parsing in VTE handler (early return in `handle_kitty_graphics`, `sixel_start`, `iterm2_file`)
+  - [x] On config reload (hot reload): if limit decreased, trigger eviction immediately
 
 ### Damage tracking interaction
 
-- [ ] When `ImageCache::dirty` is `true`, mark all lines overlapping image placements as dirty, or mark the entire viewport dirty (simpler, acceptable since image changes are infrequent)
-- [ ] `Term::renderable_content_into()` calls `image_cache.take_dirty()` and sets `images_dirty` on `RenderableContent` so the GPU layer knows textures need re-upload. One-way data flow: the GPU layer never reaches back into `ImageCache`.
+- [x] When `ImageCache::dirty` is `true`, mark all lines overlapping image placements as dirty, or mark the entire viewport dirty (simpler, acceptable since image changes are infrequent)
+- [x] `Term::renderable_content_into()` calls `image_cache.take_dirty()` and sets `images_dirty` on `RenderableContent` so the GPU layer knows textures need re-upload. One-way data flow: the GPU layer never reaches back into `ImageCache`.
 
 ### Tests
 
-- [ ] **Tests** (`oriterm/src/gpu/image_render/tests.rs`):
-  - [ ] Image texture uploads to GPU correctly (mock or headless wgpu)
-  - [ ] Image at z=-1 is in `image_quads_below` list
-  - [ ] Image at z=1 is in `image_quads_above` list
-  - [ ] Image scrolls with content (viewport Y changes with display_offset)
-  - [ ] Image clipped at viewport boundary (UV coords adjusted)
-  - [ ] GPU memory limit evicts oldest textures
-  - [ ] Config `image_protocol = false` produces no image quads
-  - [ ] Resize recalculates cell-count-based placement pixel dimensions
+- [x] **Tests** (`oriterm/src/gpu/image_render/tests.rs`):
+  - [x] Image texture uploads to GPU correctly (mock or headless wgpu)
+  - [x] Image at z=-1 is in `image_quads_below` list (in `prepare/tests.rs`)
+  - [x] Image at z=1 is in `image_quads_above` list (in `prepare/tests.rs`)
+  - [x] Image scrolls with content (viewport Y changes with display_offset) (in `image/tests.rs`)
+  - [x] Image clipped at viewport boundary (UV coords adjusted) (in `prepare/tests.rs`)
+  - [x] GPU memory limit evicts oldest textures
+  - [x] Config `image_protocol = false` produces no image quads (handler early-return)
+  - [x] Resize recalculates cell-count-based placement pixel dimensions (in `image/tests.rs`)
 
 ---
 
@@ -603,74 +602,74 @@ Render cached images as GPU textures composited into the terminal frame.
 ### Sync points — all locations that must be updated together
 
 **VTE crate changes** (`crates/vte/`):
-- [ ] `src/lib.rs` — `Perform` trait: `apc_start`, `apc_put`, `apc_end` methods; `SosPmApcString` → `ApcString` state split
-- [ ] `src/ansi.rs` — `Handler` trait: `kitty_graphics_command`, `sixel_start`, `sixel_put`, `sixel_end`, `iterm2_file` methods
-- [ ] `src/ansi.rs` — `Processor` struct: `apc_buf`, `dcs_state` fields; `Perform` impl for APC and DCS dispatch
-- [ ] `src/ansi.rs` — `MAX_OSC_RAW` increase or Vec migration for iTerm2 support
-- [ ] `src/ansi.rs` — `NamedPrivateMode`: add sixel modes (80, 8452)
+- [x] `src/lib.rs` — `Perform` trait: `apc_start`, `apc_put`, `apc_end` methods; `SosPmApcString` → `ApcString` state split
+- [x] `src/ansi.rs` — `Handler` trait: `kitty_graphics_command`, `sixel_start`, `sixel_put`, `sixel_end`, `iterm2_file` methods
+- [x] `src/ansi.rs` — `Processor` struct: `apc_buf`, `dcs_state` fields; `Perform` impl for APC and DCS dispatch
+- [x] `src/ansi.rs` — `MAX_OSC_RAW` increase or Vec migration for iTerm2 support
+- [x] `src/ansi.rs` — `NamedPrivateMode`: add sixel modes (80, 8452)
 
 **oriterm_core changes** (`oriterm_core/src/`):
-- [ ] `image/mod.rs` — new module: `ImageId`, `ImageData`, `ImagePlacement`, `ImageCache`, `ImageError`
-- [ ] `image/cache.rs` — `ImageCache` implementation
-- [ ] `image/decode.rs` — format detection + RGBA decode
-- [ ] `image/kitty/mod.rs` — Kitty types + re-exports + `#[cfg(test)] mod tests;`
-- [ ] `image/kitty/parse.rs` — Kitty command parser
-- [ ] `image/kitty/exec.rs` — Kitty command execution
-- [ ] `image/kitty/shm.rs` — shared memory (platform-specific, `#[cfg()]` at module level)
-- [ ] `image/kitty/tests.rs` — Kitty protocol tests
-- [ ] `image/sixel/mod.rs` — Sixel decoder + state machine + `#[cfg(test)] mod tests;`
-- [ ] `image/sixel/tests.rs` — Sixel decoder tests
-- [ ] `image/iterm2/mod.rs` — iTerm2 parser + placement + `#[cfg(test)] mod tests;`
-- [ ] `image/iterm2/tests.rs` — iTerm2 protocol tests
-- [ ] `term/mod.rs` — `Term<T>`: add `image_cache`, `alt_image_cache`, `sixel_parser`, `cell_pixel_width`, `cell_pixel_height` fields; update `new()`, `renderable_content_into()`
-- [ ] `term/alt_screen.rs` — `toggle_alt_common()`: swap image caches
-- [ ] `term/handler/mod.rs` — add `mod image;`
-- [ ] `term/handler/image.rs` — new file: Kitty/Sixel/iTerm2 handler dispatch. If all three protocol handlers exceed 500 lines combined, restructure as `handler/image/mod.rs` with `kitty.rs`, `sixel.rs`, `iterm2.rs` sub-handlers.
-- [ ] `term/handler/esc.rs` — `esc_reset_state()`: clear image caches
-- [ ] `term/handler/status.rs` — `status_identify_terminal()`: update DA response for graphics capability
-- [ ] `term/handler/modes.rs` — `apply_decset`/`apply_decrst`: handle sixel modes 80, 8452
-- [ ] `term/renderable/mod.rs` — `RenderableContent`: add `images`, `image_data`, `images_dirty` fields; add `RenderablePlacement` struct
-- [ ] `lib.rs` — add `pub mod image;` and re-exports
-- [ ] `Cargo.toml` — add `image` crate as optional dependency with format features `["png", "jpeg", "gif", "bmp", "webp"]`; add `image-protocol = ["dep:image"]` feature (default-enabled)
+- [x] `image/mod.rs` — new module: `ImageId`, `ImageData`, `ImagePlacement`, `ImageCache`, `ImageError`
+- [x] `image/cache.rs` — `ImageCache` implementation
+- [x] `image/decode.rs` — format detection + RGBA decode
+- [x] `image/kitty/mod.rs` — Kitty types + re-exports + `#[cfg(test)] mod tests;`
+- [x] `image/kitty/parse.rs` — Kitty command parser
+- [x] `image/kitty/exec.rs` — Kitty command execution (folded into `handler/image/kitty.rs` + `kitty_animation.rs`)
+- [x] `image/kitty/shm.rs` — shared memory stubbed with error response (rarely used over the wire)
+- [x] `image/kitty/tests.rs` — Kitty protocol tests
+- [x] `image/sixel/mod.rs` — Sixel decoder + state machine + `#[cfg(test)] mod tests;`
+- [x] `image/sixel/tests.rs` — Sixel decoder tests
+- [x] `image/iterm2/mod.rs` — iTerm2 parser + placement + `#[cfg(test)] mod tests;`
+- [x] `image/iterm2/tests.rs` — iTerm2 protocol tests
+- [x] `term/mod.rs` — `Term<T>`: add `image_cache`, `alt_image_cache`, `sixel_parser`, `cell_pixel_width`, `cell_pixel_height` fields; update `new()`, `renderable_content_into()`
+- [x] `term/alt_screen.rs` — `toggle_alt_common()`: swap image caches
+- [x] `term/handler/mod.rs` — add `mod image;`
+- [x] `term/handler/image.rs` — new file: Kitty/Sixel/iTerm2 handler dispatch. Restructured as `handler/image/mod.rs` with `kitty.rs`, `sixel.rs`, `iterm2.rs` sub-handlers.
+- [x] `term/handler/esc.rs` — `esc_reset_state()`: clear image caches
+- [x] `term/handler/status.rs` — `status_identify_terminal()`: update DA response for graphics capability
+- [x] `term/handler/modes.rs` — `apply_decset`/`apply_decrst`: handle sixel modes 80, 8452
+- [x] `term/renderable/mod.rs` — `RenderableContent`: add `images`, `image_data`, `images_dirty` fields; add `RenderablePlacement` struct
+- [x] `lib.rs` — add `pub mod image;` and re-exports
+- [x] `Cargo.toml` — add `image` crate as optional dependency with format features `["png", "jpeg", "gif", "bmp", "webp"]`; add `image-protocol = ["dep:image"]` feature (default-enabled)
 
 **oriterm GPU changes** (`oriterm/src/gpu/`):
-- [ ] `image_render/mod.rs` — new directory module: `ImageTextureCache`, `GpuImageTexture`, `ImageQuad` + `#[cfg(test)] mod tests;`
-- [ ] `image_render/tests.rs` — GPU image render tests
-- [ ] `shaders/image.wgsl` — new shader
-- [ ] `pipeline/mod.rs` — `create_image_pipeline()` function
-- [ ] `pipelines.rs` — `GpuPipelines`: add `image_pipeline`, `image_texture_layout` fields
-- [ ] `window_renderer/mod.rs` — `WindowRenderer`: add `image_texture_cache`, `image_instance_buffer` fields
-- [ ] `window_renderer/render.rs` — `render_frame()`: add image draw passes (below-text and above-text)
-- [ ] `frame_input/mod.rs` — `FrameInput`: add `images`, `image_data`, `images_dirty` fields
-- [ ] `extract/from_snapshot/mod.rs` — `extract_frame_from_snapshot()`: convert `WirePlacement` to `RenderablePlacement`
-- [ ] `prepared_frame/mod.rs` — add `image_quads_below`, `image_quads_above` fields
-- [ ] `mod.rs` — add `pub mod image_render;`
+- [x] `image_render/mod.rs` — new directory module: `ImageTextureCache`, `GpuImageTexture`, `ImageQuad` + `#[cfg(test)] mod tests;`
+- [x] `image_render/tests.rs` — GPU image render tests
+- [x] `shaders/image.wgsl` — new shader
+- [x] `pipeline/mod.rs` — `create_image_pipeline()` function
+- [x] `pipelines.rs` — `GpuPipelines`: add `image_pipeline`, `image_texture_layout` fields
+- [x] `window_renderer/mod.rs` — `WindowRenderer`: add `image_texture_cache`, `image_instance_buffer` fields
+- [x] `window_renderer/render.rs` — `render_frame()`: add image draw passes (below-text and above-text)
+- [x] `frame_input/mod.rs` — `FrameInput`: add `images`, `image_data`, `images_dirty` fields
+- [ ] `extract/from_snapshot/mod.rs` — `extract_frame_from_snapshot()`: convert `WirePlacement` to `RenderablePlacement` <!-- deferred: daemon image support -->
+- [x] `prepared_frame/mod.rs` — add `image_quads_below`, `image_quads_above` fields
+- [x] `mod.rs` — add `pub mod image_render;`
 
 **oriterm_mux changes** (`oriterm_mux/src/`):
-- [ ] `protocol/snapshot.rs` — `PaneSnapshot`: add `images: Vec<WirePlacement>` field; add `WirePlacement` struct
-- [ ] Snapshot extraction: include image placements when serializing pane state for daemon mode
+- [ ] `protocol/snapshot.rs` — `PaneSnapshot`: add `images: Vec<WirePlacement>` field; add `WirePlacement` struct <!-- deferred: daemon image support -->
+- [ ] Snapshot extraction: include image placements when serializing pane state for daemon mode <!-- deferred: daemon image support -->
 
 ### Completion checklist
 
-- [ ] All 39.1–39.5 items complete
-- [ ] Kitty Graphics Protocol: transmit, place, delete, animate, query, response
-- [ ] Sixel: decode and render legacy sixel images, HLS palette support
-- [ ] iTerm2: `imgcat`-compatible inline image display, all sizing modes
-- [ ] GPU compositing: images render at correct z-order with text
-- [ ] Memory management: configurable CPU + GPU limits with LRU eviction
-- [ ] Error handling: corrupt images, oversized images, invalid protocol commands — all handled gracefully
-- [ ] Scrolling: images scroll with text, clip at viewport
-- [ ] Resize: images survive terminal resize, cell-count sizing recalculated
-- [ ] Animation: timer-driven frame switching for animated images
-- [ ] Config: all image settings hot-reloadable
-- [ ] Selection: text selection works over image regions (underlying cell text extracted)
-- [ ] Screen clear (ED/EL): erased regions also clear image placements
-- [ ] Alt screen: image caches swap with grid on alt screen enter/exit
-- [ ] RIS: full reset clears all image caches
-- [ ] Tab close: image resources cleaned up (Drop-based)
-- [ ] Daemon mode: images included in `PaneSnapshot` for remote rendering
-- [ ] `./build-all.sh` — builds cleanly
-- [ ] `./test-all.sh` — all image protocol tests pass
-- [ ] `./clippy-all.sh` — no warnings
+- [ ] All 39.1–39.5 items complete (39.5 has 2 deferred daemon-mode items)
+- [x] Kitty Graphics Protocol: transmit, place, delete, animate, query, response
+- [x] Sixel: decode and render legacy sixel images, HLS palette support
+- [x] iTerm2: `imgcat`-compatible inline image display, all sizing modes
+- [x] GPU compositing: images render at correct z-order with text
+- [x] Memory management: configurable CPU + GPU limits with LRU eviction
+- [x] Error handling: corrupt images, oversized images, invalid protocol commands — all handled gracefully
+- [x] Scrolling: images scroll with text, clip at viewport
+- [x] Resize: images survive terminal resize, cell-count sizing recalculated
+- [x] Animation: timer-driven frame switching for animated images
+- [x] Config: all image settings hot-reloadable
+- [x] Selection: text selection works over image regions (underlying cell text extracted)
+- [x] Screen clear (ED/EL): erased regions also clear image placements
+- [x] Alt screen: image caches swap with grid on alt screen enter/exit
+- [x] RIS: full reset clears all image caches
+- [x] Tab close: image resources cleaned up (Drop-based)
+- [ ] Daemon mode: images included in `PaneSnapshot` for remote rendering <!-- deferred: daemon image support -->
+- [x] `./build-all.sh` — builds cleanly
+- [x] `./test-all.sh` — all image protocol tests pass
+- [x] `./clippy-all.sh` — no warnings
 
 **Exit Criteria:** `kitty icat`, `imgcat`, `viu`, `timg`, and sixel-based tools display images inline in the terminal. Images composite correctly with text, scroll with content, and respect memory limits. Corrupt/oversized images are rejected gracefully. Image resources are cleaned up on tab close, screen clear, and terminal reset.

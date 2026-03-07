@@ -27,6 +27,19 @@ use crate::{DomainId, PaneId};
 pub use self::client::MuxClient;
 pub use self::embedded::EmbeddedMux;
 
+/// Image protocol configuration for a pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageConfig {
+    /// Whether image protocols are enabled.
+    pub enabled: bool,
+    /// CPU-side image cache memory limit in bytes.
+    pub memory_limit: usize,
+    /// Maximum single image size in bytes.
+    pub max_single: usize,
+    /// Whether animated images play their frames.
+    pub animation_enabled: bool,
+}
+
 /// Abstraction over in-process and daemon-mode multiplexer access.
 ///
 /// The App calls trait methods identically regardless of whether
@@ -87,6 +100,9 @@ pub trait MuxBackend {
 
     /// Mark all lines in a pane as dirty (forces full re-render).
     fn mark_all_dirty(&mut self, pane_id: PaneId);
+
+    /// Apply image protocol configuration to a pane.
+    fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig);
 
     // -- Scroll operations --
 

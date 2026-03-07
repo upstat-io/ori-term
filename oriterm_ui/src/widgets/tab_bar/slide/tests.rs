@@ -538,3 +538,35 @@ fn large_tab_count_slide() {
     state.cleanup(&mut tree, &animator);
     assert!(!state.has_active());
 }
+
+// --- Dynamic slide duration tests ---
+
+use super::slide_duration;
+
+#[test]
+fn slide_duration_single_slot() {
+    let d = slide_duration(200.0, 200.0);
+    // 1 slot → 80 + 25 = 105ms.
+    assert_eq!(d.as_millis(), 105);
+}
+
+#[test]
+fn slide_duration_three_slots() {
+    let d = slide_duration(600.0, 200.0);
+    // 3 slots → 80 + 75 = 155ms.
+    assert_eq!(d.as_millis(), 155);
+}
+
+#[test]
+fn slide_duration_capped_at_200ms() {
+    let d = slide_duration(2000.0, 200.0);
+    // 10 slots → 80 + 250 = 330, clamped to 200.
+    assert_eq!(d.as_millis(), 200);
+}
+
+#[test]
+fn slide_duration_minimum_80ms() {
+    // Even very small distance gets at least 80ms (1 slot minimum).
+    let d = slide_duration(1.0, 200.0);
+    assert!(d.as_millis() >= 80);
+}

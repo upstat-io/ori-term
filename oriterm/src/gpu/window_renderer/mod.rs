@@ -20,6 +20,7 @@ use oriterm_core::Rgb;
 use super::atlas::GlyphAtlas;
 use super::bind_groups::{AtlasBindGroup, UniformBuffer};
 use super::frame_input::FrameInput;
+use super::image_render::ImageTextureCache;
 use super::pipelines::GpuPipelines;
 use super::prepare::{self, AtlasLookup};
 use super::prepared_frame::PreparedFrame;
@@ -113,6 +114,8 @@ pub struct WindowRenderer {
 
     // Per-frame reusable scratch buffers.
     ui_raster_keys: Vec<RasterKey>,
+    /// Reusable clip stack for `convert_draw_list` (avoids per-frame allocation).
+    clip_stack: Vec<oriterm_ui::geometry::Rect>,
     shaping: ShapingScratch,
     /// GPU-ready instances for the current frame.
     ///
@@ -134,6 +137,10 @@ pub struct WindowRenderer {
     overlay_fg_buffer: Option<Buffer>,
     overlay_subpixel_fg_buffer: Option<Buffer>,
     overlay_color_fg_buffer: Option<Buffer>,
+
+    // Image rendering.
+    image_texture_cache: ImageTextureCache,
+    image_instance_buffer: Option<Buffer>,
 }
 
 impl WindowRenderer {
@@ -190,6 +197,7 @@ impl WindowRenderer {
             font_collection,
             ui_font_collection,
             ui_raster_keys: Vec::new(),
+            clip_stack: Vec::new(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             bg_buffer: None,
@@ -205,6 +213,8 @@ impl WindowRenderer {
             overlay_fg_buffer: None,
             overlay_subpixel_fg_buffer: None,
             overlay_color_fg_buffer: None,
+            image_texture_cache: ImageTextureCache::new(device),
+            image_instance_buffer: None,
         }
     }
 
@@ -262,6 +272,7 @@ impl WindowRenderer {
         &mut self,
         input: &FrameInput,
         gpu: &GpuState,
+        pipelines: &GpuPipelines,
         origin: (f32, f32),
         cursor_blink_visible: bool,
         content_changed: bool,
@@ -318,13 +329,54 @@ impl WindowRenderer {
             cursor_blink_visible,
         );
 
+        // Phase D: Ensure image textures uploaded.
+        self.upload_image_textures(input, gpu, pipelines);
+
         log::trace!(
-            "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
+            "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={} images={}",
             input.content.cells.len(),
             self.prepared.backgrounds.len(),
             self.prepared.glyphs.len(),
             self.prepared.cursors.len(),
+            self.prepared.image_quads_below.len() + self.prepared.image_quads_above.len(),
         );
+    }
+
+    /// Upload image textures for the current frame.
+    ///
+    /// Ensures all images referenced by the prepared frame have GPU textures.
+    /// Evicts textures that haven't been used recently.
+    fn upload_image_textures(
+        &mut self,
+        input: &FrameInput,
+        gpu: &GpuState,
+        pipelines: &GpuPipelines,
+    ) {
+        self.image_texture_cache.begin_frame();
+
+        // Upload textures for all visible images.
+        for img_data in &input.content.image_data {
+            self.image_texture_cache.ensure_uploaded(
+                &gpu.device,
+                &gpu.queue,
+                &pipelines.image_texture_layout,
+                img_data.id,
+                &img_data.data,
+                img_data.width,
+                img_data.height,
+            );
+        }
+
+        // Evict textures not used in the last 60 frames (~1 second at 60fps).
+        self.image_texture_cache.evict_unused(60);
+        self.image_texture_cache.evict_over_limit();
+    }
+
+    /// Update the GPU memory limit for image textures.
+    ///
+    /// Triggers immediate eviction if current usage exceeds the new limit.
+    pub fn set_image_gpu_memory_limit(&mut self, limit: usize) {
+        self.image_texture_cache.set_gpu_memory_limit(limit);
     }
 }
 

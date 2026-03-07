@@ -383,6 +383,8 @@ fn hit_is_tab_matches_body_and_close() {
 
 // --- TabBarWidget ---
 
+use std::time::{Duration, Instant};
+
 use super::widget::{TabBarWidget, TabEntry};
 
 #[test]
@@ -449,7 +451,7 @@ fn widget_set_active_index() {
 #[test]
 fn widget_set_hover_hit() {
     let mut w = TabBarWidget::new(1200.0);
-    w.set_hover_hit(TabBarHit::NewTab);
+    w.set_hover_hit(TabBarHit::NewTab, Instant::now());
     // No panic — hover state stored.
 }
 
@@ -468,7 +470,7 @@ fn ring_bell_starts_animation() {
     w.set_tabs(vec![TabEntry::new("A")]);
     w.ring_bell(0);
     // Bell phase should be nonzero immediately after ringing.
-    let phase = TabBarWidget::bell_phase_for_test(&TabEntry::new("A"), std::time::Instant::now());
+    let phase = TabBarWidget::bell_phase_for_test(&TabEntry::new("A"), Instant::now());
     // A fresh TabEntry has no bell, so phase is 0.
     assert_eq!(phase, 0.0);
 }
@@ -485,18 +487,18 @@ fn update_tab_title_changes_title() {
 #[test]
 fn bell_phase_zero_when_no_bell() {
     let entry = TabEntry::new("test");
-    let now = std::time::Instant::now();
+    let now = Instant::now();
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     assert!((phase - 0.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn bell_phase_positive_right_after_bell() {
-    let now = std::time::Instant::now();
+    let now = Instant::now();
     let entry = TabEntry {
         title: "test".into(),
         icon: None,
-        bell_start: Some(now - std::time::Duration::from_millis(100)),
+        bell_start: Some(now - Duration::from_millis(100)),
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     // Phase should be > 0 shortly after bell fires.
@@ -505,14 +507,167 @@ fn bell_phase_positive_right_after_bell() {
 
 #[test]
 fn bell_phase_zero_after_duration() {
-    let now = std::time::Instant::now();
+    let now = Instant::now();
     let entry = TabEntry {
         title: "test".into(),
         icon: None,
-        bell_start: Some(now - std::time::Duration::from_secs(5)),
+        bell_start: Some(now - Duration::from_secs(5)),
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     assert!((phase - 0.0).abs() < f32::EPSILON);
+}
+
+// --- AnimatedValue<Color> smoke test ---
+
+use crate::animation::{AnimatedValue, Easing};
+use crate::color::Color;
+
+#[test]
+fn animated_value_color_interpolates() {
+    let now = Instant::now();
+    let mut av = AnimatedValue::new(Color::BLACK, Duration::from_millis(100), Easing::Linear);
+    av.set(Color::WHITE, now);
+
+    // At t=0, should be black (start).
+    let c0 = av.get(now);
+    assert!((c0.r - 0.0).abs() < 0.01);
+    assert!((c0.g - 0.0).abs() < 0.01);
+    assert!((c0.b - 0.0).abs() < 0.01);
+
+    // At t=50ms (50%), should be mid-gray.
+    let mid = now + Duration::from_millis(50);
+    let c50 = av.get(mid);
+    assert!((c50.r - 0.5).abs() < 0.05, "r at 50%: {}", c50.r);
+    assert!((c50.g - 0.5).abs() < 0.05, "g at 50%: {}", c50.g);
+    assert!((c50.b - 0.5).abs() < 0.05, "b at 50%: {}", c50.b);
+
+    // At t=100ms+, should be white (target).
+    let end = now + Duration::from_millis(100);
+    let c100 = av.get(end);
+    assert!((c100.r - 1.0).abs() < 0.01);
+    assert!((c100.g - 1.0).abs() < 0.01);
+    assert!((c100.b - 1.0).abs() < 0.01);
+}
+
+// --- Hover progress animation tests ---
+
+#[test]
+fn hover_progress_starts_at_zero() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let now = Instant::now();
+    assert!((w.test_hover_progress(0, now) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_hover_progress(1, now) - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn hover_progress_reaches_one_after_duration() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let now = Instant::now();
+
+    // Hover tab 0.
+    w.set_hover_hit(TabBarHit::Tab(0), now);
+
+    // After 100ms+ (TAB_HOVER_DURATION), should be 1.0.
+    let after = now + Duration::from_millis(150);
+    assert!(
+        (w.test_hover_progress(0, after) - 1.0).abs() < f32::EPSILON,
+        "hover progress should be 1.0, got {}",
+        w.test_hover_progress(0, after)
+    );
+    // Tab 1 should still be 0.
+    assert!((w.test_hover_progress(1, after) - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn hover_progress_mid_transition() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    let now = Instant::now();
+
+    w.set_hover_hit(TabBarHit::Tab(0), now);
+
+    // At ~50% of 100ms duration, should be mid-transition (not 0 and not 1).
+    let mid = now + Duration::from_millis(50);
+    let p = w.test_hover_progress(0, mid);
+    assert!(p > 0.1, "mid-transition should be > 0.1, got {p}");
+    assert!(p < 0.99, "mid-transition should be < 0.99, got {p}");
+}
+
+#[test]
+fn hover_leave_starts_reverse_transition() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    let now = Instant::now();
+
+    // Hover enter.
+    w.set_hover_hit(TabBarHit::Tab(0), now);
+
+    // Let animation complete.
+    let t1 = now + Duration::from_millis(150);
+    assert!((w.test_hover_progress(0, t1) - 1.0).abs() < f32::EPSILON);
+
+    // Hover leave.
+    w.set_hover_hit(TabBarHit::None, t1);
+
+    // After leave animation completes, should be 0.
+    let t2 = t1 + Duration::from_millis(150);
+    assert!(
+        (w.test_hover_progress(0, t2) - 0.0).abs() < f32::EPSILON,
+        "after leave, hover progress should be 0.0, got {}",
+        w.test_hover_progress(0, t2)
+    );
+}
+
+// --- Close button opacity tests ---
+
+#[test]
+fn close_btn_opacity_zero_by_default() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    let now = Instant::now();
+    assert!((w.test_close_btn_opacity(0, now) - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn close_btn_opacity_reaches_one_on_hover() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    let now = Instant::now();
+
+    w.set_hover_hit(TabBarHit::Tab(0), now);
+
+    // After 80ms+ (CLOSE_BTN_FADE_DURATION), should be 1.0.
+    let after = now + Duration::from_millis(100);
+    assert!(
+        (w.test_close_btn_opacity(0, after) - 1.0).abs() < f32::EPSILON,
+        "close btn opacity should be 1.0, got {}",
+        w.test_close_btn_opacity(0, after)
+    );
+}
+
+#[test]
+fn close_btn_opacity_fades_out_on_leave() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+    let now = Instant::now();
+
+    // Hover enter, let animation complete.
+    w.set_hover_hit(TabBarHit::Tab(0), now);
+    let t1 = now + Duration::from_millis(100);
+    assert!((w.test_close_btn_opacity(0, t1) - 1.0).abs() < f32::EPSILON);
+
+    // Hover leave.
+    w.set_hover_hit(TabBarHit::None, t1);
+
+    // After fade-out completes, should be 0.
+    let t2 = t1 + Duration::from_millis(100);
+    assert!(
+        (w.test_close_btn_opacity(0, t2) - 0.0).abs() < f32::EPSILON,
+        "after leave, close btn opacity should be 0.0, got {}",
+        w.test_close_btn_opacity(0, t2)
+    );
 }
 
 // --- Button repositioning during drag ---
@@ -826,7 +981,7 @@ fn interleaved_mutations_do_not_corrupt_layout() {
         TabEntry::new("C"),
     ]);
     w.set_window_width(800.0);
-    w.set_hover_hit(TabBarHit::Tab(1));
+    w.set_hover_hit(TabBarHit::Tab(1), Instant::now());
     w.set_active_index(0);
     w.set_window_width(1200.0);
     // Layout should reflect final state: 3 tabs, 1200px window.
@@ -1288,4 +1443,173 @@ fn hit_test_close_window_in_controls_zone() {
         x -= 1.0;
     }
     assert!(found, "CloseWindow should be hittable in controls zone");
+}
+
+// --- Tab lifecycle animation tests (Section 04) ---
+
+#[test]
+fn width_multiplier_defaults_to_one() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let now = Instant::now();
+    // No animation → multiplier is 1.0 (full width).
+    assert!(!w.has_width_animation(now));
+}
+
+#[test]
+fn animate_tab_open_starts_at_zero() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let now = Instant::now();
+
+    w.animate_tab_open(1, now);
+
+    // Tab 1 width multiplier at t=0 should be 0.0.
+    assert!(w.has_width_animation(now));
+    // After animation (200ms+), should be 1.0.
+    let after = now + Duration::from_millis(250);
+    assert!(!w.has_width_animation(after));
+}
+
+#[test]
+fn animate_tab_close_starts_at_one() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let now = Instant::now();
+
+    w.animate_tab_close(0, now);
+
+    assert!(w.is_closing(0));
+    assert!(!w.is_closing(1));
+    assert!(w.has_width_animation(now));
+}
+
+#[test]
+fn closing_complete_returns_none_during_animation() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let now = Instant::now();
+
+    w.animate_tab_close(0, now);
+
+    // Mid-animation: no completion yet.
+    let mid = now + Duration::from_millis(50);
+    assert!(w.closing_complete(mid).is_none());
+}
+
+#[test]
+fn closing_complete_returns_index_after_animation() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let now = Instant::now();
+
+    w.animate_tab_close(0, now);
+
+    // After animation (150ms+), tab 0 should be complete.
+    let after = now + Duration::from_millis(200);
+    assert_eq!(w.closing_complete(after), Some(0));
+}
+
+#[test]
+fn set_tabs_resets_closing_state() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
+    let now = Instant::now();
+
+    w.animate_tab_close(0, now);
+    assert!(w.is_closing(0));
+
+    // set_tabs resets all parallel vecs.
+    w.set_tabs(vec![TabEntry::new("B")]);
+    assert!(!w.is_closing(0));
+    assert!(!w.has_width_animation(Instant::now()));
+}
+
+// --- Layout with width multipliers ---
+
+#[test]
+fn layout_with_uniform_multipliers_matches_default() {
+    let default = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let with_ones =
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 1.0, 1.0]));
+
+    for i in 0..3 {
+        assert!(
+            (default.tab_x(i) - with_ones.tab_x(i)).abs() < f32::EPSILON,
+            "tab_x({i}) should match"
+        );
+        assert!(
+            (default.tab_width_at(i) - with_ones.tab_width_at(i)).abs() < f32::EPSILON,
+            "tab_width_at({i}) should match"
+        );
+    }
+    assert!((default.tabs_end() - with_ones.tabs_end()).abs() < f32::EPSILON);
+}
+
+#[test]
+fn layout_half_multiplier_halves_tab_width() {
+    let layout =
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+
+    // Tab 1 should be half width.
+    let base = layout.tab_width;
+    assert!(
+        (layout.tab_width_at(1) - base * 0.5).abs() < f32::EPSILON,
+        "tab 1 should be half width"
+    );
+
+    // Tab 2 should start at tab 1 start + half width (not full width).
+    let expected_tab2_x = layout.tab_x(1) + base * 0.5;
+    assert!(
+        (layout.tab_x(2) - expected_tab2_x).abs() < f32::EPSILON,
+        "tab 2 should start after half-width tab 1"
+    );
+}
+
+#[test]
+fn layout_zero_multiplier_collapses_tab() {
+    let layout =
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.0, 1.0]));
+
+    assert!(
+        layout.tab_width_at(1) < f32::EPSILON,
+        "collapsed tab has zero width"
+    );
+    // Tab 2 starts where tab 1 starts (zero-width tab occupies no space).
+    assert!(
+        (layout.tab_x(2) - layout.tab_x(1)).abs() < f32::EPSILON,
+        "tab 2 should be adjacent to tab 1 start"
+    );
+}
+
+#[test]
+fn tab_index_at_with_non_uniform_widths() {
+    let layout =
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+
+    // Mid-point of tab 0 should hit tab 0.
+    let mid0 = layout.tab_x(0) + layout.tab_width_at(0) / 2.0;
+    assert_eq!(layout.tab_index_at(mid0), Some(0));
+
+    // Mid-point of tab 1 (half-width) should hit tab 1.
+    let mid1 = layout.tab_x(1) + layout.tab_width_at(1) / 2.0;
+    assert_eq!(layout.tab_index_at(mid1), Some(1));
+
+    // Mid-point of tab 2 should hit tab 2.
+    let mid2 = layout.tab_x(2) + layout.tab_width_at(2) / 2.0;
+    assert_eq!(layout.tab_index_at(mid2), Some(2));
+}
+
+#[test]
+fn tabs_end_with_multipliers() {
+    let layout =
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+
+    // Total width = 1.0 + 0.5 + 1.0 = 2.5 tab widths.
+    let base = layout.tab_width;
+    let expected = layout.tab_x(0) + 2.5 * base;
+    assert!(
+        (layout.tabs_end() - expected).abs() < f32::EPSILON,
+        "tabs_end should account for multipliers"
+    );
 }

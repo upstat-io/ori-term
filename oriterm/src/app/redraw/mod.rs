@@ -211,7 +211,14 @@ impl App {
                 .bounds()
                 .map_or((0.0, 0.0), |b| (b.x(), b.y()));
 
-            renderer.prepare(frame, gpu, origin, cursor_blink_visible, content_changed);
+            renderer.prepare(
+                frame,
+                gpu,
+                pipelines,
+                origin,
+                cursor_blink_visible,
+                content_changed,
+            );
 
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.

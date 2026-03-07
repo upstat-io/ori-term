@@ -122,7 +122,7 @@ pub(super) fn render_to_pixels_with_origin(
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(input, gpu, origin, true, true);
+    renderer.prepare(input, gpu, pipelines, origin, true, true);
     renderer.render_frame(gpu, pipelines, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")

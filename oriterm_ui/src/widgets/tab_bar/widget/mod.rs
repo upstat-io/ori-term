@@ -8,25 +8,35 @@
 //! The widget implements [`Widget`] for draw integration. Event handling
 //! stubs are provided here; full hit-test dispatch is Section 16.3.
 
+mod control_state;
 mod controls_draw;
+mod drag_draw;
 mod draw;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use crate::animation::Lerp;
+use crate::animation::{AnimatedValue, Easing};
 use crate::color::Color;
-use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 use crate::widgets::window_chrome::controls::{ControlButtonColors, WindowControlButton};
 use crate::widgets::window_chrome::layout::ControlKind;
-use crate::widgets::{EventCtx, Widget, WidgetResponse};
 
 use super::colors::TabBarColors;
-use super::constants::{DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT};
 use super::hit::TabBarHit;
 use super::layout::TabBarLayout;
+
+/// Duration for tab hover background animation.
+const TAB_HOVER_DURATION: Duration = Duration::from_millis(100);
+
+/// Duration for close button fade in/out animation.
+const CLOSE_BTN_FADE_DURATION: Duration = Duration::from_millis(80);
+
+/// Duration for tab open width animation.
+const TAB_OPEN_DURATION: Duration = Duration::from_millis(200);
+
+/// Duration for tab close width animation.
+const TAB_CLOSE_DURATION: Duration = Duration::from_millis(150);
 
 /// Icon type for tab entries.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +102,18 @@ pub struct TabBarWidget {
     // Per-tab animation offsets for smooth transitions (pixels).
     anim_offsets: Vec<f32>,
 
+    // Per-tab hover animation progress (0.0 = inactive, 1.0 = hovered).
+    hover_progress: Vec<AnimatedValue<f32>>,
+
+    // Per-tab close button fade (0.0 = hidden, 1.0 = visible).
+    close_btn_opacity: Vec<AnimatedValue<f32>>,
+
+    // Per-tab width multiplier for open/close animation (0.0 = collapsed, 1.0 = full).
+    width_multipliers: Vec<AnimatedValue<f32>>,
+
+    // Per-tab closing flag (true = tab is animating closed, skip interaction).
+    closing_tabs: Vec<bool>,
+
     // Window control buttons: [minimize, maximize/restore, close].
     controls: [WindowControlButton; 3],
     /// Index of the currently hovered control button (`None` if not hovering).
@@ -125,6 +147,10 @@ impl TabBarWidget {
             hover_hit: TabBarHit::None,
             drag_visual: None,
             anim_offsets: Vec::new(),
+            hover_progress: Vec::new(),
+            close_btn_opacity: Vec::new(),
+            width_multipliers: Vec::new(),
+            closing_tabs: Vec::new(),
             controls,
             hovered_control: None,
             left_inset: 0.0,
@@ -147,8 +173,26 @@ impl TabBarWidget {
     // --- State setters ---
 
     /// Updates the tab list and recomputes layout.
+    ///
+    /// Resets per-tab animation state (hover progress, close button opacity)
+    /// since tab indices may have changed due to add/remove/reorder.
     pub fn set_tabs(&mut self, tabs: Vec<TabEntry>) {
+        let n = tabs.len();
         self.tabs = tabs;
+        self.hover_progress.clear();
+        self.hover_progress.resize_with(n, || {
+            AnimatedValue::new(0.0, TAB_HOVER_DURATION, Easing::EaseOut)
+        });
+        self.close_btn_opacity.clear();
+        self.close_btn_opacity.resize_with(n, || {
+            AnimatedValue::new(0.0, CLOSE_BTN_FADE_DURATION, Easing::EaseOut)
+        });
+        self.width_multipliers.clear();
+        self.width_multipliers.resize_with(n, || {
+            AnimatedValue::new(1.0, TAB_OPEN_DURATION, Easing::EaseOut)
+        });
+        self.closing_tabs.clear();
+        self.closing_tabs.resize(n, false);
         self.recompute_layout();
     }
 
@@ -177,9 +221,37 @@ impl TabBarWidget {
         self.recompute_layout();
     }
 
-    /// Updates which element the cursor is hovering.
-    pub fn set_hover_hit(&mut self, hit: TabBarHit) {
+    /// Updates which element the cursor is hovering, driving hover animations.
+    ///
+    /// Starts animated transitions for hover background and close button
+    /// visibility on the affected tabs.
+    pub fn set_hover_hit(&mut self, hit: TabBarHit, now: Instant) {
+        let old_tab = self.hover_hit.tab_index();
+        let new_tab = hit.tab_index();
         self.hover_hit = hit;
+
+        // Animate hover leave on old tab.
+        if let Some(i) = old_tab {
+            if Some(i) != new_tab {
+                if let Some(p) = self.hover_progress.get_mut(i) {
+                    p.set(0.0, now);
+                }
+                if let Some(o) = self.close_btn_opacity.get_mut(i) {
+                    o.set(0.0, now);
+                }
+            }
+        }
+        // Animate hover enter on new tab.
+        if let Some(i) = new_tab {
+            if Some(i) != old_tab {
+                if let Some(p) = self.hover_progress.get_mut(i) {
+                    p.set(1.0, now);
+                }
+                if let Some(o) = self.close_btn_opacity.get_mut(i) {
+                    o.set(1.0, now);
+                }
+            }
+        }
     }
 
     /// Sets the dragged tab visual state.
@@ -188,6 +260,72 @@ impl TabBarWidget {
     /// position is at `x` logical pixels. `None` means no drag in progress.
     pub fn set_drag_visual(&mut self, drag: Option<(usize, f32)>) {
         self.drag_visual = drag;
+    }
+
+    // --- Tab lifecycle animations ---
+
+    /// Starts a tab open animation, expanding from zero to full width.
+    ///
+    /// Call after `set_tabs()` which initializes the entry at 1.0.
+    /// This overrides to start from 0.0 and animate to 1.0 over 200ms.
+    pub fn animate_tab_open(&mut self, index: usize, now: Instant) {
+        if let Some(m) = self.width_multipliers.get_mut(index) {
+            m.set_immediate(0.0);
+            m.set(1.0, now);
+        }
+    }
+
+    /// Starts a tab close animation, shrinking from full to zero width.
+    ///
+    /// Marks the tab as closing (skipped for hover/click interaction).
+    /// When the animation completes, call [`closing_complete`] to find
+    /// which tab to remove.
+    pub fn animate_tab_close(&mut self, index: usize, now: Instant) {
+        if let Some(m) = self.width_multipliers.get_mut(index) {
+            *m = AnimatedValue::new(1.0, TAB_CLOSE_DURATION, Easing::EaseOut);
+            m.set(0.0, now);
+        }
+        if let Some(c) = self.closing_tabs.get_mut(index) {
+            *c = true;
+        }
+    }
+
+    /// Returns the index of a tab whose close animation has finished.
+    ///
+    /// The app layer polls this during redraw and removes the finished
+    /// tab via `set_tabs()`.
+    pub fn closing_complete(&self, now: Instant) -> Option<usize> {
+        self.closing_tabs
+            .iter()
+            .enumerate()
+            .find(|&(i, &closing)| {
+                closing
+                    && self
+                        .width_multipliers
+                        .get(i)
+                        .is_none_or(|m| m.get(now) < 0.01)
+            })
+            .map(|(i, _)| i)
+    }
+
+    /// Whether the tab at `index` is in closing state.
+    pub fn is_closing(&self, index: usize) -> bool {
+        self.closing_tabs.get(index).copied().unwrap_or(false)
+    }
+
+    /// Whether any width animation is currently running.
+    pub fn has_width_animation(&self, now: Instant) -> bool {
+        self.width_multipliers.iter().any(|m| m.is_animating(now))
+    }
+
+    /// Updates layout with current animated width multipliers.
+    ///
+    /// Call once per frame before draw when width animations are active.
+    /// No-op when no width animations are running.
+    pub fn update_animated_layout(&mut self, now: Instant) {
+        if self.has_width_animation(now) {
+            self.recompute_layout_animated(now);
+        }
     }
 
     // --- Accessors ---
@@ -231,174 +369,33 @@ impl TabBarWidget {
         }
     }
 
-    // --- Window control state ---
-
-    /// Sets the maximized state on all control buttons.
-    ///
-    /// The maximize/restore button changes symbol (□ vs ⧉).
-    pub fn set_maximized(&mut self, maximized: bool) {
-        for ctrl in &mut self.controls {
-            ctrl.set_maximized(maximized);
-        }
-    }
-
-    /// Sets the active/focused state.
-    ///
-    /// Adjusts the caption background color on control buttons: active
-    /// windows use `bar_bg`, inactive windows use a darkened variant.
-    pub fn set_active(&mut self, active: bool) {
-        let caption_bg = if active {
-            self.colors.bar_bg
-        } else {
-            Color::lerp(self.colors.bar_bg, Color::BLACK, 0.3)
-        };
-        for ctrl in &mut self.controls {
-            ctrl.set_caption_bg(caption_bg);
-        }
-    }
-
-    /// Returns all interactive rects in logical pixels.
-    ///
-    /// Includes tab rects, new-tab button, dropdown button, and the three
-    /// control buttons. The platform layer scales these to physical pixels
-    /// and uses them for `WM_NCHITTEST` — points inside are `HTCLIENT`
-    /// (clickable), everything else is `HTCAPTION` (draggable).
-    pub fn interactive_rects(&self) -> Vec<Rect> {
-        let mut rects = Vec::with_capacity(self.tabs.len() + 5);
-        // Tab rects.
-        for i in 0..self.tabs.len() {
-            let x = self.layout.tab_x(i);
-            rects.push(Rect::new(x, 0.0, self.layout.tab_width, TAB_BAR_HEIGHT));
-        }
-        // New-tab button.
-        let ntx = self.layout.new_tab_x();
-        rects.push(Rect::new(ntx, 0.0, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT));
-        // Dropdown button.
-        let ddx = self.layout.dropdown_x();
-        rects.push(Rect::new(ddx, 0.0, DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT));
-        // Control buttons.
-        for i in 0..3 {
-            rects.push(self.control_rect(i));
-        }
-        rects
-    }
-
-    /// Updates hover state for control buttons based on cursor position.
-    ///
-    /// Routes `HoverEvent::Enter`/`Leave` to the appropriate
-    /// [`WindowControlButton`] so animation transitions play correctly.
-    pub fn update_control_hover(&mut self, pos: Point, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let new_idx = (0..3).find(|&i| self.control_rect(i).contains(pos));
-
-        if new_idx == self.hovered_control {
-            return WidgetResponse::ignored();
-        }
-
-        // Leave old control.
-        let left = if let Some(old) = self.hovered_control {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: self.control_rect(old),
-                is_focused: false,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-            };
-            self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
-            true
-        } else {
-            false
-        };
-
-        // Enter new control.
-        let entered = if let Some(new) = new_idx {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: self.control_rect(new),
-                is_focused: false,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-            };
-            self.controls[new].handle_hover(HoverEvent::Enter, &child_ctx);
-            true
-        } else {
-            false
-        };
-
-        self.hovered_control = new_idx;
-
-        if left || entered {
-            WidgetResponse::redraw()
-        } else {
-            WidgetResponse::ignored()
-        }
-    }
-
-    /// Clears control button hover state (e.g. when cursor leaves the tab bar).
-    pub fn clear_control_hover(&mut self, ctx: &EventCtx<'_>) {
-        if let Some(old) = self.hovered_control.take() {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: self.control_rect(old),
-                is_focused: false,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-            };
-            self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
-        }
-    }
-
-    /// Routes a mouse event to the appropriate control button.
-    ///
-    /// On button down: sets pressed state on the hovered control.
-    /// On button up: releases the pressed control and emits the action.
-    pub fn handle_control_mouse(
-        &mut self,
-        event: &MouseEvent,
-        ctx: &EventCtx<'_>,
-    ) -> WidgetResponse {
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                let idx = (0..3).find(|&i| self.control_rect(i).contains(event.pos));
-                if let Some(i) = idx {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: self.control_rect(i),
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
-                    return self.controls[i].handle_mouse(event, &child_ctx);
-                }
-                WidgetResponse::ignored()
-            }
-            MouseEventKind::Up(MouseButton::Left) => {
-                for i in 0..3 {
-                    if self.controls[i].is_pressed() {
-                        let child_ctx = EventCtx {
-                            measurer: ctx.measurer,
-                            bounds: self.control_rect(i),
-                            is_focused: false,
-                            focused_widget: ctx.focused_widget,
-                            theme: ctx.theme,
-                        };
-                        return self.controls[i].handle_mouse(event, &child_ctx);
-                    }
-                }
-                WidgetResponse::ignored()
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
     // --- Private helpers ---
 
     /// Recomputes layout from current state.
+    ///
+    /// When width multipliers are active (during open/close animations),
+    /// passes current multiplier values to the layout computation.
     fn recompute_layout(&mut self) {
         self.layout = TabBarLayout::compute(
             self.tabs.len(),
             self.window_width,
             self.tab_width_lock,
             self.left_inset,
+        );
+    }
+
+    /// Recomputes layout with current animated width multipliers.
+    ///
+    /// Called during draw when width animations are running. Samples
+    /// each `AnimatedValue` at `now` and passes the snapshot to layout.
+    fn recompute_layout_animated(&mut self, now: Instant) {
+        let multipliers: Vec<f32> = self.width_multipliers.iter().map(|m| m.get(now)).collect();
+        self.layout = TabBarLayout::compute_with_multipliers(
+            self.tabs.len(),
+            self.window_width,
+            self.tab_width_lock,
+            self.left_inset,
+            Some(&multipliers),
         );
     }
 
@@ -464,5 +461,17 @@ impl TabBarWidget {
     /// Test-only access to drag-adjusted dropdown button X.
     pub fn test_dropdown_button_x(&self) -> f32 {
         draw::dropdown_button_x(self)
+    }
+
+    /// Test-only access to hover progress for a tab.
+    pub fn test_hover_progress(&self, index: usize, now: Instant) -> f32 {
+        self.hover_progress.get(index).map_or(0.0, |p| p.get(now))
+    }
+
+    /// Test-only access to close button opacity for a tab.
+    pub fn test_close_btn_opacity(&self, index: usize, now: Instant) -> f32 {
+        self.close_btn_opacity
+            .get(index)
+            .map_or(0.0, |o| o.get(now))
     }
 }

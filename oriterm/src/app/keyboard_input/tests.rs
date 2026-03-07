@@ -53,6 +53,9 @@ fn content_with_cursor(
         mode: TermMode::SHOW_CURSOR,
         all_dirty: true,
         damage: Vec::new(),
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     }
 }
 
@@ -413,6 +416,9 @@ fn preedit_empty_cells_no_panic() {
         mode: TermMode::SHOW_CURSOR,
         all_dirty: true,
         damage: Vec::new(),
+        images: Vec::new(),
+        image_data: Vec::new(),
+        images_dirty: false,
     };
     // Empty cells vec should early-return without panic.
     overlay_preedit_cells("A", &mut content, 10);

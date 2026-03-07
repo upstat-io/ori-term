@@ -3478,3 +3478,117 @@ fn prompt_markers_with_origin_offset() {
     // One marker rect at row 1 with origin offset applied.
     assert_eq!(frame.cursors.len(), 1, "expected 1 prompt marker rect");
 }
+
+// ── Image z-index splitting ──
+
+fn placement(z: i32, x: f32, y: f32) -> oriterm_core::RenderablePlacement {
+    oriterm_core::RenderablePlacement {
+        image_id: oriterm_core::image::ImageId(1),
+        viewport_x: x,
+        viewport_y: y,
+        display_width: 32.0,
+        display_height: 32.0,
+        source_x: 0.0,
+        source_y: 0.0,
+        source_w: 1.0,
+        source_h: 1.0,
+        z_index: z,
+        opacity: 1.0,
+    }
+}
+
+#[test]
+fn image_z_negative_goes_to_below_list() {
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    input.content.images = vec![placement(-1, 0.0, 0.0)];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 1);
+    assert_eq!(frame.image_quads_above.len(), 0);
+    assert_eq!(frame.image_quads_below[0].x, 0.0);
+}
+
+#[test]
+fn image_z_zero_goes_to_above_list() {
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    input.content.images = vec![placement(0, 10.0, 20.0)];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 0);
+    assert_eq!(frame.image_quads_above.len(), 1);
+    assert_eq!(frame.image_quads_above[0].x, 10.0);
+}
+
+#[test]
+fn image_z_positive_goes_to_above_list() {
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    input.content.images = vec![placement(5, 0.0, 0.0)];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 0);
+    assert_eq!(frame.image_quads_above.len(), 1);
+}
+
+#[test]
+fn mixed_z_images_split_correctly() {
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    input.content.images = vec![
+        placement(-2, 0.0, 0.0),
+        placement(1, 10.0, 0.0),
+        placement(-1, 20.0, 0.0),
+        placement(0, 30.0, 0.0),
+    ];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    assert_eq!(frame.image_quads_below.len(), 2, "z<0 images");
+    assert_eq!(frame.image_quads_above.len(), 2, "z>=0 images");
+}
+
+#[test]
+fn image_origin_offset_applied() {
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    input.content.images = vec![placement(-1, 5.0, 10.0)];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (100.0, 200.0));
+
+    let q = &frame.image_quads_below[0];
+    assert_eq!(q.x, 105.0, "origin x added to viewport_x");
+    assert_eq!(q.y, 210.0, "origin y added to viewport_y");
+}
+
+#[test]
+fn image_uv_and_opacity_propagated() {
+    let mut input = FrameInput::test_grid(4, 2, "");
+    input.content.cursor.visible = false;
+    let mut img = placement(0, 0.0, 0.0);
+    img.source_x = 0.25;
+    img.source_y = 0.5;
+    img.source_w = 0.5;
+    img.source_h = 0.25;
+    img.opacity = 0.8;
+    input.content.images = vec![img];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let q = &frame.image_quads_above[0];
+    assert_eq!(q.uv_x, 0.25);
+    assert_eq!(q.uv_y, 0.5);
+    assert_eq!(q.uv_w, 0.5);
+    assert_eq!(q.uv_h, 0.25);
+    assert_eq!(q.opacity, 0.8);
+}

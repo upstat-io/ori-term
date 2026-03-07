@@ -200,6 +200,20 @@ pub enum MuxPdu {
     /// List all live pane IDs.
     ListPanes,
 
+    /// Configure image protocol settings for a pane. Fire-and-forget.
+    SetImageConfig {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Whether image protocols are enabled.
+        enabled: bool,
+        /// CPU-side image cache memory limit in bytes.
+        memory_limit: u64,
+        /// Maximum single image size in bytes.
+        max_single: u64,
+        /// Whether animated images play their frames.
+        animation_enabled: bool,
+    },
+
     // -- Responses (daemon → client) --
     /// Handshake acknowledgment.
     HelloAck {
@@ -339,6 +353,7 @@ impl MuxPdu {
             Self::SetCapabilities { .. } => MsgType::SetCapabilities,
             Self::SpawnPane { .. } => MsgType::SpawnPane,
             Self::ListPanes => MsgType::ListPanes,
+            Self::SetImageConfig { .. } => MsgType::SetImageConfig,
             Self::HelloAck { .. } => MsgType::HelloAck,
             Self::PaneClosedAck => MsgType::PaneClosedAck,
             Self::Subscribed { .. } => MsgType::Subscribed,
@@ -377,6 +392,7 @@ impl MuxPdu {
                 | Self::SearchNextMatch { .. }
                 | Self::SearchPrevMatch { .. }
                 | Self::SetCapabilities { .. }
+                | Self::SetImageConfig { .. }
         )
     }
 

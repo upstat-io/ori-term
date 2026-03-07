@@ -1,16 +1,16 @@
 ---
 section: "02"
 title: Tab Bar Clipping
-status: not-started
+status: complete
 goal: "Each tab's content is clipped to its tab rect — no show-through between adjacent tabs"
 depends_on: ["01"]
 sections:
   - id: "02.1"
     title: "Per-Tab Clip Rects"
-    status: not-started
+    status: complete
   - id: "02.2"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 02: Tab Bar Clipping
@@ -32,7 +32,7 @@ sections:
 
 Wrap each `draw_tab()` call in a clip rect matching the tab's bounds.
 
-- [ ] In `draw_tab()`, add `push_clip(tab_rect)` before drawing content and `pop_clip()` after:
+- [x] In `draw_tab()`, add `push_clip(tab_rect)` before drawing content and `pop_clip()` after:
   ```rust
   fn draw_tab(&self, ctx: &mut DrawCtx<'_>, index: usize, strip: &TabStrip) {
       let tab = &self.tabs[index];
@@ -46,24 +46,24 @@ Wrap each `draw_tab()` call in a clip rect matching the tab's bounds.
       ctx.draw_list.pop_clip();
   }
   ```
-- [ ] Ensure `push_clip` is called BEFORE `push_layer` in `draw_tab()`, and `pop_clip` AFTER `pop_layer` — clip wraps the entire tab content including the layer boundary
-- [ ] Verify the dragged tab overlay (`draw_dragged_tab_overlay`) does NOT need a clip — it floats freely and should be allowed to extend beyond tab bounds for visual polish
-- [ ] Verify new-tab button and dropdown button don't need clips — they have fixed positions and don't overlap tabs
+- [x] Ensure `push_clip` is called BEFORE `push_layer` in `draw_tab()`, and `pop_clip` AFTER `pop_layer` — clip wraps the entire tab content including the layer boundary
+- [x] Verify the dragged tab overlay (`draw_dragged_tab_overlay`) does NOT need a clip — it floats freely and should be allowed to extend beyond tab bounds for visual polish
+- [x] Verify new-tab button and dropdown button don't need clips — they have fixed positions and don't overlap tabs
 
 ---
 
 ## 02.2 Completion Checklist
 
-- [ ] `draw_tab()` wraps content in `push_clip(tab_rect)` / `pop_clip()`
-- [ ] Clip wraps layer boundary: `push_clip` before `push_layer`, `pop_clip` after `pop_layer`
-- [ ] Tab title text is clipped at tab boundaries
-- [ ] Close button is clipped at tab boundaries
-- [ ] Active tab renders on top of inactive tabs (draw order unchanged)
-- [ ] Dragged tab overlay is not clipped (floats freely)
-- [ ] Clip rect includes `anim_offset` — tab clips move correctly during slide animations
-- [ ] No visual regression in tab bar appearance at normal widths
-- [ ] `./clippy-all.sh` — no warnings
-- [ ] `./test-all.sh` — all pass
-- [ ] `./build-all.sh` — cross-compilation succeeds
+- [x] `draw_tab()` wraps content in `push_clip(tab_rect)` / `pop_clip()`
+- [x] Clip wraps layer boundary: `push_clip` before `push_layer`, `pop_clip` after `pop_layer`
+- [x] Tab title text is clipped at tab boundaries
+- [x] Close button is clipped at tab boundaries
+- [x] Active tab renders on top of inactive tabs (draw order unchanged)
+- [x] Dragged tab overlay is not clipped (floats freely)
+- [x] Clip rect includes `anim_offset` — tab clips move correctly during slide animations
+- [x] No visual regression in tab bar appearance at normal widths
+- [x] `./clippy-all.sh` — no warnings
+- [x] `./test-all.sh` — all pass
+- [x] `./build-all.sh` — cross-compilation succeeds
 
 **Exit Criteria:** With 20+ tabs open (narrow widths), title text and close buttons are cleanly clipped at tab boundaries. No content from one tab bleeds into adjacent tabs. Visually matches Chrome's tab strip behavior.

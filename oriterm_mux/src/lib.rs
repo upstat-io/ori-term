@@ -27,7 +27,7 @@ pub mod registry;
 pub mod server;
 pub mod shell_integration;
 
-pub use backend::{EmbeddedMux, MuxBackend, MuxClient};
+pub use backend::{EmbeddedMux, ImageConfig, MuxBackend, MuxClient};
 pub use domain::SpawnConfig;
 pub use id::{ClientId, DomainId, PaneId};
 pub use mux_event::MuxNotification;

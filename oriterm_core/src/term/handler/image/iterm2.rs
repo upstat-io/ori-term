@@ -10,7 +10,10 @@ use log::warn;
 use crate::event::EventListener;
 use crate::grid::StableRowIndex;
 use crate::image::iterm2::{Iterm2Image, SizeSpec, parse_iterm2_file};
-use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, decode_to_rgba};
+use crate::image::{
+    ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, PlacementSizing,
+    decode_gif_frames, decode_to_rgba, detect_format,
+};
 use crate::term::Term;
 
 /// Parameters for resolving iTerm2 display dimensions.
@@ -29,6 +32,9 @@ struct DisplaySizeParams {
 impl<T: EventListener> Term<T> {
     /// Parse and execute an iTerm2 File= image command.
     pub(in crate::term::handler) fn handle_iterm2_file(&mut self, params: &[&[u8]]) {
+        if !self.image_protocol_enabled {
+            return;
+        }
         let image = match parse_iterm2_file(params) {
             Ok(img) => img,
             Err(e) => {
@@ -51,7 +57,40 @@ impl<T: EventListener> Term<T> {
             return;
         }
 
-        // Decode image to RGBA pixels.
+        // Try animated GIF extraction first.
+        let is_gif = detect_format(&image.data) == Some(ImageFormat::Gif);
+        if is_gif {
+            if let Some(gif) = decode_gif_frames(&image.data) {
+                let id = self.image_cache_mut().next_image_id();
+                let frames: Vec<Arc<Vec<u8>>> = gif.frames.into_iter().map(Arc::new).collect();
+                let img_data = ImageData {
+                    id,
+                    width: gif.width,
+                    height: gif.height,
+                    data: frames[0].clone(),
+                    format: ImageFormat::Rgba,
+                    source: ImageSource::Direct,
+                    last_accessed: 0,
+                };
+                match self.image_cache_mut().store_animated(
+                    img_data,
+                    frames,
+                    gif.durations,
+                    gif.loop_count,
+                ) {
+                    Ok(_) => {
+                        self.iterm2_create_placement(id, gif.width, gif.height, &image);
+                        return;
+                    }
+                    Err(e) => {
+                        warn!("iTerm2 animated GIF store failed: {e}");
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Decode image to RGBA pixels (single frame or non-GIF).
         let (rgba, img_w, img_h) = match decode_to_rgba(&image.data) {
             Ok(result) => result,
             Err(e) => {
@@ -111,6 +150,20 @@ impl<T: EventListener> Term<T> {
         let cols = display_w.div_ceil(cell_w) as usize;
         let rows = display_h.div_ceil(cell_h) as usize;
 
+        // Cell-count sizing only when both dimensions are explicitly cells.
+        // Otherwise use fixed-pixel sizing (auto, pixels, percent all resolve
+        // to concrete pixel dimensions that should not scale with cell size).
+        let sizing = if matches!(image.width, SizeSpec::Cells(_))
+            && matches!(image.height, SizeSpec::Cells(_))
+        {
+            PlacementSizing::CellCount
+        } else {
+            PlacementSizing::FixedPixels {
+                width: display_w,
+                height: display_h,
+            }
+        };
+
         let grid = self.grid();
         let col = grid.cursor().col().0;
         let line = grid.cursor().line();
@@ -133,6 +186,7 @@ impl<T: EventListener> Term<T> {
             z_index: 0,
             cell_x_offset: 0,
             cell_y_offset: 0,
+            sizing,
         };
 
         self.image_cache_mut().place(placement);

@@ -100,6 +100,16 @@ pub struct TerminalConfig {
     pub cursor_blink: bool,
     /// Blink interval in milliseconds (default: 530).
     pub cursor_blink_interval_ms: u64,
+    /// Enable/disable all image protocols (Kitty, Sixel, iTerm2).
+    pub image_protocol: bool,
+    /// CPU-side image cache memory limit in bytes (default: 320 MB).
+    pub image_memory_limit: usize,
+    /// GPU texture cache memory limit in bytes (default: 512 MB).
+    pub image_gpu_memory_limit: usize,
+    /// Enable animated image display (default: true).
+    pub image_animation: bool,
+    /// Maximum single image size in bytes (default: 64 MB).
+    pub image_max_single_size: usize,
 }
 
 impl Default for TerminalConfig {
@@ -110,6 +120,23 @@ impl Default for TerminalConfig {
             cursor_style: CursorStyle::default(),
             cursor_blink: true,
             cursor_blink_interval_ms: 530,
+            image_protocol: true,
+            image_memory_limit: 320 * 1_000_000,
+            image_gpu_memory_limit: 512 * 1_000_000,
+            image_animation: true,
+            image_max_single_size: 64 * 1_000_000,
+        }
+    }
+}
+
+impl TerminalConfig {
+    /// Build an [`ImageConfig`](oriterm_mux::ImageConfig) from these settings.
+    pub fn image_config(&self) -> oriterm_mux::ImageConfig {
+        oriterm_mux::ImageConfig {
+            enabled: self.image_protocol,
+            memory_limit: self.image_memory_limit,
+            max_single: self.image_max_single_size,
+            animation_enabled: self.image_animation,
         }
     }
 }

@@ -230,6 +230,22 @@ pub fn dispatch_request(
             None // Fire-and-forget.
         }
 
+        MuxPdu::SetImageConfig {
+            pane_id,
+            enabled,
+            memory_limit,
+            max_single,
+            animation_enabled,
+        } => {
+            if let Some(pane) = ctx.panes.get(&pane_id) {
+                let mut term = pane.terminal().lock();
+                term.set_image_protocol_enabled(enabled);
+                term.set_image_limits(memory_limit as usize, max_single as usize);
+                term.set_image_animation_enabled(animation_enabled);
+            }
+            None // Fire-and-forget.
+        }
+
         MuxPdu::SetCapabilities { flags } => {
             conn.set_capabilities(flags);
             log::info!("client {} capabilities: 0x{flags:08x}", conn.id());

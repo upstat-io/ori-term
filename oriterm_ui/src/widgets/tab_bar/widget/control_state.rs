@@ -1,0 +1,179 @@
+//! Window control button state management.
+//!
+//! Handles hover routing, click dispatch, maximized/active state, and
+//! interactive rect reporting for the tab bar's window control buttons.
+//! Extracted from `mod.rs` to keep that file under the 500-line limit.
+
+use crate::animation::Lerp;
+use crate::color::Color;
+use crate::geometry::{Point, Rect};
+use crate::input::{HoverEvent, MouseButton, MouseEvent, MouseEventKind};
+
+use super::super::constants::{DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT};
+use super::TabBarWidget;
+
+use crate::widgets::{EventCtx, Widget, WidgetResponse};
+
+impl TabBarWidget {
+    /// Sets the maximized state on all control buttons.
+    ///
+    /// The maximize/restore button changes symbol (□ vs ⧉).
+    pub fn set_maximized(&mut self, maximized: bool) {
+        for ctrl in &mut self.controls {
+            ctrl.set_maximized(maximized);
+        }
+    }
+
+    /// Sets the active/focused state.
+    ///
+    /// Adjusts the caption background color on control buttons: active
+    /// windows use `bar_bg`, inactive windows use a darkened variant.
+    pub fn set_active(&mut self, active: bool) {
+        let caption_bg = if active {
+            self.colors.bar_bg
+        } else {
+            Color::lerp(self.colors.bar_bg, Color::BLACK, 0.3)
+        };
+        for ctrl in &mut self.controls {
+            ctrl.set_caption_bg(caption_bg);
+        }
+    }
+
+    /// Returns all interactive rects in logical pixels.
+    ///
+    /// Includes tab rects, new-tab button, dropdown button, and the three
+    /// control buttons. The platform layer scales these to physical pixels
+    /// and uses them for `WM_NCHITTEST` — points inside are `HTCLIENT`
+    /// (clickable), everything else is `HTCAPTION` (draggable).
+    pub fn interactive_rects(&self) -> Vec<Rect> {
+        let mut rects = Vec::with_capacity(self.tabs.len() + 5);
+        // Tab rects.
+        for i in 0..self.tabs.len() {
+            let x = self.layout.tab_x(i);
+            rects.push(Rect::new(
+                x,
+                0.0,
+                self.layout.tab_width_at(i),
+                TAB_BAR_HEIGHT,
+            ));
+        }
+        // New-tab button.
+        let ntx = self.layout.new_tab_x();
+        rects.push(Rect::new(ntx, 0.0, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT));
+        // Dropdown button.
+        let ddx = self.layout.dropdown_x();
+        rects.push(Rect::new(ddx, 0.0, DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT));
+        // Control buttons.
+        for i in 0..3 {
+            rects.push(self.control_rect(i));
+        }
+        rects
+    }
+
+    /// Updates hover state for control buttons based on cursor position.
+    ///
+    /// Routes `HoverEvent::Enter`/`Leave` to the appropriate
+    /// [`WindowControlButton`] so animation transitions play correctly.
+    pub fn update_control_hover(&mut self, pos: Point, ctx: &EventCtx<'_>) -> WidgetResponse {
+        let new_idx = (0..3).find(|&i| self.control_rect(i).contains(pos));
+
+        if new_idx == self.hovered_control {
+            return WidgetResponse::ignored();
+        }
+
+        // Leave old control.
+        let left = if let Some(old) = self.hovered_control {
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: self.control_rect(old),
+                is_focused: false,
+                focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
+            };
+            self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
+            true
+        } else {
+            false
+        };
+
+        // Enter new control.
+        let entered = if let Some(new) = new_idx {
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: self.control_rect(new),
+                is_focused: false,
+                focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
+            };
+            self.controls[new].handle_hover(HoverEvent::Enter, &child_ctx);
+            true
+        } else {
+            false
+        };
+
+        self.hovered_control = new_idx;
+
+        if left || entered {
+            WidgetResponse::redraw()
+        } else {
+            WidgetResponse::ignored()
+        }
+    }
+
+    /// Clears control button hover state (e.g. when cursor leaves the tab bar).
+    pub fn clear_control_hover(&mut self, ctx: &EventCtx<'_>) {
+        if let Some(old) = self.hovered_control.take() {
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: self.control_rect(old),
+                is_focused: false,
+                focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
+            };
+            self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
+        }
+    }
+
+    /// Routes a mouse event to the appropriate control button.
+    ///
+    /// On button down: sets pressed state on the hovered control.
+    /// On button up: releases the pressed control and emits the action.
+    pub fn handle_control_mouse(
+        &mut self,
+        event: &MouseEvent,
+        ctx: &EventCtx<'_>,
+    ) -> WidgetResponse {
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let idx = (0..3).find(|&i| self.control_rect(i).contains(event.pos));
+                if let Some(i) = idx {
+                    let child_ctx = EventCtx {
+                        measurer: ctx.measurer,
+                        bounds: self.control_rect(i),
+                        is_focused: false,
+                        focused_widget: ctx.focused_widget,
+                        theme: ctx.theme,
+                    };
+                    return self.controls[i].handle_mouse(event, &child_ctx);
+                }
+                WidgetResponse::ignored()
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                for i in 0..3 {
+                    if self.controls[i].is_pressed() {
+                        let child_ctx = EventCtx {
+                            measurer: ctx.measurer,
+                            bounds: self.control_rect(i),
+                            is_focused: false,
+                            focused_widget: ctx.focused_widget,
+                            theme: ctx.theme,
+                        };
+                        return self.controls[i].handle_mouse(event, &child_ctx);
+                    }
+                }
+                WidgetResponse::ignored()
+            }
+            _ => WidgetResponse::ignored(),
+        }
+    }
+}
