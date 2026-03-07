@@ -147,16 +147,22 @@ jobs:
         id: meta
         run: |
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
-          DATE=$(date -u +%Y-%m-%d)
+          DATE=$(date -u +%Y%m%d)
+          DATE_DISPLAY=$(date -u +%Y-%m-%d)
+          CARGO_VERSION=$(sed -n '/\[workspace\.package\]/,/^\[/{ s/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p }' Cargo.toml)
+          TAG="v${CARGO_VERSION}-nightly.${DATE}"
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "date=$DATE" >> $GITHUB_OUTPUT
-          echo "name=Nightly ($DATE / $SHORT_SHA)" >> $GITHUB_OUTPUT
+          echo "date=$DATE_DISPLAY" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "name=oriterm ${CARGO_VERSION}-nightly.${DATE}" >> $GITHUB_OUTPUT
+          echo "Nightly tag: $TAG"
 
       - name: Gather commit log
         id: commits
         run: |
-          PREV_TAG=$(git tag --sort=-creatordate | grep -v '^nightly$' \
-            | grep '^v\|^nightly-' | head -1)
+          # Find most recent non-nightly tag, or any previous nightly tag.
+          PREV_TAG=$(git tag --sort=-creatordate \
+            | grep -E '^v[0-9]' | head -1)
 
           if [[ -n "$PREV_TAG" ]]; then
             LOG=$(git log "${PREV_TAG}..HEAD" \
@@ -193,20 +199,22 @@ jobs:
           printf '%b' "$BODY" > /tmp/release-notes.txt
           echo "Release notes generated from commit log"
 
-      # softprops/action-gh-release appends assets; delete old ones first.
-      - name: Delete old nightly release assets
+      # If a nightly release already exists for the same day, delete it
+      # so we can create a fresh one with the updated tag.
+      - name: Clean up same-day nightly
         run: |
-          gh release view nightly --json assets --jq '.assets[].name' 2>/dev/null | while read -r asset; do
-            gh release delete-asset nightly "$asset" --yes
-          done
+          TAG="${{ steps.meta.outputs.tag }}"
+          if gh release view "$TAG" &>/dev/null; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
-      - name: Update nightly release
+      - name: Publish nightly release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nightly
+          tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.name }}
           body_path: /tmp/release-notes.txt
           files: artifacts/*

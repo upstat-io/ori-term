@@ -210,38 +210,26 @@ the macOS platform is fully supported. Add a `build-macos` job when ready.
 
 ## 04.2 Rolling release strategy
 
-The nightly uses a **single rolling `nightly` tag** (like Neovim/WezTerm):
+The nightly uses **semver-compliant per-day tags** matching the binary version:
 
-- The `softprops/action-gh-release` action with a fixed `tag_name: nightly`
-  automatically creates the tag on first run and updates it on subsequent
-  runs. It appends assets (does not replace), so old assets must be deleted
-  before uploading (handled by the cleanup step in 04.1).
+- Tag format: `v{cargo_version}-nightly.{YYYYMMDD}`
+  (e.g., `v0.1.0-alpha.3-nightly.20260307`).
+- The tag matches what the binary reports via `--version`, so any GitHub
+  release maps unambiguously to a specific build.
+- Multiple pushes on the same day update the same tag (the cleanup step
+  deletes the existing release for that day before creating a new one).
 - The release is always `prerelease: true` and `make_latest: false` so it
   never appears as the "Latest Release" on the repo page.
-- The release title changes each run: `Nightly (2026-03-07 / abc1234)`.
-- The release body includes the full commit SHA for traceability.
+- Release title: `oriterm 0.1.0-alpha.3-nightly.20260307`.
 - Artifact filenames include date + hash for downloaded file identification:
   `oriterm-nightly-20260307-abc1234-windows-x86_64.zip`
 - `concurrency: nightly` with `cancel-in-progress: true` ensures rapid
   pushes don't stack up builds.
 
-**First-run behavior:** On the very first push to `main` after merging this
-workflow, the `gh release delete-asset` step will fail (no `nightly` release
-exists yet). The `continue-on-error: true` handles this gracefully — the
-`softprops/action-gh-release` step will create the release and tag from
-scratch. Subsequent runs delete old assets before uploading new ones.
-
-**Shallow clone compatibility:** The default `actions/checkout@v4` uses
-`fetch-depth: 1` (shallow clone). This is sufficient — `git rev-parse
---short=7 HEAD` and `git show -s --format=%cs HEAD` both work on a single
-commit. No `fetch-depth: 0` needed for nightly builds (unlike the release
-workflow's validate job which checks branch ancestry).
-
-**Why rolling tag instead of per-push tags:**
-- Avoids tag pollution (one nightly per day vs hundreds of tags)
-- GitHub UI stays clean — one nightly entry, not a wall of nightlies
-- The binary itself contains the unique version, so traceability isn't lost
-- Matches established convention (Neovim, WezTerm, Ghostty)
+**Why per-day semver tags (not a rolling `nightly` tag):**
+- The tag should match the version the binary reports — consistency matters.
+- A bare `nightly` tag is not semver and can't be sorted or compared.
+- One tag per day is a reasonable cadence — not polluting, still traceable.
 
 ---
 
