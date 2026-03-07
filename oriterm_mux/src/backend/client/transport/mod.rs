@@ -159,18 +159,7 @@ impl ClientTransport {
 
         // Create self-pipe for waking the reader thread on outbound requests.
         #[cfg(unix)]
-        let (wake_read, wake_write) = {
-            let mut fds = [0i32; 2];
-            let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) };
-            if ret != 0 {
-                return Err(io::Error::last_os_error());
-            }
-            #[expect(
-                clippy::tuple_array_conversions,
-                reason = "pipe2 returns [i32; 2], need (RawFd, RawFd)"
-            )]
-            (fds[0], fds[1])
-        };
+        let (wake_read, wake_write) = create_self_pipe()?;
 
         // Spawn reader thread.
         let handle = std::thread::Builder::new()
@@ -345,6 +334,31 @@ impl ClientTransport {
     pub(super) fn test_set_next_seq(&mut self, val: u32) {
         self.next_seq = val;
     }
+}
+
+/// Create a non-blocking, close-on-exec self-pipe pair `(read_fd, write_fd)`.
+#[cfg(unix)]
+fn create_self_pipe() -> io::Result<(RawFd, RawFd)> {
+    let mut fds = [0i32; 2];
+    #[cfg(target_os = "linux")]
+    let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) };
+    #[cfg(not(target_os = "linux"))]
+    let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    if ret != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    #[cfg(not(target_os = "linux"))]
+    for &fd in &fds {
+        unsafe {
+            libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
+            libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
+        }
+    }
+    #[expect(
+        clippy::tuple_array_conversions,
+        reason = "pipe returns [i32; 2], need (RawFd, RawFd)"
+    )]
+    Ok((fds[0], fds[1]))
 }
 
 impl Drop for ClientTransport {
