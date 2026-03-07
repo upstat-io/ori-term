@@ -932,10 +932,10 @@ icon, icns, iconset, iconutil, dock icon, Cmd+Tab, NSHighResolutionCapable
 universal binary, lipo, x86_64-apple-darwin, aarch64-apple-darwin, Apple Silicon, Intel
 DMG, disk image, hdiutil, UDZO, drag-to-install, Applications symlink
 codesign, ad-hoc signing, notarization, entitlements, Gatekeeper
-build-macos, CI pipeline, nightly, release, macos-14 runner
+build-macos, CI pipeline, nightly, release, macos-latest runner
 MACOSX_DEPLOYMENT_TARGET, LSMinimumSystemVersion, NSRequiresAquaSystemAppearance
 scripts/build-macos-bundle.sh, scripts/build-macos-dmg.sh
-assets/macos/OriTerm.app, assets/icons/oriterm.iconset
+assets/macos/OriTerm.app, assets/oriterm.iconset
 ```
 
 ---
