@@ -1064,8 +1064,11 @@ fn test_notification_title_changed() {
     let mut notifs = Vec::new();
     client.drain_notifications(&mut notifs);
 
-    // Set title via OSC 0.
-    client.send_input(pane_id, b"\x1b]0;E2E_TITLE_TEST\x07");
+    // Set title via OSC 0. Use printf to emit the escape through stdout
+    // (the terminal emulator's input path). Sending raw escape bytes as
+    // PTY input relies on terminal echo which the shell may disable in
+    // raw mode during line editing.
+    client.send_input(pane_id, b"printf '\\033]0;E2E_TITLE_TEST\\007'\n");
 
     // Wait for PaneTitleChanged notification.
     // CI runners can be slow to deliver IPC notifications.
