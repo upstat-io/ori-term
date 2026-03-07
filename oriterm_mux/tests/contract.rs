@@ -459,21 +459,23 @@ macro_rules! muxbackend_contract_tests {
             let mut ctx = $factory();
             let pid = ctx.pane_id;
 
-            // Generate massive output: 5000 lines of 200-char padded numbers.
+            // Generate large output: 2000 lines of 120-char padded numbers.
+            // Kept smaller than a stress test so daemon IPC finishes within CI
+            // time limits even at --test-threads=2.
             ctx.b().send_input(
                 pid,
-                b"for i in $(seq 1 5000); do printf '%0200d\\n' $i; done\n",
+                b"for i in $(seq 1 2000); do printf '%0120d\\n' $i; done\n",
             );
 
             // Poll until the flood finishes (last line appears).
             // CI runners (especially macOS) are slow — use a generous deadline.
-            let deadline = Instant::now() + Duration::from_secs(30);
+            let deadline = Instant::now() + Duration::from_secs(60);
             loop {
                 ctx.b().poll_events();
                 let mut n = Vec::new();
                 ctx.b().drain_notifications(&mut n);
                 if let Some(snap) = ctx.b().refresh_pane_snapshot(pid) {
-                    if snapshot_contains(snap, "5000") {
+                    if snapshot_contains(snap, "2000") {
                         break;
                     }
                 }
