@@ -314,6 +314,9 @@ impl App {
         // so the target pane receives the event.
         if pressed {
             self.try_pane_focus_click();
+            // Reset cursor blink to visible on grid click (keeps cursor
+            // visible during interactive mouse use).
+            self.cursor_blink.reset();
         }
 
         // Read terminal mode once (single lock acquisition) and determine

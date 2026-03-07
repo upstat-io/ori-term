@@ -404,6 +404,11 @@ impl TabBarWidget {
         self.anim_offsets.get(index).copied().unwrap_or(0.0)
     }
 
+    /// Whether a tab drag overlay should be drawn.
+    pub fn has_drag_overlay(&self) -> bool {
+        self.drag_visual.is_some_and(|(i, _)| i < self.tabs.len())
+    }
+
     /// Whether the given tab index is the one being dragged.
     fn is_dragged(&self, index: usize) -> bool {
         self.drag_visual.is_some_and(|(i, _)| i == index)

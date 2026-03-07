@@ -224,21 +224,18 @@ impl App {
 
     /// Resize the single active pane to fill the full grid area.
     ///
-    /// Computes rows/cols from the grid bounds and cell metrics, matching
-    /// the same calculation `sync_grid_layout` uses during window resize.
+    /// Uses the grid widget's authoritative column/row counts rather than
+    /// recomputing from pixel bounds. Recomputing from bounds introduces a
+    /// float round-trip (`cols * cell_width` → `as u32` → `/ cell_width`)
+    /// that can lose a column/row due to f32 truncation, bypassing the
+    /// `last_pty_size` dedup guard and triggering a spurious `ConPTY` resize
+    /// that disrupts shell startup.
     fn resize_single_pane(&mut self) {
         let Some(ctx) = self.focused_ctx() else {
             return;
         };
-        let Some(bounds) = ctx.terminal_grid.bounds() else {
-            return;
-        };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let cell = renderer.cell_metrics();
-        let cols = cell.columns(bounds.width() as u32).max(1) as u16;
-        let rows = cell.rows(bounds.height() as u32).max(1) as u16;
+        let cols = ctx.terminal_grid.cols().max(1) as u16;
+        let rows = ctx.terminal_grid.rows().max(1) as u16;
         if let Some(pane_id) = self.active_pane_id() {
             if let Some(mux) = self.mux.as_mut() {
                 mux.resize_pane_grid(pane_id, rows, cols);

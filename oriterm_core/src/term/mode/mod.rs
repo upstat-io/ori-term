@@ -1,7 +1,7 @@
 //! Terminal mode flags (DECSET/DECRST, SM/RM).
 //!
 //! Each flag corresponds to a terminal mode set/reset via escape sequences.
-//! The default mode has `SHOW_CURSOR` and `LINE_WRAP` enabled.
+//! The default mode has `SHOW_CURSOR`, `LINE_WRAP`, and `CURSOR_BLINKING` enabled.
 
 use bitflags::bitflags;
 
@@ -93,7 +93,11 @@ bitflags! {
 
 impl Default for TermMode {
     fn default() -> Self {
-        Self::SHOW_CURSOR | Self::LINE_WRAP | Self::ALTERNATE_SCROLL | Self::SIXEL_SCROLLING
+        Self::SHOW_CURSOR
+            | Self::LINE_WRAP
+            | Self::ALTERNATE_SCROLL
+            | Self::SIXEL_SCROLLING
+            | Self::CURSOR_BLINKING
     }
 }
 

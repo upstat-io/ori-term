@@ -224,6 +224,7 @@ impl App {
                         frame.hovered_cell = None;
                         frame.hovered_url_segments.clear();
                         frame.mark_cursor = None;
+                        frame.window_focused = true;
                         frame.fg_dim = 1.0;
                         frame.prompt_marker_rows.clear();
                     } else {
@@ -250,6 +251,7 @@ impl App {
                     let frame = ctx.frame.as_mut().expect("frame just assigned");
 
                     frame.palette.opacity = self.config.window.effective_opacity();
+                    frame.window_focused = ctx.window.window().has_focus();
 
                     if layout.is_focused && !self.ime.preedit.is_empty() {
                         let cols = frame.columns();
@@ -311,6 +313,11 @@ impl App {
 
                     if layout.is_focused {
                         blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
+                        let pos = (frame.content.cursor.line, frame.content.cursor.column.0);
+                        if pos != self.last_cursor_pos {
+                            self.last_cursor_pos = pos;
+                            self.cursor_blink.reset();
+                        }
                     }
 
                     frame.fg_dim = if layout.is_focused || !dim_inactive {
@@ -432,7 +439,7 @@ impl App {
         if blinking_now && !self.blinking_active {
             self.cursor_blink.reset();
         }
-        self.blinking_active = blinking_now;
+        self.blinking_active = self.config.terminal.cursor_blink && blinking_now;
 
         self.update_ime_cursor_area();
     }

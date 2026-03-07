@@ -120,6 +120,7 @@ fn frame_input_grid_dimensions() {
         hovered_cell: None,
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
+        window_focused: true,
         fg_dim: 1.0,
         prompt_marker_rows: Vec::new(),
     };
@@ -143,6 +144,7 @@ fn frame_input_needs_full_repaint() {
         hovered_cell: None,
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
+        window_focused: true,
         fg_dim: 1.0,
         prompt_marker_rows: Vec::new(),
     };
@@ -165,6 +167,7 @@ fn frame_input_incremental_repaint() {
         hovered_cell: None,
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
+        window_focused: true,
         fg_dim: 1.0,
         prompt_marker_rows: Vec::new(),
     };

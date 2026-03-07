@@ -408,6 +408,28 @@ pub(super) fn dropdown_button_x(widget: &TabBarWidget) -> f32 {
     }
 }
 
+// Public drag overlay drawing (overlay tier — on top of all chrome text)
+
+impl TabBarWidget {
+    /// Draw the dragged tab overlay into the given draw context.
+    ///
+    /// Called separately from [`Widget::draw`] so the overlay can be rendered
+    /// in the overlay tier (draws 10–13), ON TOP of all chrome text. Without
+    /// this separation, regular tab text from the chrome tier (draw 7) would
+    /// paint over the dragged tab's background (draw 6).
+    pub fn draw_drag_overlay(&self, ctx: &mut DrawCtx<'_>) {
+        let y0 = ctx.bounds.y();
+        let strip = TabStrip {
+            y: y0 + TAB_TOP_MARGIN,
+            h: TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
+            active: false,
+            bell: 0.0,
+            text_color: self.colors.text_fg,
+        };
+        self.draw_dragged_tab_overlay(ctx, &strip);
+    }
+}
+
 // Widget impl
 
 impl Widget for TabBarWidget {
@@ -452,10 +474,6 @@ impl Widget for TabBarWidget {
         self.draw_new_tab_button(ctx, &strip);
         self.draw_dropdown_button(ctx, &strip);
         self.draw_window_controls(ctx);
-
-        // 7. Dragged tab overlay (floats above everything).
-        strip.text_color = self.colors.text_fg;
-        self.draw_dragged_tab_overlay(ctx, &strip);
     }
 
     fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {

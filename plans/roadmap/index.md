@@ -634,7 +634,7 @@ performance escape hatch, default properties, zero overhead
 ---
 
 ### Section 24: Visual Polish
-**File:** `section-24-visual-polish.md` | **Tier:** 6 | **Status:** Not Started
+**File:** `section-24-visual-polish.md` | **Tier:** 6 | **Status:** In Progress
 
 ```
 cursor blink, blink timer, DECSCUSR, steady vs blinking
@@ -956,7 +956,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 39 | Image Protocols | `section-39-image-protocols.md` | 5 | Not Started |
 | 40 | Vi Mode + Copy Mode | `section-40-vi-copy-mode.md` | 3 | Not Started |
 | 41 | Hints + Quick Select | `section-41-hints-quick-select.md` | 3 | Not Started |
-| 24 | Visual Polish | `section-24-visual-polish.md` | 6 | Not Started |
+| 24 | Visual Polish | `section-24-visual-polish.md` | 6 | In Progress |
 | 25 | Theme System | `section-25-theme-system.md` | 6 | In Progress |
 | 26 | Split Panes | `section-26-split-panes.md` | 7 | Superseded → 29, 31, 33 |
 | 27 | Command Palette & Quick Terminal | `section-27-command-palette.md` | 7 | Not Started |

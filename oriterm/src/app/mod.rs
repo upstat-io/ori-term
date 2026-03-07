@@ -121,6 +121,10 @@ pub(crate) struct App {
     // Cached from the last extracted frame to gate blink timer in about_to_wait.
     blinking_active: bool,
 
+    // Last cursor position (line, column) for blink-reset-on-move detection.
+    // Compared per frame; reset blink when the cursor moves due to PTY output.
+    last_cursor_pos: (usize, usize),
+
     // Mouse selection state (click detection, drag tracking).
     mouse: MouseState,
 

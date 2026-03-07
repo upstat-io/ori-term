@@ -5,11 +5,12 @@ use vte::ansi::KeyboardModes;
 use super::TermMode;
 
 #[test]
-fn default_has_show_cursor_line_wrap_and_alternate_scroll() {
+fn default_has_show_cursor_line_wrap_alternate_scroll_and_cursor_blinking() {
     let mode = TermMode::default();
     assert!(mode.contains(TermMode::SHOW_CURSOR));
     assert!(mode.contains(TermMode::LINE_WRAP));
     assert!(mode.contains(TermMode::ALTERNATE_SCROLL));
+    assert!(mode.contains(TermMode::CURSOR_BLINKING));
 }
 
 #[test]

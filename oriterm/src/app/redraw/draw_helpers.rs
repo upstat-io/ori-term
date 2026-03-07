@@ -62,8 +62,28 @@ impl App {
         let animating = animations_running.get();
 
         // Tab bar contains text — use text-aware conversion to rasterize
-        // tab title glyphs into the UI overlay layer.
+        // tab title glyphs into the chrome tier.
         renderer.append_ui_draw_list_with_text(draw_list, scale, 1.0, gpu);
+
+        // Dragged tab overlay: render in the overlay tier (draws 10–13) so it
+        // paints ON TOP of all chrome text. Without this, regular tab text from
+        // the chrome tier (draw 7) would show through the dragged tab's bg.
+        if tab_bar.has_drag_overlay() {
+            draw_list.clear();
+            let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let mut overlay_ctx = DrawCtx {
+                measurer: &measurer,
+                draw_list,
+                bounds,
+                focused_widget: None,
+                now: Instant::now(),
+                animations_running: &animations_running,
+                theme,
+            };
+            tab_bar.draw_drag_overlay(&mut overlay_ctx);
+            renderer.append_overlay_draw_list_with_text(draw_list, scale, 1.0, gpu);
+        }
+
         animating
     }
 

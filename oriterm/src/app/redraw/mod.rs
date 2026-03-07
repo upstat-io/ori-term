@@ -52,7 +52,7 @@ impl App {
         let pane_sel = self.pane_selection(pane_id).copied();
         let pane_mc = self.pane_mark_cursor(pane_id);
 
-        let (render_result, blinking_now) = {
+        let (render_result, blinking_now, cursor_pos) = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw: no gpu");
                 return;
@@ -141,6 +141,7 @@ impl App {
             // Set window opacity from config (extract phase doesn't have
             // access to config — opacity is a window concern, not terminal state).
             frame.palette.opacity = self.config.window.effective_opacity();
+            frame.window_focused = ctx.window.window().has_focus();
 
             // IME preedit: overlay composition text at the cursor position
             // (underlined) so it flows through the normal shaping pipeline.
@@ -193,10 +194,11 @@ impl App {
                 frame.prompt_marker_rows.clear();
             }
 
-            // Capture blinking mode for post-render update. Timer reset
-            // and state mutation are deferred to after GPU submission so that
-            // the render block stays free of blink-state side effects.
+            // Capture blinking mode and cursor position for post-render
+            // updates. State mutation is deferred to after GPU submission
+            // so the render block stays free of side effects.
             let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
+            let cursor_pos = (frame.content.cursor.line, frame.content.cursor.column.0);
 
             // On false→true transition, force cursor visible this frame (the
             // timer reset hasn't happened yet, so is_visible() may be stale).
@@ -270,16 +272,22 @@ impl App {
             }
 
             let result = renderer.render_to_surface(gpu, pipelines, ctx.window.surface());
-            (result, blinking_now)
+            (result, blinking_now, cursor_pos)
         };
 
         self.handle_render_result(render_result);
+
+        // Reset blink to visible when the cursor moves (PTY output moved it).
+        if cursor_pos != self.last_cursor_pos {
+            self.last_cursor_pos = cursor_pos;
+            self.cursor_blink.reset();
+        }
 
         // Update blink state after rendering (no state mutation during render).
         if blinking_now && !self.blinking_active {
             self.cursor_blink.reset();
         }
-        self.blinking_active = blinking_now;
+        self.blinking_active = self.config.terminal.cursor_blink && blinking_now;
 
         // Keep the IME candidate window positioned at the terminal cursor.
         // Called every frame (not just during preedit) so Windows knows the
