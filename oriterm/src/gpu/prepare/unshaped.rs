@@ -162,10 +162,16 @@ fn fill_frame(
     draw_prompt_markers(input, frame, ox, oy);
 
     // Cursor instances (gated by terminal visibility AND application blink state).
+    // Unfocused windows always render a steady hollow block cursor.
     if cursor.visible && cursor_blink_visible {
+        let shape = if input.window_focused {
+            cursor.shape
+        } else {
+            oriterm_core::CursorShape::HollowBlock
+        };
         build_cursor(
             frame,
-            cursor.shape,
+            shape,
             cursor.column.0,
             cursor.line,
             cw,

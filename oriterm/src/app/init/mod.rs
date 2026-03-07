@@ -296,7 +296,7 @@ impl App {
     /// Create an initial tab with one pane in the given mux window.
     ///
     /// The mux backend and window must already exist. The pane is stored
-    /// inside the backend. Setup notifications are drained and discarded.
+    /// inside the backend.
     pub(super) fn create_initial_tab(
         &mut self,
         session_wid: crate::session::WindowId,
@@ -326,9 +326,6 @@ impl App {
 
         // Apply image protocol config.
         mux.set_image_config(pane_id, self.config.terminal.image_config());
-
-        // Discard setup notifications (not useful at init time).
-        mux.discard_notifications();
 
         // Local tab creation.
         let tab_id = self.session.alloc_tab_id();

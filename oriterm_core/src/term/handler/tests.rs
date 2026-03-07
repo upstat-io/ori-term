@@ -3214,15 +3214,16 @@ fn decscusr_set_same_shape_twice_is_idempotent() {
 }
 
 #[test]
-fn ris_clears_cursor_blinking() {
+fn ris_restores_default_cursor_blinking() {
     let (mut t, _listener) = term_with_recorder();
-    feed(&mut t, b"\x1b[5 q");
-    assert!(t.mode().contains(TermMode::CURSOR_BLINKING));
+    // Disable blinking, then RIS should restore to default (blinking on).
+    feed(&mut t, b"\x1b[2 q");
+    assert!(!t.mode().contains(TermMode::CURSOR_BLINKING));
 
     feed(&mut t, b"\x1bc");
     assert!(
-        !t.mode().contains(TermMode::CURSOR_BLINKING),
-        "RIS should clear cursor blinking flag"
+        t.mode().contains(TermMode::CURSOR_BLINKING),
+        "RIS should restore default cursor blinking (on)"
     );
 }
 

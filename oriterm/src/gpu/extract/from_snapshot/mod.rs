@@ -44,6 +44,7 @@ pub(crate) fn extract_frame_from_snapshot(
         hovered_cell: None,
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
+        window_focused: true,
         fg_dim: 1.0,
         prompt_marker_rows: Vec::new(),
     }

@@ -251,6 +251,11 @@ pub struct FrameInput {
     /// `content.cursor`. Set by the app layer after extraction when mark
     /// mode is active; the extracted content is never mutated.
     pub mark_cursor: Option<MarkCursorOverride>,
+    /// Whether the containing window has OS-level focus.
+    ///
+    /// When `false`, the cursor renders as a hollow block regardless of the
+    /// terminal's configured cursor shape. Set from `App::focused_window_id`.
+    pub window_focused: bool,
     /// Foreground alpha multiplier for inactive pane dimming.
     ///
     /// 1.0 = fully opaque (default, focused pane). Values < 1.0 dim glyph
@@ -359,6 +364,7 @@ impl FrameInput {
             hovered_cell: None,
             hovered_url_segments: Vec::new(),
             mark_cursor: None,
+            window_focused: true,
             fg_dim: 1.0,
             prompt_marker_rows: Vec::new(),
         }

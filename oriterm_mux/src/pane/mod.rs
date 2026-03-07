@@ -16,6 +16,7 @@ mod shutdown;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
+
 use std::thread::JoinHandle;
 
 use crate::{DomainId, PaneId};
@@ -89,6 +90,10 @@ pub struct PaneParts {
     pub wakeup_pending: Arc<AtomicBool>,
     /// Mode bits cache (lock-free).
     pub mode_cache: Arc<AtomicU32>,
+    /// Initial PTY dimensions (rows, cols) from spawn.
+    pub initial_rows: u16,
+    /// Initial PTY columns from spawn.
+    pub initial_cols: u16,
 }
 
 /// Owns all per-shell-session state: terminal, PTY handles, reader thread.
@@ -146,6 +151,12 @@ pub struct Pane {
     mark_cursor: Option<MarkCursor>,
     /// Active search state (query, matches, navigation).
     search: Option<SearchState>,
+    /// Last PTY size sent to the OS, packed as `(rows << 16) | cols`.
+    ///
+    /// Guards against redundant `ResizePseudoConsole` calls that would
+    /// generate spurious `WINDOW_BUFFER_SIZE_EVENT` notifications and
+    /// interrupt shell startup (e.g. `PowerShell` prompt lost on first load).
+    last_pty_size: AtomicU32,
 }
 
 impl Pane {
@@ -174,6 +185,9 @@ impl Pane {
             selection: None,
             mark_cursor: None,
             search: None,
+            last_pty_size: AtomicU32::new(
+                (parts.initial_rows as u32) << 16 | parts.initial_cols as u32,
+            ),
         }
     }
 
@@ -369,7 +383,15 @@ impl Pane {
     }
 
     /// Resize the OS PTY handle, sending SIGWINCH to the shell.
+    ///
+    /// Skips the syscall when the dimensions haven't changed since the last
+    /// resize. This prevents spurious `ConPTY` resize events that interfere
+    /// with shell startup (e.g. `PowerShell` prompt lost on first load).
     pub fn resize_pty(&self, rows: u16, cols: u16) {
+        let packed = (rows as u32) << 16 | cols as u32;
+        if self.last_pty_size.swap(packed, Ordering::Relaxed) == packed {
+            return;
+        }
         if let Err(e) = self.pty_control.resize(rows, cols) {
             log::warn!("PTY resize failed: {e}");
         }

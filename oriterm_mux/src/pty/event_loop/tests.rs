@@ -5,11 +5,11 @@
 
 use std::io::{Read, Write};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use oriterm_core::{FairMutex, Term, Theme, VoidListener};
+use oriterm_core::{FairMutex, Term, TermMode, Theme, VoidListener};
 
 use super::{MAX_LOCKED_PARSE, PtyEventLoop, READ_BUFFER_SIZE};
 
@@ -20,6 +20,7 @@ fn build_event_loop(
     PtyEventLoop<VoidListener>,
     Arc<FairMutex<Term<VoidListener>>>,
     Arc<AtomicBool>,
+    Arc<AtomicU32>,
 ) {
     let terminal = Arc::new(FairMutex::new(Term::new(
         24,
@@ -29,10 +30,16 @@ fn build_event_loop(
         VoidListener,
     )));
     let shutdown = Arc::new(AtomicBool::new(false));
+    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
 
-    let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, Arc::clone(&shutdown));
+    let event_loop = PtyEventLoop::new(
+        Arc::clone(&terminal),
+        reader,
+        Arc::clone(&shutdown),
+        Arc::clone(&mode_cache),
+    );
 
-    (event_loop, terminal, shutdown)
+    (event_loop, terminal, shutdown, mode_cache)
 }
 
 #[test]
@@ -40,7 +47,7 @@ fn shutdown_on_reader_eof() {
     // Anonymous pipe where we control the write end — dropping it produces EOF.
     let (pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, _terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
+    let (event_loop, _terminal, _shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -54,7 +61,7 @@ fn shutdown_on_reader_eof() {
 fn processes_pty_output_into_terminal() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
+    let (event_loop, terminal, _shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -92,7 +99,7 @@ fn max_locked_parse_is_64kb() {
 #[test]
 fn try_parse_is_bounded_to_max_locked_parse() {
     let (pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
-    let (mut event_loop, _terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
+    let (mut event_loop, _terminal, _shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
     drop(pipe_writer);
 
     let data = vec![b'X'; MAX_LOCKED_PARSE * 2];
@@ -123,7 +130,7 @@ fn try_parse_is_bounded_to_max_locked_parse() {
 fn run_contention_bench(duration: Duration) -> (usize, usize, Duration) {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, shutdown) = build_event_loop(Box::new(pipe_reader));
+    let (event_loop, terminal, shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -208,7 +215,7 @@ fn renderer_not_starved_during_flood() {
 fn reader_throughput_no_contention() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, _terminal, shutdown) = build_event_loop(Box::new(pipe_reader));
+    let (event_loop, _terminal, shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -251,7 +258,7 @@ fn reader_throughput_no_contention() {
 fn interactive_reads_low_latency() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
+    let (event_loop, terminal, _shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -298,7 +305,7 @@ fn interactive_reads_low_latency() {
 fn bursty_flood_renderer_access() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
+    let (event_loop, terminal, _shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -354,7 +361,7 @@ fn bursty_flood_renderer_access() {
 fn sustained_flood_no_oom() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, shutdown) = build_event_loop(Box::new(pipe_reader));
+    let (event_loop, terminal, shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 

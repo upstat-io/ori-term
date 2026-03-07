@@ -523,6 +523,44 @@ fn cursor_color_from_palette() {
     assert_eq!(c.bg_color, rgb_f32(cursor_color));
 }
 
+#[test]
+fn unfocused_window_renders_hollow_cursor() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    // Default cursor is Block; unfocused window overrides to HollowBlock.
+    input.window_focused = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // HollowBlock emits 4 edge rectangles (top, bottom, left, right).
+    assert_eq!(frame.cursors.len(), 4);
+}
+
+#[test]
+fn focused_window_renders_block_cursor() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.window_focused = true;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Focused window renders default Block cursor (1 filled rect).
+    assert_eq!(frame.cursors.len(), 1);
+}
+
+#[test]
+fn unfocused_window_bar_cursor_becomes_hollow() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.content.cursor.shape = CursorShape::Bar;
+    input.window_focused = false;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Bar cursor overridden to HollowBlock when unfocused.
+    assert_eq!(frame.cursors.len(), 4);
+}
+
 // ── Missing atlas entries ──
 
 #[test]

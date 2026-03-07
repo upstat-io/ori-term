@@ -195,7 +195,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 ### Tier 6 — Polish
 | Section | Title | What |
 |---------|-------|------|
-| 24 | Visual Polish | Cursor blink, hide-while-typing, background images, gradients, backdrop effects |
+| 24 | Visual Polish | Cursor blink, hide-while-typing, minimum contrast, HiDPI, vector icons, background images, gradients, backdrop effects, scrollable menus |
 | 25 | Theme System | 100+ themes, TOML theme files, discovery, light/dark auto-switch |
 
 ### Tier 7 — Advanced

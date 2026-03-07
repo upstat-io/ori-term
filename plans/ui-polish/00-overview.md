@@ -1,7 +1,7 @@
 ---
 plan: "ui-polish"
 title: "2D Framework Polish: Z-Index, Clipping, Animation Quality"
-status: not-started
+status: complete
 references:
   - "plans/roadmap/section-43-compositor-layers.md"
   - "plans/roadmap/section-16-tab-bar.md"
@@ -116,20 +116,20 @@ Phase 2 — Verification
 
 | Bug | Root Cause | Fix Location | Status |
 |-----|-----------|-------------|--------|
-| Tabs show through each other | `PushClip`/`PopClip` are no-ops in GPU converter | Section 01 | Not Started |
-| Dragged tab uses opaque backing rect | No proper z-ordering for drag overlay | Section 05 | Not Started |
-| Hover color is instant swap | No `AnimatedValue<f32>` hover progress in `TabBarWidget` — color resolves instantly | Section 03 | Not Started |
-| Close button appears/disappears instantly | No opacity animation on show/hide | Section 03 | Not Started |
-| Tab open/close has no width animation | Layout recomputes instantly | Section 04 | Not Started |
-| Slide duration is fixed 150ms | Not proportional to distance | Section 04 | Not Started |
+| Tabs show through each other | `PushClip`/`PopClip` are no-ops in GPU converter | Section 01 | Fixed |
+| Dragged tab uses opaque backing rect | No proper z-ordering for drag overlay | Section 05 | Fixed |
+| Hover color is instant swap | No `AnimatedValue<f32>` hover progress in `TabBarWidget` — color resolves instantly | Section 03 | Fixed |
+| Close button appears/disappears instantly | No opacity animation on show/hide | Section 03 | Fixed |
+| Tab open/close has no width animation | Layout recomputes instantly | Section 04 | Fixed |
+| Slide duration is fixed 150ms | Not proportional to distance | Section 04 | Fixed |
 
 ## Quick Reference
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | GPU Scissor Rect Support | `section-01-gpu-scissor.md` | Not Started |
-| 02 | Tab Bar Clipping | `section-02-tab-clipping.md` | Not Started |
-| 03 | Color Lerp & Animated Hover | `section-03-color-animation.md` | Not Started |
-| 04 | Tab Open/Close Animations | `section-04-tab-lifecycle-anim.md` | Not Started |
-| 05 | Dragged Tab Elevation | `section-05-drag-elevation.md` | Not Started |
-| 06 | Verification | `section-06-verification.md` | Not Started |
+| 01 | GPU Scissor Rect Support | `section-01-gpu-scissor.md` | Complete |
+| 02 | Tab Bar Clipping | `section-02-tab-clipping.md` | Complete |
+| 03 | Color Lerp & Animated Hover | `section-03-color-animation.md` | Complete |
+| 04 | Tab Open/Close Animations | `section-04-tab-lifecycle-anim.md` | Complete |
+| 05 | Dragged Tab Elevation | `section-05-drag-elevation.md` | Complete |
+| 06 | Verification | `section-06-verification.md` | Complete |

@@ -15,7 +15,7 @@
 
 use std::io::{self, Read};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{self, JoinHandle};
 
 use oriterm_core::{EventListener, FairMutex, Term};
@@ -55,6 +55,8 @@ pub struct PtyEventLoop<T: EventListener> {
     reader: Box<dyn Read + Send>,
     /// Set by the writer thread on `Msg::Shutdown`.
     shutdown: Arc<AtomicBool>,
+    /// Lock-free cache of terminal mode bits, updated after each parse.
+    mode_cache: Arc<AtomicU32>,
     /// High-level VTE parser (routes to `Handler` trait methods).
     processor: vte::ansi::Processor,
     /// Raw VTE parser for shell integration sequences (OSC 7, 133, etc.)
@@ -68,11 +70,13 @@ impl<T: EventListener> PtyEventLoop<T> {
         terminal: Arc<FairMutex<Term<T>>>,
         reader: Box<dyn Read + Send>,
         shutdown: Arc<AtomicBool>,
+        mode_cache: Arc<AtomicU32>,
     ) -> Self {
         Self {
             terminal,
             reader,
             shutdown,
+            mode_cache,
             processor: vte::ansi::Processor::new(),
             raw_parser: vte::Parser::new(),
         }
@@ -121,6 +125,7 @@ impl<T: EventListener> PtyEventLoop<T> {
                         let terminal = Arc::clone(&self.terminal);
                         let mut term = terminal.lock_unfair();
                         self.parse_chunk(&mut *term, &buf[..unprocessed]);
+                        self.mode_cache.store(term.mode().bits(), Ordering::Release);
                         term.event_listener()
                             .send_event(oriterm_core::Event::Wakeup);
                     }
@@ -198,6 +203,10 @@ impl<T: EventListener> PtyEventLoop<T> {
         // render paths are not starved under sustained floods.
         let parse_len = data.len().min(MAX_LOCKED_PARSE);
         self.parse_chunk(&mut *term, &data[..parse_len]);
+
+        // Update the lock-free mode cache so the app can query terminal
+        // mode (cursor keys, mouse, bracketed paste) without locking.
+        self.mode_cache.store(term.mode().bits(), Ordering::Release);
 
         // Notify the renderer.
         let sync_bytes = self.processor.sync_bytes_count();

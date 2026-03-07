@@ -99,7 +99,7 @@ impl LocalDomain {
         // 3. Set up lock-free atomics for the mux event proxy.
         let wakeup_pending = Arc::new(AtomicBool::new(false));
         let grid_dirty = Arc::new(AtomicBool::new(false));
-        let mode_cache = Arc::new(AtomicU32::new(0));
+        let mode_cache = Arc::new(AtomicU32::new(oriterm_core::TermMode::default().bits()));
 
         // 4. Create the terminal state machine with a mux event proxy.
         let event_proxy = MuxEventProxy::new(
@@ -127,7 +127,12 @@ impl LocalDomain {
         let writer_thread = spawn_pty_writer(writer, rx, Arc::clone(&shutdown))?;
 
         // 7. Spawn the reader thread (reads PTY, parses VTE, checks shutdown).
-        let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, shutdown);
+        let event_loop = PtyEventLoop::new(
+            Arc::clone(&terminal),
+            reader,
+            shutdown,
+            Arc::clone(&mode_cache),
+        );
         let reader_thread = event_loop.spawn()?;
 
         Ok(Pane::from_parts(PaneParts {
@@ -142,6 +147,8 @@ impl LocalDomain {
             grid_dirty,
             wakeup_pending,
             mode_cache,
+            initial_rows: config.rows,
+            initial_cols: config.cols,
         }))
     }
 }

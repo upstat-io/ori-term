@@ -203,7 +203,18 @@ impl ApplicationHandler<TermEvent> for App {
                     {
                         self.active_window = Some(mux_id);
                     }
+                    // Re-evaluate blink from config + pane's terminal mode.
+                    self.blinking_active = self.config.terminal.cursor_blink
+                        && self
+                            .terminal_mode()
+                            .is_some_and(|m| m.contains(oriterm_core::TermMode::CURSOR_BLINKING));
+                } else {
+                    // Freeze cursor visible when window loses focus.
+                    self.blinking_active = false;
                 }
+                // Reset blink timer so cursor is visible immediately
+                // (on focus-in: fresh start; on focus-out: frozen visible).
+                self.cursor_blink.reset();
                 self.send_focus_event(focused);
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.set_active(focused);

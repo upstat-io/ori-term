@@ -20,9 +20,9 @@ impl<T: EventListener> Term<T> {
             self.cursor_shape = CursorShape::from(style.shape);
             self.mode.set(TermMode::CURSOR_BLINKING, style.blinking);
         } else {
-            // Reset to default: block cursor, implementation-default blinking.
+            // Reset to default: block cursor, restore default blinking (on).
             self.cursor_shape = CursorShape::default();
-            self.mode.remove(TermMode::CURSOR_BLINKING);
+            self.mode.insert(TermMode::CURSOR_BLINKING);
         }
         self.event_listener.send_event(Event::CursorBlinkingChange);
     }

@@ -344,10 +344,16 @@ pub(crate) fn fill_frame_shaped(
     draw_prompt_markers(input, frame, ox, oy);
 
     // Cursor (gated by terminal visibility AND application blink state).
+    // Unfocused windows always render a steady hollow block cursor.
     if cursor.visible && cursor_blink_visible {
+        let shape = if input.window_focused {
+            cursor.shape
+        } else {
+            CursorShape::HollowBlock
+        };
         build_cursor(
             frame,
-            cursor.shape,
+            shape,
             cursor.column.0,
             cursor.line,
             cw,
