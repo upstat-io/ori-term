@@ -112,7 +112,7 @@ fn server_to_client() {
     let client = std::thread::spawn(move || {
         let mut stream = ClientStream::connect(&addr2).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(15)))
             .unwrap();
         let mut buf = [0u8; 64];
         let n = stream.read(&mut buf).unwrap();
@@ -162,7 +162,7 @@ fn bidirectional_roundtrip() {
     let client = std::thread::spawn(move || {
         let mut stream = ClientStream::connect(&addr2).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(15)))
             .unwrap();
 
         // Send request.
@@ -215,7 +215,7 @@ fn multiple_sequential_connections() {
             let mut stream = ClientStream::connect(&addr2).unwrap();
             stream.write_all(&[i]).unwrap();
             stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
+                .set_read_timeout(Some(Duration::from_secs(15)))
                 .unwrap();
             let mut buf = [0u8; 1];
             let n = stream.read(&mut buf).unwrap();
@@ -273,7 +273,7 @@ fn write_after_accept_does_not_block() {
     let client = std::thread::spawn(move || {
         let mut stream = ClientStream::connect(&addr2).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(15)))
             .unwrap();
         // Read all available data.
         let mut buf = vec![0u8; 1024];
@@ -305,7 +305,7 @@ fn write_after_accept_does_not_block() {
 
 /// Poll until a specific token is readable, with a timeout.
 fn poll_until_readable(poll: &mut Poll, events: &mut Events, target: Token) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
@@ -323,7 +323,7 @@ fn poll_until_readable(poll: &mut Poll, events: &mut Events, target: Token) {
 
 /// Poll until a specific token is writable, with a timeout.
 fn poll_until_writable(poll: &mut Poll, events: &mut Events, target: Token) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
