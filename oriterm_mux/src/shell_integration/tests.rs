@@ -591,7 +591,13 @@ fn interceptor_osc99_kitty_notification() {
 
 #[test]
 fn ensure_scripts_nonexistent_parent_returns_error() {
-    let result = ensure_scripts_on_disk(Path::new("/nonexistent/path/shell-int"));
+    // Use /dev/null (Unix) or NUL (Windows) as a parent — both are device
+    // files that cannot contain child directories.
+    #[cfg(unix)]
+    let bad = Path::new("/dev/null/shell-int");
+    #[cfg(windows)]
+    let bad = Path::new(r"\\.\NUL\shell-int");
+    let result = ensure_scripts_on_disk(bad);
     assert!(result.is_err());
 }
 
