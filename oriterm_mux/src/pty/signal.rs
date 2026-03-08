@@ -16,7 +16,13 @@ use signal_hook::consts::SIGCHLD;
 
 /// Initialization result: either the flag on success or an error message.
 enum InitState {
-    Ok(#[allow(dead_code, reason = "flag read in check()")] Arc<AtomicBool>),
+    Ok(
+        #[allow(
+            dead_code,
+            reason = "holds Arc alive so signal_hook handler stays registered"
+        )]
+        Arc<AtomicBool>,
+    ),
     Err(String),
 }
 

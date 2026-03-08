@@ -38,14 +38,17 @@ fn drain_returns_injected_notifications() {
     let p2 = PaneId::from_raw(2);
 
     client.notifications.push(MuxNotification::PaneOutput(p1));
-    client.notifications.push(MuxNotification::PaneClosed(p2));
+    client.notifications.push(MuxNotification::PaneClosed {
+        pane_id: p2,
+        exit_code: 0,
+    });
 
     let mut buf = Vec::new();
     client.drain_notifications(&mut buf);
 
     assert_eq!(buf.len(), 2);
     assert!(matches!(buf[0], MuxNotification::PaneOutput(id) if id == p1));
-    assert!(matches!(buf[1], MuxNotification::PaneClosed(id) if id == p2));
+    assert!(matches!(buf[1], MuxNotification::PaneClosed { pane_id, .. } if pane_id == p2));
 
     // Buffer should be empty after drain.
     let mut buf2 = Vec::new();
@@ -257,10 +260,13 @@ fn non_dirty_notifications_ignored() {
     let mut client = MuxClient::new();
     let p = PaneId::from_raw(1);
 
-    client.notifications.push(MuxNotification::PaneClosed(p));
+    client.notifications.push(MuxNotification::PaneClosed {
+        pane_id: p,
+        exit_code: 0,
+    });
     client
         .notifications
-        .push(MuxNotification::PaneTitleChanged(p));
+        .push(MuxNotification::PaneMetadataChanged(p));
     client.poll_events();
 
     assert!(!client.is_pane_snapshot_dirty(p));
@@ -373,21 +379,24 @@ mod transport_tests {
     fn notify_pane_exited() {
         let pdu = MuxPdu::NotifyPaneExited {
             pane_id: PaneId::from_raw(2),
+            exit_code: 0,
         };
         let notif = pdu_to_notification(pdu).unwrap();
-        assert!(matches!(notif, MuxNotification::PaneClosed(id) if id == PaneId::from_raw(2)));
+        assert!(
+            matches!(notif, MuxNotification::PaneClosed { pane_id, .. } if pane_id == PaneId::from_raw(2))
+        );
     }
 
-    /// `NotifyPaneTitleChanged` converts to `PaneTitleChanged`.
+    /// `NotifyPaneMetadataChanged` converts to `PaneMetadataChanged`.
     #[test]
-    fn notify_pane_title() {
-        let pdu = MuxPdu::NotifyPaneTitleChanged {
+    fn notify_pane_metadata() {
+        let pdu = MuxPdu::NotifyPaneMetadataChanged {
             pane_id: PaneId::from_raw(3),
             title: "hello".into(),
         };
         let notif = pdu_to_notification(pdu).unwrap();
         assert!(
-            matches!(notif, MuxNotification::PaneTitleChanged(id) if id == PaneId::from_raw(3))
+            matches!(notif, MuxNotification::PaneMetadataChanged(id) if id == PaneId::from_raw(3))
         );
     }
 

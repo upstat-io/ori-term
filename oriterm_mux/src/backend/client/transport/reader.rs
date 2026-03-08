@@ -6,7 +6,6 @@
 //! notification channel.
 
 // Platform FFI for poll(2), pipe read/drain.
-#![allow(unsafe_code)]
 
 use std::collections::HashMap;
 use std::io;
@@ -71,6 +70,10 @@ fn dispatch_notification(
 /// `decode_frame` retry that would sleep for `READ_POLL_INTERVAL` (1ms+
 /// due to kernel timer granularity) when no more data is available.
 #[cfg(unix)]
+#[allow(
+    unsafe_code,
+    reason = "poll(2) for non-blocking socket readability check"
+)]
 fn socket_has_data(stream: &ClientStream) -> bool {
     let mut pfd = libc::pollfd {
         fd: stream.as_raw_fd(),
@@ -86,6 +89,10 @@ fn socket_has_data(stream: &ClientStream) -> bool {
 /// wake pipe is signalled. Returns immediately if either fd is already ready.
 /// Falls back to a short sleep on non-Unix platforms.
 #[cfg(unix)]
+#[allow(
+    unsafe_code,
+    reason = "poll(2) + read(2) for socket/wake-pipe multiplexing"
+)]
 fn wait_for_readable(stream: &ClientStream, wake_read: RawFd, timeout_ms: i32) -> bool {
     let mut fds = [
         libc::pollfd {

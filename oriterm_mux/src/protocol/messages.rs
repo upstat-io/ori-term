@@ -294,13 +294,15 @@ pub enum MuxPdu {
     NotifyPaneExited {
         /// Pane that exited.
         pane_id: PaneId,
+        /// Exit code from the child process (0 = clean exit).
+        exit_code: i32,
     },
 
-    /// Pane title changed (OSC 0/2).
-    NotifyPaneTitleChanged {
-        /// Pane with new title.
+    /// Pane metadata changed (title, icon name, or CWD).
+    NotifyPaneMetadataChanged {
+        /// Pane with updated metadata.
         pane_id: PaneId,
-        /// New title text.
+        /// Current title text.
         title: String,
     },
 
@@ -324,7 +326,7 @@ pub enum MuxPdu {
 
 impl MuxPdu {
     /// Message type ID for the wire header.
-    pub fn msg_type(&self) -> MsgType {
+    pub(crate) fn msg_type(&self) -> MsgType {
         match self {
             Self::Hello { .. } => MsgType::Hello,
             Self::ClosePane { .. } => MsgType::ClosePane,
@@ -367,7 +369,7 @@ impl MuxPdu {
             Self::Error { .. } => MsgType::Error,
             Self::NotifyPaneOutput { .. } => MsgType::NotifyPaneOutput,
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,
-            Self::NotifyPaneTitleChanged { .. } => MsgType::NotifyPaneTitleChanged,
+            Self::NotifyPaneMetadataChanged { .. } => MsgType::NotifyPaneMetadataChanged,
             Self::NotifyPaneBell { .. } => MsgType::NotifyPaneBell,
             Self::NotifyPaneSnapshot { .. } => MsgType::NotifyPaneSnapshot,
         }
@@ -400,7 +402,7 @@ impl MuxPdu {
             self,
             Self::NotifyPaneOutput { .. }
                 | Self::NotifyPaneExited { .. }
-                | Self::NotifyPaneTitleChanged { .. }
+                | Self::NotifyPaneMetadataChanged { .. }
                 | Self::NotifyPaneBell { .. }
                 | Self::NotifyPaneSnapshot { .. }
         )

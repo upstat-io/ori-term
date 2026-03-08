@@ -19,7 +19,6 @@ use crate::MuxPdu;
 use crate::domain::SpawnConfig;
 
 use super::connection::ClientConnection;
-use super::snapshot;
 
 use self::helpers::drop_pane_background;
 
@@ -257,7 +256,7 @@ pub fn dispatch_request(
             conn.subscribe(pane_id);
             match ctx.panes.get(&pane_id) {
                 Some(pane) => {
-                    let snap = snapshot::build_snapshot(pane);
+                    let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
                     Some(MuxPdu::Subscribed { snapshot: snap })
                 }
                 None => Some(MuxPdu::Error {

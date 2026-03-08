@@ -58,8 +58,8 @@ use crate::event::TermEvent;
 use crate::font::FontSet;
 use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
 use crate::keybindings::KeyBinding;
+use oriterm_mux::MuxNotification;
 use oriterm_mux::backend::MuxBackend;
-use oriterm_mux::mux_event::MuxNotification;
 
 use oriterm_ui::theme::UiTheme;
 

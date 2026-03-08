@@ -144,10 +144,13 @@ fn register_shutdown_handler(server: &oriterm_mux::server::MuxServer) {
 fn run_daemon() {
     use std::process::{Command, Stdio};
 
-    let exe = std::env::current_exe().unwrap_or_else(|e| {
-        eprintln!("failed to get executable path: {e}");
-        std::process::exit(1);
-    });
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("failed to get executable path: {e}");
+            std::process::exit(1);
+        }
+    };
 
     let mut cmd = Command::new(exe);
     cmd.arg("--foreground")

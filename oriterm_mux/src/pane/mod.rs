@@ -139,6 +139,9 @@ pub struct Pane {
     /// Current working directory (from OSC 7).
     cwd: Option<String>,
     /// Whether the current title was explicitly set via OSC 0/2.
+    ///
+    /// Authoritative source — `Term` does not track this. Set by
+    /// `set_title()` (true when non-empty) and cleared by `set_cwd()`.
     /// When `false`, `effective_title()` prefers CWD-based title.
     has_explicit_title: bool,
     /// Duration of the last completed command (from OSC 133 C→D timing).
@@ -233,6 +236,10 @@ impl Pane {
     // -- Terminal access --
 
     /// Shared terminal state for rendering.
+    ///
+    /// Returns a reference to the `Arc<FairMutex<Term<MuxEventProxy>>>`
+    /// for direct grid access. Prefer `PaneSnapshot` for IPC/render paths
+    /// where a lock-free copy is acceptable.
     pub fn terminal(&self) -> &Arc<FairMutex<Term<MuxEventProxy>>> {
         &self.terminal
     }

@@ -105,16 +105,17 @@ fn inject_powershell(cmd: &mut CommandBuilder, dir: &Path) {
 }
 
 /// WSL: propagate env vars via `WSLENV`; users manually source scripts.
+///
+/// Note: `--cd` requires Windows 10 build 18362+ (May 2019 Update).
 fn inject_wsl(cmd: &mut CommandBuilder, cwd: Option<&str>) {
     cmd.arg("--cd");
     cmd.arg(cwd.unwrap_or("~"));
 
-    let mut wslenv = std::env::var("WSLENV").unwrap_or_default();
-    if !wslenv.is_empty() {
-        wslenv.push(':');
+    // Reuse the dedup-aware WSLENV builder from spawn.rs.
+    let existing = std::env::var("WSLENV").unwrap_or_default();
+    if let Some(wslenv) = crate::pty::compute_wslenv(&existing, &[]) {
+        cmd.env("WSLENV", wslenv);
     }
-    wslenv.push_str("ORITERM:TERM_PROGRAM:TERM_PROGRAM_VERSION");
-    cmd.env("WSLENV", &wslenv);
 
     log::info!("shell_integration: wsl configured (env vars via WSLENV, no auto-injection)");
 }

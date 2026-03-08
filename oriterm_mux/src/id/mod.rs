@@ -49,11 +49,15 @@ impl fmt::Display for ClientId {
 ///
 /// This trait is sealed — only the ID types in this module implement it.
 /// External crates cannot add implementations.
-pub trait MuxId: sealed::Sealed + Copy {
+pub(crate) trait MuxId: sealed::Sealed + Copy {
     /// Construct this ID type from a raw counter value.
     fn from_raw(raw: u64) -> Self;
 
     /// Return the underlying raw value.
+    #[allow(
+        dead_code,
+        reason = "trait completeness — inherent methods used instead"
+    )]
     fn raw(self) -> u64;
 }
 
@@ -66,31 +70,31 @@ mod sealed {
 
 impl MuxId for PaneId {
     fn from_raw(raw: u64) -> Self {
-        Self(raw)
+        Self::from_raw(raw)
     }
 
     fn raw(self) -> u64 {
-        self.0
+        Self::raw(self)
     }
 }
 
 impl MuxId for DomainId {
     fn from_raw(raw: u64) -> Self {
-        Self(raw)
+        Self::from_raw(raw)
     }
 
     fn raw(self) -> u64 {
-        self.0
+        Self::raw(self)
     }
 }
 
 impl MuxId for ClientId {
     fn from_raw(raw: u64) -> Self {
-        Self(raw)
+        Self::from_raw(raw)
     }
 
     fn raw(self) -> u64 {
-        self.0
+        Self::raw(self)
     }
 }
 
@@ -159,7 +163,7 @@ impl ClientId {
 ///
 /// IDs start at 1; 0 is reserved as "no ID" for sentinel use.
 #[derive(Debug)]
-pub struct IdAllocator<T: MuxId> {
+pub(crate) struct IdAllocator<T: MuxId> {
     counter: u64,
     _phantom: PhantomData<T>,
 }
@@ -174,7 +178,11 @@ impl<T: MuxId> IdAllocator<T> {
     }
 
     /// Allocate the next ID, incrementing the counter.
+    ///
+    /// IDs start at 1 (counter initialized to 1, used then post-incremented).
+    /// Overflow is practically impossible with u64 but guarded in debug builds.
     pub fn alloc(&mut self) -> T {
+        debug_assert!(self.counter < u64::MAX, "IdAllocator counter overflow");
         let id = self.counter;
         self.counter += 1;
         T::from_raw(id)

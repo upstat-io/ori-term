@@ -92,7 +92,7 @@ fn msg_type_roundtrip_all() {
         MsgType::Error,
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
-        MsgType::NotifyPaneTitleChanged,
+        MsgType::NotifyPaneMetadataChanged,
         MsgType::NotifyPaneBell,
         MsgType::NotifyPaneSnapshot,
     ];
@@ -315,6 +315,7 @@ fn roundtrip_notify_pane_output() {
 fn roundtrip_notify_pane_exited() {
     let pdu = MuxPdu::NotifyPaneExited {
         pane_id: PaneId::from_raw(2),
+        exit_code: 0,
     };
     assert!(pdu.is_notification());
     roundtrip(0, pdu);
@@ -324,7 +325,7 @@ fn roundtrip_notify_pane_exited() {
 fn roundtrip_notify_title_changed() {
     roundtrip(
         0,
-        MuxPdu::NotifyPaneTitleChanged {
+        MuxPdu::NotifyPaneMetadataChanged {
             pane_id: PaneId::from_raw(1),
             title: "vim main.rs".into(),
         },
@@ -590,8 +591,9 @@ fn notification_delivery() {
         },
         MuxPdu::NotifyPaneExited {
             pane_id: PaneId::from_raw(2),
+            exit_code: 0,
         },
-        MuxPdu::NotifyPaneTitleChanged {
+        MuxPdu::NotifyPaneMetadataChanged {
             pane_id: PaneId::from_raw(1),
             title: "new title".into(),
         },

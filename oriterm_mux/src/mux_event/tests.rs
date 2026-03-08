@@ -1,3 +1,5 @@
+//! Tests for mux event types and the PTY-to-mux event bridge.
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -199,7 +201,7 @@ fn mux_event_debug_format() {
     assert_eq!(format!("{event:?}"), "PaneExited(Pane(3), code=1)");
 }
 
-// --- Gap analysis tests ---
+// Gap analysis tests
 
 /// When the mpsc receiver is dropped, sending events doesn't panic.
 #[test]
@@ -311,7 +313,7 @@ fn mux_event_debug_all_variants() {
     assert!(dbg.contains("Selection"));
 }
 
-// --- MuxNotification Debug format ---
+// MuxNotification Debug format
 
 #[test]
 fn mux_notification_debug_all_variants() {
@@ -321,11 +323,17 @@ fn mux_notification_debug_all_variants() {
 
     let cases: Vec<(MuxNotification, &str)> = vec![
         (
-            MuxNotification::PaneTitleChanged(pid),
-            "PaneTitleChanged(Pane(1))",
+            MuxNotification::PaneMetadataChanged(pid),
+            "PaneMetadataChanged(Pane(1))",
         ),
         (MuxNotification::PaneOutput(pid), "PaneOutput(Pane(1))"),
-        (MuxNotification::PaneClosed(pid), "PaneClosed(Pane(1))"),
+        (
+            MuxNotification::PaneClosed {
+                pane_id: pid,
+                exit_code: 0,
+            },
+            "PaneClosed(Pane(1), code=0)",
+        ),
         (MuxNotification::PaneBell(pid), "PaneBell(Pane(1))"),
         (
             MuxNotification::CommandComplete {
@@ -360,7 +368,7 @@ fn mux_notification_debug_all_variants() {
     assert!(dbg.contains("Selection"));
 }
 
-// --- Concurrent wakeup coalescing ---
+// Concurrent wakeup coalescing
 
 #[test]
 fn concurrent_wakeup_coalescing_does_not_lose_events() {
@@ -413,7 +421,7 @@ fn concurrent_wakeup_coalescing_does_not_lose_events() {
     assert!(wakeup_count.load(Ordering::Relaxed) >= 1);
 }
 
-// --- Non-routed events (wakeup-only) ---
+// Non-routed events (wakeup-only)
 
 #[test]
 fn color_request_wakes_event_loop_without_mux_event() {

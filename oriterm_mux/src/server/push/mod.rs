@@ -37,7 +37,7 @@ pub(super) struct PushContext<'a> {
 }
 
 /// Whether enough time has passed since the last push for this pane.
-pub fn should_push(now: Instant, last_push: Option<Instant>, interval: Duration) -> bool {
+pub(super) fn should_push(now: Instant, last_push: Option<Instant>, interval: Duration) -> bool {
     last_push.is_none_or(|t| now.duration_since(t) >= interval)
 }
 
@@ -47,7 +47,7 @@ pub fn should_push(now: Instant, last_push: Option<Instant>, interval: Duration)
 ///
 /// Clients without `CAP_SNAPSHOT_PUSH` receive a bare `NotifyPaneOutput`
 /// instead and are never added to the deferred set.
-pub fn push_snapshot_to_subscribers(
+pub(super) fn push_snapshot_to_subscribers(
     pane_id: PaneId,
     snapshot: &PaneSnapshot,
     subscribers: &[ClientId],
@@ -83,7 +83,7 @@ pub fn push_snapshot_to_subscribers(
 }
 
 /// Add all capable subscribers to the deferred set for trailing-edge retry.
-pub fn defer_all_subscribers(
+pub(super) fn defer_all_subscribers(
     pane_id: PaneId,
     subscribers: &[ClientId],
     connections: &HashMap<ClientId, ClientConnection>,
@@ -216,20 +216,21 @@ pub fn trailing_edge_flush(ctx: &mut PushContext<'_>, now: Instant) {
         };
 
         // Push to sendable clients, keep deferred for the rest.
-        let mut served = Vec::new();
+        // Reuse scratch buffer for tracking served clients.
+        ctx.scratch.clear();
         for &cid in deferred.iter() {
             let Some(conn) = ctx.connections.get_mut(&cid) else {
-                served.push(cid);
+                ctx.scratch.push(cid);
                 continue;
             };
             if conn.pending_write_bytes() <= WRITE_HIGH_WATER {
                 if let Err(e) = conn.queue_frame(0, &push_pdu) {
                     log::warn!("trailing push to {cid} failed: {e}");
                 }
-                served.push(cid);
+                ctx.scratch.push(cid);
             }
         }
-        for cid in served {
+        for &cid in ctx.scratch.iter() {
             deferred.remove(&cid);
         }
         if deferred.is_empty() {

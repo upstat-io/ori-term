@@ -80,7 +80,8 @@ impl SnapshotCache {
 /// Blocks on the terminal lock. The PTY reader uses a fairness-gate
 /// lease to control when the renderer gets access — the reader yields
 /// between parse cycles, keeping this wait brief even during flood output.
-pub fn build_snapshot(pane: &Pane) -> PaneSnapshot {
+#[allow(dead_code, reason = "available for non-cached snapshot path")]
+pub(crate) fn build_snapshot(pane: &Pane) -> PaneSnapshot {
     let term = pane.terminal().lock();
     build_snapshot_inner(&term, pane)
 }
@@ -91,7 +92,7 @@ pub fn build_snapshot(pane: &Pane) -> PaneSnapshot {
 /// palette `Vec`, and the `RenderableContent::cells` buffer keep their
 /// allocated capacity across frames, avoiding the per-frame allocation
 /// that makes [`build_snapshot`] expensive under sustained flood output.
-pub fn build_snapshot_into(
+pub(crate) fn build_snapshot_into(
     pane: &Pane,
     out: &mut PaneSnapshot,
     render_buf: &mut RenderableContent,
