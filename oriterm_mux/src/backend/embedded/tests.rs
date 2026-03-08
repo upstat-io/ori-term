@@ -108,7 +108,7 @@ fn close_pane_emits_notification() {
     assert!(
         notes
             .iter()
-            .any(|n| matches!(n, MuxNotification::PaneClosed(id) if *id == p2))
+            .any(|n| matches!(n, MuxNotification::PaneClosed { pane_id, .. } if *pane_id == p2))
     );
 }
 

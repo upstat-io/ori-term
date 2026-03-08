@@ -82,7 +82,7 @@ impl InProcessMux {
         }
     }
 
-    // -- Pane operations --
+    // Pane operations
 
     /// Spawn a pane with a new PTY process.
     ///
@@ -114,14 +114,26 @@ impl InProcessMux {
 
     /// Close a pane, removing it from the registry.
     ///
-    /// The caller is responsible for dropping the `Pane` struct from its map.
+    /// Uses exit code 0 (clean exit). For process-initiated closes with a
+    /// real exit code, use [`close_pane_with_exit_code`](Self::close_pane_with_exit_code).
     pub fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
+        self.close_pane_with_exit_code(pane_id, 0)
+    }
+
+    /// Close a pane with a specific exit code.
+    ///
+    /// The caller is responsible for dropping the `Pane` struct from its map.
+    pub fn close_pane_with_exit_code(
+        &mut self,
+        pane_id: PaneId,
+        exit_code: i32,
+    ) -> ClosePaneResult {
         if self.pane_registry.unregister(pane_id).is_none() {
             return ClosePaneResult::NotFound;
         }
 
         self.notifications
-            .push(MuxNotification::PaneClosed(pane_id));
+            .push(MuxNotification::PaneClosed { pane_id, exit_code });
         ClosePaneResult::PaneRemoved
     }
 
@@ -131,7 +143,7 @@ impl InProcessMux {
     }
 }
 
-// -- Test helpers --
+// Test helpers
 
 #[cfg(test)]
 impl InProcessMux {

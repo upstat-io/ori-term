@@ -5,7 +5,7 @@
 /// Ranges: `0x01xx` = requests, `0x02xx` = responses, `0x03xx` = notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
-pub enum MsgType {
+pub(crate) enum MsgType {
     // Requests (client → daemon).
     Hello = 0x0101,
     ClosePane = 0x0105,
@@ -52,7 +52,7 @@ pub enum MsgType {
     // Push notifications (daemon → client).
     NotifyPaneOutput = 0x0301,
     NotifyPaneExited = 0x0302,
-    NotifyPaneTitleChanged = 0x0303,
+    NotifyPaneMetadataChanged = 0x0303,
     NotifyPaneBell = 0x0304,
     NotifyPaneSnapshot = 0x0307,
 }
@@ -102,7 +102,7 @@ impl MsgType {
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),
-            0x0303 => Some(Self::NotifyPaneTitleChanged),
+            0x0303 => Some(Self::NotifyPaneMetadataChanged),
             0x0304 => Some(Self::NotifyPaneBell),
             0x0307 => Some(Self::NotifyPaneSnapshot),
             _ => None,

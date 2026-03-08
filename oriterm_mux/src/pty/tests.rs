@@ -7,9 +7,7 @@
 use super::PtyConfig;
 use super::spawn::{build_command, compute_wslenv, default_shell};
 
-// ---------------------------------------------------------------------------
 // Shell detection
-// ---------------------------------------------------------------------------
 
 #[test]
 fn default_shell_is_nonempty() {
@@ -25,9 +23,7 @@ fn default_shell_exists_on_disk() {
     assert!(path.exists(), "default shell `{shell}` does not exist");
 }
 
-// ---------------------------------------------------------------------------
 // Command building
-// ---------------------------------------------------------------------------
 
 #[test]
 fn build_command_sets_terminal_env_vars() {
@@ -122,9 +118,7 @@ fn build_command_sets_wslenv_for_cross_boundary_propagation() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // WSLENV computation (cross-platform — tests the pure string logic)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn wslenv_empty_existing_adds_builtins() {
@@ -223,7 +217,10 @@ fn wslenv_user_env_overlapping_builtin() {
 #[test]
 fn wslenv_all_already_present_returns_none() {
     // Every builtin already in WSLENV, no user keys — nothing to add.
-    let result = compute_wslenv("TERM:COLORTERM:TERM_PROGRAM", &[]);
+    let result = compute_wslenv(
+        "TERM:COLORTERM:ORITERM:TERM_PROGRAM:TERM_PROGRAM_VERSION",
+        &[],
+    );
     assert!(
         result.is_none(),
         "should return None when nothing to add: {result:?}",
@@ -264,9 +261,7 @@ fn wslenv_user_env_special_values_are_keys_not_values() {
     assert!(result.contains("X11_DISPLAY"), "mixed key: {result}");
 }
 
-// ---------------------------------------------------------------------------
 // User env overrides builtins
-// ---------------------------------------------------------------------------
 
 #[test]
 fn build_command_user_env_overrides_builtins() {
@@ -331,9 +326,7 @@ fn build_command_empty_env_list_leaves_builtins() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // WSLENV flag collision
-// ---------------------------------------------------------------------------
 
 #[test]
 fn wslenv_flag_collision_existing_has_flags_user_omits() {

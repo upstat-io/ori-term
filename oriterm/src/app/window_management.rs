@@ -405,7 +405,7 @@ impl App {
         }
 
         self.with_drained_notifications(|this, notification| {
-            if let oriterm_mux::mux_event::MuxNotification::PaneClosed(id) = notification {
+            if let oriterm_mux::MuxNotification::PaneClosed { pane_id: id, .. } = notification {
                 // Clean up backend resources and caches.
                 if let Some(mux) = this.mux.as_mut() {
                     mux.cleanup_closed_pane(id);
