@@ -39,10 +39,11 @@ impl App {
         let scale = ctx.scale_factor.factor() as f32;
 
         // Prepare the UI-only frame.
+        let c = ui_theme.bg_primary;
         let bg = oriterm_core::Rgb {
-            r: 30,
-            g: 30,
-            b: 46,
+            r: (c.r * 255.0) as u8,
+            g: (c.g * 255.0) as u8,
+            b: (c.b * 255.0) as u8,
         };
         renderer.prepare_ui_frame(w, h, bg, 1.0);
 

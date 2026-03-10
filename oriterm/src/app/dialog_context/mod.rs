@@ -141,8 +141,10 @@ impl DialogWindowContext {
         theme: &oriterm_ui::theme::UiTheme,
     ) -> Self {
         let (w, h) = (surface_config.width, surface_config.height);
-        let viewport = Rect::new(0.0, 0.0, w as f32, h as f32);
-        let logical_w = w as f32 / scale_factor.factor() as f32;
+        let scale = scale_factor.factor() as f32;
+        let logical_w = w as f32 / scale;
+        let logical_h = h as f32 / scale;
+        let viewport = Rect::new(0.0, 0.0, logical_w, logical_h);
         let chrome = WindowChromeWidget::dialog(kind.title(), logical_w, theme);
         Self {
             window,
@@ -172,8 +174,10 @@ impl DialogWindowContext {
         let scale = self.scale_factor.factor() as f32;
         let logical_w = w as f32 / scale;
         self.chrome.set_window_width(logical_w);
+        let logical_w = w as f32 / scale;
+        let logical_h = h as f32 / scale;
         self.overlays
-            .set_viewport(Rect::new(0.0, 0.0, w as f32, h as f32));
+            .set_viewport(Rect::new(0.0, 0.0, logical_w, logical_h));
         self.dirty = true;
     }
 

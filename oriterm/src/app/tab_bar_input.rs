@@ -9,12 +9,17 @@ use std::time::{Duration, Instant};
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 
+use oriterm_ui::geometry::{Point, Rect};
+use oriterm_ui::input::{MouseButton, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::Placement;
 use oriterm_ui::widgets::menu::{MenuStyle, MenuWidget};
 use oriterm_ui::widgets::tab_bar::TabBarHit;
 use oriterm_ui::widgets::tab_bar::constants::{
     DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_TOP_MARGIN,
 };
+use oriterm_ui::widgets::{EventCtx, WidgetAction};
+
+use crate::font::UiFontMeasurer;
 
 use super::{App, context_menu};
 
@@ -55,9 +60,13 @@ impl App {
             return false;
         }
 
-        // Consume release events without action — prevents them from
-        // falling through to the terminal selection handler.
+        // On release: route to control buttons for press/release cycle.
+        // Window control actions fire on mouse-up (matching Windows caption
+        // button behavior: press highlights, release fires, drag-off cancels).
         if state != ElementState::Pressed {
+            if let Some(action) = self.route_control_mouse(MouseButton::Left, false) {
+                self.handle_chrome_action(&action, event_loop);
+            }
             return true;
         }
 
@@ -98,21 +107,10 @@ impl App {
                 true
             }
 
-            TabBarHit::Minimize => {
-                let action = oriterm_ui::widgets::WidgetAction::WindowMinimize;
-                self.handle_chrome_action(&action, event_loop);
-                true
-            }
-
-            TabBarHit::Maximize => {
-                let action = oriterm_ui::widgets::WidgetAction::WindowMaximize;
-                self.handle_chrome_action(&action, event_loop);
-                true
-            }
-
-            TabBarHit::CloseWindow => {
-                let action = oriterm_ui::widgets::WidgetAction::WindowClose;
-                self.handle_chrome_action(&action, event_loop);
+            TabBarHit::Minimize | TabBarHit::Maximize | TabBarHit::CloseWindow => {
+                // Route press to control button widget — sets pressed state
+                // but does not fire the action until mouse-up.
+                self.route_control_mouse(MouseButton::Left, true);
                 true
             }
 
@@ -135,7 +133,7 @@ impl App {
             .map(|ctx| {
                 let layout = ctx.tab_bar.layout();
                 let tx = layout.tab_x(tab_index);
-                oriterm_ui::geometry::Rect::new(
+                Rect::new(
                     tx,
                     TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
                     layout.base_tab_width(),
@@ -170,7 +168,7 @@ impl App {
             .focused_ctx()
             .map(|ctx| {
                 let dx = ctx.tab_bar.layout().dropdown_x();
-                oriterm_ui::geometry::Rect::new(
+                Rect::new(
                     dx,
                     TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
                     DROPDOWN_BUTTON_WIDTH,
@@ -192,6 +190,48 @@ impl App {
             );
             ctx.dirty = true;
         }
+    }
+
+    /// Route a mouse event to the tab bar's window control buttons.
+    ///
+    /// Delegates to [`TabBarWidget::handle_control_mouse`] which manages
+    /// the press/release cycle on [`WindowControlButton`]s. Returns the
+    /// emitted [`WidgetAction`] (if any) — the caller dispatches it.
+    fn route_control_mouse(&mut self, button: MouseButton, is_down: bool) -> Option<WidgetAction> {
+        let pos = self.mouse.cursor_pos();
+        let ui_theme = self.ui_theme;
+        let ctx = self.focused_ctx_mut()?;
+        let scale = ctx.window.scale_factor().factor() as f32;
+        let logical_pos = Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
+        let kind = if is_down {
+            MouseEventKind::Down(button)
+        } else {
+            MouseEventKind::Up(button)
+        };
+        let mouse_event = MouseEvent {
+            kind,
+            pos: logical_pos,
+            modifiers: oriterm_ui::input::Modifiers::NONE,
+        };
+        let renderer = ctx.renderer.as_ref()?;
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let event_ctx = EventCtx {
+            measurer: &measurer,
+            bounds: Rect::default(),
+            is_focused: false,
+            focused_widget: None,
+            theme: &ui_theme,
+        };
+        let resp = ctx.tab_bar.handle_control_mouse(&mouse_event, &event_ctx);
+        if matches!(
+            resp.response,
+            oriterm_ui::input::EventResponse::RequestPaint
+                | oriterm_ui::input::EventResponse::RequestLayout
+                | oriterm_ui::input::EventResponse::RequestRedraw
+        ) {
+            ctx.dirty = true;
+        }
+        resp.action
     }
 
     /// Handle a click in the tab bar drag area.

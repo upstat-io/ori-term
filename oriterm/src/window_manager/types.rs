@@ -19,6 +19,10 @@ pub enum WindowKind {
     /// Tear-off window created by dragging a tab out of an existing window.
     /// Behaviorally identical to `Main` after creation; the kind tracks
     /// origin for merge detection.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     TearOff,
 }
 
@@ -34,6 +38,10 @@ impl WindowKind {
     }
 
     /// Returns `true` for tear-off windows.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn is_tear_off(&self) -> bool {
         matches!(self, Self::TearOff)
     }
@@ -53,6 +61,10 @@ pub enum DialogKind {
     /// Confirmation prompt (e.g. close with running processes).
     Confirmation,
     /// About dialog (version info, credits).
+    #[allow(
+        dead_code,
+        reason = "dialog kind — wired when About dialog is implemented"
+    )]
     About,
 }
 
@@ -100,6 +112,10 @@ pub struct ManagedWindow {
     /// Destroyed when this window closes.
     pub children: Vec<WindowId>,
     /// Whether the window is currently visible.
+    #[allow(
+        dead_code,
+        reason = "window manager API — read during main window migration"
+    )]
     pub visible: bool,
 }
 
@@ -108,6 +124,10 @@ pub struct ManagedWindow {
 /// The caller fills this out and passes it to
 /// [`WindowManager::prepare_create`](super::WindowManager::prepare_create)
 /// to get the corresponding `WindowAttributes`.
+#[allow(
+    dead_code,
+    reason = "window manager API — used when prepare_create is wired"
+)]
 #[derive(Debug, Clone)]
 pub struct WindowRequest {
     /// What kind of window to create.

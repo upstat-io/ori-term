@@ -8,13 +8,13 @@
 mod hierarchy;
 mod lifecycle;
 pub(crate) mod platform;
-pub mod types;
+pub(crate) mod types;
 
 use std::collections::HashMap;
 
 use winit::window::WindowId;
 
-pub use types::{ManagedWindow, WindowKind};
+pub(crate) use types::{ManagedWindow, WindowKind};
 
 /// Central registry for all OS windows in the application.
 ///
@@ -43,6 +43,10 @@ impl WindowManager {
     }
 
     /// Get a mutable reference to a managed window by winit ID.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn get_mut(&mut self, id: WindowId) -> Option<&mut ManagedWindow> {
         self.windows.get_mut(&id)
     }
@@ -56,11 +60,19 @@ impl WindowManager {
     }
 
     /// Iterate all main windows.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn main_windows(&self) -> impl Iterator<Item = &ManagedWindow> {
         self.windows_of_kind(WindowKind::is_main)
     }
 
     /// Iterate children of a specific window.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn children_of(&self, parent: WindowId) -> impl Iterator<Item = &ManagedWindow> {
         let children: Vec<WindowId> = self
             .windows
@@ -73,21 +85,37 @@ impl WindowManager {
     }
 
     /// Check if a window is registered.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn contains(&self, id: WindowId) -> bool {
         self.windows.contains_key(&id)
     }
 
     /// Total number of managed windows.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn len(&self) -> usize {
         self.windows.len()
     }
 
     /// Returns `true` if no windows are managed.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn is_empty(&self) -> bool {
         self.windows.is_empty()
     }
 
     /// Number of primary windows (main + tear-off).
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn primary_window_count(&self) -> usize {
         self.windows
             .values()
@@ -96,6 +124,10 @@ impl WindowManager {
     }
 
     /// Get the currently focused window ID.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn focused_id(&self) -> Option<WindowId> {
         self.focused_id
     }
@@ -110,6 +142,10 @@ impl WindowManager {
     /// Used for determining which terminal receives keyboard input
     /// (when no dialog is focused) and for resolving the session window
     /// associated with the current focus.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn active_main_window(&self) -> Option<WindowId> {
         let focused = self.focused_id?;
         let window = self.windows.get(&focused)?;

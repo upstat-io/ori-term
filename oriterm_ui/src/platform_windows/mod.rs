@@ -8,7 +8,7 @@
 //! The entire module is Win32 FFI glue — every public function calls into
 //! the Win32 API through `windows-sys`.
 
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "Win32 FFI via windows-sys")]
 
 mod subclass;
 
@@ -87,12 +87,21 @@ struct OsDragState {
     result: Option<OsDragResult>,
 }
 
+/// Chrome sizing metrics in physical pixels.
+///
+/// Bundled into a single `Mutex` because `WM_NCHITTEST` reads both fields
+/// together and `set_chrome_metrics` writes both atomically.
+struct ChromeMetrics {
+    /// Border width for resize hit testing.
+    border_width: f32,
+    /// Caption (tab bar) height.
+    caption_height: f32,
+}
+
 /// Per-window data stored via `SetWindowSubclass`.
 struct SnapData {
-    /// Border width for resize hit testing (physical pixels).
-    border_width: Mutex<f32>,
-    /// Caption (tab bar) height (physical pixels).
-    caption_height: Mutex<f32>,
+    /// Chrome sizing metrics (physical pixels).
+    chrome_metrics: Mutex<ChromeMetrics>,
     /// Interactive regions (buttons, tabs) in physical pixels.
     interactive_rects: Mutex<Vec<Rect>>,
     /// DPI from the most recent `WM_DPICHANGED`. 0 means not yet received.
@@ -181,8 +190,10 @@ fn install_chrome_subclass(window: &Window, border_width: f32, caption_height: f
 
         // Install `WndProc` subclass with per-window data.
         let data = Box::new(SnapData {
-            border_width: Mutex::new(border_width),
-            caption_height: Mutex::new(caption_height),
+            chrome_metrics: Mutex::new(ChromeMetrics {
+                border_width,
+                caption_height,
+            }),
             interactive_rects: Mutex::new(Vec::new()),
             last_dpi: AtomicU32::new(0),
             os_drag: Mutex::new(None),
@@ -207,15 +218,16 @@ fn install_chrome_subclass(window: &Window, border_width: f32, caption_height: f
 /// Updates the interactive regions that receive `HTCLIENT` instead of
 /// `HTCAPTION`.
 ///
-/// Each rect is in logical coordinates. Call whenever the tab bar layout
-/// changes (resize, tab add/remove).
-pub fn set_client_rects(window: &Window, rects: Vec<Rect>) {
+/// Each rect is in physical pixels (pre-scaled by the display scale factor).
+/// Call whenever the tab bar layout changes (resize, tab add/remove).
+pub fn set_client_rects(window: &Window, rects: &[Rect]) {
     if let Some(data) = snap_data_for_window(window) {
         let mut lock = data.interactive_rects.lock().unwrap_or_else(|e| {
             log::warn!("interactive_rects mutex poisoned: {e}");
             e.into_inner()
         });
-        *lock = rects;
+        lock.clear();
+        lock.extend_from_slice(rects);
     }
 }
 
@@ -275,14 +287,12 @@ pub fn take_os_drag_result(window: &Window) -> Option<OsDragResult> {
 /// factor). Call from the resize handler when a DPI change is detected.
 pub fn set_chrome_metrics(window: &Window, border_width: f32, caption_height: f32) {
     if let Some(data) = snap_data_for_window(window) {
-        *data.border_width.lock().unwrap_or_else(|e| {
-            log::warn!("border_width mutex poisoned: {e}");
+        let mut metrics = data.chrome_metrics.lock().unwrap_or_else(|e| {
+            log::warn!("chrome_metrics mutex poisoned: {e}");
             e.into_inner()
-        }) = border_width;
-        *data.caption_height.lock().unwrap_or_else(|e| {
-            log::warn!("caption_height mutex poisoned: {e}");
-            e.into_inner()
-        }) = caption_height;
+        });
+        metrics.border_width = border_width;
+        metrics.caption_height = caption_height;
     }
 }
 
@@ -409,7 +419,7 @@ fn snap_data_for_window(window: &Window) -> Option<&'static SnapData> {
 }
 
 /// Extracts the raw HWND from a winit `Window`.
-fn hwnd_from_window(window: &Window) -> Option<HWND> {
+pub fn hwnd_from_window(window: &Window) -> Option<HWND> {
     let handle = window.window_handle().ok()?;
     match handle.as_raw() {
         RawWindowHandle::Win32(h) => Some(h.hwnd.get() as HWND),

@@ -20,7 +20,7 @@ use winit::window::WindowId;
 use crate::font::UiFontMeasurer;
 use crate::keybindings;
 
-use super::super::App;
+use crate::app::App;
 
 /// Result of processing a dialog mouse click.
 enum DialogClickResult {
@@ -212,20 +212,22 @@ impl App {
             theme: &ui_theme,
         };
 
-        let zone = if logical_pos.y < chrome_h {
-            "chrome"
-        } else {
-            "content"
-        };
-        log::trace!(
-            "dialog cursor: phys=({:.0},{:.0}) log=({:.1},{:.1}) s={scale:.2} ch={chrome_h:.1} \
-             z={zone} rects={:?}",
-            position.x,
-            position.y,
-            logical_pos.x,
-            logical_pos.y,
-            ctx.chrome.interactive_rects(),
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            let zone = if logical_pos.y < chrome_h {
+                "chrome"
+            } else {
+                "content"
+            };
+            log::trace!(
+                "dialog cursor: phys=({:.0},{:.0}) log=({:.1},{:.1}) s={scale:.2} ch={chrome_h:.1} \
+                 z={zone} rects={:?}",
+                position.x,
+                position.y,
+                logical_pos.x,
+                logical_pos.y,
+                ctx.chrome.interactive_rects(),
+            );
+        }
 
         if logical_pos.y < chrome_h {
             // Chrome hover (close button highlight).
@@ -386,6 +388,11 @@ impl App {
             } else if button == winit::event::MouseButton::Left
                 && state == winit::event::ElementState::Pressed
                 && resp.action.is_none()
+                && !ctx
+                    .chrome
+                    .interactive_rects()
+                    .iter()
+                    .any(|r| r.contains(logical_pos))
             {
                 DialogClickResult::Drag
             } else {
@@ -454,52 +461,6 @@ impl App {
             .content
             .content_widget_mut()
             .handle_mouse(&mouse_event, &event_ctx);
-        if wants_repaint(resp.response) {
-            ctx.dirty = true;
-        }
-    }
-
-    /// Clear hover state for chrome and content.
-    fn clear_dialog_hover(&mut self, window_id: WindowId) {
-        let ui_theme = self.ui_theme;
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            return;
-        };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let scale = ctx.scale_factor.factor() as f32;
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-
-        // Chrome hover clear.
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: Rect::default(),
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-        };
-        let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
-        if wants_repaint(resp.response) {
-            ctx.dirty = true;
-        }
-
-        // Content hover clear.
-        let w = ctx.surface_config.width as f32 / scale;
-        let h = ctx.surface_config.height as f32 / scale;
-        let chrome_h = ctx.chrome.caption_height();
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: content_bounds,
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-        };
-        let resp = ctx
-            .content
-            .content_widget_mut()
-            .handle_hover(HoverEvent::Leave, &event_ctx);
         if wants_repaint(resp.response) {
             ctx.dirty = true;
         }

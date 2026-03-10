@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::input::{
-    EventResponse, Key as UiKey, KeyEvent as UiKeyEvent, Modifiers as UiModifiers,
+    EventResponse, HoverEvent, Key as UiKey, KeyEvent as UiKeyEvent, Modifiers as UiModifiers,
 };
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
@@ -20,8 +20,8 @@ use crate::app::settings_overlay;
 use crate::event::ConfirmationKind;
 use crate::font::UiFontMeasurer;
 
-use super::super::App;
 use super::DialogContent;
+use crate::app::App;
 
 impl App {
     /// Process a `WidgetAction` emitted by dialog content widgets.
@@ -73,7 +73,7 @@ impl App {
             let DialogContent::Settings { pending_config, .. } = &ctx.content else {
                 return;
             };
-            *pending_config.clone()
+            (**pending_config).clone()
         };
 
         log::info!("settings dialog: applying and saving to disk");
@@ -294,5 +294,61 @@ impl App {
             ctx.dirty = true;
         }
         resp.action
+    }
+
+    /// Clear hover state for chrome and content.
+    pub(in crate::app) fn clear_dialog_hover(&mut self, window_id: WindowId) {
+        let ui_theme = self.ui_theme;
+        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+            return;
+        };
+        let Some(renderer) = ctx.renderer.as_ref() else {
+            return;
+        };
+        let scale = ctx.scale_factor.factor() as f32;
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+
+        // Chrome hover clear.
+        let event_ctx = EventCtx {
+            measurer: &measurer,
+            bounds: Rect::default(),
+            is_focused: false,
+            focused_widget: None,
+            theme: &ui_theme,
+        };
+        let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
+        if matches!(
+            resp.response,
+            EventResponse::RequestPaint
+                | EventResponse::RequestLayout
+                | EventResponse::RequestRedraw
+        ) {
+            ctx.dirty = true;
+        }
+
+        // Content hover clear.
+        let w = ctx.surface_config.width as f32 / scale;
+        let h = ctx.surface_config.height as f32 / scale;
+        let chrome_h = ctx.chrome.caption_height();
+        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
+        let event_ctx = EventCtx {
+            measurer: &measurer,
+            bounds: content_bounds,
+            is_focused: false,
+            focused_widget: None,
+            theme: &ui_theme,
+        };
+        let resp = ctx
+            .content
+            .content_widget_mut()
+            .handle_hover(HoverEvent::Leave, &event_ctx);
+        if matches!(
+            resp.response,
+            EventResponse::RequestPaint
+                | EventResponse::RequestLayout
+                | EventResponse::RequestRedraw
+        ) {
+            ctx.dirty = true;
+        }
     }
 }

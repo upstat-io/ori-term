@@ -190,45 +190,7 @@ impl App {
         };
 
         // Drive control button hover animation when cursor targets controls.
-        {
-            use oriterm_ui::widgets::tab_bar::TabBarHit;
-            let is_control_hit = matches!(
-                hit,
-                TabBarHit::Minimize | TabBarHit::Maximize | TabBarHit::CloseWindow
-            );
-
-            if let Some(ctx) = self
-                .focused_window_id
-                .and_then(|id| self.windows.get_mut(&id))
-            {
-                if is_control_hit || ctx.tab_bar.hover_hit() != hit {
-                    let scale = ctx.window.scale_factor().factor() as f32;
-                    let pos = oriterm_ui::geometry::Point::new(
-                        position.x as f32 / scale,
-                        position.y as f32 / scale,
-                    );
-                    if let Some(renderer) = ctx.renderer.as_ref() {
-                        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-                        let event_ctx = oriterm_ui::widgets::EventCtx {
-                            measurer: &measurer,
-                            bounds: Rect::default(),
-                            is_focused: false,
-                            focused_widget: None,
-                            theme: &self.ui_theme,
-                        };
-                        let resp = ctx.tab_bar.update_control_hover(pos, &event_ctx);
-                        if matches!(
-                            resp.response,
-                            oriterm_ui::input::EventResponse::RequestPaint
-                                | oriterm_ui::input::EventResponse::RequestLayout
-                                | oriterm_ui::input::EventResponse::RequestRedraw
-                        ) {
-                            ctx.dirty = true;
-                        }
-                    }
-                }
-            }
-        }
+        self.update_control_hover_animation(position, &hit);
 
         // Apply hover hit, redraw on change.
         if let Some(ctx) = self.focused_ctx_mut() {
@@ -236,6 +198,56 @@ impl App {
                 ctx.tab_bar.set_hover_hit(hit, Instant::now());
                 ctx.dirty = true;
             }
+        }
+    }
+
+    /// Drive control button hover animation for the focused window.
+    ///
+    /// Forwards the cursor position and hit result to the tab bar's
+    /// control hover handler, which manages fade-in/fade-out animations
+    /// on minimize, maximize, and close buttons.
+    fn update_control_hover_animation(
+        &mut self,
+        position: winit::dpi::PhysicalPosition<f64>,
+        hit: &oriterm_ui::widgets::tab_bar::TabBarHit,
+    ) {
+        use oriterm_ui::widgets::tab_bar::TabBarHit;
+        let is_control_hit = matches!(
+            hit,
+            TabBarHit::Minimize | TabBarHit::Maximize | TabBarHit::CloseWindow
+        );
+
+        let Some(ctx) = self
+            .focused_window_id
+            .and_then(|id| self.windows.get_mut(&id))
+        else {
+            return;
+        };
+        if !is_control_hit && ctx.tab_bar.hover_hit() == *hit {
+            return;
+        }
+        let scale = ctx.window.scale_factor().factor() as f32;
+        let pos =
+            oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
+        let Some(renderer) = ctx.renderer.as_ref() else {
+            return;
+        };
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let event_ctx = oriterm_ui::widgets::EventCtx {
+            measurer: &measurer,
+            bounds: Rect::default(),
+            is_focused: false,
+            focused_widget: None,
+            theme: &self.ui_theme,
+        };
+        let resp = ctx.tab_bar.update_control_hover(pos, &event_ctx);
+        if matches!(
+            resp.response,
+            oriterm_ui::input::EventResponse::RequestPaint
+                | oriterm_ui::input::EventResponse::RequestLayout
+                | oriterm_ui::input::EventResponse::RequestRedraw
+        ) {
+            ctx.dirty = true;
         }
     }
 

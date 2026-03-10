@@ -4,7 +4,7 @@
 
 use crate::session::{TabId, WindowId as SessionWindowId};
 
-use super::super::App;
+use crate::app::App;
 
 impl App {
     /// Move a tab to a different window.

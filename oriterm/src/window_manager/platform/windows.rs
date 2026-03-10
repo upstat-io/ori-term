@@ -4,7 +4,7 @@
 //! extension, extended window styles, modal window disabling, and frameless
 //! chrome subclass installation.
 
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "Win32 FFI via windows-sys")]
 
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
@@ -14,7 +14,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_TOOLWINDOW,
 };
 
-use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
 
 use oriterm_ui::geometry::Rect;
@@ -51,25 +50,6 @@ impl NativeWindowOps for WindowsNativeOps {
             return;
         };
         unsafe { SetWindowLongPtrW(child_hwnd, GWLP_HWNDPARENT, 0) };
-    }
-
-    fn enable_shadow(&self, window: &Window) {
-        let Some(hwnd) = extract_hwnd(window) else {
-            return;
-        };
-        // Dialog windows lack WS_THICKFRAME, so all four margins are needed
-        // for DWM shadow. Main windows only need cyTopHeight:1 because
-        // WS_THICKFRAME provides the other edges.
-        let margins = MARGINS {
-            cxLeftWidth: 1,
-            cxRightWidth: 1,
-            cyTopHeight: 1,
-            cyBottomHeight: 1,
-        };
-        let hr = unsafe { DwmExtendFrameIntoClientArea(hwnd, &raw const margins) };
-        if hr != 0 {
-            log::warn!("DwmExtendFrameIntoClientArea failed: HRESULT 0x{hr:08X}");
-        }
     }
 
     fn set_window_type(&self, window: &Window, kind: &WindowKind) {
@@ -136,10 +116,8 @@ impl NativeChromeOps for WindowsNativeOps {
     }
 
     fn set_interactive_rects(&self, window: &Window, rects: &[Rect], scale: f32) {
-        oriterm_ui::platform_windows::set_client_rects(
-            window,
-            rects.iter().map(|r| scale_rect(*r, scale)).collect(),
-        );
+        let scaled: Vec<Rect> = rects.iter().map(|r| scale_rect(*r, scale)).collect();
+        oriterm_ui::platform_windows::set_client_rects(window, &scaled);
     }
 
     fn set_chrome_metrics(&self, window: &Window, border_width: f32, caption_height: f32) {
@@ -159,9 +137,5 @@ fn scale_rect(r: Rect, scale: f32) -> Rect {
 
 /// Extracts the raw HWND from a winit `Window`.
 fn extract_hwnd(window: &Window) -> Option<HWND> {
-    let handle = window.window_handle().ok()?;
-    match handle.as_raw() {
-        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as HWND),
-        _ => None,
-    }
+    oriterm_ui::platform_windows::hwnd_from_window(window)
 }

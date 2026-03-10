@@ -5,7 +5,7 @@
 
 use crate::keybindings::Action;
 
-use super::super::App;
+use crate::app::App;
 
 impl App {
     /// Execute a keybinding action. Returns `true` if the event was consumed.
