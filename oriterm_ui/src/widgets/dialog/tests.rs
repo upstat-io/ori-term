@@ -229,7 +229,7 @@ fn escape_emits_dismiss() {
         response.action,
         Some(WidgetAction::DismissOverlay(dialog_id))
     );
-    assert_eq!(response.response, EventResponse::RequestRedraw);
+    assert_eq!(response.response, EventResponse::RequestLayout);
 }
 
 #[test]

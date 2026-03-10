@@ -2,6 +2,7 @@
 section: 42
 title: "Expose / Overview Mode"
 status: not-started
+reviewed: false
 tier: 5
 goal: "macOS Mission Control-style Expose mode: a live GPU-rendered thumbnail grid of ALL panes across ALL windows, tabs, and panes. Full-frame modal state with keyboard/mouse navigation, type-to-filter, and instant pane switching."
 sections:

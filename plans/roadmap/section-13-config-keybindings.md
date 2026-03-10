@@ -2,6 +2,7 @@
 section: 13
 title: Configuration & Keybindings
 status: complete
+reviewed: true
 tier: 3
 goal: TOML configuration with file watching and hot reload, user-configurable keybindings with defaults
 sections:

@@ -2,6 +2,7 @@
 section: 20
 title: Shell Integration
 status: complete
+reviewed: true
 tier: 4
 goal: Shell detection, injection, OSC 7/133 handling, two-parser strategy, prompt state machine
 sections:

@@ -2,6 +2,7 @@
 section: 5
 title: Window + GPU Rendering
 status: complete
+reviewed: true
 tier: 2
 goal: Open a frameless window, initialize wgpu, render the terminal grid with a proper staged render pipeline — first visual milestone
 sections:

@@ -2,6 +2,7 @@
 section: 5C
 title: Window Chrome (Title Bar + Controls)
 status: complete
+reviewed: true
 tier: 2
 goal: Render a visible title bar with minimize/maximize/close controls, wire platform integration (Aero Snap, drag), offset the terminal grid below the caption bar
 sections:

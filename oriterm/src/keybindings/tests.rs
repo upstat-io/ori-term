@@ -787,3 +787,28 @@ fn select_command_input_roundtrip() {
     );
     assert_eq!(Action::SelectCommandInput.as_str(), "SelectCommandInput");
 }
+
+// ---------------------------------------------------------------------------
+// Action::is_global()
+// ---------------------------------------------------------------------------
+
+#[test]
+fn global_actions_are_global() {
+    assert!(Action::NewWindow.is_global());
+    assert!(Action::NewTab.is_global());
+    assert!(Action::OpenSettings.is_global());
+    assert!(Action::ReloadConfig.is_global());
+    assert!(Action::None.is_global());
+}
+
+#[test]
+fn terminal_actions_are_not_global() {
+    assert!(!Action::Copy.is_global());
+    assert!(!Action::Paste.is_global());
+    assert!(!Action::SmartCopy.is_global());
+    assert!(!Action::ScrollPageUp.is_global());
+    assert!(!Action::SplitRight.is_global());
+    assert!(!Action::SendText("test".to_owned()).is_global());
+    assert!(!Action::EnterMarkMode.is_global());
+    assert!(!Action::ToggleFullscreen.is_global());
+}

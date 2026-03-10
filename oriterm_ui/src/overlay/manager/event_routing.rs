@@ -12,7 +12,7 @@ use crate::geometry::Point;
 use crate::input::{HoverEvent, Key, KeyEvent, MouseEvent, MouseEventKind};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
-use crate::widgets::{EventCtx, WidgetResponse};
+use crate::widgets::{CaptureRequest, EventCtx, WidgetResponse};
 
 use super::{OverlayEventResult, OverlayKind, OverlayManager};
 
@@ -34,12 +34,58 @@ impl OverlayManager {
         measurer: &dyn crate::widgets::TextMeasurer,
         theme: &UiTheme,
         focused_widget: Option<WidgetId>,
-        tree: &LayerTree,
+        tree: &mut LayerTree,
         animator: &mut LayerAnimator,
         now: Instant,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
             return OverlayEventResult::PassThrough;
+        }
+
+        // During capture, route all events to the captured overlay.
+        if let Some(cap_idx) = self.captured_overlay {
+            if let Some(overlay) = self.overlays.get_mut(cap_idx) {
+                let id = overlay.id;
+                let root_id = overlay.widget.id();
+                let ctx = EventCtx {
+                    measurer,
+                    bounds: overlay.computed_rect,
+                    is_focused: focused_widget == Some(root_id),
+                    focused_widget,
+                    theme,
+                };
+                let response = overlay.widget.handle_mouse(event, &ctx);
+                match response.capture {
+                    CaptureRequest::Release => self.captured_overlay = None,
+                    CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
+                        self.captured_overlay = None;
+                    }
+                    _ => {}
+                }
+                if response.response.needs_layout() {
+                    self.layout_dirty = true;
+                }
+                return OverlayEventResult::Delivered {
+                    overlay_id: id,
+                    response,
+                };
+            }
+            // Captured overlay no longer exists — clear stale capture.
+            self.captured_overlay = None;
+        }
+
+        // Auto-dismiss topmost popup on click outside it (even if click lands
+        // inside a lower overlay like a modal). Standard dropdown behavior:
+        // the click is consumed, the user clicks again to interact below.
+        if matches!(event.kind, MouseEventKind::Down(_)) {
+            if let Some(topmost) = self.overlays.last() {
+                if topmost.kind == OverlayKind::Popup && !topmost.computed_rect.contains(event.pos)
+                {
+                    let topmost_id = topmost.id;
+                    self.begin_dismiss_topmost(tree, animator, now);
+                    return OverlayEventResult::Dismissed(topmost_id);
+                }
+            }
         }
 
         // Hit test from topmost to bottom.
@@ -56,6 +102,12 @@ impl OverlayManager {
                     theme,
                 };
                 let response = overlay.widget.handle_mouse(event, &ctx);
+                if response.capture == CaptureRequest::Acquire {
+                    self.captured_overlay = Some(i);
+                }
+                if response.response.needs_layout() {
+                    self.layout_dirty = true;
+                }
                 return OverlayEventResult::Delivered {
                     overlay_id: id,
                     response,
@@ -97,7 +149,7 @@ impl OverlayManager {
         measurer: &dyn crate::widgets::TextMeasurer,
         theme: &UiTheme,
         focused_widget: Option<WidgetId>,
-        tree: &LayerTree,
+        tree: &mut LayerTree,
         animator: &mut LayerAnimator,
         now: Instant,
     ) -> OverlayEventResult {
@@ -105,7 +157,7 @@ impl OverlayManager {
             return OverlayEventResult::PassThrough;
         }
 
-        // Escape always dismisses topmost (with fade-out).
+        // Escape always dismisses topmost.
         if event.key == Key::Escape {
             let id = self
                 .begin_dismiss_topmost(tree, animator, now)
@@ -125,6 +177,9 @@ impl OverlayManager {
             theme,
         };
         let response = topmost.widget.handle_key(event, &ctx);
+        if response.response.needs_layout() {
+            self.layout_dirty = true;
+        }
 
         if response.response.is_handled() || is_modal {
             OverlayEventResult::Delivered {

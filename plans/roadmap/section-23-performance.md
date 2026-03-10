@@ -2,6 +2,7 @@
 section: 23
 title: Performance & Damage Tracking
 status: not-started
+reviewed: false
 tier: 5
 goal: Optimize rendering, parsing, and memory for heavy terminal workloads
 sections:
@@ -243,6 +244,20 @@ Control memory usage, especially for scrollback. The primary target is replacing
 - [ ] Consider `SmallVec<[Cell; 80]>` for rows shorter than 80 columns:
   - [ ] Avoids heap allocation for small terminal windows
   - [ ] Trade-off: `SmallVec` has overhead and may not be worth it for 24-byte cells
+
+### Alt Screen On-Demand Allocation
+
+- [ ] Allocate the alternate screen buffer lazily — only when an application first switches to it (`DECSET 1049`)
+  - [ ] Currently both primary and alt screen are allocated at terminal creation
+  - [ ] Most terminals never enter alt screen (only editors, pagers, etc.)
+  - [ ] Saves several MB per terminal that never uses alt screen
+- [ ] Deallocate alt screen when returning to primary screen (optional, configurable)
+  - [ ] Or keep alive for fast re-entry (trade memory for speed)
+- [ ] Reference: Ghostty 1.3.0 — "Alt screen allocated on-demand, saving several megabytes per terminal"
+- [ ] **Tests:**
+  - [ ] Fresh terminal: alt screen not allocated (measure with memory tracking)
+  - [ ] Enter alt screen: alt screen allocated
+  - [ ] Exit alt screen: alt screen optionally deallocated
 
 ### Scrollback Memory Estimates
 

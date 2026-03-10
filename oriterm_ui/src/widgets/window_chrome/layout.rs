@@ -24,6 +24,15 @@ pub enum ControlKind {
     Close,
 }
 
+/// Which set of controls to show in the chrome bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChromeMode {
+    /// Full window chrome: minimize + maximize/restore + close.
+    Full,
+    /// Dialog chrome: close button only.
+    Dialog,
+}
+
 /// A positioned control button in the chrome layout.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ControlRect {
@@ -43,13 +52,15 @@ pub struct ChromeLayout {
     pub caption_height: f32,
     /// Title text area (left of the control buttons).
     pub title_rect: Rect,
-    /// The three control button rects, ordered: minimize, maximize, close.
-    pub controls: [ControlRect; 3],
+    /// Which chrome mode produced this layout.
+    pub mode: ChromeMode,
+    /// Control button rects. Length depends on mode: 3 for Full, 1 for Dialog.
+    pub controls: Vec<ControlRect>,
     /// All interactive rects within the caption (for hit test exclusion).
     ///
     /// Points inside these rects are `Client`, not `Caption`, so clicks
     /// reach the buttons instead of initiating a window drag.
-    pub interactive_rects: [Rect; 3],
+    pub interactive_rects: Vec<Rect>,
     /// Whether chrome is visible (false in fullscreen).
     pub visible: bool,
 }
@@ -60,8 +71,18 @@ impl ChromeLayout {
     /// Returns a layout with `visible = false` when fullscreen (chrome
     /// hidden). The caller should skip drawing and use 0 caption offset.
     pub fn compute(window_width: f32, is_maximized: bool, is_fullscreen: bool) -> Self {
+        Self::compute_with_mode(window_width, is_maximized, is_fullscreen, ChromeMode::Full)
+    }
+
+    /// Compute chrome layout with the given [`ChromeMode`].
+    pub fn compute_with_mode(
+        window_width: f32,
+        is_maximized: bool,
+        is_fullscreen: bool,
+        mode: ChromeMode,
+    ) -> Self {
         if is_fullscreen {
-            return Self::hidden();
+            return Self::hidden(mode);
         }
 
         let caption_h = if is_maximized {
@@ -70,8 +91,6 @@ impl ChromeLayout {
             CAPTION_HEIGHT
         };
 
-        // Control buttons are right-aligned: [minimize] [maximize] [close].
-        // Each button spans the full caption height.
         let btn_h = caption_h;
         let btn_w = CONTROL_BUTTON_WIDTH;
 
@@ -79,24 +98,38 @@ impl ChromeLayout {
         // handled by the hit test layer, not by vertical button offset.
         let btn_y = 0.0;
 
-        let close_x = window_width - btn_w;
-        let maximize_x = close_x - btn_w;
-        let minimize_x = maximize_x - btn_w;
-
-        let controls = [
-            ControlRect {
-                kind: ControlKind::Minimize,
-                rect: Rect::new(minimize_x, btn_y, btn_w, btn_h),
-            },
-            ControlRect {
-                kind: ControlKind::MaximizeRestore,
-                rect: Rect::new(maximize_x, btn_y, btn_w, btn_h),
-            },
-            ControlRect {
-                kind: ControlKind::Close,
-                rect: Rect::new(close_x, btn_y, btn_w, btn_h),
-            },
-        ];
+        let (controls, first_btn_x) = match mode {
+            ChromeMode::Full => {
+                // Control buttons are right-aligned: [minimize] [maximize] [close].
+                let close_x = window_width - btn_w;
+                let maximize_x = close_x - btn_w;
+                let minimize_x = maximize_x - btn_w;
+                let ctrls = vec![
+                    ControlRect {
+                        kind: ControlKind::Minimize,
+                        rect: Rect::new(minimize_x, btn_y, btn_w, btn_h),
+                    },
+                    ControlRect {
+                        kind: ControlKind::MaximizeRestore,
+                        rect: Rect::new(maximize_x, btn_y, btn_w, btn_h),
+                    },
+                    ControlRect {
+                        kind: ControlKind::Close,
+                        rect: Rect::new(close_x, btn_y, btn_w, btn_h),
+                    },
+                ];
+                (ctrls, minimize_x)
+            }
+            ChromeMode::Dialog => {
+                // Dialog chrome: close button only (right-aligned).
+                let close_x = window_width - btn_w;
+                let ctrls = vec![ControlRect {
+                    kind: ControlKind::Close,
+                    rect: Rect::new(close_x, btn_y, btn_w, btn_h),
+                }];
+                (ctrls, close_x)
+            }
+        };
 
         // Title area: left edge to the first button, full caption height.
         let title_x = if is_maximized {
@@ -104,14 +137,15 @@ impl ChromeLayout {
         } else {
             RESIZE_BORDER_WIDTH
         };
-        let title_width = (minimize_x - title_x).max(0.0);
+        let title_width = (first_btn_x - title_x).max(0.0);
         let title_rect = Rect::new(title_x, btn_y, title_width, caption_h);
 
-        let interactive_rects = [controls[0].rect, controls[1].rect, controls[2].rect];
+        let interactive_rects = controls.iter().map(|c| c.rect).collect();
 
         Self {
             caption_height: caption_h,
             title_rect,
+            mode,
             controls,
             interactive_rects,
             visible: true,
@@ -119,25 +153,13 @@ impl ChromeLayout {
     }
 
     /// Returns a hidden layout (fullscreen mode).
-    fn hidden() -> Self {
+    fn hidden(mode: ChromeMode) -> Self {
         Self {
             caption_height: 0.0,
             title_rect: Rect::default(),
-            controls: [
-                ControlRect {
-                    kind: ControlKind::Minimize,
-                    rect: Rect::default(),
-                },
-                ControlRect {
-                    kind: ControlKind::MaximizeRestore,
-                    rect: Rect::default(),
-                },
-                ControlRect {
-                    kind: ControlKind::Close,
-                    rect: Rect::default(),
-                },
-            ],
-            interactive_rects: [Rect::default(); 3],
+            mode,
+            controls: Vec::new(),
+            interactive_rects: Vec::new(),
             visible: false,
         }
     }

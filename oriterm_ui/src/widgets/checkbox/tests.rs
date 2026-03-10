@@ -2,7 +2,7 @@ use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::BoxContent;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{CaptureRequest, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 use super::{CheckboxStyle, CheckboxWidget};
 
@@ -18,7 +18,15 @@ fn event_ctx() -> EventCtx<'static> {
     }
 }
 
-fn left_click() -> MouseEvent {
+fn left_down() -> MouseEvent {
+    MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(5.0, 5.0),
+        modifiers: Modifiers::NONE,
+    }
+}
+
+fn left_up() -> MouseEvent {
     MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
         pos: Point::new(5.0, 5.0),
@@ -78,8 +86,12 @@ fn click_toggles() {
     let mut cb = CheckboxWidget::new("X");
     let ctx = event_ctx();
 
-    let r = cb.handle_mouse(&left_click(), &ctx);
+    // Down acquires capture, Up inside bounds toggles.
+    let r = cb.handle_mouse(&left_down(), &ctx);
+    assert_eq!(r.capture, CaptureRequest::Acquire);
+    let r = cb.handle_mouse(&left_up(), &ctx);
     assert!(cb.is_checked());
+    assert_eq!(r.capture, CaptureRequest::Release);
     assert_eq!(
         r.action,
         Some(WidgetAction::Toggled {
@@ -88,8 +100,11 @@ fn click_toggles() {
         })
     );
 
-    let r = cb.handle_mouse(&left_click(), &ctx);
+    let r = cb.handle_mouse(&left_down(), &ctx);
+    assert_eq!(r.capture, CaptureRequest::Acquire);
+    let r = cb.handle_mouse(&left_up(), &ctx);
     assert!(!cb.is_checked());
+    assert_eq!(r.capture, CaptureRequest::Release);
     assert_eq!(
         r.action,
         Some(WidgetAction::Toggled {
@@ -122,7 +137,9 @@ fn disabled_ignores_events() {
 
     assert!(!cb.is_focusable());
 
-    let r = cb.handle_mouse(&left_click(), &ctx);
+    let r = cb.handle_mouse(&left_down(), &ctx);
+    assert_eq!(r, WidgetResponse::ignored());
+    let r = cb.handle_mouse(&left_up(), &ctx);
     assert_eq!(r, WidgetResponse::ignored());
 
     let r = cb.handle_key(space_key(), &ctx);
@@ -190,15 +207,12 @@ fn rapid_toggle_sequence() {
     let mut cb = CheckboxWidget::new("X");
     let ctx = event_ctx();
 
-    // Toggle 4 times rapidly.
-    cb.handle_mouse(&left_click(), &ctx);
-    assert!(cb.is_checked());
-    cb.handle_mouse(&left_click(), &ctx);
-    assert!(!cb.is_checked());
-    cb.handle_mouse(&left_click(), &ctx);
-    assert!(cb.is_checked());
-    cb.handle_mouse(&left_click(), &ctx);
-    assert!(!cb.is_checked());
+    // Toggle 4 times rapidly (each toggle is Down + Up).
+    for i in 0..4 {
+        cb.handle_mouse(&left_down(), &ctx);
+        cb.handle_mouse(&left_up(), &ctx);
+        assert_eq!(cb.is_checked(), i % 2 == 0);
+    }
 }
 
 #[test]
@@ -206,15 +220,17 @@ fn release_outside_bounds_no_toggle() {
     let mut cb = CheckboxWidget::new("X");
     let ctx = event_ctx();
 
-    // MouseUp outside the widget bounds should not toggle.
-    let outside_click = MouseEvent {
+    // Press inside, then release outside — should not toggle but release capture.
+    cb.handle_mouse(&left_down(), &ctx);
+    let outside_up = MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
         pos: Point::new(300.0, 300.0),
         modifiers: Modifiers::NONE,
     };
-    let r = cb.handle_mouse(&outside_click, &ctx);
+    let r = cb.handle_mouse(&outside_up, &ctx);
     assert!(!cb.is_checked());
-    assert_eq!(r, WidgetResponse::ignored());
+    assert_eq!(r.capture, CaptureRequest::Release);
+    assert!(r.action.is_none());
 }
 
 #[test]

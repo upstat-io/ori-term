@@ -99,7 +99,6 @@ impl Config {
     }
 
     /// Saves config to the default path. Creates the directory if needed.
-    #[allow(dead_code, reason = "used in state persistence (Section 15)")]
     pub fn save(&self) {
         save_toml(self, &config_path(), "config");
     }

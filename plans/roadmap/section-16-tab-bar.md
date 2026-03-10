@@ -2,6 +2,7 @@
 section: 16
 title: Tab Bar & Chrome
 status: in-progress
+reviewed: false
 tier: 4
 goal: Tab bar layout, rendering, and hit testing with DPI awareness
 sections:

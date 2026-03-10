@@ -83,6 +83,7 @@ impl Widget for StackWidget {
                 now: ctx.now,
                 animations_running: ctx.animations_running,
                 theme: ctx.theme,
+                icons: ctx.icons,
             };
             child.draw(&mut child_ctx);
         }

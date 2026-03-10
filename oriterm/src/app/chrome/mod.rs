@@ -167,7 +167,12 @@ impl App {
                             theme: &self.ui_theme,
                         };
                         let resp = ctx.tab_bar.update_control_hover(pos, &event_ctx);
-                        if resp.response == oriterm_ui::input::EventResponse::RequestRedraw {
+                        if matches!(
+                            resp.response,
+                            oriterm_ui::input::EventResponse::RequestPaint
+                                | oriterm_ui::input::EventResponse::RequestLayout
+                                | oriterm_ui::input::EventResponse::RequestRedraw
+                        ) {
                             ctx.dirty = true;
                         }
                     }

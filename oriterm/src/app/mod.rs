@@ -11,9 +11,13 @@ pub(crate) mod config_reload;
 mod constructors;
 mod context_menu;
 mod cursor_blink;
+mod cursor_hide;
 mod cursor_hover;
+pub(crate) mod dialog_context;
+mod dialog_management;
 mod divider_drag;
 mod event_loop;
+mod event_loop_helpers;
 mod floating_drag;
 mod init;
 mod keyboard_input;
@@ -26,6 +30,7 @@ mod pane_ops;
 mod perf_stats;
 mod redraw;
 mod search_ui;
+mod settings_overlay;
 pub(crate) mod snapshot_grid;
 mod tab_bar_input;
 mod tab_drag;
@@ -45,8 +50,10 @@ use oriterm_core::{Selection, SelectionPoint, TermMode};
 use oriterm_mux::{MarkCursor, PaneId};
 
 use crate::session::{SessionRegistry, WindowId as SessionWindowId};
+use crate::window_manager::WindowManager;
 
 use self::cursor_blink::CursorBlink;
+use self::dialog_context::DialogWindowContext;
 use self::keyboard_input::ImeState;
 use self::mouse_selection::MouseState;
 use self::perf_stats::PerfStats;
@@ -74,6 +81,17 @@ const DEFAULT_DPI: f32 = 96.0;
 /// terminal and leaves ample time for event processing between frames.
 const FRAME_BUDGET: Duration = Duration::from_millis(16);
 
+/// Deferred focus-out state.
+///
+/// When a terminal window receives `Focused(false)`, the focus-out escape
+/// sequence is deferred until `about_to_wait`. If the new focused window
+/// turns out to be a child dialog, the focus-out is suppressed — the
+/// terminal is still "active" from the user's perspective.
+struct PendingFocusOut {
+    /// The winit window that lost focus.
+    window_id: WindowId,
+}
+
 /// Terminal application state and event loop handler.
 ///
 /// Owns all top-level resources: GPU state, renderer, windows, and mux.
@@ -94,8 +112,16 @@ pub(crate) struct App {
     /// Number of user-configured fallbacks loaded (for `apply_font_config`).
     user_fb_count: usize,
 
+    // Window manager: tracks window kinds, parent-child hierarchy, and focus.
+    // Parallels `windows` HashMap — both keyed by winit WindowId.
+    window_manager: WindowManager,
+
     // Per-window state, keyed by winit WindowId for event routing.
     windows: HashMap<WindowId, WindowContext>,
+    // Dialog window state, keyed by winit WindowId.
+    // Separate from `windows` because dialogs have no terminal grid, tab bar,
+    // or session model — they only render UI widgets.
+    dialogs: HashMap<WindowId, DialogWindowContext>,
     // Winit ID of the currently focused window (set on Focused(true)).
     focused_window_id: Option<WindowId>,
 
@@ -116,6 +142,9 @@ pub(crate) struct App {
 
     // Cursor blink state (application-level, not terminal-level).
     cursor_blink: CursorBlink,
+
+    // Whether the OS mouse cursor is currently hidden (typing auto-hide).
+    mouse_cursor_hidden: bool,
 
     // Whether the terminal's CURSOR_BLINKING mode is active.
     // Cached from the last extracted frame to gate blink timer in about_to_wait.
@@ -159,6 +188,26 @@ pub(crate) struct App {
     // contexts use a single source of truth. When dynamic theming arrives,
     // only this field and the theme-change handler need updating.
     ui_theme: UiTheme,
+
+    // Widget IDs for the currently-open settings overlay. Set when the
+    // overlay opens, cleared on dismiss. Used by overlay dispatch to
+    // match widget actions to config fields.
+    settings_ids: Option<settings_overlay::SettingsIds>,
+
+    // Working copy of the config being edited in the settings panel.
+    // Created when the panel opens, mutated by control changes, applied
+    // on Save, discarded on Cancel. `self.config` stays untouched until Save.
+    settings_pending: Option<Config>,
+
+    // The dropdown widget ID whose popup is currently open. Set when
+    // `OpenDropdown` creates a popup overlay, cleared on selection or
+    // dismiss. Used to route `Selected` events to the correct dropdown.
+    pending_dropdown_id: Option<oriterm_ui::widget_id::WidgetId>,
+
+    // Deferred focus-out: set in Focused(false), consumed in about_to_wait.
+    // If focus moved to a child dialog, the focus-out escape sequence is
+    // suppressed (the terminal is still "active" from the user's perspective).
+    pending_focus_out: Option<PendingFocusOut>,
 
     // Pending tear-off state. Set by `tear_off_tab()`, consumed by
     // `check_torn_off_merge()` in `about_to_wait`.
@@ -449,6 +498,20 @@ impl App {
         }
     }
 
+    /// Restore the mouse cursor if it was hidden by typing auto-hide.
+    ///
+    /// Called on mouse move, cursor leave, and focus loss to ensure the
+    /// OS cursor is visible again. Skips the winit call when the cursor
+    /// is already visible to avoid redundant system calls.
+    fn restore_mouse_cursor(&mut self, winit_id: WindowId) {
+        if self.mouse_cursor_hidden {
+            self.mouse_cursor_hidden = false;
+            if let Some(ctx) = self.windows.get(&winit_id) {
+                ctx.window.window().set_cursor_visible(true);
+            }
+        }
+    }
+
     /// Release the tab width lock, allowing tabs to recompute widths.
     pub(super) fn release_tab_width_lock(&mut self) {
         if self.tab_width_lock().is_some() {
@@ -460,7 +523,7 @@ impl App {
     }
 }
 
-use event_loop::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};
+use event_loop_helpers::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};
 
 #[cfg(test)]
 mod tests;

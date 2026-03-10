@@ -2,6 +2,7 @@
 section: 31
 title: In-Process Mux + Multi-Pane Rendering
 status: complete
+reviewed: true
 tier: 4M
 goal: Wire up InProcessMux, rewire App to use mux layer, render multiple panes per tab with correct viewport offsets and dividers
 sections:

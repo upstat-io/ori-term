@@ -1,13 +1,14 @@
 //! Dropdown widget — a trigger button showing the selected item.
 //!
 //! Displays the currently selected item and a dropdown indicator.
-//! The popup/overlay is deferred to section 07.8 — this widget only
-//! handles the closed (trigger) state. Emits `WidgetAction::Selected`
-//! when the selection changes programmatically.
+//! On click or Enter/Space, emits `WidgetAction::OpenDropdown` for
+//! the app layer to open a popup overlay. Arrow keys cycle through
+//! items directly, emitting `WidgetAction::Selected`.
 
 use crate::color::Color;
 use crate::draw::RectStyle;
-use crate::geometry::{Insets, Point};
+use crate::geometry::{Insets, Point, Rect};
+use crate::icons::IconId;
 use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
 use crate::text::TextStyle;
@@ -80,10 +81,9 @@ impl Default for DropdownStyle {
 
 /// A dropdown trigger button showing the selected item.
 ///
-/// The popup list is deferred to the overlay system (07.8). For now,
-/// the widget tracks selection state and renders the trigger button.
-/// Arrow Up/Down keys cycle through items; Enter/Space would open the
-/// popup (emitted as `WidgetAction::Clicked` for the app layer).
+/// Arrow Up/Down keys cycle through items directly. Enter/Space and
+/// mouse click emit `WidgetAction::OpenDropdown` for the app layer
+/// to open a popup overlay with the options list.
 #[derive(Debug, Clone)]
 pub struct DropdownWidget {
     id: WidgetId,
@@ -233,7 +233,8 @@ impl Widget for DropdownWidget {
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        // Width accommodates the widest item + padding + indicator.
+        // Natural width accommodates the widest item + padding + indicator.
+        // Fill width lets the dropdown stretch in form rows.
         let style = self.text_style();
         let max_text_w = self
             .items
@@ -279,7 +280,7 @@ impl Widget for DropdownWidget {
         ctx.draw_list
             .push_text(Point::new(inner.x(), y), shaped, self.current_fg());
 
-        // Dropdown indicator (simple downward-pointing chevron as two lines).
+        // Dropdown indicator (downward-pointing chevron).
         let ind_x = bounds.right() - s.indicator_width;
         let ind_center_x = ind_x + s.indicator_width / 2.0;
         let ind_center_y = bounds.y() + bounds.height() / 2.0;
@@ -290,18 +291,30 @@ impl Widget for DropdownWidget {
             s.indicator_color
         };
 
-        ctx.draw_list.push_line(
-            Point::new(ind_center_x - arrow_half, ind_center_y - arrow_half / 2.0),
-            Point::new(ind_center_x, ind_center_y + arrow_half / 2.0),
-            1.5,
-            ind_color,
-        );
-        ctx.draw_list.push_line(
-            Point::new(ind_center_x, ind_center_y + arrow_half / 2.0),
-            Point::new(ind_center_x + arrow_half, ind_center_y - arrow_half / 2.0),
-            1.5,
-            ind_color,
-        );
+        let icon_size = (arrow_half * 2.0_f32).round() as u32;
+        if let Some(resolved) = ctx
+            .icons
+            .and_then(|ic| ic.get(IconId::ChevronDown, icon_size))
+        {
+            let icon_rect = Rect::new(
+                ind_center_x - arrow_half,
+                ind_center_y - arrow_half / 2.0,
+                arrow_half * 2.0,
+                arrow_half,
+            );
+            ctx.draw_list
+                .push_icon(icon_rect, resolved.atlas_page, resolved.uv, ind_color);
+        } else {
+            // Text fallback when icon atlas is not available.
+            let chevron_style = TextStyle::new(s.font_size, ind_color);
+            let shaped = ctx
+                .measurer
+                .shape("\u{25BE}", &chevron_style, s.indicator_width);
+            let chevron_y = ind_center_y - shaped.height / 2.0;
+            let chevron_x = ind_center_x - shaped.width / 2.0;
+            ctx.draw_list
+                .push_text(Point::new(chevron_x, chevron_y), shaped, ind_color);
+        }
 
         ctx.draw_list.pop_layer();
     }
@@ -319,10 +332,15 @@ impl Widget for DropdownWidget {
                 let was_pressed = self.pressed;
                 self.pressed = false;
                 if was_pressed && ctx.bounds.contains(event.pos) {
-                    // Emit Clicked — the app layer would open the popup (07.8).
-                    WidgetResponse::redraw().with_action(WidgetAction::Clicked(self.id))
+                    let action = WidgetAction::OpenDropdown {
+                        id: self.id,
+                        options: self.items.clone(),
+                        selected: self.selected,
+                        anchor: ctx.bounds,
+                    };
+                    WidgetResponse::layout().with_action(action)
                 } else {
-                    WidgetResponse::redraw()
+                    WidgetResponse::paint()
                 }
             }
             _ => WidgetResponse::ignored(),
@@ -336,12 +354,12 @@ impl Widget for DropdownWidget {
         match event {
             HoverEvent::Enter => {
                 self.hovered = true;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             HoverEvent::Leave => {
                 self.hovered = false;
                 self.pressed = false;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
         }
     }
@@ -353,18 +371,33 @@ impl Widget for DropdownWidget {
         match event.key {
             Key::ArrowDown => {
                 let action = self.select_next();
-                WidgetResponse::redraw().with_action(action)
+                WidgetResponse::paint().with_action(action)
             }
             Key::ArrowUp => {
                 let action = self.select_prev();
-                WidgetResponse::redraw().with_action(action)
+                WidgetResponse::paint().with_action(action)
             }
             Key::Enter | Key::Space => {
-                // Would open popup — emit Clicked for app layer.
-                WidgetResponse::redraw().with_action(WidgetAction::Clicked(self.id))
+                let action = WidgetAction::OpenDropdown {
+                    id: self.id,
+                    options: self.items.clone(),
+                    selected: self.selected,
+                    anchor: ctx.bounds,
+                };
+                WidgetResponse::layout().with_action(action)
             }
             _ => WidgetResponse::ignored(),
         }
+    }
+
+    fn accept_action(&mut self, action: &WidgetAction) -> bool {
+        if let WidgetAction::Selected { id, index } = action {
+            if *id == self.id {
+                self.set_selected(*index);
+                return true;
+            }
+        }
+        false
     }
 }
 

@@ -224,6 +224,13 @@ impl App {
                 }
                 true
             }
+            Action::OpenSettings => {
+                // Defer to event loop — dialog creation needs &ActiveEventLoop.
+                let _ = self
+                    .event_proxy
+                    .send_event(crate::event::TermEvent::OpenSettings);
+                true
+            }
             // Actions for future sections — consume the event but log a stub.
             Action::ZoomIn | Action::ZoomOut | Action::ZoomReset => {
                 log::debug!("keybinding action not yet implemented: {action:?}");

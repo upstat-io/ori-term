@@ -7,7 +7,7 @@ use wgpu::{
 
 use super::super::pipeline::IMAGE_INSTANCE_STRIDE;
 use super::super::state::GpuState;
-use super::helpers::{record_draw, record_draw_clipped, upload_buffer};
+use super::helpers::{record_draw, record_draw_clipped, record_draw_range_clipped, upload_buffer};
 use super::{SurfaceError, WindowRenderer};
 use crate::gpu::pipelines::GpuPipelines;
 
@@ -342,51 +342,61 @@ impl WindowRenderer {
             vh,
         );
 
-        // Overlay tier (draws 10–13) — with scissor rect clipping.
-        record_draw_clipped(
-            pass,
-            &pipelines.ui_rect_pipeline,
-            bg,
-            None,
-            renderer.overlay_rect_buffer.as_ref(),
-            p.overlay_rects.len() as u32,
-            &p.overlay_clips.rects,
-            vw,
-            vh,
-        );
-        record_draw_clipped(
-            pass,
-            &pipelines.fg_pipeline,
-            bg,
-            mono,
-            renderer.overlay_fg_buffer.as_ref(),
-            p.overlay_glyphs.len() as u32,
-            &p.overlay_clips.mono,
-            vw,
-            vh,
-        );
-        record_draw_clipped(
-            pass,
-            &pipelines.subpixel_fg_pipeline,
-            bg,
-            sub,
-            renderer.overlay_subpixel_fg_buffer.as_ref(),
-            p.overlay_subpixel_glyphs.len() as u32,
-            &p.overlay_clips.subpixel,
-            vw,
-            vh,
-        );
-        record_draw_clipped(
-            pass,
-            &pipelines.color_fg_pipeline,
-            bg,
-            color,
-            renderer.overlay_color_fg_buffer.as_ref(),
-            p.overlay_color_glyphs.len() as u32,
-            &p.overlay_clips.color,
-            vw,
-            vh,
-        );
+        // Overlay tier — per-overlay compositing for correct z-ordering.
+        //
+        // Each overlay is drawn as a complete unit (rects → mono → subpixel → color)
+        // before moving to the next. This ensures overlay[N]'s text doesn't paint
+        // over overlay[N+1]'s background.
+        for range in &p.overlay_draw_ranges {
+            record_draw_range_clipped(
+                pass,
+                &pipelines.ui_rect_pipeline,
+                bg,
+                None,
+                renderer.overlay_rect_buffer.as_ref(),
+                range.rects.0,
+                range.rects.1,
+                &range.clips.rects,
+                vw,
+                vh,
+            );
+            record_draw_range_clipped(
+                pass,
+                &pipelines.fg_pipeline,
+                bg,
+                mono,
+                renderer.overlay_fg_buffer.as_ref(),
+                range.mono.0,
+                range.mono.1,
+                &range.clips.mono,
+                vw,
+                vh,
+            );
+            record_draw_range_clipped(
+                pass,
+                &pipelines.subpixel_fg_pipeline,
+                bg,
+                sub,
+                renderer.overlay_subpixel_fg_buffer.as_ref(),
+                range.subpixel.0,
+                range.subpixel.1,
+                &range.clips.subpixel,
+                vw,
+                vh,
+            );
+            record_draw_range_clipped(
+                pass,
+                &pipelines.color_fg_pipeline,
+                bg,
+                color,
+                renderer.overlay_color_fg_buffer.as_ref(),
+                range.color.0,
+                range.color.1,
+                &range.clips.color,
+                vw,
+                vh,
+            );
+        }
     }
 
     /// Record per-image draw calls for a set of image quads.

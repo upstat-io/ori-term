@@ -3,7 +3,7 @@ use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::compute_layout;
 use crate::widgets::button::ButtonWidget;
-use crate::widgets::flex::FlexWidget;
+use crate::widgets::container::ContainerWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
@@ -49,6 +49,7 @@ fn stack_draws_all_children() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     stack.draw(&mut ctx);
 
@@ -171,6 +172,7 @@ fn stack_draws_in_painter_order() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     stack.draw(&mut ctx);
 
@@ -279,7 +281,8 @@ fn stack_mouse_outside_bounds_ignored() {
 fn stack_sizes_to_flex_child() {
     // A Flex (Column) child with two labels should contribute its natural size.
     // 2 labels * 16px = 32px tall, "Hello" = 5*8 = 40px wide.
-    let col: Box<dyn Widget> = Box::new(FlexWidget::column(vec![label("Hello"), label("World")]));
+    let col: Box<dyn Widget> =
+        Box::new(ContainerWidget::column().with_children(vec![label("Hello"), label("World")]));
     let stack = StackWidget::new(vec![col]);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
@@ -299,7 +302,7 @@ fn stack_sizes_to_largest_including_flex() {
     // Label "Wide label!!" = 12*8 = 96px wide, 16px tall.
     // Column of 3 labels = 3*16 = 48px tall, "AB" = 16px wide.
     let wide_label = label("Wide label!!");
-    let tall_col: Box<dyn Widget> = Box::new(FlexWidget::column(vec![
+    let tall_col: Box<dyn Widget> = Box::new(ContainerWidget::column().with_children(vec![
         label("AB"),
         label("AB"),
         label("AB"),

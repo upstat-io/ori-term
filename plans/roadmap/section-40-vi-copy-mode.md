@@ -2,6 +2,7 @@
 section: 40
 title: Vi Mode + Copy Mode
 status: not-started
+reviewed: false
 tier: 3
 goal: "Keyboard-driven terminal navigation and text selection via vi-style motions, modeled after Alacritty's vi mode and WezTerm's copy mode."
 sections:

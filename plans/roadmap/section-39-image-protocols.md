@@ -2,6 +2,7 @@
 section: 39
 title: Image Protocols
 status: in-progress
+reviewed: false
 tier: 5
 goal: "Inline image display via Kitty Graphics Protocol, Sixel, and iTerm2 image protocol. Full GPU-accelerated compositing with text overlay, animation support, memory-managed image cache."
 sections:

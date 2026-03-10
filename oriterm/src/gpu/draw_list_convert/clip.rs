@@ -53,6 +53,22 @@ impl TierClips {
         self.color.clear();
     }
 
+    /// Shift all instance offsets by the given bases (one per writer).
+    pub fn shift_offsets(&mut self, bases: [u32; 4]) {
+        for seg in &mut self.rects {
+            seg.instance_offset += bases[0];
+        }
+        for seg in &mut self.mono {
+            seg.instance_offset += bases[1];
+        }
+        for seg in &mut self.subpixel {
+            seg.instance_offset += bases[2];
+        }
+        for seg in &mut self.color {
+            seg.instance_offset += bases[3];
+        }
+    }
+
     /// Append all segments from `other`, shifting instance offsets by the
     /// current writer lengths in the target tier.
     pub fn extend_from(&mut self, other: &Self, bases: [u32; 4]) {

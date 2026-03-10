@@ -2,6 +2,7 @@
 section: 22
 title: Terminal Modes
 status: complete
+reviewed: true
 tier: 5
 goal: Comprehensive DECSET/DECRST mode support, mode interactions, image protocol
 sections:

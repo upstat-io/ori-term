@@ -2,6 +2,7 @@
 section: 3
 title: Cross-Platform
 status: complete
+reviewed: true
 tier: 0
 goal: Day-one first-class support for Windows, Linux, and macOS — all three platforms are equal targets from the start, with native PTY, fonts, clipboard, and GPU on each
 sections:

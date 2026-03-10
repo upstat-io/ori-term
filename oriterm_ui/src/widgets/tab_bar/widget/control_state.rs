@@ -4,8 +4,6 @@
 //! interactive rect reporting for the tab bar's window control buttons.
 //! Extracted from `mod.rs` to keep that file under the 500-line limit.
 
-use crate::animation::Lerp;
-use crate::color::Color;
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, MouseButton, MouseEvent, MouseEventKind};
 
@@ -24,19 +22,15 @@ impl TabBarWidget {
         }
     }
 
-    /// Sets the active/focused state.
-    ///
-    /// Adjusts the caption background color on control buttons: active
-    /// windows use `bar_bg`, inactive windows use a darkened variant.
-    pub fn set_active(&mut self, active: bool) {
-        let caption_bg = if active {
-            self.colors.bar_bg
-        } else {
-            Color::lerp(self.colors.bar_bg, Color::BLACK, 0.3)
-        };
-        for ctrl in &mut self.controls {
-            ctrl.set_caption_bg(caption_bg);
-        }
+    /// Sets the active/focused state (affects caption background).
+    #[allow(
+        clippy::unused_self,
+        reason = "preserved for API compatibility — state not yet used"
+    )]
+    pub fn set_active(&self, _active: bool) {
+        // No-op: caption_bg was previously forwarded to control buttons
+        // for the restore symbol's background occlusion trick. With vector
+        // icons, the restore symbol no longer needs this.
     }
 
     /// Returns all interactive rects in logical pixels.
@@ -114,7 +108,7 @@ impl TabBarWidget {
         self.hovered_control = new_idx;
 
         if left || entered {
-            WidgetResponse::redraw()
+            WidgetResponse::paint()
         } else {
             WidgetResponse::ignored()
         }

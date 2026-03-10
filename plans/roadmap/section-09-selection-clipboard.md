@@ -2,6 +2,7 @@
 section: 9
 title: Selection & Clipboard
 status: in-progress
+reviewed: false
 tier: 3
 goal: Windows Terminal-style 3-point selection, all selection modes, clipboard with paste filtering
 sections:

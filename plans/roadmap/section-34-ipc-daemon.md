@@ -2,6 +2,7 @@
 section: 34
 title: IPC Protocol + Daemon Mode
 status: not-started
+reviewed: false
 tier: 7A
 goal: Wire protocol for mux server/client communication, MuxServer daemon, OutputCoalescer for push-based rendering, MuxClient for GUI, auto-start daemon
 sections:

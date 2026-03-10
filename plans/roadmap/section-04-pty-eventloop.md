@@ -2,6 +2,7 @@
 section: 4
 title: PTY + Event Loop
 status: complete
+reviewed: true
 tier: 1
 goal: Spawn a shell via ConPTY, wire the reader thread, and verify end-to-end I/O through Term<EventProxy>
 sections:

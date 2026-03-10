@@ -1,21 +1,20 @@
-//! Context menu widget — a vertical list of clickable items and separators.
+//! Menu widget — a vertical list of clickable items and separators.
 //!
-//! Emits `WidgetAction::Selected { id, index }` when an item is clicked or
-//! activated via keyboard (Enter/Space). Separators are not clickable.
-//! Supports check-mark items for toggleable options.
+//! Used for both context menus and dropdown popup lists. Emits
+//! `WidgetAction::Selected { id, index }` when an item is activated.
+//! Supports scrolling via `max_height` for long lists.
 
 use crate::color::Color;
-use crate::draw::RectStyle;
-use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
-use crate::layout::LayoutBox;
+use crate::geometry::Point;
 use crate::text::TextStyle;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::DrawCtx;
 
-/// A single entry in a context menu.
+mod widget_impl;
+
+/// A single entry in a menu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuEntry {
     /// A clickable text item.
@@ -28,7 +27,7 @@ pub enum MenuEntry {
 
 impl MenuEntry {
     /// Returns the label text, if any.
-    fn label(&self) -> Option<&str> {
+    pub(super) fn label(&self) -> Option<&str> {
         match self {
             Self::Item { label } | Self::Check { label, .. } => Some(label),
             Self::Separator => None,
@@ -36,7 +35,7 @@ impl MenuEntry {
     }
 
     /// Whether this entry is clickable (not a separator).
-    fn is_clickable(&self) -> bool {
+    pub(super) fn is_clickable(&self) -> bool {
         !matches!(self, Self::Separator)
     }
 }
@@ -72,6 +71,8 @@ pub struct MenuStyle {
     pub fg: Color,
     /// Hover highlight background color.
     pub hover_bg: Color,
+    /// Background tint for the selected item (before hover).
+    pub selected_bg: Color,
     /// Separator line color.
     pub separator_color: Color,
     /// Border color.
@@ -84,6 +85,8 @@ pub struct MenuStyle {
     pub shadow_color: Color,
     /// Font size for item labels.
     pub font_size: f32,
+    /// Maximum visible height before scrolling. `None` shows all items.
+    pub max_height: Option<f32>,
 }
 
 impl MenuStyle {
@@ -104,12 +107,14 @@ impl MenuStyle {
             bg: theme.bg_secondary,
             fg: theme.fg_primary,
             hover_bg: theme.bg_hover,
+            selected_bg: Color::TRANSPARENT,
             separator_color: theme.border,
             border_color: theme.border,
             border_width: 1.0,
             check_color: theme.accent,
             shadow_color: theme.shadow,
             font_size: theme.font_size,
+            max_height: None,
         }
     }
 }
@@ -120,17 +125,32 @@ impl Default for MenuStyle {
     }
 }
 
-/// A context menu widget.
+/// Scrollbar width inside the menu (logical pixels).
+const SCROLLBAR_WIDTH: f32 = 5.0;
+
+/// Scrollbar thumb minimum height.
+const SCROLLBAR_MIN_THUMB: f32 = 16.0;
+
+/// Pixels per scroll wheel line.
+const SCROLL_LINE_HEIGHT: f32 = 32.0;
+
+/// A menu widget with optional scrolling.
 ///
 /// Displays a vertical list of items and separators. Items can be hovered
 /// via mouse or navigated via keyboard arrows. Emits
-/// `WidgetAction::Selected { id, index }` when activated.
+/// `WidgetAction::Selected { id, index }` when activated. When `max_height`
+/// is set in the style, long lists scroll with a scrollbar.
 #[derive(Debug)]
 pub struct MenuWidget {
-    id: WidgetId,
-    entries: Vec<MenuEntry>,
-    hovered: Option<usize>,
-    style: MenuStyle,
+    pub(super) id: WidgetId,
+    pub(super) entries: Vec<MenuEntry>,
+    /// Currently hovered (highlighted) entry index.
+    pub hovered: Option<usize>,
+    /// Pre-selected entry index (shown with accent tint).
+    pub(super) selected_index: Option<usize>,
+    pub(super) style: MenuStyle,
+    /// Scroll offset in pixels from top of content.
+    pub(super) scroll_offset: f32,
 }
 
 impl MenuWidget {
@@ -140,7 +160,9 @@ impl MenuWidget {
             id: WidgetId::next(),
             entries,
             hovered: None,
+            selected_index: None,
             style: MenuStyle::default(),
+            scroll_offset: 0.0,
         }
     }
 
@@ -148,6 +170,13 @@ impl MenuWidget {
     #[must_use]
     pub fn with_style(mut self, style: MenuStyle) -> Self {
         self.style = style;
+        self
+    }
+
+    /// Sets the pre-selected entry index (highlighted with accent tint).
+    #[must_use]
+    pub fn with_selected_index(mut self, index: usize) -> Self {
+        self.selected_index = Some(index);
         self
     }
 
@@ -162,21 +191,87 @@ impl MenuWidget {
     }
 
     /// Total height of all entries plus vertical padding.
-    fn total_height(&self) -> f32 {
-        let content: f32 = self
-            .entries
+    pub(super) fn total_height(&self) -> f32 {
+        self.content_height() + self.style.padding_y * 2.0
+    }
+
+    /// Height of all entries (excluding padding).
+    fn content_height(&self) -> f32 {
+        self.entries
             .iter()
             .map(|e| match e {
                 MenuEntry::Separator => self.style.separator_height,
                 _ => self.style.item_height,
             })
-            .sum();
-        content + self.style.padding_y * 2.0
+            .sum()
+    }
+
+    /// Visible height — clamped by `max_height` if set.
+    pub(super) fn visible_height(&self) -> f32 {
+        let total = self.total_height();
+        self.style.max_height.map_or(total, |max| total.min(max))
+    }
+
+    /// Maximum scroll offset.
+    fn max_scroll(&self) -> f32 {
+        (self.total_height() - self.visible_height()).max(0.0)
+    }
+
+    /// Whether the content overflows and scrolling is active.
+    fn is_scrollable(&self) -> bool {
+        self.max_scroll() > f32::EPSILON
+    }
+
+    /// Scroll by a pixel delta. Returns `true` if offset changed.
+    fn scroll_by(&mut self, delta: f32) -> bool {
+        let max = self.max_scroll();
+        let old = self.scroll_offset;
+        self.scroll_offset = (self.scroll_offset - delta).clamp(0.0, max);
+        (self.scroll_offset - old).abs() > f32::EPSILON
+    }
+
+    /// Y offset of an entry relative to content top (after top padding).
+    fn entry_top_y(&self, target: usize) -> f32 {
+        let mut y = 0.0;
+        for (i, entry) in self.entries.iter().enumerate() {
+            if i == target {
+                return y;
+            }
+            y += match entry {
+                MenuEntry::Separator => self.style.separator_height,
+                _ => self.style.item_height,
+            };
+        }
+        y
+    }
+
+    /// Scrolls so the given entry is fully visible.
+    pub fn ensure_visible(&mut self, index: usize) {
+        if !self.is_scrollable() {
+            return;
+        }
+        let item_y = self.entry_top_y(index);
+        let item_h = match &self.entries[index] {
+            MenuEntry::Separator => self.style.separator_height,
+            _ => self.style.item_height,
+        };
+        let visible_content = self.visible_height() - self.style.padding_y * 2.0;
+
+        if item_y < self.scroll_offset {
+            self.scroll_offset = item_y;
+        } else if item_y + item_h > self.scroll_offset + visible_content {
+            self.scroll_offset = item_y + item_h - visible_content;
+        } else {
+            return;
+        }
+        self.scroll_offset = self.scroll_offset.clamp(0.0, self.max_scroll());
     }
 
     /// Hit-test: which entry index is at Y position relative to menu top.
-    fn entry_at_y(&self, y: f32) -> Option<usize> {
-        let y = y - self.style.padding_y;
+    ///
+    /// Accounts for scroll offset when scrolling is active.
+    pub(super) fn entry_at_y(&self, y: f32) -> Option<usize> {
+        let y = y - self.style.padding_y + self.scroll_offset;
         if y < 0.0 {
             return None;
         }
@@ -195,7 +290,7 @@ impl MenuWidget {
     }
 
     /// Moves hover to the next clickable item in the given direction.
-    fn navigate(&mut self, forward: bool) -> bool {
+    pub(super) fn navigate(&mut self, forward: bool) -> bool {
         let count = self.entries.len();
         if count == 0 {
             return false;
@@ -216,7 +311,6 @@ impl MenuWidget {
                 }
             }
         };
-        // Scan up to `count` positions, wrapping around.
         for offset in 0..count {
             let idx = if forward {
                 (start + offset) % count
@@ -232,14 +326,14 @@ impl MenuWidget {
     }
 
     /// Whether any entry has a check mark (affects left padding).
-    fn has_checks(&self) -> bool {
+    pub(super) fn has_checks(&self) -> bool {
         self.entries
             .iter()
             .any(|e| matches!(e, MenuEntry::Check { .. }))
     }
 
     /// Left margin for label text — reserves space for checkmarks if needed.
-    fn label_left_margin(&self) -> f32 {
+    pub(super) fn label_left_margin(&self) -> f32 {
         if self.has_checks() {
             self.style.padding_x + self.style.checkmark_size + self.style.checkmark_gap
         } else {
@@ -248,12 +342,12 @@ impl MenuWidget {
     }
 
     /// Builds the `TextStyle` for item labels.
-    fn text_style(&self) -> TextStyle {
+    pub(super) fn text_style(&self) -> TextStyle {
         TextStyle::new(self.style.font_size, self.style.fg)
     }
 
     /// Draws a checkmark at the given position.
-    fn draw_checkmark(&self, ctx: &mut DrawCtx<'_>, x: f32, y: f32) {
+    pub(super) fn draw_checkmark(&self, ctx: &mut DrawCtx<'_>, x: f32, y: f32) {
         let s = self.style.checkmark_size;
         let inset = s * 0.2;
         let x0 = x + inset;
@@ -275,223 +369,6 @@ impl MenuWidget {
             2.0,
             self.style.check_color,
         );
-    }
-}
-
-impl Widget for MenuWidget {
-    fn id(&self) -> WidgetId {
-        self.id
-    }
-
-    fn is_focusable(&self) -> bool {
-        true
-    }
-
-    fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        let style = self.text_style();
-        let left_margin = self.label_left_margin();
-
-        // Measure max label width.
-        let max_label_w: f32 = self
-            .entries
-            .iter()
-            .filter_map(|e| e.label())
-            .map(|label| ctx.measurer.measure(label, &style, f32::INFINITY).width)
-            .fold(0.0_f32, f32::max);
-
-        let width = (left_margin + max_label_w + self.style.extra_width).max(self.style.min_width);
-        let height = self.total_height();
-
-        LayoutBox::leaf(width, height).with_widget_id(self.id)
-    }
-
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let bounds = ctx.bounds;
-        let s = &self.style;
-
-        // Shadow rect (offset down-right by 2px).
-        let shadow_rect = Rect::new(
-            bounds.x() + 2.0,
-            bounds.y() + 2.0,
-            bounds.width(),
-            bounds.height(),
-        );
-        ctx.draw_list.push_rect(
-            shadow_rect,
-            RectStyle::filled(s.shadow_color).with_radius(s.corner_radius),
-        );
-
-        // Background layer for subpixel text compositing.
-        ctx.draw_list.push_layer(s.bg);
-
-        // Background rect with border.
-        ctx.draw_list.push_rect(
-            bounds,
-            RectStyle::filled(s.bg)
-                .with_border(s.border_width, s.border_color)
-                .with_radius(s.corner_radius),
-        );
-
-        let left_margin = self.label_left_margin();
-        let text_style = self.text_style();
-        let mut y = bounds.y() + s.padding_y;
-
-        for (i, entry) in self.entries.iter().enumerate() {
-            match entry {
-                MenuEntry::Separator => {
-                    let sep_y = y + s.separator_height / 2.0;
-                    let x0 = bounds.x() + s.hover_inset;
-                    let x1 = bounds.right() - s.hover_inset;
-                    ctx.draw_list.push_line(
-                        Point::new(x0, sep_y),
-                        Point::new(x1, sep_y),
-                        1.0,
-                        s.separator_color,
-                    );
-                    y += s.separator_height;
-                }
-                MenuEntry::Item { label } => {
-                    // Hover highlight.
-                    if self.hovered == Some(i) {
-                        let hover_rect = Rect::new(
-                            bounds.x() + s.hover_inset,
-                            y,
-                            bounds.width() - s.hover_inset * 2.0,
-                            s.item_height,
-                        );
-                        ctx.draw_list.push_rect(
-                            hover_rect,
-                            RectStyle::filled(s.hover_bg).with_radius(s.hover_radius),
-                        );
-                    }
-
-                    // Label text.
-                    let text_x = bounds.x() + left_margin;
-                    let text_w = bounds.width() - left_margin - s.padding_x;
-                    let shaped = ctx.measurer.shape(label, &text_style, text_w);
-                    let text_y = y + (s.item_height - shaped.height) / 2.0;
-                    ctx.draw_list
-                        .push_text(Point::new(text_x, text_y), shaped, s.fg);
-
-                    y += s.item_height;
-                }
-                MenuEntry::Check { label, checked } => {
-                    // Hover highlight.
-                    if self.hovered == Some(i) {
-                        let hover_rect = Rect::new(
-                            bounds.x() + s.hover_inset,
-                            y,
-                            bounds.width() - s.hover_inset * 2.0,
-                            s.item_height,
-                        );
-                        ctx.draw_list.push_rect(
-                            hover_rect,
-                            RectStyle::filled(s.hover_bg).with_radius(s.hover_radius),
-                        );
-                    }
-
-                    // Checkmark.
-                    if *checked {
-                        let check_x = bounds.x() + s.padding_x;
-                        let check_y = y + (s.item_height - s.checkmark_size) / 2.0;
-                        self.draw_checkmark(ctx, check_x, check_y);
-                    }
-
-                    // Label text.
-                    let text_x = bounds.x() + left_margin;
-                    let text_w = bounds.width() - left_margin - s.padding_x;
-                    let shaped = ctx.measurer.shape(label, &text_style, text_w);
-                    let text_y = y + (s.item_height - shaped.height) / 2.0;
-                    ctx.draw_list
-                        .push_text(Point::new(text_x, text_y), shaped, s.fg);
-
-                    y += s.item_height;
-                }
-            }
-        }
-
-        ctx.draw_list.pop_layer();
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event.kind {
-            MouseEventKind::Move => {
-                let rel_y = event.pos.y - ctx.bounds.y();
-                let new_hover = self.entry_at_y(rel_y);
-                if new_hover != self.hovered {
-                    self.hovered = new_hover;
-                    return WidgetResponse::redraw();
-                }
-                WidgetResponse::handled()
-            }
-            MouseEventKind::Down(MouseButton::Left) => {
-                // Absorb press — action fires on release.
-                WidgetResponse::handled()
-            }
-            MouseEventKind::Up(MouseButton::Left) => {
-                if let Some(idx) = self.hovered {
-                    if self.entries[idx].is_clickable() {
-                        return WidgetResponse::redraw().with_action(WidgetAction::Selected {
-                            id: self.id,
-                            index: idx,
-                        });
-                    }
-                }
-                WidgetResponse::handled()
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event {
-            HoverEvent::Enter => WidgetResponse::handled(),
-            HoverEvent::Leave => {
-                if self.hovered.is_some() {
-                    self.hovered = None;
-                    WidgetResponse::redraw()
-                } else {
-                    WidgetResponse::handled()
-                }
-            }
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        match event.key {
-            Key::ArrowDown => {
-                if self.navigate(true) {
-                    WidgetResponse::redraw()
-                } else {
-                    WidgetResponse::handled()
-                }
-            }
-            Key::ArrowUp => {
-                if self.navigate(false) {
-                    WidgetResponse::redraw()
-                } else {
-                    WidgetResponse::handled()
-                }
-            }
-            Key::Enter | Key::Space => {
-                if let Some(idx) = self.hovered {
-                    if self.entries[idx].is_clickable() {
-                        return WidgetResponse::redraw().with_action(WidgetAction::Selected {
-                            id: self.id,
-                            index: idx,
-                        });
-                    }
-                }
-                WidgetResponse::handled()
-            }
-            Key::Escape => {
-                WidgetResponse::redraw().with_action(WidgetAction::DismissOverlay(self.id))
-            }
-            _ => WidgetResponse::ignored(),
-        }
     }
 }
 

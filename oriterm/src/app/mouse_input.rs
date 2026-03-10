@@ -21,7 +21,11 @@ impl App {
     /// early). Returns `false` if no overlays are active.
     pub(super) fn try_overlay_mouse(&mut self, button: MouseButton, state: ElementState) -> bool {
         let scale = match self.focused_ctx() {
-            Some(ctx) if !ctx.overlays.is_empty() => ctx.window.scale_factor().factor() as f32,
+            // Only check active overlays — dismissing (fading-out) overlays are
+            // visual-only and must not intercept input.
+            Some(ctx) if !ctx.overlays.is_active_empty() => {
+                ctx.window.scale_factor().factor() as f32
+            }
             _ => return false,
         };
         let pos = self.mouse.cursor_pos();
@@ -59,7 +63,7 @@ impl App {
                 measurer,
                 &self.ui_theme,
                 None,
-                &ctx.layer_tree,
+                &mut ctx.layer_tree,
                 &mut ctx.layer_animator,
                 now,
             )
@@ -78,7 +82,10 @@ impl App {
         position: winit::dpi::PhysicalPosition<f64>,
     ) -> bool {
         let scale = match self.focused_ctx() {
-            Some(ctx) if !ctx.overlays.is_empty() => ctx.window.scale_factor().factor() as f32,
+            // Only check active overlays — dismissing overlays don't receive events.
+            Some(ctx) if !ctx.overlays.is_active_empty() => {
+                ctx.window.scale_factor().factor() as f32
+            }
             _ => return false,
         };
         let logical = Point::new(position.x as f32 / scale, position.y as f32 / scale);
@@ -105,15 +112,73 @@ impl App {
                 measurer,
                 &self.ui_theme,
                 None,
-                &ctx.layer_tree,
+                &mut ctx.layer_tree,
                 &mut ctx.layer_animator,
                 now,
             )
         };
         self.handle_overlay_result(result);
-        // Only consume if a modal overlay blocked or handled it.
+        // Consume when any overlay is active — popup menus need exclusive
+        // cursor handling so tab bar hover and terminal mouse handlers
+        // don't interfere with menu interaction.
         self.focused_ctx()
-            .is_some_and(|ctx| ctx.overlays.has_modal())
+            .is_some_and(|ctx| !ctx.overlays.is_active_empty())
+    }
+
+    /// Route a mouse scroll event through the overlay manager.
+    ///
+    /// Returns `true` if the overlay consumed the event (caller should return
+    /// early). Returns `false` if no overlays are active.
+    pub(super) fn try_overlay_scroll(&mut self, delta: winit::event::MouseScrollDelta) -> bool {
+        let scale = match self.focused_ctx() {
+            Some(ctx) if !ctx.overlays.is_active_empty() => {
+                ctx.window.scale_factor().factor() as f32
+            }
+            _ => return false,
+        };
+        let pos = self.mouse.cursor_pos();
+        let logical = Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
+        let scroll_delta = match delta {
+            winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                oriterm_ui::input::ScrollDelta::Lines { x, y }
+            }
+            winit::event::MouseScrollDelta::PixelDelta(p) => {
+                oriterm_ui::input::ScrollDelta::Pixels {
+                    x: p.x as f32 / scale,
+                    y: p.y as f32 / scale,
+                }
+            }
+        };
+        let ui_event = oriterm_ui::input::MouseEvent {
+            kind: oriterm_ui::input::MouseEventKind::Scroll(scroll_delta),
+            pos: logical,
+            modifiers: super::winit_mods_to_ui(self.modifiers),
+        };
+        let now = Instant::now();
+        let result = {
+            let Some(ctx) = self
+                .focused_window_id
+                .and_then(|id| self.windows.get_mut(&id))
+            else {
+                return true;
+            };
+            let Some(renderer) = ctx.renderer.as_ref() else {
+                return true;
+            };
+            let measurer = crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
+            ctx.overlays.process_mouse_event(
+                &ui_event,
+                measurer,
+                &self.ui_theme,
+                None,
+                &mut ctx.layer_tree,
+                &mut ctx.layer_animator,
+                now,
+            )
+        };
+        self.handle_overlay_result(result);
+        true
     }
 
     /// Open the grid right-click context menu at the cursor position.

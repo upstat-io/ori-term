@@ -12,6 +12,7 @@ use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
+use crate::window_manager::types::{ManagedWindow, WindowKind};
 
 impl App {
     /// Run the one-shot startup sequence: window → GPU → fonts → renderer → tab.
@@ -194,6 +195,9 @@ impl App {
         self.ui_font_set = ui_font_set;
         self.user_fb_count = user_fb_count;
         self.windows.insert(winit_id, ctx);
+        self.window_manager
+            .register(ManagedWindow::new(winit_id, WindowKind::Main));
+        self.window_manager.set_focused(Some(winit_id));
         self.focused_window_id = Some(winit_id);
         self.active_window = Some(session_wid);
         Ok(())

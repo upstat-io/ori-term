@@ -42,6 +42,7 @@ impl TabBarWidget {
                 now: ctx.now,
                 animations_running: ctx.animations_running,
                 theme: ctx.theme,
+                icons: ctx.icons,
             };
             ctrl.draw(&mut child_ctx);
         }

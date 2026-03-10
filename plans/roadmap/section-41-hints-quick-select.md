@@ -2,6 +2,7 @@
 section: 41
 title: Hints + Quick Select
 status: not-started
+reviewed: false
 tier: 3
 goal: "Regex-based labeled text selection for URLs, paths, git hashes, IPs, and custom patterns. Keyboard-driven quick copy without mouse."
 sections:

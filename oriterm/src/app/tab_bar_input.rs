@@ -161,9 +161,7 @@ impl App {
 
     /// Open the dropdown menu below the dropdown button.
     fn open_dropdown_menu(&mut self) {
-        let active_scheme = self.config.colors.scheme.clone();
-        let names = crate::scheme::builtin_names();
-        let (entries, state) = context_menu::build_dropdown_menu(&active_scheme, &names);
+        let (entries, state) = context_menu::build_dropdown_menu();
         let style = MenuStyle::from_theme(&self.ui_theme);
         let widget = MenuWidget::new(entries).with_style(style);
 
