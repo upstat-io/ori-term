@@ -1,8 +1,9 @@
-//! Platform-native window operations for ownership, shadows, and type hints.
+//! Platform-native window operations for ownership, shadows, type hints, and chrome.
 //!
-//! Each platform module implements [`NativeWindowOps`] using OS-specific APIs.
-//! Methods are best-effort — platforms that don't support an operation silently
-//! no-op (e.g., Wayland doesn't support explicit shadow configuration).
+//! Each platform module implements [`NativeWindowOps`] and [`NativeChromeOps`]
+//! using OS-specific APIs. Methods are best-effort — platforms that don't
+//! support an operation silently no-op (e.g., Wayland doesn't support
+//! explicit shadow configuration or OS-level interactive rect tracking).
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -13,7 +14,11 @@ mod windows;
 
 use winit::window::Window;
 
+use oriterm_ui::geometry::Rect;
+
 use super::types::WindowKind;
+
+// Window management
 
 /// Platform-native window operations beyond what winit provides.
 ///
@@ -52,6 +57,73 @@ pub(crate) trait NativeWindowOps {
 
 /// Returns the platform-specific [`NativeWindowOps`] implementation.
 pub(crate) fn platform_ops() -> &'static dyn NativeWindowOps {
+    #[cfg(target_os = "windows")]
+    {
+        &windows::WindowsNativeOps
+    }
+    #[cfg(target_os = "macos")]
+    {
+        &macos::MacosNativeOps
+    }
+    #[cfg(target_os = "linux")]
+    {
+        &linux::LinuxNativeOps
+    }
+}
+
+// Chrome management
+
+/// How a window's chrome should behave at the OS level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChromeMode {
+    /// Main window: Aero Snap, full resize borders, tab bar caption.
+    Main,
+    /// Dialog window: no Aero Snap, optional resize, close-only caption.
+    Dialog {
+        /// Whether the dialog has resize borders.
+        resizable: bool,
+    },
+}
+
+/// Platform-native chrome operations for frameless window management.
+///
+/// Installs OS-level hit test routing (resize borders, caption drag, window
+/// controls) and syncs interactive region geometry with the OS. Each platform
+/// implements the trait; app code calls [`chrome_ops()`] instead of
+/// `#[cfg(target_os)]` blocks.
+///
+/// Separate from [`NativeWindowOps`] because chrome operations (hit testing,
+/// DWM subclass) are conceptually distinct from window management (ownership,
+/// modality, type hints).
+pub(crate) trait NativeChromeOps {
+    /// Install frameless window chrome with platform-specific subclass/hooks.
+    ///
+    /// On Windows: `WS_THICKFRAME` (Main only), DWM frame, `WndProc` subclass.
+    /// On macOS: `NSFullSizeContentViewWindowMask`, titlebar transparency.
+    /// On Linux: no-op (compositor-managed decorations or GTK CSD via winit).
+    fn install_chrome(
+        &self,
+        window: &Window,
+        mode: ChromeMode,
+        border_width: f32,
+        caption_height: f32,
+    );
+
+    /// Update interactive rects (buttons, tabs) for OS-level hit testing.
+    ///
+    /// Accepts logical-pixel rects and a scale factor. The platform
+    /// implementation handles scaling to physical pixels internally.
+    /// On macOS/Linux, this is a no-op.
+    fn set_interactive_rects(&self, window: &Window, rects: &[Rect], scale: f32);
+
+    /// Update chrome metrics after DPI change or resize.
+    ///
+    /// `border_width` and `caption_height` are in physical pixels.
+    fn set_chrome_metrics(&self, window: &Window, border_width: f32, caption_height: f32);
+}
+
+/// Returns the platform-specific [`NativeChromeOps`] implementation.
+pub(crate) fn chrome_ops() -> &'static dyn NativeChromeOps {
     #[cfg(target_os = "windows")]
     {
         &windows::WindowsNativeOps

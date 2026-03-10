@@ -25,9 +25,9 @@ use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows_sys::Win32::UI::Shell::SetWindowSubclass;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetCursorPos, GetWindowLongPtrW, SW_SHOW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_THICKFRAME,
+    GWL_STYLE, GetCursorPos, GetWindowLongPtrW, GetWindowRect, SW_SHOW, SWP_FRAMECHANGED,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_THICKFRAME,
 };
 
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -141,7 +141,35 @@ pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
             0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
         );
+    }
 
+    install_chrome_subclass(window, border_width, caption_height);
+}
+
+/// Installs `WndProc` subclass and DWM frame on a borderless dialog window.
+///
+/// Unlike [`enable_snap()`], this does NOT modify window styles (no
+/// `WS_THICKFRAME` etc.). It only installs the subclass for `WM_NCHITTEST`
+/// routing (close button, caption drag, resize edges) and `WM_NCCALCSIZE`
+/// (full client area — no OS frame inset). Use for dialog windows that need
+/// proper hit testing without Aero Snap integration.
+///
+/// `border_width` and `caption_height` are in physical pixels.
+pub fn enable_dialog_chrome(window: &Window, border_width: f32, caption_height: f32) {
+    install_chrome_subclass(window, border_width, caption_height);
+}
+
+/// Shared subclass installation for both snap-enabled and dialog windows.
+///
+/// Extends the DWM frame (1px top margin for shadow), installs the
+/// `WndProc` subclass, and registers the per-window `SnapData`.
+fn install_chrome_subclass(window: &Window, border_width: f32, caption_height: f32) {
+    let Some(hwnd) = hwnd_from_window(window) else {
+        log::warn!("install_chrome_subclass: failed to extract HWND");
+        return;
+    };
+
+    unsafe {
         // Hide OS title bar — 1px top margin keeps DWM shadow + snap preview.
         let margins = MARGINS {
             cxLeftWidth: 0,
@@ -270,24 +298,12 @@ pub fn cursor_screen_pos() -> (i32, i32) {
 /// Returns the visible frame bounds excluding the invisible DWM extended
 /// frame that `GetWindowRect` includes.
 ///
-/// Returns `(left, top, right, bottom)` in screen coordinates.
+/// Returns `None` if the HWND cannot be extracted or DWM composition is
+/// unavailable. Returns `(left, top, right, bottom)` in screen coordinates.
 pub fn visible_frame_bounds(window: &Window) -> Option<(i32, i32, i32, i32)> {
     let hwnd = hwnd_from_window(window)?;
-    let mut rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    let attr = DWMWA_EXTENDED_FRAME_BOUNDS as u32;
-    let hr = unsafe {
-        DwmGetWindowAttribute(hwnd, attr, (&raw mut rect).cast(), size_of::<RECT>() as u32)
-    };
-    if hr == 0 {
-        Some((rect.left, rect.top, rect.right, rect.bottom))
-    } else {
-        None
-    }
+    let rect = try_dwm_frame_bounds(hwnd)?;
+    Some((rect.left, rect.top, rect.right, rect.bottom))
 }
 
 /// Shows a window that was hidden via `SW_HIDE` (used after merge-cancel).
@@ -334,6 +350,46 @@ pub fn set_transitions_enabled(window: &Window, enabled: bool) {
 }
 
 // Private helpers
+
+/// Queries DWM for the visible frame bounds of an HWND.
+///
+/// Returns `None` if DWM composition is unavailable (e.g. disabled,
+/// or running on an older Windows version without DWM).
+fn try_dwm_frame_bounds(hwnd: HWND) -> Option<RECT> {
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let hr = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
+            (&raw mut rect).cast(),
+            size_of::<RECT>() as u32,
+        )
+    };
+    if hr == 0 { Some(rect) } else { None }
+}
+
+/// Returns the visible frame bounds for an HWND via DWM.
+///
+/// Uses `DWMWA_EXTENDED_FRAME_BOUNDS` which excludes the invisible DWM
+/// border that `GetWindowRect` includes on windows with `WS_THICKFRAME`.
+/// Falls back to `GetWindowRect` if the DWM query fails.
+pub(super) fn visible_frame_bounds_hwnd(hwnd: HWND) -> RECT {
+    try_dwm_frame_bounds(hwnd).unwrap_or_else(|| {
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        unsafe { GetWindowRect(hwnd, &raw mut rect) };
+        rect
+    })
+}
 
 fn snap_ptrs() -> &'static Mutex<HashMap<usize, usize>> {
     SNAP_PTRS.get_or_init(|| Mutex::new(HashMap::new()))

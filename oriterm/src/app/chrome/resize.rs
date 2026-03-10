@@ -115,14 +115,16 @@ impl App {
             });
             if let Some(new_scale) = dpi_changed {
                 self.handle_dpi_change(winit_id, new_scale);
-                // Update SnapData chrome metrics for the new physical DPI.
-                let s = new_scale as f32;
-                let caption_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                // Update chrome metrics for the new physical DPI.
                 if let Some(ctx) = self.windows.get(&winit_id) {
-                    oriterm_ui::platform_windows::set_chrome_metrics(
+                    let s = new_scale as f32;
+                    let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                    super::refresh_chrome(
                         ctx.window.window(),
-                        oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * s,
-                        caption_h * s,
+                        &ctx.tab_bar.interactive_rects(),
+                        tab_bar_h,
+                        s,
+                        true,
                     );
                 }
             }
@@ -170,24 +172,19 @@ impl App {
     ///
     /// Must be called after any tab mutation (add, remove, reorder, tear-off)
     /// so the OS hit test layer matches the current tab bar layout.
-    /// On non-Windows platforms this is a no-op.
-    #[cfg(target_os = "windows")]
+    /// Routes through [`NativeChromeOps`] — no-op on non-Windows platforms.
     pub(in crate::app) fn refresh_platform_rects(&self, winit_id: WindowId) {
-        if let Some(ctx) = self.windows.get(&winit_id) {
-            let scale = ctx.window.scale_factor().factor() as f32;
-            oriterm_ui::platform_windows::set_client_rects(
-                ctx.window.window(),
-                ctx.tab_bar
-                    .interactive_rects()
-                    .iter()
-                    .map(|r| super::scale_rect(*r, scale))
-                    .collect(),
-            );
-        }
+        let Some(ctx) = self.windows.get(&winit_id) else {
+            return;
+        };
+        let scale = ctx.window.scale_factor().factor() as f32;
+        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        super::refresh_chrome(
+            ctx.window.window(),
+            &ctx.tab_bar.interactive_rects(),
+            tab_bar_h,
+            scale,
+            true,
+        );
     }
-
-    /// No-op on non-Windows platforms.
-    #[cfg(not(target_os = "windows"))]
-    #[expect(clippy::unused_self, reason = "platform parity with Windows variant")]
-    pub(in crate::app) fn refresh_platform_rects(&self, _winit_id: WindowId) {}
 }

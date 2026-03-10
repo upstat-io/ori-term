@@ -85,7 +85,6 @@ impl App {
             let parent_win = parent_ctx.window.window();
             let ops = platform_ops();
             ops.set_owner(&window, parent_win);
-            ops.enable_shadow(&window);
             ops.set_window_type(&window, &WindowKind::Dialog(kind));
         }
 
@@ -136,6 +135,12 @@ impl App {
 
         // Store context.
         self.dialogs.insert(winit_id, ctx);
+
+        // Install platform chrome subclass for hit testing (close button,
+        // caption drag, resize edges). Without this on Windows, the OS
+        // default WM_NCHITTEST treats the window edges as resize borders,
+        // intercepting cursor events before they reach our hover handler.
+        self.install_dialog_chrome(winit_id);
 
         // Render first frame, then show.
         self.render_dialog(winit_id);
@@ -202,12 +207,11 @@ impl App {
         };
         let winit_id = window.id();
 
-        // Apply platform native ops: ownership, shadow, type hints, modal.
+        // Apply platform native ops: ownership, type hints, modal.
         if let Some(parent_ctx) = self.windows.get(&parent_wid) {
             let parent_win = parent_ctx.window.window();
             let ops = platform_ops();
             ops.set_owner(&window, parent_win);
-            ops.enable_shadow(&window);
             ops.set_window_type(&window, &WindowKind::Dialog(kind));
             ops.set_modal(&window, parent_win);
         }
@@ -256,6 +260,9 @@ impl App {
 
         // Store context.
         self.dialogs.insert(winit_id, ctx);
+
+        // Install platform chrome subclass for hit testing.
+        self.install_dialog_chrome(winit_id);
 
         // Render first frame, then show.
         self.render_dialog(winit_id);
@@ -311,29 +318,38 @@ impl App {
 
     /// Compute the position to center a dialog on its parent window.
     ///
-    /// The result is clamped to the current monitor's work area so the
-    /// dialog never opens partially or fully off-screen.
+    /// All arithmetic is in physical pixels (`outer_position` and `outer_size`
+    /// return physical coordinates). The result is converted back to logical
+    /// for winit's `LogicalPosition`.
     fn center_on_parent(&self, parent_wid: WindowId, width: u32, height: u32) -> (i32, i32) {
         let Some(ctx) = self.windows.get(&parent_wid) else {
             return (100, 100);
         };
         let parent_win = ctx.window.window();
+        let scale = parent_win.scale_factor();
         let parent_pos = parent_win.outer_position().unwrap_or_default();
         let parent_size = parent_win.outer_size();
-        let mut x = parent_pos.x + (parent_size.width as i32 - width as i32) / 2;
-        let mut y = parent_pos.y + (parent_size.height as i32 - height as i32) / 2;
 
-        // Clamp to the current monitor's bounds.
+        // Convert dialog logical size to physical for consistent math.
+        let phys_w = (width as f64 * scale).round() as i32;
+        let phys_h = (height as f64 * scale).round() as i32;
+        let mut x = parent_pos.x + (parent_size.width as i32 - phys_w) / 2;
+        let mut y = parent_pos.y + (parent_size.height as i32 - phys_h) / 2;
+
+        // Clamp to the current monitor's physical bounds.
         if let Some(monitor) = parent_win.current_monitor() {
             let mon_pos = monitor.position();
             let mon_size = monitor.size();
-            let max_x = mon_pos.x + mon_size.width as i32 - width as i32;
-            let max_y = mon_pos.y + mon_size.height as i32 - height as i32;
+            let max_x = mon_pos.x + mon_size.width as i32 - phys_w;
+            let max_y = mon_pos.y + mon_size.height as i32 - phys_h;
             x = x.clamp(mon_pos.x, max_x.max(mon_pos.x));
             y = y.clamp(mon_pos.y, max_y.max(mon_pos.y));
         }
 
-        (x, y)
+        // Convert physical position back to logical for winit's LogicalPosition.
+        let lx = (x as f64 / scale).round() as i32;
+        let ly = (y as f64 / scale).round() as i32;
+        (lx, ly)
     }
 
     /// Create a `UiOnly` renderer for a dialog window.
@@ -396,5 +412,44 @@ impl App {
             pending_config: Box::new(self.config.clone()),
             original_config: Box::new(self.config.clone()),
         }
+    }
+
+    /// Install platform chrome on a dialog window.
+    ///
+    /// Enables proper OS-level hit testing so the close button receives
+    /// cursor events and the caption area supports drag. Routes through
+    /// [`NativeChromeOps`] — no-op on non-Windows platforms.
+    fn install_dialog_chrome(&self, winit_id: WindowId) {
+        let Some(ctx) = self.dialogs.get(&winit_id) else {
+            return;
+        };
+        let scale = ctx.scale_factor.factor() as f32;
+        let mode = crate::window_manager::platform::ChromeMode::Dialog {
+            resizable: ctx.kind.is_resizable(),
+        };
+        super::chrome::install_chrome(
+            &ctx.window,
+            mode,
+            ctx.chrome.interactive_rects(),
+            ctx.chrome.caption_height(),
+            scale,
+        );
+    }
+
+    /// Update platform hit test rects and chrome metrics after a dialog resize.
+    ///
+    /// Routes through [`NativeChromeOps`] — no-op on non-Windows platforms.
+    pub(super) fn refresh_dialog_platform_rects(&self, winit_id: WindowId) {
+        let Some(ctx) = self.dialogs.get(&winit_id) else {
+            return;
+        };
+        let scale = ctx.scale_factor.factor() as f32;
+        super::chrome::refresh_chrome(
+            &ctx.window,
+            ctx.chrome.interactive_rects(),
+            ctx.chrome.caption_height(),
+            scale,
+            ctx.kind.is_resizable(),
+        );
     }
 }

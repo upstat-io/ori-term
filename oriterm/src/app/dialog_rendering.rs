@@ -49,8 +49,8 @@ impl App {
         // Resolve icons.
         renderer.resolve_icons(gpu, scale);
 
-        let logical_w = (w as f32 / scale).round();
-        let logical_h = (h as f32 / scale).round();
+        let logical_w = w as f32 / scale;
+        let logical_h = h as f32 / scale;
         let chrome_h = ctx.chrome.caption_height();
 
         ctx.draw_list.clear();
@@ -131,6 +131,11 @@ impl App {
                 ctx.resize_surface(w, h, gpu);
             }
             Err(e) => log::error!("dialog render error: {e}"),
+        }
+
+        // Widget animations (e.g. hover fade) need continued redraws.
+        if animations_running.get() {
+            ctx.dirty = true;
         }
     }
 }

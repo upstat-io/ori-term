@@ -123,6 +123,12 @@ sections:
 | `oriterm_ui/src/widgets/window_chrome/tests.rs` | Unit tests | ~218 |
 | `oriterm/src/app/chrome.rs` | App-level chrome action dispatch | ~50 |
 
+## Known Issues
+
+- [ ] **BUG:** Dialog close button hold-drag — clicking and holding the close button on a dialog allows dragging the window; the dialog then closes on mouse-up. The close button correctly returns `HTCLIENT` via `WM_NCHITTEST` (interactive rect), but the dialog's app-level event handling may be interpreting the press+drag as a caption drag simultaneously. Minor UX issue. Discovered during chrome plan verification (2026-03-10).
+
+---
+
 ## Files Modified
 
 | File | Change |
