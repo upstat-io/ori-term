@@ -224,9 +224,14 @@ impl App {
                 content_changed,
             );
 
+            // Scale factor for logical→physical coordinate conversion.
+            let scale = ctx.window.scale_factor().factor() as f32;
+
+            // Resolve icon atlas entries at physical pixel sizes.
+            renderer.resolve_icons(gpu, scale);
+
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.
-            let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
             if Self::draw_tab_bar(
                 Some(&ctx.tab_bar),

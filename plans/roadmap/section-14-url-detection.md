@@ -2,6 +2,7 @@
 section: 14
 title: URL Detection
 status: complete
+reviewed: true
 tier: 3
 goal: Detect URLs in terminal output for hover underline and Ctrl+click opening
 sections:

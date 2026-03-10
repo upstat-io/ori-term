@@ -9,6 +9,7 @@
 use winit::window::WindowId;
 
 use crate::session::TabId;
+use crate::window_manager::WindowKind;
 use oriterm_ui::platform_windows::{self, OsDragResult};
 use oriterm_ui::widgets::tab_bar::constants::{
     CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN,
@@ -123,7 +124,8 @@ impl App {
     /// Find a merge target window whose tab bar zone contains the cursor.
     ///
     /// Returns `(target_winit_id, screen_x)` or `None`. `magnetism` expands
-    /// the tab bar zone vertically for post-drag detection.
+    /// the tab bar zone vertically for post-drag detection. Only considers
+    /// primary windows (`Main` + `TearOff`) via the `WindowManager` registry.
     fn find_merge_target(
         &self,
         exclude: WindowId,
@@ -131,10 +133,14 @@ impl App {
         magnetism: i32,
     ) -> Option<(WindowId, f64)> {
         let (cx, cy) = cursor;
-        for (&wid, ctx) in &self.windows {
+        for managed in self.window_manager.windows_of_kind(WindowKind::is_primary) {
+            let wid = managed.winit_id;
             if wid == exclude {
                 continue;
             }
+            let Some(ctx) = self.windows.get(&wid) else {
+                continue;
+            };
             let scale = ctx.window.scale_factor().factor() as f32;
             let tab_bar_h = (TAB_BAR_HEIGHT * scale).round() as i32;
             let controls_w = (CONTROLS_ZONE_WIDTH * scale).round() as i32;

@@ -2,6 +2,7 @@
 section: 27
 title: Command Palette & Quick Terminal
 status: not-started
+reviewed: false
 tier: 7
 goal: Searchable command palette, global hotkey drop-down terminal, notifications, progress, inspector
 sections:
@@ -83,6 +84,11 @@ Searchable overlay for all terminal actions.
   - [ ] Toggle Search Bar
   - [ ] Previous Prompt, Next Prompt (shell integration)
   - [ ] All user-configured keybindings
+- [ ] **Session search** (Ghostty 1.3.0):
+  - [ ] Search running terminals by title or working directory
+  - [ ] Results show matching panes across all tabs/windows
+  - [ ] Selecting a result switches to that pane
+  - [ ] Useful for users with many open terminals
 
 **Tests:**
 - [ ] Ctrl+Shift+P opens palette overlay

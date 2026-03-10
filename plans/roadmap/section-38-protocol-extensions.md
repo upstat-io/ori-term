@@ -2,6 +2,7 @@
 section: 38
 title: Terminal Protocol Extensions
 status: not-started
+reviewed: false
 tier: 5
 goal: Capability reporting, query/response sequences, extended SGR, window manipulation, DCS passthrough — the modern terminal protocol surface that applications rely on for progressive enhancement
 sections:
@@ -30,9 +31,12 @@ sections:
     title: Window Manipulation (CSI t)
     status: not-started
   - id: "38.9"
-    title: DCS Passthrough
+    title: Additional Protocol Sequences
     status: not-started
   - id: "38.10"
+    title: DCS Passthrough
+    status: not-started
+  - id: "38.11"
     title: Section Completion
     status: not-started
 ---
@@ -401,7 +405,49 @@ Handle xterm window manipulation sequences. These are security-sensitive — som
 
 ---
 
-## 38.9 DCS Passthrough
+## 38.9 Additional Protocol Sequences
+
+Parse and handle additional terminal protocol sequences used by modern applications.
+
+**Files:** `oriterm_core/src/term/handler.rs`
+
+**Reference:** Ghostty 1.3.0 release notes, Kitty protocol docs
+
+- [ ] **Kitty OSC 66 — Text Sizing** (`OSC 66 ; ... ST`):
+  - [ ] Parse Kitty text sizing protocol (font size adjustments from within the terminal)
+  - [ ] Implementation: adjust font size or store as state for reporting
+  - [ ] If not implementing full support, parse and discard gracefully (no error)
+- [ ] **Kitty OSC 5522 — Extended Clipboard Protocol** (`OSC 5522 ; ... ST`):
+  - [ ] Kitty's extended clipboard protocol (superset of OSC 52)
+  - [ ] Supports MIME types, multiple clipboard targets, metadata
+  - [ ] Parse and route to clipboard system (extend OSC 52 handling)
+- [ ] **iTerm2 OSC 1337** (`OSC 1337 ; ... ST`):
+  - [ ] Parse iTerm2 proprietary extensions (primarily inline images)
+  - [ ] `File=...` — inline image protocol (alternative to Kitty graphics and sixel)
+  - [ ] `SetUserVar=...` — user-defined variables
+  - [ ] At minimum: parse without crashing, log unhandled sub-commands at debug level
+  - [ ] Full inline image support deferred to Section 39 (Image Protocols)
+- [ ] **ConEmu OSC 9 Full Subcommands** (`OSC 9;N;... ST`):
+  - [ ] Subcommands 1-12 (currently only OSC 9;4 progress in Section 27.4)
+  - [ ] `OSC 9;1` — Palette set
+  - [ ] `OSC 9;2` — Palette query
+  - [ ] `OSC 9;5` — Task notification
+  - [ ] `OSC 9;6` — Process manipulation
+  - [ ] Parse all, implement where useful, discard rest gracefully
+- [ ] **CSI Scroll Up preserving scrollback** (`CSI n S`):
+  - [ ] When CSI Scroll Up is executed, preserve scrolled-off lines in scrollback buffer instead of erasing them
+  - [ ] Reference: Ghostty 1.3.0 — "CSI Scroll Up now preserves scrolled-off lines in scrollback buffer"
+  - [ ] This matches user expectation: lines that scroll off the top should be accessible in scrollback
+- [ ] **Tests:**
+  - [ ] OSC 66 parsed without crash
+  - [ ] OSC 5522 routes to clipboard system
+  - [ ] OSC 1337 parsed without crash, unhandled sub-commands logged
+  - [ ] ConEmu OSC 9 subcommands parsed
+  - [ ] CSI S preserves lines in scrollback
+
+---
+
+## 38.10 DCS Passthrough
 
 Support DCS passthrough for applications running inside nested terminals or multiplexers. When ori_term is the inner terminal, the outer terminal (tmux, screen, or another terminal emulator) needs to forward escape sequences. When ori_term is the outer terminal running a multiplexer, it must handle passthrough from inner sessions.
 
@@ -427,9 +473,9 @@ Support DCS passthrough for applications running inside nested terminals or mult
 
 ---
 
-## 38.10 Section Completion
+## 38.11 Section Completion
 
-- [ ] All 38.1-38.9 items complete
+- [ ] All 38.1-38.10 items complete
 - [ ] DA1/DA2/DA3 responses are correct and fast (no blocking)
 - [ ] `fish` shell correctly detects ori_term capabilities via DA + XTGETTCAP
 - [ ] `starship` prompt correctly detects color support via OSC 10/11 query

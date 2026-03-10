@@ -99,6 +99,8 @@ pub(crate) enum Action {
     UndoSplit,
     /// Redo the last undone split tree mutation.
     RedoSplit,
+    /// Open the settings overlay.
+    OpenSettings,
     /// Send literal bytes to the PTY.
     SendText(String),
     /// Explicitly unbinds a default binding.
@@ -106,6 +108,18 @@ pub(crate) enum Action {
 }
 
 impl Action {
+    /// Whether this action works regardless of focused window kind.
+    ///
+    /// Global actions can fire from dialog windows — they target the app
+    /// or the active terminal window (resolved via `active_main_window()`).
+    /// Non-global actions require a terminal window to be directly focused.
+    pub(crate) fn is_global(&self) -> bool {
+        matches!(
+            self,
+            Self::NewWindow | Self::NewTab | Self::OpenSettings | Self::ReloadConfig | Self::None
+        )
+    }
+
     /// Canonical string for this action variant.
     ///
     /// Returns the same strings that [`parse_action`] accepts, ensuring
@@ -158,6 +172,7 @@ impl Action {
             Self::ToggleFloatTile => "ToggleFloatTile",
             Self::UndoSplit => "UndoSplit",
             Self::RedoSplit => "RedoSplit",
+            Self::OpenSettings => "OpenSettings",
             Self::SendText(_) => "SendText",
             Self::None => "None",
         }

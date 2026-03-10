@@ -22,6 +22,7 @@ use super::super::constants::{
 use super::super::hit::TabBarHit;
 use super::{TabBarWidget, TabEntry, TabIcon};
 
+use crate::icons::IconId;
 use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
 // Drawing constants (logical pixels).
@@ -32,20 +33,14 @@ pub(super) const ACTIVE_TAB_RADIUS: f32 = 8.0;
 /// Corner radius for hover backgrounds on buttons and close targets.
 const BUTTON_HOVER_RADIUS: f32 = 4.0;
 
-/// Inset from close button edges to the × crosshair center.
+/// Inset from close button edges to the × icon area.
 pub(super) const CLOSE_ICON_INSET: f32 = 7.0;
 
-/// Line thickness for icon strokes (× close, + new tab, ▾ dropdown).
-pub(super) const ICON_STROKE_WIDTH: f32 = 1.5;
-
 /// Half-arm length of the + icon in the new-tab button.
-const PLUS_ARM: f32 = 6.0;
+const PLUS_ARM: f32 = 5.0;
 
-/// Half-width of the ▾ chevron in the dropdown button.
-const CHEVRON_HALF_W: f32 = 4.0;
-
-/// Half-height of the ▾ chevron in the dropdown button.
-const CHEVRON_HALF_H: f32 = 3.0;
+/// Half-extent of the ▾ chevron in the dropdown button.
+const CHEVRON_HALF: f32 = 5.0;
 
 /// Vertical inset for separators from tab top/bottom edges.
 const SEPARATOR_INSET: f32 = 8.0;
@@ -212,24 +207,17 @@ impl TabBarWidget {
             ctx.draw_list.push_rect(btn, style);
         }
 
-        // × lines.
-        let x1 = cx + CLOSE_ICON_INSET;
-        let y1 = cy + CLOSE_ICON_INSET;
-        let x2 = cx + CLOSE_BUTTON_WIDTH - CLOSE_ICON_INSET;
-        let y2 = cy + CLOSE_BUTTON_WIDTH - CLOSE_ICON_INSET;
+        // × icon.
         let fg = self.colors.close_fg.with_alpha(opacity);
-        ctx.draw_list.push_line(
-            Point::new(x1, y1),
-            Point::new(x2, y2),
-            ICON_STROKE_WIDTH,
-            fg,
+        let inset = CLOSE_ICON_INSET;
+        let icon_size = (CLOSE_BUTTON_WIDTH - 2.0 * inset).round() as u32;
+        let icon_rect = Rect::new(
+            cx + inset,
+            cy + inset,
+            CLOSE_BUTTON_WIDTH - 2.0 * inset,
+            CLOSE_BUTTON_WIDTH - 2.0 * inset,
         );
-        ctx.draw_list.push_line(
-            Point::new(x1, y2),
-            Point::new(x2, y1),
-            ICON_STROKE_WIDTH,
-            fg,
-        );
+        draw_icon(ctx, IconId::Close, icon_rect, icon_size, fg);
     }
 
     /// Draws inactive tabs, active tab, and checks for running animations.
@@ -319,18 +307,9 @@ impl TabBarWidget {
         let cx = bx + NEW_TAB_BUTTON_WIDTH / 2.0;
         let cy = strip.y + strip.h / 2.0;
         let fg = self.colors.close_fg;
-        ctx.draw_list.push_line(
-            Point::new(cx - PLUS_ARM, cy),
-            Point::new(cx + PLUS_ARM, cy),
-            ICON_STROKE_WIDTH,
-            fg,
-        );
-        ctx.draw_list.push_line(
-            Point::new(cx, cy - PLUS_ARM),
-            Point::new(cx, cy + PLUS_ARM),
-            ICON_STROKE_WIDTH,
-            fg,
-        );
+        let icon_size = (PLUS_ARM * 2.0).round() as u32;
+        let icon_rect = Rect::new(cx - PLUS_ARM, cy - PLUS_ARM, PLUS_ARM * 2.0, PLUS_ARM * 2.0);
+        draw_icon(ctx, IconId::Plus, icon_rect, icon_size, fg);
     }
 
     /// Draws the dropdown (▾) button.
@@ -348,18 +327,24 @@ impl TabBarWidget {
         let cx = bx + DROPDOWN_BUTTON_WIDTH / 2.0;
         let cy = strip.y + strip.h / 2.0;
         let fg = self.colors.close_fg;
-        ctx.draw_list.push_line(
-            Point::new(cx - CHEVRON_HALF_W, cy - CHEVRON_HALF_H),
-            Point::new(cx, cy + CHEVRON_HALF_H),
-            ICON_STROKE_WIDTH,
-            fg,
+        let icon_size = (CHEVRON_HALF * 2.0).round() as u32;
+        let icon_rect = Rect::new(
+            cx - CHEVRON_HALF,
+            cy - CHEVRON_HALF,
+            CHEVRON_HALF * 2.0,
+            CHEVRON_HALF * 2.0,
         );
-        ctx.draw_list.push_line(
-            Point::new(cx, cy + CHEVRON_HALF_H),
-            Point::new(cx + CHEVRON_HALF_W, cy - CHEVRON_HALF_H),
-            ICON_STROKE_WIDTH,
-            fg,
-        );
+        draw_icon(ctx, IconId::ChevronDown, icon_rect, icon_size, fg);
+    }
+}
+
+/// Emit a vector icon from the pre-resolved icon atlas.
+///
+/// No-ops when `ctx.icons` is `None` (tests) or the icon wasn't resolved.
+fn draw_icon(ctx: &mut DrawCtx<'_>, id: IconId, rect: Rect, size_px: u32, color: Color) {
+    if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(id, size_px)) {
+        ctx.draw_list
+            .push_icon(rect, resolved.atlas_page, resolved.uv, color);
     }
 }
 

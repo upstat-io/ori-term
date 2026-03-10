@@ -191,6 +191,7 @@ impl Widget for PanelWidget {
                 now: ctx.now,
                 animations_running: ctx.animations_running,
                 theme: ctx.theme,
+                icons: ctx.icons,
             };
             self.child.draw(&mut child_ctx);
         }

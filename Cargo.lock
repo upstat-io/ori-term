@@ -1842,6 +1842,7 @@ dependencies = [
  "image",
  "log",
  "notify",
+ "objc2 0.5.2",
  "oriterm_core",
  "oriterm_mux",
  "oriterm_ui",
@@ -1864,6 +1865,7 @@ dependencies = [
  "window-vibrancy",
  "windows-sys 0.60.2",
  "winit",
+ "x11-dl",
 ]
 
 [[package]]

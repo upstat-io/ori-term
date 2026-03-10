@@ -74,11 +74,16 @@ impl Default for ToggleStyle {
 /// The thumb slides smoothly between on (1.0) and off (0.0) positions
 /// using an [`AnimatedValue`] with `EaseInOut` easing over 150ms.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent UI state flags: on, disabled, hovered, pressed"
+)]
 pub struct ToggleWidget {
     id: WidgetId,
     on: bool,
     disabled: bool,
     hovered: bool,
+    pressed: bool,
     /// Animated thumb position: 0.0 = off, 1.0 = on.
     toggle_progress: AnimatedValue<f32>,
     style: ToggleStyle,
@@ -98,6 +103,7 @@ impl ToggleWidget {
             on: false,
             disabled: false,
             hovered: false,
+            pressed: false,
             toggle_progress: AnimatedValue::new(0.0, TOGGLE_DURATION, Easing::EaseInOut),
             style: ToggleStyle::default(),
         }
@@ -180,7 +186,7 @@ impl ToggleWidget {
         if self.on {
             return self.style.on_bg;
         }
-        if self.hovered {
+        if self.pressed || self.hovered {
             return self.style.off_hover_bg;
         }
         self.style.off_bg
@@ -248,11 +254,25 @@ impl Widget for ToggleWidget {
         if self.disabled {
             return WidgetResponse::ignored();
         }
-        if event.kind == MouseEventKind::Up(MouseButton::Left) && ctx.bounds.contains(event.pos) {
-            let action = self.toggle();
-            return WidgetResponse::focus().with_action(action);
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.pressed = true;
+                WidgetResponse::handled().with_capture()
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                let was_pressed = self.pressed;
+                self.pressed = false;
+                if was_pressed && ctx.bounds.contains(event.pos) {
+                    let action = self.toggle();
+                    WidgetResponse::focus()
+                        .with_action(action)
+                        .with_release_capture()
+                } else {
+                    WidgetResponse::paint().with_release_capture()
+                }
+            }
+            _ => WidgetResponse::ignored(),
         }
-        WidgetResponse::ignored()
     }
 
     fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
@@ -262,11 +282,11 @@ impl Widget for ToggleWidget {
         match event {
             HoverEvent::Enter => {
                 self.hovered = true;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             HoverEvent::Leave => {
                 self.hovered = false;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
         }
     }
@@ -277,7 +297,7 @@ impl Widget for ToggleWidget {
         }
         if event.key == Key::Space {
             let action = self.toggle();
-            return WidgetResponse::redraw().with_action(action);
+            return WidgetResponse::paint().with_action(action);
         }
         WidgetResponse::ignored()
     }

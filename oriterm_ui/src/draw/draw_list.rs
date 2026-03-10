@@ -62,6 +62,20 @@ pub enum DrawCommand {
     },
     /// Pop the most recent clip rectangle from the stack.
     PopClip,
+    /// A vector icon rendered as a mono glyph from the atlas.
+    ///
+    /// Icons are rasterized via `tiny_skia` and cached in the monochrome
+    /// glyph atlas. The shader tints the alpha mask to `color`.
+    Icon {
+        /// Bounding rectangle in logical pixels.
+        rect: Rect,
+        /// Atlas page (texture array layer) containing the icon bitmap.
+        atlas_page: u32,
+        /// Normalized UV coordinates `[u_left, v_top, u_width, v_height]`.
+        uv: [f32; 4],
+        /// Icon tint color.
+        color: Color,
+    },
     /// Push a background layer onto the layer stack.
     ///
     /// Widgets that draw a background rect push their bg color here
@@ -130,6 +144,19 @@ impl DrawList {
             shaped,
             color,
             bg_hint,
+        });
+    }
+
+    /// Appends a vector icon rendered as a mono atlas glyph.
+    ///
+    /// The `atlas_page` and `uv` must be resolved from the icon cache
+    /// before calling this method. The shader tints the alpha mask to `color`.
+    pub fn push_icon(&mut self, rect: Rect, atlas_page: u32, uv: [f32; 4], color: Color) {
+        self.commands.push(DrawCommand::Icon {
+            rect,
+            atlas_page,
+            uv,
+            color,
         });
     }
 

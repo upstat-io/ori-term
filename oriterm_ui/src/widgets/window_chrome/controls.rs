@@ -10,13 +10,15 @@ use std::time::{Duration, Instant};
 use crate::animation::{AnimatedValue, Easing, Lerp};
 use crate::color::Color;
 use crate::draw::RectStyle;
-use crate::geometry::{Point, Rect};
+use crate::geometry::Rect;
 use crate::input::{HoverEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
 use crate::widget_id::WidgetId;
 
+use crate::icons::IconId;
+
 use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
-use super::constants::{CONTROL_BUTTON_WIDTH, SYMBOL_SIZE, SYMBOL_STROKE_WIDTH};
+use super::constants::{CONTROL_BUTTON_WIDTH, SYMBOL_SIZE};
 use super::layout::ControlKind;
 
 /// Duration of the hover color transition.
@@ -59,9 +61,6 @@ pub struct WindowControlButton {
     bg: Color,
     hover_bg: Color,
     pressed_bg: Color,
-    /// Caption background color, set by the chrome widget before drawing.
-    /// Used by the restore symbol to occlude the back window outline.
-    caption_bg: Color,
     /// Close button hover background (from theme).
     close_hover_bg: Color,
     /// Close button pressed background (from theme).
@@ -82,7 +81,6 @@ impl WindowControlButton {
             bg: colors.bg,
             hover_bg: colors.hover_bg,
             pressed_bg: colors.bg,
-            caption_bg: colors.bg,
             close_hover_bg: colors.close_hover_bg,
             close_pressed_bg: colors.close_pressed_bg,
         }
@@ -101,11 +99,6 @@ impl WindowControlButton {
     /// Updates the maximized state (affects maximize/restore symbol).
     pub fn set_maximized(&mut self, maximized: bool) {
         self.is_maximized = maximized;
-    }
-
-    /// Sets the caption background color for restore symbol rendering.
-    pub fn set_caption_bg(&mut self, color: Color) {
-        self.caption_bg = color;
     }
 
     /// Updates the button colors from a new theme palette.
@@ -169,13 +162,12 @@ fn draw_minimize(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
     let cx = bounds.x() + bounds.width() / 2.0;
     let cy = bounds.y() + bounds.height() / 2.0;
     let half = SYMBOL_SIZE / 2.0;
-
-    ctx.draw_list.push_line(
-        Point::new(cx - half, cy),
-        Point::new(cx + half, cy),
-        SYMBOL_STROKE_WIDTH,
-        fg,
-    );
+    let icon_size = SYMBOL_SIZE.round() as u32;
+    if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(IconId::Minimize, icon_size)) {
+        let icon_rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
+        ctx.draw_list
+            .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
+    }
 }
 
 /// Draw the maximize symbol: a square outline centered in the button.
@@ -183,33 +175,25 @@ fn draw_maximize(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
     let cx = bounds.x() + bounds.width() / 2.0;
     let cy = bounds.y() + bounds.height() / 2.0;
     let half = SYMBOL_SIZE / 2.0;
-
-    let rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
-    let style = RectStyle::filled(Color::TRANSPARENT).with_border(SYMBOL_STROKE_WIDTH, fg);
-    ctx.draw_list.push_rect(rect, style);
+    let icon_size = SYMBOL_SIZE.round() as u32;
+    if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(IconId::Maximize, icon_size)) {
+        let icon_rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
+        ctx.draw_list
+            .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
+    }
 }
 
 /// Draw the restore symbol: two overlapping square outlines.
-fn draw_restore(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color, caption_bg: Color) {
+fn draw_restore(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
     let cx = bounds.x() + bounds.width() / 2.0;
     let cy = bounds.y() + bounds.height() / 2.0;
-    let size = SYMBOL_SIZE - 2.0;
-    let offset = 2.0;
-
-    // Back window (offset up-right).
-    let back = Rect::new(
-        cx - size / 2.0 + offset,
-        cy - size / 2.0 - offset,
-        size,
-        size,
-    );
-    let style = RectStyle::filled(Color::TRANSPARENT).with_border(SYMBOL_STROKE_WIDTH, fg);
-    ctx.draw_list.push_rect(back, style);
-
-    // Front window (offset down-left) with filled bg to occlude back window.
-    let front = Rect::new(cx - size / 2.0, cy - size / 2.0, size, size);
-    let bg_style = RectStyle::filled(caption_bg).with_border(SYMBOL_STROKE_WIDTH, fg);
-    ctx.draw_list.push_rect(front, bg_style);
+    let half = SYMBOL_SIZE / 2.0;
+    let icon_size = SYMBOL_SIZE.round() as u32;
+    if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(IconId::Restore, icon_size)) {
+        let icon_rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
+        ctx.draw_list
+            .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
+    }
 }
 
 /// Draw the close symbol: an X centered in the button.
@@ -217,21 +201,15 @@ fn draw_close(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
     let cx = bounds.x() + bounds.width() / 2.0;
     let cy = bounds.y() + bounds.height() / 2.0;
     let half = SYMBOL_SIZE / 2.0;
-
-    // Top-left to bottom-right diagonal.
-    ctx.draw_list.push_line(
-        Point::new(cx - half, cy - half),
-        Point::new(cx + half, cy + half),
-        SYMBOL_STROKE_WIDTH,
-        fg,
-    );
-    // Top-right to bottom-left diagonal.
-    ctx.draw_list.push_line(
-        Point::new(cx + half, cy - half),
-        Point::new(cx - half, cy + half),
-        SYMBOL_STROKE_WIDTH,
-        fg,
-    );
+    let icon_size = SYMBOL_SIZE.round() as u32;
+    if let Some(resolved) = ctx
+        .icons
+        .and_then(|ic| ic.get(IconId::WindowClose, icon_size))
+    {
+        let icon_rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
+        ctx.draw_list
+            .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
+    }
 }
 
 impl Widget for WindowControlButton {
@@ -262,7 +240,7 @@ impl Widget for WindowControlButton {
             ControlKind::Minimize => draw_minimize(ctx, ctx.bounds, fg),
             ControlKind::MaximizeRestore => {
                 if self.is_maximized {
-                    draw_restore(ctx, ctx.bounds, fg, self.caption_bg);
+                    draw_restore(ctx, ctx.bounds, fg);
                 } else {
                     draw_maximize(ctx, ctx.bounds, fg);
                 }
@@ -280,15 +258,15 @@ impl Widget for WindowControlButton {
         match event.kind {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.pressed = true;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 let was_pressed = self.pressed;
                 self.pressed = false;
                 if was_pressed && ctx.bounds.contains(event.pos) {
-                    WidgetResponse::redraw().with_action(self.action())
+                    WidgetResponse::paint().with_action(self.action())
                 } else {
-                    WidgetResponse::redraw()
+                    WidgetResponse::paint()
                 }
             }
             _ => WidgetResponse::ignored(),
@@ -301,13 +279,13 @@ impl Widget for WindowControlButton {
             HoverEvent::Enter => {
                 self.hovered = true;
                 self.hover_progress.set(1.0, now);
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             HoverEvent::Leave => {
                 self.hovered = false;
                 self.pressed = false;
                 self.hover_progress.set(0.0, now);
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
         }
     }

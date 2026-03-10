@@ -2,6 +2,7 @@
 section: 29
 title: Mux Crate + Layout Engine
 status: complete
+reviewed: true
 tier: 4M
 goal: Create the oriterm_mux crate with newtype IDs, immutable SplitTree, FloatingLayer, spatial navigation, and layout computation
 sections:

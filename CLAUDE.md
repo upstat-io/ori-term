@@ -120,6 +120,8 @@ When the user says **"continue plan X"** or **"resume plan X"** or **"pick up pl
 
 Plans are the source of truth for multi-session work. Keep them in sync with reality.
 
+**Review Gate:** Every roadmap section has `reviewed: true/false` in its frontmatter. Sections with `reviewed: false` have NOT been vetted by `/review-plan` and must not be implemented without review. `/continue-roadmap` enforces this gate automatically — it will stop and warn before working on an unreviewed section.
+
 ---
 
 ## Current State

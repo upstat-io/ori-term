@@ -30,6 +30,8 @@ pub struct WindowConfig {
     pub opacity: f32,
     /// Initial window position, or `None` for OS default.
     pub position: Option<Point>,
+    /// Whether the window is resizable. Defaults to `true`.
+    pub resizable: bool,
 }
 
 impl Default for WindowConfig {
@@ -41,6 +43,7 @@ impl Default for WindowConfig {
             blur: false,
             opacity: 1.0,
             position: None,
+            resizable: true,
         }
     }
 }
@@ -100,6 +103,7 @@ fn build_window_attributes(config: &WindowConfig) -> WindowAttributes {
         ))
         .with_decorations(false)
         .with_visible(false)
+        .with_resizable(config.resizable)
         .with_transparent(config.transparent);
 
     if let Some(pos) = config.position {

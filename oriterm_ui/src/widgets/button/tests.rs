@@ -434,6 +434,7 @@ fn draw_signals_animations_running() {
         now,
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     btn.draw(&mut draw_ctx);
 

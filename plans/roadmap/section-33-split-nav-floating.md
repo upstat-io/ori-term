@@ -2,6 +2,7 @@
 section: 33
 title: Split Navigation + Floating Panes
 status: complete
+reviewed: true
 tier: 4M
 goal: Spatial navigation keybinds, divider drag resize, zoom/unzoom, floating pane creation and management, scissored rendering, float-tile toggle, undo/redo split operations
 sections:

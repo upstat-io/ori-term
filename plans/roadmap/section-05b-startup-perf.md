@@ -2,6 +2,7 @@
 section: 5B
 title: Startup Performance
 status: complete
+reviewed: true
 tier: 2
 blocks: [6]
 goal: Zero perceptible startup delay — window appears instantly, shell prompt is ready before the user can react

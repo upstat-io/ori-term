@@ -22,4 +22,6 @@ pub(crate) enum TermEvent {
     CreateWindow,
     /// Move a tab to a new window (context menu action deferred to event loop).
     MoveTabToNewWindow(usize),
+    /// Open the settings window (deferred from overlay dispatch to event loop).
+    OpenSettings,
 }

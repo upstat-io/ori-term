@@ -132,9 +132,8 @@ impl TabBarWidget {
     /// Creates a new tab bar widget with colors from the given theme.
     pub fn with_theme(window_width: f32, theme: &UiTheme) -> Self {
         let layout = TabBarLayout::compute(0, window_width, None, 0.0);
-        let caption_bg = theme.bg_secondary;
         let ctrl_colors = control_colors_from_theme(theme);
-        let controls = create_controls(ctrl_colors, caption_bg);
+        let controls = create_controls(ctrl_colors);
 
         Self {
             id: WidgetId::next(),
@@ -163,10 +162,8 @@ impl TabBarWidget {
     pub fn apply_theme(&mut self, theme: &UiTheme) {
         self.colors = TabBarColors::from_theme(theme);
         let ctrl_colors = control_colors_from_theme(theme);
-        let caption_bg = theme.bg_secondary;
         for ctrl in &mut self.controls {
             ctrl.set_colors(ctrl_colors);
-            ctrl.set_caption_bg(caption_bg);
         }
     }
 
@@ -438,14 +435,11 @@ fn control_colors_from_theme(theme: &UiTheme) -> ControlButtonColors {
     }
 }
 
-/// Creates the three control buttons with initial colors and caption bg.
-fn create_controls(colors: ControlButtonColors, caption_bg: Color) -> [WindowControlButton; 3] {
-    let mut min_btn = WindowControlButton::new(ControlKind::Minimize, colors);
-    min_btn.set_caption_bg(caption_bg);
-    let mut max_btn = WindowControlButton::new(ControlKind::MaximizeRestore, colors);
-    max_btn.set_caption_bg(caption_bg);
-    let mut close_btn = WindowControlButton::new(ControlKind::Close, colors);
-    close_btn.set_caption_bg(caption_bg);
+/// Creates the three control buttons with initial colors.
+fn create_controls(colors: ControlButtonColors) -> [WindowControlButton; 3] {
+    let min_btn = WindowControlButton::new(ControlKind::Minimize, colors);
+    let max_btn = WindowControlButton::new(ControlKind::MaximizeRestore, colors);
+    let close_btn = WindowControlButton::new(ControlKind::Close, colors);
     [min_btn, max_btn, close_btn]
 }
 

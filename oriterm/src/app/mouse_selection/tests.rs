@@ -77,6 +77,7 @@ fn make_widget_with_bounds(
         now: Instant::now(),
         animations_running: &animations_running,
         theme: &theme,
+        icons: None,
     };
     widget.draw(&mut ctx);
     widget

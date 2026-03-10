@@ -216,8 +216,52 @@ fn hit_test_clipped_excludes_outside_clip() {
 fn event_response_is_handled() {
     assert!(EventResponse::Handled.is_handled());
     assert!(EventResponse::RequestFocus.is_handled());
+    assert!(EventResponse::RequestPaint.is_handled());
+    assert!(EventResponse::RequestLayout.is_handled());
     assert!(EventResponse::RequestRedraw.is_handled());
     assert!(!EventResponse::Ignored.is_handled());
+}
+
+#[test]
+fn event_response_merge_priority() {
+    // Layout beats everything.
+    assert_eq!(
+        EventResponse::RequestLayout.merge(EventResponse::RequestPaint),
+        EventResponse::RequestLayout,
+    );
+    assert_eq!(
+        EventResponse::RequestPaint.merge(EventResponse::RequestLayout),
+        EventResponse::RequestLayout,
+    );
+    // RequestRedraw merges to RequestLayout.
+    assert_eq!(
+        EventResponse::RequestRedraw.merge(EventResponse::Handled),
+        EventResponse::RequestLayout,
+    );
+    // Paint beats focus/handled.
+    assert_eq!(
+        EventResponse::RequestPaint.merge(EventResponse::RequestFocus),
+        EventResponse::RequestPaint,
+    );
+    assert_eq!(
+        EventResponse::Handled.merge(EventResponse::RequestPaint),
+        EventResponse::RequestPaint,
+    );
+    // Focus beats handled.
+    assert_eq!(
+        EventResponse::RequestFocus.merge(EventResponse::Handled),
+        EventResponse::RequestFocus,
+    );
+    // Handled beats ignored.
+    assert_eq!(
+        EventResponse::Handled.merge(EventResponse::Ignored),
+        EventResponse::Handled,
+    );
+    // Ignored + ignored = ignored.
+    assert_eq!(
+        EventResponse::Ignored.merge(EventResponse::Ignored),
+        EventResponse::Ignored,
+    );
 }
 
 // ── Input Routing ────────────────────────────────────────────────────

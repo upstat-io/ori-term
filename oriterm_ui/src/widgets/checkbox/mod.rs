@@ -81,12 +81,17 @@ impl Default for CheckboxStyle {
 /// Toggles between checked and unchecked on click or Space.
 /// Emits `WidgetAction::Toggled { id, value }`.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent UI state flags: checked, disabled, hovered, pressed"
+)]
 pub struct CheckboxWidget {
     id: WidgetId,
     label: String,
     checked: bool,
     disabled: bool,
     hovered: bool,
+    pressed: bool,
     style: CheckboxStyle,
 }
 
@@ -99,6 +104,7 @@ impl CheckboxWidget {
             checked: false,
             disabled: false,
             hovered: false,
+            pressed: false,
             style: CheckboxStyle::default(),
         }
     }
@@ -169,7 +175,7 @@ impl CheckboxWidget {
         if self.checked {
             return self.style.checked_bg;
         }
-        if self.hovered {
+        if self.pressed || self.hovered {
             return self.style.hover_bg;
         }
         self.style.bg
@@ -268,11 +274,25 @@ impl Widget for CheckboxWidget {
         if self.disabled {
             return WidgetResponse::ignored();
         }
-        if event.kind == MouseEventKind::Up(MouseButton::Left) && ctx.bounds.contains(event.pos) {
-            let action = self.toggle();
-            return WidgetResponse::focus().with_action(action);
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.pressed = true;
+                WidgetResponse::handled().with_capture()
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                let was_pressed = self.pressed;
+                self.pressed = false;
+                if was_pressed && ctx.bounds.contains(event.pos) {
+                    let action = self.toggle();
+                    WidgetResponse::focus()
+                        .with_action(action)
+                        .with_release_capture()
+                } else {
+                    WidgetResponse::paint().with_release_capture()
+                }
+            }
+            _ => WidgetResponse::ignored(),
         }
-        WidgetResponse::ignored()
     }
 
     fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
@@ -282,11 +302,11 @@ impl Widget for CheckboxWidget {
         match event {
             HoverEvent::Enter => {
                 self.hovered = true;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             HoverEvent::Leave => {
                 self.hovered = false;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
         }
     }
@@ -297,7 +317,7 @@ impl Widget for CheckboxWidget {
         }
         if event.key == Key::Space {
             let action = self.toggle();
-            return WidgetResponse::redraw().with_action(action);
+            return WidgetResponse::paint().with_action(action);
         }
         WidgetResponse::ignored()
     }

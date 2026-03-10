@@ -2,6 +2,7 @@
 section: 1
 title: Cell + Grid
 status: complete
+reviewed: true
 tier: 0
 goal: Build the core data structures — Cell, Row, Grid — in oriterm_core with full test coverage
 sections:

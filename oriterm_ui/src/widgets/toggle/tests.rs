@@ -4,7 +4,7 @@ use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::BoxContent;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{CaptureRequest, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 use super::{ToggleStyle, ToggleWidget};
 
@@ -20,7 +20,15 @@ fn event_ctx() -> EventCtx<'static> {
     }
 }
 
-fn left_click() -> MouseEvent {
+fn left_down() -> MouseEvent {
+    MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+    }
+}
+
+fn left_up() -> MouseEvent {
     MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
         pos: Point::new(10.0, 10.0),
@@ -80,9 +88,13 @@ fn click_toggles() {
     let mut t = ToggleWidget::new();
     let ctx = event_ctx();
 
-    let r = t.handle_mouse(&left_click(), &ctx);
+    // Down acquires capture, Up inside bounds toggles.
+    let r = t.handle_mouse(&left_down(), &ctx);
+    assert_eq!(r.capture, CaptureRequest::Acquire);
+    let r = t.handle_mouse(&left_up(), &ctx);
     assert!(t.is_on());
     assert_eq!(t.toggle_progress(), 1.0);
+    assert_eq!(r.capture, CaptureRequest::Release);
     assert_eq!(
         r.action,
         Some(WidgetAction::Toggled {
@@ -91,9 +103,12 @@ fn click_toggles() {
         })
     );
 
-    let r = t.handle_mouse(&left_click(), &ctx);
+    let r = t.handle_mouse(&left_down(), &ctx);
+    assert_eq!(r.capture, CaptureRequest::Acquire);
+    let r = t.handle_mouse(&left_up(), &ctx);
     assert!(!t.is_on());
     assert_eq!(t.toggle_progress(), 0.0);
+    assert_eq!(r.capture, CaptureRequest::Release);
     assert_eq!(
         r.action,
         Some(WidgetAction::Toggled {
@@ -126,7 +141,9 @@ fn disabled_ignores() {
 
     assert!(!t.is_focusable());
 
-    let r = t.handle_mouse(&left_click(), &ctx);
+    let r = t.handle_mouse(&left_down(), &ctx);
+    assert_eq!(r, WidgetResponse::ignored());
+    let r = t.handle_mouse(&left_up(), &ctx);
     assert_eq!(r, WidgetResponse::ignored());
 
     let r = t.handle_key(space_key(), &ctx);
@@ -196,15 +213,17 @@ fn release_outside_bounds_no_toggle() {
     let mut t = ToggleWidget::new();
     let ctx = event_ctx();
 
-    // MouseUp outside the widget bounds should not toggle.
-    let outside_click = MouseEvent {
+    // Press inside, then release outside — should not toggle but release capture.
+    t.handle_mouse(&left_down(), &ctx);
+    let outside_up = MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
         pos: Point::new(300.0, 300.0),
         modifiers: Modifiers::NONE,
     };
-    let r = t.handle_mouse(&outside_click, &ctx);
+    let r = t.handle_mouse(&outside_up, &ctx);
     assert!(!t.is_on());
-    assert_eq!(r, WidgetResponse::ignored());
+    assert_eq!(r.capture, CaptureRequest::Release);
+    assert!(r.action.is_none());
 }
 
 #[test]
@@ -367,6 +386,7 @@ fn toggle_draw_signals_animations_running() {
         now,
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -395,6 +415,7 @@ fn toggle_draw_no_animation_signal_when_idle() {
         now,
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -425,6 +446,7 @@ fn toggle_draws_thumb_at_correct_position() {
         now,
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -472,6 +494,7 @@ fn toggle_draws_thumb_at_off_position() {
         now,
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     t.draw(&mut draw_ctx);
 

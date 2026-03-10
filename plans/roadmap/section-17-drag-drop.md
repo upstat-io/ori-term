@@ -2,6 +2,7 @@
 section: 17
 title: Drag & Drop
 status: complete
+reviewed: true
 tier: 4
 goal: Chrome-style tab dragging with tear-off, OS-level drag, and merge detection
 sections:

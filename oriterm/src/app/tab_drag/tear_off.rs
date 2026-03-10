@@ -9,6 +9,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::session::TabId;
+use crate::window_manager::types::{ManagedWindow, WindowKind};
 use oriterm_ui::platform_windows::{self, OsDragConfig};
 use oriterm_ui::widgets::tab_bar::constants::{
     CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN,
@@ -54,6 +55,13 @@ impl App {
         let Some((new_winit_id, new_session_wid)) = self.create_window_bare(event_loop) else {
             return;
         };
+
+        // Register tear-off with window manager (parent is the source window).
+        self.window_manager.register(ManagedWindow::with_parent(
+            new_winit_id,
+            WindowKind::TearOff,
+            source_winit_id,
+        ));
 
         // Move tab from source window to new window (local session).
         {
@@ -219,16 +227,21 @@ impl App {
         self.begin_os_tab_drag(winit_id, tab_id, mouse_offset, grab_offset);
     }
 
-    /// Collect tab bar merge rects from all windows except `exclude`.
+    /// Collect tab bar merge rects from all primary windows except `exclude`.
     ///
     /// Each rect is `[left, top, right, tab_bar_bottom]` in screen coordinates,
-    /// excluding the window controls zone on the right.
+    /// excluding the window controls zone on the right. Uses the `WindowManager`
+    /// registry to enumerate only primary windows (`Main` + `TearOff`).
     fn collect_merge_rects(&self, exclude: WindowId) -> Vec<[i32; 4]> {
         let mut rects = Vec::new();
-        for (&wid, ctx) in &self.windows {
+        for managed in self.window_manager.windows_of_kind(WindowKind::is_primary) {
+            let wid = managed.winit_id;
             if wid == exclude {
                 continue;
             }
+            let Some(ctx) = self.windows.get(&wid) else {
+                continue;
+            };
             let scale = ctx.window.scale_factor().factor() as f32;
             let tab_bar_h = (TAB_BAR_HEIGHT * scale).round() as i32;
             let controls_w = (CONTROLS_ZONE_WIDTH * scale).round() as i32;

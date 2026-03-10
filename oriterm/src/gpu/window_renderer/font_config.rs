@@ -112,6 +112,7 @@ impl WindowRenderer {
         self.subpixel_atlas.clear();
         self.color_atlas.clear();
         self.empty_keys.clear();
+        self.icon_cache.clear();
 
         let format = self.font_collection.format();
         if format.is_subpixel() {

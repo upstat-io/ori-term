@@ -1412,8 +1412,8 @@ fn update_control_hover_enters_and_leaves() {
     let resp = w.update_control_hover(center, &ctx);
     assert_eq!(
         resp.response,
-        EventResponse::RequestRedraw,
-        "entering a control should request redraw"
+        EventResponse::RequestPaint,
+        "entering a control should request paint"
     );
 
     // Hover same position again — no change.

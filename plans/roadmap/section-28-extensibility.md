@@ -2,6 +2,7 @@
 section: 28
 title: Extensibility
 status: not-started
+reviewed: false
 tier: 7
 goal: Lua scripting, custom shaders, smart paste, undo close tab, session recording, workspaces
 sections:

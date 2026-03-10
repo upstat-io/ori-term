@@ -84,10 +84,13 @@ pub fn convert_draw_list(
     let mut text_ctx = text_ctx;
     let mut clip_ctx = clip_ctx;
 
-    // Clear clip stack at start of each call.
+    // Clear the clip *stack* (nested PushClip/PopClip state) at the start
+    // of each call — each overlay starts with no active clips. Do NOT clear
+    // the output `clips` (TierClips) here: when multiple overlays share a
+    // tier, clips must accumulate across calls. The frame-level clear in
+    // `PreparedFrame::clear()` handles the per-frame reset.
     if let Some(ctx) = clip_ctx.as_deref_mut() {
         ctx.stack.clear();
-        ctx.clips.clear();
     }
 
     for cmd in draw_list.commands() {
@@ -113,6 +116,16 @@ pub fn convert_draw_list(
                     convert_text(*position, shaped, *color, *bg_hint, ctx, scale, opacity);
                 } else {
                     log::trace!("DrawCommand::Text deferred — no TextContext provided");
+                }
+            }
+            DrawCommand::Icon {
+                rect,
+                atlas_page,
+                uv,
+                color,
+            } => {
+                if let Some(ctx) = text_ctx.as_deref_mut() {
+                    convert_icon(*rect, *atlas_page, *uv, *color, ctx, scale, opacity);
                 }
             }
             DrawCommand::Image { .. } => {
@@ -404,6 +417,37 @@ fn emit_text_glyph(
         AtlasKind::Mono => ctx.mono_writer.push_glyph(rect, uv, fg, alpha, entry.page),
         AtlasKind::Color => ctx.color_writer.push_glyph(rect, uv, fg, alpha, entry.page),
     }
+}
+
+/// Convert an icon draw command into a mono glyph instance.
+///
+/// The icon bitmap lives in the mono atlas and is tinted to `color`
+/// by the `fg.wgsl` shader (same as monochrome text glyphs).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "icon conversion: rect, atlas_page, uv, color, text context, scale, opacity"
+)]
+fn convert_icon(
+    rect: Rect,
+    atlas_page: u32,
+    uv: [f32; 4],
+    color: Color,
+    ctx: &mut TextContext<'_>,
+    scale: f32,
+    opacity: f32,
+) {
+    let fg = color_to_rgb(color);
+    let alpha = color.a * opacity;
+
+    // Snap icon quad to integer physical pixels so each texel maps 1:1 to a
+    // screen pixel. Without this, bilinear atlas sampling blurs the icon.
+    let x = (rect.x() * scale).round();
+    let y = (rect.y() * scale).round();
+    let w = (rect.width() * scale).round();
+    let h = (rect.height() * scale).round();
+    let screen = ScreenRect { x, y, w, h };
+    ctx.mono_writer
+        .push_glyph(screen, uv, fg, alpha, atlas_page);
 }
 
 /// Convert an [`oriterm_ui::color::Color`] (f32 RGBA) to [`oriterm_core::Rgb`] (u8 RGB).

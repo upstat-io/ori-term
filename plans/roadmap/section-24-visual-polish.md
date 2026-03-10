@@ -2,6 +2,7 @@
 section: 24
 title: Visual Polish
 status: in-progress
+reviewed: false
 tier: 6
 goal: Cursor blinking, hide-while-typing, minimum contrast, HiDPI, vector icons, background images, gradients, backdrop effects, scrollable menus
 sections:
@@ -10,7 +11,7 @@ sections:
     status: complete
   - id: "24.2"
     title: Hide Cursor While Typing
-    status: not-started
+    status: complete
   - id: "24.3"
     title: Minimum Contrast
     status: not-started
@@ -19,7 +20,7 @@ sections:
     status: in-progress
   - id: "24.5"
     title: Vector Icon Pipeline (tiny_skia)
-    status: not-started
+    status: complete
   - id: "24.6"
     title: Background Images
     status: not-started
@@ -39,7 +40,7 @@ sections:
 
 # Section 24: Visual Polish
 
-**Status:** In Progress (24.1 cursor blink, 24.4 HiDPI, 24.8 backdrop effects are partially implemented)
+**Status:** In Progress (24.1 cursor blink complete; 24.4 HiDPI and 24.8 backdrop effects partially implemented)
 **Goal:** Small visual features that collectively create a polished, modern feel. Each is low-to-medium effort but highly visible. These are the details people notice in the first 5 minutes. Missing cursor blink, broken HiDPI, or unreadable colors are dealbreakers.
 
 **Crate:** `oriterm` (app layer + GPU rendering in `oriterm/src/gpu/`), `oriterm_ui` (widgets)
@@ -56,27 +57,27 @@ sections:
 - 24.8 (Backdrop Effects) -- standalone (compositor-level via `window-vibrancy`/DWM, independent of GPU render passes)
 - 24.9 (Scrollable Menus) -- standalone (`oriterm_ui` only, no GPU changes)
 
-**Recommended implementation order:** 24.1 → 24.2 → 24.9 → 24.3 → 24.4 → 24.5 → 24.6 → 24.7 → 24.8
+**Recommended implementation order:** 24.1 -> 24.2 -> 24.9 -> 24.3 -> 24.4 -> 24.5 -> 24.6 -> 24.7 -> 24.8
 
 ---
 
 ## 24.1 Cursor Blinking
 
-Toggle cursor visibility on a timer. **Partially implemented**: `CursorBlink` state machine exists (`oriterm/src/app/cursor_blink/mod.rs`) with toggle, reset, and `next_toggle()`. The `about_to_wait` handler drives blink via `ControlFlow::WaitUntil`. `cursor_blink_visible` is threaded through the prepare pipeline. Remaining work: focus handling (unfocused hollow cursor), mouse click reset, and PTY cursor-move reset.
+Toggle cursor visibility on a timer. **Complete**: `CursorBlink` state machine exists (`oriterm/src/app/cursor_blink/mod.rs`) with `is_visible()`, `reset()`, and `next_toggle()`. The `about_to_wait` handler drives blink via `ControlFlow::WaitUntil`. `cursor_blink_visible` is threaded through the prepare pipeline. Focus handling (unfocused hollow cursor), mouse click reset, and PTY cursor-move reset are all implemented.
 
 **File:** `oriterm/src/app/cursor_blink/mod.rs` (blink state -- exists), `oriterm/src/app/event_loop.rs` (`about_to_wait` blink timer -- exists), `oriterm/src/app/redraw/mod.rs` (cursor blink visible flag -- exists), `oriterm/src/gpu/prepare/mod.rs` (cursor emission gating -- exists)
 
 - [x] Blink state tracking:
-  - [x] `CursorBlink` struct with `visible`, `phase_start`, `interval` fields on `App`
+  - [x] `CursorBlink` struct with `last_visible`, `epoch`, `interval` fields on `App`
   - [x] Blink interval: 530ms on / 530ms off (configurable via `cursor_blink_interval_ms`)
-  - [x] `update()` toggles visibility when interval elapses
+  - [x] `update()` checks `is_visible()` (pure function of elapsed time since epoch), caches the result, and returns `true` if visibility changed
 - [x] DECSCUSR blinking style detection:
   - [x] DECSCUSR values 1 (blinking block), 3 (blinking underline), 5 (blinking bar) enable blink
   - [x] Even values (2, 4, 6) = steady -- no blink
   - [x] Default (0) = implementation-defined -- follow config
   - [x] `TermMode::CURSOR_BLINKING` flag set/cleared by DECSCUSR handler; `blinking_active` cached on `App`
 - [x] Reset blink to visible on keypress:
-  - [x] `cursor_blink.reset()` called from keyboard input handler (resets deadline to now + interval)
+  - [x] `cursor_blink.reset()` called from keyboard input handler (resets `epoch` to `Instant::now()`, so the phase-0 visible window restarts)
 - [x] Reset blink to visible on PTY cursor movement:
   - [x] Compare `last_cursor_pos` between frames in `handle_redraw()` and `handle_redraw_multi_pane()`; reset blink only on actual position change (not on every PTY byte)
 - [x] Reset blink to visible on mouse click in grid:
@@ -91,17 +92,17 @@ Toggle cursor visibility on a timer. **Partially implemented**: `CursorBlink` st
 - [x] Focus handling:
   - [x] Window loses focus (`WindowEvent::Focused(false)` in `event_loop.rs`): set `blinking_active = false` and call `cursor_blink.reset()` to freeze cursor visible
   - [x] Window gains focus (`WindowEvent::Focused(true)` in `event_loop.rs`): re-evaluate `blinking_active` from pane's `TermMode::CURSOR_BLINKING` and call `cursor_blink.reset()`
-  - [x] Unfocused window renders cursor as hollow block (outline only). `window_os_focused` on `App` tracks OS focus; `window_focused: bool` on `FrameInput` propagated to both shaped and unshaped prepare paths
+  - [x] Unfocused window renders cursor as hollow block (outline only). `focused_window_id` on `App` tracks which window has OS focus; `window_focused: bool` on `FrameInput` is set from `ctx.window.window().has_focus()` and propagated to the shaped prepare path
 - [x] Config: `terminal.cursor_blink` (default: true) -- exists as `TerminalConfig::cursor_blink`
 - [x] Config: `terminal.cursor_blink_interval_ms` (default: 530) -- exists as `TerminalConfig::cursor_blink_interval_ms`
 
 **Tests:**
-- [x] Blink state toggles after interval elapses (`update_after_interval_toggles`)
+- [x] Blink state reports change after interval elapses (`update_after_interval_reports_change`)
 - [x] Keypress resets blink to visible (`reset_makes_visible`)
 - [x] Even DECSCUSR values disable blinking (`decscusr_fires_cursor_blinking_change_event`)
 - [x] Odd DECSCUSR values enable blinking (oriterm_core handler tests)
-- [x] Focus loss sets `blinking_active = false` and freezes cursor visible
-- [x] Mouse click in grid resets blink to visible
+- [x] Focus loss sets `blinking_active = false` and freezes cursor visible (verified in `event_loop.rs` Focused handler; no dedicated unit test -- integration behavior)
+- [x] Mouse click in grid resets blink to visible (verified in `mouse_input.rs` grid click path; no dedicated unit test -- integration behavior)
 - [x] Unfocused window renders hollow block cursor (`unfocused_window_renders_hollow_cursor`, `unfocused_window_bar_cursor_becomes_hollow`, `focused_window_renders_block_cursor`)
 
 ---
@@ -110,28 +111,35 @@ Toggle cursor visibility on a timer. **Partially implemented**: `CursorBlink` st
 
 Mouse cursor disappears when typing, reappears on mouse move.
 
-**File:** `oriterm/src/app/mod.rs` (state), `oriterm/src/app/keyboard_input/mod.rs` (keypress hiding), `oriterm/src/app/event_loop.rs` (`CursorMoved` restore)
+**File:** `oriterm/src/app/cursor_hide/mod.rs` (pure decision logic), `oriterm/src/app/mod.rs` (state + `restore_mouse_cursor`), `oriterm/src/app/keyboard_input/mod.rs` (keypress hiding), `oriterm/src/app/event_loop.rs` (`CursorMoved`/`CursorLeft`/`Focused` restore), `oriterm/src/config/behavior.rs` (config)
 
-- [ ] Hide mouse cursor on keypress:
-  - [ ] Track `mouse_cursor_hidden: bool` on `App`
-  - [ ] On `KeyboardInput` with `ElementState::Pressed`: call `self.focused_ctx()?.window.window().set_cursor_visible(false)` and set `mouse_cursor_hidden = true`
-  - [ ] Skip modifier-only keys (`NamedKey::Shift`, `NamedKey::Control`, `NamedKey::Alt`, `NamedKey::Super`) -- only hide on character-producing or action key presses
-  - [ ] Only hide if mouse is over the grid area (not tab bar or resize border)
-- [ ] Restore mouse cursor on mouse move:
-  - [ ] On `CursorMoved` event: if `mouse_cursor_hidden`, call `window.set_cursor_visible(true)` and set `mouse_cursor_hidden = false`
-  - [ ] Skip the `set_cursor_visible(true)` call when `!mouse_cursor_hidden` (avoid redundant winit calls)
-- [ ] Suppress hiding during mouse reporting mode:
-  - [ ] Check `TermMode::ANY_MOUSE` (composite of `MOUSE_REPORT_CLICK | MOUSE_DRAG | MOUSE_MOTION | MOUSE_X10`)
-  - [ ] If any mouse mode is active, do not hide the cursor
-- [ ] Config: add `hide_mouse_when_typing: bool` (default: true) to `BehaviorConfig` in `oriterm/src/config/behavior.rs`
-  - [ ] Gate all hide/show logic on `self.config.behavior.hide_mouse_when_typing`
+- [x] Hide mouse cursor on keypress:
+  - [x] Track `mouse_cursor_hidden: bool` on `App`
+  - [x] Pure decision function `should_hide_cursor(HideContext)` in `app/cursor_hide/mod.rs`
+  - [x] Called from `encode_key_to_pty()` — hides via `window.set_cursor_visible(false)`
+  - [x] Skip modifier-only keys (`NamedKey::Shift`, `NamedKey::Control`, `NamedKey::Alt`, `NamedKey::Super`, `Hyper`, `Meta`)
+  - [x] Skip when IME composition active (`ime.should_suppress_key()`)
+- [x] Restore mouse cursor on mouse move:
+  - [x] `restore_mouse_cursor()` helper on `App` — only calls `set_cursor_visible(true)` when `mouse_cursor_hidden` is true
+  - [x] Called on `CursorMoved` event in `event_loop.rs`
+  - [x] Called on `CursorLeft` event to avoid sticky hidden state
+- [x] Suppress hiding during mouse reporting mode:
+  - [x] Check `TermMode::ANY_MOUSE` inline at the call site (already have `mode` from `pane_mode()`)
+  - [x] Passed as `mouse_reporting` field in `HideContext`
+- [x] Restore cursor on window focus loss:
+  - [x] `restore_mouse_cursor()` called on `WindowEvent::Focused(false)`
+- [x] Config: `hide_mouse_when_typing: bool` (default: true) on `BehaviorConfig`
+  - [x] All hide/show logic gated on `self.config.behavior.hide_mouse_when_typing`
+  - [x] Added to `Default for BehaviorConfig`
 
-**Tests:** Extract decision logic into a pure function (`should_hide_cursor(...)`) testable without a winit `Window`. Test in `oriterm/src/app/tests.rs` or a `cursor_hide` submodule.
-- [ ] Keypress with `hide_mouse_when_typing = true` returns `should_hide = true`
-- [ ] Mouse move with `mouse_cursor_hidden = true` resets to `false`
-- [ ] `ANY_MOUSE` mode active prevents hiding even when config is true
-- [ ] `hide_mouse_when_typing = false` disables the feature entirely
-- [ ] Modifier-only keypress (Shift, Ctrl, Alt, Super) does not trigger hiding
+**Tests:** Pure function `should_hide_cursor()` tested in `app/cursor_hide/tests.rs`.
+- [x] Keypress with `hide_mouse_when_typing = true` returns `should_hide = true`
+- [x] Already-hidden cursor skips redundant hide
+- [x] `ANY_MOUSE` mode active prevents hiding even when config is true
+- [x] `hide_mouse_when_typing = false` disables the feature entirely
+- [x] Modifier-only keypress (Shift, Ctrl, Alt, Super) does not trigger hiding
+- [x] IME composition does not hide cursor
+- [x] Named action keys (Enter, Space, Backspace) trigger hiding
 
 ---
 
@@ -142,6 +150,8 @@ Mouse cursor disappears when typing, reappears on mouse move.
 Ensure text is always readable regardless of color scheme. WCAG 2.0 contrast enforcement in the GPU shader.
 
 **File:** `oriterm/src/gpu/contrast/mod.rs` (new -- Rust reference impl for WCAG luminance/contrast), `oriterm/src/gpu/contrast/tests.rs` (new -- unit tests), `oriterm/src/gpu/shaders/fg.wgsl` + `oriterm/src/gpu/shaders/subpixel_fg.wgsl` (WGSL shaders -- contrast enforcement), `oriterm/src/config/color_config.rs` (config -- field already exists), `oriterm/src/gpu/bind_groups/mod.rs` (uniform buffer write)
+
+**FILE SIZE WARNING:** `oriterm/src/gpu/pipeline/mod.rs` is at 500 lines (the hard limit). The 24.3 uniform buffer change (repurposing `_pad.x`) does not change the buffer layout or require pipeline modifications -- it only changes the data written via `write_uniforms()`. However, sections 24.6 and 24.7 add NEW pipelines whose creation functions must go in new submodules (e.g., `pipeline/bg_image.rs`, `pipeline/bg_gradient.rs`), not in `pipeline/mod.rs`. Extract existing pipeline code into submodules (e.g., `pipeline/fg.rs`, `pipeline/bg.rs`) before 24.6 if `mod.rs` needs modifications beyond adding `mod` declarations.
 
 **Reference:** Ghostty's minimum contrast feature (see `ghostty/src/renderer/shaders/`), iTerm2's minimum contrast slider
 
@@ -154,22 +164,29 @@ Ensure text is always readable regardless of color scheme. WCAG 2.0 contrast enf
   - [ ] Add `pub(crate) mod contrast;` to `gpu/mod.rs`
   - [ ] Write and pass all unit tests (Step 3 below) before proceeding to shaders
 - [ ] **Step 2: Uniform buffer update** -- repurpose `_pad.x` for `min_contrast`:
-  - [ ] Rename `UniformBuffer::write_screen_size()` to `write_uniforms()`, add `min_contrast: f32` parameter. Write `min_contrast` at bytes 8--11 (the current zero-padded `_pad.x` slot). Update ALL callers (grep for `write_screen_size`)
-  - [ ] Rename `_pad: vec2<f32>` to `extra: vec2<f32>` in the `Uniform` struct across all 7 shaders that use the shared layout: `fg.wgsl`, `bg.wgsl`, `subpixel_fg.wgsl`, `color_fg.wgsl`, `ui_rect.wgsl`, `image.wgsl`, `composite.wgsl`. (`colr_solid.wgsl` and `colr_gradient.wgsl` use separate uniform structs and are not affected.) Buffer size stays 16 bytes
+  - [ ] Rename `UniformBuffer::write_screen_size()` to `write_uniforms()`, add `min_contrast: f32` parameter. Write `min_contrast` at bytes 8--11 (the current zero-padded `_pad.x` slot). Update all callers:
+    - `oriterm/src/gpu/window_renderer/render.rs` line 27 (`render_frame()`)
+    - `oriterm/src/gpu/bind_groups/tests.rs` lines 21-45 (test functions `write_screen_size_does_not_panic`, `write_screen_size_zero_dimensions`)
+    - Update doc comments on `UniformBuffer` struct (line 23 of `bind_groups/mod.rs`)
+  - [ ] Rename `_pad: vec2<f32>` to `extra: vec2<f32>` in 7 shaders that use the `Uniform` struct: `fg.wgsl`, `bg.wgsl`, `subpixel_fg.wgsl`, `color_fg.wgsl`, `ui_rect.wgsl`, `image.wgsl`, and `composite.wgsl` (which names its struct `ScreenUniform` but shares the same memory layout at group 0). (`colr_solid.wgsl` and `colr_gradient.wgsl` use separate uniform structs and are not affected.) Buffer size stays 16 bytes
 - [ ] **Step 3: WGSL shader port** -- port the validated Rust functions into `fg.wgsl` and `subpixel_fg.wgsl`:
   - [ ] Add `luminance()`, `contrast_ratio()`, `contrasted_color()` as WGSL functions
-  - [ ] Apply contrast in vertex shader (`vs_main`), not fragment shader -- `bg_color` is only available as a per-instance attribute, not in fragment stage. Per-vertex is sufficient since each cell is one quad with uniform fg/bg:
+  - [ ] **sRGB-to-linear conversion**: the `luminance()` function in WGSL expects linear RGB. Colors in the instance buffer are already in linear space (the prepare phase converts via `srgb_to_linear()` in `gpu/mod.rs`). The `*Srgb` surface format handles the final linear-to-sRGB conversion on output. No additional sRGB conversion is needed in the shader
+  - [ ] Apply contrast adjustment in `vs_main` (vertex shader) for both `fg.wgsl` and `subpixel_fg.wgsl`. In `fg.wgsl`, `bg_color` is a per-instance attribute in `vs_main` but is NOT passed to the fragment stage, so contrast must be applied per-vertex. In `subpixel_fg.wgsl`, `bg_color` IS passed through to `fs_main` (for per-channel compositing), but vertex stage is preferred for consistency:
     ```wgsl
     out.fg_color = contrasted_color(uniforms.extra.x, input.fg_color, input.bg_color);
     ```
   - [ ] Only apply in `fg.wgsl` and `subpixel_fg.wgsl` (text shaders). `bg.wgsl`, `ui_rect.wgsl`, `image.wgsl` do not render text. `color_fg.wgsl` (emoji/color glyphs): skip contrast -- adjusting bitmap colors would distort them
+  - [ ] **UI text side effect**: UI text rendered via `draw_list_convert/mod.rs` uses the same `fg.wgsl` and `subpixel_fg.wgsl` shaders. The `min_contrast` uniform will apply to UI text (tab labels, menu items) as well as terminal cells. This is acceptable (Ghostty does the same) but should be documented as intentional behavior
 - [ ] Hot-reload: `minimum_contrast` value read from `config.colors.effective_minimum_contrast()` each frame, so config changes apply immediately
+- [ ] Threading `min_contrast` to `write_uniforms()`: add `min_contrast: f32` field to `PreparedFrame` in `oriterm/src/gpu/prepared_frame/mod.rs`, set during `prepare()` from the config. This keeps `render_frame()` pure (reads from `self.prepared`, no config access during render)
 
 **Edge cases:**
 - [ ] `minimum_contrast = 1.0` (default, disabled): shader short-circuits -- no luminance computation, pass fg through unchanged. Cost: one branch per vertex, zero overhead when disabled
-- [ ] HIDDEN cells (SGR 8): do not reveal. HIDDEN cells already have `fg == bg` (set by `resolve_cell_colors()`). The shader's `contrasted_color()` must detect `fg == bg` and skip adjustment. Do NOT use `fg_color.a = 0.0` as a signal (it would break premultiplied alpha blending for all text)
-- [ ] Reverse video cells (SGR 7): contrast uses the already-swapped fg/bg (no special handling needed)
-- [ ] Bold/dim flags: contrast applied after bold-bright and dim adjustments (`resolve_cell_colors` output is what the shader sees, no special handling needed)
+- [ ] HIDDEN cells (SGR 8): do not reveal. SGR 8 sets `CellFlags::HIDDEN` on the cell but does NOT set `fg = bg`. The fg and bg colors remain independently resolved by `resolve_fg()`/`resolve_bg()` in `oriterm_core/src/term/renderable/mod.rs` and `apply_inverse()`. The shader cannot rely on `fg == bg` to detect HIDDEN cells. **Solution**: the prepare phase (`resolve_cell_colors()` in `oriterm/src/gpu/prepare/mod.rs`) must detect `CellFlags::HIDDEN` and explicitly set `fg = bg` before writing to the instance buffer. This makes the `fg == bg` signal reliable for the shader's `contrasted_color()` to detect and skip. Do NOT use `fg_color.a = 0.0` as a signal (it would break premultiplied alpha blending for all text)
+- [ ] **Prepare phase change for HIDDEN**: in `resolve_cell_colors()` (and the unshaped path in `unshaped.rs` which also calls `resolve_cell_colors()`), add an early return after the base color resolution: `if cell.flags.contains(CellFlags::HIDDEN) { return (bg, bg); }`. Place after selection handling (so selected HIDDEN cells remain hidden) to ensure the shader sees `fg == bg` for all HIDDEN cells
+- [ ] Reverse video cells (SGR 7): contrast uses the already-swapped fg/bg (no special handling needed -- `apply_inverse()` runs in the renderable layer before colors reach the prepare phase)
+- [ ] Bold/dim flags: contrast applied after bold-bright resolution (handled at the terminal renderable layer in `oriterm_core/src/term/renderable/mod.rs::resolve_fg()`) and dim adjustments. The shader sees final resolved colors; no special handling needed
 
 **Tests:** (in `oriterm/src/gpu/contrast/tests.rs`)
 - [ ] White on black at `minimum_contrast = 1.0` passes through unchanged
@@ -179,8 +196,13 @@ Ensure text is always readable regardless of color scheme. WCAG 2.0 contrast enf
 - [ ] `contrast_ratio(white, black)` approximately equals 21.0; `contrast_ratio(#777, #000)` approximately equals 4.0
 - [ ] `contrasted_color` picks white adjustment for dark backgrounds, black adjustment for light backgrounds
 - [ ] `fg == bg` (HIDDEN cell) returns fg unchanged regardless of `min_contrast` value
-- [ ] Config `effective_minimum_contrast()` clamps NaN to 1.0, values outside [1.0, 21.0] to nearest bound (partially tested in `oriterm/src/config/tests.rs`)
+- [ ] Config `effective_minimum_contrast()` clamps NaN to 1.0, values outside [1.0, 21.0] to nearest bound (tested in `oriterm/src/config/tests.rs`: `minimum_contrast_nan_defaults_to_one`, `minimum_contrast_inf_clamped_to_twenty_one`, `minimum_contrast_clamped`)
 - [ ] Uniform buffer bytes 8--11 contain `min_contrast` after `write_uniforms()` call
+
+**Tests:** (in `oriterm/src/gpu/prepare/tests.rs` -- HIDDEN cell prepare phase)
+- [ ] HIDDEN cell (SGR 8) with distinct fg/bg produces `fg == bg` in the instance buffer (prepare phase sets `fg = bg`)
+- [ ] HIDDEN cell under selection still produces `fg == bg` (not revealed by selection)
+- [ ] Non-HIDDEN cell with same fg/bg is NOT treated as hidden (contrast still applies)
 
 ---
 
@@ -188,7 +210,7 @@ Ensure text is always readable regardless of color scheme. WCAG 2.0 contrast enf
 
 Render correctly on high-DPI displays and handle multi-monitor DPI transitions.
 
-**File:** `oriterm/src/window/mod.rs` (per-window `ScaleFactor` -- exists), `oriterm/src/app/mod.rs` (`handle_dpi_change` -- exists), `oriterm/src/app/event_loop.rs` (`ScaleFactorChanged` handler -- exists), `oriterm/src/gpu/pipeline/mod.rs` (sRGB surface format -- exists)
+**File:** `oriterm/src/window/mod.rs` (per-window `ScaleFactor` -- exists), `oriterm/src/app/mod.rs` (`handle_dpi_change` -- exists), `oriterm/src/app/event_loop.rs` (`ScaleFactorChanged` handler -- exists), `oriterm/src/gpu/state/mod.rs` (sRGB surface format via `select_formats()` + `render_format` -- exists)
 
 - [x] Track `scale_factor: ScaleFactor` per-window on `TermWindow` (not `App`):
   - [x] Initial value from `window.scale_factor()`, updated via `update_scale_factor()`
@@ -198,11 +220,14 @@ Render correctly on high-DPI displays and handle multi-monitor DPI transitions.
   - [x] Atlas clear + re-render via `renderer.set_font_size()`
   - [x] Updates hinting and subpixel mode for new scale factor
   - [x] Marks all grid lines dirty via `mux.mark_all_dirty()`
-- [ ] Font size scaling (remaining):
-  - [ ] Zoom operations (`increase_font_size`, `decrease_font_size`) account for scale factor
+- [ ] Font size zoom operations (not yet implemented):
+  - [ ] Add `increase_font_size()`, `decrease_font_size()`, `reset_font_size()` methods to `App` or `WindowContext` that call `renderer.set_font_size()` with the adjusted size
+  - [ ] Bind to keybindings: `Ctrl+=` (increase), `Ctrl+-` (decrease), `Ctrl+0` (reset). Register in keybinding dispatch table
+  - [ ] Zoom operations must account for scale factor: the font size passed to the renderer is `logical_size * (DEFAULT_DPI * scale_factor)`, so zoom increments apply to the logical size and then re-multiply
   - [ ] `reset_font_size()` resets to `config.font.size * scale_factor`
-- [ ] Multi-monitor DPI handling (remaining):
-  - [ ] Verify that winit fires `ScaleFactorChanged` when dragging between monitors with different DPI -- the existing handler should handle this. Do not add scale-factor polling during drag (violates event flow discipline). If winit does not fire the event, file a winit issue upstream
+  - [ ] After zoom: recalculate grid dimensions (columns/rows), notify mux of resize, mark all dirty
+- [ ] Multi-monitor DPI transitions:
+  - [ ] Confirm that winit fires `ScaleFactorChanged` when dragging between monitors with different DPI -- the existing handler should handle this correctly. If winit does not fire the event on a particular platform, file a winit issue upstream. Do not add scale-factor polling during drag
 - [x] sRGB-correct rendering pipeline:
   - [x] GPU pipeline uses sRGB surface format for gamma-correct blending
   - [x] Luminance-based alpha correction option (`AlphaBlending::LinearCorrected`)
@@ -221,69 +246,74 @@ Render correctly on high-DPI displays and handle multi-monitor DPI transitions.
 
 Replace jagged geometric-primitive icons with properly anti-aliased vector path rasterization. Currently, diagonal lines (close X, chevron) are decomposed into pixel-stepping rectangles in `gpu/draw_list_convert/mod.rs`, producing visible staircase artifacts. This section introduces `tiny_skia` to rasterize icon paths into bitmaps at the exact DPI, cached in the glyph atlas alongside font glyphs.
 
-**File:** `oriterm_ui/src/icons/mod.rs` (new -- icon path definitions), `oriterm/src/gpu/icon_rasterizer/mod.rs` (new -- tiny_skia rasterization), `oriterm/src/gpu/icon_rasterizer/cache.rs` (new -- `IconCache`), `oriterm_ui/src/widgets/tab_bar/widget/draw.rs` (consume icon textures -- currently uses `push_line()`), `oriterm_ui/src/widgets/window_chrome/controls.rs` (consume icon textures -- currently uses `push_line()`)
+**File:** `oriterm_ui/src/icons/mod.rs` (new -- icon path definitions), `oriterm/src/gpu/icon_rasterizer/mod.rs` (new -- tiny_skia rasterization), `oriterm/src/gpu/icon_rasterizer/cache.rs` (new -- `IconCache`), `oriterm_ui/src/widgets/tab_bar/widget/draw.rs` (consume icon textures -- currently uses `push_line()`), `oriterm_ui/src/widgets/window_chrome/controls.rs` (consume icon textures -- currently uses `push_line()` for minimize/close and `push_rect()` for maximize/restore)
 
 **Reference:** WezTerm `wezterm-gui/src/customglyph.rs` (`Poly`/`PolyCommand` system with `to_skia()` bridge), Chromium `components/vector_icons/` (.icon format to Skia paths)
 
 **Dependency:** `tiny-skia` crate -- already in `oriterm/Cargo.toml` (used by COLRv1 rasterization)
 
-- [ ] Icon path data structures:
-  - [ ] `PathCommand` enum: `MoveTo(f32, f32)`, `LineTo(f32, f32)`, `CubicTo(f32, f32, f32, f32, f32, f32)`, `Close`
-  - [ ] `IconPath` struct: `commands: &'static [PathCommand]`, `style: IconStyle`
-  - [ ] `IconStyle` enum: `Stroke(f32)` (line width), `Fill`
-  - [ ] All coordinates normalized 0.0 to 1.0 (scaled to target pixel size at rasterization time)
-- [ ] Static icon definitions (`&'static` slices, zero runtime allocation):
-  - [ ] `ICON_CLOSE`: two diagonal lines forming × (tab close button)
-  - [ ] `ICON_PLUS`: two perpendicular lines forming + (new tab button)
-  - [ ] `ICON_CHEVRON_DOWN`: two lines forming ▾ (dropdown button)
-  - [ ] `ICON_MINIMIZE`: single horizontal line ─ (window control)
-  - [ ] `ICON_MAXIMIZE`: square outline □ (window control)
-  - [ ] `ICON_RESTORE`: two overlapping rectangles ⧉ (window control, maximized state)
-  - [ ] `ICON_WINDOW_CLOSE`: two diagonal lines × (window close, slightly different proportions than tab close)
-- [ ] tiny_skia rasterization:
-  - [ ] `rasterize_icon(icon: &IconPath, size_px: u32, color: Color) -> Vec<u8>` (RGBA8 bitmap)
-  - [ ] Build `tiny_skia::Path` from `PathCommand` sequence (scale 0.0--1.0 coords to `size_px`)
-  - [ ] For `Stroke`: use `tiny_skia::Stroke` with round caps and round joins
-  - [ ] For `Fill`: use `tiny_skia::FillRule::Winding`
-  - [ ] Anti-aliasing enabled (tiny_skia default -- analytic AA, no MSAA needed)
-  - [ ] Return RGBA8 pixmap data ready for atlas upload
-- [ ] Atlas integration:
-  - [ ] Icon bitmaps cached in the existing glyph atlas (grayscale pages, same as text)
-  - [ ] Cache key: `(IconId, size_px, color_hash)` -- re-rasterize on DPI change or theme change
-  - [ ] `IconCache` struct: `HashMap<(IconId, u32), AtlasRegion>` -- maps icon+size to atlas UV coords
-  - [ ] On DPI scale change: invalidate icon cache, re-rasterize at new physical size
-  - [ ] On theme color change: invalidate icon cache (icon color changed)
-- [ ] Widget integration -- tab bar:
-  - [ ] `draw.rs`: replace `push_line()` calls for close ×, + button, and chevron with `push_image()` referencing cached atlas region
-  - [ ] Icon size derived from tab bar constants (e.g., `CLOSE_BUTTON_WIDTH * scale_factor`)
-  - [ ] Hover color change: cache both normal and hover-color variants, or tint in shader
-- [ ] Widget integration -- window chrome:
-  - [ ] `controls.rs`: replace `push_line()` calls for minimize, maximize, restore, close with `push_image()` referencing cached atlas regions
-  - [ ] Maximize/restore: swap icon based on `is_maximized` state
-  - [ ] Close button hover: white icon on red background (cache white variant)
-- [ ] Draw list integration:
-  - [ ] Add `push_icon(rect, atlas_page, uv)` convenience method to `DrawList` -- emits a `DrawCommand::Image` with the icon's atlas region (no new enum variant needed; `DrawCommand::Image` already has `rect`, `texture_id`, `uv`)
-  - [ ] In `oriterm/src/gpu/draw_list_convert/mod.rs`: implement the `DrawCommand::Image` conversion (currently logged as "deferred no-op") -- emit a textured quad using the atlas bind group
-  - [ ] Make `IconCache` accessible during draw list conversion: either pass through conversion context, store on `WindowRenderer`, or provide a pre-resolved icon atlas lookup via `DrawCtx` so widgets resolve `(IconId, size_px)` to `(atlas_page, uv)` before emitting commands
-- [ ] Module registration:
-  - [ ] Create `oriterm_ui/src/icons/mod.rs` -- icon path definitions (`PathCommand`, `IconPath`, `IconStyle`, static icon data). Add `#[cfg(test)] mod tests;` at bottom
-  - [ ] Create `oriterm_ui/src/icons/tests.rs` -- tests for icon path data (e.g., each icon has at least one `MoveTo` and one `Close`)
-  - [ ] Add `pub mod icons;` to `oriterm_ui/src/lib.rs`
-  - [ ] Create `oriterm/src/gpu/icon_rasterizer/mod.rs` -- `rasterize_icon()` function + re-exports. Add `#[cfg(test)] mod tests;` at bottom
-  - [ ] Create `oriterm/src/gpu/icon_rasterizer/cache.rs` -- `IconCache` struct (HashMap-based atlas region cache, invalidation on DPI/theme change). Keep under 500 lines
-  - [ ] Create `oriterm/src/gpu/icon_rasterizer/tests.rs` -- tests for rasterization + cache
-  - [ ] Add `mod icon_rasterizer;` to `oriterm/src/gpu/mod.rs`
-  - [ ] Wire `IconCache` into `WindowRenderer` -- initialized on construction, invalidated on DPI/theme change
-- [ ] Remove old icon line-stepping code:
-  - [ ] Remove icon-specific `push_line()` calls from `draw.rs` and `controls.rs`
-  - [ ] Keep the general `push_line()` / `convert_line()` infrastructure (still used for menu checkmarks, separators, etc.)
+- [x] **Phase 1: Library crate types** (`oriterm_ui` -- must be implemented before binary crate code):
+  - [x] Create `oriterm_ui/src/icons/mod.rs` -- icon path definitions. Add `#[cfg(test)] mod tests;` at bottom
+  - [x] Add `pub mod icons;` to `oriterm_ui/src/lib.rs`
+  - [x] `PathCommand` enum: `MoveTo(f32, f32)`, `LineTo(f32, f32)`, `CubicTo(f32, f32, f32, f32, f32, f32)`, `Close`
+  - [x] `IconPath` struct: `commands: &'static [PathCommand]`, `style: IconStyle`
+  - [x] `IconStyle` enum: `Stroke(f32)` (line width), `Fill`
+  - [x] `IconId` enum: `Close`, `Plus`, `ChevronDown`, `Minimize`, `Maximize`, `Restore`, `WindowClose` -- newtype for type-safe cache key (not a bare `u32`)
+  - [x] All coordinates normalized 0.0 to 1.0 (scaled to target pixel size at rasterization time)
+  - [x] Create `oriterm_ui/src/icons/tests.rs` -- validate each icon has at least one `MoveTo` and one `Close` command
+- [x] **Phase 1b: Static icon definitions** (`&'static` slices, zero runtime allocation):
+  - [x] `ICON_CLOSE`: two diagonal lines forming x (tab close button)
+  - [x] `ICON_PLUS`: two perpendicular lines forming + (new tab button)
+  - [x] `ICON_CHEVRON_DOWN`: two lines forming down-pointing chevron (dropdown button)
+  - [x] `ICON_MINIMIZE`: single horizontal line (window control)
+  - [x] `ICON_MAXIMIZE`: square outline (window control)
+  - [x] `ICON_RESTORE`: two overlapping rectangles (window control, maximized state)
+  - [x] `ICON_WINDOW_CLOSE`: two diagonal lines x (window close, slightly different proportions than tab close)
+- [x] **Phase 2: Rasterization + cache** (`oriterm` binary crate -- depends on Phase 1):
+  - [x] Create `oriterm/src/gpu/icon_rasterizer/mod.rs` -- `rasterize_icon()` function + re-exports. Add `#[cfg(test)] mod tests;` at bottom
+  - [x] Create `oriterm/src/gpu/icon_rasterizer/cache.rs` -- `IconCache` struct (HashMap-based atlas region cache, invalidation on DPI change). Keep under 500 lines
+  - [x] Create `oriterm/src/gpu/icon_rasterizer/tests.rs` -- tests for rasterization + cache
+  - [x] Add `mod icon_rasterizer;` to `oriterm/src/gpu/mod.rs`
+  - [x] `rasterize_icon(icon: &IconPath, size_px: u32) -> Vec<u8>` -- rasterize as alpha-only (single-channel). Render white-on-transparent in tiny_skia, extract the alpha channel as R8 data for the mono glyph atlas. Output size: `size_px * size_px` bytes
+  - [x] Build `tiny_skia::Path` from `PathCommand` sequence (scale 0.0--1.0 coords to `size_px`)
+  - [x] For `Stroke`: use `tiny_skia::Stroke` with round caps and round joins
+  - [x] For `Fill`: use `tiny_skia::FillRule::Winding`
+  - [x] Anti-aliasing enabled (tiny_skia default -- analytic AA, no MSAA needed)
+- [x] **Phase 2b: Atlas integration**:
+  - [x] Icon bitmaps cached in the existing glyph atlas as R8Unorm grayscale pages (same as mono text glyphs), rendered through the `fg.wgsl` pipeline. This allows tinting icons to any color at draw time (hover states, theme changes) without re-rasterizing
+  - [x] Cache key: `(IconId, size_px)` -- re-rasterize on DPI change only (color is applied by shader, not baked in)
+  - [x] `IconCache` struct: `HashMap<(IconId, u32), AtlasRegion>` -- maps icon+size to atlas UV coords
+  - [x] On DPI scale change: invalidate icon cache, re-rasterize at new physical size
+  - [x] Wire `IconCache` into `WindowRenderer` -- initialized on construction, invalidated on DPI change
+- [x] **Phase 3: Draw list integration**:
+  - [x] Add a `DrawCommand::Icon { rect: Rect, atlas_page: u32, uv: [f32; 4] }` variant that routes through the existing glyph pipeline. Do NOT reuse `DrawCommand::Image` -- that variant implies per-image texture bind groups (routed through `record_image_draws()`), while icons live in the shared glyph atlas
+  - [x] Add `push_icon(rect, atlas_page, uv)` convenience method to `DrawList` -- emits a `DrawCommand::Icon`
+  - [x] In `oriterm/src/gpu/draw_list_convert/mod.rs`: handle `DrawCommand::Icon { .. }` by emitting a glyph instance via `push_glyph()` on the mono writer with the atlas page and UV from the icon cache
+  - [x] **FILE SIZE NOTE:** `draw_list_convert/mod.rs` is at 444 lines. Adding `DrawCommand::Icon` handling (~10 lines) stays within the 500-line limit
+  - [x] Icons must be resolved to `(atlas_page, uv)` BEFORE draw list emission (in the widget's `draw()` method). Pass `&ResolvedIcons` through `DrawCtx` so widgets can look up atlas regions at draw time
+- [x] **Phase 4: Widget integration** (one widget at a time -- depends on Phases 1-3):
+  - [x] Widget integration -- tab bar:
+    - [x] `draw.rs`: replace `push_line()` calls for close x, + button, and chevron with `push_icon()` referencing cached atlas region (with push_line fallback when icons not resolved)
+    - [x] `drag_draw.rs`: replace `push_line()` calls for close x on dragged tab with `push_icon()` (with fallback)
+    - [x] Icon size derived from tab bar constants (e.g., `CLOSE_BUTTON_WIDTH - 2*CLOSE_ICON_INSET`)
+    - [x] Hover color change: shader tints icon to hover color via `fg_color` attribute (no re-rasterization needed)
+  - [x] Widget integration -- window chrome:
+    - [x] `controls.rs`: replace `push_line()` calls for minimize and close, and `push_rect()` calls for maximize and restore, with `push_icon()` referencing cached atlas regions (with fallback)
+    - [x] Maximize/restore: swap icon based on `is_maximized` state (existing logic, icon lookup by `IconId::Maximize` vs `IconId::Restore`)
+    - [x] Close button hover: white icon on red background (shader tints to white via `fg_color`)
+  - [x] Widget integration -- dropdown:
+    - [x] `oriterm_ui/src/widgets/dropdown/mod.rs`: replace `push_line()` calls for chevron indicator with `push_icon()` referencing `ICON_CHEVRON_DOWN` atlas region (with fallback)
+    - [x] Chevron uses the same icon definition but may need a smaller size variant (4px arrow_half vs tab bar's `CHEVRON_HALF_W`)
+- [x] **Phase 5: Cleanup** (after all widgets migrated and `ResolvedIcons` wired into `WindowRenderer`):
+  - [x] Remove icon-specific `push_line()` fallback branches from `draw.rs`, `drag_draw.rs`, `controls.rs`, and `dropdown/mod.rs`
+  - [x] Keep the general `push_line()` / `convert_line()` infrastructure (still used for menu checkmarks, menu separators, tab separators, checkbox checkmarks, dialog separators, and `separator/mod.rs`) and `push_rect()` (still used everywhere for non-icon rectangles)
 
 **Tests:**
-- [ ] Rasterize close icon at 16px, 24px, 32px -- output is non-empty RGBA8 with correct dimensions (`size_px * size_px * 4` bytes)
-- [ ] Rasterize at different sizes produces different pixel data (not a byte-for-byte duplicate)
-- [ ] Icon cache returns same `AtlasRegion` for same `(IconId, size_px)` key (cache hit)
-- [ ] DPI change invalidates cache; subsequent lookup re-rasterizes and returns new region
-- [ ] Rasterized close icon at 2.0x scale has non-zero alpha along the diagonal (no staircase gap)
+- [x] Rasterize close icon at 16px, 24px, 32px -- output is non-empty with correct dimensions (`size_px * size_px` bytes for alpha-only R8 data)
+- [x] Rasterize at different sizes produces different pixel data (not a byte-for-byte duplicate)
+- [ ] Icon cache returns same `AtlasRegion` for same `(IconId, size_px)` key (cache hit) -- requires GPU test harness
+- [ ] DPI change invalidates cache; subsequent lookup re-rasterizes and returns new region -- requires GPU test harness
+- [x] Rasterized close icon at 2.0x scale has non-zero alpha along the diagonal (no staircase gap)
 
 ---
 
@@ -291,9 +321,13 @@ Replace jagged geometric-primitive icons with properly anti-aliased vector path 
 
 **COMPLEXITY WARNING:** New GPU pipeline + texture management. The `record_draw_passes()` function already has a `#[expect(clippy::too_many_lines)]` annotation -- adding another pipeline makes it longer. Consider extracting per-tier draw helpers if any logical block exceeds 50 lines.
 
+**FILE SIZE WARNING:** `render.rs` is at 455 lines. Adding background image rendering (render pass setup, bind group binding, draw call) will approach or exceed 500. Extract existing render pass helper functions into a sibling file within `window_renderer/` (e.g., `window_renderer/render_passes.rs`) BEFORE adding the background image pass. Note: `render.rs` is a plain file inside the `window_renderer/` directory module -- extraction creates sibling files. Similarly, `pipeline/mod.rs` is at 500 lines -- new pipeline creation functions MUST go in a new submodule (e.g., `pipeline/bg_image.rs`).
+
+**CONFIG WARNING:** `config/mod.rs` is at 331 lines. Sections 24.6, 24.7, and 24.8 collectively add ~40 lines of config structs/fields/impls to `WindowConfig`. Consider extracting `WindowConfig` and its impls into a `config/window.rs` submodule if the file approaches 400 lines after 24.6.
+
 Display a background image behind the terminal grid.
 
-**File:** `oriterm/src/gpu/window_renderer/render.rs` (render pass), `oriterm/src/gpu/shaders/bg_image.wgsl` (new shader), `oriterm/src/config/mod.rs` (config -- `WindowConfig`), `oriterm/src/gpu/bg_image/mod.rs` (new -- texture loading + GPU upload), `oriterm/src/gpu/bg_image/tests.rs` (new -- position mode UV computation tests)
+**File:** `oriterm/src/gpu/window_renderer/render.rs` (render pass -- extract helpers first), `oriterm/src/gpu/shaders/bg_image.wgsl` (new shader), `oriterm/src/config/mod.rs` (config -- `WindowConfig`), `oriterm/src/gpu/bg_image/mod.rs` (new -- texture loading + GPU upload), `oriterm/src/gpu/bg_image/tests.rs` (new -- position mode UV computation tests)
 
 - [ ] Config options:
   ```toml
@@ -302,9 +336,17 @@ Display a background image behind the terminal grid.
   background_image_opacity = 0.1
   background_image_position = "center"  # center | stretch | tile | fill
   ```
+- [ ] Config fields on `WindowConfig` in `oriterm/src/config/mod.rs`:
+  - [ ] Add `background_image: Option<String>` (default: `None`)
+  - [ ] Add `background_image_opacity: f32` (default: `0.1`)
+  - [ ] Add `background_image_position: BackgroundImagePosition` (default: `Center`)
+  - [ ] Create `BackgroundImagePosition` enum: `Center`, `Stretch`, `Fill`, `Tile` with `#[serde(rename_all = "lowercase")]`
+  - [ ] Add `effective_background_image_opacity()` clamped to [0.0, 1.0] (matching the pattern of other `effective_*` methods)
+  - [ ] Update `Default for WindowConfig` to include new fields
+  - [ ] Config placement note: these fields go on app-layer `WindowConfig` only. The `oriterm_ui::window::WindowConfig` (window creation struct) does NOT get these fields -- background rendering is a GPU concern
 - [ ] Image loading:
   - [ ] Load at startup and on config reload (hot-reload)
-  - [ ] Decode PNG/JPEG/BMP via `image` crate. Currently `build-dependencies` and `dev-dependencies` only in `oriterm/Cargo.toml` -- must add `image` to `[dependencies]` with features (`png`, `jpeg`, `bmp`). The `build-dependencies` entry (used for icon embedding at build time) is separate and stays as-is
+  - [ ] Decode PNG/JPEG/BMP via `image` crate. Currently `build-dependencies` and `dev-dependencies` only in `oriterm/Cargo.toml` -- add `image` to `[dependencies]` with features (`png`, `jpeg`, `bmp`). The existing `build-dependencies` entry (for icon embedding at build time) is separate and stays as-is
   - [ ] Convert to RGBA8 texture for wgpu
   - [ ] Handle errors gracefully (missing file, corrupt image, unsupported format) -- log warning, continue without background image
   - [ ] Validate image dimensions: reject images larger than GPU `max_texture_dimension_2d` (typically 8192 or 16384); log error and skip
@@ -315,31 +357,37 @@ Display a background image behind the terminal grid.
     - [ ] Insert between `LoadOp::Clear` and the terminal tier backgrounds draw call
     - [ ] Full-screen quad with image texture
     - [ ] Apply `background_image_opacity` as alpha multiplier in the shader
+    - [ ] Texture handle and opacity stored on `PreparedFrame` during prepare phase (rendering discipline: no config access during render, no state mutation)
   - [ ] New shader: `oriterm/src/gpu/shaders/bg_image.wgsl` -- samples texture, applies opacity uniform, outputs premultiplied alpha
   - [ ] New pipeline: add `bg_image_pipeline` to `GpuPipelines` in `oriterm/src/gpu/pipelines.rs`
   - [ ] Cell backgrounds blend over the image (existing bg pipeline uses `src*1 + dst*(1-srcA)` blend -- already works)
   - [ ] Position/scale image according to `background_image_position` -- compute UV coordinates on CPU, pass as instance data or uniform
 - [ ] Position modes:
-  - [ ] `center`: original size, centered, crop if larger than window
-  - [ ] `stretch`: scale to fill window, may distort aspect ratio
-  - [ ] `fill`: scale to fill, maintaining aspect ratio, crop excess
-  - [ ] `tile`: repeat at original size
+  - [ ] `center`: original size, centered, crop if larger than window. UV computed from window/image size ratio
+  - [ ] `stretch`: scale to fill window, may distort aspect ratio. UV = 0..1 on both axes
+  - [ ] `fill`: scale to fill, maintaining aspect ratio, crop excess. UV computed to crop the shorter axis
+  - [ ] `tile`: repeat at original size. Requires `AddressMode::Repeat` on the sampler (the atlas sampler uses `ClampToEdge`, so `tile` mode needs a dedicated sampler)
 - [ ] Handle window resize: recompute UV coordinates on resize (no re-decode needed)
 - [ ] Memory: keep decoded texture in GPU memory only. Drop the `image::DynamicImage` after GPU upload
-- [ ] Config placement: `background_image` fields go on `oriterm/src/config/mod.rs::WindowConfig` (app-layer config). The `oriterm_ui::window::WindowConfig` (window creation struct) does NOT get these fields -- background rendering is a GPU concern
 - [ ] Module registration:
   - [ ] Create `oriterm/src/gpu/bg_image/mod.rs` -- image loading, GPU texture creation, position mode UV computation. Add `#[cfg(test)] mod tests;` at bottom
   - [ ] Create `oriterm/src/gpu/bg_image/tests.rs` -- UV coordinate computation tests for each position mode
   - [ ] Add `pub(crate) mod bg_image;` to `oriterm/src/gpu/mod.rs`
   - [ ] Add `bg_image_pipeline` to `GpuPipelines` in `oriterm/src/gpu/pipelines.rs`
-  - [ ] Add `image` to `[dependencies]` in `oriterm/Cargo.toml` (with features `png`, `jpeg`)
+  - [ ] Add pipeline creation function `create_bg_image_pipeline()` in a new `oriterm/src/gpu/pipeline/bg_image.rs` submodule (NOT in `pipeline/mod.rs` which is at 500 lines). Add `mod bg_image;` and re-export from `pipeline/mod.rs`
+  - [ ] Add `image` to `[dependencies]` in `oriterm/Cargo.toml` (with features `png`, `jpeg`). The existing `build-dependencies` and `dev-dependencies` entries for `image` are separate and stay as-is
 
 **Tests:**
 - [ ] Image loads from valid path, returns error for missing path
-- [ ] Position mode center computes correct UV coordinates
-- [ ] Position mode fill maintains aspect ratio
+- [ ] Corrupt/truncated image file returns error gracefully (no panic)
+- [ ] Image exceeding `max_texture_dimension_2d` is rejected with log warning
+- [ ] Position mode `center` computes correct UV coordinates for window larger than image and image larger than window
+- [ ] Position mode `stretch` produces UV = 0..1 on both axes regardless of aspect ratio
+- [ ] Position mode `fill` maintains aspect ratio (UV covers window, may exceed 0..1 on one axis)
+- [ ] Position mode `tile` uses `AddressMode::Repeat` sampler
 - [ ] Opacity multiplier applied correctly in shader
 - [ ] Config reload swaps background image without restart
+- [ ] Config change from image path to `None` removes the background image draw call
 
 ---
 
@@ -347,11 +395,13 @@ Display a background image behind the terminal grid.
 
 GPU-rendered gradient backgrounds as an alternative to solid colors or images.
 
-**File:** `oriterm/src/gpu/window_renderer/render.rs` (render pass), `oriterm/src/gpu/shaders/bg_gradient.wgsl` (new shader), `oriterm_ui/src/draw/gradient.rs` (gradient data structures -- exists), `oriterm/src/gpu/pipelines.rs` (add `bg_gradient_pipeline`)
+**DEPENDENCY:** This section depends on the `render.rs` extraction done in 24.6 (extracting render pass helpers to stay under 500 lines). If 24.6's render pass extraction is not done, this section will exceed the file size limit.
+
+**File:** `oriterm/src/gpu/window_renderer/render.rs` (render pass -- must be extracted per 24.6), `oriterm/src/gpu/shaders/bg_gradient.wgsl` (new shader), `oriterm_ui/src/draw/gradient.rs` (gradient data structures -- exists), `oriterm/src/gpu/pipelines.rs` (add `bg_gradient_pipeline`)
 
 **Reference:** WezTerm `background` config (gradient presets + custom)
 
-- [ ] Config:
+- [ ] Config (add to `WindowConfig` in `oriterm/src/config/mod.rs`):
   ```toml
   [window]
   background_gradient = "none"  # "none", "linear", "radial"
@@ -359,6 +409,11 @@ GPU-rendered gradient backgrounds as an alternative to solid colors or images.
   gradient_angle = 180  # degrees, for linear gradient (CSS convention: 0 = bottom-to-top, 180 = top-to-bottom)
   gradient_opacity = 1.0  # 0.0-1.0, blended with background color
   ```
+  - [ ] Create `GradientType` enum: `None`, `Linear`, `Radial` with `#[serde(rename_all = "lowercase")]`
+  - [ ] Add fields to `WindowConfig`: `background_gradient: GradientType` (default `None`), `gradient_colors: Vec<String>` (default empty), `gradient_angle: f32` (default `180.0`), `gradient_opacity: f32` (default `1.0`)
+  - [ ] Update `Default for WindowConfig`
+  - [ ] Add `effective_gradient_opacity()` clamped to [0.0, 1.0]
+  - [ ] Validate `gradient_colors` has at least 2 entries when `background_gradient != None`; log warning and fall back to `None` if fewer
 - [ ] Linear gradient:
   - [ ] Two-stop gradient from color A to color B
   - [ ] Angle configurable: 0 deg = bottom-to-top, 90 deg = left-to-right, 180 deg = top-to-bottom (CSS convention, matching existing `oriterm_ui::draw::gradient::Gradient::angle` field)
@@ -374,7 +429,7 @@ GPU-rendered gradient backgrounds as an alternative to solid colors or images.
   - [ ] New shader: `oriterm/src/gpu/shaders/bg_gradient.wgsl` -- takes gradient parameters as uniforms (2 colors, angle), outputs interpolated color per fragment
   - [ ] New pipeline: add `bg_gradient_pipeline` to `GpuPipelines` in `oriterm/src/gpu/pipelines.rs`
   - [ ] Full-screen quad before cell backgrounds in `record_draw_passes()` (same insertion point as background image from 24.6)
-  - [ ] Draw order in `record_draw_passes()`: clear, then gradient, then background image, then terminal cell backgrounds, then text, then cursors, then chrome, then overlays
+  - [ ] Draw order in `record_draw_passes()`: clear -> gradient -> background image -> terminal cell backgrounds -> text -> cursors -> chrome -> overlays
   - [ ] If both gradient and image configured: gradient renders first, image blends on top with alpha
   - [ ] Cell backgrounds blend on top of gradient (existing blend mode handles this)
   - [ ] Gradient parameters passed via a dedicated uniform buffer or packed into the existing uniform buffer (evaluate 16-byte alignment cost vs. dedicated bind group)
@@ -382,11 +437,19 @@ GPU-rendered gradient backgrounds as an alternative to solid colors or images.
   - [ ] Gradient respects `window.opacity` -- blended with compositor-provided background
   - [ ] `gradient_opacity` controls gradient's own alpha (independent of window opacity)
 - [ ] Hot-reload: gradient config changes apply immediately
-- [ ] **Tests:**
-  - [ ] Linear gradient: pixel at top differs from pixel at bottom
-  - [ ] Angle rotation: 90 deg gradient varies horizontally, not vertically
-  - [ ] Gradient opacity: alpha applied correctly
-  - [ ] Config "none": no gradient rendered
+- [ ] Module registration:
+  - [ ] Add pipeline creation function `create_bg_gradient_pipeline()` in a new `oriterm/src/gpu/pipeline/bg_gradient.rs` submodule (NOT in `pipeline/mod.rs` which is at 500 lines). Add `mod bg_gradient;` and re-export from `pipeline/mod.rs`
+  - [ ] Add `bg_gradient_pipeline: RenderPipeline` field to `GpuPipelines` in `oriterm/src/gpu/pipelines.rs`
+  - [ ] Wire pipeline creation in `GpuPipelines::new()`
+  - [ ] Create gradient uniform buffer (or extend existing uniform buffer) -- must fit 2 colors (8 floats), angle (1 float), opacity (1 float). Evaluate: separate bind group at group 1 is cleaner than extending the 16-byte screen uniform buffer
+
+**Tests:**
+- [ ] Linear gradient: pixel at top differs from pixel at bottom (for 180 deg angle)
+- [ ] Angle rotation: 90 deg gradient varies horizontally, not vertically
+- [ ] Gradient opacity: alpha channel reflects `gradient_opacity` value
+- [ ] Config `background_gradient = "none"`: no gradient rendered
+- [ ] `gradient_colors` with < 2 entries falls back to no gradient with log warning
+- [ ] Config hot-reload: changing gradient type applies without restart
 
 ---
 
@@ -404,9 +467,14 @@ Platform-specific compositor effects: Acrylic/Mica on Windows, blur on macOS/Lin
   backdrop = "none"  # "none", "blur", "acrylic", "mica", "auto"
   # Existing fields: opacity = 1.0, blur = true
   ```
+- [ ] Create `Backdrop` enum: `None`, `Blur`, `Acrylic`, `Mica`, `Auto` with `#[serde(rename_all = "lowercase")]` and `Default = Auto`
+- [ ] Add `backdrop: Backdrop` field to `WindowConfig`
+- [ ] Update `Default for WindowConfig` to include `backdrop: Backdrop::Auto`
+- [ ] Deprecate `blur: bool` config field (keep for backwards compatibility; `backdrop` takes priority when both present)
+- [ ] Refactor `transparency.rs::apply_transparency()` to accept `Backdrop` enum instead of `bool blur`. Update caller in `oriterm/src/app/init/mod.rs`
 - [x] Windows backdrop effects (Win32) -- partially implemented:
   - [x] `acrylic` -- `window_vibrancy::apply_acrylic()` with tint color (exists in `transparency.rs`)
-  - [ ] `mica` -- `DWM_SYSTEMBACKDROP_TYPE::DWMSBT_MAINWINDOW` (Windows 11 only)
+  - [ ] `mica` -- `DWM_SYSTEMBACKDROP_TYPE::DWMSBT_MAINWINDOW` (Windows 11 only). Requires `windows-sys` feature `Win32_Graphics_Dwm` (already in Cargo.toml)
   - [ ] `auto` -- Mica on Windows 11, Acrylic on Windows 10
   - [x] Requires `window.opacity < 1.0` to see the effect (guarded in `apply_transparency()`)
   - [x] Uses `window-vibrancy` crate (already a dependency)
@@ -416,13 +484,12 @@ Platform-specific compositor effects: Acrylic/Mica on Windows, blur on macOS/Lin
 - [x] Linux backdrop effects -- implemented:
   - [x] `blur` -- `window.set_blur(true)` via winit (exists in `transparency.rs`)
   - [ ] Log a warning when compositor does not support blur (best-effort detection)
-- [ ] Config mapping: the `backdrop` enum replaces the boolean `blur` field in `oriterm/src/config/mod.rs::WindowConfig`:
+- [ ] Config mapping to `apply_transparency()`:
   - [ ] `backdrop = "none"` -- `apply_transparency(_, opacity, false, _)`
   - [ ] `backdrop = "blur"` -- `apply_transparency(_, opacity, true, _)` (current behavior)
   - [ ] `backdrop = "acrylic"` -- new code path: call `window_vibrancy::apply_acrylic()` directly
   - [ ] `backdrop = "mica"` -- new code path: Windows 11 DWM API
   - [ ] `backdrop = "auto"` -- platform detection logic
-  - [ ] Deprecate `blur: bool` config field (keep for backwards compatibility; `backdrop` takes priority when both present)
 - [ ] Interaction with other features:
   - [ ] Backdrop visible only when `window.opacity < 1.0`
   - [ ] Background gradient renders on top of backdrop effect
@@ -432,12 +499,13 @@ Platform-specific compositor effects: Acrylic/Mica on Windows, blur on macOS/Lin
   - [ ] Mica on Windows 10: log warning, fall back to Acrylic
   - [ ] Acrylic on Windows without DWM composition: log warning, fall back to `none`
   - [ ] Linux without compositor: `window.set_blur(true)` may silently fail -- detect and log
-- [ ] **Tests:**
-  - [ ] Config parsing: all backdrop variants deserialize correctly
-  - [ ] "none" disables backdrop
-  - [ ] "auto" selects platform-appropriate effect
-  - [ ] Backwards compatibility: `blur = true` without `backdrop` field still enables blur
-  - [ ] `backdrop` field overrides `blur` field when both are present
+
+**Tests:**
+- [ ] Config parsing: all `Backdrop` variants deserialize correctly from TOML
+- [ ] `backdrop = "none"` disables backdrop
+- [ ] `backdrop = "auto"` selects platform-appropriate effect
+- [ ] Backwards compatibility: `blur = true` without `backdrop` field still enables blur
+- [ ] `backdrop` field overrides `blur` field when both are present
 
 ---
 
@@ -445,14 +513,18 @@ Platform-specific compositor effects: Acrylic/Mica on Windows, blur on macOS/Lin
 
 Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g., 50+ theme entries) do not overflow the window.
 
-**COMPLEXITY WARNING:** `menu/mod.rs` is already 499 lines. Adding scroll support directly will exceed the 500-line limit. Extract drawing into a submodule first, then add scroll logic.
+**COMPLEXITY WARNING:** `menu/mod.rs` is at 499 lines. Adding scroll support directly will exceed the 500-line limit. Extract drawing into a submodule first, then add scroll logic.
 
-**File:** `oriterm_ui/src/widgets/menu/mod.rs` (`MenuWidget` + `MenuStyle` -- exist, 499 lines), `oriterm_ui/src/widgets/menu/draw.rs` (new -- extracted drawing logic), `oriterm_ui/src/widgets/menu/scroll.rs` (new -- scroll state + scrollbar drawing), `oriterm_ui/src/widgets/scroll/mod.rs` (existing scroll widget for reference)
+**File:** `oriterm_ui/src/widgets/menu/mod.rs` (`MenuWidget` + `MenuStyle` -- exist, 499 lines), `oriterm_ui/src/widgets/menu/draw.rs` (new -- extracted drawing logic), `oriterm_ui/src/widgets/menu/scroll.rs` (new -- scroll state + scrollbar drawing, keep under 500 lines), `oriterm_ui/src/widgets/scroll/mod.rs` (existing scroll widget for reference)
 
-- [ ] **Prerequisite: split `menu/mod.rs`** to make room for scroll code:
-  - [ ] Extract drawing logic into `oriterm_ui/src/widgets/menu/draw.rs` (the `draw()` method body and helper functions like separator drawing, check-mark drawing)
+**NOTE:** `scroll.rs` is a plain submodule of `menu/`, not a directory module. It does not get its own `tests.rs` -- scroll behavior tests go in the existing `menu/tests.rs` alongside other menu tests. If `scroll.rs` grows enough to warrant its own tests, convert to `menu/scroll/mod.rs` + `menu/scroll/tests.rs` at that time.
+
+- [ ] **Prerequisite: split `menu/mod.rs`** to make room for scroll code (currently 499 lines):
+  - [ ] Extract drawing logic into `oriterm_ui/src/widgets/menu/draw.rs`: the `draw()` method body (lines 308-414), `draw_checkmark()` helper (lines 256-278), and the free functions `draw_separator`, `draw_item`, `draw_check` extracted from the match arms
+  - [ ] Add `mod draw;` to `mod.rs`
   - [ ] Keep widget struct, entry types, style, layout, and event handling in `mod.rs`
-  - [ ] Verify `mod.rs` is well under 500 lines after split
+  - [ ] Verify `mod.rs` is well under 500 lines after split (target ~300 lines)
+  - [ ] Run `./test-all.sh` to verify no regressions from the extraction
 - [ ] `max_height: Option<f32>` on `MenuStyle` (default: None = unlimited)
 - [ ] `scroll_offset: f32` field on `MenuWidget` -- vertical scroll position (0.0 = top)
 - [ ] When content height exceeds `max_height`: clip entries and show vertical scrollbar
@@ -463,14 +535,20 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
   - [ ] Style values from `ScrollbarStyle` (reuse from `oriterm_ui/src/widgets/scroll/mod.rs`) or add `scrollbar_width`, `scrollbar_color` to `MenuStyle`
   - [ ] Only visible when `total_height() > max_height`
 - [ ] Mouse wheel scrolls menu content:
-  - [ ] Handle `MouseEventKind::Scroll(delta)` in `handle_mouse()` (currently only `Move`, `Down`, `Up` are handled)
+  - [ ] Handle `MouseEventKind::Scroll(delta)` in `handle_mouse()` (currently `Move`, `Down`, `Up` are handled -- line 442 returns `WidgetResponse::ignored()` for unmatched variants, which includes `Scroll`)
+  - [ ] Convert `ScrollDelta::Lines { y, .. }` to pixel offset: `y * style.item_height`
+  - [ ] Convert `ScrollDelta::Pixels { y, .. }` directly
   - [ ] Clamp `scroll_offset` to `[0.0, total_height - max_height]`
+  - [ ] Return `WidgetResponse::paint()` when scroll offset actually changes (avoid redundant repaints)
 - [ ] Keyboard navigation auto-scrolls to keep hovered item visible:
-  - [ ] After `navigate()`: compute the Y position of the hovered entry and adjust `scroll_offset` to keep it within the visible window
-  - [ ] `PageUp`/`PageDown` keys: scroll by visible height
-  - [ ] `Home`/`End` keys: jump to first/last clickable entry
-- [ ] Scroll position resets to top when menu opens
+  - [ ] Add `entry_y_position(index: usize) -> f32` helper that computes the Y offset of entry `index` from menu top (sum of heights of preceding entries + padding)
+  - [ ] After `navigate()`: compute the Y position of the hovered entry and adjust `scroll_offset` to keep it within the visible window. Scroll down if entry bottom exceeds `scroll_offset + max_height`; scroll up if entry top is above `scroll_offset`
+  - [ ] `PageUp`/`PageDown` keys in `handle_key()`: scroll by `max_height.unwrap_or(total_height())` pixels, then update `hovered` to the entry at the new scroll position
+  - [ ] `Home`/`End` keys in `handle_key()`: jump to first/last clickable entry and set `scroll_offset` to 0.0 / `total_height - max_height` respectively
+- [ ] Scroll position resets to top when menu opens:
   - [ ] Reset `scroll_offset = 0.0` in `MenuWidget::new()` and when entries are replaced
+- [ ] Update `entry_at_y()` to account for scroll offset: add `scroll_offset` to the visible Y position to convert to content Y before hit testing
+- [ ] Update `handle_mouse()` `MouseEventKind::Move` branch: the `entry_at_y()` call at line 420 uses `event.pos.y - ctx.bounds.y()` which needs scroll offset adjustment
 
 **Tests:**
 - [ ] Menu with 5 entries and no `max_height`: no clipping, no scrollbar, full height
@@ -494,10 +572,13 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 - [ ] Mouse hiding respects mouse reporting mode (does not hide when app uses mouse)
 - [ ] Minimum contrast enforces readable text (WCAG 2.0 in shader)
 - [ ] `minimum_contrast = 1.0` (default) adds zero per-vertex overhead (shader short-circuits)
+- [ ] HIDDEN cells (SGR 8) are not revealed by minimum contrast at any setting
 - [ ] HiDPI displays render crisp text at correct scale
 - [ ] Moving between monitors with different DPI works
-- [ ] Vector icons (close ×, +, chevron, minimize, maximize, restore, window close) render with smooth anti-aliasing at all DPI scales
+- [ ] Font zoom (Ctrl+=/Ctrl+-/Ctrl+0) works correctly at all DPI scales
+- [ ] Vector icons (close x, +, chevron, minimize, maximize, restore, window close) render with smooth anti-aliasing at all DPI scales
 - [ ] No jagged staircase artifacts on diagonal lines in any icon
+- [ ] Dropdown chevron icons render with smooth anti-aliasing (same as tab bar)
 - [ ] Background images render behind terminal content
 - [ ] Background gradients render behind terminal content
 - [ ] Backdrop effects (blur/acrylic/mica) apply on supported platforms

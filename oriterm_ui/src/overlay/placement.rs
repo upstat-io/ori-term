@@ -14,6 +14,8 @@ const ANCHOR_GAP: f32 = 4.0;
 pub enum Placement {
     /// Below the anchor, left-aligned.
     Below,
+    /// Below the anchor with zero gap (flush). Used for dropdown lists.
+    BelowFlush,
     /// Above the anchor, left-aligned.
     Above,
     /// Right of the anchor, top-aligned.
@@ -38,8 +40,9 @@ pub fn compute_overlay_rect(
     placement: Placement,
 ) -> Rect {
     let rect = match placement {
-        Placement::Below => place_below_or_above(anchor, content_size, viewport, true),
-        Placement::Above => place_below_or_above(anchor, content_size, viewport, false),
+        Placement::Below => place_below_or_above(anchor, content_size, viewport, true, ANCHOR_GAP),
+        Placement::BelowFlush => place_below_or_above(anchor, content_size, viewport, true, 0.0),
+        Placement::Above => place_below_or_above(anchor, content_size, viewport, false, ANCHOR_GAP),
         Placement::Right => place_right_or_left(anchor, content_size, viewport, true),
         Placement::Left => place_right_or_left(anchor, content_size, viewport, false),
         Placement::Center => place_center(content_size, viewport),
@@ -49,10 +52,16 @@ pub fn compute_overlay_rect(
 }
 
 /// Places below (primary) or above (flip). Left-aligned with anchor.
-fn place_below_or_above(anchor: Rect, size: Size, viewport: Rect, prefer_below: bool) -> Rect {
+fn place_below_or_above(
+    anchor: Rect,
+    size: Size,
+    viewport: Rect,
+    prefer_below: bool,
+    gap: f32,
+) -> Rect {
     let x = anchor.x();
-    let below_y = anchor.bottom() + ANCHOR_GAP;
-    let above_y = anchor.y() - size.height() - ANCHOR_GAP;
+    let below_y = anchor.bottom() + gap;
+    let above_y = anchor.y() - size.height() - gap;
 
     let y = if prefer_below {
         if below_y + size.height() <= viewport.bottom() {

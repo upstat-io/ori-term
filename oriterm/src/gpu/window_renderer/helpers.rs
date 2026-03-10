@@ -335,6 +335,74 @@ pub(super) fn record_draw_clipped(
     pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
 }
 
+/// Record an instanced draw call for a sub-range `[start..end)` with clips.
+///
+/// Like [`record_draw_clipped`] but draws only instances in `[start..end)`.
+/// Clip segment offsets are absolute (matching the buffer's instance indices).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "GPU render pass + range: pipeline, bind groups, buffer, range, clips, viewport"
+)]
+pub(super) fn record_draw_range_clipped(
+    pass: &mut RenderPass<'_>,
+    pipeline: &RenderPipeline,
+    uniform_bg: &BindGroup,
+    atlas_bg: Option<&BindGroup>,
+    buffer: Option<&Buffer>,
+    start: u32,
+    end: u32,
+    clips: &[super::super::draw_list_convert::ClipSegment],
+    viewport_w: u32,
+    viewport_h: u32,
+) {
+    if start >= end {
+        return;
+    }
+    let Some(buf) = buffer else { return };
+
+    pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, uniform_bg, &[]);
+    if let Some(atlas) = atlas_bg {
+        pass.set_bind_group(1, atlas, &[]);
+    }
+    pass.set_vertex_buffer(0, buf.slice(..));
+
+    if clips.is_empty() {
+        pass.draw(0..4, start..end);
+        return;
+    }
+
+    let mut cursor = start;
+    for seg in clips {
+        // Skip clips outside our range.
+        if seg.instance_offset < start {
+            // Apply the scissor but don't draw — it affects later segments.
+            if let Some(r) = seg.rect {
+                pass.set_scissor_rect(r[0], r[1], r[2], r[3]);
+            } else {
+                pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
+            }
+            continue;
+        }
+        if seg.instance_offset >= end {
+            break;
+        }
+        if seg.instance_offset > cursor {
+            pass.draw(0..4, cursor..seg.instance_offset);
+        }
+        if let Some(r) = seg.rect {
+            pass.set_scissor_rect(r[0], r[1], r[2], r[3]);
+        } else {
+            pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
+        }
+        cursor = seg.instance_offset;
+    }
+    if cursor < end {
+        pass.draw(0..4, cursor..end);
+    }
+    pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
+}
+
 /// Pre-cache printable ASCII glyphs (Regular + Bold) into the given atlas.
 ///
 /// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has

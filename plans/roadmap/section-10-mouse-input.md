@@ -2,6 +2,7 @@
 section: 10
 title: Mouse Input & Reporting
 status: complete
+reviewed: true
 tier: 3
 goal: Mouse reporting for terminal apps + mouse selection state machine
 sections:

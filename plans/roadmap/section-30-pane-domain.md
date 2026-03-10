@@ -2,6 +2,7 @@
 section: 30
 title: Pane Extraction + Domain System
 status: complete
+reviewed: true
 tier: 4M
 goal: Extract Pane from Tab, define the Domain trait for shell spawning, implement LocalDomain, create PaneRegistry and SessionRegistry
 sections:

@@ -225,18 +225,9 @@ impl App {
             self.write_paste_to_pty(&text);
         }
         if let Some(ctx) = self.focused_ctx_mut() {
+            let now = std::time::Instant::now();
             ctx.overlays
-                .clear_all(&mut ctx.layer_tree, &mut ctx.layer_animator);
-            ctx.dirty = true;
-        }
-    }
-
-    /// Cancel a pending paste: discard the stored text and dismiss the dialog.
-    pub(super) fn cancel_paste(&mut self) {
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.pending_paste = None;
-            ctx.overlays
-                .clear_all(&mut ctx.layer_tree, &mut ctx.layer_animator);
+                .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
             ctx.dirty = true;
         }
     }
