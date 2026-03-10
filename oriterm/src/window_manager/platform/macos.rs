@@ -1,7 +1,9 @@
-//! macOS implementation of [`NativeWindowOps`].
+//! macOS implementation of [`NativeWindowOps`] and [`NativeChromeOps`].
 //!
 //! Uses the Objective-C runtime via `objc2` for `NSWindow` child window
 //! management, shadow configuration, and window level control.
+//! Chrome operations are mostly no-ops — macOS handles DPI scaling and
+//! title bar hit testing automatically via `NSFullSizeContentViewWindowMask`.
 
 #![allow(unsafe_code)]
 
@@ -15,7 +17,9 @@ use objc2::{msg_send, sel};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
 
-use super::NativeWindowOps;
+use oriterm_ui::geometry::Rect;
+
+use super::{ChromeMode, NativeChromeOps, NativeWindowOps};
 use crate::window_manager::types::WindowKind;
 
 /// `NSWindowAbove` — child window appears above parent.
@@ -106,6 +110,29 @@ impl NativeWindowOps for MacosNativeOps {
         unsafe {
             let _: () = msg_send![nswindow, setLevel: NS_NORMAL_WINDOW_LEVEL];
         }
+    }
+}
+
+impl NativeChromeOps for MacosNativeOps {
+    fn install_chrome(
+        &self,
+        _window: &Window,
+        _mode: ChromeMode,
+        _border_width: f32,
+        _caption_height: f32,
+    ) {
+        // macOS uses NSFullSizeContentViewWindowMask + titlebarAppearsTransparent
+        // configured at window creation via winit. No runtime subclass needed.
+        // TODO: Set titlebar transparency and traffic light visibility per mode.
+    }
+
+    fn set_interactive_rects(&self, _window: &Window, _rects: &[Rect], _scale: f32) {
+        // macOS does not use OS-level interactive rect tracking.
+        // Title bar buttons (traffic lights) are managed by AppKit.
+    }
+
+    fn set_chrome_metrics(&self, _window: &Window, _border_width: f32, _caption_height: f32) {
+        // macOS handles DPI scaling automatically via Retina display support.
     }
 }
 

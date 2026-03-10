@@ -228,6 +228,8 @@ Render correctly on high-DPI displays and handle multi-monitor DPI transitions.
   - [ ] After zoom: recalculate grid dimensions (columns/rows), notify mux of resize, mark all dirty
 - [ ] Multi-monitor DPI transitions:
   - [ ] Confirm that winit fires `ScaleFactorChanged` when dragging between monitors with different DPI -- the existing handler should handle this correctly. If winit does not fire the event on a particular platform, file a winit issue upstream. Do not add scale-factor polling during drag
+- [ ] **BUG:** First Aero Snap after launch shrinks text — if the user opens the app and Aero Snaps without manually resizing first, text renders smaller. A single manual resize before snapping prevents it. Suggests initial DPI/scale factor isn't fully applied until the first resize event forces recalculation. Discovered during chrome plan verification (2026-03-10).
+- [ ] **BUG:** Settings dialog inherits parent window DPI — dragging a settings dialog to a monitor with different DPI keeps the parent's scale factor instead of responding to its own `ScaleFactorChanged` event. The dialog's `handle_dpi_change` path may not be wired up or `ScaleFactorChanged` may not fire for child windows. Discovered during chrome plan verification (2026-03-10).
 - [x] sRGB-correct rendering pipeline:
   - [x] GPU pipeline uses sRGB surface format for gamma-correct blending
   - [x] Luminance-based alpha correction option (`AlphaBlending::LinearCorrected`)

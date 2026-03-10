@@ -111,6 +111,17 @@ impl DialogContent {
             Self::Confirmation { dialog, .. } => &mut **dialog,
         }
     }
+
+    /// Invalidate any cached layout state.
+    ///
+    /// Called when external state that affects layout changes (e.g. DPI)
+    /// but the bounds remain the same, so the cache wouldn't auto-invalidate.
+    pub(super) fn invalidate_cache(&self) {
+        match self {
+            Self::Settings { panel, .. } => panel.invalidate_cache(),
+            Self::Confirmation { .. } => {}
+        }
+    }
 }
 
 impl DialogWindowContext {

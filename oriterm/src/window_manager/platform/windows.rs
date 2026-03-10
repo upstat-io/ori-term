@@ -1,7 +1,8 @@
-//! Windows implementation of [`NativeWindowOps`].
+//! Windows implementation of [`NativeWindowOps`] and [`NativeChromeOps`].
 //!
 //! Uses Win32 APIs through `windows-sys` for HWND ownership, DWM shadow
-//! extension, extended window styles, and modal window disabling.
+//! extension, extended window styles, modal window disabling, and frameless
+//! chrome subclass installation.
 
 #![allow(unsafe_code)]
 
@@ -16,7 +17,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
 
-use super::NativeWindowOps;
+use oriterm_ui::geometry::Rect;
+
+use super::{ChromeMode, NativeChromeOps, NativeWindowOps};
 use crate::window_manager::types::WindowKind;
 
 /// `SetWindowLongPtrW` index for the owner window handle.
@@ -96,6 +99,62 @@ impl NativeWindowOps for WindowsNativeOps {
         };
         unsafe { EnableWindow(owner_hwnd, 1) }; // TRUE = enabled
     }
+}
+
+impl NativeChromeOps for WindowsNativeOps {
+    fn install_chrome(
+        &self,
+        window: &Window,
+        mode: ChromeMode,
+        border_width: f32,
+        caption_height: f32,
+    ) {
+        match mode {
+            ChromeMode::Main => {
+                oriterm_ui::platform_windows::enable_snap(window, border_width, caption_height);
+                // Main windows get edge shadows from WS_THICKFRAME.
+                // DWM margins {0,0,1,0} are set by install_chrome_subclass.
+            }
+            ChromeMode::Dialog { resizable } => {
+                let bw = if resizable { border_width } else { 0.0 };
+                oriterm_ui::platform_windows::enable_dialog_chrome(window, bw, caption_height);
+
+                // Dialog windows lack WS_THICKFRAME, so install_chrome_subclass's
+                // {0,0,1,0} margins only give a top-edge shadow. Override with
+                // full margins for shadow on all four edges.
+                if let Some(hwnd) = extract_hwnd(window) {
+                    let margins = MARGINS {
+                        cxLeftWidth: 1,
+                        cxRightWidth: 1,
+                        cyTopHeight: 1,
+                        cyBottomHeight: 1,
+                    };
+                    unsafe { DwmExtendFrameIntoClientArea(hwnd, &raw const margins) };
+                }
+            }
+        }
+    }
+
+    fn set_interactive_rects(&self, window: &Window, rects: &[Rect], scale: f32) {
+        oriterm_ui::platform_windows::set_client_rects(
+            window,
+            rects.iter().map(|r| scale_rect(*r, scale)).collect(),
+        );
+    }
+
+    fn set_chrome_metrics(&self, window: &Window, border_width: f32, caption_height: f32) {
+        oriterm_ui::platform_windows::set_chrome_metrics(window, border_width, caption_height);
+    }
+}
+
+/// Scale a logical-pixel rect to physical pixels.
+fn scale_rect(r: Rect, scale: f32) -> Rect {
+    Rect::new(
+        r.x() * scale,
+        r.y() * scale,
+        r.width() * scale,
+        r.height() * scale,
+    )
 }
 
 /// Extracts the raw HWND from a winit `Window`.

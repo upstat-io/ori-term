@@ -134,6 +134,7 @@ Protect against paste injection attacks (malicious content that executes command
 
 ### Multi-line paste confirmation
 
+- [ ] **BUG:** Paste confirmation dialog does not trigger — even with `warn_on_paste: Always` (default) and cmd.exe (no bracketed paste mode), pasting multiline text does not open the confirmation dialog. Discovered during chrome plan verification (2026-03-10). Investigate: is the keybinding routing to `paste_from_clipboard()`? Is `pane_mode()` incorrectly reporting `BRACKETED_PASTE` when the shell doesn't support it?
 - [ ] When pasting text containing newlines into a non-bracketed-paste terminal, show a confirmation dialog (already partially implemented — verify and harden)
 - [ ] Detect BOTH `\n` AND `\r` as line separators — WT #8601 showed `\r`-only pastes bypass `\n`-only detection. A malicious web page can `clipboardData.setData("text/plain", "evil command\r")` and the warning never fires.
 - [ ] Normalize line endings on paste: `\r\n` → `\r`, `\n` → `\r` (single pass, same as WT PR#8634)

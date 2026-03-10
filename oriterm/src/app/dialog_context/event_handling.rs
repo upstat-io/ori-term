@@ -59,16 +59,32 @@ impl App {
                         ctx.resize_surface(size.width, size.height, gpu);
                     }
                 }
+                // Update platform hit test rects after chrome layout recompute.
+                self.refresh_dialog_platform_rects(window_id);
+                // Render immediately to avoid showing uninitialized surface
+                // (light blue flash) between reconfigure and next frame budget.
+                self.render_dialog(window_id);
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(ctx) = self.dialogs.get_mut(&window_id) {
                     let new_factor = oriterm_ui::scale::ScaleFactor::new(scale_factor);
                     if ctx.scale_factor != new_factor {
                         ctx.scale_factor = new_factor;
+                        // Recompute chrome layout width — the physical surface
+                        // size may stay the same, but the logical width changes
+                        // when DPI changes (e.g. moving to a different monitor).
+                        let scale = new_factor.factor() as f32;
+                        let logical_w = ctx.surface_config.width as f32 / scale;
+                        ctx.chrome.set_window_width(logical_w);
+                        // Invalidate content layout cache — text metrics change
+                        // with DPI even when logical bounds stay the same.
+                        ctx.content.invalidate_cache();
                         // TODO: re-rasterize UI fonts at new DPI.
                         ctx.dirty = true;
                     }
                 }
+                // Update platform hit test rects for the new DPI.
+                self.refresh_dialog_platform_rects(window_id);
             }
             WindowEvent::Focused(focused) => {
                 self.handle_dialog_focus(window_id, focused);
@@ -188,21 +204,42 @@ impl App {
             }
         }
 
+        let event_ctx = EventCtx {
+            measurer: &measurer,
+            bounds: Rect::default(),
+            is_focused: false,
+            focused_widget: None,
+            theme: &ui_theme,
+        };
+
+        let zone = if logical_pos.y < chrome_h {
+            "chrome"
+        } else {
+            "content"
+        };
+        log::trace!(
+            "dialog cursor: phys=({:.0},{:.0}) log=({:.1},{:.1}) s={scale:.2} ch={chrome_h:.1} \
+             z={zone} rects={:?}",
+            position.x,
+            position.y,
+            logical_pos.x,
+            logical_pos.y,
+            ctx.chrome.interactive_rects(),
+        );
+
         if logical_pos.y < chrome_h {
             // Chrome hover (close button highlight).
-            let event_ctx = EventCtx {
-                measurer: &measurer,
-                bounds: Rect::default(),
-                is_focused: false,
-                focused_widget: None,
-                theme: &ui_theme,
-            };
             let resp = ctx.chrome.update_hover(logical_pos, &event_ctx);
             if wants_repaint(resp.response) {
                 ctx.dirty = true;
             }
         } else {
-            // Content area hover.
+            // Content area hover — clear any active chrome hover first.
+            let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
+            if wants_repaint(resp.response) {
+                ctx.dirty = true;
+            }
+
             let w = ctx.surface_config.width as f32 / scale;
             let h = ctx.surface_config.height as f32 / scale;
             let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
@@ -211,7 +248,7 @@ impl App {
                 pos: logical_pos,
                 modifiers: oriterm_ui::input::Modifiers::NONE,
             };
-            let event_ctx = EventCtx {
+            let content_ctx = EventCtx {
                 measurer: &measurer,
                 bounds: content_bounds,
                 is_focused: false,
@@ -221,7 +258,7 @@ impl App {
             let resp = ctx
                 .content
                 .content_widget_mut()
-                .handle_mouse(&hover_event, &event_ctx);
+                .handle_mouse(&hover_event, &content_ctx);
             if wants_repaint(resp.response) {
                 ctx.dirty = true;
             }

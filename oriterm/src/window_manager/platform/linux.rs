@@ -1,9 +1,13 @@
-//! Linux implementation of [`NativeWindowOps`].
+//! Linux implementation of [`NativeWindowOps`] and [`NativeChromeOps`].
 //!
 //! Handles both X11 and Wayland at runtime via `RawWindowHandle` discrimination.
 //! X11 uses `x11-dl` for transient-for hints, window type atoms, and modal
 //! state. Wayland operations are best-effort no-ops where winit doesn't expose
 //! the underlying `xdg_toplevel`.
+//!
+//! Chrome operations are no-ops — Linux compositors (Mutter, `KWin`, Sway) handle
+//! window decorations via CSD or SSD, and hit testing is managed by winit's
+//! built-in decoration support or the compositor itself.
 
 #![allow(unsafe_code)]
 
@@ -15,7 +19,9 @@ use winit::raw_window_handle::{
 };
 use winit::window::Window;
 
-use super::NativeWindowOps;
+use oriterm_ui::geometry::Rect;
+
+use super::{ChromeMode, NativeChromeOps, NativeWindowOps};
 use crate::window_manager::types::WindowKind;
 
 /// Lazily loaded X11 library handle.
@@ -69,6 +75,27 @@ impl NativeWindowOps for LinuxNativeOps {
         if let Some(RawWindowHandle::Xlib(_)) = dialog.window_handle().ok().map(|h| h.as_raw()) {
             set_modal_x11(dialog, false);
         }
+    }
+}
+
+impl NativeChromeOps for LinuxNativeOps {
+    fn install_chrome(
+        &self,
+        _window: &Window,
+        _mode: ChromeMode,
+        _border_width: f32,
+        _caption_height: f32,
+    ) {
+        // Linux/Wayland uses compositor-managed decorations (SSD) or
+        // winit-provided CSD. No runtime subclass or frame manipulation needed.
+    }
+
+    fn set_interactive_rects(&self, _window: &Window, _rects: &[Rect], _scale: f32) {
+        // Linux compositors handle title bar hit testing via CSD/SSD.
+    }
+
+    fn set_chrome_metrics(&self, _window: &Window, _border_width: f32, _caption_height: f32) {
+        // DPI scaling is handled by the compositor or winit.
     }
 }
 

@@ -201,6 +201,14 @@ impl SettingsPanel {
         self.close_id
     }
 
+    /// Clears the cached layout so it is recomputed on the next draw.
+    ///
+    /// Call this when external state that affects layout changes (e.g.
+    /// scale factor / DPI), since the cache is keyed on bounds only.
+    pub fn invalidate_cache(&self) {
+        *self.cached_layout.borrow_mut() = None;
+    }
+
     /// Returns cached layout if bounds match, otherwise recomputes.
     fn get_or_compute_layout(
         &self,
@@ -218,8 +226,13 @@ impl SettingsPanel {
         }
         let ctx = LayoutCtx { measurer, theme };
         let child_box = self.container.layout(&ctx);
+        let width = if self.show_chrome {
+            SizeSpec::Fixed(PANEL_WIDTH)
+        } else {
+            SizeSpec::Fill
+        };
         let wrapper = LayoutBox::flex(Direction::Column, vec![child_box])
-            .with_width(SizeSpec::Fixed(PANEL_WIDTH))
+            .with_width(width)
             .with_height(SizeSpec::Hug)
             .with_widget_id(self.id);
         let node = Rc::new(compute_layout(&wrapper, bounds));
@@ -270,8 +283,13 @@ impl Widget for SettingsPanel {
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
         let child_box = self.container.layout(ctx);
+        let width = if self.show_chrome {
+            SizeSpec::Fixed(PANEL_WIDTH)
+        } else {
+            SizeSpec::Fill
+        };
         LayoutBox::flex(Direction::Column, vec![child_box])
-            .with_width(SizeSpec::Fixed(PANEL_WIDTH))
+            .with_width(width)
             .with_height(SizeSpec::Hug)
             .with_widget_id(self.id)
     }

@@ -335,6 +335,10 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 - [ ] If overlay pipeline is added (search bar, dropdown menus), limit to one additional draw call
 - [ ] Batch all instances into a single buffer per pipeline (already the approach)
 
+### Resize Rendering Performance
+
+- [ ] **BUG:** Dialog resize shows uninitialized surface (baby blue background) — GPU redraw during `WM_SIZING` modal loop is too slow. The render timer in `WM_ENTERSIZEMOVE` fires `WM_TIMER` which invalidates, but the redraw can't keep up with the resize rate. Investigate: frame budget during modal resize, whether the `WM_TIMER` approach is optimal, or if `WM_PAINT` handling during modal loop needs improvement. Affects both settings dialogs and main windows. Discovered during chrome plan verification (2026-03-10).
+
 ### Skip Off-Screen Content
 
 - [ ] Do not generate instances for cells that are fully clipped (outside the viewport)
