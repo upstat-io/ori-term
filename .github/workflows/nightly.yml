@@ -1,10 +1,10 @@
 name: Nightly
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
+  schedule:
+    # Every day at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Manual trigger for testing
 
 concurrency:
   group: nightly
@@ -18,15 +18,47 @@ permissions:
   contents: write
 
 jobs:
+  check:
+    name: Check for changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for new commits since last nightly
+        id: check
+        run: |
+          # Find the most recent nightly tag
+          LAST_NIGHTLY=$(git tag --sort=-creatordate \
+            | grep -E '^v.*-nightly\.' | head -1)
+
+          if [[ -n "$LAST_NIGHTLY" ]]; then
+            AHEAD=$(git rev-list --count "${LAST_NIGHTLY}..HEAD")
+            echo "Last nightly tag: $LAST_NIGHTLY"
+            echo "Commits ahead: $AHEAD"
+            if [ "$AHEAD" -eq 0 ]; then
+              echo "No new commits since last nightly. Skipping."
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+            else
+              echo "$AHEAD new commit(s) since last nightly."
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No previous nightly tag found. Building."
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
   build-linux:
     name: Build Linux (x86_64)
-    if: github.event.workflow_run.conclusion == 'success'
+    needs: [check]
+    if: needs.check.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Install system dependencies
         run: |
@@ -58,13 +90,12 @@ jobs:
 
   build-macos:
     name: Build macOS (aarch64)
-    if: github.event.workflow_run.conclusion == 'success'
+    needs: [check]
+    if: needs.check.outputs.has_changes == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -89,7 +120,8 @@ jobs:
 
   build-windows:
     name: Build Windows (x86_64)
-    if: github.event.workflow_run.conclusion == 'success'
+    needs: [check]
+    if: needs.check.outputs.has_changes == 'true'
     runs-on: windows-2022
     timeout-minutes: 30
     # CI builds natively on Windows using MSVC (not the x86_64-pc-windows-gnu
@@ -97,8 +129,6 @@ jobs:
     # and avoids MinGW runtime dependencies.
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
@@ -129,7 +159,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Download artifacts
         uses: actions/download-artifact@v4

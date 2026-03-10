@@ -41,13 +41,6 @@ impl App {
                     WidgetAction::CancelSettings => {
                         self.cancel_settings();
                     }
-                    WidgetAction::Clicked(_)
-                        if self
-                            .focused_ctx()
-                            .is_some_and(|c| c.pending_paste.is_some()) =>
-                    {
-                        self.confirm_paste();
-                    }
                     WidgetAction::DismissOverlay(_) => {
                         self.dismiss_topmost_overlay();
                     }
@@ -96,7 +89,6 @@ impl App {
                     self.settings_pending = None;
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.context_menu = None;
-                        ctx.pending_paste = None;
                         ctx.dirty = true;
                     }
                     self.settings_ids = None;
@@ -195,7 +187,6 @@ impl App {
             // Top-level overlay dismissed.
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.context_menu = None;
-                ctx.pending_paste = None;
             }
             self.settings_ids = None;
         }

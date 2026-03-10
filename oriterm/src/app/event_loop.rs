@@ -325,6 +325,9 @@ impl ApplicationHandler<TermEvent> for App {
             TermEvent::OpenSettings => {
                 self.open_settings_dialog(event_loop);
             }
+            TermEvent::OpenConfirmation(request) => {
+                self.open_confirmation_dialog(event_loop, request);
+            }
         }
     }
 

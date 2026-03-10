@@ -1,24 +1,23 @@
-//! Dialog window lifecycle: open, close, render, and event handling.
+//! Dialog window lifecycle: open, close, and content creation.
 //!
 //! Coordinates dialog OS window creation with the window manager, platform
 //! native ops, and GPU renderer. Each dialog is a real OS window with its
 //! own surface — moveable independently of the parent terminal window.
+//! Rendering lives in `dialog_rendering.rs`.
 
-use std::cell::Cell;
 use std::sync::Arc;
-use std::time::Instant;
 
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use oriterm_ui::geometry::Rect;
 use oriterm_ui::scale::ScaleFactor;
+use oriterm_ui::widgets::dialog::{DialogButton, DialogButtons, DialogWidget};
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
-use oriterm_ui::widgets::{DrawCtx, Widget};
 
 use super::App;
 use super::dialog_context::{DialogContent, DialogWindowContext};
 use super::settings_overlay::form_builder;
+use crate::event::ConfirmationRequest;
 use crate::font::UiFontMeasurer;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
@@ -147,6 +146,126 @@ impl App {
         log::info!("settings dialog opened: {winit_id:?}, parent: {parent_wid:?}");
     }
 
+    /// Open a confirmation dialog as a real OS window.
+    ///
+    /// The dialog is modal: it blocks input to its parent window until
+    /// dismissed. The `request.kind` determines what action is taken when
+    /// the user clicks OK.
+    pub(super) fn open_confirmation_dialog(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        request: ConfirmationRequest,
+    ) {
+        let parent_wid = match self.find_dialog_parent() {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Prevent duplicate confirmation dialogs.
+        if self.has_dialog_of_kind(DialogKind::Confirmation) {
+            log::info!("confirmation dialog already open");
+            if let Some((&wid, _)) = self
+                .dialogs
+                .iter()
+                .find(|(_, ctx)| ctx.kind == DialogKind::Confirmation)
+            {
+                if let Some(ctx) = self.dialogs.get(&wid) {
+                    ctx.window.focus_window();
+                }
+            }
+            return;
+        }
+
+        let kind = DialogKind::Confirmation;
+        let (width, height) = kind.default_size();
+        let position = self.center_on_parent(parent_wid, width, height);
+
+        let window_config = oriterm_ui::window::WindowConfig {
+            title: kind.title().into(),
+            inner_size: oriterm_ui::geometry::Size::new(width as f32, height as f32),
+            transparent: false,
+            blur: false,
+            opacity: 1.0,
+            position: Some(oriterm_ui::geometry::Point::new(
+                position.0 as f32,
+                position.1 as f32,
+            )),
+            resizable: kind.is_resizable(),
+        };
+
+        let window = match oriterm_ui::window::create_window(event_loop, &window_config) {
+            Ok(w) => w,
+            Err(e) => {
+                log::error!("failed to create confirmation dialog window: {e}");
+                return;
+            }
+        };
+        let winit_id = window.id();
+
+        // Apply platform native ops: ownership, shadow, type hints, modal.
+        if let Some(parent_ctx) = self.windows.get(&parent_wid) {
+            let parent_win = parent_ctx.window.window();
+            let ops = platform_ops();
+            ops.set_owner(&window, parent_win);
+            ops.enable_shadow(&window);
+            ops.set_window_type(&window, &WindowKind::Dialog(kind));
+            ops.set_modal(&window, parent_win);
+        }
+
+        // Create GPU surface.
+        let Some(gpu) = self.gpu.as_ref() else {
+            log::error!("dialog: no GPU state");
+            return;
+        };
+        let Some(pipelines) = self.pipelines.as_ref() else {
+            log::error!("dialog: no GPU pipelines");
+            return;
+        };
+        let (surface, surface_config) = match gpu.create_surface(&window) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("failed to create confirmation dialog GPU surface: {e}");
+                return;
+            }
+        };
+
+        // Create UiOnly renderer.
+        let renderer = self.create_dialog_renderer(&window, gpu, pipelines);
+
+        // Build confirmation content.
+        let content = Self::build_confirmation_content(request);
+
+        let scale_factor = ScaleFactor::new(window.scale_factor());
+        let ctx = DialogWindowContext::new(
+            window.clone(),
+            surface,
+            surface_config,
+            renderer,
+            kind,
+            content,
+            scale_factor,
+            &self.ui_theme,
+        );
+
+        // Register with window manager.
+        self.window_manager.register(ManagedWindow::with_parent(
+            winit_id,
+            WindowKind::Dialog(kind),
+            parent_wid,
+        ));
+
+        // Store context.
+        self.dialogs.insert(winit_id, ctx);
+
+        // Render first frame, then show.
+        self.render_dialog(winit_id);
+        if let Some(ctx) = self.dialogs.get(&winit_id) {
+            ctx.window.set_visible(true);
+        }
+
+        log::info!("confirmation dialog opened: {winit_id:?}, parent: {parent_wid:?}");
+    }
+
     /// Close a dialog window, discarding any pending changes.
     pub(super) fn close_dialog(&mut self, winit_id: WindowId) {
         // Clear platform modal state if applicable.
@@ -173,125 +292,6 @@ impl App {
         );
     }
 
-    /// Render a dialog window's content to its GPU surface.
-    pub(super) fn render_dialog(&mut self, winit_id: WindowId) {
-        let Some(gpu) = self.gpu.as_ref() else { return };
-        let Some(pipelines) = self.pipelines.as_ref() else {
-            return;
-        };
-        let ui_theme = self.ui_theme;
-
-        let Some(ctx) = self.dialogs.get_mut(&winit_id) else {
-            return;
-        };
-        if !ctx.has_surface_area() {
-            return;
-        }
-        let Some(renderer) = ctx.renderer.as_mut() else {
-            return;
-        };
-
-        let w = ctx.surface_config.width;
-        let h = ctx.surface_config.height;
-        let scale = ctx.scale_factor.factor() as f32;
-
-        // Prepare the UI-only frame.
-        let bg = oriterm_core::Rgb {
-            r: 30,
-            g: 30,
-            b: 46,
-        };
-        renderer.prepare_ui_frame(w, h, bg, 1.0);
-
-        // Resolve icons.
-        renderer.resolve_icons(gpu, scale);
-
-        let logical_w = (w as f32 / scale).round();
-        let logical_h = (h as f32 / scale).round();
-        let chrome_h = ctx.chrome.caption_height();
-
-        ctx.draw_list.clear();
-        let animations_running = Cell::new(false);
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-        let icons = renderer.resolved_icons();
-
-        // Draw the chrome title bar.
-        let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
-        {
-            let mut draw_ctx = DrawCtx {
-                measurer: &measurer,
-                draw_list: &mut ctx.draw_list,
-                bounds: chrome_bounds,
-                focused_widget: None,
-                now: Instant::now(),
-                animations_running: &animations_running,
-                theme: &ui_theme,
-                icons: Some(icons),
-            };
-            ctx.chrome.draw(&mut draw_ctx);
-        }
-
-        // Draw the dialog content below the chrome.
-        let content_bounds = Rect::new(0.0, chrome_h, logical_w, logical_h - chrome_h);
-        {
-            let mut draw_ctx = DrawCtx {
-                measurer: &measurer,
-                draw_list: &mut ctx.draw_list,
-                bounds: content_bounds,
-                focused_widget: None,
-                now: Instant::now(),
-                animations_running: &animations_running,
-                theme: &ui_theme,
-                icons: Some(icons),
-            };
-            let DialogContent::Settings { panel, .. } = &ctx.content;
-            panel.draw(&mut draw_ctx);
-        }
-
-        // Convert draw list to GPU instances.
-        renderer.append_ui_draw_list_with_text(&ctx.draw_list, scale, 1.0, gpu);
-
-        // Draw overlay popups (dropdown lists) on top.
-        let overlay_count = ctx.overlays.draw_count();
-        if overlay_count > 0 {
-            let overlay_bounds = Rect::new(0.0, 0.0, logical_w, logical_h);
-            {
-                let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-                ctx.overlays.layout_overlays(&measurer, &ui_theme);
-            }
-            for i in 0..overlay_count {
-                ctx.draw_list.clear();
-                let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-                let icons = renderer.resolved_icons();
-                let mut overlay_draw_ctx = DrawCtx {
-                    measurer: &measurer,
-                    draw_list: &mut ctx.draw_list,
-                    bounds: overlay_bounds,
-                    focused_widget: None,
-                    now: Instant::now(),
-                    animations_running: &animations_running,
-                    theme: &ui_theme,
-                    icons: Some(icons),
-                };
-                let opacity =
-                    ctx.overlays
-                        .draw_overlay_at(i, &mut overlay_draw_ctx, &ctx.layer_tree);
-                renderer.append_overlay_draw_list_with_text(&ctx.draw_list, scale, opacity, gpu);
-            }
-        }
-
-        // Render to surface.
-        let result = renderer.render_to_surface(gpu, pipelines, &ctx.surface);
-        match result {
-            Ok(()) => {}
-            Err(crate::gpu::SurfaceError::Lost) => {
-                log::warn!("dialog surface lost, reconfiguring");
-                ctx.resize_surface(w, h, gpu);
-            }
-            Err(e) => log::error!("dialog render error: {e}"),
-        }
-    }
-
     /// Check if a dialog of the given kind is already open.
     fn has_dialog_of_kind(&self, kind: DialogKind) -> bool {
         self.dialogs.values().any(|ctx| ctx.kind == kind)
@@ -310,14 +310,29 @@ impl App {
     }
 
     /// Compute the position to center a dialog on its parent window.
+    ///
+    /// The result is clamped to the current monitor's work area so the
+    /// dialog never opens partially or fully off-screen.
     fn center_on_parent(&self, parent_wid: WindowId, width: u32, height: u32) -> (i32, i32) {
         let Some(ctx) = self.windows.get(&parent_wid) else {
             return (100, 100);
         };
-        let parent_pos = ctx.window.window().outer_position().unwrap_or_default();
-        let parent_size = ctx.window.window().outer_size();
-        let x = parent_pos.x + (parent_size.width as i32 - width as i32) / 2;
-        let y = parent_pos.y + (parent_size.height as i32 - height as i32) / 2;
+        let parent_win = ctx.window.window();
+        let parent_pos = parent_win.outer_position().unwrap_or_default();
+        let parent_size = parent_win.outer_size();
+        let mut x = parent_pos.x + (parent_size.width as i32 - width as i32) / 2;
+        let mut y = parent_pos.y + (parent_size.height as i32 - height as i32) / 2;
+
+        // Clamp to the current monitor's bounds.
+        if let Some(monitor) = parent_win.current_monitor() {
+            let mon_pos = monitor.position();
+            let mon_size = monitor.size();
+            let max_x = mon_pos.x + mon_size.width as i32 - width as i32;
+            let max_y = mon_pos.y + mon_size.height as i32 - height as i32;
+            x = x.clamp(mon_pos.x, max_x.max(mon_pos.x));
+            y = y.clamp(mon_pos.y, max_y.max(mon_pos.y));
+        }
+
         (x, y)
     }
 
@@ -343,6 +358,23 @@ impl App {
         Some(WindowRenderer::new_ui_only(gpu, pipelines, ui_fc))
     }
 
+    /// Build dialog content for a confirmation dialog.
+    fn build_confirmation_content(request: ConfirmationRequest) -> DialogContent {
+        let mut dialog = DialogWidget::new(&request.title)
+            .with_message(request.message)
+            .with_buttons(DialogButtons::OkCancel)
+            .with_ok_label(request.ok_label)
+            .with_cancel_label(request.cancel_label)
+            .with_default_button(DialogButton::Ok);
+        if let Some(content) = request.content {
+            dialog = dialog.with_content(content);
+        }
+        DialogContent::Confirmation {
+            dialog: Box::new(dialog),
+            kind: request.kind,
+        }
+    }
+
     /// Build dialog content for the settings panel.
     fn build_settings_content(
         &self,
@@ -359,10 +391,10 @@ impl App {
         }
 
         DialogContent::Settings {
-            panel: SettingsPanel::embedded(form),
+            panel: Box::new(SettingsPanel::embedded(form)),
             ids,
-            pending_config: self.config.clone(),
-            original_config: self.config.clone(),
+            pending_config: Box::new(self.config.clone()),
+            original_config: Box::new(self.config.clone()),
         }
     }
 }

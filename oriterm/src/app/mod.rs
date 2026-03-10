@@ -15,6 +15,7 @@ mod cursor_hide;
 mod cursor_hover;
 pub(crate) mod dialog_context;
 mod dialog_management;
+mod dialog_rendering;
 mod divider_drag;
 mod event_loop;
 mod event_loop_helpers;
