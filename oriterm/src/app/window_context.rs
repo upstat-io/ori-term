@@ -67,7 +67,6 @@ pub(crate) struct WindowContext {
     pub(super) context_menu: Option<ContextMenuState>,
     pub(super) hovered_url: Option<DetectedUrl>,
     pub(super) url_cache: UrlDetectCache,
-    pub(super) pending_paste: Option<String>,
     pub(super) last_drag_area_press: Option<Instant>,
 
     // Reusable buffers.
@@ -109,7 +108,6 @@ impl WindowContext {
             context_menu: None,
             hovered_url: None,
             url_cache: UrlDetectCache::default(),
-            pending_paste: None,
             last_drag_area_press: None,
             search_bar_buf: String::new(),
             dirty: true,

@@ -17,11 +17,14 @@ use oriterm_ui::draw::DrawList;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::scale::ScaleFactor;
+use oriterm_ui::widgets::Widget;
+use oriterm_ui::widgets::dialog::DialogWidget;
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 use crate::app::settings_overlay::SettingsIds;
 use crate::config::Config;
+use crate::event::ConfirmationKind;
 use crate::gpu::WindowRenderer;
 use crate::window_manager::types::DialogKind;
 
@@ -65,22 +68,49 @@ pub(crate) struct DialogWindowContext {
 /// how the dialog renders.
 pub(crate) enum DialogContent {
     /// Settings / preferences dialog.
+    ///
+    /// `panel` and configs are boxed to keep the enum's stack size down
+    /// (`SettingsPanel` alone is ~800 bytes, each `Config` ~500 bytes).
     Settings {
         /// The settings form panel widget.
-        panel: SettingsPanel,
+        panel: Box<SettingsPanel>,
         /// Widget IDs for matching actions to config fields.
         ids: SettingsIds,
         /// Working copy of the config being edited. Applied on Save.
-        pending_config: Config,
+        pending_config: Box<Config>,
         /// Original config snapshot for Cancel / diff detection.
         #[expect(
             dead_code,
             reason = "reserved for dirty detection in future cancel-guard UX"
         )]
-        original_config: Config,
+        original_config: Box<Config>,
     },
-    // Future variants (Confirmation, About) will be added when those
-    // dialog types are migrated from the overlay system.
+    /// Confirmation prompt (e.g. paste with newlines, close with running processes).
+    Confirmation {
+        /// The confirmation dialog widget (title, message, OK/Cancel buttons).
+        /// Boxed to avoid large enum variant size difference.
+        dialog: Box<DialogWidget>,
+        /// What action to take when the user clicks OK.
+        kind: ConfirmationKind,
+    },
+}
+
+impl DialogContent {
+    /// Returns a shared reference to the content's root widget.
+    pub(super) fn content_widget(&self) -> &dyn Widget {
+        match self {
+            Self::Settings { panel, .. } => &**panel,
+            Self::Confirmation { dialog, .. } => &**dialog,
+        }
+    }
+
+    /// Returns an exclusive reference to the content's root widget.
+    pub(super) fn content_widget_mut(&mut self) -> &mut dyn Widget {
+        match self {
+            Self::Settings { panel, .. } => &mut **panel,
+            Self::Confirmation { dialog, .. } => &mut **dialog,
+        }
+    }
 }
 
 impl DialogWindowContext {

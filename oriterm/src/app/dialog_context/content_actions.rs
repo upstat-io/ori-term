@@ -1,17 +1,24 @@
 //! Dialog content action dispatch.
 //!
-//! Handles widget actions emitted by dialog content (settings panel):
-//! Save, Cancel, dropdown open, selection, toggle. Also manages
-//! dropdown popup overlays within dialog windows.
+//! Handles widget actions emitted by dialog content (settings panel,
+//! confirmation dialog): Save, Cancel, OK, dropdown open, selection,
+//! toggle. Also manages dropdown popup overlays within dialog windows
+//! and keyboard routing to confirmation dialog widgets.
 
 use std::time::Instant;
 
 use oriterm_ui::geometry::Rect;
+use oriterm_ui::input::{
+    EventResponse, Key as UiKey, KeyEvent as UiKeyEvent, Modifiers as UiModifiers,
+};
 use oriterm_ui::overlay::OverlayEventResult;
-use oriterm_ui::widgets::{Widget, WidgetAction};
+use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
 use crate::app::settings_overlay;
+use crate::event::ConfirmationKind;
+use crate::font::UiFontMeasurer;
 
 use super::super::App;
 use super::DialogContent;
@@ -20,7 +27,8 @@ impl App {
     /// Process a `WidgetAction` emitted by dialog content widgets.
     ///
     /// Routes settings-specific actions (Save, Cancel, dropdown open,
-    /// toggle, selection) to their handlers.
+    /// toggle, selection) and confirmation actions (OK, Cancel) to their
+    /// handlers.
     pub(in crate::app) fn handle_dialog_content_action(
         &mut self,
         window_id: WindowId,
@@ -44,6 +52,14 @@ impl App {
             WidgetAction::Toggled { .. } | WidgetAction::Selected { .. } => {
                 self.dispatch_dialog_settings_action(window_id, &action);
             }
+            WidgetAction::Clicked(_) => {
+                // OK button clicked in a confirmation dialog.
+                self.execute_confirmation(window_id);
+            }
+            WidgetAction::DismissOverlay(_) => {
+                // Cancel button clicked in a confirmation dialog.
+                self.close_dialog(window_id);
+            }
             _ => {}
         }
     }
@@ -54,8 +70,10 @@ impl App {
             let Some(ctx) = self.dialogs.get_mut(&window_id) else {
                 return;
             };
-            let DialogContent::Settings { pending_config, .. } = &ctx.content;
-            pending_config.clone()
+            let DialogContent::Settings { pending_config, .. } = &ctx.content else {
+                return;
+            };
+            *pending_config.clone()
         };
 
         log::info!("settings dialog: applying and saving to disk");
@@ -76,7 +94,10 @@ impl App {
             pending_config,
             panel,
             ..
-        } = &mut ctx.content;
+        } = &mut ctx.content
+        else {
+            return;
+        };
 
         if settings_overlay::action_handler::handle_settings_action(action, ids, pending_config) {
             log::info!("settings dialog: pending config updated (deferred until Save)");
@@ -185,5 +206,93 @@ impl App {
             ctx.dirty = true;
         }
         self.pending_dropdown_id = None;
+    }
+
+    /// Execute the confirmation action and close the dialog.
+    fn execute_confirmation(&mut self, window_id: WindowId) {
+        // Extract the confirmation kind before closing (close drops the ctx).
+        let kind = {
+            let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+                return;
+            };
+            match &mut ctx.content {
+                DialogContent::Confirmation { kind, .. } => {
+                    // Take ownership by swapping with a dummy.
+                    // We use a Paste with empty text as the dummy since we're
+                    // about to close the dialog anyway.
+                    std::mem::replace(
+                        kind,
+                        ConfirmationKind::Paste {
+                            text: String::new(),
+                        },
+                    )
+                }
+                DialogContent::Settings { .. } => return,
+            }
+        };
+
+        match kind {
+            ConfirmationKind::Paste { text } => {
+                log::info!("confirmation: pasting {} bytes", text.len());
+                self.write_paste_to_pty(&text);
+            }
+        }
+
+        self.close_dialog(window_id);
+    }
+
+    /// Try routing a key event to the dialog content widget.
+    ///
+    /// Returns the emitted `WidgetAction` if the content handled the key.
+    /// Only confirmation dialogs handle key events (Tab/Enter/Space for
+    /// button focus cycling and activation).
+    pub(in crate::app) fn try_dialog_content_key(
+        &mut self,
+        window_id: WindowId,
+        event: &winit::event::KeyEvent,
+    ) -> Option<WidgetAction> {
+        let ui_key = match &event.logical_key {
+            Key::Named(NamedKey::Tab) => UiKey::Tab,
+            Key::Named(NamedKey::Enter) => UiKey::Enter,
+            Key::Named(NamedKey::Space) => UiKey::Space,
+            _ => return None,
+        };
+
+        let ctx = self.dialogs.get_mut(&window_id)?;
+        if !matches!(ctx.content, DialogContent::Confirmation { .. }) {
+            return None;
+        }
+
+        let ui_event = UiKeyEvent {
+            key: ui_key,
+            modifiers: UiModifiers::NONE,
+        };
+        let renderer = ctx.renderer.as_ref()?;
+        let scale = ctx.scale_factor.factor() as f32;
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let chrome_h = ctx.chrome.caption_height();
+        let w = ctx.surface_config.width as f32 / scale;
+        let h = ctx.surface_config.height as f32 / scale;
+        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
+        let event_ctx = EventCtx {
+            measurer: &measurer,
+            bounds: content_bounds,
+            is_focused: true,
+            focused_widget: None,
+            theme: &self.ui_theme,
+        };
+        let resp = ctx
+            .content
+            .content_widget_mut()
+            .handle_key(ui_event, &event_ctx);
+        if matches!(
+            resp.response,
+            EventResponse::RequestPaint
+                | EventResponse::RequestLayout
+                | EventResponse::RequestRedraw
+        ) {
+            ctx.dirty = true;
+        }
+        resp.action
     }
 }

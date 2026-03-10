@@ -14,13 +14,13 @@ use oriterm_ui::input::{
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
 use winit::event::WindowEvent;
+use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
 use crate::font::UiFontMeasurer;
 use crate::keybindings;
 
 use super::super::App;
-use super::DialogContent;
 
 /// Result of processing a dialog mouse click.
 enum DialogClickResult {
@@ -110,6 +110,7 @@ impl App {
     /// Handle keyboard input within a dialog window.
     ///
     /// Escape closes the dialog (or dismisses a dropdown popup).
+    /// Tab/Enter/Space route to confirmation dialog widgets.
     /// Global keybindings are dispatched normally.
     fn handle_dialog_keyboard(&mut self, window_id: WindowId, event: &winit::event::KeyEvent) {
         if event.state != winit::event::ElementState::Pressed {
@@ -117,12 +118,19 @@ impl App {
         }
 
         // Escape: dismiss dropdown popup, or close dialog.
-        if event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) {
+        if event.logical_key == Key::Named(NamedKey::Escape) {
             if self.dialog_has_overlay(window_id) {
                 self.dismiss_dialog_overlay(window_id);
                 return;
             }
             self.close_dialog(window_id);
+            return;
+        }
+
+        // Route Tab/Enter/Space to confirmation dialog content widgets.
+        let action = self.try_dialog_content_key(window_id, event);
+        if let Some(action) = action {
+            self.handle_dialog_content_action(window_id, action);
             return;
         }
 
@@ -136,9 +144,6 @@ impl App {
                 }
             }
         }
-
-        // TODO: Route Tab/Enter to dialog content widgets for focus cycling
-        // and button activation once the widget focus system is implemented.
     }
 
     /// Handle cursor movement within a dialog window.
@@ -206,7 +211,6 @@ impl App {
                 pos: logical_pos,
                 modifiers: oriterm_ui::input::Modifiers::NONE,
             };
-            let DialogContent::Settings { panel, .. } = &mut ctx.content;
             let event_ctx = EventCtx {
                 measurer: &measurer,
                 bounds: content_bounds,
@@ -214,7 +218,10 @@ impl App {
                 focused_widget: None,
                 theme: &ui_theme,
             };
-            let resp = panel.handle_mouse(&hover_event, &event_ctx);
+            let resp = ctx
+                .content
+                .content_widget_mut()
+                .handle_mouse(&hover_event, &event_ctx);
             if wants_repaint(resp.response) {
                 ctx.dirty = true;
             }
@@ -351,7 +358,6 @@ impl App {
             let w = ctx.surface_config.width as f32 / scale;
             let h = ctx.surface_config.height as f32 / scale;
             let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-            let DialogContent::Settings { panel, .. } = &mut ctx.content;
             let event_ctx = EventCtx {
                 measurer: &measurer,
                 bounds: content_bounds,
@@ -359,7 +365,10 @@ impl App {
                 focused_widget: None,
                 theme: &ui_theme,
             };
-            let resp = panel.handle_mouse(&mouse_event, &event_ctx);
+            let resp = ctx
+                .content
+                .content_widget_mut()
+                .handle_mouse(&mouse_event, &event_ctx);
             if wants_repaint(resp.response) {
                 ctx.dirty = true;
             }
@@ -397,7 +406,6 @@ impl App {
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let DialogContent::Settings { panel, .. } = &mut ctx.content;
         let event_ctx = EventCtx {
             measurer: &measurer,
             bounds: content_bounds,
@@ -405,7 +413,10 @@ impl App {
             focused_widget: None,
             theme: &ui_theme,
         };
-        let resp = panel.handle_mouse(&mouse_event, &event_ctx);
+        let resp = ctx
+            .content
+            .content_widget_mut()
+            .handle_mouse(&mouse_event, &event_ctx);
         if wants_repaint(resp.response) {
             ctx.dirty = true;
         }
@@ -441,7 +452,6 @@ impl App {
         let h = ctx.surface_config.height as f32 / scale;
         let chrome_h = ctx.chrome.caption_height();
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let DialogContent::Settings { panel, .. } = &mut ctx.content;
         let event_ctx = EventCtx {
             measurer: &measurer,
             bounds: content_bounds,
@@ -449,7 +459,10 @@ impl App {
             focused_widget: None,
             theme: &ui_theme,
         };
-        let resp = panel.handle_hover(HoverEvent::Leave, &event_ctx);
+        let resp = ctx
+            .content
+            .content_widget_mut()
+            .handle_hover(HoverEvent::Leave, &event_ctx);
         if wants_repaint(resp.response) {
             ctx.dirty = true;
         }
