@@ -24,6 +24,19 @@ use crate::gpu::window_renderer::WindowRenderer;
 use crate::window_manager::platform::platform_ops;
 use crate::window_manager::types::{DialogKind, ManagedWindow, WindowKind};
 
+/// Intermediate state from creating a dialog OS window and GPU surface.
+///
+/// Produced by [`App::create_dialog_window`], consumed by
+/// [`App::finalize_dialog`]. Separates OS window setup (common to all
+/// dialog kinds) from content creation (kind-specific).
+struct DialogWindowParts {
+    window: Arc<winit::window::Window>,
+    surface: wgpu::Surface<'static>,
+    surface_config: wgpu::SurfaceConfiguration,
+    renderer: Option<WindowRenderer>,
+    parent_wid: WindowId,
+}
+
 impl App {
     /// Open a settings dialog as a real OS window.
     ///
@@ -31,124 +44,18 @@ impl App {
     /// ownership and shadow. The dialog uses a `UiOnly` renderer — no terminal
     /// grid or pane state.
     pub(super) fn open_settings_dialog(&mut self, event_loop: &ActiveEventLoop) {
-        let parent_wid = match self.find_dialog_parent() {
-            Some(id) => id,
-            None => return,
-        };
-
-        // Prevent duplicate settings dialogs.
-        if self.has_dialog_of_kind(DialogKind::Settings) {
-            log::info!("settings dialog already open");
-            // Focus the existing settings dialog.
-            if let Some((&wid, _)) = self
-                .dialogs
-                .iter()
-                .find(|(_, ctx)| ctx.kind == DialogKind::Settings)
-            {
-                if let Some(ctx) = self.dialogs.get(&wid) {
-                    ctx.window.focus_window();
-                }
-            }
-            return;
-        }
-
         let kind = DialogKind::Settings;
-        let (width, height) = kind.default_size();
-
-        // Center on parent window.
-        let position = self.center_on_parent(parent_wid, width, height);
-
-        let window_config = oriterm_ui::window::WindowConfig {
-            title: kind.title().into(),
-            inner_size: oriterm_ui::geometry::Size::new(width as f32, height as f32),
-            transparent: false,
-            blur: false,
-            opacity: 1.0,
-            position: Some(oriterm_ui::geometry::Point::new(
-                position.0 as f32,
-                position.1 as f32,
-            )),
-            resizable: kind.is_resizable(),
+        let Some(parts) = self.create_dialog_window(kind, event_loop) else {
+            return;
         };
-
-        let window = match oriterm_ui::window::create_window(event_loop, &window_config) {
-            Ok(w) => w,
-            Err(e) => {
-                log::error!("failed to create settings dialog window: {e}");
-                return;
-            }
-        };
-        let winit_id = window.id();
-
-        // Apply platform native ops: ownership, shadow, type hints.
-        if let Some(parent_ctx) = self.windows.get(&parent_wid) {
-            let parent_win = parent_ctx.window.window();
-            let ops = platform_ops();
-            ops.set_owner(&window, parent_win);
-            ops.set_window_type(&window, &WindowKind::Dialog(kind));
-        }
 
         // Set min inner size for settings dialog.
-        window.set_min_inner_size(Some(winit::dpi::LogicalSize::new(600u32, 400u32)));
+        parts
+            .window
+            .set_min_inner_size(Some(winit::dpi::LogicalSize::new(600u32, 400u32)));
 
-        // Create GPU surface.
-        let Some(gpu) = self.gpu.as_ref() else {
-            log::error!("dialog: no GPU state");
-            return;
-        };
-        let Some(pipelines) = self.pipelines.as_ref() else {
-            log::error!("dialog: no GPU pipelines");
-            return;
-        };
-        let (surface, surface_config) = match gpu.create_surface(&window) {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("failed to create dialog GPU surface: {e}");
-                return;
-            }
-        };
-
-        // Create UiOnly renderer.
-        let renderer = self.create_dialog_renderer(&window, gpu, pipelines);
-
-        // Build settings form content.
-        let content = self.build_settings_content(&window, renderer.as_ref());
-
-        let scale_factor = ScaleFactor::new(window.scale_factor());
-        let ctx = DialogWindowContext::new(
-            window.clone(),
-            surface,
-            surface_config,
-            renderer,
-            kind,
-            content,
-            scale_factor,
-            &self.ui_theme,
-        );
-
-        // Register with window manager.
-        self.window_manager.register(ManagedWindow::with_parent(
-            winit_id,
-            WindowKind::Dialog(kind),
-            parent_wid,
-        ));
-
-        // Store context.
-        self.dialogs.insert(winit_id, ctx);
-
-        // Install platform chrome subclass for hit testing (close button,
-        // caption drag, resize edges). Without this on Windows, the OS
-        // default WM_NCHITTEST treats the window edges as resize borders,
-        // intercepting cursor events before they reach our hover handler.
-        self.install_dialog_chrome(winit_id);
-
-        // Render first frame, then show.
-        self.render_dialog(winit_id);
-        if let Some(ctx) = self.dialogs.get(&winit_id) {
-            ctx.window.set_visible(true);
-        }
-
-        log::info!("settings dialog opened: {winit_id:?}, parent: {parent_wid:?}");
+        let content = self.build_settings_content(&parts.window, parts.renderer.as_ref());
+        self.finalize_dialog(parts, kind, content);
     }
 
     /// Open a confirmation dialog as a real OS window.
@@ -161,27 +68,41 @@ impl App {
         event_loop: &ActiveEventLoop,
         request: ConfirmationRequest,
     ) {
-        let parent_wid = match self.find_dialog_parent() {
-            Some(id) => id,
-            None => return,
+        let kind = DialogKind::Confirmation;
+        let Some(parts) = self.create_dialog_window(kind, event_loop) else {
+            return;
         };
 
-        // Prevent duplicate confirmation dialogs.
-        if self.has_dialog_of_kind(DialogKind::Confirmation) {
-            log::info!("confirmation dialog already open");
-            if let Some((&wid, _)) = self
-                .dialogs
-                .iter()
-                .find(|(_, ctx)| ctx.kind == DialogKind::Confirmation)
-            {
-                if let Some(ctx) = self.dialogs.get(&wid) {
-                    ctx.window.focus_window();
-                }
-            }
-            return;
+        // Modal: disable parent window input.
+        if let Some(parent_ctx) = self.windows.get(&parts.parent_wid) {
+            platform_ops().set_modal(&parts.window, parent_ctx.window.window());
         }
 
-        let kind = DialogKind::Confirmation;
+        let content = Self::build_confirmation_content(request);
+        self.finalize_dialog(parts, kind, content);
+    }
+
+    /// Create a dialog OS window with GPU surface and renderer.
+    ///
+    /// Handles duplicate prevention, parent lookup, window creation,
+    /// platform ownership, type hints, and GPU setup. Returns `None` if
+    /// any step fails (no parent, duplicate, GPU error).
+    fn create_dialog_window(
+        &self,
+        kind: DialogKind,
+        event_loop: &ActiveEventLoop,
+    ) -> Option<DialogWindowParts> {
+        let parent_wid = self.find_dialog_parent()?;
+
+        // Prevent duplicate dialogs of the same kind.
+        if self.has_dialog_of_kind(kind) {
+            log::info!("{} dialog already open", kind.title());
+            if let Some((_, ctx)) = self.dialogs.iter().find(|(_, ctx)| ctx.kind == kind) {
+                ctx.window.focus_window();
+            }
+            return None;
+        }
+
         let (width, height) = kind.default_size();
         let position = self.center_on_parent(parent_wid, width, height);
 
@@ -201,76 +122,78 @@ impl App {
         let window = match oriterm_ui::window::create_window(event_loop, &window_config) {
             Ok(w) => w,
             Err(e) => {
-                log::error!("failed to create confirmation dialog window: {e}");
-                return;
+                log::error!("failed to create {} dialog window: {e}", kind.title());
+                return None;
             }
         };
-        let winit_id = window.id();
 
-        // Apply platform native ops: ownership, type hints, modal.
+        // Platform ownership and type hints.
         if let Some(parent_ctx) = self.windows.get(&parent_wid) {
             let parent_win = parent_ctx.window.window();
             let ops = platform_ops();
             ops.set_owner(&window, parent_win);
             ops.set_window_type(&window, &WindowKind::Dialog(kind));
-            ops.set_modal(&window, parent_win);
         }
 
-        // Create GPU surface.
-        let Some(gpu) = self.gpu.as_ref() else {
-            log::error!("dialog: no GPU state");
-            return;
-        };
-        let Some(pipelines) = self.pipelines.as_ref() else {
-            log::error!("dialog: no GPU pipelines");
-            return;
-        };
+        // GPU surface and renderer.
+        let gpu = self.gpu.as_ref()?;
+        let pipelines = self.pipelines.as_ref()?;
         let (surface, surface_config) = match gpu.create_surface(&window) {
             Ok(s) => s,
             Err(e) => {
-                log::error!("failed to create confirmation dialog GPU surface: {e}");
-                return;
+                log::error!("failed to create dialog GPU surface: {e}");
+                return None;
             }
         };
-
-        // Create UiOnly renderer.
         let renderer = self.create_dialog_renderer(&window, gpu, pipelines);
 
-        // Build confirmation content.
-        let content = Self::build_confirmation_content(request);
-
-        let scale_factor = ScaleFactor::new(window.scale_factor());
-        let ctx = DialogWindowContext::new(
-            window.clone(),
+        Some(DialogWindowParts {
+            window,
             surface,
             surface_config,
             renderer,
+            parent_wid,
+        })
+    }
+
+    /// Register, store, install chrome, render first frame, and show a dialog.
+    fn finalize_dialog(
+        &mut self,
+        parts: DialogWindowParts,
+        kind: DialogKind,
+        content: DialogContent,
+    ) {
+        let winit_id = parts.window.id();
+        let scale_factor = ScaleFactor::new(parts.window.scale_factor());
+        let ctx = DialogWindowContext::new(
+            parts.window.clone(),
+            parts.surface,
+            parts.surface_config,
+            parts.renderer,
             kind,
             content,
             scale_factor,
             &self.ui_theme,
         );
 
-        // Register with window manager.
         self.window_manager.register(ManagedWindow::with_parent(
             winit_id,
             WindowKind::Dialog(kind),
-            parent_wid,
+            parts.parent_wid,
         ));
-
-        // Store context.
         self.dialogs.insert(winit_id, ctx);
-
-        // Install platform chrome subclass for hit testing.
         self.install_dialog_chrome(winit_id);
-
-        // Render first frame, then show.
         self.render_dialog(winit_id);
+
         if let Some(ctx) = self.dialogs.get(&winit_id) {
             ctx.window.set_visible(true);
         }
 
-        log::info!("confirmation dialog opened: {winit_id:?}, parent: {parent_wid:?}");
+        log::info!(
+            "{} dialog opened: {winit_id:?}, parent: {:?}",
+            kind.title(),
+            parts.parent_wid,
+        );
     }
 
     /// Close a dialog window, discarding any pending changes.

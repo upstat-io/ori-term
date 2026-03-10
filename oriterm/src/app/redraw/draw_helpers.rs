@@ -10,7 +10,7 @@ use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::{DrawCtx, Widget};
 
-use super::super::App;
+use crate::app::App;
 use crate::font::UiFontMeasurer;
 use crate::gpu::state::GpuState;
 

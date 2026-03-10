@@ -5,13 +5,12 @@
 //! Chrome operations are mostly no-ops — macOS handles DPI scaling and
 //! title bar hit testing automatically via `NSFullSizeContentViewWindowMask`.
 
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "Objective-C FFI via objc2")]
 
-use std::ffi::c_void;
 use std::ptr::NonNull;
 
 use objc2::ffi::NSInteger;
-use objc2::runtime::{AnyObject, Bool};
+use objc2::runtime::AnyObject;
 use objc2::{msg_send, sel};
 
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -68,17 +67,6 @@ impl NativeWindowOps for MacosNativeOps {
         }
     }
 
-    fn enable_shadow(&self, window: &Window) {
-        let Some(nswindow) = get_nswindow(window) else {
-            return;
-        };
-        // macOS frameless windows (borderless styleMask) don't get shadows
-        // by default. Setting hasShadow explicitly enables them.
-        unsafe {
-            let _: () = msg_send![nswindow, setHasShadow: Bool::YES];
-        }
-    }
-
     fn set_window_type(&self, window: &Window, kind: &WindowKind) {
         if !kind.is_dialog() {
             return;
@@ -96,8 +84,10 @@ impl NativeWindowOps for MacosNativeOps {
         let Some(nswindow) = get_nswindow(dialog) else {
             return;
         };
-        // Use NSModalPanelWindowLevel instead of NSApp.runModalForWindow:
-        // since we control the event loop ourselves.
+        // NSModalPanelWindowLevel raises the dialog but doesn't block parent
+        // input. True modality requires beginSheet:completionHandler: or
+        // NSApp.runModalSession — deferred until we validate the event loop
+        // interaction with winit's run_app.
         unsafe {
             let _: () = msg_send![nswindow, setLevel: NS_MODAL_PANEL_WINDOW_LEVEL];
         }

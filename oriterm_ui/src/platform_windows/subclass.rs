@@ -3,7 +3,7 @@
 //! Contains the subclass callback installed by [`super::enable_snap()`] and
 //! the individual message handlers it dispatches to.
 
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "Win32 WndProc subclass callback")]
 
 use windows_sys::Win32::Foundation::{HWND, LRESULT, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::InvalidateRect;
@@ -88,8 +88,12 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
 
     let is_maximized = unsafe { IsZoomed(hwnd) != 0 };
 
-    let border_width = data.border_width.lock().map(|g| *g).unwrap_or(0.0);
-    let caption_height = data.caption_height.lock().map(|g| *g).unwrap_or(0.0);
+    let metrics = data.chrome_metrics.lock();
+    let (border_width, caption_height) = metrics
+        .as_ref()
+        .map(|m| (m.border_width, m.caption_height))
+        .unwrap_or((0.0, 0.0));
+    drop(metrics);
     let rects_lock = data.interactive_rects.lock();
     let rects: &[crate::geometry::Rect] = rects_lock.as_ref().map(|g| g.as_slice()).unwrap_or(&[]);
     let chrome = hit_test::WindowChrome {

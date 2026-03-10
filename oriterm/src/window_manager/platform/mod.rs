@@ -33,17 +33,17 @@ pub(crate) trait NativeWindowOps {
     fn set_owner(&self, child: &Window, parent: &Window);
 
     /// Remove the owner/parent relationship from a window.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     fn clear_owner(&self, child: &Window);
-
-    /// Enable OS-level shadow on a frameless window.
-    ///
-    /// On Windows, uses DWM frame extension. On macOS, sets `hasShadow`.
-    /// On Linux, shadows are typically compositor-managed.
-    fn enable_shadow(&self, window: &Window);
 
     /// Apply OS window type hints based on the window's kind.
     ///
     /// Affects taskbar visibility, z-ordering, and decoration style.
+    /// Currently only acts on dialogs; accepts full `WindowKind` to allow
+    /// future differentiation (e.g. tear-off vs main).
     fn set_window_type(&self, window: &Window, kind: &WindowKind);
 
     /// Set a dialog window as modal relative to its owner.
@@ -101,6 +101,9 @@ pub(crate) trait NativeChromeOps {
     /// On Windows: `WS_THICKFRAME` (Main only), DWM frame, `WndProc` subclass.
     /// On macOS: `NSFullSizeContentViewWindowMask`, titlebar transparency.
     /// On Linux: no-op (compositor-managed decorations or GTK CSD via winit).
+    ///
+    /// `border_width` and `caption_height` are in physical pixels (scaled by
+    /// the display scale factor).
     fn install_chrome(
         &self,
         window: &Window,
@@ -112,7 +115,7 @@ pub(crate) trait NativeChromeOps {
     /// Update interactive rects (buttons, tabs) for OS-level hit testing.
     ///
     /// Accepts logical-pixel rects and a scale factor. The platform
-    /// implementation handles scaling to physical pixels internally.
+    /// implementation scales them to physical pixels internally.
     /// On macOS/Linux, this is a no-op.
     fn set_interactive_rects(&self, window: &Window, rects: &[Rect], scale: f32);
 

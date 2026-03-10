@@ -57,6 +57,10 @@ impl WindowManager {
     ///
     /// Removes from old parent's children list, adds to new parent's children
     /// list. Pass `None` to make the window a root window.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn reparent(&mut self, id: WindowId, new_parent: Option<WindowId>) {
         // Remove from old parent.
         let old_parent = self.windows.get(&id).and_then(|w| w.parent);

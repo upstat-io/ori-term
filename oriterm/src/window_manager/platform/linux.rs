@@ -9,7 +9,7 @@
 //! window decorations via CSD or SSD, and hit testing is managed by winit's
 //! built-in decoration support or the compositor itself.
 
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "X11 FFI via x11-dl")]
 
 use std::ffi::CString;
 use std::sync::OnceLock;
@@ -23,6 +23,9 @@ use oriterm_ui::geometry::Rect;
 
 use super::{ChromeMode, NativeChromeOps, NativeWindowOps};
 use crate::window_manager::types::WindowKind;
+
+/// `XA_ATOM` — built-in X11 atom type for property values.
+const XA_ATOM: u64 = 4;
 
 /// Lazily loaded X11 library handle.
 static XLIB: OnceLock<Option<x11_dl::xlib::Xlib>> = OnceLock::new();
@@ -48,12 +51,6 @@ impl NativeWindowOps for LinuxNativeOps {
         if let Some(RawWindowHandle::Xlib(_)) = child.window_handle().ok().map(|h| h.as_raw()) {
             clear_owner_x11(child);
         }
-    }
-
-    fn enable_shadow(&self, _window: &Window) {
-        // On X11 with a compositor (picom, mutter, kwin), frameless windows
-        // receive shadows automatically based on _NET_WM_WINDOW_TYPE.
-        // On Wayland, shadows are compositor-managed for xdg_toplevel.
     }
 
     fn set_window_type(&self, window: &Window, kind: &WindowKind) {
@@ -117,6 +114,10 @@ fn set_owner_x11(child: &Window, parent: &Window) {
 }
 
 /// Clears `WM_TRANSIENT_FOR` by setting it to the root window (None).
+#[allow(
+    dead_code,
+    reason = "called from NativeWindowOps::clear_owner (not yet wired)"
+)]
 fn clear_owner_x11(child: &Window) {
     let Some(xlib) = xlib() else { return };
     let Some((display, child_xid)) = extract_x11(child) else {
@@ -140,12 +141,11 @@ fn set_window_type_x11(window: &Window) {
     unsafe {
         let wm_type = intern_atom(xlib, display, "_NET_WM_WINDOW_TYPE");
         let dialog = intern_atom(xlib, display, "_NET_WM_WINDOW_TYPE_DIALOG");
-        let xa_atom = 4u64; // XA_ATOM
         (xlib.XChangeProperty)(
             display,
             xid,
             wm_type,
-            xa_atom,
+            XA_ATOM,
             32,                            // format: 32-bit values
             x11_dl::xlib::PropModeReplace, // mode
             (&raw const dialog).cast(),    // data

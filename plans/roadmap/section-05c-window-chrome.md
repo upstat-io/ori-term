@@ -125,7 +125,7 @@ sections:
 
 ## Known Issues
 
-- [ ] **BUG:** Dialog close button hold-drag — clicking and holding the close button on a dialog allows dragging the window; the dialog then closes on mouse-up. The close button correctly returns `HTCLIENT` via `WM_NCHITTEST` (interactive rect), but the dialog's app-level event handling may be interpreting the press+drag as a caption drag simultaneously. Minor UX issue. Discovered during chrome plan verification (2026-03-10).
+- [x] **BUG:** Dialog close button hold-drag — clicking and holding the close button on a dialog allows dragging the window; the dialog then closes on mouse-up. The close button correctly returns `HTCLIENT` via `WM_NCHITTEST` (interactive rect), but the dialog's app-level event handling may be interpreting the press+drag as a caption drag simultaneously. Minor UX issue. Discovered during chrome plan verification (2026-03-10). **Fixed:** Added interactive rect check in `route_dialog_click()` — mirrors the platform hit test logic. Click on a control button no longer initiates drag (2026-03-10).
 
 ---
 

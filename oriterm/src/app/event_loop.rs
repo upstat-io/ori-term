@@ -444,6 +444,12 @@ impl ApplicationHandler<TermEvent> for App {
         // Schedule wakeup for continuous rendering when animations are
         // active or for the next blink toggle. The default ControlFlow::Wait
         // lets the event loop sleep indefinitely when nothing is animating.
+        //
+        // Re-check dirty state: widget animations (e.g. control button hover
+        // fade) set ctx.dirty = true during draw, after the pre-render
+        // `any_dirty` check above.
+        let still_dirty = self.windows.values().any(|ctx| ctx.dirty)
+            || self.dialogs.values().any(|ctx| ctx.dirty);
         let has_animations = self
             .windows
             .values()
@@ -452,8 +458,9 @@ impl ApplicationHandler<TermEvent> for App {
                 .dialogs
                 .values()
                 .any(|ctx| ctx.layer_animator.is_any_animating());
-        if any_dirty && !budget_elapsed {
-            // Dirty but budget not yet elapsed — wake up when budget allows.
+        if (any_dirty && !budget_elapsed) || still_dirty {
+            // Dirty but budget not yet elapsed, or re-dirtied by widget
+            // animations during render — wake up when budget allows.
             let remaining =
                 super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
             event_loop.set_control_flow(ControlFlow::WaitUntil(now + remaining));

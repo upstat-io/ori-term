@@ -22,10 +22,6 @@ mod session;
 mod url_detect;
 mod widgets;
 mod window;
-#[allow(
-    dead_code,
-    reason = "foundational types — integrated in Section 03 (main window migration)"
-)]
 mod window_manager;
 
 use clap::Parser;

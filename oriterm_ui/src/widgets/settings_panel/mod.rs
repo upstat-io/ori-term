@@ -1,8 +1,10 @@
 //! Settings panel widget — modal overlay container for settings forms.
 //!
 //! Composes a header bar (title + close button), a separator, and a scrollable
-//! `FormLayout` body. The close button emits `WidgetAction::DismissOverlay`
+//! `FormLayout` body. The close button emits `WidgetAction::CancelSettings`
 //! (translated from the button's `Clicked` action).
+
+mod id_override_button;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -24,6 +26,8 @@ use super::scroll::ScrollWidget;
 use super::separator::SeparatorWidget;
 use super::spacer::SpacerWidget;
 use super::{DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction, WidgetResponse};
+
+use id_override_button::IdOverrideButton;
 
 /// Fixed width of the settings panel in logical pixels.
 const PANEL_WIDTH: f32 = 600.0;
@@ -197,8 +201,24 @@ impl SettingsPanel {
     }
 
     /// Returns the close button's `WidgetId`.
-    pub fn close_id(&self) -> WidgetId {
+    ///
+    /// Only meaningful when `show_chrome` is `true`. When embedded, the
+    /// returned ID points to an unused widget.
+    #[allow(
+        dead_code,
+        reason = "settings panel API — used when overlay settings is wired"
+    )]
+    pub(crate) fn close_id(&self) -> WidgetId {
         self.close_id
+    }
+
+    /// Returns the width spec for the panel's root layout box.
+    fn width_spec(&self) -> SizeSpec {
+        if self.show_chrome {
+            SizeSpec::Fixed(PANEL_WIDTH)
+        } else {
+            SizeSpec::Fill
+        }
     }
 
     /// Clears the cached layout so it is recomputed on the next draw.
@@ -225,16 +245,7 @@ impl SettingsPanel {
             }
         }
         let ctx = LayoutCtx { measurer, theme };
-        let child_box = self.container.layout(&ctx);
-        let width = if self.show_chrome {
-            SizeSpec::Fixed(PANEL_WIDTH)
-        } else {
-            SizeSpec::Fill
-        };
-        let wrapper = LayoutBox::flex(Direction::Column, vec![child_box])
-            .with_width(width)
-            .with_height(SizeSpec::Hug)
-            .with_widget_id(self.id);
+        let wrapper = self.layout(&ctx);
         let node = Rc::new(compute_layout(&wrapper, bounds));
         *self.cached_layout.borrow_mut() = Some((bounds, Rc::clone(&node)));
         node
@@ -283,11 +294,7 @@ impl Widget for SettingsPanel {
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
         let child_box = self.container.layout(ctx);
-        let width = if self.show_chrome {
-            SizeSpec::Fixed(PANEL_WIDTH)
-        } else {
-            SizeSpec::Fill
-        };
+        let width = self.width_spec();
         LayoutBox::flex(Direction::Column, vec![child_box])
             .with_width(width)
             .with_height(SizeSpec::Hug)
@@ -338,10 +345,9 @@ impl Widget for SettingsPanel {
         // Overlay mode: header drag support.
         if self.show_chrome {
             // Active drag: track movement and emit MoveOverlay deltas.
-            if self.drag_origin.is_some() {
+            if let Some(origin) = self.drag_origin {
                 return match event.kind {
                     MouseEventKind::Move => {
-                        let origin = self.drag_origin.unwrap();
                         let dx = event.pos.x - origin.x;
                         let dy = event.pos.y - origin.y;
                         self.drag_origin = Some(event.pos);
@@ -426,73 +432,6 @@ impl Widget for SettingsPanel {
 
     fn focusable_children(&self) -> Vec<WidgetId> {
         self.container.focusable_children()
-    }
-}
-
-/// Wrapper around `ButtonWidget` that overrides its `WidgetId`.
-///
-/// Needed because `ButtonWidget::new()` generates its own ID internally,
-/// but we need a known ID to intercept the `Clicked` action.
-struct IdOverrideButton {
-    inner: ButtonWidget,
-    id_override: WidgetId,
-}
-
-impl Widget for IdOverrideButton {
-    fn id(&self) -> WidgetId {
-        self.id_override
-    }
-
-    fn is_focusable(&self) -> bool {
-        self.inner.is_focusable()
-    }
-
-    fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        // Rewrite the widget id on the layout box.
-        let mut lb = self.inner.layout(ctx);
-        lb = lb.with_widget_id(self.id_override);
-        lb
-    }
-
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        self.inner.draw(ctx);
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let resp = self.inner.handle_mouse(event, ctx);
-        // Rewrite the clicked id to our override.
-        match resp.action {
-            Some(WidgetAction::Clicked(_)) => WidgetResponse {
-                response: resp.response,
-                action: Some(WidgetAction::Clicked(self.id_override)),
-                capture: resp.capture,
-            },
-            _ => resp,
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.inner.handle_hover(event, ctx)
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let resp = self.inner.handle_key(event, ctx);
-        match resp.action {
-            Some(WidgetAction::Clicked(_)) => WidgetResponse {
-                response: resp.response,
-                action: Some(WidgetAction::Clicked(self.id_override)),
-                capture: resp.capture,
-            },
-            _ => resp,
-        }
-    }
-
-    fn focusable_children(&self) -> Vec<WidgetId> {
-        if self.is_focusable() {
-            vec![self.id_override]
-        } else {
-            Vec::new()
-        }
     }
 }
 

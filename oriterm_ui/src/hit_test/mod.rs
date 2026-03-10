@@ -56,6 +56,22 @@ pub enum ResizeDirection {
     BottomRight,
 }
 
+impl ResizeDirection {
+    /// Maps to winit's compass-based resize direction.
+    pub fn to_winit(self) -> winit::window::ResizeDirection {
+        match self {
+            Self::Top => winit::window::ResizeDirection::North,
+            Self::Bottom => winit::window::ResizeDirection::South,
+            Self::Left => winit::window::ResizeDirection::West,
+            Self::Right => winit::window::ResizeDirection::East,
+            Self::TopLeft => winit::window::ResizeDirection::NorthWest,
+            Self::TopRight => winit::window::ResizeDirection::NorthEast,
+            Self::BottomLeft => winit::window::ResizeDirection::SouthWest,
+            Self::BottomRight => winit::window::ResizeDirection::SouthEast,
+        }
+    }
+}
+
 /// Determines the semantic region for a point within a frameless window.
 ///
 /// Priority hierarchy:

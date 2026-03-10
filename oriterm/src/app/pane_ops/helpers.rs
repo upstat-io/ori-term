@@ -6,7 +6,7 @@ use oriterm_mux::PaneId;
 
 use crate::session::{Rect, SessionRegistry, SplitDirection, TabId, WindowId};
 
-use super::super::App;
+use crate::app::App;
 
 /// Result of removing a pane from the session model.
 pub(in crate::app) struct PaneRemovalResult {

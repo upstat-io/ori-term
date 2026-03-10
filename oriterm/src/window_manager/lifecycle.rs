@@ -16,6 +16,10 @@ impl WindowManager {
     /// The caller (`App`) is responsible for actually creating the winit
     /// window via `ActiveEventLoop::create_window()`, then calling
     /// [`register()`](WindowManager::register) with the resulting ID.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn prepare_create(request: &WindowRequest) -> WindowAttributes {
         let mut attrs = WindowAttributes::default()
             .with_title(request.title.clone())
@@ -42,6 +46,10 @@ impl WindowManager {
     ///
     /// The app should exit when the last primary window (main or tear-off)
     /// closes. Dialog windows don't keep the app alive on their own.
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn should_exit_on_close(&self, id: WindowId) -> bool {
         let remaining = self
             .windows
@@ -57,6 +65,10 @@ impl WindowManager {
     /// Prefers the currently focused main window. Falls back to any main
     /// window if the focused window is not a primary window (or if no
     /// window is focused).
+    #[allow(
+        dead_code,
+        reason = "window manager API — wired during main window migration"
+    )]
     pub fn find_dialog_parent(&self) -> Option<WindowId> {
         // Try the focused window first if it's a primary window.
         if let Some(focused) = self.focused_id {
