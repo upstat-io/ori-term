@@ -604,8 +604,9 @@ fn notification_delivery() {
     }
 
     let mut reader = Cursor::new(buf);
+    let mut codec = ProtocolCodec::new();
     for expected in &notifications {
-        let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
+        let frame = codec.decode_frame(&mut reader).unwrap();
         assert_eq!(frame.seq, 0);
         assert!(frame.pdu.is_notification());
         assert_eq!(&frame.pdu, expected);
@@ -709,14 +710,15 @@ fn multiple_frames_sequential() {
     }
 
     let mut reader = Cursor::new(buf);
+    let mut codec = ProtocolCodec::new();
     for (expected_seq, expected_pdu) in &pdus {
-        let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
+        let frame = codec.decode_frame(&mut reader).unwrap();
         assert_eq!(frame.seq, *expected_seq);
         assert_eq!(&frame.pdu, expected_pdu);
     }
 
     // Stream exhausted — next decode should fail with UnexpectedEof.
-    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
+    let err = codec.decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::Io(_)));
 }
 

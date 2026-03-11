@@ -458,6 +458,7 @@ impl Widget for TabBarWidget {
         self.draw_separators(ctx, &strip);
         self.draw_new_tab_button(ctx, &strip);
         self.draw_dropdown_button(ctx, &strip);
+        #[cfg(not(target_os = "macos"))]
         self.draw_window_controls(ctx);
     }
 

@@ -130,6 +130,67 @@ impl App {
         self.send_focus_event(false);
     }
 
+    /// Process pending macOS fullscreen transition events.
+    ///
+    /// Consumes atomic flags set by `NSNotificationCenter` observers and
+    /// applies tab bar inset changes + traffic light re-centering.
+    ///
+    /// Called from `about_to_wait` AND `handle_resize`. During fullscreen
+    /// transitions, macOS fires resize events before capturing the "to"
+    /// state for the animation. Processing flags in `handle_resize` ensures
+    /// the tab bar layout is correct in the animation snapshot, avoiding
+    /// a visible pop after the animation completes.
+    #[cfg(target_os = "macos")]
+    pub(super) fn process_fullscreen_events(&mut self) {
+        let Some(events) =
+            crate::window_manager::platform::macos::take_fullscreen_events()
+        else {
+            return;
+        };
+        if events.will_exit() || events.will_enter() {
+            // For exit: center traffic lights NOW, before macOS captures
+            // the "to" snapshot for the animation. This ensures the buttons
+            // are at their correct centered positions in the exit animation
+            // target frame, preventing the visible "bump down" artifact.
+            if events.will_exit() {
+                if let Some(ctx) = self.focused_ctx() {
+                    let scale = ctx.window.scale_factor().factor() as f32;
+                    let caption_h =
+                        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT * scale;
+                    crate::window_manager::platform::macos::reapply_traffic_lights(
+                        ctx.window.window(),
+                        caption_h,
+                    );
+                }
+            }
+            if let Some(ctx) = self.focused_ctx_mut() {
+                let inset = if events.will_enter() {
+                    0.0
+                } else {
+                    oriterm_ui::widgets::tab_bar::constants::MACOS_TRAFFIC_LIGHT_WIDTH
+                };
+                ctx.tab_bar.set_left_inset(inset);
+                ctx.dirty = true;
+            }
+        }
+        if events.did_exit() {
+            // Safety-net centering after the animation completes. Usually
+            // a no-op since we already centered during the resize above.
+            if let Some(ctx) = self.focused_ctx() {
+                let scale = ctx.window.scale_factor().factor() as f32;
+                let caption_h =
+                    oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT * scale;
+                crate::window_manager::platform::macos::reapply_traffic_lights(
+                    ctx.window.window(),
+                    caption_h,
+                );
+            }
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
+        }
+    }
+
     /// Tick overlay animations in dialog windows.
     ///
     /// Drives dropdown fade-in/fade-out transitions and cleans up

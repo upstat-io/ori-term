@@ -98,6 +98,13 @@ impl App {
         winit_id: WindowId,
         size: winit::dpi::PhysicalSize<u32>,
     ) {
+        // macOS: process fullscreen events eagerly during resize. macOS fires
+        // resize events during fullscreen transitions BEFORE capturing the "to"
+        // state for the animation. Processing here ensures the tab bar inset
+        // is correct in the animation snapshot.
+        #[cfg(target_os = "macos")]
+        self.process_fullscreen_events();
+
         // Window size changed — cached tab width is invalid.
         self.release_tab_width_lock();
 
@@ -144,6 +151,12 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             ctx.tab_bar.set_window_width(logical_w);
+
+            // macOS tab bar inset (traffic light space) is managed by
+            // fullscreen transition notifications in macos.rs, not here.
+            // The willEnter/willExit observers update the inset before the
+            // macOS animation starts, avoiding the visual glitch of traffic
+            // lights overlapping tab text during the transition.
         }
 
         // Update overlay manager viewport for dialog placement.

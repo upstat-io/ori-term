@@ -6,7 +6,9 @@
 
 #[cfg(target_os = "windows")]
 mod merge;
-#[cfg(target_os = "windows")]
+#[cfg(target_os = "macos")]
+mod merge_macos;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 mod tear_off;
 
 use crate::session::TabId;
@@ -63,13 +65,14 @@ pub(crate) struct TabDragState {
 /// Set by [`App::tear_off_tab()`] when a tab exceeds the tear-off threshold,
 /// consumed by [`App::check_torn_off_merge()`] in `about_to_wait` after the
 /// OS modal drag loop completes.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 pub(crate) struct TornOffPending {
     /// Winit ID of the torn-off window (the new, single-tab window).
     pub winit_id: winit::window::WindowId,
     /// Mux tab ID of the dragged tab.
     pub tab_id: TabId,
     /// Cursor offset from the tab's left edge at drag start.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub mouse_offset: f32,
 }
 
@@ -182,7 +185,7 @@ impl App {
     pub(super) fn update_tab_drag(
         &mut self,
         position: winit::dpi::PhysicalPosition<f64>,
-        #[cfg(target_os = "windows")] event_loop: &winit::event_loop::ActiveEventLoop,
+        #[cfg(any(target_os = "windows", target_os = "macos"))] event_loop: &winit::event_loop::ActiveEventLoop,
     ) -> bool {
         // Extract drag data (all Copy fields) to break the borrow chain.
         let drag_info = {
@@ -219,11 +222,12 @@ impl App {
                     return true;
                 }
 
-                // Single-tab window: skip DraggingInBar, go directly to
-                // OS-level drag with merge detection.
-                #[cfg(target_os = "windows")]
+                // Single-tab window: skip DraggingInBar, start OS window drag.
                 if drag_info.tab_count <= 1 {
+                    #[cfg(target_os = "windows")]
                     self.begin_single_tab_os_drag(event_loop);
+                    #[cfg(target_os = "macos")]
+                    self.begin_single_tab_window_drag();
                     return true;
                 }
 
@@ -238,7 +242,7 @@ impl App {
                     logical_x,
                     logical_y,
                     drag_info,
-                    #[cfg(target_os = "windows")]
+                    #[cfg(any(target_os = "windows", target_os = "macos"))]
                     event_loop,
                 );
                 true
@@ -248,7 +252,7 @@ impl App {
                     logical_x,
                     logical_y,
                     drag_info,
-                    #[cfg(target_os = "windows")]
+                    #[cfg(any(target_os = "windows", target_os = "macos"))]
                     event_loop,
                 );
                 true
@@ -262,13 +266,15 @@ impl App {
         logical_x: f32,
         logical_y: f32,
         info: DragInfo,
-        #[cfg(target_os = "windows")] event_loop: &winit::event_loop::ActiveEventLoop,
+        #[cfg(any(target_os = "windows", target_os = "macos"))] event_loop: &winit::event_loop::ActiveEventLoop,
     ) {
         // Tear-off detection.
         if exceeds_tear_off(logical_y, info.bar_y, info.bar_bottom) {
             #[cfg(target_os = "windows")]
             self.tear_off_tab(event_loop);
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(target_os = "macos")]
+            self.tear_off_tab(event_loop);
+            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
             log::debug!("tab drag: tear-off not supported on this platform");
             return;
         }

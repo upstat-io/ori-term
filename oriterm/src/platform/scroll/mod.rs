@@ -46,7 +46,7 @@ fn platform_wheel_scroll_lines() -> u32 {
     }
 }
 
-/// macOS: return 1 (OS pre-applies scroll acceleration to NSEvent deltas).
+/// macOS: return 1 (OS pre-applies scroll acceleration to `NSEvent` deltas).
 ///
 /// `NSEvent`'s `scrollingDeltaY()` already reflects the user's "Scroll speed"
 /// preference from System Settings → Mouse. For discrete mice (non-trackpad),

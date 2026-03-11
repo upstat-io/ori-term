@@ -212,7 +212,7 @@ pub(crate) struct App {
 
     // Pending tear-off state. Set by `tear_off_tab()`, consumed by
     // `check_torn_off_merge()` in `about_to_wait`.
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     torn_off_pending: Option<tab_drag::TornOffPending>,
 
     // Frame budget: time of last render to enforce FRAME_BUDGET spacing.
