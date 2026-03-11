@@ -150,8 +150,9 @@ impl NativeChromeOps for MacosNativeOps {
 /// safety-net after the animation completes. macOS resets the titlebar
 /// container during animations; this re-applies our customizations.
 ///
-/// Traffic light visibility is NOT toggled — macOS manages it natively
-/// as part of the fullscreen animation.
+/// Fullscreen transition visibility toggling (hide before exit animation,
+/// show after repositioning) is handled by the notification observers in
+/// [`fullscreen`].
 pub fn reapply_traffic_lights(window: &Window, caption_height: f32) {
     center_traffic_lights(window, caption_height);
     disable_titlebar_drag(window);
@@ -229,6 +230,40 @@ unsafe fn center_and_disable_drag_raw(nswindow: *mut AnyObject) {
     // Disable titlebar drag.
     let _: () = msg_send![nswindow, setMovableByWindowBackground: false];
     let _: () = msg_send![nswindow, setMovable: false];
+}
+
+/// Set the hidden state of the `NSTitlebarContainerView`.
+///
+/// The container is discovered via the view hierarchy:
+/// `standardWindowButton(0)` → superview (`NSTitlebarView`) → superview
+/// (`NSTitlebarContainerView`).
+///
+/// Called from fullscreen transition handlers to hide the container before
+/// the exit animation (preventing traffic light jump) and show it after
+/// repositioning.
+///
+/// # Safety
+///
+/// `nswindow` must be a valid, non-null `NSWindow` pointer.
+unsafe fn set_titlebar_container_hidden(nswindow: *mut AnyObject, hidden: bool) {
+    let close_btn: *mut AnyObject = msg_send![nswindow, standardWindowButton: 0i64];
+    if close_btn.is_null() {
+        return;
+    }
+    let titlebar_view: *mut AnyObject = msg_send![close_btn, superview];
+    if titlebar_view.is_null() {
+        return;
+    }
+    let container: *mut AnyObject = msg_send![titlebar_view, superview];
+    if container.is_null() {
+        return;
+    }
+    // Disable implicit Core Animation so the show/hide is instant.
+    let ca = AnyClass::get("CATransaction").expect("CATransaction not found");
+    let _: () = msg_send![ca, begin];
+    let _: () = msg_send![ca, setDisableActions: true];
+    let _: () = msg_send![container, setHidden: hidden];
+    let _: () = msg_send![ca, commit];
 }
 
 /// Disable `isMovableByWindowBackground` on the `NSWindow`.

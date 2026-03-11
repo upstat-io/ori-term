@@ -5,12 +5,21 @@
 //! We observe the corresponding `NSNotification` events instead, which fire
 //! on the main thread at the same time as the delegate methods.
 //!
-//! The handlers center traffic lights synchronously (before macOS captures
-//! animation snapshots) and set atomic flags consumed by
-//! `process_fullscreen_events()` for tab bar inset adjustments.
+//! The handlers hide/show the `NSTitlebarContainerView` during fullscreen
+//! exit (Electron pattern) to prevent traffic light jump artifacts, center
+//! buttons, and set atomic flags consumed by `process_fullscreen_events()`
+//! for tab bar inset adjustments.
+//!
+//! Note: earlier versions used an `NSViewFrameDidChangeNotification` observer
+//! on the titlebar container as a supplementary centering mechanism. This was
+//! removed because on macOS 26 (Tahoe), resizing the container inside a
+//! frame-change handler triggers an infinite `_syncToolbarPosition` ↔
+//! `_updateTitlebarContainerViewFrameIfNecessary` recursion in `AppKit`. The
+//! hide/show pattern makes it unnecessary — buttons are hidden during the
+//! exit animation and explicitly centered in `handle_did_exit_fs`.
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use objc2::declare::ClassBuilder;
 use objc2::runtime::{AnyClass, AnyObject, Sel};
@@ -24,13 +33,13 @@ const FS_DID_EXIT: u8 = 2;
 const FS_WILL_ENTER: u8 = 4;
 
 /// Pending fullscreen events, set by notification observers on the main thread.
-static FULLSCREEN_EVENTS: AtomicU8 = AtomicU8::new(0);
-
-/// Reentrancy guard for the titlebar frame-change observer.
 ///
-/// `center_and_disable_drag_raw` changes the container frame, which
-/// re-posts `NSViewFrameDidChangeNotification`. This flag breaks the cycle.
-static CENTERING_GUARD: AtomicBool = AtomicBool::new(false);
+/// The hide/show calls in notification handlers operate per-window (observers
+/// are registered with `object: nswindow`). This global bitfield is a
+/// simplification for the event-loop flags — it applies to the focused window
+/// only. Acceptable because only one window can be focused during a fullscreen
+/// transition.
+static FULLSCREEN_EVENTS: AtomicU8 = AtomicU8::new(0);
 
 /// Atomically consume all pending fullscreen transition events.
 ///
@@ -68,9 +77,11 @@ impl FullscreenEvents {
 
 /// Register `NSNotificationCenter` observers for fullscreen transitions.
 ///
-/// Observes `willExit`, `didExit`, and `willEnter` notifications on the
-/// given window. Handlers set atomic flags consumed by the event loop.
-/// No traffic light visibility toggling — macOS handles it natively.
+/// Observes `willExit`, `didExit`, `willEnter`, and `didEnter` notifications
+/// on the given window. The `willExit`/`didExit` handlers toggle
+/// `NSTitlebarContainerView` visibility (Electron pattern) to prevent
+/// traffic light jump artifacts. Handlers also set atomic flags consumed
+/// by the event loop.
 ///
 /// Called once per window from `install_chrome`.
 pub(super) fn install_fullscreen_observers(window: &Window) {
@@ -106,6 +117,10 @@ pub(super) fn install_fullscreen_observers(window: &Window) {
                 c"NSWindowWillEnterFullScreenNotification".as_ptr(),
                 sel!(handleWillEnter:),
             ),
+            (
+                c"NSWindowDidEnterFullScreenNotification".as_ptr(),
+                sel!(handleDidEnter:),
+            ),
         ];
 
         for &(name_ptr, handler_sel) in registrations {
@@ -119,39 +134,6 @@ pub(super) fn install_fullscreen_observers(window: &Window) {
                 object: nswindow.as_ptr(),
             ];
         }
-        // Observe the titlebar container's frame changes. During fullscreen
-        // exit, macOS rebuilds the container at default height. This observer
-        // fires synchronously, re-centering buttons before macOS captures the
-        // animation snapshot — eliminating both the "bump" and "pop" artifacts.
-        //
-        // Set guard BEFORE enabling notifications to prevent immediate firing
-        // during the initial layout pass.
-        CENTERING_GUARD.store(true, Ordering::Release);
-        let close_btn: *mut AnyObject =
-            msg_send![nswindow.as_ptr(), standardWindowButton: 0i64];
-        if !close_btn.is_null() {
-            let titlebar_view: *mut AnyObject = msg_send![close_btn, superview];
-            if !titlebar_view.is_null() {
-                let container: *mut AnyObject = msg_send![titlebar_view, superview];
-                if !container.is_null() {
-                    let _: () =
-                        msg_send![container, setPostsFrameChangedNotifications: true];
-                    let name: *mut AnyObject = msg_send![
-                        str_cls,
-                        stringWithUTF8String:
-                            c"NSViewFrameDidChangeNotification".as_ptr()
-                    ];
-                    let _: () = msg_send![
-                        center,
-                        addObserver: observer,
-                        selector: sel!(handleFrameChange:),
-                        name: name,
-                        object: container,
-                    ];
-                }
-            }
-        }
-        CENTERING_GUARD.store(false, Ordering::Release);
 
         // The observer is intentionally leaked — it lives for the window's
         // lifetime. NSNotificationCenter filters by `object:`, so no
@@ -160,9 +142,8 @@ pub(super) fn install_fullscreen_observers(window: &Window) {
 }
 
 /// Returns (or lazily creates) the `ObjC` class for fullscreen notification
-/// observers. Methods: `willExit`, `didExit`, `willEnter` set atomic flags
-/// for the event loop; `handleFrameChange` re-centers traffic lights when
-/// macOS rebuilds the titlebar container.
+/// observers. Methods: `willExit`, `didExit`, `willEnter`, `didEnter` set
+/// atomic flags and manage titlebar container visibility.
 fn fullscreen_observer_class() -> &'static AnyClass {
     static CLASS: OnceLock<&'static AnyClass> = OnceLock::new();
     CLASS.get_or_init(|| {
@@ -187,8 +168,8 @@ fn fullscreen_observer_class() -> &'static AnyClass {
                 handle_will_enter_fs as unsafe extern "C" fn(_, _, _),
             );
             builder.add_method(
-                sel!(handleFrameChange:),
-                handle_frame_change as unsafe extern "C" fn(_, _, _),
+                sel!(handleDidEnter:),
+                handle_did_enter_fs as unsafe extern "C" fn(_, _, _),
             );
         }
 
@@ -201,13 +182,14 @@ unsafe extern "C" fn handle_will_exit_fs(
     _cmd: Sel,
     notif: *mut AnyObject,
 ) {
-    // Pre-center buttons before macOS begins the exit animation. macOS may
-    // rebuild the titlebar during the transition, but the frame-change
-    // observer on NSTitlebarContainerView will catch that and re-center.
     if !notif.is_null() {
         let nswindow: *mut AnyObject = msg_send![notif, object];
         if !nswindow.is_null() {
+            // Center buttons, then hide the container so the macOS animation
+            // snapshot does not show buttons at default positions. Electron
+            // uses this same pattern to prevent the traffic light jump.
             unsafe { super::center_and_disable_drag_raw(nswindow) };
+            unsafe { super::set_titlebar_container_hidden(nswindow, true) };
         }
     }
     FULLSCREEN_EVENTS.fetch_or(FS_WILL_EXIT, Ordering::Release);
@@ -218,11 +200,15 @@ unsafe extern "C" fn handle_did_exit_fs(
     _cmd: Sel,
     notif: *mut AnyObject,
 ) {
-    // Safety-net centering after the animation completes. macOS may have
-    // rebuilt the titlebar during the transition, resetting positions.
     if !notif.is_null() {
         let nswindow: *mut AnyObject = msg_send![notif, object];
         if !nswindow.is_null() {
+            // Center buttons while still hidden, then show the container so
+            // traffic lights appear at the correct position with no jump.
+            unsafe { super::center_and_disable_drag_raw(nswindow) };
+            unsafe { super::set_titlebar_container_hidden(nswindow, false) };
+            // Re-center after show — macOS 26 (Tahoe) re-layouts the
+            // container when setHidden: is toggled, resetting positions.
             unsafe { super::center_and_disable_drag_raw(nswindow) };
         }
     }
@@ -232,38 +218,24 @@ unsafe extern "C" fn handle_did_exit_fs(
 unsafe extern "C" fn handle_will_enter_fs(
     _this: &AnyObject,
     _cmd: Sel,
-    _notif: *mut AnyObject,
+    notif: *mut AnyObject,
 ) {
+    // Ensure container is visible when entering fullscreen (safety net for
+    // interrupted exit transitions that may have left it hidden).
+    if !notif.is_null() {
+        let nswindow: *mut AnyObject = msg_send![notif, object];
+        if !nswindow.is_null() {
+            unsafe { super::set_titlebar_container_hidden(nswindow, false) };
+        }
+    }
     FULLSCREEN_EVENTS.fetch_or(FS_WILL_ENTER, Ordering::Release);
 }
 
-/// Re-center traffic lights when macOS changes the titlebar container frame.
-///
-/// Fires synchronously during fullscreen exit when macOS rebuilds the
-/// `NSTitlebarContainerView` at its default height. By re-centering here,
-/// buttons are positioned correctly before macOS captures the animation
-/// snapshot — no visible bump or pop.
-unsafe extern "C" fn handle_frame_change(
+unsafe extern "C" fn handle_did_enter_fs(
     _this: &AnyObject,
     _cmd: Sel,
-    notif: *mut AnyObject,
+    _notif: *mut AnyObject,
 ) {
-    // Reentrancy guard: `center_and_disable_drag_raw` calls `setFrame:` on
-    // the container, which re-posts this notification.
-    if CENTERING_GUARD.swap(true, Ordering::Acquire) {
-        return;
-    }
-
-    if !notif.is_null() {
-        // The notification's object is the NSTitlebarContainerView.
-        let view: *mut AnyObject = msg_send![notif, object];
-        if !view.is_null() {
-            let nswindow: *mut AnyObject = msg_send![view, window];
-            if !nswindow.is_null() {
-                unsafe { super::center_and_disable_drag_raw(nswindow) };
-            }
-        }
-    }
-
-    CENTERING_GUARD.store(false, Ordering::Release);
+    // No-op — exists so `didEnter` is observed. Future use: clear transition
+    // state or re-apply settings after entering fullscreen.
 }
