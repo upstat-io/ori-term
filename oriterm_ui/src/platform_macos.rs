@@ -2,7 +2,7 @@
 //!
 //! Thin layer — winit handles most macOS windowing. Traffic light buttons
 //! are positioned automatically by `fullsize_content_view(true)` (set in
-//! [`crate::window`]). Retina (HiDPI) is handled by winit's
+//! [`crate::window`]). Retina (`HiDPI`) is handled by winit's
 //! `ScaleFactorChanged` event. Full screen is achieved via
 //! `window.set_fullscreen()`.
 

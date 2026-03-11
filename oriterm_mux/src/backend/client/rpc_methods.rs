@@ -360,35 +360,40 @@ impl MuxBackend for MuxClient {
     }
 
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot> {
-        // Try server-pushed snapshot first (checked at render time, not poll
-        // time, so bare-dirty invalidations between poll and render are respected).
+        // Fast path: server-pushed snapshot available.
         let pushed = self
             .transport
             .as_ref()
             .and_then(|t| t.take_pushed_snapshot(pane_id));
         if let Some(snapshot) = pushed {
             self.pane_snapshots.insert(pane_id, snapshot);
+            self.pending_refresh.remove(&pane_id);
             return self.pane_snapshots.get(&pane_id);
         }
 
-        // Fallback: synchronous RPC (no pushed snapshot available).
-        match self.rpc(MuxPdu::GetPaneSnapshot { pane_id }) {
-            Ok(MuxPdu::PaneSnapshotResp { snapshot }) => {
-                self.pane_snapshots.insert(pane_id, snapshot);
-                self.pane_snapshots.get(&pane_id)
-            }
-            Ok(other) => {
-                log::error!("refresh_pane_snapshot: unexpected response: {other:?}");
-                None
-            }
-            Err(e) => {
-                log::error!("refresh_pane_snapshot: RPC failed: {e}");
-                None
+        // Non-blocking fallback: trigger a pushed snapshot via MarkAllDirty.
+        // Returns stale data (or None for brand-new panes). The daemon will
+        // push a NotifyPaneSnapshot via the subscription channel, picked up
+        // on the next event loop tick.
+        //
+        // Note: call fire_and_forget directly — do NOT use the mark_all_dirty()
+        // wrapper which calls invalidate_pushed_snapshot(), dropping the very
+        // snapshot we are waiting for.
+        if self.pending_refresh.insert(pane_id) {
+            if let Some(transport) = &mut self.transport {
+                transport.fire_and_forget(MuxPdu::MarkAllDirty { pane_id });
             }
         }
+        self.dirty_panes.insert(pane_id);
+        self.pane_snapshots.get(&pane_id)
     }
 
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {
+        // Don't clear dirty if an async refresh is still outstanding —
+        // the pane must stay dirty so the next render tick retries.
+        if self.pending_refresh.contains(&pane_id) {
+            return;
+        }
         self.dirty_panes.remove(&pane_id);
     }
 }

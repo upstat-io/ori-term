@@ -266,7 +266,7 @@ fn read_and_dispatch_frames(
                 if *outstanding_ping_seq == Some(seq) && pdu == MuxPdu::PingAck {
                     *outstanding_ping_seq = None;
                     #[cfg(unix)]
-                    if !socket_has_data(stream) {
+                    if !codec.has_buffered_data() && !socket_has_data(stream) {
                         break;
                     }
                     continue;
@@ -282,9 +282,10 @@ fn read_and_dispatch_frames(
                     );
                 }
 
-                // Break early if no more data — avoids blocking decode_frame retry.
+                // Break early if no more data in buffer or on socket —
+                // avoids blocking read() that sleeps for the timeout.
                 #[cfg(unix)]
-                if !socket_has_data(stream) {
+                if !codec.has_buffered_data() && !socket_has_data(stream) {
                     break;
                 }
             }

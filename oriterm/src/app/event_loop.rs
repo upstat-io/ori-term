@@ -161,7 +161,14 @@ impl ApplicationHandler<TermEvent> for App {
                 self.clear_tab_bar_hover();
                 self.clear_url_hover();
                 self.clear_divider_hover();
+                // On macOS, mouseDragged: continues after CursorLeft. Don't
+                // cancel an active drag — it needs to reach tear-off threshold.
+                #[cfg(not(target_os = "macos"))]
                 self.cancel_tab_drag();
+                #[cfg(target_os = "macos")]
+                if !self.has_tab_drag() || !self.mouse.left_down() {
+                    self.cancel_tab_drag();
+                }
                 self.cancel_divider_drag();
                 self.cancel_floating_drag();
                 self.release_tab_width_lock();
@@ -185,9 +192,15 @@ impl ApplicationHandler<TermEvent> for App {
                 // Tab drag: consume all cursor moves when active.
                 if self.update_tab_drag(
                     position,
-                    #[cfg(target_os = "windows")]
+                    #[cfg(any(target_os = "windows", target_os = "macos"))]
                     event_loop,
                 ) {
+                    return;
+                }
+
+                // macOS: track torn-off window under cursor during drag.
+                #[cfg(target_os = "macos")]
+                if self.update_torn_off_drag() {
                     return;
                 }
 
@@ -245,17 +258,19 @@ impl ApplicationHandler<TermEvent> for App {
                     let suppress = self
                         .focused_ctx_mut()
                         .and_then(|ctx| ctx.tab_drag.as_mut())
-                        .is_some_and(|drag| {
-                            if drag.suppress_next_release {
-                                drag.suppress_next_release = false;
-                                true
-                            } else {
-                                false
-                            }
-                        });
+                        .is_some_and(|d| std::mem::replace(&mut d.suppress_next_release, false));
                     if suppress {
                         return;
                     }
+                }
+                // macOS: finish torn-off drag on mouse-up → check merge.
+                #[cfg(target_os = "macos")]
+                if button == winit::event::MouseButton::Left
+                    && state == winit::event::ElementState::Released
+                    && self.torn_off_pending.is_some()
+                {
+                    self.check_torn_off_merge();
+                    return;
                 }
                 // Tab drag: finish on left-button release.
                 if button == winit::event::MouseButton::Left
@@ -338,7 +353,12 @@ impl ApplicationHandler<TermEvent> for App {
         // Focused(true) arrived), send the focus-out escape now.
         self.flush_pending_focus_out();
 
-        // Check for completed OS-level tab drag (tear-off + merge).
+        // macOS: process fullscreen transition notifications.
+        #[cfg(target_os = "macos")]
+        self.process_fullscreen_events();
+
+        // Windows: check for completed OS-level tab drag (merge on return
+        // from blocking drag_window()). macOS checks on mouse-up instead.
         #[cfg(target_os = "windows")]
         self.check_torn_off_merge();
 
@@ -391,51 +411,7 @@ impl ApplicationHandler<TermEvent> for App {
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
         if any_dirty && budget_elapsed {
-            // Render all dirty windows. Each render temporarily swaps
-            // `focused_window_id`/`active_window` so `handle_redraw`
-            // targets the correct window (same pattern as `tear_off_tab`).
-            let dirty_winit_ids: Vec<winit::window::WindowId> = self
-                .windows
-                .iter()
-                .filter(|(_, ctx)| ctx.dirty)
-                .map(|(&id, _)| id)
-                .collect();
-
-            let saved_focused = self.focused_window_id;
-            let saved_active = self.active_window;
-
-            for wid in dirty_winit_ids {
-                if let Some(ctx) = self.windows.get_mut(&wid) {
-                    ctx.dirty = false;
-                }
-                let mux_wid = self
-                    .windows
-                    .get(&wid)
-                    .map(|ctx| ctx.window.session_window_id());
-                self.focused_window_id = Some(wid);
-                self.active_window = mux_wid;
-                self.handle_redraw();
-            }
-
-            self.focused_window_id = saved_focused;
-            self.active_window = saved_active;
-
-            // Render dirty dialog windows.
-            let dirty_dialog_ids: Vec<winit::window::WindowId> = self
-                .dialogs
-                .iter()
-                .filter(|(_, ctx)| ctx.dirty)
-                .map(|(&id, _)| id)
-                .collect();
-            for wid in dirty_dialog_ids {
-                if let Some(ctx) = self.dialogs.get_mut(&wid) {
-                    ctx.dirty = false;
-                }
-                self.render_dialog(wid);
-            }
-
-            self.last_render = std::time::Instant::now();
-            self.perf.record_render();
+            self.render_dirty_windows();
         }
 
         // Periodic performance stats.
@@ -445,19 +421,11 @@ impl ApplicationHandler<TermEvent> for App {
         // active or for the next blink toggle. The default ControlFlow::Wait
         // lets the event loop sleep indefinitely when nothing is animating.
         //
-        // Re-check dirty state: widget animations (e.g. control button hover
-        // fade) set ctx.dirty = true during draw, after the pre-render
-        // `any_dirty` check above.
-        let still_dirty = self.windows.values().any(|ctx| ctx.dirty)
-            || self.dialogs.values().any(|ctx| ctx.dirty);
-        let has_animations = self
-            .windows
-            .values()
-            .any(|ctx| ctx.layer_animator.is_any_animating())
-            || self
-                .dialogs
-                .values()
-                .any(|ctx| ctx.layer_animator.is_any_animating());
+        // Re-check: widget animations may set dirty during draw.
+        let still_dirty = self.windows.values().any(|c| c.dirty)
+            || self.dialogs.values().any(|c| c.dirty);
+        let has_animations = self.windows.values().any(|c| c.layer_animator.is_any_animating())
+            || self.dialogs.values().any(|c| c.layer_animator.is_any_animating());
         if (any_dirty && !budget_elapsed) || still_dirty {
             // Dirty but budget not yet elapsed, or re-dirtied by widget
             // animations during render — wake up when budget allows.
@@ -475,5 +443,56 @@ impl ApplicationHandler<TermEvent> for App {
         } else {
             // Nothing animating — sleep until the next external event.
         }
+    }
+}
+
+impl App {
+    /// Render all dirty terminal and dialog windows.
+    ///
+    /// Temporarily swaps `focused_window_id`/`active_window` to target each
+    /// dirty window, then restores the original focus.
+    fn render_dirty_windows(&mut self) {
+        let dirty_winit_ids: Vec<winit::window::WindowId> = self
+            .windows
+            .iter()
+            .filter(|(_, ctx)| ctx.dirty)
+            .map(|(&id, _)| id)
+            .collect();
+
+        let saved_focused = self.focused_window_id;
+        let saved_active = self.active_window;
+
+        for wid in dirty_winit_ids {
+            if let Some(ctx) = self.windows.get_mut(&wid) {
+                ctx.dirty = false;
+            }
+            let mux_wid = self
+                .windows
+                .get(&wid)
+                .map(|ctx| ctx.window.session_window_id());
+            self.focused_window_id = Some(wid);
+            self.active_window = mux_wid;
+            self.handle_redraw();
+        }
+
+        self.focused_window_id = saved_focused;
+        self.active_window = saved_active;
+
+        // Render dirty dialog windows.
+        let dirty_dialog_ids: Vec<winit::window::WindowId> = self
+            .dialogs
+            .iter()
+            .filter(|(_, ctx)| ctx.dirty)
+            .map(|(&id, _)| id)
+            .collect();
+        for wid in dirty_dialog_ids {
+            if let Some(ctx) = self.dialogs.get_mut(&wid) {
+                ctx.dirty = false;
+            }
+            self.render_dialog(wid);
+        }
+
+        self.last_render = std::time::Instant::now();
+        self.perf.record_render();
     }
 }

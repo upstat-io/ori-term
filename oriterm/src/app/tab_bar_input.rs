@@ -9,7 +9,10 @@ use std::time::{Duration, Instant};
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 
-use oriterm_ui::geometry::{Point, Rect};
+use oriterm_ui::geometry::Rect;
+#[cfg(not(target_os = "macos"))]
+use oriterm_ui::geometry::Point;
+#[cfg(not(target_os = "macos"))]
 use oriterm_ui::input::{MouseButton, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::Placement;
 use oriterm_ui::widgets::menu::{MenuStyle, MenuWidget};
@@ -17,8 +20,10 @@ use oriterm_ui::widgets::tab_bar::TabBarHit;
 use oriterm_ui::widgets::tab_bar::constants::{
     DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_TOP_MARGIN,
 };
+#[cfg(not(target_os = "macos"))]
 use oriterm_ui::widgets::{EventCtx, WidgetAction};
 
+#[cfg(not(target_os = "macos"))]
 use crate::font::UiFontMeasurer;
 
 use super::{App, context_menu};
@@ -35,7 +40,8 @@ impl App {
         &mut self,
         button: winit::event::MouseButton,
         state: ElementState,
-        event_loop: &ActiveEventLoop,
+        #[cfg(not(target_os = "macos"))] event_loop: &ActiveEventLoop,
+        #[cfg(target_os = "macos")] _event_loop: &ActiveEventLoop,
     ) -> bool {
         let pos = self.mouse.cursor_pos();
         if !self.cursor_in_tab_bar(pos) {
@@ -63,7 +69,9 @@ impl App {
         // On release: route to control buttons for press/release cycle.
         // Window control actions fire on mouse-up (matching Windows caption
         // button behavior: press highlights, release fires, drag-off cancels).
+        // Not on macOS — native traffic lights handle their own events.
         if state != ElementState::Pressed {
+            #[cfg(not(target_os = "macos"))]
             if let Some(action) = self.route_control_mouse(MouseButton::Left, false) {
                 self.handle_chrome_action(&action, event_loop);
             }
@@ -110,6 +118,10 @@ impl App {
             TabBarHit::Minimize | TabBarHit::Maximize | TabBarHit::CloseWindow => {
                 // Route press to control button widget — sets pressed state
                 // but does not fire the action until mouse-up.
+                // On macOS: native traffic lights handle their own events,
+                // but these hit types won't occur since controls are removed
+                // from interactive_rects.
+                #[cfg(not(target_os = "macos"))]
                 self.route_control_mouse(MouseButton::Left, true);
                 true
             }
@@ -197,6 +209,7 @@ impl App {
     /// Delegates to [`TabBarWidget::handle_control_mouse`] which manages
     /// the press/release cycle on [`WindowControlButton`]s. Returns the
     /// emitted [`WidgetAction`] (if any) — the caller dispatches it.
+    #[cfg(not(target_os = "macos"))]
     fn route_control_mouse(&mut self, button: MouseButton, is_down: bool) -> Option<WidgetAction> {
         let pos = self.mouse.cursor_pos();
         let ui_theme = self.ui_theme;

@@ -71,7 +71,7 @@ pub const CONTROLS_ZONE_WIDTH: f32 = CONTROL_BUTTON_MARGIN
 /// Width reserved for macOS traffic light buttons (close/minimize/maximize).
 ///
 /// Apple's traffic lights: 14px circles, 6px apart, 20px left margin, 20px right
-/// margin = 76px total. WezTerm uses ~80px. We use 76px to match Apple's geometry.
+/// margin = 76px total. `WezTerm` uses ~80px. We use 76px to match Apple's geometry.
 #[cfg(target_os = "macos")]
 pub const MACOS_TRAFFIC_LIGHT_WIDTH: f32 = 76.0;
 

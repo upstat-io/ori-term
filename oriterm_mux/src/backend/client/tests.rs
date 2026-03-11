@@ -357,8 +357,8 @@ mod transport_tests {
     ///
     /// Test servers must call this after writing `HelloAck` to stay in sync
     /// with the client's handshake sequence.
-    fn consume_set_capabilities(stream: &mut UnixStream) {
-        let _ = ProtocolCodec::new().decode_frame(stream);
+    fn consume_set_capabilities(codec: &mut ProtocolCodec, stream: &mut UnixStream) {
+        let _ = codec.decode_frame(stream);
     }
 
     // -- Notification conversion tests --
@@ -440,8 +440,9 @@ mod transport_tests {
         ProtocolCodec::encode_frame(&mut a, 1, &MuxPdu::Ping).unwrap();
         ProtocolCodec::encode_frame(&mut a, 2, &MuxPdu::ListPanes).unwrap();
 
-        let f1 = ProtocolCodec::new().decode_frame(&mut b).unwrap();
-        let f2 = ProtocolCodec::new().decode_frame(&mut b).unwrap();
+        let mut codec = ProtocolCodec::new();
+        let f1 = codec.decode_frame(&mut b).unwrap();
+        let f2 = codec.decode_frame(&mut b).unwrap();
 
         assert_eq!(f1.seq, 1);
         assert!(matches!(f1.pdu, MuxPdu::Ping));
@@ -465,8 +466,9 @@ mod transport_tests {
 
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Read Hello.
-            let frame = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let frame = codec.decode_frame(&mut stream).unwrap();
             assert!(matches!(frame.pdu, MuxPdu::Hello { .. }));
             // Write HelloAck.
             ProtocolCodec::encode_frame(
@@ -477,7 +479,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
             stream
         });
 
@@ -501,8 +503,9 @@ mod transport_tests {
 
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -511,10 +514,10 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Read Ping request.
-            let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let req = codec.decode_frame(&mut stream).unwrap();
             assert!(matches!(req.pdu, MuxPdu::Ping));
 
             // Reply with PingAck.
@@ -544,8 +547,9 @@ mod transport_tests {
 
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -554,7 +558,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Push a notification (seq=0).
             ProtocolCodec::encode_frame(
@@ -603,8 +607,9 @@ mod transport_tests {
 
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -613,7 +618,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Drop the stream immediately to simulate disconnect.
             drop(stream);
@@ -639,8 +644,9 @@ mod transport_tests {
 
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -649,10 +655,10 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Read the request but never respond — let client timeout.
-            let _req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let _req = codec.decode_frame(&mut stream).unwrap();
             // Keep connection alive while client waits (just past the 5s RPC timeout).
             std::thread::sleep(Duration::from_secs(6));
             stream
@@ -683,8 +689,9 @@ mod transport_tests {
 
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -693,11 +700,11 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Read 3 requests, record their seqs, respond to each.
             for _ in 0..3 {
-                let frame = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+                let frame = codec.decode_frame(&mut stream).unwrap();
                 seqs.lock().unwrap().push(frame.seq);
                 ProtocolCodec::encode_frame(&mut stream, frame.seq, &MuxPdu::PingAck).unwrap();
             }
@@ -730,8 +737,9 @@ mod transport_tests {
 
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake only, then drop.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -740,7 +748,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
             drop(stream);
         });
 
@@ -771,8 +779,9 @@ mod transport_tests {
 
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -781,10 +790,10 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Read the RPC request.
-            let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let req = codec.decode_frame(&mut stream).unwrap();
 
             // Send a notification BEFORE the RPC response.
             ProtocolCodec::encode_frame(
@@ -837,8 +846,9 @@ mod transport_tests {
 
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -847,7 +857,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Send a frame with an unknown msg type + 4-byte payload.
             let header = crate::protocol::FrameHeader {
@@ -883,8 +893,9 @@ mod transport_tests {
 
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -893,7 +904,7 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Send 10 notifications in rapid succession.
             for i in 1..=10u64 {
@@ -943,8 +954,9 @@ mod transport_tests {
 
         let server_handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let mut codec = ProtocolCodec::new();
             // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let hello = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 hello.seq,
@@ -953,10 +965,10 @@ mod transport_tests {
                 },
             )
             .unwrap();
-            consume_set_capabilities(&mut stream);
+            consume_set_capabilities(&mut codec, &mut stream);
 
             // Read request, respond with Error.
-            let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
+            let req = codec.decode_frame(&mut stream).unwrap();
             ProtocolCodec::encode_frame(
                 &mut stream,
                 req.seq,

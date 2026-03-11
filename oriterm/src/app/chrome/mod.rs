@@ -10,14 +10,17 @@ mod resize;
 
 use std::time::Instant;
 
+#[cfg(not(target_os = "macos"))]
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
 use oriterm_ui::geometry::Rect;
+#[cfg(not(target_os = "macos"))]
 use oriterm_ui::widgets::WidgetAction;
 use oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH;
 
 use super::App;
+#[cfg(not(target_os = "macos"))]
 use crate::font::UiFontMeasurer;
 use crate::window_manager::platform::{ChromeMode, chrome_ops};
 
@@ -90,6 +93,8 @@ impl App {
     /// Dispatch a window chrome action to the corresponding window operation.
     ///
     /// Returns `true` if the action was handled (recognized as a chrome action).
+    /// On macOS, native traffic lights handle these actions directly.
+    #[cfg(not(target_os = "macos"))]
     pub(super) fn handle_chrome_action(
         &mut self,
         action: &WidgetAction,
@@ -125,6 +130,7 @@ impl App {
             let maximized = !ctx.window.is_maximized();
             ctx.window.window().set_maximized(maximized);
             ctx.window.set_maximized(maximized);
+            #[cfg(not(target_os = "macos"))]
             ctx.tab_bar.set_maximized(maximized);
             ctx.dirty = true;
         }
@@ -190,6 +196,7 @@ impl App {
         };
 
         // Drive control button hover animation when cursor targets controls.
+        #[cfg(not(target_os = "macos"))]
         self.update_control_hover_animation(position, &hit);
 
         // Apply hover hit, redraw on change.
@@ -206,6 +213,7 @@ impl App {
     /// Forwards the cursor position and hit result to the tab bar's
     /// control hover handler, which manages fade-in/fade-out animations
     /// on minimize, maximize, and close buttons.
+    #[cfg(not(target_os = "macos"))]
     fn update_control_hover_animation(
         &mut self,
         position: winit::dpi::PhysicalPosition<f64>,
@@ -268,7 +276,8 @@ impl App {
                 Instant::now(),
             );
         }
-        // Clear control button hover animation.
+        // Clear control button hover animation (not on macOS — native traffic lights).
+        #[cfg(not(target_os = "macos"))]
         if let Some(renderer) = ctx.renderer.as_ref() {
             let scale = ctx.window.scale_factor().factor() as f32;
             let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);

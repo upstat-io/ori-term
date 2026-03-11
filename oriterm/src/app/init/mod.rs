@@ -278,6 +278,13 @@ impl App {
 
         let mut tab_bar_widget =
             oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &self.ui_theme);
+
+        // Reserve space for macOS traffic light buttons on the left.
+        #[cfg(target_os = "macos")]
+        tab_bar_widget.set_left_inset(
+            oriterm_ui::widgets::tab_bar::constants::MACOS_TRAFFIC_LIGHT_WIDTH,
+        );
+
         tab_bar_widget.set_tabs(vec![oriterm_ui::widgets::tab_bar::TabEntry::new("")]);
 
         // Set initial platform hit test rects from the tab bar.
