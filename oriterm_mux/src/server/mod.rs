@@ -34,7 +34,7 @@ use crate::pane::Pane;
 use self::notify::TargetClients;
 use self::snapshot::SnapshotCache;
 
-pub use connection::ClientConnection;
+pub(crate) use connection::ClientConnection;
 pub use ipc::{IpcListener, IpcStream, socket_path};
 pub use pid_file::{PidFile, pid_file_path, read_pid};
 
@@ -298,18 +298,16 @@ impl MuxServer {
         }
 
         // Post-pass: Clean up per-pane state for closed panes.
-        // Collect IDs first to avoid borrowing `self` immutably (notification_buf)
-        // and mutably (cleanup_pane_state) at the same time.
-        let closed: Vec<PaneId> = self
-            .notification_buf
-            .iter()
-            .filter_map(|n| match n {
-                MuxNotification::PaneClosed(id) => Some(*id),
+        // Collect IDs into scratch_panes to avoid borrowing `self` immutably
+        // (notification_buf) and mutably (cleanup_pane_state) at the same time.
+        self.scratch_panes.clear();
+        self.scratch_panes
+            .extend(self.notification_buf.iter().filter_map(|n| match n {
+                MuxNotification::PaneClosed { pane_id, .. } => Some(*pane_id),
                 _ => None,
-            })
-            .collect();
-        for pane_id in closed {
-            self.cleanup_pane_state(pane_id);
+            }));
+        for i in 0..self.scratch_panes.len() {
+            self.cleanup_pane_state(self.scratch_panes[i]);
         }
 
         // Phase 3: Update write interests for connections with pending data.

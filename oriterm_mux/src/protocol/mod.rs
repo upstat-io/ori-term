@@ -25,10 +25,10 @@ mod snapshot;
 
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};
 pub use messages::MuxPdu;
-pub use msg_type::MsgType;
+pub(crate) use msg_type::MsgType;
 pub use snapshot::{
-    PaneSnapshot, WireCell, WireCellFlags, WireColor, WireCursor, WireCursorShape, WireRgb,
-    WireSearchMatch, WireSelection,
+    PaneSnapshot, WireCell, WireCellFlags, WireCursor, WireCursorShape, WireRgb, WireSearchMatch,
+    WireSelection,
 };
 
 /// Frame header size in bytes.
@@ -39,7 +39,7 @@ pub const MAX_PAYLOAD: u32 = 16 * 1024 * 1024;
 
 /// Frame header on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FrameHeader {
+pub(crate) struct FrameHeader {
     /// Message type ID (for routing and debugging).
     pub msg_type: u16,
     /// Request/response correlation. `0` for fire-and-forget and notifications.

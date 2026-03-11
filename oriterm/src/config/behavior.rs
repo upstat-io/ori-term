@@ -63,6 +63,12 @@ pub struct BehaviorConfig {
     /// When `true`, a thin colored bar is drawn at the left edge of each prompt
     /// line. Requires shell integration to be active. Default: `false`.
     pub prompt_markers: bool,
+    /// Hide the mouse cursor while typing in the terminal grid.
+    ///
+    /// The cursor reappears on any mouse movement. Does not hide when the
+    /// terminal has mouse reporting enabled (e.g., vim, tmux mouse mode).
+    /// Default: `true`.
+    pub hide_mouse_when_typing: bool,
 }
 
 impl Default for BehaviorConfig {
@@ -79,6 +85,7 @@ impl Default for BehaviorConfig {
             notify_command_threshold_secs: 10,
             notify_command_bell: true,
             prompt_markers: false,
+            hide_mouse_when_typing: true,
         }
     }
 }

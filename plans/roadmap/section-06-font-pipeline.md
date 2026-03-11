@@ -2,6 +2,7 @@
 section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
 status: complete
+reviewed: true
 tier: 2
 goal: "Best font rendering of any terminal emulator. Full shaping pipeline with hinting, LCD subpixel rendering, subpixel positioning, proper font synthesis, and automated visual regression testing. The feature users switch terminals for."
 sections:

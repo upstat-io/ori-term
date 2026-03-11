@@ -5,7 +5,7 @@
 
 use crate::keybindings::Action;
 
-use super::super::App;
+use crate::app::App;
 
 impl App {
     /// Execute a keybinding action. Returns `true` if the event was consumed.
@@ -222,6 +222,13 @@ impl App {
                 if let Some(i) = idx {
                     self.move_tab_to_new_window_deferred(i);
                 }
+                true
+            }
+            Action::OpenSettings => {
+                // Defer to event loop — dialog creation needs &ActiveEventLoop.
+                let _ = self
+                    .event_proxy
+                    .send_event(crate::event::TermEvent::OpenSettings);
                 true
             }
             // Actions for future sections — consume the event but log a stub.

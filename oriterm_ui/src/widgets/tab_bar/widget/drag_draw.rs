@@ -6,10 +6,11 @@
 
 use crate::color::Color;
 use crate::draw::{RectStyle, Shadow};
-use crate::geometry::{Point, Rect};
+use crate::geometry::Rect;
+use crate::icons::IconId;
 
 use super::TabBarWidget;
-use super::draw::{ACTIVE_TAB_RADIUS, CLOSE_ICON_INSET, ICON_STROKE_WIDTH, TabStrip};
+use super::draw::{ACTIVE_TAB_RADIUS, CLOSE_ICON_INSET, TabStrip};
 
 use super::super::constants::{CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH};
 use crate::widgets::DrawCtx;
@@ -59,23 +60,18 @@ impl TabBarWidget {
         let cx =
             tab_x + self.layout.tab_width_at(index) - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH;
         let cy = strip.y + (strip.h - CLOSE_BUTTON_WIDTH) / 2.0;
-
-        let x1 = cx + CLOSE_ICON_INSET;
-        let y1 = cy + CLOSE_ICON_INSET;
-        let x2 = cx + CLOSE_BUTTON_WIDTH - CLOSE_ICON_INSET;
-        let y2 = cy + CLOSE_BUTTON_WIDTH - CLOSE_ICON_INSET;
         let fg = self.colors.close_fg;
-        ctx.draw_list.push_line(
-            Point::new(x1, y1),
-            Point::new(x2, y2),
-            ICON_STROKE_WIDTH,
-            fg,
-        );
-        ctx.draw_list.push_line(
-            Point::new(x1, y2),
-            Point::new(x2, y1),
-            ICON_STROKE_WIDTH,
-            fg,
-        );
+
+        let icon_size = (CLOSE_BUTTON_WIDTH - 2.0 * CLOSE_ICON_INSET).round() as u32;
+        if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(IconId::Close, icon_size)) {
+            let icon_rect = Rect::new(
+                cx + CLOSE_ICON_INSET,
+                cy + CLOSE_ICON_INSET,
+                CLOSE_BUTTON_WIDTH - 2.0 * CLOSE_ICON_INSET,
+                CLOSE_BUTTON_WIDTH - 2.0 * CLOSE_ICON_INSET,
+            );
+            ctx.draw_list
+                .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
+        }
     }
 }

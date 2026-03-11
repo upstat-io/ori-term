@@ -20,15 +20,16 @@ use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use self::controls::{ControlButtonColors, WindowControlButton};
-use self::layout::{ChromeLayout, ControlKind};
+use self::layout::{ChromeLayout, ChromeMode, ControlKind};
 use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
 /// Window chrome widget: caption bar with title and window controls.
 ///
 /// Draws a colored bar at the top of the window containing a title string
-/// and three control buttons (minimize, maximize/restore, close). The caption
-/// background is draggable (the platform layer uses [`interactive_rects`] to
-/// exclude button areas from the drag zone).
+/// and control buttons. In [`ChromeMode::Full`] mode: minimize,
+/// maximize/restore, and close. In [`ChromeMode::Dialog`] mode: close only.
+/// The caption background is draggable (the platform layer uses
+/// [`interactive_rects`] to exclude button areas from the drag zone).
 pub struct WindowChromeWidget {
     id: WidgetId,
     title: String,
@@ -38,12 +39,14 @@ pub struct WindowChromeWidget {
     is_maximized: bool,
     /// Whether the window is currently fullscreen.
     is_fullscreen: bool,
+    /// Which controls to show (full vs dialog).
+    mode: ChromeMode,
     /// Window width in logical pixels (updated on resize).
     window_width: f32,
     /// Cached layout (recomputed on state/size change).
     chrome_layout: ChromeLayout,
-    /// Control buttons: [minimize, maximize, close].
-    controls: [WindowControlButton; 3],
+    /// Control buttons. Length depends on mode: 3 for Full, 1 for Dialog.
+    controls: Vec<WindowControlButton>,
     /// Index of the currently hovered control button (None if no hover).
     hovered_control: Option<usize>,
     /// Caption background color (active).
@@ -62,7 +65,22 @@ impl WindowChromeWidget {
 
     /// Creates a new window chrome widget with colors from the given theme.
     pub fn with_theme(title: impl Into<String>, window_width: f32, theme: &UiTheme) -> Self {
-        let chrome_layout = ChromeLayout::compute(window_width, false, false);
+        Self::with_theme_and_mode(title, window_width, theme, ChromeMode::Full)
+    }
+
+    /// Creates a dialog chrome widget (close button only).
+    pub fn dialog(title: impl Into<String>, window_width: f32, theme: &UiTheme) -> Self {
+        Self::with_theme_and_mode(title, window_width, theme, ChromeMode::Dialog)
+    }
+
+    /// Creates a window chrome widget with the given mode and theme.
+    fn with_theme_and_mode(
+        title: impl Into<String>,
+        window_width: f32,
+        theme: &UiTheme,
+        mode: ChromeMode,
+    ) -> Self {
+        let chrome_layout = ChromeLayout::compute_with_mode(window_width, false, false, mode);
 
         let caption_bg = theme.bg_secondary;
 
@@ -74,12 +92,14 @@ impl WindowChromeWidget {
             close_pressed_bg: theme.close_pressed_bg,
         };
 
-        let mut min_btn = WindowControlButton::new(ControlKind::Minimize, colors);
-        min_btn.set_caption_bg(caption_bg);
-        let mut max_btn = WindowControlButton::new(ControlKind::MaximizeRestore, colors);
-        max_btn.set_caption_bg(caption_bg);
-        let mut close_btn = WindowControlButton::new(ControlKind::Close, colors);
-        close_btn.set_caption_bg(caption_bg);
+        let controls = match mode {
+            ChromeMode::Full => vec![
+                WindowControlButton::new(ControlKind::Minimize, colors),
+                WindowControlButton::new(ControlKind::MaximizeRestore, colors),
+                WindowControlButton::new(ControlKind::Close, colors),
+            ],
+            ChromeMode::Dialog => vec![WindowControlButton::new(ControlKind::Close, colors)],
+        };
 
         Self {
             id: WidgetId::next(),
@@ -87,9 +107,10 @@ impl WindowChromeWidget {
             active: true,
             is_maximized: false,
             is_fullscreen: false,
+            mode,
             window_width,
             chrome_layout,
-            controls: [min_btn, max_btn, close_btn],
+            controls,
             hovered_control: None,
             caption_bg,
             caption_bg_inactive: darken(caption_bg, 0.3),
@@ -128,7 +149,6 @@ impl WindowChromeWidget {
     /// Sets the active/focused state.
     pub fn set_active(&mut self, active: bool) {
         self.active = active;
-        self.sync_caption_bg();
     }
 
     /// Sets the maximized state and recomputes layout.
@@ -167,13 +187,16 @@ impl WindowChromeWidget {
         for ctrl in &mut self.controls {
             ctrl.set_colors(colors);
         }
-        self.sync_caption_bg();
     }
 
     /// Recomputes the chrome layout from current state.
     fn recompute_layout(&mut self) {
-        self.chrome_layout =
-            ChromeLayout::compute(self.window_width, self.is_maximized, self.is_fullscreen);
+        self.chrome_layout = ChromeLayout::compute_with_mode(
+            self.window_width,
+            self.is_maximized,
+            self.is_fullscreen,
+            self.mode,
+        );
     }
 
     /// Returns the current caption background color based on active state.
@@ -182,14 +205,6 @@ impl WindowChromeWidget {
             self.caption_bg
         } else {
             self.caption_bg_inactive
-        }
-    }
-
-    /// Syncs the caption background color to all control buttons.
-    fn sync_caption_bg(&mut self) {
-        let bg = self.current_caption_bg();
-        for ctrl in &mut self.controls {
-            ctrl.set_caption_bg(bg);
         }
     }
 
@@ -253,6 +268,7 @@ impl Widget for WindowChromeWidget {
                 now: ctx.now,
                 animations_running: ctx.animations_running,
                 theme: ctx.theme,
+                icons: ctx.icons,
             };
             ctrl.draw(&mut child_ctx);
         }

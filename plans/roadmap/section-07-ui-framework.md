@@ -2,6 +2,7 @@
 section: 7
 title: 2D UI Framework
 status: in-progress
+reviewed: false
 tier: 2
 goal: A lightweight GPU-rendered UI framework on top of wgpu — drawing primitives, layout engine, and widget kit for ori_term's rich cross-platform UI
 sections:

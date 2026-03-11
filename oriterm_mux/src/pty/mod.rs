@@ -23,6 +23,7 @@ pub use event_loop::PtyEventLoop;
     reason = "returned by PtyHandle::wait/try_wait; callers need access"
 )]
 pub use spawn::ExitStatus;
+pub(crate) use spawn::compute_wslenv;
 pub use spawn::{PtyConfig, PtyControl, PtyHandle, spawn_pty};
 
 /// Commands sent from the main thread to the PTY writer thread.

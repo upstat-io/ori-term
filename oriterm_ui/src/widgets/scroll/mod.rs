@@ -8,15 +8,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::color::Color;
-use crate::draw::RectStyle;
-use crate::geometry::{Point, Rect};
+use crate::geometry::Rect;
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseEvent, MouseEventKind, ScrollDelta};
-use crate::layout::{LayoutBox, LayoutNode, compute_layout};
+use crate::layout::{LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{CaptureRequest, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+
+mod scrollbar;
 
 /// Scroll direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,10 +57,36 @@ impl Default for ScrollbarStyle {
     }
 }
 
+/// When to show the scrollbar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ScrollbarPolicy {
+    /// Show scrollbar only when content overflows (default).
+    #[default]
+    Auto,
+    /// Always show scrollbar.
+    Always,
+    /// Never show scrollbar (content still scrollable via wheel).
+    Hidden,
+}
+
+/// Tracks scrollbar drag and hover state.
+#[derive(Debug, Default)]
+struct ScrollbarState {
+    /// Whether the scrollbar thumb is being dragged.
+    dragging: bool,
+    /// Y offset of drag start.
+    drag_start_y: f32,
+    /// Scroll offset at drag start.
+    drag_start_offset: f32,
+    /// Whether the cursor is over the scrollbar track area.
+    track_hovered: bool,
+}
+
 /// A scrollable container that clips its child to visible bounds.
 ///
 /// Supports vertical, horizontal, or dual-axis scrolling. Renders a
-/// thin overlay scrollbar when content overflows.
+/// thin overlay scrollbar when content overflows. Supports scrollbar
+/// thumb drag interaction.
 pub struct ScrollWidget {
     id: WidgetId,
     child: Box<dyn Widget>,
@@ -69,6 +96,14 @@ pub struct ScrollWidget {
     /// Horizontal scroll offset (only used with `Both` direction).
     scroll_offset_x: f32,
     scrollbar_style: ScrollbarStyle,
+    scrollbar_policy: ScrollbarPolicy,
+    scrollbar: ScrollbarState,
+    /// Whether the child widget has active mouse capture (drag in progress).
+    ///
+    /// Mutually exclusive with `scrollbar.dragging`. When active, scroll
+    /// events and scrollbar hit-testing are bypassed — all mouse events
+    /// route directly to the child.
+    child_captured: bool,
     /// Pixels per mouse wheel line.
     line_height: f32,
     /// Cached child natural size, keyed by viewport bounds.
@@ -85,6 +120,9 @@ impl ScrollWidget {
             scroll_offset: 0.0,
             scroll_offset_x: 0.0,
             scrollbar_style: ScrollbarStyle::default(),
+            scrollbar_policy: ScrollbarPolicy::default(),
+            scrollbar: ScrollbarState::default(),
+            child_captured: false,
             line_height: 20.0,
             cached_child_layout: RefCell::new(None),
         }
@@ -99,6 +137,9 @@ impl ScrollWidget {
             scroll_offset: 0.0,
             scroll_offset_x: 0.0,
             scrollbar_style: ScrollbarStyle::default(),
+            scrollbar_policy: ScrollbarPolicy::default(),
+            scrollbar: ScrollbarState::default(),
+            child_captured: false,
             line_height: 20.0,
             cached_child_layout: RefCell::new(None),
         }
@@ -108,6 +149,13 @@ impl ScrollWidget {
     #[must_use]
     pub fn with_scrollbar_style(mut self, style: ScrollbarStyle) -> Self {
         self.scrollbar_style = style;
+        self
+    }
+
+    /// Sets the scrollbar visibility policy.
+    #[must_use]
+    pub fn with_scrollbar_policy(mut self, policy: ScrollbarPolicy) -> Self {
+        self.scrollbar_policy = policy;
         self
     }
 
@@ -158,31 +206,6 @@ impl ScrollWidget {
         self.scroll_offset = (self.scroll_offset - delta_y).clamp(0.0, max);
         (self.scroll_offset - old).abs() > f32::EPSILON
     }
-
-    /// Draws the vertical scrollbar thumb.
-    fn draw_scrollbar(&self, ctx: &mut DrawCtx<'_>, content_height: f32, view_height: f32) {
-        if content_height <= view_height {
-            return;
-        }
-
-        let s = &self.scrollbar_style;
-        let track_x = ctx.bounds.right() - s.width;
-        let track_h = view_height;
-
-        // Thumb proportional to visible portion.
-        let ratio = view_height / content_height;
-        let thumb_h = (track_h * ratio).max(s.min_thumb_height).min(track_h);
-        let scroll_range = content_height - view_height;
-        let thumb_top = if scroll_range > 0.0 {
-            (self.scroll_offset / scroll_range) * (track_h - thumb_h)
-        } else {
-            0.0
-        };
-
-        let thumb_rect = Rect::new(track_x, ctx.bounds.y() + thumb_top, s.width, thumb_h);
-        let style = RectStyle::filled(s.thumb_color).with_radius(s.thumb_radius);
-        ctx.draw_list.push_rect(thumb_rect, style);
-    }
 }
 
 impl Widget for ScrollWidget {
@@ -200,13 +223,22 @@ impl Widget for ScrollWidget {
         // populates cached_child_layout for later draw/event use.
         let unconstrained = Rect::new(0.0, 0.0, f32::INFINITY, f32::INFINITY);
         let (w, h) = self.child_natural_size(ctx.measurer, ctx.theme, unconstrained);
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        let mut lb = LayoutBox::leaf(w, h).with_widget_id(self.id);
+
+        // For vertical scrolling, use Fill width so the scroll container
+        // expands to the parent's available width. The child's natural width
+        // in infinite space may be narrow when it contains Fill-width children
+        // (Fill resolves to 0 in unbounded contexts). Only height scrolls.
+        // Symmetrically, horizontal scroll uses Fill height.
+        match self.direction {
+            ScrollDirection::Vertical => lb = lb.with_width(SizeSpec::Fill),
+            ScrollDirection::Horizontal => lb = lb.with_height(SizeSpec::Fill),
+            ScrollDirection::Both => {}
+        }
+        lb
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        // Invalidate cache each frame so children with changed intrinsic sizes
-        // get fresh layout.
-        *self.cached_child_layout.borrow_mut() = None;
         let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
 
         // Clip to visible area.
@@ -227,6 +259,7 @@ impl Widget for ScrollWidget {
             now: ctx.now,
             animations_running: ctx.animations_running,
             theme: ctx.theme,
+            icons: ctx.icons,
         };
         self.child.draw(&mut child_ctx);
 
@@ -240,6 +273,40 @@ impl Widget for ScrollWidget {
         let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
         let view_h = ctx.bounds.height();
 
+        // During child capture, bypass scrollbar and scroll handling.
+        if self.child_captured {
+            let child_bounds = Rect::new(
+                ctx.bounds.x() - self.scroll_offset_x,
+                ctx.bounds.y() - self.scroll_offset,
+                content_w,
+                content_h,
+            );
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: child_bounds,
+                is_focused: ctx.focused_widget == Some(self.child.id()),
+                focused_widget: ctx.focused_widget,
+                theme: ctx.theme,
+            };
+            let resp = self.child.handle_mouse(event, &child_ctx);
+            match resp.capture {
+                CaptureRequest::Release => self.child_captured = false,
+                CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
+                    self.child_captured = false;
+                }
+                _ => {}
+            }
+            if resp.response.needs_layout() {
+                *self.cached_child_layout.borrow_mut() = None;
+            }
+            return resp;
+        }
+
+        // Scrollbar drag takes priority.
+        if let Some(resp) = self.handle_scrollbar_mouse(event, ctx.bounds, content_h, view_h) {
+            return resp;
+        }
+
         // Handle scroll events.
         if let MouseEventKind::Scroll(delta) = event.kind {
             let delta_y = match delta {
@@ -247,22 +314,20 @@ impl Widget for ScrollWidget {
                 ScrollDelta::Lines { y, .. } => y * self.line_height,
             };
             if self.scroll_by(delta_y, content_h, view_h) {
-                return WidgetResponse::redraw();
+                return WidgetResponse::paint();
             }
             return WidgetResponse::handled();
         }
 
-        // Translate event position for the child (account for scroll offset).
-        let child_pos = Point::new(
-            event.pos.x + self.scroll_offset_x,
-            event.pos.y + self.scroll_offset,
+        // Use the same coordinate system as draw: child bounds start at
+        // ctx.bounds.origin() offset by scroll. Mouse position stays in
+        // screen space to match the layout nodes in the child's tree.
+        let child_bounds = Rect::new(
+            ctx.bounds.x() - self.scroll_offset_x,
+            ctx.bounds.y() - self.scroll_offset,
+            content_w,
+            content_h,
         );
-        let child_event = MouseEvent {
-            kind: event.kind,
-            pos: child_pos,
-            modifiers: event.modifiers,
-        };
-        let child_bounds = Rect::new(0.0, 0.0, content_w, content_h);
         let child_ctx = EventCtx {
             measurer: ctx.measurer,
             bounds: child_bounds,
@@ -270,12 +335,24 @@ impl Widget for ScrollWidget {
             focused_widget: ctx.focused_widget,
             theme: ctx.theme,
         };
-        self.child.handle_mouse(&child_event, &child_ctx)
+        let resp = self.child.handle_mouse(event, &child_ctx);
+        if resp.capture == CaptureRequest::Acquire {
+            self.child_captured = true;
+        }
+        if resp.response.needs_layout() {
+            *self.cached_child_layout.borrow_mut() = None;
+        }
+        resp
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
-        let child_bounds = Rect::new(0.0, 0.0, content_w, content_h);
+        let child_bounds = Rect::new(
+            ctx.bounds.x() - self.scroll_offset_x,
+            ctx.bounds.y() - self.scroll_offset,
+            content_w,
+            content_h,
+        );
         let child_ctx = EventCtx {
             measurer: ctx.measurer,
             bounds: child_bounds,
@@ -295,13 +372,13 @@ impl Widget for ScrollWidget {
             match event.key {
                 Key::ArrowUp => {
                     if self.scroll_by(self.line_height, content_h, view_h) {
-                        return WidgetResponse::redraw();
+                        return WidgetResponse::paint();
                     }
                     return WidgetResponse::handled();
                 }
                 Key::ArrowDown => {
                     if self.scroll_by(-self.line_height, content_h, view_h) {
-                        return WidgetResponse::redraw();
+                        return WidgetResponse::paint();
                     }
                     return WidgetResponse::handled();
                 }
@@ -309,7 +386,7 @@ impl Widget for ScrollWidget {
                     let changed = self.scroll_offset > f32::EPSILON;
                     self.scroll_offset = 0.0;
                     return if changed {
-                        WidgetResponse::redraw()
+                        WidgetResponse::paint()
                     } else {
                         WidgetResponse::handled()
                     };
@@ -319,7 +396,7 @@ impl Widget for ScrollWidget {
                     let changed = (self.scroll_offset - max).abs() > f32::EPSILON;
                     self.scroll_offset = max;
                     return if changed {
-                        WidgetResponse::redraw()
+                        WidgetResponse::paint()
                     } else {
                         WidgetResponse::handled()
                     };
@@ -329,7 +406,15 @@ impl Widget for ScrollWidget {
         }
 
         // Delegate to child for non-scroll keys.
-        self.child.handle_key(event, ctx)
+        let resp = self.child.handle_key(event, ctx);
+        if resp.response.needs_layout() {
+            *self.cached_child_layout.borrow_mut() = None;
+        }
+        resp
+    }
+
+    fn accept_action(&mut self, action: &WidgetAction) -> bool {
+        self.child.accept_action(action)
     }
 
     fn focusable_children(&self) -> Vec<WidgetId> {

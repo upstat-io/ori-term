@@ -11,6 +11,7 @@ pub mod draw;
 pub mod focus;
 pub mod geometry;
 pub mod hit_test;
+pub mod icons;
 pub mod input;
 pub mod layout;
 pub mod overlay;

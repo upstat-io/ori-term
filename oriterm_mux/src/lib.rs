@@ -23,7 +23,7 @@ pub mod mux_event;
 pub mod pane;
 pub mod protocol;
 pub mod pty;
-pub mod registry;
+pub(crate) mod registry;
 pub mod server;
 pub mod shell_integration;
 

@@ -65,6 +65,7 @@ fn panel_draws_background_rect() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     panel.draw(&mut ctx);
 
@@ -257,6 +258,7 @@ fn panel_with_bg() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     panel.draw(&mut ctx);
 
@@ -288,6 +290,7 @@ fn panel_with_corner_radius() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     panel.draw(&mut ctx);
 
@@ -342,6 +345,7 @@ fn panel_with_shadow() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     panel.draw(&mut ctx);
 

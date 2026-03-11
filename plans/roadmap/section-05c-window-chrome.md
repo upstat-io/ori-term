@@ -2,6 +2,7 @@
 section: 5C
 title: Window Chrome (Title Bar + Controls)
 status: complete
+reviewed: true
 tier: 2
 goal: Render a visible title bar with minimize/maximize/close controls, wire platform integration (Aero Snap, drag), offset the terminal grid below the caption bar
 sections:
@@ -121,6 +122,12 @@ sections:
 | `oriterm_ui/src/widgets/window_chrome/mod.rs` | WindowChromeWidget container | ~360 |
 | `oriterm_ui/src/widgets/window_chrome/tests.rs` | Unit tests | ~218 |
 | `oriterm/src/app/chrome.rs` | App-level chrome action dispatch | ~50 |
+
+## Known Issues
+
+- [x] **BUG:** Dialog close button hold-drag — clicking and holding the close button on a dialog allows dragging the window; the dialog then closes on mouse-up. The close button correctly returns `HTCLIENT` via `WM_NCHITTEST` (interactive rect), but the dialog's app-level event handling may be interpreting the press+drag as a caption drag simultaneously. Minor UX issue. Discovered during chrome plan verification (2026-03-10). **Fixed:** Added interactive rect check in `route_dialog_click()` — mirrors the platform hit test logic. Click on a control button no longer initiates drag (2026-03-10).
+
+---
 
 ## Files Modified
 

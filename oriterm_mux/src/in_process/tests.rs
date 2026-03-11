@@ -36,7 +36,7 @@ fn two_pane_setup() -> (InProcessMux, PaneId, PaneId) {
     (mux, p1, p2)
 }
 
-// -- close_pane --
+// close_pane
 
 #[test]
 fn close_pane_not_found() {
@@ -57,7 +57,7 @@ fn close_pane_emits_pane_closed() {
     assert!(
         notifs
             .iter()
-            .any(|n| matches!(n, MuxNotification::PaneClosed(id) if *id == p2)),
+            .any(|n| matches!(n, MuxNotification::PaneClosed { pane_id: id, .. } if *id == p2)),
         "PaneClosed notification missing"
     );
 }
@@ -81,7 +81,7 @@ fn close_pane_removes_from_registry() {
     assert!(mux.get_pane_entry(pid).is_none());
 }
 
-// -- event pump --
+// event pump
 
 #[test]
 fn poll_events_handles_title_change() {
@@ -151,7 +151,7 @@ fn drain_notifications_clears_queue() {
     assert!(second.is_empty());
 }
 
-// -- get_pane_entry --
+// get_pane_entry
 
 #[test]
 fn get_pane_entry_returns_correct_metadata() {
@@ -160,7 +160,7 @@ fn get_pane_entry_returns_correct_metadata() {
     assert_eq!(entry.pane, pid);
 }
 
-// -- event_tx cloning --
+// event_tx cloning
 
 #[test]
 fn event_tx_can_be_cloned_and_used() {
@@ -173,7 +173,7 @@ fn event_tx_can_be_cloned_and_used() {
     assert!(matches!(event, MuxEvent::PaneBell(_)));
 }
 
-// -- poll_events with disconnected sender --
+// poll_events with disconnected sender
 
 #[test]
 fn poll_events_with_empty_channel_is_noop() {
@@ -183,7 +183,7 @@ fn poll_events_with_empty_channel_is_noop() {
     assert!(drain(&mut mux).is_empty());
 }
 
-// -- multiple event processing --
+// multiple event processing
 
 #[test]
 fn poll_events_processes_multiple_events() {
@@ -204,7 +204,7 @@ fn poll_events_processes_multiple_events() {
     assert_eq!(notifs.len(), 3);
 }
 
-// -- Batch pane exits --
+// Batch pane exits
 
 #[test]
 fn batch_pane_exits_emit_pane_closed_for_each() {
@@ -235,13 +235,13 @@ fn batch_pane_exits_emit_pane_closed_for_each() {
     for &pid in &[p1, p2, p3] {
         let count = notifs
             .iter()
-            .filter(|n| matches!(n, MuxNotification::PaneClosed(id) if *id == pid))
+            .filter(|n| matches!(n, MuxNotification::PaneClosed { pane_id: id, .. } if *id == pid))
             .count();
         assert_eq!(count, 1, "PaneClosed({pid:?}) emitted {count} times");
     }
 }
 
-// -- CWD change with missing pane --
+// CWD change with missing pane
 
 #[test]
 fn poll_events_cwd_change_missing_pane_no_panic() {
@@ -258,7 +258,7 @@ fn poll_events_cwd_change_missing_pane_no_panic() {
     mux.poll_events(&mut panes);
 }
 
-// -- PtyWrite with missing pane --
+// PtyWrite with missing pane
 
 #[test]
 fn poll_events_pty_write_missing_pane_no_panic() {
@@ -275,7 +275,7 @@ fn poll_events_pty_write_missing_pane_no_panic() {
     mux.poll_events(&mut panes);
 }
 
-// -- Notification ordering --
+// Notification ordering
 
 #[test]
 fn drain_notifications_preserves_insertion_order() {
@@ -301,7 +301,7 @@ fn drain_notifications_preserves_insertion_order() {
     assert!(matches!(&notifs[2], MuxNotification::PaneBell(id) if *id == p3));
 }
 
-// -- Send trait bound --
+// Send trait bound
 
 /// Compile-time assertion that key mux types are `Send`.
 #[test]
@@ -312,7 +312,7 @@ fn mux_types_are_send() {
     assert_send::<MuxNotification>();
 }
 
-// -- Stale pane events --
+// Stale pane events
 
 #[test]
 fn stale_pane_map_during_event_dispatch() {
@@ -340,7 +340,7 @@ fn stale_pane_map_during_event_dispatch() {
     assert!(mux.get_pane_entry(p2).is_some());
 }
 
-// -- PaneOutput after close --
+// PaneOutput after close
 
 #[test]
 fn pane_output_after_pane_closed_is_noop() {
@@ -369,7 +369,7 @@ fn pane_output_after_pane_closed_is_noop() {
     );
 }
 
-// -- PaneClosed notification ID --
+// PaneClosed notification ID
 
 #[test]
 fn pane_closed_notification_carries_correct_id() {
@@ -382,7 +382,7 @@ fn pane_closed_notification_carries_correct_id() {
     let closed: Vec<PaneId> = notifs
         .iter()
         .filter_map(|n| match n {
-            MuxNotification::PaneClosed(id) => Some(*id),
+            MuxNotification::PaneClosed { pane_id: id, .. } => Some(*id),
             _ => None,
         })
         .collect();
@@ -394,7 +394,7 @@ fn pane_closed_notification_carries_correct_id() {
     );
 }
 
-// -- Domain allocator --
+// Domain allocator
 
 #[test]
 fn domain_alloc_persisted_in_struct() {
@@ -408,7 +408,7 @@ fn domain_alloc_persisted_in_struct() {
     assert_ne!(local_id, third_id);
 }
 
-// -- Sender drops --
+// Sender drops
 
 #[test]
 fn sender_dropped_during_poll_drains_remaining() {
@@ -429,7 +429,7 @@ fn sender_dropped_during_poll_drains_remaining() {
     assert!(drain(&mut mux).is_empty());
 }
 
-// -- Clipboard data preservation --
+// Clipboard data preservation
 
 #[test]
 fn drain_notifications_preserves_clipboard_data() {
@@ -471,7 +471,7 @@ fn drain_notifications_preserves_clipboard_data() {
     }
 }
 
-// -- PaneOutput for absent pane --
+// PaneOutput for absent pane
 
 #[test]
 fn pane_dirty_produced_for_absent_pane() {
@@ -492,7 +492,7 @@ fn pane_dirty_produced_for_absent_pane() {
     ));
 }
 
-// -- ClipboardLoad for unknown pane --
+// ClipboardLoad for unknown pane
 
 #[test]
 fn clipboard_load_unknown_pane_produces_notification() {
@@ -523,7 +523,7 @@ fn clipboard_load_unknown_pane_produces_notification() {
     }
 }
 
-// -- Empty notification buffer --
+// Empty notification buffer
 
 #[test]
 fn empty_notification_buffer_short_circuits() {
@@ -539,7 +539,7 @@ fn empty_notification_buffer_short_circuits() {
     );
 }
 
-// -- Double-buffer pattern --
+// Double-buffer pattern
 
 #[test]
 fn drain_double_buffer_no_cross_cycle_accumulation() {
@@ -565,7 +565,7 @@ fn drain_double_buffer_no_cross_cycle_accumulation() {
     );
 }
 
-// -- CommandComplete --
+// CommandComplete
 
 #[test]
 fn poll_events_command_complete_emits_notification() {
@@ -611,7 +611,7 @@ fn poll_events_command_complete_missing_pane_no_panic() {
     ));
 }
 
-// -- PaneIconChanged --
+// PaneIconChanged
 
 #[test]
 fn poll_events_icon_changed_emits_title_notification() {
@@ -631,7 +631,7 @@ fn poll_events_icon_changed_emits_title_notification() {
     assert!(
         notifs
             .iter()
-            .any(|n| matches!(n, MuxNotification::PaneTitleChanged(id) if *id == pid)),
+            .any(|n| matches!(n, MuxNotification::PaneMetadataChanged(id) if *id == pid)),
         "expected PaneTitleChanged notification for icon change"
     );
 }
@@ -653,7 +653,7 @@ fn poll_events_icon_changed_missing_pane_no_panic() {
     let notifs = drain(&mut mux);
     assert!(
         notifs.iter().any(
-            |n| matches!(n, MuxNotification::PaneTitleChanged(id) if *id == PaneId::from_raw(999))
+            |n| matches!(n, MuxNotification::PaneMetadataChanged(id) if *id == PaneId::from_raw(999))
         ),
         "expected PaneTitleChanged even when pane is missing from map"
     );

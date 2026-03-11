@@ -203,7 +203,7 @@ fn hover_tracking_on_move() {
     let item2_y = s.padding_y + s.item_height + s.item_height / 2.0;
     let r = menu.handle_mouse(&mouse_move(50.0, item2_y), &ctx);
     assert_eq!(menu.hovered(), Some(1));
-    assert_eq!(r.response, crate::input::EventResponse::RequestRedraw);
+    assert_eq!(r.response, crate::input::EventResponse::RequestPaint);
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn hover_leave_clears() {
     // Leave.
     let r = menu.handle_hover(HoverEvent::Leave, &ctx);
     assert_eq!(menu.hovered(), None);
-    assert_eq!(r.response, crate::input::EventResponse::RequestRedraw);
+    assert_eq!(r.response, crate::input::EventResponse::RequestPaint);
 }
 
 // Keyboard navigation tests

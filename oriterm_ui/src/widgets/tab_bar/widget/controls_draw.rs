@@ -3,19 +3,28 @@
 //! Renders minimize, maximize/restore, and close buttons inside the tab
 //! bar's reserved controls zone. Extracted from `draw.rs` to keep that
 //! file under the 500-line limit.
+//!
+//! Gated to non-macOS platforms: macOS uses native traffic light buttons
+//! provided by `fullsize_content_view(true)`.
 
+#[cfg(not(target_os = "macos"))]
 use crate::geometry::Rect;
+#[cfg(not(target_os = "macos"))]
 use crate::widgets::{DrawCtx, Widget};
 
+#[cfg(not(target_os = "macos"))]
 use super::super::constants::{CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT};
+#[cfg(not(target_os = "macos"))]
 use super::TabBarWidget;
 
 /// Width of each control button (zone width divided equally among 3 buttons).
 ///
-/// On Windows this equals `CONTROL_BUTTON_WIDTH` (46px); on Linux/macOS
+/// On Windows this equals `CONTROL_BUTTON_WIDTH` (46px); on Linux
 /// the zone is smaller (100px) so buttons are ~33px each.
+#[cfg(not(target_os = "macos"))]
 const BUTTON_WIDTH: f32 = CONTROLS_ZONE_WIDTH / 3.0;
 
+#[cfg(not(target_os = "macos"))]
 impl TabBarWidget {
     /// Draws the window control buttons (minimize, maximize/restore, close).
     ///
@@ -42,6 +51,7 @@ impl TabBarWidget {
                 now: ctx.now,
                 animations_running: ctx.animations_running,
                 theme: ctx.theme,
+                icons: ctx.icons,
             };
             ctrl.draw(&mut child_ctx);
         }

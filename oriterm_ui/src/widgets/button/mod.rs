@@ -249,9 +249,9 @@ impl Widget for ButtonWidget {
                 let was_pressed = self.pressed;
                 self.pressed = false;
                 if was_pressed && ctx.bounds.contains(event.pos) {
-                    WidgetResponse::redraw().with_action(WidgetAction::Clicked(self.id))
+                    WidgetResponse::paint().with_action(WidgetAction::Clicked(self.id))
                 } else {
-                    WidgetResponse::redraw()
+                    WidgetResponse::paint()
                 }
             }
             _ => WidgetResponse::ignored(),
@@ -267,13 +267,13 @@ impl Widget for ButtonWidget {
             HoverEvent::Enter => {
                 self.hovered = true;
                 self.hover_progress.set(1.0, now);
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             HoverEvent::Leave => {
                 self.hovered = false;
                 self.pressed = false;
                 self.hover_progress.set(0.0, now);
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
         }
     }
@@ -284,7 +284,7 @@ impl Widget for ButtonWidget {
         }
         match event.key {
             Key::Enter | Key::Space => {
-                WidgetResponse::redraw().with_action(WidgetAction::Clicked(self.id))
+                WidgetResponse::paint().with_action(WidgetAction::Clicked(self.id))
             }
             _ => WidgetResponse::ignored(),
         }

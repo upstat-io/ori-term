@@ -2,6 +2,7 @@
 section: 19
 title: Event Routing & Render Scheduling
 status: in-progress
+reviewed: false
 tier: 4
 goal: Coordinate systems, 7-layer input dispatch, frame budgeting, cursor blink scheduling
 sections:

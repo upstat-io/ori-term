@@ -2,6 +2,7 @@
 section: 37
 title: TUI Client
 status: not-started
+reviewed: false
 tier: 7A
 goal: Headless terminal-in-terminal client (`oriterm-tui`) that connects to a local or remote `oriterm-mux` daemon, rendering panes inside the host terminal — the tmux-replacement experience
 sections:

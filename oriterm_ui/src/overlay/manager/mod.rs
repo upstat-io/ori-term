@@ -15,7 +15,7 @@ use crate::compositor::layer_animator::{AnimationParams, LayerAnimator};
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
 use crate::geometry::LayerId;
-use crate::geometry::{Rect, Size};
+use crate::geometry::{Point, Rect, Size};
 use crate::layout::compute_layout;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -93,6 +93,19 @@ pub struct OverlayManager {
     /// Tracked across `process_hover_event` calls so we can send
     /// `HoverEvent::Leave` to the old overlay when hover transitions.
     pub(in crate::overlay) hovered_overlay: Option<usize>,
+    /// Index of the overlay with active mouse capture (drag in progress).
+    ///
+    /// When set, all mouse events route to this overlay regardless of cursor
+    /// position, and click-outside dismiss is suppressed. Cleared on `MouseUp`
+    /// or explicit `CaptureRequest::Release`. Benign if the cursor leaves the
+    /// window entirely — the next mouse event re-enters and routes correctly.
+    pub(in crate::overlay) captured_overlay: Option<usize>,
+    /// Whether overlay placement needs recomputation.
+    ///
+    /// Set on push, remove, or viewport change. Cleared after
+    /// `layout_overlays` runs. Avoids expensive `widget.layout()` calls
+    /// every frame when overlay positions haven't changed.
+    layout_dirty: bool,
 }
 
 impl OverlayManager {
@@ -105,6 +118,8 @@ impl OverlayManager {
             dismissing: Vec::new(),
             viewport,
             hovered_overlay: None,
+            captured_overlay: None,
+            layout_dirty: false,
         }
     }
 
@@ -112,7 +127,10 @@ impl OverlayManager {
 
     /// Updates the viewport bounds (e.g. on window resize).
     pub fn set_viewport(&mut self, viewport: Rect) {
-        self.viewport = viewport;
+        if self.viewport != viewport {
+            self.viewport = viewport;
+            self.layout_dirty = true;
+        }
     }
 
     /// Returns the current viewport.
@@ -155,12 +173,31 @@ impl OverlayManager {
             .map(|o| o.computed_rect)
     }
 
+    /// Offsets the topmost overlay's position by a screen-space delta.
+    ///
+    /// Used for header-drag repositioning. Switches placement to `AtPoint`
+    /// so that subsequent `layout_overlays` calls preserve the dragged
+    /// position instead of snapping back to the original placement.
+    /// Clamps to keep the overlay within the viewport.
+    pub fn offset_topmost(&mut self, dx: f32, dy: f32) -> bool {
+        let Some(overlay) = self.overlays.last_mut() else {
+            return false;
+        };
+        let vp = self.viewport;
+        let r = overlay.computed_rect;
+        let new_x = (r.x() + dx).clamp(0.0, (vp.width() - r.width()).max(0.0));
+        let new_y = (r.y() + dy).clamp(0.0, (vp.height() - r.height()).max(0.0));
+        overlay.computed_rect = Rect::new(new_x, new_y, r.width(), r.height());
+        overlay.placement = Placement::AtPoint(Point::new(new_x, new_y));
+        true
+    }
+
     // Lifecycle API
 
     /// Pushes a non-modal overlay that dismisses on click-outside.
     ///
-    /// Creates a `Textured` compositor layer and starts a fade-in animation
-    /// (opacity `0→1`, 150ms `EaseOut`).
+    /// Creates a `Textured` compositor layer at full opacity (no fade-in).
+    /// Popups like dropdown menus and context menus should appear instantly.
     #[expect(
         clippy::too_many_arguments,
         reason = "lifecycle: widget, anchor, placement, tree, animator, now"
@@ -171,8 +208,8 @@ impl OverlayManager {
         anchor: Rect,
         placement: Placement,
         tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
-        now: Instant,
+        _animator: &mut LayerAnimator,
+        _now: Instant,
     ) -> OverlayId {
         let id = OverlayId::next();
         let root = tree.root();
@@ -181,18 +218,10 @@ impl OverlayManager {
             root,
             LayerType::Textured,
             LayerProperties {
-                opacity: 0.0,
+                opacity: 1.0,
                 ..LayerProperties::default()
             },
         );
-
-        let params = AnimationParams {
-            duration: FADE_DURATION,
-            easing: Easing::EaseOut,
-            tree,
-            now,
-        };
-        animator.animate_opacity(layer_id, 1.0, &params);
 
         self.overlays.push(Overlay {
             id,
@@ -204,6 +233,7 @@ impl OverlayManager {
             layer_id,
             dim_layer_id: None,
         });
+        self.layout_dirty = true;
         id
     }
 
@@ -221,19 +251,21 @@ impl OverlayManager {
         anchor: Rect,
         placement: Placement,
         tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
-        now: Instant,
+        _animator: &mut LayerAnimator,
+        _now: Instant,
     ) -> OverlayId {
         let id = OverlayId::next();
         let root = tree.root();
 
         // Dim layer (SolidColor) — drawn behind content.
+        // Both layers start at full opacity (no fade-in animation) so the
+        // modal appears instantly. The fade-out on dismiss is still animated.
         let dim_layer_id = tree.add(
             root,
             LayerType::SolidColor(MODAL_DIM_COLOR),
             LayerProperties {
                 bounds: self.viewport,
-                opacity: 0.0,
+                opacity: 1.0,
                 ..LayerProperties::default()
             },
         );
@@ -243,20 +275,10 @@ impl OverlayManager {
             root,
             LayerType::Textured,
             LayerProperties {
-                opacity: 0.0,
+                opacity: 1.0,
                 ..LayerProperties::default()
             },
         );
-
-        // Animate both layers opacity 0→1.
-        let params = AnimationParams {
-            duration: FADE_DURATION,
-            easing: Easing::EaseOut,
-            tree,
-            now,
-        };
-        animator.animate_opacity(dim_layer_id, 1.0, &params);
-        animator.animate_opacity(layer_id, 1.0, &params);
 
         self.overlays.push(Overlay {
             id,
@@ -268,17 +290,19 @@ impl OverlayManager {
             layer_id,
             dim_layer_id: Some(dim_layer_id),
         });
+        self.layout_dirty = true;
         id
     }
 
-    /// Begins dismissing a specific overlay by ID with a fade-out animation.
+    /// Begins dismissing a specific overlay by ID.
     ///
-    /// The overlay is moved from the active stack to the dismissing list
-    /// and becomes invisible to event routing. Returns `true` if found.
+    /// Popup overlays are removed instantly. Modal overlays fade out via
+    /// the compositor and are moved to the dismissing list. Returns `true`
+    /// if found.
     pub fn begin_dismiss(
         &mut self,
         id: OverlayId,
-        tree: &LayerTree,
+        tree: &mut LayerTree,
         animator: &mut LayerAnimator,
         now: Instant,
     ) -> bool {
@@ -286,26 +310,29 @@ impl OverlayManager {
             return false;
         };
         let overlay = self.overlays.remove(idx);
-        Self::start_fade_out(&overlay, tree, animator, now);
-        self.dismissing.push(overlay);
+        self.dismiss_overlay(overlay, tree, animator, now);
         self.hovered_overlay = None;
+        self.captured_overlay = None;
+        self.layout_dirty = true;
         true
     }
 
-    /// Begins dismissing the topmost overlay with a fade-out animation.
+    /// Begins dismissing the topmost overlay.
     ///
+    /// Popup overlays are removed instantly. Modal overlays fade out.
     /// Returns the dismissed overlay's ID, or `None` if the stack is empty.
     pub fn begin_dismiss_topmost(
         &mut self,
-        tree: &LayerTree,
+        tree: &mut LayerTree,
         animator: &mut LayerAnimator,
         now: Instant,
     ) -> Option<OverlayId> {
         let overlay = self.overlays.pop()?;
         let id = overlay.id;
-        Self::start_fade_out(&overlay, tree, animator, now);
-        self.dismissing.push(overlay);
+        self.dismiss_overlay(overlay, tree, animator, now);
         self.hovered_overlay = None;
+        self.captured_overlay = None;
+        self.layout_dirty = true;
         Some(id)
     }
 
@@ -320,6 +347,8 @@ impl OverlayManager {
             }
         }
         self.hovered_overlay = None;
+        self.captured_overlay = None;
+        self.layout_dirty = false;
     }
 
     /// Removes dismissing overlays whose fade-out animations have completed.
@@ -353,18 +382,27 @@ impl OverlayManager {
         measurer: &dyn crate::widgets::TextMeasurer,
         theme: &UiTheme,
     ) {
+        if !self.layout_dirty {
+            return;
+        }
+
         let viewport = self.viewport;
         let layout_ctx = LayoutCtx { measurer, theme };
 
         for overlay in self.overlays.iter_mut().chain(self.dismissing.iter_mut()) {
             let layout_box = overlay.widget.layout(&layout_ctx);
-            let unconstrained = Rect::new(0.0, 0.0, f32::INFINITY, f32::INFINITY);
-            let node = compute_layout(&layout_box, unconstrained);
+            // Use viewport as constraint so `Fill`-sized widgets resolve to
+            // the viewport dimensions instead of zero (infinite available space
+            // gives fill children zero remaining space). `Hug`-sized widgets
+            // are unaffected — they use intrinsic size regardless.
+            let node = compute_layout(&layout_box, viewport);
             let content_size = Size::new(node.rect.width(), node.rect.height());
 
             overlay.computed_rect =
                 compute_overlay_rect(overlay.anchor, content_size, viewport, overlay.placement);
         }
+
+        self.layout_dirty = false;
     }
 
     /// Returns the total number of overlays to draw (active + dismissing).
@@ -375,14 +413,7 @@ impl OverlayManager {
     /// Draws a single overlay at `draw_idx` and returns its compositor opacity.
     ///
     /// Indices `0..active_count` draw active overlays; the rest draw dismissing
-    /// overlays (still visible during fade-out).
-    ///
-    /// Modal overlays emit a dimming rectangle (with opacity-adjusted alpha)
-    /// before the content. The returned opacity should be passed to the GPU
-    /// draw-list converter so all content colors are alpha-multiplied correctly.
-    ///
-    /// # Panics
-    ///
+    /// overlays. Modal overlays emit a dimming rectangle before the content.
     /// Panics if `draw_idx >= draw_count()`.
     pub fn draw_overlay_at(&self, draw_idx: usize, ctx: &mut DrawCtx<'_>, tree: &LayerTree) -> f32 {
         let overlay = if draw_idx < self.overlays.len() {
@@ -421,6 +452,7 @@ impl OverlayManager {
             now: ctx.now,
             animations_running: ctx.animations_running,
             theme: ctx.theme,
+            icons: ctx.icons,
         };
         overlay.widget.draw(&mut overlay_ctx);
 
@@ -439,7 +471,36 @@ impl OverlayManager {
         Some(topmost.widget.focusable_children())
     }
 
+    /// Propagates an action to the topmost overlay's widget tree.
+    ///
+    /// Used to update child widget state after an external action (e.g.,
+    /// updating a dropdown's selected index after its popup menu was dismissed).
+    pub fn accept_action_topmost(&mut self, action: &crate::widgets::WidgetAction) -> bool {
+        self.overlays
+            .last_mut()
+            .is_some_and(|o| o.widget.accept_action(action))
+    }
+
     // Private helpers
+
+    /// Dismisses an overlay — instant removal for popups, fade-out for modals.
+    fn dismiss_overlay(
+        &mut self,
+        overlay: Overlay,
+        tree: &mut LayerTree,
+        animator: &mut LayerAnimator,
+        now: Instant,
+    ) {
+        if overlay.kind == OverlayKind::Popup {
+            // Popups disappear instantly — remove compositor layers now.
+            animator.cancel_all(overlay.layer_id);
+            tree.remove_subtree(overlay.layer_id);
+        } else {
+            // Modals fade out via the compositor.
+            Self::start_fade_out(&overlay, tree, animator, now);
+            self.dismissing.push(overlay);
+        }
+    }
 
     /// Starts fade-out animations on an overlay's compositor layers.
     fn start_fade_out(

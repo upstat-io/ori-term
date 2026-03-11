@@ -2,6 +2,7 @@
 section: 12
 title: Resize & Reflow
 status: complete
+reviewed: true
 tier: 3
 goal: Dynamic grid resize with PTY notification and text reflow on column change
 sections:

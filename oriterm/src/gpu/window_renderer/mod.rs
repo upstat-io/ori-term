@@ -9,6 +9,9 @@ mod font_config;
 mod helpers;
 mod multi_pane;
 mod render;
+mod ui_only;
+
+pub use ui_only::RendererMode;
 
 use std::collections::HashSet;
 use std::fmt;
@@ -17,9 +20,12 @@ use wgpu::Buffer;
 
 use oriterm_core::Rgb;
 
+use oriterm_ui::icons::{IconId, ResolvedIcon, ResolvedIcons};
+
 use super::atlas::GlyphAtlas;
 use super::bind_groups::{AtlasBindGroup, UniformBuffer};
 use super::frame_input::FrameInput;
+use super::icon_rasterizer::IconCache;
 use super::image_render::ImageTextureCache;
 use super::pipelines::GpuPipelines;
 use super::prepare::{self, AtlasLookup};
@@ -90,6 +96,9 @@ impl AtlasLookup for CombinedAtlasLookup<'_> {
 /// glyph atlases (monochrome + subpixel + color), font collection, and
 /// per-frame GPU buffers. Pipelines are shared via [`GpuPipelines`].
 pub struct WindowRenderer {
+    /// Rendering mode: full terminal or UI-only (dialogs).
+    mode: RendererMode,
+
     // Bind groups (per-window, created with layouts from GpuPipelines).
     uniform_buffer: UniformBuffer,
     atlas_bind_group: AtlasBindGroup,
@@ -116,6 +125,8 @@ pub struct WindowRenderer {
     ui_raster_keys: Vec<RasterKey>,
     /// Reusable clip stack for `convert_draw_list` (avoids per-frame allocation).
     clip_stack: Vec<oriterm_ui::geometry::Rect>,
+    /// Scratch clips for per-overlay draw range recording.
+    overlay_scratch_clips: super::draw_list_convert::TierClips,
     shaping: ShapingScratch,
     /// GPU-ready instances for the current frame.
     ///
@@ -137,6 +148,11 @@ pub struct WindowRenderer {
     overlay_fg_buffer: Option<Buffer>,
     overlay_subpixel_fg_buffer: Option<Buffer>,
     overlay_color_fg_buffer: Option<Buffer>,
+
+    // Icon rendering.
+    icon_cache: IconCache,
+    /// Reusable scratch buffer for pre-resolved icon atlas entries (avoids per-frame allocation).
+    resolved_icons: ResolvedIcons,
 
     // Image rendering.
     image_texture_cache: ImageTextureCache,
@@ -188,6 +204,7 @@ impl WindowRenderer {
         log::info!("window renderer init: total={:?}", t0.elapsed(),);
 
         Self {
+            mode: RendererMode::Terminal,
             uniform_buffer,
             atlas_bind_group,
             subpixel_atlas_bind_group,
@@ -200,6 +217,7 @@ impl WindowRenderer {
             ui_font_collection,
             ui_raster_keys: Vec::new(),
             clip_stack: Vec::new(),
+            overlay_scratch_clips: super::draw_list_convert::TierClips::default(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             bg_buffer: None,
@@ -215,6 +233,8 @@ impl WindowRenderer {
             overlay_fg_buffer: None,
             overlay_subpixel_fg_buffer: None,
             overlay_color_fg_buffer: None,
+            icon_cache: IconCache::new(),
+            resolved_icons: ResolvedIcons::new(),
             image_texture_cache: ImageTextureCache::new(device),
             image_instance_buffer: None,
             image_instance_data: Vec::new(),
@@ -245,6 +265,65 @@ impl WindowRenderer {
     pub fn atlas(&self) -> &GlyphAtlas {
         &self.atlas
     }
+
+    // ── Icon resolution ──
+
+    /// Pre-resolve all icon atlas entries for the current frame.
+    ///
+    /// Icons are rasterized at **physical pixel size** (`logical × scale`)
+    /// so each texel maps 1:1 to a screen pixel. The `ResolvedIcons` map
+    /// is keyed by logical size (what widgets pass) so the scaling is
+    /// transparent to widget code.
+    ///
+    /// Call once per frame before constructing `DrawCtx`.
+    pub fn resolve_icons(&mut self, gpu: &GpuState, scale: f32) {
+        self.resolved_icons.clear();
+        for &(id, logical_size) in &Self::ICON_SIZES {
+            let physical_size = (logical_size as f32 * scale).round() as u32;
+            if physical_size == 0 {
+                continue;
+            }
+            if let Some(entry) =
+                self.icon_cache
+                    .get_or_insert(id, physical_size, scale, &mut self.atlas, &gpu.queue)
+            {
+                self.resolved_icons.insert(
+                    id,
+                    logical_size,
+                    ResolvedIcon {
+                        atlas_page: entry.page,
+                        uv: [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h],
+                    },
+                );
+            }
+        }
+    }
+
+    /// Pre-resolved icon atlas entries for the current frame.
+    ///
+    /// Valid after [`resolve_icons`](Self::resolve_icons) has been called.
+    pub fn resolved_icons(&self) -> &ResolvedIcons {
+        &self.resolved_icons
+    }
+
+    /// All `(IconId, logical_size)` pairs used by widgets.
+    ///
+    /// Sizes are in **logical pixels** — [`resolve_icons`](Self::resolve_icons)
+    /// multiplies by the display scale factor to get the physical rasterization
+    /// size. Derived from widget constants:
+    /// - `Close` (tab): `(CLOSE_BUTTON_WIDTH - 2 * CLOSE_ICON_INSET).round()` = 10
+    /// - `Plus`: `(PLUS_ARM * 2).round()` = 10
+    /// - `ChevronDown`: `(CHEVRON_HALF * 2).round()` = 10
+    /// - `Minimize`/`Maximize`/`Restore`/`WindowClose`: `SYMBOL_SIZE.round()` = 10
+    const ICON_SIZES: [(IconId, u32); 7] = [
+        (IconId::Close, 10),
+        (IconId::Plus, 10),
+        (IconId::ChevronDown, 10),
+        (IconId::Minimize, 10),
+        (IconId::Maximize, 10),
+        (IconId::Restore, 10),
+        (IconId::WindowClose, 10),
+    ];
 
     // ── Frame preparation ──
 

@@ -161,11 +161,11 @@ impl Widget for TextInputWidget {
         match event {
             HoverEvent::Enter => {
                 self.hovered = true;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             HoverEvent::Leave => {
                 self.hovered = false;
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
         }
     }
@@ -183,11 +183,11 @@ impl Widget for TextInputWidget {
             Key::Delete => self.handle_delete(),
             Key::ArrowLeft => {
                 self.move_left(shift);
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             Key::ArrowRight => {
                 self.move_right(shift);
-                WidgetResponse::redraw()
+                WidgetResponse::paint()
             }
             Key::Home => self.handle_home_end(0, shift),
             Key::End => self.handle_home_end(self.text.len(), shift),
@@ -203,7 +203,7 @@ impl TextInputWidget {
             if ch == 'a' {
                 self.selection_anchor = Some(0);
                 self.cursor = self.text.len();
-                return WidgetResponse::redraw();
+                return WidgetResponse::paint();
             }
             return WidgetResponse::ignored();
         }
@@ -252,7 +252,7 @@ impl TextInputWidget {
         if !shift {
             self.selection_anchor = None;
         }
-        WidgetResponse::redraw()
+        WidgetResponse::paint()
     }
 
     /// Returns a redraw response with `TextChanged` action.

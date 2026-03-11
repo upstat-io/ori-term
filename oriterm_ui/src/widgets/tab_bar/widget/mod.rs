@@ -16,10 +16,13 @@ mod draw;
 use std::time::{Duration, Instant};
 
 use crate::animation::{AnimatedValue, Easing};
+#[cfg(not(target_os = "macos"))]
 use crate::color::Color;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
+#[cfg(not(target_os = "macos"))]
 use crate::widgets::window_chrome::controls::{ControlButtonColors, WindowControlButton};
+#[cfg(not(target_os = "macos"))]
 use crate::widgets::window_chrome::layout::ControlKind;
 
 use super::colors::TabBarColors;
@@ -115,8 +118,10 @@ pub struct TabBarWidget {
     closing_tabs: Vec<bool>,
 
     // Window control buttons: [minimize, maximize/restore, close].
+    #[cfg(not(target_os = "macos"))]
     controls: [WindowControlButton; 3],
     /// Index of the currently hovered control button (`None` if not hovering).
+    #[cfg(not(target_os = "macos"))]
     hovered_control: Option<usize>,
 
     /// Extra left margin for platform chrome (macOS traffic lights).
@@ -132,9 +137,6 @@ impl TabBarWidget {
     /// Creates a new tab bar widget with colors from the given theme.
     pub fn with_theme(window_width: f32, theme: &UiTheme) -> Self {
         let layout = TabBarLayout::compute(0, window_width, None, 0.0);
-        let caption_bg = theme.bg_secondary;
-        let ctrl_colors = control_colors_from_theme(theme);
-        let controls = create_controls(ctrl_colors, caption_bg);
 
         Self {
             id: WidgetId::next(),
@@ -151,7 +153,9 @@ impl TabBarWidget {
             close_btn_opacity: Vec::new(),
             width_multipliers: Vec::new(),
             closing_tabs: Vec::new(),
-            controls,
+            #[cfg(not(target_os = "macos"))]
+            controls: create_controls(control_colors_from_theme(theme)),
+            #[cfg(not(target_os = "macos"))]
             hovered_control: None,
             left_inset: 0.0,
         }
@@ -162,11 +166,12 @@ impl TabBarWidget {
     /// Updates all theme-derived colors from a new [`UiTheme`].
     pub fn apply_theme(&mut self, theme: &UiTheme) {
         self.colors = TabBarColors::from_theme(theme);
-        let ctrl_colors = control_colors_from_theme(theme);
-        let caption_bg = theme.bg_secondary;
-        for ctrl in &mut self.controls {
-            ctrl.set_colors(ctrl_colors);
-            ctrl.set_caption_bg(caption_bg);
+        #[cfg(not(target_os = "macos"))]
+        {
+            let ctrl_colors = control_colors_from_theme(theme);
+            for ctrl in &mut self.controls {
+                ctrl.set_colors(ctrl_colors);
+            }
         }
     }
 
@@ -428,6 +433,7 @@ impl TabBarWidget {
 // Free functions
 
 /// Builds [`ControlButtonColors`] from a [`UiTheme`].
+#[cfg(not(target_os = "macos"))]
 fn control_colors_from_theme(theme: &UiTheme) -> ControlButtonColors {
     ControlButtonColors {
         fg: theme.fg_primary,
@@ -438,14 +444,12 @@ fn control_colors_from_theme(theme: &UiTheme) -> ControlButtonColors {
     }
 }
 
-/// Creates the three control buttons with initial colors and caption bg.
-fn create_controls(colors: ControlButtonColors, caption_bg: Color) -> [WindowControlButton; 3] {
-    let mut min_btn = WindowControlButton::new(ControlKind::Minimize, colors);
-    min_btn.set_caption_bg(caption_bg);
-    let mut max_btn = WindowControlButton::new(ControlKind::MaximizeRestore, colors);
-    max_btn.set_caption_bg(caption_bg);
-    let mut close_btn = WindowControlButton::new(ControlKind::Close, colors);
-    close_btn.set_caption_bg(caption_bg);
+/// Creates the three control buttons with initial colors.
+#[cfg(not(target_os = "macos"))]
+fn create_controls(colors: ControlButtonColors) -> [WindowControlButton; 3] {
+    let min_btn = WindowControlButton::new(ControlKind::Minimize, colors);
+    let max_btn = WindowControlButton::new(ControlKind::MaximizeRestore, colors);
+    let close_btn = WindowControlButton::new(ControlKind::Close, colors);
     [min_btn, max_btn, close_btn]
 }
 

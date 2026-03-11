@@ -2,6 +2,7 @@
 section: 35
 title: Session Persistence + Remote Domains
 status: not-started
+reviewed: false
 tier: 7A
 goal: Session save/load with crash recovery, scrollback archiving, full SshDomain and WslDomain implementations, tmux control mode integration
 sections:

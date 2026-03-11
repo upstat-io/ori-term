@@ -4,7 +4,9 @@ use wgpu::{CompositeAlphaMode, SurfaceCapabilities, TextureFormat, TextureUsages
 
 use wgpu::PresentMode;
 
-use super::{build_surface_config, select_alpha_mode, select_formats, select_present_mode};
+use super::helpers::{
+    build_surface_config, select_alpha_mode, select_formats, select_present_mode,
+};
 
 fn caps_with_formats(formats: Vec<TextureFormat>) -> SurfaceCapabilities {
     SurfaceCapabilities {
@@ -84,10 +86,10 @@ fn select_formats_multiple_with_srgb_first() {
     assert_eq!(render_fmt, TextureFormat::Bgra8UnormSrgb);
 }
 
-// --- Alpha mode selection ---
+// --- Alpha mode selection (transparent=true) ---
 
 #[test]
-fn select_alpha_mode_prefers_premultiplied() {
+fn select_alpha_transparent_prefers_premultiplied() {
     let caps = SurfaceCapabilities {
         formats: vec![],
         present_modes: vec![],
@@ -99,11 +101,14 @@ fn select_alpha_mode_prefers_premultiplied() {
         usages: TextureUsages::RENDER_ATTACHMENT,
     };
 
-    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::PreMultiplied,);
+    assert_eq!(
+        select_alpha_mode(&caps, true),
+        CompositeAlphaMode::PreMultiplied,
+    );
 }
 
 #[test]
-fn select_alpha_mode_falls_back_to_postmultiplied() {
+fn select_alpha_transparent_falls_back_to_postmultiplied() {
     let caps = SurfaceCapabilities {
         formats: vec![],
         present_modes: vec![],
@@ -114,23 +119,49 @@ fn select_alpha_mode_falls_back_to_postmultiplied() {
         usages: TextureUsages::RENDER_ATTACHMENT,
     };
 
-    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::PostMultiplied,);
+    assert_eq!(
+        select_alpha_mode(&caps, true),
+        CompositeAlphaMode::PostMultiplied,
+    );
 }
 
+// --- Alpha mode selection (transparent=false) ---
+
 #[test]
-fn select_alpha_mode_falls_back_to_first_available() {
+fn select_alpha_opaque_prefers_opaque() {
     let caps = SurfaceCapabilities {
         formats: vec![],
         present_modes: vec![],
-        alpha_modes: vec![CompositeAlphaMode::Opaque],
+        alpha_modes: vec![
+            CompositeAlphaMode::PreMultiplied,
+            CompositeAlphaMode::Opaque,
+        ],
         usages: TextureUsages::RENDER_ATTACHMENT,
     };
 
-    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::Opaque);
+    assert_eq!(select_alpha_mode(&caps, false), CompositeAlphaMode::Opaque,);
 }
 
 #[test]
-fn select_alpha_mode_inherit_as_only_option() {
+fn select_alpha_opaque_falls_back_to_first_when_no_opaque() {
+    let caps = SurfaceCapabilities {
+        formats: vec![],
+        present_modes: vec![],
+        alpha_modes: vec![CompositeAlphaMode::PreMultiplied],
+        usages: TextureUsages::RENDER_ATTACHMENT,
+    };
+
+    // No Opaque available — uses first available.
+    assert_eq!(
+        select_alpha_mode(&caps, false),
+        CompositeAlphaMode::PreMultiplied,
+    );
+}
+
+// --- Alpha mode selection (shared edge cases) ---
+
+#[test]
+fn select_alpha_inherit_as_only_option() {
     let caps = SurfaceCapabilities {
         formats: vec![],
         present_modes: vec![],
@@ -139,11 +170,12 @@ fn select_alpha_mode_inherit_as_only_option() {
     };
 
     // When only Inherit is available, use it (common fallback).
-    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::Inherit);
+    assert_eq!(select_alpha_mode(&caps, true), CompositeAlphaMode::Inherit,);
+    assert_eq!(select_alpha_mode(&caps, false), CompositeAlphaMode::Inherit,);
 }
 
 #[test]
-fn select_alpha_mode_empty_defaults_to_opaque() {
+fn select_alpha_empty_defaults_to_opaque() {
     let caps = SurfaceCapabilities {
         formats: vec![],
         present_modes: vec![],
@@ -152,7 +184,8 @@ fn select_alpha_mode_empty_defaults_to_opaque() {
     };
 
     // Empty alpha_modes should not panic; falls back to Opaque.
-    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::Opaque);
+    assert_eq!(select_alpha_mode(&caps, true), CompositeAlphaMode::Opaque,);
+    assert_eq!(select_alpha_mode(&caps, false), CompositeAlphaMode::Opaque,);
 }
 
 // --- Surface config builder ---
@@ -282,7 +315,7 @@ fn cache_dir_returns_valid_path() {
 fn validate_gpu_does_not_panic() {
     // Verifies GPU validation runs without panicking, even when no
     // GPU adapters are available (e.g. CI, headless).
-    let _count = super::validate_gpu();
+    let _count = super::helpers::validate_gpu();
 }
 
 // --- GPU integration tests (require real adapter) ---

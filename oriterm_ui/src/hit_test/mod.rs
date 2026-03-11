@@ -56,30 +56,56 @@ pub enum ResizeDirection {
     BottomRight,
 }
 
+impl ResizeDirection {
+    /// Maps to winit's compass-based resize direction.
+    pub fn to_winit(self) -> winit::window::ResizeDirection {
+        match self {
+            Self::Top => winit::window::ResizeDirection::North,
+            Self::Bottom => winit::window::ResizeDirection::South,
+            Self::Left => winit::window::ResizeDirection::West,
+            Self::Right => winit::window::ResizeDirection::East,
+            Self::TopLeft => winit::window::ResizeDirection::NorthWest,
+            Self::TopRight => winit::window::ResizeDirection::NorthEast,
+            Self::BottomLeft => winit::window::ResizeDirection::SouthWest,
+            Self::BottomRight => winit::window::ResizeDirection::SouthEast,
+        }
+    }
+}
+
 /// Determines the semantic region for a point within a frameless window.
 ///
-/// Priority hierarchy (from Chromium's decision tree):
+/// Priority hierarchy:
 ///
-/// 1. Interactive rects within caption (buttons, tabs) -> `Client`.
-/// 2. Resize edges/corners (unless maximized) -> `ResizeBorder`.
+/// 1. Resize edges/corners (unless maximized) -> `ResizeBorder`.
+/// 2. Interactive rects within caption (buttons, tabs) -> `Client`.
 /// 3. Caption area -> `Caption` (draggable).
 /// 4. Everything else -> `Client`.
 ///
+/// Resize borders have highest priority so that corners near window
+/// control buttons remain resizable (e.g. top-right corner overlapping
+/// the close button still allows diagonal resize).
+///
 /// Corners take priority over edges: a point in the top-left corner
 /// returns `TopLeft`, not `Top` or `Left`.
+///
+/// All coordinates must be in the same unit space — caller ensures this.
+/// The function is unit-agnostic: it works with physical pixels, logical
+/// pixels, or any consistent coordinate system.
 pub fn hit_test(point: Point, chrome: &WindowChrome<'_>) -> HitTestResult {
-    // 1. Check interactive rects first — buttons/tabs within caption are
+    // 1. Check resize borders first (suppressed when maximized).
+    //    Resize always wins over buttons/caption so corners near window
+    //    controls remain resizable.
+    if !chrome.is_maximized {
+        if let Some(direction) = resize_direction(point, chrome.window_size, chrome.border_width) {
+            return HitTestResult::ResizeBorder(direction);
+        }
+    }
+
+    // 2. Check interactive rects — buttons/tabs within caption are
     //    clickable, not draggable.
     for rect in chrome.interactive_rects {
         if rect.contains(point) {
             return HitTestResult::Client;
-        }
-    }
-
-    // 2. Check resize borders (suppressed when maximized).
-    if !chrome.is_maximized {
-        if let Some(direction) = resize_direction(point, chrome.window_size, chrome.border_width) {
-            return HitTestResult::ResizeBorder(direction);
         }
     }
 

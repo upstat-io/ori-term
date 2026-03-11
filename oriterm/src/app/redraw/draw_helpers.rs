@@ -10,7 +10,7 @@ use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::{DrawCtx, Widget};
 
-use super::super::App;
+use crate::app::App;
 use crate::font::UiFontMeasurer;
 use crate::gpu::state::GpuState;
 
@@ -48,6 +48,7 @@ impl App {
         draw_list.clear();
         let animations_running = Cell::new(false);
         let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let icons = renderer.resolved_icons();
 
         let mut ctx = DrawCtx {
             measurer: &measurer,
@@ -57,6 +58,7 @@ impl App {
             now: Instant::now(),
             animations_running: &animations_running,
             theme,
+            icons: Some(icons),
         };
         tab_bar.draw(&mut ctx);
         let animating = animations_running.get();
@@ -71,6 +73,7 @@ impl App {
         if tab_bar.has_drag_overlay() {
             draw_list.clear();
             let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let icons = renderer.resolved_icons();
             let mut overlay_ctx = DrawCtx {
                 measurer: &measurer,
                 draw_list,
@@ -79,6 +82,7 @@ impl App {
                 now: Instant::now(),
                 animations_running: &animations_running,
                 theme,
+                icons: Some(icons),
             };
             tab_bar.draw_drag_overlay(&mut overlay_ctx);
             renderer.append_overlay_draw_list_with_text(draw_list, scale, 1.0, gpu);
@@ -130,6 +134,7 @@ impl App {
             // Re-create measurer per iteration — cheap (no allocation), and
             // the immutable borrow drops before the mutable append below.
             let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let icons = renderer.resolved_icons();
             let mut ctx = DrawCtx {
                 measurer: &measurer,
                 draw_list,
@@ -138,6 +143,7 @@ impl App {
                 now: Instant::now(),
                 animations_running: &animations_running,
                 theme,
+                icons: Some(icons),
             };
             let opacity = overlays.draw_overlay_at(i, &mut ctx, tree);
 

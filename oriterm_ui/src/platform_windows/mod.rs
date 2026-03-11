@@ -8,7 +8,7 @@
 //! The entire module is Win32 FFI glue — every public function calls into
 //! the Win32 API through `windows-sys`.
 
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "Win32 FFI via windows-sys")]
 
 mod subclass;
 
@@ -25,9 +25,9 @@ use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows_sys::Win32::UI::Shell::SetWindowSubclass;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetCursorPos, GetWindowLongPtrW, SW_SHOW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_THICKFRAME,
+    GWL_STYLE, GetCursorPos, GetWindowLongPtrW, GetWindowRect, SW_SHOW, SWP_FRAMECHANGED,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_THICKFRAME,
 };
 
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -87,12 +87,21 @@ struct OsDragState {
     result: Option<OsDragResult>,
 }
 
+/// Chrome sizing metrics in physical pixels.
+///
+/// Bundled into a single `Mutex` because `WM_NCHITTEST` reads both fields
+/// together and `set_chrome_metrics` writes both atomically.
+struct ChromeMetrics {
+    /// Border width for resize hit testing.
+    border_width: f32,
+    /// Caption (tab bar) height.
+    caption_height: f32,
+}
+
 /// Per-window data stored via `SetWindowSubclass`.
 struct SnapData {
-    /// Border width for resize hit testing (physical pixels).
-    border_width: Mutex<f32>,
-    /// Caption (tab bar) height (physical pixels).
-    caption_height: Mutex<f32>,
+    /// Chrome sizing metrics (physical pixels).
+    chrome_metrics: Mutex<ChromeMetrics>,
     /// Interactive regions (buttons, tabs) in physical pixels.
     interactive_rects: Mutex<Vec<Rect>>,
     /// DPI from the most recent `WM_DPICHANGED`. 0 means not yet received.
@@ -141,7 +150,35 @@ pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
             0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
         );
+    }
 
+    install_chrome_subclass(window, border_width, caption_height);
+}
+
+/// Installs `WndProc` subclass and DWM frame on a borderless dialog window.
+///
+/// Unlike [`enable_snap()`], this does NOT modify window styles (no
+/// `WS_THICKFRAME` etc.). It only installs the subclass for `WM_NCHITTEST`
+/// routing (close button, caption drag, resize edges) and `WM_NCCALCSIZE`
+/// (full client area — no OS frame inset). Use for dialog windows that need
+/// proper hit testing without Aero Snap integration.
+///
+/// `border_width` and `caption_height` are in physical pixels.
+pub fn enable_dialog_chrome(window: &Window, border_width: f32, caption_height: f32) {
+    install_chrome_subclass(window, border_width, caption_height);
+}
+
+/// Shared subclass installation for both snap-enabled and dialog windows.
+///
+/// Extends the DWM frame (1px top margin for shadow), installs the
+/// `WndProc` subclass, and registers the per-window `SnapData`.
+fn install_chrome_subclass(window: &Window, border_width: f32, caption_height: f32) {
+    let Some(hwnd) = hwnd_from_window(window) else {
+        log::warn!("install_chrome_subclass: failed to extract HWND");
+        return;
+    };
+
+    unsafe {
         // Hide OS title bar — 1px top margin keeps DWM shadow + snap preview.
         let margins = MARGINS {
             cxLeftWidth: 0,
@@ -153,8 +190,10 @@ pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
 
         // Install `WndProc` subclass with per-window data.
         let data = Box::new(SnapData {
-            border_width: Mutex::new(border_width),
-            caption_height: Mutex::new(caption_height),
+            chrome_metrics: Mutex::new(ChromeMetrics {
+                border_width,
+                caption_height,
+            }),
             interactive_rects: Mutex::new(Vec::new()),
             last_dpi: AtomicU32::new(0),
             os_drag: Mutex::new(None),
@@ -179,15 +218,16 @@ pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
 /// Updates the interactive regions that receive `HTCLIENT` instead of
 /// `HTCAPTION`.
 ///
-/// Each rect is in logical coordinates. Call whenever the tab bar layout
-/// changes (resize, tab add/remove).
-pub fn set_client_rects(window: &Window, rects: Vec<Rect>) {
+/// Each rect is in physical pixels (pre-scaled by the display scale factor).
+/// Call whenever the tab bar layout changes (resize, tab add/remove).
+pub fn set_client_rects(window: &Window, rects: &[Rect]) {
     if let Some(data) = snap_data_for_window(window) {
         let mut lock = data.interactive_rects.lock().unwrap_or_else(|e| {
             log::warn!("interactive_rects mutex poisoned: {e}");
             e.into_inner()
         });
-        *lock = rects;
+        lock.clear();
+        lock.extend_from_slice(rects);
     }
 }
 
@@ -247,14 +287,12 @@ pub fn take_os_drag_result(window: &Window) -> Option<OsDragResult> {
 /// factor). Call from the resize handler when a DPI change is detected.
 pub fn set_chrome_metrics(window: &Window, border_width: f32, caption_height: f32) {
     if let Some(data) = snap_data_for_window(window) {
-        *data.border_width.lock().unwrap_or_else(|e| {
-            log::warn!("border_width mutex poisoned: {e}");
+        let mut metrics = data.chrome_metrics.lock().unwrap_or_else(|e| {
+            log::warn!("chrome_metrics mutex poisoned: {e}");
             e.into_inner()
-        }) = border_width;
-        *data.caption_height.lock().unwrap_or_else(|e| {
-            log::warn!("caption_height mutex poisoned: {e}");
-            e.into_inner()
-        }) = caption_height;
+        });
+        metrics.border_width = border_width;
+        metrics.caption_height = caption_height;
     }
 }
 
@@ -270,24 +308,12 @@ pub fn cursor_screen_pos() -> (i32, i32) {
 /// Returns the visible frame bounds excluding the invisible DWM extended
 /// frame that `GetWindowRect` includes.
 ///
-/// Returns `(left, top, right, bottom)` in screen coordinates.
+/// Returns `None` if the HWND cannot be extracted or DWM composition is
+/// unavailable. Returns `(left, top, right, bottom)` in screen coordinates.
 pub fn visible_frame_bounds(window: &Window) -> Option<(i32, i32, i32, i32)> {
     let hwnd = hwnd_from_window(window)?;
-    let mut rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    let attr = DWMWA_EXTENDED_FRAME_BOUNDS as u32;
-    let hr = unsafe {
-        DwmGetWindowAttribute(hwnd, attr, (&raw mut rect).cast(), size_of::<RECT>() as u32)
-    };
-    if hr == 0 {
-        Some((rect.left, rect.top, rect.right, rect.bottom))
-    } else {
-        None
-    }
+    let rect = try_dwm_frame_bounds(hwnd)?;
+    Some((rect.left, rect.top, rect.right, rect.bottom))
 }
 
 /// Shows a window that was hidden via `SW_HIDE` (used after merge-cancel).
@@ -335,6 +361,46 @@ pub fn set_transitions_enabled(window: &Window, enabled: bool) {
 
 // Private helpers
 
+/// Queries DWM for the visible frame bounds of an HWND.
+///
+/// Returns `None` if DWM composition is unavailable (e.g. disabled,
+/// or running on an older Windows version without DWM).
+fn try_dwm_frame_bounds(hwnd: HWND) -> Option<RECT> {
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let hr = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
+            (&raw mut rect).cast(),
+            size_of::<RECT>() as u32,
+        )
+    };
+    if hr == 0 { Some(rect) } else { None }
+}
+
+/// Returns the visible frame bounds for an HWND via DWM.
+///
+/// Uses `DWMWA_EXTENDED_FRAME_BOUNDS` which excludes the invisible DWM
+/// border that `GetWindowRect` includes on windows with `WS_THICKFRAME`.
+/// Falls back to `GetWindowRect` if the DWM query fails.
+pub(super) fn visible_frame_bounds_hwnd(hwnd: HWND) -> RECT {
+    try_dwm_frame_bounds(hwnd).unwrap_or_else(|| {
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        unsafe { GetWindowRect(hwnd, &raw mut rect) };
+        rect
+    })
+}
+
 fn snap_ptrs() -> &'static Mutex<HashMap<usize, usize>> {
     SNAP_PTRS.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -353,7 +419,7 @@ fn snap_data_for_window(window: &Window) -> Option<&'static SnapData> {
 }
 
 /// Extracts the raw HWND from a winit `Window`.
-fn hwnd_from_window(window: &Window) -> Option<HWND> {
+pub fn hwnd_from_window(window: &Window) -> Option<HWND> {
     let handle = window.window_handle().ok()?;
     match handle.as_raw() {
         RawWindowHandle::Win32(h) => Some(h.hwnd.get() as HWND),

@@ -23,9 +23,6 @@ pub const CONTROL_BUTTON_WIDTH: f32 = 46.0;
 /// Used by hit testing to determine the draggable edge zone.
 pub const RESIZE_BORDER_WIDTH: f32 = 6.0;
 
-/// Symbol stroke width for window control glyphs (logical pixels).
-pub const SYMBOL_STROKE_WIDTH: f32 = 1.0;
-
 /// Size of the glyph symbols in control buttons (logical pixels).
 ///
 /// The minimize dash, maximize square, and close X are drawn within a

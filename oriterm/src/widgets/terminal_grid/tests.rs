@@ -120,6 +120,7 @@ fn bounds_some_after_draw() {
         now: Instant::now(),
         animations_running: &animations_running,
         theme: &theme,
+        icons: None,
     };
 
     widget.draw(&mut ctx);
@@ -147,6 +148,7 @@ fn draw_emits_no_commands() {
         now: Instant::now(),
         animations_running: &animations_running,
         theme: &theme,
+        icons: None,
     };
 
     widget.draw(&mut ctx);

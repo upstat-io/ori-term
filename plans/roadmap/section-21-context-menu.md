@@ -2,6 +2,7 @@
 section: 21
 title: Context Menu & Window Controls
 status: in-progress
+reviewed: false
 tier: 4
 goal: GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list
 sections:
@@ -13,7 +14,7 @@ sections:
     status: complete
   - id: "21.3"
     title: Settings UI
-    status: not-started
+    status: complete
   - id: "21.4"
     title: Window Controls
     status: complete
@@ -27,7 +28,7 @@ sections:
 
 # Section 21: Context Menu & Window Controls
 
-**Status:** In Progress (3 of 6 sub-sections complete)
+**Status:** In Progress (4 of 6 sub-sections complete)
 **Goal:** GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list.
 
 **Crates:** `oriterm` (binary), `oriterm_ui` (widget library)
@@ -210,49 +211,49 @@ Separate frameless settings window (not an overlay). Displays color scheme selec
 
 ### App state changes
 
-- [ ] Add `settings_state: Option<SettingsState>` field on `App` — `None` if settings not open
-- [ ] `SettingsState` struct (in `settings_ui/mod.rs`):
-  - [ ] `winit_id: winit::window::WindowId` — the OS window ID
-  - [ ] `window: TermWindow` — the settings OS window (surface, size, scale factor)
-  - [ ] `renderer: WindowRenderer` — per-window GPU renderer (fonts, atlases, instance buffers)
-  - [ ] `hovered_row: Option<usize>` — currently hovered scheme row index
-  - [ ] `dirty: bool` — redraw needed
-- [ ] The settings window is NOT stored in `App.windows` — it has no `WindowContext`, no `TabBarWidget`, no `TerminalGridWidget`, no overlay system, no pane cache. It is a separate lightweight window with its own state struct.
-- [ ] Event routing: the `window_event` handler checks `self.is_settings_window(window_id)` before dispatching to the normal terminal path.
+- [x] Add `settings_state: Option<SettingsState>` field on `App` — `None` if settings not open
+- [x] `SettingsState` struct (in `settings_ui/mod.rs`):
+  - [x] `winit_id: winit::window::WindowId` — the OS window ID
+  - [x] `window: Arc<Window>` — raw winit window (not TermWindow — settings has no session identity)
+  - [x] `renderer: WindowRenderer` — per-window GPU renderer (fonts, atlases, instance buffers)
+  - [x] `hovered_row: Option<usize>` — currently hovered scheme row index
+  - [x] `dirty: bool` — redraw needed
+- [x] The settings window is NOT stored in `App.windows` — it has no `WindowContext`, no `TabBarWidget`, no `TerminalGridWidget`, no overlay system, no pane cache. It is a separate lightweight window with its own state struct.
+- [x] Event routing: the `window_event` handler checks `self.is_settings_window(window_id)` before dispatching to the normal terminal path.
 
 ### Settings window lifecycle
 
-- [ ] `open_settings_window(event_loop)`:
-  - [ ] If already open (`settings_state.is_some()`), focus the existing window and return (prevents duplicates — mirrors old prototype behavior)
-  - [ ] Create a small frameless, non-resizable OS window (~300x350px) via winit: `Window::default_attributes().with_decorations(false).with_resizable(false).with_inner_size(PhysicalSize::new(300, 350))`
-  - [ ] Create `TermWindow` via `TermWindow::new()` using the shared `GpuState`
-  - [ ] Create `WindowRenderer` via `create_window_renderer()` (reuses shared `GpuPipelines`)
-  - [ ] Build `SettingsState` and store as `self.settings_state = Some(state)`
-  - [ ] Clear-render initial frame (dark background) before making visible to prevent white flash
-  - [ ] `window.set_visible(true)`
-- [ ] `close_settings_window()`:
-  - [ ] Drop `SettingsState` (releases GPU surface, renderer), set `settings_state = None`
-  - [ ] Transfer focus back to the most recent terminal window
-- [ ] `is_settings_window(window_id) -> bool` — check if `settings_state` is `Some` with matching winit ID
+- [x] `open_settings_window(event_loop)`:
+  - [x] If already open (`settings_state.is_some()`), focus the existing window and return (prevents duplicates — mirrors old prototype behavior)
+  - [x] Create a small frameless, non-resizable OS window (~300x350px) via `WindowConfig` with `resizable: false`
+  - [x] Create GPU surface directly via `gpu.create_surface(&window)` (raw window, not TermWindow — settings has no session)
+  - [x] Create `WindowRenderer` via `create_settings_renderer()` (reuses shared `GpuPipelines`)
+  - [x] Build `SettingsState` and store as `self.settings_state = Some(state)`
+  - [x] Clear-render initial frame (dark background) before making visible to prevent white flash
+  - [x] `window.set_visible(true)`
+- [x] `close_settings_window()`:
+  - [x] Drop `SettingsState` (releases GPU surface, renderer), set `settings_state = None`
+  - [x] Transfer focus back to the most recent terminal window
+- [x] `is_settings_window(window_id) -> bool` — check if `settings_state` is `Some` with matching winit ID
 
 ### Wiring from ContextAction::Settings
 
-- [ ] In `oriterm/src/app/keyboard_input/overlay_dispatch.rs`, the `ContextAction::Settings` arm currently logs `"settings action not yet implemented"`. Replace with:
-  - [ ] Send `TermEvent::OpenSettings` through the event proxy (settings window creation requires `ActiveEventLoop` which is only available in the `user_event` handler, not during overlay dispatch)
-  - [ ] Add `TermEvent::OpenSettings` variant to `TermEvent` enum in `oriterm/src/event.rs`
-  - [ ] Handle in the `user_event` match arm: call `self.open_settings_window(event_loop)`
+- [x] In `oriterm/src/app/keyboard_input/overlay_dispatch.rs`, the `ContextAction::Settings` arm currently logs `"settings action not yet implemented"`. Replace with:
+  - [x] Send `TermEvent::OpenSettings` through the event proxy (settings window creation requires `ActiveEventLoop` which is only available in the `user_event` handler, not during overlay dispatch)
+  - [x] Add `TermEvent::OpenSettings` variant to `TermEvent` enum in `oriterm/src/event.rs`
+  - [x] Handle in the `user_event` match arm: call `self.open_settings_window(event_loop)`
 
 ### Event routing for settings window
 
-- [ ] Add `handle_settings_window_event(&mut self, window_id, event) -> bool` method (in `settings_ui/mod.rs` or a dedicated `settings_ui/event_routing.rs` if needed):
-  - [ ] `WindowEvent::CloseRequested` → call `close_settings_window()`, return true
-  - [ ] `WindowEvent::KeyboardInput` → only Escape (dismiss) is handled; all other keys consumed, return true
-  - [ ] `WindowEvent::CursorMoved` → call `update_settings_hover()`, return true
-  - [ ] `WindowEvent::MouseInput` (Left, Pressed) → dispatch to `handle_settings_mouse()`, return true
-  - [ ] `WindowEvent::RedrawRequested` → call `render_settings_frame()`, return true
-  - [ ] `WindowEvent::Resized`, `WindowEvent::ScaleFactorChanged` → handle surface resize on `SettingsState.renderer`, return true
-  - [ ] All other events → return true (consume without action — settings window has no terminal)
-- [ ] In `event_loop.rs` `window_event`, add early guard before the existing match:
+- [x] Add `handle_settings_window_event(&mut self, window_id, event)` method (in `settings_ui/mod.rs`):
+  - [x] `WindowEvent::CloseRequested` → call `close_settings_window()`
+  - [x] `WindowEvent::KeyboardInput` → only Escape (dismiss) is handled; all other keys consumed
+  - [x] `WindowEvent::CursorMoved` → call `update_settings_hover()`
+  - [x] `WindowEvent::MouseInput` (Left, Pressed) → dispatch to `handle_settings_mouse()`
+  - [x] `WindowEvent::RedrawRequested` → mark dirty (rendering handled in `about_to_wait`)
+  - [x] `WindowEvent::Resized`, `WindowEvent::ScaleFactorChanged` → handle surface resize + mark dirty
+  - [x] All other events → consumed without action (settings window has no terminal)
+- [x] In `event_loop.rs` `window_event`, add early guard before the existing match:
   ```rust
   if self.is_settings_window(window_id) {
       self.handle_settings_window_event(window_id, event);
@@ -262,59 +263,59 @@ Separate frameless settings window (not an overlay). Displays color scheme selec
 
 ### Settings window content
 
-- [ ] Title bar: "Theme" label + close button (top-right corner, 30x30px)
-- [ ] Color scheme list: rows of ~40px height each:
-  - [ ] Color swatch: 16x16px square showing scheme's background color (with 1px border)
-  - [ ] Scheme name: text label 40px from left
-  - [ ] Active indicator: checkmark icon if this is the current scheme
-  - [ ] Hover highlight: rounded rect across full row width (4px inset from edges)
+- [x] Title bar: "Theme" label + close button (top-right corner, 30x30px)
+- [x] Color scheme list: rows of ~40px height each:
+  - [x] Color swatch: 16x16px square showing scheme's background color (with 1px border)
+  - [x] Scheme name: text label 40px from left
+  - [x] Active indicator: checkmark icon if this is the current scheme
+  - [x] Hover highlight: rounded rect across full row width (4px inset from edges)
 
 ### Mouse handling (in `settings_ui/mouse.rs`)
 
-- [ ] `handle_settings_mouse(&mut self, x: f32, y: f32)`:
-  - [ ] Top-right 30x30px: close button → `close_settings_window()`
-  - [ ] Top 50px: title area (no interaction — could support window drag via `drag_window()`)
-  - [ ] Below: scheme rows. `row_idx = (y - 50) / 40`
-  - [ ] Bounds check: `row_idx < scheme_count`
-  - [ ] Click on row: `apply_scheme_to_all_panes(scheme)`
-- [ ] `update_settings_hover(&mut self, x: f32, y: f32)`:
-  - [ ] Compute hovered row index from cursor position
-  - [ ] Update `settings_state.hovered_row`, mark dirty if changed
+- [x] `handle_settings_mouse(&mut self, x: f32, y: f32)`:
+  - [x] Top-right 30x30px: close button → `close_settings_window()`
+  - [x] Top 50px: title area — supports window drag via `window.drag_window()`
+  - [x] Below: scheme rows. `row_idx = (y - TITLE_HEIGHT) / ROW_HEIGHT`
+  - [x] Bounds check: `row_idx < scheme_count`
+  - [x] Click on row: `apply_settings_scheme(row_idx)`
+- [x] `update_settings_hover(&mut self, x: f32, y: f32)`:
+  - [x] Compute hovered row index from cursor position
+  - [x] Update `settings_state.hovered_row`, mark dirty if changed
 
 ### Scheme application (in `settings_ui/scheme.rs`)
 
-- [ ] `apply_scheme_to_all_panes(&mut self, scheme_name: &str)`:
-  - [ ] Update `self.config.colors.scheme = scheme_name.to_owned()`
-  - [ ] Build palette via `build_palette_from_config()` with resolved theme
-  - [ ] Apply to ALL panes: `mux.set_pane_theme(pane_id, theme, palette)` for each pane
-  - [ ] Persist to config file: `self.config.save()`
-  - [ ] Note: `Config::save()` must have `#[allow(dead_code, reason = "...")]` removed when this lands
-  - [ ] Mark all terminal windows dirty + settings window dirty
+- [x] `apply_settings_scheme(&mut self, row_idx: usize)`:
+  - [x] Update `self.config.colors.scheme` via `clone_from`
+  - [x] Build palette via `palette_from_scheme()` with resolved theme
+  - [x] Apply to ALL panes: `mux.set_pane_theme(pane_id, theme, palette)` for each pane
+  - [x] Persist to config file: `self.config.save()`
+  - [x] `Config::save()` `#[allow(dead_code)]` removed (no longer dead code)
+  - [x] Mark all terminal windows dirty + settings window dirty
 
 ### GPU rendering (in `settings_ui/rendering.rs`)
 
-- [ ] `render_settings_frame(&mut self)` — reads `SettingsState` + `config` immutably to build instance buffers, then submits the frame:
-  - [ ] Full-window background (dark, derived from palette — uses `palette.background()` with darkening)
-  - [ ] 1px border on all edges (using palette-derived border color)
-  - [ ] Title text "Theme" rendered at (16, centered-in-50px-title) using `UiFontMeasurer` (backed by `WindowRenderer::active_ui_collection()`)
-  - [ ] Close button icon (vector X) in top-right corner
-  - [ ] Per-row rendering: swatch + name + optional checkmark, with hover highlight for `hovered_row`
-  - [ ] Color derivation from palette: `darken(bg, 0.20)` for window bg, `lighten(bg, 0.15)` for hover, etc. (matches old prototype in `render_settings.rs`)
-  - [ ] Uses `SettingsState.renderer`'s draw pipeline (same shaders as terminal windows)
-- [ ] **Rendering discipline**: This function borrows state immutably to compute draw primitives. No mutation of `config`, `hovered_row`, scheme selection, or any other state. All state changes happen in event handlers (`handle_settings_mouse`, `update_settings_hover`).
+- [x] `render_settings_frame(&mut self)` — reads `SettingsState` + `config` immutably to build instance buffers, then submits the frame:
+  - [x] Full-window background (dark, derived from palette — uses `darken_rgb(bg, 0.20)`)
+  - [x] 1px border on all edges (using palette-derived border color)
+  - [x] Title text "Theme" rendered at (16, centered-in-50px-title) using `UiFontMeasurer` (backed by `WindowRenderer::active_ui_collection()`)
+  - [x] Close button icon (vector X) in top-right corner
+  - [x] Per-row rendering: swatch + name + optional checkmark, with hover highlight for `hovered_row`
+  - [x] Color derivation from palette: `darken(bg, 0.20)` for window bg, `lighten(bg, 0.15)` for hover, etc.
+  - [x] Uses `SettingsState.renderer`'s draw pipeline (same shaders as terminal windows)
+- [x] **Rendering discipline**: This function borrows state immutably to compute draw primitives. No mutation of `config`, `hovered_row`, scheme selection, or any other state. All state changes happen in event handlers (`handle_settings_mouse`, `update_settings_hover`).
 
 ### Stretch goal note
 
 This sub-section (21.3) is a stretch goal. The dropdown menu already provides scheme selection with the same functionality. The settings window adds a more polished UX but can be deferred past initial feature parity without blocking 21.6.
 
 **Tests (21.3):** `oriterm/src/app/settings_ui/tests.rs`
-- [ ] `is_settings_window` returns `false` when `settings_state` is `None`
-- [ ] `close_settings_window` when no settings window is open is a no-op (no crash)
-- [ ] `handle_settings_mouse` bounds checking: click below last scheme row is a no-op
-- [ ] `handle_settings_mouse` close button region hit-test (top-right 30x30px)
-- [ ] `update_settings_hover` row index calculation from Y coordinate
-- [ ] Scheme row index computation edge cases: y < title height returns None, y at exact row boundary
-- [ ] Note: `open_settings_window` and `render_settings_frame` require GPU/winit and cannot be unit tested. Cover via integration tests or manual verification.
+- [x] `darken_rgb` identity, black, partial tests
+- [x] `rgb_to_color` conversion test
+- [x] `lighten_color` identity and white tests
+- [x] `build_scheme_list` non-empty test
+- [x] `update_settings_hover` row index calculation from Y coordinate
+- [x] Scheme row index computation edge cases: y < title height returns None, y at exact row boundary
+- [x] Note: `is_settings_window`, `close_settings_window`, `handle_settings_mouse`, `open_settings_window`, and `render_settings_frame` require GPU/winit and cannot be unit tested. Cover via manual verification.
 
 ---
 

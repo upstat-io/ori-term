@@ -43,6 +43,11 @@ pub struct MuxClient {
 
     /// Panes with pending content updates (from `PaneOutput` notifications).
     dirty_panes: HashSet<PaneId>,
+
+    /// Panes awaiting an async pushed snapshot after a non-blocking
+    /// `MarkAllDirty` request. Prevents `clear_pane_snapshot_dirty` from
+    /// clearing the dirty flag prematurely (before the snapshot arrives).
+    pending_refresh: HashSet<PaneId>,
 }
 
 impl MuxClient {
@@ -61,6 +66,7 @@ impl MuxClient {
             notifications: Vec::new(),
             pane_snapshots: HashMap::new(),
             dirty_panes: HashSet::new(),
+            pending_refresh: HashSet::new(),
         })
     }
 
@@ -74,6 +80,7 @@ impl MuxClient {
             notifications: Vec::new(),
             pane_snapshots: HashMap::new(),
             dirty_panes: HashSet::new(),
+            pending_refresh: HashSet::new(),
         }
     }
 
@@ -86,6 +93,7 @@ impl MuxClient {
     pub(crate) fn remove_snapshot(&mut self, pane_id: PaneId) {
         self.pane_snapshots.remove(&pane_id);
         self.dirty_panes.remove(&pane_id);
+        self.pending_refresh.remove(&pane_id);
         if let Some(transport) = &self.transport {
             transport.invalidate_pushed_snapshot(pane_id);
         }

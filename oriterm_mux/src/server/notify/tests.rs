@@ -15,41 +15,47 @@ fn empty_panes() -> HashMap<PaneId, Pane> {
     HashMap::new()
 }
 
-// -- Notifications that produce Some --
+// Notifications that produce Some
 
-/// `PaneOutput` → `NotifyPaneOutput` routed to pane subscribers.
+/// `PaneOutput` is intercepted before reaching `notification_to_pdu` — returns `None`.
 #[test]
-fn pane_output_to_notify() {
+fn pane_output_returns_none() {
     let pid = PaneId::from_raw(1);
     let notif = MuxNotification::PaneOutput(pid);
-    let (target, pdu) = notification_to_pdu(&notif, &empty_panes()).unwrap();
-
-    assert!(matches!(target, TargetClients::PaneSubscribers(id) if id == pid));
-    assert_eq!(pdu, MuxPdu::NotifyPaneOutput { pane_id: pid });
+    assert!(notification_to_pdu(&notif, &empty_panes()).is_none());
 }
 
 /// `PaneClosed` → `NotifyPaneExited` routed to pane subscribers.
 #[test]
 fn pane_closed_to_notify_exited() {
     let pid = PaneId::from_raw(2);
-    let notif = MuxNotification::PaneClosed(pid);
-    let (target, pdu) = notification_to_pdu(&notif, &empty_panes()).unwrap();
-
-    assert!(matches!(target, TargetClients::PaneSubscribers(id) if id == pid));
-    assert_eq!(pdu, MuxPdu::NotifyPaneExited { pane_id: pid });
-}
-
-/// `PaneTitleChanged` with pane not in map → empty title string.
-#[test]
-fn pane_title_changed_missing_pane() {
-    let pid = PaneId::from_raw(3);
-    let notif = MuxNotification::PaneTitleChanged(pid);
+    let notif = MuxNotification::PaneClosed {
+        pane_id: pid,
+        exit_code: 0,
+    };
     let (target, pdu) = notification_to_pdu(&notif, &empty_panes()).unwrap();
 
     assert!(matches!(target, TargetClients::PaneSubscribers(id) if id == pid));
     assert_eq!(
         pdu,
-        MuxPdu::NotifyPaneTitleChanged {
+        MuxPdu::NotifyPaneExited {
+            pane_id: pid,
+            exit_code: 0,
+        }
+    );
+}
+
+/// `PaneMetadataChanged` with pane not in map → empty title string.
+#[test]
+fn pane_metadata_changed_missing_pane() {
+    let pid = PaneId::from_raw(3);
+    let notif = MuxNotification::PaneMetadataChanged(pid);
+    let (target, pdu) = notification_to_pdu(&notif, &empty_panes()).unwrap();
+
+    assert!(matches!(target, TargetClients::PaneSubscribers(id) if id == pid));
+    assert_eq!(
+        pdu,
+        MuxPdu::NotifyPaneMetadataChanged {
             pane_id: pid,
             title: String::new(),
         }
@@ -67,7 +73,7 @@ fn pane_bell_to_notify() {
     assert_eq!(pdu, MuxPdu::NotifyPaneBell { pane_id: pid });
 }
 
-// -- Notifications that return None --
+// Notifications that return None
 
 /// `CommandComplete` is not pushed over IPC.
 #[test]

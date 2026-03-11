@@ -23,24 +23,22 @@ pub fn notification_to_pdu(
     panes: &HashMap<PaneId, Pane>,
 ) -> Option<(TargetClients, MuxPdu)> {
     match notif {
-        MuxNotification::PaneOutput(pane_id) => Some((
+        MuxNotification::PaneClosed { pane_id, exit_code } => Some((
             TargetClients::PaneSubscribers(*pane_id),
-            MuxPdu::NotifyPaneOutput { pane_id: *pane_id },
+            MuxPdu::NotifyPaneExited {
+                pane_id: *pane_id,
+                exit_code: *exit_code,
+            },
         )),
 
-        MuxNotification::PaneClosed(pane_id) => Some((
-            TargetClients::PaneSubscribers(*pane_id),
-            MuxPdu::NotifyPaneExited { pane_id: *pane_id },
-        )),
-
-        MuxNotification::PaneTitleChanged(pane_id) => {
+        MuxNotification::PaneMetadataChanged(pane_id) => {
             let title = panes
                 .get(pane_id)
                 .map(|p| p.effective_title().to_string())
                 .unwrap_or_default();
             Some((
                 TargetClients::PaneSubscribers(*pane_id),
-                MuxPdu::NotifyPaneTitleChanged {
+                MuxPdu::NotifyPaneMetadataChanged {
                     pane_id: *pane_id,
                     title,
                 },
@@ -52,8 +50,10 @@ pub fn notification_to_pdu(
             MuxPdu::NotifyPaneBell { pane_id: *pane_id },
         )),
 
-        // Notifications not pushed over IPC.
-        MuxNotification::CommandComplete { .. }
+        // PaneOutput is intercepted by drain_mux_events before reaching
+        // this function — included here for match exhaustiveness.
+        MuxNotification::PaneOutput(_)
+        | MuxNotification::CommandComplete { .. }
         | MuxNotification::ClipboardStore { .. }
         | MuxNotification::ClipboardLoad { .. } => None,
     }

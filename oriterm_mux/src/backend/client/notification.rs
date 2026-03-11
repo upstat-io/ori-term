@@ -17,9 +17,11 @@ use crate::protocol::MuxPdu;
 /// in the reader loop and should never reach this function.
 pub(super) fn pdu_to_notification(pdu: MuxPdu) -> Option<MuxNotification> {
     match pdu {
-        MuxPdu::NotifyPaneExited { pane_id } => Some(MuxNotification::PaneClosed(pane_id)),
-        MuxPdu::NotifyPaneTitleChanged { pane_id, .. } => {
-            Some(MuxNotification::PaneTitleChanged(pane_id))
+        MuxPdu::NotifyPaneExited { pane_id, exit_code } => {
+            Some(MuxNotification::PaneClosed { pane_id, exit_code })
+        }
+        MuxPdu::NotifyPaneMetadataChanged { pane_id, .. } => {
+            Some(MuxNotification::PaneMetadataChanged(pane_id))
         }
         MuxPdu::NotifyPaneBell { pane_id } => Some(MuxNotification::PaneBell(pane_id)),
         other => {

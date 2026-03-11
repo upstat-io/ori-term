@@ -12,6 +12,7 @@ use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
+use crate::window_manager::types::{ManagedWindow, WindowKind};
 
 impl App {
     /// Run the one-shot startup sequence: window → GPU → fonts → renderer → tab.
@@ -185,6 +186,10 @@ impl App {
         let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
         gpu.clear_surface(window.surface(), palette.background(), opacity);
         window.set_visible(true);
+        // On Linux (X11/Wayland), a newly created window is not guaranteed to
+        // receive input focus. Explicitly request it so the terminal is
+        // immediately interactive.
+        window.window().focus_window();
 
         let winit_id = window.window_id();
         let ctx = WindowContext::new(window, tab_bar_widget, grid_widget, Some(renderer));
@@ -194,6 +199,9 @@ impl App {
         self.ui_font_set = ui_font_set;
         self.user_fb_count = user_fb_count;
         self.windows.insert(winit_id, ctx);
+        self.window_manager
+            .register(ManagedWindow::new(winit_id, WindowKind::Main));
+        self.window_manager.set_focused(Some(winit_id));
         self.focused_window_id = Some(winit_id);
         self.active_window = Some(session_wid);
         Ok(())
@@ -248,47 +256,48 @@ impl App {
             })
     }
 
-    /// Create a tab bar widget and apply platform window effects.
+    /// Create a tab bar widget and install platform window chrome.
     ///
     /// The tab bar is the sole chrome bar (unified tab-in-titlebar).
+    /// Chrome installation (Aero Snap on Windows, no-op on other platforms)
+    /// goes through [`NativeChromeOps`] — no `#[cfg]` blocks needed.
     pub(super) fn create_tab_bar_widget(
         &self,
         window: &TermWindow,
     ) -> oriterm_ui::widgets::tab_bar::TabBarWidget {
         let (w, _) = window.size_px();
-        let logical_w = w as f32 / window.scale_factor().factor() as f32;
+        let scale = window.scale_factor().factor() as f32;
+        let logical_w = w as f32 / scale;
+        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
 
-        // Enable Aero Snap on Windows (installs WndProc subclass).
-        // All values are in physical pixels — the subclass proc works in
-        // the physical coordinate space of WM_NCHITTEST cursor positions.
-        #[cfg(target_os = "windows")]
-        {
-            let s = window.scale_factor().factor() as f32;
-            let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-            oriterm_ui::platform_windows::enable_snap(
-                window.window(),
-                oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * s,
-                tab_bar_h * s,
-            );
-        }
+        // Install platform chrome (Aero Snap subclass on Windows, no-op elsewhere).
+        // Empty rects — the tab bar widget is created next.
+        super::chrome::install_chrome(
+            window.window(),
+            crate::window_manager::platform::ChromeMode::Main,
+            &[],
+            tab_bar_h,
+            scale,
+        );
 
         let mut tab_bar_widget =
             oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &self.ui_theme);
+
+        // Reserve space for macOS traffic light buttons on the left.
+        #[cfg(target_os = "macos")]
+        tab_bar_widget
+            .set_left_inset(oriterm_ui::widgets::tab_bar::constants::MACOS_TRAFFIC_LIGHT_WIDTH);
+
         tab_bar_widget.set_tabs(vec![oriterm_ui::widgets::tab_bar::TabEntry::new("")]);
 
         // Set initial platform hit test rects from the tab bar.
-        #[cfg(target_os = "windows")]
-        {
-            let s = window.scale_factor().factor() as f32;
-            oriterm_ui::platform_windows::set_client_rects(
-                window.window(),
-                tab_bar_widget
-                    .interactive_rects()
-                    .iter()
-                    .map(|r| super::chrome::scale_rect(*r, s))
-                    .collect(),
-            );
-        }
+        super::chrome::refresh_chrome(
+            window.window(),
+            &tab_bar_widget.interactive_rects(),
+            tab_bar_h,
+            scale,
+            true,
+        );
 
         tab_bar_widget
     }

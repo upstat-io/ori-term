@@ -143,6 +143,21 @@ When the scanner shows blocked items, analyze the blocker chain:
       └─ blocks 3 items here
    ```
 
+### Step 2.7: Review Gate
+
+After the scanner identifies the focus section, check its frontmatter for `reviewed: false`. This flag means `/review-plan` has NOT been run on this section — the plan may contain errors, missing steps, or architectural problems.
+
+**If `reviewed: false` is present on the focus section:**
+
+1. **STOP** — do not begin implementation
+2. **Warn the user** via AskUserQuestion:
+   - "Section N has `reviewed: false` — /review-plan has not been run on this section. Implementing an unreviewed plan risks wasted work if the plan has errors."
+   - Options: **Run /review-plan now (Recommended)** | **Proceed anyway** | **Pick a different section**
+3. **If user chooses to review**: Run `/review-plan` on the section, then set `reviewed: true` in the frontmatter after the review completes
+4. **If user chooses to proceed**: Continue, but note the risk in the summary output
+
+**If `reviewed: false` is NOT present** (field absent or `reviewed: true`), proceed normally.
+
 ### Step 3: Load Section Details
 
 Read the focus section file at the line numbers reported by the scanner. Extract:
@@ -265,6 +280,7 @@ Section files use YAML frontmatter for machine-readable status tracking. **You m
 section: 5
 title: Window + GPU Rendering
 status: in-progress          # Section-level status
+reviewed: true               # Has /review-plan been run? (false = gate implementation)
 tier: 2
 goal: Open a frameless window...
 sections:

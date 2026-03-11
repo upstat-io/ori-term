@@ -940,6 +940,74 @@ assets/macos/OriTerm.app, assets/oriterm.iconset
 
 ---
 
+### Section 47: Semantic Prompt State Management
+**File:** `section-47-semantic-prompt-state.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+semantic prompt, OSC 133, SemanticContentType, prompt state, cell-level
+prompt, input, output, content type, 2-bit flag, CellFlags
+RowPromptFlag, NoPrompt, Prompt, PromptContinuation, row flag
+prompt iterator, prompt scanning, prompt navigation, row flags
+semantic range, highlight semantic content, command output, command input
+prompt-aware resize, clear prompt, redraw=0, Kitty extension, SIGWINCH
+has_semantic_prompts, fast path, optimization flag
+click-to-move cursor, mouse prompt reposition, cursor placement
+smart selection, command output extraction, prompt region
+Vec<PromptMarker> replacement, cell stamping, grid-level tracking
+```
+
+---
+
+### Section 48: Native OS Scrollbars
+**File:** `section-48-native-scrollbars.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+scrollbar, native scrollbar, overlay scrollbar, scroll indicator
+ScrollbarState, thumb, track, thumb_position, thumb_size
+scroll offset, content length, viewport length, display_offset
+fade animation, fade_alpha, auto-hide, hover expand
+scrollbar input, thumb drag, track click, page scroll
+scrollbar config, overlay, always, never, scrollbar_width
+platform scrollbar, macOS overlay, Windows thin, GTK overlay
+```
+
+---
+
+### Section 49: Advanced Keybinding System
+**File:** `section-49-advanced-keybindings.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+key table, KeyTable, modal keybinding, prefix key, tmux prefix
+key table stack, push_key_table, pop_key_table, timeout
+chained keybind, chain, multiple actions, Action::Chain
+catch-all key, CatchAll, match unbound, ignore action, passthrough
+key remapping, key-remap, modifier remap, ctrl=super, caps_lock=escape
+visual indicator, active key table, key table name
+zellij modes, tmux key table, wezterm key_tables
+```
+
+---
+
+### Ghostty 1.3.0 Parity — Items in Completed Sections
+
+These features from Ghostty 1.3.0 belong in sections already marked complete. They should be addressed when those sections are revisited or as standalone follow-up work.
+
+| Feature | Belongs In | Notes |
+|---------|-----------|-------|
+| Clipboard codepoint mapping (replace chars on copy) | Section 9 (in-progress) | Config: `clipboard-codepoint-map`, e.g., replace non-breaking space with space |
+| Auto-scroll on output config | Section 13 (complete) | Config: `scroll-to-bottom = output` — auto-scroll on any terminal output |
+| Working directory inheritance controls | Section 20 (complete) | Separate `tab-inherit-working-directory` and `split-inherit-working-directory` |
+| Mouse reporting disable toggle | Section 10 (complete) | Config: `mouse-reporting = false` disables all TUI mouse reporting |
+| Tab title inline editing (double-click) | Section 16 (not started) | Double-click tab label to edit title inline |
+| Readonly surfaces | Section 33 / new | Mark surfaces as readonly to prevent input |
+| Custom shader uniforms | Section 28 (not started) | Cursor shape, position, time since change, color scheme |
+| Unicode 17 grapheme clustering | Section 06 (complete) | Full UAX#29 conformance for multi-codepoint characters |
+| Brahmic/complex script rendering | Section 06 (complete) | Devanagari, Bengali, Tibetan, Javanese, Tai Tham, Chakma |
+| Split drag & drop with grab handles | Section 33 (in-progress) | Reorder, move to tabs, or extract splits |
+| Selection word boundary chars | Section 9 (in-progress) | Config: `selection-word-chars` customizes double-click word selection |
+
+---
+
 ## Quick Reference
 
 | ID | Title | File | Tier | Status |
@@ -992,6 +1060,9 @@ assets/macos/OriTerm.app, assets/oriterm.iconset
 | **44** | **Multi-Process Window Architecture** | **`section-44-multi-process-windows.md`** | **0 (BLOCKER)** | **Not Started** |
 | 45 | Security Hardening | `section-45-security-hardening.md` | 5 | Not Started |
 | 46 | macOS App Bundle & Platform Packaging | `section-46-macos-app-bundle.md` | 6 | Not Started |
+| 47 | Semantic Prompt State Management | `section-47-semantic-prompt-state.md` | 5 | Not Started |
+| 48 | Native OS Scrollbars | `section-48-native-scrollbars.md` | 5 | Not Started |
+| 49 | Advanced Keybinding System | `section-49-advanced-keybindings.md` | 5 | Not Started |
 
 ## Tier Summary
 
@@ -1003,7 +1074,7 @@ assets/macos/OriTerm.app, assets/oriterm.iconset
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23, 38-39, 42-43, 45 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security) |
+| 5 | 22-23, 38-39, 42-43, 45, 47-49 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security, semantic prompts, scrollbars, advanced keybindings) |
 | 6 | 24-25, 46 | Polish (visual refinements, themes, macOS app bundle) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |

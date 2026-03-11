@@ -1,29 +1,82 @@
-//! Window chrome: action dispatch and shared helpers.
+//! Window chrome: action dispatch, platform chrome lifecycle, and shared helpers.
 //!
 //! Handles `WidgetAction::WindowMinimize`, `WindowMaximize`, and
 //! `WindowClose` by forwarding to the appropriate winit window operations.
-//! Provides shared geometry helpers used by both init and resize.
+//! Provides unified chrome installation and refresh functions that route
+//! through [`NativeChromeOps`] for cross-platform support. Also provides
+//! shared geometry helpers used by both init and resize.
 
 mod resize;
 
 use std::time::Instant;
 
+#[cfg(not(target_os = "macos"))]
 use winit::event_loop::ActiveEventLoop;
+use winit::window::Window;
 
+use oriterm_ui::geometry::Rect;
+#[cfg(not(target_os = "macos"))]
 use oriterm_ui::widgets::WidgetAction;
+use oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH;
 
 use super::App;
+#[cfg(not(target_os = "macos"))]
 use crate::font::UiFontMeasurer;
+use crate::window_manager::platform::{ChromeMode, chrome_ops};
 
-/// Scale a logical-pixel rect to physical pixels.
-#[cfg(target_os = "windows")]
-pub(super) fn scale_rect(r: oriterm_ui::geometry::Rect, scale: f32) -> oriterm_ui::geometry::Rect {
-    oriterm_ui::geometry::Rect::new(
-        r.x() * scale,
-        r.y() * scale,
-        r.width() * scale,
-        r.height() * scale,
-    )
+/// Install frameless window chrome via the platform trait.
+///
+/// Installs the OS-level subclass/hooks for hit testing (resize borders,
+/// caption drag, window controls) and sets initial interactive rects.
+/// On macOS/Linux, the platform impl is a no-op.
+///
+/// `rects` are in logical pixels, `caption_height` is in logical pixels.
+/// `scale` is the display scale factor for physical pixel conversion.
+pub(super) fn install_chrome(
+    window: &Window,
+    mode: ChromeMode,
+    rects: &[Rect],
+    caption_height: f32,
+    scale: f32,
+) {
+    let ops = chrome_ops();
+    let border_width = match mode {
+        ChromeMode::Main => RESIZE_BORDER_WIDTH * scale,
+        ChromeMode::Dialog { resizable } => {
+            if resizable {
+                RESIZE_BORDER_WIDTH * scale
+            } else {
+                0.0
+            }
+        }
+    };
+    ops.install_chrome(window, mode, border_width, caption_height * scale);
+    ops.set_interactive_rects(window, rects, scale);
+}
+
+/// Refresh platform hit test rects and chrome metrics.
+///
+/// Updates both the interactive regions and the border/caption dimensions
+/// at the OS level. Called after resize, DPI change, tab add/remove, or
+/// any other event that changes chrome layout.
+///
+/// `rects` are in logical pixels, `caption_height` is in logical pixels.
+/// `scale` is the display scale factor for physical pixel conversion.
+pub(super) fn refresh_chrome(
+    window: &Window,
+    rects: &[Rect],
+    caption_height: f32,
+    scale: f32,
+    resizable: bool,
+) {
+    let ops = chrome_ops();
+    ops.set_interactive_rects(window, rects, scale);
+    let border_width = if resizable {
+        RESIZE_BORDER_WIDTH * scale
+    } else {
+        0.0
+    };
+    ops.set_chrome_metrics(window, border_width, caption_height * scale);
 }
 
 /// Compute the grid origin y-coordinate in physical pixels.
@@ -40,6 +93,8 @@ impl App {
     /// Dispatch a window chrome action to the corresponding window operation.
     ///
     /// Returns `true` if the action was handled (recognized as a chrome action).
+    /// On macOS, native traffic lights handle these actions directly.
+    #[cfg(not(target_os = "macos"))]
     pub(super) fn handle_chrome_action(
         &mut self,
         action: &WidgetAction,
@@ -75,6 +130,7 @@ impl App {
             let maximized = !ctx.window.is_maximized();
             ctx.window.window().set_maximized(maximized);
             ctx.window.set_maximized(maximized);
+            #[cfg(not(target_os = "macos"))]
             ctx.tab_bar.set_maximized(maximized);
             ctx.dirty = true;
         }
@@ -140,40 +196,8 @@ impl App {
         };
 
         // Drive control button hover animation when cursor targets controls.
-        {
-            use oriterm_ui::widgets::tab_bar::TabBarHit;
-            let is_control_hit = matches!(
-                hit,
-                TabBarHit::Minimize | TabBarHit::Maximize | TabBarHit::CloseWindow
-            );
-
-            if let Some(ctx) = self
-                .focused_window_id
-                .and_then(|id| self.windows.get_mut(&id))
-            {
-                if is_control_hit || ctx.tab_bar.hover_hit() != hit {
-                    let scale = ctx.window.scale_factor().factor() as f32;
-                    let pos = oriterm_ui::geometry::Point::new(
-                        position.x as f32 / scale,
-                        position.y as f32 / scale,
-                    );
-                    if let Some(renderer) = ctx.renderer.as_ref() {
-                        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-                        let event_ctx = oriterm_ui::widgets::EventCtx {
-                            measurer: &measurer,
-                            bounds: oriterm_ui::geometry::Rect::default(),
-                            is_focused: false,
-                            focused_widget: None,
-                            theme: &self.ui_theme,
-                        };
-                        let resp = ctx.tab_bar.update_control_hover(pos, &event_ctx);
-                        if resp.response == oriterm_ui::input::EventResponse::RequestRedraw {
-                            ctx.dirty = true;
-                        }
-                    }
-                }
-            }
-        }
+        #[cfg(not(target_os = "macos"))]
+        self.update_control_hover_animation(position, &hit);
 
         // Apply hover hit, redraw on change.
         if let Some(ctx) = self.focused_ctx_mut() {
@@ -181,6 +205,57 @@ impl App {
                 ctx.tab_bar.set_hover_hit(hit, Instant::now());
                 ctx.dirty = true;
             }
+        }
+    }
+
+    /// Drive control button hover animation for the focused window.
+    ///
+    /// Forwards the cursor position and hit result to the tab bar's
+    /// control hover handler, which manages fade-in/fade-out animations
+    /// on minimize, maximize, and close buttons.
+    #[cfg(not(target_os = "macos"))]
+    fn update_control_hover_animation(
+        &mut self,
+        position: winit::dpi::PhysicalPosition<f64>,
+        hit: &oriterm_ui::widgets::tab_bar::TabBarHit,
+    ) {
+        use oriterm_ui::widgets::tab_bar::TabBarHit;
+        let is_control_hit = matches!(
+            hit,
+            TabBarHit::Minimize | TabBarHit::Maximize | TabBarHit::CloseWindow
+        );
+
+        let Some(ctx) = self
+            .focused_window_id
+            .and_then(|id| self.windows.get_mut(&id))
+        else {
+            return;
+        };
+        if !is_control_hit && ctx.tab_bar.hover_hit() == *hit {
+            return;
+        }
+        let scale = ctx.window.scale_factor().factor() as f32;
+        let pos =
+            oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
+        let Some(renderer) = ctx.renderer.as_ref() else {
+            return;
+        };
+        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let event_ctx = oriterm_ui::widgets::EventCtx {
+            measurer: &measurer,
+            bounds: Rect::default(),
+            is_focused: false,
+            focused_widget: None,
+            theme: &self.ui_theme,
+        };
+        let resp = ctx.tab_bar.update_control_hover(pos, &event_ctx);
+        if matches!(
+            resp.response,
+            oriterm_ui::input::EventResponse::RequestPaint
+                | oriterm_ui::input::EventResponse::RequestLayout
+                | oriterm_ui::input::EventResponse::RequestRedraw
+        ) {
+            ctx.dirty = true;
         }
     }
 
@@ -201,13 +276,14 @@ impl App {
                 Instant::now(),
             );
         }
-        // Clear control button hover animation.
+        // Clear control button hover animation (not on macOS — native traffic lights).
+        #[cfg(not(target_os = "macos"))]
         if let Some(renderer) = ctx.renderer.as_ref() {
             let scale = ctx.window.scale_factor().factor() as f32;
             let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
             let event_ctx = oriterm_ui::widgets::EventCtx {
                 measurer: &measurer,
-                bounds: oriterm_ui::geometry::Rect::default(),
+                bounds: Rect::default(),
                 is_focused: false,
                 focused_widget: None,
                 theme: &self.ui_theme,

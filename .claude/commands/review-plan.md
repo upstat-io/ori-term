@@ -194,6 +194,14 @@ requires human judgement rather than mechanical fixes.}
 - **SIGNIFICANT REWORK APPLIED**: Substantial edits (reordered steps, added missing sections, fixed incorrect assumptions). Review the diff before proceeding.
 - **NEEDS MANUAL ATTENTION**: Issues found that require human judgement — architectural decisions, ambiguous scope, conflicting requirements. Cannot be auto-fixed.
 
+### Step 6: Update Review Gate
+
+After the review completes (any verdict except NEEDS MANUAL ATTENTION), update the plan's frontmatter to mark it as reviewed:
+
+- If the plan file has `reviewed: false`, change it to `reviewed: true`
+- If the plan file has no `reviewed` field, add `reviewed: true` after the `status` field
+- This clears the review gate so `/continue-roadmap` can proceed without warning
+
 ## Important Rules
 
 1. **Agents edit directly** — This is not a report-only review. Agents fix what they find.

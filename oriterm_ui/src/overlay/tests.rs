@@ -8,7 +8,7 @@ use crate::geometry::{Point, Rect, Size};
 use crate::input::{Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::theme::UiTheme;
 use crate::widgets::button::ButtonWidget;
-use crate::widgets::flex::FlexWidget;
+use crate::widgets::container::ContainerWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, Widget, WidgetAction};
@@ -569,10 +569,8 @@ fn mouse_click_outside_dismisses() {
         OverlayEventResult::Dismissed(dismissed_id) => assert_eq!(dismissed_id, id),
         other => panic!("expected Dismissed, got {other:?}"),
     }
-    // Active count drops immediately; overlay is now in dismissing vec.
+    // Popups are removed instantly — no dismissing phase.
     assert_eq!(mgr.count(), 0);
-    // Complete fade-out to fully clean up.
-    complete_animations(&mut mgr, &mut tree, &mut animator);
     assert!(mgr.is_empty());
 }
 
@@ -1044,6 +1042,7 @@ fn draw_non_modal_no_dimming() {
         now,
         animations_running: &anim_flag,
         theme: &TEST_THEME,
+        icons: None,
     };
 
     assert_eq!(mgr.draw_count(), 1);
@@ -1089,6 +1088,7 @@ fn draw_modal_emits_dimming_rect() {
         now: future,
         animations_running: &anim_flag,
         theme: &TEST_THEME,
+        icons: None,
     };
 
     assert_eq!(mgr.draw_count(), 1);
@@ -1148,6 +1148,7 @@ fn draw_overlays_in_painter_order() {
             now,
             animations_running: &anim_flag,
             theme: &TEST_THEME,
+            icons: None,
         };
         mgr.draw_overlay_at(i, &mut ctx, &tree);
     }
@@ -1885,6 +1886,7 @@ fn draw_stacked_modals_emits_two_dim_rects() {
             now: future,
             animations_running: &anim_flag,
             theme: &TEST_THEME,
+            icons: None,
         };
         mgr.draw_overlay_at(i, &mut ctx, &tree);
     }
@@ -1930,7 +1932,8 @@ fn modal_focus_order_traverses_containers() {
     let btn1_id = btn1.id();
     let btn2 = ButtonWidget::new("Cancel");
     let btn2_id = btn2.id();
-    let flex: Box<dyn Widget> = Box::new(FlexWidget::row(vec![Box::new(btn1), Box::new(btn2)]));
+    let flex: Box<dyn Widget> =
+        Box::new(ContainerWidget::row().with_children(vec![Box::new(btn1), Box::new(btn2)]));
 
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
@@ -1975,18 +1978,11 @@ fn dismiss_during_fade_in_starts_fade_out() {
 
     // Don't tick — the fade-in has not started yet.
     // Immediately dismiss.
-    assert!(mgr.begin_dismiss(id, &tree, &mut animator, now));
+    assert!(mgr.begin_dismiss(id, &mut tree, &mut animator, now));
     assert_eq!(mgr.count(), 0, "active count drops immediately");
 
-    // Draw count includes dismissing overlay.
-    assert_eq!(mgr.draw_count(), 1, "dismissing overlay still drawn");
-
-    // Not fully empty until animation completes.
-    assert!(!mgr.is_empty(), "still has dismissing overlay");
-
-    // Advance past all animations and clean up.
-    complete_animations(&mut mgr, &mut tree, &mut animator);
-    assert!(mgr.is_empty(), "fully cleaned up");
+    // Popups are removed instantly (no fade-out), so it should be fully empty.
+    assert!(mgr.is_empty(), "popup fully cleaned up immediately");
     assert_eq!(mgr.draw_count(), 0);
 }
 
@@ -2007,25 +2003,64 @@ fn double_dismiss_is_noop() {
         now,
     );
 
-    assert!(mgr.begin_dismiss(id, &tree, &mut animator, now));
-    // Second dismiss: overlay is in dismissing vec, not active.
+    assert!(mgr.begin_dismiss(id, &mut tree, &mut animator, now));
+    // Second dismiss: popup was already removed instantly, not in active stack.
     assert!(
-        !mgr.begin_dismiss(id, &tree, &mut animator, now),
+        !mgr.begin_dismiss(id, &mut tree, &mut animator, now),
         "second dismiss should be no-op"
     );
 }
 
 #[test]
-fn draw_overlay_at_returns_opacity_from_layer_tree() {
+fn popup_starts_at_full_opacity() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
     let now = Instant::now();
 
     mgr.push_overlay(
-        label_widget("Fade"),
+        label_widget("Popup"),
         anchor(),
         Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    // Popups appear instantly at full opacity (no fade-in).
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let anim_flag = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now,
+        animations_running: &anim_flag,
+        theme: &TEST_THEME,
+        icons: None,
+    };
+
+    let opacity = mgr.draw_overlay_at(0, &mut ctx, &tree);
+    assert!(
+        (opacity - 1.0).abs() < f32::EPSILON,
+        "popup should start at full opacity, got {opacity}",
+    );
+}
+
+#[test]
+fn modal_fades_in_from_zero() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    mgr.push_modal(
+        label_widget("Modal"),
+        anchor(),
+        Placement::Center,
         &mut tree,
         &mut animator,
         now,
@@ -2044,33 +2079,14 @@ fn draw_overlay_at_returns_opacity_from_layer_tree() {
         now,
         animations_running: &anim_flag,
         theme: &TEST_THEME,
+        icons: None,
     };
 
-    let opacity_before = mgr.draw_overlay_at(0, &mut ctx, &tree);
+    // Modal appears instantly — opacity is 1.0 at t=0 (no fade-in).
+    let opacity = mgr.draw_overlay_at(0, &mut ctx, &tree);
     assert!(
-        opacity_before < 1.0,
-        "opacity at t=0 should be < 1.0 (initial = 0.0), got {opacity_before}",
-    );
-
-    // Tick past the animation duration.
-    let future = now + Duration::from_secs(1);
-    animator.tick(&mut tree, future);
-
-    draw_list = DrawList::new();
-    let mut ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds: Rect::default(),
-        focused_widget: None,
-        now: future,
-        animations_running: &anim_flag,
-        theme: &TEST_THEME,
-    };
-
-    let opacity_after = mgr.draw_overlay_at(0, &mut ctx, &tree);
-    assert!(
-        (opacity_after - 1.0).abs() < f32::EPSILON,
-        "opacity after fade-in = {opacity_after}",
+        (opacity - 1.0).abs() < f32::EPSILON,
+        "modal opacity at t=0 should be 1.0 (instant), got {opacity}",
     );
 }
 
@@ -2091,7 +2107,7 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
     );
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
-    // Before tick: dim layer opacity is 0.0, so dim rect alpha should be 0.
+    // Modal appears instantly — dim layer starts at opacity 1.0 (no fade-in).
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let anim_flag = Cell::new(false);
@@ -2103,48 +2119,19 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
         now,
         animations_running: &anim_flag,
         theme: &TEST_THEME,
+        icons: None,
     };
 
     mgr.draw_overlay_at(0, &mut ctx, &tree);
 
-    // Dim rect is the first command.
-    let dim_cmd = &draw_list.commands()[0];
-    match dim_cmd {
-        DrawCommand::Rect { style, .. } => {
-            let fill = style.fill.expect("dim rect has fill");
-            assert!(
-                fill.a < f32::EPSILON,
-                "dim alpha at t=0 should be ~0, got {}",
-                fill.a,
-            );
-        }
-        other => panic!("expected dim Rect, got {other:?}"),
-    }
-
-    // Tick past animation.
-    let future = now + Duration::from_secs(1);
-    animator.tick(&mut tree, future);
-
-    draw_list = DrawList::new();
-    let mut ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds: Rect::default(),
-        focused_widget: None,
-        now: future,
-        animations_running: &anim_flag,
-        theme: &TEST_THEME,
-    };
-
-    mgr.draw_overlay_at(0, &mut ctx, &tree);
-
+    // Dim rect is the first command — alpha should be 0.5 immediately.
     let dim_cmd = &draw_list.commands()[0];
     match dim_cmd {
         DrawCommand::Rect { style, .. } => {
             let fill = style.fill.expect("dim rect has fill");
             assert!(
                 fill.a > 0.4,
-                "dim alpha after fade-in should be ~0.5, got {}",
+                "dim alpha at t=0 should be ~0.5 (instant), got {}",
                 fill.a,
             );
         }

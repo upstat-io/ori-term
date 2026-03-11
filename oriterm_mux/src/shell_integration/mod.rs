@@ -52,9 +52,11 @@ pub(crate) fn detect_shell(program: &str) -> Option<Shell> {
 
 /// Set common identification env vars on a command.
 ///
-/// These variables are set regardless of shell type and tell the child
-/// process that it's running inside oriterm.
-fn set_common_env(cmd: &mut CommandBuilder) {
+/// Single source of truth for oriterm identification env vars
+/// (`ORITERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`). Called
+/// unconditionally from `build_command` regardless of shell integration
+/// setting.
+pub(crate) fn set_common_env(cmd: &mut CommandBuilder) {
     cmd.env("ORITERM", "1");
     cmd.env("TERM_PROGRAM", "oriterm");
     cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
