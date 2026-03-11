@@ -362,6 +362,11 @@ impl ApplicationHandler<TermEvent> for App {
         #[cfg(target_os = "windows")]
         self.check_torn_off_merge();
 
+        // macOS: update torn-off window position every frame as a backup.
+        // CursorMoved events may not always reach the source window.
+        #[cfg(target_os = "macos")]
+        self.update_torn_off_drag();
+
         // Pump mux events: drain PTY reader thread messages and process
         // resulting notifications before rendering.
         self.pump_mux_events();

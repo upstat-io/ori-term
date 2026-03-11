@@ -10,8 +10,11 @@
 #![allow(unsafe_code, reason = "Objective-C FFI via objc2")]
 
 mod fullscreen;
+mod types;
 
 pub use fullscreen::take_fullscreen_events;
+
+use types::{NSPoint, NSRect};
 
 use std::ptr::NonNull;
 
@@ -292,48 +295,6 @@ fn disable_titlebar_drag(window: &Window) {
 
 /// Traffic light button diameter in points.
 const TRAFFIC_LIGHT_SIZE: f64 = 12.0;
-
-/// `NSPoint` / `CGPoint` — two `f64` fields on 64-bit macOS.
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct NSPoint {
-    x: f64,
-    y: f64,
-}
-
-/// `NSRect` / `CGRect` — origin + size, four `f64` fields on 64-bit macOS.
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct NSRect {
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-}
-
-// SAFETY: These are plain C structs matching Apple's ABI for msg_send returns.
-unsafe impl objc2::Encode for NSPoint {
-    const ENCODING: objc2::Encoding = objc2::Encoding::Struct(
-        "CGPoint",
-        &[objc2::Encoding::Double, objc2::Encoding::Double],
-    );
-}
-
-unsafe impl objc2::Encode for NSRect {
-    const ENCODING: objc2::Encoding = objc2::Encoding::Struct(
-        "CGRect",
-        &[
-            objc2::Encoding::Struct(
-                "CGPoint",
-                &[objc2::Encoding::Double, objc2::Encoding::Double],
-            ),
-            objc2::Encoding::Struct(
-                "CGSize",
-                &[objc2::Encoding::Double, objc2::Encoding::Double],
-            ),
-        ],
-    );
-}
 
 /// Vertically center the macOS traffic light buttons within the tab bar.
 ///
