@@ -19,8 +19,8 @@ use types::{NSPoint, NSRect};
 use std::ptr::NonNull;
 
 use objc2::ffi::NSInteger;
-use objc2::runtime::{AnyClass, AnyObject};
 use objc2::msg_send;
+use objc2::runtime::{AnyClass, AnyObject};
 
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
@@ -171,8 +171,7 @@ pub fn reapply_traffic_lights(window: &Window, caption_height: f32) {
 ///
 /// `nswindow` must be a valid, non-null `NSWindow` pointer.
 unsafe fn center_and_disable_drag_raw(nswindow: *mut AnyObject) {
-    let logical_height =
-        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT as f64;
+    let logical_height = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT as f64;
 
     // Get the close button to find the titlebar container view hierarchy.
     let close_button: *mut AnyObject = msg_send![nswindow, standardWindowButton: 0i64];
@@ -224,7 +223,10 @@ unsafe fn center_and_disable_drag_raw(nswindow: *mut AnyObject) {
         if (new_y - frame.y).abs() < 0.5 {
             continue;
         }
-        let origin = NSPoint { x: frame.x, y: new_y };
+        let origin = NSPoint {
+            x: frame.x,
+            y: new_y,
+        };
         let _: () = msg_send![button, setFrameOrigin: origin];
     }
 
@@ -246,8 +248,7 @@ unsafe fn center_and_disable_drag_raw(nswindow: *mut AnyObject) {
 ///
 /// `nswindow` must be a valid, non-null `NSWindow` pointer.
 unsafe fn reposition_buttons_raw(nswindow: *mut AnyObject) {
-    let logical_height =
-        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT as f64;
+    let logical_height = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT as f64;
 
     let ca = AnyClass::get("CATransaction").expect("CATransaction not found");
     let _: () = msg_send![ca, begin];
@@ -269,7 +270,10 @@ unsafe fn reposition_buttons_raw(nswindow: *mut AnyObject) {
         if (new_y - frame.y).abs() < 0.5 {
             continue;
         }
-        let origin = NSPoint { x: frame.x, y: new_y };
+        let origin = NSPoint {
+            x: frame.x,
+            y: new_y,
+        };
         let _: () = msg_send![button, setFrameOrigin: origin];
     }
 
@@ -315,8 +319,7 @@ fn center_traffic_lights(window: &Window, caption_height: f32) {
 
     // Get the close button to find the titlebar container view hierarchy.
     // Button → superview (NSTitlebarView) → superview (NSTitlebarContainerView).
-    let close_button: *mut AnyObject =
-        unsafe { msg_send![nswindow, standardWindowButton: 0i64] };
+    let close_button: *mut AnyObject = unsafe { msg_send![nswindow, standardWindowButton: 0i64] };
     if close_button.is_null() {
         return;
     }
@@ -371,7 +374,10 @@ fn center_traffic_lights(window: &Window, caption_height: f32) {
         if (new_y - frame.y).abs() < 0.5 {
             continue;
         }
-        let origin = NSPoint { x: frame.x, y: new_y };
+        let origin = NSPoint {
+            x: frame.x,
+            y: new_y,
+        };
         unsafe {
             let _: () = msg_send![button, setFrameOrigin: origin];
         }

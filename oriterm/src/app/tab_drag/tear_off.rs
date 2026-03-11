@@ -128,12 +128,7 @@ impl App {
 
     /// Position the torn-off window under the cursor (macOS).
     #[cfg(target_os = "macos")]
-    fn position_torn_off_window(
-        &self,
-        new_winit_id: WindowId,
-        mouse_offset: f32,
-        origin_y: f32,
-    ) {
+    fn position_torn_off_window(&self, new_winit_id: WindowId, mouse_offset: f32, origin_y: f32) {
         let Some(ctx) = self.windows.get(&new_winit_id) else {
             return;
         };
@@ -212,7 +207,11 @@ impl App {
                 return;
             };
             ctx.tab_bar.set_drag_visual(None);
-            (drag.tab_id, drag.mouse_offset_in_tab, ctx.window.window_id())
+            (
+                drag.tab_id,
+                drag.mouse_offset_in_tab,
+                ctx.window.window_id(),
+            )
         };
         self.release_tab_width_lock();
 
@@ -231,12 +230,7 @@ impl App {
 
     /// Position the torn-off window under the cursor (Windows).
     #[cfg(target_os = "windows")]
-    fn position_torn_off_window(
-        &self,
-        new_winit_id: WindowId,
-        mouse_offset: f32,
-        origin_y: f32,
-    ) {
+    fn position_torn_off_window(&self, new_winit_id: WindowId, mouse_offset: f32, origin_y: f32) {
         let Some(ctx) = self.windows.get(&new_winit_id) else {
             return;
         };
@@ -330,6 +324,133 @@ impl App {
         self.begin_os_tab_drag(winit_id, tab_id, mouse_offset, origin_y);
     }
 
+    // -- Linux implementation --
+
+    /// Position the torn-off window under the cursor (Linux).
+    ///
+    /// Uses winit's cursor position relative to the source window plus the
+    /// source window's outer position to compute the screen-space location.
+    #[cfg(target_os = "linux")]
+    fn position_torn_off_window(&self, new_winit_id: WindowId, mouse_offset: f32, origin_y: f32) {
+        let Some(ctx) = self.windows.get(&new_winit_id) else {
+            return;
+        };
+        let scale = ctx.window.scale_factor().factor() as f32;
+        let grab_x = (TAB_LEFT_MARGIN + mouse_offset) * scale;
+        let grab_y = origin_y * scale;
+
+        let cursor = self.mouse.cursor_pos();
+        if let Some(src_ctx) = self.focused_ctx() {
+            if let Ok(outer) = src_ctx.window.window().outer_position() {
+                let pos_x = outer.x as f32 + cursor.x as f32 - grab_x;
+                let pos_y = outer.y as f32 + cursor.y as f32 - grab_y;
+                ctx.window
+                    .window()
+                    .set_outer_position(winit::dpi::PhysicalPosition::new(
+                        pos_x as i32,
+                        pos_y as i32,
+                    ));
+            }
+        }
+    }
+
+    /// Show the torn-off window (Linux).
+    #[cfg(target_os = "linux")]
+    fn show_torn_off_window(&self, new_winit_id: WindowId) {
+        if let Some(ctx) = self.windows.get(&new_winit_id) {
+            ctx.window.set_visible(true);
+        }
+    }
+
+    /// Start drag tracking on the torn-off window (Linux).
+    ///
+    /// On X11: manual tracking with merge detection (clients can position
+    /// windows via `set_outer_position`). On Wayland: compositor-managed
+    /// `drag_window()` since clients cannot set their own position.
+    #[cfg(target_os = "linux")]
+    fn begin_os_tab_drag(
+        &mut self,
+        winit_id: WindowId,
+        tab_id: TabId,
+        mouse_offset: f32,
+        _origin_y: f32,
+    ) {
+        if Self::is_x11_window(winit_id, &self.windows) {
+            let tear_off_origin = self.screen_cursor_pos().unwrap_or((0, 0));
+            self.torn_off_pending = Some(super::TornOffPending {
+                winit_id,
+                tab_id,
+                mouse_offset,
+                merge_enabled: false,
+                tear_off_origin,
+            });
+        } else {
+            // Wayland: compositor-managed drag (no merge detection).
+            if let Some(ctx) = self.windows.get(&winit_id) {
+                if let Err(e) = ctx.window.window().drag_window() {
+                    log::warn!("drag_window failed: {e}");
+                }
+            }
+        }
+    }
+
+    /// Drag a single-tab window directly (Linux).
+    ///
+    /// Uses `drag_window()` for reliable window movement on both X11
+    /// and Wayland.
+    #[cfg(target_os = "linux")]
+    pub(super) fn begin_single_tab_os_drag(&mut self, _event_loop: &ActiveEventLoop) {
+        let winit_id = {
+            let Some(ctx) = self.focused_ctx_mut() else {
+                return;
+            };
+            let _drag = ctx.tab_drag.take();
+            ctx.tab_bar.set_drag_visual(None);
+            ctx.window.window_id()
+        };
+        self.release_tab_width_lock();
+
+        if let Some(ctx) = self.windows.get(&winit_id) {
+            if let Err(e) = ctx.window.window().drag_window() {
+                log::warn!("drag_window failed: {e}");
+            }
+        }
+    }
+
+    /// Compute screen cursor position from source window + local cursor.
+    ///
+    /// Uses the focused (source) window's outer position plus the
+    /// winit-tracked cursor position to derive screen coordinates.
+    /// Works on X11 where the implicit grab delivers events to the
+    /// button-down window even when the cursor is outside the window.
+    #[cfg(target_os = "linux")]
+    pub(super) fn screen_cursor_pos(&self) -> Option<(i32, i32)> {
+        let cursor = self.mouse.cursor_pos();
+        let src_ctx = self.focused_ctx()?;
+        let outer = src_ctx.window.window().outer_position().ok()?;
+        Some((outer.x + cursor.x as i32, outer.y + cursor.y as i32))
+    }
+
+    /// Check whether a window is using the X11 display server.
+    ///
+    /// Returns `true` for X11 (Xlib), `false` for Wayland or unknown.
+    /// Used to decide between manual drag tracking (X11, where clients
+    /// can position windows) and compositor-managed `drag_window()`
+    /// (Wayland, where `set_outer_position` is a no-op).
+    #[cfg(target_os = "linux")]
+    fn is_x11_window(
+        winit_id: WindowId,
+        windows: &std::collections::HashMap<WindowId, super::super::window_context::WindowContext>,
+    ) -> bool {
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        windows.get(&winit_id).is_some_and(|ctx| {
+            matches!(
+                ctx.window.window().window_handle().map(|h| h.as_raw()),
+                Ok(RawWindowHandle::Xlib(_))
+            )
+        })
+    }
+
     /// Collect tab bar merge rects from all primary windows except `exclude`.
     #[cfg(target_os = "windows")]
     fn collect_merge_rects(&self, exclude: WindowId) -> Vec<[i32; 4]> {
@@ -345,8 +466,7 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             let tab_bar_h = (TAB_BAR_HEIGHT * scale).round() as i32;
             let controls_w = (CONTROLS_ZONE_WIDTH * scale).round() as i32;
-            if let Some((l, t, r, _)) =
-                platform_windows::visible_frame_bounds(ctx.window.window())
+            if let Some((l, t, r, _)) = platform_windows::visible_frame_bounds(ctx.window.window())
             {
                 rects.push([l, t, r - controls_w, t + tab_bar_h]);
             }

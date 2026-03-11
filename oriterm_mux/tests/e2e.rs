@@ -643,17 +643,26 @@ fn test_snapshot_dirty_flag() {
 
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Clear initial dirty state.
-    client.poll_events();
+    // Clear initial dirty state. The daemon refresh is async (triggers
+    // MarkAllDirty → server pushes snapshot), so poll until the pushed
+    // snapshot arrives and the clear succeeds.
     let mut notifs = Vec::new();
-    client.drain_notifications(&mut notifs);
-    client.refresh_pane_snapshot(pane_id);
-    client.clear_pane_snapshot_dirty(pane_id);
-
-    assert!(
-        !client.is_pane_snapshot_dirty(pane_id),
-        "dirty flag should be false after clear"
-    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        client.refresh_pane_snapshot(pane_id);
+        client.clear_pane_snapshot_dirty(pane_id);
+        if !client.is_pane_snapshot_dirty(pane_id) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for clean snapshot state"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 
     // Generate output to make it dirty.
     client.send_input(pane_id, b"echo DIRTY_TEST\n");

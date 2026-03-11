@@ -186,6 +186,10 @@ impl App {
         let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
         gpu.clear_surface(window.surface(), palette.background(), opacity);
         window.set_visible(true);
+        // On Linux (X11/Wayland), a newly created window is not guaranteed to
+        // receive input focus. Explicitly request it so the terminal is
+        // immediately interactive.
+        window.window().focus_window();
 
         let winit_id = window.window_id();
         let ctx = WindowContext::new(window, tab_bar_widget, grid_widget, Some(renderer));
@@ -281,9 +285,8 @@ impl App {
 
         // Reserve space for macOS traffic light buttons on the left.
         #[cfg(target_os = "macos")]
-        tab_bar_widget.set_left_inset(
-            oriterm_ui::widgets::tab_bar::constants::MACOS_TRAFFIC_LIGHT_WIDTH,
-        );
+        tab_bar_widget
+            .set_left_inset(oriterm_ui::widgets::tab_bar::constants::MACOS_TRAFFIC_LIGHT_WIDTH);
 
         tab_bar_widget.set_tabs(vec![oriterm_ui::widgets::tab_bar::TabEntry::new("")]);
 

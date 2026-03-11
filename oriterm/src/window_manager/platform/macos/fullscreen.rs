@@ -93,8 +93,7 @@ pub(super) fn install_fullscreen_observers(window: &Window) {
             return;
         }
 
-        let nc_cls =
-            AnyClass::get("NSNotificationCenter").expect("NSNotificationCenter not found");
+        let nc_cls = AnyClass::get("NSNotificationCenter").expect("NSNotificationCenter not found");
         let center: *mut AnyObject = msg_send![nc_cls, defaultCenter];
         let str_cls = AnyClass::get("NSString").expect("NSString not found");
 
@@ -118,8 +117,7 @@ pub(super) fn install_fullscreen_observers(window: &Window) {
         ];
 
         for &(name_ptr, handler_sel) in registrations {
-            let ns_name: *mut AnyObject =
-                msg_send![str_cls, stringWithUTF8String: name_ptr];
+            let ns_name: *mut AnyObject = msg_send![str_cls, stringWithUTF8String: name_ptr];
             let _: () = msg_send![
                 center,
                 addObserver: observer,
@@ -132,15 +130,13 @@ pub(super) fn install_fullscreen_observers(window: &Window) {
         // Observe the titlebar container's frame changes. When macOS
         // rebuilds the container during transitions, this repositions
         // buttons (without resizing the container) to keep them centered.
-        let close_btn: *mut AnyObject =
-            msg_send![nswindow.as_ptr(), standardWindowButton: 0i64];
+        let close_btn: *mut AnyObject = msg_send![nswindow.as_ptr(), standardWindowButton: 0i64];
         if !close_btn.is_null() {
             let titlebar_view: *mut AnyObject = msg_send![close_btn, superview];
             if !titlebar_view.is_null() {
                 let container: *mut AnyObject = msg_send![titlebar_view, superview];
                 if !container.is_null() {
-                    let _: () =
-                        msg_send![container, setPostsFrameChangedNotifications: true];
+                    let _: () = msg_send![container, setPostsFrameChangedNotifications: true];
                     let name: *mut AnyObject = msg_send![
                         str_cls,
                         stringWithUTF8String:
@@ -202,11 +198,7 @@ fn fullscreen_observer_class() -> &'static AnyClass {
     })
 }
 
-unsafe extern "C" fn handle_will_exit_fs(
-    _this: &AnyObject,
-    _cmd: Sel,
-    notif: *mut AnyObject,
-) {
+unsafe extern "C" fn handle_will_exit_fs(_this: &AnyObject, _cmd: Sel, notif: *mut AnyObject) {
     // Full center (container resize + button reposition) before the exit
     // animation. Runs synchronously before macOS captures the snapshot.
     if !notif.is_null() {
@@ -218,11 +210,7 @@ unsafe extern "C" fn handle_will_exit_fs(
     FULLSCREEN_EVENTS.fetch_or(FS_WILL_EXIT, Ordering::Release);
 }
 
-unsafe extern "C" fn handle_did_exit_fs(
-    _this: &AnyObject,
-    _cmd: Sel,
-    notif: *mut AnyObject,
-) {
+unsafe extern "C" fn handle_did_exit_fs(_this: &AnyObject, _cmd: Sel, notif: *mut AnyObject) {
     // Full center after the animation completes. macOS may have rebuilt
     // the titlebar at default height during the transition.
     if !notif.is_null() {
@@ -234,19 +222,11 @@ unsafe extern "C" fn handle_did_exit_fs(
     FULLSCREEN_EVENTS.fetch_or(FS_DID_EXIT, Ordering::Release);
 }
 
-unsafe extern "C" fn handle_will_enter_fs(
-    _this: &AnyObject,
-    _cmd: Sel,
-    _notif: *mut AnyObject,
-) {
+unsafe extern "C" fn handle_will_enter_fs(_this: &AnyObject, _cmd: Sel, _notif: *mut AnyObject) {
     FULLSCREEN_EVENTS.fetch_or(FS_WILL_ENTER, Ordering::Release);
 }
 
-unsafe extern "C" fn handle_did_enter_fs(
-    _this: &AnyObject,
-    _cmd: Sel,
-    _notif: *mut AnyObject,
-) {
+unsafe extern "C" fn handle_did_enter_fs(_this: &AnyObject, _cmd: Sel, _notif: *mut AnyObject) {
     // No-op — observed for completeness.
 }
 
@@ -256,11 +236,7 @@ unsafe extern "C" fn handle_did_enter_fs(
 /// container (`setFrame:`). This avoids the `_syncToolbarPosition` infinite
 /// recursion on macOS 26 that the full `center_and_disable_drag_raw` would
 /// trigger when called from a frame-change handler.
-unsafe extern "C" fn handle_frame_change(
-    _this: &AnyObject,
-    _cmd: Sel,
-    notif: *mut AnyObject,
-) {
+unsafe extern "C" fn handle_frame_change(_this: &AnyObject, _cmd: Sel, notif: *mut AnyObject) {
     if !notif.is_null() {
         // The notification's object is the NSTitlebarContainerView.
         // Walk up to the NSWindow to call reposition_buttons_raw.

@@ -190,16 +190,12 @@ impl ApplicationHandler<TermEvent> for App {
                 self.update_tab_bar_hover(position);
 
                 // Tab drag: consume all cursor moves when active.
-                if self.update_tab_drag(
-                    position,
-                    #[cfg(any(target_os = "windows", target_os = "macos"))]
-                    event_loop,
-                ) {
+                if self.update_tab_drag(position, event_loop) {
                     return;
                 }
 
-                // macOS: track torn-off window under cursor during drag.
-                #[cfg(target_os = "macos")]
+                // macOS/Linux: track torn-off window under cursor during drag.
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
                 if self.update_torn_off_drag() {
                     return;
                 }
@@ -263,8 +259,8 @@ impl ApplicationHandler<TermEvent> for App {
                         return;
                     }
                 }
-                // macOS: finish torn-off drag on mouse-up → check merge.
-                #[cfg(target_os = "macos")]
+                // macOS/Linux: finish torn-off drag on mouse-up → check merge.
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
                 if button == winit::event::MouseButton::Left
                     && state == winit::event::ElementState::Released
                     && self.torn_off_pending.is_some()
@@ -362,9 +358,9 @@ impl ApplicationHandler<TermEvent> for App {
         #[cfg(target_os = "windows")]
         self.check_torn_off_merge();
 
-        // macOS: update torn-off window position every frame as a backup.
+        // macOS/Linux: update torn-off window position every frame as a backup.
         // CursorMoved events may not always reach the source window.
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         self.update_torn_off_drag();
 
         // Pump mux events: drain PTY reader thread messages and process
@@ -427,10 +423,16 @@ impl ApplicationHandler<TermEvent> for App {
         // lets the event loop sleep indefinitely when nothing is animating.
         //
         // Re-check: widget animations may set dirty during draw.
-        let still_dirty = self.windows.values().any(|c| c.dirty)
-            || self.dialogs.values().any(|c| c.dirty);
-        let has_animations = self.windows.values().any(|c| c.layer_animator.is_any_animating())
-            || self.dialogs.values().any(|c| c.layer_animator.is_any_animating());
+        let still_dirty =
+            self.windows.values().any(|c| c.dirty) || self.dialogs.values().any(|c| c.dirty);
+        let has_animations = self
+            .windows
+            .values()
+            .any(|c| c.layer_animator.is_any_animating())
+            || self
+                .dialogs
+                .values()
+                .any(|c| c.layer_animator.is_any_animating());
         if (any_dirty && !budget_elapsed) || still_dirty {
             // Dirty but budget not yet elapsed, or re-dirtied by widget
             // animations during render — wake up when budget allows.
