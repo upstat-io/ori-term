@@ -183,30 +183,48 @@ impl App {
         mouse_offset: f32,
         _origin_y: f32,
     ) {
+        use crate::window_manager::platform::macos;
         self.torn_off_pending = Some(super::TornOffPending {
             winit_id,
             tab_id,
             mouse_offset,
+            merge_enabled: false,
+            tear_off_origin: macos::cursor_screen_pos(),
         });
     }
 
     /// Drag a single-tab window directly (macOS).
     ///
-    /// When there's only one tab, dragging it moves the entire window.
+    /// Instead of native `drag_window()` (which bypasses merge detection),
+    /// enter the torn-off tracking state so that continuous merge detection
+    /// runs during the drag. This lets the user drag a single-tab window
+    /// back onto another window's tab bar to merge.
     #[cfg(target_os = "macos")]
     pub(super) fn begin_single_tab_window_drag(&mut self) {
-        // Clean up the drag state first.
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.tab_drag.take();
+        use crate::window_manager::platform::macos;
+
+        // Extract drag info before cleaning up.
+        let (tab_id, mouse_offset, winit_id) = {
+            let Some(ctx) = self.focused_ctx_mut() else {
+                return;
+            };
+            let Some(drag) = ctx.tab_drag.take() else {
+                return;
+            };
             ctx.tab_bar.set_drag_visual(None);
-        }
+            (drag.tab_id, drag.mouse_offset_in_tab, ctx.window.window_id())
+        };
         self.release_tab_width_lock();
 
-        if let Some(ctx) = self.focused_ctx() {
-            if let Err(e) = ctx.window.window().drag_window() {
-                log::warn!("drag_window failed: {e}");
-            }
-        }
+        // Enter torn-off tracking — the event loop will move the window
+        // under the cursor and check for merge on every frame.
+        self.torn_off_pending = Some(super::TornOffPending {
+            winit_id,
+            tab_id,
+            mouse_offset,
+            merge_enabled: false,
+            tear_off_origin: macos::cursor_screen_pos(),
+        });
     }
 
     // -- Windows implementation --

@@ -74,6 +74,16 @@ pub(crate) struct TornOffPending {
     /// Cursor offset from the tab's left edge at drag start.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub mouse_offset: f32,
+    /// Whether the cursor has moved far enough from the tear-off point
+    /// to allow merges. Set to `true` once the cursor exceeds
+    /// `MIN_MERGE_DISTANCE` from the tear-off origin. Once enabled,
+    /// stays enabled — prevents immediate snap-back while allowing
+    /// the user to drag back to the source window's tab bar.
+    #[cfg(target_os = "macos")]
+    pub merge_enabled: bool,
+    /// Screen cursor position at tear-off time (for merge exclusion).
+    #[cfg(target_os = "macos")]
+    pub tear_off_origin: (i32, i32),
 }
 
 // -- Pure computation helpers (testable without App) --
