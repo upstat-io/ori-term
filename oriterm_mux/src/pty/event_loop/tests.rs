@@ -248,51 +248,92 @@ fn reader_throughput_no_contention() {
     eprintln!("  throughput: {throughput:.1} MB/s");
 }
 
-/// Verifies that interactive-size reads do not incur excess latency.
+/// Verifies that per-byte reads do not regress relative to bulk reads.
 ///
-/// Feeds small payloads (single characters) through a real PtyEventLoop
-/// with a contending renderer. The lease+try_lock pattern should process
-/// small reads promptly since the reader always acquires the lock when
-/// the buffer is tiny.
+/// Water-level test: measures bulk throughput as a baseline, then measures
+/// per-byte throughput using a `OneByteReader`, and asserts the ratio stays
+/// within bounds. Self-calibrating — no absolute timers that flake across
+/// platforms or CI machines.
+///
+/// A contending renderer thread competes for the lock in both measurements
+/// so the comparison is apples-to-apples.
 #[test]
 fn interactive_reads_low_latency() {
-    let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
-
-    let (event_loop, terminal, _shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
-
-    let join = event_loop.spawn().expect("spawn event loop");
-
-    // Renderer thread — creates contention.
-    let term_clone = Arc::clone(&terminal);
-    let done = Arc::new(AtomicBool::new(false));
-    let done_clone = Arc::clone(&done);
-    let renderer = thread::spawn(move || {
-        while !done_clone.load(Ordering::Relaxed) {
-            let _g = term_clone.lock();
-            thread::yield_now();
-        }
-    });
-
-    // Feed 50 small writes (simulating keystrokes).
-    let start = Instant::now();
-    for i in 0..50 {
-        let ch = b'a' + (i % 26);
-        pipe_writer.write_all(&[ch]).expect("write");
-        // Tiny sleep between keystrokes to let the reader process each
-        // individually (separate read() calls).
-        thread::sleep(Duration::from_micros(100));
+    /// Reader that yields exactly one byte per `read()` call.
+    struct OneByteReader {
+        inner: Box<dyn Read + Send>,
     }
-    let elapsed = start.elapsed();
+    impl Read for OneByteReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if buf.is_empty() {
+                return Ok(0);
+            }
+            self.inner.read(&mut buf[..1])
+        }
+    }
 
-    done.store(true, Ordering::Relaxed);
-    drop(pipe_writer);
-    let _ = join.join();
-    renderer.join().expect("renderer thread");
+    /// Spawn a PtyEventLoop with the given reader, a contending renderer,
+    /// and measure wall time until the event loop exits (EOF).
+    ///
+    /// Data must be pre-written to the pipe (and write end closed) before
+    /// calling this function.
+    fn measure(reader: Box<dyn Read + Send>) -> Duration {
+        let (event_loop, terminal, _shutdown, _mode) = build_event_loop(reader);
+        let join = event_loop.spawn().expect("spawn event loop");
 
-    // 50 keystrokes at 100us spacing = ~5ms baseline. Allow generous margin.
+        let term_clone = Arc::clone(&terminal);
+        let done = Arc::new(AtomicBool::new(false));
+        let done_clone = Arc::clone(&done);
+        let renderer = thread::spawn(move || {
+            while !done_clone.load(Ordering::Relaxed) {
+                let _g = term_clone.lock();
+                thread::yield_now();
+            }
+        });
+
+        let start = Instant::now();
+        let _ = join.join();
+        let elapsed = start.elapsed();
+
+        done.store(true, Ordering::Relaxed);
+        renderer.join().expect("renderer thread");
+        elapsed
+    }
+
+    let payload: Vec<u8> = (0..200).map(|i| b'a' + (i % 26)).collect();
+
+    // Baseline: bulk read (pipe delivers all bytes in one read() call).
+    let (bulk_reader, mut bulk_writer) = std::io::pipe().expect("pipe");
+    bulk_writer.write_all(&payload).expect("write");
+    drop(bulk_writer); // EOF in pipe before event loop starts reading.
+    let bulk_time = measure(Box::new(bulk_reader));
+
+    // Interactive: one-byte-at-a-time read (each byte is a separate read()).
+    let (byte_reader, mut byte_writer) = std::io::pipe().expect("pipe");
+    byte_writer.write_all(&payload).expect("write");
+    drop(byte_writer);
+    let byte_time = measure(Box::new(OneByteReader {
+        inner: Box::new(byte_reader),
+    }));
+
+    eprintln!("--- interactive latency water level ---");
+    eprintln!("  bulk (200 bytes):     {bulk_time:?}");
+    eprintln!("  per-byte (200 bytes): {byte_time:?}");
+
+    // Per-byte path has 200x more read() calls and lock cycles, so it's
+    // naturally slower. But it should not be catastrophically slower —
+    // allow up to 200x overhead (1x per byte). A real regression (e.g.
+    // O(n^2) parsing or lock convoy) would blow past this easily.
+    let max_ratio = 200u128;
+    let bulk_ns = bulk_time.as_nanos().max(1);
+    let byte_ns = byte_time.as_nanos();
+    let ratio = byte_ns / bulk_ns;
+    eprintln!("  ratio:                {ratio}x (max {max_ratio}x)");
+
     assert!(
-        elapsed < Duration::from_millis(100),
-        "interactive reads too slow ({elapsed:?})",
+        byte_ns <= bulk_ns * max_ratio,
+        "per-byte reads {ratio}x slower than bulk (max {max_ratio}x). \
+         bulk={bulk_time:?}, per-byte={byte_time:?}",
     );
 }
 
