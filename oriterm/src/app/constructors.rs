@@ -96,7 +96,6 @@ impl App {
             pending_dropdown_id: None,
             pending_focus_out: None,
 
-            #[cfg(any(target_os = "windows", target_os = "macos"))]
             torn_off_pending: None,
 
             last_render: Instant::now(),
@@ -169,7 +168,6 @@ impl App {
             pending_dropdown_id: None,
             pending_focus_out: None,
 
-            #[cfg(any(target_os = "windows", target_os = "macos"))]
             torn_off_pending: None,
 
             last_render: Instant::now(),

@@ -402,10 +402,25 @@ macro_rules! muxbackend_contract_tests {
             let mut ctx = $factory();
             let pid = ctx.pane_id;
 
-            // Refresh + clear dirty.
-            ctx.b().refresh_pane_snapshot(pid);
-            ctx.b().clear_pane_snapshot_dirty(pid);
-            assert!(!ctx.b().is_pane_snapshot_dirty(pid), "should be clean");
+            // Refresh + clear dirty. In daemon mode the refresh is async
+            // (triggers MarkAllDirty → server pushes snapshot), so we must
+            // poll until the pushed snapshot arrives and the clear succeeds.
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                ctx.b().poll_events();
+                let mut n = Vec::new();
+                ctx.b().drain_notifications(&mut n);
+                ctx.b().refresh_pane_snapshot(pid);
+                ctx.b().clear_pane_snapshot_dirty(pid);
+                if !ctx.b().is_pane_snapshot_dirty(pid) {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "timed out waiting for clean snapshot state"
+                );
+                thread::sleep(Duration::from_millis(20));
+            }
 
             // Generate output → dirty.
             ctx.b().send_input(pid, b"echo DIRTY\n");

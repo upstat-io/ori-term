@@ -164,9 +164,7 @@ impl ProtocolCodec {
                     if e.kind() == io::ErrorKind::WouldBlock
                         || e.kind() == io::ErrorKind::TimedOut =>
                 {
-                    return Err(DecodeError::Io(io::Error::from(
-                        io::ErrorKind::WouldBlock,
-                    )));
+                    return Err(DecodeError::Io(io::Error::from(io::ErrorKind::WouldBlock)));
                 }
                 Err(e) => return Err(DecodeError::Io(e)),
             }

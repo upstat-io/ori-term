@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 
-use oriterm_ui::geometry::Rect;
 #[cfg(not(target_os = "macos"))]
 use oriterm_ui::geometry::Point;
+use oriterm_ui::geometry::Rect;
 #[cfg(not(target_os = "macos"))]
 use oriterm_ui::input::{MouseButton, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::Placement;
