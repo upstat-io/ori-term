@@ -9,14 +9,18 @@ pub mod text_measurer;
 
 pub mod button;
 pub mod checkbox;
+pub mod container;
 pub mod dialog;
 pub mod dropdown;
-pub mod flex;
+pub mod form_layout;
+pub mod form_row;
+pub mod form_section;
 pub mod label;
 pub mod menu;
 pub mod panel;
 pub mod scroll;
 pub mod separator;
+pub mod settings_panel;
 pub mod slider;
 pub mod spacer;
 pub mod stack;
@@ -31,12 +35,29 @@ use std::time::Instant;
 
 use crate::draw::DrawList;
 use crate::geometry::Rect;
+use crate::icons::ResolvedIcons;
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::LayoutBox;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 pub use text_measurer::TextMeasurer;
+
+/// Whether a widget wants to acquire or release mouse capture.
+///
+/// Capture is a routing directive: when a widget acquires capture, all
+/// subsequent mouse events (Move, Up) are routed to that widget regardless
+/// of cursor position, until capture is released.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CaptureRequest {
+    /// No capture change requested.
+    #[default]
+    None,
+    /// Request mouse capture for the responding widget.
+    Acquire,
+    /// Release any active mouse capture.
+    Release,
+}
 
 /// How a widget responded to an event, including an optional semantic action.
 ///
@@ -49,6 +70,8 @@ pub struct WidgetResponse {
     pub response: EventResponse,
     /// Optional semantic action for the application layer to interpret.
     pub action: Option<WidgetAction>,
+    /// Whether the widget wants to acquire or release mouse capture.
+    pub capture: CaptureRequest,
 }
 
 impl WidgetResponse {
@@ -57,6 +80,7 @@ impl WidgetResponse {
         Self {
             response: EventResponse::Handled,
             action: None,
+            capture: CaptureRequest::None,
         }
     }
 
@@ -65,15 +89,31 @@ impl WidgetResponse {
         Self {
             response: EventResponse::Ignored,
             action: None,
+            capture: CaptureRequest::None,
         }
     }
 
-    /// Event handled and a redraw is needed.
-    pub fn redraw() -> Self {
+    /// Visual-only change (hover color, focus ring). Repaint needed, no relayout.
+    pub fn paint() -> Self {
         Self {
-            response: EventResponse::RequestRedraw,
+            response: EventResponse::RequestPaint,
             action: None,
+            capture: CaptureRequest::None,
         }
+    }
+
+    /// Structural change (text content, visibility). Relayout + repaint needed.
+    pub fn layout() -> Self {
+        Self {
+            response: EventResponse::RequestLayout,
+            action: None,
+            capture: CaptureRequest::None,
+        }
+    }
+
+    /// Backward-compatible alias for `layout()`.
+    pub fn redraw() -> Self {
+        Self::layout()
     }
 
     /// Event handled, focus requested, no action.
@@ -81,6 +121,7 @@ impl WidgetResponse {
         Self {
             response: EventResponse::RequestFocus,
             action: None,
+            capture: CaptureRequest::None,
         }
     }
 
@@ -88,6 +129,20 @@ impl WidgetResponse {
     #[must_use]
     pub fn with_action(mut self, action: WidgetAction) -> Self {
         self.action = Some(action);
+        self
+    }
+
+    /// Requests mouse capture for the responding widget.
+    #[must_use]
+    pub fn with_capture(mut self) -> Self {
+        self.capture = CaptureRequest::Acquire;
+        self
+    }
+
+    /// Requests release of any active mouse capture.
+    #[must_use]
+    pub fn with_release_capture(mut self) -> Self {
+        self.capture = CaptureRequest::Release;
         self
     }
 }
@@ -106,10 +161,27 @@ pub enum WidgetAction {
     ValueChanged { id: WidgetId, value: f32 },
     /// Text content changed (text input).
     TextChanged { id: WidgetId, text: String },
-    /// An item was selected by index (dropdown).
+    /// An item was selected by index (dropdown, menu).
     Selected { id: WidgetId, index: usize },
+    /// A dropdown trigger requests opening its popup list.
+    OpenDropdown {
+        /// The dropdown widget's ID (for routing selection back).
+        id: WidgetId,
+        /// Option labels.
+        options: Vec<String>,
+        /// Currently selected index.
+        selected: usize,
+        /// Screen-space anchor rect for popup placement.
+        anchor: Rect,
+    },
     /// An overlay content widget requests its own dismissal.
     DismissOverlay(WidgetId),
+    /// An overlay widget requests repositioning (e.g. header drag).
+    MoveOverlay { delta_x: f32, delta_y: f32 },
+    /// The settings panel Save button was clicked — persist and dismiss.
+    SaveSettings,
+    /// The settings panel Cancel button was clicked — revert and dismiss.
+    CancelSettings,
     /// Minimize the window.
     WindowMinimize,
     /// Maximize or restore the window.
@@ -142,6 +214,11 @@ pub struct DrawCtx<'a> {
     pub animations_running: &'a Cell<bool>,
     /// Active UI theme.
     pub theme: &'a UiTheme,
+    /// Pre-resolved icon atlas entries for this frame.
+    ///
+    /// `None` in tests or when the GPU renderer is not available.
+    /// Widgets fall back to `push_line()` when this is `None`.
+    pub icons: Option<&'a ResolvedIcons>,
 }
 
 /// Context passed to mouse and keyboard event handlers.
@@ -187,6 +264,16 @@ pub trait Widget {
 
     /// Handles a keyboard event. Returns a response with optional action.
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
+
+    /// Propagates an externally-originated action to a descendant widget.
+    ///
+    /// Used when an action from a popup overlay (e.g. dropdown menu selection)
+    /// needs to update a widget buried in the tree. Containers propagate to
+    /// children; leaf widgets check if the action targets them.
+    /// Returns `true` if a descendant handled the action.
+    fn accept_action(&mut self, _action: &WidgetAction) -> bool {
+        false
+    }
 
     /// Collects focusable widget IDs reachable from this widget.
     ///

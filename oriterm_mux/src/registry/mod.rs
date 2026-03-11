@@ -53,11 +53,16 @@ impl PaneRegistry {
     }
 
     /// Total number of registered panes.
+    #[allow(
+        dead_code,
+        reason = "used in tests and when pane listing is wired to daemon"
+    )]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether the registry is empty.
+    #[allow(dead_code, reason = "clippy requires is_empty when len exists")]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

@@ -6,7 +6,10 @@
 
 #[cfg(target_os = "windows")]
 mod merge;
-#[cfg(target_os = "windows")]
+#[cfg(target_os = "linux")]
+mod merge_linux;
+#[cfg(target_os = "macos")]
+mod merge_macos;
 mod tear_off;
 
 use crate::session::TabId;
@@ -63,7 +66,6 @@ pub(crate) struct TabDragState {
 /// Set by [`App::tear_off_tab()`] when a tab exceeds the tear-off threshold,
 /// consumed by [`App::check_torn_off_merge()`] in `about_to_wait` after the
 /// OS modal drag loop completes.
-#[cfg(target_os = "windows")]
 pub(crate) struct TornOffPending {
     /// Winit ID of the torn-off window (the new, single-tab window).
     pub winit_id: winit::window::WindowId,
@@ -71,6 +73,16 @@ pub(crate) struct TornOffPending {
     pub tab_id: TabId,
     /// Cursor offset from the tab's left edge at drag start.
     pub mouse_offset: f32,
+    /// Whether the cursor has moved far enough from the tear-off point
+    /// to allow merges. Set to `true` once the cursor exceeds
+    /// `MIN_MERGE_DISTANCE` from the tear-off origin. Once enabled,
+    /// stays enabled — prevents immediate snap-back while allowing
+    /// the user to drag back to the source window's tab bar.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub merge_enabled: bool,
+    /// Screen cursor position at tear-off time (for merge exclusion).
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub tear_off_origin: (i32, i32),
 }
 
 // -- Pure computation helpers (testable without App) --
@@ -182,7 +194,7 @@ impl App {
     pub(super) fn update_tab_drag(
         &mut self,
         position: winit::dpi::PhysicalPosition<f64>,
-        #[cfg(target_os = "windows")] event_loop: &winit::event_loop::ActiveEventLoop,
+        event_loop: &winit::event_loop::ActiveEventLoop,
     ) -> bool {
         // Extract drag data (all Copy fields) to break the borrow chain.
         let drag_info = {
@@ -219,10 +231,13 @@ impl App {
                     return true;
                 }
 
-                // Single-tab window: skip DraggingInBar, go directly to
-                // OS-level drag with merge detection.
-                #[cfg(target_os = "windows")]
+                // Single-tab window: skip DraggingInBar, start OS window drag.
                 if drag_info.tab_count <= 1 {
+                    #[cfg(target_os = "windows")]
+                    self.begin_single_tab_os_drag(event_loop);
+                    #[cfg(target_os = "macos")]
+                    self.begin_single_tab_window_drag();
+                    #[cfg(target_os = "linux")]
                     self.begin_single_tab_os_drag(event_loop);
                     return true;
                 }
@@ -234,23 +249,11 @@ impl App {
                     }
                 }
                 // Fall through to DraggingInBar handling below.
-                self.update_drag_in_bar(
-                    logical_x,
-                    logical_y,
-                    drag_info,
-                    #[cfg(target_os = "windows")]
-                    event_loop,
-                );
+                self.update_drag_in_bar(logical_x, logical_y, drag_info, event_loop);
                 true
             }
             DragPhase::DraggingInBar => {
-                self.update_drag_in_bar(
-                    logical_x,
-                    logical_y,
-                    drag_info,
-                    #[cfg(target_os = "windows")]
-                    event_loop,
-                );
+                self.update_drag_in_bar(logical_x, logical_y, drag_info, event_loop);
                 true
             }
         }
@@ -262,14 +265,11 @@ impl App {
         logical_x: f32,
         logical_y: f32,
         info: DragInfo,
-        #[cfg(target_os = "windows")] event_loop: &winit::event_loop::ActiveEventLoop,
+        event_loop: &winit::event_loop::ActiveEventLoop,
     ) {
         // Tear-off detection.
         if exceeds_tear_off(logical_y, info.bar_y, info.bar_bottom) {
-            #[cfg(target_os = "windows")]
             self.tear_off_tab(event_loop);
-            #[cfg(not(target_os = "windows"))]
-            log::debug!("tab drag: tear-off not supported on this platform");
             return;
         }
 

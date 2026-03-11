@@ -6,7 +6,7 @@ use oriterm_mux::{PaneId, SpawnConfig};
 
 use crate::session::SplitDirection;
 
-use super::super::App;
+use crate::app::App;
 
 impl App {
     /// Toggle floating pane: focus topmost if any exist, else spawn a new one.

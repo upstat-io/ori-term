@@ -20,6 +20,10 @@ use crate::PaneId;
 ///
 /// Sent over `mpsc::Sender<MuxEvent>`. The mux processes these on the main
 /// thread during each event loop iteration.
+///
+/// **Adding a variant?** The event pump match in `in_process/event_pump.rs`
+/// must be updated to handle it — the compiler enforces this via exhaustive
+/// matching. Also update the `Debug` impl below and tests in `tests.rs`.
 pub enum MuxEvent {
     /// Pane has new terminal output — grid is dirty.
     PaneOutput(PaneId),
@@ -256,13 +260,36 @@ impl EventListener for MuxEventProxy {
 ///
 /// These flow from the mux to clients after the mux has processed
 /// incoming [`MuxEvent`]s and updated its state.
+///
+/// # Event-to-notification mapping
+///
+/// | `MuxEvent` variant | `MuxNotification` | Notes |
+/// |---|---|---|
+/// | `PaneOutput` | `PaneOutput` | 1:1 forwarding |
+/// | `PaneExited` | `PaneClosed` | Carries exit code |
+/// | `PaneTitleChanged` | `PaneMetadataChanged` | Collapsed with icon/CWD |
+/// | `PaneIconChanged` | `PaneMetadataChanged` | Collapsed with title/CWD |
+/// | `PaneCwdChanged` | `PaneMetadataChanged` | Collapsed with title/icon |
+/// | `CommandComplete` | `CommandComplete` | 1:1 forwarding |
+/// | `PaneBell` | `PaneBell` | 1:1 forwarding |
+/// | `PtyWrite` | *(not forwarded)* | Handled inline (PTY write) |
+/// | `ClipboardStore` | `ClipboardStore` | 1:1 forwarding |
+/// | `ClipboardLoad` | `ClipboardLoad` | 1:1 forwarding |
 pub enum MuxNotification {
-    /// A pane's title or icon name changed.
-    PaneTitleChanged(PaneId),
+    /// A pane's metadata changed (title, icon name, or CWD).
+    ///
+    /// Downstream consumers should re-read pane metadata rather than
+    /// relying on which specific field changed.
+    PaneMetadataChanged(PaneId),
     /// A pane has new content to render.
     PaneOutput(PaneId),
     /// A pane was closed (PTY exited, removed from registry).
-    PaneClosed(PaneId),
+    PaneClosed {
+        /// Which pane was closed.
+        pane_id: PaneId,
+        /// Exit code from the child process (0 = clean exit).
+        exit_code: i32,
+    },
     /// A bell or urgent notification fired in a pane.
     PaneBell(PaneId),
     /// A long-running command completed in a pane.
@@ -295,9 +322,11 @@ pub enum MuxNotification {
 impl fmt::Debug for MuxNotification {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PaneTitleChanged(id) => write!(f, "PaneTitleChanged({id})"),
+            Self::PaneMetadataChanged(id) => write!(f, "PaneMetadataChanged({id})"),
             Self::PaneOutput(id) => write!(f, "PaneOutput({id})"),
-            Self::PaneClosed(id) => write!(f, "PaneClosed({id})"),
+            Self::PaneClosed { pane_id, exit_code } => {
+                write!(f, "PaneClosed({pane_id}, code={exit_code})")
+            }
             Self::PaneBell(id) => write!(f, "PaneBell({id})"),
             Self::CommandComplete { pane_id, duration } => {
                 write!(f, "CommandComplete({pane_id}, {duration:?})")

@@ -1213,7 +1213,13 @@ fn close_button_colors_theme_invariant() {
 // interactive_rects (unified chrome)
 
 #[test]
-fn interactive_rects_count_equals_tab_count_plus_five() {
+fn interactive_rects_count_equals_tab_count_plus_extras() {
+    // macOS: 2 extras (new-tab + dropdown). Others: 5 (+ 3 window controls).
+    #[cfg(target_os = "macos")]
+    let extras = 2;
+    #[cfg(not(target_os = "macos"))]
+    let extras = 5;
+
     for tab_count in [0, 1, 3, 5, 10] {
         let mut w = TabBarWidget::new(1200.0);
         let tabs: Vec<TabEntry> = (0..tab_count)
@@ -1223,9 +1229,9 @@ fn interactive_rects_count_equals_tab_count_plus_five() {
         let rects = w.interactive_rects();
         assert_eq!(
             rects.len(),
-            tab_count + 5,
+            tab_count + extras,
             "tab_count={tab_count}: expected {} rects, got {}",
-            tab_count + 5,
+            tab_count + extras,
             rects.len()
         );
     }
@@ -1291,15 +1297,18 @@ fn interactive_rects_buttons_and_controls_at_correct_positions() {
         "dropdown button width"
     );
 
-    // rects[4..7] = control buttons starting at controls_x().
-    let controls_x = layout.controls_x();
-    for i in 0..3 {
-        let ctrl = rects[4 + i];
-        assert!(
-            ctrl.x() >= controls_x - 0.01,
-            "control {i} x ({}) < controls_x ({controls_x})",
-            ctrl.x()
-        );
+    // rects[4..7] = control buttons starting at controls_x() (not on macOS).
+    #[cfg(not(target_os = "macos"))]
+    {
+        let controls_x = layout.controls_x();
+        for i in 0..3 {
+            let ctrl = rects[4 + i];
+            assert!(
+                ctrl.x() >= controls_x - 0.01,
+                "control {i} x ({}) < controls_x ({controls_x})",
+                ctrl.x()
+            );
+        }
     }
 }
 
@@ -1321,7 +1330,8 @@ fn interactive_rects_with_left_inset_shifts_tabs_not_controls() {
         );
     }
 
-    // Control button rects (last 3) should stay at the same position.
+    // Control button rects (last 3) should stay at the same position (not on macOS).
+    #[cfg(not(target_os = "macos"))]
     for i in 4..7 {
         assert!(
             (rects_inset[i].x() - rects_no_inset[i].x()).abs() < f32::EPSILON,
@@ -1332,6 +1342,7 @@ fn interactive_rects_with_left_inset_shifts_tabs_not_controls() {
 
 // set_maximized / set_active
 
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn set_maximized_does_not_panic() {
     let mut w = TabBarWidget::new(1200.0);
@@ -1383,11 +1394,16 @@ fn layout_with_left_inset_controls_stay_right() {
 
 // update_control_hover
 
+#[cfg(not(target_os = "macos"))]
 use crate::geometry::Rect;
+#[cfg(not(target_os = "macos"))]
 use crate::input::EventResponse;
+#[cfg(not(target_os = "macos"))]
 use crate::widgets::EventCtx;
+#[cfg(not(target_os = "macos"))]
 use crate::widgets::tests::MockMeasurer;
 
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn update_control_hover_enters_and_leaves() {
     let mut w = TabBarWidget::new(1200.0);
@@ -1412,8 +1428,8 @@ fn update_control_hover_enters_and_leaves() {
     let resp = w.update_control_hover(center, &ctx);
     assert_eq!(
         resp.response,
-        EventResponse::RequestRedraw,
-        "entering a control should request redraw"
+        EventResponse::RequestPaint,
+        "entering a control should request paint"
     );
 
     // Hover same position again — no change.

@@ -2,6 +2,7 @@
 section: 2
 title: Terminal State Machine + VTE
 status: complete
+reviewed: true
 tier: 0
 goal: Build Term<T> and implement all ~50 VTE handler methods so escape sequences produce correct grid state
 sections:

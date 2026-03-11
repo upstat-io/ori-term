@@ -11,7 +11,7 @@ use oriterm_mux::backend::MuxBackend;
 
 use super::App;
 use super::cursor_blink::CursorBlink;
-use super::event_loop::resolve_ui_theme;
+use super::event_loop_helpers::resolve_ui_theme;
 use super::keyboard_input::ImeState;
 use super::mouse_selection::MouseState;
 use super::perf_stats::PerfStats;
@@ -21,6 +21,7 @@ use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
 use crate::keybindings;
 use crate::session::SessionRegistry;
+use crate::window_manager::WindowManager;
 
 impl App {
     /// Create a new application instance in daemon mode.
@@ -67,7 +68,9 @@ impl App {
             font_set: None,
             ui_font_set: None,
             user_fb_count: 0,
+            window_manager: WindowManager::new(),
             windows: HashMap::new(),
+            dialogs: HashMap::new(),
             focused_window_id: None,
             session: SessionRegistry::new(),
             mux,
@@ -75,6 +78,7 @@ impl App {
             notification_buf: Vec::new(),
             modifiers: ModifiersState::empty(),
             cursor_blink: CursorBlink::new(blink_interval),
+            mouse_cursor_hidden: false,
             blinking_active: false,
             last_cursor_pos: (0, 0),
             mouse: MouseState::new(),
@@ -87,7 +91,11 @@ impl App {
             _config_monitor: monitor,
             ime: ImeState::new(),
             ui_theme,
-            #[cfg(target_os = "windows")]
+            settings_ids: None,
+            settings_pending: None,
+            pending_dropdown_id: None,
+            pending_focus_out: None,
+
             torn_off_pending: None,
 
             last_render: Instant::now(),
@@ -132,7 +140,9 @@ impl App {
             font_set: None,
             ui_font_set: None,
             user_fb_count: 0,
+            window_manager: WindowManager::new(),
             windows: HashMap::new(),
+            dialogs: HashMap::new(),
             focused_window_id: None,
             session: SessionRegistry::new(),
             mux: Some(Box::new(mux)),
@@ -140,6 +150,7 @@ impl App {
             notification_buf: Vec::new(),
             modifiers: ModifiersState::empty(),
             cursor_blink: CursorBlink::new(blink_interval),
+            mouse_cursor_hidden: false,
             blinking_active: false,
             last_cursor_pos: (0, 0),
             mouse: MouseState::new(),
@@ -152,7 +163,11 @@ impl App {
             _config_monitor: monitor,
             ime: ImeState::new(),
             ui_theme,
-            #[cfg(target_os = "windows")]
+            settings_ids: None,
+            settings_pending: None,
+            pending_dropdown_id: None,
+            pending_focus_out: None,
+
             torn_off_pending: None,
 
             last_render: Instant::now(),

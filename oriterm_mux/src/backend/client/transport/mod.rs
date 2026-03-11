@@ -5,7 +5,6 @@
 //! requests with inbound responses and push notifications.
 
 // Platform FFI for self-pipe wakeup (pipe2, poll, read, write, close).
-#![allow(unsafe_code)]
 
 mod reader;
 
@@ -176,6 +175,7 @@ impl ClientTransport {
                     wake_read,
                 );
                 #[cfg(unix)]
+                #[allow(unsafe_code, reason = "close(2) for self-pipe read end")]
                 unsafe {
                     libc::close(wake_read);
                 }
@@ -305,6 +305,7 @@ impl ClientTransport {
     /// Write a byte to the self-pipe to wake the reader thread immediately.
     #[cfg(unix)]
     fn signal_wake(&self) {
+        #[allow(unsafe_code, reason = "write(2) to self-pipe for reader thread wakeup")]
         unsafe {
             libc::write(self.wake_write, [1u8].as_ptr().cast(), 1);
         }
@@ -341,14 +342,17 @@ impl ClientTransport {
 fn create_self_pipe() -> io::Result<(RawFd, RawFd)> {
     let mut fds = [0i32; 2];
     #[cfg(target_os = "linux")]
+    #[allow(unsafe_code, reason = "pipe2(2) to create non-blocking self-pipe")]
     let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) };
     #[cfg(not(target_os = "linux"))]
+    #[allow(unsafe_code, reason = "pipe(2) to create self-pipe (non-Linux)")]
     let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
     if ret != 0 {
         return Err(io::Error::last_os_error());
     }
     #[cfg(not(target_os = "linux"))]
     for &fd in &fds {
+        #[allow(unsafe_code, reason = "fcntl(2) to set O_NONBLOCK and FD_CLOEXEC")]
         unsafe {
             libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
             libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
@@ -373,6 +377,7 @@ impl Drop for ClientTransport {
             let _ = handle.join();
         }
         #[cfg(unix)]
+        #[allow(unsafe_code, reason = "close(2) for self-pipe write end")]
         unsafe {
             libc::close(self.wake_write);
         }

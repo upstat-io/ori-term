@@ -15,6 +15,26 @@ use super::frame_input::ViewportSize;
 use super::instance_writer::InstanceWriter;
 use super::srgb_to_linear;
 
+/// Instance index ranges for a single overlay's content within the shared buffers.
+///
+/// Each overlay's rects and glyphs occupy a contiguous range in the shared
+/// overlay instance writers. The render pass draws each overlay as a complete
+/// unit (rects → mono → subpixel → color) before moving to the next, ensuring
+/// correct z-ordering between stacked overlays.
+#[derive(Debug, Clone, Default)]
+pub struct OverlayDrawRange {
+    /// `[start..end)` in `overlay_rects`.
+    pub rects: (u32, u32),
+    /// `[start..end)` in `overlay_glyphs` (mono).
+    pub mono: (u32, u32),
+    /// `[start..end)` in `overlay_subpixel_glyphs`.
+    pub subpixel: (u32, u32),
+    /// `[start..end)` in `overlay_color_glyphs`.
+    pub color: (u32, u32),
+    /// Clip segments for this overlay (absolute instance offsets).
+    pub clips: TierClips,
+}
+
 /// A single image quad ready for GPU rendering.
 ///
 /// Each image maps to one draw call because each has its own texture.
@@ -85,6 +105,11 @@ pub struct PreparedFrame {
     pub ui_clips: TierClips,
     /// Clip segments for the overlay tier (draws 10–13), one per writer.
     pub overlay_clips: TierClips,
+    /// Per-overlay draw ranges for correct z-ordering between stacked overlays.
+    ///
+    /// Each entry corresponds to one overlay (back-to-front order). The render
+    /// pass draws each overlay as a complete unit before moving to the next.
+    pub overlay_draw_ranges: Vec<OverlayDrawRange>,
     /// Image quads below text (`z_index` < 0).
     pub image_quads_below: Vec<ImageQuad>,
     /// Image quads above text (`z_index` >= 0).
@@ -114,6 +139,7 @@ impl PreparedFrame {
             overlay_color_glyphs: InstanceWriter::new(),
             ui_clips: TierClips::default(),
             overlay_clips: TierClips::default(),
+            overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
             viewport,
@@ -150,6 +176,7 @@ impl PreparedFrame {
             overlay_color_glyphs: InstanceWriter::new(),
             ui_clips: TierClips::default(),
             overlay_clips: TierClips::default(),
+            overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
             viewport,
@@ -210,6 +237,7 @@ impl PreparedFrame {
         self.overlay_color_glyphs.clear();
         self.ui_clips.clear();
         self.overlay_clips.clear();
+        self.overlay_draw_ranges.clear();
         self.image_quads_below.clear();
         self.image_quads_above.clear();
     }
@@ -253,6 +281,22 @@ impl PreparedFrame {
                 self.overlay_color_glyphs.len() as u32,
             ],
         );
+        // Shift per-overlay draw ranges by current buffer lengths.
+        let bases = [
+            self.overlay_rects.len() as u32,
+            self.overlay_glyphs.len() as u32,
+            self.overlay_subpixel_glyphs.len() as u32,
+            self.overlay_color_glyphs.len() as u32,
+        ];
+        for range in &other.overlay_draw_ranges {
+            let mut shifted = range.clone();
+            shifted.rects = (range.rects.0 + bases[0], range.rects.1 + bases[0]);
+            shifted.mono = (range.mono.0 + bases[1], range.mono.1 + bases[1]);
+            shifted.subpixel = (range.subpixel.0 + bases[2], range.subpixel.1 + bases[2]);
+            shifted.color = (range.color.0 + bases[3], range.color.1 + bases[3]);
+            shifted.clips.shift_offsets(bases);
+            self.overlay_draw_ranges.push(shifted);
+        }
         self.image_quads_below
             .extend_from_slice(&other.image_quads_below);
         self.image_quads_above

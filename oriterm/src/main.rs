@@ -22,6 +22,7 @@ mod session;
 mod url_detect;
 mod widgets;
 mod window;
+mod window_manager;
 
 use clap::Parser;
 
@@ -121,7 +122,13 @@ fn init_logger() {
     if let Ok(file) = std::fs::File::create(&path) {
         let logger = Box::new(FileLogger(Mutex::new(file)));
         if log::set_logger(Box::leak(logger)).is_ok() {
-            log::set_max_level(log::LevelFilter::Info);
+            let rust_log = std::env::var("RUST_LOG").ok();
+            let level = rust_log
+                .as_deref()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(log::LevelFilter::Info);
+            log::set_max_level(level);
+            log::info!("log level: {level} (RUST_LOG={rust_log:?})");
         }
     }
 }

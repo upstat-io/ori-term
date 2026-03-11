@@ -12,8 +12,7 @@ use oriterm_core::TermMode;
 use oriterm_core::event::ClipboardType;
 use oriterm_core::paste;
 
-use oriterm_ui::overlay::Placement;
-use oriterm_ui::widgets::dialog::{DialogButton, DialogButtons, DialogWidget};
+use crate::event::{ConfirmationKind, ConfirmationRequest};
 
 use super::App;
 use crate::config::PasteWarning;
@@ -164,7 +163,7 @@ impl App {
     ///
     /// Reads the terminal mode to determine bracketed paste, applies the
     /// full paste processing pipeline, and writes the result to the PTY.
-    fn write_paste_to_pty(&mut self, text: &str) {
+    pub(in crate::app) fn write_paste_to_pty(&mut self, text: &str) {
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
@@ -191,54 +190,21 @@ impl App {
     }
 
     /// Show a confirmation dialog before pasting multi-line text.
-    fn show_paste_confirmation(&mut self, text: String, line_count: usize) {
-        let dialog = DialogWidget::new("Confirm Paste")
-            .with_message(format!("Paste {line_count} lines into terminal?"))
-            .with_content(&text)
-            .with_buttons(DialogButtons::OkCancel)
-            .with_ok_label("Paste")
-            .with_cancel_label("Cancel")
-            .with_default_button(DialogButton::Ok);
-
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.pending_paste = Some(text);
-            let viewport = ctx.overlays.viewport();
-            let now = std::time::Instant::now();
-            ctx.overlays.push_modal(
-                Box::new(dialog),
-                viewport,
-                Placement::Center,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            );
-            ctx.dirty = true;
-        }
-    }
-
-    /// Confirm a pending paste: write the stored text to the PTY.
-    pub(super) fn confirm_paste(&mut self) {
-        let text = self
-            .focused_ctx_mut()
-            .and_then(|ctx| ctx.pending_paste.take());
-        if let Some(text) = text {
-            self.write_paste_to_pty(&text);
-        }
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays
-                .clear_all(&mut ctx.layer_tree, &mut ctx.layer_animator);
-            ctx.dirty = true;
-        }
-    }
-
-    /// Cancel a pending paste: discard the stored text and dismiss the dialog.
-    pub(super) fn cancel_paste(&mut self) {
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.pending_paste = None;
-            ctx.overlays
-                .clear_all(&mut ctx.layer_tree, &mut ctx.layer_animator);
-            ctx.dirty = true;
-        }
+    ///
+    /// Sends a `TermEvent::OpenConfirmation` so the dialog is created as a
+    /// real OS window (requires `&ActiveEventLoop` from `user_event`).
+    fn show_paste_confirmation(&self, text: String, line_count: usize) {
+        let request = ConfirmationRequest {
+            title: "Confirm Paste".into(),
+            message: format!("Paste {line_count} lines into terminal?"),
+            content: Some(text.clone()),
+            ok_label: "Paste".into(),
+            cancel_label: "Cancel".into(),
+            kind: ConfirmationKind::Paste { text },
+        };
+        let _ = self
+            .event_proxy
+            .send_event(crate::event::TermEvent::OpenConfirmation(request));
     }
 }
 

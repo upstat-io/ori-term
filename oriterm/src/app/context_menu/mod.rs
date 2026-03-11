@@ -10,10 +10,10 @@ use oriterm_ui::widgets::menu::MenuEntry;
 /// What to do when a context menu item is selected.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum ContextAction {
-    /// Open settings (no-op until Section 21.3).
+    /// Open the settings dialog.
     Settings,
-    /// Switch to a named color scheme.
-    SelectScheme(String),
+    /// Show the About dialog.
+    About,
     /// Close the tab at the given index.
     CloseTab(usize),
     /// Duplicate the tab at the given index (new tab inheriting CWD).
@@ -46,30 +46,21 @@ impl ContextMenuState {
 }
 
 /// Build the dropdown menu for the tab bar dropdown button.
-pub(super) fn build_dropdown_menu(
-    active_scheme: &str,
-    scheme_names: &[&str],
-) -> (Vec<MenuEntry>, ContextMenuState) {
-    let mut entries = Vec::new();
-    let mut actions = Vec::new();
-
-    entries.push(MenuEntry::Item {
-        label: "Settings".into(),
-    });
-    actions.push(Some(ContextAction::Settings));
-
-    entries.push(MenuEntry::Separator);
-    actions.push(None);
-
-    for &name in scheme_names {
-        let checked = name.eq_ignore_ascii_case(active_scheme);
-        entries.push(MenuEntry::Check {
-            label: name.to_owned(),
-            checked,
-        });
-        actions.push(Some(ContextAction::SelectScheme(name.to_owned())));
-    }
-
+pub(super) fn build_dropdown_menu() -> (Vec<MenuEntry>, ContextMenuState) {
+    let entries = vec![
+        MenuEntry::Item {
+            label: "Settings".into(),
+        },
+        MenuEntry::Separator,
+        MenuEntry::Item {
+            label: "About".into(),
+        },
+    ];
+    let actions = vec![
+        Some(ContextAction::Settings),
+        None, // separator
+        Some(ContextAction::About),
+    ];
     (entries, ContextMenuState { actions })
 }
 

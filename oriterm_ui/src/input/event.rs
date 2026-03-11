@@ -132,19 +132,43 @@ pub enum EventResponse {
     Handled,
     /// The widget did not consume the event; propagate to parent.
     Ignored,
+    /// Visual-only change (hover color, focus ring). Repaint needed, no relayout.
+    RequestPaint,
+    /// Structural change (text content, visibility). Relayout + repaint needed.
+    RequestLayout,
     /// The widget wants keyboard focus.
     RequestFocus,
-    /// The widget needs a redraw (state changed visually).
+    /// Backward-compatible alias for `RequestLayout` during migration.
     RequestRedraw,
 }
 
 impl EventResponse {
-    /// Returns `true` if the event was consumed.
+    /// Returns `true` if the event was consumed (anything other than `Ignored`).
     pub fn is_handled(self) -> bool {
-        matches!(
-            self,
-            Self::Handled | Self::RequestFocus | Self::RequestRedraw
-        )
+        !matches!(self, Self::Ignored)
+    }
+
+    /// Returns `true` if the response indicates a layout change.
+    ///
+    /// Used by container widgets to invalidate cached layouts when a child's
+    /// structure changes (e.g., section collapse/expand).
+    pub fn needs_layout(self) -> bool {
+        matches!(self, Self::RequestLayout | Self::RequestRedraw)
+    }
+
+    /// Returns the higher-priority response.
+    ///
+    /// Priority: `RequestLayout`/`RequestRedraw` > `RequestPaint` > `RequestFocus` > `Handled` > `Ignored`.
+    #[must_use]
+    pub fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::RequestLayout | Self::RequestRedraw, _)
+            | (_, Self::RequestLayout | Self::RequestRedraw) => Self::RequestLayout,
+            (Self::RequestPaint, _) | (_, Self::RequestPaint) => Self::RequestPaint,
+            (Self::RequestFocus, _) | (_, Self::RequestFocus) => Self::RequestFocus,
+            (Self::Handled, _) | (_, Self::Handled) => Self::Handled,
+            _ => Self::Ignored,
+        }
     }
 }
 

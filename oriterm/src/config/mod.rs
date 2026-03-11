@@ -207,7 +207,7 @@ impl WindowConfig {
 pub(crate) use behavior::{BehaviorConfig, NotifyOnCommandFinish};
 pub(crate) use paste_warning::PasteWarning;
 
-pub(crate) use bell::BellConfig;
+pub(crate) use bell::{BellAnimation, BellConfig};
 
 /// Pane splitting and layout configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]

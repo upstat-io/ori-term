@@ -103,14 +103,14 @@ fn drag_changes_value() {
     let mut s = SliderWidget::new().with_range(0.0, 100.0).with_step(1.0);
     let ctx = slider_ctx();
 
-    // Click at center of track (x=100 of 200px bounds).
-    s.handle_mouse(&mouse_down(100.0), &ctx);
+    // Track area is 140px (200 - 48 value label - 12 gap).
+    // Center of track: x=70 → normalized 0.5 → value 50.
+    s.handle_mouse(&mouse_down(70.0), &ctx);
     assert!(s.is_dragging());
-    // Value should be near 50 (center of 0..100 range).
     assert!((s.value() - 50.0).abs() < 2.0);
 
-    // Drag to right edge.
-    s.handle_mouse(&mouse_move(192.0), &ctx);
+    // Drag to right edge of track (x=132 → normalized 1.0 → value 100).
+    s.handle_mouse(&mouse_move(132.0), &ctx);
     assert!((s.value() - 100.0).abs() < 2.0);
 
     // Release.

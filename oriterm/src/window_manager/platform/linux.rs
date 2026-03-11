@@ -1,0 +1,221 @@
+//! Linux implementation of [`NativeWindowOps`] and [`NativeChromeOps`].
+//!
+//! Handles both X11 and Wayland at runtime via `RawWindowHandle` discrimination.
+//! X11 uses `x11-dl` for transient-for hints, window type atoms, and modal
+//! state. Wayland operations are best-effort no-ops where winit doesn't expose
+//! the underlying `xdg_toplevel`.
+//!
+//! Chrome operations are no-ops — Linux compositors (Mutter, `KWin`, Sway) handle
+//! window decorations via CSD or SSD, and hit testing is managed by winit's
+//! built-in decoration support or the compositor itself.
+
+#![allow(unsafe_code, reason = "X11 FFI via x11-dl")]
+
+use std::ffi::CString;
+use std::sync::OnceLock;
+
+use winit::raw_window_handle::{
+    HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
+};
+use winit::window::Window;
+
+use oriterm_ui::geometry::Rect;
+
+use super::{ChromeMode, NativeChromeOps, NativeWindowOps};
+use crate::window_manager::types::WindowKind;
+
+/// `XA_ATOM` — built-in X11 atom type for property values.
+const XA_ATOM: u64 = 4;
+
+/// Lazily loaded X11 library handle.
+static XLIB: OnceLock<Option<x11_dl::xlib::Xlib>> = OnceLock::new();
+
+/// Returns the lazily loaded Xlib handle, or `None` on pure Wayland systems.
+fn xlib() -> Option<&'static x11_dl::xlib::Xlib> {
+    XLIB.get_or_init(|| x11_dl::xlib::Xlib::open().ok())
+        .as_ref()
+}
+
+pub(super) struct LinuxNativeOps;
+
+impl NativeWindowOps for LinuxNativeOps {
+    fn set_owner(&self, child: &Window, parent: &Window) {
+        if let Some(RawWindowHandle::Xlib(_)) = child.window_handle().ok().map(|h| h.as_raw()) {
+            set_owner_x11(child, parent);
+        }
+        // Wayland: winit 0.30 doesn't expose xdg_toplevel for set_parent().
+        // The window works without stacking hints.
+    }
+
+    fn clear_owner(&self, child: &Window) {
+        if let Some(RawWindowHandle::Xlib(_)) = child.window_handle().ok().map(|h| h.as_raw()) {
+            clear_owner_x11(child);
+        }
+    }
+
+    fn set_window_type(&self, window: &Window, kind: &WindowKind) {
+        if !kind.is_dialog() {
+            return;
+        }
+        if let Some(RawWindowHandle::Xlib(_)) = window.window_handle().ok().map(|h| h.as_raw()) {
+            set_window_type_x11(window);
+        }
+    }
+
+    fn set_modal(&self, dialog: &Window, _owner: &Window) {
+        if let Some(RawWindowHandle::Xlib(_)) = dialog.window_handle().ok().map(|h| h.as_raw()) {
+            set_modal_x11(dialog, true);
+        }
+    }
+
+    fn clear_modal(&self, dialog: &Window, _owner: &Window) {
+        if let Some(RawWindowHandle::Xlib(_)) = dialog.window_handle().ok().map(|h| h.as_raw()) {
+            set_modal_x11(dialog, false);
+        }
+    }
+}
+
+impl NativeChromeOps for LinuxNativeOps {
+    fn install_chrome(
+        &self,
+        _window: &Window,
+        _mode: ChromeMode,
+        _border_width: f32,
+        _caption_height: f32,
+    ) {
+        // Linux/Wayland uses compositor-managed decorations (SSD) or
+        // winit-provided CSD. No runtime subclass or frame manipulation needed.
+    }
+
+    fn set_interactive_rects(&self, _window: &Window, _rects: &[Rect], _scale: f32) {
+        // Linux compositors handle title bar hit testing via CSD/SSD.
+    }
+
+    fn set_chrome_metrics(&self, _window: &Window, _border_width: f32, _caption_height: f32) {
+        // DPI scaling is handled by the compositor or winit.
+    }
+}
+
+// X11 implementations
+
+/// Sets `WM_TRANSIENT_FOR` on the child window, hinting to the window manager
+/// that it should stack above the parent.
+fn set_owner_x11(child: &Window, parent: &Window) {
+    let Some(xlib) = xlib() else { return };
+    let Some((display, child_xid)) = extract_x11(child) else {
+        return;
+    };
+    let Some((_, parent_xid)) = extract_x11(parent) else {
+        return;
+    };
+    unsafe {
+        (xlib.XSetTransientForHint)(display, child_xid, parent_xid);
+    }
+}
+
+/// Clears `WM_TRANSIENT_FOR` by setting it to the root window (None).
+#[allow(
+    dead_code,
+    reason = "called from NativeWindowOps::clear_owner (not yet wired)"
+)]
+fn clear_owner_x11(child: &Window) {
+    let Some(xlib) = xlib() else { return };
+    let Some((display, child_xid)) = extract_x11(child) else {
+        return;
+    };
+    // Setting transient-for to None (0) removes the hint.
+    unsafe {
+        (xlib.XSetTransientForHint)(display, child_xid, 0);
+    }
+}
+
+/// Sets `_NET_WM_WINDOW_TYPE` to `_NET_WM_WINDOW_TYPE_DIALOG`.
+///
+/// Tells the window manager to skip taskbar, stack above parent, and use
+/// dialog-style decoration.
+fn set_window_type_x11(window: &Window) {
+    let Some(xlib) = xlib() else { return };
+    let Some((display, xid)) = extract_x11(window) else {
+        return;
+    };
+    unsafe {
+        let wm_type = intern_atom(xlib, display, "_NET_WM_WINDOW_TYPE");
+        let dialog = intern_atom(xlib, display, "_NET_WM_WINDOW_TYPE_DIALOG");
+        (xlib.XChangeProperty)(
+            display,
+            xid,
+            wm_type,
+            XA_ATOM,
+            32,                            // format: 32-bit values
+            x11_dl::xlib::PropModeReplace, // mode
+            (&raw const dialog).cast(),    // data
+            1,                             // nelements
+        );
+    }
+}
+
+/// Adds or removes `_NET_WM_STATE_MODAL` via a client message to the root
+/// window (EWMH spec requires this for mapped windows).
+fn set_modal_x11(dialog: &Window, modal: bool) {
+    let Some(xlib) = xlib() else { return };
+    let Some((display, xid)) = extract_x11(dialog) else {
+        return;
+    };
+    unsafe {
+        let wm_state = intern_atom(xlib, display, "_NET_WM_STATE");
+        let modal_atom = intern_atom(xlib, display, "_NET_WM_STATE_MODAL");
+        // _NET_WM_STATE_ADD = 1, _NET_WM_STATE_REMOVE = 0
+        let action = i64::from(modal);
+
+        let root = (xlib.XDefaultRootWindow)(display);
+
+        let mut event: x11_dl::xlib::XClientMessageEvent = std::mem::zeroed();
+        event.type_ = x11_dl::xlib::ClientMessage;
+        event.window = xid;
+        event.message_type = wm_state;
+        event.format = 32;
+        event.data.set_long(0, action);
+        event.data.set_long(1, modal_atom as i64);
+        event.data.set_long(2, 0);
+        event.data.set_long(3, 1); // source: normal application
+
+        let mask = x11_dl::xlib::SubstructureNotifyMask | x11_dl::xlib::SubstructureRedirectMask;
+        (xlib.XSendEvent)(
+            display,
+            root,
+            x11_dl::xlib::False,
+            mask,
+            (&raw mut event).cast(),
+        );
+        (xlib.XFlush)(display);
+    }
+}
+
+// Helpers
+
+/// Extracts the X11 display and window ID from a winit `Window`.
+fn extract_x11(window: &Window) -> Option<(*mut x11_dl::xlib::Display, u64)> {
+    let wh = window.window_handle().ok()?;
+    let dh = window.display_handle().ok()?;
+
+    let xid = match wh.as_raw() {
+        RawWindowHandle::Xlib(h) => h.window,
+        _ => return None,
+    };
+    let display = match dh.as_raw() {
+        RawDisplayHandle::Xlib(h) => h.display?.as_ptr().cast(),
+        _ => return None,
+    };
+
+    Some((display, xid))
+}
+
+/// Interns an X11 atom name, returning the `Atom` value.
+unsafe fn intern_atom(
+    xlib: &x11_dl::xlib::Xlib,
+    display: *mut x11_dl::xlib::Display,
+    name: &str,
+) -> u64 {
+    let cname = CString::new(name).unwrap_or_else(|_| CString::new("_NET_WM_WINDOW_TYPE").unwrap());
+    unsafe { (xlib.XInternAtom)(display, cname.as_ptr(), x11_dl::xlib::False) }
+}

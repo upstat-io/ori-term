@@ -98,6 +98,13 @@ impl App {
         winit_id: WindowId,
         size: winit::dpi::PhysicalSize<u32>,
     ) {
+        // macOS: process fullscreen events eagerly during resize. macOS fires
+        // resize events during fullscreen transitions BEFORE capturing the "to"
+        // state for the animation. Processing here ensures the tab bar inset
+        // is correct in the animation snapshot.
+        #[cfg(target_os = "macos")]
+        self.process_fullscreen_events();
+
         // Window size changed — cached tab width is invalid.
         self.release_tab_width_lock();
 
@@ -115,14 +122,16 @@ impl App {
             });
             if let Some(new_scale) = dpi_changed {
                 self.handle_dpi_change(winit_id, new_scale);
-                // Update SnapData chrome metrics for the new physical DPI.
-                let s = new_scale as f32;
-                let caption_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                // Update chrome metrics for the new physical DPI.
                 if let Some(ctx) = self.windows.get(&winit_id) {
-                    oriterm_ui::platform_windows::set_chrome_metrics(
+                    let s = new_scale as f32;
+                    let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                    super::refresh_chrome(
                         ctx.window.window(),
-                        oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * s,
-                        caption_h * s,
+                        &ctx.tab_bar.interactive_rects(),
+                        tab_bar_h,
+                        s,
+                        true,
                     );
                 }
             }
@@ -142,6 +151,12 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             ctx.tab_bar.set_window_width(logical_w);
+
+            // macOS tab bar inset (traffic light space) is managed by
+            // fullscreen transition notifications in macos.rs, not here.
+            // The willEnter/willExit observers update the inset before the
+            // macOS animation starts, avoiding the visual glitch of traffic
+            // lights overlapping tab text during the transition.
         }
 
         // Update overlay manager viewport for dialog placement.
@@ -170,24 +185,19 @@ impl App {
     ///
     /// Must be called after any tab mutation (add, remove, reorder, tear-off)
     /// so the OS hit test layer matches the current tab bar layout.
-    /// On non-Windows platforms this is a no-op.
-    #[cfg(target_os = "windows")]
+    /// Routes through [`NativeChromeOps`] — no-op on non-Windows platforms.
     pub(in crate::app) fn refresh_platform_rects(&self, winit_id: WindowId) {
-        if let Some(ctx) = self.windows.get(&winit_id) {
-            let scale = ctx.window.scale_factor().factor() as f32;
-            oriterm_ui::platform_windows::set_client_rects(
-                ctx.window.window(),
-                ctx.tab_bar
-                    .interactive_rects()
-                    .iter()
-                    .map(|r| super::scale_rect(*r, scale))
-                    .collect(),
-            );
-        }
+        let Some(ctx) = self.windows.get(&winit_id) else {
+            return;
+        };
+        let scale = ctx.window.scale_factor().factor() as f32;
+        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        super::refresh_chrome(
+            ctx.window.window(),
+            &ctx.tab_bar.interactive_rects(),
+            tab_bar_h,
+            scale,
+            true,
+        );
     }
-
-    /// No-op on non-Windows platforms.
-    #[cfg(not(target_os = "windows"))]
-    #[expect(clippy::unused_self, reason = "platform parity with Windows variant")]
-    pub(in crate::app) fn refresh_platform_rects(&self, _winit_id: WindowId) {}
 }

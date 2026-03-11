@@ -2,6 +2,7 @@
 section: 11
 title: Search
 status: complete
+reviewed: true
 tier: 3
 goal: Plain text and regex search across terminal grid with search UI overlay and match navigation
 sections:

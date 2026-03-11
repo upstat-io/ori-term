@@ -5,7 +5,7 @@ use crate::input::{
 };
 use crate::layout::compute_layout;
 use crate::widgets::button::ButtonWidget;
-use crate::widgets::flex::FlexWidget;
+use crate::widgets::container::ContainerWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget};
@@ -23,7 +23,7 @@ fn tall_content() -> Box<dyn Widget> {
     let labels: Vec<Box<dyn Widget>> = (0..20)
         .map(|i| Box::new(LabelWidget::new(format!("Line {i}"))) as Box<dyn Widget>)
         .collect();
-    Box::new(FlexWidget::column(labels))
+    Box::new(ContainerWidget::column().with_children(labels))
 }
 
 fn make_scroll(child: Box<dyn Widget>) -> ScrollWidget {
@@ -31,19 +31,19 @@ fn make_scroll(child: Box<dyn Widget>) -> ScrollWidget {
 }
 
 #[test]
-fn scroll_layout_reports_child_size() {
+fn scroll_layout_fills_width_for_vertical() {
     let scroll = make_scroll(short_content());
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
         theme: &super::super::tests::TEST_THEME,
     };
     let layout_box = scroll.layout(&ctx);
-    // Use a viewport wide enough that no clamping occurs.
     let viewport = Rect::new(0.0, 0.0, 1000.0, 1000.0);
     let node = compute_layout(&layout_box, viewport);
 
-    // Label: 100 chars * 8px = 800px wide, 16px tall.
-    assert_eq!(node.rect.width(), 800.0);
+    // Vertical scroll uses Fill width — takes viewport width, not content width.
+    assert_eq!(node.rect.width(), 1000.0);
+    // Height is the child's natural height (100-char label = 16px tall).
     assert_eq!(node.rect.height(), 16.0);
 }
 
@@ -93,6 +93,7 @@ fn scroll_draws_with_clip() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     scroll.draw(&mut ctx);
 
@@ -235,6 +236,7 @@ fn scroll_clip_rect_matches_viewport() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     scroll.draw(&mut ctx);
 
@@ -263,6 +265,7 @@ fn scroll_child_drawn_offset_by_scroll() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     scroll.draw(&mut ctx);
 
@@ -292,6 +295,7 @@ fn scroll_draws_scrollbar_when_overflowing() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     scroll.draw(&mut ctx);
 
@@ -324,6 +328,7 @@ fn scroll_no_scrollbar_when_content_fits() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     scroll.draw(&mut ctx);
 
@@ -473,6 +478,227 @@ fn scroll_delegates_non_scroll_mouse_to_child() {
 }
 
 #[test]
+fn scroll_delegates_click_with_nonzero_origin() {
+    // Button inside scroll container at non-zero origin —
+    // verifies coordinate system is correct when scroll widget isn't at (0,0).
+    let btn = ButtonWidget::new("Click");
+    let btn_id = btn.id();
+    let mut scroll = ScrollWidget::vertical(Box::new(btn));
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(100.0, 200.0, 300.0, 150.0);
+    let ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: false,
+        focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    // Click inside the button area (offset from bounds origin).
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(110.0, 210.0),
+        modifiers: Modifiers::NONE,
+    };
+    let _ = scroll.handle_mouse(&down, &ctx);
+
+    let up = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(110.0, 210.0),
+        modifiers: Modifiers::NONE,
+    };
+    let resp = scroll.handle_mouse(&up, &ctx);
+
+    match resp.action {
+        Some(crate::widgets::WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
+        other => panic!("expected Clicked through scroll at non-zero origin, got {other:?}"),
+    }
+}
+
+#[test]
+fn scroll_delegates_checkbox_toggle_through_form_hierarchy() {
+    // Full form hierarchy: ScrollWidget → FormLayout → FormSection → FormRow → Checkbox
+    // This tests the complete settings panel event chain.
+    use crate::widgets::checkbox::CheckboxWidget;
+    use crate::widgets::form_layout::FormLayout;
+    use crate::widgets::form_row::FormRow;
+    use crate::widgets::form_section::FormSection;
+
+    let checkbox = CheckboxWidget::new("Enable feature");
+    let checkbox_id = checkbox.id();
+
+    let mut form = FormLayout::new().with_section(
+        FormSection::new("Test Section").with_row(FormRow::new("My Setting", Box::new(checkbox))),
+    );
+    form.compute_label_widths(&MockMeasurer::STANDARD, &super::super::tests::TEST_THEME);
+
+    let mut scroll = ScrollWidget::vertical(Box::new(form));
+
+    let measurer = MockMeasurer::STANDARD;
+    // Non-zero origin simulating a centered overlay panel.
+    let bounds = Rect::new(150.0, 100.0, 500.0, 400.0);
+
+    // First, draw to populate layout caches (matching real app behavior).
+    let mut draw_list = DrawList::new();
+    let anim_flag = std::cell::Cell::new(false);
+    let mut draw_ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+    };
+    scroll.draw(&mut draw_ctx);
+
+    // Now send mouse events. The click target needs to be within the
+    // control column of the form row. The label column is on the left,
+    // the control is on the right. We click far enough right to be in
+    // the control zone.
+    let event_ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: false,
+        focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    // Click in the right half of the form (control column area).
+    // Form padding top (16) + section header (28) + row gap (12) = 56,
+    // so +60 is in the first row. Label column is ~100px, control is right.
+    let click_x = bounds.x() + 150.0; // In the control column (checkbox natural width)
+    let click_y = bounds.y() + 60.0; // Below form padding + section header + gap
+
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(click_x, click_y),
+        modifiers: Modifiers::NONE,
+    };
+    let _ = scroll.handle_mouse(&down, &event_ctx);
+
+    let up = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(click_x, click_y),
+        modifiers: Modifiers::NONE,
+    };
+    let resp = scroll.handle_mouse(&up, &event_ctx);
+
+    match resp.action {
+        Some(crate::widgets::WidgetAction::Toggled { id, value }) => {
+            assert_eq!(id, checkbox_id, "toggled wrong checkbox");
+            assert!(value, "checkbox should be checked after toggle");
+        }
+        other => panic!(
+            "expected Toggled action from checkbox click at ({click_x}, {click_y}), got {other:?}"
+        ),
+    }
+}
+
+#[test]
+fn container_with_scroll_form_click_reaches_checkbox() {
+    // Simulates the SettingsPanel structure: Container(column) with
+    // header + scroll(FormLayout). Verifies click events route through
+    // the Container's capture semantics to the checkbox.
+    use crate::layout::SizeSpec;
+    use crate::widgets::checkbox::CheckboxWidget;
+    use crate::widgets::form_layout::FormLayout;
+    use crate::widgets::form_row::FormRow;
+    use crate::widgets::form_section::FormSection;
+    use crate::widgets::separator::SeparatorWidget;
+
+    let checkbox = CheckboxWidget::new("Test toggle");
+    let checkbox_id = checkbox.id();
+
+    let mut form = FormLayout::new().with_section(
+        FormSection::new("General").with_row(FormRow::new("My option", Box::new(checkbox))),
+    );
+    form.compute_label_widths(&MockMeasurer::STANDARD, &super::super::tests::TEST_THEME);
+
+    let scroll = ScrollWidget::vertical(Box::new(form));
+
+    // Simulate SettingsPanel's container structure.
+    let header = LabelWidget::new("Settings");
+    let separator = SeparatorWidget::horizontal();
+
+    let mut container = ContainerWidget::column()
+        .with_width(SizeSpec::Fixed(500.0))
+        .with_height(SizeSpec::Hug)
+        .with_child(Box::new(header))
+        .with_child(Box::new(separator))
+        .with_child(Box::new(scroll));
+
+    let measurer = MockMeasurer::STANDARD;
+    // Simulate centered overlay at a non-zero position.
+    let bounds = Rect::new(140.0, 80.0, 500.0, 400.0);
+
+    // Draw first to populate caches.
+    let mut draw_list = DrawList::new();
+    let anim_flag = std::cell::Cell::new(false);
+    let mut draw_ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+    };
+    container.draw(&mut draw_ctx);
+
+    // Compute layout to find exact scroll widget position for click targeting.
+    let layout_ctx = LayoutCtx {
+        measurer: &measurer,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout_box = container.layout(&layout_ctx);
+    let layout = compute_layout(&layout_box, bounds);
+
+    // Click in the control column area, below the header + separator.
+    // header=child[0], separator=child[1], scroll=child[2].
+    let scroll_node = &layout.children[2];
+    // Offset 60 = past form padding(16) + section header(28) + gap(12) into row.
+    let click_x = scroll_node.rect.x() + 150.0;
+    let click_y = scroll_node.rect.y() + 60.0;
+
+    let event_ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: false,
+        focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(click_x, click_y),
+        modifiers: Modifiers::NONE,
+    };
+    let down_resp = container.handle_mouse(&down, &event_ctx);
+
+    let up = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(click_x, click_y),
+        modifiers: Modifiers::NONE,
+    };
+    let up_resp = container.handle_mouse(&up, &event_ctx);
+
+    match up_resp.action {
+        Some(crate::widgets::WidgetAction::Toggled { id, value }) => {
+            assert_eq!(id, checkbox_id, "toggled wrong checkbox");
+            assert!(value, "checkbox should be checked after toggle");
+        }
+        other => panic!(
+            "expected Toggled action from container→scroll→form→checkbox click at ({click_x}, {click_y}), \
+             down_resp={down_resp:?}, got {other:?}"
+        ),
+    }
+}
+
+#[test]
 fn arrow_up_scrolls_upward() {
     let mut scroll = ScrollWidget::vertical(tall_content());
     // Start scrolled down.
@@ -504,7 +730,7 @@ fn wide_content() -> Box<dyn Widget> {
     let labels: Vec<Box<dyn Widget>> = (0..20)
         .map(|i| Box::new(LabelWidget::new(format!("HorizLbl{i}"))) as Box<dyn Widget>)
         .collect();
-    Box::new(FlexWidget::row(labels))
+    Box::new(ContainerWidget::row().with_children(labels))
 }
 
 #[test]
@@ -536,6 +762,7 @@ fn horizontal_scroll_draws_with_clip() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     scroll.draw(&mut ctx);
 
@@ -581,6 +808,7 @@ fn scroll_content_exactly_fits_no_scrollbar() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     scroll.draw(&mut ctx);
 
@@ -642,6 +870,7 @@ fn scroll_with_scrollbar_style() {
         now: std::time::Instant::now(),
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
+        icons: None,
     };
     scroll.draw(&mut ctx);
     assert!(!draw_list.is_empty());

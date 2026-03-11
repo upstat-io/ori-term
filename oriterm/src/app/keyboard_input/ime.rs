@@ -1,6 +1,6 @@
 //! IME (Input Method Editor) composition state and event handling.
 
-use super::super::App;
+use crate::app::App;
 
 /// IME composition state machine.
 ///

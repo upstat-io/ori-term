@@ -135,22 +135,38 @@ fn arrow_up_cycles_backward() {
 }
 
 #[test]
-fn click_emits_clicked() {
+fn click_emits_open_dropdown() {
     let mut dd = DropdownWidget::new(items());
     let ctx = event_ctx();
 
     dd.handle_mouse(&mouse_down(), &ctx);
     let r = dd.handle_mouse(&mouse_up(), &ctx);
-    assert_eq!(r.action, Some(WidgetAction::Clicked(dd.id())));
+    assert_eq!(
+        r.action,
+        Some(WidgetAction::OpenDropdown {
+            id: dd.id(),
+            options: items(),
+            selected: 0,
+            anchor: ctx.bounds,
+        })
+    );
 }
 
 #[test]
-fn enter_emits_clicked() {
+fn enter_emits_open_dropdown() {
     let mut dd = DropdownWidget::new(items());
     let ctx = event_ctx();
 
     let r = dd.handle_key(key_event(Key::Enter), &ctx);
-    assert_eq!(r.action, Some(WidgetAction::Clicked(dd.id())));
+    assert_eq!(
+        r.action,
+        Some(WidgetAction::OpenDropdown {
+            id: dd.id(),
+            options: items(),
+            selected: 0,
+            anchor: ctx.bounds,
+        })
+    );
 }
 
 #[test]
@@ -198,12 +214,20 @@ fn set_selected_clamped() {
 }
 
 #[test]
-fn space_emits_clicked() {
+fn space_emits_open_dropdown() {
     let mut dd = DropdownWidget::new(items());
     let ctx = event_ctx();
 
     let r = dd.handle_key(key_event(Key::Space), &ctx);
-    assert_eq!(r.action, Some(WidgetAction::Clicked(dd.id())));
+    assert_eq!(
+        r.action,
+        Some(WidgetAction::OpenDropdown {
+            id: dd.id(),
+            options: items(),
+            selected: 0,
+            anchor: ctx.bounds,
+        })
+    );
 }
 
 #[test]

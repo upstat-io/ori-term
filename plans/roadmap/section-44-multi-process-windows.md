@@ -1,7 +1,8 @@
 ---
 section: 44
 title: Multi-Process Window Architecture
-status: complete
+status: in-progress
+reviewed: false
 tier: 0
 goal: Each window is a separate OS process. A mux daemon owns all PTY sessions. Tabs migrate between window processes with zero session loss — same running shell, scrollback, cursor, everything. Like Chrome's process-per-window model.
 sections:

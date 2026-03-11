@@ -30,6 +30,8 @@ pub struct WindowConfig {
     pub opacity: f32,
     /// Initial window position, or `None` for OS default.
     pub position: Option<Point>,
+    /// Whether the window is resizable. Defaults to `true`.
+    pub resizable: bool,
 }
 
 impl Default for WindowConfig {
@@ -41,6 +43,7 @@ impl Default for WindowConfig {
             blur: false,
             opacity: 1.0,
             position: None,
+            resizable: true,
         }
     }
 }
@@ -92,14 +95,24 @@ pub fn create_window(
 /// All platforms share a frameless, initially-invisible window. Per-platform
 /// `#[cfg]` blocks add OS-specific attributes.
 fn build_window_attributes(config: &WindowConfig) -> WindowAttributes {
+    // macOS: keep decorations enabled so native traffic lights appear.
+    // The transparent titlebar + fullsize content view (set in
+    // apply_platform_attributes) give the frameless Chrome-style look.
+    // Other platforms: fully frameless — custom CSD handles everything.
+    #[cfg(target_os = "macos")]
+    let decorations = true;
+    #[cfg(not(target_os = "macos"))]
+    let decorations = false;
+
     let mut attrs = WindowAttributes::default()
         .with_title(&config.title)
         .with_inner_size(winit::dpi::LogicalSize::new(
             config.inner_size.width(),
             config.inner_size.height(),
         ))
-        .with_decorations(false)
+        .with_decorations(decorations)
         .with_visible(false)
+        .with_resizable(config.resizable)
         .with_transparent(config.transparent);
 
     if let Some(pos) = config.position {
@@ -160,6 +173,7 @@ fn apply_platform_attributes(attrs: WindowAttributes, _config: &WindowConfig) ->
 
     attrs
         .with_titlebar_transparent(true)
+        .with_title_hidden(true)
         .with_fullsize_content_view(true)
         .with_option_as_alt(OptionAsAlt::Both)
 }

@@ -219,7 +219,9 @@ pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
 }
 
 /// Build a `CommandBuilder` with shell detection and environment variables.
-pub fn build_command(config: &PtyConfig) -> CommandBuilder {
+pub(crate) fn build_command(config: &PtyConfig) -> CommandBuilder {
+    use crate::shell_integration::set_common_env;
+
     let shell = config.shell.as_deref().unwrap_or_else(|| default_shell());
 
     let mut cmd = CommandBuilder::new(shell);
@@ -231,7 +233,10 @@ pub fn build_command(config: &PtyConfig) -> CommandBuilder {
     // Terminal identification variables.
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
-    cmd.env("TERM_PROGRAM", "oriterm");
+
+    // Oriterm identification env vars (ORITERM, TERM_PROGRAM, TERM_PROGRAM_VERSION).
+    // Always set — not gated by shell_integration.
+    set_common_env(&mut cmd);
 
     // User-provided overrides.
     for (key, value) in &config.env {
@@ -307,8 +312,7 @@ fn build_wslenv(cmd: &mut CommandBuilder, config: &PtyConfig) {
 /// breaks WSL's computed PATH).
 ///
 /// Returns `None` if all keys are already present (nothing to add).
-#[cfg(any(windows, test))]
-pub fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<String> {
+pub(crate) fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<String> {
     use std::collections::HashSet;
 
     // Collect keys already present in WSLENV. Each entry is `KEY` or `KEY/flags`.
@@ -327,8 +331,14 @@ pub fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<String> {
     // PATH must never be added — Windows PATH breaks WSL's computed PATH.
     seen.insert("PATH".into());
 
-    // Variables we want to propagate.
-    let builtin = ["TERM", "COLORTERM", "TERM_PROGRAM"];
+    // Variables we want to propagate across the WSL boundary.
+    let builtin = [
+        "TERM",
+        "COLORTERM",
+        "ORITERM",
+        "TERM_PROGRAM",
+        "TERM_PROGRAM_VERSION",
+    ];
 
     let mut additions = String::new();
     for key in builtin.iter().copied().chain(user_keys.iter().copied()) {
@@ -357,13 +367,13 @@ pub fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<String> {
 /// On Windows, returns `cmd.exe`. On Unix, reads the `SHELL` environment
 /// variable and falls back to `/bin/sh`.
 #[cfg(windows)]
-pub fn default_shell() -> &'static str {
+pub(crate) fn default_shell() -> &'static str {
     "cmd.exe"
 }
 
 /// Returns the default shell for the current platform.
 #[cfg(not(windows))]
-pub fn default_shell() -> &'static str {
+pub(crate) fn default_shell() -> &'static str {
     // Leak a static reference from the environment variable.
     // Called once at startup, so the small allocation is acceptable.
     static SHELL: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();

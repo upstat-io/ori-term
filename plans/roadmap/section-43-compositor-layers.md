@@ -2,6 +2,7 @@
 section: 43
 title: Compositor Layer System + Animation Architecture
 status: complete
+reviewed: true
 tier: 5
 goal: GPU-backed compositor layer system with render-to-texture composition, layer tree hierarchy, property animation (opacity, transform, bounds), animation sequences/groups, and integration with overlay fade and tab sliding
 sections:

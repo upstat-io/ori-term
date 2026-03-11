@@ -92,7 +92,7 @@ fn msg_type_roundtrip_all() {
         MsgType::Error,
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
-        MsgType::NotifyPaneTitleChanged,
+        MsgType::NotifyPaneMetadataChanged,
         MsgType::NotifyPaneBell,
         MsgType::NotifyPaneSnapshot,
     ];
@@ -315,6 +315,7 @@ fn roundtrip_notify_pane_output() {
 fn roundtrip_notify_pane_exited() {
     let pdu = MuxPdu::NotifyPaneExited {
         pane_id: PaneId::from_raw(2),
+        exit_code: 0,
     };
     assert!(pdu.is_notification());
     roundtrip(0, pdu);
@@ -324,7 +325,7 @@ fn roundtrip_notify_pane_exited() {
 fn roundtrip_notify_title_changed() {
     roundtrip(
         0,
-        MuxPdu::NotifyPaneTitleChanged {
+        MuxPdu::NotifyPaneMetadataChanged {
             pane_id: PaneId::from_raw(1),
             title: "vim main.rs".into(),
         },
@@ -590,8 +591,9 @@ fn notification_delivery() {
         },
         MuxPdu::NotifyPaneExited {
             pane_id: PaneId::from_raw(2),
+            exit_code: 0,
         },
-        MuxPdu::NotifyPaneTitleChanged {
+        MuxPdu::NotifyPaneMetadataChanged {
             pane_id: PaneId::from_raw(1),
             title: "new title".into(),
         },
@@ -602,8 +604,9 @@ fn notification_delivery() {
     }
 
     let mut reader = Cursor::new(buf);
+    let mut codec = ProtocolCodec::new();
     for expected in &notifications {
-        let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
+        let frame = codec.decode_frame(&mut reader).unwrap();
         assert_eq!(frame.seq, 0);
         assert!(frame.pdu.is_notification());
         assert_eq!(&frame.pdu, expected);
@@ -707,14 +710,15 @@ fn multiple_frames_sequential() {
     }
 
     let mut reader = Cursor::new(buf);
+    let mut codec = ProtocolCodec::new();
     for (expected_seq, expected_pdu) in &pdus {
-        let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
+        let frame = codec.decode_frame(&mut reader).unwrap();
         assert_eq!(frame.seq, *expected_seq);
         assert_eq!(&frame.pdu, expected_pdu);
     }
 
     // Stream exhausted — next decode should fail with UnexpectedEof.
-    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
+    let err = codec.decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::Io(_)));
 }
 

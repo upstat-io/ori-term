@@ -127,6 +127,7 @@ impl DialogWidget {
                 now: ctx.now,
                 animations_running: ctx.animations_running,
                 theme: ctx.theme,
+                icons: ctx.icons,
             };
             button.draw(&mut btn_ctx);
         }

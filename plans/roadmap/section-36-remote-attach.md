@@ -2,6 +2,7 @@
 section: 36
 title: Remote Attach + Network Transport
 status: not-started
+reviewed: false
 tier: 7A
 goal: Network transport for the wire protocol, authentication, MuxDomain for remote daemon connections, `oriterm connect` CLI, bandwidth-aware rendering over high-latency links
 sections:

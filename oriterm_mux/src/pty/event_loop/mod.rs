@@ -141,10 +141,14 @@ impl<T: EventListener> PtyEventLoop<T> {
             };
             unprocessed += n;
 
-            log::trace!(
-                "PTY read {n} bytes (buffered {unprocessed}): {:?}",
-                String::from_utf8_lossy(&buf[unprocessed - n..unprocessed.min(200)])
-            );
+            {
+                let preview_start = unprocessed.saturating_sub(n);
+                let preview_end = (preview_start + 200).min(unprocessed);
+                log::trace!(
+                    "PTY read {n} bytes (buffered {unprocessed}): {:?}",
+                    String::from_utf8_lossy(&buf[preview_start..preview_end])
+                );
+            }
 
             // Try to parse buffered data (bounded by MAX_LOCKED_PARSE).
             let parsed = self.try_parse(&buf[..unprocessed]);
@@ -211,7 +215,7 @@ impl<T: EventListener> PtyEventLoop<T> {
         // Notify the renderer.
         let sync_bytes = self.processor.sync_bytes_count();
         if sync_bytes > 0 {
-            log::warn!("sync buffer: {sync_bytes} bytes pending");
+            log::trace!("sync buffer: {sync_bytes} bytes pending");
         }
         if sync_bytes < parse_len {
             term.event_listener()

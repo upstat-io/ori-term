@@ -95,6 +95,8 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         // Undo/redo split tree mutations.
         bind(ch("u"), cs, Action::UndoSplit),
         bind(ch("y"), cs, Action::RedoSplit),
+        // Settings overlay.
+        bind(ch(","), ctrl, Action::OpenSettings),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),
@@ -124,6 +126,7 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
             bind(ch("f"), cmd | ctrl, Action::ToggleFullscreen),
             bind(named(NamedKey::Tab), cmd, Action::NextTab),
             bind(named(NamedKey::Tab), cmd_shift, Action::PrevTab),
+            bind(ch(","), cmd, Action::OpenSettings),
         ]);
     }
 

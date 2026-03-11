@@ -164,7 +164,10 @@ pub struct Term<T: EventListener> {
     /// Duration of the last completed command (OSC 133;D − OSC 133;C).
     last_command_duration: Option<std::time::Duration>,
     /// Whether the current title was explicitly set via OSC 0/2.
-    /// When `false`, the tab bar should prefer CWD-based title.
+    ///
+    /// Set by the VTE handler when OSC 0/2 arrives, cleared on OSC 7
+    /// (CWD change) and on full terminal reset. `Pane::has_explicit_title`
+    /// mirrors this via `MuxEvent::PaneTitleChanged` — both must agree.
     has_explicit_title: bool,
     /// Title dirty flag — set when CWD or explicit title changes.
     title_dirty: bool,

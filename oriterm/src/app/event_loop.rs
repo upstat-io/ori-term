@@ -1,123 +1,15 @@
-//! Winit `ApplicationHandler` impl and helper free functions.
+//! Winit `ApplicationHandler` impl — the event dispatch table.
 //!
 //! Separated from `mod.rs` to keep the main module definition file under the
-//! 500-line limit. Contains the event dispatch table and theme/modifier
-//! conversion utilities.
+//! 500-line limit. Helper functions (theme resolution, modifier conversion,
+//! modal loop support) live in `event_loop_helpers.rs`.
 
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
-use winit::keyboard::ModifiersState;
-use winit::window::WindowId;
-
-use oriterm_core::Theme;
-use oriterm_ui::theme::UiTheme;
 
 use super::App;
-use crate::config::Config;
 use crate::event::TermEvent;
-
-/// Resolve the [`UiTheme`] from config override + system theme.
-///
-/// Maps [`ThemeOverride`] → [`UiTheme`]: `Dark` → `dark()`, `Light` → `light()`,
-/// `Auto` → delegates to the provided system theme (falls back to dark on `Unknown`).
-pub(super) fn resolve_ui_theme_with(config: &Config, system: Theme) -> UiTheme {
-    use crate::config::ThemeOverride;
-
-    match config.colors.theme {
-        ThemeOverride::Dark => UiTheme::dark(),
-        ThemeOverride::Light => UiTheme::light(),
-        ThemeOverride::Auto => match system {
-            Theme::Light => UiTheme::light(),
-            _ => UiTheme::dark(),
-        },
-    }
-}
-
-/// Resolve the [`UiTheme`] at startup by detecting the system theme.
-pub(super) fn resolve_ui_theme(config: &Config) -> UiTheme {
-    resolve_ui_theme_with(config, crate::platform::theme::system_theme())
-}
-
-/// Convert winit modifier state to `oriterm_ui` modifier bitmask.
-pub(super) fn winit_mods_to_ui(state: ModifiersState) -> oriterm_ui::input::Modifiers {
-    let mut m = oriterm_ui::input::Modifiers::NONE;
-    if state.shift_key() {
-        m = m.union(oriterm_ui::input::Modifiers::SHIFT_ONLY);
-    }
-    if state.control_key() {
-        m = m.union(oriterm_ui::input::Modifiers::CTRL_ONLY);
-    }
-    if state.alt_key() {
-        m = m.union(oriterm_ui::input::Modifiers::ALT_ONLY);
-    }
-    if state.super_key() {
-        m = m.union(oriterm_ui::input::Modifiers::LOGO_ONLY);
-    }
-    m
-}
-
-impl App {
-    /// Pump mux events and render all dirty windows during a Win32 modal loop.
-    ///
-    /// During modal move/resize, `about_to_wait` never fires. A `SetTimer`
-    /// in the `WndProc` ticks at 60 FPS, generating `RedrawRequested` via
-    /// `InvalidateRect`. This method substitutes for `about_to_wait`'s
-    /// render loop: pump mux events, then render every dirty window using
-    /// the same focus-swapping pattern.
-    #[cfg(target_os = "windows")]
-    fn modal_loop_render(&mut self) {
-        self.pump_mux_events();
-
-        let dirty_ids: Vec<WindowId> = self
-            .windows
-            .iter()
-            .filter(|(_, ctx)| ctx.dirty)
-            .map(|(&id, _)| id)
-            .collect();
-        if dirty_ids.is_empty() {
-            return;
-        }
-
-        let saved_focused = self.focused_window_id;
-        let saved_active = self.active_window;
-
-        for wid in dirty_ids {
-            if let Some(ctx) = self.windows.get_mut(&wid) {
-                ctx.dirty = false;
-            }
-            let mux_wid = self
-                .windows
-                .get(&wid)
-                .map(|ctx| ctx.window.session_window_id());
-            self.focused_window_id = Some(wid);
-            self.active_window = mux_wid;
-            self.handle_redraw();
-        }
-
-        self.focused_window_id = saved_focused;
-        self.active_window = saved_active;
-        self.last_render = std::time::Instant::now();
-    }
-
-    /// Send a focus-in or focus-out escape sequence to the active pane.
-    ///
-    /// Only sends when the terminal has `FOCUS_IN_OUT` mode enabled (mode 1004).
-    /// Focus-in: `CSI I` (`\x1b[I`), focus-out: `CSI O` (`\x1b[O`).
-    fn send_focus_event(&mut self, focused: bool) {
-        let Some(pane_id) = self.active_pane_id() else {
-            return;
-        };
-        let Some(mode) = self.pane_mode(pane_id) else {
-            return;
-        };
-        if !mode.contains(oriterm_core::TermMode::FOCUS_IN_OUT) {
-            return;
-        }
-        let seq: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
-        self.write_pane_input(pane_id, seq);
-    }
-}
 
 impl ApplicationHandler<TermEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -142,9 +34,40 @@ impl ApplicationHandler<TermEvent> for App {
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        window_id: WindowId,
+        window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        // Dialog windows: handle separately from terminal windows.
+        if self.dialogs.contains_key(&window_id) {
+            self.handle_dialog_window_event(window_id, event);
+            return;
+        }
+
+        // Modal blocking: when a modal dialog (e.g. Confirmation) is open,
+        // its parent window ignores input events. Non-input events (resize,
+        // redraw, scale change) still pass through.
+        if self.window_manager.is_modal_blocked(window_id) {
+            match &event {
+                WindowEvent::Resized(_)
+                | WindowEvent::RedrawRequested
+                | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::Focused(_)
+                | WindowEvent::ThemeChanged(_) => {
+                    // Allow these — they don't represent user input.
+                }
+                WindowEvent::MouseInput { .. } => {
+                    // Clicking a blocked window brings the modal dialog to front.
+                    if let Some(modal_id) = self.window_manager.find_modal_child(window_id) {
+                        if let Some(ctx) = self.dialogs.get(&modal_id) {
+                            ctx.window.focus_window();
+                        }
+                    }
+                    return;
+                }
+                _ => return,
+            }
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 self.close_window(window_id, event_loop);
@@ -193,9 +116,15 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::Focused(focused) => {
                 if focused {
+                    // Flush any pending focus-out before processing focus-in.
+                    // If a previous window lost focus to this one (not a child
+                    // dialog), finalize the focus-out escape sequence now.
+                    self.flush_pending_focus_out();
+
                     // Track which winit window is focused and update the
                     // mux active_window to match.
                     self.focused_window_id = Some(window_id);
+                    self.window_manager.set_focused(Some(window_id));
                     if let Some(mux_id) = self
                         .windows
                         .get(&window_id)
@@ -208,14 +137,19 @@ impl ApplicationHandler<TermEvent> for App {
                         && self
                             .terminal_mode()
                             .is_some_and(|m| m.contains(oriterm_core::TermMode::CURSOR_BLINKING));
+                    self.send_focus_event(true);
                 } else {
                     // Freeze cursor visible when window loses focus.
                     self.blinking_active = false;
+                    // Restore mouse cursor so it isn't stuck hidden in other apps.
+                    self.restore_mouse_cursor(window_id);
+                    // Defer focus-out: if focus is moving to a child dialog,
+                    // the PTY focus-out escape should be suppressed.
+                    self.pending_focus_out = Some(super::PendingFocusOut { window_id });
                 }
                 // Reset blink timer so cursor is visible immediately
                 // (on focus-in: fresh start; on focus-out: frozen visible).
                 self.cursor_blink.reset();
-                self.send_focus_event(focused);
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.set_active(focused);
                     ctx.dirty = true;
@@ -223,10 +157,18 @@ impl ApplicationHandler<TermEvent> for App {
             }
 
             WindowEvent::CursorLeft { .. } => {
+                self.restore_mouse_cursor(window_id);
                 self.clear_tab_bar_hover();
                 self.clear_url_hover();
                 self.clear_divider_hover();
+                // On macOS, mouseDragged: continues after CursorLeft. Don't
+                // cancel an active drag — it needs to reach tear-off threshold.
+                #[cfg(not(target_os = "macos"))]
                 self.cancel_tab_drag();
+                #[cfg(target_os = "macos")]
+                if !self.has_tab_drag() || !self.mouse.left_down() {
+                    self.cancel_tab_drag();
+                }
                 self.cancel_divider_drag();
                 self.cancel_floating_drag();
                 self.release_tab_width_lock();
@@ -234,20 +176,27 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.perf.record_cursor_move();
+                self.restore_mouse_cursor(window_id);
                 self.mouse.set_cursor_pos(position);
-                self.update_tab_bar_hover(position);
 
-                // Tab drag: consume all cursor moves when active.
-                if self.update_tab_drag(
-                    position,
-                    #[cfg(target_os = "windows")]
-                    event_loop,
-                ) {
+                // Overlays take priority: deliver move events for per-widget
+                // hover tracking and consume the event when any overlay is
+                // active. Without this, tab bar hover, divider hover, and
+                // terminal mouse handlers interfere with menu interaction.
+                if self.try_overlay_mouse_move(position) {
                     return;
                 }
 
-                // Forward move events to overlays for per-widget hover tracking.
-                if self.try_overlay_mouse_move(position) {
+                self.update_tab_bar_hover(position);
+
+                // Tab drag: consume all cursor moves when active.
+                if self.update_tab_drag(position, event_loop) {
+                    return;
+                }
+
+                // macOS/Linux: track torn-off window under cursor during drag.
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                if self.update_torn_off_drag() {
                     return;
                 }
 
@@ -305,17 +254,19 @@ impl ApplicationHandler<TermEvent> for App {
                     let suppress = self
                         .focused_ctx_mut()
                         .and_then(|ctx| ctx.tab_drag.as_mut())
-                        .is_some_and(|drag| {
-                            if drag.suppress_next_release {
-                                drag.suppress_next_release = false;
-                                true
-                            } else {
-                                false
-                            }
-                        });
+                        .is_some_and(|d| std::mem::replace(&mut d.suppress_next_release, false));
                     if suppress {
                         return;
                     }
+                }
+                // macOS/Linux: finish torn-off drag on mouse-up → check merge.
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                if button == winit::event::MouseButton::Left
+                    && state == winit::event::ElementState::Released
+                    && self.torn_off_pending.is_some()
+                {
+                    self.check_torn_off_merge();
+                    return;
                 }
                 // Tab drag: finish on left-button release.
                 if button == winit::event::MouseButton::Left
@@ -331,8 +282,11 @@ impl ApplicationHandler<TermEvent> for App {
                 self.handle_mouse_input(button, state);
             }
 
-            // Mouse wheel: report, alternate scroll, or viewport scroll.
+            // Mouse wheel: overlays first, then report/alternate/viewport scroll.
             WindowEvent::MouseWheel { delta, .. } => {
+                if self.try_overlay_scroll(delta) {
+                    return;
+                }
                 if let Some(mode) = self.terminal_mode() {
                     self.handle_mouse_wheel(delta, mode);
                 }
@@ -379,15 +333,35 @@ impl ApplicationHandler<TermEvent> for App {
                     self.move_tab_to_new_window(tid, event_loop);
                 }
             }
+            TermEvent::OpenSettings => {
+                self.open_settings_dialog(event_loop);
+            }
+            TermEvent::OpenConfirmation(request) => {
+                self.open_confirmation_dialog(event_loop, request);
+            }
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         self.perf.record_tick();
 
-        // Check for completed OS-level tab drag (tear-off + merge).
+        // Flush deferred focus-out. If focus left our app entirely (no
+        // Focused(true) arrived), send the focus-out escape now.
+        self.flush_pending_focus_out();
+
+        // macOS: process fullscreen transition notifications.
+        #[cfg(target_os = "macos")]
+        self.process_fullscreen_events();
+
+        // Windows: check for completed OS-level tab drag (merge on return
+        // from blocking drag_window()). macOS checks on mouse-up instead.
         #[cfg(target_os = "windows")]
         self.check_torn_off_merge();
+
+        // macOS/Linux: update torn-off window position every frame as a backup.
+        // CursorMoved events may not always reach the source window.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        self.update_torn_off_drag();
 
         // Pump mux events: drain PTY reader thread messages and process
         // resulting notifications before rendering.
@@ -428,42 +402,17 @@ impl ApplicationHandler<TermEvent> for App {
             }
         }
 
-        // Check if any window is dirty and render it, subject to frame budget.
-        let any_dirty = self.windows.values().any(|ctx| ctx.dirty);
+        // Tick dialog overlay animations (dropdown fade-in/fade-out).
+        self.tick_dialog_animations();
+
+        // Check if any window (terminal or dialog) is dirty and render it.
+        let any_dirty = self.windows.values().any(|ctx| ctx.dirty)
+            || self.dialogs.values().any(|ctx| ctx.dirty);
         let now = std::time::Instant::now();
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
         if any_dirty && budget_elapsed {
-            // Render all dirty windows. Each render temporarily swaps
-            // `focused_window_id`/`active_window` so `handle_redraw`
-            // targets the correct window (same pattern as `tear_off_tab`).
-            let dirty_winit_ids: Vec<WindowId> = self
-                .windows
-                .iter()
-                .filter(|(_, ctx)| ctx.dirty)
-                .map(|(&id, _)| id)
-                .collect();
-
-            let saved_focused = self.focused_window_id;
-            let saved_active = self.active_window;
-
-            for wid in dirty_winit_ids {
-                if let Some(ctx) = self.windows.get_mut(&wid) {
-                    ctx.dirty = false;
-                }
-                let mux_wid = self
-                    .windows
-                    .get(&wid)
-                    .map(|ctx| ctx.window.session_window_id());
-                self.focused_window_id = Some(wid);
-                self.active_window = mux_wid;
-                self.handle_redraw();
-            }
-
-            self.focused_window_id = saved_focused;
-            self.active_window = saved_active;
-            self.last_render = std::time::Instant::now();
-            self.perf.record_render();
+            self.render_dirty_windows();
         }
 
         // Periodic performance stats.
@@ -472,12 +421,21 @@ impl ApplicationHandler<TermEvent> for App {
         // Schedule wakeup for continuous rendering when animations are
         // active or for the next blink toggle. The default ControlFlow::Wait
         // lets the event loop sleep indefinitely when nothing is animating.
+        //
+        // Re-check: widget animations may set dirty during draw.
+        let still_dirty =
+            self.windows.values().any(|c| c.dirty) || self.dialogs.values().any(|c| c.dirty);
         let has_animations = self
             .windows
             .values()
-            .any(|ctx| ctx.layer_animator.is_any_animating());
-        if any_dirty && !budget_elapsed {
-            // Dirty but budget not yet elapsed — wake up when budget allows.
+            .any(|c| c.layer_animator.is_any_animating())
+            || self
+                .dialogs
+                .values()
+                .any(|c| c.layer_animator.is_any_animating());
+        if (any_dirty && !budget_elapsed) || still_dirty {
+            // Dirty but budget not yet elapsed, or re-dirtied by widget
+            // animations during render — wake up when budget allows.
             let remaining =
                 super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
             event_loop.set_control_flow(ControlFlow::WaitUntil(now + remaining));
@@ -492,5 +450,56 @@ impl ApplicationHandler<TermEvent> for App {
         } else {
             // Nothing animating — sleep until the next external event.
         }
+    }
+}
+
+impl App {
+    /// Render all dirty terminal and dialog windows.
+    ///
+    /// Temporarily swaps `focused_window_id`/`active_window` to target each
+    /// dirty window, then restores the original focus.
+    fn render_dirty_windows(&mut self) {
+        let dirty_winit_ids: Vec<winit::window::WindowId> = self
+            .windows
+            .iter()
+            .filter(|(_, ctx)| ctx.dirty)
+            .map(|(&id, _)| id)
+            .collect();
+
+        let saved_focused = self.focused_window_id;
+        let saved_active = self.active_window;
+
+        for wid in dirty_winit_ids {
+            if let Some(ctx) = self.windows.get_mut(&wid) {
+                ctx.dirty = false;
+            }
+            let mux_wid = self
+                .windows
+                .get(&wid)
+                .map(|ctx| ctx.window.session_window_id());
+            self.focused_window_id = Some(wid);
+            self.active_window = mux_wid;
+            self.handle_redraw();
+        }
+
+        self.focused_window_id = saved_focused;
+        self.active_window = saved_active;
+
+        // Render dirty dialog windows.
+        let dirty_dialog_ids: Vec<winit::window::WindowId> = self
+            .dialogs
+            .iter()
+            .filter(|(_, ctx)| ctx.dirty)
+            .map(|(&id, _)| id)
+            .collect();
+        for wid in dirty_dialog_ids {
+            if let Some(ctx) = self.dialogs.get_mut(&wid) {
+                ctx.dirty = false;
+            }
+            self.render_dialog(wid);
+        }
+
+        self.last_render = std::time::Instant::now();
+        self.perf.record_render();
     }
 }

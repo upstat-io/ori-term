@@ -3,18 +3,18 @@
 //! Contains the subclass callback installed by [`super::enable_snap()`] and
 //! the individual message handlers it dispatches to.
 
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "Win32 WndProc subclass callback")]
 
 use windows_sys::Win32::Foundation::{HWND, LRESULT, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::InvalidateRect;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetSystemMetrics, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
-    HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed, KillTimer,
-    NCCALCSIZE_PARAMS, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE, SWP_NOACTIVATE,
-    SWP_NOZORDER, SetTimer, SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE,
-    WM_EXITSIZEMOVE, WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_TIMER,
+    GetCursorPos, GetSystemMetrics, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT,
+    HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed, KillTimer, NCCALCSIZE_PARAMS,
+    SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer,
+    SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING,
+    WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_TIMER,
 };
 
 use std::sync::atomic::Ordering;
@@ -54,22 +54,28 @@ fn map_hit_result(result: HitTestResult) -> LRESULT {
 
 /// Handles `WM_NCHITTEST` by delegating to [`hit_test::hit_test()`].
 ///
-/// All coordinates are in physical pixels — the cursor position from
-/// `lparam`, the window rect from `GetWindowRect`, and the stored
-/// `border_width`/`caption_height`/`interactive_rects` (set via
-/// [`super::enable_snap()`] and [`super::set_client_rects()`]) are all physical.
+/// Converts screen coordinates to client-relative physical pixels and
+/// delegates to the pure hit test function. Resize borders are checked
+/// before interactive rects so corners near window controls remain
+/// resizable.
+///
+/// All coordinates are in physical pixels — `lparam` screen cursor,
+/// visible frame bounds, and stored `interactive_rects` are all physical.
+///
+/// Uses `DWMWA_EXTENDED_FRAME_BOUNDS` (via [`super::visible_frame_bounds_hwnd`])
+/// instead of `GetWindowRect` for coordinate conversion. On Windows 10/11,
+/// `GetWindowRect` includes invisible DWM borders (~7px per side) for
+/// windows with `WS_THICKFRAME`, but the client area starts at the visible
+/// boundary. Using the DWM visible bounds ensures the screen-to-client
+/// conversion matches winit's `CursorMoved` coordinates.
 fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
     let cursor_x = get_x_lparam(lparam);
     let cursor_y = get_y_lparam(lparam);
 
-    // Window rect in screen coordinates (physical pixels).
-    let mut rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    unsafe { GetWindowRect(hwnd, &raw mut rect) };
+    // Visible frame bounds in screen coordinates (physical pixels).
+    // Uses DWMWA_EXTENDED_FRAME_BOUNDS to exclude the invisible DWM border
+    // that GetWindowRect includes for WS_THICKFRAME windows.
+    let rect = super::visible_frame_bounds_hwnd(hwnd);
 
     // Client-relative physical coordinates.
     let point = Point::new((cursor_x - rect.left) as f32, (cursor_y - rect.top) as f32);
@@ -82,8 +88,12 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
 
     let is_maximized = unsafe { IsZoomed(hwnd) != 0 };
 
-    let border_width = data.border_width.lock().map(|g| *g).unwrap_or(0.0);
-    let caption_height = data.caption_height.lock().map(|g| *g).unwrap_or(0.0);
+    let metrics = data.chrome_metrics.lock();
+    let (border_width, caption_height) = metrics
+        .as_ref()
+        .map(|m| (m.border_width, m.caption_height))
+        .unwrap_or((0.0, 0.0));
+    drop(metrics);
     let rects_lock = data.interactive_rects.lock();
     let rects: &[crate::geometry::Rect] = rects_lock.as_ref().map(|g| g.as_slice()).unwrap_or(&[]);
     let chrome = hit_test::WindowChrome {
@@ -94,8 +104,24 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
         is_maximized,
     };
     let result = hit_test::hit_test(point, &chrome);
+    let lresult = map_hit_result(result);
 
-    map_hit_result(result)
+    log::trace!(
+        "nchittest: screen=({cursor_x},{cursor_y}) vfb=({},{},{},{}) \
+         client=({:.0},{:.0}) size=({:.0},{:.0}) max={is_maximized} \
+         bw={border_width:.1} ch={caption_height:.1} rects={rects:?} \
+         result={result:?} ht={lresult}",
+        rect.left,
+        rect.top,
+        rect.right,
+        rect.bottom,
+        point.x,
+        point.y,
+        window_size.width(),
+        window_size.height(),
+    );
+
+    lresult
 }
 
 /// Handles `WM_MOVING`: position correction + cursor-based merge detection.

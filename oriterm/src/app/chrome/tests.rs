@@ -2,7 +2,7 @@
 
 use super::grid_origin_y;
 
-// ── grid_origin_y: integer-pixel guarantee ──
+// grid_origin_y: integer-pixel guarantee
 
 #[test]
 fn origin_integer_at_100_percent_scale() {

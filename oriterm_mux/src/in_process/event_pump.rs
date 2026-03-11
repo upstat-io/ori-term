@@ -6,14 +6,14 @@
 use std::collections::HashMap;
 
 use crate::domain::Domain;
+use crate::mux_event::{MuxEvent, MuxNotification};
+use crate::pane::Pane;
 use crate::{DomainId, PaneId};
 
 use super::InProcessMux;
-use crate::mux_event::{MuxEvent, MuxNotification};
-use crate::pane::Pane;
 
 impl InProcessMux {
-    // -- Event pump --
+    // Event pump
 
     /// Drain `MuxEvent`s from pane reader threads and emit `MuxNotification`s.
     ///
@@ -29,29 +29,29 @@ impl InProcessMux {
                     }
                     self.notifications.push(MuxNotification::PaneOutput(id));
                 }
-                MuxEvent::PaneExited { pane_id, .. } => {
-                    self.close_pane(pane_id);
+                MuxEvent::PaneExited { pane_id, exit_code } => {
+                    self.close_pane_with_exit_code(pane_id, exit_code);
                 }
                 MuxEvent::PaneTitleChanged { pane_id, title } => {
                     if let Some(pane) = panes.get_mut(&pane_id) {
                         pane.set_title(title);
                     }
                     self.notifications
-                        .push(MuxNotification::PaneTitleChanged(pane_id));
+                        .push(MuxNotification::PaneMetadataChanged(pane_id));
                 }
                 MuxEvent::PaneIconChanged { pane_id, icon_name } => {
                     if let Some(pane) = panes.get_mut(&pane_id) {
                         pane.set_icon_name(icon_name);
                     }
                     self.notifications
-                        .push(MuxNotification::PaneTitleChanged(pane_id));
+                        .push(MuxNotification::PaneMetadataChanged(pane_id));
                 }
                 MuxEvent::PaneCwdChanged { pane_id, cwd } => {
                     if let Some(pane) = panes.get_mut(&pane_id) {
                         pane.set_cwd(cwd);
                     }
                     self.notifications
-                        .push(MuxNotification::PaneTitleChanged(pane_id));
+                        .push(MuxNotification::PaneMetadataChanged(pane_id));
                 }
                 MuxEvent::CommandComplete { pane_id, duration } => {
                     if let Some(pane) = panes.get_mut(&pane_id) {
@@ -109,12 +109,7 @@ impl InProcessMux {
         self.notifications.clear();
     }
 
-    // -- Accessors --
-
-    /// Immutable access to the pane registry.
-    pub fn pane_registry(&self) -> &crate::registry::PaneRegistry {
-        &self.pane_registry
-    }
+    // Accessors
 
     /// Clone of the event sender for spawning new panes.
     pub fn event_tx(&self) -> &std::sync::mpsc::Sender<MuxEvent> {

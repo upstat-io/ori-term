@@ -2,6 +2,7 @@
 section: 8
 title: Keyboard Input
 status: complete
+reviewed: true
 tier: 3
 goal: Legacy + Kitty keyboard encoding, keyboard dispatch, IME support
 sections:

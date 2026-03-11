@@ -1,8 +1,8 @@
 //! Frame codec for encoding and decoding protocol messages.
 //!
 //! Provides [`ProtocolCodec`] which reads/writes framed [`MuxPdu`] messages
-//! from any `Read`/`Write` stream. Handles partial reads via an internal
-//! buffer (non-blocking streams may deliver data incrementally).
+//! from any `Read`/`Write` stream. Decoding buffers partial reads internally,
+//! so timeouts or short reads never cause frame misalignment.
 
 use std::io::{self, Read, Write};
 
@@ -69,17 +69,14 @@ impl From<bincode::Error> for DecodeError {
 /// Codec for encoding and decoding framed protocol messages.
 ///
 /// Encoding is straightforward (serialize + write header + payload).
-/// Decoding reads the full header then the full payload from the stream,
-/// blocking until complete. For non-blocking streams, callers should ensure
-/// the stream is readable before calling `decode_frame`.
-///
-/// The codec reuses a single payload buffer across `decode_frame` calls,
-/// growing to the high-water mark and staying there. This avoids per-frame
-/// allocation on the reader hot path.
+/// Decoding accumulates bytes in an internal buffer across calls.
+/// Partial reads (from timeouts or non-blocking streams) are safely
+/// buffered — no bytes are lost, and frame alignment is preserved.
 pub struct ProtocolCodec {
-    /// Reusable payload buffer for decoding. Grows to the largest frame
-    /// seen and stays allocated across calls.
-    decode_buf: Vec<u8>,
+    /// Accumulation buffer for incoming bytes. Partial headers and payloads
+    /// persist across `decode_frame` calls. Bytes are consumed only when a
+    /// complete frame is decoded (or a malformed frame is skipped).
+    buf: Vec<u8>,
 }
 
 impl Default for ProtocolCodec {
@@ -92,8 +89,15 @@ impl ProtocolCodec {
     /// Create a new codec with an empty decode buffer.
     pub fn new() -> Self {
         Self {
-            decode_buf: Vec::new(),
+            buf: Vec::with_capacity(4096),
         }
+    }
+
+    /// Whether the internal buffer contains data that may form a complete
+    /// frame. The caller can use this to avoid blocking on `poll(2)` when
+    /// buffered data already contains the next frame.
+    pub fn has_buffered_data(&self) -> bool {
+        !self.buf.is_empty()
     }
 
     /// Encode a PDU and write it as a framed message.
@@ -128,43 +132,93 @@ impl ProtocolCodec {
 
     /// Decode a single framed message from a stream.
     ///
-    /// Blocks until the full header and payload are read. Returns
-    /// `DecodeError::Io` with `UnexpectedEof` if the stream closes
-    /// mid-frame. Reuses an internal buffer that grows to the high-water
-    /// mark, avoiding per-frame allocation.
+    /// Reads bytes into an internal buffer until a complete frame is
+    /// available. Returns `DecodeError::Io` with `WouldBlock` if a timeout
+    /// or non-blocking read returns before enough data arrives — partial
+    /// reads are buffered safely and will be completed on the next call.
+    ///
+    /// Returns `DecodeError::Io(UnexpectedEof)` if the stream closes.
     pub fn decode_frame<R: Read>(&mut self, reader: &mut R) -> Result<DecodedFrame, DecodeError> {
-        // Read the 10-byte header.
-        let mut hdr_buf = [0u8; HEADER_LEN];
-        reader.read_exact(&mut hdr_buf)?;
-        let header = FrameHeader::decode(&hdr_buf);
+        // Fast path: try to decode from existing buffer contents.
+        if let Some(result) = self.try_decode() {
+            return result;
+        }
+
+        // Read in a loop until we have a complete frame, EOF, or timeout.
+        let mut tmp = [0u8; 8192];
+        loop {
+            match reader.read(&mut tmp) {
+                Ok(0) => {
+                    return Err(DecodeError::Io(io::Error::from(
+                        io::ErrorKind::UnexpectedEof,
+                    )));
+                }
+                Ok(n) => {
+                    self.buf.extend_from_slice(&tmp[..n]);
+                    if let Some(result) = self.try_decode() {
+                        return result;
+                    }
+                    // Need more data — continue reading.
+                }
+                Err(e)
+                    if e.kind() == io::ErrorKind::WouldBlock
+                        || e.kind() == io::ErrorKind::TimedOut =>
+                {
+                    return Err(DecodeError::Io(io::Error::from(io::ErrorKind::WouldBlock)));
+                }
+                Err(e) => return Err(DecodeError::Io(e)),
+            }
+        }
+    }
+
+    /// Try to decode one complete frame from the internal buffer.
+    ///
+    /// Returns `Some(Ok(frame))` if a full frame was decoded and consumed,
+    /// `Some(Err(e))` on a decode error (malformed bytes are consumed),
+    /// or `None` if there aren't enough bytes yet.
+    fn try_decode(&mut self) -> Option<Result<DecodedFrame, DecodeError>> {
+        if self.buf.len() < HEADER_LEN {
+            return None;
+        }
+
+        let header = FrameHeader::decode(
+            self.buf[..HEADER_LEN]
+                .try_into()
+                .expect("checked length >= HEADER_LEN"),
+        );
 
         // Validate payload size.
         if header.payload_len > MAX_PAYLOAD {
-            return Err(DecodeError::PayloadTooLarge(header.payload_len));
+            self.buf.drain(..HEADER_LEN);
+            return Some(Err(DecodeError::PayloadTooLarge(header.payload_len)));
         }
 
-        // Validate message type. Read and discard the payload for unknown
-        // types to keep the stream aligned for the next frame.
+        // Validate message type. Wait for the full frame, then drain it.
         if super::msg_type::MsgType::from_u16(header.msg_type).is_none() {
-            let len = header.payload_len as usize;
-            self.decode_buf.resize(len, 0);
-            reader.read_exact(&mut self.decode_buf[..len])?;
-            return Err(DecodeError::UnknownMsgType(header.msg_type));
+            let total = HEADER_LEN + header.payload_len as usize;
+            if self.buf.len() < total {
+                return None; // Not enough data yet.
+            }
+            self.buf.drain(..total);
+            return Some(Err(DecodeError::UnknownMsgType(header.msg_type)));
         }
 
-        // Read the payload into the reusable buffer. `resize` only
-        // allocates when the frame is larger than any previously seen;
-        // smaller frames reuse the existing capacity.
-        let len = header.payload_len as usize;
-        self.decode_buf.resize(len, 0);
-        reader.read_exact(&mut self.decode_buf[..len])?;
+        let total = HEADER_LEN + header.payload_len as usize;
+        if self.buf.len() < total {
+            return None;
+        }
 
-        // Deserialize the PDU from bincode.
-        let pdu: MuxPdu = bincode::deserialize(&self.decode_buf[..len])?;
+        // Deserialize the payload.
+        let payload = &self.buf[HEADER_LEN..total];
+        let result: Result<MuxPdu, _> = bincode::deserialize(payload);
+        self.buf.drain(..total);
 
-        Ok(DecodedFrame {
-            seq: header.seq,
-            pdu,
-        })
+        match result {
+            Ok(pdu) => Some(Ok(DecodedFrame {
+                seq: header.seq,
+                pdu,
+            })),
+            Err(e) => Some(Err(DecodeError::Deserialize(e))),
+        }
     }
 }

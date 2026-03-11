@@ -643,17 +643,26 @@ fn test_snapshot_dirty_flag() {
 
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Clear initial dirty state.
-    client.poll_events();
+    // Clear initial dirty state. The daemon refresh is async (triggers
+    // MarkAllDirty → server pushes snapshot), so poll until the pushed
+    // snapshot arrives and the clear succeeds.
     let mut notifs = Vec::new();
-    client.drain_notifications(&mut notifs);
-    client.refresh_pane_snapshot(pane_id);
-    client.clear_pane_snapshot_dirty(pane_id);
-
-    assert!(
-        !client.is_pane_snapshot_dirty(pane_id),
-        "dirty flag should be false after clear"
-    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+        client.refresh_pane_snapshot(pane_id);
+        client.clear_pane_snapshot_dirty(pane_id);
+        if !client.is_pane_snapshot_dirty(pane_id) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for clean snapshot state"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 
     // Generate output to make it dirty.
     client.send_input(pane_id, b"echo DIRTY_TEST\n");
@@ -1047,7 +1056,7 @@ fn test_infinite_flood_random_streams_updates() {
     );
 }
 
-/// 14.4: PaneTitleChanged notification fires on title change.
+/// 14.4: PaneMetadataChanged notification fires on title change.
 ///
 /// The shell's prompt may subsequently overwrite the title via OSC 0/7,
 /// so we only verify the notification arrives, not the final snapshot
@@ -1070,7 +1079,7 @@ fn test_notification_title_changed() {
     // raw mode during line editing.
     client.send_input(pane_id, b"printf '\\033]0;E2E_TITLE_TEST\\007'\n");
 
-    // Wait for PaneTitleChanged notification.
+    // Wait for PaneMetadataChanged notification.
     // CI runners can be slow to deliver IPC notifications.
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut got_title = false;
@@ -1080,7 +1089,7 @@ fn test_notification_title_changed() {
         client.drain_notifications(&mut notifs);
 
         for notif in &notifs {
-            if let MuxNotification::PaneTitleChanged(id) = notif {
+            if let MuxNotification::PaneMetadataChanged(id) = notif {
                 if *id == pane_id {
                     got_title = true;
                 }
@@ -1093,14 +1102,14 @@ fn test_notification_title_changed() {
 
         assert!(
             Instant::now() < deadline,
-            "timed out waiting for PaneTitleChanged notification"
+            "timed out waiting for PaneMetadataChanged notification"
         );
         thread::sleep(Duration::from_millis(20));
     }
 
     assert!(
         got_title,
-        "should receive PaneTitleChanged notification after OSC 0"
+        "should receive PaneMetadataChanged notification after OSC 0"
     );
 }
 

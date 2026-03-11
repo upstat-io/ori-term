@@ -7,11 +7,11 @@
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
+use oriterm_mux::MuxNotification;
 use oriterm_mux::PaneId;
 
 use crate::config::NotifyOnCommandFinish;
 use crate::platform::notify;
-use oriterm_mux::mux_event::MuxNotification;
 
 use super::App;
 
@@ -63,10 +63,10 @@ impl App {
                 // Mark all windows dirty — the pane may be in any window.
                 self.mark_all_windows_dirty();
             }
-            MuxNotification::PaneClosed(id) => {
-                self.handle_pane_closed(id);
+            MuxNotification::PaneClosed { pane_id, .. } => {
+                self.handle_pane_closed(pane_id);
             }
-            MuxNotification::PaneTitleChanged(_) => {
+            MuxNotification::PaneMetadataChanged(_) => {
                 self.sync_tab_bar_from_mux();
                 self.mark_all_windows_dirty();
             }

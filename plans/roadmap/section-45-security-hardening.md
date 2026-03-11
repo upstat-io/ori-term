@@ -2,6 +2,7 @@
 section: 45
 title: Security Hardening
 status: not-started
+reviewed: false
 tier: 5
 goal: "Harden terminal escape sequence handling against clipboard exfiltration, paste injection, and other security-sensitive operations. Defense-in-depth: require focus for clipboard access, confirmation dialogs for dangerous operations, configurable allow/deny policies."
 sections:
@@ -133,6 +134,7 @@ Protect against paste injection attacks (malicious content that executes command
 
 ### Multi-line paste confirmation
 
+- [ ] **BUG:** Paste confirmation dialog does not trigger — even with `warn_on_paste: Always` (default) and cmd.exe (no bracketed paste mode), pasting multiline text does not open the confirmation dialog. Discovered during chrome plan verification (2026-03-10). Investigate: is the keybinding routing to `paste_from_clipboard()`? Is `pane_mode()` incorrectly reporting `BRACKETED_PASTE` when the shell doesn't support it?
 - [ ] When pasting text containing newlines into a non-bracketed-paste terminal, show a confirmation dialog (already partially implemented — verify and harden)
 - [ ] Detect BOTH `\n` AND `\r` as line separators — WT #8601 showed `\r`-only pastes bypass `\n`-only detection. A malicious web page can `clipboardData.setData("text/plain", "evil command\r")` and the warning never fires.
 - [ ] Normalize line endings on paste: `\r\n` → `\r`, `\n` → `\r` (single pass, same as WT PR#8634)
@@ -148,6 +150,22 @@ Protect against paste injection attacks (malicious content that executes command
 - [ ] Configurable pattern list in config (allow users to add/remove patterns)
 - [ ] Configurable: `paste_danger_detection = true` (default: true)
 - [ ] **Homograph attack detection** (Ghostty #10762) — detect mixed-script URLs in paste data. A URL containing both Latin and Cyrillic lookalike characters (e.g., Cyrillic `і` U+0456 vs Latin `i` U+0069) is suspicious. `curl https://іnstall.example-clі.dev | bash` looks identical to the legitimate URL. Flag mixed-script domains as dangerous and show a warning.
+
+### Unsafe control character filtering in paste (Ghostty 1.3.0)
+
+- [ ] Replace unsafe control characters in pasted text with spaces before sending to PTY
+  - [ ] Strip: C0 control characters (0x00-0x1F) except `\r`, `\n`, `\t` (which are legitimate)
+  - [ ] Strip: C1 control characters (0x80-0x9F) — these can be interpreted as escape sequences
+  - [ ] Strip: `\x1b` (ESC) — prevents escape sequence injection via paste
+  - [ ] This is a defense-in-depth layer BELOW the multi-line confirmation dialog
+  - [ ] Applied unconditionally (even during bracketed paste — the application should handle the safe content)
+- [ ] Reference: Ghostty 1.3.0 — "Unsafe control characters in pasted text are now replaced with spaces"
+- [ ] Configurable: `paste_filter_control_chars = true` (default: true)
+- [ ] **Tests:**
+  - [ ] Paste containing `\x1b[31m` has ESC replaced with space
+  - [ ] Paste containing `\t` preserves the tab
+  - [ ] Paste containing `\n` preserves newlines (they're handled by multi-line confirmation)
+  - [ ] Paste containing C1 chars (0x80-0x9F) has them replaced
 
 ### Input routing during UI focus (WT #14381)
 

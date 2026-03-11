@@ -14,6 +14,7 @@ use super::App;
 use super::window_context::WindowContext;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
+use crate::window_manager::types::{ManagedWindow, WindowKind};
 
 impl App {
     /// Create a new terminal window with an initial tab and pane.
@@ -92,6 +93,11 @@ impl App {
         if let Some(ctx) = self.windows.get(&winit_id) {
             ctx.window.set_visible(true);
         }
+
+        // Register with window manager.
+        self.window_manager
+            .register(ManagedWindow::new(winit_id, WindowKind::Main));
+        self.window_manager.set_focused(Some(winit_id));
 
         // Focus the new window.
         self.focused_window_id = Some(winit_id);
@@ -270,6 +276,16 @@ impl App {
             }
         }
 
+        // Unregister from window manager (cascades to children).
+        let removed = self.window_manager.unregister(winit_id);
+
+        // Remove dialog contexts for cascaded children.
+        for removed_win in &removed {
+            if removed_win.kind.is_dialog() {
+                self.dialogs.remove(&removed_win.winit_id);
+            }
+        }
+
         // Remove the window context.
         self.windows.remove(&winit_id);
 
@@ -312,7 +328,13 @@ impl App {
         // Window is already empty (no tabs/panes) — just remove session state.
         self.session.remove_window(session_wid);
 
-        // Remove the OS window.
+        // Unregister from window manager (cascades to dialog children).
+        let removed = self.window_manager.unregister(winit_id);
+        for removed_win in &removed {
+            if removed_win.kind.is_dialog() {
+                self.dialogs.remove(&removed_win.winit_id);
+            }
+        }
         self.windows.remove(&winit_id);
 
         self.transfer_focus_from(winit_id);
@@ -335,6 +357,12 @@ impl App {
             self.session.remove_window(session_wid);
         }
 
+        let removed = self.window_manager.unregister(winit_id);
+        for removed_win in &removed {
+            if removed_win.kind.is_dialog() {
+                self.dialogs.remove(&removed_win.winit_id);
+            }
+        }
         self.windows.remove(&winit_id);
 
         // If the removed window was focused, pick another.
@@ -405,7 +433,7 @@ impl App {
         }
 
         self.with_drained_notifications(|this, notification| {
-            if let oriterm_mux::mux_event::MuxNotification::PaneClosed(id) = notification {
+            if let oriterm_mux::MuxNotification::PaneClosed { pane_id: id, .. } = notification {
                 // Clean up backend resources and caches.
                 if let Some(mux) = this.mux.as_mut() {
                     mux.cleanup_closed_pane(id);

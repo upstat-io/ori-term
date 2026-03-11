@@ -66,7 +66,7 @@ impl App {
     ///
     /// Iterates ALL windows — each may have a different DPI scale factor,
     /// so each gets its own `FontCollection` at the correct physical DPI.
-    fn apply_font_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_font_changes(&mut self, new: &Config) {
         let old = &self.config.font;
         let font_changed = (new.font.size - old.size).abs() > f32::EPSILON
             || new.font.family != old.family
@@ -166,7 +166,7 @@ impl App {
     /// Resolves the effective theme (honoring config override), resolves the
     /// color scheme, builds the palette, applies overrides, and marks all lines
     /// dirty so colors are re-resolved.
-    fn apply_color_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_color_changes(&mut self, new: &Config) {
         if new.colors == self.config.colors {
             return;
         }
@@ -187,7 +187,7 @@ impl App {
     }
 
     /// Detect and apply cursor style and blink interval changes.
-    fn apply_cursor_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_cursor_changes(&mut self, new: &Config) {
         if new.terminal.cursor_style != self.config.terminal.cursor_style {
             let shape = new.terminal.cursor_style.to_shape();
             if let Some(mux) = self.mux.as_mut() {
@@ -211,7 +211,7 @@ impl App {
     ///
     /// Iterates ALL windows — each must receive the updated transparency
     /// settings, not just the focused one.
-    fn apply_window_changes(&self, new: &Config) {
+    pub(in crate::app) fn apply_window_changes(&self, new: &Config) {
         let opacity_changed =
             (new.window.effective_opacity() - self.config.window.effective_opacity()).abs()
                 > f32::EPSILON;

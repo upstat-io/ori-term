@@ -2,6 +2,7 @@
 section: 25
 title: Theme System
 status: in-progress
+reviewed: false
 tier: 6
 goal: 100+ built-in themes, TOML theme files, discovery, live switching, light/dark auto-switch
 sections:

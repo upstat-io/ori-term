@@ -2,6 +2,7 @@
 section: 46
 title: "macOS App Bundle & Platform Packaging"
 status: not-started
+reviewed: false
 tier: 6
 goal: "Produce a proper macOS .app bundle so oriterm launches as a native GUI application with dock icon, Cmd+Tab switching, and correct system integration — plus add the macOS build job to CI release pipelines"
 inspired_by:
