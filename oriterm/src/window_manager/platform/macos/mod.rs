@@ -150,9 +150,9 @@ impl NativeChromeOps for MacosNativeOps {
 /// safety-net after the animation completes. macOS resets the titlebar
 /// container during animations; this re-applies our customizations.
 ///
-/// Fullscreen transition visibility toggling (hide before exit animation,
-/// show after repositioning) is handled by the notification observers in
-/// [`fullscreen`].
+/// Traffic light visibility is managed by macOS natively during fullscreen
+/// transitions. The [`fullscreen`] notification observers center buttons
+/// in `willExit`/`didExit` handlers.
 pub fn reapply_traffic_lights(window: &Window, caption_height: f32) {
     center_traffic_lights(window, caption_height);
     disable_titlebar_drag(window);
@@ -232,37 +232,44 @@ unsafe fn center_and_disable_drag_raw(nswindow: *mut AnyObject) {
     let _: () = msg_send![nswindow, setMovable: false];
 }
 
-/// Set the hidden state of the `NSTitlebarContainerView`.
+/// Reposition traffic light buttons without resizing the container.
 ///
-/// The container is discovered via the view hierarchy:
-/// `standardWindowButton(0)` → superview (`NSTitlebarView`) → superview
-/// (`NSTitlebarContainerView`).
-///
-/// Called from fullscreen transition handlers to hide the container before
-/// the exit animation (preventing traffic light jump) and show it after
-/// repositioning.
+/// Safe to call from the `NSViewFrameDidChangeNotification` observer during
+/// fullscreen transitions. Unlike [`center_and_disable_drag_raw`], this
+/// does NOT call `setFrame:` on the `NSTitlebarContainerView`, avoiding
+/// the `_syncToolbarPosition` infinite recursion on macOS 26 (Tahoe).
 ///
 /// # Safety
 ///
 /// `nswindow` must be a valid, non-null `NSWindow` pointer.
-unsafe fn set_titlebar_container_hidden(nswindow: *mut AnyObject, hidden: bool) {
-    let close_btn: *mut AnyObject = msg_send![nswindow, standardWindowButton: 0i64];
-    if close_btn.is_null() {
-        return;
-    }
-    let titlebar_view: *mut AnyObject = msg_send![close_btn, superview];
-    if titlebar_view.is_null() {
-        return;
-    }
-    let container: *mut AnyObject = msg_send![titlebar_view, superview];
-    if container.is_null() {
-        return;
-    }
-    // Disable implicit Core Animation so the show/hide is instant.
+unsafe fn reposition_buttons_raw(nswindow: *mut AnyObject) {
+    let logical_height =
+        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT as f64;
+
     let ca = AnyClass::get("CATransaction").expect("CATransaction not found");
     let _: () = msg_send![ca, begin];
     let _: () = msg_send![ca, setDisableActions: true];
-    let _: () = msg_send![container, setHidden: hidden];
+
+    let target_y_from_top = (logical_height - TRAFFIC_LIGHT_SIZE) / 2.0;
+    for button_type in 0i64..3 {
+        let button: *mut AnyObject = msg_send![nswindow, standardWindowButton: button_type];
+        if button.is_null() {
+            continue;
+        }
+        let frame: NSRect = msg_send![button, frame];
+        let superview: *mut AnyObject = msg_send![button, superview];
+        if superview.is_null() {
+            continue;
+        }
+        let sv_frame: NSRect = msg_send![superview, frame];
+        let new_y = sv_frame.h - target_y_from_top - frame.h;
+        if (new_y - frame.y).abs() < 0.5 {
+            continue;
+        }
+        let origin = NSPoint { x: frame.x, y: new_y };
+        let _: () = msg_send![button, setFrameOrigin: origin];
+    }
+
     let _: () = msg_send![ca, commit];
 }
 
