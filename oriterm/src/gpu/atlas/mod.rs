@@ -214,8 +214,21 @@ impl GlyphAtlas {
 
         upload_glyph(queue, &self.texture, page_idx, x, y, glyph);
 
-        self.pages[page_idx as usize].last_used_frame = self.frame_counter;
-        self.pages[page_idx as usize].glyph_count += 1;
+        let page = &mut self.pages[page_idx as usize];
+        page.last_used_frame = self.frame_counter;
+        page.glyph_count += 1;
+
+        // Log when page utilization exceeds 80%.
+        let total_pixels = u64::from(self.page_size) * u64::from(self.page_size);
+        let free_pixels = page.packer.free_area();
+        let used_fraction = 1.0 - free_pixels as f64 / total_pixels as f64;
+        if used_fraction > 0.8 {
+            log::debug!(
+                "atlas page {page_idx} at {:.0}% utilization ({} glyphs)",
+                used_fraction * 100.0,
+                page.glyph_count,
+            );
+        }
 
         let kind = match self.format {
             GlyphFormat::Color => AtlasKind::Color,

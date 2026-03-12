@@ -271,9 +271,12 @@ pub(crate) fn fill_frame_shaped(
     let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
+    let viewport_h = input.viewport.height as f32;
+
     // Track row boundaries for row_ranges (incremental update support).
     let mut current_row = usize::MAX;
     let mut row_start = BufferLengths::capture(frame);
+    let mut row_off_screen = false;
 
     for cell in &input.content.cells {
         if cell
@@ -301,6 +304,14 @@ pub(crate) fn fill_frame_shaped(
                 row_start = now;
             }
             current_row = row;
+
+            // Skip rows entirely outside the render target.
+            let row_y = oy + row as f32 * ch;
+            row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
+        }
+
+        if row_off_screen {
+            continue;
         }
 
         let x = ox + col as f32 * cw;

@@ -241,6 +241,7 @@ pub(crate) fn fill_frame_incremental(
     let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
+    let viewport_h = input.viewport.height as f32;
     let num_rows = input.rows();
     let prev_sel = frame.prev_selection_range;
     let dirty_rows = build_dirty_set(input, num_rows, prev_sel);
@@ -249,6 +250,7 @@ pub(crate) fn fill_frame_incremental(
     let mut current_row = usize::MAX;
     let mut row_start = BufferLengths::capture(frame);
     let mut row_is_clean = false;
+    let mut row_off_screen = false;
 
     let cells = &input.content.cells;
     let mut i = 0;
@@ -317,9 +319,17 @@ pub(crate) fn fill_frame_incremental(
 
             row_start = BufferLengths::capture(frame);
             row_is_clean = false;
+
+            // Skip rows entirely outside the render target.
+            let row_y = oy + row as f32 * ch;
+            row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
         }
 
         i += 1;
+
+        if row_off_screen {
+            continue;
+        }
 
         // Skip spacer cells (handled by the base wide char cell).
         if cell
