@@ -300,3 +300,130 @@ fn frame_selection_with_scrollback_offset() {
         "viewport line 6 (stable 51) should not be selected"
     );
 }
+
+// --- viewport_line_range ---
+
+#[test]
+fn viewport_line_range_single_line() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    let sel = Selection::new_char(StableRowIndex(10), 2, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(10),
+        col: 5,
+        side: Side::Right,
+    };
+
+    let fs = FrameSelection::new(&sel, 10);
+    assert_eq!(fs.viewport_line_range(24), Some((0, 0)));
+}
+
+#[test]
+fn viewport_line_range_multi_line() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    let sel = Selection::new_char(StableRowIndex(12), 0, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(15),
+        col: 10,
+        side: Side::Right,
+    };
+
+    // base=10, so viewport lines 2-5.
+    let fs = FrameSelection::new(&sel, 10);
+    assert_eq!(fs.viewport_line_range(24), Some((2, 5)));
+}
+
+#[test]
+fn viewport_line_range_clamped_to_viewport() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    let sel = Selection::new_char(StableRowIndex(10), 0, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(100),
+        col: 10,
+        side: Side::Right,
+    };
+
+    // base=10, 24 rows → viewport lines 0-23. Selection extends to line 90.
+    let fs = FrameSelection::new(&sel, 10);
+    assert_eq!(fs.viewport_line_range(24), Some((0, 23)));
+}
+
+#[test]
+fn viewport_line_range_starts_above_viewport() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    let sel = Selection::new_char(StableRowIndex(5), 0, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(15),
+        col: 10,
+        side: Side::Right,
+    };
+
+    // base=10, so start is clamped to 0, end is line 5.
+    let fs = FrameSelection::new(&sel, 10);
+    assert_eq!(fs.viewport_line_range(24), Some((0, 5)));
+}
+
+#[test]
+fn viewport_line_range_entirely_above_viewport() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    let sel = Selection::new_char(StableRowIndex(0), 0, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(5),
+        col: 10,
+        side: Side::Right,
+    };
+
+    // base=10 → selection entirely above viewport.
+    let fs = FrameSelection::new(&sel, 10);
+    assert_eq!(fs.viewport_line_range(24), None);
+}
+
+#[test]
+fn viewport_line_range_entirely_below_viewport() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    let sel = Selection::new_char(StableRowIndex(50), 0, Side::Left);
+    let mut sel = sel;
+    sel.end = oriterm_core::SelectionPoint {
+        row: StableRowIndex(55),
+        col: 10,
+        side: Side::Right,
+    };
+
+    // base=10, 24 rows → viewport covers stable rows 10-33.
+    // Selection at 50-55 is entirely below.
+    let fs = FrameSelection::new(&sel, 10);
+    assert_eq!(fs.viewport_line_range(24), None);
+}
+
+#[test]
+fn viewport_line_range_zero_rows() {
+    use oriterm_core::{Selection, Side, StableRowIndex};
+
+    use super::FrameSelection;
+
+    let sel = Selection::new_char(StableRowIndex(10), 0, Side::Left);
+    let fs = FrameSelection::new(&sel, 10);
+    assert_eq!(fs.viewport_line_range(0), None);
+}

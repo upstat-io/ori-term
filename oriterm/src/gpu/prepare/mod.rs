@@ -232,6 +232,13 @@ pub fn prepare_frame_shaped_into(
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
     }
+
+    // Update selection range for next frame's damage tracking.
+    let num_rows = input.rows();
+    out.prev_selection_range = input
+        .selection
+        .as_ref()
+        .and_then(|s| s.viewport_line_range(num_rows));
 }
 
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.

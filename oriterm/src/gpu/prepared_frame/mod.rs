@@ -124,6 +124,12 @@ pub struct PreparedFrame {
     ///
     /// Swapped out at the start of each prepare pass; clean rows copy from here.
     pub(crate) saved_tier: SavedTerminalTier,
+    /// Selection line range from the previous frame for damage tracking.
+    ///
+    /// `(start_line, end_line)` inclusive viewport lines. Used by the
+    /// incremental path to detect which rows changed selection state.
+    /// Persists across `clear()` and `save_terminal_tier()`.
+    pub(crate) prev_selection_range: Option<(usize, usize)>,
     /// Viewport pixel dimensions for uniform buffer update.
     pub viewport: ViewportSize,
     /// Window clear color (alpha-premultiplied).
@@ -154,6 +160,7 @@ impl PreparedFrame {
             image_quads_above: Vec::new(),
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
+            prev_selection_range: None,
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -193,6 +200,7 @@ impl PreparedFrame {
             image_quads_above: Vec::new(),
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
+            prev_selection_range: None,
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }

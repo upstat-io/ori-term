@@ -109,7 +109,15 @@ impl BufferLengths {
 ///
 /// Returns a `Vec<bool>` indexed by viewport line, where `true` means
 /// the row needs regeneration. When `all_dirty` is set, all rows are dirty.
-pub fn build_dirty_set(input: &FrameInput, num_rows: usize) -> Vec<bool> {
+///
+/// `prev_selection` is the selection line range from the previous frame.
+/// When the selection changes between frames, the affected rows are marked
+/// dirty so their instances are regenerated with correct selection colors.
+pub fn build_dirty_set(
+    input: &FrameInput,
+    num_rows: usize,
+    prev_selection: Option<(usize, usize)>,
+) -> Vec<bool> {
     if input.content.all_dirty {
         return vec![true; num_rows];
     }
@@ -126,7 +134,78 @@ pub fn build_dirty_set(input: &FrameInput, num_rows: usize) -> Vec<bool> {
         dirty[input.content.cursor.line] = true;
     }
 
+    // Selection damage: mark rows that changed selection state.
+    let new_selection = input
+        .selection
+        .as_ref()
+        .and_then(|s| s.viewport_line_range(num_rows));
+    mark_selection_damage(&mut dirty, prev_selection, new_selection);
+
     dirty
+}
+
+/// Mark rows dirty that changed selection state between frames.
+///
+/// Computes the symmetric difference of old and new selection line ranges.
+/// A row needs instance regeneration if it was selected before but not now,
+/// or is selected now but wasn't before. Boundary lines (first/last of each
+/// range) are always marked dirty because their column extent may differ even
+/// when the line range overlaps.
+pub(crate) fn mark_selection_damage(
+    dirty: &mut [bool],
+    old: Option<(usize, usize)>,
+    new: Option<(usize, usize)>,
+) {
+    if old == new {
+        return;
+    }
+    let num_rows = dirty.len();
+    if num_rows == 0 {
+        return;
+    }
+    let max_line = num_rows - 1;
+
+    match (old, new) {
+        (None, None) => {}
+        (Some((s, e)), None) => {
+            // Selection cleared: damage all previously-selected lines.
+            for d in &mut dirty[s..=e.min(max_line)] {
+                *d = true;
+            }
+        }
+        (None, Some((s, e))) => {
+            // New selection: damage all newly-selected lines.
+            for d in &mut dirty[s..=e.min(max_line)] {
+                *d = true;
+            }
+        }
+        (Some((os, oe)), Some((ns, ne))) => {
+            // Selection changed. Mark symmetric difference lines dirty.
+            let min_s = os.min(ns);
+            let max_e = oe.max(ne).min(max_line);
+            for (line, d) in dirty.iter_mut().enumerate().take(max_e + 1).skip(min_s) {
+                let was = line >= os && line <= oe;
+                let is = line >= ns && line <= ne;
+                if was != is {
+                    *d = true;
+                }
+            }
+            // Boundary lines always dirty — column extent may differ
+            // even when the line is in both old and new ranges.
+            if os <= max_line {
+                dirty[os] = true;
+            }
+            if oe <= max_line {
+                dirty[oe] = true;
+            }
+            if ns <= max_line {
+                dirty[ns] = true;
+            }
+            if ne <= max_line {
+                dirty[ne] = true;
+            }
+        }
+    }
 }
 
 /// Incremental prepare: skip clean rows, copy cached instances, regenerate dirty.
@@ -163,7 +242,8 @@ pub(crate) fn fill_frame_incremental(
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
     let num_rows = input.rows();
-    let dirty_rows = build_dirty_set(input, num_rows);
+    let prev_sel = frame.prev_selection_range;
+    let dirty_rows = build_dirty_set(input, num_rows, prev_sel);
 
     // Track row boundaries for row_ranges.
     let mut current_row = usize::MAX;
