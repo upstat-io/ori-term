@@ -1,6 +1,8 @@
-//! Unit tests for chrome geometry helpers.
+//! Unit tests for chrome geometry and layout helpers.
 
-use super::grid_origin_y;
+use crate::font::CellMetrics;
+
+use super::{compute_window_layout, grid_origin_y};
 
 // grid_origin_y: integer-pixel guarantee
 
@@ -72,4 +74,80 @@ fn origin_integer_for_all_common_dpi_scales() {
             "grid_origin_y({chrome_height}, {scale}) = {y} is not integer",
         );
     }
+}
+
+// compute_window_layout: layout engine produces same results as manual calculation
+
+/// Helper to create test cell metrics.
+fn test_cell(width: f32, height: f32) -> CellMetrics {
+    CellMetrics {
+        width,
+        height,
+        baseline: height * 0.8,
+        underline_offset: 1.0,
+        stroke_size: 1.0,
+        strikeout_offset: height * 0.4,
+    }
+}
+
+#[test]
+fn layout_grid_origin_matches_manual() {
+    // 1920×1080 at 1x scale with 8×16 cells.
+    let cell = test_cell(8.0, 16.0);
+    let wl = compute_window_layout(1920, 1080, &cell, 1.0);
+
+    // Tab bar is 46px at 1x → grid starts at y=46.
+    let expected_y = grid_origin_y(46.0, 1.0);
+    assert_eq!(wl.grid_rect.y(), expected_y);
+    assert_eq!(wl.grid_rect.x(), 0.0);
+}
+
+#[test]
+fn layout_grid_fills_remaining_space() {
+    let cell = test_cell(8.0, 16.0);
+    let wl = compute_window_layout(1920, 1080, &cell, 1.0);
+
+    let chrome_h = grid_origin_y(46.0, 1.0);
+    let expected_h = 1080.0 - chrome_h;
+    assert_eq!(wl.grid_rect.height(), expected_h);
+    assert_eq!(wl.grid_rect.width(), 1920.0);
+}
+
+#[test]
+fn layout_cols_rows_match_manual_at_125_scale() {
+    // 1920×1080 at 1.25x with 10×20 physical-pixel cells.
+    let cell = test_cell(10.0, 20.0);
+    let wl = compute_window_layout(1920, 1080, &cell, 1.25);
+
+    // Manual: origin_y = (46.0 * 1.25).round() = 58.0
+    let chrome_px = grid_origin_y(46.0, 1.25) as u32;
+    let grid_h = 1080 - chrome_px;
+    let expected_cols = cell.columns(1920);
+    let expected_rows = cell.rows(grid_h);
+
+    assert_eq!(wl.cols, expected_cols);
+    assert_eq!(wl.rows, expected_rows);
+}
+
+#[test]
+fn layout_integer_origin_at_fractional_dpi() {
+    // 175% DPI — tab bar height produces fractional without rounding.
+    let cell = test_cell(14.0, 28.0);
+    let wl = compute_window_layout(2560, 1440, &cell, 1.75);
+
+    assert_eq!(
+        wl.grid_rect.y().fract(),
+        0.0,
+        "grid origin must be integer-pixel aligned"
+    );
+}
+
+#[test]
+fn layout_minimum_one_col_one_row() {
+    // Tiny viewport — must produce at least 1×1.
+    let cell = test_cell(100.0, 100.0);
+    let wl = compute_window_layout(50, 100, &cell, 1.0);
+
+    assert_eq!(wl.cols, 1);
+    assert_eq!(wl.rows, 1);
 }

@@ -1,10 +1,11 @@
-//! Window chrome: action dispatch, platform chrome lifecycle, and shared helpers.
+//! Window chrome: action dispatch, platform chrome lifecycle, and layout helpers.
 //!
 //! Handles `WidgetAction::WindowMinimize`, `WindowMaximize`, and
 //! `WindowClose` by forwarding to the appropriate winit window operations.
 //! Provides unified chrome installation and refresh functions that route
-//! through [`NativeChromeOps`] for cross-platform support. Also provides
-//! shared geometry helpers used by both init and resize.
+//! through [`NativeChromeOps`] for cross-platform support. Provides
+//! [`compute_window_layout`] — the single source of truth for top-level
+//! window layout (tab bar + terminal grid positioning) via the layout engine.
 
 mod resize;
 
@@ -87,6 +88,69 @@ pub(super) fn refresh_chrome(
 /// (e.g. `82.0 * 1.25 = 102.5`) that mis-align cell rows.
 pub(super) fn grid_origin_y(chrome_height_logical: f32, scale: f32) -> f32 {
     (chrome_height_logical * scale).round()
+}
+
+/// Computed top-level window layout: chrome and terminal grid positions.
+pub(super) struct WindowLayout {
+    /// Grid bounds in physical pixels (origin + dimensions).
+    pub grid_rect: Rect,
+    /// Number of terminal columns that fit in the grid area.
+    pub cols: usize,
+    /// Number of terminal rows that fit in the grid area.
+    pub rows: usize,
+}
+
+/// Compute the top-level window layout via the layout engine.
+///
+/// Builds a `Column { TabBar(fixed), Grid(fill) }` descriptor and runs the
+/// two-pass flexbox solver to determine positions. The tab bar gets a fixed
+/// height (logical `TAB_BAR_HEIGHT` scaled to physical pixels, rounded to
+/// prevent subpixel seams). The terminal grid fills the remaining space.
+///
+/// All coordinates are in physical pixels — consistent with cell metrics,
+/// GPU renderer, and the winit viewport.
+pub(super) fn compute_window_layout(
+    viewport_w: u32,
+    viewport_h: u32,
+    cell: &crate::font::CellMetrics,
+    scale: f32,
+) -> WindowLayout {
+    use oriterm_ui::layout::{Direction, LayoutBox, SizeSpec, compute_layout};
+
+    let tab_bar_h_px = grid_origin_y(
+        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT,
+        scale,
+    );
+
+    let root = LayoutBox::flex(
+        Direction::Column,
+        vec![
+            // Tab bar: fixed height in physical pixels, fills width.
+            LayoutBox::leaf(viewport_w as f32, tab_bar_h_px)
+                .with_width(SizeSpec::Fill)
+                .with_height(SizeSpec::Fixed(tab_bar_h_px)),
+            // Terminal grid: fills remaining space.
+            LayoutBox::leaf(0.0, 0.0)
+                .with_width(SizeSpec::Fill)
+                .with_height(SizeSpec::Fill),
+        ],
+    )
+    .with_width(SizeSpec::Fill)
+    .with_height(SizeSpec::Fill);
+
+    let viewport = Rect::new(0.0, 0.0, viewport_w as f32, viewport_h as f32);
+    let layout = compute_layout(&root, viewport);
+    let grid_rect = layout.children[1].rect;
+
+    // Compute grid dimensions from the layout-allocated space.
+    let cols = cell.columns(grid_rect.width() as u32).max(1);
+    let rows = cell.rows(grid_rect.height() as u32).max(1);
+
+    WindowLayout {
+        grid_rect,
+        cols,
+        rows,
+    }
 }
 
 impl App {

@@ -576,7 +576,7 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
   - [x] `bounds()` accessor for app to read layout origin
   - [x] `set_cell_metrics()` / `set_grid_size()` — updated on resize
   - [x] Reports preferred size based on cell dimensions and grid size
-  - [x] `set_bounds(rect)` — directly sets layout bounds, bypassing the layout engine. Used during init and resize before layout engine wiring is complete. Remove once layout engine drives widget placement.
+  - [x] `set_bounds(rect)` — stores layout bounds from `compute_window_layout` results for the GPU prepare pipeline to read.
   - [ ] *(Alternative path — not planned)* Direct DrawList cell rendering: `RenderableContent` to `DrawCommand`s for backgrounds, glyphs, cursor, selection, search highlights. Would unify rendering but add DrawList overhead for 1920+ cells/frame.
   - [ ] *(Blocked on Section 39 image pipeline)* Offscreen texture rendering: render grid to offscreen texture at arbitrary scale for thumbnails/previews.
 
@@ -603,7 +603,7 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
   - [x] The terminal grid fills the remaining space after UI chrome
   - [x] Grid receives keyboard input when focused (which is the default state)
   - [x] Mouse events within the grid are routed to terminal mouse handling
-  - [ ] Wire main window layout as `Column { TabBar, TerminalGrid, StatusBar(optional) }` through the layout engine (currently positioned manually)
+  - [x] Wire main window layout as `Column { TabBar, TerminalGrid, StatusBar(optional) }` through the layout engine (currently positioned manually)
 
 - [ ] Unify tab bar, context menus, settings, search overlay, terminal previews, and terminal grid through the same DrawList rendering pipeline (foundation laid — individual wiring in consuming sections)
 
