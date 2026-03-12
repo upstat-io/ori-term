@@ -4,7 +4,7 @@
 
 use winit::window::WindowId;
 
-use super::grid_origin_y;
+use super::compute_window_layout;
 use crate::app::App;
 
 impl App {
@@ -51,26 +51,14 @@ impl App {
         };
         let cell = renderer.cell_metrics();
         let scale = ctx.window.scale_factor().factor() as f32;
-
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-        let chrome_height = tab_bar_h;
-        let origin_y = grid_origin_y(chrome_height, scale);
-        let chrome_px = origin_y as u32;
-        let grid_h = viewport_h.saturating_sub(chrome_px);
-        let cols = cell.columns(viewport_w).max(1);
-        let rows = cell.rows(grid_h).max(1);
+        let wl = compute_window_layout(viewport_w, viewport_h, &cell, scale);
 
         // Reborrow mutably now that immutable reads are done.
         let ctx = self.windows.get_mut(&winit_id).expect("checked above");
         ctx.terminal_grid.set_cell_metrics(cell.width, cell.height);
-        ctx.terminal_grid.set_grid_size(cols, rows);
-        ctx.terminal_grid
-            .set_bounds(oriterm_ui::geometry::Rect::new(
-                0.0,
-                origin_y,
-                cols as f32 * cell.width,
-                rows as f32 * cell.height,
-            ));
+        ctx.terminal_grid.set_grid_size(wl.cols, wl.rows);
+        ctx.terminal_grid.set_bounds(wl.grid_rect);
+        let (cols, rows) = (wl.cols, wl.rows);
 
         // Resize the active pane in this specific window (not the globally
         // focused one). Multi-pane layouts are recomputed by resize_all_panes.

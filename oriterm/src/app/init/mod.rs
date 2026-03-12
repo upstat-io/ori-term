@@ -138,31 +138,21 @@ impl App {
         let (w, h) = window.size_px();
         let tab_bar_widget = self.create_tab_bar_widget(&window);
 
-        // 9. Compute grid dimensions from viewport, offset by chrome height.
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        // 9. Compute grid dimensions via layout engine (Column { TabBar, Grid }).
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let origin_y = super::chrome::grid_origin_y(tab_bar_h, scale);
-        let chrome_px = origin_y as u32;
-        let grid_h = h.saturating_sub(chrome_px);
-        let cols = cell.columns(w).max(1);
-        let rows = cell.rows(grid_h).max(1);
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
 
-        // 10. Create grid widget with cell metrics and initial grid size.
-        let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
-        grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
-            0.0,
-            origin_y,
-            cols as f32 * cell.width,
-            rows as f32 * cell.height,
-        ));
+        // 10. Create grid widget with cell metrics and layout-computed size.
+        let grid_widget = TerminalGridWidget::new(cell.width, cell.height, wl.cols, wl.rows);
+        grid_widget.set_bounds(wl.grid_rect);
 
         // 11. Create initial tab + pane (skip if daemon mode with a claimed window).
         let t_mux_start = std::time::Instant::now();
         let is_daemon = self.mux.as_ref().is_some_and(|m| m.is_daemon_mode());
         let is_claimed = is_daemon && self.active_window.is_some();
         if !is_claimed {
-            self.create_initial_tab(session_wid, rows as u16, cols as u16)?;
+            self.create_initial_tab(session_wid, wl.rows as u16, wl.cols as u16)?;
         }
         let t_mux = t_mux_start.elapsed();
 
@@ -171,9 +161,12 @@ impl App {
             "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
              renderer={t_renderer:?} mux={t_mux:?} total={t_total:?}",
         );
+        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
         log::info!(
-            "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
+            "app: initialized — {w}x{h} px, {} cols × {} rows, \
              chrome={tab_bar_h}px, font={} {:.1}pt",
+            wl.cols,
+            wl.rows,
             renderer.family_name(),
             self.config.font.size,
         );

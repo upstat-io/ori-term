@@ -35,13 +35,8 @@ impl App {
             let (w, h) = ctx.window.size_px();
             let cell = renderer.cell_metrics();
             let scale = ctx.window.scale_factor().factor() as f32;
-            let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-            let origin_y = super::chrome::grid_origin_y(tab_bar_h, scale);
-            let chrome_px = origin_y as u32;
-            let grid_h = h.saturating_sub(chrome_px);
-            let cols = cell.columns(w).max(1);
-            let rows = cell.rows(grid_h).max(1);
-            (cols, rows)
+            let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
+            (wl.cols, wl.rows)
         };
 
         let mux = self.mux.as_mut()?;
@@ -155,25 +150,17 @@ impl App {
             return None;
         };
 
-        // Compute grid dimensions from per-window cell metrics.
+        // Compute grid dimensions via layout engine (Column { TabBar, Grid }).
         let (w, h) = window.size_px();
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-        let origin_y = super::chrome::grid_origin_y(tab_bar_h, scale);
-        let chrome_px = origin_y as u32;
-        let grid_h = h.saturating_sub(chrome_px);
-        let cols = cell.columns(w).max(1);
-        let rows = cell.rows(grid_h).max(1);
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
 
         // Terminal grid widget.
+        let cols = wl.cols;
+        let rows = wl.rows;
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
-        grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
-            0.0,
-            origin_y,
-            cols as f32 * cell.width,
-            rows as f32 * cell.height,
-        ));
+        grid_widget.set_bounds(wl.grid_rect);
 
         let winit_id = window.window_id();
         let ctx = WindowContext::new(window, tab_bar_widget, grid_widget, Some(renderer));
