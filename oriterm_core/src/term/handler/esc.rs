@@ -25,7 +25,9 @@ impl<T: EventListener> Term<T> {
         self.mode.remove(TermMode::ALT_SCREEN);
 
         self.grid_mut().reset();
-        self.alt_grid.reset();
+        if let Some(alt) = &mut self.alt_grid {
+            alt.reset();
+        }
         self.mode = TermMode::default();
         self.charset = CharsetState::default();
         self.palette = crate::color::Palette::for_theme(self.theme);
@@ -50,7 +52,9 @@ impl<T: EventListener> Term<T> {
 
         // Image caches.
         self.image_cache.clear();
-        self.alt_image_cache.clear();
+        if let Some(cache) = &mut self.alt_image_cache {
+            cache.clear();
+        }
 
         self.event_listener.send_event(Event::ResetTitle);
     }

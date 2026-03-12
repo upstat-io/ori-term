@@ -1049,3 +1049,46 @@ fn snapshot_wide_char_put_and_wrap() {
     |      |
     ");
 }
+
+// INSERT mode damage tracking tests.
+
+#[test]
+fn insert_blank_then_put_char_damages_cursor_to_right_edge() {
+    // Simulates INSERT mode: insert_blank shifts cells right, then put_char writes.
+    // Combined damage should cover [col, cols-1] (the full shifted region).
+    let mut grid = grid_with_text(3, 10, "ABCDEFGHIJ");
+    grid.dirty_mut().drain().for_each(drop);
+
+    // Move cursor to col 3 (simulating cursor positioning before INSERT write).
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(3));
+
+    // INSERT mode sequence: insert_blank then put_char.
+    grid.insert_blank(1);
+    grid.put_char('X');
+
+    let items: Vec<_> = grid.dirty_mut().drain().collect();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].line, 0);
+    // Damage must cover from cursor column (3) to right edge (9).
+    assert_eq!(items[0].left, 3);
+    assert_eq!(items[0].right, 9);
+}
+
+#[test]
+fn insert_blank_at_col_zero_damages_full_line() {
+    // INSERT at column 0 damages [0, cols-1] which is the full line.
+    let mut grid = grid_with_text(3, 10, "ABCDEFGHIJ");
+    grid.dirty_mut().drain().for_each(drop);
+
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+
+    grid.insert_blank(1);
+    grid.put_char('Z');
+
+    let items: Vec<_> = grid.dirty_mut().drain().collect();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].left, 0);
+    assert_eq!(items[0].right, 9);
+}
