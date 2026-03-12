@@ -1922,34 +1922,40 @@ fn osc104_no_params_resets_all_indexed() {
 fn osc_set_color_marks_grid_dirty() {
     let mut t = term();
     // Drain any existing dirty lines.
-    let _: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
+    t.grid_mut().dirty_mut().drain().for_each(drop);
 
     // Setting a non-cursor color should mark all lines dirty.
     feed(&mut t, b"\x1b]4;1;rgb:ff/00/00\x07");
-    let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
-    assert!(!dirty.is_empty(), "set_color should mark grid dirty");
+    assert!(
+        t.grid_mut().dirty_mut().drain().next().is_some(),
+        "set_color should mark grid dirty",
+    );
 }
 
 #[test]
 fn osc_set_cursor_color_does_not_mark_dirty() {
     let mut t = term();
-    let _: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
+    t.grid_mut().dirty_mut().drain().for_each(drop);
 
     // Cursor color changes don't require full redraw (per Alacritty).
     feed(&mut t, b"\x1b]12;rgb:ff/00/00\x07");
-    let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
-    assert!(dirty.is_empty(), "cursor color should not mark grid dirty");
+    assert!(
+        t.grid_mut().dirty_mut().drain().next().is_none(),
+        "cursor color should not mark grid dirty",
+    );
 }
 
 #[test]
 fn osc_reset_color_marks_grid_dirty() {
     let mut t = term();
     feed(&mut t, b"\x1b]4;1;rgb:ff/00/00\x07");
-    let _: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
+    t.grid_mut().dirty_mut().drain().for_each(drop);
 
     feed(&mut t, b"\x1b]104;1\x07");
-    let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
-    assert!(!dirty.is_empty(), "reset_color should mark grid dirty");
+    assert!(
+        t.grid_mut().dirty_mut().drain().next().is_some(),
+        "reset_color should mark grid dirty",
+    );
 }
 
 #[test]
@@ -3764,10 +3770,10 @@ fn dirty_tracked_for_combining_mark() {
     // Combining mark should mark line 0 dirty.
     feed(&mut t, "\u{0301}".as_bytes());
 
-    let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
+    let dirty_lines: Vec<usize> = t.grid_mut().dirty_mut().drain().map(|d| d.line).collect();
     assert!(
-        dirty.contains(&0),
-        "combining mark should mark line dirty: {dirty:?}"
+        dirty_lines.contains(&0),
+        "combining mark should mark line dirty: {dirty_lines:?}"
     );
 }
 
@@ -3780,10 +3786,10 @@ fn dirty_tracked_for_zerowidth_space() {
     // Zero-width space should mark line 0 dirty.
     feed(&mut t, "\u{200B}".as_bytes());
 
-    let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
+    let dirty_lines: Vec<usize> = t.grid_mut().dirty_mut().drain().map(|d| d.line).collect();
     assert!(
-        dirty.contains(&0),
-        "zero-width space should mark line dirty: {dirty:?}"
+        dirty_lines.contains(&0),
+        "zero-width space should mark line dirty: {dirty_lines:?}"
     );
 }
 

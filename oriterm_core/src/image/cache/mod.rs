@@ -240,22 +240,37 @@ impl ImageCache {
         }
     }
 
-    /// Return placements visible in the given stable row range (inclusive).
+    /// Fill `out` with placements visible in the given stable row range (inclusive).
+    ///
+    /// Reuses `out`'s allocation across frames for zero-alloc steady state.
+    pub fn fill_viewport_placements<'a>(
+        &'a self,
+        top_row: StableRowIndex,
+        bottom_row: StableRowIndex,
+        out: &mut Vec<&'a ImagePlacement>,
+    ) {
+        out.clear();
+        out.extend(self.placements.iter().filter(|p| {
+            let placement_bottom = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
+            p.cell_row <= bottom_row && placement_bottom >= top_row
+        }));
+    }
+
+    /// Convenience wrapper returning a new `Vec` of visible placements.
+    ///
+    /// For hot-path rendering, prefer [`fill_viewport_placements`] with a
+    /// reusable buffer. This allocates on every call.
+    ///
+    /// [`fill_viewport_placements`]: Self::fill_viewport_placements
+    #[cfg(test)]
     pub fn placements_in_viewport(
         &self,
         top_row: StableRowIndex,
         bottom_row: StableRowIndex,
     ) -> Vec<&ImagePlacement> {
-        self.placements
-            .iter()
-            .filter(|p| {
-                let placement_bottom =
-                    StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
-                // Placement overlaps viewport if it starts before bottom
-                // and ends after top.
-                p.cell_row <= bottom_row && placement_bottom >= top_row
-            })
-            .collect()
+        let mut out = Vec::new();
+        self.fill_viewport_placements(top_row, bottom_row, &mut out);
+        out
     }
 
     /// Remove placements whose `cell_row` is before the eviction boundary.

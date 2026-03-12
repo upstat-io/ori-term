@@ -4,6 +4,7 @@
 //! `Term`: visible cells with resolved colors, cursor state, and damage info.
 //! Extracted under lock, consumed without lock — no back-references into `Term`.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use vte::ansi::Color;
@@ -150,6 +151,11 @@ pub struct RenderableContent {
     /// Set from `ImageCache::take_dirty()`. The GPU layer uses this to
     /// know when to re-upload textures.
     pub images_dirty: bool,
+    /// Scratch buffer for image extraction — reused across frames to
+    /// avoid per-frame `HashSet` allocation. Not part of the semantic
+    /// snapshot; only used internally by `extract_images`.
+    #[doc(hidden)]
+    pub seen_image_ids: HashSet<ImageId>,
 }
 
 impl Default for RenderableContent {
@@ -170,6 +176,7 @@ impl Default for RenderableContent {
             images: Vec::new(),
             image_data: Vec::new(),
             images_dirty: false,
+            seen_image_ids: HashSet::new(),
         }
     }
 }
@@ -207,18 +214,13 @@ impl RenderableContent {
 /// needed before iterating individual lines.
 pub struct TermDamage<'a> {
     iter: DirtyIter<'a>,
-    right: Column,
     all_dirty: bool,
 }
 
 impl<'a> TermDamage<'a> {
     /// Build a drain iterator from a grid's dirty tracker.
-    pub(crate) fn new(iter: DirtyIter<'a>, cols: usize, all_dirty: bool) -> Self {
-        Self {
-            iter,
-            right: Column(cols.saturating_sub(1)),
-            all_dirty,
-        }
+    pub(crate) fn new(iter: DirtyIter<'a>, all_dirty: bool) -> Self {
+        Self { iter, all_dirty }
     }
 
     /// Whether the entire viewport needs redrawing.
@@ -234,10 +236,10 @@ impl Iterator for TermDamage<'_> {
     type Item = DamageLine;
 
     fn next(&mut self) -> Option<DamageLine> {
-        self.iter.next().map(|line| DamageLine {
-            line,
-            left: Column(0),
-            right: self.right,
+        self.iter.next().map(|dirty| DamageLine {
+            line: dirty.line,
+            left: Column(dirty.left),
+            right: Column(dirty.right),
         })
     }
 }
@@ -306,7 +308,6 @@ pub(super) fn apply_inverse(fg: Rgb, bg: Rgb, flags: CellFlags) -> (Rgb, Rgb) {
 pub(super) fn collect_damage(
     grid: &crate::grid::Grid,
     lines: usize,
-    cols: usize,
     damage: &mut Vec<DamageLine>,
 ) -> bool {
     let dirty = grid.dirty();
@@ -321,14 +322,14 @@ pub(super) fn collect_damage(
         return false;
     }
 
-    // Slow path: check individual bits (handles mark_range covering all lines).
+    // Slow path: check individual lines and collect column bounds.
     let mut all_dirty = true;
     for line in 0..lines {
-        if dirty.is_dirty(line) {
+        if let Some((left, right)) = dirty.col_bounds(line) {
             damage.push(DamageLine {
                 line,
-                left: Column(0),
-                right: Column(cols.saturating_sub(1)),
+                left: Column(left),
+                right: Column(right),
             });
         } else {
             all_dirty = false;

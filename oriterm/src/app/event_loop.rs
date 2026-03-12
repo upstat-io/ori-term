@@ -316,10 +316,9 @@ impl ApplicationHandler<TermEvent> for App {
             TermEvent::MuxWakeup => {
                 self.perf.record_wakeup();
                 // The real work happens in `pump_mux_events()` during
-                // `about_to_wait`. This wakeup ensures the event loop
-                // doesn't sleep past pending mux events. Mark ALL windows
-                // dirty — PTY output may come from any pane in any window.
-                self.mark_all_windows_dirty();
+                // `about_to_wait`. This wakeup just ensures the event loop
+                // doesn't sleep past pending mux events. Dirty marking
+                // happens per-pane in `handle_mux_notification`.
             }
             TermEvent::CreateWindow => {
                 self.create_window(event_loop);
@@ -375,9 +374,15 @@ impl ApplicationHandler<TermEvent> for App {
         }
 
         // Tick compositor animations and clean up fully-faded overlays.
-        let any_animating = {
+        // Iterate all windows so unfocused windows with active animations
+        // (e.g., a fade started just before a focus switch) continue to
+        // progress rather than stalling.
+        {
             let now = std::time::Instant::now();
-            if let Some(ctx) = self.focused_ctx_mut() {
+            for ctx in self.windows.values_mut() {
+                if !ctx.layer_animator.is_any_animating() {
+                    continue;
+                }
                 let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
                 ctx.overlays
                     .cleanup_dismissed(&mut ctx.layer_tree, &ctx.layer_animator);
@@ -391,14 +396,9 @@ impl ApplicationHandler<TermEvent> for App {
                         .sync_to_widget(count, &ctx.layer_tree, &mut ctx.tab_bar);
                 }
 
-                animating
-            } else {
-                false
-            }
-        };
-        if any_animating {
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                if animating {
+                    ctx.dirty = true;
+                }
             }
         }
 
@@ -449,6 +449,11 @@ impl ApplicationHandler<TermEvent> for App {
             event_loop.set_control_flow(ControlFlow::WaitUntil(next_toggle));
         } else {
             // Nothing animating — sleep until the next external event.
+            // Explicit: winit's set_control_flow is persistent across
+            // iterations, so a prior WaitUntil remains in effect until
+            // overridden. Without this, the loop spin-polls at the old
+            // WaitUntil cadence even after activity stops.
+            event_loop.set_control_flow(ControlFlow::Wait);
         }
     }
 }

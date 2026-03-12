@@ -56,6 +56,7 @@ fn content_with_cursor(
         images: Vec::new(),
         image_data: Vec::new(),
         images_dirty: false,
+        ..Default::default()
     }
 }
 
@@ -419,6 +420,7 @@ fn preedit_empty_cells_no_panic() {
         images: Vec::new(),
         image_data: Vec::new(),
         images_dirty: false,
+        ..Default::default()
     };
     // Empty cells vec should early-return without panic.
     overlay_preedit_cells("A", &mut content, 10);

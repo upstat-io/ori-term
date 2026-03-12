@@ -35,6 +35,7 @@ fn empty_content() -> RenderableContent {
         images: Vec::new(),
         image_data: Vec::new(),
         images_dirty: false,
+        ..Default::default()
     }
 }
 
