@@ -3632,3 +3632,113 @@ fn image_uv_and_opacity_propagated() {
     assert_eq!(q.uv_h, 0.25);
     assert_eq!(q.opacity, 0.8);
 }
+
+// ── Incremental vs full rebuild equivalence ──
+
+/// Build a multi-row ShapedFrame where each cell gets its own glyph.
+fn shaped_multi_row(
+    cols: usize,
+    rows: usize,
+    glyph_id_base: u16,
+    size_q6: u32,
+) -> (ShapedFrame, Vec<u16>) {
+    let mut sf = ShapedFrame::new(cols, size_q6);
+    let mut all_ids = Vec::new();
+    for row in 0..rows {
+        let glyphs: Vec<ShapedGlyph> = (0..cols)
+            .map(|c| {
+                let id = glyph_id_base + (row * cols + c) as u16;
+                all_ids.push(id);
+                ShapedGlyph {
+                    glyph_id: id,
+                    face_index: 0,
+                    synthetic: 0,
+                    x_advance: 0.0,
+                    x_offset: 0.0,
+                    y_offset: 0.0,
+                }
+            })
+            .collect();
+        let col_starts: Vec<usize> = (0..cols).collect();
+        let mut col_map = Vec::new();
+        crate::font::build_col_glyph_map(&col_starts, cols, &mut col_map);
+        sf.push_row(&glyphs, &col_starts, &col_map);
+    }
+    (sf, all_ids)
+}
+
+#[test]
+fn incremental_all_dirty_matches_full_rebuild() {
+    // When all rows are dirty, the incremental path should produce the
+    // same instance data as a full rebuild.
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    // Full rebuild (fresh frame).
+    let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    // First pass: full rebuild into reusable frame to populate row_ranges.
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+
+    // Second pass: all_dirty = true means full rebuild again.
+    input.content.all_dirty = true;
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+
+    assert_eq!(
+        fresh.backgrounds.as_bytes(),
+        frame.backgrounds.as_bytes(),
+        "backgrounds should match"
+    );
+    assert_eq!(
+        fresh.glyphs.as_bytes(),
+        frame.glyphs.as_bytes(),
+        "glyphs should match"
+    );
+}
+
+#[test]
+fn incremental_no_dirty_rows_matches_cached() {
+    // When no rows are dirty (all clean), the incremental path copies
+    // all instances from the cached tier — result should match the
+    // original full rebuild.
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    // First pass: full rebuild populates row_ranges.
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+
+    // Capture the full rebuild output.
+    let full_bg = frame.backgrounds.as_bytes().to_vec();
+    let full_fg = frame.glyphs.as_bytes().to_vec();
+
+    // Second pass: no damage, no cursor visible → all rows clean.
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+
+    assert_eq!(
+        full_bg,
+        frame.backgrounds.as_bytes(),
+        "clean rows should copy cached backgrounds"
+    );
+    assert_eq!(
+        full_fg,
+        frame.glyphs.as_bytes(),
+        "clean rows should copy cached glyphs"
+    );
+}
