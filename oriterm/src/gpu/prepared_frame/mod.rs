@@ -242,6 +242,42 @@ impl PreparedFrame {
             && self.overlay_color_glyphs.is_empty()
     }
 
+    /// Count the number of GPU draw calls this frame will produce.
+    ///
+    /// Each non-empty instance buffer generates one draw call. Overlays
+    /// generate 4 draws each (rects + 3 glyph passes). Images generate
+    /// one draw call per quad.
+    pub fn count_draw_calls(&self) -> u32 {
+        let mut count = 0u32;
+
+        // Terminal tier: bg, mono, subpixel, color, cursors.
+        count += u32::from(!self.backgrounds.is_empty());
+        count += u32::from(!self.glyphs.is_empty());
+        count += u32::from(!self.subpixel_glyphs.is_empty());
+        count += u32::from(!self.color_glyphs.is_empty());
+        count += u32::from(!self.cursors.is_empty());
+
+        // Chrome tier: ui_rects, ui_mono, ui_subpixel, ui_color.
+        count += u32::from(!self.ui_rects.is_empty());
+        count += u32::from(!self.ui_glyphs.is_empty());
+        count += u32::from(!self.ui_subpixel_glyphs.is_empty());
+        count += u32::from(!self.ui_color_glyphs.is_empty());
+
+        // Overlay tier: 4 draws per overlay.
+        for range in &self.overlay_draw_ranges {
+            count += u32::from(range.rects.0 != range.rects.1);
+            count += u32::from(range.mono.0 != range.mono.1);
+            count += u32::from(range.subpixel.0 != range.subpixel.1);
+            count += u32::from(range.color.0 != range.color.1);
+        }
+
+        // Image draws: one per quad.
+        count += self.image_quads_below.len() as u32;
+        count += self.image_quads_above.len() as u32;
+
+        count
+    }
+
     /// Reset all buffers for the next frame, retaining allocated memory.
     pub fn clear(&mut self) {
         self.backgrounds.clear();

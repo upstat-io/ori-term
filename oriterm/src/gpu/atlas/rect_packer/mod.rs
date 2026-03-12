@@ -120,6 +120,14 @@ impl RectPacker {
         Some(pos)
     }
 
+    /// Total free area remaining on this page (sum of free rectangle areas).
+    pub fn free_area(&self) -> u64 {
+        self.free_rects
+            .iter()
+            .map(|r| u64::from(r.w) * u64::from(r.h))
+            .sum()
+    }
+
     /// Reset the packer to a single free rectangle covering the full page.
     pub fn reset(&mut self) {
         self.free_rects.clear();

@@ -1927,7 +1927,9 @@ fn zero_origin_matches_no_origin() {
 #[test]
 fn origin_offset_shaped_shifts_all_instances() {
     let size_q6 = 768;
-    let input = FrameInput::test_grid(2, 1, "AB");
+    let mut input = FrameInput::test_grid(2, 1, "AB");
+    // Viewport must be large enough to contain origin + cell area.
+    input.viewport = ViewportSize::new(200, 300);
 
     let atlas = key_atlas_with(&[10, 11], size_q6);
     let glyphs = vec![

@@ -63,6 +63,9 @@ impl WindowRenderer {
         }
 
         queue.submit(std::iter::once(encoder.finish()));
+
+        // Debug: log draw call count per frame.
+        log::debug!("frame draw calls: {}", self.prepared.count_draw_calls());
     }
 
     /// Upload all instance buffers to the GPU.

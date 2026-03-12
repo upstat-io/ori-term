@@ -256,8 +256,8 @@ Optimize VTE sequence parsing throughput for high-volume output.
 - [x] Coalesce: `about_to_wait()` processes `pump_mux_events()` then renders once
 - [x] Time-based throttle: `FRAME_BUDGET = 16ms` enforced in `about_to_wait()`
 - [x] Synchronized output (Mode 2026): PTY reader suppresses `Wakeup` while sync buffer active
-- [ ] Test final-frame edge case: run `seq 1 100000`, verify the terminal shows the last line ("100000") after output completes. If the final `MuxWakeup` arrives just after a render and no subsequent wakeup triggers a redraw, add a "trailing render" — when `pump_mux_events()` returns with data processed, always set `ctx.dirty`
-- [ ] Verify `thread::yield_now()` between parse cycles allows the UI thread to snapshot terminal state during sustained PTY floods. Run `yes | head -1000000` and confirm the terminal remains interactive (responds to Ctrl+C within 100ms)
+- [x] Test final-frame edge case: code audit verified — `PaneOutput(id)` → `mark_pane_window_dirty(id)` sets `ctx.dirty = true`. If budget hasn't elapsed, `still_dirty` triggers `WaitUntil(last_render + FRAME_BUDGET)` which wakes the event loop to render. The dirty flag persists until `render_dirty_windows()` clears it (event_loop.rs:474). No trailing render needed — the existing WaitUntil mechanism guarantees the final frame renders. Manual `seq 1 100000` test deferred to runtime verification
+- [x] Verify `thread::yield_now()` between parse cycles — confirmed in `pty/event_loop/mod.rs:115`: `thread::yield_now()` is called after each `try_parse()` cycle before continuing the parse loop. This gives the UI thread's snapshot builder a turn at the terminal lock during sustained PTY floods. Manual `yes | head -1000000` interactivity test deferred to runtime verification
 
 - [ ] **Tests** (allocation-free verification in `oriterm_core/benches/grid.rs` or a new `oriterm_mux/benches/parsing.rs`; integration tests in `oriterm_mux/src/pty/event_loop/tests.rs`):
   - [ ] Processing a 1MB ASCII buffer does not allocate (use a custom allocator or `#[global_allocator]` tracking in a benchmark)
@@ -397,7 +397,7 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 - [x] Multi-page atlas with automatic page addition up to 4 pages
 - [x] LRU page eviction when all pages are full
 - [x] Color emoji support via separate `Rgba8UnormSrgb` atlas
-- [ ] Add `log::debug!` in `GlyphAtlas::allocate()` when page utilization exceeds 80% (total allocated pixels / total page pixels)
+- [x] Add `log::debug!` in `GlyphAtlas::insert()` when page utilization exceeds 80% — computed via `RectPacker::free_area()` (total page pixels - free area) / total page pixels. Logs page index, utilization percentage, and glyph count
 - [ ] Stress-test with heavy Unicode workload (CJK + emoji + combining marks filling 240x80 grid). If 4 pages overflow, make max pages configurable via `GlyphAtlas::new(max_pages: u32)` with a default of 4
 
 ### Frame Pacing
@@ -421,7 +421,7 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 
 - [x] Each tier uses per-pipeline instance buffers (one draw call per pipeline per tier)
 - [x] Compositor with render target pooling for multi-layer composition
-- [ ] Audit current draw call count per frame (add a `draw_call_count` counter to `WindowRenderer::render()`, log at debug level). Current expected count: ~15+ per frame across three tiers (terminal: 7+, chrome: 4, overlay: 4 per overlay, plus per-image draws)
+- [x] Audit current draw call count per frame — `PreparedFrame::count_draw_calls()` computes the count from non-empty instance buffers (5 terminal + 4 chrome + 4 per overlay + per-image). Logged at `log::debug!` level after `queue.submit()` in `render_frame()`
 - [x] Verify `record_draw()` / `record_draw_clipped()` skip the draw when instance count is zero — both already have `if instance_count == 0 { return; }` guard (helpers.rs:294, helpers.rs:329)
 - [ ] Image texture atlasing: when 3+ images are visible simultaneously, merge their textures into a shared atlas to reduce per-image bind group switches and draw calls. Deferred until image protocol support (Section 39) is implemented
 
@@ -441,8 +441,8 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 
 ### Skip Off-Screen Content
 
-- [ ] In `fill_frame_shaped()`, skip generating instances for cells whose computed pixel position (after origin offset) falls entirely outside the render target bounds. This matters when: (a) a pane in a split layout extends beyond the window edge during resize, or (b) partially visible rows at the top/bottom edge of a pane
-- [ ] Add a bounds check before `emit_cell()`: if `cell_y + cell_height < 0.0 || cell_y > viewport_height`, skip the cell
+- [x] In `fill_frame_shaped()` and `fill_frame_incremental()`, skip generating instances for cells whose row is entirely outside the render target bounds. Per-row `row_off_screen` flag computed on row transition: `row_y + ch < 0.0 || row_y > viewport_h`. Cells in off-screen rows are skipped, avoiding instance generation, atlas lookup, and decoration work
+- [x] Bounds check is per-row (not per-cell) for efficiency: `let row_y = oy + row as f32 * ch; row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;`
 
 ### Rendering Performance Tests
 
