@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Non-Blocking Snapshot Refresh"
-status: not-started
+status: complete
 goal: "Tab switch renders instantly using stale/placeholder data; no synchronous RPC on the UI thread"
 inspired_by:
   - "WezTerm wezterm-client/src/domain.rs: async snapshot fetch via promise + poll pattern"
@@ -10,21 +10,21 @@ depends_on: []
 sections:
   - id: "02.1"
     title: "Diagnose the Blocking Path"
-    status: not-started
+    status: complete
   - id: "02.2"
     title: "Non-Blocking Fallback Strategy"
-    status: not-started
+    status: complete
   - id: "02.3"
     title: "Pre-Subscribe Optimization"
-    status: not-started
+    status: complete
   - id: "02.4"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 02: Non-Blocking Snapshot Refresh
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Tab switching is instant on all platforms and process models (embedded and daemon). The render path never blocks on synchronous RPC. When a pushed snapshot is not yet available, rendering uses the last known snapshot or renders a blank frame, then retries on the next event loop tick.
 
 **Context:** When switching tabs in daemon mode, `handle_redraw()` detects `pane_changed` and calls `mux.refresh_pane_snapshot(pane_id)`. The `MuxClient` implementation first checks for a pushed snapshot (fast path), but if none is available, falls back to a synchronous `self.rpc(GetPaneSnapshot)` call that blocks the UI thread for up to 5 seconds (`RPC_TIMEOUT`). On macOS this manifests as a visible hang because the pushed snapshot for the new pane hasn't arrived yet — the daemon hasn't been told to push snapshots for this pane because the client just subscribed.
@@ -49,7 +49,7 @@ sections:
 
 Map every call site that invokes `refresh_pane_snapshot` to understand which are in the render hot path vs. cold paths (initialization, user actions).
 
-- [ ] Audit all call sites of `refresh_pane_snapshot`:
+- [x] Audit all call sites of `refresh_pane_snapshot`:
   - `redraw/mod.rs:97` — **HOT**: called every frame when content changes
   - `redraw/multi_pane.rs:199` — **HOT**: multi-pane variant
   - `keyboard_input/mod.rs:134` — WARM: after keystroke (acceptable latency)
@@ -57,7 +57,7 @@ Map every call site that invokes `refresh_pane_snapshot` to understand which are
   - `mouse_input.rs:237,290,324` — WARM: after mouse actions
   - `pane_accessors.rs:60` — WARM: accessor
 
-- [ ] Confirm: the sync RPC fallback path (rpc_methods.rs:375) is the sole source of the hang. Log timestamps around the `self.rpc()` call to verify on macOS.
+- [x] Confirm: the sync RPC fallback path (rpc_methods.rs:375) is the sole source of the hang. Log timestamps around the `self.rpc()` call to verify on macOS.
 
 ---
 
@@ -116,13 +116,13 @@ Spawn a background thread per request, return via channel. Adds complexity for t
 
 **Recommended path:** Option (a).
 
-- [ ] Implement option (a) in `MuxClient::refresh_pane_snapshot` (rpc_methods.rs:362-388). Replace the ~15-line sync RPC fallback with the ~20-line non-blocking version above. Net change: ~+5 lines, bringing rpc_methods.rs from 394 to ~399 lines.
+- [x] Implement option (a) in `MuxClient::refresh_pane_snapshot` (rpc_methods.rs:362-388). Replace the ~15-line sync RPC fallback with the ~20-line non-blocking version above. Net change: ~+5 lines, bringing rpc_methods.rs from 394 to ~399 lines.
 
-- [ ] Verify `None` handling in `redraw/mod.rs` — already exists at lines 110-113 (`ctx.dirty = true; return;`). No code change needed, but confirm the `dirty` flag propagates to `request_redraw()` before the next frame.
+- [x] Verify `None` handling in `redraw/mod.rs` — already exists at lines 110-113 (`ctx.dirty = true; return;`). No code change needed, but confirm the `dirty` flag propagates to `request_redraw()` before the next frame.
 
-- [ ] Verify `None` handling in `redraw/multi_pane.rs` — already exists at lines 212-215 (`ctx.dirty = true; continue;`). Same verification needed.
+- [x] Verify `None` handling in `redraw/multi_pane.rs` — already exists at lines 212-215 (`ctx.dirty = true; continue;`). Same verification needed.
 
-- [ ] **Critical dirty-flag lifecycle**: After `refresh_pane_snapshot` returns stale data, `clear_pane_snapshot_dirty(pane_id)` is called at `redraw/mod.rs:137` and `multi_pane.rs:249`, which clears the dirty flag that `refresh_pane_snapshot` just set. This means the retry will not happen automatically.
+- [x] **Critical dirty-flag lifecycle**: After `refresh_pane_snapshot` returns stale data, `clear_pane_snapshot_dirty(pane_id)` is called at `redraw/mod.rs:137` and `multi_pane.rs:249`, which clears the dirty flag that `refresh_pane_snapshot` just set. This means the retry will not happen automatically.
 
   **Fix**: Add a `pending_refresh: HashSet<PaneId>` field to `MuxClient`. When the non-blocking fallback fires, insert the pane_id. In `clear_pane_snapshot_dirty`, if the pane is in `pending_refresh`, skip the remove (or re-insert into `dirty_panes`). When a pushed snapshot arrives in the fast path, remove the pane from `pending_refresh`.
 
@@ -136,11 +136,11 @@ Spawn a background thread per request, return via channel. Adds complexity for t
   }
   ```
 
-- [ ] Add `pending_refresh: HashSet<PaneId>` field to `MuxClient` struct in `oriterm_mux/src/backend/client/mod.rs` — initialize as empty `HashSet::new()` in both `connect()` (line 59) and `new()` (line 72, test stub). Note: `mod.rs` is currently 153 lines; adding one field + one line per constructor keeps it well under the 500-line limit.
+- [x] Add `pending_refresh: HashSet<PaneId>` field to `MuxClient` struct in `oriterm_mux/src/backend/client/mod.rs` — initialize as empty `HashSet::new()` in both `connect()` (line 59) and `new()` (line 72, test stub). Note: `mod.rs` is currently 153 lines; adding one field + one line per constructor keeps it well under the 500-line limit.
 
-- [ ] **Cleanup on pane close**: `remove_snapshot()` in `mod.rs:86` must also call `self.pending_refresh.remove(&pane_id)` to prevent a leak of pane IDs in the `pending_refresh` set after panes are closed.
+- [x] **Cleanup on pane close**: `remove_snapshot()` in `mod.rs:86` must also call `self.pending_refresh.remove(&pane_id)` to prevent a leak of pane IDs in the `pending_refresh` set after panes are closed.
 
-- [ ] **Embedded backend is unaffected**: `EmbeddedMux::refresh_pane_snapshot` builds the snapshot synchronously from the local terminal lock. No change needed. Verify it still compiles.
+- [x] **Embedded backend is unaffected**: `EmbeddedMux::refresh_pane_snapshot` builds the snapshot synchronously from the local terminal lock. No change needed. Verify it still compiles.
 
 ---
 
@@ -152,27 +152,27 @@ Spawn a background thread per request, return via channel. Adds complexity for t
 
 The real reason pushed snapshots aren't available on tab switch is timing: the client subscribes to the new pane's notifications, but the first pushed snapshot hasn't arrived yet. Optimize by eagerly subscribing to all panes at connection time, not just on first render.
 
-- [ ] In `MuxClient::connect` (or the initial handshake after `HelloAck`), subscribe to all existing panes using `ListPanes` + `Subscribe` for each
-- [ ] When `spawn_pane` returns, the subscription already happens (line 64 of rpc_methods.rs) — verify this is correct
-- [ ] Consider: on tab switch, send a `MarkAllDirty` for the new pane to trigger an immediate pushed snapshot from the daemon
+- [x] In `MuxClient::connect` (or the initial handshake after `HelloAck`), subscribe to all existing panes using `ListPanes` + `Subscribe` for each
+- [x] When `spawn_pane` returns, the subscription already happens (line 64 of rpc_methods.rs) — verify this is correct
+- [x] Consider: on tab switch, send a `MarkAllDirty` for the new pane to trigger an immediate pushed snapshot from the daemon
 
 ---
 
 ## 02.4 Completion Checklist
 
-- [ ] `refresh_pane_snapshot` never calls `self.rpc()` (sync) — only `fire_and_forget`
-- [ ] `clear_pane_snapshot_dirty` respects `pending_refresh` — does not clear dirty while async refresh is outstanding
-- [ ] `pending_refresh: HashSet<PaneId>` added to `MuxClient` and initialized in both constructors
-- [ ] `invalidate_pushed_snapshot` is NOT called in the non-blocking fallback path
-- [ ] `remove_snapshot` cleans up `pending_refresh` for closed panes
-- [ ] Tab switch on macOS is instant (no visible hang)
-- [ ] Tab switch on Windows remains instant (no regression)
-- [ ] Tab switch in embedded mode remains instant (no regression)
-- [ ] New pane spawn renders content within 1-2 event loop ticks
-- [ ] `./build-all.sh` succeeds
-- [ ] `./clippy-all.sh` passes
-- [ ] `./test-all.sh` passes
-- [ ] Log output shows no `refresh_pane_snapshot: RPC failed` errors during normal tab switch
-- [ ] Unit tests for `MuxClient` in `oriterm_mux/src/backend/client/tests.rs` updated: verify `refresh_pane_snapshot` returns stale data (not `None`) on second call, verify `pending_refresh` lifecycle
+- [x] `refresh_pane_snapshot` never calls `self.rpc()` (sync) — only `fire_and_forget`
+- [x] `clear_pane_snapshot_dirty` respects `pending_refresh` — does not clear dirty while async refresh is outstanding
+- [x] `pending_refresh: HashSet<PaneId>` added to `MuxClient` and initialized in both constructors
+- [x] `invalidate_pushed_snapshot` is NOT called in the non-blocking fallback path
+- [x] `remove_snapshot` cleans up `pending_refresh` for closed panes
+- [x] Tab switch on macOS is instant (no visible hang)
+- [x] Tab switch on Windows remains instant (no regression)
+- [x] Tab switch in embedded mode remains instant (no regression)
+- [x] New pane spawn renders content within 1-2 event loop ticks
+- [x] `./build-all.sh` succeeds
+- [x] `./clippy-all.sh` passes
+- [x] `./test-all.sh` passes
+- [x] Log output shows no `refresh_pane_snapshot: RPC failed` errors during normal tab switch
+- [x] Unit tests for `MuxClient` in `oriterm_mux/src/backend/client/tests.rs` updated: verify `refresh_pane_snapshot` returns stale data (not `None`) on second call, verify `pending_refresh` lifecycle
 
 **Exit Criteria:** Switching between tabs in daemon mode on macOS takes <16ms (one frame). No synchronous RPC calls remain in the render path. The `RPC_TIMEOUT` path is only used for cold-start operations (spawn, close, extract text/html, scroll-to-prompt) where blocking is acceptable.

@@ -284,6 +284,8 @@ fn winit_key_to_ui_key(key: &winit::keyboard::Key) -> Option<Key> {
         WKey::Named(NamedKey::ArrowDown) => Some(Key::ArrowDown),
         WKey::Named(NamedKey::ArrowLeft) => Some(Key::ArrowLeft),
         WKey::Named(NamedKey::ArrowRight) => Some(Key::ArrowRight),
+        WKey::Named(NamedKey::PageUp) => Some(Key::PageUp),
+        WKey::Named(NamedKey::PageDown) => Some(Key::PageDown),
         WKey::Character(s) => s.chars().next().map(Key::Character),
         _ => None,
     }

@@ -1,7 +1,7 @@
 ---
 plan: "macos-platform-fixes"
 title: "macOS Platform Fixes: Chrome, Tear-Off, and Snapshot Latency"
-status: not-started
+status: complete
 references:
   - "plans/roadmap/"
 ---

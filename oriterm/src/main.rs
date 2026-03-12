@@ -45,6 +45,8 @@ fn main() {
     if args.new_window {
         log::info!("--new-window requested");
     }
+    #[cfg(windows)]
+    set_app_user_model_id();
 
     #[cfg(unix)]
     if let Err(e) = oriterm_mux::pty::signal::init() {
@@ -52,6 +54,10 @@ fn main() {
     }
 
     let event_loop = build_event_loop();
+
+    #[cfg(windows)]
+    submit_jump_list_on_startup();
+
     let proxy = event_loop.create_proxy();
 
     let config = Config::load();
@@ -169,6 +175,55 @@ fn ensure_daemon_with_retry() -> std::io::Result<std::path::PathBuf> {
         }
     }
     Err(last_err.unwrap_or_else(|| std::io::Error::other("daemon start failed")))
+}
+
+/// Set the Windows App User Model ID for taskbar grouping and Jump Lists.
+///
+/// Must be called before window creation. Uses the existing `windows-sys`
+/// crate since this is a flat Win32 API, not a COM interface.
+#[cfg(windows)]
+fn set_app_user_model_id() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let id: Vec<u16> = OsStr::new("Ori.Terminal")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    // SAFETY: `SetCurrentProcessExplicitAppUserModelID` is a standard
+    // Win32 API. The wide string is valid and null-terminated.
+    #[allow(unsafe_code)]
+    let hr = unsafe {
+        windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(id.as_ptr())
+    };
+    if hr != 0 {
+        log::warn!("SetCurrentProcessExplicitAppUserModelID failed: HRESULT 0x{hr:08x}");
+    }
+}
+
+/// Initialize COM and submit the Jump List on startup.
+///
+/// Explicit `CoInitializeEx` is required because winit does not
+/// initialize COM until window creation (inside `App::resumed`).
+#[cfg(windows)]
+fn submit_jump_list_on_startup() {
+    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+
+    // SAFETY: `CoInitializeEx` is a standard Win32 API for COM
+    // initialization. The subsequent winit `OleInitialize` call will
+    // harmlessly return `S_FALSE` (already initialized).
+    #[allow(unsafe_code)]
+    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if hr.is_err() {
+        log::warn!("CoInitializeEx failed: {hr:?}");
+        return;
+    }
+
+    let tasks = platform::jump_list::build_jump_list_tasks();
+    if let Err(e) = platform::jump_list::submit_jump_list(&tasks) {
+        log::warn!("jump list submission failed: {e}");
+    }
 }
 
 /// Build a winit event loop usable from the main thread.

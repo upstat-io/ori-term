@@ -9,7 +9,9 @@ use crate::widgets::label::LabelWidget;
 use crate::widgets::panel::PanelWidget;
 use crate::widgets::spacer::SpacerWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{
+    CaptureRequest, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse,
+};
 
 use super::ContainerWidget;
 
@@ -676,14 +678,17 @@ fn panel_inside_container_layout() {
 
 #[test]
 fn layout_cache_returns_same_result_for_same_bounds() {
-    let row = ContainerWidget::row().with_children(vec![label("A")]);
+    let mut row = ContainerWidget::row().with_children(vec![label("A")]);
     let measurer = MockMeasurer::STANDARD;
     let theme = super::super::tests::TEST_THEME;
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
 
+    // First layout populates the cache and clears the dirty flag.
     let node1 = row.get_or_compute_layout(&measurer, &theme, bounds);
+    row.clear_dirty();
+
     let node2 = row.get_or_compute_layout(&measurer, &theme, bounds);
-    // Same Rc (pointer equality).
+    // Same Rc (pointer equality) — cache hit.
     assert!(std::rc::Rc::ptr_eq(&node1, &node2));
 }
 
@@ -820,4 +825,79 @@ fn new_container_starts_dirty() {
     let c = ContainerWidget::column();
     assert!(c.needs_paint());
     assert!(c.needs_layout());
+}
+
+#[test]
+fn needs_layout_bypasses_cache() {
+    // A container with a label child.
+    let mut c = ContainerWidget::column().with_child(Box::new(LabelWidget::new("hello")));
+    c.clear_dirty();
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let theme = &super::super::tests::TEST_THEME;
+
+    // First draw populates the cache.
+    let mut draw_list = DrawList::new();
+    let anim = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim,
+        theme,
+        icons: None,
+    };
+    c.draw(&mut ctx);
+    let cmd_count_1 = draw_list.commands().len();
+
+    // Second draw with same bounds should use cache (same result).
+    draw_list.clear();
+    let mut ctx2 = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim,
+        theme,
+        icons: None,
+    };
+    c.draw(&mut ctx2);
+    assert_eq!(
+        draw_list.commands().len(),
+        cmd_count_1,
+        "cached layout should produce same draw commands"
+    );
+
+    // Simulate a child requesting layout (e.g. section collapse).
+    let layout_resp = WidgetResponse {
+        response: EventResponse::RequestLayout,
+        action: None,
+        capture: CaptureRequest::None,
+    };
+    c.update_dirty(&layout_resp);
+    assert!(c.needs_layout());
+
+    // Third draw with same bounds should bypass cache (recompute).
+    // This verifies the dirty flag properly invalidates the layout cache.
+    draw_list.clear();
+    let mut ctx3 = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim,
+        theme,
+        icons: None,
+    };
+    c.draw(&mut ctx3);
+    assert_eq!(
+        draw_list.commands().len(),
+        cmd_count_1,
+        "recomputed layout should produce same draw commands"
+    );
 }

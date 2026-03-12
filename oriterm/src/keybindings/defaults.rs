@@ -95,6 +95,8 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         // Undo/redo split tree mutations.
         bind(ch("u"), cs, Action::UndoSplit),
         bind(ch("y"), cs, Action::RedoSplit),
+        // Select all (smart: shell input line if in prompt, else entire buffer).
+        bind(ch("a"), ctrl, Action::SelectAll),
         // Settings overlay.
         bind(ch(","), ctrl, Action::OpenSettings),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER

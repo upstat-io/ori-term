@@ -172,7 +172,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | ~~18~~ | ~~Multi-Window & Lifecycle~~ | *Superseded → Section 32* |
 | 19 | Event Routing & Scheduling | Coordinate systems, dispatch, frame budget, cursor blink |
 | 20 | Shell Integration | Shell detection, injection, OSC 7/133, prompt state, two-parser, semantic zones, command notifications |
-| 21 | Context Menu & Controls | GPU-rendered menus, config reload, settings UI, window controls |
+| 21 | Context Menu & Window Controls | GPU-rendered menus, config reload, settings UI, window controls, taskbar jump list |
 
 ### Tier 4M — Multiplexing Foundation (NEW)
 | Section | Title | What |

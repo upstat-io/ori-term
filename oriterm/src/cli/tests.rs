@@ -574,6 +574,8 @@ fn new_window_with_subcommand_parses() {
 
 // ── --embedded flag ──
 
+// ── --embedded flag ──
+
 #[test]
 fn embedded_flag_parses() {
     let cli = Cli::try_parse_from(["oriterm", "--embedded"]).unwrap();

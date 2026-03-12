@@ -200,7 +200,7 @@ Keyboard-driven selection for accessibility and power users, modeled after Windo
   - [x] Ctrl+Shift+Home: extend to top of scrollback
   - [x] Ctrl+Shift+End: extend to bottom of buffer
 - [x] **Ctrl+A** — Select all:
-  - [ ] If cursor is in shell input line (with shell integration): select input line <!-- blocked-by:20 -->
+  - [x] If cursor is in shell input line (with shell integration): select input line
   - [x] Otherwise: select entire buffer (visible + scrollback)
 - [x] **Escape** — Cancel selection:
   - [x] Clear selection

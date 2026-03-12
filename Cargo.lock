@@ -1863,6 +1863,7 @@ dependencies = [
  "vte",
  "wgpu",
  "window-vibrancy",
+ "windows",
  "windows-sys 0.60.2",
  "winit",
  "x11-dl",

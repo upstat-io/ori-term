@@ -203,6 +203,10 @@ pub enum Key {
     ArrowLeft,
     /// Right arrow.
     ArrowRight,
+    /// Page Up.
+    PageUp,
+    /// Page Down.
+    PageDown,
     /// A character key (after dead-key / IME composition).
     Character(char),
 }

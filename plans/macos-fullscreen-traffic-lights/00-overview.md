@@ -1,7 +1,7 @@
 ---
 plan: "macos-fullscreen-traffic-lights"
 title: "macOS Fullscreen Exit Traffic Light Repositioning Fix"
-status: in-progress
+status: complete
 references:
   - "plans/macos-platform-fixes/"
 ---
@@ -109,4 +109,4 @@ Phase 2 - Verification (Section 03)
 |----|-------|------|--------|
 | 01 | Research Findings | `section-01-research-findings.md` | Complete |
 | 02 | Implementation | `section-02-implementation.md` | Complete |
-| 03 | Verification | `section-03-verification.md` | Not Started |
+| 03 | Verification | `section-03-verification.md` | Complete |

@@ -788,6 +788,12 @@ fn select_command_input_roundtrip() {
     assert_eq!(Action::SelectCommandInput.as_str(), "SelectCommandInput");
 }
 
+#[test]
+fn select_all_roundtrip() {
+    assert_eq!(parse_action("SelectAll"), Some(Action::SelectAll));
+    assert_eq!(Action::SelectAll.as_str(), "SelectAll");
+}
+
 // ---------------------------------------------------------------------------
 // Action::is_global()
 // ---------------------------------------------------------------------------
