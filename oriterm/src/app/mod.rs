@@ -392,12 +392,18 @@ impl App {
     /// it afterward to preserve `Vec` capacity across frames.
     fn with_drained_notifications(&mut self, mut handler: impl FnMut(&mut Self, MuxNotification)) {
         let mut buf = std::mem::take(&mut self.notification_buf);
+        let count = buf.len();
         #[allow(
             clippy::iter_with_drain,
             reason = "drain preserves Vec capacity; into_iter drops it"
         )]
         for n in buf.drain(..) {
             handler(self, n);
+        }
+        // Shrink if capacity vastly exceeds typical usage.
+        let cap = buf.capacity();
+        if cap > 4 * count && cap > 4096 {
+            buf.shrink_to(count * 2);
         }
         self.notification_buf = buf;
     }

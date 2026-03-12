@@ -19,7 +19,7 @@ use std::ops::{Index, IndexMut, Range};
 use crate::index::Line;
 
 pub use cursor::{Cursor, CursorShape};
-pub use dirty::{DirtyIter, DirtyTracker};
+pub use dirty::{DirtyIter, DirtyLine, DirtyTracker};
 pub use editing::{DisplayEraseMode, LineEraseMode};
 pub use navigation::TabClearMode;
 pub use ring::ScrollbackBuffer;
@@ -92,7 +92,7 @@ impl Grid {
             display_offset: 0,
             total_evicted: 0,
             resize_pushed: 0,
-            dirty: DirtyTracker::new(lines),
+            dirty: DirtyTracker::new(lines, cols),
         }
     }
 

@@ -16,8 +16,9 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 
 | Priority | Section | Reason |
 |----------|---------|--------|
-| **1** | **44 — Multi-Process Window Architecture** | **BLOCKER — current single-process multi-window model is fundamentally broken. Must complete before any other work.** |
-| ~~2~~ | ~~43 — Compositor Layer System~~ | ~~Complete~~ |
+| ~~1~~ | ~~44 — Multi-Process Window Architecture~~ | ~~Complete (2 Windows named pipe items deferred to Windows platform support)~~ |
+| ~~2~~ | ~~50 — Runtime Efficiency~~ | ~~Complete~~ |
+| ~~3~~ | ~~43 — Compositor Layer System~~ | ~~Complete~~ |
 
 ---
 
@@ -497,13 +498,16 @@ save/restore modes, XTSAVE, XTRESTORE
 **File:** `section-23-performance.md` | **Tier:** 5 | **Status:** Not Started
 
 ```
-damage tracking, DirtyTracker, per-row dirty, BitVec
-instance buffer caching, partial update, skip present
-ring buffer, ScrollbackRing, O(1) push, wrapping index
-parsing performance, PTY buffer size, fast ASCII path
-rendering performance, instance buffer reuse, frame pacing
-memory optimization, Row pooling, compact representation
-benchmarks, criterion, throughput, latency, FPS, regression
+damage tracking, DirtyTracker, per-row dirty, column-level damage, LineDamageBounds, DamageLine
+instance buffer caching, PaneRenderCache, PreparedFrame, partial update, skip present, dirty skip
+ring buffer, ScrollbackBuffer, O(1) push, wrapping index, row pool, grid resize reuse
+parsing performance, PTY buffer size, fast ASCII path, put_ascii_run, MAX_LOCKED_PARSE
+rendering performance, instance buffer reuse, frame pacing, FRAME_BUDGET, upload_buffer
+memory optimization, alt screen lazy allocation, CellExtra, Row occupancy, occ
+benchmarks, criterion, throughput, latency, FPS, regression, vte_throughput
+selection damage, selection_dirty, symmetric difference, incremental damage
+synchronized output, Mode 2026, sync_bytes_count, MuxWakeup coalescing
+debug overlay, FPS counter, atlas utilization, dirty row percentage
 ```
 
 ---
@@ -985,6 +989,20 @@ visual indicator, active key table, key table name
 zellij modes, tmux key table, wezterm key_tables
 ```
 
+### Section 50: Runtime Efficiency — CPU & Memory Tuning
+**File:** `section-50-runtime-efficiency.md` | **Tier:** 2 | **Status:** Not Started
+
+```
+idle CPU, CPU usage, event loop spin, busy wait, ControlFlow::Wait, ControlFlow
+memory growth, RSS, memory leak, allocation, shrink_to, capacity cap, maybe_shrink
+about_to_wait, pump_mux_events, cursor blink, animation tick, tick_dialog_animations
+frame budget, render coalescing, wakeup coalescing, has_pending_wakeup, MuxBackend
+allocation audit, zero-alloc, hot path, counting allocator, GlobalAlloc
+extract_images, placements_in_viewport, HashSet scratch, InstanceWriter, ShapingScratch
+PerfStats, frame timing, profiling, perf counter, compute_control_flow
+regression, CI benchmark, memory watermark, performance invariant
+```
+
 ---
 
 ### Ghostty 1.3.0 Parity — Items in Completed Sections
@@ -1062,6 +1080,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 47 | Semantic Prompt State Management | `section-47-semantic-prompt-state.md` | 5 | Not Started |
 | 48 | Native OS Scrollbars | `section-48-native-scrollbars.md` | 5 | Not Started |
 | 49 | Advanced Keybinding System | `section-49-advanced-keybindings.md` | 5 | Not Started |
+| 50 | Runtime Efficiency — CPU & Memory Tuning | `section-50-runtime-efficiency.md` | 2 | Not Started |
 
 ## Tier Summary
 
@@ -1069,7 +1088,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 |------|----------|-------|
 | **0** | **01-03, 44** | **Core library + cross-platform architecture + multi-process window model (44 is BLOCKER)** |
 | 1 | 04 | Process layer (PTY, threads) |
-| 2 | 05, 05B, 06-07 | Rendering foundation (window, GPU, fonts, UI framework) |
+| 2 | 05, 05B, 06-07, 50 | Rendering foundation (window, GPU, fonts, UI framework) + runtime efficiency |
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |

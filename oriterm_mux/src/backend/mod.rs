@@ -278,4 +278,10 @@ pub trait MuxBackend {
 
     /// Clear the dirty flag for a pane's cached snapshot.
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId);
+
+    /// Shrink renderable content caches if capacity vastly exceeds usage.
+    ///
+    /// Called after rendering to bound memory waste. Default is a no-op
+    /// (daemon mode doesn't cache `RenderableContent`).
+    fn maybe_shrink_renderable_caches(&mut self) {}
 }

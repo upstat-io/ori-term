@@ -54,6 +54,14 @@ pub(crate) struct Cli {
     /// CI testing, or environments where daemon spawning isn't possible.
     #[arg(long)]
     pub embedded: bool,
+
+    /// Enable profiling output (frame timing, allocation counts).
+    ///
+    /// Logs performance statistics at `info` level so they appear in
+    /// `oriterm.log` without setting `RUST_LOG=debug`. Build with
+    /// `--features profile` to also enable per-allocation counting.
+    #[arg(long)]
+    pub profile: bool,
 }
 
 /// Diagnostic subcommands that run headlessly.

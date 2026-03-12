@@ -364,6 +364,12 @@ impl MuxBackend for EmbeddedMux {
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {
         self.snapshot_dirty.remove(&pane_id);
     }
+
+    fn maybe_shrink_renderable_caches(&mut self) {
+        for content in self.renderable_cache.values_mut() {
+            content.maybe_shrink();
+        }
+    }
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ use oriterm_core::image::ImageId;
 use super::draw_list_convert::TierClips;
 use super::frame_input::ViewportSize;
 use super::instance_writer::InstanceWriter;
+use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
 use super::srgb_to_linear;
 
 /// Instance index ranges for a single overlay's content within the shared buffers.
@@ -114,6 +115,15 @@ pub struct PreparedFrame {
     pub image_quads_below: Vec<ImageQuad>,
     /// Image quads above text (`z_index` >= 0).
     pub image_quads_above: Vec<ImageQuad>,
+    /// Per-row instance byte ranges in the terminal-tier buffers.
+    ///
+    /// Index = viewport line. Used by the incremental prepare path to copy
+    /// clean rows' instances from the previous frame without regenerating them.
+    pub row_ranges: Vec<RowInstanceRanges>,
+    /// Saved terminal-tier data from the previous frame for incremental updates.
+    ///
+    /// Swapped out at the start of each prepare pass; clean rows copy from here.
+    pub(crate) saved_tier: SavedTerminalTier,
     /// Viewport pixel dimensions for uniform buffer update.
     pub viewport: ViewportSize,
     /// Window clear color (alpha-premultiplied).
@@ -142,6 +152,8 @@ impl PreparedFrame {
             overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
+            row_ranges: Vec::new(),
+            saved_tier: SavedTerminalTier::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -179,6 +191,8 @@ impl PreparedFrame {
             overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
+            row_ranges: Vec::new(),
+            saved_tier: SavedTerminalTier::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -240,6 +254,7 @@ impl PreparedFrame {
         self.overlay_draw_ranges.clear();
         self.image_quads_below.clear();
         self.image_quads_above.clear();
+        self.row_ranges.clear();
     }
 
     /// Append all instances from `other` into this frame.
@@ -303,9 +318,55 @@ impl PreparedFrame {
             .extend_from_slice(&other.image_quads_above);
     }
 
+    /// Shrink all instance buffers and scratch Vecs if capacity vastly exceeds usage.
+    ///
+    /// Called after rendering to bound memory waste. See [`InstanceWriter::maybe_shrink`].
+    pub fn maybe_shrink(&mut self) {
+        self.backgrounds.maybe_shrink();
+        self.glyphs.maybe_shrink();
+        self.subpixel_glyphs.maybe_shrink();
+        self.color_glyphs.maybe_shrink();
+        self.cursors.maybe_shrink();
+        self.ui_rects.maybe_shrink();
+        self.ui_glyphs.maybe_shrink();
+        self.ui_subpixel_glyphs.maybe_shrink();
+        self.ui_color_glyphs.maybe_shrink();
+        self.overlay_rects.maybe_shrink();
+        self.overlay_glyphs.maybe_shrink();
+        self.overlay_subpixel_glyphs.maybe_shrink();
+        self.overlay_color_glyphs.maybe_shrink();
+        maybe_shrink_vec(&mut self.overlay_draw_ranges);
+        maybe_shrink_vec(&mut self.image_quads_below);
+        maybe_shrink_vec(&mut self.image_quads_above);
+        maybe_shrink_vec(&mut self.row_ranges);
+    }
+
     /// Update the clear color (e.g. after a palette change).
     pub fn set_clear_color(&mut self, background: Rgb, opacity: f64) {
         self.clear_color = rgb_to_clear(background, opacity);
+    }
+
+    /// Swap the terminal-tier buffers into `saved_tier` for incremental updates.
+    ///
+    /// After this call the terminal-tier writers are empty (backed by the
+    /// previous `saved_tier`'s Vecs, cleared to zero length). The old
+    /// instances live in `saved_tier` and can be copied row-by-row for
+    /// clean rows. This is O(1) — three pointer swaps, no data copied.
+    pub(crate) fn save_terminal_tier(&mut self) {
+        self.backgrounds.swap_buf(&mut self.saved_tier.backgrounds);
+        self.glyphs.swap_buf(&mut self.saved_tier.glyphs);
+        self.subpixel_glyphs
+            .swap_buf(&mut self.saved_tier.subpixel_glyphs);
+        self.color_glyphs
+            .swap_buf(&mut self.saved_tier.color_glyphs);
+        std::mem::swap(&mut self.row_ranges, &mut self.saved_tier.row_ranges);
+
+        // Clear the now-swapped-in buffers (they held the old saved_tier data).
+        self.backgrounds.clear();
+        self.glyphs.clear();
+        self.subpixel_glyphs.clear();
+        self.color_glyphs.clear();
+        self.row_ranges.clear();
     }
 }
 
@@ -320,6 +381,15 @@ fn rgb_to_clear(c: Rgb, opacity: f64) -> [f64; 4] {
         f64::from(srgb_to_linear(c.b)) * opacity,
         opacity,
     ]
+}
+
+/// Shrink a Vec if capacity vastly exceeds usage (> 4× len and > 4096 elements).
+fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
+    let cap = v.capacity();
+    let len = v.len();
+    if cap > 4 * len && cap > 4096 {
+        v.shrink_to(len * 2);
+    }
 }
 
 #[cfg(test)]

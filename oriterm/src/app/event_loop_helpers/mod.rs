@@ -208,3 +208,55 @@ impl App {
         }
     }
 }
+
+/// Inputs for the control flow decision (no winit types).
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "mirrors event loop state flags"
+)]
+pub(super) struct ControlFlowInput {
+    /// Whether any window is dirty.
+    pub any_dirty: bool,
+    /// Whether the frame budget has elapsed since last render.
+    pub budget_elapsed: bool,
+    /// Whether any window still has dirty flag after rendering.
+    pub still_dirty: bool,
+    /// Whether compositor animations are running.
+    pub has_animations: bool,
+    /// Whether cursor blink is active.
+    pub blinking_active: bool,
+    /// Next cursor blink toggle time (only meaningful if `blinking_active`).
+    pub next_toggle: std::time::Instant,
+    /// Time remaining until frame budget allows next render.
+    pub budget_remaining: std::time::Duration,
+    /// Current time.
+    pub now: std::time::Instant,
+}
+
+/// Result of the control flow decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ControlFlowDecision {
+    /// Sleep until an external event arrives.
+    Wait,
+    /// Sleep until the given instant.
+    WaitUntil(std::time::Instant),
+}
+
+/// Pure function: decide the next `ControlFlow` from event loop state.
+///
+/// No winit types — testable without a display server. Mirrors the
+/// decision tree in `about_to_wait`.
+pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecision {
+    if (input.any_dirty && !input.budget_elapsed) || input.still_dirty {
+        ControlFlowDecision::WaitUntil(input.now + input.budget_remaining)
+    } else if input.has_animations {
+        ControlFlowDecision::WaitUntil(input.now + std::time::Duration::from_millis(16))
+    } else if input.blinking_active {
+        ControlFlowDecision::WaitUntil(input.next_toggle)
+    } else {
+        ControlFlowDecision::Wait
+    }
+}
+
+#[cfg(test)]
+mod tests;

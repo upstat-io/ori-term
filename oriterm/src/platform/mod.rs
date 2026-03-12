@@ -6,6 +6,7 @@
 
 pub mod config_paths;
 pub mod jump_list;
+pub mod memory;
 pub mod notify;
 pub mod scroll;
 pub mod shutdown;

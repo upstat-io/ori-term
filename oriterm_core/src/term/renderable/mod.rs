@@ -204,6 +204,26 @@ impl RenderableContent {
             visible: false,
         };
     }
+
+    /// Shrink Vec buffers if capacity vastly exceeds usage.
+    ///
+    /// Called after extraction to bound memory waste to 2× actual usage.
+    /// Only fires when capacity > 4× length AND > 4096 elements.
+    pub fn maybe_shrink(&mut self) {
+        maybe_shrink_vec(&mut self.cells);
+        maybe_shrink_vec(&mut self.damage);
+        maybe_shrink_vec(&mut self.images);
+        maybe_shrink_vec(&mut self.image_data);
+    }
+}
+
+/// Shrink a Vec if capacity vastly exceeds usage (> 4× len and > 4096 elements).
+fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
+    let cap = v.capacity();
+    let len = v.len();
+    if cap > 4 * len && cap > 4096 {
+        v.shrink_to(len * 2);
+    }
 }
 
 /// Drain iterator for terminal damage.

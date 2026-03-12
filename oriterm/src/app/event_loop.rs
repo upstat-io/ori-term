@@ -9,6 +9,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 
 use super::App;
+use super::event_loop_helpers::{ControlFlowDecision, ControlFlowInput, compute_control_flow};
 use crate::event::TermEvent;
 
 impl ApplicationHandler<TermEvent> for App {
@@ -415,14 +416,11 @@ impl ApplicationHandler<TermEvent> for App {
             self.render_dirty_windows();
         }
 
-        // Periodic performance stats.
+        // Periodic performance stats and idle detection.
+        self.perf.check_idle();
         self.perf.maybe_log();
 
-        // Schedule wakeup for continuous rendering when animations are
-        // active or for the next blink toggle. The default ControlFlow::Wait
-        // lets the event loop sleep indefinitely when nothing is animating.
-        //
-        // Re-check: widget animations may set dirty during draw.
+        // Decide ControlFlow via pure function (testable without winit).
         let still_dirty =
             self.windows.values().any(|c| c.dirty) || self.dialogs.values().any(|c| c.dirty);
         let has_animations = self
@@ -433,27 +431,23 @@ impl ApplicationHandler<TermEvent> for App {
                 .dialogs
                 .values()
                 .any(|c| c.layer_animator.is_any_animating());
-        if (any_dirty && !budget_elapsed) || still_dirty {
-            // Dirty but budget not yet elapsed, or re-dirtied by widget
-            // animations during render — wake up when budget allows.
-            let remaining =
-                super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
-            event_loop.set_control_flow(ControlFlow::WaitUntil(now + remaining));
-        } else if has_animations {
-            // Compositor animations: wake up promptly to drive the next frame.
-            // 16ms ≈ 60 FPS — smooth enough for fade transitions.
-            let next_frame = now + std::time::Duration::from_millis(16);
-            event_loop.set_control_flow(ControlFlow::WaitUntil(next_frame));
-        } else if self.blinking_active {
-            let next_toggle = self.cursor_blink.next_toggle();
-            event_loop.set_control_flow(ControlFlow::WaitUntil(next_toggle));
-        } else {
-            // Nothing animating — sleep until the next external event.
-            // Explicit: winit's set_control_flow is persistent across
-            // iterations, so a prior WaitUntil remains in effect until
-            // overridden. Without this, the loop spin-polls at the old
-            // WaitUntil cadence even after activity stops.
-            event_loop.set_control_flow(ControlFlow::Wait);
+        let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
+
+        let input = ControlFlowInput {
+            any_dirty,
+            budget_elapsed,
+            still_dirty,
+            has_animations,
+            blinking_active: self.blinking_active,
+            next_toggle: self.cursor_blink.next_toggle(),
+            budget_remaining: remaining,
+            now,
+        };
+        match compute_control_flow(&input) {
+            ControlFlowDecision::Wait => event_loop.set_control_flow(ControlFlow::Wait),
+            ControlFlowDecision::WaitUntil(t) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(t));
+            }
         }
     }
 }
@@ -464,6 +458,7 @@ impl App {
     /// Temporarily swaps `focused_window_id`/`active_window` to target each
     /// dirty window, then restores the original focus.
     fn render_dirty_windows(&mut self) {
+        let frame_start = std::time::Instant::now();
         let dirty_winit_ids: Vec<winit::window::WindowId> = self
             .windows
             .iter()
@@ -505,6 +500,21 @@ impl App {
         }
 
         self.last_render = std::time::Instant::now();
-        self.perf.record_render();
+        self.perf.record_render(frame_start.elapsed());
+
+        // Post-render: shrink grow-only buffers if capacity vastly exceeds usage.
+        for ctx in self.windows.values_mut() {
+            if let Some(renderer) = ctx.renderer.as_mut() {
+                renderer.maybe_shrink_buffers();
+            }
+        }
+        for ctx in self.dialogs.values_mut() {
+            if let Some(renderer) = ctx.renderer.as_mut() {
+                renderer.maybe_shrink_buffers();
+            }
+        }
+        if let Some(mux) = self.mux.as_mut() {
+            mux.maybe_shrink_renderable_caches();
+        }
     }
 }

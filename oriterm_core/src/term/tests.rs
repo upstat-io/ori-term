@@ -142,7 +142,7 @@ fn damage_write_char_marks_line() {
     assert!(dmg.iter().any(|d| d.line == 0));
     assert!(dmg.iter().all(|d| d.line == 0));
     assert_eq!(dmg[0].left, Column(0));
-    assert_eq!(dmg[0].right, Column(9));
+    assert_eq!(dmg[0].right, Column(0));
 }
 
 #[test]
@@ -651,7 +651,7 @@ fn damage_resize_marks_all_dirty() {
     let mut t = damage_term();
 
     // DirtyTracker::resize marks all dirty.
-    t.grid_mut().dirty_mut().resize(8);
+    t.grid_mut().dirty_mut().resize(8, 80);
 
     let dmg = t.damage();
     assert!(dmg.is_all_dirty(), "resize should mark all dirty");

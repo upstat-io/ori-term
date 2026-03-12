@@ -92,7 +92,7 @@ impl Grid {
         // stale offset causes the renderer to show corrupted/duplicated
         // scrollback instead of the live cursor position.
         self.display_offset = 0;
-        self.dirty.resize(self.lines);
+        self.dirty.resize(self.lines, self.cols);
     }
 
     /// Resize the number of visible lines.
@@ -106,7 +106,7 @@ impl Grid {
             self.grow_rows(new_lines);
         }
         self.lines = new_lines;
-        self.dirty.resize(new_lines);
+        self.dirty.resize(new_lines, self.cols);
     }
 
     /// Shrink visible rows: trim trailing blanks, push excess to scrollback.
