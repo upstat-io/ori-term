@@ -8,13 +8,16 @@ use std::path::Path;
 
 use portable_pty::CommandBuilder;
 
-use super::{Shell, set_common_env};
+use super::Shell;
 
 /// Configure the command environment for shell integration injection.
 ///
 /// Sets env vars on `cmd` so the target shell will source our integration
 /// scripts from `integration_dir`. The `cwd` parameter provides the inherited
 /// working directory for WSL's `--cd` argument.
+///
+/// Common env vars (`ORITERM`, `TERM_PROGRAM`, etc.) are set by the caller
+/// in `build_command()` — this function only configures per-shell injection.
 ///
 /// Returns an optional extra argument to append to the command (e.g.
 /// `--posix` for bash).
@@ -24,8 +27,6 @@ pub(crate) fn setup_injection(
     integration_dir: &Path,
     cwd: Option<&str>,
 ) -> Option<&'static str> {
-    set_common_env(cmd);
-
     match shell {
         Shell::Bash => {
             inject_bash(cmd, integration_dir);

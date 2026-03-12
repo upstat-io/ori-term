@@ -34,6 +34,7 @@ pub(super) struct PushContext<'a> {
     pub snapshot_cache: &'a mut SnapshotCache,
     pub pending_push: &'a mut HashMap<PaneId, HashSet<ClientId>>,
     pub scratch: &'a mut Vec<ClientId>,
+    pub scratch_panes: &'a mut Vec<PaneId>,
 }
 
 /// Whether enough time has passed since the last push for this pane.
@@ -161,10 +162,12 @@ pub fn push_or_defer_pane(ctx: &mut PushContext<'_>, now: Instant, pane_id: Pane
 /// 3. If no client is below high-water, skip snapshot build.
 /// 4. Otherwise, build snapshot and push to sendable clients.
 pub fn trailing_edge_flush(ctx: &mut PushContext<'_>, now: Instant) {
-    // Collect pane IDs to process (can't iterate and mutate simultaneously).
-    let pane_ids: Vec<PaneId> = ctx.pending_push.keys().copied().collect();
+    // Collect pane IDs into scratch buffer (can't iterate and mutate simultaneously).
+    ctx.scratch_panes.clear();
+    ctx.scratch_panes.extend(ctx.pending_push.keys().copied());
 
-    for pane_id in pane_ids {
+    for i in 0..ctx.scratch_panes.len() {
+        let pane_id = ctx.scratch_panes[i];
         if !should_push(
             now,
             ctx.last_snapshot_push.get(&pane_id).copied(),

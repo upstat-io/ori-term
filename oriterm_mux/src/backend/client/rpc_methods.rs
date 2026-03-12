@@ -345,10 +345,12 @@ impl MuxBackend for MuxClient {
     }
 
     fn default_domain(&self) -> DomainId {
-        DomainId::from_raw(0)
+        DomainId::LOCAL
     }
 
     fn is_connected(&self) -> bool {
+        // Delegates to the inherent `MuxClient::is_connected` which checks
+        // transport liveness, overriding the trait's default `true`.
         Self::is_connected(self)
     }
 

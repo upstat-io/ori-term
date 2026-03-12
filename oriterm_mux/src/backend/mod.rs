@@ -178,9 +178,9 @@ pub trait MuxBackend {
 
     /// Current working directory of a pane (from OSC 7).
     ///
-    /// Reads from the cached snapshot's `cwd` field.
-    fn pane_cwd(&self, pane_id: PaneId) -> Option<String> {
-        self.pane_snapshot(pane_id).and_then(|s| s.cwd.clone())
+    /// Borrows from the cached snapshot's `cwd` field.
+    fn pane_cwd(&self, pane_id: PaneId) -> Option<&str> {
+        self.pane_snapshot(pane_id).and_then(|s| s.cwd.as_deref())
     }
 
     /// Mark the bell as active for a pane.

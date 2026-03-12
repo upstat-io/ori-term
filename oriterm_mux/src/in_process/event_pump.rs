@@ -61,6 +61,9 @@ impl InProcessMux {
                         .push(MuxNotification::CommandComplete { pane_id, duration });
                 }
                 MuxEvent::PaneBell(id) => {
+                    if let Some(pane) = panes.get_mut(&id) {
+                        pane.set_bell();
+                    }
                     self.notifications.push(MuxNotification::PaneBell(id));
                 }
                 MuxEvent::PtyWrite { pane_id, data } => {

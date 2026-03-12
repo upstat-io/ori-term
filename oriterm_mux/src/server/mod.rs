@@ -260,6 +260,7 @@ impl MuxServer {
                 snapshot_cache: &mut self.snapshot_cache,
                 pending_push: &mut self.pending_push,
                 scratch: &mut self.scratch_clients,
+                scratch_panes: &mut self.scratch_panes,
             };
             push::trailing_edge_flush(&mut push_ctx, now);
         }
@@ -275,6 +276,7 @@ impl MuxServer {
                     snapshot_cache: &mut self.snapshot_cache,
                     pending_push: &mut self.pending_push,
                     scratch: &mut self.scratch_clients,
+                    scratch_panes: &mut self.scratch_panes,
                 };
                 push::push_or_defer_pane(&mut push_ctx, now, *pane_id);
             } else {

@@ -67,9 +67,10 @@ impl InProcessMux {
     /// Create a new in-process mux with a local domain.
     pub fn new() -> Self {
         let (event_tx, event_rx) = mpsc::channel();
-        let mut domain_alloc: IdAllocator<DomainId> = IdAllocator::new();
-        let local_id = domain_alloc.alloc();
-        let local = LocalDomain::new(local_id);
+        let domain_alloc: IdAllocator<DomainId> = IdAllocator::new();
+        // Local domain uses the well-known ID 0. The allocator starts at 1,
+        // so dynamically added domains (WSL, SSH) never collide.
+        let local = LocalDomain::new(DomainId::LOCAL);
 
         Self {
             pane_registry: PaneRegistry::new(),

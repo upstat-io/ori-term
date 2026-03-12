@@ -362,8 +362,18 @@ fn create_self_pipe() -> io::Result<(RawFd, RawFd)> {
     for &fd in &fds {
         #[allow(unsafe_code, reason = "fcntl(2) to set O_NONBLOCK and FD_CLOEXEC")]
         unsafe {
-            libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
-            libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
+            if libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK) == -1 {
+                log::warn!(
+                    "fcntl(F_SETFL, O_NONBLOCK) failed: {}",
+                    io::Error::last_os_error()
+                );
+            }
+            if libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) == -1 {
+                log::warn!(
+                    "fcntl(F_SETFD, FD_CLOEXEC) failed: {}",
+                    io::Error::last_os_error()
+                );
+            }
         }
     }
     #[expect(

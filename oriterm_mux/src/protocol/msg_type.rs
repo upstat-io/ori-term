@@ -54,6 +54,9 @@ pub(crate) enum MsgType {
     NotifyPaneExited = 0x0302,
     NotifyPaneMetadataChanged = 0x0303,
     NotifyPaneBell = 0x0304,
+    NotifyCommandComplete = 0x0305,
+    NotifyClipboardStore = 0x0306,
+    NotifyClipboardLoad = 0x0308,
     NotifyPaneSnapshot = 0x0307,
 }
 
@@ -104,6 +107,9 @@ impl MsgType {
             0x0302 => Some(Self::NotifyPaneExited),
             0x0303 => Some(Self::NotifyPaneMetadataChanged),
             0x0304 => Some(Self::NotifyPaneBell),
+            0x0305 => Some(Self::NotifyCommandComplete),
+            0x0306 => Some(Self::NotifyClipboardStore),
+            0x0308 => Some(Self::NotifyClipboardLoad),
             0x0307 => Some(Self::NotifyPaneSnapshot),
             _ => None,
         }
