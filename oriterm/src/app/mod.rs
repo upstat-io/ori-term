@@ -253,6 +253,23 @@ impl App {
         }
     }
 
+    /// Mark only the window containing `pane_id` as dirty.
+    ///
+    /// Falls back to [`mark_all_windows_dirty`] if the pane's window cannot
+    /// be resolved (orphan pane during close, or session out of sync).
+    fn mark_pane_window_dirty(&mut self, pane_id: PaneId) {
+        if let Some(session_wid) = self.session.window_for_pane(pane_id) {
+            for ctx in self.windows.values_mut() {
+                if ctx.window.session_window_id() == session_wid {
+                    ctx.dirty = true;
+                    return;
+                }
+            }
+        }
+        // Fallback: pane not found in session → mark all dirty.
+        self.mark_all_windows_dirty();
+    }
+
     /// Re-rasterize fonts and update rendering settings for a new DPI scale.
     ///
     /// Called when the window moves between monitors with different scale

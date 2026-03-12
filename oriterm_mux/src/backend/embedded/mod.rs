@@ -76,6 +76,10 @@ impl EmbeddedMux {
 }
 
 impl MuxBackend for EmbeddedMux {
+    fn has_pending_wakeup(&self) -> bool {
+        self.wakeup_pending.load(Ordering::Acquire)
+    }
+
     fn poll_events(&mut self) {
         self.wakeup_pending.store(false, Ordering::Release);
         self.mux.poll_events(&mut self.panes);

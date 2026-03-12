@@ -86,6 +86,7 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
         images: Vec::new(),
         image_data: Vec::new(),
         images_dirty: false,
+        ..Default::default()
     }
 }
 

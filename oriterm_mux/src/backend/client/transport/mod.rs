@@ -295,6 +295,14 @@ impl ClientTransport {
         self.alive.load(Ordering::Acquire)
     }
 
+    /// Whether a wakeup has been posted since the last `clear_wakeup_pending`.
+    ///
+    /// Used by the event loop to skip `poll_events` when no PTY activity
+    /// has occurred since the last poll.
+    pub(super) fn has_pending_wakeup(&self) -> bool {
+        self.wakeup_pending.load(Ordering::Acquire)
+    }
+
     /// Clear the wakeup-pending flag so the next notification posts a wakeup.
     ///
     /// Called at the start of `poll_events` on the main thread.

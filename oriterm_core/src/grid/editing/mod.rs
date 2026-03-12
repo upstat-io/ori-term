@@ -115,7 +115,9 @@ impl Grid {
             // Advance cursor by character width.
             self.cursor.set_col(Column(col + width));
 
-            self.dirty.mark(line);
+            // Mark only the affected columns dirty.
+            let right = if width == 2 { col + 1 } else { col };
+            self.dirty.mark_cols(line, col, right);
             break;
         }
     }
@@ -162,7 +164,7 @@ impl Grid {
         }
 
         self.rows[line][Column(prev_col)].push_zerowidth(ch);
-        self.dirty.mark(line);
+        self.dirty.mark_cols(line, prev_col, prev_col);
     }
 
     /// Insert `count` blank cells at the cursor, shifting existing cells right.
@@ -217,7 +219,8 @@ impl Grid {
         // Cells shifted right: occ grows by at most `count`, capped at cols.
         row.set_occ((row.occ() + count).min(cols));
 
-        self.dirty.mark(line);
+        // Content shifts from cursor to right edge.
+        self.dirty.mark_cols(line, col, cols.saturating_sub(1));
     }
 
     /// Delete `count` cells at the cursor, shifting remaining cells left.
@@ -276,7 +279,8 @@ impl Grid {
         // else: Content shifted left; existing occ remains a valid upper
         // bound. Fill cells are empty and don't extend the dirty range.
 
-        self.dirty.mark(line);
+        // Content shifts from cursor to right edge.
+        self.dirty.mark_cols(line, col, cols.saturating_sub(1));
     }
 
     /// Erase part or all of the display.
@@ -295,7 +299,9 @@ impl Grid {
                 let cursor_line = self.cursor.line();
                 for line in cursor_line + 1..self.lines {
                     self.rows[line].reset(self.cols, &template);
-                    self.dirty.mark(line);
+                }
+                if cursor_line + 1 < self.lines {
+                    self.dirty.mark_range(cursor_line + 1..self.lines);
                 }
             }
             DisplayEraseMode::Above => {
@@ -303,7 +309,9 @@ impl Grid {
                 let cursor_line = self.cursor.line();
                 for line in 0..cursor_line {
                     self.rows[line].reset(self.cols, &template);
-                    self.dirty.mark(line);
+                }
+                if cursor_line > 0 {
+                    self.dirty.mark_range(0..cursor_line);
                 }
             }
             DisplayEraseMode::All => {
@@ -383,7 +391,19 @@ impl Grid {
             }
         }
 
-        self.dirty.mark(line);
+        // Mark the affected column range dirty.
+        match mode {
+            LineEraseMode::Right => {
+                self.dirty.mark_cols(line, col, cols.saturating_sub(1));
+            }
+            LineEraseMode::Left => {
+                self.dirty
+                    .mark_cols(line, 0, col.min(cols.saturating_sub(1)));
+            }
+            LineEraseMode::All => {
+                self.dirty.mark(line);
+            }
+        }
     }
 
     /// Erase `count` cells starting at cursor (replace with template, don't shift).
@@ -417,7 +437,7 @@ impl Grid {
             row.set_occ(row.occ().max(end));
         }
 
-        self.dirty.mark(line);
+        self.dirty.mark_cols(line, col, end.saturating_sub(1));
     }
 
     /// Fix wide char pairs split by an erase of `[start..end)`.

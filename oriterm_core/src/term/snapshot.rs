@@ -3,8 +3,11 @@
 //! Extracted from `term/mod.rs` to keep the main file under the 500-line
 //! limit. These methods build `RenderableContent` and manage damage state.
 
+use std::collections::HashSet;
+
 use crate::event::EventListener;
 use crate::grid::CursorShape;
+use crate::image::ImageId;
 use crate::index::Column;
 
 use super::Term;
@@ -44,6 +47,7 @@ impl<T: EventListener> Term<T> {
             images: Vec::new(),
             image_data: Vec::new(),
             images_dirty: false,
+            seen_image_ids: HashSet::new(),
         };
         self.renderable_content_into(&mut out);
         out
@@ -133,7 +137,7 @@ impl<T: EventListener> Term<T> {
             visible: cursor_visible,
         };
 
-        out.all_dirty = renderable::collect_damage(grid, lines, cols, &mut out.damage);
+        out.all_dirty = renderable::collect_damage(grid, lines, &mut out.damage);
         out.display_offset = offset;
         let base_abs = grid.scrollback().len().saturating_sub(offset);
         out.stable_row_base = grid.total_evicted() as u64 + base_abs as u64;
@@ -148,6 +152,7 @@ impl<T: EventListener> Term<T> {
             self.cell_pixel_height,
             &mut out.images,
             &mut out.image_data,
+            &mut out.seen_image_ids,
         );
 
         // Propagate image dirty flag. When images changed, force a full
@@ -168,9 +173,8 @@ impl<T: EventListener> Term<T> {
     pub fn damage(&mut self) -> TermDamage<'_> {
         self.image_cache_mut().take_dirty();
         let grid = self.grid_mut();
-        let cols = grid.cols();
         let all_dirty = grid.dirty().is_all_dirty();
-        TermDamage::new(grid.dirty_mut().drain(), cols, all_dirty)
+        TermDamage::new(grid.dirty_mut().drain(), all_dirty)
     }
 
     /// Clear all damage marks without reading them.
@@ -196,9 +200,11 @@ impl<T: EventListener> Term<T> {
         cell_h: u16,
         images: &mut Vec<RenderablePlacement>,
         image_data: &mut Vec<RenderableImageData>,
+        seen_ids: &mut HashSet<ImageId>,
     ) {
         images.clear();
         image_data.clear();
+        seen_ids.clear();
 
         if cache.placement_count() == 0 {
             return;
@@ -208,19 +214,16 @@ impl<T: EventListener> Term<T> {
         let bottom =
             crate::grid::StableRowIndex(stable_row_base + viewport_lines.saturating_sub(1) as u64);
 
-        let visible = cache.placements_in_viewport(top, bottom);
-        if visible.is_empty() {
+        let mut visible_buf = Vec::new();
+        cache.fill_viewport_placements(top, bottom, &mut visible_buf);
+        if visible_buf.is_empty() {
             return;
         }
 
         let cw = f32::from(cell_w);
         let ch = f32::from(cell_h);
 
-        // Collect unique image IDs for pixel data.
-        let mut seen_ids: std::collections::HashSet<crate::image::ImageId> =
-            std::collections::HashSet::new();
-
-        for p in &visible {
+        for p in &visible_buf {
             // Signed offset: images starting above the viewport have negative Y,
             // so their visible bottom portion renders correctly. The GPU clips
             // fragments outside the framebuffer (implicit viewport scissor).
@@ -281,7 +284,7 @@ impl<T: EventListener> Term<T> {
         }
 
         // Collect pixel data for referenced images.
-        for id in seen_ids {
+        for &id in seen_ids.iter() {
             if let Some(img) = cache.get_no_touch(id) {
                 image_data.push(RenderableImageData {
                     id,

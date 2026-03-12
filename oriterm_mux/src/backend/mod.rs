@@ -48,6 +48,15 @@ pub struct ImageConfig {
 pub trait MuxBackend {
     // -- Event pump --
 
+    /// Whether a PTY wakeup has arrived since the last `poll_events` call.
+    ///
+    /// Used by the event loop to skip `poll_events` when no PTY activity
+    /// has occurred. Conservative default: always returns `true` so
+    /// existing code compiles before both backends implement.
+    fn has_pending_wakeup(&self) -> bool {
+        true
+    }
+
     /// Drain `MuxEvent`s from PTY reader threads and emit notifications.
     ///
     /// In embedded mode, this processes the mpsc channel. In client mode,

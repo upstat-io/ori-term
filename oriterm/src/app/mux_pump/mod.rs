@@ -30,6 +30,13 @@ impl App {
             return;
         }
 
+        // Skip polling when no PTY wakeup has arrived since the last poll.
+        // The try_recv() inside poll_events() is cheap but acquires the
+        // channel lock; skipping it entirely avoids even that overhead.
+        if !mux.has_pending_wakeup() {
+            return;
+        }
+
         // 1. Process incoming MuxEvents from PTY reader threads.
         mux.poll_events();
 
@@ -60,15 +67,15 @@ impl App {
                         ctx.hovered_url = None;
                     }
                 }
-                // Mark all windows dirty — the pane may be in any window.
-                self.mark_all_windows_dirty();
+                // Mark only the window containing this pane as dirty.
+                self.mark_pane_window_dirty(id);
             }
             MuxNotification::PaneClosed { pane_id, .. } => {
                 self.handle_pane_closed(pane_id);
             }
-            MuxNotification::PaneMetadataChanged(_) => {
+            MuxNotification::PaneMetadataChanged(id) => {
                 self.sync_tab_bar_from_mux();
-                self.mark_all_windows_dirty();
+                self.mark_pane_window_dirty(id);
             }
             MuxNotification::CommandComplete { pane_id, duration } => {
                 self.handle_command_complete(pane_id, duration);
@@ -82,7 +89,7 @@ impl App {
                         ctx.tab_bar.ring_bell(idx, Instant::now());
                     }
                 }
-                self.mark_all_windows_dirty();
+                self.mark_pane_window_dirty(id);
             }
             MuxNotification::ClipboardStore {
                 clipboard_type,

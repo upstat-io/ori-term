@@ -192,6 +192,9 @@ impl App {
     /// Drives dropdown fade-in/fade-out transitions and cleans up
     /// fully-dismissed overlays. Called from `about_to_wait`.
     pub(super) fn tick_dialog_animations(&mut self) {
+        if self.dialogs.is_empty() {
+            return;
+        }
         let now = std::time::Instant::now();
         for ctx in self.dialogs.values_mut() {
             if ctx.layer_animator.is_any_animating() {
