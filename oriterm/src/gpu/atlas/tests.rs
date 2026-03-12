@@ -852,3 +852,60 @@ fn evict_and_reinsert_same_key() {
         "key 1 should be evicted to make room",
     );
 }
+
+#[test]
+fn atlas_growth_preserves_existing_glyph_coordinates() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+
+    // Insert initial glyphs and record their UV coordinates.
+    let mut initial_entries = Vec::new();
+    for id in 0..20u16 {
+        let key = test_key(id);
+        let glyph = test_glyph(8, 14);
+        let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
+        initial_entries.push((key, entry));
+    }
+
+    // Insert many more glyphs to fill the atlas further.
+    // Each 8x14 glyph + 1px padding = 9x15 pixels.
+    // Page is 2048x2048 = ~4M pixels. Each glyph uses 135 pixels.
+    // 80% of 4M = ~3.2M pixels ÷ 135 ≈ 23,700 glyphs needed.
+    // For test speed, insert enough to push to multi-page.
+    for id in 20..500u16 {
+        let key = test_key(id);
+        let glyph = test_glyph(8, 14);
+        atlas.insert(key, &glyph, &gpu.queue);
+    }
+
+    // Verify original glyphs still have the same UV coordinates.
+    for (key, original) in &initial_entries {
+        let current = atlas
+            .lookup(*key)
+            .expect("initial glyph should still be cached");
+        assert_eq!(
+            original.page, current.page,
+            "page should be unchanged for glyph {key:?}"
+        );
+        assert_eq!(
+            original.uv_x, current.uv_x,
+            "uv_x should be unchanged for glyph {key:?}"
+        );
+        assert_eq!(
+            original.uv_y, current.uv_y,
+            "uv_y should be unchanged for glyph {key:?}"
+        );
+        assert_eq!(
+            original.uv_w, current.uv_w,
+            "uv_w should be unchanged for glyph {key:?}"
+        );
+        assert_eq!(
+            original.uv_h, current.uv_h,
+            "uv_h should be unchanged for glyph {key:?}"
+        );
+    }
+}

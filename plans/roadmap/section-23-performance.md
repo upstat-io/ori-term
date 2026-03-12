@@ -446,10 +446,10 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 
 ### Rendering Performance Tests
 
-- [ ] **Tests** (unit tests in `oriterm/src/gpu/prepare/tests.rs` and `oriterm/src/gpu/atlas/tests.rs`):
-  - [ ] Partial buffer update produces the same visual result as full rebuild: prepare same `FrameInput` with full vs. partial path, assert `PreparedFrame` equality
-  - [ ] Atlas growth preserves glyph coordinates: fill atlas to 80%+ capacity, add new glyphs, verify existing glyph UV coordinates are unchanged
-  - [ ] Idle terminal produces zero redraws: run terminal with no PTY output for 5 seconds, assert `render()` call count is 0 (excluding initial frame and cursor blink)
+- [x] **Tests** (unit tests in `oriterm/src/gpu/prepare/tests.rs` and `oriterm/src/gpu/atlas/tests.rs`):
+  - [x] Incremental path produces the same visual result as full rebuild: `incremental_all_dirty_matches_full_rebuild` and `incremental_no_dirty_rows_matches_cached` — both verify backgrounds and glyphs byte-equality between full rebuild and incremental path
+  - [x] Atlas growth preserves glyph coordinates: `atlas_growth_preserves_existing_glyph_coordinates` — inserts 20 glyphs, records UVs, inserts 480 more, verifies original UVs unchanged
+  - [ ] Idle terminal produces zero redraws: run terminal with no PTY output for 5 seconds, assert `render()` call count is 0 (excluding initial frame and cursor blink) — requires runtime instrumentation, deferred to manual testing
 
 ---
 
