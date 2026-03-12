@@ -212,6 +212,36 @@ impl App {
                 }
                 true
             }
+            Action::SelectAll => {
+                if let Some(pane_id) = self.active_pane_id() {
+                    // Try shell input selection first (OSC 133 zones).
+                    let input_sel = self
+                        .mux
+                        .as_ref()
+                        .and_then(|m| m.select_command_input(pane_id));
+                    if let Some(sel) = input_sel {
+                        self.set_pane_selection(pane_id, sel);
+                    } else {
+                        // No shell input zone — select entire buffer.
+                        let mux = self.mux.as_mut().expect("mux checked at pane_id");
+                        if mux.pane_snapshot(pane_id).is_none()
+                            || mux.is_pane_snapshot_dirty(pane_id)
+                        {
+                            mux.refresh_pane_snapshot(pane_id);
+                        }
+                        if let Some(snap) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id))
+                        {
+                            let grid = crate::app::snapshot_grid::SnapshotGrid::new(snap);
+                            let sel = super::mark_mode::select_all(&grid);
+                            self.set_pane_selection(pane_id, sel);
+                        }
+                    }
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
             Action::MoveTabToNewWindow => {
                 // Resolve the active tab index and defer to `about_to_wait`
                 // where `ActiveEventLoop` is available.

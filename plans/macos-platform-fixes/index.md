@@ -2,7 +2,7 @@
 reroute: true
 name: "macOS Platform Fixes"
 full_name: "macOS Platform Fixes: Chrome, Tear-Off, and Snapshot Latency"
-status: active
+status: resolved
 order: 1
 ---
 
@@ -21,7 +21,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: Window Chrome Platform Gate
-**File:** `section-01-chrome-platform-gate.md` | **Status:** Not Started
+**File:** `section-01-chrome-platform-gate.md` | **Status:** Complete
 
 ```
 chrome, window controls, traffic lights, minimize, maximize, close
@@ -37,7 +37,7 @@ ControlButtonColors, ControlKind, create_controls, control_colors_from_theme
 ---
 
 ### Section 02: Non-Blocking Snapshot Refresh
-**File:** `section-02-nonblocking-snapshot.md` | **Status:** Not Started
+**File:** `section-02-nonblocking-snapshot.md` | **Status:** Complete
 
 ```
 tab switch, hang, freeze, latency, blocking, synchronous
@@ -52,7 +52,7 @@ pending_refresh, clear_pane_snapshot_dirty, invalidate_pushed_snapshot
 ---
 
 ### Section 03: macOS Tab Tear-Off
-**File:** `section-03-macos-tear-off.md` | **Status:** Not Started
+**File:** `section-03-macos-tear-off.md` | **Status:** Complete
 
 ```
 tear-off, tab drag, torn off, new window, detach tab
@@ -67,7 +67,7 @@ begin_single_tab_os_drag, check_torn_off_merge, update_drag_in_bar
 ---
 
 ### Section 04: Verification
-**File:** `section-04-verification.md` | **Status:** Not Started
+**File:** `section-04-verification.md` | **Status:** Complete
 
 ```
 test, verify, visual regression, platform matrix
@@ -82,7 +82,7 @@ pending_refresh cleanup, multi-display, Wayland
 
 | ID | Title | File |
 |----|-------|------|
-| 01 | Window Chrome Platform Gate | `section-01-chrome-platform-gate.md` |
-| 02 | Non-Blocking Snapshot Refresh | `section-02-nonblocking-snapshot.md` |
-| 03 | macOS Tab Tear-Off | `section-03-macos-tear-off.md` |
-| 04 | Verification | `section-04-verification.md` |
+| 01 | Window Chrome Platform Gate (Complete) | `section-01-chrome-platform-gate.md` |
+| 02 | Non-Blocking Snapshot Refresh (Complete) | `section-02-nonblocking-snapshot.md` |
+| 03 | macOS Tab Tear-Off (Complete) | `section-03-macos-tear-off.md` |
+| 04 | Verification (Complete) | `section-04-verification.md` |

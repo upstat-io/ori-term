@@ -219,6 +219,106 @@ fn key_arrow_down_scrolls() {
     assert_eq!(scroll.scroll_offset(), 20.0);
 }
 
+#[test]
+fn key_page_down_scrolls_by_viewport() {
+    // tall_content = 320px tall, viewport 100px.
+    let mut scroll = ScrollWidget::vertical(tall_content());
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: true,
+        focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    let event = KeyEvent {
+        key: Key::PageDown,
+        modifiers: Modifiers::NONE,
+    };
+    let resp = scroll.handle_key(event, &ctx);
+    assert!(resp.response.is_handled());
+    // Should scroll down by one viewport height (100px).
+    assert_eq!(scroll.scroll_offset(), 100.0);
+}
+
+#[test]
+fn key_page_up_scrolls_by_viewport() {
+    // tall_content = 320px tall, viewport 100px.
+    let mut scroll = ScrollWidget::vertical(tall_content());
+    scroll.set_scroll_offset(200.0, 320.0, 100.0);
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: true,
+        focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    let event = KeyEvent {
+        key: Key::PageUp,
+        modifiers: Modifiers::NONE,
+    };
+    let resp = scroll.handle_key(event, &ctx);
+    assert!(resp.response.is_handled());
+    // Should scroll up by one viewport height (100px): 200 - 100 = 100.
+    assert_eq!(scroll.scroll_offset(), 100.0);
+}
+
+#[test]
+fn key_page_down_clamps_at_bottom() {
+    // tall_content = 320px, viewport 100px → max offset 220.
+    let mut scroll = ScrollWidget::vertical(tall_content());
+    scroll.set_scroll_offset(200.0, 320.0, 100.0);
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: true,
+        focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    let event = KeyEvent {
+        key: Key::PageDown,
+        modifiers: Modifiers::NONE,
+    };
+    scroll.handle_key(event, &ctx);
+    // 200 + 100 = 300, clamped to max 220.
+    assert_eq!(scroll.scroll_offset(), 220.0);
+}
+
+#[test]
+fn key_page_up_clamps_at_top() {
+    let mut scroll = ScrollWidget::vertical(tall_content());
+    scroll.set_scroll_offset(30.0, 320.0, 100.0);
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: true,
+        focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    let event = KeyEvent {
+        key: Key::PageUp,
+        modifiers: Modifiers::NONE,
+    };
+    scroll.handle_key(event, &ctx);
+    // 30 - 100 = -70, clamped to 0.
+    assert_eq!(scroll.scroll_offset(), 0.0);
+}
+
 // Edge cases from Chromium/Ratatui audit
 
 #[test]

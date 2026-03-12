@@ -24,8 +24,7 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 ## Keyword Clusters by Section
 
 ### Section 01: Cell + Grid
-**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** Complete
 ```
 cell, Cell, CellFlags, CellExtra, rich cell, 24 bytes
 grid, Grid, Row, rows, columns, viewport
@@ -46,8 +45,7 @@ workspace, Cargo workspace, oriterm_core, multi-crate
 ---
 
 ### Section 02: Terminal State Machine + VTE
-**File:** `section-02-term-vte.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-02-term-vte.md` | **Tier:** 0 | **Status:** Complete
 ```
 Term, Term<T>, terminal state machine, terminal emulation
 VTE, vte::ansi::Handler, escape sequences, ANSI, control codes
@@ -80,8 +78,7 @@ damage, DamageLine, dirty, damage tracking, incremental
 ---
 
 ### Section 03: Cross-Platform
-**File:** `section-03-cross-platform.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-03-cross-platform.md` | **Tier:** 0 | **Status:** Complete
 ```
 cross-platform, day one, Windows, Linux, macOS, platform abstraction
 ConPTY, portable-pty, openpty, forkpty, SIGCHLD
@@ -110,8 +107,7 @@ shell detection, $SHELL, cmd.exe, TERM, COLORTERM
 ---
 
 ### Section 04: PTY + Event Loop
-**File:** `section-04-pty-eventloop.md` | **Tier:** 1 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-04-pty-eventloop.md` | **Tier:** 1 | **Status:** Complete
 ```
 PTY, pty, ConPTY, portable-pty, pseudo-terminal
 spawn, shell, cmd.exe, powershell, spawn_shell, PtyHandle
@@ -130,8 +126,7 @@ contention, starvation, fair lock, reader thread lock
 ---
 
 ### Section 05: Window + GPU Rendering
-**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** Complete
 ```
 render pipeline, staged pipeline, Extract, Prepare, Render, 3-phase
 FrameInput, PreparedFrame, pipeline_stages.rs, phase separation
@@ -165,8 +160,7 @@ determinism, pixel readback, decode_instance, assert_instance_count
 ---
 
 ### Section 05B: Startup Performance
-**File:** `section-05b-startup-perf.md` | **Tier:** 2 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-05b-startup-perf.md` | **Tier:** 2 | **Status:** Complete
 ```
 startup, launch, performance, cold start, warm start
 dwrote, FontCollection::system, DirectWrite, COM, font cache
@@ -231,25 +225,28 @@ dwrote, DirectWrite, Windows font, system fonts
 ---
 
 ### Section 07: 2D UI Framework
-**File:** `section-07-ui-framework.md` | **Tier:** 2 | **Status:** Not Started
+**File:** `section-07-ui-framework.md` | **Tier:** 2 | **Status:** In Progress
 
 ```
 UI framework, oriterm_ui, widget, widget tree, retained mode
-DrawList, draw primitives, rect, rounded rect, shadow, gradient
-RectStyle, Border, Shadow, Color, Rect, Point
-text rendering, ShapedText, TextStyle, measure_text, UI font
-layout, LayoutNode, LayoutConstraints, flex, Row, Column
-Size, Fixed, Fill, Hug, FillPortion, Spacing, padding, margin
-Align, Justify, Gap, Direction, two-pass layout
-hit testing, hit_test, WidgetId, mouse capture
+DrawList, DrawCommand, draw primitives, rect, rounded rect, shadow, gradient
+RectStyle, Border, Shadow, Color, Rect, Point, push_rect, push_text, push_icon
+text rendering, ShapedText, ShapedGlyph, TextStyle, TextMetrics, TextMeasurer, UI font
+layout, LayoutNode, LayoutBox, LayoutConstraints, SizeSpec, flex, compute_layout
+Fixed, Fill, Hug, FillPortion, Spacing, padding, margin, Insets
+Align, Justify, Gap, Direction, two-pass layout, BoxContent
+hit testing, hit_test, WidgetId, InputState, RouteAction, mouse capture
 focus, FocusManager, Tab order, focus ring, keyboard navigation
 Button, Checkbox, Toggle, Slider, TextInput, Dropdown, Label
 Separator, Spacer, Panel, ScrollWidget, Stack
-FlexWidget, ScrollContainer, scroll, scrollbar
-overlay, OverlayManager, Placement, modal, context menu
-animation, Animation, Easing, AnimatedValue, transition
-UiTheme, dark theme, light theme, accent color, styling
-TerminalGridWidget, terminal as widget, tab bar widget
+ContainerWidget, scroll, scrollbar, ScrollbarStyle, ScrollbarPolicy
+overlay, OverlayManager, OverlayId, Placement, modal, context menu
+animation, Animation, Easing, AnimatedValue, Lerp, AnimationBuilder, AnimationSequence
+UiTheme, dark theme, light theme, accent color, styling, resolve_ui_theme
+TerminalGridWidget, TerminalPreviewWidget, terminal as widget, tab bar widget
+Widget trait, WidgetAction, WidgetResponse, EventResponse, CaptureRequest
+KeyEvent, Key, MouseEvent, Modifiers, HoverEvent, ScrollDelta
+DialogWidget, MenuWidget, FormLayout, SettingsPanelWidget, TabBarWidget, WindowChromeWidget
 ```
 
 ---
@@ -460,14 +457,16 @@ bash-preexec, oriterm.bash, oriterm.fish, oriterm.ps1, .zshenv
 
 ```
 context menu, MenuWidget, MenuEntry, Item, Check, Separator, ContextAction
-tab context menu, grid context menu, dropdown menu, color scheme selector
+tab context menu, grid context menu, dropdown menu, ContextMenuState
 GPU-rendered menu, shadow, rounded corners, hover highlight, keyboard navigation
 config reload, apply_config_reload, broadcast ALL panes, FontCollection rebuild
 atlas rebuild, resize all panes all windows, keybinding rebuild
-settings UI, settings_window, color scheme list, checkmark
+settings UI, settings_overlay, dialog_management, DialogWindowContext, SettingsPanel
+settings dialog, build_settings_form, SettingsIds, Save, Cancel, Config::save
 window controls, minimize, maximize, close, platform-specific
 frameless, drag window, Aero Snap, double-click maximize
 jump list, Jump List, ICustomDestinationList, IShellLinkW, taskbar right-click
+JumpListTask, submit_jump_list, build_jump_list_tasks, --new-tab, --new-window
 dock menu, applicationDockMenu, NSMenu, dock right-click, macOS dock
 desktop actions, .desktop file, Linux quicklist, New Window, New Tab
 profile quick-launch, taskbar integration, start menu

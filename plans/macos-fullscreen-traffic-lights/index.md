@@ -2,7 +2,7 @@
 reroute: true
 name: "Fullscreen Traffic Lights"
 full_name: "macOS Fullscreen Exit Traffic Light Repositioning Fix"
-status: in-progress
+status: resolved
 order: 10
 ---
 
@@ -56,7 +56,7 @@ frame-change observer, handle_frame_change, stale comment, macOS 26 Tahoe
 ---
 
 ### Section 03: Verification
-**File:** `section-03-verification.md` | **Status:** Not Started
+**File:** `section-03-verification.md` | **Status:** Complete
 
 ```
 visual regression, fullscreen exit, fullscreen enter

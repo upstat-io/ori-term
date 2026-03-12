@@ -254,14 +254,14 @@ impl ContainerWidget {
 
 // Layout helpers.
 impl ContainerWidget {
-    /// Returns cached layout if bounds match, otherwise recomputes.
+    /// Returns cached layout if bounds match and layout is clean, otherwise recomputes.
     fn get_or_compute_layout(
         &self,
         measurer: &dyn TextMeasurer,
         theme: &UiTheme,
         bounds: Rect,
     ) -> Rc<LayoutNode> {
-        {
+        if !self.needs_layout {
             let cached = self.cached_layout.borrow();
             if let Some((ref cb, ref node)) = *cached {
                 if *cb == bounds {

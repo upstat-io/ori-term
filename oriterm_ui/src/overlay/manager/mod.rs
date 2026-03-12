@@ -5,13 +5,11 @@
 //! layout after the main tree, drawing after the main tree.
 
 mod event_routing;
+mod lifecycle;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use crate::animation::Easing;
 use crate::color::Color;
-use crate::compositor::layer::{LayerProperties, LayerType};
-use crate::compositor::layer_animator::{AnimationParams, LayerAnimator};
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
 use crate::geometry::LayerId;
@@ -105,7 +103,7 @@ pub struct OverlayManager {
     /// Set on push, remove, or viewport change. Cleared after
     /// `layout_overlays` runs. Avoids expensive `widget.layout()` calls
     /// every frame when overlay positions haven't changed.
-    layout_dirty: bool,
+    pub(in crate::overlay) layout_dirty: bool,
 }
 
 impl OverlayManager {
@@ -190,185 +188,6 @@ impl OverlayManager {
         overlay.computed_rect = Rect::new(new_x, new_y, r.width(), r.height());
         overlay.placement = Placement::AtPoint(Point::new(new_x, new_y));
         true
-    }
-
-    // Lifecycle API
-
-    /// Pushes a non-modal overlay that dismisses on click-outside.
-    ///
-    /// Creates a `Textured` compositor layer at full opacity (no fade-in).
-    /// Popups like dropdown menus and context menus should appear instantly.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "lifecycle: widget, anchor, placement, tree, animator, now"
-    )]
-    pub fn push_overlay(
-        &mut self,
-        widget: Box<dyn Widget>,
-        anchor: Rect,
-        placement: Placement,
-        tree: &mut LayerTree,
-        _animator: &mut LayerAnimator,
-        _now: Instant,
-    ) -> OverlayId {
-        let id = OverlayId::next();
-        let root = tree.root();
-
-        let layer_id = tree.add(
-            root,
-            LayerType::Textured,
-            LayerProperties {
-                opacity: 1.0,
-                ..LayerProperties::default()
-            },
-        );
-
-        self.overlays.push(Overlay {
-            id,
-            widget,
-            anchor,
-            placement,
-            kind: OverlayKind::Popup,
-            computed_rect: Rect::default(),
-            layer_id,
-            dim_layer_id: None,
-        });
-        self.layout_dirty = true;
-        id
-    }
-
-    /// Pushes a modal overlay (blocks interaction below, no click-outside dismiss).
-    ///
-    /// Creates a `SolidColor` dim layer and a `Textured` content layer,
-    /// both with fade-in animations (opacity `0→1`, 150ms `EaseOut`).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "lifecycle: widget, anchor, placement, tree, animator, now"
-    )]
-    pub fn push_modal(
-        &mut self,
-        widget: Box<dyn Widget>,
-        anchor: Rect,
-        placement: Placement,
-        tree: &mut LayerTree,
-        _animator: &mut LayerAnimator,
-        _now: Instant,
-    ) -> OverlayId {
-        let id = OverlayId::next();
-        let root = tree.root();
-
-        // Dim layer (SolidColor) — drawn behind content.
-        // Both layers start at full opacity (no fade-in animation) so the
-        // modal appears instantly. The fade-out on dismiss is still animated.
-        let dim_layer_id = tree.add(
-            root,
-            LayerType::SolidColor(MODAL_DIM_COLOR),
-            LayerProperties {
-                bounds: self.viewport,
-                opacity: 1.0,
-                ..LayerProperties::default()
-            },
-        );
-
-        // Content layer (Textured).
-        let layer_id = tree.add(
-            root,
-            LayerType::Textured,
-            LayerProperties {
-                opacity: 1.0,
-                ..LayerProperties::default()
-            },
-        );
-
-        self.overlays.push(Overlay {
-            id,
-            widget,
-            anchor,
-            placement,
-            kind: OverlayKind::Modal,
-            computed_rect: Rect::default(),
-            layer_id,
-            dim_layer_id: Some(dim_layer_id),
-        });
-        self.layout_dirty = true;
-        id
-    }
-
-    /// Begins dismissing a specific overlay by ID.
-    ///
-    /// Popup overlays are removed instantly. Modal overlays fade out via
-    /// the compositor and are moved to the dismissing list. Returns `true`
-    /// if found.
-    pub fn begin_dismiss(
-        &mut self,
-        id: OverlayId,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
-        now: Instant,
-    ) -> bool {
-        let Some(idx) = self.overlays.iter().position(|o| o.id == id) else {
-            return false;
-        };
-        let overlay = self.overlays.remove(idx);
-        self.dismiss_overlay(overlay, tree, animator, now);
-        self.hovered_overlay = None;
-        self.captured_overlay = None;
-        self.layout_dirty = true;
-        true
-    }
-
-    /// Begins dismissing the topmost overlay.
-    ///
-    /// Popup overlays are removed instantly. Modal overlays fade out.
-    /// Returns the dismissed overlay's ID, or `None` if the stack is empty.
-    pub fn begin_dismiss_topmost(
-        &mut self,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
-        now: Instant,
-    ) -> Option<OverlayId> {
-        let overlay = self.overlays.pop()?;
-        let id = overlay.id;
-        self.dismiss_overlay(overlay, tree, animator, now);
-        self.hovered_overlay = None;
-        self.captured_overlay = None;
-        self.layout_dirty = true;
-        Some(id)
-    }
-
-    /// Removes all overlays instantly, canceling any running animations.
-    pub fn clear_all(&mut self, tree: &mut LayerTree, animator: &mut LayerAnimator) {
-        for overlay in self.overlays.drain(..).chain(self.dismissing.drain(..)) {
-            animator.cancel_all(overlay.layer_id);
-            tree.remove_subtree(overlay.layer_id);
-            if let Some(dim_id) = overlay.dim_layer_id {
-                animator.cancel_all(dim_id);
-                tree.remove_subtree(dim_id);
-            }
-        }
-        self.hovered_overlay = None;
-        self.captured_overlay = None;
-        self.layout_dirty = false;
-    }
-
-    /// Removes dismissing overlays whose fade-out animations have completed.
-    ///
-    /// Call after [`LayerAnimator::tick`] each frame. Removes compositor layers
-    /// for fully faded overlays.
-    pub fn cleanup_dismissed(&mut self, tree: &mut LayerTree, animator: &LayerAnimator) {
-        self.dismissing.retain(|overlay| {
-            let still_fading = animator.is_animating(
-                overlay.layer_id,
-                crate::animation::AnimatableProperty::Opacity,
-            );
-            if !still_fading {
-                tree.remove_subtree(overlay.layer_id);
-                if let Some(dim_id) = overlay.dim_layer_id {
-                    tree.remove_subtree(dim_id);
-                }
-            }
-            still_fading
-        });
     }
 
     // Frame-loop API
@@ -479,45 +298,5 @@ impl OverlayManager {
         self.overlays
             .last_mut()
             .is_some_and(|o| o.widget.accept_action(action))
-    }
-
-    // Private helpers
-
-    /// Dismisses an overlay — instant removal for popups, fade-out for modals.
-    fn dismiss_overlay(
-        &mut self,
-        overlay: Overlay,
-        tree: &mut LayerTree,
-        animator: &mut LayerAnimator,
-        now: Instant,
-    ) {
-        if overlay.kind == OverlayKind::Popup {
-            // Popups disappear instantly — remove compositor layers now.
-            animator.cancel_all(overlay.layer_id);
-            tree.remove_subtree(overlay.layer_id);
-        } else {
-            // Modals fade out via the compositor.
-            Self::start_fade_out(&overlay, tree, animator, now);
-            self.dismissing.push(overlay);
-        }
-    }
-
-    /// Starts fade-out animations on an overlay's compositor layers.
-    fn start_fade_out(
-        overlay: &Overlay,
-        tree: &LayerTree,
-        animator: &mut LayerAnimator,
-        now: Instant,
-    ) {
-        let params = AnimationParams {
-            duration: FADE_DURATION,
-            easing: Easing::EaseOut,
-            tree,
-            now,
-        };
-        animator.animate_opacity(overlay.layer_id, 0.0, &params);
-        if let Some(dim_id) = overlay.dim_layer_id {
-            animator.animate_opacity(dim_id, 0.0, &params);
-        }
     }
 }
