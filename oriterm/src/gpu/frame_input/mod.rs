@@ -42,6 +42,41 @@ impl FrameSelection {
         let stable = StableRowIndex(self.base_stable + viewport_line as u64);
         self.bounds.contains(stable, col)
     }
+
+    /// Compute the viewport line range covered by this selection.
+    ///
+    /// Returns `Some((start, end))` where both are inclusive viewport line
+    /// indices clamped to `[0, num_rows)`. Returns `None` if the selection
+    /// is entirely outside the viewport.
+    pub fn viewport_line_range(&self, num_rows: usize) -> Option<(usize, usize)> {
+        if num_rows == 0 {
+            return None;
+        }
+
+        let sel_start = self.bounds.start.row.0;
+        let sel_end = self.bounds.end.row.0;
+
+        // Selection entirely above viewport.
+        if sel_end < self.base_stable {
+            return None;
+        }
+
+        // Convert stable rows to viewport-relative, clamping to [0, num_rows).
+        let start = if sel_start >= self.base_stable {
+            (sel_start - self.base_stable) as usize
+        } else {
+            0 // Selection starts above viewport.
+        };
+
+        let end = (sel_end - self.base_stable) as usize;
+
+        // Selection entirely below viewport.
+        if start >= num_rows {
+            return None;
+        }
+
+        Some((start, end.min(num_rows - 1)))
+    }
 }
 
 /// Search rendering snapshot for one frame.

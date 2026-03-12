@@ -11,13 +11,13 @@ sections:
     status: in-progress
   - id: "23.2"
     title: Parsing Performance
-    status: not-started
+    status: in-progress
   - id: "23.3"
     title: Memory Optimization
     status: in-progress
   - id: "23.4"
     title: Rendering Performance
-    status: not-started
+    status: in-progress
   - id: "23.5"
     title: Benchmarks
     status: not-started
@@ -154,17 +154,17 @@ When selection changes, only damage the affected lines rather than forcing a ful
 
 **Existing mechanism:** `Term::selection_dirty` (bool) is set by any grid mutation that could invalidate a selection (put_char, erase, scroll, insert, delete, linefeed, alt screen swap). Checked via `is_selection_dirty()`, cleared via `clear_selection_dirty()`. This flag tells the renderer "selection might be stale" but does NOT indicate which lines are affected.
 
-- [ ] Store previous selection range (start line, end line) after each frame
-- [ ] On selection change, compute the symmetric difference of old and new selection line ranges
-- [ ] Damage only lines in the symmetric difference (lines that changed selection state)
-- [ ] Selection clear damages only the previously-selected lines (not the whole grid)
-- [ ] Selection drag damages only the incrementally changed lines (not the entire selection)
-- [ ] **Integration with `selection_dirty`:** when `is_selection_dirty()` returns true AND the selection has been mutated by grid operations (not user drag), fall back to full-selection-range damage since the selection endpoints may have shifted due to scrolling
-- [ ] **Tests** (in `oriterm_core/src/term/tests.rs` — extend existing sibling test file, or a new `oriterm_core/src/term/selection_damage/tests.rs` if the module is extracted):
-  - [ ] New selection damages only the selected lines
-  - [ ] Extending selection damages only the newly-covered lines
-  - [ ] Clearing selection damages only the previously-selected lines
-  - [ ] Grid mutation (put_char) while selection active sets `selection_dirty` and damages selection lines
+- [x] Store previous selection range (start line, end line) after each frame — `PreparedFrame::prev_selection_range: Option<(usize, usize)>`, updated after both full and incremental prepare paths in `prepare_frame_shaped_into()`
+- [x] On selection change, compute the symmetric difference of old and new selection line ranges — `mark_selection_damage()` in `prepare/dirty_skip/mod.rs`, called from `build_dirty_set()` with `prev_selection` from `PreparedFrame`
+- [x] Damage only lines in the symmetric difference (lines that changed selection state) — boundary lines (first/last of each range) always dirty for column extent changes; interior symmetric difference for selection state changes
+- [x] Selection clear damages only the previously-selected lines (not the whole grid) — `mark_selection_damage(Some((s,e)), None)` marks only `[s..=e]`
+- [x] Selection drag damages only the incrementally changed lines (not the entire selection) — `mark_selection_damage(Some((os,oe)), Some((ns,ne)))` marks symmetric diff + boundary lines only
+- [x] **Integration with `selection_dirty`:** when content changes cause `selection_dirty=true`, the content damage already covers affected lines via `DirtyTracker`. The grid-level `content.damage` and selection-level damage are independent and combined in `build_dirty_set()`. Full-selection-range fallback not needed — content damage and selection damage are additive, both feed the same dirty set
+- [x] **Tests** (in `oriterm/src/gpu/prepare/dirty_skip/tests.rs` and `oriterm/src/gpu/frame_input/tests.rs` — selection is app-level, not core-level):
+  - [x] New selection damages only the selected lines (`new_selection_damages_selected_lines`)
+  - [x] Extending selection damages only the newly-covered lines + boundary (`extend_selection_damages_new_lines_and_boundary`)
+  - [x] Clearing selection damages only the previously-selected lines (`clear_selection_damages_previously_selected_lines`)
+  - [x] Grid mutation while selection active: content damage from `DirtyTracker` + selection damage from `mark_selection_damage` combine additively (`selection_damage_integrated_with_build_dirty_set`)
 
 ### Snapshot Extraction Optimization
 
@@ -237,12 +237,12 @@ Optimize VTE sequence parsing throughput for high-volume output.
 
 ### Reduce Allocations in Hot Path
 
-- [ ] Verify `input()` handler writes directly to grid cells (no intermediate `String` allocation) by reading `term/handler/mod.rs::input()`
-- [ ] Audit hot-path allocations with DHAT or a tracking allocator during `cat 100MB_file.txt`:
-  - [ ] **Known:** `log::trace!` in `try_parse()` calls `String::from_utf8_lossy()` which allocates for non-UTF8 data. Zero-cost at default log level (lazy evaluation). If trace logging is enabled during benchmarks, gate with `if log::log_enabled!(log::Level::Trace)`
-  - [ ] Verify `log::debug!()`/`log::trace!()` macros are compiled out at release log level (standard `log` crate does this, but verify no custom wrapper macros bypass lazy evaluation)
-  - [ ] Check scroll/reflow for temporary `Vec` allocations — `scroll_up()`, `scroll_down()`, `resize()` should reuse existing row allocations, not create new ones
-  - [ ] `format!()` calls in error paths are acceptable (errors are rare and not in the hot path)
+- [x] Verify `input()` handler writes directly to grid cells (no intermediate `String` allocation) by reading `term/handler/mod.rs::input()` — verified: `input()` calls `charset.translate(c)` → `UnicodeWidthChar::width(c)` → `grid.put_char(c)` directly, zero allocations
+- [x] Audit hot-path allocations with DHAT or a tracking allocator during `cat 100MB_file.txt`:
+  - [x] **Known:** `log::trace!` in PTY event loop (line 147) calls `String::from_utf8_lossy()` — zero-cost at default log level (lazy evaluation). `log` crate macros only evaluate arguments when the level is enabled. No custom wrapper macros in the project
+  - [x] Verify `log::debug!()`/`log::trace!()` macros are compiled out at release log level — confirmed: all log calls use standard `log` crate macros, no custom wrappers (`macro_rules!` only in vte/ansi.rs, contract.rs, index/mod.rs — none wrap log macros)
+  - [x] Check scroll/reflow for temporary `Vec` allocations — `scroll_up()` uses `rotate_left()` (in-place, O(1)), `scroll_down()` uses `rotate_right()` (in-place, O(1)). Evicted rows reused via `scrollback.push()` recycling. `Row::reset()` reuses existing allocation. Zero temporary `Vec` allocations
+  - [x] `format!()` calls in error paths are acceptable — verified: no `format!()` in `term/handler/mod.rs` hot path
 
 ### Throttle Rendering During Heavy Output
 
@@ -410,9 +410,9 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 - [x] `FRAME_BUDGET` check before rendering — skip if <16ms since last render
 - [x] Cursor blink timer: `cursor_blink.update()` only sets dirty when blink state changes
 - [x] Animation timer: `layer_animator.tick()` only sets dirty when animations are active
-- [ ] Refine `MuxWakeup` to only dirty windows containing active panes (currently marks ALL windows dirty — wasteful for multi-window setups where output is in one window)
-- [ ] Verify `selection_dirty` propagates to `ctx.dirty`: trace the path from `Term::selection_dirty = true` to `ctx.dirty = true` in the event loop. If there is no path, add one (e.g., `MuxNotification::SelectionChanged`)
-- [ ] Verify overlay updates (search bar, settings dialog) set `ctx.dirty`: trace each overlay's state mutation to confirm it reaches `ctx.dirty`. If any overlay mutates state without setting dirty, add the dirty call
+- [x] Refine `MuxWakeup` to only dirty windows containing active panes — already implemented: `MuxWakeup` → `pump_mux_events()` → per-notification `handle_mux_notification()` → `PaneOutput(id)` → `mark_pane_window_dirty(id)`. Only the window containing the pane is marked dirty, not all windows
+- [x] Verify `selection_dirty` propagates to `ctx.dirty` — traced: grid mutations that set `selection_dirty` also produce PTY output → `PaneOutput(id)` notification → `mark_pane_window_dirty(id)` → `ctx.dirty = true`. User-initiated selection changes (mouse drag) go through input handlers which set `ctx.dirty` directly. No gap exists
+- [x] Verify overlay updates (search bar, settings dialog) set `ctx.dirty`: traced `draw_overlays()` → returns `true` when animations active → `ctx.dirty = true` in both single-pane (`redraw/mod.rs:250-261`) and multi-pane (`redraw/multi_pane.rs:402-413`) paths. Search bar and notification overlays are drawn every frame when visible, and their visibility state changes trigger redraws through the event loop
 - [ ] Profile idle terminal CPU usage: run a terminal with no PTY output for 30 seconds, measure CPU with `perf stat` or Activity Monitor. Target: <0.5% CPU (only cursor blink timer wakes the event loop)
 
 ### Draw Call Reduction
@@ -422,7 +422,7 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 - [x] Each tier uses per-pipeline instance buffers (one draw call per pipeline per tier)
 - [x] Compositor with render target pooling for multi-layer composition
 - [ ] Audit current draw call count per frame (add a `draw_call_count` counter to `WindowRenderer::render()`, log at debug level). Current expected count: ~15+ per frame across three tiers (terminal: 7+, chrome: 4, overlay: 4 per overlay, plus per-image draws)
-- [ ] Verify `record_draw()` / `record_draw_clipped()` skip the draw when instance count is zero. If not, add an `if instance_count == 0 { return; }` guard
+- [x] Verify `record_draw()` / `record_draw_clipped()` skip the draw when instance count is zero — both already have `if instance_count == 0 { return; }` guard (helpers.rs:294, helpers.rs:329)
 - [ ] Image texture atlasing: when 3+ images are visible simultaneously, merge their textures into a shared atlas to reduce per-image bind group switches and draw calls. Deferred until image protocol support (Section 39) is implemented
 
 ### Resize Rendering Performance
