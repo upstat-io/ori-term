@@ -1926,3 +1926,75 @@ fn image_at_viewport_bottom_visible() {
     // Row 3 * 16px = 48.0.
     assert_eq!(out.images[0].viewport_y, 48.0);
 }
+
+// Alt screen on-demand allocation tests.
+
+#[test]
+fn alt_grid_not_allocated_initially() {
+    let term = make_term();
+    assert!(
+        term.alt_grid.is_none(),
+        "alt grid should be None on fresh terminal"
+    );
+    assert!(
+        term.alt_image_cache.is_none(),
+        "alt image cache should be None on fresh terminal"
+    );
+}
+
+#[test]
+fn alt_grid_allocated_on_first_entry() {
+    let mut term = make_term();
+    // DECSET 1049: enter alt screen with cursor save.
+    feed(&mut term, b"\x1b[?1049h");
+
+    assert!(
+        term.alt_grid.is_some(),
+        "alt grid should be allocated after entering alt screen"
+    );
+    assert!(
+        term.alt_image_cache.is_some(),
+        "alt image cache should be allocated after entering alt screen"
+    );
+    assert!(term.mode().contains(TermMode::ALT_SCREEN));
+}
+
+#[test]
+fn alt_grid_survives_exit() {
+    let mut term = make_term();
+    // Enter then exit alt screen.
+    feed(&mut term, b"\x1b[?1049h");
+    feed(&mut term, b"\x1b[?1049l");
+
+    // Alt grid stays allocated for fast re-entry.
+    assert!(term.alt_grid.is_some());
+    assert!(!term.mode().contains(TermMode::ALT_SCREEN));
+}
+
+#[test]
+fn resize_before_alt_screen_no_crash() {
+    let mut term = make_term();
+    assert!(term.alt_grid.is_none());
+
+    // Resize should not crash when alt grid is None.
+    term.resize(10, 40);
+    assert!(
+        term.alt_grid.is_none(),
+        "resize should not allocate alt grid"
+    );
+}
+
+#[test]
+fn alt_screen_reentry_correct() {
+    let mut term = make_term();
+    // Enter, write something, exit, re-enter.
+    feed(&mut term, b"\x1b[?1049h");
+    feed(&mut term, b"hello");
+    feed(&mut term, b"\x1b[?1049l");
+    feed(&mut term, b"\x1b[?1049h");
+
+    assert!(term.mode().contains(TermMode::ALT_SCREEN));
+    // Grid should be fresh (mode 1049 saves/restores cursor).
+    assert_eq!(term.grid().lines(), 24);
+    assert_eq!(term.grid().cols(), 80);
+}
