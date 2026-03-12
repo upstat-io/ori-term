@@ -114,6 +114,11 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
+        // Phase 1: unregister from the pane registry and push a PaneClosed
+        // notification. The pane itself remains in `self.panes` so the PTY
+        // process continues running until `cleanup_closed_pane` is called
+        // (Phase 2), which drops the Pane on a background thread to avoid
+        // blocking the event loop with PTY kill + child reap.
         self.mux.close_pane(pane_id)
     }
 

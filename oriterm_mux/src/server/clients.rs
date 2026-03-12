@@ -182,6 +182,7 @@ impl MuxServer {
                 snapshot_cache: &mut self.snapshot_cache,
                 pending_push: &mut self.pending_push,
                 scratch: &mut self.scratch_clients,
+                scratch_panes: &mut self.scratch_panes,
             };
             for &push_pane_id in &self.scratch_immediate_push {
                 push::push_or_defer_pane(&mut push_ctx, now, push_pane_id);
@@ -256,18 +257,21 @@ impl MuxServer {
         // Subscription-based cleanup: for each pane the disconnecting client
         // was subscribed to, check if any other client is still subscribed.
         // If not, close the pane (it has no remaining consumers).
-        let subscribed: Vec<_> = conn.subscribed_panes().iter().copied().collect();
-        for pid in &subscribed {
+        self.scratch_panes.clear();
+        self.scratch_panes
+            .extend(conn.subscribed_panes().iter().copied());
+        for i in 0..self.scratch_panes.len() {
+            let pid = self.scratch_panes[i];
             let other_subscribers = self
                 .subscriptions
-                .get(pid)
+                .get(&pid)
                 .is_some_and(|subs| subs.iter().any(|&c| c != client_id));
             if !other_subscribers {
-                self.mux.close_pane(*pid);
-                if let Some(pane) = self.panes.remove(pid) {
+                self.mux.close_pane(pid);
+                if let Some(pane) = self.panes.remove(&pid) {
                     std::thread::spawn(move || drop(pane));
                 }
-                self.cleanup_pane_state(*pid);
+                self.cleanup_pane_state(pid);
                 log::debug!("closed orphaned {pid} (last subscriber {client_id} disconnected)");
             }
         }
@@ -293,21 +297,25 @@ impl MuxServer {
     /// Called after dispatch to ensure the global map stays in sync with
     /// per-connection tracking.
     fn sync_subscriptions(&mut self, client_id: ClientId) {
+        use std::collections::HashSet;
+
+        use crate::PaneId;
+
         let Some(conn) = self.connections.get(&client_id) else {
             return;
         };
-        for &pane_id in conn.subscribed_panes() {
+        // O(m) set for the conn's subscribed panes.
+        let subscribed: HashSet<PaneId> = conn.subscribed_panes().iter().copied().collect();
+        for &pane_id in &subscribed {
             let subs = self.subscriptions.entry(pane_id).or_default();
             if !subs.contains(&client_id) {
                 subs.push(client_id);
             }
         }
-        // Remove entries where the client unsubscribed.
-        self.scratch_panes.clear();
-        self.scratch_panes
-            .extend(conn.subscribed_panes().iter().copied());
+        // Remove entries where the client unsubscribed — O(n) scan of
+        // the global subscription map with O(1) HashSet lookup per entry.
         self.subscriptions.retain(|pane_id, subs| {
-            if !self.scratch_panes.contains(pane_id) {
+            if !subscribed.contains(pane_id) {
                 subs.retain(|&c| c != client_id);
             }
             !subs.is_empty()

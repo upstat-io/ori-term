@@ -125,6 +125,12 @@ impl PaneId {
 }
 
 impl DomainId {
+    /// Well-known ID for the local (in-process) domain.
+    ///
+    /// The local domain always uses ID 0. The `IdAllocator` starts at 1,
+    /// so dynamically allocated domains (WSL, SSH, etc.) never collide.
+    pub const LOCAL: Self = Self(0);
+
     /// Create a `DomainId` from a raw value.
     ///
     /// Prefer `IdAllocator::<DomainId>::alloc()` for runtime allocation. This
@@ -161,7 +167,8 @@ impl ClientId {
 /// Each ID domain (panes, domains, clients) gets its own allocator
 /// parameterized by the ID type, preventing cross-domain allocation mistakes.
 ///
-/// IDs start at 1; 0 is reserved as "no ID" for sentinel use.
+/// IDs start at 1; 0 is reserved for well-known constants (e.g.
+/// [`DomainId::LOCAL`]) and must not be returned by the allocator.
 #[derive(Debug)]
 pub(crate) struct IdAllocator<T: MuxId> {
     counter: u64,

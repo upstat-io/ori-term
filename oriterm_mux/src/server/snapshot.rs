@@ -49,7 +49,7 @@ impl SnapshotCache {
         build_snapshot_inner_into(&term, pane, cached, &mut self.render_buf);
         // Drain dirty flags under the same lock (see build_snapshot_into).
         term.reset_damage();
-        // SAFETY: `entry().or_default()` guarantees the key exists.
+        // Invariant: `entry().or_default()` above guarantees the key exists.
         &self.cache[&pane_id]
     }
 

@@ -73,36 +73,86 @@ fn pane_bell_to_notify() {
     assert_eq!(pdu, MuxPdu::NotifyPaneBell { pane_id: pid });
 }
 
-// Notifications that return None
-
-/// `CommandComplete` is not pushed over IPC.
+/// `CommandComplete` → `NotifyCommandComplete` with duration in milliseconds.
 #[test]
-fn command_complete_returns_none() {
+fn command_complete_to_notify() {
+    let pid = PaneId::from_raw(5);
     let notif = MuxNotification::CommandComplete {
-        pane_id: PaneId::from_raw(1),
-        duration: std::time::Duration::from_secs(5),
+        pane_id: pid,
+        duration: std::time::Duration::from_millis(1234),
     };
-    assert!(notification_to_pdu(&notif, &empty_panes()).is_none());
+    let (target, pdu) = notification_to_pdu(&notif, &empty_panes()).unwrap();
+
+    assert!(matches!(target, TargetClients::PaneSubscribers(id) if id == pid));
+    assert_eq!(
+        pdu,
+        MuxPdu::NotifyCommandComplete {
+            pane_id: pid,
+            duration_ms: 1234,
+        }
+    );
 }
 
-/// `ClipboardStore` is not pushed over IPC.
+/// `ClipboardStore` → `NotifyClipboardStore` with wire clipboard type.
 #[test]
-fn clipboard_store_returns_none() {
+fn clipboard_store_to_notify() {
+    let pid = PaneId::from_raw(6);
     let notif = MuxNotification::ClipboardStore {
-        pane_id: PaneId::from_raw(1),
+        pane_id: pid,
         clipboard_type: ClipboardType::Clipboard,
         text: "hello".into(),
     };
-    assert!(notification_to_pdu(&notif, &empty_panes()).is_none());
+    let (target, pdu) = notification_to_pdu(&notif, &empty_panes()).unwrap();
+
+    assert!(matches!(target, TargetClients::PaneSubscribers(id) if id == pid));
+    assert_eq!(
+        pdu,
+        MuxPdu::NotifyClipboardStore {
+            pane_id: pid,
+            clipboard_type: 0,
+            text: "hello".into(),
+        }
+    );
 }
 
-/// `ClipboardLoad` is not pushed over IPC.
+/// `ClipboardStore` with Selection clipboard type maps to wire value 1.
 #[test]
-fn clipboard_load_returns_none() {
+fn clipboard_store_selection_type() {
+    let pid = PaneId::from_raw(7);
+    let notif = MuxNotification::ClipboardStore {
+        pane_id: pid,
+        clipboard_type: ClipboardType::Selection,
+        text: "sel".into(),
+    };
+    let (_, pdu) = notification_to_pdu(&notif, &empty_panes()).unwrap();
+
+    assert_eq!(
+        pdu,
+        MuxPdu::NotifyClipboardStore {
+            pane_id: pid,
+            clipboard_type: 1,
+            text: "sel".into(),
+        }
+    );
+}
+
+/// `ClipboardLoad` → `NotifyClipboardLoad` (formatter dropped at wire boundary).
+#[test]
+fn clipboard_load_to_notify() {
+    let pid = PaneId::from_raw(8);
     let notif = MuxNotification::ClipboardLoad {
-        pane_id: PaneId::from_raw(1),
+        pane_id: pid,
         clipboard_type: ClipboardType::Clipboard,
         formatter: Arc::new(|s| s.to_string()),
     };
-    assert!(notification_to_pdu(&notif, &empty_panes()).is_none());
+    let (target, pdu) = notification_to_pdu(&notif, &empty_panes()).unwrap();
+
+    assert!(matches!(target, TargetClients::PaneSubscribers(id) if id == pid));
+    assert_eq!(
+        pdu,
+        MuxPdu::NotifyClipboardLoad {
+            pane_id: pid,
+            clipboard_type: 0,
+        }
+    );
 }

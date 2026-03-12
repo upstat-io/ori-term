@@ -312,6 +312,35 @@ pub enum MuxPdu {
         pane_id: PaneId,
     },
 
+    /// A command completed in a pane (OSC 133;D → duration).
+    NotifyCommandComplete {
+        /// Pane that completed a command.
+        pane_id: PaneId,
+        /// Command duration in milliseconds.
+        duration_ms: u64,
+    },
+
+    /// OSC 52 clipboard store request forwarded from a pane.
+    NotifyClipboardStore {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Clipboard discriminant: 0 = Clipboard, 1 = Selection.
+        clipboard_type: u8,
+        /// Text to store.
+        text: String,
+    },
+
+    /// OSC 52 clipboard load request forwarded from a pane.
+    ///
+    /// The `formatter` closure from the event is not serializable — the
+    /// receiving client applies its own formatting when responding.
+    NotifyClipboardLoad {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Clipboard discriminant: 0 = Clipboard, 1 = Selection.
+        clipboard_type: u8,
+    },
+
     /// Server-pushed pane snapshot (proactive, throttled to ~60fps).
     ///
     /// Only sent to clients that advertised [`CAP_SNAPSHOT_PUSH`].
@@ -371,6 +400,9 @@ impl MuxPdu {
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,
             Self::NotifyPaneMetadataChanged { .. } => MsgType::NotifyPaneMetadataChanged,
             Self::NotifyPaneBell { .. } => MsgType::NotifyPaneBell,
+            Self::NotifyCommandComplete { .. } => MsgType::NotifyCommandComplete,
+            Self::NotifyClipboardStore { .. } => MsgType::NotifyClipboardStore,
+            Self::NotifyClipboardLoad { .. } => MsgType::NotifyClipboardLoad,
             Self::NotifyPaneSnapshot { .. } => MsgType::NotifyPaneSnapshot,
         }
     }
@@ -404,6 +436,9 @@ impl MuxPdu {
                 | Self::NotifyPaneExited { .. }
                 | Self::NotifyPaneMetadataChanged { .. }
                 | Self::NotifyPaneBell { .. }
+                | Self::NotifyCommandComplete { .. }
+                | Self::NotifyClipboardStore { .. }
+                | Self::NotifyClipboardLoad { .. }
                 | Self::NotifyPaneSnapshot { .. }
         )
     }
