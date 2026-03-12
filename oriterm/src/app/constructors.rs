@@ -34,6 +34,7 @@ impl App {
         config: Config,
         socket_path: &std::path::Path,
         window_id: Option<u64>,
+        profiling: bool,
     ) -> Self {
         let bindings = keybindings::merge_bindings(&config.keybind);
         let config_proxy = event_proxy.clone();
@@ -99,7 +100,7 @@ impl App {
             torn_off_pending: None,
 
             last_render: Instant::now(),
-            perf: PerfStats::new(),
+            perf: PerfStats::new(profiling),
         };
 
         // Store the claimed window ID so init can use it instead of creating one.
@@ -114,7 +115,11 @@ impl App {
     ///
     /// All GPU/window/tab state is `None` until [`resumed`] is called by
     /// the event loop (lazy initialization pattern from winit docs).
-    pub(crate) fn new(event_proxy: EventLoopProxy<TermEvent>, config: Config) -> Self {
+    pub(crate) fn new(
+        event_proxy: EventLoopProxy<TermEvent>,
+        config: Config,
+        profiling: bool,
+    ) -> Self {
         let bindings = keybindings::merge_bindings(&config.keybind);
         let config_proxy = event_proxy.clone();
         let monitor = ConfigMonitor::new(Arc::new(move || {
@@ -171,7 +176,7 @@ impl App {
             torn_off_pending: None,
 
             last_render: Instant::now(),
-            perf: PerfStats::new(),
+            perf: PerfStats::new(profiling),
         }
     }
 }

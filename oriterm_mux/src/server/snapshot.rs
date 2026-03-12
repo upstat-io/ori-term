@@ -45,8 +45,10 @@ impl SnapshotCache {
     /// buffers keep their capacity across calls.
     pub fn build(&mut self, pane_id: PaneId, pane: &Pane) -> &PaneSnapshot {
         let cached = self.cache.entry(pane_id).or_default();
-        let term = pane.terminal().lock();
+        let mut term = pane.terminal().lock();
         build_snapshot_inner_into(&term, pane, cached, &mut self.render_buf);
+        // Drain dirty flags under the same lock (see build_snapshot_into).
+        term.reset_damage();
         // SAFETY: `entry().or_default()` guarantees the key exists.
         &self.cache[&pane_id]
     }
@@ -97,8 +99,11 @@ pub(crate) fn build_snapshot_into(
     out: &mut PaneSnapshot,
     render_buf: &mut RenderableContent,
 ) {
-    let term = pane.terminal().lock();
+    let mut term = pane.terminal().lock();
     build_snapshot_inner_into(&term, pane, out, render_buf);
+    // Drain dirty flags now that the snapshot has captured the damage info.
+    // Must happen under the same lock to avoid racing with the PTY reader.
+    term.reset_damage();
 }
 
 /// Shared allocation-reusing snapshot logic.

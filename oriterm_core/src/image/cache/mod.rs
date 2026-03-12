@@ -429,9 +429,9 @@ impl ImageCache {
             .collect();
 
         for id in orphans {
-            if let Some(img) = self.images.remove(&id) {
-                self.memory_used = self.memory_used.saturating_sub(img.data.len());
-            }
+            // Delegates to `remove_image` to clean up all associated state:
+            // animations, animation_frames, frame_starts, and memory tracking.
+            self.remove_image(id);
         }
     }
 }

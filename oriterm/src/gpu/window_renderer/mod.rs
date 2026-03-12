@@ -37,6 +37,9 @@ use helpers::{
     ShapingScratch, ensure_glyphs_cached, grid_raster_keys, pre_cache_atlas, shape_frame,
 };
 
+/// Maximum entries in `empty_keys` before clearing to prevent unbounded growth.
+const EMPTY_KEYS_CAP: usize = 10_000;
+
 // ── Error type ──
 
 /// Error returned by [`WindowRenderer::render_to_surface`].
@@ -459,6 +462,19 @@ impl WindowRenderer {
     /// Triggers immediate eviction if current usage exceeds the new limit.
     pub fn set_image_gpu_memory_limit(&mut self, limit: usize) {
         self.image_texture_cache.set_gpu_memory_limit(limit);
+    }
+
+    /// Shrink grow-only buffers if capacity vastly exceeds usage.
+    ///
+    /// Called after rendering to bound memory waste to 2× actual usage.
+    /// Also caps `empty_keys` at 10,000 entries to prevent unbounded growth
+    /// from pathological glyph-missing scenarios.
+    pub fn maybe_shrink_buffers(&mut self) {
+        self.prepared.maybe_shrink();
+        self.shaping.maybe_shrink();
+        if self.empty_keys.len() > EMPTY_KEYS_CAP {
+            self.empty_keys.clear();
+        }
     }
 }
 

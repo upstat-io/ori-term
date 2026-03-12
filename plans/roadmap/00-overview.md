@@ -129,7 +129,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 
 **Mux event flow (daemon mode):** PTY Reader → `MuxEvent` → MuxServer → `OutputCoalescer` (1ms/16ms/100ms tiered) → push to client via IPC → GUI renders.
 
-## Section Overview (43 Sections, 10 Tiers)
+## Section Overview
 
 ### Tier 0 — Core Library + Cross-Platform Architecture
 | Section | Title | What |
@@ -187,10 +187,11 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | Section | Title | What |
 |---------|-------|------|
 | 22 | Terminal Modes | Comprehensive DECSET/DECRST table, mode interactions |
-| 23 | Performance & Damage Tracking | Damage tracking, ring buffer, parsing optimization, benchmarks |
+| 23 | Performance & Damage Tracking | Row/column damage tracking, row-level dirty skip, fast ASCII path, alt screen lazy alloc, rendering benchmarks (ring buffer + frame throttling + pane caching already done) |
 | 38 | Terminal Protocol Extensions | Capability reporting (DA, DECRQM, XTGETTCAP), color queries, extended SGR (underline styles/colors), window manipulation, DCS passthrough |
 | 39 | Image Protocols | Kitty Graphics Protocol, Sixel, iTerm2 inline images, GPU compositing |
 | 42 | Expose / Overview Mode | Mission Control-style live thumbnail grid of all panes, type-to-filter, keyboard/mouse navigation |
+| 50 | Runtime Efficiency | Idle CPU elimination (`ControlFlow::Wait`), memory stability, allocation audit, profiling infrastructure |
 
 ### Tier 6 — Polish
 | Section | Title | What |

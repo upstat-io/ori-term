@@ -36,6 +36,7 @@ window-vibrancy = "0.7"
 [features]
 default = []
 gpu-tests = []
+profile = []
 
 [target.'cfg(not(windows))'.dependencies]
 arboard = "3"

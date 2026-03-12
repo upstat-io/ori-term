@@ -10,6 +10,7 @@
 //! `HashMap`.
 
 mod decorations;
+pub(crate) mod dirty_skip;
 mod emit;
 pub(crate) mod shaped_frame;
 #[cfg(test)]
@@ -27,6 +28,7 @@ use super::prepared_frame::PreparedFrame;
 
 use crate::font::{GlyphStyle, RasterKey};
 use crate::gpu::instance_writer::ScreenRect;
+use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
 use emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hover_underline};
 
 pub(crate) use shaped_frame::ShapedFrame;
@@ -195,6 +197,10 @@ pub fn prepare_frame_shaped(
 /// allocating a new frame. The `origin` offset shifts all cell positions
 /// (from layout), and `cursor_blink_visible` gates cursor emission (from
 /// application-level blink state).
+///
+/// When the previous frame's row ranges are available and not all rows are
+/// dirty, uses the incremental path: saves the old terminal-tier instances,
+/// copies clean rows from the cache, and only regenerates dirty rows.
 #[expect(
     clippy::too_many_arguments,
     reason = "origin + cursor blink are pipeline context, not FrameInput concerns"
@@ -207,10 +213,25 @@ pub fn prepare_frame_shaped_into(
     origin: (f32, f32),
     cursor_blink_visible: bool,
 ) {
-    out.clear();
-    out.viewport = input.viewport;
-    out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-    fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
+    let can_incremental = !input.content.all_dirty && out.saved_tier.has_cached_rows();
+
+    if can_incremental {
+        // Incremental path: save old instances, clear buffers, merge.
+        // save_terminal_tier swaps old data to saved_tier and clears writers.
+        out.save_terminal_tier();
+        out.cursors.clear();
+        out.image_quads_below.clear();
+        out.image_quads_above.clear();
+        out.viewport = input.viewport;
+        out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
+        fill_frame_incremental(input, atlas, shaped, out, origin, cursor_blink_visible);
+    } else {
+        // Full rebuild path.
+        out.clear();
+        out.viewport = input.viewport;
+        out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
+        fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
+    }
 }
 
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.
@@ -243,6 +264,10 @@ pub(crate) fn fill_frame_shaped(
     let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
+    // Track row boundaries for row_ranges (incremental update support).
+    let mut current_row = usize::MAX;
+    let mut row_start = BufferLengths::capture(frame);
+
     for cell in &input.content.cells {
         if cell
             .flags
@@ -253,6 +278,24 @@ pub(crate) fn fill_frame_shaped(
 
         let col = cell.column.0;
         let row = cell.line;
+
+        // Record row range on row transition.
+        if row != current_row {
+            if current_row == usize::MAX {
+                row_start = BufferLengths::capture(frame);
+            } else {
+                let now = BufferLengths::capture(frame);
+                let ranges = now.range_since(&row_start);
+                // Fill gaps if rows were skipped (shouldn't happen but defensive).
+                while frame.row_ranges.len() < current_row {
+                    frame.row_ranges.push(RowInstanceRanges::default());
+                }
+                frame.row_ranges.push(ranges);
+                row_start = now;
+            }
+            current_row = row;
+        }
+
         let x = ox + col as f32 * cw;
         let y = oy + row as f32 * ch;
 
@@ -335,6 +378,16 @@ pub(crate) fn fill_frame_shaped(
             }
             .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
         }
+    }
+
+    // Record the final row's range.
+    if current_row != usize::MAX {
+        let now = BufferLengths::capture(frame);
+        let ranges = now.range_since(&row_start);
+        while frame.row_ranges.len() < current_row {
+            frame.row_ranges.push(RowInstanceRanges::default());
+        }
+        frame.row_ranges.push(ranges);
     }
 
     // Implicit URL hover: one continuous underline rect per segment.

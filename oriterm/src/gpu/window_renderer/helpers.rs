@@ -36,6 +36,14 @@ pub(super) struct ShapingScratch {
     col_map: Vec<Option<usize>>,
     /// Rustybuzz buffer reused across frames to avoid per-frame allocation.
     unicode_buffer: Option<rustybuzz::UnicodeBuffer>,
+    /// Rustybuzz Face objects reused across frames.
+    ///
+    /// Stored with `'static` lifetime because `ShapingScratch` has no lifetime
+    /// parameter. Filled via [`FontCollection::fill_shaping_faces`] which
+    /// transmutes the actual `'a` borrow to `'static`. This is sound because
+    /// the Vec is cleared before every fill and only accessed while
+    /// `FontCollection` is borrowed (within `shape_frame`).
+    faces_buf: Vec<Option<rustybuzz::Face<'static>>>,
 }
 
 impl ShapingScratch {
@@ -47,7 +55,29 @@ impl ShapingScratch {
             col_starts: Vec::new(),
             col_map: Vec::new(),
             unicode_buffer: None,
+            faces_buf: Vec::new(),
         }
+    }
+
+    /// Shrink per-row scratch buffers if capacity vastly exceeds usage.
+    ///
+    /// Called after rendering to bound memory waste. Only fires when
+    /// capacity > 4× length AND > 4096 elements.
+    pub(super) fn maybe_shrink(&mut self) {
+        maybe_shrink_vec(&mut self.runs);
+        maybe_shrink_vec(&mut self.glyphs);
+        maybe_shrink_vec(&mut self.col_starts);
+        maybe_shrink_vec(&mut self.col_map);
+        maybe_shrink_vec(&mut self.faces_buf);
+    }
+}
+
+/// Shrink a Vec if capacity vastly exceeds usage (> 4× len and > 4096 elements).
+fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
+    let cap = v.capacity();
+    let len = v.len();
+    if cap > 4 * len && cap > 4096 {
+        v.shrink_to(len * 2);
     }
 }
 
@@ -67,7 +97,7 @@ pub(super) fn shape_frame(
     // Clamp rows to actual cell data — viewport dimensions may race ahead
     // of the terminal grid during async resize.
     let rows = input.rows().min(input.content.cells.len() / cols);
-    let faces = fonts.create_shaping_faces();
+    fonts.fill_shaping_faces(&mut scratch.faces_buf);
 
     for row_idx in 0..rows {
         let start = row_idx * cols;
@@ -77,7 +107,7 @@ pub(super) fn shape_frame(
         prepare_line(row_cells, cols, fonts, &mut scratch.runs);
         shape_prepared_runs(
             &scratch.runs,
-            &faces,
+            &scratch.faces_buf,
             fonts,
             &mut scratch.glyphs,
             &mut scratch.col_starts,
