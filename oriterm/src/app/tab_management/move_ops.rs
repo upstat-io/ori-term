@@ -50,10 +50,9 @@ impl App {
     ///
     /// The actual tab move happens in `user_event()` where `ActiveEventLoop`
     /// is available.
-    pub(in crate::app) fn move_tab_to_new_window_deferred(&self, tab_index: usize) {
-        let _ = self
-            .event_proxy
-            .send_event(crate::event::TermEvent::MoveTabToNewWindow(tab_index));
+    pub(in crate::app) fn move_tab_to_new_window_deferred(&self, tab_id: TabId) {
+        self.event_proxy
+            .send(crate::event::TermEvent::MoveTabToNewWindow(tab_id));
     }
 
     /// Move a tab to a new window.

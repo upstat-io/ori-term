@@ -38,7 +38,7 @@ enum DialogClickResult {
 fn wants_repaint(resp: EventResponse) -> bool {
     matches!(
         resp,
-        EventResponse::RequestPaint | EventResponse::RequestLayout | EventResponse::RequestRedraw
+        EventResponse::RequestPaint | EventResponse::RequestLayout
     )
 }
 

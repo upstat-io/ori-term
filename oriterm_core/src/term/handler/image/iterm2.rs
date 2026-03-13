@@ -167,10 +167,7 @@ impl<T: EventListener> Term<T> {
         let grid = self.grid();
         let col = grid.cursor().col().0;
         let line = grid.cursor().line();
-        let scrollback_len = grid.scrollback().len();
-        let display_offset = grid.display_offset();
-        let abs_row = scrollback_len.saturating_sub(display_offset) + line;
-        let stable_row = StableRowIndex(abs_row as u64);
+        let stable_row = StableRowIndex::from_visible(grid, line);
 
         let placement = ImagePlacement {
             image_id: id,

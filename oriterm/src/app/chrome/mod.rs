@@ -268,6 +268,7 @@ impl App {
             if ctx.tab_bar.hover_hit() != hit {
                 ctx.tab_bar.set_hover_hit(hit, Instant::now());
                 ctx.dirty = true;
+                ctx.ui_stale = true;
             }
         }
     }
@@ -317,9 +318,9 @@ impl App {
             resp.response,
             oriterm_ui::input::EventResponse::RequestPaint
                 | oriterm_ui::input::EventResponse::RequestLayout
-                | oriterm_ui::input::EventResponse::RequestRedraw
         ) {
             ctx.dirty = true;
+            ctx.ui_stale = true;
         }
     }
 
@@ -356,6 +357,7 @@ impl App {
         }
         if had_hover {
             ctx.dirty = true;
+            ctx.ui_stale = true;
         }
     }
 }

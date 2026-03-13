@@ -38,3 +38,9 @@ fn platform_rss() -> Option<usize> {
 fn platform_rss() -> Option<usize> {
     None
 }
+
+// Fallback for other platforms (FreeBSD, etc.).
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn platform_rss() -> Option<usize> {
+    None
+}

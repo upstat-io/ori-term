@@ -398,7 +398,7 @@ impl WindowChromeWidget {
         self.hovered_control = new_idx;
 
         if left || entered {
-            WidgetResponse::redraw()
+            WidgetResponse::layout()
         } else {
             WidgetResponse::ignored()
         }

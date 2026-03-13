@@ -158,7 +158,7 @@ impl ContainerWidget {
     /// Updates dirty flags based on a child's event response.
     pub fn update_dirty(&mut self, response: &WidgetResponse) {
         match response.response {
-            EventResponse::RequestLayout | EventResponse::RequestRedraw => {
+            EventResponse::RequestLayout => {
                 self.needs_layout = true;
                 self.needs_paint = true;
             }

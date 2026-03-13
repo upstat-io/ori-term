@@ -16,7 +16,7 @@ pub use ui_only::RendererMode;
 use std::collections::HashSet;
 use std::fmt;
 
-use wgpu::Buffer;
+use wgpu::{Buffer, Device};
 
 use oriterm_core::Rgb;
 
@@ -31,10 +31,10 @@ use super::pipelines::GpuPipelines;
 use super::prepare::{self, AtlasLookup};
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
-use crate::font::{CellMetrics, FontCollection, GlyphFormat, RasterKey};
+use crate::font::{CellMetrics, FontCollection, RasterKey};
 use crate::gpu::frame_input::ViewportSize;
 use helpers::{
-    ShapingScratch, ensure_glyphs_cached, grid_raster_keys, pre_cache_atlas, shape_frame,
+    ShapingScratch, create_atlases, ensure_glyphs_cached, grid_raster_keys, shape_frame,
 };
 
 /// Maximum entries in `empty_keys` before clearing to prevent unbounded growth.
@@ -112,6 +112,10 @@ pub struct WindowRenderer {
     atlas: GlyphAtlas,
     subpixel_atlas: GlyphAtlas,
     color_atlas: GlyphAtlas,
+    /// Last-seen atlas generations for bind group staleness detection.
+    atlas_generation: u64,
+    subpixel_atlas_generation: u64,
+    color_atlas_generation: u64,
     /// Keys known to produce zero-size glyphs (spaces, non-printing chars).
     ///
     /// Cross-atlas: a glyph that fails rasterization produces no bitmap
@@ -162,6 +166,14 @@ pub struct WindowRenderer {
     image_instance_buffer: Option<Buffer>,
     /// Reusable scratch buffer for image quad instance data (avoids per-frame allocation).
     image_instance_data: Vec<u8>,
+
+    // Content cache: offscreen texture holding the fully rendered frame
+    // without the cursor. On cursor-blink-only redraws, the cache is
+    // copied to the surface and only the cursor is re-rendered on top,
+    // avoiding the full GPU submission.
+    content_cache: Option<wgpu::Texture>,
+    content_cache_view: Option<wgpu::TextureView>,
+    content_cache_size: (u32, u32),
 }
 
 impl WindowRenderer {
@@ -179,23 +191,9 @@ impl WindowRenderer {
         // Uniform buffer.
         let uniform_buffer = UniformBuffer::new(device, &pipelines.uniform_layout);
 
-        // Monochrome atlas + pre-cache printable ASCII (0x20–0x7E).
-        // When subpixel is enabled, ASCII goes into the subpixel atlas instead.
-        let format = font_collection.format();
-        let (atlas, subpixel_atlas) = if format.is_subpixel() {
-            let atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
-            let mut sp_atlas = GlyphAtlas::new(device, format);
-            pre_cache_atlas(&mut sp_atlas, &mut font_collection, queue);
-            (atlas, sp_atlas)
-        } else {
-            let mut atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
-            let sp_atlas = GlyphAtlas::new(device, GlyphFormat::SubpixelRgb);
-            pre_cache_atlas(&mut atlas, &mut font_collection, queue);
-            (atlas, sp_atlas)
-        };
-
-        // Color atlas (starts empty — emoji cached on first use).
-        let color_atlas = GlyphAtlas::new(device, GlyphFormat::Color);
+        // Atlases: mono + subpixel (with ASCII pre-cached) + color (empty).
+        let (atlas, subpixel_atlas, color_atlas) =
+            create_atlases(device, queue, &mut font_collection);
 
         // Bind groups.
         let atlas_bind_group = AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view());
@@ -215,6 +213,9 @@ impl WindowRenderer {
             atlas,
             subpixel_atlas,
             color_atlas,
+            atlas_generation: 0,
+            subpixel_atlas_generation: 0,
+            color_atlas_generation: 0,
             empty_keys: HashSet::new(),
             font_collection,
             ui_font_collection,
@@ -241,6 +242,9 @@ impl WindowRenderer {
             image_texture_cache: ImageTextureCache::new(device),
             image_instance_buffer: None,
             image_instance_data: Vec::new(),
+            content_cache: None,
+            content_cache_view: None,
+            content_cache_size: (0, 0),
         }
     }
 
@@ -269,6 +273,38 @@ impl WindowRenderer {
         &self.atlas
     }
 
+    // ── Bind group staleness ──
+
+    /// Rebuild atlas bind groups whose texture generation has advanced.
+    ///
+    /// Called at the start of render passes. When an atlas grows (new page
+    /// allocated), its texture and view are replaced. The bind group
+    /// referencing the old view becomes stale and must be recreated.
+    pub(crate) fn rebuild_stale_atlas_bind_groups(
+        &mut self,
+        device: &Device,
+        atlas_layout: &wgpu::BindGroupLayout,
+    ) {
+        if self.atlas.generation() != self.atlas_generation {
+            self.atlas_bind_group
+                .rebuild(device, atlas_layout, self.atlas.view());
+            self.atlas_generation = self.atlas.generation();
+        }
+        if self.subpixel_atlas.generation() != self.subpixel_atlas_generation {
+            self.subpixel_atlas_bind_group.rebuild(
+                device,
+                atlas_layout,
+                self.subpixel_atlas.view(),
+            );
+            self.subpixel_atlas_generation = self.subpixel_atlas.generation();
+        }
+        if self.color_atlas.generation() != self.color_atlas_generation {
+            self.color_atlas_bind_group
+                .rebuild(device, atlas_layout, self.color_atlas.view());
+            self.color_atlas_generation = self.color_atlas.generation();
+        }
+    }
+
     // ── Icon resolution ──
 
     /// Pre-resolve all icon atlas entries for the current frame.
@@ -286,10 +322,14 @@ impl WindowRenderer {
             if physical_size == 0 {
                 continue;
             }
-            if let Some(entry) =
-                self.icon_cache
-                    .get_or_insert(id, physical_size, scale, &mut self.atlas, &gpu.queue)
-            {
+            if let Some(entry) = self.icon_cache.get_or_insert(
+                id,
+                physical_size,
+                scale,
+                &mut self.atlas,
+                &gpu.device,
+                &gpu.queue,
+            ) {
                 self.resolved_icons.insert(
                     id,
                     logical_size,
@@ -362,6 +402,19 @@ impl WindowRenderer {
         cursor_blink_visible: bool,
         content_changed: bool,
     ) {
+        // Cursor-blink-only fast path: when content hasn't changed and we
+        // have a valid prepared frame, skip shaping, glyph caching, and the
+        // full instance rebuild. Just update cursor/URL/prompt overlays.
+        let cols = input.columns();
+        let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
+        if !content_changed && cached_valid && self.prepared.has_terminal_data() {
+            self.atlas.begin_frame();
+            self.subpixel_atlas.begin_frame();
+            self.color_atlas.begin_frame();
+            prepare::update_cursor_only(input, &mut self.prepared, origin, cursor_blink_visible);
+            return;
+        }
+
         self.atlas.begin_frame();
         self.subpixel_atlas.begin_frame();
         self.color_atlas.begin_frame();
@@ -369,8 +422,6 @@ impl WindowRenderer {
         // Phase A: Shape all rows, or reuse cached shaping when content
         // hasn't changed (mouse hover, cursor blink, selection changes
         // only affect the prepare phase).
-        let cols = input.columns();
-        let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
         if content_changed || !cached_valid {
             shape_frame(input, &self.font_collection, &mut self.shaping);
         }
@@ -386,6 +437,7 @@ impl WindowRenderer {
             &mut self.color_atlas,
             &mut self.empty_keys,
             &mut self.font_collection,
+            &gpu.device,
             &gpu.queue,
         );
 
@@ -396,6 +448,7 @@ impl WindowRenderer {
             self.shaping.frame.size_q6(),
             &mut self.atlas,
             &mut self.empty_keys,
+            &gpu.device,
             &gpu.queue,
         );
 

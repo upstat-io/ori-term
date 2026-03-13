@@ -40,15 +40,15 @@ pub struct RowInstanceRanges {
 /// [`RowInstanceRanges`]; dirty rows are regenerated fresh.
 pub struct SavedTerminalTier {
     /// Previous frame's background instance bytes.
-    pub backgrounds: Vec<u8>,
+    pub(crate) backgrounds: Vec<u8>,
     /// Previous frame's mono glyph instance bytes.
-    pub glyphs: Vec<u8>,
+    pub(crate) glyphs: Vec<u8>,
     /// Previous frame's subpixel glyph instance bytes.
-    pub subpixel_glyphs: Vec<u8>,
+    pub(crate) subpixel_glyphs: Vec<u8>,
     /// Previous frame's color glyph instance bytes.
-    pub color_glyphs: Vec<u8>,
+    pub(crate) color_glyphs: Vec<u8>,
     /// Per-row instance ranges into the above buffers.
-    pub row_ranges: Vec<RowInstanceRanges>,
+    pub(crate) row_ranges: Vec<RowInstanceRanges>,
 }
 
 impl SavedTerminalTier {
@@ -77,10 +77,10 @@ impl SavedTerminalTier {
 /// Snapshot of current buffer byte lengths, used to compute row ranges.
 #[derive(Debug, Clone, Copy)]
 pub struct BufferLengths {
-    pub backgrounds: usize,
-    pub glyphs: usize,
-    pub subpixel_glyphs: usize,
-    pub color_glyphs: usize,
+    pub(super) backgrounds: usize,
+    pub(super) glyphs: usize,
+    pub(super) subpixel_glyphs: usize,
+    pub(super) color_glyphs: usize,
 }
 
 impl BufferLengths {
@@ -117,12 +117,15 @@ pub fn build_dirty_set(
     input: &FrameInput,
     num_rows: usize,
     prev_selection: Option<(usize, usize)>,
-) -> Vec<bool> {
+    dirty: &mut Vec<bool>,
+) {
+    dirty.clear();
     if input.content.all_dirty {
-        return vec![true; num_rows];
+        dirty.resize(num_rows, true);
+        return;
     }
 
-    let mut dirty = vec![false; num_rows];
+    dirty.resize(num_rows, false);
     for d in &input.content.damage {
         if d.line < num_rows {
             dirty[d.line] = true;
@@ -139,9 +142,7 @@ pub fn build_dirty_set(
         .selection
         .as_ref()
         .and_then(|s| s.viewport_line_range(num_rows));
-    mark_selection_damage(&mut dirty, prev_selection, new_selection);
-
-    dirty
+    mark_selection_damage(dirty, prev_selection, new_selection);
 }
 
 /// Mark rows dirty that changed selection state between frames.
@@ -244,7 +245,7 @@ pub(crate) fn fill_frame_incremental(
     let viewport_h = input.viewport.height as f32;
     let num_rows = input.rows();
     let prev_sel = frame.prev_selection_range;
-    let dirty_rows = build_dirty_set(input, num_rows, prev_sel);
+    build_dirty_set(input, num_rows, prev_sel, &mut frame.scratch_dirty);
 
     // Track row boundaries for row_ranges.
     let mut current_row = usize::MAX;
@@ -272,7 +273,7 @@ pub(crate) fn fill_frame_incremental(
             }
 
             current_row = row;
-            let is_dirty = dirty_rows.get(row).copied().unwrap_or(true);
+            let is_dirty = frame.scratch_dirty.get(row).copied().unwrap_or(true);
 
             if !is_dirty {
                 // Clean row: copy cached instances and skip all cells.

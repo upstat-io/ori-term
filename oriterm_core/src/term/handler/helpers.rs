@@ -190,7 +190,12 @@ impl<T: EventListener> Term<T> {
                 self.image_cache_mut()
                     .remove_placements_in_region(first, last, None, None);
             }
-            ClearMode::Saved => {} // Scrollback clearing not yet implemented.
+            ClearMode::Saved => {
+                // Scrollback was just cleared — prune image placements that
+                // referenced evicted rows.
+                let threshold = StableRowIndex(self.grid().total_evicted() as u64);
+                self.image_cache_mut().prune_scrollback(threshold);
+            }
         }
     }
 

@@ -8,6 +8,7 @@
 mod alt_screen;
 pub mod charset;
 mod handler;
+mod image_config;
 pub mod mode;
 pub mod renderable;
 mod shell_state;
@@ -249,22 +250,33 @@ impl<T: EventListener> Term<T> {
     }
 
     /// Reference to the active grid.
+    ///
+    /// Returns the alternate grid when `ALT_SCREEN` mode is active, falling
+    /// back to the primary grid if the alt grid was not allocated (race
+    /// condition at mode transition or malformed escape sequence).
     pub fn grid(&self) -> &Grid {
         if self.mode.contains(TermMode::ALT_SCREEN) {
-            self.alt_grid
-                .as_ref()
-                .expect("ALT_SCREEN set but alt_grid not allocated")
+            debug_assert!(
+                self.alt_grid.is_some(),
+                "ALT_SCREEN set but alt_grid not allocated"
+            );
+            self.alt_grid.as_ref().unwrap_or(&self.grid)
         } else {
             &self.grid
         }
     }
 
     /// Mutable reference to the active grid.
+    ///
+    /// Returns the alternate grid when `ALT_SCREEN` mode is active, falling
+    /// back to the primary grid if the alt grid was not allocated.
     pub fn grid_mut(&mut self) -> &mut Grid {
         if self.mode.contains(TermMode::ALT_SCREEN) {
-            self.alt_grid
-                .as_mut()
-                .expect("ALT_SCREEN set but alt_grid not allocated")
+            debug_assert!(
+                self.alt_grid.is_some(),
+                "ALT_SCREEN set but alt_grid not allocated"
+            );
+            self.alt_grid.as_mut().unwrap_or(&mut self.grid)
         } else {
             &mut self.grid
         }
@@ -286,90 +298,40 @@ impl<T: EventListener> Term<T> {
     }
 
     /// Reference to the active screen's image cache.
+    ///
+    /// Returns the alternate image cache when `ALT_SCREEN` mode is active,
+    /// falling back to the primary cache if the alt cache was not allocated.
     pub fn image_cache(&self) -> &ImageCache {
         if self.mode.contains(TermMode::ALT_SCREEN) {
-            self.alt_image_cache
-                .as_ref()
-                .expect("ALT_SCREEN set but alt_image_cache not allocated")
+            debug_assert!(
+                self.alt_image_cache.is_some(),
+                "ALT_SCREEN set but alt_image_cache not allocated"
+            );
+            self.alt_image_cache.as_ref().unwrap_or(&self.image_cache)
         } else {
             &self.image_cache
         }
     }
 
     /// Mutable reference to the active screen's image cache.
+    ///
+    /// Returns the alternate image cache when `ALT_SCREEN` mode is active,
+    /// falling back to the primary cache if the alt cache was not allocated.
     pub fn image_cache_mut(&mut self) -> &mut ImageCache {
         if self.mode.contains(TermMode::ALT_SCREEN) {
+            debug_assert!(
+                self.alt_image_cache.is_some(),
+                "ALT_SCREEN set but alt_image_cache not allocated"
+            );
             self.alt_image_cache
                 .as_mut()
-                .expect("ALT_SCREEN set but alt_image_cache not allocated")
+                .unwrap_or(&mut self.image_cache)
         } else {
             &mut self.image_cache
         }
     }
 
-    /// Set cell pixel dimensions (called by GUI after font metrics are known).
-    ///
-    /// Also recalculates cell coverage for fixed-pixel image placements
-    /// so viewport intersection queries remain correct.
-    pub fn set_cell_dimensions(&mut self, width: u16, height: u16) {
-        self.cell_pixel_width = width;
-        self.cell_pixel_height = height;
-        self.image_cache.update_cell_coverage(width, height);
-        if let Some(cache) = &mut self.alt_image_cache {
-            cache.update_cell_coverage(width, height);
-        }
-    }
-
-    /// Whether image protocols are enabled.
-    pub fn image_protocol_enabled(&self) -> bool {
-        self.image_protocol_enabled
-    }
-
-    /// Enable or disable image protocol handling (Kitty, Sixel, iTerm2).
-    ///
-    /// When disabled, all image protocol sequences are silently ignored.
-    pub fn set_image_protocol_enabled(&mut self, enabled: bool) {
-        self.image_protocol_enabled = enabled;
-    }
-
-    /// Apply image cache limits from config.
-    ///
-    /// If the new limit is lower than current usage, triggers immediate
-    /// LRU eviction.
-    pub fn set_image_limits(&mut self, memory_limit: usize, max_single: usize) {
-        self.image_cache.set_memory_limit(memory_limit);
-        self.image_cache.set_max_single_image(max_single);
-        if let Some(cache) = &mut self.alt_image_cache {
-            cache.set_memory_limit(memory_limit);
-            cache.set_max_single_image(max_single);
-        }
-    }
-
-    /// Enable or disable image animation.
-    ///
-    /// When disabled, animated images show the first frame only.
-    pub fn set_image_animation_enabled(&mut self, enabled: bool) {
-        self.image_cache.set_animation_enabled(enabled);
-        if let Some(cache) = &mut self.alt_image_cache {
-            cache.set_animation_enabled(enabled);
-        }
-    }
-
-    /// Advance image animations for the active screen.
-    ///
-    /// Returns the next frame deadline so the event loop can schedule
-    /// a redraw. Call once per frame before extracting renderable content.
-    pub fn advance_animations(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
-        let grid = self.grid();
-        let offset = grid.display_offset().min(grid.scrollback().len());
-        let lines = grid.lines();
-        let base =
-            grid.total_evicted() as u64 + grid.scrollback().len().saturating_sub(offset) as u64;
-        let top = StableRowIndex(base);
-        let bottom = StableRowIndex(base + lines.saturating_sub(1) as u64);
-
-        self.image_cache_mut().advance_animations(now, top, bottom)
-    }
+    // Image protocol configuration and animation methods are in `image_config.rs`.
 
     /// Current color theme.
     pub fn theme(&self) -> Theme {
@@ -484,21 +446,9 @@ impl<T: EventListener> Term<T> {
     // are in `alt_screen.rs`.
 }
 
-/// Extract the last path component from a CWD path for tab display.
-///
-/// - `/home/user/projects` → `projects`
-/// - `/` → `/`
-/// - `~` passthrough (shouldn't occur from OSC 7, but handle gracefully).
-pub fn cwd_short_path(cwd: &str) -> &str {
-    if cwd == "/" {
-        return cwd;
-    }
-    // Strip trailing slash then take last component.
-    let trimmed = cwd.strip_suffix('/').unwrap_or(cwd);
-    let component = trimmed.rsplit('/').next().unwrap_or(cwd);
-    // Paths like `///` reduce to an empty component after stripping — return `/`.
-    if component.is_empty() { "/" } else { component }
-}
+// `cwd_short_path` lives in `shell_state.rs` alongside other shell
+// integration helpers. Re-exported here for public API compatibility.
+pub use shell_state::cwd_short_path;
 
 #[cfg(test)]
 mod tests;

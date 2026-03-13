@@ -74,6 +74,13 @@ pub(crate) struct WindowContext {
 
     // Redraw coalescing.
     pub(super) dirty: bool,
+    /// Chrome/overlay content has changed since the last full content render.
+    ///
+    /// When `true`, the GPU content cache texture is stale and
+    /// `render_to_surface` must do a full render even if terminal content
+    /// hasn't changed. Set by chrome hover, overlay animations, and other
+    /// UI state changes. Cleared after a full content render.
+    pub(super) ui_stale: bool,
 }
 
 impl WindowContext {
@@ -111,6 +118,7 @@ impl WindowContext {
             last_drag_area_press: None,
             search_bar_buf: String::new(),
             dirty: true,
+            ui_stale: true,
         }
     }
 }

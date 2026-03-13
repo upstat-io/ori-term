@@ -124,7 +124,10 @@ impl App {
                 frame.mark_cursor = None;
                 frame.fg_dim = 1.0;
                 frame.prompt_marker_rows.clear();
-            } else {
+            } else if content_changed || ctx.frame.is_none() {
+                // Only re-extract when content actually changed. On cursor-
+                // blink-only redraws the existing frame is still valid — skip
+                // the O(rows*cols) snapshot-to-renderable copy.
                 match &mut ctx.frame {
                     Some(existing) => {
                         extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
@@ -133,6 +136,8 @@ impl App {
                         *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
                     }
                 }
+            } else {
+                // Cursor-blink-only: reuse existing frame as-is.
             }
             mux.clear_pane_snapshot_dirty(pane_id);
 
@@ -233,7 +238,7 @@ impl App {
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.
             let logical_w = (w as f32 / scale).round() as u32;
-            if Self::draw_tab_bar(
+            let tab_bar_animating = Self::draw_tab_bar(
                 Some(&ctx.tab_bar),
                 renderer,
                 &mut ctx.chrome_draw_list,
@@ -241,13 +246,14 @@ impl App {
                 scale,
                 gpu,
                 &self.ui_theme,
-            ) {
+            );
+            if tab_bar_animating {
                 ctx.dirty = true;
             }
 
             // Draw overlays with per-overlay compositor opacity.
             let logical_size = (logical_w as f32, h as f32 / scale);
-            if Self::draw_overlays(
+            let overlays_animating = Self::draw_overlays(
                 &mut ctx.overlays,
                 renderer,
                 &mut ctx.chrome_draw_list,
@@ -256,7 +262,8 @@ impl App {
                 gpu,
                 &ctx.layer_tree,
                 &self.ui_theme,
-            ) {
+            );
+            if overlays_animating {
                 ctx.dirty = true;
             }
 
@@ -276,7 +283,18 @@ impl App {
                 );
             }
 
-            let result = renderer.render_to_surface(gpu, pipelines, ctx.window.surface());
+            // Full content render when terminal content changed OR chrome/
+            // overlay visuals are stale (hover, animation, theme change).
+            // Only cursor-blink-only frames may reuse the cached texture.
+            let needs_full_render = content_changed || ctx.ui_stale;
+
+            // Keep ui_stale set while animations are running so subsequent
+            // animation frames also get full renders. Clear when the cache
+            // is freshly rendered with no ongoing animations.
+            ctx.ui_stale = tab_bar_animating || overlays_animating;
+
+            let result =
+                renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
             (result, blinking_now, cursor_pos)
         };
 

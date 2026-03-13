@@ -145,7 +145,7 @@ pub struct MenuWidget {
     pub(super) id: WidgetId,
     pub(super) entries: Vec<MenuEntry>,
     /// Currently hovered (highlighted) entry index.
-    pub hovered: Option<usize>,
+    pub(super) hovered: Option<usize>,
     /// Pre-selected entry index (shown with accent tint).
     pub(super) selected_index: Option<usize>,
     pub(super) style: MenuStyle,

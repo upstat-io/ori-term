@@ -6,18 +6,16 @@
 //! code that needs grid geometry or cell data uses this adapter instead of
 //! locking the terminal.
 
+use oriterm_core::CellFlags;
 use oriterm_core::grid::StableRowIndex;
+use oriterm_core::selection::delimiter_class;
 use oriterm_mux::{PaneSnapshot, WireCell, WireCellFlags};
 
 /// `CellFlags::WIDE_CHAR_SPACER` bit in the wire format.
-///
-/// Maps 1:1 to `oriterm_core::CellFlags::WIDE_CHAR_SPACER` (bit 9).
-const WIDE_CHAR_SPACER_BIT: WireCellFlags = 1 << 9;
+const WIDE_CHAR_SPACER_BIT: WireCellFlags = CellFlags::WIDE_CHAR_SPACER.bits();
 
 /// `CellFlags::WRAP` bit in the wire format.
-///
-/// Maps 1:1 to `oriterm_core::CellFlags::WRAP` (bit 10).
-const WRAP_BIT: WireCellFlags = 1 << 10;
+const WRAP_BIT: WireCellFlags = CellFlags::WRAP.bits();
 
 /// Read-only grid accessor backed by a [`PaneSnapshot`].
 ///
@@ -251,20 +249,6 @@ impl<'a> SnapshotGrid<'a> {
             }
         }
         current
-    }
-}
-
-/// Character classification for word boundary detection.
-///
-/// Mirrors `oriterm_core::selection::boundaries::delimiter_class` (which is
-/// `pub(crate)` and not accessible from this crate).
-fn delimiter_class(c: char, word_delimiters: &str) -> u8 {
-    if c == '\0' || c == ' ' || c == '\t' {
-        1
-    } else if word_delimiters.contains(c) {
-        2
-    } else {
-        0
     }
 }
 

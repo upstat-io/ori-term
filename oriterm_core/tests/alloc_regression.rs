@@ -13,6 +13,7 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Instant;
 
 use oriterm_core::{Term, Theme, VoidListener};
 
@@ -46,15 +47,29 @@ unsafe impl GlobalAlloc for CountingAlloc {
 #[global_allocator]
 static GLOBAL: CountingAlloc = CountingAlloc;
 
+/// Allocation + byte counts from a measurement window.
+struct AllocMeasurement {
+    allocs: u64,
+    bytes: u64,
+}
+
 /// Measure allocations during `f()`. Enables counting, runs the closure,
-/// disables counting, and returns the allocation count.
-fn measure_allocs<F: FnOnce()>(f: F) -> u64 {
+/// disables counting, and returns both allocation count and bytes.
+fn measure(f: impl FnOnce()) -> AllocMeasurement {
     ALLOC_COUNT.store(0, Ordering::SeqCst);
     BYTES_ALLOCATED.store(0, Ordering::SeqCst);
     COUNTING.store(true, Ordering::SeqCst);
     f();
     COUNTING.store(false, Ordering::SeqCst);
-    ALLOC_COUNT.load(Ordering::SeqCst)
+    AllocMeasurement {
+        allocs: ALLOC_COUNT.load(Ordering::SeqCst),
+        bytes: BYTES_ALLOCATED.load(Ordering::SeqCst),
+    }
+}
+
+/// Measure allocations during `f()`. Returns allocation count only.
+fn measure_allocs<F: FnOnce()>(f: F) -> u64 {
+    measure(f).allocs
 }
 
 fn make_term() -> Term<VoidListener> {
@@ -163,4 +178,170 @@ fn rss_stability_under_sustained_output() {
         allocated < 50_000_000,
         "100k lines caused {allocated} bytes of allocations (expected < 50 MB)"
     );
+}
+
+/// Processing 1 MB of printable ASCII through VTE + Term must not allocate
+/// after warmup. This covers the full parse path: `Processor::advance()` →
+/// `Term::input()` → `Grid::put_char_ascii()`.
+#[test]
+fn vte_1mb_ascii_zero_alloc_after_warmup() {
+    let mut term = make_term();
+    let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
+
+    // Build a 1 MB buffer of printable ASCII (0x20–0x7E) with periodic \n.
+    let line = "A".repeat(79) + "\n";
+    let mut buf = Vec::new();
+    while buf.len() < 1_024 * 1_024 {
+        buf.extend_from_slice(line.as_bytes());
+    }
+    buf.truncate(1_024 * 1_024);
+
+    // Warmup: fill grid and scrollback to stabilize all internal capacities.
+    proc.advance(&mut term, &buf);
+
+    // Measure: second pass should produce near-zero allocations.
+    let allocs = measure_allocs(|| {
+        proc.advance(&mut term, &buf);
+    });
+
+    assert!(
+        allocs < ZERO_ALLOC_THRESHOLD,
+        "1 MB ASCII parse produced {allocs} allocations after warmup \
+         (expected < {ZERO_ALLOC_THRESHOLD})"
+    );
+}
+
+// --- Profiling tests (Section 23.3) ---
+
+/// Profile memory consumed by blank rows in scrollback.
+///
+/// Creates a 120-column terminal with 10K scrollback and fills it with
+/// alternating content/blank lines. Measures total bytes allocated for the
+/// blank rows to determine whether a compact `RowStorage::Blank` enum is
+/// justified (threshold: >5 MB savings).
+///
+/// Analytical expectation: 5,000 blank rows × 120 cols × 24 bytes/cell =
+/// 14.4 MB. Each blank `Row` stores a full `Vec<Cell>` even when every cell
+/// is default. A compact representation would use ~8 bytes per blank row.
+///
+/// Run with: `cargo test -p oriterm_core --test alloc_regression profile_blank -- --ignored`
+#[test]
+#[ignore = "profiling test — run separately to avoid counting allocator noise"]
+fn profile_blank_row_memory() {
+    let cols = 120;
+    let scrollback = 10_000;
+    let mut term = Term::new(50, cols, scrollback, Theme::default(), VoidListener);
+    let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
+
+    // Fill scrollback with alternating content and blank lines.
+    // Content line: 119 chars + \n. Blank line: just \n.
+    let content_line = "X".repeat(cols - 1) + "\n";
+    let blank_line = b"\n";
+
+    // Push enough lines to fill scrollback (need >10K lines to saturate).
+    // Each pair is one content + one blank = 2 lines.
+    let m = measure(|| {
+        for _ in 0..6_000 {
+            proc.advance(&mut term, content_line.as_bytes());
+            proc.advance(&mut term, blank_line);
+        }
+    });
+
+    // Theoretical: 10K rows × 120 cols × 24 bytes/cell = 28.8 MB total.
+    // Half blank → 14.4 MB for blank rows alone.
+    // The actual allocation includes Vec overhead per row (24 bytes ptr/len/cap)
+    // and allocator alignment, so expect slightly more.
+    let bytes_mb = m.bytes as f64 / (1024.0 * 1024.0);
+    let theoretical_blank_mb = (scrollback as f64 / 2.0) * (cols as f64) * 24.0 / (1024.0 * 1024.0);
+
+    eprintln!("--- Blank Row Memory Profile (Section 23.3) ---");
+    eprintln!("  Grid: {cols} cols, {scrollback} scrollback");
+    eprintln!(
+        "  Total bytes allocated: {:.1} MB ({} allocs)",
+        bytes_mb, m.allocs
+    );
+    eprintln!("  Theoretical blank row cost: {theoretical_blank_mb:.1} MB");
+    eprintln!("  (5K blank rows × {cols} cols × 24 bytes/cell)");
+    eprintln!(
+        "  Verdict: blank rows consume >{:.0} MB → {} compact blank optimization",
+        theoretical_blank_mb,
+        if theoretical_blank_mb > 5.0 {
+            "JUSTIFIES"
+        } else {
+            "does NOT justify"
+        }
+    );
+    eprintln!("-----------------------------------------------");
+
+    // Sanity: we should have allocated at least the grid memory.
+    assert!(
+        m.bytes > 1_000_000,
+        "expected substantial allocation for 10K-row scrollback, got {} bytes",
+        m.bytes
+    );
+}
+
+/// Profile allocation count during rapid resize cycles.
+///
+/// Simulates dragging a window edge by alternating between two terminal
+/// sizes for 100 cycles. Measures allocation count after warmup to determine
+/// whether a `row_pool` for resize reuse is justified (threshold: >1000
+/// allocs causing >16ms frame time).
+///
+/// Run with: `cargo test -p oriterm_core --test alloc_regression profile_resize -- --ignored`
+#[test]
+#[ignore = "profiling test — run separately to avoid counting allocator noise"]
+fn profile_resize_allocation_count() {
+    let mut term = Term::new(50, 120, 1000, Theme::default(), VoidListener);
+    let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
+
+    // Fill grid with content so resize has rows to reflow.
+    let line = "Hello world, this is terminal content for resize testing.\n";
+    for _ in 0..200 {
+        proc.advance(&mut term, line.as_bytes());
+    }
+
+    // Warmup: one resize cycle to stabilize internal capacities.
+    term.resize(40, 100);
+    term.resize(50, 120);
+
+    // Measure: 100 resize cycles alternating between two sizes.
+    let start = Instant::now();
+    let m = measure(|| {
+        for _ in 0..100 {
+            term.resize(40, 100);
+            term.resize(50, 120);
+        }
+    });
+    let elapsed = start.elapsed();
+
+    let allocs_per_cycle = m.allocs as f64 / 100.0;
+    let bytes_per_cycle = m.bytes as f64 / 100.0;
+    let ms_per_cycle = elapsed.as_secs_f64() * 1000.0 / 100.0;
+
+    eprintln!("--- Resize Allocation Profile (Section 23.3) ---");
+    eprintln!("  Resize cycle: 50×120 ↔ 40×100 (with reflow)");
+    eprintln!(
+        "  Cycles: 100, total time: {:.1}ms",
+        elapsed.as_secs_f64() * 1000.0
+    );
+    eprintln!(
+        "  Total: {} allocs, {:.1} KB",
+        m.allocs,
+        m.bytes as f64 / 1024.0
+    );
+    eprintln!(
+        "  Per cycle: {allocs_per_cycle:.1} allocs, {bytes_per_cycle:.0} bytes, {ms_per_cycle:.2}ms"
+    );
+    eprintln!(
+        "  Verdict: {} allocs/cycle, {ms_per_cycle:.2}ms/cycle → {} row pool optimization",
+        m.allocs / 100,
+        if m.allocs > 100_000 && ms_per_cycle > 16.0 {
+            "JUSTIFIES"
+        } else {
+            "does NOT justify"
+        }
+    );
+    eprintln!("  (Threshold: >1000 allocs/cycle with >16ms frame time)");
+    eprintln!("------------------------------------------------");
 }

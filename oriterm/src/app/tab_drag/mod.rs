@@ -6,6 +6,7 @@
 
 #[cfg(target_os = "windows")]
 mod merge;
+mod merge_core;
 #[cfg(target_os = "linux")]
 mod merge_linux;
 #[cfg(target_os = "macos")]

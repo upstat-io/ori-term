@@ -102,9 +102,8 @@ impl AtlasBindGroup {
 
     /// Recreate the bind group with a new texture view.
     ///
-    /// Called when the atlas texture changes (e.g. font size change + clear).
-    /// Reuses the existing sampler.
-    #[allow(dead_code, reason = "used on atlas clear/font change")]
+    /// Called when the atlas texture changes: grow-on-demand (new layer
+    /// allocated) or font size change + clear. Reuses the existing sampler.
     pub fn rebuild(&mut self, device: &Device, layout: &BindGroupLayout, view: &TextureView) {
         self.bind_group = create_atlas_bind_group(device, layout, view, &self.sampler);
     }

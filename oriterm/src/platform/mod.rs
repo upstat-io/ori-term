@@ -4,11 +4,11 @@
 //! implementations. Follows Chromium's pattern of thin platform glue
 //! behind a shared interface.
 
-pub mod config_paths;
-pub mod jump_list;
-pub mod memory;
-pub mod notify;
-pub mod scroll;
-pub mod shutdown;
-pub mod theme;
-pub mod url;
+pub(crate) mod config_paths;
+pub(crate) mod jump_list;
+pub(crate) mod memory;
+pub(crate) mod notify;
+pub(crate) mod scroll;
+pub(crate) mod shutdown;
+pub(crate) mod theme;
+pub(crate) mod url;

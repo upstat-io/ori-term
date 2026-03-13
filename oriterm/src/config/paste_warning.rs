@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// bracketed paste mode is active). Matches Windows Terminal's
 /// `Automatic` default behavior.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum PasteWarning {
+pub(crate) enum PasteWarning {
     /// Warn on any paste containing newlines.
     #[default]
     Always,

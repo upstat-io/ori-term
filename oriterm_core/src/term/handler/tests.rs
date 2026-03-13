@@ -5123,3 +5123,172 @@ fn resize_prunes_evicted_image_placements() {
         assert_eq!(t.image_cache().placement_count(), 0);
     }
 }
+
+// DECSET/DECRST mode sync: verify `named_private_mode_flag` agrees with
+// `apply_decset`/`apply_decrst` for every `NamedPrivateMode` variant.
+
+#[test]
+fn decset_decrst_flag_sync() {
+    use vte::ansi::NamedPrivateMode;
+
+    use super::helpers::named_private_mode_flag;
+    use crate::term::TermMode;
+
+    // All variants that map to a simple flag (no side-effects beyond
+    // `mode.insert`/`mode.remove`). Alt screen and SaveCursor variants
+    // have side effects (grid swaps, cursor save/restore) and are tested
+    // separately via VTE sequence tests.
+    let flag_variants = [
+        NamedPrivateMode::CursorKeys,
+        NamedPrivateMode::Origin,
+        NamedPrivateMode::LineWrap,
+        NamedPrivateMode::BlinkingCursor,
+        NamedPrivateMode::ShowCursor,
+        NamedPrivateMode::ReverseWraparound,
+        NamedPrivateMode::X10Mouse,
+        NamedPrivateMode::ReportMouseClicks,
+        NamedPrivateMode::ReportCellMouseMotion,
+        NamedPrivateMode::ReportAllMouseMotion,
+        NamedPrivateMode::ReportFocusInOut,
+        NamedPrivateMode::Utf8Mouse,
+        NamedPrivateMode::SgrMouse,
+        NamedPrivateMode::UrxvtMouse,
+        NamedPrivateMode::UrgencyHints,
+        NamedPrivateMode::BracketedPaste,
+        NamedPrivateMode::SyncUpdate,
+        NamedPrivateMode::AlternateScroll,
+        NamedPrivateMode::SixelScrolling,
+        NamedPrivateMode::SixelCursorRight,
+    ];
+
+    for variant in flag_variants {
+        let flag = named_private_mode_flag(variant)
+            .unwrap_or_else(|| panic!("{variant:?}: named_private_mode_flag returned None"));
+
+        // Start with the flag cleared so we can verify DECSET sets it.
+        let mut t = term();
+        t.mode.remove(flag);
+
+        t.apply_decset(variant);
+        assert!(
+            t.mode().contains(flag),
+            "{variant:?}: flag not set after apply_decset"
+        );
+
+        // apply_decrst should clear the flag.
+        t.apply_decrst(variant);
+        assert!(
+            !t.mode().contains(flag),
+            "{variant:?}: flag not cleared after apply_decrst"
+        );
+    }
+
+    // Variants that return None must be handled without panic.
+    let none_variants = [NamedPrivateMode::SaveCursor, NamedPrivateMode::ColumnMode];
+    for variant in none_variants {
+        assert!(
+            named_private_mode_flag(variant).is_none(),
+            "{variant:?}: expected None from named_private_mode_flag"
+        );
+    }
+
+    // Alt screen variants return Some(ALT_SCREEN) but have side effects.
+    // Just verify the flag mapping is correct.
+    let alt_variants = [
+        NamedPrivateMode::AltScreen,
+        NamedPrivateMode::AltScreenOpt,
+        NamedPrivateMode::SwapScreenAndSetRestoreCursor,
+    ];
+    for variant in alt_variants {
+        let flag = named_private_mode_flag(variant);
+        assert_eq!(
+            flag,
+            Some(TermMode::ALT_SCREEN),
+            "{variant:?}: expected ALT_SCREEN flag"
+        );
+    }
+}
+
+// --- ASCII fast path tests (23.2) ---
+
+#[test]
+fn ascii_fast_path_writes_cells_correctly() {
+    let mut t = term();
+    feed(&mut t, b"ABC");
+
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'B');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, 'C');
+    assert_eq!(grid.cursor().col(), Column(3));
+}
+
+#[test]
+fn ascii_fast_path_preserves_sgr_attributes() {
+    let mut t = term();
+    // ESC[31m = red foreground, then write ASCII.
+    feed(&mut t, b"\x1b[31mX");
+
+    let grid = t.grid();
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'X');
+    // Foreground should not be the default (it should be red / color index 1).
+    assert_ne!(
+        cell.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Foreground)
+    );
+}
+
+#[test]
+fn ascii_fast_path_falls_through_for_insert_mode() {
+    let mut t = term();
+    // Write "AB", then ESC[4h (INSERT mode), position at col 1, write "X".
+    feed(&mut t, b"AB\x1b[4h\x1b[1GX");
+
+    let grid = t.grid();
+    // INSERT mode: "X" inserted at col 0, shifting "AB" right.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'X');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, 'B');
+}
+
+#[test]
+fn ascii_fast_path_falls_through_for_non_ascii_charset() {
+    let mut t = term();
+    // ESC(0 = switch G0 to DEC Special Graphics. '`' (0x60) maps to diamond.
+    feed(&mut t, b"\x1b(0`");
+
+    let grid = t.grid();
+    // '`' in DEC Special Graphics maps to U+25C6 (diamond).
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, '\u{25C6}');
+}
+
+#[test]
+fn ascii_fast_path_handles_wrap_at_line_end() {
+    // 10-column terminal.
+    let mut t = Term::new(5, 10, 0, Theme::default(), crate::event::VoidListener);
+    // Write exactly 10 chars to fill the line, then one more to trigger wrap.
+    feed(&mut t, b"0123456789A");
+
+    let grid = t.grid();
+    // First line filled.
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, '9');
+    // 'A' wraps to line 1, col 0.
+    assert_eq!(grid[crate::index::Line(1)][Column(0)].ch, 'A');
+    assert_eq!(grid.cursor().col(), Column(1));
+    assert_eq!(grid.cursor().line(), 1);
+}
+
+#[test]
+fn ascii_fast_path_overwriting_wide_char_falls_to_slow_path() {
+    let mut t = term();
+    // Write a CJK character (width 2), then move cursor back and overwrite with ASCII.
+    // U+4E16 = '世' (width 2), encoded as UTF-8: E4 B8 96
+    feed(&mut t, b"\xe4\xb8\x96\x1b[1GA");
+
+    let grid = t.grid();
+    // ASCII 'A' at col 0 should replace the wide char (slow path handles cleanup).
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    // Col 1 should be cleared (spacer removed by slow path).
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, ' ');
+}

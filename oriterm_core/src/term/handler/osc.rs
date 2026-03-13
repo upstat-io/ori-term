@@ -95,13 +95,9 @@ impl<T: EventListener> Term<T> {
     ///
     /// Sends a `ColorRequest` event with a closure that formats the
     /// response escape sequence using the same terminator as the query.
-    pub(super) fn osc_dynamic_color_sequence(
-        &self,
-        prefix: String,
-        index: usize,
-        terminator: &str,
-    ) {
+    pub(super) fn osc_dynamic_color_sequence(&self, prefix: &str, index: usize, terminator: &str) {
         debug!("Color query for index {index} (prefix={prefix})");
+        let prefix = prefix.to_owned();
         let terminator = terminator.to_owned();
         self.event_listener.send_event(Event::ColorRequest(
             index,

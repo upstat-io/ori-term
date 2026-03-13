@@ -125,44 +125,18 @@ impl App {
             return;
         }
 
-        let idx = self.compute_drop_index_linux(target_wid, screen_x);
-        let target_session_wid = self
+        let target_left = self
             .windows
             .get(&target_wid)
-            .map(|c| c.window.session_window_id());
+            .and_then(|ctx| ctx.window.window().outer_position().ok())
+            .map_or(0.0, |p| p.x as f64);
+        let scale = self
+            .windows
+            .get(&target_wid)
+            .map_or(1.0, |ctx| ctx.window.scale_factor().factor());
+        let idx = self.compute_drop_index_for_target(target_wid, screen_x, target_left, scale);
 
-        // Move tab from torn window to target (local session).
-        if let Some(dest_wid) = target_session_wid {
-            let src_wid = self.session.window_for_tab(tab_id);
-            if let Some(wid) = src_wid {
-                if let Some(win) = self.session.get_window_mut(wid) {
-                    win.remove_tab(tab_id);
-                }
-            }
-            if let Some(win) = self.session.get_window_mut(dest_wid) {
-                win.insert_tab_at(idx, tab_id);
-            }
-        }
-
-        self.pump_mux_events();
-        self.remove_empty_window(winit_id);
-
-        // Activate and focus the target window.
-        if let Some(ctx) = self.windows.get(&target_wid) {
-            self.active_window = Some(ctx.window.session_window_id());
-            ctx.window.window().focus_window();
-        }
-        self.focused_window_id = Some(target_wid);
-
-        self.sync_tab_bar_for_window(target_wid);
-        self.refresh_platform_rects(target_wid);
-        self.resize_all_panes();
-
-        if let Some(ctx) = self.windows.get_mut(&target_wid) {
-            ctx.pane_cache.invalidate_all();
-            ctx.cached_dividers = None;
-            ctx.dirty = true;
-        }
+        self.execute_tab_merge(winit_id, tab_id, target_wid, idx);
     }
 
     /// Find a merge target window whose tab bar region contains the cursor.
@@ -203,24 +177,5 @@ impl App {
             }
         }
         None
-    }
-
-    /// Compute the drop index for inserting a tab at a screen X position.
-    fn compute_drop_index_linux(&self, target: WindowId, screen_x: f64) -> usize {
-        let Some(ctx) = self.windows.get(&target) else {
-            return 0;
-        };
-        let scale = ctx.window.scale_factor().factor();
-        let target_left = ctx
-            .window
-            .window()
-            .outer_position()
-            .map_or(0.0, |p| p.x as f64);
-        let local_x = screen_x - target_left;
-        let tab_width = ctx.tab_bar.layout().base_tab_width() as f64 * scale;
-        let left_margin = TAB_LEFT_MARGIN as f64 * scale;
-        let tab_count = ctx.tab_bar.layout().tab_count();
-        let raw = ((local_x - left_margin + tab_width / 2.0) / tab_width.max(1.0)).floor();
-        raw.clamp(0.0, tab_count as f64) as usize
     }
 }

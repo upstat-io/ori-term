@@ -11,9 +11,7 @@ use winit::window::WindowId;
 use crate::session::TabId;
 use crate::window_manager::WindowKind;
 use oriterm_ui::platform_windows::{self, OsDragResult};
-use oriterm_ui::widgets::tab_bar::constants::{
-    CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN,
-};
+use oriterm_ui::widgets::tab_bar::constants::{CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT};
 
 use super::{DragPhase, TabDragState};
 use crate::app::App;
@@ -63,51 +61,15 @@ impl App {
         let target = self.find_merge_target(winit_id, cursor, magnetism);
 
         if let Some((target_wid, screen_x)) = target {
-            let idx = self.compute_drop_index(target_wid, screen_x);
-            let target_session_wid = self
-                .windows
-                .get(&target_wid)
-                .map(|c| c.window.session_window_id());
+            let (scale, target_left) = self.windows.get(&target_wid).map_or((1.0, 0.0), |ctx| {
+                let s = ctx.window.scale_factor().factor();
+                let l = platform_windows::visible_frame_bounds(ctx.window.window())
+                    .map_or(0.0, |(l, _, _, _)| l as f64);
+                (s, l)
+            });
+            let idx = self.compute_drop_index_for_target(target_wid, screen_x, target_left, scale);
 
-            // Move tab from torn window to target (local session).
-            if let Some(dest_wid) = target_session_wid {
-                let src_wid = self.session.window_for_tab(tab_id);
-                if let Some(wid) = src_wid {
-                    if let Some(win) = self.session.get_window_mut(wid) {
-                        win.remove_tab(tab_id);
-                    }
-                }
-                if let Some(win) = self.session.get_window_mut(dest_wid) {
-                    win.insert_tab_at(idx, tab_id);
-                }
-            }
-
-            // Drain mux notifications from the move.
-            self.pump_mux_events();
-
-            // Remove the torn-off window (now empty).
-            self.remove_empty_window(winit_id);
-
-            // Activate and focus the target window.
-            if let Some(ctx) = self.windows.get(&target_wid) {
-                self.active_window = Some(ctx.window.session_window_id());
-                ctx.window.window().focus_window();
-            }
-            self.focused_window_id = Some(target_wid);
-
-            // Sync tab bars and refresh platform hit test rects.
-            self.sync_tab_bar_for_window(target_wid);
-            self.refresh_platform_rects(target_wid);
-
-            // Resize panes in the moved tab to fit the target window.
-            self.resize_all_panes();
-
-            // Mark target dirty.
-            if let Some(ctx) = self.windows.get_mut(&target_wid) {
-                ctx.pane_cache.invalidate_all();
-                ctx.cached_dividers = None;
-                ctx.dirty = true;
-            }
+            self.execute_tab_merge(winit_id, tab_id, target_wid, idx);
 
             // Seamless drag continuation if the merge was live.
             if is_live {
@@ -154,25 +116,6 @@ impl App {
             }
         }
         None
-    }
-
-    /// Compute the drop index for inserting a tab at a screen X position.
-    ///
-    /// Converts screen X to local coordinates within the target window,
-    /// then computes the tab index using center-based logic.
-    pub(super) fn compute_drop_index(&self, target: WindowId, screen_x: f64) -> usize {
-        let Some(ctx) = self.windows.get(&target) else {
-            return 0;
-        };
-        let scale = ctx.window.scale_factor().factor();
-        let target_left = platform_windows::visible_frame_bounds(ctx.window.window())
-            .map_or(0.0, |(l, _, _, _)| l as f64);
-        let local_x = screen_x - target_left;
-        let tab_width = ctx.tab_bar.layout().base_tab_width() as f64 * scale;
-        let left_margin = TAB_LEFT_MARGIN as f64 * scale;
-        let tab_count = ctx.tab_bar.layout().tab_count();
-        let raw = ((local_x - left_margin + tab_width / 2.0) / tab_width.max(1.0)).floor();
-        raw.clamp(0.0, tab_count as f64) as usize
     }
 
     /// Start a new in-bar drag on the target window for seamless continuation.

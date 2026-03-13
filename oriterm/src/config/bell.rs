@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Visual bell animation curve.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum BellAnimation {
+pub(crate) enum BellAnimation {
     #[default]
     EaseOut,
     Linear,
@@ -15,7 +15,7 @@ pub enum BellAnimation {
 /// Visual bell configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct BellConfig {
+pub(crate) struct BellConfig {
     /// Visual bell animation curve.
     pub animation: BellAnimation,
     /// Duration in milliseconds (0 = disabled).

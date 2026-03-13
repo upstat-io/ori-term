@@ -287,9 +287,7 @@ impl App {
             .handle_key(ui_event, &event_ctx);
         if matches!(
             resp.response,
-            EventResponse::RequestPaint
-                | EventResponse::RequestLayout
-                | EventResponse::RequestRedraw
+            EventResponse::RequestPaint | EventResponse::RequestLayout
         ) {
             ctx.dirty = true;
         }
@@ -319,9 +317,7 @@ impl App {
         let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
         if matches!(
             resp.response,
-            EventResponse::RequestPaint
-                | EventResponse::RequestLayout
-                | EventResponse::RequestRedraw
+            EventResponse::RequestPaint | EventResponse::RequestLayout
         ) {
             ctx.dirty = true;
         }
@@ -344,9 +340,7 @@ impl App {
             .handle_hover(HoverEvent::Leave, &event_ctx);
         if matches!(
             resp.response,
-            EventResponse::RequestPaint
-                | EventResponse::RequestLayout
-                | EventResponse::RequestRedraw
+            EventResponse::RequestPaint | EventResponse::RequestLayout
         ) {
             ctx.dirty = true;
         }

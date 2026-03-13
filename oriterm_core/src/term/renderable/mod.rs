@@ -154,8 +154,7 @@ pub struct RenderableContent {
     /// Scratch buffer for image extraction — reused across frames to
     /// avoid per-frame `HashSet` allocation. Not part of the semantic
     /// snapshot; only used internally by `extract_images`.
-    #[doc(hidden)]
-    pub seen_image_ids: HashSet<ImageId>,
+    pub(crate) seen_image_ids: HashSet<ImageId>,
 }
 
 impl Default for RenderableContent {

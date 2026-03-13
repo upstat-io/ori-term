@@ -23,10 +23,10 @@ use super::{
 };
 use codepoint_map::CodepointMap;
 pub(crate) use codepoint_map::parse_hex_range;
-pub use face::size_key;
+pub(crate) use face::size_key;
 pub(crate) use face::{FaceData, font_ref};
 use face::{build_face, compute_metrics, rasterize_from_face};
-pub use loading::FontSet;
+pub(crate) use loading::{FontByteCache, FontSet};
 pub(crate) use metadata::parse_features;
 use metadata::{
     FallbackMeta, MAX_FONT_SIZE, MIN_FONT_SIZE, default_features, effective_size_for,
@@ -35,7 +35,7 @@ use metadata::{
 
 /// A rasterized glyph bitmap ready for atlas upload.
 #[derive(Debug, Clone)]
-pub struct RasterizedGlyph {
+pub(crate) struct RasterizedGlyph {
     /// Bitmap width in pixels.
     pub width: u32,
     /// Bitmap height in pixels.
@@ -61,7 +61,7 @@ pub struct RasterizedGlyph {
 /// Owns all font face data and provides the bridge between font discovery
 /// and the GPU renderer. Resolves characters to glyph IDs, rasterizes
 /// bitmaps, and pre-caches ASCII glyphs.
-pub struct FontCollection {
+pub(crate) struct FontCollection {
     // Faces
     primary: [Option<FaceData>; 4],
     fallbacks: Vec<FaceData>,

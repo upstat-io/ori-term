@@ -241,6 +241,43 @@ pub fn prepare_frame_shaped_into(
         .and_then(|s| s.viewport_line_range(num_rows));
 }
 
+/// Cursor-blink-only fast path: rebuild only cursor instances.
+///
+/// All non-cursor content (backgrounds, glyphs, images, chrome, overlays)
+/// is already rendered into the content cache texture. This function only
+/// updates the cursor instance buffer for the blink overlay pass.
+pub fn update_cursor_only(
+    input: &FrameInput,
+    out: &mut PreparedFrame,
+    origin: (f32, f32),
+    cursor_blink_visible: bool,
+) {
+    out.cursors.clear();
+
+    let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    if cursor.visible && cursor_blink_visible {
+        let shape = if input.window_focused {
+            cursor.shape
+        } else {
+            CursorShape::HollowBlock
+        };
+        let cw = input.cell_size.width;
+        let ch = input.cell_size.height;
+        let (ox, oy) = origin;
+        build_cursor(
+            out,
+            shape,
+            cursor.column.0,
+            cursor.line,
+            cw,
+            ch,
+            ox,
+            oy,
+            input.palette.cursor_color,
+        );
+    }
+}
+
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.
 ///
 /// Backgrounds and cursors use the same per-cell logic as the unshaped path.

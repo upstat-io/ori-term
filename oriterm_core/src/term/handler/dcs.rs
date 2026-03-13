@@ -116,17 +116,20 @@ impl<T: EventListener> Term<T> {
         self.event_listener.send_event(Event::PtyWrite(response));
     }
 
-    /// CSI 14 t: report text area size in pixels (stub).
+    /// CSI 14 t: report text area size in pixels.
     ///
-    /// Real implementation requires window dimensions from the GUI layer.
-    /// Returns 0x0 until wired to the actual window.
+    /// Computes pixel dimensions from grid size and cell dimensions.
+    /// Before `set_cell_dimensions` is called, reports the default cell
+    /// size (8x16), which is reasonable for early queries.
     #[expect(
         clippy::needless_pass_by_ref_mut,
         reason = "Handler trait requires &mut self"
     )]
     pub(super) fn dcs_text_area_size_pixels(&mut self) {
-        debug!("text_area_size_pixels: no window yet, reporting 0x0");
-        let response = "\x1b[4;0;0t".to_string();
+        let grid = self.grid();
+        let height = grid.lines() as u32 * u32::from(self.cell_pixel_height);
+        let width = grid.cols() as u32 * u32::from(self.cell_pixel_width);
+        let response = format!("\x1b[4;{height};{width}t");
         self.event_listener.send_event(Event::PtyWrite(response));
     }
 }

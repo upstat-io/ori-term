@@ -159,15 +159,15 @@ impl<T: EventListener> Term<T> {
     fn kitty_delete(&mut self, cmd: &KittyCommand) {
         let spec = cmd.delete_specifier.unwrap_or(b'a');
 
-        // Extract cursor position before borrowing cache.
+        // Extract positions before borrowing cache mutably.
         let grid = self.grid();
         let cursor = grid.cursor();
         let cursor_col = cursor.col().0;
         let cursor_line = cursor.line();
-        let scrollback_len = grid.scrollback().len();
-        let display_offset = grid.display_offset();
-        let abs_row = scrollback_len.saturating_sub(display_offset) + cursor_line;
-        let cursor_row = StableRowIndex(abs_row as u64);
+        let cursor_row = StableRowIndex::from_visible(grid, cursor_line);
+        // Protocol y for d=y/Y is 1-based viewport row → convert to stable.
+        let protocol_row =
+            StableRowIndex::from_visible(grid, cmd.source_y.saturating_sub(1) as usize);
 
         let cache = self.image_cache_mut();
 
@@ -214,13 +214,9 @@ impl<T: EventListener> Term<T> {
                 cache.remove_placements_at_column(col);
                 cache.remove_orphans();
             }
-            b'y' => {
-                let row = StableRowIndex(u64::from(cmd.source_y));
-                cache.remove_placements_at_row(row);
-            }
+            b'y' => cache.remove_placements_at_row(protocol_row),
             b'Y' => {
-                let row = StableRowIndex(u64::from(cmd.source_y));
-                cache.remove_placements_at_row(row);
+                cache.remove_placements_at_row(protocol_row);
                 cache.remove_orphans();
             }
             b'z' => {
@@ -343,8 +339,12 @@ impl<T: EventListener> Term<T> {
 
         let path = std::path::Path::new(path_str);
 
-        if path_str.contains("..") {
-            return Err("EINVAL: path traversal not allowed".to_string());
+        // Reject path traversal via component inspection (not string matching,
+        // which `contains("..")` would get wrong on paths like `foo/..bar`).
+        for component in path.components() {
+            if matches!(component, std::path::Component::ParentDir) {
+                return Err("EINVAL: path traversal not allowed".to_string());
+            }
         }
 
         let max_bytes = self.image_cache().max_single_image_bytes();
@@ -393,11 +393,7 @@ impl<T: EventListener> Term<T> {
         let cursor = grid.cursor();
         let col = cursor.col().0;
         let line = cursor.line();
-        let scrollback_len = grid.scrollback().len();
-        let display_offset = grid.display_offset();
-
-        let abs_row = scrollback_len.saturating_sub(display_offset) + line;
-        let stable_row = StableRowIndex(abs_row as u64);
+        let stable_row = StableRowIndex::from_visible(grid, line);
 
         let img = self.image_cache().get_no_touch(ImageId(image_id));
         let (img_w, img_h) = img.map_or((0, 0), |i| (i.width, i.height));

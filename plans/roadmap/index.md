@@ -19,6 +19,9 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 | ~~1~~ | ~~44 — Multi-Process Window Architecture~~ | ~~Complete (2 Windows named pipe items deferred to Windows platform support)~~ |
 | ~~2~~ | ~~50 — Runtime Efficiency~~ | ~~Complete~~ |
 | ~~3~~ | ~~43 — Compositor Layer System~~ | ~~Complete~~ |
+| ~~4~~ | ~~23.3 — Memory Optimization: Atlas Over-Allocation~~ | ~~Complete~~ |
+| ~~5~~ | ~~23.3 — Memory Optimization: Font Data Deduplication~~ | ~~Complete~~ |
+| ~~6~~ | ~~23.3 — Memory Optimization: Content Cache Texture~~ | ~~Complete — GPU-only texture (no RSS impact), 20x idle CPU savings justifies the cost~~ |
 
 ---
 
@@ -504,6 +507,9 @@ ring buffer, ScrollbackBuffer, O(1) push, wrapping index, row pool, grid resize 
 parsing performance, PTY buffer size, fast ASCII path, put_ascii_run, MAX_LOCKED_PARSE
 rendering performance, instance buffer reuse, frame pacing, FRAME_BUDGET, upload_buffer
 memory optimization, alt screen lazy allocation, CellExtra, Row occupancy, occ
+atlas over-allocation, texture array, grow-on-demand, PAGE_SIZE, MAX_PAGES, create_texture_array
+font data duplication, FontByteCache, Arc<Vec<u8>>, NotoColorEmoji, fallback fonts, font loading
+content cache texture, content_cache, ensure_content_cache, cursor blink, offscreen texture
 benchmarks, criterion, throughput, latency, FPS, regression, vte_throughput
 selection damage, selection_dirty, symmetric difference, incremental damage
 synchronized output, Mode 2026, sync_bytes_count, MuxWakeup coalescing

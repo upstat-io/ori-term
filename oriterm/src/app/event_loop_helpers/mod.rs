@@ -64,20 +64,22 @@ impl App {
     pub(super) fn modal_loop_render(&mut self) {
         self.pump_mux_events();
 
-        let dirty_ids: Vec<winit::window::WindowId> = self
-            .windows
-            .iter()
-            .filter(|(_, ctx)| ctx.dirty)
-            .map(|(&id, _)| id)
-            .collect();
-        if dirty_ids.is_empty() {
+        self.scratch_dirty_windows.clear();
+        self.scratch_dirty_windows.extend(
+            self.windows
+                .iter()
+                .filter(|(_, ctx)| ctx.dirty)
+                .map(|(&id, _)| id),
+        );
+        if self.scratch_dirty_windows.is_empty() {
             return;
         }
 
         let saved_focused = self.focused_window_id;
         let saved_active = self.active_window;
 
-        for wid in dirty_ids {
+        for i in 0..self.scratch_dirty_windows.len() {
+            let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.windows.get_mut(&wid) {
                 ctx.dirty = false;
             }

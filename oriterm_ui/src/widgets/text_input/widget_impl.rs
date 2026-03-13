@@ -210,7 +210,7 @@ impl TextInputWidget {
         self.delete_selection();
         self.text.insert(self.cursor, ch);
         self.cursor += ch.len_utf8();
-        WidgetResponse::redraw().with_action(WidgetAction::TextChanged {
+        WidgetResponse::layout().with_action(WidgetAction::TextChanged {
             id: self.id,
             text: self.text.clone(),
         })
@@ -255,9 +255,9 @@ impl TextInputWidget {
         WidgetResponse::paint()
     }
 
-    /// Returns a redraw response with `TextChanged` action.
+    /// Returns a layout response with `TextChanged` action.
     fn text_changed_response(&self) -> WidgetResponse {
-        WidgetResponse::redraw().with_action(WidgetAction::TextChanged {
+        WidgetResponse::layout().with_action(WidgetAction::TextChanged {
             id: self.id,
             text: self.text.clone(),
         })

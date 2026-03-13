@@ -14,7 +14,7 @@ use super::draw_list_convert::TierClips;
 use super::frame_input::ViewportSize;
 use super::instance_writer::InstanceWriter;
 use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
-use super::srgb_to_linear;
+use super::{maybe_shrink_vec, srgb_to_linear};
 
 /// Instance index ranges for a single overlay's content within the shared buffers.
 ///
@@ -77,49 +77,49 @@ pub struct ImageQuad {
 /// rect backgrounds from draw 6, since all UI rects shared a single buffer.
 pub struct PreparedFrame {
     /// Background rectangle instances (solid-color cell fills).
-    pub backgrounds: InstanceWriter,
+    pub(crate) backgrounds: InstanceWriter,
     /// Monochrome glyph instances (`R8Unorm` atlas, tinted by `fg_color`).
-    pub glyphs: InstanceWriter,
+    pub(crate) glyphs: InstanceWriter,
     /// LCD subpixel glyph instances (`Rgba8Unorm` atlas, per-channel blend).
-    pub subpixel_glyphs: InstanceWriter,
+    pub(crate) subpixel_glyphs: InstanceWriter,
     /// Color glyph instances (`Rgba8Unorm` atlas, rendered as-is).
-    pub color_glyphs: InstanceWriter,
+    pub(crate) color_glyphs: InstanceWriter,
     /// Cursor instances (block, bar, underline shapes).
-    pub cursors: InstanceWriter,
+    pub(crate) cursors: InstanceWriter,
     /// UI rect instances (SDF rounded rectangles — chrome layer).
-    pub ui_rects: InstanceWriter,
+    pub(crate) ui_rects: InstanceWriter,
     /// UI monochrome glyph instances (chrome text, drawn after UI rects).
-    pub ui_glyphs: InstanceWriter,
+    pub(crate) ui_glyphs: InstanceWriter,
     /// UI subpixel glyph instances (chrome text, drawn after UI rects).
-    pub ui_subpixel_glyphs: InstanceWriter,
+    pub(crate) ui_subpixel_glyphs: InstanceWriter,
     /// UI color glyph instances (chrome text, drawn after UI rects).
-    pub ui_color_glyphs: InstanceWriter,
+    pub(crate) ui_color_glyphs: InstanceWriter,
     /// Overlay rect instances (SDF rounded rectangles — overlay layer, above chrome text).
-    pub overlay_rects: InstanceWriter,
+    pub(crate) overlay_rects: InstanceWriter,
     /// Overlay monochrome glyph instances (drawn after overlay rects).
-    pub overlay_glyphs: InstanceWriter,
+    pub(crate) overlay_glyphs: InstanceWriter,
     /// Overlay subpixel glyph instances (drawn after overlay rects).
-    pub overlay_subpixel_glyphs: InstanceWriter,
+    pub(crate) overlay_subpixel_glyphs: InstanceWriter,
     /// Overlay color glyph instances (drawn after overlay rects).
-    pub overlay_color_glyphs: InstanceWriter,
+    pub(crate) overlay_color_glyphs: InstanceWriter,
     /// Clip segments for the chrome tier (draws 6–9), one per writer.
-    pub ui_clips: TierClips,
+    pub(crate) ui_clips: TierClips,
     /// Clip segments for the overlay tier (draws 10–13), one per writer.
-    pub overlay_clips: TierClips,
+    pub(crate) overlay_clips: TierClips,
     /// Per-overlay draw ranges for correct z-ordering between stacked overlays.
     ///
     /// Each entry corresponds to one overlay (back-to-front order). The render
     /// pass draws each overlay as a complete unit before moving to the next.
-    pub overlay_draw_ranges: Vec<OverlayDrawRange>,
+    pub(crate) overlay_draw_ranges: Vec<OverlayDrawRange>,
     /// Image quads below text (`z_index` < 0).
-    pub image_quads_below: Vec<ImageQuad>,
+    pub(crate) image_quads_below: Vec<ImageQuad>,
     /// Image quads above text (`z_index` >= 0).
-    pub image_quads_above: Vec<ImageQuad>,
+    pub(crate) image_quads_above: Vec<ImageQuad>,
     /// Per-row instance byte ranges in the terminal-tier buffers.
     ///
     /// Index = viewport line. Used by the incremental prepare path to copy
     /// clean rows' instances from the previous frame without regenerating them.
-    pub row_ranges: Vec<RowInstanceRanges>,
+    pub(crate) row_ranges: Vec<RowInstanceRanges>,
     /// Saved terminal-tier data from the previous frame for incremental updates.
     ///
     /// Swapped out at the start of each prepare pass; clean rows copy from here.
@@ -130,10 +130,12 @@ pub struct PreparedFrame {
     /// incremental path to detect which rows changed selection state.
     /// Persists across `clear()` and `save_terminal_tier()`.
     pub(crate) prev_selection_range: Option<(usize, usize)>,
+    /// Reusable scratch buffer for per-row dirty flags (incremental rendering).
+    pub(crate) scratch_dirty: Vec<bool>,
     /// Viewport pixel dimensions for uniform buffer update.
-    pub viewport: ViewportSize,
+    pub(crate) viewport: ViewportSize,
     /// Window clear color (alpha-premultiplied).
-    pub clear_color: [f64; 4],
+    pub(crate) clear_color: [f64; 4],
 }
 
 impl PreparedFrame {
@@ -161,6 +163,7 @@ impl PreparedFrame {
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
             prev_selection_range: None,
+            scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -201,6 +204,7 @@ impl PreparedFrame {
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
             prev_selection_range: None,
+            scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -276,6 +280,14 @@ impl PreparedFrame {
         count += self.image_quads_above.len() as u32;
 
         count
+    }
+
+    /// Whether the terminal tier has rendered data from a prior frame.
+    ///
+    /// Used by the cursor-blink-only fast path to decide whether to skip
+    /// the full prepare pipeline and just update cursor instances.
+    pub fn has_terminal_data(&self) -> bool {
+        !self.backgrounds.is_empty()
     }
 
     /// Reset all buffers for the next frame, retaining allocated memory.
@@ -425,15 +437,6 @@ fn rgb_to_clear(c: Rgb, opacity: f64) -> [f64; 4] {
         f64::from(srgb_to_linear(c.b)) * opacity,
         opacity,
     ]
-}
-
-/// Shrink a Vec if capacity vastly exceeds usage (> 4× len and > 4096 elements).
-fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
-    let cap = v.capacity();
-    let len = v.len();
-    if cap > 4 * len && cap > 4096 {
-        v.shrink_to(len * 2);
-    }
 }
 
 #[cfg(test)]
