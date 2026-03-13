@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Allows overriding OpenType features and size for individual fallback fonts.
 /// Users specify these via `[[font.fallback]]` TOML array-of-tables.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FallbackFontConfig {
+pub(crate) struct FallbackFontConfig {
     /// Font family name (resolved via platform font discovery) or absolute path.
     pub family: String,
     /// Override OpenType features for this fallback (uses primary features if `None`).
@@ -26,7 +26,7 @@ pub struct FallbackFontConfig {
 /// normal fallback chain. Common use: Nerd Font symbols, CJK to a specific
 /// variant, or emoji to a dedicated color font.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CodepointMapConfig {
+pub(crate) struct CodepointMapConfig {
     /// Hex range: `"E000-F8FF"` for a range, or `"E0B0"` for a single codepoint.
     pub range: String,
     /// Font family name to use for this codepoint range.
@@ -36,7 +36,7 @@ pub struct CodepointMapConfig {
 /// Font configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct FontConfig {
+pub(crate) struct FontConfig {
     /// Font size in points.
     pub size: f32,
     /// Primary font family name.

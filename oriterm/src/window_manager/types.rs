@@ -100,23 +100,23 @@ impl DialogKind {
 
 /// A tracked OS window in the window manager.
 #[derive(Debug, Clone)]
-pub struct ManagedWindow {
+pub(crate) struct ManagedWindow {
     /// Winit window ID (for event routing from the OS).
-    pub winit_id: WindowId,
+    pub(crate) winit_id: WindowId,
     /// Window kind (determines behavior and rendering pipeline).
-    pub kind: WindowKind,
+    pub(crate) kind: WindowKind,
     /// Parent window (for dialogs and initially for tear-offs).
     /// `None` for root-level main windows.
-    pub parent: Option<WindowId>,
+    pub(crate) parent: Option<WindowId>,
     /// Child windows owned by this window.
     /// Destroyed when this window closes.
-    pub children: Vec<WindowId>,
+    pub(crate) children: Vec<WindowId>,
     /// Whether the window is currently visible.
     #[allow(
         dead_code,
         reason = "window manager API — read during main window migration"
     )]
-    pub visible: bool,
+    pub(crate) visible: bool,
 }
 
 /// Request to create a new OS window through the window manager.

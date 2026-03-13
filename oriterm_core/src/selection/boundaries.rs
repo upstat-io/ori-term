@@ -22,7 +22,7 @@ pub const DEFAULT_WORD_DELIMITERS: &str = ",│`|:\"' ()[]{}<>\t";
 /// tab), 2 for non-whitespace delimiters. The `word_delimiters` string is
 /// the authoritative set of boundary characters — anything not in it is a
 /// word character.
-pub(crate) fn delimiter_class(c: char, word_delimiters: &str) -> u8 {
+pub fn delimiter_class(c: char, word_delimiters: &str) -> u8 {
     if c == '\0' {
         1
     } else if c == ' ' || c == '\t' {

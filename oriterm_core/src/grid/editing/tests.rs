@@ -535,7 +535,7 @@ fn erase_line_below_with_bce() {
 /// Helper: create a grid and drain its dirty state so tests start clean.
 fn clean_grid(lines: usize, cols: usize) -> Grid {
     let mut grid = Grid::new(lines, cols);
-    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+    grid.dirty_mut().drain().for_each(drop);
     grid
 }
 
@@ -546,7 +546,7 @@ fn put_char_marks_cursor_line_dirty() {
     grid.cursor_mut().set_col(Column(0));
     grid.put_char('A');
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert_eq!(dirty, vec![2]);
 }
 
@@ -557,11 +557,11 @@ fn put_char_wraparound_marks_new_line_dirty() {
     for ch in "ABCDE".chars() {
         grid.put_char(ch);
     }
-    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+    grid.dirty_mut().drain().for_each(drop);
 
     // This put_char triggers wrap to line 1.
     grid.put_char('F');
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert!(dirty.contains(&1), "new line should be dirty: {dirty:?}");
 }
 
@@ -572,7 +572,7 @@ fn insert_blank_marks_cursor_line_dirty() {
     grid.cursor_mut().set_col(Column(2));
     grid.insert_blank(3);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert_eq!(dirty, vec![3]);
 }
 
@@ -583,12 +583,12 @@ fn delete_chars_marks_cursor_line_dirty() {
     grid.put_char('A');
     grid.put_char('B');
     grid.put_char('C');
-    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+    grid.dirty_mut().drain().for_each(drop);
 
     grid.cursor_mut().set_col(Column(0));
     grid.delete_chars(1);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert_eq!(dirty, vec![0]);
 }
 
@@ -596,12 +596,12 @@ fn delete_chars_marks_cursor_line_dirty() {
 fn erase_chars_marks_cursor_line_dirty() {
     let mut grid = clean_grid(5, 10);
     grid.put_char('A');
-    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+    grid.dirty_mut().drain().for_each(drop);
 
     grid.cursor_mut().set_col(Column(0));
     grid.erase_chars(5);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert_eq!(dirty, vec![0]);
 }
 
@@ -612,7 +612,7 @@ fn erase_line_below_marks_cursor_line_dirty() {
     grid.cursor_mut().set_col(Column(3));
     grid.erase_line(LineEraseMode::Right);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert_eq!(dirty, vec![2]);
 }
 
@@ -623,7 +623,7 @@ fn erase_line_above_marks_cursor_line_dirty() {
     grid.cursor_mut().set_col(Column(3));
     grid.erase_line(LineEraseMode::Left);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert_eq!(dirty, vec![2]);
 }
 
@@ -633,7 +633,7 @@ fn erase_line_all_marks_cursor_line_dirty() {
     grid.cursor_mut().set_line(2);
     grid.erase_line(LineEraseMode::All);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert_eq!(dirty, vec![2]);
 }
 
@@ -644,7 +644,7 @@ fn erase_display_below_marks_cursor_and_below_dirty() {
     grid.cursor_mut().set_col(Column(3));
     grid.erase_display(DisplayEraseMode::Below);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     // Cursor line (2) + lines below (3, 4).
     assert_eq!(dirty, vec![2, 3, 4]);
 }
@@ -656,7 +656,7 @@ fn erase_display_above_marks_above_and_cursor_dirty() {
     grid.cursor_mut().set_col(Column(3));
     grid.erase_display(DisplayEraseMode::Above);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     // Lines above (0, 1) + cursor line (2).
     assert_eq!(dirty, vec![0, 1, 2]);
 }
@@ -666,7 +666,7 @@ fn erase_display_all_marks_all_dirty() {
     let mut grid = clean_grid(5, 10);
     grid.erase_display(DisplayEraseMode::All);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     assert_eq!(dirty, vec![0, 1, 2, 3, 4]);
 }
 
@@ -677,7 +677,7 @@ fn erase_display_below_does_not_dirty_lines_above() {
     grid.cursor_mut().set_col(Column(0));
     grid.erase_display(DisplayEraseMode::Below);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     // Only lines 3 and 4.
     assert_eq!(dirty, vec![3, 4]);
 }
@@ -689,7 +689,7 @@ fn erase_display_above_does_not_dirty_lines_below() {
     grid.cursor_mut().set_col(Column(5));
     grid.erase_display(DisplayEraseMode::Above);
 
-    let dirty: Vec<usize> = grid.dirty_mut().drain().collect();
+    let dirty: Vec<usize> = grid.dirty_mut().drain().map(|d| d.line).collect();
     // Only lines 0 and 1.
     assert_eq!(dirty, vec![0, 1]);
 }
@@ -1048,4 +1048,47 @@ fn snapshot_wide_char_put_and_wrap() {
     |好_    |
     |      |
     ");
+}
+
+// INSERT mode damage tracking tests.
+
+#[test]
+fn insert_blank_then_put_char_damages_cursor_to_right_edge() {
+    // Simulates INSERT mode: insert_blank shifts cells right, then put_char writes.
+    // Combined damage should cover [col, cols-1] (the full shifted region).
+    let mut grid = grid_with_text(3, 10, "ABCDEFGHIJ");
+    grid.dirty_mut().drain().for_each(drop);
+
+    // Move cursor to col 3 (simulating cursor positioning before INSERT write).
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(3));
+
+    // INSERT mode sequence: insert_blank then put_char.
+    grid.insert_blank(1);
+    grid.put_char('X');
+
+    let items: Vec<_> = grid.dirty_mut().drain().collect();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].line, 0);
+    // Damage must cover from cursor column (3) to right edge (9).
+    assert_eq!(items[0].left, 3);
+    assert_eq!(items[0].right, 9);
+}
+
+#[test]
+fn insert_blank_at_col_zero_damages_full_line() {
+    // INSERT at column 0 damages [0, cols-1] which is the full line.
+    let mut grid = grid_with_text(3, 10, "ABCDEFGHIJ");
+    grid.dirty_mut().drain().for_each(drop);
+
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+
+    grid.insert_blank(1);
+    grid.put_char('Z');
+
+    let items: Vec<_> = grid.dirty_mut().drain().collect();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].left, 0);
+    assert_eq!(items[0].right, 9);
 }

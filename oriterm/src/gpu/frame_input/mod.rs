@@ -42,6 +42,41 @@ impl FrameSelection {
         let stable = StableRowIndex(self.base_stable + viewport_line as u64);
         self.bounds.contains(stable, col)
     }
+
+    /// Compute the viewport line range covered by this selection.
+    ///
+    /// Returns `Some((start, end))` where both are inclusive viewport line
+    /// indices clamped to `[0, num_rows)`. Returns `None` if the selection
+    /// is entirely outside the viewport.
+    pub fn viewport_line_range(&self, num_rows: usize) -> Option<(usize, usize)> {
+        if num_rows == 0 {
+            return None;
+        }
+
+        let sel_start = self.bounds.start.row.0;
+        let sel_end = self.bounds.end.row.0;
+
+        // Selection entirely above viewport.
+        if sel_end < self.base_stable {
+            return None;
+        }
+
+        // Convert stable rows to viewport-relative, clamping to [0, num_rows).
+        let start = if sel_start >= self.base_stable {
+            (sel_start - self.base_stable) as usize
+        } else {
+            0 // Selection starts above viewport.
+        };
+
+        let end = (sel_end - self.base_stable) as usize;
+
+        // Selection entirely below viewport.
+        if start >= num_rows {
+            return None;
+        }
+
+        Some((start, end.min(num_rows - 1)))
+    }
 }
 
 /// Search rendering snapshot for one frame.
@@ -92,6 +127,33 @@ impl FrameSearch {
             match_count,
             query: snapshot.search_query.clone(),
         })
+    }
+
+    /// Refill this `FrameSearch` from a snapshot, reusing allocations.
+    ///
+    /// Returns `false` if search is not active (caller should set field to `None`).
+    #[allow(
+        dead_code,
+        reason = "infrastructure for allocation-reusing extract path"
+    )]
+    pub fn update_from_snapshot(&mut self, snapshot: &PaneSnapshot) -> bool {
+        if !snapshot.search_active {
+            return false;
+        }
+        self.matches.clear();
+        self.matches
+            .extend(snapshot.search_matches.iter().map(|m| SearchMatch {
+                start_row: StableRowIndex(m.start_row),
+                start_col: m.start_col as usize,
+                end_row: StableRowIndex(m.end_row),
+                end_col: m.end_col as usize,
+            }));
+        self.match_count = self.matches.len();
+        self.focused = snapshot.search_focused.map_or(0, |f| f as usize);
+        self.base_stable = snapshot.stable_row_base;
+        self.query.clear();
+        self.query.push_str(&snapshot.search_query);
+        true
     }
 
     /// Classify a visible cell for search match highlighting.
@@ -295,17 +357,22 @@ impl FrameInput {
     /// cells use default dark-theme colors. Cell size is 8×16 px.
     #[cfg(test)]
     pub fn test_grid(cols: usize, rows: usize, text: &str) -> Self {
-        use oriterm_core::{
-            CellFlags, Column, CursorShape, RenderableCell, RenderableContent, RenderableCursor,
-            TermMode,
-        };
+        use oriterm_core::{CellFlags, Column, RenderableCell, RenderableContent, TermMode};
 
         let fg = Rgb {
             r: 211,
             g: 215,
             b: 207,
         };
-        let bg = Rgb { r: 0, g: 0, b: 0 };
+        // Cell bg differs from palette background so that bg quads are
+        // emitted in tests (the prepare phase skips cells whose bg matches
+        // the palette background to support window transparency/glass).
+        let bg = Rgb {
+            r: 30,
+            g: 30,
+            b: 46,
+        };
+        let palette_bg = Rgb { r: 0, g: 0, b: 0 };
 
         let mut cells = Vec::with_capacity(cols * rows);
         let mut chars = text.chars();
@@ -327,28 +394,18 @@ impl FrameInput {
             }
         }
 
+        let mut content = RenderableContent::default();
+        content.cells = cells;
+        content.cursor.visible = true;
+        content.mode = TermMode::SHOW_CURSOR;
+        content.all_dirty = true;
+
         Self {
-            content: RenderableContent {
-                cells,
-                cursor: RenderableCursor {
-                    line: 0,
-                    column: Column(0),
-                    shape: CursorShape::default(),
-                    visible: true,
-                },
-                display_offset: 0,
-                stable_row_base: 0,
-                mode: TermMode::SHOW_CURSOR,
-                all_dirty: true,
-                damage: Vec::new(),
-                images: Vec::new(),
-                image_data: Vec::new(),
-                images_dirty: false,
-            },
+            content,
             viewport: ViewportSize::new(cols as u32 * 8, rows as u32 * 16),
             cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
             palette: FramePalette {
-                background: bg,
+                background: palette_bg,
                 foreground: fg,
                 cursor_color: Rgb {
                     r: 255,

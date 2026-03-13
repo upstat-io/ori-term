@@ -181,9 +181,9 @@ impl GpuState {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: f64::from(bg.r) / 255.0 * f64::from(opacity),
-                            g: f64::from(bg.g) / 255.0 * f64::from(opacity),
-                            b: f64::from(bg.b) / 255.0 * f64::from(opacity),
+                            r: f64::from(super::srgb_to_linear(bg.r)) * f64::from(opacity),
+                            g: f64::from(super::srgb_to_linear(bg.g)) * f64::from(opacity),
+                            b: f64::from(super::srgb_to_linear(bg.b)) * f64::from(opacity),
                             a: f64::from(opacity),
                         }),
                         store: wgpu::StoreOp::Store,

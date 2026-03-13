@@ -69,9 +69,9 @@ pub struct ImageData {
     pub height: u32,
     /// Decoded RGBA pixel data (shared across placements).
     ///
-    /// GPU layer receives `&[u8]` via `data.as_slice()` — never clone
-    /// the `Arc` across the core-to-GPU boundary.
-    pub data: Arc<Vec<u8>>,
+    /// GPU layer receives `&[u8]` via [`RenderableImageData::data`] —
+    /// never clone the `Arc` across the core-to-GPU boundary.
+    pub(crate) data: Arc<Vec<u8>>,
     /// Original format before decode.
     pub format: ImageFormat,
     /// How the image was transmitted.

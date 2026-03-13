@@ -10,9 +10,8 @@ use oriterm_core::Rgb;
 use oriterm_ui::icons::ResolvedIcons;
 
 use super::WindowRenderer;
-use super::helpers::{ShapingScratch, pre_cache_atlas};
-use crate::font::{FontCollection, GlyphFormat};
-use crate::gpu::atlas::GlyphAtlas;
+use super::helpers::ShapingScratch;
+use crate::font::FontCollection;
 use crate::gpu::bind_groups::{AtlasBindGroup, UniformBuffer};
 use crate::gpu::draw_list_convert::TierClips;
 use crate::gpu::frame_input::ViewportSize;
@@ -59,20 +58,9 @@ impl WindowRenderer {
 
         let uniform_buffer = UniformBuffer::new(device, &pipelines.uniform_layout);
 
-        // Pre-cache ASCII into the appropriate atlas for UI text.
-        let format = ui_font_collection.format();
-        let (atlas, subpixel_atlas) = if format.is_subpixel() {
-            let atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
-            let mut sp_atlas = GlyphAtlas::new(device, format);
-            pre_cache_atlas(&mut sp_atlas, &mut ui_font_collection, queue);
-            (atlas, sp_atlas)
-        } else {
-            let mut atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
-            let sp_atlas = GlyphAtlas::new(device, GlyphFormat::SubpixelRgb);
-            pre_cache_atlas(&mut atlas, &mut ui_font_collection, queue);
-            (atlas, sp_atlas)
-        };
-        let color_atlas = GlyphAtlas::new(device, GlyphFormat::Color);
+        // Atlases: mono + subpixel (with ASCII pre-cached) + color (empty).
+        let (atlas, subpixel_atlas, color_atlas) =
+            super::helpers::create_atlases(device, queue, &mut ui_font_collection);
 
         let atlas_bind_group = AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view());
         let subpixel_atlas_bind_group =
@@ -91,6 +79,9 @@ impl WindowRenderer {
             atlas,
             subpixel_atlas,
             color_atlas,
+            atlas_generation: 0,
+            subpixel_atlas_generation: 0,
+            color_atlas_generation: 0,
             empty_keys: HashSet::new(),
             // UI font serves as primary — terminal shaping won't be invoked.
             font_collection: ui_font_collection,
@@ -119,6 +110,9 @@ impl WindowRenderer {
             image_texture_cache: ImageTextureCache::new(device),
             image_instance_buffer: None,
             image_instance_data: Vec::new(),
+            content_cache: None,
+            content_cache_view: None,
+            content_cache_size: (0, 0),
         }
     }
 

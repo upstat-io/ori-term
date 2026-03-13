@@ -50,10 +50,50 @@ fn reset_makes_visible() {
 }
 
 #[test]
-fn next_toggle_is_in_the_future() {
+fn next_toggle_is_approximately_one_interval_away() {
     let blink = CursorBlink::new(DEFAULT_BLINK_INTERVAL);
+    let now = std::time::Instant::now();
     let next = blink.next_toggle();
-    assert!(next > std::time::Instant::now() - Duration::from_millis(10));
+
+    // next_toggle should be within one interval of now (freshly created blink
+    // has epoch ≈ now, so next toggle ≈ now + interval).
+    let delta = next.duration_since(now);
+    assert!(
+        delta <= DEFAULT_BLINK_INTERVAL + Duration::from_millis(50),
+        "next_toggle too far in the future: {delta:?}",
+    );
+    assert!(
+        delta >= Duration::from_millis(1),
+        "next_toggle should be in the future, got delta: {delta:?}",
+    );
+}
+
+#[test]
+fn consecutive_toggles_spaced_by_one_interval() {
+    let blink = CursorBlink::new(Duration::from_millis(500));
+
+    // next_toggle = epoch + (floor(elapsed/interval) + 1) * interval.
+    // At phase 0 (elapsed ≈ 0): next = epoch + 500ms.
+    // At phase 1 (elapsed ≈ 500ms): next = epoch + 1000ms.
+    // Gap between consecutive phase toggles is always exactly one interval.
+    //
+    // Verify by computing next_toggle at two different elapsed offsets
+    // within consecutive phases. Since we can't control Instant::now(),
+    // use the epoch-backdating trick and compare the absolute instants.
+    let epoch = blink.epoch;
+
+    // Phase 0: next_toggle = epoch + 500ms.
+    let t0 = blink.next_toggle();
+    assert_eq!(t0, epoch + Duration::from_millis(500));
+
+    // Now simulate phase 1 by creating a new blink with epoch 600ms ago.
+    let mut blink2 = CursorBlink::new(Duration::from_millis(500));
+    blink2.epoch = epoch - Duration::from_millis(600);
+    // elapsed ≈ 600ms → phase 1 → next_toggle = (epoch - 600) + 2*500 = epoch + 400ms.
+    let t1 = blink2.next_toggle();
+    assert_eq!(t1, epoch + Duration::from_millis(400));
+    // From phase 1, next toggle is 400ms into the future (remainder of phase 1 + full phase 2 start).
+    // The key property: phase toggles are on exact interval boundaries.
 }
 
 #[test]

@@ -159,35 +159,35 @@ impl ImageTextureCache {
     /// Evict textures not used in the last `threshold` frames.
     pub(crate) fn evict_unused(&mut self, threshold: u64) {
         let cutoff = self.frame_counter.saturating_sub(threshold);
-        let mut to_remove = Vec::new();
-
-        for (&id, tex) in &self.textures {
+        let mem = &mut self.gpu_memory_used;
+        self.textures.retain(|_id, tex| {
             if tex.last_frame < cutoff {
-                to_remove.push(id);
+                *mem = mem.saturating_sub(tex.size_bytes);
+                false
+            } else {
+                true
             }
-        }
-
-        for id in to_remove {
-            if let Some(tex) = self.textures.remove(&id) {
-                self.gpu_memory_used = self.gpu_memory_used.saturating_sub(tex.size_bytes);
-            }
-        }
+        });
     }
 
     /// Evict the oldest textures until GPU memory is under the limit.
     pub(crate) fn evict_over_limit(&mut self) {
-        while self.gpu_memory_used > self.gpu_memory_limit && !self.textures.is_empty() {
-            // Find the least recently used texture.
-            let oldest = self
-                .textures
-                .iter()
-                .min_by_key(|(_, t)| t.last_frame)
-                .map(|(&id, _)| id);
-
-            if let Some(id) = oldest {
-                if let Some(tex) = self.textures.remove(&id) {
-                    self.gpu_memory_used = self.gpu_memory_used.saturating_sub(tex.size_bytes);
-                }
+        if self.gpu_memory_used <= self.gpu_memory_limit || self.textures.is_empty() {
+            return;
+        }
+        // Sort by last_frame ascending (oldest first), evict until under limit.
+        let mut entries: Vec<_> = self
+            .textures
+            .iter()
+            .map(|(&id, t)| (id, t.last_frame))
+            .collect();
+        entries.sort_unstable_by_key(|&(_, frame)| frame);
+        for (id, _) in entries {
+            if self.gpu_memory_used <= self.gpu_memory_limit {
+                break;
+            }
+            if let Some(tex) = self.textures.remove(&id) {
+                self.gpu_memory_used = self.gpu_memory_used.saturating_sub(tex.size_bytes);
             }
         }
     }

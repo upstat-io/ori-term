@@ -410,6 +410,57 @@ mod transport_tests {
         assert!(matches!(notif, MuxNotification::PaneBell(id) if id == PaneId::from_raw(4)));
     }
 
+    /// `NotifyCommandComplete` converts to `CommandComplete` with duration.
+    #[test]
+    fn notify_command_complete() {
+        let pdu = MuxPdu::NotifyCommandComplete {
+            pane_id: PaneId::from_raw(5),
+            duration_ms: 1234,
+        };
+        let notif = pdu_to_notification(pdu).unwrap();
+        assert!(
+            matches!(notif, MuxNotification::CommandComplete { pane_id, duration }
+                if pane_id == PaneId::from_raw(5) && duration == Duration::from_millis(1234))
+        );
+    }
+
+    /// `NotifyClipboardStore` converts to `ClipboardStore` with text.
+    #[test]
+    fn notify_clipboard_store() {
+        let pdu = MuxPdu::NotifyClipboardStore {
+            pane_id: PaneId::from_raw(6),
+            clipboard_type: 0,
+            text: "hello".into(),
+        };
+        let notif = pdu_to_notification(pdu).unwrap();
+        assert!(
+            matches!(&notif, MuxNotification::ClipboardStore { pane_id, text, .. }
+                if *pane_id == PaneId::from_raw(6) && text == "hello")
+        );
+    }
+
+    /// `NotifyClipboardLoad` converts to `ClipboardLoad` with a reconstructed formatter.
+    #[test]
+    fn notify_clipboard_load() {
+        let pdu = MuxPdu::NotifyClipboardLoad {
+            pane_id: PaneId::from_raw(7),
+            clipboard_type: 0,
+        };
+        let notif = pdu_to_notification(pdu).unwrap();
+        match notif {
+            MuxNotification::ClipboardLoad {
+                pane_id, formatter, ..
+            } => {
+                assert_eq!(pane_id, PaneId::from_raw(7));
+                // The reconstructed formatter produces a valid OSC 52 response.
+                let response = formatter("test");
+                assert!(response.starts_with("\x1b]52;c;"));
+                assert!(response.ends_with('\x07'));
+            }
+            other => panic!("expected ClipboardLoad, got {other:?}"),
+        }
+    }
+
     /// Non-notification PDUs return `None`.
     #[test]
     fn non_notification_returns_none() {

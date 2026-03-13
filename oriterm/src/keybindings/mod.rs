@@ -51,6 +51,9 @@ pub(crate) enum Action {
     SelectCommandOutput,
     /// Select the input of the command at or near the viewport (OSC 133;B→C).
     SelectCommandInput,
+    /// Smart select-all: if shell integration detects a command input zone near
+    /// the viewport, select only the input line; otherwise select entire buffer.
+    SelectAll,
     /// Duplicate the current tab (spawn new tab with same CWD).
     DuplicateTab,
     /// Open a new window with a fresh tab.
@@ -148,6 +151,7 @@ impl Action {
             Self::NextPrompt => "NextPrompt",
             Self::SelectCommandOutput => "SelectCommandOutput",
             Self::SelectCommandInput => "SelectCommandInput",
+            Self::SelectAll => "SelectAll",
             Self::DuplicateTab => "DuplicateTab",
             Self::NewWindow => "NewWindow",
             Self::MoveTabToNewWindow => "MoveTabToNewWindow",

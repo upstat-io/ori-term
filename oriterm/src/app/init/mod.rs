@@ -8,7 +8,7 @@ use oriterm_ui::window::WindowConfig;
 use super::window_context::WindowContext;
 use super::{App, DEFAULT_DPI};
 use crate::app::config_reload;
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
+use crate::font::{FontByteCache, FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
@@ -67,11 +67,12 @@ impl App {
         let window = TermWindow::from_window(window_arc, &window_config, &gpu, session_wid)?;
 
         // 6. Join font thread (GPU init + surface setup ran concurrently).
-        let (mut font_collection, user_fb_count, t_fonts) = match font_handle.join() {
-            Ok(Ok(result)) => result,
-            Ok(Err(e)) => return Err(e.into()),
-            Err(_) => return Err("font discovery thread panicked".into()),
-        };
+        let (mut font_collection, cached_font_set, mut font_cache, user_fb_count, t_fonts) =
+            match font_handle.join() {
+                Ok(Ok(result)) => result,
+                Ok(Err(e)) => return Err(e.into()),
+                Err(_) => return Err("font discovery thread panicked".into()),
+            };
 
         // 6b. Rescale fonts to physical DPI so glyph bitmaps match the
         // physical surface resolution. At 1.5x scaling: 96 * 1.5 = 144 DPI,
@@ -98,26 +99,12 @@ impl App {
         let t_renderer_start = std::time::Instant::now();
         let pipelines = GpuPipelines::new(&gpu);
 
-        // 7b. Cache FontSet for new windows. Re-load from config (the
-        // font_set was consumed when creating font_collection above).
-        let cached_font_set = {
-            let mut fs = FontSet::load(
-                self.config.font.family.as_deref(),
-                self.config.font.effective_weight(),
-            )?;
-            let user_fb_families: Vec<&str> = self
-                .config
-                .font
-                .fallback
-                .iter()
-                .map(|f| f.family.as_str())
-                .collect();
-            fs.prepend_user_fallbacks(&user_fb_families);
-            fs
-        };
+        // 7b. FontSet cached from thread (Arc-cloned before FontCollection
+        // consumed it — zero disk reads).
 
-        // 7c. UI font discovery + cache.
-        let ui_font_set = discover_ui_font_set();
+        // 7c. UI font discovery + cache (reuses font_cache for shared fallbacks).
+        let ui_font_set = discover_ui_font_set(&mut font_cache);
+        drop(font_cache);
         let ui_fc = ui_font_set.as_ref().and_then(|fs| {
             FontCollection::new(
                 fs.clone(),
@@ -138,31 +125,21 @@ impl App {
         let (w, h) = window.size_px();
         let tab_bar_widget = self.create_tab_bar_widget(&window);
 
-        // 9. Compute grid dimensions from viewport, offset by chrome height.
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        // 9. Compute grid dimensions via layout engine (Column { TabBar, Grid }).
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let origin_y = super::chrome::grid_origin_y(tab_bar_h, scale);
-        let chrome_px = origin_y as u32;
-        let grid_h = h.saturating_sub(chrome_px);
-        let cols = cell.columns(w).max(1);
-        let rows = cell.rows(grid_h).max(1);
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
 
-        // 10. Create grid widget with cell metrics and initial grid size.
-        let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
-        grid_widget.set_bounds(oriterm_ui::geometry::Rect::new(
-            0.0,
-            origin_y,
-            cols as f32 * cell.width,
-            rows as f32 * cell.height,
-        ));
+        // 10. Create grid widget with cell metrics and layout-computed size.
+        let grid_widget = TerminalGridWidget::new(cell.width, cell.height, wl.cols, wl.rows);
+        grid_widget.set_bounds(wl.grid_rect);
 
         // 11. Create initial tab + pane (skip if daemon mode with a claimed window).
         let t_mux_start = std::time::Instant::now();
         let is_daemon = self.mux.as_ref().is_some_and(|m| m.is_daemon_mode());
         let is_claimed = is_daemon && self.active_window.is_some();
         if !is_claimed {
-            self.create_initial_tab(session_wid, rows as u16, cols as u16)?;
+            self.create_initial_tab(session_wid, wl.rows as u16, wl.cols as u16)?;
         }
         let t_mux = t_mux_start.elapsed();
 
@@ -171,9 +148,12 @@ impl App {
             "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
              renderer={t_renderer:?} mux={t_mux:?} total={t_total:?}",
         );
+        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
         log::info!(
-            "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
+            "app: initialized — {w}x{h} px, {} cols × {} rows, \
              chrome={tab_bar_h}px, font={} {:.1}pt",
+            wl.cols,
+            wl.rows,
             renderer.family_name(),
             self.config.font.size,
         );
@@ -208,6 +188,11 @@ impl App {
     }
 
     /// Spawn font discovery on a background thread.
+    ///
+    /// Returns `(FontCollection, FontSet, FontByteCache, user_fb_count, elapsed)`.
+    /// The `FontSet` is an `Arc`-cloned copy preserved before `FontCollection`
+    /// consumes the original — zero additional disk reads. The `FontByteCache`
+    /// is returned so the caller can reuse it for UI font loading.
     #[expect(
         clippy::type_complexity,
         reason = "thread join handle with font discovery result — not worth a type alias"
@@ -216,7 +201,16 @@ impl App {
         &self,
     ) -> Result<
         std::thread::JoinHandle<
-            Result<(FontCollection, usize, std::time::Duration), crate::font::FontError>,
+            Result<
+                (
+                    FontCollection,
+                    FontSet,
+                    FontByteCache,
+                    usize,
+                    std::time::Duration,
+                ),
+                crate::font::FontError,
+            >,
         >,
         Box<dyn std::error::Error>,
     > {
@@ -229,7 +223,9 @@ impl App {
             .name("font-discovery".into())
             .spawn(move || {
                 let t0 = std::time::Instant::now();
-                let mut font_set = FontSet::load(font_config.family.as_deref(), font_weight)?;
+                let mut cache = FontByteCache::new();
+                let mut font_set =
+                    FontSet::load_cached(font_config.family.as_deref(), font_weight, &mut cache)?;
 
                 // Prepend user-configured fallback fonts.
                 let user_fb_families: Vec<&str> = font_config
@@ -237,7 +233,10 @@ impl App {
                     .iter()
                     .map(|f| f.family.as_str())
                     .collect();
-                let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
+                let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
+
+                // Clone before FontCollection consumes the FontSet (Arc clone, no disk I/O).
+                let cached_set = font_set.clone();
 
                 // Default to Full hinting + Alpha format; adjusted after window
                 // creation once the actual display scale factor is known.
@@ -249,7 +248,7 @@ impl App {
                     font_weight,
                     HintingMode::Full,
                 )?;
-                Ok((fc, user_fb_count, t0.elapsed()))
+                Ok((fc, cached_set, cache, user_fb_count, t0.elapsed()))
             })
             .map_err(|e| -> Box<dyn std::error::Error> {
                 format!("failed to spawn font discovery thread: {e}").into()
@@ -350,9 +349,12 @@ impl App {
 
 /// Discover the system UI font (proportional sans-serif) for tab bar and overlays.
 ///
+/// Reuses `cache` for shared fallback fonts (e.g., `NotoColorEmoji` loaded
+/// once for both terminal and UI collections).
+///
 /// Returns `None` if no suitable font is found — the terminal font is used
 /// as a fallback in that case.
-fn discover_ui_font_set() -> Option<FontSet> {
+fn discover_ui_font_set(cache: &mut FontByteCache) -> Option<FontSet> {
     let discovery = crate::font::discovery::discover_ui_fonts();
-    FontSet::from_discovery(&discovery).ok()
+    FontSet::from_discovery(&discovery, cache).ok()
 }

@@ -4,8 +4,24 @@
 //! limit. These methods manage prompt state (OSC 133), CWD (OSC 7),
 //! title resolution, notifications, and prompt-based navigation.
 
-use super::{Notification, PendingMarks, PromptMarker, PromptState, Term, cwd_short_path};
+use super::{Notification, PendingMarks, PromptMarker, PromptState, Term};
 use crate::event::EventListener;
+
+/// Extract the last path component from a CWD path for tab display.
+///
+/// - `/home/user/projects` → `projects`
+/// - `/` → `/`
+/// - `~` passthrough (shouldn't occur from OSC 7, but handle gracefully).
+pub fn cwd_short_path(cwd: &str) -> &str {
+    if cwd == "/" {
+        return cwd;
+    }
+    // Strip trailing slash then take last component.
+    let trimmed = cwd.strip_suffix('/').unwrap_or(cwd);
+    let component = trimmed.rsplit('/').next().unwrap_or(cwd);
+    // Paths like `///` reduce to an empty component after stripping — return `/`.
+    if component.is_empty() { "/" } else { component }
+}
 
 impl<T: EventListener> Term<T> {
     // -- Prompt state --

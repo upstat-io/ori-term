@@ -18,8 +18,8 @@ pub(super) enum ContextAction {
     CloseTab(usize),
     /// Duplicate the tab at the given index (new tab inheriting CWD).
     DuplicateTab(usize),
-    /// Move the tab at the given index to a new window.
-    MoveToNewWindow(usize),
+    /// Move the specified tab to a new window.
+    MoveToNewWindow(crate::session::TabId),
     /// Copy the current selection to clipboard.
     Copy,
     /// Paste from clipboard.
@@ -67,7 +67,10 @@ pub(super) fn build_dropdown_menu() -> (Vec<MenuEntry>, ContextMenuState) {
 /// Build the tab right-click context menu.
 ///
 /// Entries: Close Tab, Duplicate Tab, Move to New Window.
-pub(super) fn build_tab_context_menu(tab_index: usize) -> (Vec<MenuEntry>, ContextMenuState) {
+pub(super) fn build_tab_context_menu(
+    tab_index: usize,
+    tab_id: crate::session::TabId,
+) -> (Vec<MenuEntry>, ContextMenuState) {
     let entries = vec![
         MenuEntry::Item {
             label: "Close Tab".into(),
@@ -84,7 +87,7 @@ pub(super) fn build_tab_context_menu(tab_index: usize) -> (Vec<MenuEntry>, Conte
         Some(ContextAction::CloseTab(tab_index)),
         Some(ContextAction::DuplicateTab(tab_index)),
         None, // separator
-        Some(ContextAction::MoveToNewWindow(tab_index)),
+        Some(ContextAction::MoveToNewWindow(tab_id)),
     ];
     (entries, ContextMenuState { actions })
 }

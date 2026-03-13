@@ -65,10 +65,11 @@ impl TerminalGridWidget {
         self.rows = rows;
     }
 
-    /// Directly set the layout bounds (bypasses the full layout engine).
+    /// Set the layout bounds from `compute_window_layout` results.
     ///
-    /// Used during init and resize before the layout engine is wired.
-    /// Once the layout engine drives widget placement this can be removed.
+    /// The layout engine computes the grid's position and size; this
+    /// method stores the result for the GPU prepare pipeline to read
+    /// via [`bounds()`](Self::bounds).
     pub(crate) fn set_bounds(&self, bounds: Rect) {
         self.bounds.set(Some(bounds));
     }

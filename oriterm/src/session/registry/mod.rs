@@ -113,6 +113,12 @@ impl SessionRegistry {
         &self.windows
     }
 
+    /// Find which window contains a given pane.
+    pub fn window_for_pane(&self, pane_id: PaneId) -> Option<WindowId> {
+        let tab_id = self.tab_for_pane(pane_id)?;
+        self.window_for_tab(tab_id)
+    }
+
     /// Find which tab contains a given pane.
     pub fn tab_for_pane(&self, pane_id: PaneId) -> Option<TabId> {
         self.tabs

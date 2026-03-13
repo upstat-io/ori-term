@@ -149,6 +149,7 @@ impl WindowRenderer {
             &mut self.color_atlas,
             &mut self.empty_keys,
             ui_fc,
+            &gpu.device,
             &gpu.queue,
         );
     }

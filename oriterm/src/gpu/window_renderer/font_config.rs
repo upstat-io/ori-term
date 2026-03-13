@@ -104,9 +104,10 @@ impl WindowRenderer {
 
     /// Clear all atlases and empty-key set, then re-cache ASCII.
     ///
-    /// No bind group rebuild needed: `clear()` resets the packer and cache
-    /// but the underlying `Texture2DArray` and its `TextureView` are
-    /// pre-allocated at atlas creation and never change identity.
+    /// `clear()` resets the packer and cache but the underlying texture
+    /// persists at its current size. Bind group rebuild is handled lazily
+    /// by `rebuild_stale_atlas_bind_groups()` at the next render if the
+    /// atlas grows during re-caching.
     fn clear_and_recache(&mut self, gpu: &GpuState) {
         self.atlas.clear();
         self.subpixel_atlas.clear();
@@ -119,10 +120,16 @@ impl WindowRenderer {
             pre_cache_atlas(
                 &mut self.subpixel_atlas,
                 &mut self.font_collection,
+                &gpu.device,
                 &gpu.queue,
             );
         } else {
-            pre_cache_atlas(&mut self.atlas, &mut self.font_collection, &gpu.queue);
+            pre_cache_atlas(
+                &mut self.atlas,
+                &mut self.font_collection,
+                &gpu.device,
+                &gpu.queue,
+            );
         }
     }
 }

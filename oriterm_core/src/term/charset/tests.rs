@@ -104,3 +104,37 @@ fn single_shift_overrides_active_charset() {
     // Next char uses G0 (DEC special graphics) again.
     assert_eq!(state.translate('q'), '─');
 }
+
+#[test]
+fn is_ascii_default_state() {
+    let state = CharsetState::default();
+    assert!(state.is_ascii());
+}
+
+#[test]
+fn is_ascii_false_when_non_ascii_charset_active() {
+    let mut state = CharsetState::default();
+    state.set_charset(
+        CharsetIndex::G0,
+        StandardCharset::SpecialCharacterAndLineDrawing,
+    );
+    assert!(!state.is_ascii());
+}
+
+#[test]
+fn is_ascii_false_when_single_shift_pending() {
+    let mut state = CharsetState::default();
+    state.set_single_shift(CharsetIndex::G2);
+    assert!(!state.is_ascii());
+}
+
+#[test]
+fn is_ascii_true_when_non_active_slot_is_non_ascii() {
+    let mut state = CharsetState::default();
+    // G1 is non-ASCII, but G0 (active) is still ASCII.
+    state.set_charset(
+        CharsetIndex::G1,
+        StandardCharset::SpecialCharacterAndLineDrawing,
+    );
+    assert!(state.is_ascii());
+}

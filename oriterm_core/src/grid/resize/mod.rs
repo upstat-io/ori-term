@@ -92,7 +92,7 @@ impl Grid {
         // stale offset causes the renderer to show corrupted/duplicated
         // scrollback instead of the live cursor position.
         self.display_offset = 0;
-        self.dirty.resize(self.lines);
+        self.dirty.resize(self.lines, self.cols);
     }
 
     /// Resize the number of visible lines.
@@ -106,7 +106,7 @@ impl Grid {
             self.grow_rows(new_lines);
         }
         self.lines = new_lines;
-        self.dirty.resize(new_lines);
+        self.dirty.resize(new_lines, self.cols);
     }
 
     /// Shrink visible rows: trim trailing blanks, push excess to scrollback.
@@ -148,10 +148,9 @@ impl Grid {
             }
             self.resize_pushed = self.resize_pushed.saturating_sub(from_sb);
             // Insert blank rows at top, shifting cursor down.
-            let blanks: Vec<Row> = (0..from_sb).map(|_| Row::new(self.cols)).collect();
-            let blank_count = blanks.len();
-            self.rows.splice(0..0, blanks);
-            self.cursor.set_line(self.cursor.line() + blank_count);
+            let cols = self.cols;
+            self.rows.splice(0..0, (0..from_sb).map(|_| Row::new(cols)));
+            self.cursor.set_line(self.cursor.line() + from_sb);
             for _ in 0..(delta - from_sb) {
                 self.rows.push(Row::new(self.cols));
             }

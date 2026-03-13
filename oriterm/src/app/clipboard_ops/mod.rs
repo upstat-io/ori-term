@@ -202,9 +202,8 @@ impl App {
             cancel_label: "Cancel".into(),
             kind: ConfirmationKind::Paste { text },
         };
-        let _ = self
-            .event_proxy
-            .send_event(crate::event::TermEvent::OpenConfirmation(request));
+        self.event_proxy
+            .send(crate::event::TermEvent::OpenConfirmation(request));
     }
 }
 

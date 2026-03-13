@@ -2,7 +2,7 @@
 section: 21
 title: Context Menu & Window Controls
 status: in-progress
-reviewed: false
+reviewed: true
 tier: 4
 goal: GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list
 sections:
@@ -20,7 +20,7 @@ sections:
     status: complete
   - id: "21.5"
     title: Taskbar Jump List & Dock Menu
-    status: not-started
+    status: complete
   - id: "21.6"
     title: Section Completion
     status: not-started
@@ -71,9 +71,9 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
      - [x] Separator
      - [x] Settings
   3. [x] **Dropdown menu** (click dropdown button in tab bar):
-     - [x] Settings (opens settings window)
+     - [x] Settings (opens settings dialog)
      - [x] Separator
-     - [x] Color scheme selector: list all built-in schemes with `Check` entries (active scheme has checkmark)
+     - [x] About
 - [x] Layout calculation:
   - [x] Measure max label width using `TextMeasurer` (backed by `UiFontMeasurer`)
   - [x] If any `Check` entry exists: left margin includes checkmark width + gap
@@ -126,7 +126,7 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
   - [x] Requires focus — `is_focusable()` returns `true`, unfocused menu ignores keys
 
 **Tests (21.1):**
-- [x] `oriterm/src/app/context_menu/tests.rs`: dropdown menu builder (entries, actions, empty schemes, out-of-bounds resolve)
+- [x] `oriterm/src/app/context_menu/tests.rs`: dropdown menu builder (entries, actions, out-of-bounds resolve)
 - [x] `oriterm/src/app/context_menu/tests.rs`: tab context menu builder (entries, actions with tab index)
 - [x] `oriterm/src/app/context_menu/tests.rs`: grid context menu builder (with/without selection, action coverage)
 - [x] `oriterm_ui/src/widgets/menu/tests.rs`: layout (min width, height, empty menu, wide labels, check entries)
@@ -190,132 +190,85 @@ When the config file changes (detected by `ConfigMonitor` file watcher in `orite
   - [x] RAII cleanup: dropping `ConfigMonitor` signals shutdown, drops watcher, joins thread
 - [x] `Config::save()` — persist config changes to disk:
   - [x] Write current config to TOML file at `config_path()` (in `oriterm/src/config/io.rs`)
-  - [x] Used by dropdown menu scheme selection (and future settings UI) to persist user choices
+  - [x] Used by settings dialog Save button to persist user changes
   - [x] Handle write errors gracefully (log warning, don't crash)
-  - [x] Note: `Config::save()` is currently `#[allow(dead_code, reason = "...")]` — it will be used when settings UI (21.3) lands and when scheme selection persists
 
 ---
 
 ## 21.3 Settings UI
 
-Separate frameless settings window (not an overlay). Displays color scheme selector. GPU-rendered for consistent styling.
+Full-featured settings panel with form controls for font, color scheme, cursor, window, and keybinding settings. Implemented as both a modal overlay and a dialog window, GPU-rendered for consistent styling.
 
-**Files (new):**
-- `oriterm/src/app/settings_ui/mod.rs` — `SettingsState` struct, lifecycle (`open`, `close`, `is_settings`), constants
-- `oriterm/src/app/settings_ui/rendering.rs` — `render_settings_frame()` (pure computation: builds draw primitives, no state mutation)
-- `oriterm/src/app/settings_ui/mouse.rs` — `handle_settings_mouse()`, `update_settings_hover()`
-- `oriterm/src/app/settings_ui/scheme.rs` — `apply_scheme_to_all_panes()`
-- `oriterm/src/app/settings_ui/tests.rs` — sibling test file
+**Files:**
+- `oriterm/src/app/settings_overlay/mod.rs` — `open_settings_overlay()` (modal overlay path, retained as fallback)
+- `oriterm/src/app/settings_overlay/form_builder/mod.rs` — `build_settings_form()`, `SettingsIds` (maps widget IDs to config fields)
+- `oriterm/src/app/settings_overlay/form_builder/tests.rs` — form builder tests
+- `oriterm/src/app/settings_overlay/action_handler/mod.rs` — `handle_settings_action()` (dispatches widget actions to pending config)
+- `oriterm/src/app/settings_overlay/action_handler/tests.rs` — action handler tests
+- `oriterm/src/app/dialog_management.rs` — `open_settings_dialog()`, `close_dialog()`, dialog window lifecycle
+- `oriterm/src/app/dialog_rendering.rs` — dialog frame rendering
+- `oriterm/src/app/dialog_context.rs` — `DialogWindowContext`, `DialogContent` (dialog state)
+- `oriterm_ui/src/widgets/settings_panel/mod.rs` — `SettingsPanel` widget
+- `oriterm_ui/src/widgets/dialog/mod.rs` — `DialogWidget` (generic dialog frame)
 
 **Reference:** `_old/src/app/settings_ui.rs`, `_old/src/gpu/render_settings.rs`
 
 ### App state changes
 
-- [x] Add `settings_state: Option<SettingsState>` field on `App` — `None` if settings not open
-- [x] `SettingsState` struct (in `settings_ui/mod.rs`):
-  - [x] `winit_id: winit::window::WindowId` — the OS window ID
-  - [x] `window: Arc<Window>` — raw winit window (not TermWindow — settings has no session identity)
-  - [x] `renderer: WindowRenderer` — per-window GPU renderer (fonts, atlases, instance buffers)
-  - [x] `hovered_row: Option<usize>` — currently hovered scheme row index
-  - [x] `dirty: bool` — redraw needed
-- [x] The settings window is NOT stored in `App.windows` — it has no `WindowContext`, no `TabBarWidget`, no `TerminalGridWidget`, no overlay system, no pane cache. It is a separate lightweight window with its own state struct.
-- [x] Event routing: the `window_event` handler checks `self.is_settings_window(window_id)` before dispatching to the normal terminal path.
+- [x] Settings uses `settings_ids: Option<SettingsIds>` + `settings_pending: Option<Config>` on `App` — working copy of config, mutated by control changes, applied on Save
+- [x] Dialog windows stored in `App.dialogs: HashMap<WindowId, DialogWindowContext>` (separate from `App.windows`)
+- [x] `DialogWindowContext` struct (in `dialog_context.rs`): window, surface, renderer, kind, content, scale, chrome
+- [x] `DialogContent::Settings { panel, ids, pending_config, original_config }` — settings-specific dialog content
+- [x] Overlay path retained as fallback: `open_settings_overlay()` in `settings_overlay/mod.rs` (marked `#[allow(dead_code)]`)
+- [x] Event routing: dialog windows use `WindowManager` for kind-based routing, separate from terminal window dispatch
 
-### Settings window lifecycle
+### Settings dialog lifecycle
 
-- [x] `open_settings_window(event_loop)`:
-  - [x] If already open (`settings_state.is_some()`), focus the existing window and return (prevents duplicates — mirrors old prototype behavior)
-  - [x] Create a small frameless, non-resizable OS window (~300x350px) via `WindowConfig` with `resizable: false`
-  - [x] Create GPU surface directly via `gpu.create_surface(&window)` (raw window, not TermWindow — settings has no session)
-  - [x] Create `WindowRenderer` via `create_settings_renderer()` (reuses shared `GpuPipelines`)
-  - [x] Build `SettingsState` and store as `self.settings_state = Some(state)`
-  - [x] Clear-render initial frame (dark background) before making visible to prevent white flash
-  - [x] `window.set_visible(true)`
-- [x] `close_settings_window()`:
-  - [x] Drop `SettingsState` (releases GPU surface, renderer), set `settings_state = None`
-  - [x] Transfer focus back to the most recent terminal window
-- [x] `is_settings_window(window_id) -> bool` — check if `settings_state` is `Some` with matching winit ID
+- [x] `open_settings_dialog(event_loop)` (in `dialog_management.rs`):
+  - [x] Prevents duplicates: `has_dialog_of_kind(DialogKind::Settings)` — focuses existing dialog if open
+  - [x] Creates frameless dialog window centered on parent via `create_dialog_window()`
+  - [x] Sets `min_inner_size(600x400)` for settings dialog
+  - [x] Platform ownership: `platform_ops().set_owner()` + `set_window_type(WindowKind::Dialog(kind))`
+  - [x] GPU surface + `WindowRenderer::new_ui_only()` (reuses shared `GpuPipelines`, UI font collection only)
+  - [x] Builds `SettingsPanel` form via `form_builder::build_settings_form(&config)` with aligned label widths
+  - [x] Registers in `WindowManager`, stores in `App.dialogs`, installs platform chrome, renders first frame
+- [x] `close_dialog(winit_id)`:
+  - [x] Clears platform modal state, unregisters from `WindowManager`, removes `DialogWindowContext`
+- [x] Dialog chrome: `install_dialog_chrome()` enables OS-level hit testing (close button, caption drag, resize edges)
 
 ### Wiring from ContextAction::Settings
 
-- [x] In `oriterm/src/app/keyboard_input/overlay_dispatch.rs`, the `ContextAction::Settings` arm currently logs `"settings action not yet implemented"`. Replace with:
-  - [x] Send `TermEvent::OpenSettings` through the event proxy (settings window creation requires `ActiveEventLoop` which is only available in the `user_event` handler, not during overlay dispatch)
-  - [x] Add `TermEvent::OpenSettings` variant to `TermEvent` enum in `oriterm/src/event.rs`
-  - [x] Handle in the `user_event` match arm: call `self.open_settings_window(event_loop)`
+- [x] `ContextAction::Settings` arm in `overlay_dispatch.rs` sends `TermEvent::OpenSettings` through event proxy
+- [x] `TermEvent::OpenSettings` variant in `oriterm/src/event.rs`
+- [x] `user_event` handler calls `self.open_settings_dialog(event_loop)`
+- [x] Also triggered by `Action::OpenSettings` keybinding (Ctrl+, on Windows/Linux, Cmd+, on macOS)
 
-### Event routing for settings window
+### Settings form and controls
 
-- [x] Add `handle_settings_window_event(&mut self, window_id, event)` method (in `settings_ui/mod.rs`):
-  - [x] `WindowEvent::CloseRequested` → call `close_settings_window()`
-  - [x] `WindowEvent::KeyboardInput` → only Escape (dismiss) is handled; all other keys consumed
-  - [x] `WindowEvent::CursorMoved` → call `update_settings_hover()`
-  - [x] `WindowEvent::MouseInput` (Left, Pressed) → dispatch to `handle_settings_mouse()`
-  - [x] `WindowEvent::RedrawRequested` → mark dirty (rendering handled in `about_to_wait`)
-  - [x] `WindowEvent::Resized`, `WindowEvent::ScaleFactorChanged` → handle surface resize + mark dirty
-  - [x] All other events → consumed without action (settings window has no terminal)
-- [x] In `event_loop.rs` `window_event`, add early guard before the existing match:
-  ```rust
-  if self.is_settings_window(window_id) {
-      self.handle_settings_window_event(window_id, event);
-      return;
-  }
-  ```
+- [x] `build_settings_form()` constructs a `FormWidget` with grouped controls:
+  - [x] Font settings: size, family, weight, hinting, subpixel mode
+  - [x] Color settings: scheme selector (dropdown), theme override
+  - [x] Cursor settings: style, blink interval
+  - [x] Window settings: opacity, blur
+- [x] `SettingsIds` struct: maps `WidgetId` for each control to its config field
+- [x] Dropdown controls: emit `WidgetAction::OpenDropdown` → popup overlay with `MenuWidget`
+- [x] Pending config pattern: control changes mutate `settings_pending` (working copy), `self.config` untouched until Save
 
-### Settings window content
+### Save/Cancel flow (in `overlay_dispatch.rs`)
 
-- [x] Title bar: "Theme" label + close button (top-right corner, 30x30px)
-- [x] Color scheme list: rows of ~40px height each:
-  - [x] Color swatch: 16x16px square showing scheme's background color (with 1px border)
-  - [x] Scheme name: text label 40px from left
-  - [x] Active indicator: checkmark icon if this is the current scheme
-  - [x] Hover highlight: rounded rect across full row width (4px inset from edges)
+- [x] `WidgetAction::SaveSettings` → `save_settings()`:
+  - [x] Takes pending config, swaps into `self.config`
+  - [x] Calls `apply_settings_change(old_config)` which applies font/color/cursor/window deltas
+  - [x] Persists to disk via `self.config.save()`
+  - [x] Dismisses overlay/dialog
+- [x] `WidgetAction::CancelSettings` → `cancel_settings()`:
+  - [x] Discards `settings_pending`, dismisses overlay/dialog
+- [x] `apply_settings_change()`: temporarily swaps old config back so delta-comparison methods work correctly, then restores new config
 
-### Mouse handling (in `settings_ui/mouse.rs`)
-
-- [x] `handle_settings_mouse(&mut self, x: f32, y: f32)`:
-  - [x] Top-right 30x30px: close button → `close_settings_window()`
-  - [x] Top 50px: title area — supports window drag via `window.drag_window()`
-  - [x] Below: scheme rows. `row_idx = (y - TITLE_HEIGHT) / ROW_HEIGHT`
-  - [x] Bounds check: `row_idx < scheme_count`
-  - [x] Click on row: `apply_settings_scheme(row_idx)`
-- [x] `update_settings_hover(&mut self, x: f32, y: f32)`:
-  - [x] Compute hovered row index from cursor position
-  - [x] Update `settings_state.hovered_row`, mark dirty if changed
-
-### Scheme application (in `settings_ui/scheme.rs`)
-
-- [x] `apply_settings_scheme(&mut self, row_idx: usize)`:
-  - [x] Update `self.config.colors.scheme` via `clone_from`
-  - [x] Build palette via `palette_from_scheme()` with resolved theme
-  - [x] Apply to ALL panes: `mux.set_pane_theme(pane_id, theme, palette)` for each pane
-  - [x] Persist to config file: `self.config.save()`
-  - [x] `Config::save()` `#[allow(dead_code)]` removed (no longer dead code)
-  - [x] Mark all terminal windows dirty + settings window dirty
-
-### GPU rendering (in `settings_ui/rendering.rs`)
-
-- [x] `render_settings_frame(&mut self)` — reads `SettingsState` + `config` immutably to build instance buffers, then submits the frame:
-  - [x] Full-window background (dark, derived from palette — uses `darken_rgb(bg, 0.20)`)
-  - [x] 1px border on all edges (using palette-derived border color)
-  - [x] Title text "Theme" rendered at (16, centered-in-50px-title) using `UiFontMeasurer` (backed by `WindowRenderer::active_ui_collection()`)
-  - [x] Close button icon (vector X) in top-right corner
-  - [x] Per-row rendering: swatch + name + optional checkmark, with hover highlight for `hovered_row`
-  - [x] Color derivation from palette: `darken(bg, 0.20)` for window bg, `lighten(bg, 0.15)` for hover, etc.
-  - [x] Uses `SettingsState.renderer`'s draw pipeline (same shaders as terminal windows)
-- [x] **Rendering discipline**: This function borrows state immutably to compute draw primitives. No mutation of `config`, `hovered_row`, scheme selection, or any other state. All state changes happen in event handlers (`handle_settings_mouse`, `update_settings_hover`).
-
-### Stretch goal note
-
-This sub-section (21.3) is a stretch goal. The dropdown menu already provides scheme selection with the same functionality. The settings window adds a more polished UX but can be deferred past initial feature parity without blocking 21.6.
-
-**Tests (21.3):** `oriterm/src/app/settings_ui/tests.rs`
-- [x] `darken_rgb` identity, black, partial tests
-- [x] `rgb_to_color` conversion test
-- [x] `lighten_color` identity and white tests
-- [x] `build_scheme_list` non-empty test
-- [x] `update_settings_hover` row index calculation from Y coordinate
-- [x] Scheme row index computation edge cases: y < title height returns None, y at exact row boundary
-- [x] Note: `is_settings_window`, `close_settings_window`, `handle_settings_mouse`, `open_settings_window`, and `render_settings_frame` require GPU/winit and cannot be unit tested. Cover via manual verification.
+**Tests (21.3):**
+- [x] `oriterm/src/app/settings_overlay/form_builder/tests.rs`: `SettingsIds` field uniqueness, form construction
+- [x] `oriterm/src/app/settings_overlay/action_handler/tests.rs`: action dispatch to pending config fields
+- [x] Note: `open_settings_dialog`, `close_dialog`, dialog rendering require GPU/winit — manual verification
 
 ---
 
@@ -363,8 +316,10 @@ Custom window controls for the frameless window, integrated into the tab bar. Pl
 OS-level quick-action menus that appear when the user right-clicks the app icon in the Windows taskbar or macOS dock. These provide fast access to common actions (new tab, new window, profiles) without first focusing the app window.
 
 **Files (new):**
-- `oriterm/src/platform/jump_list/mod.rs` — Jump List construction and update (Windows-only, `#[cfg(target_os = "windows")]` at module declaration in `platform/mod.rs`)
-- `oriterm/src/platform/jump_list/tests.rs` — sibling test file
+- `oriterm/src/platform/jump_list/mod.rs` — `JumpListTask` struct (not platform-gated), `build_jump_list_tasks()` (not platform-gated), `#[cfg(target_os = "windows")] submit_jump_list()` (COM code, Windows-only), `#[cfg(target_os = "windows")] exe_path()`. Module declaration in `platform/mod.rs` is unconditional (`pub mod jump_list;`) so that the data model compiles and tests run on all platforms.
+- `oriterm/src/platform/jump_list/tests.rs` — sibling test file (tests `build_jump_list_tasks` on all platforms)
+
+**WARNING — file size discipline:** The `mod.rs` file will contain the cross-platform data model (~30 lines), `build_jump_list_tasks` (~15 lines), and the `#[cfg(windows)]` COM functions (`submit_jump_list` ~80 lines, `exe_path` ~10 lines, COM helpers ~40 lines). Estimated total: ~200-250 lines including docs and imports. Well within the 500-line limit. If `submit_jump_list` grows beyond 50 lines, extract COM helper functions (`create_shell_link`, `create_task_collection`) as private helpers within the same file — do NOT let the function exceed 50 lines (code-hygiene.md).
 
 **Reference:** Windows Terminal `Jumplist.cpp` (COM-based, profile entries), WezTerm `app.rs` (`applicationDockMenu` — "New Window"), Ghostty `AppDelegate.swift` (dock menu — "New Window" + "New Tab")
 
@@ -374,50 +329,104 @@ OS-level quick-action menus that appear when the user right-clicks the app icon 
 
 Win32 COM API: `ICustomDestinationList` + `IShellLinkW`. Items appear in the taskbar right-click menu and Start menu pin.
 
+**Crate dependency:**
+- [x] Add `windows` crate (Windows-only) to `oriterm/Cargo.toml` under `[target.'cfg(windows)'.dependencies]` with features: `"Win32_UI_Shell"`, `"Win32_UI_Shell_PropertiesSystem"`, `"Win32_System_Com"`, `"Win32_System_Com_StructuredStorage"`. The `windows` crate provides COM interface wrappers (`ICustomDestinationList`, `IShellLinkW`, `IObjectCollection`) with safe Rust APIs. The existing `windows-sys` crate only provides function declarations and structs, not COM vtable wrappers.
+- [x] `IPropertyStore` and `PKEY_Title` live in `windows::Win32::UI::Shell::PropertiesSystem` (requires the `Win32_UI_Shell_PropertiesSystem` feature). `PROPVARIANT` is in `windows::Win32::System::Com::StructuredStorage` (requires `Win32_System_Com_StructuredStorage`).
+- [x] Verify cross-compilation: the `windows` crate must compile for `x86_64-pc-windows-gnu` (the project's cross-compile target from WSL). Run `./build-all.sh` after adding the dependency to confirm.
+- [x] Alternatively, use `windows-sys` with manual raw COM vtable FFI (not recommended — error-prone and verbose).
+
 **WARNING — `unsafe` code required:**
-- [ ] COM FFI calls (`CoCreateInstance`, `ICustomDestinationList` vtable calls, `IShellLinkW` methods, `SetCurrentProcessExplicitAppUserModelID`) are inherently `unsafe`. The `jump_list` module must use `#![allow(unsafe_code, reason = "COM FFI for Jump List construction")]` at the module level. This follows the same pattern as `oriterm_ui/src/platform_windows/` which already allows unsafe for Win32 subclassing.
-- [ ] Minimize the unsafe surface: wrap each COM call in a safe helper function that handles `HRESULT` → `Result` conversion. Keep the unsafe blocks as small as possible.
+- [x] With the `windows` crate, COM interface method calls (`BeginList`, `AddUserTasks`, `CommitList`, `SetPath`, `SetArguments`, etc.) are **safe** — the crate handles vtable dispatch internally. Only `CoCreateInstance` and `SetCurrentProcessExplicitAppUserModelID` require `unsafe`.
+- [x] Since the module is unconditional (data model is cross-platform), use `#[allow(unsafe_code, reason = "COM FFI for Jump List construction")]` on the individual `#[cfg(target_os = "windows")]` functions that call COM APIs (`submit_jump_list`, `create_shell_link`) rather than module-level `#![allow(unsafe_code)]`. This keeps the lint active for cross-platform data model code.
+- [x] `SetCurrentProcessExplicitAppUserModelID` can use the **existing** `windows-sys` crate (already has `Win32_UI_Shell` feature enabled). It lives in `main.rs`, not in the `jump_list` module, so it uses the existing `#[allow(unsafe_code)]` pattern already present in `cli::attach_console()`.
+- [x] Minimize the unsafe surface: wrap each raw COM call in a safe helper function that handles `HRESULT` → `Result` conversion. Keep the unsafe blocks as small as possible.
 
 **COM initialization prerequisites:**
-- [ ] `CoInitializeEx(COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)` must be called on the thread that creates Jump List COM objects. The winit event loop thread on Windows already calls `OleInitialize` (which implies `CoInitializeEx(COINIT_APARTMENTTHREADED)`), so Jump List construction on the main thread is safe without an explicit `CoInitialize` call.
-- [ ] If Jump List construction is moved to a background thread (e.g., for async profile discovery), that thread MUST call `CoInitializeEx` before any COM calls and `CoUninitialize` on exit. Use an RAII guard: `struct ComGuard; impl Drop for ComGuard { fn drop(&mut self) { CoUninitialize(); } }`.
-- [ ] All COM interface pointers (`ICustomDestinationList`, `IShellLinkW`, `IObjectCollection`, `IPropertyStore`) must be released (dropped) before `CoUninitialize`. Rust's drop order handles this naturally if the guard is declared first.
-- [ ] `SetCurrentProcessExplicitAppUserModelID(L"Ori.Terminal")` should be called early in `main()` (before window creation) to ensure consistent taskbar grouping and Jump List association. Without this, Windows infers the model ID from the executable path, which breaks if the binary is renamed or moved.
+- [x] `CoInitializeEx(COINIT_APARTMENTTHREADED)` must be called on the thread before any COM object creation. Winit calls `OleInitialize` during **window creation** (`winit-0.30.12/src/platform_impl/windows/window.rs:1168`), not during event loop creation. Since `submit_jump_list` runs in `main()` before `run_app()` (and thus before any window is created), an explicit `CoInitializeEx` call is required. The subsequent winit `OleInitialize` (which itself calls `CoInitializeEx`) will harmlessly return `S_FALSE` (already initialized). Use `CoInitializeEx` from the new `windows` crate's `Win32_System_Com` feature (added for COM interfaces).
+- [x] If Jump List construction is moved to a background thread (e.g., for async profile discovery), that thread MUST call `CoInitializeEx` before any COM calls and `CoUninitialize` on exit. Use an RAII guard: `struct ComGuard; impl Drop for ComGuard { fn drop(&mut self) { CoUninitialize(); } }`.
+- [x] All COM interface pointers (`ICustomDestinationList`, `IShellLinkW`, `IObjectCollection`, `IPropertyStore`) must be released (dropped) before `CoUninitialize`. Rust's drop order handles this naturally if the guard is declared first. The `windows` crate handles `Release` automatically via `Drop`.
+- [x] `SetCurrentProcessExplicitAppUserModelID(L"Ori.Terminal")` should be called early in `main()` (before window creation) to ensure consistent taskbar grouping and Jump List association. Without this, Windows infers the model ID from the executable path, which breaks if the binary is renamed or moved. Use `windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID` with a `PCWSTR` (already available via the existing `Win32_UI_Shell` feature in `windows-sys`).
+- [x] Place the call inside a `#[cfg(windows)]` block in `main()`, after `init_logger()` but before `build_event_loop()`. Construct the wide string using the project's existing pattern: `OsStr::new("Ori.Terminal").encode_wide().chain(Some(0)).collect::<Vec<u16>>()` (see `platform/url/mod.rs` for example). The `HRESULT` return should be logged but not fatal (`S_OK` on success, `E_INVALIDARG` if the ID exceeds 128 chars).
 
 ### Architecture: data model vs. COM submission
 
-- [ ] `JumpListTask` struct (pure data, no COM dependency):
-  - [ ] `label: String` — display name in the jump list
-  - [ ] `arguments: String` — command-line arguments (e.g., `--new-tab`)
-  - [ ] `description: String` — tooltip text
-- [ ] `build_jump_list_tasks() -> Vec<JumpListTask>` — pure function that builds the task list from config. This is unit-testable without COM.
-- [ ] `submit_jump_list(tasks: &[JumpListTask]) -> Result<()>` — COM submission wrapper. Creates `ICustomDestinationList`, constructs `IShellLinkW` per task, commits. This is an integration test only (requires Windows COM runtime).
+- [x] `JumpListTask` struct (pure data, no COM dependency):
+  - [x] `label: String` — display name in the jump list
+  - [x] `arguments: String` — command-line arguments (e.g., `--new-window`)
+  - [x] `description: String` — tooltip text
+- [x] `build_jump_list_tasks() -> Vec<JumpListTask>` — pure function that builds the task list from config. This is unit-testable without COM.
+- [x] `exe_path() -> std::io::Result<std::path::PathBuf>` — helper to resolve the path to the running `oriterm` binary via `std::env::current_exe()`. Called inside `submit_jump_list` for `IShellLinkW::SetPath`. Must handle the case where `current_exe()` fails (e.g., `/proc/self/exe` unreadable) by returning an error that `submit_jump_list` propagates.
+- [x] `submit_jump_list(tasks: &[JumpListTask]) -> windows::core::Result<()>` — COM submission wrapper. Split into helpers to stay under 50 lines per function (code-hygiene.md). Recommended split:
+  - `submit_jump_list()` — orchestrates the COM transaction (< 30 lines)
+  - `create_shell_link(exe: &Path, task: &JumpListTask) -> windows::core::Result<IShellLinkW>` — creates and configures one shell link (< 30 lines)
+  Step-by-step COM transaction (across the helper functions):
+  1. `CoCreateInstance::<ICustomDestinationList>(CLSID_DestinationList)` — create destination list
+  2. `dest_list.BeginList()` — returns `(max_slots, IObjectArray)` of removed items (must be queried even if ignored)
+  3. `CoCreateInstance::<IObjectCollection>(CLSID_EnumerableObjectCollection)` — create task collection
+  4. For each `JumpListTask`, call `create_shell_link()`:
+     a. `CoCreateInstance::<IShellLinkW>(CLSID_ShellLink)` — create shell link
+     b. `link.SetPath(exe_path)` — set executable path
+     c. `link.SetArguments(task.arguments)` — set CLI args
+     d. `link.SetDescription(task.description)` — set tooltip
+     e. `link.cast::<IPropertyStore>()` — QI for property store
+     f. `prop_store.SetValue(&PKEY_Title, &PROPVARIANT::from(task.label))` — set display name
+     g. `prop_store.Commit()` — flush property store
+     h. `collection.AddObject(&link)` — add to collection
+  5. `dest_list.AddUserTasks(&collection)` — add tasks to "Tasks" category
+  6. `dest_list.CommitList()` — commit the jump list
+- [x] All string arguments to COM methods must be converted to wide strings (`HSTRING` or `PCWSTR`). The `windows` crate's `HSTRING` type handles this. For `PROPVARIANT`, use `PROPVARIANT::from(&HSTRING::from(label))` or construct manually with `VT_LPWSTR`.
 
-- [ ] Jump list initialization on app startup:
-  - [ ] Build tasks via `build_jump_list_tasks()`
-  - [ ] Submit via `submit_jump_list()`
-  - [ ] Log result (success or COM error)
-- [ ] Built-in tasks (always present):
-  - [ ] **New Tab** — launches `ori_term.exe --new-tab` (or reuses running instance via IPC when Section 34 lands)
-  - [ ] **New Window** — launches `ori_term.exe --new-window`
-- [ ] Profile quick-launch entries (when profile system exists):
-  - [ ] One `JumpListTask` per configured profile
-  - [ ] Display name: profile name (e.g., "PowerShell", "Ubuntu")
-  - [ ] Arguments: `--profile {profile_name}`
-  - [ ] Icon: profile icon path if configured, otherwise app icon
-  - [ ] Grouped under custom "Profiles" category
-- [ ] `IShellLinkW` construction per item (inside `submit_jump_list`):
-  - [ ] `SetPath()` → path to `ori_term.exe`
-  - [ ] `SetArguments()` → command-line args for the action
-  - [ ] `SetDescription()` → tooltip text
-  - [ ] `IPropertyStore::SetValue(PKEY_Title)` → display name
-  - [ ] `IPropertyStore::SetValue(PKEY_AppUserModel_ID)` → app user model ID (for taskbar grouping)
-- [ ] Update triggers:
-  - [ ] On startup (always rebuild)
-  - [ ] On profile add/remove/rename (when profile system exists)
-  - [ ] On config reload (if profile list changed)
-- [ ] Error handling: Jump list APIs may fail (Explorer not running, COM init failure) — log and continue, never crash
-- [ ] **Dependency:** Jump List entries launch `ori_term.exe --new-tab` / `--new-window`. This requires command-line argument parsing in `main()` to be implemented (not yet present). Without it, the launched process would open a default window regardless of arguments. This is a prerequisite or must be co-implemented.
+- [x] Jump list initialization on app startup:
+  - [x] Build tasks via `build_jump_list_tasks()`
+  - [x] Submit via `submit_jump_list()`
+  - [x] Log result (success or COM error)
+  - [x] **Call site:** Do NOT add to `App::try_init()` — that function is already long (208 lines with `#[expect(clippy::too_many_lines)]`) and handles window/GPU/font/mux/renderer/tab creation. Instead, place both calls in `main()`:
+    - `SetCurrentProcessExplicitAppUserModelID` goes in `main()` after `init_logger()` and before `build_event_loop()` (flat Win32 API, no COM needed).
+    - `submit_jump_list` goes in `main()` after `build_event_loop()` but before `event_loop.run_app()`, preceded by an explicit `CoInitializeEx(COINIT_APARTMENTTHREADED)` call. Winit does not initialize COM until window creation (inside `App::resumed`/`try_init`), so COM is not yet available at this point. The explicit init is harmless — winit's subsequent `OleInitialize` returns `S_FALSE` (already initialized). This is the pattern Windows Terminal uses.
+- [x] Built-in tasks (always present):
+  - [x] **New Window** — launches `oriterm.exe --new-window` (flag already exists in `Cli` struct)
+  - [x] **New Tab** — launches `oriterm.exe --new-tab` (flag does NOT exist yet — see dependency note below)
+- [x] Error handling: Jump list APIs may fail (Explorer not running, COM init failure, `current_exe()` failure) — log and continue, never crash. The `submit_jump_list` return value is logged at `warn` level, not propagated to the caller.
+- [x] **Dependency:** Jump List entries launch `oriterm --new-tab` / `--new-window`. The `--new-window` flag already exists in `oriterm/src/cli/mod.rs` (clap-based `Cli` struct). However, `--new-tab` does not exist yet — it must be added to the CLI and dispatched in `main()`. This is a prerequisite for the "New Tab" jump list entry.
+- [x] **`--new-tab` CLI flag** — add to `Cli` struct in `oriterm/src/cli/mod.rs`:
+  - [x] `#[arg(long)] pub new_tab: bool` — mirrors the existing `new_window` flag pattern (see line 49 of `cli/mod.rs`)
+  - [x] In `main()`: add `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (line 45-47 of `main.rs`). The actual tab-in-existing-window behavior requires IPC (Section 34). For now, `--new-tab` launches a new window with one tab (same as default behavior). This is the same approach WezTerm takes before its mux daemon is running.
+  - [x] The `dead_code = "deny"` workspace lint will fire if `new_tab` is added to `Cli` but never read. The `log::info!` in `main()` satisfies this.
+  - [x] Add the `--new-tab` CLI flag FIRST (before jump list code), since `build_jump_list_tasks()` references `"--new-tab"` as an argument string. The flag must exist and be tested before the jump list code that refers to it.
+
+### Profile entries (FUTURE — no profile system yet)
+
+Profile quick-launch entries are deferred until the profile system is implemented. When that happens:
+- [ ] One `JumpListTask` per configured profile
+- [ ] Display name: profile name (e.g., "PowerShell", "Ubuntu")
+- [ ] Arguments: `--profile {profile_name}`
+- [ ] Icon: profile icon path if configured, otherwise app icon
+- [ ] Grouped under custom "Profiles" category (via `ICustomDestinationList::AppendCategory`)
+- [ ] Update triggers on profile add/remove/rename and on config reload
+- [ ] `IShellLinkW::SetIconLocation()` for per-profile icons (requires `.ico` file path)
+- [ ] Auto-detect shells: PowerShell, Command Prompt, WSL distros (dynamic profile sources)
+
+**Reference:** Windows Terminal `Jumplist.cpp` uses `ActiveProfiles()` from its settings model. Profiles are auto-discovered via dynamic profile sources (WSL, PowerShell Core, Visual Studio). Jump list is rebuilt lazily on settings change (hash comparison). Uses "Tasks" category (not "Destinations"). Full replacement on each update (clear + re-add) rather than delta tracking. See `~/projects/reference_repos/console_repos/terminal/src/cascadia/TerminalApp/Jumplist.cpp`.
+
+### Implementation order
+
+The items above must be implemented in this order due to compile-time dependencies:
+
+1. **`--new-tab` CLI flag** — add field to `Cli`, read in `main()`, add tests in `cli/tests.rs`. Verify: `./build-all.sh && ./test-all.sh`.
+2. **`windows` crate dependency** — add to `Cargo.toml`. Verify: `./build-all.sh` (cross-compile must succeed).
+3. **`jump_list/mod.rs` + `jump_list/tests.rs`** — create module with `JumpListTask`, `build_jump_list_tasks()`, `#[cfg(windows)]` COM functions. Add `pub mod jump_list;` to `platform/mod.rs`. Verify: `./build-all.sh && ./test-all.sh`.
+4. **`SetCurrentProcessExplicitAppUserModelID` in `main.rs`** — early in `main()`, after `init_logger()`, before `build_event_loop()`. Uses existing `windows-sys` (no new dependency).
+5. **`submit_jump_list` call in `main.rs`** — after step 4, with explicit `CoInitializeEx(COINIT_APARTMENTTHREADED)` since winit has not initialized COM yet at this point (winit calls `OleInitialize` during window creation, not event loop creation).
+6. **Final verification** — `./build-all.sh && ./clippy-all.sh && ./test-all.sh`.
+
+### `IShellLinkW` construction detail (inside `create_shell_link` helper)
+
+- [x] `SetPath()` → absolute path to `oriterm.exe` from `exe_path()`
+- [x] `SetArguments()` → command-line args for the action (e.g., `--new-window`)
+- [x] `SetDescription()` → tooltip text (e.g., "Open a new terminal window")
+- [x] `IPropertyStore::SetValue(PKEY_Title)` → display name (e.g., "New Window")
+- [x] `IPropertyStore::Commit()` — required after `SetValue` to flush the property store
+- [x] Note: `PKEY_AppUserModel_ID` is NOT needed per-link — the process-level `SetCurrentProcessExplicitAppUserModelID` in `main()` handles taskbar grouping. Per-link model IDs are only needed for cross-process scenarios.
 
 ### macOS — Dock Menu (DEFERRED)
 
@@ -428,10 +437,13 @@ Deferred to a future section. Requires macOS build/test infrastructure.
 Deferred to a future section. The `.desktop` file is an install-time packaging artifact, not runtime code.
 
 **Tests:** `oriterm/src/platform/jump_list/tests.rs`
-- [ ] `build_jump_list_tasks` returns 2 built-in tasks ("New Tab", "New Window") with correct arguments
-- [ ] `build_jump_list_tasks` with N profiles returns N + 2 tasks
-- [ ] `JumpListTask` fields are correctly populated (label, arguments, description)
-- [ ] Note: `submit_jump_list` requires Windows COM runtime and cannot be unit tested. Cover via manual verification on Windows or a `#[cfg(target_os = "windows")] #[ignore]` integration test.
+- [x] `build_jump_list_tasks` returns 2 built-in tasks ("New Window", "New Tab") with correct arguments (`--new-window`, `--new-tab`)
+- [x] `build_jump_list_tasks` returns tasks with correct labels and descriptions (human-readable, not empty)
+- [x] `JumpListTask` fields are correctly populated (label, arguments, description) — verify each field is non-empty
+- [x] Task argument strings match CLI flag names exactly (`--new-window` not `--new_window`, `--new-tab` not `--new_tab`) — the jump list launches a new process via CLI
+- [x] Note: `submit_jump_list` requires Windows COM runtime and cannot be unit tested. Cover via manual verification on Windows or a `#[cfg(target_os = "windows")] #[ignore]` integration test.
+- [x] Note: `exe_path()` cannot be meaningfully unit tested (depends on `/proc/self/exe` or equivalent). Tested indirectly via `submit_jump_list` integration test.
+- [x] Module structure: `mod.rs` ends with `#[cfg(test)] mod tests;` (sibling test file pattern per `test-organization.md`)
 
 ---
 
@@ -439,42 +451,68 @@ Deferred to a future section. The `.desktop` file is an install-time packaging a
 
 Verification that all sub-sections (21.1-21.5) are complete and integrated.
 
-### Sync Points — New Types and Registrations
+### Sync Points — Settings UI (21.3, COMPLETE)
 
-When implementing 21.3 (Settings UI), the following locations must be updated together:
+These were required for 21.3 and are already implemented:
 
-- [ ] `oriterm/src/event.rs`: add `TermEvent::OpenSettings` variant
-- [ ] `oriterm/src/app/event_loop.rs`: add `TermEvent::OpenSettings` match arm in `user_event` handler
-- [ ] `oriterm/src/app/event_loop.rs`: add early guard in `window_event` for settings window (before existing match)
-- [ ] `oriterm/src/app/event_loop.rs`: in `about_to_wait`, check `settings_state.dirty` alongside terminal window dirty flags
-- [ ] `oriterm/src/app/keyboard_input/overlay_dispatch.rs`: replace `ContextAction::Settings` stub with `TermEvent::OpenSettings` send
-- [ ] `oriterm/src/app/mod.rs`: add `settings_state: Option<settings_ui::SettingsState>` field to `App` struct
-- [ ] `oriterm/src/app/mod.rs`: add `mod settings_ui;` declaration
-- [ ] `oriterm/src/app/settings_ui/mod.rs`: `SettingsState` struct, `open_settings_window`, `close_settings_window`, `is_settings_window`, `handle_settings_window_event`
-- [ ] `oriterm/src/app/settings_ui/rendering.rs`: `render_settings_frame`
-- [ ] `oriterm/src/app/settings_ui/mouse.rs`: `handle_settings_mouse`, `update_settings_hover`
-- [ ] `oriterm/src/app/settings_ui/scheme.rs`: `apply_scheme_to_all_panes`
-- [ ] `oriterm/src/app/settings_ui/tests.rs`: sibling test file
-- [ ] `oriterm/src/app/constructors.rs`: initialize `settings_state: None` in both `App::new()` and `App::new_daemon()`
-- [ ] `oriterm/src/config/io.rs`: remove `#[allow(dead_code, reason = "...")]` from `Config::save()` once settings UI calls it
+- [x] `oriterm/src/event.rs`: `TermEvent::OpenSettings` variant
+- [x] `oriterm/src/app/event_loop.rs`: `TermEvent::OpenSettings` match arm calls `self.open_settings_dialog(event_loop)`
+- [x] `oriterm/src/app/event_loop.rs`: dialog window event routing via `WindowManager` kind checks
+- [x] `oriterm/src/app/keyboard_input/overlay_dispatch.rs`: `ContextAction::Settings` sends `TermEvent::OpenSettings`
+- [x] `oriterm/src/app/mod.rs`: `settings_ids: Option<SettingsIds>` + `settings_pending: Option<Config>` on `App`
+- [x] `oriterm/src/app/mod.rs`: `mod settings_overlay;` + `mod dialog_management;` declarations
+- [x] `oriterm/src/app/settings_overlay/mod.rs`: `open_settings_overlay()` (overlay fallback path)
+- [x] `oriterm/src/app/settings_overlay/form_builder/mod.rs`: `build_settings_form()`, `SettingsIds`
+- [x] `oriterm/src/app/settings_overlay/action_handler/mod.rs`: `handle_settings_action()`
+- [x] `oriterm/src/app/dialog_management.rs`: `open_settings_dialog()`, `close_dialog()`, `DialogWindowContext`
+- [x] `oriterm/src/app/constructors.rs`: `settings_ids: None` + `settings_pending: None` in both `App::new()` and `App::new_daemon()`
+- [x] `oriterm/src/config/io.rs`: `Config::save()` is actively used (no `#[allow(dead_code)]`)
+
+### Sync Points — Jump List (21.5, COMPLETE)
+
+All sync points for 21.5 have been implemented:
+
+**Cargo.toml:**
+- [x] `oriterm/Cargo.toml`: add `windows` crate under `[target.'cfg(windows)'.dependencies]` with features: `"Win32_UI_Shell"`, `"Win32_UI_Shell_PropertiesSystem"`, `"Win32_System_Com"`, `"Win32_System_Com_StructuredStorage"`
+
+**New files:**
+- [x] `oriterm/src/platform/jump_list/mod.rs`: `JumpListTask` struct (unconditional), `build_jump_list_tasks()` (unconditional), `#[cfg(target_os = "windows")] submit_jump_list()` + `create_shell_link()` helper (with per-function `#[allow(unsafe_code)]`), `#[cfg(target_os = "windows")] exe_path()`; ends with `#[cfg(test)] mod tests;`
+- [x] `oriterm/src/platform/jump_list/tests.rs`: sibling test file (runs on all platforms)
+
+**Modified files (must update ALL):**
+- [x] `oriterm/src/platform/mod.rs`: add `pub mod jump_list;` — unconditional module declaration (data model is cross-platform; COM code is `#[cfg(windows)]` inside the module)
+- [x] `oriterm/src/main.rs`: add `#[cfg(windows)]` block after `init_logger()` calling `SetCurrentProcessExplicitAppUserModelID` via `windows_sys` (existing dependency, no new crate needed for this call — `Win32_UI_Shell` feature already enabled)
+- [x] `oriterm/src/main.rs`: add `#[cfg(windows)]` block in `main()` with explicit `CoInitializeEx(COINIT_APARTMENTTHREADED)` + `submit_jump_list(build_jump_list_tasks())` call. Place after `init_logger()` and the `SetCurrentProcessExplicitAppUserModelID` call. Log result at `warn` level on failure, do not fail startup on error. The explicit COM init is needed because winit does not call `OleInitialize` until window creation (inside `App::resumed`).
+- [x] `oriterm/src/cli/mod.rs`: add `#[arg(long)] pub new_tab: bool` to `Cli` struct
+- [x] `oriterm/src/main.rs`: add `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (prevents `dead_code` lint)
+- [x] `oriterm/src/cli/tests.rs`: add tests mirroring the existing `--new-window` test pattern (see `new_window_flag_parses`, `new_window_flag_defaults_to_false` in `cli/tests.rs`): `new_tab_flag_parses`, `new_tab_flag_defaults_to_false`, `completions_contain_new_tab_flag`
 
 ### Feature Checklist
 
 - [ ] All 21.1–21.5 items complete
-- [x] Context menu: 3 menu types, GPU-rendered, checkmark entries, shadow rendering, keyboard navigation, full action dispatch chain
+- [x] Context menu: 3 menu types (tab, grid, dropdown), GPU-rendered, keyboard navigation, full action dispatch chain
 - [x] Config reload: broadcast to all panes/windows, `FontCollection` rebuild, grid reflow, file watcher with 200ms debounce
-- [ ] Settings UI: separate window with `SettingsState` (not `WindowContext`), color scheme selector, persist to config
-- [ ] Settings UI: `TermEvent::OpenSettings` wiring, event routing guard, `about_to_wait` dirty integration
+- [x] Settings UI: dialog window with `DialogWindowContext`, form-based settings panel (font, color, cursor, window), Save/Cancel flow, persists to config via `Config::save()`
+- [x] Settings UI: `TermEvent::OpenSettings` wiring, `Action::OpenSettings` keybinding (Ctrl+,/Cmd+,), dialog event routing
 - [x] Window controls: platform-specific rendering, Aero Snap, frameless drag, keyboard accessibility (Alt+F4, Win+Arrow)
-- [ ] Jump List (Windows): data model (`JumpListTask`) + COM submission, app user model ID, CLI arg parsing dependency
+- [x] Jump List (Windows): data model (`JumpListTask`) + COM submission via `windows` crate, app user model ID, `--new-tab` CLI flag
 - [ ] Dock Menu (macOS): DEFERRED — requires macOS build infrastructure
 - [ ] Desktop Actions (Linux): DEFERRED — install-time packaging artifact
-- [ ] `./build-all.sh` — clean build (cross-compile + host)
-- [ ] `./clippy-all.sh` — no warnings (workspace-wide, both targets)
-- [ ] `./test-all.sh` — all tests pass (workspace-wide)
+
+### Build Verification
+
+- [x] `./build-all.sh` — clean build (cross-compile `x86_64-pc-windows-gnu` + host). Must verify that the new `windows` crate dependency compiles for the cross-compile target.
+- [x] `./clippy-all.sh` — no warnings (workspace-wide, both targets). Watch for: `dead_code` on `new_tab` field if not read in `main()`, `unsafe_code` deny on COM functions (must have per-function `#[allow(unsafe_code)]`), clippy `too_many_lines` — `submit_jump_list` and `create_shell_link` must each be < 50 lines.
+- [x] `./test-all.sh` — all tests pass (workspace-wide). The `jump_list` tests run on the host (Linux) because `JumpListTask` and `build_jump_list_tasks()` are not platform-gated. COM tests (`submit_jump_list`) are `#[cfg(target_os = "windows")]` and only run on Windows CI.
+
+### Manual Verification (Windows only)
+
 - [ ] **Context menu test**: right-click tab, grid, and dropdown button — each menu renders, keyboard-navigates, and dispatches actions correctly
 - [ ] **Config reload test**: edit config file while running — font, color scheme, cursor, keybinding, and opacity changes apply to all open panes/windows within 200ms
-- [ ] **Settings window test**: open settings, change scheme, verify all terminal windows update colors, close settings, reopen — no orphaned windows, no GPU resource leak
-- [ ] **Jump List test** (Windows): right-click taskbar icon — "New Tab" and "New Window" entries appear and launch correctly
+- [ ] **Settings dialog test**: open settings (Ctrl+, or dropdown menu), change settings, Save — verify all terminal windows update, Cancel — verify no changes applied. Reopen — no orphaned windows, no GPU resource leak
+- [ ] **Jump List test** (Windows): right-click taskbar icon — "New Window" and "New Tab" entries appear and launch correctly
+- [ ] **Jump List error resilience** (Windows): verify that Jump List COM failure does not prevent app startup — intentionally break COM (e.g., corrupt the AppUserModelID) and confirm the app still launches with a log warning
+- [ ] **`--new-tab` CLI test**: run `oriterm --new-tab` from terminal — verify it launches (new window with one tab for now; proper IPC dispatch deferred to Section 34)
+- [ ] **Cross-compile smoke test**: after adding `windows` crate, run `cargo build --target x86_64-pc-windows-gnu` to confirm the new dependency links correctly under MinGW
 
-**Exit Criteria:** All three menu contexts (tab, grid, dropdown) work with GPU rendering, keyboard navigation, and full action dispatch. Config reload broadcasts to all panes/windows with font rebuild and grid reflow. Settings UI opens as a separate window with color scheme selection that persists to config. Window controls (minimize, maximize, close) render platform-specifically with Aero Snap support. Jump List provides "New Tab" and "New Window" entries in the Windows taskbar. Clean build, zero clippy warnings, all tests pass.
+**Exit Criteria:** All three menu contexts (tab, grid, dropdown) work with GPU rendering, keyboard navigation, and full action dispatch. Config reload broadcasts to all panes/windows with font rebuild and grid reflow. Settings dialog opens with form controls for all major config sections, Save persists to disk and applies changes, Cancel discards. Window controls (minimize, maximize, close) render platform-specifically with Aero Snap support. Jump List provides "New Window" and "New Tab" entries in the Windows taskbar. `SetCurrentProcessExplicitAppUserModelID` is called early in `main()` (before event loop) for consistent taskbar grouping. `submit_jump_list` is called in `main()` with explicit `CoInitializeEx` before `run_app()`. `--new-tab` CLI flag is recognized (dispatches to default behavior until IPC lands in Section 34). All source files < 500 lines, all functions < 50 lines. Clean build on both host and cross-compile target, zero clippy warnings, all tests pass.

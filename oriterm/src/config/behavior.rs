@@ -7,7 +7,7 @@ use super::paste_warning::PasteWarning;
 /// When to send desktop notifications on long-running command completion.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum NotifyOnCommandFinish {
+pub(crate) enum NotifyOnCommandFinish {
     /// Never send command completion notifications.
     Never,
     /// Notify only when the pane is not focused (default).
@@ -24,7 +24,7 @@ pub enum NotifyOnCommandFinish {
 )]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct BehaviorConfig {
+pub(crate) struct BehaviorConfig {
     /// Auto-copy on selection release (default: true).
     pub copy_on_select: bool,
     /// Bold text uses bright colors (default: true).

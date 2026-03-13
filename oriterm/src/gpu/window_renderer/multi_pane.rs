@@ -71,6 +71,7 @@ impl WindowRenderer {
             &mut self.color_atlas,
             &mut self.empty_keys,
             &mut self.font_collection,
+            &gpu.device,
             &gpu.queue,
         );
 
@@ -80,6 +81,7 @@ impl WindowRenderer {
             self.shaping.frame.size_q6(),
             &mut self.atlas,
             &mut self.empty_keys,
+            &gpu.device,
             &gpu.queue,
         );
 

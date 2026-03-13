@@ -138,8 +138,6 @@ pub enum EventResponse {
     RequestLayout,
     /// The widget wants keyboard focus.
     RequestFocus,
-    /// Backward-compatible alias for `RequestLayout` during migration.
-    RequestRedraw,
 }
 
 impl EventResponse {
@@ -153,17 +151,16 @@ impl EventResponse {
     /// Used by container widgets to invalidate cached layouts when a child's
     /// structure changes (e.g., section collapse/expand).
     pub fn needs_layout(self) -> bool {
-        matches!(self, Self::RequestLayout | Self::RequestRedraw)
+        matches!(self, Self::RequestLayout)
     }
 
     /// Returns the higher-priority response.
     ///
-    /// Priority: `RequestLayout`/`RequestRedraw` > `RequestPaint` > `RequestFocus` > `Handled` > `Ignored`.
+    /// Priority: `RequestLayout` > `RequestPaint` > `RequestFocus` > `Handled` > `Ignored`.
     #[must_use]
     pub fn merge(self, other: Self) -> Self {
         match (self, other) {
-            (Self::RequestLayout | Self::RequestRedraw, _)
-            | (_, Self::RequestLayout | Self::RequestRedraw) => Self::RequestLayout,
+            (Self::RequestLayout, _) | (_, Self::RequestLayout) => Self::RequestLayout,
             (Self::RequestPaint, _) | (_, Self::RequestPaint) => Self::RequestPaint,
             (Self::RequestFocus, _) | (_, Self::RequestFocus) => Self::RequestFocus,
             (Self::Handled, _) | (_, Self::Handled) => Self::Handled,
@@ -203,6 +200,10 @@ pub enum Key {
     ArrowLeft,
     /// Right arrow.
     ArrowRight,
+    /// Page Up.
+    PageUp,
+    /// Page Down.
+    PageDown,
     /// A character key (after dead-key / IME composition).
     Character(char),
 }
