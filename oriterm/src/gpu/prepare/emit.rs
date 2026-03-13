@@ -61,7 +61,6 @@ impl GlyphEmitter<'_> {
         x: f32,
         y: f32,
         fg: Rgb,
-        bg: Rgb,
     ) {
         let mut is_first = true;
         for (sg, &cs) in row_glyphs[start_idx..].iter().zip(&col_starts[start_idx..]) {
@@ -96,12 +95,23 @@ impl GlyphEmitter<'_> {
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
+                // Subpixel glyphs always use alpha-based blending (no bg hint).
+                // Per-channel LCD compositing with a known bg produces opaque
+                // glyph-sized rectangles that bleed beyond cell boundaries and
+                // create visible per-character boxes. Proper per-channel
+                // compositing requires dual-source blending (Alacritty approach)
+                // which wgpu/WebGPU doesn't support. The alpha fallback path
+                // (bg_color = 0) uses max-channel coverage as a single alpha
+                // and blends correctly over any background — same strategy as
+                // Ghostty (grayscale for all text).
+                //
+                // Mono and color glyphs are unaffected (shaders ignore bg_color).
                 let writer = match entry.kind {
                     AtlasKind::Color => &mut self.frame.color_glyphs,
                     AtlasKind::Subpixel => &mut self.frame.subpixel_glyphs,
                     AtlasKind::Mono => &mut self.frame.glyphs,
                 };
-                writer.push_glyph_with_bg(rect, uv, fg, bg, self.fg_dim, entry.page);
+                writer.push_glyph(rect, uv, fg, self.fg_dim, entry.page);
             }
         }
     }

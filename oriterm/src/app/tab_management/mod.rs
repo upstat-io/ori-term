@@ -70,10 +70,13 @@ impl App {
 
         self.release_tab_width_lock();
         self.sync_tab_bar_from_mux();
+        self.resize_all_panes();
         if let Some(wid) = self.focused_window_id {
             self.refresh_platform_rects(wid);
         }
         if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.cached_dividers = None;
             ctx.dirty = true;
         }
     }

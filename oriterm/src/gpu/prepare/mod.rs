@@ -363,22 +363,27 @@ pub(crate) fn fill_frame_shaped(
             &input.palette,
         );
 
-        // Background (identical to unshaped path).
+        // Background: skip cells with the default palette background so the
+        // window clear color (which carries the theme opacity for glass/acrylic)
+        // shows through. Only cells with explicit non-default backgrounds
+        // (selection, search, SGR colors) paint an opaque quad.
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
             2.0 * cw
         } else {
             cw
         };
-        frame.backgrounds.push_rect(
-            ScreenRect {
-                x,
-                y,
-                w: bg_w,
-                h: ch,
-            },
-            bg,
-            1.0,
-        );
+        if bg != input.palette.background {
+            frame.backgrounds.push_rect(
+                ScreenRect {
+                    x,
+                    y,
+                    w: bg_w,
+                    h: ch,
+                },
+                bg,
+                1.0,
+            );
+        }
 
         let is_hovered = input.hovered_cell == Some((row, col));
         decorations::DecorationContext {
@@ -431,7 +436,7 @@ pub(crate) fn fill_frame_shaped(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
+            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg);
         }
     }
 

@@ -364,7 +364,15 @@ impl FrameInput {
             g: 215,
             b: 207,
         };
-        let bg = Rgb { r: 0, g: 0, b: 0 };
+        // Cell bg differs from palette background so that bg quads are
+        // emitted in tests (the prepare phase skips cells whose bg matches
+        // the palette background to support window transparency/glass).
+        let bg = Rgb {
+            r: 30,
+            g: 30,
+            b: 46,
+        };
+        let palette_bg = Rgb { r: 0, g: 0, b: 0 };
 
         let mut cells = Vec::with_capacity(cols * rows);
         let mut chars = text.chars();
@@ -397,7 +405,7 @@ impl FrameInput {
             viewport: ViewportSize::new(cols as u32 * 8, rows as u32 * 16),
             cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
             palette: FramePalette {
-                background: bg,
+                background: palette_bg,
                 foreground: fg,
                 cursor_color: Rgb {
                     r: 255,

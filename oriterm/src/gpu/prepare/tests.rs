@@ -2003,7 +2003,7 @@ fn selection_inverts_bg_color() {
     let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
     let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
 
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
     let selected_bg = rgb_f32(Rgb {
         r: 211,
         g: 215,
@@ -2028,9 +2028,9 @@ fn selection_inverts_fg_color() {
 
     let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
-    // Glyph "A" (col 0) should have inverted fg (black instead of light gray).
+    // Glyph "A" (col 0) should have inverted fg (cell bg instead of light gray).
     let fg0 = nth_instance(frame.glyphs.as_bytes(), 0);
-    let selected_fg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let selected_fg = rgb_f32(input.content.cells[0].bg);
     assert_eq!(
         fg0.fg_color, selected_fg,
         "selected glyph should have inverted fg"
@@ -2059,7 +2059,7 @@ fn selection_no_effect_when_none() {
 
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
     let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     assert_eq!(bg0.bg_color, normal_bg);
     assert_eq!(bg1.bg_color, normal_bg);
@@ -2070,12 +2070,17 @@ fn selection_wide_char_highlights_both_cells() {
     use oriterm_core::RenderableCell;
 
     // Build a grid with a wide char at col 0: 'Ａ' (fullwidth A, 2 cells wide).
+    // Use non-palette bg so bg quads are emitted for assertion.
     let fg = Rgb {
         r: 211,
         g: 215,
         b: 207,
     };
-    let bg = Rgb { r: 0, g: 0, b: 0 };
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
 
     let cells = vec![
         RenderableCell {
@@ -2133,7 +2138,7 @@ fn selection_wide_char_highlights_both_cells() {
         g: 215,
         b: 207,
     });
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     assert_eq!(bg0.bg_color, selected_bg, "wide char should be selected");
     assert_eq!(bg0.size, (16.0, 16.0), "wide char bg should span 2 cells");
@@ -2174,7 +2179,7 @@ fn selection_block_mode_rectangular() {
         g: 215,
         b: 207,
     });
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     // Row 0: A(normal) B(selected) C(selected) D(normal).
     let a = nth_instance(frame.backgrounds.as_bytes(), 0);
@@ -2206,12 +2211,17 @@ fn selection_wide_char_spacer_only_highlights_both() {
     // Wide char at col 0, spacer at col 1, narrow 'B' at col 2.
     // Selection covers only col 1 (the spacer). The wide char should
     // still be highlighted because you can't render half a wide char.
+    // Use non-palette bg so bg quads are emitted for assertion.
     let fg = Rgb {
         r: 211,
         g: 215,
         b: 207,
     };
-    let bg = Rgb { r: 0, g: 0, b: 0 };
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
 
     let cells = vec![
         RenderableCell {
@@ -2264,7 +2274,7 @@ fn selection_wide_char_spacer_only_highlights_both() {
         g: 215,
         b: 207,
     });
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     // bg[0] = wide char (should be selected because spacer col is in range).
     // bg[1] = 'B' (normal).
@@ -2306,7 +2316,7 @@ fn selection_across_wrapped_lines_no_gap() {
         g: 215,
         b: 207,
     });
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     // Row 0: A(norm) B(norm) C(sel) D(sel).
     let a = nth_instance(frame.backgrounds.as_bytes(), 0);
@@ -2338,12 +2348,17 @@ fn selection_block_cursor_skips_inversion() {
 
     // 3x1 grid: "ABC". Select all three columns. Visible block cursor at col 1.
     // Col 1 should NOT be inverted (cursor overlay dominates).
+    // Use non-palette bg so bg quads are emitted for assertion.
     let fg = Rgb {
         r: 211,
         g: 215,
         b: 207,
     };
-    let bg = Rgb { r: 0, g: 0, b: 0 };
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
 
     let cells = vec![
         RenderableCell {
@@ -2519,7 +2534,12 @@ fn selection_hidden_cell_stays_invisible() {
 
     // A HIDDEN (SGR 8) cell where fg == bg intentionally hides text.
     // Selection should NOT reveal it — the fg==bg fallback should be skipped.
-    let bg = Rgb { r: 0, g: 0, b: 0 };
+    // Use a non-palette bg so the bg quad is emitted for assertion.
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
 
     let cells = vec![RenderableCell {
         line: 0,
@@ -2586,7 +2606,7 @@ fn selection_preserves_instance_counts() {
     );
 
     // Verify selected cells have inverted colors while unselected cells are unchanged.
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input_sel.content.cells[0].bg);
     let selected_bg = rgb_f32(Rgb {
         r: 211,
         g: 215,
@@ -2893,7 +2913,7 @@ fn shaped_ligature_selection_col1_does_not_duplicate_glyph() {
 
     // Col 0 (unselected) should have normal bg.
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
     assert_eq!(bg0.bg_color, normal_bg, "col 0 should have normal bg");
 
     // Col 1 (selected continuation) should have inverted bg.
@@ -3089,7 +3109,7 @@ fn search_match_highlights_bg() {
 
     // Col 0: normal bg.
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
-    assert_eq!(bg0.bg_color, rgb_f32(input.palette.background));
+    assert_eq!(bg0.bg_color, rgb_f32(input.content.cells[0].bg));
 
     // Col 1: search match bg.
     let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
@@ -3101,7 +3121,7 @@ fn search_match_highlights_bg() {
 
     // Col 2: normal bg.
     let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
-    assert_eq!(bg2.bg_color, rgb_f32(input.palette.background));
+    assert_eq!(bg2.bg_color, rgb_f32(input.content.cells[2].bg));
 }
 
 #[test]
@@ -3197,14 +3217,14 @@ fn search_no_match_uses_default_colors() {
     input.search = Some(search_with_match(5, 0, 0, 0));
     input.content.cursor.visible = false;
     let atlas = atlas_with(&['A', 'B']);
-    let bg_color = input.palette.background;
+    let cell_bg = input.content.cells[0].bg;
 
     let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
-    assert_eq!(bg0.bg_color, rgb_f32(bg_color));
+    assert_eq!(bg0.bg_color, rgb_f32(cell_bg));
     let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
-    assert_eq!(bg1.bg_color, rgb_f32(bg_color));
+    assert_eq!(bg1.bg_color, rgb_f32(cell_bg));
 }
 
 // ── URL hover underline ──
@@ -3382,7 +3402,7 @@ fn selection_explicit_colors_override_inversion() {
 
     // Col 0 (not selected): normal colors.
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
-    assert_eq!(bg0.bg_color, rgb_f32(input.palette.background));
+    assert_eq!(bg0.bg_color, rgb_f32(input.content.cells[0].bg));
 }
 
 // ── Empty cells still produce bg instances ──
