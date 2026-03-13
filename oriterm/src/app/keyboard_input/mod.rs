@@ -129,7 +129,9 @@ impl App {
         }
         if event.state == ElementState::Pressed {
             // Build SnapshotGrid from the current snapshot.
-            let mux = self.mux.as_mut().expect("mux checked at pane_id");
+            let Some(mux) = self.mux.as_mut() else {
+                return true;
+            };
             if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
                 mux.refresh_pane_snapshot(pane_id);
             }
@@ -284,6 +286,8 @@ fn winit_key_to_ui_key(key: &winit::keyboard::Key) -> Option<Key> {
         WKey::Named(NamedKey::ArrowDown) => Some(Key::ArrowDown),
         WKey::Named(NamedKey::ArrowLeft) => Some(Key::ArrowLeft),
         WKey::Named(NamedKey::ArrowRight) => Some(Key::ArrowRight),
+        WKey::Named(NamedKey::PageUp) => Some(Key::PageUp),
+        WKey::Named(NamedKey::PageDown) => Some(Key::PageDown),
         WKey::Character(s) => s.chars().next().map(Key::Character),
         _ => None,
     }

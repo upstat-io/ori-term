@@ -31,6 +31,7 @@ mod pane_accessors;
 mod pane_ops;
 mod perf_stats;
 mod redraw;
+mod render_dispatch;
 mod search_ui;
 mod settings_overlay;
 pub(crate) mod snapshot_grid;
@@ -41,9 +42,9 @@ pub(crate) mod window_context;
 mod window_management;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use winit::event_loop::EventLoopProxy;
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
@@ -70,6 +71,20 @@ use oriterm_mux::MuxNotification;
 use oriterm_mux::backend::MuxBackend;
 
 use oriterm_ui::theme::UiTheme;
+
+/// Event sender for deferred actions through the event loop.
+///
+/// Wraps the concrete `EventLoopProxy` behind a callback so logic layers
+/// don't depend on winit's concrete type. The concrete binding is set up
+/// in the constructors from `EventLoopProxy::send_event`.
+pub(crate) struct EventSender(Arc<dyn Fn(TermEvent) + Send + Sync>);
+
+impl EventSender {
+    /// Send an event through the event loop.
+    pub fn send(&self, event: TermEvent) {
+        (self.0)(event);
+    }
+}
 
 /// Default DPI for font rasterization.
 const DEFAULT_DPI: f32 = 96.0;
@@ -170,8 +185,8 @@ pub(crate) struct App {
     // System clipboard for copy/paste.
     clipboard: Clipboard,
 
-    // Event proxy for sending deferred actions through the event loop.
-    event_proxy: EventLoopProxy<TermEvent>,
+    // Event sender for deferred actions through the event loop.
+    event_proxy: EventSender,
 
     // User configuration (loaded from TOML, hot-reloaded on file change).
     config: Config,
@@ -214,6 +229,11 @@ pub(crate) struct App {
     // `check_torn_off_merge()` in `about_to_wait`.
     torn_off_pending: Option<tab_drag::TornOffPending>,
 
+    // Scratch buffers reused per frame to avoid per-frame allocations.
+    scratch_dirty_windows: Vec<WindowId>,
+    scratch_pane_sels: HashMap<PaneId, Selection>,
+    scratch_pane_mcs: HashMap<PaneId, MarkCursor>,
+
     // Frame budget: time of last render to enforce FRAME_BUDGET spacing.
     last_render: Instant,
 
@@ -251,6 +271,23 @@ impl App {
         for ctx in self.windows.values_mut() {
             ctx.dirty = true;
         }
+    }
+
+    /// Mark only the window containing `pane_id` as dirty.
+    ///
+    /// Falls back to [`mark_all_windows_dirty`] if the pane's window cannot
+    /// be resolved (orphan pane during close, or session out of sync).
+    fn mark_pane_window_dirty(&mut self, pane_id: PaneId) {
+        if let Some(session_wid) = self.session.window_for_pane(pane_id) {
+            for ctx in self.windows.values_mut() {
+                if ctx.window.session_window_id() == session_wid {
+                    ctx.dirty = true;
+                    return;
+                }
+            }
+        }
+        // Fallback: pane not found in session → mark all dirty.
+        self.mark_all_windows_dirty();
     }
 
     /// Re-rasterize fonts and update rendering settings for a new DPI scale.
@@ -375,12 +412,18 @@ impl App {
     /// it afterward to preserve `Vec` capacity across frames.
     fn with_drained_notifications(&mut self, mut handler: impl FnMut(&mut Self, MuxNotification)) {
         let mut buf = std::mem::take(&mut self.notification_buf);
+        let count = buf.len();
         #[allow(
             clippy::iter_with_drain,
             reason = "drain preserves Vec capacity; into_iter drops it"
         )]
         for n in buf.drain(..) {
             handler(self, n);
+        }
+        // Shrink if capacity vastly exceeds typical usage.
+        let cap = buf.capacity();
+        if cap > 4 * count && cap > 4096 {
+            buf.shrink_to(count * 2);
         }
         self.notification_buf = buf;
     }

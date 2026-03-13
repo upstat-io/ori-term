@@ -10,6 +10,7 @@
 //! `HashMap`.
 
 mod decorations;
+pub(crate) mod dirty_skip;
 mod emit;
 pub(crate) mod shaped_frame;
 #[cfg(test)]
@@ -27,6 +28,7 @@ use super::prepared_frame::PreparedFrame;
 
 use crate::font::{GlyphStyle, RasterKey};
 use crate::gpu::instance_writer::ScreenRect;
+use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
 use emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hover_underline};
 
 pub(crate) use shaped_frame::ShapedFrame;
@@ -195,6 +197,10 @@ pub fn prepare_frame_shaped(
 /// allocating a new frame. The `origin` offset shifts all cell positions
 /// (from layout), and `cursor_blink_visible` gates cursor emission (from
 /// application-level blink state).
+///
+/// When the previous frame's row ranges are available and not all rows are
+/// dirty, uses the incremental path: saves the old terminal-tier instances,
+/// copies clean rows from the cache, and only regenerates dirty rows.
 #[expect(
     clippy::too_many_arguments,
     reason = "origin + cursor blink are pipeline context, not FrameInput concerns"
@@ -207,10 +213,69 @@ pub fn prepare_frame_shaped_into(
     origin: (f32, f32),
     cursor_blink_visible: bool,
 ) {
-    out.clear();
-    out.viewport = input.viewport;
-    out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-    fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
+    let can_incremental = !input.content.all_dirty && out.saved_tier.has_cached_rows();
+
+    if can_incremental {
+        // Incremental path: save old instances, clear buffers, merge.
+        // save_terminal_tier swaps old data to saved_tier and clears writers.
+        out.save_terminal_tier();
+        out.cursors.clear();
+        out.image_quads_below.clear();
+        out.image_quads_above.clear();
+        out.viewport = input.viewport;
+        out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
+        fill_frame_incremental(input, atlas, shaped, out, origin, cursor_blink_visible);
+    } else {
+        // Full rebuild path.
+        out.clear();
+        out.viewport = input.viewport;
+        out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
+        fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
+    }
+
+    // Update selection range for next frame's damage tracking.
+    let num_rows = input.rows();
+    out.prev_selection_range = input
+        .selection
+        .as_ref()
+        .and_then(|s| s.viewport_line_range(num_rows));
+}
+
+/// Cursor-blink-only fast path: rebuild only cursor instances.
+///
+/// All non-cursor content (backgrounds, glyphs, images, chrome, overlays)
+/// is already rendered into the content cache texture. This function only
+/// updates the cursor instance buffer for the blink overlay pass.
+pub fn update_cursor_only(
+    input: &FrameInput,
+    out: &mut PreparedFrame,
+    origin: (f32, f32),
+    cursor_blink_visible: bool,
+) {
+    out.cursors.clear();
+
+    let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
+    if cursor.visible && cursor_blink_visible {
+        let shape = if input.window_focused {
+            cursor.shape
+        } else {
+            CursorShape::HollowBlock
+        };
+        let cw = input.cell_size.width;
+        let ch = input.cell_size.height;
+        let (ox, oy) = origin;
+        build_cursor(
+            out,
+            shape,
+            cursor.column.0,
+            cursor.line,
+            cw,
+            ch,
+            ox,
+            oy,
+            input.palette.cursor_color,
+        );
+    }
 }
 
 /// Shaped rendering: emit background, glyph, and cursor instances from shaped data.
@@ -243,6 +308,13 @@ pub(crate) fn fill_frame_shaped(
     let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
+    let viewport_h = input.viewport.height as f32;
+
+    // Track row boundaries for row_ranges (incremental update support).
+    let mut current_row = usize::MAX;
+    let mut row_start = BufferLengths::capture(frame);
+    let mut row_off_screen = false;
+
     for cell in &input.content.cells {
         if cell
             .flags
@@ -253,6 +325,32 @@ pub(crate) fn fill_frame_shaped(
 
         let col = cell.column.0;
         let row = cell.line;
+
+        // Record row range on row transition.
+        if row != current_row {
+            if current_row == usize::MAX {
+                row_start = BufferLengths::capture(frame);
+            } else {
+                let now = BufferLengths::capture(frame);
+                let ranges = now.range_since(&row_start);
+                // Fill gaps if rows were skipped (shouldn't happen but defensive).
+                while frame.row_ranges.len() < current_row {
+                    frame.row_ranges.push(RowInstanceRanges::default());
+                }
+                frame.row_ranges.push(ranges);
+                row_start = now;
+            }
+            current_row = row;
+
+            // Skip rows entirely outside the render target.
+            let row_y = oy + row as f32 * ch;
+            row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
+        }
+
+        if row_off_screen {
+            continue;
+        }
+
         let x = ox + col as f32 * cw;
         let y = oy + row as f32 * ch;
 
@@ -265,22 +363,27 @@ pub(crate) fn fill_frame_shaped(
             &input.palette,
         );
 
-        // Background (identical to unshaped path).
+        // Background: skip cells with the default palette background so the
+        // window clear color (which carries the theme opacity for glass/acrylic)
+        // shows through. Only cells with explicit non-default backgrounds
+        // (selection, search, SGR colors) paint an opaque quad.
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
             2.0 * cw
         } else {
             cw
         };
-        frame.backgrounds.push_rect(
-            ScreenRect {
-                x,
-                y,
-                w: bg_w,
-                h: ch,
-            },
-            bg,
-            1.0,
-        );
+        if bg != input.palette.background {
+            frame.backgrounds.push_rect(
+                ScreenRect {
+                    x,
+                    y,
+                    w: bg_w,
+                    h: ch,
+                },
+                bg,
+                1.0,
+            );
+        }
 
         let is_hovered = input.hovered_cell == Some((row, col));
         decorations::DecorationContext {
@@ -333,8 +436,18 @@ pub(crate) fn fill_frame_shaped(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
+            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg);
         }
+    }
+
+    // Record the final row's range.
+    if current_row != usize::MAX {
+        let now = BufferLengths::capture(frame);
+        let ranges = now.range_since(&row_start);
+        while frame.row_ranges.len() < current_row {
+            frame.row_ranges.push(RowInstanceRanges::default());
+        }
+        frame.row_ranges.push(ranges);
     }
 
     // Implicit URL hover: one continuous underline rect per segment.

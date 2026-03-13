@@ -218,9 +218,6 @@ fn apply_motion(
         col: old_cursor.col,
     };
 
-    let word_ctx = matches!(m, Motion::WordLeft | Motion::WordRight)
-        .then(|| extract_word_context(grid, abs_row, cur.col, word_delimiters));
-
     let new_abs = match m {
         Motion::Left => motion::move_left(cur, bounds),
         Motion::Right => motion::move_right(cur, bounds),
@@ -232,9 +229,13 @@ fn apply_motion(
         Motion::LineEnd => motion::line_end(cur, bounds),
         Motion::BufferStart => motion::buffer_start(),
         Motion::BufferEnd => motion::buffer_end(bounds),
-        Motion::WordLeft => motion::word_left(cur, word_ctx.as_ref().expect("computed above")),
+        Motion::WordLeft => {
+            let wc = extract_word_context(grid, abs_row, cur.col, word_delimiters);
+            motion::word_left(cur, &wc)
+        }
         Motion::WordRight => {
-            motion::word_right(cur, word_ctx.as_ref().expect("computed above"), bounds)
+            let wc = extract_word_context(grid, abs_row, cur.col, word_delimiters);
+            motion::word_right(cur, &wc, bounds)
         }
     };
 

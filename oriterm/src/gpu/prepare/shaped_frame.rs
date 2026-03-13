@@ -123,6 +123,17 @@ impl ShapedFrame {
         self.hinted
     }
 
+    /// Shrink grow-only buffers if capacity vastly exceeds usage.
+    ///
+    /// Applies the standard buffer shrink discipline to prevent unbounded
+    /// memory growth across frames.
+    pub fn maybe_shrink(&mut self) {
+        crate::gpu::maybe_shrink_vec(&mut self.glyphs);
+        crate::gpu::maybe_shrink_vec(&mut self.col_starts);
+        crate::gpu::maybe_shrink_vec(&mut self.row_spans);
+        crate::gpu::maybe_shrink_vec(&mut self.col_maps);
+    }
+
     /// Reset for reuse on the next frame, updating metadata.
     ///
     /// Clears all glyph and mapping data while retaining allocations.

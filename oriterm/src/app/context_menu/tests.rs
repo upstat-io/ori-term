@@ -1,5 +1,7 @@
 use oriterm_ui::widgets::menu::MenuEntry;
 
+use crate::session::TabId;
+
 use super::{ContextAction, build_dropdown_menu, build_grid_context_menu, build_tab_context_menu};
 
 #[test]
@@ -27,7 +29,7 @@ fn resolve_out_of_bounds() {
 
 #[test]
 fn tab_context_menu_entries() {
-    let (entries, _state) = build_tab_context_menu(2);
+    let (entries, _state) = build_tab_context_menu(2, TabId::from_raw(100));
 
     // Close, Duplicate, separator, Move to New Window.
     assert_eq!(entries.len(), 4);
@@ -39,12 +41,16 @@ fn tab_context_menu_entries() {
 
 #[test]
 fn tab_context_menu_actions() {
-    let (_, state) = build_tab_context_menu(5);
+    let tab_id = TabId::from_raw(42);
+    let (_, state) = build_tab_context_menu(5, tab_id);
 
     assert_eq!(state.resolve(0), Some(&ContextAction::CloseTab(5)));
     assert_eq!(state.resolve(1), Some(&ContextAction::DuplicateTab(5)));
     assert_eq!(state.resolve(2), None); // separator
-    assert_eq!(state.resolve(3), Some(&ContextAction::MoveToNewWindow(5)));
+    assert_eq!(
+        state.resolve(3),
+        Some(&ContextAction::MoveToNewWindow(tab_id))
+    );
 }
 
 // -- Grid context menu --

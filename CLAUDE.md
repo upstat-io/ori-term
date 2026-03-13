@@ -107,6 +107,15 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 - **ptyxis** — C/GTK4, GNOME's default terminal (Fedora/RHEL/Ubuntu). libvte consumer with GPU-accelerated rendering, `ptyxis-agent` out-of-process PTY helper for Flatpak sandboxing, `.palette` file format for color schemes with light/dark auto-adaptation, profile system (per-profile container/palette/shell), tab monitor for process tracking (`sudo`/SSH indicators), container-first architecture (Podman/Toolbox/Distrobox discovery), encrypted scrollback, terminal inspector for OSC/mouse debugging
 - **termenv** — Color profile detection (NO_COLOR/CLICOLOR), `Environ` interface for testing, profile-aware downgrade
 
+## Performance Invariants
+
+These invariants are enforced by regression tests in `oriterm_core/tests/alloc_regression.rs` and `oriterm/src/app/event_loop_helpers/tests.rs`. Do not introduce code that violates them.
+
+- **Zero idle CPU beyond cursor blink.** When idle, the event loop sleeps via `ControlFlow::Wait`. The only wakeup source is the cursor blink timer (~1.89 Hz). No polling, no spurious `WaitUntil` lingering from prior activity. Verified by `compute_control_flow()` pure function tests.
+- **Zero allocations in hot render path.** `renderable_content_into()` must perform zero heap allocations after the first warmup call (same grid size, no images, no combining marks). All `Vec` buffers are reused via `.clear()` + capacity retention. `HashSet` scratch buffers live on `RenderableContent`. No `Vec::new()` or `Box::new()` per cell or per frame.
+- **Stable RSS under sustained output.** Scrollback is bounded by `max_scrollback` with row recycling via `Row::reset()`. Image caches evict via frame-based aging. GPU textures drop via `wgpu::Texture::Drop`. No unbounded growth vector exists for normal terminal operation.
+- **Buffer shrink discipline.** Grow-only `Vec` buffers (instance writers, shaping scratch, notification buffer, `RenderableContent` fields) apply `maybe_shrink()` post-render: `if capacity > 4 * len && capacity > 4096 → shrink_to(len * 2)`. No shrinking during `draw_frame()` (pure computation, no side effects).
+
 ## Plans
 
 Implementation plans live in `plans/`. Each plan is a directory with an `index.md`, `00-overview.md`, and numbered section files (`section-01-*.md`, `section-02-*.md`, etc.).

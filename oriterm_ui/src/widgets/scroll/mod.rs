@@ -382,6 +382,18 @@ impl Widget for ScrollWidget {
                     }
                     return WidgetResponse::handled();
                 }
+                Key::PageUp => {
+                    if self.scroll_by(view_h, content_h, view_h) {
+                        return WidgetResponse::paint();
+                    }
+                    return WidgetResponse::handled();
+                }
+                Key::PageDown => {
+                    if self.scroll_by(-view_h, content_h, view_h) {
+                        return WidgetResponse::paint();
+                    }
+                    return WidgetResponse::handled();
+                }
                 Key::Home => {
                     let changed = self.scroll_offset > f32::EPSILON;
                     self.scroll_offset = 0.0;

@@ -125,8 +125,8 @@ fn widget_response_equality() {
     use crate::widget_id::WidgetId;
 
     let id = WidgetId::next();
-    let r1 = WidgetResponse::redraw().with_action(WidgetAction::Clicked(id));
-    let r2 = WidgetResponse::redraw().with_action(WidgetAction::Clicked(id));
+    let r1 = WidgetResponse::layout().with_action(WidgetAction::Clicked(id));
+    let r2 = WidgetResponse::layout().with_action(WidgetAction::Clicked(id));
     assert_eq!(r1, r2);
 
     let r3 = WidgetResponse::handled();

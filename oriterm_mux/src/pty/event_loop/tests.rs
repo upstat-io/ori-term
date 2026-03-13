@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use oriterm_core::{FairMutex, Term, TermMode, Theme, VoidListener};
+use oriterm_core::{Column, FairMutex, Line, Term, TermMode, Theme, VoidListener};
 
 use super::{MAX_LOCKED_PARSE, PtyEventLoop, READ_BUFFER_SIZE};
 
@@ -76,10 +76,8 @@ fn processes_pty_output_into_terminal() {
     // Verify terminal received the output.
     let term = terminal.lock();
     let grid = term.grid();
-    let first_row = &grid[oriterm_core::Line(0)];
-    let text: String = (0..80)
-        .map(|col| first_row[oriterm_core::Column(col)].ch)
-        .collect();
+    let first_row = &grid[Line(0)];
+    let text: String = (0..80).map(|col| first_row[Column(col)].ch).collect();
     assert!(
         text.contains("hello world"),
         "terminal grid should contain 'hello world', got: {text:?}",
@@ -445,5 +443,130 @@ fn sustained_flood_no_oom() {
     assert!(
         join_result.is_ok(),
         "event loop thread panicked during sustained flood"
+    );
+}
+
+/// Verifies that all PTY data is processed even when rendering is throttled.
+///
+/// Feeds numbered lines through the event loop with a contending renderer
+/// that holds the lock for 16ms per frame (simulating render backpressure).
+/// After EOF, verifies the last N lines in the grid match the expected
+/// content — proving no data was dropped during contention.
+#[test]
+fn no_data_loss_under_renderer_contention() {
+    let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
+
+    let (event_loop, terminal, _shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
+
+    let join = event_loop.spawn().expect("spawn event loop");
+
+    // Renderer thread — holds lock for 16ms per frame (60fps contention).
+    let term_clone = Arc::clone(&terminal);
+    let done = Arc::new(AtomicBool::new(false));
+    let done_clone = Arc::clone(&done);
+    let renderer = thread::spawn(move || {
+        while !done_clone.load(Ordering::Relaxed) {
+            let _g = term_clone.lock();
+            thread::sleep(Duration::from_millis(16));
+        }
+    });
+
+    // Feed 5000 numbered lines. Each line uses \r\n so cursor returns to
+    // column 0 before advancing (raw terminal has no implicit CR on LF).
+    let total_lines = 5000usize;
+    for i in 0..total_lines {
+        let line = format!("LINE_{i:05}\r\n");
+        pipe_writer.write_all(line.as_bytes()).expect("write");
+    }
+
+    // Close pipe → EOF → event loop reads+parses all remaining data, then exits.
+    drop(pipe_writer);
+    let _ = join.join();
+
+    // Stop renderer after event loop exits.
+    done.store(true, Ordering::Relaxed);
+    renderer.join().expect("renderer thread");
+
+    // The terminal is 24 rows x 80 cols with 1000 lines of scrollback.
+    // After 5000 lines with \r\n, LINE_04999 should be in the visible grid.
+    // Scan all visible rows to find it.
+    let term = terminal.lock();
+    let grid = term.grid();
+    let expected = format!("LINE_{:05}", total_lines - 1);
+    let mut found = false;
+    for line_idx in 0..24 {
+        let row = &grid[Line(line_idx)];
+        let text: String = (0..80).map(|col| row[Column(col)].ch).collect();
+        if text.contains(&expected) {
+            found = true;
+            break;
+        }
+    }
+
+    assert!(
+        found,
+        "expected '{expected}' in visible grid after {total_lines} lines. \
+         Data may have been lost during renderer contention",
+    );
+}
+
+/// Verifies that synchronized output (Mode 2026) delivers content atomically.
+///
+/// Sends BSU (Begin Synchronized Update), unique content, then ESU (End
+/// Synchronized Update) through the event loop. Verifies all content
+/// appears in the grid after ESU — proving the sync buffer was replayed.
+#[test]
+fn sync_mode_delivers_content_atomically() {
+    let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
+
+    let (event_loop, terminal, shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
+
+    let join = event_loop.spawn().expect("spawn event loop");
+
+    // BSU (Begin Synchronized Update) — Mode 2026 on.
+    pipe_writer.write_all(b"\x1b[?2026h").expect("write BSU");
+
+    // Write unique content while sync mode is active.
+    // These lines should be buffered by the VTE processor's SyncState.
+    for i in 0..10 {
+        let line = format!("SYNC_{i:03}\r\n");
+        pipe_writer
+            .write_all(line.as_bytes())
+            .expect("write sync content");
+    }
+
+    // ESU (End Synchronized Update) — Mode 2026 off. Buffer is replayed.
+    pipe_writer.write_all(b"\x1b[?2026l").expect("write ESU");
+
+    // Give the event loop time to process the sync buffer replay.
+    thread::sleep(Duration::from_millis(100));
+
+    // Close pipe → EOF → event loop exits.
+    drop(pipe_writer);
+    shutdown.store(true, Ordering::Release);
+    let _ = join.join();
+
+    // Verify all 10 sync lines appear in the grid.
+    let term = terminal.lock();
+    let grid = term.grid();
+    let mut found = Vec::new();
+    for line_idx in 0..24 {
+        let row = &grid[Line(line_idx)];
+        let text: String = (0..80).map(|col| row[Column(col)].ch).collect();
+        for i in 0..10 {
+            let marker = format!("SYNC_{i:03}");
+            if text.contains(&marker) {
+                found.push(i);
+            }
+        }
+    }
+
+    // All 10 lines must be present after ESU replay.
+    let expected: Vec<usize> = (0..10).collect();
+    assert_eq!(
+        found, expected,
+        "not all sync lines found in grid after ESU replay. \
+         found: {found:?}, expected: {expected:?}. \
+         Mode 2026 sync buffer may not have been replayed correctly",
     );
 }

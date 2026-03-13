@@ -40,23 +40,17 @@ fn content_with_cursor(
             });
         }
     }
-    RenderableContent {
-        cells,
-        cursor: RenderableCursor {
-            line: cursor_line,
-            column: Column(cursor_col),
-            shape: CursorShape::Block,
-            visible: true,
-        },
-        display_offset: 0,
-        stable_row_base: 0,
-        mode: TermMode::SHOW_CURSOR,
-        all_dirty: true,
-        damage: Vec::new(),
-        images: Vec::new(),
-        image_data: Vec::new(),
-        images_dirty: false,
-    }
+    let mut c = RenderableContent::default();
+    c.cells = cells;
+    c.cursor = RenderableCursor {
+        line: cursor_line,
+        column: Column(cursor_col),
+        shape: CursorShape::Block,
+        visible: true,
+    };
+    c.mode = TermMode::SHOW_CURSOR;
+    c.all_dirty = true;
+    c
 }
 
 // --- overlay_preedit_cells ---
@@ -403,23 +397,10 @@ fn preedit_zero_cols_no_panic() {
 
 #[test]
 fn preedit_empty_cells_no_panic() {
-    let mut content = RenderableContent {
-        cells: Vec::new(),
-        cursor: RenderableCursor {
-            line: 0,
-            column: Column(0),
-            shape: CursorShape::Block,
-            visible: true,
-        },
-        display_offset: 0,
-        stable_row_base: 0,
-        mode: TermMode::SHOW_CURSOR,
-        all_dirty: true,
-        damage: Vec::new(),
-        images: Vec::new(),
-        image_data: Vec::new(),
-        images_dirty: false,
-    };
+    let mut content = RenderableContent::default();
+    content.cursor.visible = true;
+    content.mode = TermMode::SHOW_CURSOR;
+    content.all_dirty = true;
     // Empty cells vec should early-return without panic.
     overlay_preedit_cells("A", &mut content, 10);
     assert!(content.cells.is_empty());

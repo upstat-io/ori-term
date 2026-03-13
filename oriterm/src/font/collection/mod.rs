@@ -10,6 +10,7 @@ mod face;
 mod loading;
 mod metadata;
 mod resolve;
+mod shaping;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,10 +23,10 @@ use super::{
 };
 use codepoint_map::CodepointMap;
 pub(crate) use codepoint_map::parse_hex_range;
-pub use face::size_key;
+pub(crate) use face::size_key;
 pub(crate) use face::{FaceData, font_ref};
 use face::{build_face, compute_metrics, rasterize_from_face};
-pub use loading::FontSet;
+pub(crate) use loading::{FontByteCache, FontSet};
 pub(crate) use metadata::parse_features;
 use metadata::{
     FallbackMeta, MAX_FONT_SIZE, MIN_FONT_SIZE, default_features, effective_size_for,
@@ -34,7 +35,7 @@ use metadata::{
 
 /// A rasterized glyph bitmap ready for atlas upload.
 #[derive(Debug, Clone)]
-pub struct RasterizedGlyph {
+pub(crate) struct RasterizedGlyph {
     /// Bitmap width in pixels.
     pub width: u32,
     /// Bitmap height in pixels.
@@ -60,7 +61,7 @@ pub struct RasterizedGlyph {
 /// Owns all font face data and provides the bridge between font discovery
 /// and the GPU renderer. Resolves characters to glyph IDs, rasterizes
 /// bitmaps, and pre-caches ASCII glyphs.
-pub struct FontCollection {
+pub(crate) struct FontCollection {
     // Faces
     primary: [Option<FaceData>; 4],
     fallbacks: Vec<FaceData>,
@@ -244,61 +245,6 @@ impl FontCollection {
     /// Whether the collection has a real Bold face (not synthetic).
     pub fn has_bold(&self) -> bool {
         self.primary[GlyphStyle::Bold as usize].is_some()
-    }
-
-    /// Create rustybuzz `Face` objects for all loaded faces.
-    ///
-    /// Returns one entry per face slot (4 primary + N fallbacks). Primary faces
-    /// get variable axes set (wght, slnt, ital); fallback faces use font defaults.
-    ///
-    /// Faces borrow from `self`, so the returned vec must not outlive `self`.
-    /// Create once per frame, reuse across all rows.
-    ///
-    /// # Performance
-    ///
-    /// Called every frame (~12-60us). Caching faces across frames would require
-    /// a self-referential struct (`Face<'a>` borrows from `FaceData` inside
-    /// `FontCollection`), which needs `unsafe` lifetime transmutation or a
-    /// crate like `yoke`. Not worth the complexity while the cost is bounded.
-    pub fn create_shaping_faces(&self) -> Vec<Option<rustybuzz::Face<'_>>> {
-        let total = 4 + self.fallbacks.len();
-        let mut faces = Vec::with_capacity(total);
-
-        // Primary faces with variable axes.
-        for (i, slot) in self.primary.iter().enumerate() {
-            faces.push(slot.as_ref().and_then(|fd| {
-                let mut face = rustybuzz::Face::from_slice(&fd.bytes, fd.face_index)?;
-                let vars = face_variations(
-                    FaceIdx(i as u16),
-                    SyntheticFlags::NONE,
-                    self.weight,
-                    &fd.axes,
-                );
-                if !vars.settings.is_empty() {
-                    let mut rb_vars = [rustybuzz::Variation {
-                        tag: rustybuzz::ttf_parser::Tag(0),
-                        value: 0.0,
-                    }; 2];
-                    for (i, (tag, val)) in vars.settings.iter().enumerate() {
-                        rb_vars[i] = rustybuzz::Variation {
-                            tag: rustybuzz::ttf_parser::Tag::from_bytes(
-                                tag.as_bytes().first_chunk::<4>().expect("4-byte tag"),
-                            ),
-                            value: *val,
-                        };
-                    }
-                    face.set_variations(&rb_vars[..vars.settings.len()]);
-                }
-                Some(face)
-            }));
-        }
-
-        // Fallback faces (no variation).
-        for fb in &self.fallbacks {
-            faces.push(rustybuzz::Face::from_slice(&fb.bytes, fb.face_index));
-        }
-
-        faces
     }
 
     /// Look up a glyph ID and advance width directly from the cmap table.

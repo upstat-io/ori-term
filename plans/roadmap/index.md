@@ -16,16 +16,19 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 
 | Priority | Section | Reason |
 |----------|---------|--------|
-| **1** | **44 — Multi-Process Window Architecture** | **BLOCKER — current single-process multi-window model is fundamentally broken. Must complete before any other work.** |
-| ~~2~~ | ~~43 — Compositor Layer System~~ | ~~Complete~~ |
+| ~~1~~ | ~~44 — Multi-Process Window Architecture~~ | ~~Complete (2 Windows named pipe items deferred to Windows platform support)~~ |
+| ~~2~~ | ~~50 — Runtime Efficiency~~ | ~~Complete~~ |
+| ~~3~~ | ~~43 — Compositor Layer System~~ | ~~Complete~~ |
+| ~~4~~ | ~~23.3 — Memory Optimization: Atlas Over-Allocation~~ | ~~Complete~~ |
+| ~~5~~ | ~~23.3 — Memory Optimization: Font Data Deduplication~~ | ~~Complete~~ |
+| ~~6~~ | ~~23.3 — Memory Optimization: Content Cache Texture~~ | ~~Complete — GPU-only texture (no RSS impact), 20x idle CPU savings justifies the cost~~ |
 
 ---
 
 ## Keyword Clusters by Section
 
 ### Section 01: Cell + Grid
-**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** Complete
 ```
 cell, Cell, CellFlags, CellExtra, rich cell, 24 bytes
 grid, Grid, Row, rows, columns, viewport
@@ -46,8 +49,7 @@ workspace, Cargo workspace, oriterm_core, multi-crate
 ---
 
 ### Section 02: Terminal State Machine + VTE
-**File:** `section-02-term-vte.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-02-term-vte.md` | **Tier:** 0 | **Status:** Complete
 ```
 Term, Term<T>, terminal state machine, terminal emulation
 VTE, vte::ansi::Handler, escape sequences, ANSI, control codes
@@ -80,8 +82,7 @@ damage, DamageLine, dirty, damage tracking, incremental
 ---
 
 ### Section 03: Cross-Platform
-**File:** `section-03-cross-platform.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-03-cross-platform.md` | **Tier:** 0 | **Status:** Complete
 ```
 cross-platform, day one, Windows, Linux, macOS, platform abstraction
 ConPTY, portable-pty, openpty, forkpty, SIGCHLD
@@ -110,8 +111,7 @@ shell detection, $SHELL, cmd.exe, TERM, COLORTERM
 ---
 
 ### Section 04: PTY + Event Loop
-**File:** `section-04-pty-eventloop.md` | **Tier:** 1 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-04-pty-eventloop.md` | **Tier:** 1 | **Status:** Complete
 ```
 PTY, pty, ConPTY, portable-pty, pseudo-terminal
 spawn, shell, cmd.exe, powershell, spawn_shell, PtyHandle
@@ -130,8 +130,7 @@ contention, starvation, fair lock, reader thread lock
 ---
 
 ### Section 05: Window + GPU Rendering
-**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** Complete
 ```
 render pipeline, staged pipeline, Extract, Prepare, Render, 3-phase
 FrameInput, PreparedFrame, pipeline_stages.rs, phase separation
@@ -165,8 +164,7 @@ determinism, pixel readback, decode_instance, assert_instance_count
 ---
 
 ### Section 05B: Startup Performance
-**File:** `section-05b-startup-perf.md` | **Tier:** 2 | **Status:** Complete <!-- reviewed: accuracy fix -->
-
+**File:** `section-05b-startup-perf.md` | **Tier:** 2 | **Status:** Complete
 ```
 startup, launch, performance, cold start, warm start
 dwrote, FontCollection::system, DirectWrite, COM, font cache
@@ -231,25 +229,28 @@ dwrote, DirectWrite, Windows font, system fonts
 ---
 
 ### Section 07: 2D UI Framework
-**File:** `section-07-ui-framework.md` | **Tier:** 2 | **Status:** Not Started
+**File:** `section-07-ui-framework.md` | **Tier:** 2 | **Status:** In Progress
 
 ```
 UI framework, oriterm_ui, widget, widget tree, retained mode
-DrawList, draw primitives, rect, rounded rect, shadow, gradient
-RectStyle, Border, Shadow, Color, Rect, Point
-text rendering, ShapedText, TextStyle, measure_text, UI font
-layout, LayoutNode, LayoutConstraints, flex, Row, Column
-Size, Fixed, Fill, Hug, FillPortion, Spacing, padding, margin
-Align, Justify, Gap, Direction, two-pass layout
-hit testing, hit_test, WidgetId, mouse capture
+DrawList, DrawCommand, draw primitives, rect, rounded rect, shadow, gradient
+RectStyle, Border, Shadow, Color, Rect, Point, push_rect, push_text, push_icon
+text rendering, ShapedText, ShapedGlyph, TextStyle, TextMetrics, TextMeasurer, UI font
+layout, LayoutNode, LayoutBox, LayoutConstraints, SizeSpec, flex, compute_layout
+Fixed, Fill, Hug, FillPortion, Spacing, padding, margin, Insets
+Align, Justify, Gap, Direction, two-pass layout, BoxContent
+hit testing, hit_test, WidgetId, InputState, RouteAction, mouse capture
 focus, FocusManager, Tab order, focus ring, keyboard navigation
 Button, Checkbox, Toggle, Slider, TextInput, Dropdown, Label
 Separator, Spacer, Panel, ScrollWidget, Stack
-FlexWidget, ScrollContainer, scroll, scrollbar
-overlay, OverlayManager, Placement, modal, context menu
-animation, Animation, Easing, AnimatedValue, transition
-UiTheme, dark theme, light theme, accent color, styling
-TerminalGridWidget, terminal as widget, tab bar widget
+ContainerWidget, scroll, scrollbar, ScrollbarStyle, ScrollbarPolicy
+overlay, OverlayManager, OverlayId, Placement, modal, context menu
+animation, Animation, Easing, AnimatedValue, Lerp, AnimationBuilder, AnimationSequence
+UiTheme, dark theme, light theme, accent color, styling, resolve_ui_theme
+TerminalGridWidget, TerminalPreviewWidget, terminal as widget, tab bar widget
+Widget trait, WidgetAction, WidgetResponse, EventResponse, CaptureRequest
+KeyEvent, Key, MouseEvent, Modifiers, HoverEvent, ScrollDelta
+DialogWidget, MenuWidget, FormLayout, SettingsPanelWidget, TabBarWidget, WindowChromeWidget
 ```
 
 ---
@@ -460,14 +461,16 @@ bash-preexec, oriterm.bash, oriterm.fish, oriterm.ps1, .zshenv
 
 ```
 context menu, MenuWidget, MenuEntry, Item, Check, Separator, ContextAction
-tab context menu, grid context menu, dropdown menu, color scheme selector
+tab context menu, grid context menu, dropdown menu, ContextMenuState
 GPU-rendered menu, shadow, rounded corners, hover highlight, keyboard navigation
 config reload, apply_config_reload, broadcast ALL panes, FontCollection rebuild
 atlas rebuild, resize all panes all windows, keybinding rebuild
-settings UI, settings_window, color scheme list, checkmark
+settings UI, settings_overlay, dialog_management, DialogWindowContext, SettingsPanel
+settings dialog, build_settings_form, SettingsIds, Save, Cancel, Config::save
 window controls, minimize, maximize, close, platform-specific
 frameless, drag window, Aero Snap, double-click maximize
 jump list, Jump List, ICustomDestinationList, IShellLinkW, taskbar right-click
+JumpListTask, submit_jump_list, build_jump_list_tasks, --new-tab, --new-window
 dock menu, applicationDockMenu, NSMenu, dock right-click, macOS dock
 desktop actions, .desktop file, Linux quicklist, New Window, New Tab
 profile quick-launch, taskbar integration, start menu
@@ -498,13 +501,19 @@ save/restore modes, XTSAVE, XTRESTORE
 **File:** `section-23-performance.md` | **Tier:** 5 | **Status:** Not Started
 
 ```
-damage tracking, DirtyTracker, per-row dirty, BitVec
-instance buffer caching, partial update, skip present
-ring buffer, ScrollbackRing, O(1) push, wrapping index
-parsing performance, PTY buffer size, fast ASCII path
-rendering performance, instance buffer reuse, frame pacing
-memory optimization, Row pooling, compact representation
-benchmarks, criterion, throughput, latency, FPS, regression
+damage tracking, DirtyTracker, per-row dirty, column-level damage, LineDamageBounds, DamageLine
+instance buffer caching, PaneRenderCache, PreparedFrame, partial update, skip present, dirty skip
+ring buffer, ScrollbackBuffer, O(1) push, wrapping index, row pool, grid resize reuse
+parsing performance, PTY buffer size, fast ASCII path, put_ascii_run, MAX_LOCKED_PARSE
+rendering performance, instance buffer reuse, frame pacing, FRAME_BUDGET, upload_buffer
+memory optimization, alt screen lazy allocation, CellExtra, Row occupancy, occ
+atlas over-allocation, texture array, grow-on-demand, PAGE_SIZE, MAX_PAGES, create_texture_array
+font data duplication, FontByteCache, Arc<Vec<u8>>, NotoColorEmoji, fallback fonts, font loading
+content cache texture, content_cache, ensure_content_cache, cursor blink, offscreen texture
+benchmarks, criterion, throughput, latency, FPS, regression, vte_throughput
+selection damage, selection_dirty, symmetric difference, incremental damage
+synchronized output, Mode 2026, sync_bytes_count, MuxWakeup coalescing
+debug overlay, FPS counter, atlas utilization, dirty row percentage
 ```
 
 ---
@@ -986,6 +995,20 @@ visual indicator, active key table, key table name
 zellij modes, tmux key table, wezterm key_tables
 ```
 
+### Section 50: Runtime Efficiency — CPU & Memory Tuning
+**File:** `section-50-runtime-efficiency.md` | **Tier:** 2 | **Status:** Not Started
+
+```
+idle CPU, CPU usage, event loop spin, busy wait, ControlFlow::Wait, ControlFlow
+memory growth, RSS, memory leak, allocation, shrink_to, capacity cap, maybe_shrink
+about_to_wait, pump_mux_events, cursor blink, animation tick, tick_dialog_animations
+frame budget, render coalescing, wakeup coalescing, has_pending_wakeup, MuxBackend
+allocation audit, zero-alloc, hot path, counting allocator, GlobalAlloc
+extract_images, placements_in_viewport, HashSet scratch, InstanceWriter, ShapingScratch
+PerfStats, frame timing, profiling, perf counter, compute_control_flow
+regression, CI benchmark, memory watermark, performance invariant
+```
+
 ---
 
 ### Ghostty 1.3.0 Parity — Items in Completed Sections
@@ -1063,6 +1086,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 47 | Semantic Prompt State Management | `section-47-semantic-prompt-state.md` | 5 | Not Started |
 | 48 | Native OS Scrollbars | `section-48-native-scrollbars.md` | 5 | Not Started |
 | 49 | Advanced Keybinding System | `section-49-advanced-keybindings.md` | 5 | Not Started |
+| 50 | Runtime Efficiency — CPU & Memory Tuning | `section-50-runtime-efficiency.md` | 2 | Not Started |
 
 ## Tier Summary
 
@@ -1070,7 +1094,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 |------|----------|-------|
 | **0** | **01-03, 44** | **Core library + cross-platform architecture + multi-process window model (44 is BLOCKER)** |
 | 1 | 04 | Process layer (PTY, threads) |
-| 2 | 05, 05B, 06-07 | Rendering foundation (window, GPU, fonts, UI framework) |
+| 2 | 05, 05B, 06-07, 50 | Rendering foundation (window, GPU, fonts, UI framework) + runtime efficiency |
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |

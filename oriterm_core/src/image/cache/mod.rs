@@ -55,7 +55,7 @@ pub struct ImageCache {
 
 impl ImageCache {
     /// Create a new empty image cache with default limits.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             images: HashMap::new(),
             placements: Vec::new(),
@@ -74,7 +74,7 @@ impl ImageCache {
 
     /// Returns `true` if any images or placements have changed since
     /// the last `take_dirty()` call.
-    pub fn is_dirty(&self) -> bool {
+    pub(crate) fn is_dirty(&self) -> bool {
         self.dirty
     }
 
@@ -82,43 +82,45 @@ impl ImageCache {
     ///
     /// Called by `Term::renderable_content_into()` when building
     /// the snapshot for the renderer.
-    pub fn take_dirty(&mut self) -> bool {
+    pub(crate) fn take_dirty(&mut self) -> bool {
         std::mem::replace(&mut self.dirty, false)
     }
 
     /// Total bytes of decoded image data in the cache.
-    pub fn memory_used(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn memory_used(&self) -> usize {
         self.memory_used
     }
 
     /// Number of stored images.
-    pub fn image_count(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn image_count(&self) -> usize {
         self.images.len()
     }
 
     /// Number of active placements.
-    pub fn placement_count(&self) -> usize {
+    pub(crate) fn placement_count(&self) -> usize {
         self.placements.len()
     }
 
     /// Maximum allowed size for a single image in bytes.
-    pub fn max_single_image_bytes(&self) -> usize {
+    pub(crate) fn max_single_image_bytes(&self) -> usize {
         self.max_single_image_bytes
     }
 
     /// Update the memory limit. Triggers eviction if currently over.
-    pub fn set_memory_limit(&mut self, limit: usize) {
+    pub(crate) fn set_memory_limit(&mut self, limit: usize) {
         self.memory_limit = limit;
         self.evict_lru();
     }
 
     /// Update the max single image size.
-    pub fn set_max_single_image(&mut self, limit: usize) {
+    pub(crate) fn set_max_single_image(&mut self, limit: usize) {
         self.max_single_image_bytes = limit;
     }
 
     /// Allocate the next auto-assigned image ID.
-    pub fn next_image_id(&mut self) -> ImageId {
+    pub(crate) fn next_image_id(&mut self) -> ImageId {
         let id = ImageId(self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
         id
@@ -128,7 +130,7 @@ impl ImageCache {
     ///
     /// Rejects images exceeding `max_single_image_bytes`. Evicts LRU
     /// images if the cache would exceed `memory_limit`.
-    pub fn store(&mut self, mut data: ImageData) -> Result<ImageId, ImageError> {
+    pub(crate) fn store(&mut self, mut data: ImageData) -> Result<ImageId, ImageError> {
         let size = data.data.len();
         if size > self.max_single_image_bytes {
             return Err(ImageError::OversizedImage);
@@ -154,13 +156,13 @@ impl ImageCache {
     }
 
     /// Add a placement for an existing image.
-    pub fn place(&mut self, placement: ImagePlacement) {
+    pub(crate) fn place(&mut self, placement: ImagePlacement) {
         self.placements.push(placement);
         self.dirty = true;
     }
 
     /// Remove an image and all its placements.
-    pub fn remove_image(&mut self, id: ImageId) {
+    pub(crate) fn remove_image(&mut self, id: ImageId) {
         if let Some(img) = self.images.remove(&id) {
             self.memory_used = self.memory_used.saturating_sub(img.data.len());
 
@@ -179,7 +181,7 @@ impl ImageCache {
     }
 
     /// Remove a specific placement by image ID and placement ID.
-    pub fn remove_placement(&mut self, image_id: ImageId, placement_id: u32) {
+    pub(crate) fn remove_placement(&mut self, image_id: ImageId, placement_id: u32) {
         let before = self.placements.len();
         self.placements
             .retain(|p| !(p.image_id == image_id && p.placement_id == Some(placement_id)));
@@ -189,7 +191,7 @@ impl ImageCache {
     }
 
     /// Remove all placements for an image ID (without removing the image data).
-    pub fn remove_placements_for_image(&mut self, image_id: ImageId) {
+    pub(crate) fn remove_placements_for_image(&mut self, image_id: ImageId) {
         let before = self.placements.len();
         self.placements.retain(|p| p.image_id != image_id);
         if self.placements.len() != before {
@@ -198,7 +200,7 @@ impl ImageCache {
     }
 
     /// Remove placements at a specific column.
-    pub fn remove_placements_at_column(&mut self, col: usize) {
+    pub(crate) fn remove_placements_at_column(&mut self, col: usize) {
         let before = self.placements.len();
         self.placements.retain(|p| {
             let right = p.cell_col + p.cols.saturating_sub(1);
@@ -210,7 +212,7 @@ impl ImageCache {
     }
 
     /// Remove placements at a specific row.
-    pub fn remove_placements_at_row(&mut self, row: StableRowIndex) {
+    pub(crate) fn remove_placements_at_row(&mut self, row: StableRowIndex) {
         let before = self.placements.len();
         self.placements.retain(|p| {
             let bottom = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
@@ -222,7 +224,7 @@ impl ImageCache {
     }
 
     /// Remove placements with a specific z-index.
-    pub fn remove_placements_by_z_index(&mut self, z: i32) {
+    pub(crate) fn remove_placements_by_z_index(&mut self, z: i32) {
         let before = self.placements.len();
         self.placements.retain(|p| p.z_index != z);
         if self.placements.len() != before {
@@ -231,7 +233,7 @@ impl ImageCache {
     }
 
     /// Remove all placements at a specific cell position.
-    pub fn remove_by_position(&mut self, col: usize, row: StableRowIndex) {
+    pub(crate) fn remove_by_position(&mut self, col: usize, row: StableRowIndex) {
         let before = self.placements.len();
         self.placements
             .retain(|p| !(p.cell_col == col && p.cell_row == row));
@@ -240,22 +242,37 @@ impl ImageCache {
         }
     }
 
-    /// Return placements visible in the given stable row range (inclusive).
-    pub fn placements_in_viewport(
+    /// Fill `out` with placements visible in the given stable row range (inclusive).
+    ///
+    /// Reuses `out`'s allocation across frames for zero-alloc steady state.
+    pub(crate) fn fill_viewport_placements<'a>(
+        &'a self,
+        top_row: StableRowIndex,
+        bottom_row: StableRowIndex,
+        out: &mut Vec<&'a ImagePlacement>,
+    ) {
+        out.clear();
+        out.extend(self.placements.iter().filter(|p| {
+            let placement_bottom = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
+            p.cell_row <= bottom_row && placement_bottom >= top_row
+        }));
+    }
+
+    /// Convenience wrapper returning a new `Vec` of visible placements.
+    ///
+    /// For hot-path rendering, prefer [`fill_viewport_placements`] with a
+    /// reusable buffer. This allocates on every call.
+    ///
+    /// [`fill_viewport_placements`]: Self::fill_viewport_placements
+    #[cfg(test)]
+    pub(crate) fn placements_in_viewport(
         &self,
         top_row: StableRowIndex,
         bottom_row: StableRowIndex,
     ) -> Vec<&ImagePlacement> {
-        self.placements
-            .iter()
-            .filter(|p| {
-                let placement_bottom =
-                    StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
-                // Placement overlaps viewport if it starts before bottom
-                // and ends after top.
-                p.cell_row <= bottom_row && placement_bottom >= top_row
-            })
-            .collect()
+        let mut out = Vec::new();
+        self.fill_viewport_placements(top_row, bottom_row, &mut out);
+        out
     }
 
     /// Remove placements whose `cell_row` is before the eviction boundary.
@@ -263,7 +280,7 @@ impl ImageCache {
     /// Called when scrollback evicts rows so stale placements don't
     /// accumulate. Also removes images with zero remaining placements
     /// (Ghostty pattern: unused images evicted first).
-    pub fn prune_scrollback(&mut self, evicted_before: StableRowIndex) {
+    pub(crate) fn prune_scrollback(&mut self, evicted_before: StableRowIndex) {
         let before = self.placements.len();
         self.placements.retain(|p| p.cell_row >= evicted_before);
         if self.placements.len() != before {
@@ -276,7 +293,7 @@ impl ImageCache {
     ///
     /// Used by ED/EL erase operations. If `left`/`right` are `None`,
     /// the full row width is cleared.
-    pub fn remove_placements_in_region(
+    pub(crate) fn remove_placements_in_region(
         &mut self,
         top: StableRowIndex,
         bottom: StableRowIndex,
@@ -310,7 +327,7 @@ impl ImageCache {
     }
 
     /// Remove all images and placements.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         if !self.images.is_empty() || !self.placements.is_empty() {
             self.dirty = true;
         }
@@ -323,7 +340,8 @@ impl ImageCache {
     }
 
     /// Get image data by ID, updating access counter for LRU.
-    pub fn get(&mut self, id: ImageId) -> Option<&ImageData> {
+    #[cfg(test)]
+    pub(crate) fn get(&mut self, id: ImageId) -> Option<&ImageData> {
         self.access_counter += 1;
         let counter = self.access_counter;
         if let Some(img) = self.images.get_mut(&id) {
@@ -335,7 +353,7 @@ impl ImageCache {
     }
 
     /// Get image data by ID without updating access counter.
-    pub fn get_no_touch(&self, id: ImageId) -> Option<&ImageData> {
+    pub(crate) fn get_no_touch(&self, id: ImageId) -> Option<&ImageData> {
         self.images.get(&id)
     }
 
@@ -343,7 +361,7 @@ impl ImageCache {
     ///
     /// Called when cell pixel dimensions change (font size, zoom) so
     /// viewport intersection and region queries use correct cell counts.
-    pub fn update_cell_coverage(&mut self, cell_w: u16, cell_h: u16) {
+    pub(crate) fn update_cell_coverage(&mut self, cell_w: u16, cell_h: u16) {
         let cw = cell_w.max(1) as usize;
         let ch = cell_h.max(1) as usize;
 
@@ -404,7 +422,7 @@ impl ImageCache {
     }
 
     /// Remove images that have no remaining placements.
-    pub fn remove_orphans(&mut self) {
+    pub(crate) fn remove_orphans(&mut self) {
         let placed = self.placed_id_set();
         let orphans: Vec<ImageId> = self
             .images
@@ -414,9 +432,9 @@ impl ImageCache {
             .collect();
 
         for id in orphans {
-            if let Some(img) = self.images.remove(&id) {
-                self.memory_used = self.memory_used.saturating_sub(img.data.len());
-            }
+            // Delegates to `remove_image` to clean up all associated state:
+            // animations, animation_frames, frame_starts, and memory tracking.
+            self.remove_image(id);
         }
     }
 }

@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 /// Process model for how the terminal manages multiplexer state.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ProcessModel {
+pub(crate) enum ProcessModel {
     /// Multi-process mode: auto-start a mux daemon, connect via IPC.
     /// Each window is a separate OS process. Tabs migrate between windows.
     #[default]
@@ -48,7 +48,7 @@ pub enum ProcessModel {
 /// Top-level configuration structure.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
-pub struct Config {
+pub(crate) struct Config {
     pub process_model: ProcessModel,
     pub font: FontConfig,
     pub terminal: TerminalConfig,
@@ -67,7 +67,7 @@ pub struct Config {
 /// `"beam"` is accepted as an alias for `Bar` (common in other terminals).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CursorStyle {
+pub(crate) enum CursorStyle {
     #[default]
     Block,
     #[serde(alias = "beam")]
@@ -89,7 +89,7 @@ impl CursorStyle {
 /// Terminal behavior configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct TerminalConfig {
+pub(crate) struct TerminalConfig {
     /// Override shell (default: system shell).
     pub shell: Option<String>,
     /// Scrollback lines (default: 10,000).
@@ -121,10 +121,10 @@ impl Default for TerminalConfig {
             cursor_blink: true,
             cursor_blink_interval_ms: 530,
             image_protocol: true,
-            image_memory_limit: 320 * 1_000_000,
-            image_gpu_memory_limit: 512 * 1_000_000,
+            image_memory_limit: 320 * 1_000_000, // 320 MB (SI, not MiB)
+            image_gpu_memory_limit: 512 * 1_000_000, // 512 MB (SI, not MiB)
             image_animation: true,
-            image_max_single_size: 64 * 1_000_000,
+            image_max_single_size: 64 * 1_000_000, // 64 MB (SI, not MiB)
         }
     }
 }
@@ -144,7 +144,7 @@ impl TerminalConfig {
 /// Window decoration mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Decorations {
+pub(crate) enum Decorations {
     /// OS-native title bar and borders.
     Full,
     /// Frameless window with custom CSD (default).
@@ -159,7 +159,7 @@ pub enum Decorations {
 /// Window size and opacity configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct WindowConfig {
+pub(crate) struct WindowConfig {
     /// Initial terminal columns (default: 120).
     pub columns: usize,
     /// Initial terminal rows (default: 30).
@@ -212,7 +212,7 @@ pub(crate) use bell::{BellAnimation, BellConfig};
 /// Pane splitting and layout configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct PaneConfig {
+pub(crate) struct PaneConfig {
     /// Divider thickness in logical pixels between split panes.
     pub divider_px: f32,
     /// Minimum pane size in cells `(columns, rows)`.
@@ -278,7 +278,7 @@ impl PaneConfig {
 
 /// TOML-serializable keybinding entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeybindConfig {
+pub(crate) struct KeybindConfig {
     /// Key name (e.g. "c", "Tab", "F1").
     pub key: String,
     /// Pipe-separated modifiers (e.g. "Ctrl|Shift"). Empty for no modifiers.

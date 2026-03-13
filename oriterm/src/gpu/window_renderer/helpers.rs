@@ -13,6 +13,7 @@ use wgpu::{
 
 use super::super::atlas::GlyphAtlas;
 use super::super::frame_input::FrameInput;
+use super::super::maybe_shrink_vec;
 use super::super::prepare::ShapedFrame;
 use crate::font::{
     FontCollection, FontRealm, GlyphFormat, GlyphStyle, RasterKey, build_col_glyph_map,
@@ -36,6 +37,14 @@ pub(super) struct ShapingScratch {
     col_map: Vec<Option<usize>>,
     /// Rustybuzz buffer reused across frames to avoid per-frame allocation.
     unicode_buffer: Option<rustybuzz::UnicodeBuffer>,
+    /// Rustybuzz Face objects reused across frames.
+    ///
+    /// Stored with `'static` lifetime because `ShapingScratch` has no lifetime
+    /// parameter. Filled via [`FontCollection::fill_shaping_faces`] which
+    /// transmutes the actual `'a` borrow to `'static`. This is sound because
+    /// the Vec is cleared before every fill and only accessed while
+    /// `FontCollection` is borrowed (within `shape_frame`).
+    faces_buf: Vec<Option<rustybuzz::Face<'static>>>,
 }
 
 impl ShapingScratch {
@@ -47,7 +56,21 @@ impl ShapingScratch {
             col_starts: Vec::new(),
             col_map: Vec::new(),
             unicode_buffer: None,
+            faces_buf: Vec::new(),
         }
+    }
+
+    /// Shrink per-row scratch buffers if capacity vastly exceeds usage.
+    ///
+    /// Called after rendering to bound memory waste. Only fires when
+    /// capacity > 4× length AND > 4096 elements.
+    pub(super) fn maybe_shrink(&mut self) {
+        self.frame.maybe_shrink();
+        maybe_shrink_vec(&mut self.runs);
+        maybe_shrink_vec(&mut self.glyphs);
+        maybe_shrink_vec(&mut self.col_starts);
+        maybe_shrink_vec(&mut self.col_map);
+        maybe_shrink_vec(&mut self.faces_buf);
     }
 }
 
@@ -67,7 +90,7 @@ pub(super) fn shape_frame(
     // Clamp rows to actual cell data — viewport dimensions may race ahead
     // of the terminal grid during async resize.
     let rows = input.rows().min(input.content.cells.len() / cols);
-    let faces = fonts.create_shaping_faces();
+    fonts.fill_shaping_faces(&mut scratch.faces_buf);
 
     for row_idx in 0..rows {
         let start = row_idx * cols;
@@ -77,7 +100,7 @@ pub(super) fn shape_frame(
         prepare_line(row_cells, cols, fonts, &mut scratch.runs);
         shape_prepared_runs(
             &scratch.runs,
-            &faces,
+            &scratch.faces_buf,
             fonts,
             &mut scratch.glyphs,
             &mut scratch.col_starts,
@@ -108,7 +131,7 @@ pub(super) fn shape_frame(
 ///   [`FontRealm::Ui`] and `subpx_bin(cursor_x + glyph.x_offset)`.
 #[expect(
     clippy::too_many_arguments,
-    reason = "three atlases + empty set + fonts + queue for glyph routing"
+    reason = "three atlases + empty set + fonts + device + queue for glyph routing"
 )]
 pub(super) fn ensure_glyphs_cached(
     keys: impl Iterator<Item = RasterKey>,
@@ -117,6 +140,7 @@ pub(super) fn ensure_glyphs_cached(
     color_atlas: &mut GlyphAtlas,
     empty_keys: &mut HashSet<RasterKey>,
     fonts: &mut FontCollection,
+    device: &Device,
     queue: &Queue,
 ) {
     for key in keys {
@@ -132,13 +156,13 @@ pub(super) fn ensure_glyphs_cached(
         if let Some(rasterized) = fonts.rasterize(key) {
             match rasterized.format {
                 GlyphFormat::Color => {
-                    color_atlas.insert(key, rasterized, queue);
+                    color_atlas.insert(key, rasterized, device, queue);
                 }
                 GlyphFormat::SubpixelRgb | GlyphFormat::SubpixelBgr => {
-                    subpixel_atlas.insert(key, rasterized, queue);
+                    subpixel_atlas.insert(key, rasterized, device, queue);
                 }
                 GlyphFormat::Alpha => {
-                    mono_atlas.insert(key, rasterized, queue);
+                    mono_atlas.insert(key, rasterized, device, queue);
                 }
             }
         } else {
@@ -407,14 +431,52 @@ pub(super) fn record_draw_range_clipped(
 ///
 /// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has
 /// a real Bold face. Used by both `WindowRenderer::new()` and `clear_and_recache()`.
-pub(super) fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, queue: &Queue) {
+/// Create mono, subpixel, and color atlases with ASCII pre-cached.
+///
+/// Routes the pre-cache into the subpixel atlas when the font format is
+/// subpixel, otherwise into the mono atlas. Shared by `WindowRenderer::new()`
+/// and `new_ui_only()`.
+pub(super) fn create_atlases(
+    device: &Device,
+    queue: &Queue,
+    font_collection: &mut FontCollection,
+) -> (GlyphAtlas, GlyphAtlas, GlyphAtlas) {
+    let format = font_collection.format();
+    // The active atlas gets a full 2048² page with ASCII pre-cached.
+    // The inactive atlas is lazy (1×1 placeholder) — materialized on first insert.
+    let (atlas, subpixel_atlas) = if format.is_subpixel() {
+        let atlas = GlyphAtlas::new_lazy(device, GlyphFormat::Alpha);
+        let mut sp_atlas = GlyphAtlas::new(device, format);
+        pre_cache_atlas(&mut sp_atlas, font_collection, device, queue);
+        (atlas, sp_atlas)
+    } else {
+        let mut atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
+        let sp_atlas = GlyphAtlas::new_lazy(device, GlyphFormat::SubpixelRgb);
+        pre_cache_atlas(&mut atlas, font_collection, device, queue);
+        (atlas, sp_atlas)
+    };
+    // Color atlas is lazy — no emoji at startup.
+    let color_atlas = GlyphAtlas::new_lazy(device, GlyphFormat::Color);
+    (atlas, subpixel_atlas, color_atlas)
+}
+
+/// Pre-cache printable ASCII glyphs (Regular + Bold) into the given atlas.
+///
+/// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has
+/// a real Bold face. Used by both `WindowRenderer::new()` and `clear_and_recache()`.
+pub(super) fn pre_cache_atlas(
+    atlas: &mut GlyphAtlas,
+    fc: &mut FontCollection,
+    device: &Device,
+    queue: &Queue,
+) {
     let size_q6 = size_key(fc.size_px());
     let hinted = fc.hinting_mode().hint_flag();
     for ch in ' '..='~' {
         let resolved = fc.resolve(ch, GlyphStyle::Regular);
         let key = RasterKey::from_resolved(resolved, size_q6, hinted, 0);
         if let Some(glyph) = fc.rasterize(key) {
-            atlas.insert(key, glyph, queue);
+            atlas.insert(key, glyph, device, queue);
         }
     }
     if fc.has_bold() {
@@ -422,7 +484,7 @@ pub(super) fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, q
             let resolved = fc.resolve(ch, GlyphStyle::Bold);
             let key = RasterKey::from_resolved(resolved, size_q6, hinted, 0);
             if let Some(glyph) = fc.rasterize(key) {
-                atlas.insert(key, glyph, queue);
+                atlas.insert(key, glyph, device, queue);
             }
         }
     }

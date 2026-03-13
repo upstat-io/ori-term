@@ -408,35 +408,21 @@ fn test_scroll_display() {
 
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Generate scrollback and wait for completion. The fence output
-    // appears on 2 rows (command echo + actual output) only after the
-    // for loop finishes, guaranteeing all output has landed.
+    // Generate scrollback. The fence guarantees all output has landed.
     client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
-    client.send_input(pane_id, b"echo SCROLL_FENCE\n");
-    let fence_deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        client.poll_events();
-        let mut notifs = Vec::new();
-        client.drain_notifications(&mut notifs);
-        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            let count = snap
-                .cells
-                .iter()
-                .filter(|row| {
-                    let line: String = row.iter().map(|c| c.ch).collect();
-                    line.contains("SCROLL_FENCE")
-                })
-                .count();
-            if count >= 2 {
-                break;
-            }
-        }
-        assert!(
-            Instant::now() < fence_deadline,
-            "timed out waiting for scroll fence"
-        );
-        thread::sleep(Duration::from_millis(50));
-    }
+    wait_for_text_in_snapshot(&mut client, pane_id, "LINE_200", Duration::from_secs(30));
+
+    // Wait for shell to settle — a secondary fence ensures the prompt
+    // after the for-loop has been fully rendered. Without this, the
+    // prompt output can race with scroll_display on the daemon,
+    // causing display_offset to increment beyond the expected value.
+    client.send_input(pane_id, b"echo SCROLL_IDLE_FENCE\n");
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "SCROLL_IDLE_FENCE",
+        Duration::from_secs(30),
+    );
     // Drain pending events before scrolling.
     client.poll_events();
     let mut notifs = Vec::new();
@@ -470,33 +456,20 @@ fn test_scroll_to_bottom() {
 
     let pane_id = spawn_test_pane_ready(&mut client);
 
-    // Generate scrollback and wait for completion via 2-row fence.
+    // Generate scrollback.
     client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
-    client.send_input(pane_id, b"echo SCROLL_BTM_FENCE\n");
-    let fence_deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        client.poll_events();
-        let mut notifs = Vec::new();
-        client.drain_notifications(&mut notifs);
-        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            let count = snap
-                .cells
-                .iter()
-                .filter(|row| {
-                    let line: String = row.iter().map(|c| c.ch).collect();
-                    line.contains("SCROLL_BTM_FENCE")
-                })
-                .count();
-            if count >= 2 {
-                break;
-            }
-        }
-        assert!(
-            Instant::now() < fence_deadline,
-            "timed out waiting for scroll bottom fence"
-        );
-        thread::sleep(Duration::from_millis(50));
-    }
+    wait_for_text_in_snapshot(&mut client, pane_id, "LINE_200", Duration::from_secs(30));
+
+    // Wait for shell to settle — secondary fence ensures the prompt
+    // after the for-loop has been fully rendered, preventing a race
+    // with scroll_display.
+    client.send_input(pane_id, b"echo SCROLL_BTM_IDLE_FENCE\n");
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "SCROLL_BTM_IDLE_FENCE",
+        Duration::from_secs(30),
+    );
     client.poll_events();
     let mut notifs = Vec::new();
     client.drain_notifications(&mut notifs);

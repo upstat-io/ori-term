@@ -9,6 +9,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 
 use super::App;
+use super::event_loop_helpers::{ControlFlowDecision, ControlFlowInput, compute_control_flow};
 use crate::event::TermEvent;
 
 impl ApplicationHandler<TermEvent> for App {
@@ -316,22 +317,15 @@ impl ApplicationHandler<TermEvent> for App {
             TermEvent::MuxWakeup => {
                 self.perf.record_wakeup();
                 // The real work happens in `pump_mux_events()` during
-                // `about_to_wait`. This wakeup ensures the event loop
-                // doesn't sleep past pending mux events. Mark ALL windows
-                // dirty — PTY output may come from any pane in any window.
-                self.mark_all_windows_dirty();
+                // `about_to_wait`. This wakeup just ensures the event loop
+                // doesn't sleep past pending mux events. Dirty marking
+                // happens per-pane in `handle_mux_notification`.
             }
             TermEvent::CreateWindow => {
                 self.create_window(event_loop);
             }
-            TermEvent::MoveTabToNewWindow(tab_index) => {
-                let tab_id = self.active_window.and_then(|wid| {
-                    let win = self.session.get_window(wid)?;
-                    win.tabs().get(tab_index).copied()
-                });
-                if let Some(tid) = tab_id {
-                    self.move_tab_to_new_window(tid, event_loop);
-                }
+            TermEvent::MoveTabToNewWindow(tab_id) => {
+                self.move_tab_to_new_window(tab_id, event_loop);
             }
             TermEvent::OpenSettings => {
                 self.open_settings_dialog(event_loop);
@@ -375,9 +369,15 @@ impl ApplicationHandler<TermEvent> for App {
         }
 
         // Tick compositor animations and clean up fully-faded overlays.
-        let any_animating = {
+        // Iterate all windows so unfocused windows with active animations
+        // (e.g., a fade started just before a focus switch) continue to
+        // progress rather than stalling.
+        {
             let now = std::time::Instant::now();
-            if let Some(ctx) = self.focused_ctx_mut() {
+            for ctx in self.windows.values_mut() {
+                if !ctx.layer_animator.is_any_animating() {
+                    continue;
+                }
                 let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
                 ctx.overlays
                     .cleanup_dismissed(&mut ctx.layer_tree, &ctx.layer_animator);
@@ -391,14 +391,10 @@ impl ApplicationHandler<TermEvent> for App {
                         .sync_to_widget(count, &ctx.layer_tree, &mut ctx.tab_bar);
                 }
 
-                animating
-            } else {
-                false
-            }
-        };
-        if any_animating {
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                if animating {
+                    ctx.dirty = true;
+                    ctx.ui_stale = true;
+                }
             }
         }
 
@@ -415,14 +411,11 @@ impl ApplicationHandler<TermEvent> for App {
             self.render_dirty_windows();
         }
 
-        // Periodic performance stats.
+        // Periodic performance stats and idle detection.
+        self.perf.check_idle();
         self.perf.maybe_log();
 
-        // Schedule wakeup for continuous rendering when animations are
-        // active or for the next blink toggle. The default ControlFlow::Wait
-        // lets the event loop sleep indefinitely when nothing is animating.
-        //
-        // Re-check: widget animations may set dirty during draw.
+        // Decide ControlFlow via pure function (testable without winit).
         let still_dirty =
             self.windows.values().any(|c| c.dirty) || self.dialogs.values().any(|c| c.dirty);
         let has_animations = self
@@ -433,73 +426,23 @@ impl ApplicationHandler<TermEvent> for App {
                 .dialogs
                 .values()
                 .any(|c| c.layer_animator.is_any_animating());
-        if (any_dirty && !budget_elapsed) || still_dirty {
-            // Dirty but budget not yet elapsed, or re-dirtied by widget
-            // animations during render — wake up when budget allows.
-            let remaining =
-                super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
-            event_loop.set_control_flow(ControlFlow::WaitUntil(now + remaining));
-        } else if has_animations {
-            // Compositor animations: wake up promptly to drive the next frame.
-            // 16ms ≈ 60 FPS — smooth enough for fade transitions.
-            let next_frame = now + std::time::Duration::from_millis(16);
-            event_loop.set_control_flow(ControlFlow::WaitUntil(next_frame));
-        } else if self.blinking_active {
-            let next_toggle = self.cursor_blink.next_toggle();
-            event_loop.set_control_flow(ControlFlow::WaitUntil(next_toggle));
-        } else {
-            // Nothing animating — sleep until the next external event.
-        }
-    }
-}
+        let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
-impl App {
-    /// Render all dirty terminal and dialog windows.
-    ///
-    /// Temporarily swaps `focused_window_id`/`active_window` to target each
-    /// dirty window, then restores the original focus.
-    fn render_dirty_windows(&mut self) {
-        let dirty_winit_ids: Vec<winit::window::WindowId> = self
-            .windows
-            .iter()
-            .filter(|(_, ctx)| ctx.dirty)
-            .map(|(&id, _)| id)
-            .collect();
-
-        let saved_focused = self.focused_window_id;
-        let saved_active = self.active_window;
-
-        for wid in dirty_winit_ids {
-            if let Some(ctx) = self.windows.get_mut(&wid) {
-                ctx.dirty = false;
+        let input = ControlFlowInput {
+            any_dirty,
+            budget_elapsed,
+            still_dirty,
+            has_animations,
+            blinking_active: self.blinking_active,
+            next_toggle: self.cursor_blink.next_toggle(),
+            budget_remaining: remaining,
+            now,
+        };
+        match compute_control_flow(&input) {
+            ControlFlowDecision::Wait => event_loop.set_control_flow(ControlFlow::Wait),
+            ControlFlowDecision::WaitUntil(t) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(t));
             }
-            let mux_wid = self
-                .windows
-                .get(&wid)
-                .map(|ctx| ctx.window.session_window_id());
-            self.focused_window_id = Some(wid);
-            self.active_window = mux_wid;
-            self.handle_redraw();
         }
-
-        self.focused_window_id = saved_focused;
-        self.active_window = saved_active;
-
-        // Render dirty dialog windows.
-        let dirty_dialog_ids: Vec<winit::window::WindowId> = self
-            .dialogs
-            .iter()
-            .filter(|(_, ctx)| ctx.dirty)
-            .map(|(&id, _)| id)
-            .collect();
-        for wid in dirty_dialog_ids {
-            if let Some(ctx) = self.dialogs.get_mut(&wid) {
-                ctx.dirty = false;
-            }
-            self.render_dialog(wid);
-        }
-
-        self.last_render = std::time::Instant::now();
-        self.perf.record_render();
     }
 }

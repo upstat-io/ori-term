@@ -40,9 +40,11 @@ impl App {
         &mut self,
         button: winit::event::MouseButton,
         state: ElementState,
-        #[cfg(not(target_os = "macos"))] event_loop: &ActiveEventLoop,
-        #[cfg(target_os = "macos")] _event_loop: &ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
     ) -> bool {
+        // macOS native traffic lights handle window controls — event_loop
+        // is only used for chrome actions on other platforms.
+        let _ = event_loop;
         let pos = self.mouse.cursor_pos();
         if !self.cursor_in_tab_bar(pos) {
             return false;
@@ -135,7 +137,12 @@ impl App {
 
     /// Open the tab right-click context menu below the clicked tab.
     fn open_tab_context_menu(&mut self, tab_index: usize) {
-        let (entries, state) = context_menu::build_tab_context_menu(tab_index);
+        let tab_id = self.active_window.and_then(|wid| {
+            let win = self.session.get_window(wid)?;
+            win.tabs().get(tab_index).copied()
+        });
+        let Some(tab_id) = tab_id else { return };
+        let (entries, state) = context_menu::build_tab_context_menu(tab_index, tab_id);
         let style = MenuStyle::from_theme(&self.ui_theme);
         let widget = MenuWidget::new(entries).with_style(style);
 
@@ -166,6 +173,7 @@ impl App {
                 now,
             );
             ctx.dirty = true;
+            ctx.ui_stale = true;
         }
     }
 
@@ -201,6 +209,7 @@ impl App {
                 now,
             );
             ctx.dirty = true;
+            ctx.ui_stale = true;
         }
     }
 
@@ -240,9 +249,9 @@ impl App {
             resp.response,
             oriterm_ui::input::EventResponse::RequestPaint
                 | oriterm_ui::input::EventResponse::RequestLayout
-                | oriterm_ui::input::EventResponse::RequestRedraw
         ) {
             ctx.dirty = true;
+            ctx.ui_stale = true;
         }
         resp.action
     }

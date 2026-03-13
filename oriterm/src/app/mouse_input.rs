@@ -15,18 +15,58 @@ use super::{App, context_menu, mouse_report, mouse_selection};
 use crate::gpu::WindowRenderer;
 
 impl App {
+    /// Get the overlay scale factor if active overlays exist.
+    ///
+    /// Returns `None` if no overlays are active (callers should return
+    /// `false` to indicate the event was not consumed).
+    fn overlay_scale_if_active(&self) -> Option<f32> {
+        match self.focused_ctx() {
+            Some(ctx) if !ctx.overlays.is_active_empty() => {
+                Some(ctx.window.scale_factor().factor() as f32)
+            }
+            _ => None,
+        }
+    }
+
+    /// Dispatch a pre-built mouse event to the overlay system.
+    ///
+    /// Handles measurer creation and result processing. Call only when
+    /// overlays are confirmed active (`overlay_scale_if_active` returned
+    /// `Some`).
+    fn dispatch_overlay_mouse(&mut self, ui_event: &oriterm_ui::input::MouseEvent, scale: f32) {
+        let now = Instant::now();
+        let result = {
+            let Some(ctx) = self
+                .focused_window_id
+                .and_then(|id| self.windows.get_mut(&id))
+            else {
+                return;
+            };
+            let Some(renderer) = ctx.renderer.as_ref() else {
+                return;
+            };
+            let measurer = crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
+            ctx.overlays.process_mouse_event(
+                ui_event,
+                measurer,
+                &self.ui_theme,
+                None,
+                &mut ctx.layer_tree,
+                &mut ctx.layer_animator,
+                now,
+            )
+        };
+        self.handle_overlay_result(result);
+    }
+
     /// Route a mouse event through the overlay manager.
     ///
     /// Returns `true` if the overlay consumed the event (caller should return
     /// early). Returns `false` if no overlays are active.
     pub(super) fn try_overlay_mouse(&mut self, button: MouseButton, state: ElementState) -> bool {
-        let scale = match self.focused_ctx() {
-            // Only check active overlays — dismissing (fading-out) overlays are
-            // visual-only and must not intercept input.
-            Some(ctx) if !ctx.overlays.is_active_empty() => {
-                ctx.window.scale_factor().factor() as f32
-            }
-            _ => return false,
+        let Some(scale) = self.overlay_scale_if_active() else {
+            return false;
         };
         let pos = self.mouse.cursor_pos();
         let logical = Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
@@ -45,30 +85,7 @@ impl App {
             pos: logical,
             modifiers: super::winit_mods_to_ui(self.modifiers),
         };
-        let now = Instant::now();
-        let result = {
-            let Some(ctx) = self
-                .focused_window_id
-                .and_then(|id| self.windows.get_mut(&id))
-            else {
-                return true;
-            };
-            let Some(renderer) = ctx.renderer.as_ref() else {
-                return true;
-            };
-            let measurer = crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-            let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
-            ctx.overlays.process_mouse_event(
-                &ui_event,
-                measurer,
-                &self.ui_theme,
-                None,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            )
-        };
-        self.handle_overlay_result(result);
+        self.dispatch_overlay_mouse(&ui_event, scale);
         true
     }
 
@@ -81,12 +98,8 @@ impl App {
         &mut self,
         position: winit::dpi::PhysicalPosition<f64>,
     ) -> bool {
-        let scale = match self.focused_ctx() {
-            // Only check active overlays — dismissing overlays don't receive events.
-            Some(ctx) if !ctx.overlays.is_active_empty() => {
-                ctx.window.scale_factor().factor() as f32
-            }
-            _ => return false,
+        let Some(scale) = self.overlay_scale_if_active() else {
+            return false;
         };
         let logical = Point::new(position.x as f32 / scale, position.y as f32 / scale);
         let ui_event = oriterm_ui::input::MouseEvent {
@@ -94,30 +107,7 @@ impl App {
             pos: logical,
             modifiers: super::winit_mods_to_ui(self.modifiers),
         };
-        let now = Instant::now();
-        let result = {
-            let Some(ctx) = self
-                .focused_window_id
-                .and_then(|id| self.windows.get_mut(&id))
-            else {
-                return true;
-            };
-            let Some(renderer) = ctx.renderer.as_ref() else {
-                return true;
-            };
-            let measurer = crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-            let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
-            ctx.overlays.process_mouse_event(
-                &ui_event,
-                measurer,
-                &self.ui_theme,
-                None,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            )
-        };
-        self.handle_overlay_result(result);
+        self.dispatch_overlay_mouse(&ui_event, scale);
         // Consume when any overlay is active — popup menus need exclusive
         // cursor handling so tab bar hover and terminal mouse handlers
         // don't interfere with menu interaction.
@@ -130,11 +120,8 @@ impl App {
     /// Returns `true` if the overlay consumed the event (caller should return
     /// early). Returns `false` if no overlays are active.
     pub(super) fn try_overlay_scroll(&mut self, delta: winit::event::MouseScrollDelta) -> bool {
-        let scale = match self.focused_ctx() {
-            Some(ctx) if !ctx.overlays.is_active_empty() => {
-                ctx.window.scale_factor().factor() as f32
-            }
-            _ => return false,
+        let Some(scale) = self.overlay_scale_if_active() else {
+            return false;
         };
         let pos = self.mouse.cursor_pos();
         let logical = Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
@@ -154,30 +141,7 @@ impl App {
             pos: logical,
             modifiers: super::winit_mods_to_ui(self.modifiers),
         };
-        let now = Instant::now();
-        let result = {
-            let Some(ctx) = self
-                .focused_window_id
-                .and_then(|id| self.windows.get_mut(&id))
-            else {
-                return true;
-            };
-            let Some(renderer) = ctx.renderer.as_ref() else {
-                return true;
-            };
-            let measurer = crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-            let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
-            ctx.overlays.process_mouse_event(
-                &ui_event,
-                measurer,
-                &self.ui_theme,
-                None,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            )
-        };
-        self.handle_overlay_result(result);
+        self.dispatch_overlay_mouse(&ui_event, scale);
         true
     }
 
@@ -210,6 +174,7 @@ impl App {
                 now,
             );
             ctx.dirty = true;
+            ctx.ui_stale = true;
         }
     }
 
@@ -232,7 +197,7 @@ impl App {
         };
 
         // Build SnapshotGrid from the current snapshot.
-        let mux = self.mux.as_mut().expect("mux checked at pane_id");
+        let Some(mux) = self.mux.as_mut() else { return };
         if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
             mux.refresh_pane_snapshot(pane_id);
         }
@@ -285,7 +250,7 @@ impl App {
         };
 
         // Build SnapshotGrid from the current snapshot.
-        let mux = self.mux.as_mut().expect("mux checked at pane_id");
+        let Some(mux) = self.mux.as_mut() else { return };
         if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
             mux.refresh_pane_snapshot(pane_id);
         }

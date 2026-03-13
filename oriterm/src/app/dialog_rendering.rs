@@ -123,8 +123,8 @@ impl App {
             }
         }
 
-        // Render to surface.
-        let result = renderer.render_to_surface(gpu, pipelines, &ctx.surface);
+        // Render to surface. Dialogs always re-render content (no cursor blink).
+        let result = renderer.render_to_surface(gpu, pipelines, &ctx.surface, true);
         match result {
             Ok(()) => {}
             Err(crate::gpu::SurfaceError::Lost) => {

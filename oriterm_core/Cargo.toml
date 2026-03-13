@@ -27,5 +27,9 @@ insta = "1"
 name = "grid"
 harness = false
 
+[[bench]]
+name = "vte_throughput"
+harness = false
+
 [lints]
 workspace = true

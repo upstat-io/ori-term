@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Alpha blending mode for text rendering.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AlphaBlending {
+pub(crate) enum AlphaBlending {
     /// Standard sRGB surface format blending.
     Linear,
     /// Ghostty-style luminance-based alpha correction for even text weight.
@@ -22,7 +22,7 @@ pub enum AlphaBlending {
 /// preference.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ThemeOverride {
+pub(crate) enum ThemeOverride {
     /// Use the system's dark/light mode preference.
     #[default]
     Auto,
@@ -35,7 +35,7 @@ pub enum ThemeOverride {
 /// Color scheme and palette configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ColorConfig {
+pub(crate) struct ColorConfig {
     /// Color scheme name (default: "Catppuccin Mocha").
     pub scheme: String,
     /// Dark/light mode override (default: auto-detect from system).

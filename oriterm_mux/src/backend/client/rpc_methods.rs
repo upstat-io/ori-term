@@ -21,8 +21,15 @@ use crate::protocol::{MuxPdu, WireSelection};
 use crate::{DomainId, PaneId};
 
 use super::MuxClient;
+use super::transport::ClientTransport;
 
 impl MuxBackend for MuxClient {
+    fn has_pending_wakeup(&self) -> bool {
+        self.transport
+            .as_ref()
+            .is_some_and(ClientTransport::has_pending_wakeup)
+    }
+
     fn poll_events(&mut self) {
         if let Some(transport) = &self.transport {
             transport.clear_wakeup_pending();
@@ -338,10 +345,12 @@ impl MuxBackend for MuxClient {
     }
 
     fn default_domain(&self) -> DomainId {
-        DomainId::from_raw(0)
+        DomainId::LOCAL
     }
 
     fn is_connected(&self) -> bool {
+        // Delegates to the inherent `MuxClient::is_connected` which checks
+        // transport liveness, overriding the trait's default `true`.
         Self::is_connected(self)
     }
 

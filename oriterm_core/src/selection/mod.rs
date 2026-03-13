@@ -13,7 +13,7 @@ mod tests;
 pub(crate) mod text;
 
 pub use boundaries::{
-    DEFAULT_WORD_DELIMITERS, logical_line_end, logical_line_start, word_boundaries,
+    DEFAULT_WORD_DELIMITERS, delimiter_class, logical_line_end, logical_line_start, word_boundaries,
 };
 pub use click::ClickDetector;
 pub use html::{extract_html, extract_html_with_text};

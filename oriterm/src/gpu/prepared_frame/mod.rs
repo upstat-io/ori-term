@@ -13,7 +13,8 @@ use oriterm_core::image::ImageId;
 use super::draw_list_convert::TierClips;
 use super::frame_input::ViewportSize;
 use super::instance_writer::InstanceWriter;
-use super::srgb_to_linear;
+use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
+use super::{maybe_shrink_vec, srgb_to_linear};
 
 /// Instance index ranges for a single overlay's content within the shared buffers.
 ///
@@ -76,48 +77,65 @@ pub struct ImageQuad {
 /// rect backgrounds from draw 6, since all UI rects shared a single buffer.
 pub struct PreparedFrame {
     /// Background rectangle instances (solid-color cell fills).
-    pub backgrounds: InstanceWriter,
+    pub(crate) backgrounds: InstanceWriter,
     /// Monochrome glyph instances (`R8Unorm` atlas, tinted by `fg_color`).
-    pub glyphs: InstanceWriter,
+    pub(crate) glyphs: InstanceWriter,
     /// LCD subpixel glyph instances (`Rgba8Unorm` atlas, per-channel blend).
-    pub subpixel_glyphs: InstanceWriter,
+    pub(crate) subpixel_glyphs: InstanceWriter,
     /// Color glyph instances (`Rgba8Unorm` atlas, rendered as-is).
-    pub color_glyphs: InstanceWriter,
+    pub(crate) color_glyphs: InstanceWriter,
     /// Cursor instances (block, bar, underline shapes).
-    pub cursors: InstanceWriter,
+    pub(crate) cursors: InstanceWriter,
     /// UI rect instances (SDF rounded rectangles — chrome layer).
-    pub ui_rects: InstanceWriter,
+    pub(crate) ui_rects: InstanceWriter,
     /// UI monochrome glyph instances (chrome text, drawn after UI rects).
-    pub ui_glyphs: InstanceWriter,
+    pub(crate) ui_glyphs: InstanceWriter,
     /// UI subpixel glyph instances (chrome text, drawn after UI rects).
-    pub ui_subpixel_glyphs: InstanceWriter,
+    pub(crate) ui_subpixel_glyphs: InstanceWriter,
     /// UI color glyph instances (chrome text, drawn after UI rects).
-    pub ui_color_glyphs: InstanceWriter,
+    pub(crate) ui_color_glyphs: InstanceWriter,
     /// Overlay rect instances (SDF rounded rectangles — overlay layer, above chrome text).
-    pub overlay_rects: InstanceWriter,
+    pub(crate) overlay_rects: InstanceWriter,
     /// Overlay monochrome glyph instances (drawn after overlay rects).
-    pub overlay_glyphs: InstanceWriter,
+    pub(crate) overlay_glyphs: InstanceWriter,
     /// Overlay subpixel glyph instances (drawn after overlay rects).
-    pub overlay_subpixel_glyphs: InstanceWriter,
+    pub(crate) overlay_subpixel_glyphs: InstanceWriter,
     /// Overlay color glyph instances (drawn after overlay rects).
-    pub overlay_color_glyphs: InstanceWriter,
+    pub(crate) overlay_color_glyphs: InstanceWriter,
     /// Clip segments for the chrome tier (draws 6–9), one per writer.
-    pub ui_clips: TierClips,
+    pub(crate) ui_clips: TierClips,
     /// Clip segments for the overlay tier (draws 10–13), one per writer.
-    pub overlay_clips: TierClips,
+    pub(crate) overlay_clips: TierClips,
     /// Per-overlay draw ranges for correct z-ordering between stacked overlays.
     ///
     /// Each entry corresponds to one overlay (back-to-front order). The render
     /// pass draws each overlay as a complete unit before moving to the next.
-    pub overlay_draw_ranges: Vec<OverlayDrawRange>,
+    pub(crate) overlay_draw_ranges: Vec<OverlayDrawRange>,
     /// Image quads below text (`z_index` < 0).
-    pub image_quads_below: Vec<ImageQuad>,
+    pub(crate) image_quads_below: Vec<ImageQuad>,
     /// Image quads above text (`z_index` >= 0).
-    pub image_quads_above: Vec<ImageQuad>,
+    pub(crate) image_quads_above: Vec<ImageQuad>,
+    /// Per-row instance byte ranges in the terminal-tier buffers.
+    ///
+    /// Index = viewport line. Used by the incremental prepare path to copy
+    /// clean rows' instances from the previous frame without regenerating them.
+    pub(crate) row_ranges: Vec<RowInstanceRanges>,
+    /// Saved terminal-tier data from the previous frame for incremental updates.
+    ///
+    /// Swapped out at the start of each prepare pass; clean rows copy from here.
+    pub(crate) saved_tier: SavedTerminalTier,
+    /// Selection line range from the previous frame for damage tracking.
+    ///
+    /// `(start_line, end_line)` inclusive viewport lines. Used by the
+    /// incremental path to detect which rows changed selection state.
+    /// Persists across `clear()` and `save_terminal_tier()`.
+    pub(crate) prev_selection_range: Option<(usize, usize)>,
+    /// Reusable scratch buffer for per-row dirty flags (incremental rendering).
+    pub(crate) scratch_dirty: Vec<bool>,
     /// Viewport pixel dimensions for uniform buffer update.
-    pub viewport: ViewportSize,
+    pub(crate) viewport: ViewportSize,
     /// Window clear color (alpha-premultiplied).
-    pub clear_color: [f64; 4],
+    pub(crate) clear_color: [f64; 4],
 }
 
 impl PreparedFrame {
@@ -142,6 +160,10 @@ impl PreparedFrame {
             overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
+            row_ranges: Vec::new(),
+            saved_tier: SavedTerminalTier::new(),
+            prev_selection_range: None,
+            scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -179,6 +201,10 @@ impl PreparedFrame {
             overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
+            row_ranges: Vec::new(),
+            saved_tier: SavedTerminalTier::new(),
+            prev_selection_range: None,
+            scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
@@ -220,6 +246,50 @@ impl PreparedFrame {
             && self.overlay_color_glyphs.is_empty()
     }
 
+    /// Count the number of GPU draw calls this frame will produce.
+    ///
+    /// Each non-empty instance buffer generates one draw call. Overlays
+    /// generate 4 draws each (rects + 3 glyph passes). Images generate
+    /// one draw call per quad.
+    pub fn count_draw_calls(&self) -> u32 {
+        let mut count = 0u32;
+
+        // Terminal tier: bg, mono, subpixel, color, cursors.
+        count += u32::from(!self.backgrounds.is_empty());
+        count += u32::from(!self.glyphs.is_empty());
+        count += u32::from(!self.subpixel_glyphs.is_empty());
+        count += u32::from(!self.color_glyphs.is_empty());
+        count += u32::from(!self.cursors.is_empty());
+
+        // Chrome tier: ui_rects, ui_mono, ui_subpixel, ui_color.
+        count += u32::from(!self.ui_rects.is_empty());
+        count += u32::from(!self.ui_glyphs.is_empty());
+        count += u32::from(!self.ui_subpixel_glyphs.is_empty());
+        count += u32::from(!self.ui_color_glyphs.is_empty());
+
+        // Overlay tier: 4 draws per overlay.
+        for range in &self.overlay_draw_ranges {
+            count += u32::from(range.rects.0 != range.rects.1);
+            count += u32::from(range.mono.0 != range.mono.1);
+            count += u32::from(range.subpixel.0 != range.subpixel.1);
+            count += u32::from(range.color.0 != range.color.1);
+        }
+
+        // Image draws: one per quad.
+        count += self.image_quads_below.len() as u32;
+        count += self.image_quads_above.len() as u32;
+
+        count
+    }
+
+    /// Whether the terminal tier has rendered data from a prior frame.
+    ///
+    /// Used by the cursor-blink-only fast path to decide whether to skip
+    /// the full prepare pipeline and just update cursor instances.
+    pub fn has_terminal_data(&self) -> bool {
+        !self.backgrounds.is_empty()
+    }
+
     /// Reset all buffers for the next frame, retaining allocated memory.
     pub fn clear(&mut self) {
         self.backgrounds.clear();
@@ -240,6 +310,7 @@ impl PreparedFrame {
         self.overlay_draw_ranges.clear();
         self.image_quads_below.clear();
         self.image_quads_above.clear();
+        self.row_ranges.clear();
     }
 
     /// Append all instances from `other` into this frame.
@@ -303,9 +374,55 @@ impl PreparedFrame {
             .extend_from_slice(&other.image_quads_above);
     }
 
+    /// Shrink all instance buffers and scratch Vecs if capacity vastly exceeds usage.
+    ///
+    /// Called after rendering to bound memory waste. See [`InstanceWriter::maybe_shrink`].
+    pub fn maybe_shrink(&mut self) {
+        self.backgrounds.maybe_shrink();
+        self.glyphs.maybe_shrink();
+        self.subpixel_glyphs.maybe_shrink();
+        self.color_glyphs.maybe_shrink();
+        self.cursors.maybe_shrink();
+        self.ui_rects.maybe_shrink();
+        self.ui_glyphs.maybe_shrink();
+        self.ui_subpixel_glyphs.maybe_shrink();
+        self.ui_color_glyphs.maybe_shrink();
+        self.overlay_rects.maybe_shrink();
+        self.overlay_glyphs.maybe_shrink();
+        self.overlay_subpixel_glyphs.maybe_shrink();
+        self.overlay_color_glyphs.maybe_shrink();
+        maybe_shrink_vec(&mut self.overlay_draw_ranges);
+        maybe_shrink_vec(&mut self.image_quads_below);
+        maybe_shrink_vec(&mut self.image_quads_above);
+        maybe_shrink_vec(&mut self.row_ranges);
+    }
+
     /// Update the clear color (e.g. after a palette change).
     pub fn set_clear_color(&mut self, background: Rgb, opacity: f64) {
         self.clear_color = rgb_to_clear(background, opacity);
+    }
+
+    /// Swap the terminal-tier buffers into `saved_tier` for incremental updates.
+    ///
+    /// After this call the terminal-tier writers are empty (backed by the
+    /// previous `saved_tier`'s Vecs, cleared to zero length). The old
+    /// instances live in `saved_tier` and can be copied row-by-row for
+    /// clean rows. This is O(1) — three pointer swaps, no data copied.
+    pub(crate) fn save_terminal_tier(&mut self) {
+        self.backgrounds.swap_buf(&mut self.saved_tier.backgrounds);
+        self.glyphs.swap_buf(&mut self.saved_tier.glyphs);
+        self.subpixel_glyphs
+            .swap_buf(&mut self.saved_tier.subpixel_glyphs);
+        self.color_glyphs
+            .swap_buf(&mut self.saved_tier.color_glyphs);
+        std::mem::swap(&mut self.row_ranges, &mut self.saved_tier.row_ranges);
+
+        // Clear the now-swapped-in buffers (they held the old saved_tier data).
+        self.backgrounds.clear();
+        self.glyphs.clear();
+        self.subpixel_glyphs.clear();
+        self.color_glyphs.clear();
+        self.row_ranges.clear();
     }
 }
 

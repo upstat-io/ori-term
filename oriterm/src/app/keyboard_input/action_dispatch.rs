@@ -155,9 +155,7 @@ impl App {
                 true
             }
             Action::NewWindow => {
-                let _ = self
-                    .event_proxy
-                    .send_event(crate::event::TermEvent::CreateWindow);
+                self.event_proxy.send(crate::event::TermEvent::CreateWindow);
                 true
             }
             Action::PreviousPrompt => {
@@ -212,23 +210,28 @@ impl App {
                 }
                 true
             }
+            Action::SelectAll => {
+                self.select_all_in_pane();
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
             Action::MoveTabToNewWindow => {
-                // Resolve the active tab index and defer to `about_to_wait`
+                // Resolve the active tab ID and defer to `about_to_wait`
                 // where `ActiveEventLoop` is available.
-                let idx = self.active_window.and_then(|wid| {
+                let tab_id = self.active_window.and_then(|wid| {
                     let win = self.session.get_window(wid)?;
-                    Some(win.active_tab_idx())
+                    win.active_tab()
                 });
-                if let Some(i) = idx {
-                    self.move_tab_to_new_window_deferred(i);
+                if let Some(tid) = tab_id {
+                    self.move_tab_to_new_window_deferred(tid);
                 }
                 true
             }
             Action::OpenSettings => {
                 // Defer to event loop — dialog creation needs &ActiveEventLoop.
-                let _ = self
-                    .event_proxy
-                    .send_event(crate::event::TermEvent::OpenSettings);
+                self.event_proxy.send(crate::event::TermEvent::OpenSettings);
                 true
             }
             // Actions for future sections — consume the event but log a stub.

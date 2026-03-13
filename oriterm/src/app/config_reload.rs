@@ -7,7 +7,8 @@
 use super::{App, DEFAULT_DPI};
 use crate::config::{self, Config, FontConfig};
 use crate::font::{
-    FaceIdx, FontCollection, FontSet, HintingMode, SubpixelMode, parse_features, parse_hex_range,
+    FaceIdx, FontByteCache, FontCollection, FontSet, HintingMode, SubpixelMode, parse_features,
+    parse_hex_range,
 };
 use crate::keybindings;
 
@@ -56,6 +57,7 @@ impl App {
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.dirty = true;
+            ctx.ui_stale = true;
         }
 
         log::info!("config reload: applied successfully");
@@ -83,13 +85,15 @@ impl App {
         }
 
         let weight = new.font.effective_weight();
-        let mut font_set = match FontSet::load(new.font.family.as_deref(), weight) {
-            Ok(fs) => fs,
-            Err(e) => {
-                log::warn!("config reload: font load failed: {e}");
-                return;
-            }
-        };
+        let mut cache = FontByteCache::new();
+        let mut font_set =
+            match FontSet::load_cached(new.font.family.as_deref(), weight, &mut cache) {
+                Ok(fs) => fs,
+                Err(e) => {
+                    log::warn!("config reload: font load failed: {e}");
+                    return;
+                }
+            };
 
         // Prepend user-configured fallback fonts before system fallbacks.
         let user_fb_families: Vec<&str> = new
@@ -98,7 +102,7 @@ impl App {
             .iter()
             .map(|f| f.family.as_str())
             .collect();
-        let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
+        let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
 
         // Update cached font set on App for future window creation.
         self.font_set = Some(font_set.clone());

@@ -68,25 +68,25 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
                 flags: CellFlags::from_bits_truncate(wire.flags),
                 underline_color: wire.underline_color.map(wire_rgb_to_rgb),
                 has_hyperlink: wire.hyperlink_uri.is_some(),
-                zerowidth: wire.zerowidth.clone(),
+                zerowidth: if wire.zerowidth.is_empty() {
+                    Vec::new()
+                } else {
+                    wire.zerowidth.clone()
+                },
             });
         }
     }
 
     let cursor = wire_cursor_to_renderable(snapshot.cursor);
 
-    RenderableContent {
-        cells,
-        cursor,
-        display_offset: snapshot.display_offset as usize,
-        stable_row_base: snapshot.stable_row_base,
-        mode: TermMode::from_bits_truncate(snapshot.modes),
-        all_dirty: true,
-        damage: Vec::new(),
-        images: Vec::new(),
-        image_data: Vec::new(),
-        images_dirty: false,
-    }
+    let mut content = RenderableContent::default();
+    content.cells = cells;
+    content.cursor = cursor;
+    content.display_offset = snapshot.display_offset as usize;
+    content.stable_row_base = snapshot.stable_row_base;
+    content.mode = TermMode::from_bits_truncate(snapshot.modes);
+    content.all_dirty = true;
+    content
 }
 
 /// Refill an existing [`RenderableContent`] from a [`PaneSnapshot`], reusing allocations.
@@ -96,8 +96,7 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
 fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableContent) {
     out.cells.clear();
     let total_cells: usize = snapshot.cells.iter().map(Vec::len).sum();
-    out.cells
-        .reserve(total_cells.saturating_sub(out.cells.capacity()));
+    out.cells.reserve(total_cells);
 
     for (line, row) in snapshot.cells.iter().enumerate() {
         for (col_idx, wire) in row.iter().enumerate() {
@@ -110,7 +109,11 @@ fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableCont
                 flags: CellFlags::from_bits_truncate(wire.flags),
                 underline_color: wire.underline_color.map(wire_rgb_to_rgb),
                 has_hyperlink: wire.hyperlink_uri.is_some(),
-                zerowidth: wire.zerowidth.clone(),
+                zerowidth: if wire.zerowidth.is_empty() {
+                    Vec::new()
+                } else {
+                    wire.zerowidth.clone()
+                },
             });
         }
     }
@@ -146,6 +149,7 @@ pub(crate) fn extract_frame_from_snapshot_into(
     out.hovered_cell = None;
     out.hovered_url_segments.clear();
     out.mark_cursor = None;
+    out.window_focused = true;
     out.fg_dim = 1.0;
     out.prompt_marker_rows.clear();
 }

@@ -76,6 +76,10 @@ impl EmbeddedMux {
 }
 
 impl MuxBackend for EmbeddedMux {
+    fn has_pending_wakeup(&self) -> bool {
+        self.wakeup_pending.load(Ordering::Acquire)
+    }
+
     fn poll_events(&mut self) {
         self.wakeup_pending.store(false, Ordering::Release);
         self.mux.poll_events(&mut self.panes);
@@ -110,6 +114,11 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
+        // Phase 1: unregister from the pane registry and push a PaneClosed
+        // notification. The pane itself remains in `self.panes` so the PTY
+        // process continues running until `cleanup_closed_pane` is called
+        // (Phase 2), which drops the Pane on a background thread to avoid
+        // blocking the event loop with PTY kill + child reap.
         self.mux.close_pane(pane_id)
     }
 
@@ -359,6 +368,12 @@ impl MuxBackend for EmbeddedMux {
 
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {
         self.snapshot_dirty.remove(&pane_id);
+    }
+
+    fn maybe_shrink_renderable_caches(&mut self) {
+        for content in self.renderable_cache.values_mut() {
+            content.maybe_shrink();
+        }
     }
 }
 

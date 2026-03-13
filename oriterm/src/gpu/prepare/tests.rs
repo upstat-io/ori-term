@@ -1927,7 +1927,9 @@ fn zero_origin_matches_no_origin() {
 #[test]
 fn origin_offset_shaped_shifts_all_instances() {
     let size_q6 = 768;
-    let input = FrameInput::test_grid(2, 1, "AB");
+    let mut input = FrameInput::test_grid(2, 1, "AB");
+    // Viewport must be large enough to contain origin + cell area.
+    input.viewport = ViewportSize::new(200, 300);
 
     let atlas = key_atlas_with(&[10, 11], size_q6);
     let glyphs = vec![
@@ -2001,7 +2003,7 @@ fn selection_inverts_bg_color() {
     let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
     let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
 
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
     let selected_bg = rgb_f32(Rgb {
         r: 211,
         g: 215,
@@ -2026,9 +2028,9 @@ fn selection_inverts_fg_color() {
 
     let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
-    // Glyph "A" (col 0) should have inverted fg (black instead of light gray).
+    // Glyph "A" (col 0) should have inverted fg (cell bg instead of light gray).
     let fg0 = nth_instance(frame.glyphs.as_bytes(), 0);
-    let selected_fg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let selected_fg = rgb_f32(input.content.cells[0].bg);
     assert_eq!(
         fg0.fg_color, selected_fg,
         "selected glyph should have inverted fg"
@@ -2057,7 +2059,7 @@ fn selection_no_effect_when_none() {
 
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
     let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     assert_eq!(bg0.bg_color, normal_bg);
     assert_eq!(bg1.bg_color, normal_bg);
@@ -2068,12 +2070,17 @@ fn selection_wide_char_highlights_both_cells() {
     use oriterm_core::RenderableCell;
 
     // Build a grid with a wide char at col 0: 'Ａ' (fullwidth A, 2 cells wide).
+    // Use non-palette bg so bg quads are emitted for assertion.
     let fg = Rgb {
         r: 211,
         g: 215,
         b: 207,
     };
-    let bg = Rgb { r: 0, g: 0, b: 0 };
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
 
     let cells = vec![
         RenderableCell {
@@ -2131,7 +2138,7 @@ fn selection_wide_char_highlights_both_cells() {
         g: 215,
         b: 207,
     });
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     assert_eq!(bg0.bg_color, selected_bg, "wide char should be selected");
     assert_eq!(bg0.size, (16.0, 16.0), "wide char bg should span 2 cells");
@@ -2172,7 +2179,7 @@ fn selection_block_mode_rectangular() {
         g: 215,
         b: 207,
     });
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     // Row 0: A(normal) B(selected) C(selected) D(normal).
     let a = nth_instance(frame.backgrounds.as_bytes(), 0);
@@ -2204,12 +2211,17 @@ fn selection_wide_char_spacer_only_highlights_both() {
     // Wide char at col 0, spacer at col 1, narrow 'B' at col 2.
     // Selection covers only col 1 (the spacer). The wide char should
     // still be highlighted because you can't render half a wide char.
+    // Use non-palette bg so bg quads are emitted for assertion.
     let fg = Rgb {
         r: 211,
         g: 215,
         b: 207,
     };
-    let bg = Rgb { r: 0, g: 0, b: 0 };
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
 
     let cells = vec![
         RenderableCell {
@@ -2262,7 +2274,7 @@ fn selection_wide_char_spacer_only_highlights_both() {
         g: 215,
         b: 207,
     });
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     // bg[0] = wide char (should be selected because spacer col is in range).
     // bg[1] = 'B' (normal).
@@ -2304,7 +2316,7 @@ fn selection_across_wrapped_lines_no_gap() {
         g: 215,
         b: 207,
     });
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
 
     // Row 0: A(norm) B(norm) C(sel) D(sel).
     let a = nth_instance(frame.backgrounds.as_bytes(), 0);
@@ -2336,12 +2348,17 @@ fn selection_block_cursor_skips_inversion() {
 
     // 3x1 grid: "ABC". Select all three columns. Visible block cursor at col 1.
     // Col 1 should NOT be inverted (cursor overlay dominates).
+    // Use non-palette bg so bg quads are emitted for assertion.
     let fg = Rgb {
         r: 211,
         g: 215,
         b: 207,
     };
-    let bg = Rgb { r: 0, g: 0, b: 0 };
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
 
     let cells = vec![
         RenderableCell {
@@ -2517,7 +2534,12 @@ fn selection_hidden_cell_stays_invisible() {
 
     // A HIDDEN (SGR 8) cell where fg == bg intentionally hides text.
     // Selection should NOT reveal it — the fg==bg fallback should be skipped.
-    let bg = Rgb { r: 0, g: 0, b: 0 };
+    // Use a non-palette bg so the bg quad is emitted for assertion.
+    let bg = Rgb {
+        r: 30,
+        g: 30,
+        b: 46,
+    };
 
     let cells = vec![RenderableCell {
         line: 0,
@@ -2584,7 +2606,7 @@ fn selection_preserves_instance_counts() {
     );
 
     // Verify selected cells have inverted colors while unselected cells are unchanged.
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input_sel.content.cells[0].bg);
     let selected_bg = rgb_f32(Rgb {
         r: 211,
         g: 215,
@@ -2891,7 +2913,7 @@ fn shaped_ligature_selection_col1_does_not_duplicate_glyph() {
 
     // Col 0 (unselected) should have normal bg.
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
-    let normal_bg = rgb_f32(Rgb { r: 0, g: 0, b: 0 });
+    let normal_bg = rgb_f32(input.content.cells[0].bg);
     assert_eq!(bg0.bg_color, normal_bg, "col 0 should have normal bg");
 
     // Col 1 (selected continuation) should have inverted bg.
@@ -3087,7 +3109,7 @@ fn search_match_highlights_bg() {
 
     // Col 0: normal bg.
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
-    assert_eq!(bg0.bg_color, rgb_f32(input.palette.background));
+    assert_eq!(bg0.bg_color, rgb_f32(input.content.cells[0].bg));
 
     // Col 1: search match bg.
     let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
@@ -3099,7 +3121,7 @@ fn search_match_highlights_bg() {
 
     // Col 2: normal bg.
     let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
-    assert_eq!(bg2.bg_color, rgb_f32(input.palette.background));
+    assert_eq!(bg2.bg_color, rgb_f32(input.content.cells[2].bg));
 }
 
 #[test]
@@ -3195,14 +3217,14 @@ fn search_no_match_uses_default_colors() {
     input.search = Some(search_with_match(5, 0, 0, 0));
     input.content.cursor.visible = false;
     let atlas = atlas_with(&['A', 'B']);
-    let bg_color = input.palette.background;
+    let cell_bg = input.content.cells[0].bg;
 
     let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
 
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
-    assert_eq!(bg0.bg_color, rgb_f32(bg_color));
+    assert_eq!(bg0.bg_color, rgb_f32(cell_bg));
     let bg1 = nth_instance(frame.backgrounds.as_bytes(), 1);
-    assert_eq!(bg1.bg_color, rgb_f32(bg_color));
+    assert_eq!(bg1.bg_color, rgb_f32(cell_bg));
 }
 
 // ── URL hover underline ──
@@ -3380,7 +3402,7 @@ fn selection_explicit_colors_override_inversion() {
 
     // Col 0 (not selected): normal colors.
     let bg0 = nth_instance(frame.backgrounds.as_bytes(), 0);
-    assert_eq!(bg0.bg_color, rgb_f32(input.palette.background));
+    assert_eq!(bg0.bg_color, rgb_f32(input.content.cells[0].bg));
 }
 
 // ── Empty cells still produce bg instances ──
@@ -3629,4 +3651,114 @@ fn image_uv_and_opacity_propagated() {
     assert_eq!(q.uv_w, 0.5);
     assert_eq!(q.uv_h, 0.25);
     assert_eq!(q.opacity, 0.8);
+}
+
+// ── Incremental vs full rebuild equivalence ──
+
+/// Build a multi-row ShapedFrame where each cell gets its own glyph.
+fn shaped_multi_row(
+    cols: usize,
+    rows: usize,
+    glyph_id_base: u16,
+    size_q6: u32,
+) -> (ShapedFrame, Vec<u16>) {
+    let mut sf = ShapedFrame::new(cols, size_q6);
+    let mut all_ids = Vec::new();
+    for row in 0..rows {
+        let glyphs: Vec<ShapedGlyph> = (0..cols)
+            .map(|c| {
+                let id = glyph_id_base + (row * cols + c) as u16;
+                all_ids.push(id);
+                ShapedGlyph {
+                    glyph_id: id,
+                    face_index: 0,
+                    synthetic: 0,
+                    x_advance: 0.0,
+                    x_offset: 0.0,
+                    y_offset: 0.0,
+                }
+            })
+            .collect();
+        let col_starts: Vec<usize> = (0..cols).collect();
+        let mut col_map = Vec::new();
+        crate::font::build_col_glyph_map(&col_starts, cols, &mut col_map);
+        sf.push_row(&glyphs, &col_starts, &col_map);
+    }
+    (sf, all_ids)
+}
+
+#[test]
+fn incremental_all_dirty_matches_full_rebuild() {
+    // When all rows are dirty, the incremental path should produce the
+    // same instance data as a full rebuild.
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    // Full rebuild (fresh frame).
+    let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
+
+    // First pass: full rebuild into reusable frame to populate row_ranges.
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+
+    // Second pass: all_dirty = true means full rebuild again.
+    input.content.all_dirty = true;
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+
+    assert_eq!(
+        fresh.backgrounds.as_bytes(),
+        frame.backgrounds.as_bytes(),
+        "backgrounds should match"
+    );
+    assert_eq!(
+        fresh.glyphs.as_bytes(),
+        frame.glyphs.as_bytes(),
+        "glyphs should match"
+    );
+}
+
+#[test]
+fn incremental_no_dirty_rows_matches_cached() {
+    // When no rows are dirty (all clean), the incremental path copies
+    // all instances from the cached tier — result should match the
+    // original full rebuild.
+    let size_q6 = 768;
+    let cols = 4;
+    let rows = 3;
+    let text: String = std::iter::repeat_n('A', cols * rows).collect();
+    let mut input = FrameInput::test_grid(cols, rows, &text);
+
+    let (shaped, ids) = shaped_multi_row(cols, rows, 10, size_q6);
+    let atlas = key_atlas_with(&ids, size_q6);
+
+    // First pass: full rebuild populates row_ranges.
+    let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+
+    // Capture the full rebuild output.
+    let full_bg = frame.backgrounds.as_bytes().to_vec();
+    let full_fg = frame.glyphs.as_bytes().to_vec();
+
+    // Second pass: no damage, no cursor visible → all rows clean.
+    input.content.all_dirty = false;
+    input.content.cursor.visible = false;
+    input.content.damage.clear();
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+
+    assert_eq!(
+        full_bg,
+        frame.backgrounds.as_bytes(),
+        "clean rows should copy cached backgrounds"
+    );
+    assert_eq!(
+        full_fg,
+        frame.glyphs.as_bytes(),
+        "clean rows should copy cached glyphs"
+    );
 }

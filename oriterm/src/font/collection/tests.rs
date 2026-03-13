@@ -1914,3 +1914,69 @@ fn set_features_does_not_invalidate_cache() {
         "set_features should not clear the glyph cache (features affect shaping, not rasterization)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FontByteCache deduplication tests
+// ---------------------------------------------------------------------------
+
+use super::loading::FontByteCache;
+
+/// Two `from_discovery()` calls with the same fallback paths share `Arc` pointers.
+#[test]
+fn font_byte_cache_deduplicates_across_calls() {
+    let mut cache = FontByteCache::new();
+
+    let discovery1 = crate::font::discovery::discover_fonts(None, 400);
+    let fs1 = FontSet::from_discovery(&discovery1, &mut cache).expect("first load");
+
+    let discovery2 = crate::font::discovery::discover_fonts(None, 400);
+    let fs2 = FontSet::from_discovery(&discovery2, &mut cache).expect("second load");
+
+    // Regular variant must share the same Arc allocation.
+    assert!(
+        Arc::ptr_eq(&fs1.regular.data, &fs2.regular.data),
+        "regular font data should be deduplicated via Arc"
+    );
+
+    // Fallbacks (if any) must also share Arc allocations.
+    for (i, (fb1, fb2)) in fs1.fallbacks.iter().zip(fs2.fallbacks.iter()).enumerate() {
+        assert!(
+            Arc::ptr_eq(&fb1.data, &fb2.data),
+            "fallback {i} font data should be deduplicated via Arc"
+        );
+    }
+}
+
+/// Cached loading produces the same family name and fallback count as uncached.
+#[test]
+fn font_byte_cache_produces_identical_results() {
+    let uncached = FontSet::load(None, 400).expect("uncached load");
+
+    let mut cache = FontByteCache::new();
+    let cached = FontSet::load_cached(None, 400, &mut cache).expect("cached load");
+
+    assert_eq!(uncached.family_name, cached.family_name);
+    assert_eq!(uncached.fallbacks.len(), cached.fallbacks.len());
+    assert_eq!(uncached.has_variant, cached.has_variant);
+    assert_eq!(uncached.regular.index, cached.regular.index);
+    assert_eq!(uncached.regular.data.len(), cached.regular.data.len());
+}
+
+/// Cache entries are freed when the cache is dropped.
+#[test]
+fn font_byte_cache_dropped_after_loading() {
+    let cached_set;
+    {
+        let mut cache = FontByteCache::new();
+        cached_set = FontSet::load_cached(None, 400, &mut cache).expect("cached load");
+        // cache dropped here
+    }
+    // FontSet still usable — data held by Arc, not by the cache.
+    assert!(!cached_set.family_name.is_empty());
+    // The Arc strong count should be exactly 1 (only the FontSet holds it).
+    assert_eq!(
+        Arc::strong_count(&cached_set.regular.data),
+        1,
+        "after cache drop, regular data Arc should have strong_count == 1"
+    );
+}

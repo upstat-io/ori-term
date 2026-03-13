@@ -123,7 +123,6 @@ impl InstanceWriter {
     }
 
     /// Total bytes currently stored.
-    #[allow(dead_code, reason = "instance writer methods for later sections")]
     pub fn byte_len(&self) -> usize {
         self.buf.len()
     }
@@ -133,9 +132,41 @@ impl InstanceWriter {
         self.buf.clear();
     }
 
+    /// Shrink the backing buffer if capacity vastly exceeds usage.
+    ///
+    /// Called after rendering to bound memory waste to 2x actual usage.
+    /// Only fires when capacity > 4× length AND > 4096 bytes, so small
+    /// buffers and normal high-water-mark reuse are untouched.
+    pub fn maybe_shrink(&mut self) {
+        let cap = self.buf.capacity();
+        let len = self.buf.len();
+        if cap > 4 * len && cap > 4096 {
+            self.buf.shrink_to(len * 2);
+        }
+    }
+
     /// Append all instances from `other` into this writer.
     pub fn extend_from(&mut self, other: &Self) {
         self.buf.extend_from_slice(&other.buf);
+    }
+
+    /// Append a byte range from a saved buffer.
+    ///
+    /// `start` and `end` are byte offsets (not instance indices). The range
+    /// must be aligned to [`INSTANCE_SIZE`] boundaries.
+    pub fn extend_from_byte_range(&mut self, src: &[u8], start: usize, end: usize) {
+        debug_assert!(start.is_multiple_of(INSTANCE_SIZE) && end.is_multiple_of(INSTANCE_SIZE));
+        if start < end && end <= src.len() {
+            self.buf.extend_from_slice(&src[start..end]);
+        }
+    }
+
+    /// Swap the backing buffer with an external `Vec`.
+    ///
+    /// Used by the incremental prepare path to save the previous frame's
+    /// instances for clean-row reuse without cloning.
+    pub fn swap_buf(&mut self, other: &mut Vec<u8>) {
+        std::mem::swap(&mut self.buf, other);
     }
 
     /// Push a solid-color rectangle instance.

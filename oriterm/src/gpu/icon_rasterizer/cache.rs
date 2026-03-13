@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use wgpu::Queue;
+use wgpu::{Device, Queue};
 
 use oriterm_ui::icons::IconId;
 
@@ -60,6 +60,7 @@ impl IconCache {
         size_px: u32,
         scale: f32,
         atlas: &mut GlyphAtlas,
+        device: &Device,
         queue: &Queue,
     ) -> Option<AtlasEntry> {
         let key = CacheKey { id, size_px };
@@ -98,7 +99,7 @@ impl IconCache {
             font_realm: crate::font::FontRealm::Ui,
         };
 
-        let entry = atlas.insert(raster_key, &glyph, queue)?;
+        let entry = atlas.insert(raster_key, &glyph, device, queue)?;
         self.entries.insert(key, entry);
         Some(entry)
     }

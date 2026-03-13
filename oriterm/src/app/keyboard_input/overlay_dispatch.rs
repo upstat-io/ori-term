@@ -10,7 +10,7 @@ use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
 
 use crate::config::Config;
 
-use super::super::{App, context_menu, mark_mode, settings_overlay};
+use super::super::{App, context_menu, settings_overlay};
 
 impl App {
     /// Process the result of routing an event through the overlay manager.
@@ -211,9 +211,7 @@ impl App {
         match action {
             context_menu::ContextAction::Settings => {
                 log::info!("settings action dispatched, sending OpenSettings event");
-                let _ = self
-                    .event_proxy
-                    .send_event(crate::event::TermEvent::OpenSettings);
+                self.event_proxy.send(crate::event::TermEvent::OpenSettings);
             }
             context_menu::ContextAction::About => {
                 log::info!("about action dispatched");
@@ -227,8 +225,8 @@ impl App {
                     self.new_tab_in_window(win_id);
                 }
             }
-            context_menu::ContextAction::MoveToNewWindow(idx) => {
-                self.move_tab_to_new_window_deferred(idx);
+            context_menu::ContextAction::MoveToNewWindow(tab_id) => {
+                self.move_tab_to_new_window_deferred(tab_id);
             }
             context_menu::ContextAction::Copy => {
                 self.copy_selection();
@@ -237,17 +235,7 @@ impl App {
                 self.paste_from_clipboard();
             }
             context_menu::ContextAction::SelectAll => {
-                if let Some(pane_id) = self.active_pane_id() {
-                    let mux = self.mux.as_mut().expect("mux checked at pane_id");
-                    if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
-                        mux.refresh_pane_snapshot(pane_id);
-                    }
-                    if let Some(snap) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) {
-                        let grid = crate::app::snapshot_grid::SnapshotGrid::new(snap);
-                        let sel = mark_mode::select_all(&grid);
-                        self.set_pane_selection(pane_id, sel);
-                    }
-                }
+                self.select_all_in_pane();
             }
             context_menu::ContextAction::NewTab => {
                 if let Some(win_id) = self.active_window {
@@ -314,6 +302,7 @@ impl App {
                 now,
             );
             ctx.dirty = true;
+            ctx.ui_stale = true;
         }
     }
 
