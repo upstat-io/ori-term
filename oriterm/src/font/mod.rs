@@ -9,9 +9,9 @@
 //! - [`collection`] loads font bytes, computes cell metrics, and rasterizes
 //!   glyphs into bitmaps for atlas upload.
 
-pub mod collection;
-pub mod discovery;
-pub mod shaper;
+pub(crate) mod collection;
+pub(crate) mod discovery;
+pub(crate) mod shaper;
 
 use std::fmt;
 
@@ -19,8 +19,8 @@ use bitflags::bitflags;
 
 pub(crate) use collection::parse_features;
 pub(crate) use collection::parse_hex_range;
-pub use collection::{FontCollection, FontSet, RasterizedGlyph, size_key};
-pub use shaper::{
+pub(crate) use collection::{FontByteCache, FontCollection, FontSet, RasterizedGlyph, size_key};
+pub(crate) use shaper::{
     ShapingRun, UiFontMeasurer, build_col_glyph_map, prepare_line, shape_prepared_runs,
 };
 

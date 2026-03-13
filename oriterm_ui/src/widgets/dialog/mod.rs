@@ -240,10 +240,10 @@ impl DialogWidget {
     fn map_button_click(&self, id: WidgetId) -> WidgetResponse {
         match self.button_for_id(id) {
             Some(DialogButton::Ok) => {
-                WidgetResponse::redraw().with_action(WidgetAction::Clicked(id))
+                WidgetResponse::layout().with_action(WidgetAction::Clicked(id))
             }
             Some(DialogButton::Cancel) => {
-                WidgetResponse::redraw().with_action(WidgetAction::DismissOverlay(self.id))
+                WidgetResponse::layout().with_action(WidgetAction::DismissOverlay(self.id))
             }
             None => WidgetResponse::handled(),
         }
@@ -303,7 +303,7 @@ impl DialogWidget {
         }
 
         self.hovered_button = new_hover;
-        WidgetResponse::redraw()
+        WidgetResponse::layout()
     }
 
     /// Clear all per-button hover state.
@@ -439,14 +439,14 @@ impl Widget for DialogWidget {
         match event.key {
             Key::Enter | Key::Space => match self.focused_button {
                 DialogButton::Ok => {
-                    WidgetResponse::redraw().with_action(WidgetAction::Clicked(self.ok_button.id()))
+                    WidgetResponse::layout().with_action(WidgetAction::Clicked(self.ok_button.id()))
                 }
                 DialogButton::Cancel => {
-                    WidgetResponse::redraw().with_action(WidgetAction::DismissOverlay(self.id))
+                    WidgetResponse::layout().with_action(WidgetAction::DismissOverlay(self.id))
                 }
             },
             Key::Escape => {
-                WidgetResponse::redraw().with_action(WidgetAction::DismissOverlay(self.id))
+                WidgetResponse::layout().with_action(WidgetAction::DismissOverlay(self.id))
             }
             Key::Tab => {
                 if self.buttons == DialogButtons::OkCancel {
@@ -455,7 +455,7 @@ impl Widget for DialogWidget {
                         DialogButton::Ok => DialogButton::Cancel,
                         DialogButton::Cancel => DialogButton::Ok,
                     };
-                    WidgetResponse::redraw()
+                    WidgetResponse::layout()
                 } else {
                     WidgetResponse::handled()
                 }

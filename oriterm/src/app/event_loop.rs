@@ -324,14 +324,8 @@ impl ApplicationHandler<TermEvent> for App {
             TermEvent::CreateWindow => {
                 self.create_window(event_loop);
             }
-            TermEvent::MoveTabToNewWindow(tab_index) => {
-                let tab_id = self.active_window.and_then(|wid| {
-                    let win = self.session.get_window(wid)?;
-                    win.tabs().get(tab_index).copied()
-                });
-                if let Some(tid) = tab_id {
-                    self.move_tab_to_new_window(tid, event_loop);
-                }
+            TermEvent::MoveTabToNewWindow(tab_id) => {
+                self.move_tab_to_new_window(tab_id, event_loop);
             }
             TermEvent::OpenSettings => {
                 self.open_settings_dialog(event_loop);
@@ -399,6 +393,7 @@ impl ApplicationHandler<TermEvent> for App {
 
                 if animating {
                     ctx.dirty = true;
+                    ctx.ui_stale = true;
                 }
             }
         }
@@ -448,73 +443,6 @@ impl ApplicationHandler<TermEvent> for App {
             ControlFlowDecision::WaitUntil(t) => {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(t));
             }
-        }
-    }
-}
-
-impl App {
-    /// Render all dirty terminal and dialog windows.
-    ///
-    /// Temporarily swaps `focused_window_id`/`active_window` to target each
-    /// dirty window, then restores the original focus.
-    fn render_dirty_windows(&mut self) {
-        let frame_start = std::time::Instant::now();
-        let dirty_winit_ids: Vec<winit::window::WindowId> = self
-            .windows
-            .iter()
-            .filter(|(_, ctx)| ctx.dirty)
-            .map(|(&id, _)| id)
-            .collect();
-
-        let saved_focused = self.focused_window_id;
-        let saved_active = self.active_window;
-
-        for wid in dirty_winit_ids {
-            if let Some(ctx) = self.windows.get_mut(&wid) {
-                ctx.dirty = false;
-            }
-            let mux_wid = self
-                .windows
-                .get(&wid)
-                .map(|ctx| ctx.window.session_window_id());
-            self.focused_window_id = Some(wid);
-            self.active_window = mux_wid;
-            self.handle_redraw();
-        }
-
-        self.focused_window_id = saved_focused;
-        self.active_window = saved_active;
-
-        // Render dirty dialog windows.
-        let dirty_dialog_ids: Vec<winit::window::WindowId> = self
-            .dialogs
-            .iter()
-            .filter(|(_, ctx)| ctx.dirty)
-            .map(|(&id, _)| id)
-            .collect();
-        for wid in dirty_dialog_ids {
-            if let Some(ctx) = self.dialogs.get_mut(&wid) {
-                ctx.dirty = false;
-            }
-            self.render_dialog(wid);
-        }
-
-        self.last_render = std::time::Instant::now();
-        self.perf.record_render(frame_start.elapsed());
-
-        // Post-render: shrink grow-only buffers if capacity vastly exceeds usage.
-        for ctx in self.windows.values_mut() {
-            if let Some(renderer) = ctx.renderer.as_mut() {
-                renderer.maybe_shrink_buffers();
-            }
-        }
-        for ctx in self.dialogs.values_mut() {
-            if let Some(renderer) = ctx.renderer.as_mut() {
-                renderer.maybe_shrink_buffers();
-            }
-        }
-        if let Some(mux) = self.mux.as_mut() {
-            mux.maybe_shrink_renderable_caches();
         }
     }
 }

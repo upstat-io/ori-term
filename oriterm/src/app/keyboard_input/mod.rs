@@ -129,7 +129,9 @@ impl App {
         }
         if event.state == ElementState::Pressed {
             // Build SnapshotGrid from the current snapshot.
-            let mux = self.mux.as_mut().expect("mux checked at pane_id");
+            let Some(mux) = self.mux.as_mut() else {
+                return true;
+            };
             if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
                 mux.refresh_pane_snapshot(pane_id);
             }

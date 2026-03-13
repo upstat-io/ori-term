@@ -1,25 +1,39 @@
 //! Glyph atlas: guillotine-packed texture array for GPU glyph rendering.
 //!
-//! [`GlyphAtlas`] manages a pre-allocated `Texture2DArray` (2048×2048 × 4
-//! pages) using guillotine bin packing for mixed glyph sizes. Pages are
-//! evicted via LRU when all are full. Glyphs are inserted once and looked
-//! up by [`RasterKey`] on subsequent frames.
+//! [`GlyphAtlas`] manages a grow-on-demand `Texture2DArray` (2048×2048,
+//! starting with 1 layer and growing up to [`MAX_PAGES`]) using guillotine
+//! bin packing for mixed glyph sizes. Pages are evicted via LRU when all
+//! are full. Glyphs are inserted once and looked up by [`RasterKey`] on
+//! subsequent frames.
 //!
 //! Three atlas instances are used at runtime:
 //! - **Monochrome** (`R8Unorm`): standard glyph alpha masks.
 //! - **Subpixel** (`Rgba8Unorm`): LCD subpixel coverage masks (RGB/BGR).
 //! - **Color** (`Rgba8Unorm`): color emoji and bitmap glyphs.
+//!
+//! Atlases that are not immediately needed (e.g., color atlas before any
+//! emoji, or the inactive mono/subpixel atlas) are created in **lazy mode**
+//! via [`GlyphAtlas::new_lazy`]: a 1×1 placeholder texture that consumes
+//! negligible GPU memory. On first [`insert`](GlyphAtlas::insert), the
+//! placeholder is replaced with the full 2048² texture (materialization).
+//!
+//! When a page fills and a new layer is needed, the atlas grows by creating
+//! a new texture with one additional layer, copying existing layers via
+//! `CommandEncoder::copy_texture_to_texture()`, and incrementing a
+//! [`generation`](GlyphAtlas::generation) counter. Callers check the
+//! generation to detect stale bind groups.
 
 mod rect_packer;
+mod texture;
 
 use std::collections::HashMap;
 
 use wgpu::{
-    Device, Extent3d, Queue, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
+    CommandEncoderDescriptor, Device, Extent3d, Queue, Texture, TextureFormat, TextureView,
 };
 
 use self::rect_packer::RectPacker;
+use self::texture::{create_texture_array, upload_glyph};
 use crate::font::{GlyphFormat, RasterKey, RasterizedGlyph};
 
 /// Atlas page dimension (width = height).
@@ -89,16 +103,19 @@ impl AtlasEntry {
 
 /// Texture atlas for glyph bitmaps using guillotine packing on a `Texture2DArray`.
 ///
-/// Manages a single pre-allocated texture array with up to [`MAX_PAGES`]
-/// layers. The texture format is determined at construction: `R8Unorm` for
-/// monochrome glyphs, `Rgba8Unorm` for color emoji. Glyphs are packed using
-/// guillotine best-short-side-fit, uploaded via `queue.write_texture`, and
-/// cached by [`RasterKey`] for O(1) lookup. When all pages are full, the
-/// least-recently-used page is evicted.
+/// Manages a grow-on-demand texture array starting with 1 layer and growing
+/// up to [`MAX_PAGES`] layers. The texture format is determined at
+/// construction: `R8Unorm` for monochrome glyphs, `Rgba8Unorm` for color
+/// emoji. Glyphs are packed using guillotine best-short-side-fit, uploaded
+/// via `queue.write_texture`, and cached by [`RasterKey`] for O(1) lookup.
+/// When all pages are full, the least-recently-used page is evicted.
+///
+/// When the atlas grows (new layer allocated), [`generation`](Self::generation)
+/// increments so callers can detect stale bind groups.
 pub struct GlyphAtlas {
-    /// Single pre-allocated `Texture2DArray`.
+    /// Current `Texture2DArray` (grows on demand).
     texture: Texture,
-    /// `D2Array` view over all layers.
+    /// `D2Array` view over all current layers.
     view: TextureView,
     /// Per-page packing state + LRU metadata.
     pages: Vec<AtlasPage>,
@@ -106,14 +123,30 @@ pub struct GlyphAtlas {
     cache: HashMap<RasterKey, AtlasEntry>,
     page_size: u32,
     max_pages: u32,
+    /// Number of layers in the current GPU texture.
+    texture_layers: u32,
     /// Monotonically increasing frame counter for LRU tracking.
     frame_counter: u64,
+    /// Incremented when the texture is replaced (grow or recreate).
+    generation: u64,
     /// Pixel format of this atlas texture.
     format: GlyphFormat,
+    /// wgpu texture format (cached from construction).
+    tex_format: TextureFormat,
+    /// Whether this atlas is in lazy mode (1×1 placeholder, not yet materialized).
+    ///
+    /// Set by [`new_lazy`](Self::new_lazy), cleared by [`materialize`](Self::materialize)
+    /// on first [`insert`](Self::insert). Saves ~4–16 MB GPU memory per atlas
+    /// that is never used (e.g., color atlas when no emoji are rendered).
+    lazy: bool,
 }
 
 impl GlyphAtlas {
-    /// Create a new atlas with a pre-allocated texture array and one active page.
+    /// Create a new atlas with a 1-layer texture array and one active page.
+    ///
+    /// The texture starts with a single layer and grows on demand up to
+    /// [`MAX_PAGES`] layers. This saves ~108 MB GPU memory per window for
+    /// typical ASCII terminal usage.
     ///
     /// `format` determines the texture format:
     /// - [`GlyphFormat::Alpha`] → `R8Unorm` (1 byte/pixel).
@@ -125,7 +158,8 @@ impl GlyphAtlas {
             GlyphFormat::Color => TextureFormat::Rgba8UnormSrgb,
             _ => TextureFormat::Rgba8Unorm, // subpixel masks are linear
         };
-        let (texture, view) = create_texture_array(device, PAGE_SIZE, MAX_PAGES, tex_format);
+        // Start with 1 layer; grow on demand when pages overflow.
+        let (texture, view) = create_texture_array(device, PAGE_SIZE, 1, tex_format);
 
         Self {
             texture,
@@ -138,8 +172,45 @@ impl GlyphAtlas {
             cache: HashMap::new(),
             page_size: PAGE_SIZE,
             max_pages: MAX_PAGES,
+            texture_layers: 1,
             frame_counter: 0,
+            generation: 0,
             format,
+            tex_format,
+            lazy: false,
+        }
+    }
+
+    /// Create a lazy atlas with a 1×1 placeholder texture.
+    ///
+    /// The full 2048² texture is allocated on the first [`insert`](Self::insert)
+    /// call (materialization). Until then, the atlas consumes negligible GPU
+    /// memory — saving ~4 MB (`R8Unorm`) or ~16 MB (`Rgba8Unorm`) per atlas.
+    ///
+    /// Use for atlases that may never be needed (e.g., color atlas when no
+    /// emoji are rendered, or the inactive mono/subpixel atlas).
+    pub fn new_lazy(device: &Device, format: GlyphFormat) -> Self {
+        let tex_format = match format {
+            GlyphFormat::Alpha => TextureFormat::R8Unorm,
+            GlyphFormat::Color => TextureFormat::Rgba8UnormSrgb,
+            _ => TextureFormat::Rgba8Unorm,
+        };
+        // 1×1 placeholder — satisfies bind group layout without allocating a full page.
+        let (texture, view) = create_texture_array(device, 1, 1, tex_format);
+
+        Self {
+            texture,
+            view,
+            pages: Vec::new(),
+            cache: HashMap::new(),
+            page_size: PAGE_SIZE,
+            max_pages: MAX_PAGES,
+            texture_layers: 0,
+            frame_counter: 0,
+            generation: 0,
+            format,
+            tex_format,
+            lazy: true,
         }
     }
 
@@ -185,10 +256,15 @@ impl GlyphAtlas {
     /// Finds space via guillotine packing, uploads the bitmap to the GPU, and
     /// caches the entry. Returns `None` for zero-size glyphs (e.g. space)
     /// or glyphs too large for an atlas page.
+    ///
+    /// `device` is needed for grow-on-demand: when all existing pages are
+    /// full and fewer than [`MAX_PAGES`] exist, the texture array is grown
+    /// by one layer (creating a new texture and copying existing layers).
     pub fn insert(
         &mut self,
         key: RasterKey,
         glyph: &RasterizedGlyph,
+        device: &Device,
         queue: &Queue,
     ) -> Option<AtlasEntry> {
         if let Some(&entry) = self.cache.get(&key) {
@@ -197,6 +273,11 @@ impl GlyphAtlas {
 
         if glyph.width == 0 || glyph.height == 0 {
             return None;
+        }
+
+        // Materialize lazy atlas on first real insert.
+        if self.lazy {
+            self.materialize(device);
         }
 
         let max_dim = self.page_size.saturating_sub(GLYPH_PADDING);
@@ -211,6 +292,12 @@ impl GlyphAtlas {
         }
 
         let (page_idx, x, y) = self.find_space(glyph.width, glyph.height);
+
+        // Grow the GPU texture if find_space added a page beyond the
+        // current texture layer count.
+        if self.pages.len() as u32 > self.texture_layers {
+            self.grow_texture(device, queue);
+        }
 
         upload_glyph(queue, &self.texture, page_idx, x, y, glyph);
 
@@ -267,6 +354,7 @@ impl GlyphAtlas {
         &mut self,
         key: RasterKey,
         rasterize: impl FnOnce() -> Option<RasterizedGlyph>,
+        device: &Device,
         queue: &Queue,
     ) -> Option<AtlasEntry> {
         // Cache hit — touch page and return.
@@ -277,7 +365,7 @@ impl GlyphAtlas {
 
         // Cache miss — rasterize and insert.
         let glyph = rasterize()?;
-        self.insert(key, &glyph, queue)
+        self.insert(key, &glyph, device, queue)
     }
 
     /// `Texture2DArray` view for atlas bind group creation.
@@ -309,6 +397,15 @@ impl GlyphAtlas {
         self.frame_counter
     }
 
+    /// Texture generation counter.
+    ///
+    /// Incremented when the texture is replaced (grow-on-demand). Callers
+    /// compare against their last-seen generation to detect stale bind
+    /// groups that reference a now-destroyed `TextureView`.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
     /// Clear all cached glyphs and reset packing state.
     ///
     /// Keeps the texture array but resets to one active page. Called on font
@@ -322,7 +419,97 @@ impl GlyphAtlas {
         self.pages.truncate(1);
     }
 
+    /// Whether this atlas is in lazy mode (1×1 placeholder).
+    #[allow(dead_code, reason = "used in tests and diagnostics")]
+    pub fn is_lazy(&self) -> bool {
+        self.lazy
+    }
+
     // ── Private helpers ──
+
+    /// Replace the 1×1 placeholder with the full-size texture and first page.
+    ///
+    /// Called once on the first [`insert`](Self::insert). Bumps the generation
+    /// counter so callers rebuild stale bind groups.
+    fn materialize(&mut self, device: &Device) {
+        debug_assert!(self.lazy, "materialize called on non-lazy atlas");
+        log::debug!(
+            "atlas materializing: {:?} → {PAGE_SIZE}² texture",
+            self.tex_format
+        );
+
+        let (texture, view) = create_texture_array(device, PAGE_SIZE, 1, self.tex_format);
+        self.texture = texture;
+        self.view = view;
+        self.texture_layers = 1;
+        self.pages.push(AtlasPage {
+            packer: RectPacker::new(PAGE_SIZE, PAGE_SIZE),
+            last_used_frame: self.frame_counter,
+            glyph_count: 0,
+        });
+        self.generation += 1;
+        self.lazy = false;
+    }
+
+    /// Grow the GPU texture to match the current page count.
+    ///
+    /// Creates a new `Texture2DArray` with `self.pages.len()` layers,
+    /// copies all existing layers from the old texture, and replaces
+    /// `self.texture` and `self.view`. Increments `self.generation` so
+    /// callers can detect stale bind groups.
+    fn grow_texture(&mut self, device: &Device, queue: &Queue) {
+        let new_layers = self.pages.len() as u32;
+        let old_layers = self.texture_layers;
+        debug_assert!(new_layers > old_layers);
+
+        log::debug!(
+            "atlas growing: {old_layers} → {new_layers} layers ({:?})",
+            self.tex_format,
+        );
+
+        let (new_texture, new_view) =
+            create_texture_array(device, self.page_size, new_layers, self.tex_format);
+
+        // Copy existing layers from old texture to new texture.
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("atlas_grow_copy"),
+        });
+        for layer in 0..old_layers {
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &new_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.page_size,
+                    height: self.page_size,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        queue.submit(std::iter::once(encoder.finish()));
+
+        self.texture = new_texture;
+        self.view = new_view;
+        self.texture_layers = new_layers;
+        self.generation += 1;
+    }
 
     /// Find space for a glyph, returning `(page_idx, x, y)`.
     ///
@@ -386,80 +573,6 @@ impl GlyphAtlas {
         self.pages[page_idx].last_used_frame = self.frame_counter;
         self.cache.retain(|_, e| e.page as usize != page_idx);
     }
-}
-
-// ── Free functions ──
-
-/// Create a pre-allocated texture array with the given format.
-fn create_texture_array(
-    device: &Device,
-    size: u32,
-    max_pages: u32,
-    format: TextureFormat,
-) -> (Texture, TextureView) {
-    let label = match format {
-        TextureFormat::R8Unorm => "glyph_atlas_array",
-        _ => "rgba_glyph_atlas_array",
-    };
-    let texture = device.create_texture(&TextureDescriptor {
-        label: Some(label),
-        size: Extent3d {
-            width: size,
-            height: size,
-            depth_or_array_layers: max_pages,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: TextureDimension::D2,
-        format,
-        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-
-    let view = texture.create_view(&TextureViewDescriptor {
-        dimension: Some(TextureViewDimension::D2Array),
-        ..Default::default()
-    });
-
-    (texture, view)
-}
-
-/// Upload a glyph bitmap to a position on a texture array layer.
-///
-/// Handles both `R8Unorm` (1 byte/pixel) and `Rgba8Unorm` (4 bytes/pixel)
-/// textures based on the glyph's format.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "GPU texture upload: resource refs, destination coords, glyph data"
-)]
-fn upload_glyph(
-    queue: &Queue,
-    texture: &Texture,
-    page_idx: u32,
-    x: u32,
-    y: u32,
-    glyph: &RasterizedGlyph,
-) {
-    let bpp = glyph.format.bytes_per_pixel();
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d { x, y, z: page_idx },
-            aspect: wgpu::TextureAspect::All,
-        },
-        &glyph.bitmap,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(glyph.width * bpp),
-            rows_per_image: None,
-        },
-        Extent3d {
-            width: glyph.width,
-            height: glyph.height,
-            depth_or_array_layers: 1,
-        },
-    );
 }
 
 #[cfg(test)]

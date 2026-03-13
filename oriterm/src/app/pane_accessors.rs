@@ -97,6 +97,35 @@ impl App {
         }
     }
 
+    /// Select all content in the active pane.
+    ///
+    /// Tries shell input selection first (OSC 133 zones), falling back to
+    /// selecting the entire buffer (scrollback + visible).
+    pub(super) fn select_all_in_pane(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        // Try shell input selection first (OSC 133 zones).
+        let input_sel = self
+            .mux
+            .as_ref()
+            .and_then(|m| m.select_command_input(pane_id));
+        if let Some(sel) = input_sel {
+            self.set_pane_selection(pane_id, sel);
+            return;
+        }
+        // No shell input zone — select entire buffer.
+        let Some(mux) = self.mux.as_mut() else { return };
+        if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
+            mux.refresh_pane_snapshot(pane_id);
+        }
+        if let Some(snap) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) {
+            let grid = super::snapshot_grid::SnapshotGrid::new(snap);
+            let sel = super::mark_mode::select_all(&grid);
+            self.set_pane_selection(pane_id, sel);
+        }
+    }
+
     /// Tab index for a given pane within the active window's tab list.
     ///
     /// Traverses local session: pane → tab → window tab list to find the position.

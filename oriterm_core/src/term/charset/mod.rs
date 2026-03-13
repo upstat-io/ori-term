@@ -44,6 +44,15 @@ impl CharsetState {
         self.charsets[idx as usize].map(ch)
     }
 
+    /// Whether the active charset is plain ASCII with no single shift pending.
+    ///
+    /// When true, `translate(ch)` is guaranteed to return `ch` unchanged,
+    /// so callers can skip the translation call entirely.
+    #[inline]
+    pub fn is_ascii(&self) -> bool {
+        self.single_shift.is_none() && self.charsets[self.active as usize] == StandardCharset::Ascii
+    }
+
     /// Currently active charset slot.
     pub fn active(&self) -> &CharsetIndex {
         &self.active

@@ -7,11 +7,18 @@ use crate::gpu::frame_input::FrameInput;
 
 use super::{BufferLengths, RowInstanceRanges, build_dirty_set, mark_selection_damage};
 
+/// Helper: call `build_dirty_set` with a reusable scratch buffer and return it.
+fn dirty_set(input: &FrameInput, num_rows: usize, prev_sel: Option<(usize, usize)>) -> Vec<bool> {
+    let mut buf = Vec::new();
+    build_dirty_set(input, num_rows, prev_sel, &mut buf);
+    buf
+}
+
 #[test]
 fn all_dirty_marks_every_row() {
     let mut input = FrameInput::test_grid(10, 5, "");
     input.content.all_dirty = true;
-    let dirty = build_dirty_set(&input, 5, None);
+    let dirty = dirty_set(&input, 5, None);
     assert!(dirty.iter().all(|&d| d));
 }
 
@@ -32,7 +39,7 @@ fn damage_marks_specific_rows() {
             right: Column(9),
         },
     ];
-    let dirty = build_dirty_set(&input, 5, None);
+    let dirty = dirty_set(&input, 5, None);
     assert!(!dirty[0]);
     assert!(dirty[1]);
     assert!(!dirty[2]);
@@ -50,7 +57,7 @@ fn cursor_row_always_dirty() {
         shape: CursorShape::Block,
         visible: true,
     };
-    let dirty = build_dirty_set(&input, 5, None);
+    let dirty = dirty_set(&input, 5, None);
     assert!(dirty[2]);
     assert!(!dirty[0]);
 }
@@ -65,7 +72,7 @@ fn invisible_cursor_not_dirty() {
         shape: CursorShape::Block,
         visible: false,
     };
-    let dirty = build_dirty_set(&input, 5, None);
+    let dirty = dirty_set(&input, 5, None);
     assert!(!dirty[2]);
 }
 
@@ -178,7 +185,7 @@ fn selection_damage_integrated_with_build_dirty_set() {
     input.content.cursor.visible = false;
     // No content damage, but previous selection covered lines 1-3
     // and current frame has no selection (cleared).
-    let dirty = build_dirty_set(&input, 5, Some((1, 3)));
+    let dirty = dirty_set(&input, 5, Some((1, 3)));
     assert!(!dirty[0]);
     assert!(dirty[1]);
     assert!(dirty[2]);

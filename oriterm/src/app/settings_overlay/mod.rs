@@ -64,5 +64,6 @@ impl App {
             now,
         );
         ctx.dirty = true;
+        ctx.ui_stale = true;
     }
 }

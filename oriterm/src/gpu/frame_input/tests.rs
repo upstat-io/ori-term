@@ -1,6 +1,6 @@
 //! Unit tests for frame input types.
 
-use oriterm_core::{Column, CursorShape, RenderableContent, RenderableCursor, Rgb, TermMode};
+use oriterm_core::{Column, RenderableContent, Rgb};
 
 use super::{FrameInput, FramePalette, ViewportSize};
 use crate::font::CellMetrics;
@@ -19,24 +19,10 @@ const CURSOR: Rgb = Rgb {
 
 /// Build a minimal `RenderableContent` for testing.
 fn empty_content() -> RenderableContent {
-    RenderableContent {
-        cells: Vec::new(),
-        cursor: RenderableCursor {
-            line: 0,
-            column: Column(0),
-            shape: CursorShape::default(),
-            visible: true,
-        },
-        display_offset: 0,
-        stable_row_base: 0,
-        mode: TermMode::empty(),
-        all_dirty: true,
-        damage: Vec::new(),
-        images: Vec::new(),
-        image_data: Vec::new(),
-        images_dirty: false,
-        ..Default::default()
-    }
+    let mut c = RenderableContent::default();
+    c.cursor.visible = true;
+    c.all_dirty = true;
+    c
 }
 
 fn test_palette() -> FramePalette {

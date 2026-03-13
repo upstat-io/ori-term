@@ -5,8 +5,6 @@
 //! its layout-computed pixel offset, and instances accumulate into one shared
 //! `PreparedFrame` for a single GPU submission.
 
-use std::collections::HashMap;
-
 use crate::session::{DividerLayout, LayoutDescriptor, PaneLayout, Rect, compute_all};
 use oriterm_core::{Column, CursorShape, TermMode};
 
@@ -103,22 +101,20 @@ impl App {
         dividers: &[DividerLayout],
         mut url_segments: Vec<crate::url_detect::UrlSegment>,
     ) {
-        // Copy per-pane selections and mark cursors before the render block
-        // (where ctx.renderer is mutably borrowed, preventing &self borrows).
-        let pane_sels: HashMap<_, _> = layouts
-            .iter()
-            .filter_map(|l| {
-                let sel = self.pane_selection(l.pane_id).copied()?;
-                Some((l.pane_id, sel))
-            })
-            .collect();
-        let pane_mcs: HashMap<_, _> = layouts
-            .iter()
-            .filter_map(|l| {
-                let mc = self.pane_mark_cursor(l.pane_id)?;
-                Some((l.pane_id, mc))
-            })
-            .collect();
+        // Copy per-pane selections and mark cursors into scratch buffers
+        // (ctx.renderer is mutably borrowed during render, preventing &self).
+        self.scratch_pane_sels.clear();
+        for l in layouts {
+            if let Some(sel) = self.pane_selection(l.pane_id).copied() {
+                self.scratch_pane_sels.insert(l.pane_id, sel);
+            }
+        }
+        self.scratch_pane_mcs.clear();
+        for l in layouts {
+            if let Some(mc) = self.pane_mark_cursor(l.pane_id) {
+                self.scratch_pane_mcs.insert(l.pane_id, mc);
+            }
+        }
 
         let (render_result, blinking_now) = {
             let Some(gpu) = self.gpu.as_ref() else {
@@ -169,6 +165,7 @@ impl App {
 
             let mut focused_rect = None;
             let mut blinking_now = self.blinking_active;
+            let mut any_content_changed = false;
 
             for layout in layouts {
                 let pane_id = layout.pane_id;
@@ -184,6 +181,7 @@ impl App {
                     .as_ref()
                     .is_some_and(|m| m.pane_snapshot(pane_id).is_none());
                 let dirty = layout.is_focused || snap_dirty || no_snapshot || !is_cached;
+                any_content_changed |= dirty;
 
                 if dirty {
                     let pane_viewport = ViewportSize::new(
@@ -227,7 +225,9 @@ impl App {
                         frame.window_focused = true;
                         frame.fg_dim = 1.0;
                         frame.prompt_marker_rows.clear();
-                    } else {
+                    } else if content_refreshed || ctx.frame.is_none() {
+                        // Only re-extract when content actually changed.
+                        // Cursor-blink-only redraws reuse the existing frame.
                         match &mut ctx.frame {
                             Some(existing) => {
                                 extract_frame_from_snapshot_into(
@@ -245,6 +245,8 @@ impl App {
                                 ));
                             }
                         }
+                    } else {
+                        // Cursor-blink-only: reuse existing frame as-is.
                     }
                     mux.clear_pane_snapshot_dirty(pane_id);
 
@@ -267,7 +269,7 @@ impl App {
                     let base = frame.content.stable_row_base;
                     // Mark cursor from App state (copied before render block).
                     frame.mark_cursor = if layout.is_focused {
-                        pane_mcs.get(&pane_id).and_then(|mc| {
+                        self.scratch_pane_mcs.get(&pane_id).and_then(|mc| {
                             let (line, col) =
                                 mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
                             Some(MarkCursorOverride {
@@ -286,7 +288,8 @@ impl App {
                         .and_then(|m| m.pane_snapshot(pane_id))
                         .and_then(FrameSearch::from_snapshot);
                     // Selection lives on App, not Pane (copied before render block).
-                    frame.selection = pane_sels
+                    frame.selection = self
+                        .scratch_pane_sels
                         .get(&pane_id)
                         .map(|sel| FrameSelection::new(sel, base));
 
@@ -386,7 +389,7 @@ impl App {
             // Chrome, tab bar, overlays, search bar (shared with single-pane path).
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
-            if Self::draw_tab_bar(
+            let tab_bar_animating = Self::draw_tab_bar(
                 Some(&ctx.tab_bar),
                 renderer,
                 &mut ctx.chrome_draw_list,
@@ -394,12 +397,13 @@ impl App {
                 scale,
                 gpu,
                 &self.ui_theme,
-            ) {
+            );
+            if tab_bar_animating {
                 ctx.dirty = true;
             }
 
             let logical_size = (logical_w as f32, h as f32 / scale);
-            if Self::draw_overlays(
+            let overlays_animating = Self::draw_overlays(
                 &mut ctx.overlays,
                 renderer,
                 &mut ctx.chrome_draw_list,
@@ -408,7 +412,8 @@ impl App {
                 gpu,
                 &ctx.layer_tree,
                 &self.ui_theme,
-            ) {
+            );
+            if overlays_animating {
                 ctx.dirty = true;
             }
 
@@ -429,7 +434,14 @@ impl App {
                 }
             }
 
-            let result = renderer.render_to_surface(gpu, pipelines, ctx.window.surface());
+            // Full content render when any pane content changed OR chrome/
+            // overlay visuals are stale.
+            let needs_full_render = any_content_changed || ctx.ui_stale;
+
+            ctx.ui_stale = tab_bar_animating || overlays_animating;
+
+            let result =
+                renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
             (result, blinking_now)
         };
 

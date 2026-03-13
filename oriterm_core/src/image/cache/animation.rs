@@ -16,7 +16,7 @@ use super::ImageCache;
 impl ImageCache {
     /// Enable or disable animation. When disabled, animated images show
     /// frame 0 only.
-    pub fn set_animation_enabled(&mut self, enabled: bool) {
+    pub(crate) fn set_animation_enabled(&mut self, enabled: bool) {
         if self.animation_enabled == enabled {
             return;
         }
@@ -42,7 +42,7 @@ impl ImageCache {
     ///
     /// `frames[0]` becomes the initial `ImageData.data`. All frames are
     /// retained in `animation_frames` for timer-driven switching.
-    pub fn store_animated(
+    pub(crate) fn store_animated(
         &mut self,
         mut data: ImageData,
         frames: Vec<Arc<Vec<u8>>>,
@@ -80,7 +80,7 @@ impl ImageCache {
     ///
     /// Only advances images that have placements in the given viewport.
     /// Call once per frame before `renderable_content_into()`.
-    pub fn advance_animations(
+    pub(crate) fn advance_animations(
         &mut self,
         now: Instant,
         viewport_top: StableRowIndex,
@@ -151,12 +151,13 @@ impl ImageCache {
     }
 
     /// Whether this cache has any animated images.
-    pub fn has_animations(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn has_animations(&self) -> bool {
         !self.animations.is_empty()
     }
 
     /// Get the animation state for an image (if animated).
-    pub fn animation_state(&self, id: ImageId) -> Option<&AnimationState> {
+    pub(crate) fn animation_state(&self, id: ImageId) -> Option<&AnimationState> {
         self.animations.get(&id)
     }
 
@@ -166,7 +167,7 @@ impl ImageCache {
     /// becomes frame 1 with a default gap, and the new data becomes frame 2.
     /// `gap` is the duration before displaying this frame.
     /// `composition_mode` controls how the frame is built from existing data.
-    pub fn add_animation_frame(
+    pub(crate) fn add_animation_frame(
         &mut self,
         id: ImageId,
         frame_data: Arc<Vec<u8>>,
@@ -223,7 +224,7 @@ impl ImageCache {
     /// Set animation playback state (Kitty `a=a`, `s=` key).
     ///
     /// `action`: 1=stop, 2=run (wait), 3=run.
-    pub fn set_animation_action(&mut self, id: ImageId, action: u32) {
+    pub(crate) fn set_animation_action(&mut self, id: ImageId, action: u32) {
         if let Some(state) = self.animations.get_mut(&id) {
             match action {
                 1 => state.paused = true,
@@ -239,7 +240,7 @@ impl ImageCache {
     }
 
     /// Set the loop count for an animated image (Kitty `v=` key).
-    pub fn set_animation_loops(&mut self, id: ImageId, loops: u32) {
+    pub(crate) fn set_animation_loops(&mut self, id: ImageId, loops: u32) {
         if let Some(state) = self.animations.get_mut(&id) {
             state.loop_count = if loops == 0 { None } else { Some(loops) };
             state.loops_completed = 0;
@@ -247,7 +248,7 @@ impl ImageCache {
     }
 
     /// Set the gap (frame duration) for a specific frame.
-    pub fn set_frame_gap(&mut self, id: ImageId, frame_idx: usize, gap: Duration) {
+    pub(crate) fn set_frame_gap(&mut self, id: ImageId, frame_idx: usize, gap: Duration) {
         if let Some(state) = self.animations.get_mut(&id) {
             if frame_idx < state.frame_durations.len() {
                 state.frame_durations[frame_idx] = gap;
@@ -256,7 +257,7 @@ impl ImageCache {
     }
 
     /// Jump to a specific frame (Kitty `r=` or `c=` in `a=a`).
-    pub fn set_current_frame(&mut self, id: ImageId, frame_idx: usize) {
+    pub(crate) fn set_current_frame(&mut self, id: ImageId, frame_idx: usize) {
         if let Some(state) = self.animations.get_mut(&id) {
             if frame_idx < state.total_frames {
                 state.current_frame = frame_idx;

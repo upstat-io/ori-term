@@ -10,8 +10,11 @@
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
-use oriterm_core::grid::Grid;
+use oriterm_core::event::VoidListener;
+use oriterm_core::grid::{DirtyTracker, Grid};
 use oriterm_core::index::Column;
+use oriterm_core::term::{RenderableContent, Term};
+use oriterm_core::theme::Theme;
 use oriterm_core::{Cell, DisplayEraseMode, LineEraseMode};
 
 /// Terminal sizes that represent real usage.
@@ -489,6 +492,74 @@ fn bench_realistic_tui_redraw(c: &mut Criterion) {
     group.finish();
 }
 
+/// `renderable_content_into`: extract a rendering snapshot from a populated
+/// terminal. This is the main bottleneck gating damage-aware rendering —
+/// even if the prepare phase can skip clean rows, snapshot extraction has
+/// already done O(rows * cols) work.
+///
+/// Baseline (2026-03-12, WSL2, Ryzen):
+///   80x24:  ~20 µs
+///   120x50: ~52 µs
+///   240x80: ~167 µs
+///
+/// All well under the 0.5ms optimization threshold (Section 23.1).
+fn bench_renderable_content_into(c: &mut Criterion) {
+    let mut group = c.benchmark_group("snapshot/renderable_content_into");
+    for &(cols, lines) in &SIZES {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{cols}x{lines}")),
+            &(cols, lines),
+            |b, &(cols, lines)| {
+                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidListener);
+                // Fill every visible line with content.
+                let chars = ascii_heavy_line(cols);
+                for line in 0..lines {
+                    term.grid_mut().cursor_mut().set_line(line);
+                    term.grid_mut().cursor_mut().set_col(Column(0));
+                    for &ch in &chars {
+                        term.grid_mut().put_char(ch);
+                    }
+                }
+                // Pre-allocate the output buffer (amortized across iterations).
+                let mut content = RenderableContent::default();
+                b.iter(|| {
+                    term.renderable_content_into(black_box(&mut content));
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+/// `DirtyTracker::drain`: iterate all dirty lines and reset to clean.
+/// Called once per frame after the prepare phase consumes the snapshot.
+///
+/// Baseline (2026-03-12, WSL2, Ryzen):
+///   120x50: ~384 ns
+///   240x80: ~608 ns
+fn bench_dirty_drain(c: &mut Criterion) {
+    let drain_sizes: [(usize, usize); 2] = [(120, 50), (240, 80)];
+    let mut group = c.benchmark_group("dirty/drain");
+    for &(cols, lines) in &drain_sizes {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{cols}x{lines}")),
+            &(cols, lines),
+            |b, &(cols, lines)| {
+                let mut tracker = DirtyTracker::new(lines, cols);
+                b.iter(|| {
+                    // Mark all lines dirty (worst case — every line changed).
+                    tracker.mark_all();
+                    // Drain resets all dirty flags.
+                    for entry in tracker.drain() {
+                        black_box(entry);
+                    }
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_put_char_ascii,
@@ -507,5 +578,7 @@ criterion_group!(
     bench_row_reset,
     bench_realistic_output_burst,
     bench_realistic_tui_redraw,
+    bench_renderable_content_into,
+    bench_dirty_drain,
 );
 criterion_main!(benches);

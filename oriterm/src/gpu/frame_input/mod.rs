@@ -129,6 +129,33 @@ impl FrameSearch {
         })
     }
 
+    /// Refill this `FrameSearch` from a snapshot, reusing allocations.
+    ///
+    /// Returns `false` if search is not active (caller should set field to `None`).
+    #[allow(
+        dead_code,
+        reason = "infrastructure for allocation-reusing extract path"
+    )]
+    pub fn update_from_snapshot(&mut self, snapshot: &PaneSnapshot) -> bool {
+        if !snapshot.search_active {
+            return false;
+        }
+        self.matches.clear();
+        self.matches
+            .extend(snapshot.search_matches.iter().map(|m| SearchMatch {
+                start_row: StableRowIndex(m.start_row),
+                start_col: m.start_col as usize,
+                end_row: StableRowIndex(m.end_row),
+                end_col: m.end_col as usize,
+            }));
+        self.match_count = self.matches.len();
+        self.focused = snapshot.search_focused.map_or(0, |f| f as usize);
+        self.base_stable = snapshot.stable_row_base;
+        self.query.clear();
+        self.query.push_str(&snapshot.search_query);
+        true
+    }
+
     /// Classify a visible cell for search match highlighting.
     pub fn cell_match_type(&self, viewport_line: usize, col: usize) -> MatchType {
         if self.matches.is_empty() {
@@ -330,10 +357,7 @@ impl FrameInput {
     /// cells use default dark-theme colors. Cell size is 8×16 px.
     #[cfg(test)]
     pub fn test_grid(cols: usize, rows: usize, text: &str) -> Self {
-        use oriterm_core::{
-            CellFlags, Column, CursorShape, RenderableCell, RenderableContent, RenderableCursor,
-            TermMode,
-        };
+        use oriterm_core::{CellFlags, Column, RenderableCell, RenderableContent, TermMode};
 
         let fg = Rgb {
             r: 211,
@@ -362,25 +386,14 @@ impl FrameInput {
             }
         }
 
+        let mut content = RenderableContent::default();
+        content.cells = cells;
+        content.cursor.visible = true;
+        content.mode = TermMode::SHOW_CURSOR;
+        content.all_dirty = true;
+
         Self {
-            content: RenderableContent {
-                cells,
-                cursor: RenderableCursor {
-                    line: 0,
-                    column: Column(0),
-                    shape: CursorShape::default(),
-                    visible: true,
-                },
-                display_offset: 0,
-                stable_row_base: 0,
-                mode: TermMode::SHOW_CURSOR,
-                all_dirty: true,
-                damage: Vec::new(),
-                images: Vec::new(),
-                image_data: Vec::new(),
-                images_dirty: false,
-                ..Default::default()
-            },
+            content,
             viewport: ViewportSize::new(cols as u32 * 8, rows as u32 * 16),
             cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
             palette: FramePalette {

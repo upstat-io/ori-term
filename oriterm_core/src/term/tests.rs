@@ -1998,3 +1998,42 @@ fn alt_screen_reentry_correct() {
     assert_eq!(term.grid().lines(), 24);
     assert_eq!(term.grid().cols(), 80);
 }
+
+// Graceful fallback tests: ALT_SCREEN set without alt_grid allocated.
+//
+// In debug builds, `debug_assert!` fires to catch the inconsistency during
+// development. In release builds, the methods fall back to the primary
+// grid/cache via `unwrap_or` so the terminal never crashes.
+
+#[test]
+#[should_panic(expected = "ALT_SCREEN set but alt_grid not allocated")]
+fn grid_debug_asserts_on_missing_alt_grid() {
+    let mut term = make_term();
+    // Force inconsistent state: set ALT_SCREEN without allocating alt grid.
+    term.mode.insert(TermMode::ALT_SCREEN);
+    let _grid = term.grid();
+}
+
+#[test]
+#[should_panic(expected = "ALT_SCREEN set but alt_grid not allocated")]
+fn grid_mut_debug_asserts_on_missing_alt_grid() {
+    let mut term = make_term();
+    term.mode.insert(TermMode::ALT_SCREEN);
+    let _grid = term.grid_mut();
+}
+
+#[test]
+#[should_panic(expected = "ALT_SCREEN set but alt_image_cache not allocated")]
+fn image_cache_debug_asserts_on_missing_alt_cache() {
+    let mut term = make_term();
+    term.mode.insert(TermMode::ALT_SCREEN);
+    let _cache = term.image_cache();
+}
+
+#[test]
+#[should_panic(expected = "ALT_SCREEN set but alt_image_cache not allocated")]
+fn image_cache_mut_debug_asserts_on_missing_alt_cache() {
+    let mut term = make_term();
+    term.mode.insert(TermMode::ALT_SCREEN);
+    let _cache = term.image_cache_mut();
+}

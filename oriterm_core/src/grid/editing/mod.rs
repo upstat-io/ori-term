@@ -4,6 +4,8 @@
 //! primitives the VTE handler calls for writing text and manipulating
 //! grid content.
 
+mod wide_char;
+
 use unicode_width::UnicodeWidthChar;
 
 use crate::cell::{Cell, CellFlags};
@@ -40,6 +42,7 @@ impl Grid {
     ///
     /// Handles wide characters (writes cell + spacer), wrap at end of line,
     /// and clearing overwritten wide char pairs.
+    #[inline]
     pub fn put_char(&mut self, ch: char) {
         debug_assert!(
             self.cursor.line() < self.lines,
@@ -47,6 +50,54 @@ impl Grid {
             self.cursor.line(),
             self.lines,
         );
+
+        self.put_char_slow(ch);
+    }
+
+    /// Fast path for ASCII printable characters (0x20–0x7E, width 1).
+    ///
+    /// Caller guarantees `ch` is in the ASCII printable range. Skips
+    /// `UnicodeWidthChar::width()`, the wrap loop, and wide char cleanup.
+    /// Returns `true` if the write succeeded; `false` if the caller must
+    /// fall through to the full `put_char` path (wrap pending, or target
+    /// cell has wide char flags requiring cleanup).
+    ///
+    /// Called from `Term::input()`'s fast path which already verified the
+    /// ASCII range, so this avoids double-checking.
+    #[inline]
+    pub fn put_char_ascii(&mut self, ch: char) -> bool {
+        let line = self.cursor.line();
+        let col = self.cursor.col().0;
+
+        // Wrap pending or at end of line — fall through to slow path which
+        // handles WRAP flag + linefeed.
+        if col >= self.cols {
+            return false;
+        }
+
+        // Target cell is part of a wide char pair — needs cleanup via
+        // clear_wide_char_at() in the slow path.
+        let flags = self.rows[line][Column(col)].flags;
+        if flags.intersects(CellFlags::WIDE_CHAR | CellFlags::WIDE_CHAR_SPACER) {
+            return false;
+        }
+
+        // Direct cell write — no width lookup, no wide char handling.
+        let cell = &mut self.rows[line][Column(col)];
+        cell.ch = ch;
+        cell.fg = self.cursor.template.fg;
+        cell.bg = self.cursor.template.bg;
+        cell.flags = self.cursor.template.flags;
+        cell.extra.clone_from(&self.cursor.template.extra);
+
+        self.cursor.set_col(Column(col + 1));
+        self.dirty.mark_cols(line, col, col);
+        true
+    }
+
+    /// Slow path for `put_char`: full width lookup, wide char handling,
+    /// and wrap logic.
+    fn put_char_slow(&mut self, ch: char) {
         let width = UnicodeWidthChar::width(ch).unwrap_or(1);
         let cols = self.cols;
 
@@ -328,7 +379,12 @@ impl Grid {
                 self.dirty.mark_all();
             }
             DisplayEraseMode::Scrollback => {
-                // Scrollback clearing will be implemented in 1.10.
+                // ED 3 — clear scrollback buffer only (visible grid untouched).
+                // Adjust total_evicted so StableRowIndex values remain valid.
+                self.total_evicted += self.scrollback.len();
+                self.scrollback.clear();
+                self.display_offset = 0;
+                self.dirty.mark_all();
             }
         }
     }
@@ -440,62 +496,8 @@ impl Grid {
         self.dirty.mark_cols(line, col, end.saturating_sub(1));
     }
 
-    /// Fix wide char pairs split by an erase of `[start..end)`.
-    ///
-    /// Clears orphaned halves OUTSIDE the range. Call BEFORE resetting.
-    fn fix_wide_boundaries(&mut self, line: usize, start: usize, end: usize) {
-        let cols = self.cols;
-        if start > 0
-            && start < cols
-            && self.rows[line][Column(start)]
-                .flags
-                .contains(CellFlags::WIDE_CHAR_SPACER)
-        {
-            self.rows[line][Column(start - 1)].ch = ' ';
-            self.rows[line][Column(start - 1)]
-                .flags
-                .remove(CellFlags::WIDE_CHAR);
-        }
-        if end > 0
-            && end < cols
-            && self.rows[line][Column(end - 1)]
-                .flags
-                .contains(CellFlags::WIDE_CHAR)
-        {
-            self.rows[line][Column(end)].ch = ' ';
-            self.rows[line][Column(end)]
-                .flags
-                .remove(CellFlags::WIDE_CHAR_SPACER);
-        }
-    }
-
-    /// Clear any wide char pair at the given position.
-    ///
-    /// If the cell is a wide char spacer, clears the preceding wide char.
-    /// If the cell is a wide char, clears its trailing spacer.
-    fn clear_wide_char_at(&mut self, line: usize, col: usize) {
-        let cols = self.cols;
-
-        if col >= cols {
-            return;
-        }
-
-        let flags = self.rows[line][Column(col)].flags;
-
-        // Overwriting a spacer: clear the wide char that owns it.
-        if flags.contains(CellFlags::WIDE_CHAR_SPACER) && col > 0 {
-            let prev = &mut self.rows[line][Column(col - 1)];
-            prev.ch = ' ';
-            prev.flags.remove(CellFlags::WIDE_CHAR);
-        }
-
-        // Overwriting a wide char: clear its spacer.
-        if flags.contains(CellFlags::WIDE_CHAR) && col + 1 < cols {
-            let next = &mut self.rows[line][Column(col + 1)];
-            next.ch = ' ';
-            next.flags.remove(CellFlags::WIDE_CHAR_SPACER);
-        }
-    }
+    // Wide character boundary fixup helpers (`fix_wide_boundaries`,
+    // `clear_wide_char_at`) are in `wide_char.rs`.
 }
 
 #[cfg(test)]

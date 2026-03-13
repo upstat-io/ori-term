@@ -218,7 +218,6 @@ fn event_response_is_handled() {
     assert!(EventResponse::RequestFocus.is_handled());
     assert!(EventResponse::RequestPaint.is_handled());
     assert!(EventResponse::RequestLayout.is_handled());
-    assert!(EventResponse::RequestRedraw.is_handled());
     assert!(!EventResponse::Ignored.is_handled());
 }
 
@@ -231,11 +230,6 @@ fn event_response_merge_priority() {
     );
     assert_eq!(
         EventResponse::RequestPaint.merge(EventResponse::RequestLayout),
-        EventResponse::RequestLayout,
-    );
-    // RequestRedraw merges to RequestLayout.
-    assert_eq!(
-        EventResponse::RequestRedraw.merge(EventResponse::Handled),
         EventResponse::RequestLayout,
     );
     // Paint beats focus/handled.

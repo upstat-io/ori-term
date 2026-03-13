@@ -120,8 +120,8 @@ fn mouse_delegates_to_section() {
         modifiers: Modifiers::NONE,
     };
     let resp = form.handle_mouse(&event, &ctx);
-    // Should toggle the first section (redraw response).
-    assert_eq!(resp, WidgetResponse::redraw());
+    // Should toggle the first section (layout response).
+    assert_eq!(resp, WidgetResponse::layout());
     assert!(!form.sections()[0].is_expanded());
 }
 

@@ -155,9 +155,7 @@ impl App {
                 true
             }
             Action::NewWindow => {
-                let _ = self
-                    .event_proxy
-                    .send_event(crate::event::TermEvent::CreateWindow);
+                self.event_proxy.send(crate::event::TermEvent::CreateWindow);
                 true
             }
             Action::PreviousPrompt => {
@@ -213,52 +211,27 @@ impl App {
                 true
             }
             Action::SelectAll => {
-                if let Some(pane_id) = self.active_pane_id() {
-                    // Try shell input selection first (OSC 133 zones).
-                    let input_sel = self
-                        .mux
-                        .as_ref()
-                        .and_then(|m| m.select_command_input(pane_id));
-                    if let Some(sel) = input_sel {
-                        self.set_pane_selection(pane_id, sel);
-                    } else {
-                        // No shell input zone — select entire buffer.
-                        let mux = self.mux.as_mut().expect("mux checked at pane_id");
-                        if mux.pane_snapshot(pane_id).is_none()
-                            || mux.is_pane_snapshot_dirty(pane_id)
-                        {
-                            mux.refresh_pane_snapshot(pane_id);
-                        }
-                        if let Some(snap) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id))
-                        {
-                            let grid = crate::app::snapshot_grid::SnapshotGrid::new(snap);
-                            let sel = super::mark_mode::select_all(&grid);
-                            self.set_pane_selection(pane_id, sel);
-                        }
-                    }
-                }
+                self.select_all_in_pane();
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;
                 }
                 true
             }
             Action::MoveTabToNewWindow => {
-                // Resolve the active tab index and defer to `about_to_wait`
+                // Resolve the active tab ID and defer to `about_to_wait`
                 // where `ActiveEventLoop` is available.
-                let idx = self.active_window.and_then(|wid| {
+                let tab_id = self.active_window.and_then(|wid| {
                     let win = self.session.get_window(wid)?;
-                    Some(win.active_tab_idx())
+                    win.active_tab()
                 });
-                if let Some(i) = idx {
-                    self.move_tab_to_new_window_deferred(i);
+                if let Some(tid) = tab_id {
+                    self.move_tab_to_new_window_deferred(tid);
                 }
                 true
             }
             Action::OpenSettings => {
                 // Defer to event loop — dialog creation needs &ActiveEventLoop.
-                let _ = self
-                    .event_proxy
-                    .send_event(crate::event::TermEvent::OpenSettings);
+                self.event_proxy.send(crate::event::TermEvent::OpenSettings);
                 true
             }
             // Actions for future sections — consume the event but log a stub.

@@ -216,6 +216,9 @@ unsafe fn intern_atom(
     display: *mut x11_dl::xlib::Display,
     name: &str,
 ) -> u64 {
-    let cname = CString::new(name).unwrap_or_else(|_| CString::new("_NET_WM_WINDOW_TYPE").unwrap());
+    let cname = CString::new(name).unwrap_or_else(|_| {
+        // Fallback is a known-valid string with no interior null bytes.
+        CString::new("_NET_WM_WINDOW_TYPE").expect("hardcoded atom name is valid")
+    });
     unsafe { (xlib.XInternAtom)(display, cname.as_ptr(), x11_dl::xlib::False) }
 }

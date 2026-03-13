@@ -97,7 +97,7 @@ fn click_on_header_toggles_expanded() {
     };
     let resp = section.handle_mouse(&event, &ctx);
     assert!(!section.is_expanded());
-    assert_eq!(resp, WidgetResponse::redraw());
+    assert_eq!(resp, WidgetResponse::layout());
 
     // Click again to re-expand.
     let _ = section.handle_mouse(&event, &ctx);

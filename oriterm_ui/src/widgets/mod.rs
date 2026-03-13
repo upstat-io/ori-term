@@ -2,8 +2,8 @@
 //!
 //! Provides the [`Widget`] trait, action/response types, and context structs
 //! that widgets use during layout, drawing, and event handling. Each widget
-//! is a concrete struct implementing `Widget`; no trait objects are needed
-//! in the widget tree.
+//! is a concrete struct implementing `Widget`. Trait objects (`Box<dyn Widget>`)
+//! are used for dynamic dispatch in overlay and container contexts.
 
 pub mod text_measurer;
 
@@ -109,11 +109,6 @@ impl WidgetResponse {
             action: None,
             capture: CaptureRequest::None,
         }
-    }
-
-    /// Backward-compatible alias for `layout()`.
-    pub fn redraw() -> Self {
-        Self::layout()
     }
 
     /// Event handled, focus requested, no action.

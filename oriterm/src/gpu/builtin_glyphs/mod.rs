@@ -14,7 +14,7 @@ mod powerline;
 
 use std::collections::HashSet;
 
-use wgpu::Queue;
+use wgpu::{Device, Queue};
 
 use oriterm_core::CellFlags;
 
@@ -77,11 +77,16 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
 ///
 /// `empty_keys` is the cross-atlas set of keys known to produce zero-size
 /// glyphs, shared with the shaped-glyph caching path.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "input + cache key + atlas + empty set + device + queue for builtin glyph caching"
+)]
 pub(crate) fn ensure_builtins_cached(
     input: &FrameInput,
     size_q6: u32,
     atlas: &mut GlyphAtlas,
     empty_keys: &mut HashSet<RasterKey>,
+    device: &Device,
     queue: &Queue,
 ) {
     let cell_w = input.cell_size.width.round() as u32;
@@ -98,7 +103,7 @@ pub(crate) fn ensure_builtins_cached(
             let key = raster_key(cell.ch, size_q6);
             if atlas.lookup_touch(key).is_none() && !empty_keys.contains(&key) {
                 if let Some(glyph) = rasterize(cell.ch, cell_w, cell_h) {
-                    atlas.insert(key, &glyph, queue);
+                    atlas.insert(key, &glyph, device, queue);
                 } else {
                     empty_keys.insert(key);
                 }
@@ -120,6 +125,7 @@ pub(crate) fn ensure_builtins_cached(
             metrics,
             atlas,
             empty_keys,
+            device,
             queue,
             decorations::rasterize_curly,
         );
@@ -131,6 +137,7 @@ pub(crate) fn ensure_builtins_cached(
             metrics,
             atlas,
             empty_keys,
+            device,
             queue,
             decorations::rasterize_dotted,
         );
@@ -142,6 +149,7 @@ pub(crate) fn ensure_builtins_cached(
             metrics,
             atlas,
             empty_keys,
+            device,
             queue,
             decorations::rasterize_dashed,
         );
@@ -151,7 +159,7 @@ pub(crate) fn ensure_builtins_cached(
 /// Cache a single decoration pattern if not already present.
 #[expect(
     clippy::too_many_arguments,
-    reason = "cache key, cell metrics, atlas + empty set, and rasterization function"
+    reason = "cache key, cell metrics, atlas + empty set, device + queue, and rasterize fn"
 )]
 fn cache_decoration(
     glyph_id: u16,
@@ -159,6 +167,7 @@ fn cache_decoration(
     metrics: &CellMetrics,
     atlas: &mut GlyphAtlas,
     empty_keys: &mut HashSet<RasterKey>,
+    device: &Device,
     queue: &Queue,
     rasterize_fn: fn(&CellMetrics) -> Option<RasterizedGlyph>,
 ) {
@@ -167,7 +176,7 @@ fn cache_decoration(
         return;
     }
     if let Some(glyph) = rasterize_fn(metrics) {
-        atlas.insert(key, &glyph, queue);
+        atlas.insert(key, &glyph, device, queue);
     } else {
         empty_keys.insert(key);
     }
