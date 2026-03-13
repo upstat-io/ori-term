@@ -353,21 +353,25 @@ pub(crate) fn fill_frame_incremental(
             &input.palette,
         );
 
+        // Skip default palette background so the window clear color (with
+        // theme opacity for glass/acrylic) shows through.
         let bg_w = if cell.flags.contains(CellFlags::WIDE_CHAR) {
             2.0 * cw
         } else {
             cw
         };
-        frame.backgrounds.push_rect(
-            ScreenRect {
-                x,
-                y,
-                w: bg_w,
-                h: ch,
-            },
-            bg,
-            1.0,
-        );
+        if bg != input.palette.background {
+            frame.backgrounds.push_rect(
+                ScreenRect {
+                    x,
+                    y,
+                    w: bg_w,
+                    h: ch,
+                },
+                bg,
+                1.0,
+            );
+        }
 
         let is_hovered = input.hovered_cell == Some((row, col));
         DecorationContext {
@@ -417,7 +421,7 @@ pub(crate) fn fill_frame_incremental(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
+            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg);
         }
     }
 

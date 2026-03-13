@@ -22,9 +22,11 @@ fn new_window_is_empty() {
 fn add_tab() {
     let mut win = Window::new(wid(1));
     win.add_tab(tid(10));
+    assert_eq!(win.active_tab(), Some(tid(10)));
     win.add_tab(tid(20));
     assert_eq!(win.tabs(), &[tid(10), tid(20)]);
-    assert_eq!(win.active_tab(), Some(tid(10)));
+    // add_tab activates the newly added tab.
+    assert_eq!(win.active_tab(), Some(tid(20)));
 }
 
 #[test]

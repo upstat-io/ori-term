@@ -51,9 +51,10 @@ impl Window {
         self.tabs.get(self.active_tab_idx).copied()
     }
 
-    /// Add a tab at the end.
+    /// Add a tab at the end and activate it.
     pub fn add_tab(&mut self, tab_id: TabId) {
         self.tabs.push(tab_id);
+        self.active_tab_idx = self.tabs.len() - 1;
     }
 
     /// Insert a tab at a specific index. Appends if `index >= len()`.

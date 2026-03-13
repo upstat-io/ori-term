@@ -55,6 +55,13 @@ impl App {
             }
             if let Some(win) = self.session.get_window_mut(dest_wid) {
                 win.insert_tab_at(drop_index, tab_id);
+                // Activate the merged tab so it becomes the focused tab.
+                let idx = win
+                    .tabs()
+                    .iter()
+                    .position(|&t| t == tab_id)
+                    .unwrap_or(drop_index);
+                win.set_active_tab_idx(idx);
             }
         }
 
