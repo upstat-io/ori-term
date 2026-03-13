@@ -216,6 +216,8 @@ impl App {
                         let frame = ctx.frame.as_mut().expect("frame exists when swapped");
                         frame.viewport = pane_viewport;
                         frame.cell_size = cell;
+                        frame.content_cols = snapshot.cols as usize;
+                        frame.content_rows = snapshot.cells.len();
                         frame.palette = snapshot_palette(snapshot);
                         frame.selection = None;
                         frame.search = None;
@@ -439,6 +441,8 @@ impl App {
             let needs_full_render = any_content_changed || ctx.ui_stale;
 
             ctx.ui_stale = tab_bar_animating || overlays_animating;
+
+            ctx.window.apply_pending_surface_resize(gpu);
 
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);

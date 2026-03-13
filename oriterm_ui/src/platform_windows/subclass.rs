@@ -13,8 +13,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetSystemMetrics, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT,
     HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed, KillTimer, NCCALCSIZE_PARAMS,
     SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer,
-    SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING,
-    WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_TIMER,
+    SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
+    WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_SIZING, WM_TIMER, WMSZ_BOTTOM,
+    WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
+    WMSZ_TOPRIGHT,
 };
 
 use std::sync::atomic::Ordering;
@@ -172,6 +174,85 @@ fn handle_moving(hwnd: HWND, lparam: isize, data: &SnapData) {
     }
 }
 
+/// Handles `WM_SIZING`: snap the proposed resize rect to cell boundaries.
+///
+/// Reads cell dimensions from `SnapData::cell_size` and chrome height from
+/// `SnapData::chrome_metrics`. Adjusts the proposed `RECT` so the grid area
+/// (total height minus chrome) is an exact multiple of cell height, and the
+/// total width is an exact multiple of cell width. The edge adjustment
+/// depends on which edge the user is dragging (`wparam`: `WMSZ_LEFT`,
+/// `WMSZ_RIGHT`, etc.).
+///
+/// Returns `true` if the rect was snapped (caller should return `TRUE`),
+/// `false` if snapping is unavailable (no cell size set).
+fn handle_sizing(wparam: usize, lparam: isize, data: &SnapData) -> bool {
+    let cell = {
+        let lock = data.cell_size.lock();
+        let Ok(guard) = lock.as_ref() else {
+            log::debug!("WM_SIZING: cell_size mutex poisoned");
+            return false;
+        };
+        let Some(cs) = guard.as_ref() else {
+            log::debug!("WM_SIZING: no cell_size set yet");
+            return false;
+        };
+        (cs.width, cs.height, cs.padding)
+    };
+    let (cell_w, cell_h, pad) = cell;
+    if cell_w < 1.0 || cell_h < 1.0 {
+        log::debug!("WM_SIZING: cell too small ({cell_w}x{cell_h})");
+        return false;
+    }
+
+    let chrome_h = {
+        let lock = data.chrome_metrics.lock();
+        lock.as_ref().map(|m| m.caption_height).unwrap_or(0.0)
+    };
+
+    let proposed = unsafe { &mut *(lparam as *mut RECT) };
+    let cur_w = (proposed.right - proposed.left) as f32;
+    let cur_h = (proposed.bottom - proposed.top) as f32;
+
+    // Grid area = total size minus chrome and padding. The grid origin is
+    // offset by `pad` pixels (left and top), so the renderable area for
+    // cells is `total - chrome - pad`. Snap that area to whole cells, then
+    // add chrome + pad back to get the total window size.
+    let grid_h = (cur_h - chrome_h - pad).max(cell_h);
+    let grid_w = (cur_w - pad).max(cell_w);
+
+    // Snap to whole cells.
+    let snapped_cols = (grid_w / cell_w).round().max(1.0);
+    let snapped_rows = (grid_h / cell_h).round().max(1.0);
+    let snapped_w = (snapped_cols * cell_w + pad).round() as i32;
+    let snapped_h = (snapped_rows * cell_h + chrome_h + pad).round() as i32;
+
+    let dw = snapped_w - (proposed.right - proposed.left);
+    let dh = snapped_h - (proposed.bottom - proposed.top);
+
+    log::debug!(
+        "WM_SIZING: cell={cell_w:.1}x{cell_h:.1} chrome_h={chrome_h:.0} \
+         cur={cur_w:.0}x{cur_h:.0} cols={snapped_cols:.0} rows={snapped_rows:.0} \
+         snapped={snapped_w}x{snapped_h} dw={dw} dh={dh} edge={wparam}"
+    );
+
+    // Adjust the correct edges based on drag direction.
+    let edge = wparam as u32;
+
+    match edge {
+        WMSZ_LEFT | WMSZ_TOPLEFT | WMSZ_BOTTOMLEFT => proposed.left -= dw,
+        WMSZ_RIGHT | WMSZ_TOPRIGHT | WMSZ_BOTTOMRIGHT => proposed.right += dw,
+        _ => {}
+    }
+
+    match edge {
+        WMSZ_TOP | WMSZ_TOPLEFT | WMSZ_TOPRIGHT => proposed.top -= dh,
+        WMSZ_BOTTOM | WMSZ_BOTTOMLEFT | WMSZ_BOTTOMRIGHT => proposed.bottom += dh,
+        _ => {}
+    }
+
+    true
+}
+
 /// `WndProc` subclass callback installed by [`super::enable_snap()`].
 ///
 /// `ref_data` is a valid `*const SnapData` allocated in `enable_snap` and
@@ -188,6 +269,12 @@ pub(super) unsafe extern "system" fn subclass_proc(
         let data = &*(ref_data as *const SnapData);
 
         match msg {
+            // Suppress OS background erasure. Custom-painted windows must
+            // return 1 to prevent Windows from filling the client area with
+            // the window class brush between WM_PAINT cycles, which causes
+            // visible flicker during resize (WezTerm, Chrome do the same).
+            WM_ERASEBKGND => 1,
+
             // Return 0 so the entire window is client area (no OS frame).
             // When maximized, inset by frame thickness to prevent
             // adjacent-monitor bleed (Chrome's GetClientAreaInsets pattern).
@@ -245,6 +332,14 @@ pub(super) unsafe extern "system" fn subclass_proc(
             WM_MOVING => {
                 handle_moving(hwnd, lparam, data);
                 DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+
+            WM_SIZING => {
+                if handle_sizing(wparam, lparam, data) {
+                    1 // TRUE — rect was modified
+                } else {
+                    DefSubclassProc(hwnd, msg, wparam, lparam)
+                }
             }
 
             WM_EXITSIZEMOVE => {

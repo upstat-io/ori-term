@@ -13,9 +13,6 @@ impl App {
     /// Called after any change that affects cell dimensions (font size,
     /// DPI, font family) so the window snaps to cell boundaries.
     pub(in crate::app) fn update_resize_increments(&self, winit_id: WindowId) {
-        if !self.config.window.resize_increments {
-            return;
-        }
         let Some(ctx) = self.windows.get(&winit_id) else {
             return;
         };
@@ -23,6 +20,28 @@ impl App {
             return;
         };
         let cell = renderer.cell_metrics();
+
+        // Push cell size and grid padding to the Win32 subclass for
+        // WM_SIZING snap-to-grid. On frameless CSD windows, winit's
+        // set_resize_increments is ignored by the OS, so WM_SIZING is the
+        // only way to snap resize boundaries. Cell metrics are already in
+        // physical pixels (font loaded at DPI). The padding ensures the
+        // snapped width accounts for the grid origin offset.
+        #[cfg(target_os = "windows")]
+        {
+            let scale = ctx.window.scale_factor().factor() as f32;
+            let pad = (super::GRID_PADDING * scale).round();
+            oriterm_ui::platform_windows::set_cell_size(
+                ctx.window.window(),
+                cell.width,
+                cell.height,
+                pad,
+            );
+        }
+
+        if !self.config.window.resize_increments {
+            return;
+        }
         let inc =
             winit::dpi::PhysicalSize::new(cell.width.round() as u32, cell.height.round() as u32);
         ctx.window.window().set_resize_increments(Some(inc));

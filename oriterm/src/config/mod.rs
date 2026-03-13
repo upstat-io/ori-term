@@ -172,7 +172,7 @@ pub(crate) struct WindowConfig {
     pub blur: bool,
     /// Window decoration mode (default: `None` for frameless CSD).
     pub decorations: Decorations,
-    /// Snap resize to cell boundaries (default: false).
+    /// Snap resize to cell boundaries (default: true).
     pub resize_increments: bool,
 }
 
@@ -185,7 +185,7 @@ impl Default for WindowConfig {
             tab_bar_opacity: None,
             blur: true,
             decorations: Decorations::default(),
-            resize_increments: false,
+            resize_increments: true,
         }
     }
 }

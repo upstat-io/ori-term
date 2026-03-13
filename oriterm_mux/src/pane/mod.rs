@@ -386,7 +386,9 @@ impl Pane {
 
     /// Resize the terminal grids (with reflow). Does NOT resize the PTY.
     pub fn resize_grid(&self, rows: u16, cols: u16) {
-        self.terminal.lock().resize(rows as usize, cols as usize);
+        self.terminal
+            .lock()
+            .resize(rows as usize, cols as usize, true);
     }
 
     /// Resize the OS PTY handle, sending SIGWINCH to the shell.

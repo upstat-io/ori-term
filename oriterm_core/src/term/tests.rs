@@ -1183,7 +1183,7 @@ fn term_resize_changes_both_grids() {
     assert_eq!(term.grid().lines(), 24);
     assert_eq!(term.grid().cols(), 80);
 
-    term.resize(10, 40);
+    term.resize(10, 40, true);
 
     // Primary grid (active) resized.
     assert_eq!(term.grid().lines(), 10);
@@ -1201,7 +1201,7 @@ fn term_resize_preserves_content() {
     // Write "hello" at (0,0) via VTE.
     feed(&mut term, b"hello");
 
-    term.resize(10, 40);
+    term.resize(10, 40, true);
 
     assert_eq!(term.grid()[Line(0)][Column(0)].ch, 'h');
     assert_eq!(term.grid()[Line(0)][Column(1)].ch, 'e');
@@ -1213,7 +1213,7 @@ fn term_resize_marks_selection_dirty() {
     let mut term = make_term();
     term.clear_selection_dirty();
 
-    term.resize(10, 40);
+    term.resize(10, 40, true);
 
     assert!(term.is_selection_dirty());
 }
@@ -1223,7 +1223,7 @@ fn term_resize_marks_all_dirty() {
     let mut term = make_term();
     term.grid_mut().dirty_mut().drain().for_each(drop);
 
-    term.resize(10, 40);
+    term.resize(10, 40, true);
 
     assert!(term.grid().dirty().is_all_dirty());
 }
@@ -1231,11 +1231,11 @@ fn term_resize_marks_all_dirty() {
 #[test]
 fn term_resize_zero_is_noop() {
     let mut term = make_term();
-    term.resize(0, 40);
+    term.resize(0, 40, true);
     assert_eq!(term.grid().lines(), 24);
     assert_eq!(term.grid().cols(), 80);
 
-    term.resize(10, 0);
+    term.resize(10, 0, true);
     assert_eq!(term.grid().lines(), 24);
     assert_eq!(term.grid().cols(), 80);
 }
@@ -1249,7 +1249,7 @@ fn term_resize_with_vte_wrapped_content() {
     assert_eq!(term.grid().cursor().line(), 1);
 
     // Grow to 20 cols — wrapped line should unwrap.
-    term.resize(5, 20);
+    term.resize(5, 20, true);
 
     assert_eq!(term.grid().cols(), 20);
     // Content should be on one line now.
@@ -1977,7 +1977,7 @@ fn resize_before_alt_screen_no_crash() {
     assert!(term.alt_grid.is_none());
 
     // Resize should not crash when alt grid is None.
-    term.resize(10, 40);
+    term.resize(10, 40, true);
     assert!(
         term.alt_grid.is_none(),
         "resize should not allocate alt grid"

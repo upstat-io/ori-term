@@ -98,12 +98,22 @@ struct ChromeMetrics {
     caption_height: f32,
 }
 
+/// Cell dimensions and grid padding for resize snapping (physical pixels).
+struct CellSize {
+    width: f32,
+    height: f32,
+    /// Grid padding in physical pixels (left/top offset before cell content).
+    padding: f32,
+}
+
 /// Per-window data stored via `SetWindowSubclass`.
 struct SnapData {
     /// Chrome sizing metrics (physical pixels).
     chrome_metrics: Mutex<ChromeMetrics>,
     /// Interactive regions (buttons, tabs) in physical pixels.
     interactive_rects: Mutex<Vec<Rect>>,
+    /// Cell dimensions for `WM_SIZING` snap (physical pixels).
+    cell_size: Mutex<Option<CellSize>>,
     /// DPI from the most recent `WM_DPICHANGED`. 0 means not yet received.
     ///
     /// Since we eat `WM_DPICHANGED` (return 0 without calling
@@ -195,6 +205,7 @@ fn install_chrome_subclass(window: &Window, border_width: f32, caption_height: f
                 caption_height,
             }),
             interactive_rects: Mutex::new(Vec::new()),
+            cell_size: Mutex::new(None),
             last_dpi: AtomicU32::new(0),
             os_drag: Mutex::new(None),
         });
@@ -293,6 +304,28 @@ pub fn set_chrome_metrics(window: &Window, border_width: f32, caption_height: f3
         });
         metrics.border_width = border_width;
         metrics.caption_height = caption_height;
+    }
+}
+
+/// Updates the cell dimensions and grid padding for `WM_SIZING` snap-to-grid.
+///
+/// All values are in physical pixels (scaled by the display scale factor).
+/// Call whenever font metrics change (initial load, config reload, DPI change).
+/// When set, `WM_SIZING` snaps the resize rect to cell boundaries so the
+/// terminal grid doesn't fluctuate during interactive resize. The `padding`
+/// accounts for the grid origin offset so the snapped width equals
+/// `cols * cell_width + padding`.
+pub fn set_cell_size(window: &Window, width: f32, height: f32, padding: f32) {
+    if let Some(data) = snap_data_for_window(window) {
+        let mut lock = data.cell_size.lock().unwrap_or_else(|e| {
+            log::warn!("cell_size mutex poisoned: {e}");
+            e.into_inner()
+        });
+        *lock = Some(CellSize {
+            width,
+            height,
+            padding,
+        });
     }
 }
 

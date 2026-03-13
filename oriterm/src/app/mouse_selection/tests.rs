@@ -1,42 +1,13 @@
 //! Tests for mouse selection coordinate conversion and state tracking.
 
-use std::time::Instant;
-
 use winit::dpi::PhysicalPosition;
 
 use oriterm_core::Side;
-use oriterm_ui::draw::DrawList;
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::text::{ShapedText, TextMetrics, TextStyle};
-use oriterm_ui::theme::UiTheme;
-use oriterm_ui::widgets::text_measurer::TextMeasurer;
-use oriterm_ui::widgets::{DrawCtx, Widget};
 
 use super::{DRAG_THRESHOLD_PX, GridCtx, MouseState, pixel_to_cell, pixel_to_side};
 use crate::font::CellMetrics;
 use crate::widgets::terminal_grid::TerminalGridWidget;
-
-/// Minimal text measurer for tests.
-struct TestMeasurer;
-
-impl TextMeasurer for TestMeasurer {
-    fn measure(&self, text: &str, _style: &TextStyle, _max_width: f32) -> TextMetrics {
-        TextMetrics {
-            width: text.len() as f32 * 8.0,
-            height: 16.0,
-            line_count: 1,
-        }
-    }
-
-    fn shape(&self, _text: &str, _style: &TextStyle, _max_width: f32) -> ShapedText {
-        ShapedText {
-            glyphs: Vec::new(),
-            width: 0.0,
-            height: 16.0,
-            baseline: 12.0,
-        }
-    }
-}
 
 fn test_cell_metrics(w: f32, h: f32) -> CellMetrics {
     CellMetrics {
@@ -59,27 +30,13 @@ fn make_widget_with_bounds(
     origin_y: f32,
 ) -> TerminalGridWidget {
     let widget = TerminalGridWidget::new(cell_w, cell_h, cols, rows);
-    let theme = UiTheme::dark();
-    let measurer = TestMeasurer;
-    let mut draw_list = DrawList::new();
-    let animations_running = std::cell::Cell::new(false);
     let bounds = Rect::new(
         origin_x,
         origin_y,
         cols as f32 * cell_w,
         rows as f32 * cell_h,
     );
-    let mut ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: None,
-        now: Instant::now(),
-        animations_running: &animations_running,
-        theme: &theme,
-        icons: None,
-    };
-    widget.draw(&mut ctx);
+    widget.set_bounds(bounds);
     widget
 }
 

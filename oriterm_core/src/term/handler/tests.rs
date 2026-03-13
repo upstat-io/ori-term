@@ -5114,7 +5114,7 @@ fn resize_prunes_evicted_image_placements() {
     }
 
     // Shrink to 3 lines — this pushes many rows to scrollback, evicting some.
-    t.resize(3, 80);
+    t.resize(3, 80, true);
 
     // If the image's row was evicted, placement should be pruned.
     let evicted = t.grid().total_evicted();
