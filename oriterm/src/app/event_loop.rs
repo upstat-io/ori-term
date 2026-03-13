@@ -76,6 +76,7 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::Resized(size) => {
                 self.handle_resize(window_id, size);
+                self.handle_redraw();
             }
 
             WindowEvent::RedrawRequested => {

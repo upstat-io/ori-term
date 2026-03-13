@@ -2,7 +2,7 @@
 
 use crate::font::CellMetrics;
 
-use super::{compute_window_layout, grid_origin_y};
+use super::{GRID_PADDING, compute_window_layout, grid_origin_y};
 
 // grid_origin_y: integer-pixel guarantee
 
@@ -91,39 +91,46 @@ fn test_cell(width: f32, height: f32) -> CellMetrics {
 }
 
 #[test]
-fn layout_grid_origin_matches_manual() {
+fn layout_grid_origin_includes_padding() {
     // 1920×1080 at 1x scale with 8×16 cells.
     let cell = test_cell(8.0, 16.0);
     let wl = compute_window_layout(1920, 1080, &cell, 1.0);
 
-    // Tab bar is 46px at 1x → grid starts at y=46.
-    let expected_y = grid_origin_y(46.0, 1.0);
+    // Tab bar is 46px at 1x. Grid origin includes padding offset.
+    let pad = (GRID_PADDING * 1.0).round();
+    let expected_y = grid_origin_y(46.0, 1.0) + pad;
     assert_eq!(wl.grid_rect.y(), expected_y);
-    assert_eq!(wl.grid_rect.x(), 0.0);
+    assert_eq!(wl.grid_rect.x(), pad);
 }
 
 #[test]
-fn layout_grid_fills_remaining_space() {
+fn layout_padding_reduces_cols_rows() {
+    // Cols/rows are computed from the visible grid area after padding.
+    // This matches the WM_SIZING snap formula so the column count is
+    // stable during interactive resize.
     let cell = test_cell(8.0, 16.0);
     let wl = compute_window_layout(1920, 1080, &cell, 1.0);
 
+    let pad = (GRID_PADDING * 1.0).round();
     let chrome_h = grid_origin_y(46.0, 1.0);
-    let expected_h = 1080.0 - chrome_h;
-    assert_eq!(wl.grid_rect.height(), expected_h);
-    assert_eq!(wl.grid_rect.width(), 1920.0);
+    let expected_cols = cell.columns((1920.0 - pad) as u32);
+    let expected_rows = cell.rows((1080.0 - chrome_h - pad) as u32);
+    assert_eq!(wl.cols, expected_cols);
+    assert_eq!(wl.rows, expected_rows);
 }
 
 #[test]
 fn layout_cols_rows_match_manual_at_125_scale() {
     // 1920×1080 at 1.25x with 10×20 physical-pixel cells.
+    let scale = 1.25;
     let cell = test_cell(10.0, 20.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.25);
+    let wl = compute_window_layout(1920, 1080, &cell, scale);
 
-    // Manual: origin_y = (46.0 * 1.25).round() = 58.0
-    let chrome_px = grid_origin_y(46.0, 1.25) as u32;
-    let grid_h = 1080 - chrome_px;
-    let expected_cols = cell.columns(1920);
-    let expected_rows = cell.rows(grid_h);
+    // Cols/rows computed from visible grid area after padding.
+    let pad = (GRID_PADDING * scale).round();
+    let chrome_px = grid_origin_y(46.0, scale);
+    let expected_cols = cell.columns((1920.0 - pad) as u32);
+    let expected_rows = cell.rows((1080.0 - chrome_px - pad) as u32);
 
     assert_eq!(wl.cols, expected_cols);
     assert_eq!(wl.rows, expected_rows);

@@ -402,20 +402,27 @@ impl<T: EventListener> Term<T> {
 
     /// Resize the terminal to new dimensions.
     ///
-    /// Resizes both primary and alternate grids. The primary grid uses text
-    /// reflow (soft-wrapped lines re-wrap to fit the new width). The alternate
-    /// grid does not reflow (full-screen apps manage their own layout).
+    /// When `reflow` is true, the primary grid re-wraps soft-wrapped lines
+    /// to fit the new column width. When false, rows are simply truncated
+    /// or extended (used on Windows where `ConPTY` handles content reflow via
+    /// escape sequences — doing our own reflow races with `ConPTY`'s output).
+    /// The alternate grid never reflows (full-screen apps manage their own
+    /// layout).
     ///
     /// Marks all lines dirty so the renderer repaints. Also marks selection
     /// as dirty since content positions change.
-    pub fn resize(&mut self, new_lines: usize, new_cols: usize) {
+    pub fn resize(&mut self, new_lines: usize, new_cols: usize, reflow: bool) {
         if new_lines == 0 || new_cols == 0 {
             return;
         }
+        if self.grid.lines() == new_lines && self.grid.cols() == new_cols {
+            return;
+        }
 
-        // Primary grid: reflow enabled. Prune image placements if rows evicted.
+        // Primary grid: reflow when caller permits. Prune image placements
+        // if rows evicted.
         let prev_primary = self.grid.total_evicted();
-        self.grid.resize(new_lines, new_cols, true);
+        self.grid.resize(new_lines, new_cols, reflow);
         let new_primary = self.grid.total_evicted();
         if new_primary > prev_primary {
             self.image_cache

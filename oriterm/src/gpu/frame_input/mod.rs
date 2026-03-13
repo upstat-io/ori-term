@@ -290,6 +290,15 @@ pub struct FrameInput {
     pub viewport: ViewportSize,
     /// Cell pixel dimensions from font metrics.
     pub cell_size: CellMetrics,
+    /// Content grid columns (from snapshot, not viewport).
+    ///
+    /// During async resize in daemon mode, the viewport may have different
+    /// dimensions than the snapshot content. This field records the actual
+    /// column count of `content.cells` so shaping and rendering index the
+    /// flat cell array correctly.
+    pub content_cols: usize,
+    /// Content grid rows (from snapshot, not viewport).
+    pub content_rows: usize,
     /// Semantic colors for background clear and cursor.
     pub palette: FramePalette,
     /// Active selection for highlight rendering.
@@ -334,14 +343,22 @@ pub struct FrameInput {
 }
 
 impl FrameInput {
-    /// Number of grid columns based on viewport and cell size.
+    /// Number of grid columns in the content.
+    ///
+    /// Returns the content-derived column count, not viewport-derived.
+    /// During async resize in daemon mode, the viewport may race ahead of
+    /// the snapshot — using viewport dimensions to index the flat cell
+    /// array would read cells at wrong offsets, placing text fragments on
+    /// wrong lines.
     pub fn columns(&self) -> usize {
-        self.cell_size.columns(self.viewport.width)
+        self.content_cols
     }
 
-    /// Number of grid rows based on viewport and cell size.
+    /// Number of grid rows in the content.
+    ///
+    /// Returns the content-derived row count. See [`columns()`](Self::columns).
     pub fn rows(&self) -> usize {
-        self.cell_size.rows(self.viewport.height)
+        self.content_rows
     }
 
     /// Whether the entire viewport needs a full repaint.
@@ -404,6 +421,8 @@ impl FrameInput {
             content,
             viewport: ViewportSize::new(cols as u32 * 8, rows as u32 * 16),
             cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
+            content_cols: cols,
+            content_rows: rows,
             palette: FramePalette {
                 background: palette_bg,
                 foreground: fg,

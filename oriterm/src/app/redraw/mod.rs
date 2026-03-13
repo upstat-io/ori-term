@@ -116,6 +116,8 @@ impl App {
                 let frame = ctx.frame.as_mut().expect("frame exists when swapped");
                 frame.viewport = viewport;
                 frame.cell_size = cell;
+                frame.content_cols = snapshot.cols as usize;
+                frame.content_rows = snapshot.cells.len();
                 frame.palette = snapshot_palette(snapshot);
                 frame.selection = None;
                 frame.search = None;
@@ -293,6 +295,12 @@ impl App {
             // is freshly rendered with no ongoing animations.
             ctx.ui_stale = tab_bar_animating || overlays_animating;
 
+            // Apply deferred DXGI ResizeBuffers just before acquiring the
+            // surface texture. This minimizes the gap between swap chain
+            // invalidation and frame presentation, preventing the DWM from
+            // stretching stale content during interactive resize.
+            ctx.window.apply_pending_surface_resize(gpu);
+
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
             (result, blinking_now, cursor_pos)
@@ -332,6 +340,9 @@ impl App {
                 {
                     let (w, h) = ctx.window.size_px();
                     ctx.window.resize_surface(w, h, gpu);
+                    // Force immediate reconfigure for error recovery
+                    // (can't defer — the surface is lost).
+                    ctx.window.apply_pending_surface_resize(gpu);
                 }
             }
             Err(e) => log::error!("render error: {e}"),

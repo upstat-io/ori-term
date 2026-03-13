@@ -90,9 +90,15 @@ pub(super) fn grid_origin_y(chrome_height_logical: f32, scale: f32) -> f32 {
     (chrome_height_logical * scale).round()
 }
 
+/// Logical padding around the terminal grid (in logical pixels).
+///
+/// Prevents text from touching the window edge. Scaled to physical pixels
+/// and rounded to integer pixels during layout computation.
+const GRID_PADDING: f32 = 8.0;
+
 /// Computed top-level window layout: chrome and terminal grid positions.
 pub(super) struct WindowLayout {
-    /// Grid bounds in physical pixels (origin + dimensions).
+    /// Grid bounds in physical pixels (origin + dimensions), inset by padding.
     pub grid_rect: Rect,
     /// Number of terminal columns that fit in the grid area.
     pub cols: usize,
@@ -140,11 +146,27 @@ pub(super) fn compute_window_layout(
 
     let viewport = Rect::new(0.0, 0.0, viewport_w as f32, viewport_h as f32);
     let layout = compute_layout(&root, viewport);
-    let grid_rect = layout.children[1].rect;
+    let raw_grid = layout.children[1].rect;
 
-    // Compute grid dimensions from the layout-allocated space.
-    let cols = cell.columns(grid_rect.width() as u32).max(1);
-    let rows = cell.rows(grid_rect.height() as u32).max(1);
+    // Padding in physical pixels, rounded to integer to prevent subpixel
+    // seams. Applied as a left/top origin shift on the grid rect.
+    let pad = (GRID_PADDING * scale).round();
+
+    // Compute grid dimensions from the visible area after padding.
+    // The grid origin is shifted right by `pad`, so the renderable width
+    // for cells is `raw_width - pad`. This must match the WM_SIZING snap
+    // formula (`snapped_w = cols * cell_w + pad`) so the column count is
+    // stable during interactive resize.
+    let grid_pixel_w = (raw_grid.width() - pad).max(0.0) as u32;
+    let grid_pixel_h = (raw_grid.height() - pad).max(0.0) as u32;
+    let cols = cell.columns(grid_pixel_w).max(1);
+    let rows = cell.rows(grid_pixel_h).max(1);
+    let grid_rect = Rect::new(
+        raw_grid.x() + pad,
+        raw_grid.y() + pad,
+        raw_grid.width(),
+        raw_grid.height(),
+    );
 
     WindowLayout {
         grid_rect,
