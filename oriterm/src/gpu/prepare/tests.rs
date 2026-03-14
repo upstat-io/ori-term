@@ -3024,6 +3024,42 @@ fn two_panes_at_correct_offsets() {
 }
 
 #[test]
+fn lower_pane_origin_is_not_culled_by_local_pane_height() {
+    use super::fill_frame_shaped;
+
+    let size_q6 = 768;
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        synthetic: 0,
+        x_advance: 8.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let col_starts = vec![0];
+    let shaped = shaped_one_row(1, &glyphs, &col_starts, size_q6);
+    let atlas = key_atlas_with(&[42], size_q6);
+
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.viewport = ViewportSize::new(8, 16);
+    input.content.cursor.visible = false;
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(800, 600), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+
+    // Simulate a lower split pane: pane-local viewport is one row tall,
+    // but the pane origin is well below that in window coordinates.
+    fill_frame_shaped(&input, &atlas, &shaped, &mut frame, (0.0, 200.0), false);
+
+    assert_eq!(
+        frame.glyphs.len(),
+        1,
+        "lower pane glyph should still render"
+    );
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert_eq!(fg.pos.1, 200.0, "pane origin y should be preserved");
+}
+
+#[test]
 fn cursor_only_in_focused_pane() {
     use super::fill_frame_shaped;
 

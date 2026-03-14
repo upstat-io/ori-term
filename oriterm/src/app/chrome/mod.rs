@@ -22,7 +22,7 @@ use oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH;
 
 use super::App;
 #[cfg(not(target_os = "macos"))]
-use crate::font::UiFontMeasurer;
+use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 use crate::window_manager::platform::{ChromeMode, chrome_ops};
 
 /// Install frameless window chrome via the platform trait.
@@ -327,7 +327,11 @@ impl App {
         let Some(renderer) = ctx.renderer.as_ref() else {
             return;
         };
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
         let event_ctx = oriterm_ui::widgets::EventCtx {
             measurer: &measurer,
             bounds: Rect::default(),
@@ -367,7 +371,11 @@ impl App {
         #[cfg(not(target_os = "macos"))]
         if let Some(renderer) = ctx.renderer.as_ref() {
             let scale = ctx.window.scale_factor().factor() as f32;
-            let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer = CachedTextMeasurer::new(
+                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                &ctx.text_cache,
+                scale,
+            );
             let event_ctx = oriterm_ui::widgets::EventCtx {
                 measurer: &measurer,
                 bounds: Rect::default(),

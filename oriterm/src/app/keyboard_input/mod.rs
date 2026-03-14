@@ -18,6 +18,22 @@ use crate::keybindings;
 
 pub(super) use ime::ImeState;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PtyInputRedrawState {
+    cursor_hidden_by_blink: bool,
+    snapshot_dirty: bool,
+    snapshot_display_offset: Option<u32>,
+}
+
+fn should_redraw_after_pty_input(state: PtyInputRedrawState) -> bool {
+    state.cursor_hidden_by_blink
+        || state.snapshot_dirty
+        || match state.snapshot_display_offset {
+            Some(offset) => offset > 0,
+            None => true,
+        }
+}
+
 impl App {
     /// Dispatch a keyboard event through overlays, mark mode, keybindings,
     /// or PTY encoding.
@@ -68,8 +84,11 @@ impl App {
                     let Some(renderer) = ctx.renderer.as_ref() else {
                         return;
                     };
-                    let measurer =
-                        crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+                    let measurer = crate::font::CachedTextMeasurer::new(
+                        crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                        &ctx.text_cache,
+                        scale,
+                    );
                     ctx.overlays.process_key_event(
                         ui_event,
                         &measurer,
@@ -221,6 +240,7 @@ impl App {
         });
 
         if !bytes.is_empty() {
+            let redraw_after_input = self.redraw_after_pty_input(pane_id);
             if let Some(mux) = self.mux.as_mut() {
                 mux.scroll_to_bottom(pane_id);
             }
@@ -242,10 +262,32 @@ impl App {
                 }
             }
 
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+            if redraw_after_input {
+                // Avoid a redundant pre-echo frame when typing at the live
+                // prompt with a visible cursor. That frame can consume the
+                // render budget and push the echoed glyph to the next tick.
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
         }
+    }
+
+    fn redraw_after_pty_input(&self, pane_id: oriterm_mux::PaneId) -> bool {
+        let snapshot_display_offset = self
+            .mux
+            .as_ref()
+            .and_then(|mux| mux.pane_snapshot(pane_id))
+            .map(|snapshot| snapshot.display_offset);
+        let snapshot_dirty = self
+            .mux
+            .as_ref()
+            .is_some_and(|mux| mux.is_pane_snapshot_dirty(pane_id));
+        should_redraw_after_pty_input(PtyInputRedrawState {
+            cursor_hidden_by_blink: self.blinking_active && !self.cursor_blink.is_visible(),
+            snapshot_dirty,
+            snapshot_display_offset,
+        })
     }
 
     /// Scroll by one page in the given direction.

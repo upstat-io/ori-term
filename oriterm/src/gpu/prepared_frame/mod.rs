@@ -313,6 +313,26 @@ impl PreparedFrame {
         self.row_ranges.clear();
     }
 
+    /// Clear tiers that are rebuilt every frame above the cached terminal scene.
+    ///
+    /// Preserves terminal backgrounds/glyphs/images so the content cache can
+    /// be reused, while dropping cursor, chrome, and overlay tiers that will
+    /// be re-emitted for the current frame.
+    pub fn clear_ephemeral_tiers(&mut self) {
+        self.cursors.clear();
+        self.ui_rects.clear();
+        self.ui_glyphs.clear();
+        self.ui_subpixel_glyphs.clear();
+        self.ui_color_glyphs.clear();
+        self.overlay_rects.clear();
+        self.overlay_glyphs.clear();
+        self.overlay_subpixel_glyphs.clear();
+        self.overlay_color_glyphs.clear();
+        self.ui_clips.clear();
+        self.overlay_clips.clear();
+        self.overlay_draw_ranges.clear();
+    }
+
     /// Append all instances from `other` into this frame.
     ///
     /// Copies instances from each of the thirteen buffers. Viewport and

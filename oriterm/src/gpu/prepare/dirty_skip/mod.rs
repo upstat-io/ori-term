@@ -242,7 +242,7 @@ pub(crate) fn fill_frame_incremental(
     let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
-    let viewport_h = input.viewport.height as f32;
+    let viewport_h = frame.viewport.height as f32;
     let num_rows = input.rows();
     let prev_sel = frame.prev_selection_range;
     build_dirty_set(input, num_rows, prev_sel, &mut frame.scratch_dirty);

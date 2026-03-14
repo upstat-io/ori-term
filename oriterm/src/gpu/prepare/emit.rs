@@ -95,15 +95,15 @@ impl GlyphEmitter<'_> {
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                // Subpixel glyphs always use alpha-based blending (no bg hint).
-                // Per-channel LCD compositing with a known bg produces opaque
-                // glyph-sized rectangles that bleed beyond cell boundaries and
-                // create visible per-character boxes. Proper per-channel
-                // compositing requires dual-source blending (Alacritty approach)
-                // which wgpu/WebGPU doesn't support. The alpha fallback path
-                // (bg_color = 0) uses max-channel coverage as a single alpha
-                // and blends correctly over any background — same strategy as
-                // Ghostty (grayscale for all text).
+                // Subpixel glyphs always use the no-bg-hint path here.
+                // Per-channel LCD compositing with a synthetic cell bg
+                // produces opaque glyph-sized rectangles that bleed beyond
+                // cell boundaries and create visible per-character boxes.
+                // Proper per-channel compositing requires dual-source
+                // blending (Alacritty approach), which wgpu/WebGPU doesn't
+                // support. The shader's no-bg-hint fallback collapses the
+                // mask to grayscale coverage so the glyph blends correctly
+                // over whatever background is already in the framebuffer.
                 //
                 // Mono and color glyphs are unaffected (shaders ignore bg_color).
                 let writer = match entry.kind {

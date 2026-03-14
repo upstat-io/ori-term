@@ -18,7 +18,7 @@ use super::App;
 use super::dialog_context::{DialogContent, DialogWindowContext};
 use super::settings_overlay::form_builder;
 use crate::event::ConfirmationRequest;
-use crate::font::UiFontMeasurer;
+use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
 use crate::window_manager::platform::platform_ops;
@@ -186,7 +186,11 @@ impl App {
         self.render_dialog(winit_id);
 
         if let Some(ctx) = self.dialogs.get(&winit_id) {
+            #[cfg(target_os = "windows")]
+            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, false);
             ctx.window.set_visible(true);
+            #[cfg(target_os = "windows")]
+            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, true);
         }
 
         log::info!(
@@ -200,6 +204,9 @@ impl App {
     pub(super) fn close_dialog(&mut self, winit_id: WindowId) {
         // Clear platform modal state if applicable.
         if let Some(ctx) = self.dialogs.get(&winit_id) {
+            #[cfg(target_os = "windows")]
+            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, false);
+            ctx.window.set_visible(false);
             if let Some(managed) = self.window_manager.get(winit_id) {
                 if let Some(parent_wid) = managed.parent {
                     if let Some(parent_ctx) = self.windows.get(&parent_wid) {
@@ -325,7 +332,12 @@ impl App {
         // Compute label widths for aligned form layout.
         if let Some(renderer) = renderer {
             let scale = window.scale_factor() as f32;
-            let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let cache = TextShapeCache::new();
+            let measurer = CachedTextMeasurer::new(
+                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                &cache,
+                scale,
+            );
             form.compute_label_widths(&measurer, &self.ui_theme);
         }
 

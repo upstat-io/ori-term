@@ -18,7 +18,7 @@ use winit::window::WindowId;
 
 use crate::app::settings_overlay;
 use crate::event::ConfirmationKind;
-use crate::font::UiFontMeasurer;
+use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
 use super::DialogContent;
 use crate::app::App;
@@ -103,7 +103,7 @@ impl App {
             log::info!("settings dialog: pending config updated (deferred until Save)");
             // Propagate selection back to widget so it updates its display.
             panel.accept_action(action);
-            ctx.dirty = true;
+            ctx.request_urgent_redraw();
         }
     }
 
@@ -150,7 +150,7 @@ impl App {
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
-        ctx.overlays.push_overlay(
+        ctx.overlays.replace_popup(
             Box::new(widget),
             anchor,
             Placement::BelowFlush,
@@ -158,7 +158,7 @@ impl App {
             &mut ctx.layer_animator,
             now,
         );
-        ctx.dirty = true;
+        ctx.request_urgent_redraw();
     }
 
     /// Process an overlay event result from a dialog window.
@@ -203,7 +203,7 @@ impl App {
         if let Some(ctx) = self.dialogs.get_mut(&window_id) {
             ctx.overlays
                 .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
-            ctx.dirty = true;
+            ctx.request_urgent_redraw();
         }
         self.pending_dropdown_id = None;
     }
@@ -269,7 +269,11 @@ impl App {
         };
         let renderer = ctx.renderer.as_ref()?;
         let scale = ctx.scale_factor.factor() as f32;
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
         let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
@@ -289,7 +293,7 @@ impl App {
             resp.response,
             EventResponse::RequestPaint | EventResponse::RequestLayout
         ) {
-            ctx.dirty = true;
+            ctx.request_urgent_redraw();
         }
         resp.action
     }
@@ -304,7 +308,12 @@ impl App {
             return;
         };
         let scale = ctx.scale_factor.factor() as f32;
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
+        let mut needs_redraw = false;
 
         // Chrome hover clear.
         let event_ctx = EventCtx {
@@ -319,7 +328,7 @@ impl App {
             resp.response,
             EventResponse::RequestPaint | EventResponse::RequestLayout
         ) {
-            ctx.dirty = true;
+            needs_redraw = true;
         }
 
         // Content hover clear.
@@ -342,7 +351,11 @@ impl App {
             resp.response,
             EventResponse::RequestPaint | EventResponse::RequestLayout
         ) {
-            ctx.dirty = true;
+            needs_redraw = true;
+        }
+
+        if needs_redraw {
+            ctx.request_urgent_redraw();
         }
     }
 }

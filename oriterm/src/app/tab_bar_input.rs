@@ -24,7 +24,7 @@ use oriterm_ui::widgets::tab_bar::constants::{
 use oriterm_ui::widgets::{EventCtx, WidgetAction};
 
 #[cfg(not(target_os = "macos"))]
-use crate::font::UiFontMeasurer;
+use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
 use super::{App, context_menu};
 
@@ -164,7 +164,7 @@ impl App {
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = Some(state);
-            ctx.overlays.push_overlay(
+            ctx.overlays.replace_popup(
                 Box::new(widget),
                 anchor,
                 Placement::Below,
@@ -173,7 +173,7 @@ impl App {
                 now,
             );
             ctx.dirty = true;
-            ctx.ui_stale = true;
+            ctx.urgent_redraw = true;
         }
     }
 
@@ -200,7 +200,7 @@ impl App {
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = Some(state);
-            ctx.overlays.push_overlay(
+            ctx.overlays.replace_popup(
                 Box::new(widget),
                 anchor,
                 Placement::Below,
@@ -209,7 +209,7 @@ impl App {
                 now,
             );
             ctx.dirty = true;
-            ctx.ui_stale = true;
+            ctx.urgent_redraw = true;
         }
     }
 
@@ -236,7 +236,11 @@ impl App {
             modifiers: oriterm_ui::input::Modifiers::NONE,
         };
         let renderer = ctx.renderer.as_ref()?;
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
         let event_ctx = EventCtx {
             measurer: &measurer,
             bounds: Rect::default(),

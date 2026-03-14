@@ -9,6 +9,7 @@ use oriterm_core::{
 
 use super::super::redraw::preedit::overlay_preedit_cells;
 use super::ime::{ImeEffect, ImeState};
+use super::{PtyInputRedrawState, should_redraw_after_pty_input};
 
 const FG: Rgb = Rgb {
     r: 211,
@@ -404,6 +405,44 @@ fn preedit_empty_cells_no_panic() {
     // Empty cells vec should early-return without panic.
     overlay_preedit_cells("A", &mut content, 10);
     assert!(content.cells.is_empty());
+}
+
+// --- PTY input redraw policy ---
+
+#[test]
+fn pty_input_skips_redraw_at_live_prompt_with_visible_cursor() {
+    assert!(!should_redraw_after_pty_input(PtyInputRedrawState {
+        cursor_hidden_by_blink: false,
+        snapshot_dirty: false,
+        snapshot_display_offset: Some(0),
+    }));
+}
+
+#[test]
+fn pty_input_redraws_when_cursor_was_blink_hidden() {
+    assert!(should_redraw_after_pty_input(PtyInputRedrawState {
+        cursor_hidden_by_blink: true,
+        snapshot_dirty: false,
+        snapshot_display_offset: Some(0),
+    }));
+}
+
+#[test]
+fn pty_input_redraws_when_typing_exits_scrollback() {
+    assert!(should_redraw_after_pty_input(PtyInputRedrawState {
+        cursor_hidden_by_blink: false,
+        snapshot_dirty: false,
+        snapshot_display_offset: Some(4),
+    }));
+}
+
+#[test]
+fn pty_input_redraws_without_a_cached_snapshot() {
+    assert!(should_redraw_after_pty_input(PtyInputRedrawState {
+        cursor_hidden_by_blink: false,
+        snapshot_dirty: false,
+        snapshot_display_offset: None,
+    }));
 }
 
 // --- Dispatch chain: keybinding priority over PTY ---

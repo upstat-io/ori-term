@@ -156,3 +156,31 @@ fn draw_produces_header_text() {
         "expected at least header text commands, got {text_cmds}"
     );
 }
+
+#[test]
+fn draw_skips_rows_outside_active_clip() {
+    let section = test_section();
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    draw_list.push_clip(Rect::new(0.0, 0.0, 400.0, 60.0));
+    let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+    };
+    section.draw(&mut ctx);
+
+    let text_cmds = draw_list
+        .commands()
+        .iter()
+        .filter(|c| matches!(c, crate::draw::DrawCommand::Text { .. }))
+        .count();
+    assert_eq!(text_cmds, 4, "header and first visible row should draw");
+}
