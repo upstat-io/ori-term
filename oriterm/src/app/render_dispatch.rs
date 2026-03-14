@@ -28,7 +28,6 @@ impl App {
             let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.windows.get_mut(&wid) {
                 ctx.dirty = false;
-                ctx.invalidation.clear();
             }
             let mux_wid = self
                 .windows
@@ -37,6 +36,10 @@ impl App {
             self.focused_window_id = Some(wid);
             self.active_window = mux_wid;
             self.handle_redraw();
+            // Clear invalidation after render so compose_scene sees dirty widgets.
+            if let Some(ctx) = self.windows.get_mut(&wid) {
+                ctx.invalidation.clear();
+            }
         }
 
         self.focused_window_id = saved_focused;
@@ -54,9 +57,12 @@ impl App {
             let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.dialogs.get_mut(&wid) {
                 ctx.dirty = false;
-                ctx.invalidation.clear();
             }
             self.render_dialog(wid);
+            // Clear invalidation after render so compose_scene sees dirty widgets.
+            if let Some(ctx) = self.dialogs.get_mut(&wid) {
+                ctx.invalidation.clear();
+            }
         }
 
         self.last_render = std::time::Instant::now();
