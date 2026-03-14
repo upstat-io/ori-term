@@ -368,3 +368,44 @@ fn clear_resets_layer_stack() {
     assert!(dl.current_layer_bg().is_none());
     assert!(dl.is_empty());
 }
+
+// Translate stack
+
+#[test]
+fn push_pop_translate_emits_commands() {
+    let mut dl = DrawList::new();
+    dl.push_translate(-10.0, -40.0);
+    dl.push_rect(Rect::new(0.0, 0.0, 50.0, 50.0), Default::default());
+    dl.pop_translate();
+
+    assert_eq!(dl.len(), 3);
+    assert!(matches!(
+        dl.commands()[0],
+        DrawCommand::PushTranslate { dx, dy } if dx == -10.0 && dy == -40.0
+    ));
+    assert!(matches!(dl.commands()[2], DrawCommand::PopTranslate));
+}
+
+#[test]
+#[should_panic(expected = "pop_translate called with empty translate stack")]
+fn pop_translate_on_empty_stack_panics() {
+    let mut dl = DrawList::new();
+    dl.pop_translate();
+}
+
+#[test]
+fn clear_resets_translate_stack() {
+    let mut dl = DrawList::new();
+    dl.push_translate(10.0, 20.0);
+    dl.clear();
+
+    assert!(dl.is_empty());
+    // After clear, pop should panic (stack is empty).
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut dl2 = DrawList::new();
+        dl2.push_translate(1.0, 1.0);
+        dl2.clear();
+        dl2.pop_translate();
+    }));
+    assert!(result.is_err());
+}

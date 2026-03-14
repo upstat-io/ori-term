@@ -229,6 +229,10 @@ pub(crate) struct App {
     // `check_torn_off_merge()` in `about_to_wait`.
     torn_off_pending: Option<tab_drag::TornOffPending>,
 
+    // Dialog windows pending destruction (Closing → Destroyed).
+    // Populated by close_dialog(), drained by drain_pending_destroy() in about_to_wait.
+    pending_destroy: Vec<WindowId>,
+
     // Scratch buffers reused per frame to avoid per-frame allocations.
     scratch_dirty_windows: Vec<WindowId>,
     scratch_pane_sels: HashMap<PaneId, Selection>,

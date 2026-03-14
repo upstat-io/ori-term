@@ -76,6 +76,19 @@ pub enum DrawCommand {
         /// Icon tint color.
         color: Color,
     },
+    /// Push a 2D translation transform onto the transform stack.
+    ///
+    /// Scroll containers use this to offset cached child content without
+    /// rebuilding it. The GPU converter applies cumulative transforms to
+    /// all subsequent draw commands until the matching [`PopTranslate`].
+    PushTranslate {
+        /// Horizontal translation in logical pixels (positive = right).
+        dx: f32,
+        /// Vertical translation in logical pixels (positive = down).
+        dy: f32,
+    },
+    /// Pop the most recent translation transform from the stack.
+    PopTranslate,
     /// Push a background layer onto the layer stack.
     ///
     /// Widgets that draw a background rect push their bg color here
@@ -105,6 +118,8 @@ pub struct DrawList {
     bg_stack: Vec<Color>,
     /// Tracks push/pop balance for debug assertions.
     layer_stack_depth: u32,
+    /// Tracks push/pop balance for debug assertions.
+    translate_stack_depth: u32,
 }
 
 impl DrawList {
@@ -116,6 +131,7 @@ impl DrawList {
             clip_stack: Vec::new(),
             bg_stack: Vec::new(),
             layer_stack_depth: 0,
+            translate_stack_depth: 0,
         }
     }
 
@@ -199,6 +215,29 @@ impl DrawList {
         self.commands.push(DrawCommand::PopClip);
     }
 
+    /// Pushes a 2D translation. Must be paired with [`pop_translate`](Self::pop_translate).
+    ///
+    /// Used by scroll containers to offset cached child content. Nested
+    /// translates compose additively in the GPU converter.
+    pub fn push_translate(&mut self, dx: f32, dy: f32) {
+        self.translate_stack_depth += 1;
+        self.commands.push(DrawCommand::PushTranslate { dx, dy });
+    }
+
+    /// Pops the most recent translation transform.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the translate stack is already empty.
+    pub fn pop_translate(&mut self) {
+        assert!(
+            self.translate_stack_depth > 0,
+            "pop_translate called with empty translate stack",
+        );
+        self.translate_stack_depth -= 1;
+        self.commands.push(DrawCommand::PopTranslate);
+    }
+
     /// Pushes a background layer. Must be paired with [`pop_layer`](Self::pop_layer).
     ///
     /// The `bg` color is captured by subsequent [`push_text`](Self::push_text)
@@ -266,6 +305,7 @@ impl DrawList {
         self.clip_stack.clear();
         self.bg_stack.clear();
         self.layer_stack_depth = 0;
+        self.translate_stack_depth = 0;
     }
 }
 

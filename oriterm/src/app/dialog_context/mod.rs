@@ -18,6 +18,7 @@ use oriterm_ui::geometry::Rect;
 use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::scale::ScaleFactor;
+use oriterm_ui::surface::{DamageSet, RenderStrategy, SurfaceLifecycle};
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::dialog::DialogWidget;
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
@@ -65,6 +66,20 @@ pub(crate) struct DialogWindowContext {
     pub(super) scene_cache: SceneCache,
     /// Per-widget invalidation tracker.
     pub(super) invalidation: InvalidationTracker,
+    // Surface strategy, damage tracking, and lifecycle.
+    #[expect(
+        dead_code,
+        reason = "vocabulary for retained-ui plan; consumed by future render paths"
+    )]
+    pub(super) render_strategy: RenderStrategy,
+    #[expect(
+        dead_code,
+        reason = "vocabulary for retained-ui plan; consumed by future render paths"
+    )]
+    pub(super) damage: DamageSet,
+    /// Lifecycle state for framework-managed visibility transitions.
+    pub(super) lifecycle: SurfaceLifecycle,
+
     /// Whether this dialog needs a redraw.
     pub(super) dirty: bool,
     /// Whether this dialog should bypass the normal frame budget once.
@@ -173,6 +188,9 @@ impl DialogWindowContext {
             invalidation: InvalidationTracker::new(),
             scale_factor,
             last_cursor_pos: oriterm_ui::geometry::Point::new(0.0, 0.0),
+            render_strategy: RenderStrategy::UiRetained,
+            damage: DamageSet::default(),
+            lifecycle: SurfaceLifecycle::CreatedHidden,
             dirty: true,
             urgent_redraw: false,
         }

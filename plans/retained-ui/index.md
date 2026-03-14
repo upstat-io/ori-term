@@ -65,7 +65,7 @@ clip stack, layer stack, cached subtree, replay commands
 ---
 
 ### Section 04: Scroll Transform
-**File:** `section-04-scroll-transform.md` | **Status:** Not Started
+**File:** `section-04-scroll-transform.md` | **Status:** Complete
 
 ```
 scroll transform, viewport offset, translate transform
@@ -78,7 +78,7 @@ GPU converter, transform stack, scroll composition
 ---
 
 ### Section 05: Surface Strategy
-**File:** `section-05-surface-strategy.md` | **Status:** Not Started
+**File:** `section-05-surface-strategy.md` | **Status:** Complete
 
 ```
 surface strategy, render strategy, damage kind, surface host
@@ -92,7 +92,7 @@ oriterm_ui/src/lib.rs (add pub mod surface)
 ---
 
 ### Section 06: Window Lifecycle
-**File:** `section-06-window-lifecycle.md` | **Status:** Not Started
+**File:** `section-06-window-lifecycle.md` | **Status:** Complete
 
 ```
 window lifecycle, surface lifecycle, visibility, show/hide

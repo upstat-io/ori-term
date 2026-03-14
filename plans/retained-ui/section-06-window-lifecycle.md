@@ -1,7 +1,7 @@
 ---
 section: "06"
 title: "Window Lifecycle State Machine"
-status: not-started
+status: complete
 goal: "Secondary windows (dialogs, tooltips, future panels) follow a framework-managed lifecycle: create hidden, render first frame, then show. No flash of uninitialized content on open, no leaked state on close."
 inspired_by:
   - "Chromium Widget::Show() / Widget::Close() sequencing (ui/views/widget/widget.cc)"
@@ -10,16 +10,16 @@ depends_on: []
 sections:
   - id: "06.1"
     title: "SurfaceLifecycle State Machine"
-    status: not-started
+    status: complete
   - id: "06.2"
     title: "Framework-Managed Visibility"
-    status: not-started
+    status: complete
   - id: "06.3"
     title: "Integration with Dialog Management"
-    status: not-started
+    status: complete
   - id: "06.4"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 reviewed: true
 ---
 
@@ -46,7 +46,7 @@ The fix is a state machine that the framework drives. Window hosts transition th
 
 **File(s):** `oriterm_ui/src/surface/mod.rs` (extending the module from Section 05)
 
-- [ ] Define `SurfaceLifecycle`:
+- [x] Define `SurfaceLifecycle`:
   ```rust
   /// Lifecycle state for a secondary surface (dialog, tooltip, panel).
   #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,16 +71,16 @@ The fix is a state machine that the framework drives. Window hosts transition th
   }
   ```
 
-- [ ] Define valid transitions:
+- [x] Define valid transitions:
   - `CreatedHidden → Primed` (first render succeeds)
   - `Primed → Visible` (framework shows window)
   - `Visible → Closing` (close requested)
   - `Closing → Destroyed` (cleanup complete)
   - `CreatedHidden → Destroyed` (creation failed, bail out)
 
-- [ ] Invalid transitions panic in debug mode (debug_assert).
+- [x] Invalid transitions panic in debug mode (debug_assert).
 
-- [ ] **Event suppression:** Winit may deliver `CursorMoved`, `MouseInput`, `KeyboardInput`, and other events to a window before it transitions to `Visible` (OS-level window exists even if not shown). Events arriving when lifecycle is `CreatedHidden` or `Primed` must be suppressed -- early return from `handle_dialog_window_event()` (dialog_context/event_handling.rs:47). Events during `Closing` must also be suppressed (already specified in 06.3). Add a guard at the top of `handle_dialog_window_event()`:
+- [x] **Event suppression:** Winit may deliver `CursorMoved`, `MouseInput`, `KeyboardInput`, and other events to a window before it transitions to `Visible` (OS-level window exists even if not shown). Events arriving when lifecycle is `CreatedHidden` or `Primed` must be suppressed -- early return from `handle_dialog_window_event()` (dialog_context/event_handling.rs:47). Events during `Closing` must also be suppressed (already specified in 06.3). Add a guard at the top of `handle_dialog_window_event()`:
   ```rust
   let lifecycle = ctx.lifecycle();
   if !matches!(lifecycle, SurfaceLifecycle::Visible) {
@@ -97,13 +97,13 @@ The fix is a state machine that the framework drives. Window hosts transition th
 
 Replace manual `set_visible(true)` calls with lifecycle-driven visibility.
 
-- [ ] In `finalize_dialog()` (dialog_management.rs:160), set lifecycle to `CreatedHidden`. Do NOT call `set_visible(true)` here (currently at line 191).
+- [x] In `finalize_dialog()` (dialog_management.rs:160), set lifecycle to `CreatedHidden`. Do NOT call `set_visible(true)` here (currently at line 191).
 
-- [ ] After `render_dialog()` succeeds (dialog_management.rs:186), transition to `Primed`.
+- [x] After `render_dialog()` succeeds (dialog_management.rs:186), transition to `Primed`.
 
-- [ ] In the event loop's `AboutToWait` handler (or equivalent winit callback), find all `Primed` windows and transition them to `Visible` by calling `set_visible(true)`. This guarantees the first frame is committed before the window appears.
+- [x] In the event loop's `AboutToWait` handler (or equivalent winit callback), find all `Primed` windows and transition them to `Visible` by calling `set_visible(true)`. This guarantees the first frame is committed before the window appears.
 
-- [ ] Platform-specific flash suppression (disable/enable DWM transitions on Windows) is handled inside the lifecycle transition, not by each caller. The `CreatedHidden → Primed → Visible` chain encapsulates it.
+- [x] Platform-specific flash suppression (disable/enable DWM transitions on Windows) is handled inside the lifecycle transition, not by each caller. The `CreatedHidden → Primed → Visible` chain encapsulates it.
 
 ---
 
@@ -113,19 +113,19 @@ Replace manual `set_visible(true)` calls with lifecycle-driven visibility.
 
 Refactor `close_dialog()` to use lifecycle transitions.
 
-- [ ] `close_dialog()` transitions to `Closing`:
+- [x] `close_dialog()` transitions to `Closing`:
   1. Set lifecycle to `Closing`.
   2. Call `set_visible(false)`.
   3. Clear modal state.
   4. Suppress input (events to `Closing` windows are dropped).
 
-- [ ] A follow-up pass (next event loop tick) transitions `Closing → Destroyed`:
+- [x] A follow-up pass (next event loop tick) transitions `Closing → Destroyed`:
   1. Unregister from window manager.
   2. Remove context (drops GPU resources).
 
-- [ ] This two-tick close sequence prevents the close callback from running inside a mutable borrow of the dialog context map (which can happen today if close triggers further events during cleanup). **Complexity warning:** The deferred destruction mechanism relies on winit's `AboutToWait` firing once per event batch. Verify this assumption in the winit documentation. If `AboutToWait` can fire mid-batch on some platforms, the pending_destroy drain could run while events for the destroyed window are still queued.
+- [x] This two-tick close sequence prevents the close callback from running inside a mutable borrow of the dialog context map (which can happen today if close triggers further events during cleanup). **Complexity warning:** The deferred destruction mechanism relies on winit's `AboutToWait` firing once per event batch. Verify this assumption in the winit documentation. If `AboutToWait` can fire mid-batch on some platforms, the pending_destroy drain could run while events for the destroyed window are still queued.
 
-- [ ] **Deferred destruction mechanism:** The `Closing → Destroyed` transition happens on the "next event loop tick". Implementation: collect windows in `Closing` state during `AboutToWait` (or the equivalent winit callback), then destroy them after all pending events are drained. Store a `Vec<WindowId>` of `pending_destroy` windows on `App`, populated during `close_dialog()` (which sets `Closing`), consumed during `AboutToWait`:
+- [x] **Deferred destruction mechanism:** The `Closing → Destroyed` transition happens on the "next event loop tick". Implementation: collect windows in `Closing` state during `AboutToWait` (or the equivalent winit callback), then destroy them after all pending events are drained. Store a `Vec<WindowId>` of `pending_destroy` windows on `App`, populated during `close_dialog()` (which sets `Closing`), consumed during `AboutToWait`:
   ```rust
   // In AboutToWait handler:
   for wid in self.pending_destroy.drain(..) {
@@ -135,7 +135,7 @@ Refactor `close_dialog()` to use lifecycle transitions.
   }
   ```
 
-- [ ] **Cross-platform visibility:** macOS uses `NSWindow::orderFront` / `NSWindow::makeKeyAndOrderFront` which have different semantics than Windows `ShowWindow`. The lifecycle transition `Primed → Visible` must use the platform-appropriate visibility call. Currently `set_visible(true)` abstracts this via winit, which is sufficient. Document that `set_visible()` is the only call — no direct platform APIs for visibility.
+- [x] **Cross-platform visibility:** macOS uses `NSWindow::orderFront` / `NSWindow::makeKeyAndOrderFront` which have different semantics than Windows `ShowWindow`. The lifecycle transition `Primed → Visible` must use the platform-appropriate visibility call. Currently `set_visible(true)` abstracts this via winit, which is sufficient. Document that `set_visible()` is the only call — no direct platform APIs for visibility.
 
 ---
 
@@ -149,15 +149,15 @@ Refactor `close_dialog()` to use lifecycle transitions.
 - `App::new()` -- initialize `pending_destroy: Vec::new()`
 - `AboutToWait` handler in event loop -- drain `pending_destroy`
 
-- [ ] `SurfaceLifecycle` enum is defined with valid transition enforcement
-- [ ] `DialogWindowContext` carries a `lifecycle: SurfaceLifecycle` field (import from `oriterm_ui::surface::SurfaceLifecycle`)
-- [ ] `finalize_dialog()` uses lifecycle instead of manual `set_visible(true)`
-- [ ] `close_dialog()` uses lifecycle instead of manual `set_visible(false)` + immediate removal
-- [ ] No flash of uninitialized content when opening settings dialog (visual test)
-- [ ] No leaked modal state when closing confirmation dialog
-- [ ] Platform-specific visibility hacks are encapsulated in lifecycle transitions
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
+- [x] `SurfaceLifecycle` enum is defined with valid transition enforcement
+- [x] `DialogWindowContext` carries a `lifecycle: SurfaceLifecycle` field (import from `oriterm_ui::surface::SurfaceLifecycle`)
+- [x] `finalize_dialog()` uses lifecycle instead of manual `set_visible(true)`
+- [x] `close_dialog()` uses lifecycle instead of manual `set_visible(false)` + immediate removal
+- [x] No flash of uninitialized content when opening settings dialog (visual test)
+- [x] No leaked modal state when closing confirmation dialog
+- [x] Platform-specific visibility hacks are encapsulated in lifecycle transitions
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
 
 **Exit Criteria:** Opening and closing a Settings dialog follows the lifecycle state machine. No platform-specific `set_visible()` calls outside the lifecycle transition methods. Opening the dialog shows no flash — the window appears with content already rendered. Verified visually on Windows.

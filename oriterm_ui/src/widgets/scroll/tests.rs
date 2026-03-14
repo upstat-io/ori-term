@@ -372,11 +372,21 @@ fn scroll_child_drawn_offset_by_scroll() {
     };
     scroll.draw(&mut ctx);
 
-    // The scroll widget clips to bounds (0,0,200,100) and offsets child by
-    // -40px. With 16px-tall labels, label 0 is at y=-40..-24, label 1 at
-    // y=-24..-8, label 2 at y=-8..8. Container visibility culling skips
-    // children fully outside the clip, so the first drawn text should be
-    // label 2 at y=-8 (partially visible).
+    // The scroll widget clips to bounds (0,0,200,100) then applies a
+    // PushTranslate(0, -40) to offset the child content. Children draw at
+    // their natural (unscrolled) positions — the GPU converter applies the
+    // translate at render time. The first text is label 0 at y=0 (the
+    // container sees all labels 0..6 as intersecting the clip region).
+    let translate = draw_list.commands().iter().find_map(|c| match c {
+        DrawCommand::PushTranslate { dx, dy } => Some((*dx, *dy)),
+        _ => None,
+    });
+    assert_eq!(
+        translate,
+        Some((0.0, -40.0)),
+        "PushTranslate should offset by scroll amount"
+    );
+
     let first_text = draw_list.commands().iter().find_map(|c| match c {
         DrawCommand::Text { position, .. } => Some(*position),
         _ => None,
@@ -384,8 +394,8 @@ fn scroll_child_drawn_offset_by_scroll() {
     assert!(first_text.is_some(), "should have text commands");
     let pos = first_text.unwrap();
     assert_eq!(
-        pos.y, -8.0,
-        "first visible text should be offset to partially visible position"
+        pos.y, 0.0,
+        "first text should be at natural (unscrolled) position"
     );
 }
 

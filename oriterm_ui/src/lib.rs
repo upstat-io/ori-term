@@ -17,6 +17,7 @@ pub mod invalidation;
 pub mod layout;
 pub mod overlay;
 pub mod scale;
+pub mod surface;
 pub mod text;
 pub mod theme;
 pub mod widget_id;

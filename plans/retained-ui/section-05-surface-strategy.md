@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "Surface Strategy Abstraction"
-status: not-started
+status: complete
 goal: "A shared surface host contract distinguishes terminal surfaces, UI-only surfaces, and transient overlays — each with its own render strategy, damage tracking, and invalidation policy."
 inspired_by:
   - "Chromium aura::Window + WindowTargeter strategy pattern"
@@ -10,19 +10,19 @@ depends_on: []
 sections:
   - id: "05.1"
     title: "RenderStrategy Enum"
-    status: not-started
+    status: complete
   - id: "05.2"
     title: "DamageKind Enum"
-    status: not-started
+    status: complete
   - id: "05.3"
     title: "SurfaceHost Trait"
-    status: not-started
+    status: complete
   - id: "05.4"
     title: "Integration with WindowContext and DialogWindowContext"
-    status: not-started
+    status: complete
   - id: "05.5"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 reviewed: true
 ---
 
@@ -49,7 +49,7 @@ This duplication means every new window type (about dialog, tooltip window, sett
 
 Define the rendering strategies that different surface types use.
 
-- [ ] Define `RenderStrategy`:
+- [x] Define `RenderStrategy`:
   ```rust
   /// How a surface renders its content.
   #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,7 @@ Define the rendering strategies that different surface types use.
 
 Define damage categories that drive render decisions.
 
-- [ ] Define `DamageKind`:
+- [x] Define `DamageKind`:
   ```rust
   /// What kind of change requires a render pass.
   #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,7 +103,7 @@ Define damage categories that drive render decisions.
   }
   ```
 
-- [ ] `DamageKind` maps to render work:
+- [x] `DamageKind` maps to render work:
   - `Layout` → relayout + repaint all affected subtrees + GPU upload
   - `Paint` → repaint dirty subtrees only + GPU upload
   - `Overlay` → rebuild overlay layer only
@@ -118,7 +118,7 @@ Define damage categories that drive render decisions.
 
 A trait that both `WindowContext` and `DialogWindowContext` can implement.
 
-- [ ] Define `SurfaceHost`:
+- [x] Define `SurfaceHost`:
   ```rust
   /// Shared contract for any drawable surface.
   pub trait SurfaceHost {
@@ -139,9 +139,9 @@ A trait that both `WindowContext` and `DialogWindowContext` can implement.
   }
   ```
 
-- [ ] This trait is NOT implemented in this section — just defined. The implementations come when Sections 02-06 are all in place. This section is about establishing the vocabulary.
+- [x] This trait is NOT implemented in this section — just defined. The implementations come when Sections 02-06 are all in place. This section is about establishing the vocabulary.
 
-- [ ] **Compile dependency:** The `lifecycle()` method returns `SurfaceLifecycle`, which is defined in Section 06 (same file: `surface/mod.rs`). To compile, `SurfaceLifecycle` must be defined first. Either implement Section 06.1 before this subsection, or stub `SurfaceLifecycle` as an empty enum and fill in the variants during Section 06.
+- [x] **Compile dependency:** The `lifecycle()` method returns `SurfaceLifecycle`, which is defined in Section 06 (same file: `surface/mod.rs`). To compile, `SurfaceLifecycle` must be defined first. Either implement Section 06.1 before this subsection, or stub `SurfaceLifecycle` as an empty enum and fill in the variants during Section 06.
 
 ---
 
@@ -151,15 +151,15 @@ A trait that both `WindowContext` and `DialogWindowContext` can implement.
 
 Add `RenderStrategy` to existing context structs, replacing ad-hoc dirty management over time.
 
-- [ ] `WindowContext` gets `render_strategy: RenderStrategy` field, set to `TerminalCached` at construction.
+- [x] `WindowContext` gets `render_strategy: RenderStrategy` field, set to `TerminalCached` at construction.
 
-- [ ] `DialogWindowContext` gets `render_strategy: RenderStrategy` field, set to `UiRetained` at construction.
+- [x] `DialogWindowContext` gets `render_strategy: RenderStrategy` field, set to `UiRetained` at construction.
 
-- [ ] Add `damage: DamageSet` to both contexts. Initially coexists with `dirty: bool` -- `dirty` is set when `!damage.is_empty()`. Future sections remove `dirty` once all render paths consume `damage` directly.
+- [x] Add `damage: DamageSet` to both contexts. Initially coexists with `dirty: bool` -- `dirty` is set when `!damage.is_empty()`. Future sections remove `dirty` once all render paths consume `damage` directly.
 
-- [ ] `urgent_redraw` maps to: the damage set contains `Layout` or `Paint`. Non-urgent damage (e.g. `Cursor`) does not bypass frame budget.
+- [x] `urgent_redraw` maps to: the damage set contains `Layout` or `Paint`. Non-urgent damage (e.g. `Cursor`) does not bypass frame budget.
 
-- [ ] **`DamageSet` bitflag struct** (defined in `surface/mod.rs` alongside the trait): Since `DamageKind` has only 5 variants, represent the pending damage set as a compact bitflag to avoid per-frame heap allocation:
+- [x] **`DamageSet` bitflag struct** (defined in `surface/mod.rs` alongside the trait): Since `DamageKind` has only 5 variants, represent the pending damage set as a compact bitflag to avoid per-frame heap allocation:
   ```rust
   /// Pending damage as a compact bitflag set.
   #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -173,7 +173,7 @@ Add `RenderStrategy` to existing context structs, replacing ad-hoc dirty managem
   }
   ```
 
-- [ ] **Module registration:** Add `pub mod surface;` to `oriterm_ui/src/lib.rs` (after `pub mod text;`). Without this, the new module won't compile.
+- [x] **Module registration:** Add `pub mod surface;` to `oriterm_ui/src/lib.rs` (after `pub mod text;`). Without this, the new module won't compile.
 
 ---
 
@@ -181,13 +181,13 @@ Add `RenderStrategy` to existing context structs, replacing ad-hoc dirty managem
 
 **Tests:** If `DamageSet` needs unit tests (bitflag correctness, insert/contains/clear), use the sibling `tests.rs` pattern: `surface/mod.rs` + `surface/tests.rs`. Add `#[cfg(test)] mod tests;` at the bottom of `surface/mod.rs`.
 
-- [ ] `RenderStrategy`, `DamageKind`, `DamageSet`, `SurfaceHost` are defined and exported from `oriterm_ui::surface`
-- [ ] `WindowContext` carries `render_strategy: TerminalCached`
-- [ ] `DialogWindowContext` carries `render_strategy: UiRetained`
-- [ ] Damage tracking coexists with existing `dirty` flags (no behavioral change yet)
-- [ ] New module `oriterm_ui/src/surface/mod.rs` is ≤500 lines
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
+- [x] `RenderStrategy`, `DamageKind`, `DamageSet`, `SurfaceHost` are defined and exported from `oriterm_ui::surface`
+- [x] `WindowContext` carries `render_strategy: TerminalCached`
+- [x] `DialogWindowContext` carries `render_strategy: UiRetained`
+- [x] Damage tracking coexists with existing `dirty` flags (no behavioral change yet)
+- [x] New module `oriterm_ui/src/surface/mod.rs` is ≤500 lines
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
 
 **Exit Criteria:** The abstractions compile, are exported, and are assigned to both context types. No behavioral change — this section only adds vocabulary. Verified by `./test-all.sh` green with zero test changes.

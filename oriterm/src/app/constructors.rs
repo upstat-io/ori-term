@@ -147,6 +147,7 @@ impl App {
 
             torn_off_pending: None,
 
+            pending_destroy: Vec::new(),
             scratch_dirty_windows: Vec::new(),
             scratch_pane_sels: HashMap::new(),
             scratch_pane_mcs: HashMap::new(),

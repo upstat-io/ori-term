@@ -11,6 +11,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use oriterm_ui::scale::ScaleFactor;
+use oriterm_ui::surface::SurfaceLifecycle;
 use oriterm_ui::widgets::dialog::{DialogButton, DialogButtons, DialogWidget};
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
 
@@ -185,12 +186,11 @@ impl App {
         self.install_dialog_chrome(winit_id);
         self.render_dialog(winit_id);
 
-        if let Some(ctx) = self.dialogs.get(&winit_id) {
-            #[cfg(target_os = "windows")]
-            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, false);
-            ctx.window.set_visible(true);
-            #[cfg(target_os = "windows")]
-            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, true);
+        // Transition to Primed — the event loop's about_to_wait handler
+        // will show the window on the next tick (after the first frame is
+        // committed). This prevents any flash of uninitialized content.
+        if let Some(ctx) = self.dialogs.get_mut(&winit_id) {
+            ctx.lifecycle = ctx.lifecycle.transition(SurfaceLifecycle::Primed);
         }
 
         log::info!(
@@ -201,12 +201,27 @@ impl App {
     }
 
     /// Close a dialog window, discarding any pending changes.
+    ///
+    /// Transitions to `Closing`: hides the window, clears modal state,
+    /// and suppresses further input. Actual destruction (unregister +
+    /// context removal) is deferred to the next `about_to_wait` tick
+    /// to avoid mutable borrow issues during event dispatch.
     pub(super) fn close_dialog(&mut self, winit_id: WindowId) {
-        // Clear platform modal state if applicable.
-        if let Some(ctx) = self.dialogs.get(&winit_id) {
+        // Transition to Closing: hide and clear modal state.
+        if let Some(ctx) = self.dialogs.get_mut(&winit_id) {
+            if ctx.lifecycle == SurfaceLifecycle::Closing
+                || ctx.lifecycle == SurfaceLifecycle::Destroyed
+            {
+                return; // Already closing/closed.
+            }
+            ctx.lifecycle = ctx.lifecycle.transition(SurfaceLifecycle::Closing);
             #[cfg(target_os = "windows")]
             oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, false);
             ctx.window.set_visible(false);
+        }
+
+        // Clear platform modal state.
+        if let Some(ctx) = self.dialogs.get(&winit_id) {
             if let Some(managed) = self.window_manager.get(winit_id) {
                 if let Some(parent_wid) = managed.parent {
                     if let Some(parent_ctx) = self.windows.get(&parent_wid) {
@@ -217,16 +232,49 @@ impl App {
             }
         }
 
-        // Unregister from window manager (cascades to children).
-        self.window_manager.unregister(winit_id);
+        // Defer destruction to the next event loop tick.
+        self.pending_destroy.push(winit_id);
 
-        // Remove context (drops GPU resources).
-        self.dialogs.remove(&winit_id);
+        log::info!("dialog closing: {winit_id:?}");
+    }
 
-        log::info!(
-            "dialog closed: {winit_id:?}, {} dialogs remaining",
-            self.dialogs.len()
-        );
+    /// Complete deferred dialog destruction.
+    ///
+    /// Called from `about_to_wait` to transition `Closing → Destroyed`,
+    /// unregister from the window manager, and drop GPU resources.
+    pub(super) fn drain_pending_destroy(&mut self) {
+        if self.pending_destroy.is_empty() {
+            return;
+        }
+        for wid in self.pending_destroy.drain(..) {
+            if let Some(ctx) = self.dialogs.get_mut(&wid) {
+                ctx.lifecycle = ctx.lifecycle.transition(SurfaceLifecycle::Destroyed);
+            }
+            self.window_manager.unregister(wid);
+            self.dialogs.remove(&wid);
+            log::info!(
+                "dialog destroyed: {wid:?}, {} dialogs remaining",
+                self.dialogs.len()
+            );
+        }
+    }
+
+    /// Show all Primed dialogs (first frame rendered, ready to be visible).
+    ///
+    /// Called from `about_to_wait` to transition `Primed → Visible`.
+    /// Platform DWM transition suppression is handled here.
+    pub(super) fn show_primed_dialogs(&mut self) {
+        for ctx in self.dialogs.values_mut() {
+            if ctx.lifecycle != SurfaceLifecycle::Primed {
+                continue;
+            }
+            #[cfg(target_os = "windows")]
+            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, false);
+            ctx.window.set_visible(true);
+            #[cfg(target_os = "windows")]
+            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, true);
+            ctx.lifecycle = ctx.lifecycle.transition(SurfaceLifecycle::Visible);
+        }
     }
 
     /// Check if a dialog of the given kind is already open.
