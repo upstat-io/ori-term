@@ -84,6 +84,7 @@ impl Widget for StackWidget {
                 animations_running: ctx.animations_running,
                 theme: ctx.theme,
                 icons: ctx.icons,
+                scene_cache: ctx.scene_cache.as_deref_mut(),
             };
             child.draw(&mut child_ctx);
         }

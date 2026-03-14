@@ -80,6 +80,7 @@ impl App {
                         // with DPI even when logical bounds stay the same.
                         ctx.content.invalidate_cache();
                         ctx.text_cache.clear();
+                        ctx.scene_cache.clear();
                         ctx.invalidation.invalidate_all();
                         // TODO: re-rasterize UI fonts at new DPI.
                         ctx.request_urgent_redraw();

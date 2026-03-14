@@ -142,6 +142,7 @@ fn draw_produces_header_text() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     section.draw(&mut ctx);
 
@@ -174,6 +175,7 @@ fn draw_skips_rows_outside_active_clip() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     section.draw(&mut ctx);
 

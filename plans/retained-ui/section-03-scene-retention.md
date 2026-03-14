@@ -1,7 +1,7 @@
 ---
 section: "03"
 title: "Scene Retention"
-status: not-started
+status: complete
 goal: "Unchanged widget subtrees reuse cached draw command sequences — only dirty subtrees rebuild their DrawList segment. The final frame is composed from retained + rebuilt pieces."
 inspired_by:
   - "Flutter Scene / Layer compositing (compositor_context.cc)"
@@ -10,22 +10,22 @@ depends_on: ["02"]
 sections:
   - id: "03.1"
     title: "SceneNode Abstraction"
-    status: not-started
+    status: complete
   - id: "03.2"
     title: "Per-Widget DrawList Caching"
-    status: not-started
+    status: complete
   - id: "03.3"
     title: "Scene Composition"
-    status: not-started
+    status: complete
   - id: "03.4"
     title: "Container Draw with Selective Rebuild"
-    status: not-started
+    status: complete
   - id: "03.5"
     title: "Dialog and Chrome Integration"
-    status: not-started
+    status: complete
   - id: "03.6"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 reviewed: true
 ---
 
@@ -54,7 +54,7 @@ reviewed: true
 
 A `SceneNode` is a cached draw command slice for one widget subtree. It stores the DrawList segment range (start..end indices) from the last successful draw, along with the bounds that produced it.
 
-- [ ] Define `SceneNode`:
+- [x] Define `SceneNode`:
   ```rust
   /// Cached draw output for a widget subtree.
   pub struct SceneNode {
@@ -78,9 +78,9 @@ A `SceneNode` is a cached draw command slice for one widget subtree. It stores t
   }
   ```
 
-- [ ] `SceneNode` does NOT own its children -- the widget tree already provides the hierarchy. The scene node is a flat per-widget cache, not a parallel tree. This avoids maintaining two trees.
+- [x] `SceneNode` does NOT own its children -- the widget tree already provides the hierarchy. The scene node is a flat per-widget cache, not a parallel tree. This avoids maintaining two trees.
 
-- [ ] **Clone cost awareness:** `SceneNode::commands()` returns `&[DrawCommand]`. When replaying cached commands, the caller appends them to the output `DrawList`. This requires cloning each `DrawCommand`, including `DrawCommand::Text { shaped: ShapedText { glyphs: Vec<ShapedGlyph> } }`. For a widget with 5 text commands each containing 20 glyphs, that's 5 vec clones of ~20 elements each. This is still much cheaper than re-shaping (rustybuzz is ~10x more expensive than a vec clone), but consider extending `DrawList` with `extend_from_slice()` that clones in bulk. If Section 01's decision is option (b) (`Rc<ShapedText>` in `DrawCommand`), the clone cost becomes trivial (`Rc::clone`).
+- [x] **Clone cost awareness:** `SceneNode::commands()` returns `&[DrawCommand]`. When replaying cached commands, the caller appends them to the output `DrawList`. This requires cloning each `DrawCommand`, including `DrawCommand::Text { shaped: ShapedText { glyphs: Vec<ShapedGlyph> } }`. For a widget with 5 text commands each containing 20 glyphs, that's 5 vec clones of ~20 elements each. This is still much cheaper than re-shaping (rustybuzz is ~10x more expensive than a vec clone), but consider extending `DrawList` with `extend_from_slice()` that clones in bulk. If Section 01's decision is option (b) (`Rc<ShapedText>` in `DrawCommand`), the clone cost becomes trivial (`Rc::clone`).
 
 ---
 
@@ -90,7 +90,7 @@ A `SceneNode` is a cached draw command slice for one widget subtree. It stores t
 
 Each widget that participates in scene retention needs a `SceneNode`. For leaf widgets (Label, Button, Checkbox, etc.), the node caches their individual draw commands. For containers, the node caches the composite output of all children.
 
-- [ ] Add `SceneNode` to `DrawCtx`:
+- [x] Add `SceneNode` to `DrawCtx`:
   ```rust
   pub struct DrawCtx<'a> {
       // ...existing fields...
@@ -99,11 +99,11 @@ Each widget that participates in scene retention needs a `SceneNode`. For leaf w
   }
   ```
 
-- [ ] The scene cache is a flat `HashMap<WidgetId, SceneNode>` owned by the host (`WindowContext` or `DialogWindowContext`), passed into the draw context. Widgets don't need to know about caching — the container draw logic checks the cache.
+- [x] The scene cache is a flat `HashMap<WidgetId, SceneNode>` owned by the host (`WindowContext` or `DialogWindowContext`), passed into the draw context. Widgets don't need to know about caching — the container draw logic checks the cache.
 
-- [ ] Alternative: put the cache on `ContainerWidget` instead of `DrawCtx`. **Trade-off:** Container ownership is simpler but means leaf widgets at the root (not inside a container) can't be cached. Since all UI is composed via containers, this is acceptable. **Recommendation:** Cache on the host context, passed via `DrawCtx`, for maximum flexibility.
+- [x] Alternative: put the cache on `ContainerWidget` instead of `DrawCtx`. **Trade-off:** Container ownership is simpler but means leaf widgets at the root (not inside a container) can't be cached. Since all UI is composed via containers, this is acceptable. **Recommendation:** Cache on the host context, passed via `DrawCtx`, for maximum flexibility.
 
-- [ ] **Widget identity in draw context:** `DrawCtx` (widgets/mod.rs:197) does not currently carry a `WidgetId`. The `compose_scene` function needs to know which widget is being drawn to look up its `SceneNode`. Two options:
+- [x] **Widget identity in draw context:** `DrawCtx` (widgets/mod.rs:197) does not currently carry a `WidgetId`. The `compose_scene` function needs to know which widget is being drawn to look up its `SceneNode`. Two options:
   - **(a) `ContainerWidget::draw()` performs the cache lookup** (recommended): The container already knows each child's `id()`. It checks `scene_cache[child.id()]` before calling `child.draw()`. This keeps `draw()` signatures unchanged — the cache check is in the container, not in individual widgets.
   - **(b) Add `widget_id: WidgetId` to `DrawCtx`**: Each widget sets it before drawing. More general but adds a field to every draw context.
   - **Recommendation:** Option (a) — containers drive the cache. `compose_scene()` is called by `ContainerWidget::draw()`, not by leaf widgets. Leaf widgets don't need to know about caching.
@@ -118,7 +118,7 @@ Each widget that participates in scene retention needs a `SceneNode`. For leaf w
 
 A function that builds the final `DrawList` by replaying cached segments for clean subtrees and collecting new segments for dirty subtrees.
 
-- [ ] Define `compose_scene()`:
+- [x] Define `compose_scene()`:
   ```rust
   /// Compose a final DrawList from a widget tree using scene caches.
   ///
@@ -136,11 +136,11 @@ A function that builds the final `DrawList` by replaying cached segments for cle
   ) -> DrawList { ... }
   ```
 
-- [ ] Clip state must be correctly managed across cached/uncached boundaries. If a parent container has `clip_children: true`, the `PushClip`/`PopClip` commands must be emitted even when replaying cached child content. Solution: the parent's scene node includes the clip commands wrapping the children.
+- [x] Clip state must be correctly managed across cached/uncached boundaries. If a parent container has `clip_children: true`, the `PushClip`/`PopClip` commands must be emitted even when replaying cached child content. Solution: the parent's scene node includes the clip commands wrapping the children.
 
-- [ ] Layer stack (`PushLayer`/`PopLayer`) must similarly be maintained. The bg_hint for subpixel text compositing depends on the layer stack state, which is baked into the cached `DrawCommand::Text` entries. This is correct because the layer push happens in the parent's draw, and the child text already captured the bg_hint at push_text time.
+- [x] Layer stack (`PushLayer`/`PopLayer`) must similarly be maintained. The bg_hint for subpixel text compositing depends on the layer stack state, which is baked into the cached `DrawCommand::Text` entries. This is correct because the layer push happens in the parent's draw, and the child text already captured the bg_hint at push_text time.
 
-- [ ] **Background color invalidation:** If a parent widget changes its background color (e.g. container hover changes its `PushLayer` bg color), all child text commands' `bg_hint` values become stale — they were captured from the old layer stack. When a container's paint state changes and it pushes a different `PushLayer { bg }`, all children's scene nodes must be invalidated (not just the container itself). This is a paint-level invalidation that cascades to children.
+- [x] **Background color invalidation:** If a parent widget changes its background color (e.g. container hover changes its `PushLayer` bg color), all child text commands' `bg_hint` values become stale — they were captured from the old layer stack. When a container's paint state changes and it pushes a different `PushLayer { bg }`, all children's scene nodes must be invalidated (not just the container itself). This is a paint-level invalidation that cascades to children.
   - Rule: `DirtyKind::Paint` on a widget that emits `PushLayer` must invalidate all descendant scene nodes, not just the widget's own node.
   - Implementation: `compose_scene` checks whether the parent's `PushLayer` bg matches the bg at the time children were cached. Mismatch → invalidate children.
 
@@ -154,14 +154,14 @@ A function that builds the final `DrawList` by replaying cached segments for cle
 
 The `ContainerWidget::draw()` method (container/mod.rs:330-363) currently iterates all children and calls `child.draw()` for each. Modify this to skip children whose `SceneNode` is valid.
 
-- [ ] In `ContainerWidget::draw()`, for each child:
+- [x] In `ContainerWidget::draw()`, for each child:
   1. Check if `scene_cache[child.id()]` is valid and `bounds` matches.
   2. If valid: append cached commands to `ctx.draw_list`.
   3. If invalid: call `child.draw()` into a temporary `DrawList`, store in cache, append to output.
 
-- [ ] The visibility culling already in `draw()` (container/mod.rs:343 — `if !child_node.rect.intersects(visible_bounds)`) continues to work — culled children never enter the cache check.
+- [x] The visibility culling already in `draw()` (container/mod.rs:343 — `if !child_node.rect.intersects(visible_bounds)`) continues to work — culled children never enter the cache check.
 
-- [ ] `needs_layout` and `needs_paint` flags on `ContainerWidget` (container/mod.rs:50-52) should invalidate the corresponding children's `SceneNode`s. When `needs_layout` is true, all children's nodes are invalidated (because positions changed). When only `needs_paint` is true, only the specific dirty child's node is invalidated.
+- [x] `needs_layout` and `needs_paint` flags on `ContainerWidget` (container/mod.rs:50-52) should invalidate the corresponding children's `SceneNode`s. When `needs_layout` is true, all children's nodes are invalidated (because positions changed). When only `needs_paint` is true, only the specific dirty child's node is invalidated.
 
 ---
 
@@ -171,7 +171,7 @@ The `ContainerWidget::draw()` method (container/mod.rs:330-363) currently iterat
 
 Wire scene composition into the actual render paths.
 
-- [ ] `render_dialog()` — Replace the current pattern:
+- [x] `render_dialog()` — Replace the current pattern:
   ```rust
   // Before:
   ctx.draw_list.clear();
@@ -184,13 +184,13 @@ Wire scene composition into the actual render paths.
   compose_scene(ctx.content.content_widget(), &mut draw_ctx, &tracker, &mut ctx.scene_cache);
   ```
 
-- [ ] Chrome rendering in `draw_tab_bar()` — The tab bar is a single `TabBarWidget` with child tab items. Its scene node caches the entire tab bar draw output. Only invalidated when tabs change (add, remove, rename, reorder, switch) or on hover/drag. Static tab bar across frames → zero draw calls.
+- [x] Chrome rendering in `draw_tab_bar()` — The tab bar is a single `TabBarWidget` with child tab items. Its scene node caches the entire tab bar draw output. Only invalidated when tabs change (add, remove, rename, reorder, switch) or on hover/drag. Static tab bar across frames → zero draw calls.
 
-- [ ] Overlay rendering in `draw_overlays()` — Each overlay is a separate scene. Overlay open/close/animation invalidates the overlay's node. Stable overlays (e.g. open dropdown list without hover change) reuse cached commands.
+- [x] Overlay rendering in `draw_overlays()` — Each overlay is a separate scene. Overlay open/close/animation invalidates the overlay's node. Stable overlays (e.g. open dropdown list without hover change) reuse cached commands.
 
-- [ ] Add `scene_cache: HashMap<WidgetId, SceneNode>` to `WindowContext` and `DialogWindowContext`. Clear on resize, theme change, font change (same triggers as text cache invalidation from Section 01).
+- [x] Add `scene_cache: HashMap<WidgetId, SceneNode>` to `WindowContext` and `DialogWindowContext`. Clear on resize, theme change, font change (same triggers as text cache invalidation from Section 01).
 
-- [ ] **Sync point:** Adding `scene_cache` field requires updating:
+- [x] **Sync point:** Adding `scene_cache` field requires updating:
   - `WindowContext::new()` (window_context.rs:95) — initialize `HashMap::new()`
   - `DialogWindowContext::new()` (dialog_context/mod.rs:135) — initialize `HashMap::new()`
   - `DialogWindowContext::resize_surface()` (dialog_context/mod.rs:171) — clear scene cache on resize
@@ -204,17 +204,17 @@ Wire scene composition into the actual render paths.
 - `scene_node/mod.rs` + `scene_node/tests.rs` — test `SceneNode` invalidation, update, bounds tracking
 - `scene_compose/mod.rs` + `scene_compose/tests.rs` — test compose with all-clean, all-dirty, mixed, nested clips, nested layers
 
-- [ ] `SceneNode` is defined and exported from `oriterm_ui::draw`
-- [ ] `compose_scene()` correctly handles clip and layer stack across cached/uncached boundaries
-- [ ] `ContainerWidget::draw()` skips clean children and replays cached commands
-- [ ] `render_dialog()` uses scene composition — verified by counting `Widget::draw()` calls
-- [ ] Tab bar uses scene composition — static tab bar produces zero draw calls after first frame
-- [ ] Overlay rendering uses scene composition
-- [ ] Scene cache invalidates correctly on resize, theme change, font change
-- [ ] Scene cache invalidates correctly when `InvalidationTracker` marks a widget dirty
-- [ ] `DrawList` output is identical whether rendered via scene composition or full rebuild (behavioral equivalence test)
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
+- [x] `SceneNode` is defined and exported from `oriterm_ui::draw`
+- [x] `compose_scene()` correctly handles clip and layer stack across cached/uncached boundaries
+- [x] `ContainerWidget::draw()` skips clean children and replays cached commands
+- [x] `render_dialog()` uses scene composition — verified by counting `Widget::draw()` calls
+- [x] Tab bar uses scene composition — static tab bar produces zero draw calls after first frame
+- [x] Overlay rendering uses scene composition
+- [x] Scene cache invalidates correctly on resize, theme change, font change
+- [x] Scene cache invalidates correctly when `InvalidationTracker` marks a widget dirty
+- [x] `DrawList` output is identical whether rendered via scene composition or full rebuild (behavioral equivalence test)
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
 
 **Exit Criteria:** Hovering a single button in the Settings dialog calls `Widget::draw()` on exactly that button (and its container chain for clip/layer management). All other widgets' draw commands are replayed from cache. Verified by instrumenting `Widget::draw()` with a call counter.

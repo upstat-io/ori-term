@@ -419,6 +419,8 @@ impl App {
                 gpu,
                 &self.ui_theme,
                 &ctx.text_cache,
+                &ctx.invalidation,
+                &mut ctx.scene_cache,
             );
             if tab_bar_animating {
                 ctx.dirty = true;
@@ -435,6 +437,8 @@ impl App {
                 &ctx.layer_tree,
                 &self.ui_theme,
                 &ctx.text_cache,
+                &ctx.invalidation,
+                &mut ctx.scene_cache,
             );
             if overlays_animating {
                 ctx.dirty = true;

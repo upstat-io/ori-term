@@ -9,8 +9,9 @@ use std::time::Instant;
 
 use winit::window::WindowId;
 
+use oriterm_ui::draw::compose_scene;
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::widgets::{DrawCtx, Widget};
+use oriterm_ui::widgets::DrawCtx;
 
 use super::App;
 use crate::font::{CachedTextMeasurer, UiFontMeasurer};
@@ -64,7 +65,7 @@ impl App {
         );
         let icons = renderer.resolved_icons();
 
-        // Draw the chrome title bar.
+        // Draw the chrome title bar via scene composition.
         let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
         {
             let mut draw_ctx = DrawCtx {
@@ -76,11 +77,17 @@ impl App {
                 animations_running: &animations_running,
                 theme: &ui_theme,
                 icons: Some(icons),
+                scene_cache: None,
             };
-            ctx.chrome.draw(&mut draw_ctx);
+            compose_scene(
+                &ctx.chrome,
+                &mut draw_ctx,
+                &ctx.invalidation,
+                &mut ctx.scene_cache,
+            );
         }
 
-        // Draw the dialog content below the chrome.
+        // Draw the dialog content below the chrome via scene composition.
         let content_bounds = Rect::new(0.0, chrome_h, logical_w, logical_h - chrome_h);
         {
             let mut draw_ctx = DrawCtx {
@@ -92,8 +99,14 @@ impl App {
                 animations_running: &animations_running,
                 theme: &ui_theme,
                 icons: Some(icons),
+                scene_cache: None,
             };
-            ctx.content.content_widget().draw(&mut draw_ctx);
+            compose_scene(
+                ctx.content.content_widget(),
+                &mut draw_ctx,
+                &ctx.invalidation,
+                &mut ctx.scene_cache,
+            );
         }
 
         // Convert draw list to GPU instances.
@@ -166,6 +179,7 @@ impl App {
                 animations_running,
                 theme: ui_theme,
                 icons: Some(icons),
+                scene_cache: None,
             };
             let opacity = ctx
                 .overlays

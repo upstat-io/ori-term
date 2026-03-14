@@ -387,6 +387,7 @@ fn toggle_draw_signals_animations_running() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -416,6 +417,7 @@ fn toggle_draw_no_animation_signal_when_idle() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -447,6 +449,7 @@ fn toggle_draws_thumb_at_correct_position() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -495,6 +498,7 @@ fn toggle_draws_thumb_at_off_position() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     t.draw(&mut draw_ctx);
 

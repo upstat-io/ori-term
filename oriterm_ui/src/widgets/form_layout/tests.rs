@@ -141,6 +141,7 @@ fn draw_produces_commands() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     form.draw(&mut ctx);
 
@@ -173,6 +174,7 @@ fn draw_skips_sections_outside_active_clip() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     form.draw(&mut ctx);
 

@@ -290,6 +290,7 @@ fn draw_skips_children_fully_outside_active_clip() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
 
     row.draw(&mut ctx);
@@ -327,6 +328,7 @@ fn draw_delegates_to_children() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     row.draw(&mut ctx);
 
@@ -356,6 +358,7 @@ fn focused_widget_propagates_through_draw() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     row.draw(&mut ctx);
 
@@ -964,6 +967,7 @@ fn needs_layout_bypasses_cache() {
         animations_running: &anim,
         theme,
         icons: None,
+        scene_cache: None,
     };
     c.draw(&mut ctx);
     let cmd_count_1 = draw_list.commands().len();
@@ -979,6 +983,7 @@ fn needs_layout_bypasses_cache() {
         animations_running: &anim,
         theme,
         icons: None,
+        scene_cache: None,
     };
     c.draw(&mut ctx2);
     assert_eq!(
@@ -1009,6 +1014,7 @@ fn needs_layout_bypasses_cache() {
         animations_running: &anim,
         theme,
         icons: None,
+        scene_cache: None,
     };
     c.draw(&mut ctx3);
     assert_eq!(
@@ -1016,4 +1022,159 @@ fn needs_layout_bypasses_cache() {
         cmd_count_1,
         "recomputed layout should produce same draw commands"
     );
+}
+
+// --- Scene cache tests ---
+
+#[test]
+fn scene_cache_skips_clean_children() {
+    let draws = std::rc::Rc::new(std::cell::Cell::new(0));
+    let child_a = CountingWidget::new(100.0, 20.0, draws.clone());
+    let child_b = CountingWidget::new(100.0, 20.0, draws.clone());
+    let id_a = child_a.id;
+    let id_b = child_b.id;
+    let row = ContainerWidget::column()
+        .with_child(Box::new(child_a))
+        .with_child(Box::new(child_b));
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 100.0, 40.0);
+    let anim = std::cell::Cell::new(false);
+    let mut cache = crate::draw::SceneCache::new();
+
+    // First draw populates the cache.
+    let mut draw_list = DrawList::new();
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        scene_cache: Some(&mut cache),
+    };
+    row.draw(&mut ctx);
+
+    assert_eq!(draws.get(), 2, "both children drawn on first pass");
+    assert!(cache.contains_key(&id_a));
+    assert!(cache.contains_key(&id_b));
+
+    // Second draw with same bounds — children should be skipped (cache hit).
+    draws.set(0);
+    draw_list.clear();
+    let mut ctx2 = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        scene_cache: Some(&mut cache),
+    };
+    row.draw(&mut ctx2);
+
+    assert_eq!(
+        draws.get(),
+        0,
+        "clean children should be replayed from cache"
+    );
+}
+
+#[test]
+fn scene_cache_redraws_invalidated_child() {
+    let draws_a = std::rc::Rc::new(std::cell::Cell::new(0));
+    let draws_b = std::rc::Rc::new(std::cell::Cell::new(0));
+    let child_a = CountingWidget::new(100.0, 20.0, draws_a.clone());
+    let child_b = CountingWidget::new(100.0, 20.0, draws_b.clone());
+    let id_b = child_b.id;
+    let row = ContainerWidget::column()
+        .with_child(Box::new(child_a))
+        .with_child(Box::new(child_b));
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 100.0, 40.0);
+    let anim = std::cell::Cell::new(false);
+    let mut cache = crate::draw::SceneCache::new();
+
+    // First draw populates cache.
+    let mut draw_list = DrawList::new();
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        scene_cache: Some(&mut cache),
+    };
+    row.draw(&mut ctx);
+
+    // Invalidate child B only.
+    cache.get_mut(&id_b).unwrap().invalidate();
+
+    // Second draw — A should be cached, B should redraw.
+    draws_a.set(0);
+    draws_b.set(0);
+    draw_list.clear();
+    let mut ctx2 = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        scene_cache: Some(&mut cache),
+    };
+    row.draw(&mut ctx2);
+
+    assert_eq!(draws_a.get(), 0, "child A should be replayed from cache");
+    assert_eq!(
+        draws_b.get(),
+        1,
+        "child B should be redrawn after invalidation"
+    );
+}
+
+#[test]
+fn scene_cache_miss_on_bounds_mismatch() {
+    use crate::draw::{SceneCache, SceneNode};
+
+    let draws = std::rc::Rc::new(std::cell::Cell::new(0));
+    let child = CountingWidget::new(100.0, 20.0, draws.clone());
+    let child_id = child.id;
+    let row = ContainerWidget::column().with_child(Box::new(child));
+
+    let measurer = MockMeasurer::STANDARD;
+    let anim = std::cell::Cell::new(false);
+    let mut cache = SceneCache::new();
+
+    // Pre-populate cache with WRONG bounds for the child.
+    let mut stale = SceneNode::new(child_id);
+    stale.update(vec![], Rect::new(999.0, 999.0, 50.0, 50.0));
+    cache.insert(child_id, stale);
+
+    // Draw — the cached bounds don't match layout, so child must redraw.
+    let mut draw_list = DrawList::new();
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::new(0.0, 0.0, 100.0, 20.0),
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        scene_cache: Some(&mut cache),
+    };
+    row.draw(&mut ctx);
+
+    assert_eq!(draws.get(), 1, "stale bounds should cause cache miss");
 }

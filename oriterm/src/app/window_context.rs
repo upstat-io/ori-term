@@ -12,7 +12,7 @@ use crate::session::DividerLayout;
 
 use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;
-use oriterm_ui::draw::DrawList;
+use oriterm_ui::draw::{DrawList, SceneCache};
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
@@ -77,6 +77,9 @@ pub(crate) struct WindowContext {
     // Reusable buffers.
     pub(super) search_bar_buf: String,
 
+    // Scene cache for retained UI rendering.
+    pub(super) scene_cache: SceneCache,
+
     // Invalidation tracking.
     pub(super) invalidation: InvalidationTracker,
 
@@ -130,6 +133,7 @@ impl WindowContext {
             last_drag_area_press: None,
             text_cache: TextShapeCache::new(),
             search_bar_buf: String::new(),
+            scene_cache: SceneCache::new(),
             invalidation: InvalidationTracker::new(),
             dirty: true,
             urgent_redraw: false,

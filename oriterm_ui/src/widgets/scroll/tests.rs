@@ -94,6 +94,7 @@ fn scroll_draws_with_clip() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut ctx);
 
@@ -337,6 +338,7 @@ fn scroll_clip_rect_matches_viewport() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut ctx);
 
@@ -366,6 +368,7 @@ fn scroll_child_drawn_offset_by_scroll() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut ctx);
 
@@ -403,6 +406,7 @@ fn scroll_draws_scrollbar_when_overflowing() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut ctx);
 
@@ -436,6 +440,7 @@ fn scroll_no_scrollbar_when_content_fits() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut ctx);
 
@@ -658,6 +663,7 @@ fn scroll_delegates_checkbox_toggle_through_form_hierarchy() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut draw_ctx);
 
@@ -753,6 +759,7 @@ fn container_with_scroll_form_click_reaches_checkbox() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     container.draw(&mut draw_ctx);
 
@@ -870,6 +877,7 @@ fn horizontal_scroll_draws_with_clip() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut ctx);
 
@@ -916,6 +924,7 @@ fn scroll_content_exactly_fits_no_scrollbar() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut ctx);
 
@@ -978,6 +987,7 @@ fn scroll_with_scrollbar_style() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     scroll.draw(&mut ctx);
     assert!(!draw_list.is_empty());

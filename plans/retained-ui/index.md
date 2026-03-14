@@ -35,7 +35,7 @@ cache key, generation, invalidation, hit rate, font reload
 ---
 
 ### Section 02: Subtree Invalidation
-**File:** `section-02-subtree-invalidation.md` | **Status:** Not Started
+**File:** `section-02-subtree-invalidation.md` | **Status:** Complete
 
 ```
 dirty tracking, invalidation, subtree dirty, per-widget dirty
@@ -51,7 +51,7 @@ OverlayManager::process_mouse_event, widgets/mod.rs
 ---
 
 ### Section 03: Scene Retention
-**File:** `section-03-scene-retention.md` | **Status:** Not Started
+**File:** `section-03-scene-retention.md` | **Status:** Complete
 
 ```
 scene node, scene cache, retained scene, draw list cache

@@ -135,6 +135,7 @@ fn draw_emits_no_commands() {
         animations_running: &animations_running,
         theme: &theme,
         icons: None,
+        scene_cache: None,
     };
 
     widget.draw(&mut ctx);

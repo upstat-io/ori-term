@@ -272,6 +272,7 @@ impl OverlayManager {
             animations_running: ctx.animations_running,
             theme: ctx.theme,
             icons: ctx.icons,
+            scene_cache: None,
         };
         overlay.widget.draw(&mut overlay_ctx);
 

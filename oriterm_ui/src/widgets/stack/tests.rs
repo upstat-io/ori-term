@@ -50,6 +50,7 @@ fn stack_draws_all_children() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     stack.draw(&mut ctx);
 
@@ -173,6 +174,7 @@ fn stack_draws_in_painter_order() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     stack.draw(&mut ctx);
 

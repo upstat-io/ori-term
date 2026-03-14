@@ -321,6 +321,7 @@ impl App {
 
         ctx.pane_cache.invalidate_all();
         ctx.text_cache.clear();
+        ctx.scene_cache.clear();
         ctx.invalidation.invalidate_all();
         ctx.dirty = true;
 
@@ -360,6 +361,7 @@ impl App {
             ctx.tab_bar.apply_theme(&self.ui_theme);
             ctx.pane_cache.invalidate_all();
             ctx.text_cache.clear();
+            ctx.scene_cache.clear();
             ctx.invalidation.invalidate_all();
             ctx.dirty = true;
         }
