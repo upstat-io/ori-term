@@ -17,7 +17,7 @@ use winit::event::WindowEvent;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
-use crate::font::UiFontMeasurer;
+use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 use crate::keybindings;
 
 use crate::app::App;
@@ -79,8 +79,9 @@ impl App {
                         // Invalidate content layout cache — text metrics change
                         // with DPI even when logical bounds stay the same.
                         ctx.content.invalidate_cache();
+                        ctx.text_cache.clear();
                         // TODO: re-rasterize UI fonts at new DPI.
-                        ctx.dirty = true;
+                        ctx.request_urgent_redraw();
                     }
                 }
                 // Update platform hit test rects for the new DPI.
@@ -116,10 +117,23 @@ impl App {
         if focused {
             self.window_manager.set_focused(Some(window_id));
             self.flush_pending_focus_out();
+        } else {
+            let mut removed = 0;
+            if let Some(ctx) = self.dialogs.get_mut(&window_id) {
+                removed = ctx
+                    .overlays
+                    .clear_popups(&mut ctx.layer_tree, &mut ctx.layer_animator);
+                if removed > 0 {
+                    ctx.request_urgent_redraw();
+                }
+            }
+            if removed > 0 {
+                self.pending_dropdown_id = None;
+            }
         }
         if let Some(ctx) = self.dialogs.get_mut(&window_id) {
             ctx.chrome.set_active(focused);
-            ctx.dirty = true;
+            ctx.request_urgent_redraw();
         }
     }
 
@@ -179,8 +193,13 @@ impl App {
         let Some(renderer) = ctx.renderer.as_ref() else {
             return;
         };
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
         let chrome_h = ctx.chrome.caption_height();
+        let mut needs_redraw = false;
 
         // Route to overlay manager first (dropdown popup hover).
         if !ctx.overlays.is_empty() {
@@ -199,7 +218,7 @@ impl App {
                 Instant::now(),
             );
             if matches!(result, OverlayEventResult::Delivered { .. }) {
-                ctx.dirty = true;
+                ctx.request_urgent_redraw();
                 return;
             }
         }
@@ -233,13 +252,13 @@ impl App {
             // Chrome hover (close button highlight).
             let resp = ctx.chrome.update_hover(logical_pos, &event_ctx);
             if wants_repaint(resp.response) {
-                ctx.dirty = true;
+                needs_redraw = true;
             }
         } else {
             // Content area hover — clear any active chrome hover first.
             let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
             if wants_repaint(resp.response) {
-                ctx.dirty = true;
+                needs_redraw = true;
             }
 
             let w = ctx.surface_config.width as f32 / scale;
@@ -262,8 +281,11 @@ impl App {
                 .content_widget_mut()
                 .handle_mouse(&hover_event, &content_ctx);
             if wants_repaint(resp.response) {
-                ctx.dirty = true;
+                needs_redraw = true;
             }
+        }
+        if needs_redraw {
+            ctx.request_urgent_redraw();
         }
     }
 
@@ -322,7 +344,11 @@ impl App {
         }
         let scale = ctx.scale_factor.factor() as f32;
         let renderer = ctx.renderer.as_ref()?;
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
         let mouse_event = MouseEvent {
             kind,
             pos: ctx.last_cursor_pos,
@@ -339,7 +365,7 @@ impl App {
         );
         match &result {
             OverlayEventResult::Delivered { .. } | OverlayEventResult::Dismissed(_) => {
-                ctx.dirty = true;
+                ctx.request_urgent_redraw();
                 Some(result)
             }
             _ => None,
@@ -369,7 +395,11 @@ impl App {
         let Some(renderer) = ctx.renderer.as_ref() else {
             return DialogClickResult::None;
         };
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
 
         if logical_pos.y < chrome_h {
             let event_ctx = EventCtx {
@@ -381,7 +411,7 @@ impl App {
             };
             let resp = ctx.chrome.handle_mouse(&mouse_event, &event_ctx);
             if wants_repaint(resp.response) {
-                ctx.dirty = true;
+                ctx.request_urgent_redraw();
             }
             if resp.action.as_ref() == Some(&WidgetAction::WindowClose) {
                 DialogClickResult::Close
@@ -414,7 +444,7 @@ impl App {
                 .content_widget_mut()
                 .handle_mouse(&mouse_event, &event_ctx);
             if wants_repaint(resp.response) {
-                ctx.dirty = true;
+                ctx.request_urgent_redraw();
             }
             match resp.action {
                 Some(action) => DialogClickResult::Action(action),
@@ -445,7 +475,11 @@ impl App {
         let Some(renderer) = ctx.renderer.as_ref() else {
             return;
         };
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
         let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
@@ -462,7 +496,7 @@ impl App {
             .content_widget_mut()
             .handle_mouse(&mouse_event, &event_ctx);
         if wants_repaint(resp.response) {
-            ctx.dirty = true;
+            ctx.request_urgent_redraw();
         }
     }
 }

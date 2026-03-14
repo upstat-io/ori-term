@@ -57,6 +57,11 @@ impl WindowRenderer {
         cursor_blink_visible: bool,
         target: &mut PreparedFrame,
     ) {
+        // Off-screen culling in the prepare phase uses the target frame's
+        // viewport, so multi-pane cached frames must inherit the full window
+        // viewport rather than the pane-local extraction viewport.
+        target.viewport = self.prepared.viewport;
+
         // Phase A: Shape all rows for this pane.
         shape_frame(input, &self.font_collection, &mut self.shaping);
 

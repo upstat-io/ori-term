@@ -42,6 +42,10 @@ impl OverlayManager {
             return OverlayEventResult::PassThrough;
         }
 
+        // Newly pushed overlays may receive input before the next redraw.
+        // Ensure placement is current so hit-testing works immediately.
+        self.layout_overlays(measurer, theme);
+
         // During capture, route all events to the captured overlay.
         if let Some(cap_idx) = self.captured_overlay {
             if let Some(overlay) = self.overlays.get_mut(cap_idx) {
@@ -207,6 +211,9 @@ impl OverlayManager {
             self.hovered_overlay = None;
             return OverlayEventResult::PassThrough;
         }
+
+        // Hover hit-testing must see the latest placement even before a redraw.
+        self.layout_overlays(measurer, theme);
 
         // Find topmost overlay containing the point.
         let new_hover = (0..self.overlays.len())

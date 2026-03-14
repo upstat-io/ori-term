@@ -9,9 +9,11 @@
 //! Splitting into two phases lets callers create rustybuzz `Face` objects once
 //! per frame and reuse them across all rows.
 
+pub mod cached_measurer;
 pub mod ui_measurer;
 mod ui_text;
 
+pub use cached_measurer::{CachedTextMeasurer, TextShapeCache};
 pub use ui_measurer::UiFontMeasurer;
 // Re-export UI text functions for sibling tests (accessed via super::).
 #[cfg(test)]

@@ -15,6 +15,65 @@ use crate::widgets::{
 
 use super::ContainerWidget;
 
+struct CountingWidget {
+    id: crate::widget_id::WidgetId,
+    size: Rect,
+    draws: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl CountingWidget {
+    fn new(width: f32, height: f32, draws: std::rc::Rc<std::cell::Cell<usize>>) -> Self {
+        Self {
+            id: crate::widget_id::WidgetId::next(),
+            size: Rect::new(0.0, 0.0, width, height),
+            draws,
+        }
+    }
+}
+
+impl Widget for CountingWidget {
+    fn id(&self) -> crate::widget_id::WidgetId {
+        self.id
+    }
+
+    fn is_focusable(&self) -> bool {
+        false
+    }
+
+    fn layout(&self, _ctx: &LayoutCtx<'_>) -> crate::layout::LayoutBox {
+        crate::layout::LayoutBox::leaf(self.size.width(), self.size.height())
+            .with_widget_id(self.id)
+    }
+
+    fn draw(&self, _ctx: &mut DrawCtx<'_>) {
+        self.draws.set(self.draws.get() + 1);
+    }
+
+    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
+        WidgetResponse::ignored()
+    }
+
+    fn handle_hover(
+        &mut self,
+        _event: crate::input::HoverEvent,
+        _ctx: &EventCtx<'_>,
+    ) -> WidgetResponse {
+        WidgetResponse::ignored()
+    }
+
+    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
+        WidgetResponse::ignored()
+    }
+
+    fn accept_action(&mut self, _action: &WidgetAction) -> bool {
+        false
+    }
+
+    fn focusable_children(&self) -> Vec<crate::widget_id::WidgetId> {
+        Vec::new()
+    }
+}
+
 fn label(text: &str) -> Box<dyn Widget> {
     Box::new(LabelWidget::new(text))
 }
@@ -208,6 +267,33 @@ fn with_children_builder() {
         .with_child(label("A"))
         .with_child(label("B"));
     assert_eq!(row.child_count(), 2);
+}
+
+#[test]
+fn draw_skips_children_fully_outside_active_clip() {
+    let draws = std::rc::Rc::new(std::cell::Cell::new(0));
+    let row = ContainerWidget::column()
+        .with_child(Box::new(CountingWidget::new(100.0, 20.0, draws.clone())))
+        .with_child(Box::new(CountingWidget::new(100.0, 20.0, draws.clone())));
+
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    draw_list.push_clip(Rect::new(0.0, 0.0, 100.0, 20.0));
+    let anim_flag = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::new(0.0, 0.0, 100.0, 40.0),
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+    };
+
+    row.draw(&mut ctx);
+
+    assert_eq!(draws.get(), 1, "only the visible child should draw");
 }
 
 #[test]

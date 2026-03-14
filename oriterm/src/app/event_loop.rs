@@ -76,6 +76,7 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::Resized(size) => {
                 self.handle_resize(window_id, size);
+                self.handle_redraw();
             }
 
             WindowEvent::RedrawRequested => {
@@ -144,6 +145,8 @@ impl ApplicationHandler<TermEvent> for App {
                     self.blinking_active = false;
                     // Restore mouse cursor so it isn't stuck hidden in other apps.
                     self.restore_mouse_cursor(window_id);
+                    // Transient popups should never survive window deactivation.
+                    self.clear_window_popups(window_id);
                     // Defer focus-out: if focus is moving to a child dialog,
                     // the PTY focus-out escape should be suppressed.
                     self.pending_focus_out = Some(super::PendingFocusOut { window_id });
@@ -405,9 +408,17 @@ impl ApplicationHandler<TermEvent> for App {
         let any_dirty = self.windows.values().any(|ctx| ctx.dirty)
             || self.dialogs.values().any(|ctx| ctx.dirty);
         let now = std::time::Instant::now();
+        let urgent_redraw = self
+            .windows
+            .values()
+            .any(|ctx| ctx.dirty && ctx.urgent_redraw)
+            || self
+                .dialogs
+                .values()
+                .any(|ctx| ctx.dirty && ctx.urgent_redraw);
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
-        if any_dirty && budget_elapsed {
+        if any_dirty && (budget_elapsed || urgent_redraw) {
             self.render_dirty_windows();
         }
 
@@ -431,6 +442,7 @@ impl ApplicationHandler<TermEvent> for App {
         let input = ControlFlowInput {
             any_dirty,
             budget_elapsed,
+            urgent_redraw,
             still_dirty,
             has_animations,
             blinking_active: self.blinking_active,

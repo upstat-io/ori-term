@@ -302,15 +302,15 @@ fn profile_resize_allocation_count() {
     }
 
     // Warmup: one resize cycle to stabilize internal capacities.
-    term.resize(40, 100);
-    term.resize(50, 120);
+    term.resize(40, 100, true);
+    term.resize(50, 120, true);
 
     // Measure: 100 resize cycles alternating between two sizes.
     let start = Instant::now();
     let m = measure(|| {
         for _ in 0..100 {
-            term.resize(40, 100);
-            term.resize(50, 120);
+            term.resize(40, 100, true);
+            term.resize(50, 120, true);
         }
     });
     let elapsed = start.elapsed();

@@ -168,10 +168,13 @@ impl Widget for FormSection {
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
+        let visible_bounds = ctx.draw_list.current_clip_rect().unwrap_or(ctx.bounds);
 
         // Draw header.
         if let Some(header_node) = layout.children.first() {
-            self.draw_header(ctx, &header_node.content_rect);
+            if header_node.rect.intersects(visible_bounds) {
+                self.draw_header(ctx, &header_node.content_rect);
+            }
         }
 
         // Draw rows (if expanded).
@@ -179,6 +182,9 @@ impl Widget for FormSection {
             for (i, row) in self.rows.iter().enumerate() {
                 // Row nodes start at index 1 (index 0 is the header).
                 if let Some(row_node) = layout.children.get(i + 1) {
+                    if !row_node.rect.intersects(visible_bounds) {
+                        continue;
+                    }
                     let mut child_ctx = DrawCtx {
                         measurer: ctx.measurer,
                         draw_list: ctx.draw_list,

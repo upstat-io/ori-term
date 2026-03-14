@@ -21,7 +21,8 @@ pub(crate) use collection::parse_features;
 pub(crate) use collection::parse_hex_range;
 pub(crate) use collection::{FontByteCache, FontCollection, FontSet, RasterizedGlyph, size_key};
 pub(crate) use shaper::{
-    ShapingRun, UiFontMeasurer, build_col_glyph_map, prepare_line, shape_prepared_runs,
+    CachedTextMeasurer, ShapingRun, TextShapeCache, UiFontMeasurer, build_col_glyph_map,
+    prepare_line, shape_prepared_runs,
 };
 
 /// Cell dimensions in pixels, derived from the font metrics.

@@ -90,12 +90,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(r, g, b, 1.0);
     }
 
-    // Unknown background — fall back to single-alpha blending.
-    // Uses maximum channel coverage as the composite alpha (for the
-    // blend equation's dst factor). The RGB channels are premultiplied
-    // by fg.a only — NOT by the composite alpha — to avoid the
-    // "squared coverage" artifact where mask * max(mask) produces
-    // visibly thinner/darker text than the correct mask * 1.
-    let a = max(mask.r, max(mask.g, mask.b)) * fg.a;
-    return vec4<f32>(r * fg.a, g * fg.a, b * fg.a, a);
+    // Unknown background — fall back to grayscale alpha blending.
+    // Without a real background hint, preserving independent RGB coverage
+    // produces visible color fringing on non-default cell backgrounds.
+    // Collapse the subpixel mask to a single coverage value so the glyph
+    // blends like standard grayscale text over whatever background is
+    // already in the framebuffer.
+    let coverage = max(mask.r, max(mask.g, mask.b));
+    let a = coverage * fg.a;
+    return vec4<f32>(fg.rgb * a, a);
 }

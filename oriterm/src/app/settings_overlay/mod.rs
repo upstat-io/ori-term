@@ -41,8 +41,11 @@ impl App {
         if let Some(ctx) = self.focused_ctx() {
             let scale = ctx.window.scale_factor().factor() as f32;
             if let Some(renderer) = ctx.renderer.as_ref() {
-                let measurer =
-                    crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+                let measurer = crate::font::CachedTextMeasurer::new(
+                    crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                    &ctx.text_cache,
+                    scale,
+                );
                 form.compute_label_widths(&measurer, &self.ui_theme);
             }
         }

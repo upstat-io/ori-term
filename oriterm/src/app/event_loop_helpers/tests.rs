@@ -8,6 +8,7 @@ fn idle_input() -> ControlFlowInput {
     ControlFlowInput {
         any_dirty: false,
         budget_elapsed: false,
+        urgent_redraw: false,
         still_dirty: false,
         has_animations: false,
         blinking_active: false,
@@ -79,6 +80,17 @@ fn dirty_takes_priority_over_animations() {
     // Dirty+budget-not-elapsed takes priority over animations.
     let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(8));
     assert_eq!(result, expected);
+}
+
+#[test]
+fn urgent_dirty_bypasses_budget_wait() {
+    let mut input = idle_input();
+    input.any_dirty = true;
+    input.budget_elapsed = false;
+    input.urgent_redraw = true;
+
+    let result = compute_control_flow(&input);
+    assert_eq!(result, ControlFlowDecision::Wait);
 }
 
 #[test]

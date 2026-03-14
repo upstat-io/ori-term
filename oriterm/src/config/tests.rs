@@ -22,7 +22,7 @@ fn default_config_roundtrip() {
     assert!(parsed.terminal.cursor_blink);
     assert_eq!(parsed.terminal.cursor_blink_interval_ms, 530);
     assert_eq!(parsed.window.decorations, Decorations::None);
-    assert!(!parsed.window.resize_increments);
+    assert!(parsed.window.resize_increments);
 }
 
 #[test]
@@ -535,19 +535,19 @@ decorations = "buttonless"
 }
 
 #[test]
-fn resize_increments_default_false() {
+fn resize_increments_default_true() {
     let parsed: Config = toml::from_str("").expect("deserialize");
-    assert!(!parsed.window.resize_increments);
+    assert!(parsed.window.resize_increments);
 }
 
 #[test]
-fn resize_increments_from_toml() {
+fn resize_increments_disabled_from_toml() {
     let toml_str = r#"
 [window]
-resize_increments = true
+resize_increments = false
 "#;
     let parsed: Config = toml::from_str(toml_str).expect("deserialize");
-    assert!(parsed.window.resize_increments);
+    assert!(!parsed.window.resize_increments);
 }
 
 #[test]

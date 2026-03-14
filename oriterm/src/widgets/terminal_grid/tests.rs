@@ -95,37 +95,23 @@ fn is_focusable() {
     assert!(widget.is_focusable());
 }
 
-// ── Draw stores bounds ──
+// ── Bounds via set_bounds ──
 
 #[test]
-fn bounds_none_before_draw() {
+fn bounds_none_before_set() {
     let widget = make_widget();
     assert!(widget.bounds().is_none());
 }
 
 #[test]
-fn bounds_some_after_draw() {
+fn bounds_some_after_set() {
     let widget = make_widget();
-    let theme = UiTheme::dark();
-    let measurer = TestMeasurer;
-    let mut draw_list = DrawList::new();
-    let animations_running = std::cell::Cell::new(false);
     let bounds = Rect::new(10.0, 20.0, 640.0, 384.0);
+    widget.set_bounds(bounds);
 
-    let mut ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: None,
-        now: Instant::now(),
-        animations_running: &animations_running,
-        theme: &theme,
-        icons: None,
-    };
-
-    widget.draw(&mut ctx);
-
-    let stored = widget.bounds().expect("bounds should be set after draw");
+    let stored = widget
+        .bounds()
+        .expect("bounds should be set after set_bounds");
     assert_eq!(stored.x(), 10.0);
     assert_eq!(stored.y(), 20.0);
     assert_eq!(stored.width(), 640.0);

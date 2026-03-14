@@ -56,6 +56,10 @@ pub(crate) struct TermWindow {
     /// Whether the window is currently maximized.
     #[allow(dead_code, reason = "maximized state for Section 7")]
     is_maximized: bool,
+    /// True when `surface_config` dimensions were updated but
+    /// `surface.configure()` was deferred. The next render pass must call
+    /// [`apply_pending_surface_resize`] before acquiring a texture.
+    surface_stale: bool,
 }
 
 impl TermWindow {
@@ -99,6 +103,7 @@ impl TermWindow {
             size_px,
             scale_factor,
             is_maximized: false,
+            surface_stale: false,
         })
     }
 
@@ -134,6 +139,7 @@ impl TermWindow {
             size_px,
             scale_factor,
             is_maximized: false,
+            surface_stale: false,
         })
     }
 
@@ -196,14 +202,31 @@ impl TermWindow {
     ///
     /// Updates internal size tracking and reconfigures the wgpu surface.
     /// The caller should request a redraw after calling this.
-    pub(crate) fn resize_surface(&mut self, width: u32, height: u32, gpu: &GpuState) {
+    pub(crate) fn resize_surface(&mut self, width: u32, height: u32, _gpu: &GpuState) {
         let w = width.max(1);
         let h = height.max(1);
 
         self.size_px = (w, h);
         self.surface_config.width = w;
         self.surface_config.height = h;
+        // Defer the actual DXGI ResizeBuffers call to just before the next
+        // present. This minimizes the window between swap chain invalidation
+        // and frame presentation, preventing the DWM from stretching stale
+        // content to the new window size during interactive resize.
+        self.surface_stale = true;
+    }
+
+    /// Apply a pending surface reconfigure (DXGI `ResizeBuffers`).
+    ///
+    /// Must be called before acquiring a surface texture for rendering.
+    /// Returns `true` if the surface was reconfigured.
+    pub(crate) fn apply_pending_surface_resize(&mut self, gpu: &GpuState) -> bool {
+        if !self.surface_stale {
+            return false;
+        }
+        self.surface_stale = false;
         gpu.configure_surface(&self.surface, &self.surface_config);
+        true
     }
 
     /// Update the DPI scale factor (e.g. when the window moves between monitors).

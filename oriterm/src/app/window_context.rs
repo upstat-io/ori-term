@@ -21,6 +21,7 @@ use super::context_menu::ContextMenuState;
 use super::divider_drag::DividerDragState;
 use super::floating_drag::FloatingDragState;
 use super::tab_drag::TabDragState;
+use crate::font::TextShapeCache;
 use crate::gpu::{FrameInput, PaneRenderCache, WindowRenderer};
 use crate::url_detect::{DetectedUrl, UrlDetectCache};
 use crate::widgets::terminal_grid::TerminalGridWidget;
@@ -69,11 +70,18 @@ pub(crate) struct WindowContext {
     pub(super) url_cache: UrlDetectCache,
     pub(super) last_drag_area_press: Option<Instant>,
 
+    // Text shaping cache (persists across frames for cached UI text measurer).
+    pub(super) text_cache: TextShapeCache,
+
     // Reusable buffers.
     pub(super) search_bar_buf: String,
 
     // Redraw coalescing.
     pub(super) dirty: bool,
+    /// Whether this window should bypass the normal frame budget once.
+    ///
+    /// Used for latency-sensitive UI feedback like popup open/dismiss.
+    pub(super) urgent_redraw: bool,
     /// Chrome/overlay content has changed since the last full content render.
     ///
     /// When `true`, the GPU content cache texture is stale and
@@ -116,8 +124,10 @@ impl WindowContext {
             hovered_url: None,
             url_cache: UrlDetectCache::default(),
             last_drag_area_press: None,
+            text_cache: TextShapeCache::new(),
             search_bar_buf: String::new(),
             dirty: true,
+            urgent_redraw: false,
             ui_stale: true,
         }
     }

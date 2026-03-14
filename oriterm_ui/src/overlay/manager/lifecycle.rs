@@ -60,6 +60,28 @@ impl OverlayManager {
         id
     }
 
+    /// Replaces any active popup overlays with a new popup.
+    ///
+    /// Preserves modal overlays beneath the popup stack. This is the correct
+    /// entry point for transient UI like context menus and dropdown popups,
+    /// where duplicate stacked popups would leave stale interaction state.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "lifecycle: widget, anchor, placement, tree, animator, now"
+    )]
+    pub fn replace_popup(
+        &mut self,
+        widget: Box<dyn Widget>,
+        anchor: Rect,
+        placement: Placement,
+        tree: &mut LayerTree,
+        animator: &mut LayerAnimator,
+        now: Instant,
+    ) -> OverlayId {
+        self.clear_popups(tree, animator);
+        self.push_overlay(widget, anchor, placement, tree, animator, now)
+    }
+
     /// Pushes a modal overlay (blocks interaction below, no click-outside dismiss).
     ///
     /// Creates a `SolidColor` dim layer and a `Textured` content layer,
@@ -172,6 +194,35 @@ impl OverlayManager {
         self.hovered_overlay = None;
         self.captured_overlay = None;
         self.layout_dirty = false;
+    }
+
+    /// Removes all active popup overlays, preserving modals.
+    ///
+    /// Popups are transient UI and are removed immediately rather than faded
+    /// out. Returns the number of removed overlays.
+    pub fn clear_popups(&mut self, tree: &mut LayerTree, animator: &mut LayerAnimator) -> usize {
+        let before = self.overlays.len();
+        let mut retained = Vec::with_capacity(before);
+
+        for overlay in self.overlays.drain(..) {
+            if overlay.kind == OverlayKind::Popup {
+                animator.cancel_all(overlay.layer_id);
+                tree.remove_subtree(overlay.layer_id);
+            } else {
+                retained.push(overlay);
+            }
+        }
+
+        let removed = before - retained.len();
+        self.overlays = retained;
+
+        if removed > 0 {
+            self.hovered_overlay = None;
+            self.captured_overlay = None;
+            self.layout_dirty = true;
+        }
+
+        removed
     }
 
     /// Removes dismissing overlays whose fade-out animations have completed.

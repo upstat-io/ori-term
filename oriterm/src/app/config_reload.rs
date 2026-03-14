@@ -146,6 +146,7 @@ impl App {
                 cell.height,
             );
             renderer.replace_font_collection(fc, gpu);
+            ctx.text_cache.clear();
         }
 
         // Grid dimensions, terminal widget, PTY, and resize increments all
