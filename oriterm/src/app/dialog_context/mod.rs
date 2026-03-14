@@ -15,6 +15,7 @@ use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;
 use oriterm_ui::draw::DrawList;
 use oriterm_ui::geometry::Rect;
+use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::scale::ScaleFactor;
 use oriterm_ui::widgets::Widget;
@@ -60,6 +61,8 @@ pub(crate) struct DialogWindowContext {
     pub(super) scale_factor: ScaleFactor,
     /// Last cursor position in logical pixels (for mouse click handlers).
     pub(super) last_cursor_pos: oriterm_ui::geometry::Point,
+    /// Per-widget invalidation tracker.
+    pub(super) invalidation: InvalidationTracker,
     /// Whether this dialog needs a redraw.
     pub(super) dirty: bool,
     /// Whether this dialog should bypass the normal frame budget once.
@@ -164,6 +167,7 @@ impl DialogWindowContext {
             layer_animator: LayerAnimator::new(),
             text_cache: TextShapeCache::new(),
             draw_list: DrawList::new(),
+            invalidation: InvalidationTracker::new(),
             scale_factor,
             last_cursor_pos: oriterm_ui::geometry::Point::new(0.0, 0.0),
             dirty: true,
@@ -185,6 +189,7 @@ impl DialogWindowContext {
         let logical_h = h as f32 / scale;
         self.overlays
             .set_viewport(Rect::new(0.0, 0.0, logical_w, logical_h));
+        self.invalidation.invalidate_all();
         self.dirty = true;
     }
 

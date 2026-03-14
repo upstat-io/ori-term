@@ -257,7 +257,7 @@ impl Widget for ToggleWidget {
         match event.kind {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.pressed = true;
-                WidgetResponse::handled().with_capture()
+                WidgetResponse::paint().with_capture()
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 let was_pressed = self.pressed;

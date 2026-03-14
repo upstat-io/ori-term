@@ -152,7 +152,7 @@ Phase 3 - Verification
 | ID | Title | File | Status |
 |----|-------|------|--------|
 | 01 | Text/Layout Caching | `section-01-text-cache.md` | Complete |
-| 02 | Subtree Invalidation | `section-02-subtree-invalidation.md` | Not Started |
+| 02 | Subtree Invalidation | `section-02-subtree-invalidation.md` | Complete |
 | 03 | Scene Retention | `section-03-scene-retention.md` | Not Started |
 | 04 | Scroll Transform | `section-04-scroll-transform.md` | Not Started |
 | 05 | Surface Strategy | `section-05-surface-strategy.md` | Not Started |

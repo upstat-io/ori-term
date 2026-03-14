@@ -3,6 +3,7 @@ use crate::geometry::{Insets, Point, Rect};
 use crate::input::{
     EventResponse, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind,
 };
+use crate::invalidation::InvalidationTracker;
 use crate::layout::{Align, Justify, SizeSpec, compute_layout};
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::label::LabelWidget;
@@ -866,7 +867,7 @@ fn update_dirty_paint_sets_needs_paint() {
     assert!(!c.needs_layout());
 
     let resp = WidgetResponse::paint();
-    c.update_dirty(&resp);
+    c.update_dirty(&resp, None);
     assert!(c.needs_paint());
     assert!(!c.needs_layout());
 }
@@ -877,7 +878,7 @@ fn update_dirty_layout_sets_both_flags() {
     c.clear_dirty();
 
     let resp = WidgetResponse::layout();
-    c.update_dirty(&resp);
+    c.update_dirty(&resp, None);
     assert!(c.needs_paint());
     assert!(c.needs_layout());
 }
@@ -888,7 +889,7 @@ fn update_dirty_handled_does_not_set_flags() {
     c.clear_dirty();
 
     let resp = WidgetResponse::handled();
-    c.update_dirty(&resp);
+    c.update_dirty(&resp, None);
     assert!(!c.needs_paint());
     assert!(!c.needs_layout());
 }
@@ -897,13 +898,41 @@ fn update_dirty_handled_does_not_set_flags() {
 fn clear_dirty_resets_both_flags() {
     let mut c = ContainerWidget::column();
     let resp = WidgetResponse::layout();
-    c.update_dirty(&resp);
+    c.update_dirty(&resp, None);
     assert!(c.needs_paint());
     assert!(c.needs_layout());
 
     c.clear_dirty();
     assert!(!c.needs_paint());
     assert!(!c.needs_layout());
+}
+
+#[test]
+fn update_dirty_marks_tracker_with_source() {
+    let mut c = ContainerWidget::column();
+    c.clear_dirty();
+    let mut tracker = InvalidationTracker::new();
+    let source_id = crate::widget_id::WidgetId::next();
+
+    let resp = WidgetResponse::paint().with_source(source_id);
+    c.update_dirty(&resp, Some(&mut tracker));
+
+    assert!(c.needs_paint());
+    assert!(tracker.is_paint_dirty(source_id));
+    assert!(!tracker.is_layout_dirty(source_id));
+}
+
+#[test]
+fn update_dirty_without_source_does_not_mark_tracker() {
+    let mut c = ContainerWidget::column();
+    c.clear_dirty();
+    let mut tracker = InvalidationTracker::new();
+
+    let resp = WidgetResponse::paint();
+    c.update_dirty(&resp, Some(&mut tracker));
+
+    assert!(c.needs_paint());
+    assert!(!tracker.is_any_dirty());
 }
 
 #[test]
@@ -963,8 +992,9 @@ fn needs_layout_bypasses_cache() {
         response: EventResponse::RequestLayout,
         action: None,
         capture: CaptureRequest::None,
+        source: None,
     };
-    c.update_dirty(&layout_resp);
+    c.update_dirty(&layout_resp, None);
     assert!(c.needs_layout());
 
     // Third draw with same bounds should bypass cache (recompute).

@@ -47,6 +47,7 @@ impl Widget for IdOverrideButton {
                 response: resp.response,
                 action: Some(WidgetAction::Clicked(self.id_override)),
                 capture: resp.capture,
+                source: resp.source,
             },
             _ => resp,
         }
@@ -63,6 +64,7 @@ impl Widget for IdOverrideButton {
                 response: resp.response,
                 action: Some(WidgetAction::Clicked(self.id_override)),
                 capture: resp.capture,
+                source: resp.source,
             },
             _ => resp,
         }

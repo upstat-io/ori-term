@@ -82,6 +82,7 @@ impl App {
             let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.windows.get_mut(&wid) {
                 ctx.dirty = false;
+                ctx.invalidation.clear();
             }
             let mux_wid = self
                 .windows

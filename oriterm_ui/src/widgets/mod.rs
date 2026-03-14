@@ -72,6 +72,11 @@ pub struct WidgetResponse {
     pub action: Option<WidgetAction>,
     /// Whether the widget wants to acquire or release mouse capture.
     pub capture: CaptureRequest,
+    /// The widget that produced this response (for invalidation tracking).
+    ///
+    /// Set by container-side injection: containers fill this with the child's
+    /// `WidgetId` after receiving a response. Widgets themselves leave it `None`.
+    pub source: Option<WidgetId>,
 }
 
 impl WidgetResponse {
@@ -81,6 +86,7 @@ impl WidgetResponse {
             response: EventResponse::Handled,
             action: None,
             capture: CaptureRequest::None,
+            source: None,
         }
     }
 
@@ -90,6 +96,7 @@ impl WidgetResponse {
             response: EventResponse::Ignored,
             action: None,
             capture: CaptureRequest::None,
+            source: None,
         }
     }
 
@@ -99,6 +106,7 @@ impl WidgetResponse {
             response: EventResponse::RequestPaint,
             action: None,
             capture: CaptureRequest::None,
+            source: None,
         }
     }
 
@@ -108,6 +116,7 @@ impl WidgetResponse {
             response: EventResponse::RequestLayout,
             action: None,
             capture: CaptureRequest::None,
+            source: None,
         }
     }
 
@@ -117,6 +126,7 @@ impl WidgetResponse {
             response: EventResponse::RequestFocus,
             action: None,
             capture: CaptureRequest::None,
+            source: None,
         }
     }
 
@@ -139,6 +149,36 @@ impl WidgetResponse {
     pub fn with_release_capture(mut self) -> Self {
         self.capture = CaptureRequest::Release;
         self
+    }
+
+    /// Sets the source widget ID (for invalidation tracking).
+    ///
+    /// Normally set by container-side injection rather than individual widgets.
+    #[must_use]
+    pub fn with_source(mut self, id: WidgetId) -> Self {
+        self.source = Some(id);
+        self
+    }
+
+    /// Sets the source widget ID if not already set.
+    ///
+    /// Used by containers to inject the child's ID without overwriting
+    /// a source that a nested container already set.
+    pub fn inject_source(&mut self, id: WidgetId) {
+        if self.source.is_none() {
+            self.source = Some(id);
+        }
+    }
+
+    /// Marks the tracker if this response carries a dirty source.
+    ///
+    /// Convenience for the application layer: extracts `source` and
+    /// `DirtyKind` from the response and calls `tracker.mark()`.
+    pub fn mark_tracker(&self, tracker: &mut crate::invalidation::InvalidationTracker) {
+        if let Some(source) = self.source {
+            let kind = crate::invalidation::DirtyKind::from(self.response);
+            tracker.mark(source, kind);
+        }
     }
 }
 

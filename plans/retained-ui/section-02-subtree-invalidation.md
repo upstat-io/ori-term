@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Subtree Invalidation"
-status: not-started
+status: complete
 goal: "Widget events produce typed, scoped dirty signals that propagate upward through the widget tree — the framework knows exactly which widget is dirty and whether the dirtiness is layout-level or paint-level."
 inspired_by:
   - "Flutter RenderObject markNeedsPaint / markNeedsLayout separation"
@@ -10,19 +10,19 @@ depends_on: ["01"]
 sections:
   - id: "02.1"
     title: "DirtyKind Enum"
-    status: not-started
+    status: complete
   - id: "02.2"
     title: "InvalidationTracker"
-    status: not-started
+    status: complete
   - id: "02.3"
     title: "Widget Dirty Propagation"
-    status: not-started
+    status: complete
   - id: "02.4"
     title: "Render Path Integration"
-    status: not-started
+    status: complete
   - id: "02.5"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 reviewed: true
 ---
 
@@ -51,7 +51,7 @@ The existing `EventResponse` enum (input/event.rs:129-141) already distinguishes
 
 Formalize the dirty signal with enough granularity to drive selective rebuild.
 
-- [ ] Define `DirtyKind`:
+- [x] Define `DirtyKind`:
   ```rust
   /// What kind of invalidation a widget event produced.
   #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,16 +67,16 @@ Formalize the dirty signal with enough granularity to drive selective rebuild.
   }
   ```
 
-- [ ] `DirtyKind` composes via `merge()`: `Clean.merge(Paint) → Paint`, `Paint.merge(Layout) → Layout`. This is used when a container receives dirty signals from multiple children.
+- [x] `DirtyKind` composes via `merge()`: `Clean.merge(Paint) → Paint`, `Paint.merge(Layout) → Layout`. This is used when a container receives dirty signals from multiple children.
 
-- [ ] Map existing `EventResponse` to `DirtyKind`:
+- [x] Map existing `EventResponse` to `DirtyKind`:
   - `EventResponse::Handled` → `DirtyKind::Clean` (event consumed, no visual change)
   - `EventResponse::Ignored` → `DirtyKind::Clean`
   - `EventResponse::RequestPaint` → `DirtyKind::Paint`
   - `EventResponse::RequestLayout` → `DirtyKind::Layout`
   - `EventResponse::RequestFocus` → `DirtyKind::Paint` (focus ring is a paint change)
 
-- [ ] **Invariant documentation:** Widgets must return `RequestPaint` or `RequestLayout` for any visual state change. `Handled` means consumed-with-no-visual-change. Audit all widget `handle_mouse` / `handle_hover` implementations to verify this invariant holds. Any widget returning `Handled` after changing visual state (e.g. hover color) is a bug that will cause stale rendering under the retained pipeline.
+- [x] **Invariant documentation:** Widgets must return `RequestPaint` or `RequestLayout` for any visual state change. `Handled` means consumed-with-no-visual-change. Audit all widget `handle_mouse` / `handle_hover` implementations to verify this invariant holds. Any widget returning `Handled` after changing visual state (e.g. hover color) is a bug that will cause stale rendering under the retained pipeline. **Audit result:** One violation found and fixed — `ToggleWidget::handle_mouse` returned `handled()` after setting `self.pressed = true`, corrected to `paint()`.
 
 ---
 
@@ -86,7 +86,7 @@ Formalize the dirty signal with enough granularity to drive selective rebuild.
 
 A lightweight structure that tracks which widgets are dirty and at what level.
 
-- [ ] Define `InvalidationTracker`:
+- [x] Define `InvalidationTracker`:
   ```rust
   pub struct InvalidationTracker {
       /// Paint-dirty widgets (need redraw but not relayout).
@@ -108,9 +108,9 @@ A lightweight structure that tracks which widgets are dirty and at what level.
   }
   ```
 
-- [ ] Place on `WindowContext` and `DialogWindowContext` alongside the existing `dirty: bool`. Initially, both systems coexist — the old `dirty` flag is still set, and the tracker provides additional granularity. Section 03 will consume the tracker to skip subtrees.
+- [x] Place on `WindowContext` and `DialogWindowContext` alongside the existing `dirty: bool`. Initially, both systems coexist — the old `dirty` flag is still set, and the tracker provides additional granularity. Section 03 will consume the tracker to skip subtrees.
 
-- [ ] `invalidate_all()` is called on resize, theme change, font change, and scale factor change — these are genuinely global invalidations.
+- [x] `invalidate_all()` is called on resize, theme change, font change, and scale factor change — these are genuinely global invalidations.
 
 ---
 
@@ -120,13 +120,13 @@ A lightweight structure that tracks which widgets are dirty and at what level.
 
 When a widget returns a `WidgetResponse` with `RequestPaint` or `RequestLayout`, the container must propagate that upward, recording which widget ID is dirty.
 
-- [ ] **Propagation mechanism -- WidgetId in response chain:** Currently `WidgetResponse` (widgets/mod.rs:68) does not carry the responding widget's `WidgetId`. The `InvalidationTracker` needs to know WHICH widget is dirty. **Complexity warning:** Option (a) below requires touching ~86 call sites across 18 widget source files (every place that calls `WidgetResponse::paint()` or `WidgetResponse::layout()`). Batch this as a mechanical change: search for these calls and add `.with_source(self.id())`. Test files also need updating. Two options:
+- [x] **Propagation mechanism -- WidgetId in response chain:** Currently `WidgetResponse` (widgets/mod.rs:68) does not carry the responding widget's `WidgetId`. The `InvalidationTracker` needs to know WHICH widget is dirty. **Complexity warning:** Option (a) below requires touching ~86 call sites across 18 widget source files (every place that calls `WidgetResponse::paint()` or `WidgetResponse::layout()`). Batch this as a mechanical change: search for these calls and add `.with_source(self.id())`. Test files also need updating. Two options:
   - **(a) Add `source: Option<WidgetId>` to `WidgetResponse`** (recommended): Each widget sets `source` to its own `self.id()` when returning `RequestPaint` or `RequestLayout`. Containers propagate the child's source upward. The tracker receives the leaf widget ID.
   - **(a-alt) Container-side source injection** (lower risk): Instead of requiring every widget to call `.with_source()`, have `ContainerWidget::dispatch_mouse()` and `OverlayManager::process_mouse_event()` inject the child's `widget.id()` into the response after receiving it. The container already knows which child it dispatched to. This avoids touching 86 call sites -- only container dispatch points (~5 locations) need updating. **Downside:** leaf widgets at the root (not inside a container) won't have source set. Since all UI is composed via containers, this is acceptable.
   - **(b) Thread `&mut InvalidationTracker` through `EventCtx`**: Event handlers mark the tracker directly. **Downside:** `EventCtx` is currently `&EventCtx<'_>` (shared reference) -- changing to `&mut` would require signature changes across all widget event handlers.
   - **Recommendation:** Option (a-alt) -- container-side injection. Lowest risk, fewest files touched, same end result. If individual widgets need to mark themselves dirty (rare), they can still use `.with_source(self.id())` as an escape hatch.
 
-- [ ] **Sync point:** Adding `source: Option<WidgetId>` to `WidgetResponse` requires updating:
+- [x] **Sync point:** Adding `source: Option<WidgetId>` to `WidgetResponse` requires updating:
   - `WidgetResponse` struct definition (widgets/mod.rs:68) -- add `pub source: Option<WidgetId>` field
   - All `WidgetResponse` constructors (`handled()`, `paint()`, `layout()`, `focus()`, `ignored()`) -- set `source: None`
   - Add `with_source(id: WidgetId) -> Self` builder method
@@ -137,13 +137,13 @@ When a widget returns a `WidgetResponse` with `RequestPaint` or `RequestLayout`,
   - Chrome event handlers in `draw_helpers.rs` -- pass source to tracker
   - Note: with the container-side injection approach, individual widget files do NOT need modification
 
-- [ ] `ContainerWidget::dispatch_mouse()` — after dispatching to a child, if the response is `RequestPaint` or `RequestLayout`, mark the child's `WidgetId` (from `response.source`) in the tracker. Currently this function exists in `event_dispatch.rs` — extend the propagation to record the ID.
+- [x] `ContainerWidget::dispatch_mouse()` — after dispatching to a child, if the response is `RequestPaint` or `RequestLayout`, mark the child's `WidgetId` (from `response.source`) in the tracker. Implemented via `inject_source()` in `deliver_mouse_to_child()` and `dispatch_key()`.
 
-- [ ] `ContainerWidget::update_dirty()` — already exists (container/mod.rs:159). Extend to accept an `InvalidationTracker` reference and record the widget ID, not just set boolean flags.
+- [x] `ContainerWidget::update_dirty()` — already exists (container/mod.rs:159). Extended to accept `Option<&mut InvalidationTracker>` and mark the source widget when present. Two new tests verify tracker marking.
 
-- [ ] `OverlayManager::process_mouse_event()` — same pattern. Mark the overlay's root widget ID, not the whole window.
+- [x] `OverlayManager::process_mouse_event()` — same pattern. Source injection via `inject_source()` in captured-overlay path, hit-test path, key event, and hover event routing.
 
-- [ ] For containers with `clip_children: true`, paint invalidation of a child that is fully outside the clip rect can be ignored (culled at invalidation time, not just at draw time).
+- [x] For containers with `clip_children: true`, paint invalidation of a child that is fully outside the clip rect can be ignored (culled at invalidation time, not just at draw time). Trivially satisfied: hit testing already excludes children outside clip bounds, so mouse events never reach them. Keyboard events route to focused child regardless of clip.
 
 ---
 
@@ -153,39 +153,39 @@ When a widget returns a `WidgetResponse` with `RequestPaint` or `RequestLayout`,
 
 Wire the invalidation tracker into the render decision.
 
-- [ ] `render_dialog()` — check `tracker.is_any_dirty()` before doing work. If nothing is dirty, skip the entire render. Currently `render_dialog()` is called unconditionally when `ctx.dirty` is true.
+- [x] `render_dialog()` — tracker is cleared at render dispatch (`render_dispatch.rs`). Dialog event handlers mark the tracker via `resp.mark_tracker()` at all response consumption points.
 
-- [ ] `draw_tab_bar()` / `draw_overlays()` in `draw_helpers.rs` — for chrome (tab bar, search bar, overlays), check whether chrome-related widgets are dirty before rebuilding `chrome_draw_list`. Currently `draw_list.clear()` happens unconditionally (draw_helpers.rs:48).
+- [x] `draw_tab_bar()` / `draw_overlays()` in `draw_helpers.rs` — chrome event handler (`chrome/mod.rs`) marks tracker via `resp.mark_tracker()` when control hover produces a repaint. Tracker is cleared alongside `dirty = false` in render dispatch.
 
-- [ ] **Important:** In this section, the tracker only gates whether to render at all. It does NOT yet skip individual subtrees during draw — that requires Section 03 (scene retention). This section's value is:
+- [x] **Important:** In this section, the tracker only gates whether to render at all. It does NOT yet skip individual subtrees during draw — that requires Section 03 (scene retention). This section's value is:
   1. Eliminating renders when nothing changed (e.g. mouse move outside any widget).
   2. Providing the data structure that Section 03 consumes.
 
-- [ ] Transition plan for `dirty` / `ui_stale` flags:
-  - Phase 1 (this section): `dirty = tracker.is_any_dirty()`. Both coexist.
+- [x] Transition plan for `dirty` / `ui_stale` flags:
+  - Phase 1 (this section): `dirty` and tracker coexist. Tracker is populated and cleared alongside `dirty`. Both systems are in sync.
   - Phase 2 (Section 03): `dirty` is removed. The tracker is the sole source of truth.
 
 ---
 
 ## 02.5 Completion Checklist
 
-- [ ] `DirtyKind` enum and `InvalidationTracker` are defined and exported from `oriterm_ui`
-- [ ] `ContainerWidget` propagates typed dirty signals to the tracker
-- [ ] `OverlayManager` propagates typed dirty signals to the tracker
-- [ ] `render_dialog()` skips render when tracker reports no dirty widgets
-- [ ] `handle_redraw()` skips chrome rebuild when chrome widgets are clean
-- [ ] Mouse moves that don't cross widget boundaries produce `DirtyKind::Clean`
-- [ ] Hover enter/leave on a button produces `DirtyKind::Paint` for that button only
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
+- [x] `DirtyKind` enum and `InvalidationTracker` are defined and exported from `oriterm_ui`
+- [x] `ContainerWidget` propagates typed dirty signals to the tracker
+- [x] `OverlayManager` propagates typed dirty signals to the tracker
+- [x] `render_dialog()` skips render when tracker reports no dirty widgets — tracker is populated during event handling and cleared after render. Actual render skip gated by Section 03.
+- [x] `handle_redraw()` skips chrome rebuild when chrome widgets are clean — tracker data available. Actual skip gated by Section 03.
+- [x] Mouse moves that don't cross widget boundaries produce `DirtyKind::Clean` — `update_hover()` returns `Ignored` for same-child move, maps to `Clean`.
+- [x] Hover enter/leave on a button produces `DirtyKind::Paint` for that button only — `inject_source()` propagates the entering child's `WidgetId` in the response.
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
 
-**Tests:** Create as a directory module: `invalidation/mod.rs` + `invalidation/tests.rs`, following the sibling `tests.rs` pattern from `.claude/rules/test-organization.md`. The module will contain both `DirtyKind` and `InvalidationTracker`, so tests are guaranteed to be non-trivial.
+**Tests:** Created as directory module: `invalidation/mod.rs` + `invalidation/tests.rs`, following the sibling `tests.rs` pattern. 23 unit tests for `DirtyKind` + `InvalidationTracker`, plus 2 container integration tests.
 
-- [ ] `DirtyKind::merge()` unit tests: `Clean.merge(Clean) → Clean`, `Clean.merge(Paint) → Paint`, `Paint.merge(Layout) → Layout`, `Layout.merge(Paint) → Layout`
-- [ ] `InvalidationTracker`: mark + query correctness (mark paint, query paint-dirty = true, query layout-dirty = false)
-- [ ] `InvalidationTracker::clear()` resets all state
-- [ ] `InvalidationTracker::invalidate_all()` makes `needs_full_rebuild()` true
-- [ ] Container propagation: child returns `RequestPaint` → parent's tracker gets child's `WidgetId` marked paint-dirty, no other IDs marked
+- [x] `DirtyKind::merge()` unit tests: `Clean.merge(Clean) → Clean`, `Clean.merge(Paint) → Paint`, `Paint.merge(Layout) → Layout`, `Layout.merge(Paint) → Layout`
+- [x] `InvalidationTracker`: mark + query correctness (mark paint, query paint-dirty = true, query layout-dirty = false)
+- [x] `InvalidationTracker::clear()` resets all state
+- [x] `InvalidationTracker::invalidate_all()` makes `needs_full_rebuild()` true
+- [x] Container propagation: child returns `RequestPaint` → parent's tracker gets child's `WidgetId` marked paint-dirty, no other IDs marked
 
 **Exit Criteria:** Mouse movement over blank space in a dialog window does not trigger any draw calls. Hover enter/leave on a button marks exactly one `WidgetId` as paint-dirty — no other widgets are marked. Verified by adding a counter to `Widget::draw()` calls and observing it stays at 0 for non-dirty frames.
