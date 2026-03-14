@@ -33,7 +33,7 @@ pub mod window_chrome;
 use std::cell::Cell;
 use std::time::Instant;
 
-use crate::draw::DrawList;
+use crate::draw::{DrawList, SceneCache};
 use crate::geometry::Rect;
 use crate::icons::ResolvedIcons;
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent};
@@ -254,6 +254,11 @@ pub struct DrawCtx<'a> {
     /// `None` in tests or when the GPU renderer is not available.
     /// Widgets fall back to `push_line()` when this is `None`.
     pub icons: Option<&'a ResolvedIcons>,
+    /// Per-widget scene cache for retained rendering.
+    ///
+    /// `None` during uncached draws (tests, first frame). When present,
+    /// container widgets check the cache before calling `child.draw()`.
+    pub scene_cache: Option<&'a mut SceneCache>,
 }
 
 /// Context passed to mouse and keyboard event handlers.

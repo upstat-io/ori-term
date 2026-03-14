@@ -185,6 +185,7 @@ fn draws_without_panic() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     panel.draw(&mut ctx);
 
@@ -215,6 +216,7 @@ fn checkbox_click_emits_toggled() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     panel.draw(&mut draw_ctx);
 

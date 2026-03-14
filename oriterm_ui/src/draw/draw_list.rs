@@ -250,6 +250,15 @@ impl DrawList {
         self.commands.len()
     }
 
+    /// Appends cached draw commands without updating clip or layer stacks.
+    ///
+    /// Used by scene composition to replay a widget's cached output. The caller
+    /// must ensure cached commands are self-contained (balanced push/pop pairs),
+    /// which is guaranteed for commands captured from a complete `Widget::draw()`.
+    pub fn extend_from_cache(&mut self, commands: &[DrawCommand]) {
+        self.commands.extend(commands.iter().cloned());
+    }
+
     /// Removes all commands and resets all stacks, retaining allocated memory.
     pub fn clear(&mut self) {
         self.commands.clear();

@@ -5,10 +5,11 @@
 use std::cell::Cell;
 use std::time::Instant;
 
-use oriterm_ui::draw::DrawList;
+use oriterm_ui::draw::{DrawList, SceneCache, compose_scene};
+use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
-use oriterm_ui::widgets::{DrawCtx, Widget};
+use oriterm_ui::widgets::DrawCtx;
 
 use crate::app::App;
 use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
@@ -35,6 +36,8 @@ impl App {
         gpu: &GpuState,
         theme: &UiTheme,
         text_cache: &TextShapeCache,
+        invalidation: &InvalidationTracker,
+        scene_cache: &mut SceneCache,
     ) -> bool {
         let Some(tab_bar) = tab_bar else {
             return false;
@@ -64,8 +67,9 @@ impl App {
             animations_running: &animations_running,
             theme,
             icons: Some(icons),
+            scene_cache: None,
         };
-        tab_bar.draw(&mut ctx);
+        compose_scene(tab_bar, &mut ctx, invalidation, scene_cache);
         let animating = animations_running.get();
 
         // Tab bar contains text — use text-aware conversion to rasterize
@@ -92,6 +96,7 @@ impl App {
                 animations_running: &animations_running,
                 theme,
                 icons: Some(icons),
+                scene_cache: None,
             };
             tab_bar.draw_drag_overlay(&mut overlay_ctx);
             renderer.append_overlay_draw_list_with_text(draw_list, scale, 1.0, gpu);
@@ -121,6 +126,8 @@ impl App {
         tree: &oriterm_ui::compositor::layer_tree::LayerTree,
         theme: &UiTheme,
         text_cache: &TextShapeCache,
+        _invalidation: &InvalidationTracker,
+        _scene_cache: &mut SceneCache,
     ) -> bool {
         let count = overlays.draw_count();
         if count == 0 {
@@ -162,6 +169,7 @@ impl App {
                 animations_running: &animations_running,
                 theme,
                 icons: Some(icons),
+                scene_cache: None,
             };
             let opacity = overlays.draw_overlay_at(i, &mut ctx, tree);
 

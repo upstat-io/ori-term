@@ -160,6 +160,7 @@ fn draw_produces_text_commands() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     row.draw(&mut ctx);
 

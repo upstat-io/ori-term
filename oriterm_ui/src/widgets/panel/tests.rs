@@ -66,6 +66,7 @@ fn panel_draws_background_rect() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     panel.draw(&mut ctx);
 
@@ -259,6 +260,7 @@ fn panel_with_bg() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     panel.draw(&mut ctx);
 
@@ -291,6 +293,7 @@ fn panel_with_corner_radius() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     panel.draw(&mut ctx);
 
@@ -346,6 +349,7 @@ fn panel_with_shadow() {
         animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        scene_cache: None,
     };
     panel.draw(&mut ctx);
 

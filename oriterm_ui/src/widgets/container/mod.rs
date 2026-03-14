@@ -11,6 +11,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::draw::SceneNode;
 use crate::geometry::{Insets, Rect};
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, layout_hit_test};
 use crate::invalidation::{DirtyKind, InvalidationTracker};
@@ -323,6 +324,35 @@ impl ContainerWidget {
         }
         None
     }
+
+    // Scene cache helpers
+
+    /// Tries to replay cached draw commands for a child widget.
+    ///
+    /// Returns `true` if the cache hit and commands were replayed.
+    fn try_replay_cached(ctx: &mut DrawCtx<'_>, child_id: WidgetId, bounds: Rect) -> bool {
+        let cache = match ctx.scene_cache.as_ref() {
+            Some(c) => c,
+            None => return false,
+        };
+        let node = match cache.get(&child_id) {
+            Some(n) if n.is_valid() && n.bounds() == bounds => n,
+            _ => return false,
+        };
+        ctx.draw_list.extend_from_cache(node.commands());
+        true
+    }
+
+    /// Stores a child's draw output in the scene cache for future reuse.
+    fn store_in_cache(ctx: &mut DrawCtx<'_>, child_id: WidgetId, bounds: Rect, start: usize) {
+        if let Some(cache) = ctx.scene_cache.as_deref_mut() {
+            let commands = ctx.draw_list.commands()[start..].to_vec();
+            cache
+                .entry(child_id)
+                .or_insert_with(|| SceneNode::new(child_id))
+                .update(commands, bounds);
+        }
+    }
 }
 
 impl Widget for ContainerWidget {
@@ -354,17 +384,30 @@ impl Widget for ContainerWidget {
                 if !child_node.rect.intersects(visible_bounds) {
                     continue;
                 }
+
+                let child_id = child.id();
+                let bounds = child_node.content_rect;
+
+                // Scene cache hit — replay cached commands.
+                if Self::try_replay_cached(ctx, child_id, bounds) {
+                    continue;
+                }
+
+                // Cache miss — draw and capture for future reuse.
+                let start = ctx.draw_list.len();
                 let mut child_ctx = DrawCtx {
                     measurer: ctx.measurer,
                     draw_list: ctx.draw_list,
-                    bounds: child_node.content_rect,
+                    bounds,
                     focused_widget: ctx.focused_widget,
                     now: ctx.now,
                     animations_running: ctx.animations_running,
                     theme: ctx.theme,
                     icons: ctx.icons,
+                    scene_cache: ctx.scene_cache.as_deref_mut(),
                 };
                 child.draw(&mut child_ctx);
+                Self::store_in_cache(ctx, child_id, bounds, start);
             }
         }
 

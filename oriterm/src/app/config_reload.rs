@@ -56,6 +56,7 @@ impl App {
         // Invalidate pane render cache and mark dirty for redraw.
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.invalidate_all();
+            ctx.scene_cache.clear();
             ctx.invalidation.invalidate_all();
             ctx.dirty = true;
             ctx.ui_stale = true;
@@ -148,6 +149,7 @@ impl App {
             );
             renderer.replace_font_collection(fc, gpu);
             ctx.text_cache.clear();
+            ctx.scene_cache.clear();
         }
 
         // Grid dimensions, terminal widget, PTY, and resize increments all
