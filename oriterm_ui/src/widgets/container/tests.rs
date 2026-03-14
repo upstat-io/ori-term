@@ -1058,8 +1058,8 @@ fn scene_cache_skips_clean_children() {
     row.draw(&mut ctx);
 
     assert_eq!(draws.get(), 2, "both children drawn on first pass");
-    assert!(cache.contains_key(&id_a));
-    assert!(cache.contains_key(&id_b));
+    assert!(cache.contains_key(id_a));
+    assert!(cache.contains_key(id_b));
 
     // Second draw with same bounds — children should be skipped (cache hit).
     draws.set(0);
@@ -1116,7 +1116,7 @@ fn scene_cache_redraws_invalidated_child() {
     row.draw(&mut ctx);
 
     // Invalidate child B only.
-    cache.get_mut(&id_b).unwrap().invalidate();
+    cache.get_mut(id_b).unwrap().invalidate();
 
     // Second draw — A should be cached, B should redraw.
     draws_a.set(0);

@@ -11,7 +11,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::draw::SceneNode;
 use crate::geometry::{Insets, Rect};
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, layout_hit_test};
 use crate::invalidation::{DirtyKind, InvalidationTracker};
@@ -335,7 +334,7 @@ impl ContainerWidget {
             Some(c) => c,
             None => return false,
         };
-        let node = match cache.get(&child_id) {
+        let node = match cache.get(child_id) {
             Some(n) if n.is_valid() && n.bounds() == bounds => n,
             _ => return false,
         };
@@ -344,13 +343,20 @@ impl ContainerWidget {
     }
 
     /// Stores a child's draw output in the scene cache for future reuse.
-    fn store_in_cache(ctx: &mut DrawCtx<'_>, child_id: WidgetId, bounds: Rect, start: usize) {
+    ///
+    /// `log_start` is the store-log position captured before the child's
+    /// draw. All IDs stored between then and now are recorded as contained
+    /// descendants of this child's cache entry.
+    fn store_in_cache(
+        ctx: &mut DrawCtx<'_>,
+        child_id: WidgetId,
+        bounds: Rect,
+        start: usize,
+        log_start: usize,
+    ) {
         if let Some(cache) = ctx.scene_cache.as_deref_mut() {
             let commands = ctx.draw_list.commands()[start..].to_vec();
-            cache
-                .entry(child_id)
-                .or_insert_with(|| SceneNode::new(child_id))
-                .update(commands, bounds);
+            cache.store(child_id, commands, bounds, log_start);
         }
     }
 }
@@ -395,6 +401,7 @@ impl Widget for ContainerWidget {
 
                 // Cache miss — draw and capture for future reuse.
                 let start = ctx.draw_list.len();
+                let log_start = ctx.scene_cache.as_ref().map_or(0, |c| c.log_position());
                 let mut child_ctx = DrawCtx {
                     measurer: ctx.measurer,
                     draw_list: ctx.draw_list,
@@ -407,7 +414,7 @@ impl Widget for ContainerWidget {
                     scene_cache: ctx.scene_cache.as_deref_mut(),
                 };
                 child.draw(&mut child_ctx);
-                Self::store_in_cache(ctx, child_id, bounds, start);
+                Self::store_in_cache(ctx, child_id, bounds, start, log_start);
             }
         }
 

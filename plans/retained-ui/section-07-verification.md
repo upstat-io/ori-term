@@ -1,13 +1,13 @@
 ---
 section: "07"
 title: "Verification"
-status: not-started
+status: in-progress
 goal: "Comprehensive validation that the retained UI framework produces correct output, maintains performance invariants, and introduces no regressions."
 depends_on: ["01", "02", "03", "04", "05", "06"]
 sections:
   - id: "07.1"
     title: "Behavioral Equivalence"
-    status: not-started
+    status: complete
   - id: "07.2"
     title: "Performance Validation"
     status: not-started
@@ -33,9 +33,9 @@ reviewed: true
 
 Verify that scene composition produces identical `DrawList` output to the full-rebuild path. Place equivalence tests in `oriterm_ui/src/draw/scene_compose/tests.rs` (sibling to `scene_compose/mod.rs`) following the project's test organization rules.
 
-- [ ] **Equivalence test harness:** Create a test that renders the same widget tree twice -- once via full rebuild (all scene nodes invalidated), once via scene composition (all nodes valid from a prior frame). Compare `DrawList::commands()` output element-by-element.
+- [x] **Equivalence test harness:** Create a test that renders the same widget tree twice -- once via full rebuild (all scene nodes invalidated), once via scene composition (all nodes valid from a prior frame). Compare `DrawList::commands()` output element-by-element.
 
-- [ ] **Test cases:**
+- [x] **Test cases:**
   - Simple label
   - Button with hover state
   - Container with 5 mixed children
@@ -44,9 +44,9 @@ Verify that scene composition produces identical `DrawList` output to the full-r
   - Full Settings panel form
   - Overlay popup on top of content
 
-- [ ] **Clip/Layer stack correctness:** Verify that `PushClip`/`PopClip` and `PushLayer`/`PopLayer` are correctly balanced in composed output. A test that counts push/pop pairs and asserts balance.
+- [x] **Clip/Layer stack correctness:** Verify that `PushClip`/`PopClip` and `PushLayer`/`PopLayer` are correctly balanced in composed output. A test that counts push/pop pairs and asserts balance.
 
-- [ ] **Transform correctness:** Verify that `PushTranslate`/`PopTranslate` are correctly balanced and that the GPU converter produces identical pixel positions as the old bounds-shifting approach.
+- [x] **Transform correctness:** Verify that `PushTranslate`/`PopTranslate` are correctly balanced and that the GPU converter produces identical pixel positions as the old bounds-shifting approach.
 
 ---
 
