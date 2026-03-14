@@ -170,7 +170,7 @@ Create the `.app` bundle template directory structure checked into the repo. Thi
   </plist>
   ```
 
-- [ ] Verify `CFBundleShortVersionString` matches workspace version in `Cargo.toml` (currently `0.1.0-alpha.3`) — the build script replaces the `__VERSION__` placeholder at assembly time.
+- [ ] Verify `CFBundleShortVersionString` matches workspace version in `Cargo.toml` (currently `0.2.0-alpha.20260314`) — the build script replaces the `__VERSION__` placeholder at assembly time.
 
 ---
 

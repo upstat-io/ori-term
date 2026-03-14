@@ -8,8 +8,8 @@ Prepare and publish a new release with human-curated release notes.
 /publish-release [version]
 ```
 
-- No argument: auto-increment alpha version (e.g., 0.1.0-alpha.7 → 0.1.0-alpha.8)
-- With argument: use explicit version (e.g., `0.2.0`, `0.1.0-beta.1`)
+- No argument: bump alpha to today's date (e.g., `0.2.0-alpha.20260314` → `0.2.0-alpha.20260315`)
+- With argument: use explicit version (e.g., `0.3.0-alpha.20260315`, `0.2.0-beta.20260401`)
 
 ---
 
@@ -47,6 +47,9 @@ Analyze all commits since the last release tag and create release notes in this 
 
 ### Performance
 - Brief description of optimization
+
+### Housekeeping
+- Brief description of internal change
 ```
 
 **Guidelines for release notes:**
@@ -55,9 +58,7 @@ Analyze all commits since the last release tag and create release notes in this 
   - `feat` → Features
   - `fix` → Bug Fixes
   - `perf` → Performance
-- **Exclude from release notes:**
-  - `docs` → Documentation changes (not user-facing)
-  - `refactor`, `chore`, `build`, `ci`, `test`, `style` → Internal changes
+- `refactor`, `chore`, `build`, `ci`, `test`, `style`, `docs` → Housekeeping
 - Write descriptions from the user's perspective (what they get, not what you changed)
 - Keep each bullet point to one line
 - Skip trivial changes (typos, minor internal cleanup)
@@ -156,7 +157,7 @@ mno7890 chore(ci): update build matrix
 
 Generate (excluding docs/chore/ci commits):
 ```markdown
-## What's New in v0.1.0-alpha.8
+## What's New in v0.2.0-alpha.20260314
 
 ### Features
 - Add adaptive scrollback buffer for PTY sessions
