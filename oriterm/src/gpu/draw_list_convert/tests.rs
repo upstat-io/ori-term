@@ -1989,3 +1989,164 @@ fn scroll_widget_clip_pattern_produces_segments() {
     assert!(clips.rects[1].rect.is_none());
     assert_eq!(clips.rects[1].instance_offset, 2);
 }
+
+// --- Transform stack tests ---
+
+#[test]
+fn translate_offsets_rect_position() {
+    let mut dl = DrawList::new();
+    dl.push_translate(10.0, 20.0);
+    dl.push_rect(
+        Rect::new(0.0, 0.0, 50.0, 30.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    dl.pop_translate();
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    assert_eq!(read_f32(rec, 0), 10.0, "x should be offset by dx");
+    assert_eq!(read_f32(rec, 4), 20.0, "y should be offset by dy");
+    assert_eq!(read_f32(rec, 8), 50.0, "width unchanged");
+    assert_eq!(read_f32(rec, 12), 30.0, "height unchanged");
+}
+
+#[test]
+fn translate_does_not_affect_rects_outside_scope() {
+    let mut dl = DrawList::new();
+    dl.push_translate(100.0, 200.0);
+    dl.push_rect(
+        Rect::new(5.0, 5.0, 10.0, 10.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    dl.pop_translate();
+    // Second rect is outside the translate scope.
+    dl.push_rect(
+        Rect::new(5.0, 5.0, 10.0, 10.0),
+        RectStyle::filled(Color::WHITE),
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+
+    assert_eq!(writer.len(), 2);
+    let rec = writer.as_bytes();
+    // First rect: translated.
+    assert_eq!(read_f32(rec, 0), 105.0);
+    assert_eq!(read_f32(rec, 4), 205.0);
+    // Second rect: not translated.
+    let r2 = &rec[INSTANCE_SIZE..];
+    assert_eq!(read_f32(r2, 0), 5.0);
+    assert_eq!(read_f32(r2, 4), 5.0);
+}
+
+#[test]
+fn nested_translates_compose_additively() {
+    let mut dl = DrawList::new();
+    dl.push_translate(10.0, 20.0);
+    dl.push_translate(5.0, 3.0);
+    dl.push_rect(
+        Rect::new(0.0, 0.0, 1.0, 1.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    dl.pop_translate();
+    // After inner pop, only outer translate active.
+    dl.push_rect(
+        Rect::new(0.0, 0.0, 1.0, 1.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    dl.pop_translate();
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+
+    assert_eq!(writer.len(), 2);
+    let rec = writer.as_bytes();
+    // First rect: both translates active (10+5=15, 20+3=23).
+    assert_eq!(read_f32(rec, 0), 15.0);
+    assert_eq!(read_f32(rec, 4), 23.0);
+    // Second rect: only outer translate (10, 20).
+    let r2 = &rec[INSTANCE_SIZE..];
+    assert_eq!(read_f32(r2, 0), 10.0);
+    assert_eq!(read_f32(r2, 4), 20.0);
+}
+
+#[test]
+fn translate_offsets_line_endpoints() {
+    let mut dl = DrawList::new();
+    dl.push_translate(50.0, 60.0);
+    // Horizontal line: from (0,10) to (100,10).
+    dl.push_line(
+        Point::new(0.0, 10.0),
+        Point::new(100.0, 10.0),
+        2.0,
+        Color::WHITE,
+    );
+    dl.pop_translate();
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    // Horizontal line: x = min(from.x, to.x) + translate = 0 + 50 = 50.
+    assert_eq!(read_f32(rec, 0), 50.0, "line x should be offset by dx");
+    // y = from.y - hw + translate = 10 - 1 + 60 = 69.
+    assert_eq!(read_f32(rec, 4), 69.0, "line y should be offset by dy");
+}
+
+#[test]
+fn translate_equivalent_to_bounds_shift() {
+    // Behavioral equivalence: translate-based drawing must produce the same
+    // GPU output as manually shifting positions (the old ScrollWidget approach).
+    let offset_x = 15.0_f32;
+    let offset_y = 40.0_f32;
+
+    // Approach A: PushTranslate + draw at (10, 20).
+    let mut dl_a = DrawList::new();
+    dl_a.push_translate(-offset_x, -offset_y);
+    dl_a.push_rect(
+        Rect::new(10.0, 20.0, 100.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    dl_a.pop_translate();
+
+    let mut writer_a = InstanceWriter::new();
+    convert_draw_list(&dl_a, &mut writer_a, None, None, 1.0, 1.0);
+
+    // Approach B: draw at (10 - offset_x, 20 - offset_y) directly.
+    let mut dl_b = DrawList::new();
+    dl_b.push_rect(
+        Rect::new(10.0 - offset_x, 20.0 - offset_y, 100.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+
+    let mut writer_b = InstanceWriter::new();
+    convert_draw_list(&dl_b, &mut writer_b, None, None, 1.0, 1.0);
+
+    assert_eq!(writer_a.as_bytes(), writer_b.as_bytes());
+}
+
+#[test]
+fn translate_with_scale() {
+    let mut dl = DrawList::new();
+    dl.push_translate(10.0, 20.0);
+    dl.push_rect(
+        Rect::new(5.0, 5.0, 50.0, 30.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    dl.pop_translate();
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, None, 2.0, 1.0);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    // Position: (5+10)*2=30, (5+20)*2=50. Size: 50*2=100, 30*2=60.
+    assert_eq!(read_f32(rec, 0), 30.0);
+    assert_eq!(read_f32(rec, 4), 50.0);
+    assert_eq!(read_f32(rec, 8), 100.0);
+    assert_eq!(read_f32(rec, 12), 60.0);
+}

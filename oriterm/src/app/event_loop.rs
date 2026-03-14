@@ -404,6 +404,11 @@ impl ApplicationHandler<TermEvent> for App {
         // Tick dialog overlay animations (dropdown fade-in/fade-out).
         self.tick_dialog_animations();
 
+        // Lifecycle: show Primed dialogs (first frame committed) and
+        // destroy Closing dialogs (deferred from close_dialog()).
+        self.show_primed_dialogs();
+        self.drain_pending_destroy();
+
         // Check if any window (terminal or dialog) is dirty and render it.
         let any_dirty = self.windows.values().any(|ctx| ctx.dirty)
             || self.dialogs.values().any(|ctx| ctx.dirty);

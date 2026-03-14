@@ -16,6 +16,7 @@ use oriterm_ui::draw::{DrawList, SceneCache};
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
+use oriterm_ui::surface::{DamageSet, RenderStrategy};
 use oriterm_ui::widgets::tab_bar::{TabBarWidget, TabSlideState};
 
 use super::context_menu::ContextMenuState;
@@ -83,6 +84,18 @@ pub(crate) struct WindowContext {
     // Invalidation tracking.
     pub(super) invalidation: InvalidationTracker,
 
+    // Surface strategy and damage tracking.
+    #[expect(
+        dead_code,
+        reason = "vocabulary for retained-ui plan; consumed by future render paths"
+    )]
+    pub(super) render_strategy: RenderStrategy,
+    #[expect(
+        dead_code,
+        reason = "vocabulary for retained-ui plan; consumed by future render paths"
+    )]
+    pub(super) damage: DamageSet,
+
     // Redraw coalescing.
     pub(super) dirty: bool,
     /// Whether this window should bypass the normal frame budget once.
@@ -135,6 +148,8 @@ impl WindowContext {
             search_bar_buf: String::new(),
             scene_cache: SceneCache::new(),
             invalidation: InvalidationTracker::new(),
+            render_strategy: RenderStrategy::TerminalCached,
+            damage: DamageSet::default(),
             dirty: true,
             urgent_redraw: false,
             ui_stale: true,

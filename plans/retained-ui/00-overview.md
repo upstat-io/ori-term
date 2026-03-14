@@ -153,8 +153,8 @@ Phase 3 - Verification
 |----|-------|------|--------|
 | 01 | Text/Layout Caching | `section-01-text-cache.md` | Complete |
 | 02 | Subtree Invalidation | `section-02-subtree-invalidation.md` | Complete |
-| 03 | Scene Retention | `section-03-scene-retention.md` | Not Started |
-| 04 | Scroll Transform | `section-04-scroll-transform.md` | Not Started |
-| 05 | Surface Strategy | `section-05-surface-strategy.md` | Not Started |
-| 06 | Window Lifecycle | `section-06-window-lifecycle.md` | Not Started |
+| 03 | Scene Retention | `section-03-scene-retention.md` | Complete |
+| 04 | Scroll Transform | `section-04-scroll-transform.md` | Complete |
+| 05 | Surface Strategy | `section-05-surface-strategy.md` | Complete |
+| 06 | Window Lifecycle | `section-06-window-lifecycle.md` | Complete |
 | 07 | Verification | `section-07-verification.md` | Not Started |

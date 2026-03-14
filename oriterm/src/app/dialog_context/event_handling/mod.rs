@@ -3,14 +3,15 @@
 //! Routes winit `WindowEvent` variants to dialog-specific handlers.
 //! Chrome events (close, drag) are handled inline. Content area events
 //! are routed to the settings panel widget tree. Widget actions are
-//! dispatched via `content_actions.rs`.
+//! dispatched via `content_actions.rs`. Mouse click/scroll routing lives
+//! in the `mouse` submodule.
+
+mod mouse;
 
 use std::time::Instant;
 
 use oriterm_ui::geometry::{Point, Rect};
-use oriterm_ui::input::{
-    EventResponse, HoverEvent, MouseButton, MouseEvent, MouseEventKind, ScrollDelta,
-};
+use oriterm_ui::input::{EventResponse, HoverEvent, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
 use winit::event::WindowEvent;
@@ -19,6 +20,8 @@ use winit::window::WindowId;
 
 use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 use crate::keybindings;
+
+use oriterm_ui::surface::SurfaceLifecycle;
 
 use crate::app::App;
 
@@ -49,6 +52,21 @@ impl App {
         window_id: WindowId,
         event: WindowEvent,
     ) {
+        // Lifecycle guard: suppress events outside the Visible state.
+        // Resized and ScaleFactorChanged must still be handled in CreatedHidden
+        // (the surface needs reconfiguration before the first render).
+        if let Some(ctx) = self.dialogs.get(&window_id) {
+            let lifecycle = ctx.lifecycle;
+            if !matches!(lifecycle, SurfaceLifecycle::Visible) {
+                match event {
+                    WindowEvent::Resized(..)
+                    | WindowEvent::ScaleFactorChanged { .. }
+                    | WindowEvent::CloseRequested => {}
+                    _ => return,
+                }
+            }
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 self.close_dialog(window_id);
@@ -290,220 +308,6 @@ impl App {
             }
         }
         if needs_redraw {
-            ctx.request_urgent_redraw();
-        }
-    }
-
-    /// Handle mouse button events within a dialog window.
-    fn handle_dialog_mouse_input(
-        &mut self,
-        window_id: WindowId,
-        state: winit::event::ElementState,
-        button: winit::event::MouseButton,
-    ) {
-        let ui_button = match button {
-            winit::event::MouseButton::Left => MouseButton::Left,
-            winit::event::MouseButton::Right => MouseButton::Right,
-            winit::event::MouseButton::Middle => MouseButton::Middle,
-            _ => return,
-        };
-        let kind = match state {
-            winit::event::ElementState::Pressed => MouseEventKind::Down(ui_button),
-            winit::event::ElementState::Released => MouseEventKind::Up(ui_button),
-        };
-
-        // Route to overlay manager first (dropdown popup interactions).
-        if let Some(result) = self.try_dialog_overlay_mouse(window_id, kind) {
-            self.handle_dialog_overlay_result(window_id, result);
-            return;
-        }
-
-        // Chrome and content area.
-        let result = self.route_dialog_click(window_id, kind, button, state);
-        match result {
-            DialogClickResult::Close => self.close_dialog(window_id),
-            DialogClickResult::Drag => {
-                if let Some(ctx) = self.dialogs.get(&window_id) {
-                    let _ = ctx.window.drag_window();
-                }
-            }
-            DialogClickResult::Action(action) => {
-                self.handle_dialog_content_action(window_id, action);
-            }
-            DialogClickResult::None => {}
-        }
-    }
-
-    /// Try routing a mouse event through a dialog's overlay manager.
-    ///
-    /// Returns `Some(result)` if an overlay consumed the event.
-    fn try_dialog_overlay_mouse(
-        &mut self,
-        window_id: WindowId,
-        kind: MouseEventKind,
-    ) -> Option<OverlayEventResult> {
-        let ui_theme = self.ui_theme;
-        let ctx = self.dialogs.get_mut(&window_id)?;
-        if ctx.overlays.is_empty() {
-            return None;
-        }
-        let scale = ctx.scale_factor.factor() as f32;
-        let renderer = ctx.renderer.as_ref()?;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-        let mouse_event = MouseEvent {
-            kind,
-            pos: ctx.last_cursor_pos,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
-        };
-        let result = ctx.overlays.process_mouse_event(
-            &mouse_event,
-            &measurer,
-            &ui_theme,
-            None,
-            &mut ctx.layer_tree,
-            &mut ctx.layer_animator,
-            Instant::now(),
-        );
-        match &result {
-            OverlayEventResult::Delivered { .. } | OverlayEventResult::Dismissed(_) => {
-                ctx.request_urgent_redraw();
-                Some(result)
-            }
-            _ => None,
-        }
-    }
-
-    /// Route a click to either chrome or content area.
-    fn route_dialog_click(
-        &mut self,
-        window_id: WindowId,
-        kind: MouseEventKind,
-        button: winit::event::MouseButton,
-        state: winit::event::ElementState,
-    ) -> DialogClickResult {
-        let ui_theme = self.ui_theme;
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            return DialogClickResult::None;
-        };
-        let scale = ctx.scale_factor.factor() as f32;
-        let logical_pos = ctx.last_cursor_pos;
-        let chrome_h = ctx.chrome.caption_height();
-        let mouse_event = MouseEvent {
-            kind,
-            pos: logical_pos,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
-        };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return DialogClickResult::None;
-        };
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-
-        if logical_pos.y < chrome_h {
-            let event_ctx = EventCtx {
-                measurer: &measurer,
-                bounds: Rect::default(),
-                is_focused: false,
-                focused_widget: None,
-                theme: &ui_theme,
-            };
-            let resp = ctx.chrome.handle_mouse(&mouse_event, &event_ctx);
-            if wants_repaint(resp.response) {
-                resp.mark_tracker(&mut ctx.invalidation);
-                ctx.request_urgent_redraw();
-            }
-            if resp.action.as_ref() == Some(&WidgetAction::WindowClose) {
-                DialogClickResult::Close
-            } else if button == winit::event::MouseButton::Left
-                && state == winit::event::ElementState::Pressed
-                && resp.action.is_none()
-                && !ctx
-                    .chrome
-                    .interactive_rects()
-                    .iter()
-                    .any(|r| r.contains(logical_pos))
-            {
-                DialogClickResult::Drag
-            } else {
-                DialogClickResult::None
-            }
-        } else {
-            let w = ctx.surface_config.width as f32 / scale;
-            let h = ctx.surface_config.height as f32 / scale;
-            let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-            let event_ctx = EventCtx {
-                measurer: &measurer,
-                bounds: content_bounds,
-                is_focused: false,
-                focused_widget: None,
-                theme: &ui_theme,
-            };
-            let resp = ctx
-                .content
-                .content_widget_mut()
-                .handle_mouse(&mouse_event, &event_ctx);
-            if wants_repaint(resp.response) {
-                resp.mark_tracker(&mut ctx.invalidation);
-                ctx.request_urgent_redraw();
-            }
-            match resp.action {
-                Some(action) => DialogClickResult::Action(action),
-                None => DialogClickResult::None,
-            }
-        }
-    }
-
-    /// Handle mouse wheel events within a dialog window.
-    fn handle_dialog_scroll(&mut self, window_id: WindowId, delta: winit::event::MouseScrollDelta) {
-        let ui_theme = self.ui_theme;
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            return;
-        };
-        let scale = ctx.scale_factor.factor() as f32;
-        let scroll_delta = match delta {
-            winit::event::MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Lines { x, y: -y },
-            winit::event::MouseScrollDelta::PixelDelta(pos) => ScrollDelta::Pixels {
-                x: pos.x as f32 / scale,
-                y: -(pos.y as f32 / scale),
-            },
-        };
-        let mouse_event = MouseEvent {
-            kind: MouseEventKind::Scroll(scroll_delta),
-            pos: ctx.last_cursor_pos,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
-        };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-        let chrome_h = ctx.chrome.caption_height();
-        let w = ctx.surface_config.width as f32 / scale;
-        let h = ctx.surface_config.height as f32 / scale;
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: content_bounds,
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-        };
-        let resp = ctx
-            .content
-            .content_widget_mut()
-            .handle_mouse(&mouse_event, &event_ctx);
-        if wants_repaint(resp.response) {
-            resp.mark_tracker(&mut ctx.invalidation);
             ctx.request_urgent_redraw();
         }
     }
