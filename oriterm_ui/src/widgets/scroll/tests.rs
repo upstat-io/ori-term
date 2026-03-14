@@ -375,8 +375,9 @@ fn scroll_child_drawn_offset_by_scroll() {
     // The scroll widget clips to bounds (0,0,200,100) then applies a
     // PushTranslate(0, -40) to offset the child content. Children draw at
     // their natural (unscrolled) positions — the GPU converter applies the
-    // translate at render time. The first text is label 0 at y=0 (the
-    // container sees all labels 0..6 as intersecting the clip region).
+    // translate at render time. Content-space visibility culling skips
+    // labels above the scrolled viewport, so the first drawn label is the
+    // one whose layout rect intersects the visible area [40, 140].
     let translate = draw_list.commands().iter().find_map(|c| match c {
         DrawCommand::PushTranslate { dx, dy } => Some((*dx, *dy)),
         _ => None,
@@ -393,9 +394,11 @@ fn scroll_child_drawn_offset_by_scroll() {
     });
     assert!(first_text.is_some(), "should have text commands");
     let pos = first_text.unwrap();
+    // Label 2 at y=32 (16px per label) is the first whose rect [32,48]
+    // intersects the scrolled viewport [40,140].
     assert_eq!(
-        pos.y, 0.0,
-        "first text should be at natural (unscrolled) position"
+        pos.y, 32.0,
+        "first text should be the first label intersecting the scrolled viewport"
     );
 }
 
