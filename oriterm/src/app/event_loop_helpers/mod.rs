@@ -221,6 +221,8 @@ pub(super) struct ControlFlowInput {
     pub any_dirty: bool,
     /// Whether the frame budget has elapsed since last render.
     pub budget_elapsed: bool,
+    /// Whether any dirty window requests an immediate interactive repaint.
+    pub urgent_redraw: bool,
     /// Whether any window still has dirty flag after rendering.
     pub still_dirty: bool,
     /// Whether compositor animations are running.
@@ -249,7 +251,7 @@ pub(super) enum ControlFlowDecision {
 /// No winit types — testable without a display server. Mirrors the
 /// decision tree in `about_to_wait`.
 pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecision {
-    if (input.any_dirty && !input.budget_elapsed) || input.still_dirty {
+    if (input.any_dirty && !(input.budget_elapsed || input.urgent_redraw)) || input.still_dirty {
         ControlFlowDecision::WaitUntil(input.now + input.budget_remaining)
     } else if input.has_animations {
         ControlFlowDecision::WaitUntil(input.now + std::time::Duration::from_millis(16))

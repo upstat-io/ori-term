@@ -329,6 +329,10 @@ impl Widget for ContainerWidget {
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
+        let visible_bounds = ctx
+            .draw_list
+            .current_clip_rect()
+            .map_or(ctx.bounds, |clip| clip.intersection(ctx.bounds));
 
         if self.clip_children {
             ctx.draw_list.push_clip(ctx.bounds);
@@ -336,6 +340,9 @@ impl Widget for ContainerWidget {
 
         for (idx, child) in self.children.iter().enumerate() {
             if let Some(child_node) = layout.children.get(idx) {
+                if !child_node.rect.intersects(visible_bounds) {
+                    continue;
+                }
                 let mut child_ctx = DrawCtx {
                     measurer: ctx.measurer,
                     draw_list: ctx.draw_list,

@@ -11,7 +11,7 @@ use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::{DrawCtx, Widget};
 
 use crate::app::App;
-use crate::font::UiFontMeasurer;
+use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
 use crate::gpu::state::GpuState;
 
 impl App {
@@ -24,7 +24,7 @@ impl App {
     /// Returns `true` if the tab bar has running animations (e.g. bell pulse).
     #[expect(
         clippy::too_many_arguments,
-        reason = "tab bar drawing: widget, renderer, draw list, viewport, scale, GPU, theme"
+        reason = "tab bar drawing: widget, renderer, draw list, viewport, scale, GPU, theme, cache"
     )]
     pub(in crate::app::redraw) fn draw_tab_bar(
         tab_bar: Option<&oriterm_ui::widgets::tab_bar::TabBarWidget>,
@@ -34,6 +34,7 @@ impl App {
         scale: f32,
         gpu: &GpuState,
         theme: &UiTheme,
+        text_cache: &TextShapeCache,
     ) -> bool {
         let Some(tab_bar) = tab_bar else {
             return false;
@@ -47,7 +48,11 @@ impl App {
 
         draw_list.clear();
         let animations_running = Cell::new(false);
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            text_cache,
+            scale,
+        );
         let icons = renderer.resolved_icons();
 
         let mut ctx = DrawCtx {
@@ -72,7 +77,11 @@ impl App {
         // the chrome tier (draw 7) would show through the dragged tab's bg.
         if tab_bar.has_drag_overlay() {
             draw_list.clear();
-            let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer = CachedTextMeasurer::new(
+                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                text_cache,
+                scale,
+            );
             let icons = renderer.resolved_icons();
             let mut overlay_ctx = DrawCtx {
                 measurer: &measurer,
@@ -100,7 +109,7 @@ impl App {
     /// Returns `true` if overlays have running animations (fade-in/fade-out).
     #[expect(
         clippy::too_many_arguments,
-        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU, tree, theme"
+        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU, tree, theme, cache"
     )]
     pub(in crate::app::redraw) fn draw_overlays(
         overlays: &mut OverlayManager,
@@ -111,6 +120,7 @@ impl App {
         gpu: &GpuState,
         tree: &oriterm_ui::compositor::layer_tree::LayerTree,
         theme: &UiTheme,
+        text_cache: &TextShapeCache,
     ) -> bool {
         let count = overlays.draw_count();
         if count == 0 {
@@ -125,7 +135,11 @@ impl App {
         // drops before the mutable append_ui_draw_list_with_text call.
         // We collect (opacity) per overlay, then append after the borrow ends.
         {
-            let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer = CachedTextMeasurer::new(
+                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                text_cache,
+                scale,
+            );
             overlays.layout_overlays(&measurer, theme);
         }
 
@@ -133,7 +147,11 @@ impl App {
             draw_list.clear();
             // Re-create measurer per iteration — cheap (no allocation), and
             // the immutable borrow drops before the mutable append below.
-            let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer = CachedTextMeasurer::new(
+                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                text_cache,
+                scale,
+            );
             let icons = renderer.resolved_icons();
             let mut ctx = DrawCtx {
                 measurer: &measurer,

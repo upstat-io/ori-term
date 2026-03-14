@@ -13,11 +13,35 @@ use crate::config::Config;
 use super::super::{App, context_menu, settings_overlay};
 
 impl App {
+    /// Clear all transient popup overlays in a terminal window.
+    pub(in crate::app) fn clear_window_popups(&mut self, window_id: winit::window::WindowId) {
+        let mut removed = 0;
+        if let Some(ctx) = self.windows.get_mut(&window_id) {
+            removed = ctx
+                .overlays
+                .clear_popups(&mut ctx.layer_tree, &mut ctx.layer_animator);
+            if removed > 0 {
+                ctx.context_menu = None;
+                ctx.dirty = true;
+                ctx.urgent_redraw = true;
+            }
+        }
+        if removed > 0 {
+            self.pending_dropdown_id = None;
+        }
+    }
+
     /// Process the result of routing an event through the overlay manager.
     pub(in crate::app) fn handle_overlay_result(&mut self, result: OverlayEventResult) {
         match result {
             OverlayEventResult::Delivered { response, .. } => {
                 log::debug!("overlay Delivered: action={:?}", response.action);
+
+                if response.response.is_handled() {
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.urgent_redraw = true;
+                    }
+                }
 
                 let Some(action) = response.action else {
                     if response.response.is_handled() {
@@ -69,6 +93,7 @@ impl App {
                         if response.response.is_handled() {
                             if let Some(ctx) = self.focused_ctx_mut() {
                                 ctx.dirty = true;
+                                ctx.urgent_redraw = true;
                             }
                         }
                     }
@@ -82,6 +107,7 @@ impl App {
                     self.pending_dropdown_id = None;
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.dirty = true;
+                        ctx.urgent_redraw = true;
                     }
                 } else {
                     // Top-level overlay dismissed (Escape, click-outside).
@@ -90,6 +116,7 @@ impl App {
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.context_menu = None;
                         ctx.dirty = true;
+                        ctx.urgent_redraw = true;
                     }
                     self.settings_ids = None;
                 }
@@ -179,6 +206,7 @@ impl App {
             ctx.overlays
                 .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
             ctx.dirty = true;
+            ctx.urgent_redraw = true;
         }
         if self.pending_dropdown_id.is_some() {
             // Only the dropdown popup was dismissed.
@@ -253,10 +281,10 @@ impl App {
     fn dismiss_context_menu(&mut self) {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = None;
-            let now = Instant::now();
             ctx.overlays
-                .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
+                .clear_popups(&mut ctx.layer_tree, &mut ctx.layer_animator);
             ctx.dirty = true;
+            ctx.urgent_redraw = true;
         }
     }
 
@@ -293,7 +321,7 @@ impl App {
         self.pending_dropdown_id = Some(dropdown_id);
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays.push_overlay(
+            ctx.overlays.replace_popup(
                 Box::new(widget),
                 anchor,
                 Placement::BelowFlush,
@@ -302,7 +330,7 @@ impl App {
                 now,
             );
             ctx.dirty = true;
-            ctx.ui_stale = true;
+            ctx.urgent_redraw = true;
         }
     }
 
@@ -322,6 +350,7 @@ impl App {
             ctx.overlays
                 .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
             ctx.dirty = true;
+            ctx.urgent_redraw = true;
         }
 
         // Route the selection through the settings action handler.

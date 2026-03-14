@@ -15,6 +15,14 @@ use crate::gpu::{
     extract_frame_from_snapshot_into, snapshot_palette,
 };
 
+fn should_reextract_multi_pane_scratch(
+    content_refreshed: bool,
+    frame_missing: bool,
+    scratch_matches_pane: bool,
+) -> bool {
+    content_refreshed || frame_missing || !scratch_matches_pane
+}
+
 impl App {
     /// Compute pane layouts for the active tab.
     ///
@@ -166,6 +174,7 @@ impl App {
             let mut focused_rect = None;
             let mut blinking_now = self.blinking_active;
             let mut any_content_changed = false;
+            let mut scratch_frame_pane = None;
 
             for layout in layouts {
                 let pane_id = layout.pane_id;
@@ -216,6 +225,8 @@ impl App {
                         let frame = ctx.frame.as_mut().expect("frame exists when swapped");
                         frame.viewport = pane_viewport;
                         frame.cell_size = cell;
+                        frame.content_cols = snapshot.cols as usize;
+                        frame.content_rows = snapshot.cells.len();
                         frame.palette = snapshot_palette(snapshot);
                         frame.selection = None;
                         frame.search = None;
@@ -225,9 +236,18 @@ impl App {
                         frame.window_focused = true;
                         frame.fg_dim = 1.0;
                         frame.prompt_marker_rows.clear();
-                    } else if content_refreshed || ctx.frame.is_none() {
-                        // Only re-extract when content actually changed.
-                        // Cursor-blink-only redraws reuse the existing frame.
+                        scratch_frame_pane = Some(pane_id);
+                    } else if should_reextract_multi_pane_scratch(
+                        content_refreshed,
+                        ctx.frame.is_none(),
+                        scratch_frame_pane == Some(pane_id),
+                    ) {
+                        // `ctx.frame` is a shared scratch buffer across all
+                        // panes in the loop. Even when a pane's snapshot isn't
+                        // dirty, the scratch buffer may currently hold another
+                        // pane's extracted content, so re-extract unless the
+                        // scratch frame is known to already belong to this
+                        // pane.
                         match &mut ctx.frame {
                             Some(existing) => {
                                 extract_frame_from_snapshot_into(
@@ -245,6 +265,7 @@ impl App {
                                 ));
                             }
                         }
+                        scratch_frame_pane = Some(pane_id);
                     } else {
                         // Cursor-blink-only: reuse existing frame as-is.
                     }
@@ -397,6 +418,7 @@ impl App {
                 scale,
                 gpu,
                 &self.ui_theme,
+                &ctx.text_cache,
             );
             if tab_bar_animating {
                 ctx.dirty = true;
@@ -412,6 +434,7 @@ impl App {
                 gpu,
                 &ctx.layer_tree,
                 &self.ui_theme,
+                &ctx.text_cache,
             );
             if overlays_animating {
                 ctx.dirty = true;
@@ -430,6 +453,7 @@ impl App {
                         chrome_h,
                         scale,
                         gpu,
+                        &ctx.text_cache,
                     );
                 }
             }
@@ -438,7 +462,9 @@ impl App {
             // overlay visuals are stale.
             let needs_full_render = any_content_changed || ctx.ui_stale;
 
-            ctx.ui_stale = tab_bar_animating || overlays_animating;
+            ctx.ui_stale = tab_bar_animating;
+
+            ctx.window.apply_pending_surface_resize(gpu);
 
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
@@ -454,5 +480,26 @@ impl App {
         self.blinking_active = self.config.terminal.cursor_blink && blinking_now;
 
         self.update_ime_cursor_area();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_reextract_multi_pane_scratch;
+
+    #[test]
+    fn reextracts_when_shared_scratch_belongs_to_another_pane() {
+        assert!(should_reextract_multi_pane_scratch(false, false, false));
+    }
+
+    #[test]
+    fn skips_reextract_only_when_scratch_already_matches_clean_pane() {
+        assert!(!should_reextract_multi_pane_scratch(false, false, true));
+    }
+
+    #[test]
+    fn reextracts_when_content_changed_or_frame_missing() {
+        assert!(should_reextract_multi_pane_scratch(true, false, true));
+        assert!(should_reextract_multi_pane_scratch(false, true, true));
     }
 }

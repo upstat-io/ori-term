@@ -320,6 +320,7 @@ impl App {
         renderer.set_hinting_and_format(hinting, format, gpu);
 
         ctx.pane_cache.invalidate_all();
+        ctx.text_cache.clear();
         ctx.dirty = true;
 
         // Mark all grid lines dirty so the frame extraction re-reads every
@@ -357,6 +358,7 @@ impl App {
         for ctx in self.windows.values_mut() {
             ctx.tab_bar.apply_theme(&self.ui_theme);
             ctx.pane_cache.invalidate_all();
+            ctx.text_cache.clear();
             ctx.dirty = true;
         }
     }

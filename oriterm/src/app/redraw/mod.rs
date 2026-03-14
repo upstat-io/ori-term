@@ -23,6 +23,10 @@ impl App {
     pub(super) fn handle_redraw(&mut self) {
         log::trace!("RedrawRequested");
 
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.urgent_redraw = false;
+        }
+
         // Compute URL hover segments before the render block (which borrows
         // ctx.renderer mutably). Take the Vec from the previous frame to
         // reuse its capacity, avoiding a per-frame allocation.
@@ -116,6 +120,8 @@ impl App {
                 let frame = ctx.frame.as_mut().expect("frame exists when swapped");
                 frame.viewport = viewport;
                 frame.cell_size = cell;
+                frame.content_cols = snapshot.cols as usize;
+                frame.content_rows = snapshot.cells.len();
                 frame.palette = snapshot_palette(snapshot);
                 frame.selection = None;
                 frame.search = None;
@@ -246,6 +252,7 @@ impl App {
                 scale,
                 gpu,
                 &self.ui_theme,
+                &ctx.text_cache,
             );
             if tab_bar_animating {
                 ctx.dirty = true;
@@ -262,6 +269,7 @@ impl App {
                 gpu,
                 &ctx.layer_tree,
                 &self.ui_theme,
+                &ctx.text_cache,
             );
             if overlays_animating {
                 ctx.dirty = true;
@@ -280,6 +288,7 @@ impl App {
                     chrome_h,
                     scale,
                     gpu,
+                    &ctx.text_cache,
                 );
             }
 
@@ -288,10 +297,15 @@ impl App {
             // Only cursor-blink-only frames may reuse the cached texture.
             let needs_full_render = content_changed || ctx.ui_stale;
 
-            // Keep ui_stale set while animations are running so subsequent
-            // animation frames also get full renders. Clear when the cache
-            // is freshly rendered with no ongoing animations.
-            ctx.ui_stale = tab_bar_animating || overlays_animating;
+            // Overlay tiers render above the cached content every frame, so
+            // only chrome animations keep the content cache stale.
+            ctx.ui_stale = tab_bar_animating;
+
+            // Apply deferred DXGI ResizeBuffers just before acquiring the
+            // surface texture. This minimizes the gap between swap chain
+            // invalidation and frame presentation, preventing the DWM from
+            // stretching stale content during interactive resize.
+            ctx.window.apply_pending_surface_resize(gpu);
 
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
@@ -332,6 +346,9 @@ impl App {
                 {
                     let (w, h) = ctx.window.size_px();
                     ctx.window.resize_surface(w, h, gpu);
+                    // Force immediate reconfigure for error recovery
+                    // (can't defer — the surface is lost).
+                    ctx.window.apply_pending_surface_resize(gpu);
                 }
             }
             Err(e) => log::error!("render error: {e}"),

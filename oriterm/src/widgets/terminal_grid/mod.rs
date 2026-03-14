@@ -116,11 +116,10 @@ impl Widget for TerminalGridWidget {
         .with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        // Store bounds for the app to read and pass as origin to the
-        // prepare pipeline. No DrawCommands — cell rendering is handled
-        // by the GPU prepare phase.
-        self.bounds.set(Some(ctx.bounds));
+    fn draw(&self, _ctx: &mut DrawCtx<'_>) {
+        // No DrawCommands — cell rendering is handled by the GPU prepare
+        // phase. Bounds are set explicitly via `set_bounds()` from
+        // `compute_window_layout`, which includes grid padding.
     }
 
     fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {

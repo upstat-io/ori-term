@@ -25,6 +25,7 @@ use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use crate::app::settings_overlay::SettingsIds;
 use crate::config::Config;
 use crate::event::ConfirmationKind;
+use crate::font::TextShapeCache;
 use crate::gpu::WindowRenderer;
 use crate::window_manager::types::DialogKind;
 
@@ -51,6 +52,8 @@ pub(crate) struct DialogWindowContext {
     pub(super) layer_tree: LayerTree,
     /// Compositor layer animator for overlay fade transitions.
     pub(super) layer_animator: LayerAnimator,
+    /// Text shaping cache (persists across frames for cached UI text measurer).
+    pub(super) text_cache: TextShapeCache,
     /// Scratch draw list for rendering the dialog frame.
     pub(super) draw_list: DrawList,
     /// DPI scale factor for this window's display.
@@ -59,6 +62,8 @@ pub(crate) struct DialogWindowContext {
     pub(super) last_cursor_pos: oriterm_ui::geometry::Point,
     /// Whether this dialog needs a redraw.
     pub(super) dirty: bool,
+    /// Whether this dialog should bypass the normal frame budget once.
+    pub(super) urgent_redraw: bool,
 }
 
 /// Dialog-specific content and associated state.
@@ -157,10 +162,12 @@ impl DialogWindowContext {
             overlays: OverlayManager::new(viewport),
             layer_tree: LayerTree::new(viewport),
             layer_animator: LayerAnimator::new(),
+            text_cache: TextShapeCache::new(),
             draw_list: DrawList::new(),
             scale_factor,
             last_cursor_pos: oriterm_ui::geometry::Point::new(0.0, 0.0),
             dirty: true,
+            urgent_redraw: false,
         }
     }
 
@@ -179,6 +186,12 @@ impl DialogWindowContext {
         self.overlays
             .set_viewport(Rect::new(0.0, 0.0, logical_w, logical_h));
         self.dirty = true;
+    }
+
+    /// Schedule an immediate redraw for latency-sensitive UI feedback.
+    pub(super) fn request_urgent_redraw(&mut self) {
+        self.dirty = true;
+        self.urgent_redraw = true;
     }
 
     /// Whether this dialog has a non-zero surface area for rendering.

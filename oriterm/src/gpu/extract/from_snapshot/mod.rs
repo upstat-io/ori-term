@@ -38,6 +38,8 @@ pub(crate) fn extract_frame_from_snapshot(
         content,
         viewport,
         cell_size,
+        content_cols: snapshot.cols as usize,
+        content_rows: snapshot.cells.len(),
         palette,
         selection: None,
         search: None,
@@ -143,6 +145,8 @@ pub(crate) fn extract_frame_from_snapshot_into(
     snapshot_to_renderable_into(snapshot, &mut out.content);
     out.viewport = viewport;
     out.cell_size = cell_size;
+    out.content_cols = snapshot.cols as usize;
+    out.content_rows = snapshot.cells.len();
     out.palette = snapshot_palette(snapshot);
     out.selection = None;
     out.search = None;

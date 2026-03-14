@@ -273,6 +273,50 @@ fn push_overlay_increments_count() {
 }
 
 #[test]
+fn replace_popup_keeps_only_latest_popup() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    mgr.push_modal(
+        label_widget("Modal"),
+        anchor(),
+        Placement::Center,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    let first_popup = mgr.push_overlay(
+        label_widget("First"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    let second_popup = mgr.replace_popup(
+        label_widget("Second"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+
+    assert_eq!(mgr.count(), 2, "modal + latest popup should remain");
+    assert!(!mgr.begin_dismiss(first_popup, &mut tree, &mut animator, now));
+    assert_eq!(
+        mgr.begin_dismiss_topmost(&mut tree, &mut animator, now),
+        Some(second_popup)
+    );
+    assert!(
+        mgr.has_modal(),
+        "modal should remain after popup replacement"
+    );
+}
+
+#[test]
 fn push_modal_sets_has_modal() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
@@ -537,6 +581,39 @@ fn mouse_click_inside_overlay_delivers() {
 }
 
 #[test]
+fn mouse_click_inside_new_overlay_delivers_without_prior_layout_pass() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let id = mgr.push_overlay(
+        button_widget("Click"),
+        Rect::default(),
+        Placement::AtPoint(Point::new(40.0, 50.0)),
+        &mut tree,
+        &mut animator,
+        now,
+    );
+
+    let event = mouse_down(45.0, 55.0);
+    let result = mgr.process_mouse_event(
+        &event,
+        &MockMeasurer::STANDARD,
+        &TEST_THEME,
+        None,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+
+    match result {
+        OverlayEventResult::Delivered { overlay_id, .. } => assert_eq!(overlay_id, id),
+        other => panic!("expected Delivered, got {other:?}"),
+    }
+}
+
+#[test]
 fn mouse_click_outside_dismisses() {
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
@@ -572,6 +649,43 @@ fn mouse_click_outside_dismisses() {
     // Popups are removed instantly — no dismissing phase.
     assert_eq!(mgr.count(), 0);
     assert!(mgr.is_empty());
+}
+
+#[test]
+fn clear_popups_preserves_modal_layers() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    mgr.push_modal(
+        label_widget("Modal"),
+        anchor(),
+        Placement::Center,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.push_overlay(
+        label_widget("Popup A"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.push_overlay(
+        label_widget("Popup B"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+
+    assert_eq!(mgr.clear_popups(&mut tree, &mut animator), 2);
+    assert_eq!(mgr.count(), 1);
+    assert!(mgr.has_modal(), "modal should survive popup clearing");
 }
 
 #[test]

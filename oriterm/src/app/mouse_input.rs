@@ -45,7 +45,11 @@ impl App {
             let Some(renderer) = ctx.renderer.as_ref() else {
                 return;
             };
-            let measurer = crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let measurer = crate::font::CachedTextMeasurer::new(
+                crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                &ctx.text_cache,
+                scale,
+            );
             let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
             ctx.overlays.process_mouse_event(
                 ui_event,
@@ -165,7 +169,7 @@ impl App {
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = Some(state);
-            ctx.overlays.push_overlay(
+            ctx.overlays.replace_popup(
                 Box::new(widget),
                 Rect::default(),
                 Placement::AtPoint(logical),
@@ -174,7 +178,7 @@ impl App {
                 now,
             );
             ctx.dirty = true;
-            ctx.ui_stale = true;
+            ctx.urgent_redraw = true;
         }
     }
 

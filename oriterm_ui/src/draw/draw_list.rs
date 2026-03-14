@@ -99,6 +99,8 @@ pub struct DrawList {
     commands: Vec<DrawCommand>,
     /// Tracks push/pop balance for debug assertions.
     clip_stack_depth: u32,
+    /// Cumulative clip stack for visibility culling during widget draw.
+    clip_stack: Vec<Rect>,
     /// Background color stack for subpixel text compositing.
     bg_stack: Vec<Color>,
     /// Tracks push/pop balance for debug assertions.
@@ -111,6 +113,7 @@ impl DrawList {
         Self {
             commands: Vec::new(),
             clip_stack_depth: 0,
+            clip_stack: Vec::new(),
             bg_stack: Vec::new(),
             layer_stack_depth: 0,
         }
@@ -172,6 +175,12 @@ impl DrawList {
     /// Pushes a clip rectangle. Must be paired with [`pop_clip`](Self::pop_clip).
     pub fn push_clip(&mut self, rect: Rect) {
         self.clip_stack_depth += 1;
+        let cumulative = self
+            .clip_stack
+            .last()
+            .copied()
+            .map_or(rect, |current| current.intersection(rect));
+        self.clip_stack.push(cumulative);
         self.commands.push(DrawCommand::PushClip { rect });
     }
 
@@ -186,6 +195,7 @@ impl DrawList {
             "pop_clip called with empty clip stack",
         );
         self.clip_stack_depth -= 1;
+        self.clip_stack.pop();
         self.commands.push(DrawCommand::PopClip);
     }
 
@@ -220,6 +230,11 @@ impl DrawList {
         self.bg_stack.last()
     }
 
+    /// Returns the effective clip bounds after intersecting all active clips.
+    pub fn current_clip_rect(&self) -> Option<Rect> {
+        self.clip_stack.last().copied()
+    }
+
     /// Returns the commands in draw order.
     pub fn commands(&self) -> &[DrawCommand] {
         &self.commands
@@ -239,6 +254,7 @@ impl DrawList {
     pub fn clear(&mut self) {
         self.commands.clear();
         self.clip_stack_depth = 0;
+        self.clip_stack.clear();
         self.bg_stack.clear();
         self.layer_stack_depth = 0;
     }
