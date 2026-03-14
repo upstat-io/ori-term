@@ -7,7 +7,8 @@
 //!   On content-change frames, everything except the cursor is rendered to an
 //!   offscreen cache texture. On every frame (including cursor-blink-only),
 //!   the cache is copied to the surface and only the cursor is drawn on top.
-//!   This avoids the full GPU submission on idle blink frames.
+//!   This avoids the full GPU submission on idle blink frames. UI-only dialog
+//!   windows bypass the cache and render straight to the surface.
 
 use std::time::Instant;
 
@@ -71,7 +72,8 @@ impl WindowRenderer {
                 ..Default::default()
             });
 
-            Self::record_content_passes(pipelines, self, &mut pass);
+            Self::record_cached_content_passes(pipelines, self, &mut pass);
+            Self::record_overlay_pass(pipelines, self, &mut pass);
             Self::record_cursor_pass(pipelines, self, &mut pass);
         }
 
@@ -83,10 +85,13 @@ impl WindowRenderer {
 
     /// Acquire a surface texture, render with content caching, and present.
     ///
-    /// When `content_changed` is `true`, renders all non-cursor content to an
-    /// offscreen cache texture, copies it to the surface, then draws the cursor.
-    /// When `false` (cursor-blink-only), skips the content render entirely —
-    /// copies the cached texture and draws only the cursor overlay.
+    /// Terminal windows use the cached path: when `content_changed` is `true`,
+    /// all non-cursor content is rendered to an offscreen cache texture, then
+    /// copied to the surface before drawing overlays/cursor. When `false`
+    /// (cursor-blink-only), the cached texture is reused.
+    ///
+    /// UI-only dialog windows skip the offscreen cache entirely and render
+    /// directly to the surface every frame.
     ///
     /// Handles surface errors: `Lost`/`Outdated` → caller should reconfigure,
     /// `OutOfMemory` → propagated, `Timeout` → propagated.
@@ -104,7 +109,6 @@ impl WindowRenderer {
             wgpu::SurfaceError::Other => SurfaceError::Other,
         })?;
 
-        let vp = self.prepared.viewport;
         let device = &gpu.device;
         let queue = &gpu.queue;
 
@@ -112,8 +116,74 @@ impl WindowRenderer {
         self.rebuild_stale_atlas_bind_groups(device, &pipelines.atlas_layout);
 
         // Update screen_size uniform.
+        let vp = self.prepared.viewport;
         self.uniform_buffer
             .write_screen_size(queue, vp.width as f32, vp.height as f32);
+
+        if self.is_ui_only() {
+            self.render_ui_only(gpu, pipelines, &output);
+        } else {
+            self.render_cached(gpu, pipelines, &output, content_changed);
+        }
+
+        output.present();
+        log::debug!("frame draw calls: {}", self.prepared.count_draw_calls());
+        Ok(())
+    }
+
+    /// UI-only path: render everything directly to the surface in a single pass.
+    fn render_ui_only(
+        &mut self,
+        gpu: &GpuState,
+        pipelines: &GpuPipelines,
+        output: &wgpu::SurfaceTexture,
+    ) {
+        let device = &gpu.device;
+        let queue = &gpu.queue;
+        self.upload_instance_buffers(device, queue);
+        self.upload_image_instances(device, queue);
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("ui_only_frame_encoder"),
+        });
+        let surface_view = output.texture.create_view(&TextureViewDescriptor {
+            format: Some(gpu.render_format()),
+            ..Default::default()
+        });
+        let clear = self.clear_color();
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("ui_only_surface_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &surface_view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(clear),
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            });
+            Self::record_cached_content_passes(pipelines, self, &mut pass);
+            Self::record_overlay_pass(pipelines, self, &mut pass);
+            Self::record_cursor_pass(pipelines, self, &mut pass);
+        }
+        queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Cached path: render content to an offscreen texture, copy to surface,
+    /// then draw overlays and cursor on top.
+    fn render_cached(
+        &mut self,
+        gpu: &GpuState,
+        pipelines: &GpuPipelines,
+        output: &wgpu::SurfaceTexture,
+        content_changed: bool,
+    ) {
+        let vp = self.prepared.viewport;
+        let device = &gpu.device;
+        let queue = &gpu.queue;
 
         // Ensure the content cache texture exists and matches the viewport.
         self.ensure_content_cache(device, vp.width, vp.height, gpu);
@@ -147,20 +217,15 @@ impl WindowRenderer {
                     })],
                     ..Default::default()
                 });
-                Self::record_content_passes(pipelines, self, &mut pass);
+                Self::record_cached_content_passes(pipelines, self, &mut pass);
             }
         } else {
-            // Blink-only: just upload the cursor buffer.
-            upload_buffer(
-                device,
-                queue,
-                &mut self.cursor_buffer,
-                self.prepared.cursors.as_bytes(),
-                "cursor_instance_buffer",
-            );
+            // Cached content is still valid: only transient overlay/cursor
+            // tiers need fresh buffers this frame.
+            self.upload_overlay_and_cursor_buffers(device, queue);
         }
 
-        // Copy cached content → surface texture.
+        // Copy cached content to surface texture.
         let cache_tex = self.content_cache.as_ref().expect("cache ensured");
         encoder.copy_texture_to_texture(
             cache_tex.as_image_copy(),
@@ -172,14 +237,14 @@ impl WindowRenderer {
             },
         );
 
-        // Draw cursor on top of the copied content.
+        // Draw overlays and cursor on top of the copied content.
         let surface_view = output.texture.create_view(&TextureViewDescriptor {
             format: Some(gpu.render_format()),
             ..Default::default()
         });
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("cursor_overlay_pass"),
+                label: Some("overlay_cursor_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &surface_view,
                     resolve_target: None,
@@ -191,14 +256,11 @@ impl WindowRenderer {
                 })],
                 ..Default::default()
             });
+            Self::record_overlay_pass(pipelines, self, &mut pass);
             Self::record_cursor_pass(pipelines, self, &mut pass);
         }
 
         queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-
-        log::debug!("frame draw calls: {}", self.prepared.count_draw_calls());
-        Ok(())
     }
 
     // ── Content cache management ──
@@ -333,6 +395,46 @@ impl WindowRenderer {
         );
     }
 
+    /// Upload only the transient overlay and cursor buffers.
+    ///
+    /// Used when the cached terminal/chrome content is still valid and only
+    /// the overlay or cursor layer needs to change.
+    fn upload_overlay_and_cursor_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        macro_rules! upload {
+            ($buf:ident, $writer:ident, $label:literal) => {
+                upload_buffer(
+                    device,
+                    queue,
+                    &mut self.$buf,
+                    self.prepared.$writer.as_bytes(),
+                    $label,
+                );
+            };
+        }
+
+        upload!(cursor_buffer, cursors, "cursor_instance_buffer");
+        upload!(
+            overlay_rect_buffer,
+            overlay_rects,
+            "overlay_rect_instance_buffer"
+        );
+        upload!(
+            overlay_fg_buffer,
+            overlay_glyphs,
+            "overlay_fg_instance_buffer"
+        );
+        upload!(
+            overlay_subpixel_fg_buffer,
+            overlay_subpixel_glyphs,
+            "overlay_subpixel_fg_instance_buffer"
+        );
+        upload!(
+            overlay_color_fg_buffer,
+            overlay_color_glyphs,
+            "overlay_color_fg_instance_buffer"
+        );
+    }
+
     /// Upload image quad instances to a shared GPU buffer.
     ///
     /// Each image quad is 36 bytes. All quads (below + above text) are packed
@@ -382,17 +484,12 @@ impl WindowRenderer {
 
     // ── Draw pass recording ──
 
-    /// Record all content draw passes (everything except the cursor).
+    /// Record cached-content draw passes.
     ///
-    /// Three tiers in painter's order:
+    /// Two tiers in painter's order:
     /// - Terminal: cell backgrounds, images below text, glyphs, images above
     /// - Chrome: UI rects + chrome text (tab bar, search bar)
-    /// - Overlay: overlay rects + overlay text (context menus)
-    #[expect(
-        clippy::too_many_lines,
-        reason = "GPU draw dispatch table: draw calls across multiple tiers + image passes"
-    )]
-    fn record_content_passes<'a>(
+    fn record_cached_content_passes<'a>(
         pipelines: &'a GpuPipelines,
         renderer: &'a Self,
         pass: &mut wgpu::RenderPass<'a>,
@@ -505,8 +602,22 @@ impl WindowRenderer {
             vw,
             vh,
         );
+    }
 
-        // Overlay tier — per-overlay compositing for correct z-ordering.
+    /// Record overlay draw passes only.
+    fn record_overlay_pass<'a>(
+        pipelines: &'a GpuPipelines,
+        renderer: &'a Self,
+        pass: &mut wgpu::RenderPass<'a>,
+    ) {
+        let bg = renderer.uniform_buffer.bind_group();
+        let mono = Some(renderer.atlas_bind_group.bind_group());
+        let sub = Some(renderer.subpixel_atlas_bind_group.bind_group());
+        let color = Some(renderer.color_atlas_bind_group.bind_group());
+        let p = &renderer.prepared;
+        let vw = p.viewport.width;
+        let vh = p.viewport.height;
+
         for range in &p.overlay_draw_ranges {
             record_draw_range_clipped(
                 pass,

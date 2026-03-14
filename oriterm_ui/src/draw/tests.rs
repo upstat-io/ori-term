@@ -177,6 +177,33 @@ fn nested_clips() {
 }
 
 #[test]
+fn current_clip_rect_tracks_nested_intersection() {
+    let mut dl = DrawList::new();
+    assert_eq!(dl.current_clip_rect(), None);
+
+    dl.push_clip(Rect::new(0.0, 0.0, 200.0, 200.0));
+    assert_eq!(
+        dl.current_clip_rect(),
+        Some(Rect::new(0.0, 0.0, 200.0, 200.0))
+    );
+
+    dl.push_clip(Rect::new(50.0, 50.0, 200.0, 200.0));
+    assert_eq!(
+        dl.current_clip_rect(),
+        Some(Rect::new(50.0, 50.0, 150.0, 150.0))
+    );
+
+    dl.pop_clip();
+    assert_eq!(
+        dl.current_clip_rect(),
+        Some(Rect::new(0.0, 0.0, 200.0, 200.0))
+    );
+
+    dl.pop_clip();
+    assert_eq!(dl.current_clip_rect(), None);
+}
+
+#[test]
 fn clear_resets_everything() {
     let mut dl = DrawList::new();
     dl.push_rect(Rect::new(0.0, 0.0, 10.0, 10.0), RectStyle::default());

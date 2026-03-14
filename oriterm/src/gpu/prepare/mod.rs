@@ -308,7 +308,7 @@ pub(crate) fn fill_frame_shaped(
     let search = input.search.as_ref();
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
 
-    let viewport_h = input.viewport.height as f32;
+    let viewport_h = frame.viewport.height as f32;
 
     // Track row boundaries for row_ranges (incremental update support).
     let mut current_row = usize::MAX;

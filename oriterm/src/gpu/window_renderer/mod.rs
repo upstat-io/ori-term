@@ -411,6 +411,7 @@ impl WindowRenderer {
             self.atlas.begin_frame();
             self.subpixel_atlas.begin_frame();
             self.color_atlas.begin_frame();
+            self.prepared.clear_ephemeral_tiers();
             prepare::update_cursor_only(input, &mut self.prepared, origin, cursor_blink_visible);
             return;
         }

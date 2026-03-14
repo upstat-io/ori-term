@@ -7,7 +7,7 @@ use oriterm_ui::geometry::Point;
 use oriterm_ui::widgets::status_badge::StatusBadge;
 
 use super::App;
-use crate::font::UiFontMeasurer;
+use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
 use crate::gpu::FrameSearch;
 use crate::gpu::state::GpuState;
 
@@ -19,7 +19,7 @@ impl App {
     /// to physical pixels for the GPU pipeline.
     #[expect(
         clippy::too_many_arguments,
-        reason = "search bar drawing: search state, renderer, draw list, buffer, viewport, caption, scale, GPU"
+        reason = "search bar drawing: search state, renderer, draw list, buffer, viewport, caption, scale, GPU, cache"
     )]
     pub(in crate::app::redraw) fn draw_search_bar(
         search: &FrameSearch,
@@ -30,6 +30,7 @@ impl App {
         caption_h: f32,
         scale: f32,
         gpu: &GpuState,
+        text_cache: &TextShapeCache,
     ) {
         buf.clear();
         let query = search.query();
@@ -51,7 +52,11 @@ impl App {
         // Shape text and measure badge (immutable borrow on renderer ends
         // after shape — NLL lets the mutable append follow).
         let max_text_w = logical_width * 0.4;
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            text_cache,
+            scale,
+        );
         let (w, _h) = badge.measure(&measurer, max_text_w);
 
         // Position: top-right of grid area, inset from edges.

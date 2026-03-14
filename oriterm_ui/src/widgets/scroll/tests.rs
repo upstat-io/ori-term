@@ -369,14 +369,21 @@ fn scroll_child_drawn_offset_by_scroll() {
     };
     scroll.draw(&mut ctx);
 
-    // Find the first Text command — it should be offset by -40px vertically.
+    // The scroll widget clips to bounds (0,0,200,100) and offsets child by
+    // -40px. With 16px-tall labels, label 0 is at y=-40..-24, label 1 at
+    // y=-24..-8, label 2 at y=-8..8. Container visibility culling skips
+    // children fully outside the clip, so the first drawn text should be
+    // label 2 at y=-8 (partially visible).
     let first_text = draw_list.commands().iter().find_map(|c| match c {
         DrawCommand::Text { position, .. } => Some(*position),
         _ => None,
     });
     assert!(first_text.is_some(), "should have text commands");
     let pos = first_text.unwrap();
-    assert_eq!(pos.y, -40.0, "text y should be offset by scroll amount");
+    assert_eq!(
+        pos.y, -8.0,
+        "first visible text should be offset to partially visible position"
+    );
 }
 
 #[test]

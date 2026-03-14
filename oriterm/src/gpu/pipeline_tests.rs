@@ -22,8 +22,12 @@ fn subpixel_blend(fg: [f32; 4], bg: [f32; 4], mask: [f32; 3]) -> [f32; 4] {
     let r = mix(bg[0], fg[0], mask[0]);
     let g = mix(bg[1], fg[1], mask[1]);
     let b = mix(bg[2], fg[2], mask[2]);
-    let a = mask[0].max(mask[1]).max(mask[2]) * fg[3];
-    [r * a, g * a, b * a, a]
+    if bg[3] > 0.001 {
+        return [r, g, b, 1.0];
+    }
+    let coverage = mask[0].max(mask[1]).max(mask[2]);
+    let a = coverage * fg[3];
+    [fg[0] * a, fg[1] * a, fg[2] * a, a]
 }
 
 #[test]
@@ -43,11 +47,11 @@ fn subpixel_blend_zero_mask_returns_bg() {
     let fg = [1.0, 1.0, 1.0, 1.0];
     let bg = [0.2, 0.4, 0.6, 1.0];
     let out = subpixel_blend(fg, bg, [0.0, 0.0, 0.0]);
-    // mask=(0,0,0) → a=0, so premultiplied output is all zeros.
-    assert!((out[0]).abs() < 1e-6, "R should be 0 (premultiplied)");
-    assert!((out[1]).abs() < 1e-6, "G should be 0 (premultiplied)");
-    assert!((out[2]).abs() < 1e-6, "B should be 0 (premultiplied)");
-    assert!((out[3]).abs() < 1e-6, "A should be 0");
+    // Known background branch: mask=(0,0,0) returns the background directly.
+    assert!((out[0] - 0.2).abs() < 1e-6, "R should be bg.r");
+    assert!((out[1] - 0.4).abs() < 1e-6, "G should be bg.g");
+    assert!((out[2] - 0.6).abs() < 1e-6, "B should be bg.b");
+    assert!((out[3] - 1.0).abs() < 1e-6, "A should be 1.0");
 }
 
 #[test]
@@ -55,12 +59,11 @@ fn subpixel_blend_partial_mask_interpolates() {
     let fg = [1.0, 1.0, 1.0, 1.0];
     let bg = [0.0, 0.0, 0.0, 1.0];
     let out = subpixel_blend(fg, bg, [0.5, 0.5, 0.5]);
-    // mix(0, 1, 0.5) = 0.5 for each channel, a = 0.5 * 1.0 = 0.5.
-    // Premultiplied: 0.5 * 0.5 = 0.25.
-    assert!((out[0] - 0.25).abs() < 1e-6, "R should be 0.25");
-    assert!((out[1] - 0.25).abs() < 1e-6, "G should be 0.25");
-    assert!((out[2] - 0.25).abs() < 1e-6, "B should be 0.25");
-    assert!((out[3] - 0.5).abs() < 1e-6, "A should be 0.5");
+    // Known background branch returns the per-channel mix directly as opaque.
+    assert!((out[0] - 0.5).abs() < 1e-6, "R should be 0.5");
+    assert!((out[1] - 0.5).abs() < 1e-6, "G should be 0.5");
+    assert!((out[2] - 0.5).abs() < 1e-6, "B should be 0.5");
+    assert!((out[3] - 1.0).abs() < 1e-6, "A should be 1.0");
 }
 
 #[test]
@@ -81,15 +84,30 @@ fn subpixel_blend_per_channel_independence() {
 #[test]
 fn subpixel_blend_semitransparent_fg() {
     let fg = [1.0, 1.0, 1.0, 0.5]; // 50% opacity foreground
-    let bg = [0.0, 0.0, 0.0, 1.0];
+    let bg = [0.0, 0.0, 0.0, 0.0];
     let out = subpixel_blend(fg, bg, [1.0, 1.0, 1.0]);
-    // mask=1 → mix(bg, fg, 1) = fg for each channel = 1.0
-    // a = max(1,1,1) * 0.5 = 0.5
-    // premultiplied: 1.0 * 0.5 = 0.5
+    // Unknown background branch: grayscale alpha fallback.
     assert!((out[0] - 0.5).abs() < 1e-6);
     assert!((out[1] - 0.5).abs() < 1e-6);
     assert!((out[2] - 0.5).abs() < 1e-6);
     assert!((out[3] - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn subpixel_blend_unknown_bg_falls_back_to_grayscale() {
+    let fg = [1.0, 0.5, 0.25, 1.0];
+    let bg = [0.0, 0.0, 0.0, 0.0];
+    let out = subpixel_blend(fg, bg, [1.0, 0.0, 0.5]);
+    // Unknown background branch should collapse to a single grayscale
+    // coverage value (max channel = 1.0), preserving fg color ratios
+    // without per-channel fringing.
+    assert!((out[0] - 1.0).abs() < 1e-6, "R should be fg.r * coverage");
+    assert!((out[1] - 0.5).abs() < 1e-6, "G should be fg.g * coverage");
+    assert!((out[2] - 0.25).abs() < 1e-6, "B should be fg.b * coverage");
+    assert!(
+        (out[3] - 1.0).abs() < 1e-6,
+        "A should be grayscale coverage"
+    );
 }
 
 use super::frame_input::{FrameInput, ViewportSize};
