@@ -345,6 +345,7 @@ impl App {
             oriterm_ui::input::EventResponse::RequestPaint
                 | oriterm_ui::input::EventResponse::RequestLayout
         ) {
+            resp.mark_tracker(&mut ctx.invalidation);
             ctx.dirty = true;
             ctx.ui_stale = true;
         }

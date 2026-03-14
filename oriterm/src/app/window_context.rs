@@ -14,6 +14,7 @@ use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;
 use oriterm_ui::draw::DrawList;
 use oriterm_ui::geometry::Rect;
+use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::widgets::tab_bar::{TabBarWidget, TabSlideState};
 
@@ -76,6 +77,9 @@ pub(crate) struct WindowContext {
     // Reusable buffers.
     pub(super) search_bar_buf: String,
 
+    // Invalidation tracking.
+    pub(super) invalidation: InvalidationTracker,
+
     // Redraw coalescing.
     pub(super) dirty: bool,
     /// Whether this window should bypass the normal frame budget once.
@@ -126,6 +130,7 @@ impl WindowContext {
             last_drag_area_press: None,
             text_cache: TextShapeCache::new(),
             search_bar_buf: String::new(),
+            invalidation: InvalidationTracker::new(),
             dirty: true,
             urgent_redraw: false,
             ui_stale: true,

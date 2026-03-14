@@ -58,7 +58,8 @@ impl OverlayManager {
                     focused_widget,
                     theme,
                 };
-                let response = overlay.widget.handle_mouse(event, &ctx);
+                let mut response = overlay.widget.handle_mouse(event, &ctx);
+                response.inject_source(root_id);
                 match response.capture {
                     CaptureRequest::Release => self.captured_overlay = None,
                     CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
@@ -105,7 +106,8 @@ impl OverlayManager {
                     focused_widget,
                     theme,
                 };
-                let response = overlay.widget.handle_mouse(event, &ctx);
+                let mut response = overlay.widget.handle_mouse(event, &ctx);
+                response.inject_source(root_id);
                 if response.capture == CaptureRequest::Acquire {
                     self.captured_overlay = Some(i);
                 }
@@ -180,7 +182,8 @@ impl OverlayManager {
             focused_widget,
             theme,
         };
-        let response = topmost.widget.handle_key(event, &ctx);
+        let mut response = topmost.widget.handle_key(event, &ctx);
+        response.inject_source(root_id);
         if response.response.needs_layout() {
             self.layout_dirty = true;
         }
@@ -253,7 +256,8 @@ impl OverlayManager {
                     focused_widget,
                     theme,
                 };
-                let response = overlay.widget.handle_hover(HoverEvent::Enter, &ctx);
+                let mut response = overlay.widget.handle_hover(HoverEvent::Enter, &ctx);
+                response.inject_source(root_id);
                 OverlayEventResult::Delivered {
                     overlay_id: id,
                     response,

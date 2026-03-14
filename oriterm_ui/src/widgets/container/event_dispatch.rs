@@ -88,7 +88,8 @@ impl ContainerWidget {
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
             };
-            let resp = child.handle_mouse(event, &child_ctx);
+            let mut resp = child.handle_mouse(event, &child_ctx);
+            resp.inject_source(child.id());
             if resp.response.needs_layout() {
                 *self.cached_layout.borrow_mut() = None;
             }
@@ -123,19 +124,26 @@ impl ContainerWidget {
             return WidgetResponse::ignored();
         }
 
+        // Hover changed between children — always at least a Paint.
+        let mut result = WidgetResponse::paint();
+
         // Leave old child.
         if let Some(old_idx) = self.input_state.hovered_child {
             if let (Some(child), Some(child_node)) =
                 (self.children.get_mut(old_idx), layout.children.get(old_idx))
             {
+                let child_id = child.id();
                 let child_ctx = EventCtx {
                     measurer: ctx.measurer,
                     bounds: child_node.content_rect,
-                    is_focused: ctx.focused_widget == Some(child.id()),
+                    is_focused: ctx.focused_widget == Some(child_id),
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
                 };
-                child.handle_hover(HoverEvent::Leave, &child_ctx);
+                let resp = child.handle_hover(HoverEvent::Leave, &child_ctx);
+                if resp.response.is_handled() {
+                    result.inject_source(child_id);
+                }
             }
         }
 
@@ -144,19 +152,25 @@ impl ContainerWidget {
             if let (Some(child), Some(child_node)) =
                 (self.children.get_mut(new_idx), layout.children.get(new_idx))
             {
+                let child_id = child.id();
                 let child_ctx = EventCtx {
                     measurer: ctx.measurer,
                     bounds: child_node.content_rect,
-                    is_focused: ctx.focused_widget == Some(child.id()),
+                    is_focused: ctx.focused_widget == Some(child_id),
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
                 };
-                child.handle_hover(HoverEvent::Enter, &child_ctx);
+                let resp = child.handle_hover(HoverEvent::Enter, &child_ctx);
+                if resp.response.is_handled() {
+                    // The entering child takes priority for source —
+                    // it's the widget that will be visually active.
+                    result.source = Some(child_id);
+                }
             }
         }
 
         self.input_state.hovered_child = new_hover;
-        WidgetResponse::paint()
+        result
     }
 
     /// Dispatches a keyboard event to the focused child.
@@ -172,8 +186,9 @@ impl ContainerWidget {
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
                 };
-                let resp = child.handle_key(event, &child_ctx);
+                let mut resp = child.handle_key(event, &child_ctx);
                 if resp.response.is_handled() {
+                    resp.inject_source(child.id());
                     if resp.response.needs_layout() {
                         *self.cached_layout.borrow_mut() = None;
                     }

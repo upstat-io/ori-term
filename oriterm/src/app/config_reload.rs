@@ -56,6 +56,7 @@ impl App {
         // Invalidate pane render cache and mark dirty for redraw.
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.invalidate_all();
+            ctx.invalidation.invalidate_all();
             ctx.dirty = true;
             ctx.ui_stale = true;
         }

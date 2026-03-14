@@ -80,6 +80,7 @@ impl App {
                         // with DPI even when logical bounds stay the same.
                         ctx.content.invalidate_cache();
                         ctx.text_cache.clear();
+                        ctx.invalidation.invalidate_all();
                         // TODO: re-rasterize UI fonts at new DPI.
                         ctx.request_urgent_redraw();
                     }
@@ -252,12 +253,14 @@ impl App {
             // Chrome hover (close button highlight).
             let resp = ctx.chrome.update_hover(logical_pos, &event_ctx);
             if wants_repaint(resp.response) {
+                resp.mark_tracker(&mut ctx.invalidation);
                 needs_redraw = true;
             }
         } else {
             // Content area hover — clear any active chrome hover first.
             let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
             if wants_repaint(resp.response) {
+                resp.mark_tracker(&mut ctx.invalidation);
                 needs_redraw = true;
             }
 
@@ -281,6 +284,7 @@ impl App {
                 .content_widget_mut()
                 .handle_mouse(&hover_event, &content_ctx);
             if wants_repaint(resp.response) {
+                resp.mark_tracker(&mut ctx.invalidation);
                 needs_redraw = true;
             }
         }
@@ -411,6 +415,7 @@ impl App {
             };
             let resp = ctx.chrome.handle_mouse(&mouse_event, &event_ctx);
             if wants_repaint(resp.response) {
+                resp.mark_tracker(&mut ctx.invalidation);
                 ctx.request_urgent_redraw();
             }
             if resp.action.as_ref() == Some(&WidgetAction::WindowClose) {
@@ -444,6 +449,7 @@ impl App {
                 .content_widget_mut()
                 .handle_mouse(&mouse_event, &event_ctx);
             if wants_repaint(resp.response) {
+                resp.mark_tracker(&mut ctx.invalidation);
                 ctx.request_urgent_redraw();
             }
             match resp.action {
@@ -496,6 +502,7 @@ impl App {
             .content_widget_mut()
             .handle_mouse(&mouse_event, &event_ctx);
         if wants_repaint(resp.response) {
+            resp.mark_tracker(&mut ctx.invalidation);
             ctx.request_urgent_redraw();
         }
     }

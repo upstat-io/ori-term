@@ -13,6 +13,7 @@ use std::rc::Rc;
 
 use crate::geometry::{Insets, Rect};
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, layout_hit_test};
+use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::layout::{Align, Direction, Justify, LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -156,7 +157,14 @@ impl ContainerWidget {
 // Dirty tracking.
 impl ContainerWidget {
     /// Updates dirty flags based on a child's event response.
-    pub fn update_dirty(&mut self, response: &WidgetResponse) {
+    ///
+    /// Sets the container's boolean flags and, if a tracker is provided,
+    /// marks the source widget in the tracker for scoped invalidation.
+    pub fn update_dirty(
+        &mut self,
+        response: &WidgetResponse,
+        tracker: Option<&mut InvalidationTracker>,
+    ) {
         match response.response {
             EventResponse::RequestLayout => {
                 self.needs_layout = true;
@@ -166,6 +174,9 @@ impl ContainerWidget {
                 self.needs_paint = true;
             }
             _ => {}
+        }
+        if let (Some(tracker), Some(source)) = (tracker, response.source) {
+            tracker.mark(source, DirtyKind::from(response.response));
         }
     }
 

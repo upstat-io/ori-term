@@ -271,12 +271,14 @@ impl SettingsPanel {
                     response: response.response,
                     action: Some(WidgetAction::CancelSettings),
                     capture: response.capture,
+                    source: response.source,
                 }
             }
             Some(WidgetAction::Clicked(id)) if id == self.save_id => WidgetResponse {
                 response: response.response,
                 action: Some(WidgetAction::SaveSettings),
                 capture: response.capture,
+                source: response.source,
             },
             _ => response,
         }
