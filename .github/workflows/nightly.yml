@@ -208,6 +208,8 @@ jobs:
           BODY=""
           FEATURES=""
           FIXES=""
+          PERF=""
+          HOUSEKEEPING=""
           OTHER=""
           while IFS= read -r line; do
             line=$(echo "$line" | xargs)
@@ -217,12 +219,18 @@ jobs:
               FEATURES="${FEATURES}${line}\n"
             elif [[ "$subject" == fix* ]]; then
               FIXES="${FIXES}${line}\n"
+            elif [[ "$subject" == perf* ]]; then
+              PERF="${PERF}${line}\n"
+            elif [[ "$subject" == refactor* || "$subject" == chore* || "$subject" == build* || "$subject" == ci* || "$subject" == test* || "$subject" == style* || "$subject" == docs* ]]; then
+              HOUSEKEEPING="${HOUSEKEEPING}${line}\n"
             else
               OTHER="${OTHER}${line}\n"
             fi
           done <<< "$LOG"
           [[ -n "$FEATURES" ]] && BODY="${BODY}### Features\n\n${FEATURES}\n"
           [[ -n "$FIXES" ]] && BODY="${BODY}### Bug Fixes\n\n${FIXES}\n"
+          [[ -n "$PERF" ]] && BODY="${BODY}### Performance\n\n${PERF}\n"
+          [[ -n "$HOUSEKEEPING" ]] && BODY="${BODY}### Housekeeping\n\n${HOUSEKEEPING}\n"
           [[ -n "$OTHER" ]] && BODY="${BODY}### Other\n\n${OTHER}\n"
           [[ -z "$BODY" ]] && BODY="See commit history for changes."
           printf '%b' "$BODY" > /tmp/release-notes.txt
