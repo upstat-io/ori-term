@@ -120,6 +120,12 @@ pub struct DrawList {
     layer_stack_depth: u32,
     /// Tracks push/pop balance for debug assertions.
     translate_stack_depth: u32,
+    /// Cumulative translate offset stack for content-space visibility culling.
+    ///
+    /// Each entry is the cumulative (dx, dy) at that translate depth.
+    /// Used by [`current_clip_rect_in_content_space`] to transform the clip
+    /// rect from viewport space into content space.
+    translate_offset_stack: Vec<(f32, f32)>,
 }
 
 impl DrawList {
@@ -132,6 +138,7 @@ impl DrawList {
             bg_stack: Vec::new(),
             layer_stack_depth: 0,
             translate_stack_depth: 0,
+            translate_offset_stack: Vec::new(),
         }
     }
 
@@ -221,6 +228,12 @@ impl DrawList {
     /// translates compose additively in the GPU converter.
     pub fn push_translate(&mut self, dx: f32, dy: f32) {
         self.translate_stack_depth += 1;
+        let prev = self
+            .translate_offset_stack
+            .last()
+            .copied()
+            .unwrap_or((0.0, 0.0));
+        self.translate_offset_stack.push((prev.0 + dx, prev.1 + dy));
         self.commands.push(DrawCommand::PushTranslate { dx, dy });
     }
 
@@ -235,6 +248,7 @@ impl DrawList {
             "pop_translate called with empty translate stack",
         );
         self.translate_stack_depth -= 1;
+        self.translate_offset_stack.pop();
         self.commands.push(DrawCommand::PopTranslate);
     }
 
@@ -272,6 +286,28 @@ impl DrawList {
     /// Returns the effective clip bounds after intersecting all active clips.
     pub fn current_clip_rect(&self) -> Option<Rect> {
         self.clip_stack.last().copied()
+    }
+
+    /// Returns the clip rect transformed into content space.
+    ///
+    /// When inside a `PushTranslate`, the clip rect is in viewport space but
+    /// child layout rects are in content space. This method shifts the clip
+    /// rect by the inverse of the cumulative translate so visibility culling
+    /// works correctly inside scroll containers.
+    pub fn current_clip_rect_in_content_space(&self) -> Option<Rect> {
+        let clip = self.clip_stack.last()?;
+        let (tx, ty) = self
+            .translate_offset_stack
+            .last()
+            .copied()
+            .unwrap_or((0.0, 0.0));
+        // Inverse translate: content_pos = screen_pos - translate_offset.
+        Some(Rect::new(
+            clip.x() - tx,
+            clip.y() - ty,
+            clip.width(),
+            clip.height(),
+        ))
     }
 
     /// Returns the commands in draw order.
