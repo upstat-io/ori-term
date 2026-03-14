@@ -2,7 +2,7 @@
 reroute: true
 name: "Retained UI"
 full_name: "Retained UI Framework"
-status: active
+status: resolved
 order: 1
 ---
 
@@ -105,7 +105,7 @@ dialog_management.rs, event_loop.rs
 ---
 
 ### Section 07: Verification
-**File:** `section-07-verification.md` | **Status:** Not Started
+**File:** `section-07-verification.md` | **Status:** Complete (runtime items deferred)
 
 ```
 verification, test matrix, behavioral equivalence, performance

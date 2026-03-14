@@ -60,6 +60,11 @@ impl SceneCache {
         self.nodes.contains_key(&id)
     }
 
+    /// Returns the number of cached nodes.
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Returns an iterator over all nodes.
     pub fn values(&self) -> impl Iterator<Item = &SceneNode> {
         self.nodes.values()
