@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use crate::draw::{DrawCommand, DrawList, SceneCache, SceneNode};
 use crate::geometry::Rect;
@@ -9,6 +10,10 @@ use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::layout::LayoutBox;
 use crate::widget_id::WidgetId;
+use crate::widgets::button::ButtonWidget;
+use crate::widgets::container::ContainerWidget;
+use crate::widgets::label::LabelWidget;
+use crate::widgets::scroll::ScrollWidget;
 use crate::widgets::tests::{MockMeasurer, TEST_THEME};
 use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
@@ -85,7 +90,7 @@ fn make_ctx<'a>(
         draw_list,
         bounds,
         focused_widget: None,
-        now: std::time::Instant::now(),
+        now: Instant::now(),
         animations_running: anim,
         theme: &TEST_THEME,
         icons: None,
@@ -276,4 +281,448 @@ fn extend_from_cache_appends_commands() {
 
     dl.extend_from_cache(&cached);
     assert_eq!(dl.len(), 3);
+}
+
+// -- Behavioral Equivalence Infrastructure --
+//
+// Verify that scene composition (retained path via cached commands) produces
+// identical DrawList output to the full rebuild path (all nodes invalidated).
+
+/// Renders a widget tree via `compose_scene` with the given tracker and returns
+/// the resulting DrawCommand sequence. Uses a fixed timestamp so animated
+/// widgets produce deterministic output across multiple calls.
+fn compose_and_collect(
+    root: &dyn Widget,
+    measurer: &MockMeasurer,
+    bounds: Rect,
+    cache: &mut SceneCache,
+    tracker: &InvalidationTracker,
+    now: Instant,
+) -> Vec<DrawCommand> {
+    let mut draw_list = DrawList::new();
+    let anim = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now,
+        animations_running: &anim,
+        theme: &TEST_THEME,
+        icons: None,
+        scene_cache: None,
+    };
+    compose_scene(root, &mut ctx, tracker, cache);
+    draw_list.commands().to_vec()
+}
+
+/// Asserts that a full rebuild and a retained compose produce identical command
+/// sequences for the given widget tree.
+///
+/// 1. Full rebuild (invalidate_all + empty cache → all cache misses, widgets
+///    draw fresh, commands stored in cache).
+/// 2. Retained compose (clean tracker + warm cache → all cache hits, commands
+///    replayed from cache).
+/// 3. Compares the two command sequences element-by-element.
+fn assert_equivalence(root: &dyn Widget, bounds: Rect) {
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let mut cache = SceneCache::new();
+
+    // Full rebuild: cache is empty so invalidate_all is a no-op, but widgets
+    // draw fresh and store their output in the cache.
+    let mut full_tracker = InvalidationTracker::new();
+    full_tracker.invalidate_all();
+    let full = compose_and_collect(root, &measurer, bounds, &mut cache, &full_tracker, now);
+
+    // Retained: clean tracker, warm cache → container widgets replay cached
+    // commands via extend_from_cache instead of calling child.draw().
+    let clean_tracker = InvalidationTracker::new();
+    let retained = compose_and_collect(root, &measurer, bounds, &mut cache, &clean_tracker, now);
+
+    assert_eq!(
+        full.len(),
+        retained.len(),
+        "command count mismatch: full={} retained={}",
+        full.len(),
+        retained.len(),
+    );
+    for (i, (f, r)) in full.iter().zip(retained.iter()).enumerate() {
+        assert_eq!(f, r, "command {i} differs");
+    }
+}
+
+/// Counts push/pop pairs in a command sequence.
+struct StackCounts {
+    push_clip: usize,
+    pop_clip: usize,
+    push_layer: usize,
+    pop_layer: usize,
+    push_translate: usize,
+    pop_translate: usize,
+}
+
+fn count_stacks(commands: &[DrawCommand]) -> StackCounts {
+    let mut c = StackCounts {
+        push_clip: 0,
+        pop_clip: 0,
+        push_layer: 0,
+        pop_layer: 0,
+        push_translate: 0,
+        pop_translate: 0,
+    };
+    for cmd in commands {
+        match cmd {
+            DrawCommand::PushClip { .. } => c.push_clip += 1,
+            DrawCommand::PopClip => c.pop_clip += 1,
+            DrawCommand::PushLayer { .. } => c.push_layer += 1,
+            DrawCommand::PopLayer => c.pop_layer += 1,
+            DrawCommand::PushTranslate { .. } => c.push_translate += 1,
+            DrawCommand::PopTranslate => c.pop_translate += 1,
+            _ => {}
+        }
+    }
+    c
+}
+
+fn assert_stacks_balanced(commands: &[DrawCommand]) {
+    let c = count_stacks(commands);
+    assert_eq!(c.push_clip, c.pop_clip, "PushClip/PopClip imbalanced");
+    assert_eq!(c.push_layer, c.pop_layer, "PushLayer/PopLayer imbalanced",);
+    assert_eq!(
+        c.push_translate, c.pop_translate,
+        "PushTranslate/PopTranslate imbalanced",
+    );
+}
+
+// -- 07.1 Behavioral Equivalence: Test Cases --
+
+#[test]
+fn equivalence_simple_label() {
+    let label = LabelWidget::new("Hello, world!");
+    assert_equivalence(&label, Rect::new(0.0, 0.0, 200.0, 30.0));
+}
+
+#[test]
+fn equivalence_button_in_container() {
+    let btn = ButtonWidget::new("Click me");
+    let container = ContainerWidget::column().with_child(Box::new(btn));
+    assert_equivalence(&container, Rect::new(0.0, 0.0, 200.0, 50.0));
+}
+
+#[test]
+fn equivalence_hovered_button_in_container() {
+    let mut btn = ButtonWidget::new("Hover me");
+    let event_ctx = EventCtx {
+        measurer: &MockMeasurer::STANDARD,
+        bounds: Rect::new(0.0, 0.0, 200.0, 30.0),
+        is_focused: false,
+        focused_widget: None,
+        theme: &TEST_THEME,
+    };
+    btn.handle_hover(HoverEvent::Enter, &event_ctx);
+    let container = ContainerWidget::column().with_child(Box::new(btn));
+    // Both renders use the same fixed `now` from assert_equivalence, so the
+    // animated hover_progress interpolates to the same value in both paths.
+    assert_equivalence(&container, Rect::new(0.0, 0.0, 200.0, 50.0));
+}
+
+#[test]
+fn equivalence_container_five_children() {
+    let container = ContainerWidget::column()
+        .with_gap(8.0)
+        .with_child(Box::new(LabelWidget::new("First")))
+        .with_child(Box::new(LabelWidget::new("Second")))
+        .with_child(Box::new(ButtonWidget::new("Third")))
+        .with_child(Box::new(LabelWidget::new("Fourth")))
+        .with_child(Box::new(ButtonWidget::new("Fifth")));
+    assert_equivalence(&container, Rect::new(0.0, 0.0, 300.0, 300.0));
+}
+
+#[test]
+fn equivalence_scroll_with_content() {
+    let content = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("Line 1")))
+        .with_child(Box::new(LabelWidget::new("Line 2")))
+        .with_child(Box::new(LabelWidget::new("Line 3")))
+        .with_child(Box::new(LabelWidget::new("Line 4")))
+        .with_child(Box::new(LabelWidget::new("Line 5")));
+    let scroll = ScrollWidget::vertical(Box::new(content));
+    assert_equivalence(&scroll, Rect::new(0.0, 0.0, 200.0, 60.0));
+}
+
+#[test]
+fn equivalence_nested_containers_three_deep() {
+    let inner = ContainerWidget::row()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("A")))
+        .with_child(Box::new(LabelWidget::new("B")));
+    let middle = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(inner))
+        .with_child(Box::new(LabelWidget::new("C")));
+    let outer = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(middle))
+        .with_child(Box::new(LabelWidget::new("D")));
+    assert_equivalence(&outer, Rect::new(0.0, 0.0, 300.0, 200.0));
+}
+
+#[test]
+fn equivalence_settings_panel_form() {
+    // Simplified Settings panel structure: multiple sections with labels and
+    // controls, wrapped in a scroll container.
+    let section1 = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("General")))
+        .with_child(Box::new(ButtonWidget::new("Reset")));
+    let section2 = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("Appearance")))
+        .with_child(Box::new(LabelWidget::new("Font Size: 14")))
+        .with_child(Box::new(ButtonWidget::new("Apply")));
+    let section3 = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("Keyboard")))
+        .with_child(Box::new(LabelWidget::new("Bindings loaded")));
+    let form = ContainerWidget::column()
+        .with_gap(12.0)
+        .with_child(Box::new(section1))
+        .with_child(Box::new(section2))
+        .with_child(Box::new(section3));
+    let scroll = ScrollWidget::vertical(Box::new(form));
+    assert_equivalence(&scroll, Rect::new(0.0, 0.0, 400.0, 150.0));
+}
+
+#[test]
+fn equivalence_overlay_popup() {
+    // Simulates overlay stacking: content underneath, popup on top.
+    let content =
+        ContainerWidget::column().with_child(Box::new(LabelWidget::new("Background content")));
+    let popup = ContainerWidget::column()
+        .with_child(Box::new(LabelWidget::new("Popup item 1")))
+        .with_child(Box::new(LabelWidget::new("Popup item 2")))
+        .with_child(Box::new(ButtonWidget::new("Close")));
+    let stack = ContainerWidget::column()
+        .with_child(Box::new(content))
+        .with_child(Box::new(popup));
+    assert_equivalence(&stack, Rect::new(0.0, 0.0, 300.0, 200.0));
+}
+
+// -- Draw call reduction: partial invalidation --
+
+#[test]
+fn partial_invalidation_flat_redraws_dirty_child_only() {
+    let counter_a = Rc::new(Cell::new(0));
+    let counter_b = Rc::new(Cell::new(0));
+    let widget_a = TrackingWidget::new(100.0, 20.0, counter_a.clone());
+    let widget_b = TrackingWidget::new(100.0, 20.0, counter_b.clone());
+    let b_id = widget_b.id();
+    let container = ContainerWidget::column()
+        .with_child(Box::new(widget_a))
+        .with_child(Box::new(widget_b));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let mut cache = SceneCache::new();
+
+    // Prime cache.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    assert_eq!(counter_a.get(), 1);
+    assert_eq!(counter_b.get(), 1);
+
+    // Reset counters.
+    counter_a.set(0);
+    counter_b.set(0);
+
+    // Partial invalidation: only B is dirty.
+    let mut partial = InvalidationTracker::new();
+    partial.mark(b_id, DirtyKind::Paint);
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &partial, now);
+    assert_eq!(counter_a.get(), 0, "A should not be redrawn");
+    assert_eq!(counter_b.get(), 1, "B should be redrawn");
+}
+
+#[test]
+fn partial_invalidation_nested_redraws_dirty_leaf() {
+    let counter_a = Rc::new(Cell::new(0));
+    let counter_b = Rc::new(Cell::new(0));
+    let widget_a = TrackingWidget::new(100.0, 20.0, counter_a.clone());
+    let widget_b = TrackingWidget::new(100.0, 20.0, counter_b.clone());
+    let b_id = widget_b.id();
+    let inner = ContainerWidget::column().with_child(Box::new(widget_b));
+    let outer = ContainerWidget::column()
+        .with_child(Box::new(widget_a))
+        .with_child(Box::new(inner));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let mut cache = SceneCache::new();
+
+    // Prime cache.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&outer, &measurer, bounds, &mut cache, &tracker, now);
+    assert_eq!(counter_a.get(), 1);
+    assert_eq!(counter_b.get(), 1);
+
+    counter_a.set(0);
+    counter_b.set(0);
+
+    // Partial: only B is dirty.
+    let mut partial = InvalidationTracker::new();
+    partial.mark(b_id, DirtyKind::Paint);
+    compose_and_collect(&outer, &measurer, bounds, &mut cache, &partial, now);
+    assert_eq!(counter_a.get(), 0, "A should not be redrawn");
+    assert_eq!(counter_b.get(), 1, "B should be redrawn (nested)");
+}
+
+#[test]
+fn retained_no_dirty_zero_child_draws() {
+    let counter_a = Rc::new(Cell::new(0));
+    let counter_b = Rc::new(Cell::new(0));
+    let widget_a = TrackingWidget::new(100.0, 20.0, counter_a.clone());
+    let widget_b = TrackingWidget::new(100.0, 20.0, counter_b.clone());
+    let container = ContainerWidget::column()
+        .with_child(Box::new(widget_a))
+        .with_child(Box::new(widget_b));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let mut cache = SceneCache::new();
+
+    // Prime.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+
+    counter_a.set(0);
+    counter_b.set(0);
+
+    // Retained with no dirty widgets.
+    let clean = InvalidationTracker::new();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &clean, now);
+    assert_eq!(counter_a.get(), 0, "A should not be redrawn");
+    assert_eq!(counter_b.get(), 0, "B should not be redrawn");
+}
+
+// -- 07.1 Clip/Layer Stack Correctness --
+
+#[test]
+fn clip_layer_stacks_balanced_after_full_rebuild() {
+    let container = ContainerWidget::column()
+        .with_clip(true)
+        .with_gap(4.0)
+        .with_child(Box::new(ButtonWidget::new("A")))
+        .with_child(Box::new(ButtonWidget::new("B")))
+        .with_child(Box::new(LabelWidget::new("C")));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+    let mut cache = SceneCache::new();
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    let cmds = compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    assert_stacks_balanced(&cmds);
+    // Verify clipping is present (container has clip_children=true).
+    let counts = count_stacks(&cmds);
+    assert!(
+        counts.push_clip >= 1,
+        "clipping container should emit PushClip"
+    );
+}
+
+#[test]
+fn clip_layer_stacks_balanced_after_retained() {
+    let container = ContainerWidget::column()
+        .with_clip(true)
+        .with_gap(4.0)
+        .with_child(Box::new(ButtonWidget::new("A")))
+        .with_child(Box::new(ButtonWidget::new("B")))
+        .with_child(Box::new(LabelWidget::new("C")));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+    let mut cache = SceneCache::new();
+
+    // Prime cache.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+
+    // Retained render.
+    let clean = InvalidationTracker::new();
+    let cmds = compose_and_collect(&container, &measurer, bounds, &mut cache, &clean, now);
+    assert_stacks_balanced(&cmds);
+}
+
+// -- 07.1 Transform Correctness --
+
+#[test]
+fn transform_stacks_balanced_scroll_retained() {
+    let content =
+        ContainerWidget::column().with_child(Box::new(LabelWidget::new("Scrollable content")));
+    let scroll = ScrollWidget::vertical(Box::new(content));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
+    let mut cache = SceneCache::new();
+
+    // Prime.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&scroll, &measurer, bounds, &mut cache, &tracker, now);
+
+    // Retained.
+    let clean = InvalidationTracker::new();
+    let cmds = compose_and_collect(&scroll, &measurer, bounds, &mut cache, &clean, now);
+    assert_stacks_balanced(&cmds);
+    // Scroll container should emit PushTranslate.
+    let counts = count_stacks(&cmds);
+    assert!(
+        counts.push_translate >= 1,
+        "scroll container should emit PushTranslate",
+    );
+}
+
+#[test]
+fn transform_values_preserved_in_retained_output() {
+    let content = ContainerWidget::column().with_child(Box::new(LabelWidget::new("Scrollable")));
+    let scroll = ScrollWidget::vertical(Box::new(content));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
+    let mut cache = SceneCache::new();
+
+    // Full rebuild.
+    let mut full_tracker = InvalidationTracker::new();
+    full_tracker.invalidate_all();
+    let full = compose_and_collect(&scroll, &measurer, bounds, &mut cache, &full_tracker, now);
+
+    // Retained.
+    let clean = InvalidationTracker::new();
+    let retained = compose_and_collect(&scroll, &measurer, bounds, &mut cache, &clean, now);
+
+    // Extract translate values from both and compare.
+    let full_translates: Vec<(f32, f32)> = full
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DrawCommand::PushTranslate { dx, dy } => Some((*dx, *dy)),
+            _ => None,
+        })
+        .collect();
+    let retained_translates: Vec<(f32, f32)> = retained
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DrawCommand::PushTranslate { dx, dy } => Some((*dx, *dy)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        full_translates, retained_translates,
+        "translate values must match between full rebuild and retained",
+    );
 }
