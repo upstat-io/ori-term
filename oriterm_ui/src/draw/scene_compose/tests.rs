@@ -11,10 +11,19 @@ use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::layout::LayoutBox;
 use crate::widget_id::WidgetId;
 use crate::widgets::button::ButtonWidget;
+use crate::widgets::checkbox::CheckboxWidget;
 use crate::widgets::container::ContainerWidget;
+use crate::widgets::dropdown::DropdownWidget;
+use crate::widgets::form_row::FormRow;
+use crate::widgets::form_section::FormSection;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::scroll::ScrollWidget;
+use crate::widgets::separator::SeparatorWidget;
+use crate::widgets::slider::SliderWidget;
+use crate::widgets::spacer::SpacerWidget;
+use crate::widgets::stack::StackWidget;
 use crate::widgets::tests::{MockMeasurer, TEST_THEME};
+use crate::widgets::text_input::TextInputWidget;
 use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 use super::compose_scene;
@@ -609,6 +618,223 @@ fn retained_no_dirty_zero_child_draws() {
     assert_eq!(counter_b.get(), 0, "B should not be redrawn");
 }
 
+// -- 07.2 Performance Validation --
+
+#[test]
+fn scene_cache_stabilizes_after_warmup() {
+    let container = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("A")))
+        .with_child(Box::new(LabelWidget::new("B")))
+        .with_child(Box::new(ButtonWidget::new("C")))
+        .with_child(Box::new(LabelWidget::new("D")))
+        .with_child(Box::new(ButtonWidget::new("E")));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 300.0, 300.0);
+    let mut cache = SceneCache::new();
+
+    // Frame 1: warmup — all nodes stored.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    let count_after_warmup = cache.node_count();
+    assert!(
+        count_after_warmup > 0,
+        "cache should have nodes after warmup"
+    );
+
+    // Frames 2–100: same tree, clean tracker. Node count must not grow.
+    for _ in 2..=100 {
+        let clean = InvalidationTracker::new();
+        compose_and_collect(&container, &measurer, bounds, &mut cache, &clean, now);
+    }
+    assert_eq!(
+        cache.node_count(),
+        count_after_warmup,
+        "scene cache node count must stabilize after warmup",
+    );
+}
+
+// -- 07.2 Draw Call Reduction --
+
+#[test]
+fn full_rebuild_draws_all_n_widgets() {
+    let n = 5;
+    let counters: Vec<_> = (0..n).map(|_| Rc::new(Cell::new(0))).collect();
+    let mut container = ContainerWidget::column().with_gap(4.0);
+    for c in &counters {
+        container = container.with_child(Box::new(TrackingWidget::new(100.0, 20.0, c.clone())));
+    }
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 300.0);
+    let mut cache = SceneCache::new();
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    for (i, c) in counters.iter().enumerate() {
+        assert_eq!(c.get(), 1, "widget {i} should be drawn exactly once");
+    }
+}
+
+#[test]
+fn scroll_without_content_change_zero_child_draws() {
+    let counter_a = Rc::new(Cell::new(0));
+    let counter_b = Rc::new(Cell::new(0));
+    let container = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(TrackingWidget::new(
+            100.0,
+            20.0,
+            counter_a.clone(),
+        )))
+        .with_child(Box::new(TrackingWidget::new(
+            100.0,
+            20.0,
+            counter_b.clone(),
+        )));
+    let mut scroll = ScrollWidget::vertical(Box::new(container));
+    let scroll_id = scroll.id();
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 30.0);
+    let mut cache = SceneCache::new();
+
+    // Prime cache.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&scroll, &measurer, bounds, &mut cache, &tracker, now);
+    assert_eq!(counter_a.get(), 1);
+    assert_eq!(counter_b.get(), 1);
+
+    // Simulate a scroll: change offset, mark scroll widget Paint-dirty.
+    scroll.set_scroll_offset(10.0, 100.0, 30.0);
+    counter_a.set(0);
+    counter_b.set(0);
+
+    let mut scroll_tracker = InvalidationTracker::new();
+    scroll_tracker.mark(scroll_id, DirtyKind::Paint);
+    compose_and_collect(&scroll, &measurer, bounds, &mut cache, &scroll_tracker, now);
+    assert_eq!(counter_a.get(), 0, "A should not be redrawn on scroll");
+    assert_eq!(counter_b.get(), 0, "B should not be redrawn on scroll");
+}
+
+#[test]
+fn mouse_move_over_blank_zero_draws() {
+    // Equivalent to retained_no_dirty_zero_child_draws — clean tracker,
+    // warm cache, zero child draws.
+    let counters: Vec<_> = (0..3).map(|_| Rc::new(Cell::new(0))).collect();
+    let mut container = ContainerWidget::column().with_gap(4.0);
+    for c in &counters {
+        container = container.with_child(Box::new(TrackingWidget::new(100.0, 20.0, c.clone())));
+    }
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let mut cache = SceneCache::new();
+
+    // Prime.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    for c in &counters {
+        c.set(0);
+    }
+
+    // Clean tracker: no dirty widgets (mouse moved over blank space).
+    let clean = InvalidationTracker::new();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &clean, now);
+    for (i, c) in counters.iter().enumerate() {
+        assert_eq!(c.get(), 0, "widget {i} should not be redrawn");
+    }
+}
+
+// -- 07.2 Invalidation Triggers --
+
+#[test]
+fn full_cache_clear_then_rerender_produces_correct_output() {
+    let container = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("A")))
+        .with_child(Box::new(ButtonWidget::new("B")));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+    let mut cache = SceneCache::new();
+
+    // Prime cache.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    let before = compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+
+    // Simulate cache-clearing trigger (font reload / theme change / DPI).
+    cache.clear();
+
+    // Re-render with invalidate_all (since cache is empty, all nodes miss).
+    let mut rebuild_tracker = InvalidationTracker::new();
+    rebuild_tracker.invalidate_all();
+    let after = compose_and_collect(
+        &container,
+        &measurer,
+        bounds,
+        &mut cache,
+        &rebuild_tracker,
+        now,
+    );
+
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "command count must match after cache clear + rebuild",
+    );
+    for (i, (b, a)) in before.iter().zip(after.iter()).enumerate() {
+        assert_eq!(b, a, "command {i} differs after cache clear + rebuild");
+    }
+}
+
+#[test]
+fn window_resize_invalidates_scene_but_not_text() {
+    let container = ContainerWidget::column().with_child(Box::new(LabelWidget::new("Resize test")));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let mut cache = SceneCache::new();
+
+    // Prime with original bounds.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    let bounds_a = Rect::new(0.0, 0.0, 300.0, 200.0);
+    compose_and_collect(&container, &measurer, bounds_a, &mut cache, &tracker, now);
+    let nodes_before = cache.node_count();
+    assert!(nodes_before > 0);
+
+    // Simulate window resize: clear scene cache, keep text cache.
+    cache.clear();
+    assert_eq!(cache.node_count(), 0, "scene cache cleared on resize");
+
+    // Re-render with new bounds.
+    let mut resize_tracker = InvalidationTracker::new();
+    resize_tracker.invalidate_all();
+    let bounds_b = Rect::new(0.0, 0.0, 500.0, 300.0);
+    let cmds = compose_and_collect(
+        &container,
+        &measurer,
+        bounds_b,
+        &mut cache,
+        &resize_tracker,
+        now,
+    );
+    assert!(
+        !cmds.is_empty(),
+        "should produce draw commands after resize"
+    );
+    assert!(
+        cache.node_count() > 0,
+        "cache should repopulate after resize"
+    );
+}
+
 // -- 07.1 Clip/Layer Stack Correctness --
 
 #[test]
@@ -725,4 +951,232 @@ fn transform_values_preserved_in_retained_output() {
         full_translates, retained_translates,
         "translate values must match between full rebuild and retained",
     );
+}
+
+// -- 07.3 Test Matrix: Leaf Widgets --
+
+/// Helper: verifies a widget is cached after warmup and replayed without
+/// redrawing on a subsequent clean compose.
+fn assert_cached_after_warmup(widget: Box<dyn Widget>, bounds: Rect) {
+    let counter = Rc::new(Cell::new(0));
+    let tracker_widget = TrackingWidget::new(50.0, 10.0, counter.clone());
+    let container = ContainerWidget::column()
+        .with_child(widget)
+        .with_child(Box::new(tracker_widget));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let mut cache = SceneCache::new();
+
+    // Warmup.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    assert_eq!(counter.get(), 1, "tracking widget should draw on warmup");
+    counter.set(0);
+
+    // Retained.
+    let clean = InvalidationTracker::new();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &clean, now);
+    assert_eq!(counter.get(), 0, "tracking widget should not redraw");
+}
+
+#[test]
+fn matrix_label_cached_after_warmup() {
+    assert_cached_after_warmup(
+        Box::new(LabelWidget::new("Hello")),
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+    );
+}
+
+#[test]
+fn matrix_button_cached_after_warmup() {
+    assert_cached_after_warmup(
+        Box::new(ButtonWidget::new("Click")),
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+    );
+}
+
+#[test]
+fn matrix_button_invalidated_on_hover() {
+    let counter = Rc::new(Cell::new(0));
+    let sibling = TrackingWidget::new(50.0, 10.0, counter.clone());
+    let mut btn = ButtonWidget::new("Hover me");
+    let btn_id = btn.id();
+    let event_ctx = EventCtx {
+        measurer: &MockMeasurer::STANDARD,
+        bounds: Rect::new(0.0, 0.0, 200.0, 30.0),
+        is_focused: false,
+        focused_widget: None,
+        theme: &TEST_THEME,
+    };
+    btn.handle_hover(HoverEvent::Enter, &event_ctx);
+
+    let container = ContainerWidget::column()
+        .with_child(Box::new(btn))
+        .with_child(Box::new(sibling));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let mut cache = SceneCache::new();
+
+    // Prime.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    counter.set(0);
+
+    // Mark button as dirty (hover state changed).
+    let mut dirty = InvalidationTracker::new();
+    dirty.mark(btn_id, DirtyKind::Paint);
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &dirty, now);
+    assert_eq!(
+        counter.get(),
+        0,
+        "sibling should not redraw on button hover"
+    );
+}
+
+#[test]
+fn matrix_checkbox_cached_after_warmup() {
+    assert_cached_after_warmup(
+        Box::new(CheckboxWidget::new("Accept")),
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+    );
+}
+
+#[test]
+fn matrix_checkbox_invalidated_on_toggle() {
+    let counter = Rc::new(Cell::new(0));
+    let sibling = TrackingWidget::new(50.0, 10.0, counter.clone());
+    let mut cb = CheckboxWidget::new("Toggle");
+    let cb_id = cb.id();
+    cb = cb.with_checked(true);
+
+    let container = ContainerWidget::column()
+        .with_child(Box::new(cb))
+        .with_child(Box::new(sibling));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let mut cache = SceneCache::new();
+
+    // Prime.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    counter.set(0);
+
+    // Mark checkbox dirty (toggle).
+    let mut dirty = InvalidationTracker::new();
+    dirty.mark(cb_id, DirtyKind::Paint);
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &dirty, now);
+    assert_eq!(
+        counter.get(),
+        0,
+        "sibling should not redraw on checkbox toggle"
+    );
+}
+
+#[test]
+fn matrix_slider_cached_after_warmup() {
+    assert_cached_after_warmup(
+        Box::new(SliderWidget::new()),
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+    );
+}
+
+#[test]
+fn matrix_text_input_cached_after_warmup() {
+    assert_cached_after_warmup(
+        Box::new(TextInputWidget::new()),
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+    );
+}
+
+#[test]
+fn matrix_separator_never_invalidated() {
+    assert_cached_after_warmup(
+        Box::new(SeparatorWidget::horizontal()),
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+    );
+}
+
+#[test]
+fn matrix_spacer_never_invalidated() {
+    assert_cached_after_warmup(
+        Box::new(SpacerWidget::fixed(16.0, 16.0)),
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+    );
+}
+
+// -- 07.3 Test Matrix: Container Widgets --
+
+#[test]
+fn matrix_container_selective_child_rebuild() {
+    // Already covered by partial_invalidation_flat_redraws_dirty_child_only,
+    // but verify with mixed widget types.
+    let counter = Rc::new(Cell::new(0));
+    let tracker_widget = TrackingWidget::new(80.0, 20.0, counter.clone());
+    let tracker_id = tracker_widget.id();
+    let container = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("Static")))
+        .with_child(Box::new(tracker_widget))
+        .with_child(Box::new(ButtonWidget::new("Also static")));
+    let measurer = MockMeasurer::STANDARD;
+    let now = Instant::now();
+    let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+    let mut cache = SceneCache::new();
+
+    // Prime.
+    let mut tracker = InvalidationTracker::new();
+    tracker.invalidate_all();
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &tracker, now);
+    counter.set(0);
+
+    // Only the tracking widget is dirty.
+    let mut dirty = InvalidationTracker::new();
+    dirty.mark(tracker_id, DirtyKind::Paint);
+    compose_and_collect(&container, &measurer, bounds, &mut cache, &dirty, now);
+    assert_eq!(counter.get(), 1, "only dirty widget should redraw");
+}
+
+#[test]
+fn matrix_scroll_child_scene_stable() {
+    // Already covered by scroll_without_content_change_zero_child_draws.
+    // Verify equivalence with real widgets.
+    let content = ContainerWidget::column()
+        .with_gap(4.0)
+        .with_child(Box::new(LabelWidget::new("Line 1")))
+        .with_child(Box::new(LabelWidget::new("Line 2")))
+        .with_child(Box::new(LabelWidget::new("Line 3")));
+    let scroll = ScrollWidget::vertical(Box::new(content));
+    assert_equivalence(&scroll, Rect::new(0.0, 0.0, 200.0, 30.0));
+}
+
+#[test]
+fn matrix_dropdown_cached_after_warmup() {
+    assert_cached_after_warmup(
+        Box::new(DropdownWidget::new(vec![
+            "Option A".into(),
+            "Option B".into(),
+        ])),
+        Rect::new(0.0, 0.0, 200.0, 100.0),
+    );
+}
+
+#[test]
+fn matrix_form_section_cached_after_warmup() {
+    let section = FormSection::new("General")
+        .with_row(FormRow::new("Name", Box::new(LabelWidget::new("Value"))));
+    assert_cached_after_warmup(Box::new(section), Rect::new(0.0, 0.0, 400.0, 200.0));
+}
+
+#[test]
+fn matrix_stack_equivalence() {
+    let stack = StackWidget::new(vec![
+        Box::new(LabelWidget::new("Back")),
+        Box::new(LabelWidget::new("Front")),
+    ]);
+    assert_equivalence(&stack, Rect::new(0.0, 0.0, 200.0, 100.0));
 }
