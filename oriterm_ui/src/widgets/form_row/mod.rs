@@ -136,6 +136,8 @@ impl FormRow {
                 is_focused: ctx.focused_widget == Some(self.control.id()),
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             self.control.handle_hover(HoverEvent::Enter, &child_ctx);
             return WidgetResponse::paint();
@@ -149,6 +151,8 @@ impl FormRow {
                 is_focused: ctx.focused_widget == Some(self.control.id()),
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             self.control.handle_hover(HoverEvent::Leave, &child_ctx);
             return WidgetResponse::paint();
@@ -196,6 +200,8 @@ impl Widget for FormRow {
                 theme: ctx.theme,
                 icons: ctx.icons,
                 scene_cache: ctx.scene_cache.as_deref_mut(),
+                interaction: None,
+                widget_id: None,
             };
             self.control.draw(&mut child_ctx);
         }
@@ -222,6 +228,8 @@ impl Widget for FormRow {
                 is_focused: ctx.focused_widget == Some(self.control.id()),
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             let resp = self.control.handle_mouse(event, &child_ctx);
 
@@ -251,6 +259,8 @@ impl Widget for FormRow {
                         is_focused: ctx.focused_widget == Some(self.control.id()),
                         focused_widget: ctx.focused_widget,
                         theme: ctx.theme,
+                        interaction: None,
+                        widget_id: None,
                     };
                     self.control.handle_hover(HoverEvent::Leave, &child_ctx);
                 }
@@ -270,6 +280,8 @@ impl Widget for FormRow {
                 is_focused: ctx.focused_widget == Some(self.control.id()),
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             return self.control.handle_key(event, &child_ctx);
         }

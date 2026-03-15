@@ -104,6 +104,8 @@ fn make_ctx<'a>(
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     }
 }
 
@@ -320,6 +322,8 @@ fn compose_and_collect(
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     compose_scene(root, &mut ctx, tracker, cache);
     draw_list.commands().to_vec()
@@ -428,6 +432,8 @@ fn equivalence_hovered_button_in_container() {
         is_focused: false,
         focused_widget: None,
         theme: &TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     btn.handle_hover(HoverEvent::Enter, &event_ctx);
     let container = ContainerWidget::column().with_child(Box::new(btn));
@@ -1008,6 +1014,8 @@ fn matrix_button_invalidated_on_hover() {
         is_focused: false,
         focused_widget: None,
         theme: &TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     btn.handle_hover(HoverEvent::Enter, &event_ctx);
 

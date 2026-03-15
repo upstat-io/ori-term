@@ -249,24 +249,19 @@ impl App {
             is_focused: false,
             focused_widget: None,
             theme: &ui_theme,
+            interaction: None,
+            widget_id: None,
         };
 
-        if log::log_enabled!(log::Level::Trace) {
-            let zone = if logical_pos.y < chrome_h {
-                "chrome"
-            } else {
-                "content"
-            };
-            log::trace!(
-                "dialog cursor: phys=({:.0},{:.0}) log=({:.1},{:.1}) s={scale:.2} ch={chrome_h:.1} \
-                 z={zone} rects={:?}",
-                position.x,
-                position.y,
-                logical_pos.x,
-                logical_pos.y,
-                ctx.chrome.interactive_rects(),
-            );
-        }
+        log::trace!(
+            "dialog cursor: phys=({:.0},{:.0}) log=({:.1},{:.1}) s={scale:.2} ch={chrome_h:.1} \
+             rects={:?}",
+            position.x,
+            position.y,
+            logical_pos.x,
+            logical_pos.y,
+            ctx.chrome.interactive_rects(),
+        );
 
         if logical_pos.y < chrome_h {
             // Chrome hover (close button highlight).
@@ -297,6 +292,8 @@ impl App {
                 is_focused: false,
                 focused_widget: None,
                 theme: &ui_theme,
+                interaction: None,
+                widget_id: None,
             };
             let resp = ctx
                 .content

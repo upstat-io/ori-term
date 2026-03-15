@@ -133,6 +133,8 @@ impl App {
                 is_focused: false,
                 focused_widget: None,
                 theme: &ui_theme,
+                interaction: None,
+                widget_id: None,
             };
             let resp = ctx.chrome.handle_mouse(&mouse_event, &event_ctx);
             if wants_repaint(resp.response) {
@@ -164,6 +166,8 @@ impl App {
                 is_focused: false,
                 focused_widget: None,
                 theme: &ui_theme,
+                interaction: None,
+                widget_id: None,
             };
             let resp = ctx
                 .content
@@ -239,6 +243,8 @@ impl App {
             is_focused: false,
             focused_widget: None,
             theme: &ui_theme,
+            interaction: None,
+            widget_id: None,
         };
         let resp = ctx
             .content

@@ -129,6 +129,8 @@ impl DialogWidget {
                 theme: ctx.theme,
                 icons: ctx.icons,
                 scene_cache: ctx.scene_cache.as_deref_mut(),
+                interaction: None,
+                widget_id: None,
             };
             button.draw(&mut btn_ctx);
         }

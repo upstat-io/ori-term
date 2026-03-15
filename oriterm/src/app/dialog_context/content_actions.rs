@@ -284,6 +284,8 @@ impl App {
             is_focused: true,
             focused_widget: None,
             theme: &self.ui_theme,
+            interaction: None,
+            widget_id: None,
         };
         let resp = ctx
             .content
@@ -322,6 +324,8 @@ impl App {
             is_focused: false,
             focused_widget: None,
             theme: &ui_theme,
+            interaction: None,
+            widget_id: None,
         };
         let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
         if matches!(
@@ -342,6 +346,8 @@ impl App {
             is_focused: false,
             focused_widget: None,
             theme: &ui_theme,
+            interaction: None,
+            widget_id: None,
         };
         let resp = ctx
             .content

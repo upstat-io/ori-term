@@ -15,6 +15,8 @@ fn slider_ctx() -> EventCtx<'static> {
         is_focused: true,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     }
 }
 

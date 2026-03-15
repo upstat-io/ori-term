@@ -67,6 +67,8 @@ fn panel_draws_background_rect() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     panel.draw(&mut ctx);
 
@@ -131,6 +133,8 @@ fn panel_delegates_key_to_child() {
         is_focused: false,
         focused_widget: Some(child_id),
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -166,6 +170,8 @@ fn panel_delegates_mouse_to_child() {
         is_focused: true,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Click inside the child area (accounting for 12px padding).
@@ -205,6 +211,8 @@ fn panel_mouse_outside_child_ignored() {
         is_focused: true,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Click in the panel's padding area (outside child bounds).
@@ -232,6 +240,8 @@ fn panel_delegates_hover_to_child() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Hover should delegate to child.
@@ -261,6 +271,8 @@ fn panel_with_bg() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     panel.draw(&mut ctx);
 
@@ -294,6 +306,8 @@ fn panel_with_corner_radius() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     panel.draw(&mut ctx);
 
@@ -350,6 +364,8 @@ fn panel_with_shadow() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     panel.draw(&mut ctx);
 

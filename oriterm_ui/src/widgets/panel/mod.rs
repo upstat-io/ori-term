@@ -193,6 +193,8 @@ impl Widget for PanelWidget {
                 theme: ctx.theme,
                 icons: ctx.icons,
                 scene_cache: ctx.scene_cache.as_deref_mut(),
+                interaction: None,
+                widget_id: None,
             };
             self.child.draw(&mut child_ctx);
         }
@@ -210,6 +212,8 @@ impl Widget for PanelWidget {
                     is_focused: ctx.focused_widget == Some(self.child.id()),
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
+                    interaction: None,
+                    widget_id: None,
                 };
                 return self.child.handle_mouse(event, &child_ctx);
             }
@@ -226,6 +230,8 @@ impl Widget for PanelWidget {
                 is_focused: ctx.focused_widget == Some(self.child.id()),
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             return self.child.handle_hover(event, &child_ctx);
         }
@@ -241,6 +247,8 @@ impl Widget for PanelWidget {
                 is_focused: ctx.focused_widget == Some(self.child.id()),
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             return self.child.handle_key(event, &child_ctx);
         }

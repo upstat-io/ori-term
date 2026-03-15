@@ -85,6 +85,8 @@ impl Widget for StackWidget {
                 theme: ctx.theme,
                 icons: ctx.icons,
                 scene_cache: ctx.scene_cache.as_deref_mut(),
+                interaction: None,
+                widget_id: None,
             };
             child.draw(&mut child_ctx);
         }
@@ -139,6 +141,8 @@ impl Widget for StackWidget {
                 is_focused: ctx.focused_widget == Some(child.id()),
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             let resp = child.handle_key(event, &child_ctx);
             if resp.response.is_handled() {

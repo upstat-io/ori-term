@@ -17,6 +17,8 @@ fn event_ctx(bounds: Rect) -> EventCtx<'static> {
         is_focused: true,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     }
 }
 
@@ -436,6 +438,8 @@ fn draw_signals_animations_running() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     btn.draw(&mut draw_ctx);
 

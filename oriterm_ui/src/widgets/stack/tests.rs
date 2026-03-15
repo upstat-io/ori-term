@@ -51,6 +51,8 @@ fn stack_draws_all_children() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     stack.draw(&mut ctx);
 
@@ -77,6 +79,8 @@ fn stack_key_routes_to_frontmost() {
         is_focused: false,
         focused_widget: Some(front_id),
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let event = KeyEvent {
@@ -107,6 +111,8 @@ fn stack_mouse_routes_to_frontmost() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let down = MouseEvent {
@@ -175,6 +181,8 @@ fn stack_draws_in_painter_order() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     stack.draw(&mut ctx);
 
@@ -208,6 +216,8 @@ fn stack_empty_mouse_ignored() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -228,6 +238,8 @@ fn stack_empty_key_ignored() {
         is_focused: true,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -250,6 +262,8 @@ fn stack_hover_routes_to_frontmost() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Hover enter should reach the frontmost child.
@@ -268,6 +282,8 @@ fn stack_mouse_outside_bounds_ignored() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Click outside the stack's bounds.
@@ -337,6 +353,8 @@ fn stack_single_child_receives_events() {
         is_focused: false,
         focused_widget: Some(btn_id),
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let event = KeyEvent {
@@ -366,6 +384,8 @@ fn stack_mouse_falls_through_to_back_child() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let down = MouseEvent {

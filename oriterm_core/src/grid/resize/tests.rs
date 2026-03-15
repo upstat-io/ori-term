@@ -127,7 +127,7 @@ fn grow_rows_appends_blanks_when_cursor_in_middle() {
 }
 
 #[test]
-fn grow_rows_consumes_scrollback_inserts_blanks() {
+fn grow_rows_restores_scrollback_content() {
     let mut grid = Grid::new(3, 80);
     write_row(&mut grid, 0, "line0");
     write_row(&mut grid, 1, "line1");
@@ -139,12 +139,11 @@ fn grow_rows_consumes_scrollback_inserts_blanks() {
     assert_eq!(grid.scrollback().len(), 1);
     assert_eq!(grid.cursor().line(), 1);
 
-    // Grow back — consumes scrollback slot, inserts blank row at top.
-    // Content is blanked to prevent stale scrollback ghosting.
+    // Grow back — restores scrollback content at top.
     grid.resize(3, 80, false);
     assert_eq!(grid.lines(), 3);
     assert_eq!(grid.scrollback().len(), 0);
-    assert_eq!(read_row(&grid, 0), ""); // blank (consumed, not restored)
+    assert_eq!(read_row(&grid, 0), "line0"); // restored from scrollback
     assert_eq!(read_row(&grid, 1), "line1");
     assert_eq!(read_row(&grid, 2), "line2");
     assert_eq!(grid.cursor().line(), 2);

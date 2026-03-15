@@ -57,6 +57,8 @@ impl OverlayManager {
                     is_focused: focused_widget == Some(root_id),
                     focused_widget,
                     theme,
+                    interaction: None,
+                    widget_id: None,
                 };
                 let mut response = overlay.widget.handle_mouse(event, &ctx);
                 response.inject_source(root_id);
@@ -177,6 +179,8 @@ impl OverlayManager {
             is_focused: focused_widget == Some(root_id),
             focused_widget,
             theme,
+            interaction: None,
+            widget_id: None,
         };
         let mut response = overlay.widget.handle_mouse(event, &ctx);
         response.inject_source(root_id);
@@ -231,6 +235,8 @@ impl OverlayManager {
             is_focused: focused_widget == Some(root_id),
             focused_widget,
             theme,
+            interaction: None,
+            widget_id: None,
         };
         let mut response = topmost.widget.handle_key(event, &ctx);
         response.inject_source(root_id);
@@ -286,6 +292,8 @@ impl OverlayManager {
                         is_focused: focused_widget == Some(root_id),
                         focused_widget,
                         theme,
+                        interaction: None,
+                        widget_id: None,
                     };
                     old_overlay.widget.handle_hover(HoverEvent::Leave, &ctx);
                 }
@@ -305,6 +313,8 @@ impl OverlayManager {
                     is_focused: focused_widget == Some(root_id),
                     focused_widget,
                     theme,
+                    interaction: None,
+                    widget_id: None,
                 };
                 let mut response = overlay.widget.handle_hover(HoverEvent::Enter, &ctx);
                 response.inject_source(root_id);

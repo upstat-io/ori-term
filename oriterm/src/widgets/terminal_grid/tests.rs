@@ -136,6 +136,8 @@ fn draw_emits_no_commands() {
         theme: &theme,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
 
     widget.draw(&mut ctx);
@@ -183,6 +185,8 @@ fn handle_key_returns_handled() {
         is_focused: true,
         focused_widget: Some(widget.id()),
         theme: &theme,
+        interaction: None,
+        widget_id: None,
     };
 
     let event = KeyEvent {
@@ -204,6 +208,8 @@ fn handle_hover_returns_ignored() {
         is_focused: true,
         focused_widget: Some(widget.id()),
         theme: &theme,
+        interaction: None,
+        widget_id: None,
     };
 
     let response = widget.handle_hover(HoverEvent::Enter, &ctx);

@@ -111,6 +111,8 @@ fn close_button_click_emits_dismiss() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // The close button is in the top-right of the header. Click at ~(575, 24)
@@ -152,6 +154,8 @@ fn close_button_key_emits_dismiss() {
         is_focused: false,
         focused_widget: Some(close_id),
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let event = KeyEvent {
@@ -186,6 +190,8 @@ fn draws_without_panic() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     panel.draw(&mut ctx);
 
@@ -217,6 +223,8 @@ fn checkbox_click_emits_toggled() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     panel.draw(&mut draw_ctx);
 
@@ -232,6 +240,8 @@ fn checkbox_click_emits_toggled() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let down = MouseEvent {

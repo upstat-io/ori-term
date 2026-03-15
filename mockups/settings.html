@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ori_term — Settings</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-base:       #0e0e12;
+    --bg-surface:    #16161c;
+    --bg-raised:     #1c1c24;
+    --bg-hover:      #24242e;
+    --bg-active:     #2a2a36;
+    --bg-input:      #12121a;
+    --border:        #2a2a36;
+    --border-subtle: #1e1e28;
+    --text:          #d4d4dc;
+    --text-muted:    #7a7a8c;
+    --text-faint:    #4e4e5e;
+    --accent:        #6c8cff;
+    --accent-hover:  #8aa4ff;
+    --accent-bg:     rgba(108, 140, 255, 0.08);
+    --accent-bg-strong: rgba(108, 140, 255, 0.14);
+    --danger:        #ff6b6b;
+    --success:       #6bffb8;
+    --warning:       #ffd96b;
+    --radius:        8px;
+    --radius-sm:     6px;
+    --radius-lg:     12px;
+    --shadow:        0 8px 32px rgba(0,0,0,0.4);
+    --transition:    150ms ease;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--bg-base);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Layout ───────────────────────────────────────────── */
+  .settings-window {
+    display: flex;
+    width: 860px;
+    height: 620px;
+    margin: 40px auto;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  /* ── Sidebar ──────────────────────────────────────────── */
+  .sidebar {
+    width: 200px;
+    min-width: 200px;
+    background: var(--bg-base);
+    border-right: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    padding: 16px 0;
+  }
+
+  .sidebar-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    padding: 0 16px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-title:not(:first-child) {
+    margin-top: 20px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    margin: 1px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+    color: var(--text-muted);
+    font-size: 13px;
+    user-select: none;
+  }
+
+  .nav-item:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .nav-item.active {
+    background: var(--accent-bg-strong);
+    color: var(--accent);
+  }
+
+  .nav-item svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .nav-item.active svg { opacity: 1; }
+
+  .sidebar-spacer { flex: 1; }
+
+  .sidebar-version {
+    padding: 8px 16px;
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  /* ── Main Content ─────────────────────────────────────── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .content-header {
+    padding: 24px 28px 0;
+  }
+
+  .content-header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .content-header p {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+
+  .content-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 28px 28px;
+  }
+
+  .content-body::-webkit-scrollbar { width: 6px; }
+  .content-body::-webkit-scrollbar-track { background: transparent; }
+  .content-body::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  .content-body::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint);
+  }
+
+  /* ── Section ──────────────────────────────────────────── */
+  .section {
+    margin-bottom: 28px;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-subtle);
+  }
+
+  /* ── Form Controls ────────────────────────────────────── */
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    transition: background var(--transition);
+    min-height: 44px;
+  }
+
+  .setting-row:hover {
+    background: var(--bg-raised);
+  }
+
+  .setting-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .setting-label .name {
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .setting-label .desc {
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+
+  .setting-control {
+    flex-shrink: 0;
+    margin-left: 24px;
+  }
+
+  /* Select/Dropdown */
+  select {
+    appearance: none;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 6px 30px 6px 10px;
+    font-size: 12.5px;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    transition: border-color var(--transition);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a7a8c'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    min-width: 140px;
+  }
+
+  select:hover { border-color: var(--text-faint); }
+  select:focus { border-color: var(--accent); }
+
+  /* Toggle Switch */
+  .toggle {
+    position: relative;
+    display: inline-block;
+    width: 38px;
+    height: 20px;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+
+  .toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle .track {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-active);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    transition: background var(--transition), border-color var(--transition);
+    z-index: 0;
+  }
+
+  .toggle .thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: transform var(--transition), background var(--transition);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .toggle input:checked ~ .track {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .toggle input:checked ~ .thumb {
+    transform: translateX(18px);
+    background: #fff;
+  }
+
+  /* Number input */
+  input[type="number"] {
+    appearance: textfield;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12.5px;
+    font-family: inherit;
+    width: 80px;
+    text-align: center;
+    outline: none;
+    transition: border-color var(--transition);
+  }
+
+  input[type="number"]:hover { border-color: var(--text-faint); }
+  input[type="number"]:focus { border-color: var(--accent); }
+  input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
+
+  /* Text input */
+  input[type="text"] {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12.5px;
+    font-family: inherit;
+    width: 200px;
+    outline: none;
+    transition: border-color var(--transition);
+  }
+
+  input[type="text"]:hover { border-color: var(--text-faint); }
+  input[type="text"]:focus { border-color: var(--accent); }
+
+  /* ── Color Scheme Cards ───────────────────────────────── */
+  .scheme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .scheme-card {
+    background: var(--bg-raised);
+    border: 2px solid transparent;
+    border-radius: var(--radius);
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+    position: relative;
+  }
+
+  .scheme-card:hover {
+    background: var(--bg-hover);
+    border-color: var(--border);
+  }
+
+  .scheme-card.active {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+
+  .scheme-card .scheme-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .scheme-card .scheme-name .badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--accent-bg-strong);
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .scheme-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .scheme-terminal {
+    background: var(--preview-bg, #1a1b26);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    height: 56px;
+    overflow: hidden;
+  }
+
+  .scheme-swatches {
+    display: flex;
+    gap: 3px;
+  }
+
+  .swatch {
+    width: 100%;
+    height: 14px;
+    border-radius: 3px;
+    flex: 1;
+  }
+
+  /* ── Color Editor ─────────────────────────────────────── */
+  .color-editor {
+    margin-top: 16px;
+    background: var(--bg-raised);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-subtle);
+    padding: 16px;
+  }
+
+  .color-editor-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 12px;
+  }
+
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 6px;
+  }
+
+  .color-cell {
+    aspect-ratio: 1;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform var(--transition), box-shadow var(--transition);
+    position: relative;
+    border: 2px solid transparent;
+  }
+
+  .color-cell:hover {
+    transform: scale(1.15);
+    z-index: 1;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+
+  .color-cell-label {
+    text-align: center;
+    font-size: 9.5px;
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+
+  .color-row-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    margin-top: 12px;
+  }
+
+  .color-row-label:first-child { margin-top: 0; }
+
+  .special-colors {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .special-color {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition);
+  }
+
+  .special-color:hover { background: var(--bg-hover); }
+
+  .special-color .swatch-lg {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .special-color .sc-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .special-color .sc-label {
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  .special-color .sc-value {
+    font-size: 10px;
+    color: var(--text-faint);
+    font-family: 'Cascadia Code', monospace;
+  }
+
+  /* ── Font Preview ─────────────────────────────────────── */
+  .font-preview {
+    background: var(--bg-raised);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-subtle);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  .font-preview-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    margin-bottom: 8px;
+  }
+
+  .font-preview-text {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  .font-preview-text .kw { color: #c678dd; }
+  .font-preview-text .fn { color: #61afef; }
+  .font-preview-text .str { color: #98c379; }
+  .font-preview-text .cm { color: #5c6370; font-style: italic; }
+  .font-preview-text .num { color: #d19a66; }
+  .font-preview-text .lig { color: #56b6c2; }
+
+  /* ── Cursor Preview ───────────────────────────────────── */
+  .cursor-preview {
+    display: flex;
+    gap: 24px;
+    margin-top: 8px;
+    margin-bottom: 16px;
+  }
+
+  .cursor-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 20px;
+    background: var(--bg-raised);
+    border: 2px solid transparent;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+    min-width: 80px;
+  }
+
+  .cursor-option:hover {
+    background: var(--bg-hover);
+    border-color: var(--border);
+  }
+
+  .cursor-option.active {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+
+  .cursor-demo {
+    font-family: 'Cascadia Code', monospace;
+    font-size: 16px;
+    color: var(--text);
+    position: relative;
+    height: 24px;
+    display: flex;
+    align-items: center;
+  }
+
+  .cursor-block {
+    background: var(--accent);
+    color: var(--bg-base);
+    padding: 0 1px;
+  }
+
+  .cursor-bar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 2px;
+    bottom: 2px;
+    width: 2px;
+    background: var(--accent);
+    animation: blink 1s step-end infinite;
+  }
+
+  .cursor-underline::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+
+  .cursor-label {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* ── Keybinding Row ───────────────────────────────────── */
+  .keybind-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    transition: background var(--transition);
+  }
+
+  .keybind-row:hover { background: var(--bg-raised); }
+
+  .keybind-action {
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .keybind-keys {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  kbd {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    line-height: 1.4;
+  }
+
+  .keybind-plus {
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+
+  /* ── Footer ───────────────────────────────────────────── */
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 28px;
+    border-top: 1px solid var(--border-subtle);
+    background: var(--bg-surface);
+  }
+
+  .btn {
+    padding: 6px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background var(--transition), border-color var(--transition);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-muted);
+  }
+
+  .btn-ghost:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  /* ── Tab Bar (for sub-navigation) ─────────────────────── */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 20px;
+  }
+
+  .tab-item {
+    padding: 8px 16px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color var(--transition), border-color var(--transition);
+    user-select: none;
+  }
+
+  .tab-item:hover { color: var(--text); }
+
+  .tab-item.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── Utility ──────────────────────────────────────────── */
+  .hidden { display: none !important; }
+
+  .opacity-slider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg-surface);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+
+  .range-value {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'Cascadia Code', monospace;
+    min-width: 32px;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<div class="settings-window">
+  <!-- ── Sidebar ──────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-title">General</div>
+    <div class="nav-item active" onclick="showPage('appearance')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      Appearance
+    </div>
+    <div class="nav-item" onclick="showPage('colors')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4c3.1 0 5.6-2.5 5.6-5.6C23 5.8 18.1 2 12 2z"/><circle cx="6.5" cy="11.5" r="1.5"/><circle cx="9.5" cy="7.5" r="1.5"/><circle cx="14.5" cy="7.5" r="1.5"/><circle cx="17.5" cy="11.5" r="1.5"/></svg>
+      Colors
+    </div>
+    <div class="nav-item" onclick="showPage('font')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+      Font
+    </div>
+    <div class="nav-item" onclick="showPage('terminal')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      Terminal
+    </div>
+    <div class="nav-item" onclick="showPage('keybindings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg>
+      Keybindings
+    </div>
+    <div class="nav-item" onclick="showPage('window')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg>
+      Window
+    </div>
+
+    <div class="sidebar-title">Advanced</div>
+    <div class="nav-item" onclick="showPage('bell')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      Bell
+    </div>
+    <div class="nav-item" onclick="showPage('rendering')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Rendering
+    </div>
+
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-version">ori_term v0.1.0</div>
+  </nav>
+
+  <!-- ── Main ─────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- ═══ APPEARANCE PAGE ═══════════════════════════ -->
+    <div id="page-appearance" class="page">
+      <div class="content-header">
+        <h1>Appearance</h1>
+        <p>Theme, opacity, and visual preferences.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Theme</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Color scheme</span>
+              <span class="desc">Applied to the terminal viewport and UI chrome</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option>Tokyo Night</option>
+                <option>Dracula</option>
+                <option>One Dark</option>
+                <option>Catppuccin Mocha</option>
+                <option>Solarized Dark</option>
+                <option>Gruvbox Dark</option>
+                <option>Nord</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Window</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Opacity</span>
+              <span class="desc">Window background transparency</span>
+            </div>
+            <div class="setting-control">
+              <div class="opacity-slider">
+                <input type="range" min="30" max="100" value="100" oninput="this.nextElementSibling.textContent=this.value+'%'">
+                <span class="range-value">100%</span>
+              </div>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Blur behind</span>
+              <span class="desc">Apply blur effect when opacity is below 100%</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox">
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ COLORS PAGE ══════════════════════════════ -->
+    <div id="page-colors" class="page hidden">
+      <div class="content-header">
+        <h1>Colors</h1>
+        <p>Color schemes and palette customization.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Schemes</div>
+          <div class="scheme-grid">
+            <!-- Tokyo Night -->
+            <div class="scheme-card active">
+              <div class="scheme-name">
+                Tokyo Night
+                <span class="badge">Active</span>
+              </div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #1a1b26;">
+                  <span style="color:#7aa2f7">$</span> <span style="color:#9ece6a">cargo</span> <span style="color:#c0caf5">build --release</span><br>
+                  <span style="color:#565f89">   Compiling</span> <span style="color:#bb9af7">ori_term</span> <span style="color:#565f89">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#f7768e"></div>
+                  <div class="swatch" style="background:#9ece6a"></div>
+                  <div class="swatch" style="background:#e0af68"></div>
+                  <div class="swatch" style="background:#7aa2f7"></div>
+                  <div class="swatch" style="background:#bb9af7"></div>
+                  <div class="swatch" style="background:#7dcfff"></div>
+                  <div class="swatch" style="background:#c0caf5"></div>
+                  <div class="swatch" style="background:#a9b1d6"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dracula -->
+            <div class="scheme-card">
+              <div class="scheme-name">Dracula</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #282a36;">
+                  <span style="color:#50fa7b">$</span> <span style="color:#8be9fd">cargo</span> <span style="color:#f8f8f2">build --release</span><br>
+                  <span style="color:#6272a4">   Compiling</span> <span style="color:#bd93f9">ori_term</span> <span style="color:#6272a4">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#ff5555"></div>
+                  <div class="swatch" style="background:#50fa7b"></div>
+                  <div class="swatch" style="background:#f1fa8c"></div>
+                  <div class="swatch" style="background:#6272a4"></div>
+                  <div class="swatch" style="background:#bd93f9"></div>
+                  <div class="swatch" style="background:#8be9fd"></div>
+                  <div class="swatch" style="background:#f8f8f2"></div>
+                  <div class="swatch" style="background:#ffb86c"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Catppuccin Mocha -->
+            <div class="scheme-card">
+              <div class="scheme-name">Catppuccin Mocha</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #1e1e2e;">
+                  <span style="color:#89b4fa">$</span> <span style="color:#a6e3a1">cargo</span> <span style="color:#cdd6f4">build --release</span><br>
+                  <span style="color:#585b70">   Compiling</span> <span style="color:#cba6f7">ori_term</span> <span style="color:#585b70">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#f38ba8"></div>
+                  <div class="swatch" style="background:#a6e3a1"></div>
+                  <div class="swatch" style="background:#f9e2af"></div>
+                  <div class="swatch" style="background:#89b4fa"></div>
+                  <div class="swatch" style="background:#cba6f7"></div>
+                  <div class="swatch" style="background:#89dceb"></div>
+                  <div class="swatch" style="background:#cdd6f4"></div>
+                  <div class="swatch" style="background:#f5c2e7"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- One Dark -->
+            <div class="scheme-card">
+              <div class="scheme-name">One Dark</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #282c34;">
+                  <span style="color:#61afef">$</span> <span style="color:#98c379">cargo</span> <span style="color:#abb2bf">build --release</span><br>
+                  <span style="color:#5c6370">   Compiling</span> <span style="color:#c678dd">ori_term</span> <span style="color:#5c6370">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#e06c75"></div>
+                  <div class="swatch" style="background:#98c379"></div>
+                  <div class="swatch" style="background:#e5c07b"></div>
+                  <div class="swatch" style="background:#61afef"></div>
+                  <div class="swatch" style="background:#c678dd"></div>
+                  <div class="swatch" style="background:#56b6c2"></div>
+                  <div class="swatch" style="background:#abb2bf"></div>
+                  <div class="swatch" style="background:#d19a66"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Solarized Dark -->
+            <div class="scheme-card">
+              <div class="scheme-name">Solarized Dark</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #002b36;">
+                  <span style="color:#268bd2">$</span> <span style="color:#859900">cargo</span> <span style="color:#839496">build --release</span><br>
+                  <span style="color:#586e75">   Compiling</span> <span style="color:#6c71c4">ori_term</span> <span style="color:#586e75">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#dc322f"></div>
+                  <div class="swatch" style="background:#859900"></div>
+                  <div class="swatch" style="background:#b58900"></div>
+                  <div class="swatch" style="background:#268bd2"></div>
+                  <div class="swatch" style="background:#6c71c4"></div>
+                  <div class="swatch" style="background:#2aa198"></div>
+                  <div class="swatch" style="background:#839496"></div>
+                  <div class="swatch" style="background:#cb4b16"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Nord -->
+            <div class="scheme-card">
+              <div class="scheme-name">Nord</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #2e3440;">
+                  <span style="color:#81a1c1">$</span> <span style="color:#a3be8c">cargo</span> <span style="color:#d8dee9">build --release</span><br>
+                  <span style="color:#4c566a">   Compiling</span> <span style="color:#b48ead">ori_term</span> <span style="color:#4c566a">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#bf616a"></div>
+                  <div class="swatch" style="background:#a3be8c"></div>
+                  <div class="swatch" style="background:#ebcb8b"></div>
+                  <div class="swatch" style="background:#81a1c1"></div>
+                  <div class="swatch" style="background:#b48ead"></div>
+                  <div class="swatch" style="background:#88c0d0"></div>
+                  <div class="swatch" style="background:#d8dee9"></div>
+                  <div class="swatch" style="background:#d08770"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Palette editor for active scheme -->
+        <div class="color-editor">
+          <div class="color-editor-title">Palette — Tokyo Night</div>
+          <div class="special-colors">
+            <div class="special-color">
+              <div class="swatch-lg" style="background:#c0caf5"></div>
+              <div class="sc-info">
+                <span class="sc-label">Foreground</span>
+                <span class="sc-value">#c0caf5</span>
+              </div>
+            </div>
+            <div class="special-color">
+              <div class="swatch-lg" style="background:#1a1b26"></div>
+              <div class="sc-info">
+                <span class="sc-label">Background</span>
+                <span class="sc-value">#1a1b26</span>
+              </div>
+            </div>
+            <div class="special-color">
+              <div class="swatch-lg" style="background:#c0caf5; border: 2px solid var(--accent);"></div>
+              <div class="sc-info">
+                <span class="sc-label">Cursor</span>
+                <span class="sc-value">#c0caf5</span>
+              </div>
+            </div>
+            <div class="special-color">
+              <div class="swatch-lg" style="background:rgba(122,162,247,0.3)"></div>
+              <div class="sc-info">
+                <span class="sc-label">Selection</span>
+                <span class="sc-value">#7aa2f7 30%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="color-row-label">Normal</div>
+          <div class="color-grid">
+            <div><div class="color-cell" style="background:#15161e" title="Black"></div><div class="color-cell-label">0</div></div>
+            <div><div class="color-cell" style="background:#f7768e" title="Red"></div><div class="color-cell-label">1</div></div>
+            <div><div class="color-cell" style="background:#9ece6a" title="Green"></div><div class="color-cell-label">2</div></div>
+            <div><div class="color-cell" style="background:#e0af68" title="Yellow"></div><div class="color-cell-label">3</div></div>
+            <div><div class="color-cell" style="background:#7aa2f7" title="Blue"></div><div class="color-cell-label">4</div></div>
+            <div><div class="color-cell" style="background:#bb9af7" title="Magenta"></div><div class="color-cell-label">5</div></div>
+            <div><div class="color-cell" style="background:#7dcfff" title="Cyan"></div><div class="color-cell-label">6</div></div>
+            <div><div class="color-cell" style="background:#a9b1d6" title="White"></div><div class="color-cell-label">7</div></div>
+          </div>
+
+          <div class="color-row-label">Bright</div>
+          <div class="color-grid">
+            <div><div class="color-cell" style="background:#414868" title="Bright Black"></div><div class="color-cell-label">8</div></div>
+            <div><div class="color-cell" style="background:#f7768e" title="Bright Red"></div><div class="color-cell-label">9</div></div>
+            <div><div class="color-cell" style="background:#9ece6a" title="Bright Green"></div><div class="color-cell-label">10</div></div>
+            <div><div class="color-cell" style="background:#e0af68" title="Bright Yellow"></div><div class="color-cell-label">11</div></div>
+            <div><div class="color-cell" style="background:#7aa2f7" title="Bright Blue"></div><div class="color-cell-label">12</div></div>
+            <div><div class="color-cell" style="background:#bb9af7" title="Bright Magenta"></div><div class="color-cell-label">13</div></div>
+            <div><div class="color-cell" style="background:#7dcfff" title="Bright Cyan"></div><div class="color-cell-label">14</div></div>
+            <div><div class="color-cell" style="background:#c0caf5" title="Bright White"></div><div class="color-cell-label">15</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ FONT PAGE ════════════════════════════════ -->
+    <div id="page-font" class="page hidden">
+      <div class="content-header">
+        <h1>Font</h1>
+        <p>Typeface, size, and rendering options.</p>
+      </div>
+      <div class="content-body">
+        <div class="font-preview">
+          <div class="font-preview-label">Preview</div>
+          <div class="font-preview-text">
+            <span class="kw">fn</span> <span class="fn">main</span>() {<br>
+            &nbsp;&nbsp;<span class="kw">let</span> msg = <span class="str">"Hello, ori_term!"</span>;<br>
+            &nbsp;&nbsp;println!(<span class="str">"{msg}"</span>); <span class="cm">// ligatures: =&gt; != &lt;= &gt;=</span><br>
+            &nbsp;&nbsp;<span class="kw">for</span> i <span class="kw">in</span> <span class="num">0</span><span class="lig">..</span><span class="num">42</span> { std::thread::sleep(<span class="num">100</span>); }<br>
+            }
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Typeface</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Font family</span>
+              <span class="desc">Primary monospace font for the terminal grid</span>
+            </div>
+            <div class="setting-control">
+              <select style="min-width: 180px;">
+                <option>Cascadia Code</option>
+                <option>JetBrains Mono</option>
+                <option>Fira Code</option>
+                <option>SF Mono</option>
+                <option>Iosevka</option>
+                <option>Berkeley Mono</option>
+                <option>Monaspace Neon</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Size</span>
+              <span class="desc">Font size in pixels</span>
+            </div>
+            <div class="setting-control">
+              <input type="number" value="14" min="8" max="32" step="0.5">
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Weight</span>
+              <span class="desc">Regular weight for normal text</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option>300 — Light</option>
+                <option selected>400 — Regular</option>
+                <option>500 — Medium</option>
+                <option>600 — Semibold</option>
+                <option>700 — Bold</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Features</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Ligatures</span>
+              <span class="desc">Programming ligatures like =>, !=, <=</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Line height</span>
+              <span class="desc">Multiplier applied to cell height</span>
+            </div>
+            <div class="setting-control">
+              <input type="number" value="1.0" min="0.8" max="2.0" step="0.05">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TERMINAL PAGE ════════════════════════════ -->
+    <div id="page-terminal" class="page hidden">
+      <div class="content-header">
+        <h1>Terminal</h1>
+        <p>Cursor, scrollback, and shell behavior.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Cursor</div>
+          <div class="cursor-preview">
+            <div class="cursor-option active" onclick="selectCursor(this)">
+              <div class="cursor-demo"><span class="cursor-block">A</span></div>
+              <span class="cursor-label">Block</span>
+            </div>
+            <div class="cursor-option" onclick="selectCursor(this)">
+              <div class="cursor-demo cursor-bar">A</div>
+              <span class="cursor-label">Bar</span>
+            </div>
+            <div class="cursor-option" onclick="selectCursor(this)">
+              <div class="cursor-demo cursor-underline">A</div>
+              <span class="cursor-label">Underline</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Cursor blink</span>
+              <span class="desc">Animate cursor visibility when idle</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Scrollback</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Maximum lines</span>
+              <span class="desc">Number of lines retained above the viewport</span>
+            </div>
+            <div class="setting-control">
+              <input type="number" value="10000" min="0" max="100000" step="1000">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Shell</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Default shell</span>
+              <span class="desc">Program launched in new panes</span>
+            </div>
+            <div class="setting-control">
+              <input type="text" value="/usr/bin/zsh" style="width: 200px; font-family: 'Cascadia Code', monospace; font-size: 12px;">
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Paste warning</span>
+              <span class="desc">Warn before pasting multi-line or suspicious text</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Always</option>
+                <option>Never</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ KEYBINDINGS PAGE ═════════════════════════ -->
+    <div id="page-keybindings" class="page hidden">
+      <div class="content-header">
+        <h1>Keybindings</h1>
+        <p>Keyboard shortcuts for terminal actions.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Tabs & Panes</div>
+          <div class="keybind-row">
+            <span class="keybind-action">New tab</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>T</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Close tab</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>W</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Split vertically</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>D</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Split horizontally</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>E</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Next tab</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Tab</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Previous tab</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>Tab</kbd></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Clipboard</div>
+          <div class="keybind-row">
+            <span class="keybind-action">Copy</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>C</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Paste</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>V</kbd></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Navigation</div>
+          <div class="keybind-row">
+            <span class="keybind-action">Scroll up</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>&#8593;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Scroll down</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>&#8595;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Search</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>F</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Settings</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>,</kbd></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ WINDOW PAGE ══════════════════════════════ -->
+    <div id="page-window" class="page hidden">
+      <div class="content-header">
+        <h1>Window</h1>
+        <p>Window chrome, padding, and startup behavior.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Chrome</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Tab bar position</span>
+              <span class="desc">Where to show the tab bar</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Top</option>
+                <option>Bottom</option>
+                <option>Hidden</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Padding</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Grid padding</span>
+              <span class="desc">Space between the window edge and terminal content (px)</span>
+            </div>
+            <div class="setting-control">
+              <input type="number" value="6" min="0" max="40" step="2">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Startup</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Restore previous session</span>
+              <span class="desc">Reopen tabs and panes from the last session</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox">
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Initial columns</span>
+            </div>
+            <div class="setting-control">
+              <input type="number" value="120" min="40" max="400">
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Initial rows</span>
+            </div>
+            <div class="setting-control">
+              <input type="number" value="30" min="10" max="200">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ BELL PAGE ════════════════════════════════ -->
+    <div id="page-bell" class="page hidden">
+      <div class="content-header">
+        <h1>Bell</h1>
+        <p>Visual bell animation and behavior.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Visual Bell</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Animation</span>
+              <span class="desc">Easing function for the flash overlay</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Ease Out</option>
+                <option>Linear</option>
+                <option>None</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Duration</span>
+              <span class="desc">How long the visual flash lasts</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option>Off</option>
+                <option>50 ms</option>
+                <option selected>150 ms</option>
+                <option>300 ms</option>
+                <option>500 ms</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ RENDERING PAGE ═══════════════════════════ -->
+    <div id="page-rendering" class="page hidden">
+      <div class="content-header">
+        <h1>Rendering</h1>
+        <p>GPU backend and text rendering options.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">GPU</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Backend</span>
+              <span class="desc">Graphics API used for rendering</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Auto</option>
+                <option>Vulkan</option>
+                <option>DirectX 12</option>
+                <option>Metal</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Text</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">LCD subpixel rendering</span>
+              <span class="desc">Sharper text on LCD displays — disable for OLED</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Footer ─────────────────────────────────────── -->
+    <div class="footer">
+      <button class="btn btn-ghost">Reset to Defaults</button>
+      <button class="btn btn-ghost">Cancel</button>
+      <button class="btn btn-primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+    document.getElementById('page-' + name).classList.remove('hidden');
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+  }
+
+  function selectCursor(el) {
+    el.parentElement.querySelectorAll('.cursor-option').forEach(o => o.classList.remove('active'));
+    el.classList.add('active');
+  }
+</script>
+
+</body>
+</html>

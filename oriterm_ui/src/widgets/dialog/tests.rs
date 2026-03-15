@@ -55,6 +55,8 @@ fn event_ctx<'a>(
         is_focused: true,
         focused_widget: None,
         theme,
+        interaction: None,
+        widget_id: None,
     }
 }
 
