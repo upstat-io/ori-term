@@ -183,6 +183,18 @@ impl App {
             // Selection lives on App, not Pane (copied before render block).
             frame.selection = pane_sel.map(|sel| FrameSelection::new(&sel, base));
 
+            // Detect selection changes: compare the current selection state
+            // with what was last rendered. When the selection changed (even
+            // without terminal output), the prepare phase must rebuild
+            // instance buffers and the render phase must re-render the
+            // content cache texture.
+            let num_rows = frame.rows();
+            let new_sel_snap = frame
+                .selection
+                .as_ref()
+                .and_then(|s| s.damage_snapshot(num_rows));
+            let selection_changed = new_sel_snap != renderer.prepared.prev_selection_snapshot;
+
             // Compute hovered cell for hyperlink underline rendering.
             let cell_metrics = renderer.cell_metrics();
             let hovered_cell = {
@@ -296,10 +308,10 @@ impl App {
                 );
             }
 
-            // Full content render when terminal content changed OR chrome/
-            // overlay visuals are stale (hover, animation, theme change).
-            // Only cursor-blink-only frames may reuse the cached texture.
-            let needs_full_render = content_changed || ctx.ui_stale;
+            // Full content render when terminal content changed, selection
+            // changed, or chrome/overlay visuals are stale. Only cursor-
+            // blink-only frames may reuse the cached texture.
+            let needs_full_render = content_changed || selection_changed || ctx.ui_stale;
 
             // Overlay tiers render above the cached content every frame, so
             // only chrome animations keep the content cache stale.

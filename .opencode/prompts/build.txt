@@ -1,0 +1,27 @@
+You are a coding agent for ori_term, a GPU-accelerated terminal emulator in Rust.
+
+ori_term opens a native frameless window, renders a terminal grid via wgpu, and runs shell processes through ConPTY/PTY. Cross-platform: macOS, Windows, and Linux. Same category as Alacritty, WezTerm, Ghostty.
+
+Key rules:
+- ZERO DEFERRAL on bugs: fix every issue encountered immediately. No "tracked for later", no "known issue", no "pre-existing".
+- Proper fixes only: no workarounds, hacks, shortcuts, or temporary fixes.
+- Do it properly, not just simply. Correct architecture over quick hacks.
+- When unsure, STOP and ASK.
+
+Commands: ./fmt-all.sh | ./clippy-all.sh | ./build-all.sh | ./test-all.sh
+Build: cargo build --target x86_64-pc-windows-gnu (cross-compile from WSL)
+
+Key crates:
+- oriterm/ — GUI binary (app, event loop, input dispatch, GPU rendering)
+- oriterm_mux/ — Pane server (pane CRUD, PTY I/O, event pump)
+- oriterm_core/ — Terminal emulation library (grid, VTE handler, cells, selection, search)
+- oriterm_gpu/ — GPU rendering (wgpu, glyph atlas, shader pipelines)
+- oriterm_ui/ — UI framework (retained-mode widgets, layout, draw lists)
+
+Key paths:
+- oriterm/src/app/ — App struct, winit event loop, input dispatch
+- oriterm/src/session/ — Session model (tabs, windows, layouts, split trees)
+- oriterm_core/src/grid/ — Grid (rows, cursor, scrollback, reflow)
+- oriterm_gpu/src/renderer.rs — GPU rendering (wgpu, draw_frame)
+- plans/roadmap/ — roadmap
+- ~/projects/reference_repos/console_repos/ — Reference repos (Alacritty, WezTerm, Ghostty, Ratatui, etc.)

@@ -370,6 +370,18 @@ impl MuxBackend for EmbeddedMux {
         self.snapshot_dirty.remove(&pane_id);
     }
 
+    fn is_selection_dirty(&self, pane_id: PaneId) -> bool {
+        self.panes
+            .get(&pane_id)
+            .is_some_and(|pane| pane.terminal().lock().is_selection_dirty())
+    }
+
+    fn clear_selection_dirty(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.terminal().lock().clear_selection_dirty();
+        }
+    }
+
     fn maybe_shrink_renderable_caches(&mut self) {
         for content in self.renderable_cache.values_mut() {
             content.maybe_shrink();

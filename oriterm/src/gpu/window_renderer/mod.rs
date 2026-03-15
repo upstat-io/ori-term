@@ -370,6 +370,17 @@ impl WindowRenderer {
 
     // ── Frame preparation ──
 
+    /// Whether visual-only state (selection) changed since the last frame.
+    ///
+    /// Visual changes need a full instance rebuild but NOT re-shaping.
+    fn has_visual_change(&self, input: &FrameInput) -> bool {
+        let new_sel = input
+            .selection
+            .as_ref()
+            .and_then(|s| s.damage_snapshot(input.rows()));
+        new_sel != self.prepared.prev_selection_snapshot
+    }
+
     /// Run the Prepare phase: shape text and build GPU instance buffers.
     ///
     /// Fills `self.prepared` via buffer reuse (no per-frame allocation after
@@ -402,12 +413,15 @@ impl WindowRenderer {
         cursor_blink_visible: bool,
         content_changed: bool,
     ) {
-        // Cursor-blink-only fast path: when content hasn't changed and we
-        // have a valid prepared frame, skip shaping, glyph caching, and the
-        // full instance rebuild. Just update cursor/URL/prompt overlays.
+        // Cursor-blink-only fast path: when content hasn't changed and no
+        // visual state (selection, search, hover) differs from the last
+        // prepared frame, skip shaping, glyph caching, and the full instance
+        // rebuild. Just update cursor/URL/prompt overlays.
         let cols = input.columns();
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
-        if !content_changed && cached_valid && self.prepared.has_terminal_data() {
+        let visual_changed = self.has_visual_change(input);
+        if !content_changed && !visual_changed && cached_valid && self.prepared.has_terminal_data()
+        {
             self.atlas.begin_frame();
             self.subpixel_atlas.begin_frame();
             self.color_atlas.begin_frame();

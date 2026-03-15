@@ -11,7 +11,7 @@ use oriterm_core::Rgb;
 use oriterm_core::image::ImageId;
 
 use super::draw_list_convert::TierClips;
-use super::frame_input::ViewportSize;
+use super::frame_input::{SelectionDamageSnapshot, ViewportSize};
 use super::instance_writer::InstanceWriter;
 use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
 use super::{maybe_shrink_vec, srgb_to_linear};
@@ -124,12 +124,13 @@ pub struct PreparedFrame {
     ///
     /// Swapped out at the start of each prepare pass; clean rows copy from here.
     pub(crate) saved_tier: SavedTerminalTier,
-    /// Selection line range from the previous frame for damage tracking.
+    /// Selection snapshot from the previous frame for damage tracking.
     ///
-    /// `(start_line, end_line)` inclusive viewport lines. Used by the
-    /// incremental path to detect which rows changed selection state.
-    /// Persists across `clear()` and `save_terminal_tier()`.
-    pub(crate) prev_selection_range: Option<(usize, usize)>,
+    /// Captures viewport-relative line range, column extents, side, and mode.
+    /// Used by the incremental path to detect which rows changed selection
+    /// state — including intra-line column changes during drag. Persists
+    /// across `clear()` and `save_terminal_tier()`.
+    pub(crate) prev_selection_snapshot: Option<SelectionDamageSnapshot>,
     /// Reusable scratch buffer for per-row dirty flags (incremental rendering).
     pub(crate) scratch_dirty: Vec<bool>,
     /// Viewport pixel dimensions for uniform buffer update.
@@ -162,7 +163,7 @@ impl PreparedFrame {
             image_quads_above: Vec::new(),
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
-            prev_selection_range: None,
+            prev_selection_snapshot: None,
             scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
@@ -203,7 +204,7 @@ impl PreparedFrame {
             image_quads_above: Vec::new(),
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
-            prev_selection_range: None,
+            prev_selection_snapshot: None,
             scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),

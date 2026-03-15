@@ -233,12 +233,12 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
     }
 
-    // Update selection range for next frame's damage tracking.
+    // Update selection snapshot for next frame's damage tracking.
     let num_rows = input.rows();
-    out.prev_selection_range = input
+    out.prev_selection_snapshot = input
         .selection
         .as_ref()
-        .and_then(|s| s.viewport_line_range(num_rows));
+        .and_then(|s| s.damage_snapshot(num_rows));
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.
