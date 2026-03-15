@@ -222,11 +222,11 @@ impl MenuWidget {
         self.max_scroll() > f32::EPSILON
     }
 
-    /// Scroll by a pixel delta. Returns `true` if offset changed.
+    /// Scroll by a pixel delta. Positive = scroll down (increase offset).
     fn scroll_by(&mut self, delta: f32) -> bool {
         let max = self.max_scroll();
         let old = self.scroll_offset;
-        self.scroll_offset = (self.scroll_offset - delta).clamp(0.0, max);
+        self.scroll_offset = (self.scroll_offset + delta).clamp(0.0, max);
         (self.scroll_offset - old).abs() > f32::EPSILON
     }
 

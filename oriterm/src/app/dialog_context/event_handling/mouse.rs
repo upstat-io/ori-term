@@ -192,10 +192,10 @@ impl App {
         };
         let scale = ctx.scale_factor.factor() as f32;
         let scroll_delta = match delta {
-            winit::event::MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Lines { x, y: -y },
+            winit::event::MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Lines { x, y },
             winit::event::MouseScrollDelta::PixelDelta(pos) => ScrollDelta::Pixels {
                 x: pos.x as f32 / scale,
-                y: -(pos.y as f32 / scale),
+                y: pos.y as f32 / scale,
             },
         };
         let mouse_event = MouseEvent {
