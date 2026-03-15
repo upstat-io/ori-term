@@ -9,6 +9,13 @@ use std::rc::Rc;
 
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
+
+/// Map a logical row index to the child node index.
+///
+/// The header occupies index 0 in the layout children, so row `i` is at `i + 1`.
+fn row_node_index(row_idx: usize) -> usize {
+    row_idx + 1
+}
 use crate::input::{HoverEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::{Align, Direction, LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::text::{FontWeight, TextStyle};
@@ -89,6 +96,9 @@ impl FormSection {
     }
 
     /// Mutable access to rows (for setting label widths).
+    ///
+    /// Must only be called during setup phase (before the first layout pass).
+    /// Mutating rows after layout may cause stale cached layout data.
     pub fn rows_mut(&mut self) -> &mut [FormRow] {
         &mut self.rows
     }
@@ -187,7 +197,7 @@ impl Widget for FormSection {
         if self.expanded {
             for (i, row) in self.rows.iter().enumerate() {
                 // Row nodes start at index 1 (index 0 is the header).
-                if let Some(row_node) = layout.children.get(i + 1) {
+                if let Some(row_node) = layout.children.get(row_node_index(i)) {
                     if !row_node.rect.intersects(visible_bounds) {
                         continue;
                     }
@@ -216,20 +226,10 @@ impl Widget for FormSection {
             if let (Some(row), Some(row_node)) =
                 (self.rows.get_mut(cap_idx), layout.children.get(cap_idx + 1))
             {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: row_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
+                let child_ctx = ctx.for_child(row_node.content_rect, None);
                 let resp = row.handle_mouse(event, &child_ctx);
-                match resp.capture {
-                    CaptureRequest::Release => self.captured_row = None,
-                    CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
-                        self.captured_row = None;
-                    }
-                    _ => {}
+                if resp.capture.should_release(&event.kind) {
+                    self.captured_row = None;
                 }
                 return resp;
             }
@@ -254,15 +254,9 @@ impl Widget for FormSection {
         // Delegate to rows if expanded.
         if self.expanded {
             for (i, row) in self.rows.iter_mut().enumerate() {
-                if let Some(row_node) = layout.children.get(i + 1) {
+                if let Some(row_node) = layout.children.get(row_node_index(i)) {
                     if row_node.rect.contains(event.pos) {
-                        let child_ctx = EventCtx {
-                            measurer: ctx.measurer,
-                            bounds: row_node.content_rect,
-                            is_focused: false,
-                            focused_widget: ctx.focused_widget,
-                            theme: ctx.theme,
-                        };
+                        let child_ctx = ctx.for_child(row_node.content_rect, None);
                         let resp = row.handle_mouse(event, &child_ctx);
                         if resp.capture == CaptureRequest::Acquire {
                             self.captured_row = Some(i);
@@ -285,13 +279,7 @@ impl Widget for FormSection {
                 if let (Some(row), Some(row_node)) =
                     (self.rows.get_mut(old_idx), layout.children.get(old_idx + 1))
                 {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: row_node.content_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
+                    let child_ctx = ctx.for_child(row_node.content_rect, None);
                     row.handle_hover(HoverEvent::Leave, &child_ctx);
                 }
                 return WidgetResponse::paint();
@@ -307,14 +295,8 @@ impl Widget for FormSection {
         }
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         for (i, row) in self.rows.iter_mut().enumerate() {
-            if let Some(row_node) = layout.children.get(i + 1) {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: row_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
+            if let Some(row_node) = layout.children.get(row_node_index(i)) {
+                let child_ctx = ctx.for_child(row_node.content_rect, None);
                 let resp = row.handle_key(event, &child_ctx);
                 if resp.response.is_handled() {
                     return resp;
@@ -352,7 +334,7 @@ impl FormSection {
         let new_hover = self.rows.iter().enumerate().find_map(|(i, _)| {
             layout
                 .children
-                .get(i + 1)
+                .get(row_node_index(i))
                 .filter(|n| n.rect.contains(pos))
                 .map(|_| i)
         });
@@ -363,13 +345,7 @@ impl FormSection {
                 if let (Some(row), Some(row_node)) =
                     (self.rows.get_mut(idx), layout.children.get(idx + 1))
                 {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: row_node.content_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
+                    let child_ctx = ctx.for_child(row_node.content_rect, None);
                     let move_event = MouseEvent {
                         kind: MouseEventKind::Move,
                         pos,
@@ -386,13 +362,7 @@ impl FormSection {
             if let (Some(row), Some(row_node)) =
                 (self.rows.get_mut(old_idx), layout.children.get(old_idx + 1))
             {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: row_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
+                let child_ctx = ctx.for_child(row_node.content_rect, None);
                 row.handle_hover(HoverEvent::Leave, &child_ctx);
             }
         }
@@ -402,13 +372,7 @@ impl FormSection {
             if let (Some(row), Some(row_node)) =
                 (self.rows.get_mut(new_idx), layout.children.get(new_idx + 1))
             {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: row_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
+                let child_ctx = ctx.for_child(row_node.content_rect, None);
                 let move_event = MouseEvent {
                     kind: MouseEventKind::Move,
                     pos,

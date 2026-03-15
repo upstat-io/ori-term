@@ -56,6 +56,7 @@ use crate::window_manager::WindowManager;
 
 use self::cursor_blink::CursorBlink;
 use self::dialog_context::DialogWindowContext;
+use self::event_loop_helpers::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};
 use self::keyboard_input::ImeState;
 use self::mouse_selection::MouseState;
 use self::perf_stats::PerfStats;
@@ -479,8 +480,6 @@ impl App {
         }
     }
 }
-
-use event_loop_helpers::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};
 
 #[cfg(test)]
 mod tests;

@@ -354,3 +354,59 @@ fn mode_change_dirties_entire_union() {
     assert!(!dirty[2]);
     assert!(!dirty[7]);
 }
+
+#[test]
+fn linear_shrink_from_top_dirties_uncovered_rows() {
+    let mut dirty = vec![false; 10];
+    // Shrink from top: old=2-7, new=5-7 (start moves down).
+    mark_selection_damage(&mut dirty, Some(snap(2, 7)), Some(snap(5, 7)));
+    // Uncovered top rows 2-4 must be dirty.
+    assert!(dirty[2]);
+    assert!(dirty[3]);
+    assert!(dirty[4]);
+    // New start boundary dirty.
+    assert!(dirty[5]);
+    // Interior rows that stayed selected — line 6 is interior.
+    assert!(!dirty[6]);
+    // Old end=7, new end=7 is boundary → dirty.
+    assert!(dirty[7]);
+    // Outside range stays clean.
+    assert!(!dirty[0]);
+    assert!(!dirty[8]);
+}
+
+#[test]
+fn block_selection_edge_at_wide_char_boundary_dirties_rows() {
+    let mut dirty = vec![false; 10];
+    // Block selection where column edge sits at a wide-char boundary.
+    // The damage logic operates on lines, not columns, so the key assertion
+    // is that column changes in block mode dirty ALL rows — even when the
+    // change is a single column shift (e.g. from col 5 to col 6 which
+    // might split a wide character).
+    let old = SelectionDamageSnapshot {
+        start_line: 1,
+        end_line: 4,
+        start_col: 5,
+        start_side: Side::Left,
+        end_col: 5,
+        end_side: Side::Right,
+        mode: SelectionMode::Block,
+    };
+    let new = SelectionDamageSnapshot {
+        start_line: 1,
+        end_line: 4,
+        start_col: 5,
+        start_side: Side::Left,
+        end_col: 6,
+        end_side: Side::Right,
+        mode: SelectionMode::Block,
+    };
+    mark_selection_damage(&mut dirty, Some(old), Some(new));
+    // Block mode with column change → all rows in range dirty.
+    assert!(dirty[1]);
+    assert!(dirty[2]);
+    assert!(dirty[3]);
+    assert!(dirty[4]);
+    assert!(!dirty[0]);
+    assert!(!dirty[5]);
+}

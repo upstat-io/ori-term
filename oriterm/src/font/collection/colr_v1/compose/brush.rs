@@ -16,9 +16,9 @@ pub(super) fn make_paint(
     brush_xf: Option<&ColrTransform>,
 ) -> Option<tiny_skia::Paint<'static>> {
     let t = if let Some(bt) = brush_xf {
-        ctx.xf * *bt
+        *ctx.transform() * *bt
     } else {
-        ctx.xf
+        *ctx.transform()
     };
 
     let shader = match brush {
@@ -29,8 +29,8 @@ pub(super) fn make_paint(
             stops,
             extend,
         } => {
-            let start = pt(p0[0], p0[1], ctx.scale, ctx.clip, &t);
-            let end = pt(p1[0], p1[1], ctx.scale, ctx.clip, &t);
+            let start = pt(p0[0], p0[1], ctx.scale(), ctx.clip(), &t);
+            let end = pt(p1[0], p1[1], ctx.scale(), ctx.clip(), &t);
             let gs = to_grad_stops(stops)?;
             tiny_skia::LinearGradient::new(
                 start,
@@ -54,13 +54,13 @@ pub(super) fn make_paint(
             if *r0 > 0.0 {
                 log::trace!("radial gradient start radius {r0} approximated as point focal");
             }
-            let focal = pt(c0[0], c0[1], ctx.scale, ctx.clip, &t);
-            let center = pt(c1[0], c1[1], ctx.scale, ctx.clip, &t);
+            let focal = pt(c0[0], c0[1], ctx.scale(), ctx.clip(), &t);
+            let center = pt(c1[0], c1[1], ctx.scale(), ctx.clip(), &t);
             let gs = to_grad_stops(stops)?;
             tiny_skia::RadialGradient::new(
                 focal,
                 center,
-                r1 * ctx.scale,
+                r1 * ctx.scale(),
                 gs,
                 to_spread(*extend),
                 tiny_skia::Transform::identity(),

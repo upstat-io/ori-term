@@ -50,9 +50,9 @@ pub(super) struct AxisInfo {
 /// [`FontRef`] construction without re-parsing.
 pub(crate) struct FaceData {
     /// Raw font file bytes.
-    pub(crate) bytes: Arc<Vec<u8>>,
+    pub(super) bytes: Arc<Vec<u8>>,
     /// Index within a `.ttc` collection file (0 for standalone `.ttf`).
-    pub(crate) face_index: u32,
+    pub(super) face_index: u32,
     /// Byte offset to the font table directory.
     offset: u32,
     /// Unique cache key for [`ScaleContext`] reuse.

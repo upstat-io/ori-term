@@ -111,6 +111,10 @@ pub struct ScrollWidget {
     /// When set to `Fill`, the scroll container expands to fill the
     /// remaining space in a column — creating a sticky footer effect
     /// where siblings below it stay pinned at the bottom.
+    ///
+    /// **Constraint:** `Fill` should only be used when the scroll is in a
+    /// column with known remaining height. Internally, scroll still caches
+    /// the child's natural height for content-space calculations.
     height_override: Option<SizeSpec>,
     /// Cached child natural size, keyed by viewport bounds.
     cached_child_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
@@ -319,12 +323,8 @@ impl Widget for ScrollWidget {
                 theme: ctx.theme,
             };
             let resp = self.child.handle_mouse(event, &child_ctx);
-            match resp.capture {
-                CaptureRequest::Release => self.child_captured = false,
-                CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
-                    self.child_captured = false;
-                }
-                _ => {}
+            if resp.capture.should_release(&event.kind) {
+                self.child_captured = false;
             }
             if resp.response.needs_layout() {
                 *self.cached_child_layout.borrow_mut() = None;
@@ -380,6 +380,11 @@ impl Widget for ScrollWidget {
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+        // Reset scrollbar hover state when cursor leaves the widget entirely.
+        if matches!(event, HoverEvent::Leave) && self.scrollbar.track_hovered {
+            self.scrollbar.track_hovered = false;
+        }
+
         let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
         let child_bounds = Rect::new(
             ctx.bounds.x() - self.scroll_offset_x,

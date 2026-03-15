@@ -87,6 +87,8 @@ jobs:
             fonts-dejavu-core
       - uses: Swatinem/rust-cache@v2
       - name: Unit tests
+        env:
+          NO_GPU_TESTS: "1"
         run: cargo test --workspace --lib --bins
       - name: Integration tests (limited parallelism)
         run: cargo test --workspace --test '*' -- --test-threads=2

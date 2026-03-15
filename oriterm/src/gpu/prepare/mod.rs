@@ -33,7 +33,7 @@ use emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hover_under
 
 pub(crate) use shaped_frame::ShapedFrame;
 #[cfg(test)]
-pub use unshaped::{prepare_frame, prepare_frame_into};
+pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 
 /// Match highlight background: yellow-tinted for visibility.
 const SEARCH_MATCH_BG: Rgb = Rgb {
