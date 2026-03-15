@@ -279,6 +279,26 @@ pub trait MuxBackend {
     /// Clear the dirty flag for a pane's cached snapshot.
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId);
 
+    /// Whether the terminal's `selection_dirty` flag is set for a pane.
+    ///
+    /// The flag is set when terminal output modifies grid content that would
+    /// invalidate a text selection (character printing, scrolling, erasing,
+    /// etc.). It is NOT set by cursor movement, SGR changes, or other
+    /// non-content-modifying operations.
+    ///
+    /// In embedded mode, reads the flag from the terminal. In daemon mode,
+    /// returns `false` — the daemon propagates invalidation via snapshot
+    /// changes instead.
+    fn is_selection_dirty(&self, _pane_id: PaneId) -> bool {
+        false
+    }
+
+    /// Clear the terminal's `selection_dirty` flag for a pane.
+    ///
+    /// Must be called after checking `is_selection_dirty()` to prevent
+    /// the flag from being re-read on subsequent poll cycles.
+    fn clear_selection_dirty(&mut self, _pane_id: PaneId) {}
+
     /// Shrink renderable content caches if capacity vastly exceeds usage.
     ///
     /// Called after rendering to bound memory waste. Default is a no-op

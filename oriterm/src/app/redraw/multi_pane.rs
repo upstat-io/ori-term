@@ -462,8 +462,12 @@ impl App {
                 }
             }
 
-            // Full content render when any pane content changed OR chrome/
-            // overlay visuals are stale.
+            // Full content render when any pane content changed or
+            // chrome/overlay visuals are stale. In multi-pane mode,
+            // `any_content_changed` is always true because the focused
+            // pane is always dirty (it needs cursor blink updates).
+            // Selection changes are handled per-pane during prepare — each
+            // pane's `FrameInput.selection` is set before `get_or_prepare`.
             let needs_full_render = any_content_changed || ctx.ui_stale;
 
             ctx.ui_stale = tab_bar_animating;

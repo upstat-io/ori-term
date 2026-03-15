@@ -54,9 +54,19 @@ impl App {
     fn handle_mux_notification(&mut self, notification: MuxNotification) {
         match notification {
             MuxNotification::PaneOutput(id) => {
-                // Invalidate client-side selection when terminal content changes.
-                // New output can shift scrollback, making selection coordinates stale.
-                self.clear_pane_selection(id);
+                // Invalidate client-side selection only when terminal content
+                // that affects selection coordinates has changed (scrolling,
+                // character printing, erasing, etc.). Non-content operations
+                // like cursor movement and SGR attribute changes do not
+                // invalidate. Without this precision, selections would be
+                // cleared on every prompt repaint or cursor blink output,
+                // making selection highlighting impossible.
+                if let Some(mux) = self.mux.as_mut() {
+                    if mux.is_selection_dirty(id) {
+                        mux.clear_selection_dirty(id);
+                        self.clear_pane_selection(id);
+                    }
+                }
 
                 // Only invalidate URL hover when the dirty pane is focused.
                 // Background shell output in other panes shouldn't kill the
