@@ -200,10 +200,15 @@ impl ScrollWidget {
     }
 
     /// Scrolls by a delta, clamping to valid range. Returns true if offset changed.
+    ///
+    /// Positive `delta_y` scrolls down (increases offset, reveals content
+    /// below). The mouse event handler negates the raw wheel delta so
+    /// wheel-up (positive y from winit) produces a negative `delta_y` here,
+    /// decreasing the offset — scrolling the view up.
     fn scroll_by(&mut self, delta_y: f32, content_height: f32, view_height: f32) -> bool {
         let max = (content_height - view_height).max(0.0);
         let old = self.scroll_offset;
-        self.scroll_offset = (self.scroll_offset - delta_y).clamp(0.0, max);
+        self.scroll_offset = (self.scroll_offset + delta_y).clamp(0.0, max);
         (self.scroll_offset - old).abs() > f32::EPSILON
     }
 }
@@ -311,10 +316,14 @@ impl Widget for ScrollWidget {
         }
 
         // Handle scroll events.
+        //
+        // Winit delivers positive y for wheel-up. Negate so positive delta_y
+        // means "scroll down" (increase offset), matching traditional
+        // Windows/Linux convention: wheel-up → view scrolls up.
         if let MouseEventKind::Scroll(delta) = event.kind {
             let delta_y = match delta {
-                ScrollDelta::Pixels { y, .. } => y,
-                ScrollDelta::Lines { y, .. } => y * self.line_height,
+                ScrollDelta::Pixels { y, .. } => -y,
+                ScrollDelta::Lines { y, .. } => -y * self.line_height,
             };
             if self.scroll_by(delta_y, content_h, view_h) {
                 return WidgetResponse::paint();
@@ -374,25 +383,25 @@ impl Widget for ScrollWidget {
         if event.modifiers == Modifiers::NONE {
             match event.key {
                 Key::ArrowUp => {
-                    if self.scroll_by(self.line_height, content_h, view_h) {
-                        return WidgetResponse::paint();
-                    }
-                    return WidgetResponse::handled();
-                }
-                Key::ArrowDown => {
                     if self.scroll_by(-self.line_height, content_h, view_h) {
                         return WidgetResponse::paint();
                     }
                     return WidgetResponse::handled();
                 }
+                Key::ArrowDown => {
+                    if self.scroll_by(self.line_height, content_h, view_h) {
+                        return WidgetResponse::paint();
+                    }
+                    return WidgetResponse::handled();
+                }
                 Key::PageUp => {
-                    if self.scroll_by(view_h, content_h, view_h) {
+                    if self.scroll_by(-view_h, content_h, view_h) {
                         return WidgetResponse::paint();
                     }
                     return WidgetResponse::handled();
                 }
                 Key::PageDown => {
-                    if self.scroll_by(-view_h, content_h, view_h) {
+                    if self.scroll_by(view_h, content_h, view_h) {
                         return WidgetResponse::paint();
                     }
                     return WidgetResponse::handled();

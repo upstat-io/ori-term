@@ -97,9 +97,11 @@ impl Widget for MenuWidget {
                 WidgetResponse::handled()
             }
             MouseEventKind::Scroll(delta) => {
+                // Negate: winit positive y = wheel-up, but positive
+                // delta_y means "scroll down" in our scroll_by convention.
                 let delta_y = match delta {
-                    ScrollDelta::Pixels { y, .. } => y,
-                    ScrollDelta::Lines { y, .. } => y * SCROLL_LINE_HEIGHT,
+                    ScrollDelta::Pixels { y, .. } => -y,
+                    ScrollDelta::Lines { y, .. } => -y * SCROLL_LINE_HEIGHT,
                 };
                 if self.scroll_by(delta_y) {
                     let rel_y = event.pos.y - ctx.bounds.y();
