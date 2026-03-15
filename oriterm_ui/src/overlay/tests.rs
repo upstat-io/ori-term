@@ -1158,6 +1158,8 @@ fn draw_non_modal_no_dimming() {
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
 
     assert_eq!(mgr.draw_count(), 1);
@@ -1205,6 +1207,8 @@ fn draw_modal_emits_dimming_rect() {
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
 
     assert_eq!(mgr.draw_count(), 1);
@@ -1266,6 +1270,8 @@ fn draw_overlays_in_painter_order() {
             theme: &TEST_THEME,
             icons: None,
             scene_cache: None,
+            interaction: None,
+            widget_id: None,
         };
         mgr.draw_overlay_at(i, &mut ctx, &tree);
     }
@@ -2009,6 +2015,8 @@ fn draw_stacked_modals_emits_two_dim_rects() {
             theme: &TEST_THEME,
             icons: None,
             scene_cache: None,
+            interaction: None,
+            widget_id: None,
         };
         mgr.draw_overlay_at(i, &mut ctx, &tree);
     }
@@ -2164,6 +2172,8 @@ fn popup_starts_at_full_opacity() {
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
 
     let opacity = mgr.draw_overlay_at(0, &mut ctx, &tree);
@@ -2204,6 +2214,8 @@ fn modal_fades_in_from_zero() {
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
 
     // Modal appears instantly — opacity is 1.0 at t=0 (no fade-in).
@@ -2245,6 +2257,8 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
 
     mgr.draw_overlay_at(0, &mut ctx, &tree);

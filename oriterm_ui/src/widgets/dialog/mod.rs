@@ -282,6 +282,8 @@ impl DialogWidget {
                     is_focused: focused == btn_kind,
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
+                    interaction: None,
+                    widget_id: None,
                 };
                 button.handle_hover(HoverEvent::Leave, &btn_ctx);
             }
@@ -297,6 +299,8 @@ impl DialogWidget {
                     is_focused: focused == btn_kind,
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
+                    interaction: None,
+                    widget_id: None,
                 };
                 button.handle_hover(HoverEvent::Enter, &btn_ctx);
             }
@@ -321,6 +325,8 @@ impl DialogWidget {
                         is_focused: focused == btn_kind,
                         focused_widget: ctx.focused_widget,
                         theme: ctx.theme,
+                        interaction: None,
+                        widget_id: None,
                     };
                     button.handle_hover(HoverEvent::Leave, &btn_ctx);
                 }
@@ -417,6 +423,8 @@ impl Widget for DialogWidget {
                 is_focused: focused == btn_kind,
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             let response = button.handle_mouse(event, &btn_ctx);
             if let Some(WidgetAction::Clicked(id)) = &response.action {

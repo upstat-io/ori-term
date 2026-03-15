@@ -31,6 +31,66 @@ pub fn layout_hit_test_clipped(
     hit_test_node(root, point, clip)
 }
 
+/// Finds the full ancestor path from root to the deepest hit widget.
+///
+/// Returns an empty `Vec` if no widget contains the point. Otherwise returns
+/// a root-to-leaf ordered list of all `WidgetId`s along the path to the
+/// deepest hit widget.
+///
+/// This is used by `InteractionManager::update_hot_path()` to compute which
+/// widgets are hot (pointer over subtree) vs hot-direct (pointer over leaf).
+pub fn layout_hit_test_path(root: &LayoutNode, point: Point) -> Vec<WidgetId> {
+    let mut path = Vec::new();
+    hit_test_path_node(root, point, None, &mut path);
+    path
+}
+
+/// Recursive path-collecting hit test.
+///
+/// Returns `true` if a hit was found in this subtree. Pushes widget IDs
+/// top-down: the current node's ID is pushed speculatively before recursing
+/// into children, and popped if no hit is found.
+fn hit_test_path_node(
+    node: &LayoutNode,
+    point: Point,
+    clip: Option<Rect>,
+    path: &mut Vec<WidgetId>,
+) -> bool {
+    // Early out: point outside this node's rect.
+    if !node.rect.contains(point) {
+        return false;
+    }
+
+    // Early out: point outside clip rect.
+    if let Some(clip) = clip {
+        if !clip.contains(point) {
+            return false;
+        }
+    }
+
+    // Push current node's ID speculatively (root-to-leaf order).
+    let pushed = if let Some(id) = node.widget_id {
+        path.push(id);
+        true
+    } else {
+        false
+    };
+
+    // Walk children back-to-front (last child = frontmost).
+    for child in node.children.iter().rev() {
+        if hit_test_path_node(child, point, clip, path) {
+            return true;
+        }
+    }
+
+    // No child hit. If we pushed our ID, we're the deepest hit widget.
+    if pushed {
+        return true;
+    }
+
+    false
+}
+
 /// Recursive hit test on a single node.
 ///
 /// Returns the deepest `WidgetId` whose rect contains `point`, or `None`.

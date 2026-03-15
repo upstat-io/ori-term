@@ -169,6 +169,8 @@ fn control_button_hover_sets_pressed() {
         is_focused: false,
         focused_widget: None,
         theme: &theme,
+        interaction: None,
+        widget_id: None,
     };
 
     let event = left_down(23.0, 18.0);

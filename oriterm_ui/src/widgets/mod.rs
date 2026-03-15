@@ -37,6 +37,7 @@ use crate::draw::{DrawList, SceneCache};
 use crate::geometry::Rect;
 use crate::icons::ResolvedIcons;
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, MouseEventKind};
+use crate::interaction::InteractionManager;
 use crate::layout::LayoutBox;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -270,6 +271,69 @@ pub struct DrawCtx<'a> {
     /// `None` during uncached draws (tests, first frame). When present,
     /// container widgets check the cache before calling `child.draw()`.
     pub scene_cache: Option<&'a mut SceneCache>,
+    /// Framework interaction state manager.
+    ///
+    /// `None` until the interaction system is fully wired (Section 03).
+    /// Widgets use `is_hot()`, `is_active()`, `is_focused()` convenience
+    /// methods which return `false` when this is `None`.
+    pub interaction: Option<&'a InteractionManager>,
+    /// The widget being drawn. `None` at the root level (app frame).
+    pub widget_id: Option<WidgetId>,
+}
+
+impl DrawCtx<'_> {
+    /// Whether the pointer is over this widget or any descendant.
+    pub fn is_hot(&self) -> bool {
+        match (self.interaction, self.widget_id) {
+            (Some(mgr), Some(id)) => mgr.get_state(id).is_hot(),
+            _ => false,
+        }
+    }
+
+    /// Whether the pointer is directly over this widget (not a descendant).
+    pub fn is_hot_direct(&self) -> bool {
+        match (self.interaction, self.widget_id) {
+            (Some(mgr), Some(id)) => mgr.get_state(id).is_hot_direct(),
+            _ => false,
+        }
+    }
+
+    /// Whether this widget has captured mouse events.
+    pub fn is_active(&self) -> bool {
+        match (self.interaction, self.widget_id) {
+            (Some(mgr), Some(id)) => mgr.get_state(id).is_active(),
+            _ => false,
+        }
+    }
+
+    /// Whether this widget has keyboard focus (via `InteractionManager`).
+    pub fn is_interaction_focused(&self) -> bool {
+        match (self.interaction, self.widget_id) {
+            (Some(mgr), Some(id)) => mgr.get_state(id).is_focused(),
+            _ => false,
+        }
+    }
+
+    /// Build a child draw context with child-specific bounds and widget ID.
+    ///
+    /// Reborrows `draw_list`, `scene_cache`, and `interaction` from `self`.
+    /// Copies all other fields. Containers should use this instead of
+    /// constructing `DrawCtx` struct literals directly.
+    pub fn for_child(&mut self, child_id: WidgetId, child_bounds: Rect) -> DrawCtx<'_> {
+        DrawCtx {
+            measurer: self.measurer,
+            draw_list: self.draw_list,
+            bounds: child_bounds,
+            focused_widget: self.focused_widget,
+            now: self.now,
+            animations_running: self.animations_running,
+            theme: self.theme,
+            icons: self.icons,
+            scene_cache: self.scene_cache.as_deref_mut(),
+            interaction: self.interaction,
+            widget_id: Some(child_id),
+        }
+    }
 }
 
 /// Context passed to mouse and keyboard event handlers.
@@ -287,6 +351,12 @@ pub struct EventCtx<'a> {
     pub focused_widget: Option<WidgetId>,
     /// Active UI theme.
     pub theme: &'a UiTheme,
+    /// Framework interaction state manager.
+    ///
+    /// `None` until the interaction system is fully wired (Section 03).
+    pub interaction: Option<&'a InteractionManager>,
+    /// The widget receiving the event. `None` at the root level.
+    pub widget_id: Option<WidgetId>,
 }
 
 impl EventCtx<'_> {
@@ -302,6 +372,32 @@ impl EventCtx<'_> {
             is_focused: child_id.is_some_and(|id| self.focused_widget == Some(id)),
             focused_widget: self.focused_widget,
             theme: self.theme,
+            interaction: self.interaction,
+            widget_id: child_id,
+        }
+    }
+
+    /// Whether the pointer is over this widget or any descendant.
+    pub fn is_hot(&self) -> bool {
+        match (self.interaction, self.widget_id) {
+            (Some(mgr), Some(id)) => mgr.get_state(id).is_hot(),
+            _ => false,
+        }
+    }
+
+    /// Whether this widget has captured mouse events.
+    pub fn is_active(&self) -> bool {
+        match (self.interaction, self.widget_id) {
+            (Some(mgr), Some(id)) => mgr.get_state(id).is_active(),
+            _ => false,
+        }
+    }
+
+    /// Whether this widget has keyboard focus (via `InteractionManager`).
+    pub fn is_interaction_focused(&self) -> bool {
+        match (self.interaction, self.widget_id) {
+            (Some(mgr), Some(id)) => mgr.get_state(id).is_focused(),
+            _ => false,
         }
     }
 }

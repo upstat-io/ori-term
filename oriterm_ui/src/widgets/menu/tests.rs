@@ -15,6 +15,8 @@ fn event_ctx(bounds: Rect) -> EventCtx<'static> {
         is_focused: true,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     }
 }
 
@@ -357,6 +359,8 @@ fn not_focused_ignores_keys() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let r = menu.handle_key(key_event(Key::ArrowDown), &ctx);

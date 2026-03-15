@@ -338,6 +338,8 @@ impl App {
             is_focused: false,
             focused_widget: None,
             theme: &self.ui_theme,
+            interaction: None,
+            widget_id: None,
         };
         let resp = ctx.tab_bar.update_control_hover(pos, &event_ctx);
         if matches!(
@@ -383,6 +385,8 @@ impl App {
                 is_focused: false,
                 focused_widget: None,
                 theme: &self.ui_theme,
+                interaction: None,
+                widget_id: None,
             };
             ctx.tab_bar.clear_control_hover(&event_ctx);
         }

@@ -415,6 +415,8 @@ impl Widget for ContainerWidget {
                     theme: ctx.theme,
                     icons: ctx.icons,
                     scene_cache: ctx.scene_cache.as_deref_mut(),
+                    interaction: None,
+                    widget_id: None,
                 };
                 child.draw(&mut child_ctx);
                 Self::store_in_cache(ctx, child_id, bounds, start, log_start);
@@ -448,6 +450,8 @@ impl Widget for ContainerWidget {
                             is_focused: ctx.focused_widget == Some(child.id()),
                             focused_widget: ctx.focused_widget,
                             theme: ctx.theme,
+                            interaction: None,
+                            widget_id: None,
                         };
                         child.handle_hover(HoverEvent::Leave, &child_ctx);
                     }

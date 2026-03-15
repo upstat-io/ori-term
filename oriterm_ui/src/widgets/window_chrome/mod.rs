@@ -270,6 +270,8 @@ impl Widget for WindowChromeWidget {
                 theme: ctx.theme,
                 icons: ctx.icons,
                 scene_cache: ctx.scene_cache.as_deref_mut(),
+                interaction: None,
+                widget_id: None,
             };
             ctrl.draw(&mut child_ctx);
         }
@@ -290,6 +292,8 @@ impl Widget for WindowChromeWidget {
                         is_focused: false,
                         focused_widget: ctx.focused_widget,
                         theme: ctx.theme,
+                        interaction: None,
+                        widget_id: None,
                     };
                     return self.controls[idx].handle_mouse(event, &child_ctx);
                 }
@@ -306,6 +310,8 @@ impl Widget for WindowChromeWidget {
                             is_focused: false,
                             focused_widget: ctx.focused_widget,
                             theme: ctx.theme,
+                            interaction: None,
+                            widget_id: None,
                         };
                         return ctrl.handle_mouse(event, &child_ctx);
                     }
@@ -333,6 +339,8 @@ impl Widget for WindowChromeWidget {
                         is_focused: false,
                         focused_widget: ctx.focused_widget,
                         theme: ctx.theme,
+                        interaction: None,
+                        widget_id: None,
                     };
                     self.controls[idx].handle_hover(HoverEvent::Leave, &child_ctx)
                 } else {
@@ -373,6 +381,8 @@ impl WindowChromeWidget {
                 is_focused: false,
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
             true
@@ -389,6 +399,8 @@ impl WindowChromeWidget {
                 is_focused: false,
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             self.controls[new].handle_hover(HoverEvent::Enter, &child_ctx);
             true

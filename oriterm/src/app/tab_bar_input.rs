@@ -247,6 +247,8 @@ impl App {
             is_focused: false,
             focused_widget: None,
             theme: &ui_theme,
+            interaction: None,
+            widget_id: None,
         };
         let resp = ctx.tab_bar.handle_control_mouse(&mouse_event, &event_ctx);
         if matches!(

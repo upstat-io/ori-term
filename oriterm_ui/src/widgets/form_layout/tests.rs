@@ -110,6 +110,8 @@ fn mouse_delegates_to_section() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Click on the first section header (past FORM_PADDING top=16,
@@ -142,6 +144,8 @@ fn draw_produces_commands() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     form.draw(&mut ctx);
 
@@ -175,6 +179,8 @@ fn draw_skips_sections_outside_active_clip() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     form.draw(&mut ctx);
 

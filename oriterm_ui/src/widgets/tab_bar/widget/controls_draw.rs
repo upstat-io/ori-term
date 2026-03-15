@@ -53,6 +53,8 @@ impl TabBarWidget {
                 theme: ctx.theme,
                 icons: ctx.icons,
                 scene_cache: ctx.scene_cache.as_deref_mut(),
+                interaction: None,
+                widget_id: None,
             };
             ctrl.draw(&mut child_ctx);
         }

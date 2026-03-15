@@ -78,6 +78,8 @@ impl App {
                 theme: &ui_theme,
                 icons: Some(icons),
                 scene_cache: None,
+                interaction: None,
+                widget_id: None,
             };
             compose_scene(
                 &ctx.chrome,
@@ -100,6 +102,8 @@ impl App {
                 theme: &ui_theme,
                 icons: Some(icons),
                 scene_cache: None,
+                interaction: None,
+                widget_id: None,
             };
             compose_scene(
                 ctx.content.content_widget(),
@@ -180,6 +184,8 @@ impl App {
                 theme: ui_theme,
                 icons: Some(icons),
                 scene_cache: None,
+                interaction: None,
+                widget_id: None,
             };
             let opacity = ctx
                 .overlays

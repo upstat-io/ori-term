@@ -13,6 +13,7 @@ pub mod geometry;
 pub mod hit_test;
 pub mod icons;
 pub mod input;
+pub mod interaction;
 pub mod invalidation;
 pub mod layout;
 pub mod overlay;

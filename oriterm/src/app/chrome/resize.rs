@@ -100,6 +100,12 @@ impl App {
     /// `winit_id` identifies which window was resized. All operations
     /// (surface reconfigure, widget layout, grid recomputation) target
     /// only this window.
+    ///
+    /// Bails when the window is minimized. On Windows, the minimize
+    /// animation fires `Resized` with a small non-zero size (e.g. 199×34)
+    /// that produces a degenerate grid (15×1). Without this guard the PTY
+    /// receives that tiny resize, the shell reflows/clears, and content is
+    /// lost. On restore a fresh `Resized` fires with the real dimensions.
     pub(in crate::app) fn handle_resize(
         &mut self,
         winit_id: WindowId,
@@ -111,9 +117,6 @@ impl App {
         // is correct in the animation snapshot.
         #[cfg(target_os = "macos")]
         self.process_fullscreen_events();
-
-        // Window size changed — cached tab width is invalid.
-        self.release_tab_width_lock();
 
         // On Windows, detect DPI changes from WM_DPICHANGED. The snap
         // subclass proc consumes the message before winit sees it, so
@@ -143,6 +146,23 @@ impl App {
                 }
             }
         }
+
+        // Skip resize while minimized. On Windows the minimize animation
+        // fires Resized with a small non-zero size (e.g. 199×34) that
+        // computes a degenerate grid (15×1). Sending that to the PTY makes
+        // the shell reflow/clear, destroying content. The restore event
+        // delivers the real dimensions.
+        let minimized = self
+            .windows
+            .get(&winit_id)
+            .and_then(|ctx| ctx.window.window().is_minimized())
+            .unwrap_or(false);
+        if minimized {
+            return;
+        }
+
+        // Window size changed — cached tab width is invalid.
+        self.release_tab_width_lock();
 
         // Resize GPU surface (scoped to release borrows before sync_grid_layout).
         {

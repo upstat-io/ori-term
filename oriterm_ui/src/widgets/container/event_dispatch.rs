@@ -87,6 +87,8 @@ impl ContainerWidget {
                 is_focused: ctx.focused_widget == Some(child.id()),
                 focused_widget: ctx.focused_widget,
                 theme: ctx.theme,
+                interaction: None,
+                widget_id: None,
             };
             let mut resp = child.handle_mouse(event, &child_ctx);
             resp.inject_source(child.id());
@@ -139,6 +141,8 @@ impl ContainerWidget {
                     is_focused: ctx.focused_widget == Some(child_id),
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
+                    interaction: None,
+                    widget_id: None,
                 };
                 let resp = child.handle_hover(HoverEvent::Leave, &child_ctx);
                 if resp.response.is_handled() {
@@ -159,6 +163,8 @@ impl ContainerWidget {
                     is_focused: ctx.focused_widget == Some(child_id),
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
+                    interaction: None,
+                    widget_id: None,
                 };
                 let resp = child.handle_hover(HoverEvent::Enter, &child_ctx);
                 if resp.response.is_handled() {
@@ -185,6 +191,8 @@ impl ContainerWidget {
                     is_focused: ctx.focused_widget == Some(child.id()),
                     focused_widget: ctx.focused_widget,
                     theme: ctx.theme,
+                    interaction: None,
+                    widget_id: None,
                 };
                 let mut resp = child.handle_key(event, &child_ctx);
                 if resp.response.is_handled() {

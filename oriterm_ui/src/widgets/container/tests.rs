@@ -291,6 +291,8 @@ fn draw_skips_children_fully_outside_active_clip() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
 
     row.draw(&mut ctx);
@@ -329,6 +331,8 @@ fn draw_delegates_to_children() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     row.draw(&mut ctx);
 
@@ -359,6 +363,8 @@ fn focused_widget_propagates_through_draw() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     row.draw(&mut ctx);
 
@@ -390,6 +396,8 @@ fn delegates_mouse_to_child() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let down = MouseEvent {
@@ -423,6 +431,8 @@ fn mouse_outside_children_is_ignored() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -446,6 +456,8 @@ fn mouse_on_gap_is_ignored() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -467,6 +479,8 @@ fn empty_container_mouse_ignored() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -491,6 +505,8 @@ fn mouse_capture_delivers_up_to_pressed_child() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Mouse down on button (x=50 is inside button area).
@@ -534,6 +550,8 @@ fn mouse_capture_fires_clicked_when_released_inside() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Mouse down on button.
@@ -570,6 +588,8 @@ fn capture_released_on_mouse_up() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Mouse down on child 0.
@@ -607,6 +627,8 @@ fn delegates_key_to_focused_child() {
         is_focused: false,
         focused_widget: Some(btn_id),
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let event = KeyEvent {
@@ -631,6 +653,8 @@ fn empty_container_key_ignored() {
         is_focused: true,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -655,6 +679,8 @@ fn child_consumes_event_stops_propagation() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let down = MouseEvent {
@@ -725,6 +751,8 @@ fn deeply_nested_mouse_routing() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     let down = MouseEvent {
@@ -808,6 +836,8 @@ fn hover_leave_clears_child_state() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Move over child 0 to set hover.
@@ -838,6 +868,8 @@ fn hover_transition_between_children() {
         is_focused: false,
         focused_widget: None,
         theme: &super::super::tests::TEST_THEME,
+        interaction: None,
+        widget_id: None,
     };
 
     // Move to child 0.
@@ -968,6 +1000,8 @@ fn needs_layout_bypasses_cache() {
         theme,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     c.draw(&mut ctx);
     let cmd_count_1 = draw_list.commands().len();
@@ -984,6 +1018,8 @@ fn needs_layout_bypasses_cache() {
         theme,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     c.draw(&mut ctx2);
     assert_eq!(
@@ -1015,6 +1051,8 @@ fn needs_layout_bypasses_cache() {
         theme,
         icons: None,
         scene_cache: None,
+        interaction: None,
+        widget_id: None,
     };
     c.draw(&mut ctx3);
     assert_eq!(
@@ -1054,6 +1092,8 @@ fn scene_cache_skips_clean_children() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
+        interaction: None,
+        widget_id: None,
     };
     row.draw(&mut ctx);
 
@@ -1074,6 +1114,8 @@ fn scene_cache_skips_clean_children() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
+        interaction: None,
+        widget_id: None,
     };
     row.draw(&mut ctx2);
 
@@ -1112,6 +1154,8 @@ fn scene_cache_redraws_invalidated_child() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
+        interaction: None,
+        widget_id: None,
     };
     row.draw(&mut ctx);
 
@@ -1132,6 +1176,8 @@ fn scene_cache_redraws_invalidated_child() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
+        interaction: None,
+        widget_id: None,
     };
     row.draw(&mut ctx2);
 
@@ -1173,6 +1219,8 @@ fn scene_cache_miss_on_bounds_mismatch() {
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
+        interaction: None,
+        widget_id: None,
     };
     row.draw(&mut ctx);
 

@@ -273,6 +273,8 @@ impl OverlayManager {
             theme: ctx.theme,
             icons: ctx.icons,
             scene_cache: None,
+            interaction: None,
+            widget_id: None,
         };
         overlay.widget.draw(&mut overlay_ctx);
 
