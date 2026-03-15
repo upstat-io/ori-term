@@ -181,22 +181,40 @@ impl App {
     }
 
     /// Handle mouse wheel events within a dialog window.
+    ///
+    /// Routes through the dialog's overlay manager first so popup menus
+    /// (e.g. dropdown lists) receive scroll events before the underlying
+    /// content's `ScrollWidget` can consume them.
     pub(in crate::app) fn handle_dialog_scroll(
         &mut self,
         window_id: WindowId,
         delta: winit::event::MouseScrollDelta,
     ) {
-        let ui_theme = self.ui_theme;
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            return;
-        };
-        let scale = ctx.scale_factor.factor() as f32;
+        // Build the scroll delta for the UI event.
+        let scale = self
+            .dialogs
+            .get(&window_id)
+            .map_or(1.0, |ctx| ctx.scale_factor.factor() as f32);
         let scroll_delta = match delta {
             winit::event::MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Lines { x, y },
             winit::event::MouseScrollDelta::PixelDelta(pos) => ScrollDelta::Pixels {
                 x: pos.x as f32 / scale,
                 y: pos.y as f32 / scale,
             },
+        };
+
+        // Try overlay routing first (dropdown popups get scroll priority).
+        if let Some(result) =
+            self.try_dialog_overlay_mouse(window_id, MouseEventKind::Scroll(scroll_delta))
+        {
+            self.handle_dialog_overlay_result(window_id, result);
+            return;
+        }
+
+        // No overlay consumed the scroll — fall through to content widget.
+        let ui_theme = self.ui_theme;
+        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+            return;
         };
         let mouse_event = MouseEvent {
             kind: MouseEventKind::Scroll(scroll_delta),
