@@ -1458,7 +1458,7 @@ fn resolve_subpixel_mode_config_override_rgb() {
 
     let mut cfg = FontConfig::default();
     cfg.subpixel_mode = Some("rgb".to_owned());
-    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0);
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0, 1.0);
     assert_eq!(result, SubpixelMode::Rgb);
 }
 
@@ -1468,7 +1468,7 @@ fn resolve_subpixel_mode_config_override_bgr() {
 
     let mut cfg = FontConfig::default();
     cfg.subpixel_mode = Some("bgr".to_owned());
-    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0);
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0);
     assert_eq!(result, SubpixelMode::Bgr);
 }
 
@@ -1478,7 +1478,7 @@ fn resolve_subpixel_mode_config_override_none() {
 
     let mut cfg = FontConfig::default();
     cfg.subpixel_mode = Some("none".to_owned());
-    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0);
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0);
     assert_eq!(result, SubpixelMode::None);
 }
 
@@ -1488,18 +1488,16 @@ fn resolve_subpixel_mode_auto_detection() {
 
     let cfg = FontConfig::default();
     assert_eq!(
-        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0),
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0),
         SubpixelMode::Rgb,
     );
     assert_eq!(
-        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0),
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0, 1.0),
         SubpixelMode::None,
     );
 }
 
-// ---------------------------------------------------------------------------
 // resolve_subpixel_mode unknown value fallback
-// ---------------------------------------------------------------------------
 
 #[test]
 fn resolve_subpixel_mode_unknown_value_falls_back() {
@@ -1507,20 +1505,47 @@ fn resolve_subpixel_mode_unknown_value_falls_back() {
 
     let mut cfg = FontConfig::default();
     cfg.subpixel_mode = Some("garbage".to_owned());
-    // Unknown value → auto-detection based on scale factor.
+    // Unknown value → auto-detection based on scale factor and opacity.
     assert_eq!(
-        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0),
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0),
         SubpixelMode::Rgb,
     );
     assert_eq!(
-        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0),
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0, 1.0),
         SubpixelMode::None,
     );
 }
 
-// ---------------------------------------------------------------------------
+#[test]
+fn resolve_subpixel_mode_transparent_disables_auto() {
+    use crate::font::SubpixelMode;
+
+    let cfg = FontConfig::default();
+    // At 1x DPI, opaque → Rgb. Transparent → None.
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0),
+        SubpixelMode::Rgb,
+    );
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 0.8),
+        SubpixelMode::None,
+    );
+}
+
+#[test]
+fn resolve_subpixel_mode_explicit_override_ignores_opacity() {
+    use crate::font::SubpixelMode;
+
+    // Explicit "rgb" with transparent background → still Rgb (user override).
+    let mut cfg = FontConfig::default();
+    cfg.subpixel_mode = Some("rgb".to_owned());
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 0.5),
+        SubpixelMode::Rgb,
+    );
+}
+
 // apply_font_config integration tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn apply_font_config_sets_custom_features() {

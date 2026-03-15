@@ -4,8 +4,14 @@
 //! loads the new config, computes deltas, and applies only what changed:
 //! fonts, colors, cursor style, window, behavior, bell, keybindings.
 
+mod color_config;
+
+#[cfg(test)]
+pub(crate) use color_config::apply_color_overrides;
+pub(crate) use color_config::build_palette_from_config;
+
 use super::{App, DEFAULT_DPI};
-use crate::config::{self, Config, FontConfig};
+use crate::config::{Config, FontConfig};
 use crate::font::{
     FaceIdx, FontByteCache, FontCollection, FontSet, HintingMode, SubpixelMode, parse_features,
     parse_hex_range,
@@ -72,6 +78,12 @@ impl App {
     /// so each gets its own `FontCollection` at the correct physical DPI.
     pub(in crate::app) fn apply_font_changes(&mut self, new: &Config) {
         let old = &self.config.font;
+        // Opacity crossing the 1.0 threshold changes auto-detected subpixel
+        // mode (subpixel disabled for transparent backgrounds). Treat this as
+        // a font change so the glyph atlas is rebuilt with the correct format.
+        let opacity_affects_subpixel = (new.window.effective_opacity() < 1.0)
+            != (self.config.window.effective_opacity() < 1.0);
+
         let font_changed = (new.font.size - old.size).abs() > f32::EPSILON
             || new.font.family != old.family
             || new.font.weight != old.weight
@@ -80,7 +92,8 @@ impl App {
             || new.font.hinting != old.hinting
             || new.font.subpixel_mode != old.subpixel_mode
             || new.font.variations != old.variations
-            || new.font.codepoint_map != old.codepoint_map;
+            || new.font.codepoint_map != old.codepoint_map
+            || opacity_affects_subpixel;
 
         if !font_changed {
             return;
@@ -119,7 +132,8 @@ impl App {
             };
             let scale = ctx.window.scale_factor().factor();
             let hinting = resolve_hinting(&new.font, scale);
-            let format = resolve_subpixel_mode(&new.font, scale).glyph_format();
+            let opacity = f64::from(new.window.effective_opacity());
+            let format = resolve_subpixel_mode(&new.font, scale, opacity).glyph_format();
             let physical_dpi = DEFAULT_DPI * scale as f32;
 
             let fc = match FontCollection::new(
@@ -386,108 +400,32 @@ pub(crate) fn resolve_hinting(config: &FontConfig, scale_factor: f64) -> Hinting
 
 /// Resolve subpixel mode from config, falling back to auto-detection.
 ///
-/// Config override takes priority; auto-detection uses display scale factor.
-pub(crate) fn resolve_subpixel_mode(config: &FontConfig, scale_factor: f64) -> SubpixelMode {
+/// Config override takes priority; auto-detection uses display scale factor
+/// and background opacity (subpixel is disabled when opacity < 1.0 to avoid
+/// color fringing on transparent backgrounds).
+pub(crate) fn resolve_subpixel_mode(
+    config: &FontConfig,
+    scale_factor: f64,
+    opacity: f64,
+) -> SubpixelMode {
     match config.subpixel_mode.as_deref() {
-        Some("rgb") => SubpixelMode::Rgb,
-        Some("bgr") => SubpixelMode::Bgr,
+        Some("rgb" | "bgr") => {
+            if opacity < 1.0 {
+                log::warn!(
+                    "config: subpixel rendering with transparent background may cause color fringing"
+                );
+            }
+            if config.subpixel_mode.as_deref() == Some("rgb") {
+                SubpixelMode::Rgb
+            } else {
+                SubpixelMode::Bgr
+            }
+        }
         Some("none") => SubpixelMode::None,
         Some(other) => {
             log::warn!("config: unknown subpixel_mode {other:?}, using auto-detection");
-            SubpixelMode::from_scale_factor(scale_factor)
+            SubpixelMode::for_display(scale_factor, opacity)
         }
-        None => SubpixelMode::from_scale_factor(scale_factor),
+        None => SubpixelMode::for_display(scale_factor, opacity),
     }
-}
-
-// Color config helpers
-
-/// Apply color overrides from [`ColorConfig`](crate::config::ColorConfig) to a palette.
-///
-/// Sets both live and default values so OSC 104 resets to config values.
-pub(crate) fn apply_color_overrides(
-    palette: &mut oriterm_core::Palette,
-    colors: &config::ColorConfig,
-) {
-    if let Some(rgb) = colors
-        .foreground
-        .as_deref()
-        .and_then(config::parse_hex_color)
-    {
-        palette.set_foreground(rgb);
-    }
-    if let Some(rgb) = colors
-        .background
-        .as_deref()
-        .and_then(config::parse_hex_color)
-    {
-        palette.set_background(rgb);
-    }
-    if let Some(rgb) = colors.cursor.as_deref().and_then(config::parse_hex_color) {
-        palette.set_cursor_color(rgb);
-    }
-
-    // ANSI colors 0–7.
-    for (key, hex) in &colors.ansi {
-        if let (Ok(idx), Some(rgb)) = (key.parse::<usize>(), config::parse_hex_color(hex)) {
-            if idx < 8 {
-                palette.set_default(idx, rgb);
-            } else {
-                log::warn!("config: ansi color index {idx} out of range 0-7");
-            }
-        }
-    }
-
-    // Bright ANSI colors: keys 0–7 map to palette indices 8–15.
-    for (key, hex) in &colors.bright {
-        if let (Ok(idx), Some(rgb)) = (key.parse::<usize>(), config::parse_hex_color(hex)) {
-            if idx < 8 {
-                palette.set_default(idx + 8, rgb);
-            } else {
-                log::warn!("config: bright color index {idx} out of range 0-7");
-            }
-        }
-    }
-
-    // Selection color overrides.
-    if let Some(rgb) = colors
-        .selection_foreground
-        .as_deref()
-        .and_then(config::parse_hex_color)
-    {
-        palette.set_selection_fg(Some(rgb));
-    }
-    if let Some(rgb) = colors
-        .selection_background
-        .as_deref()
-        .and_then(config::parse_hex_color)
-    {
-        palette.set_selection_bg(Some(rgb));
-    }
-}
-
-/// Build a palette from the configured color scheme and theme.
-///
-/// Resolves the scheme name (supporting conditional `"dark:X, light:Y"` syntax),
-/// looks up the scheme (built-in then TOML file), builds the palette from scheme
-/// colors, and applies user color overrides on top. Falls back to the default
-/// theme-based palette if the scheme cannot be found.
-pub(crate) fn build_palette_from_config(
-    colors: &config::ColorConfig,
-    theme: oriterm_core::Theme,
-) -> oriterm_core::Palette {
-    use crate::scheme;
-
-    let scheme_name = scheme::resolve_scheme_name(&colors.scheme, theme);
-    let mut palette = if let Some(s) = scheme::resolve_scheme(scheme_name) {
-        log::info!("scheme: resolved '{scheme_name}' -> '{}'", s.name);
-        scheme::palette_from_scheme(&s)
-    } else {
-        if !colors.scheme.is_empty() {
-            log::warn!("scheme: '{scheme_name}' not found, using defaults");
-        }
-        oriterm_core::Palette::for_theme(theme)
-    };
-    apply_color_overrides(&mut palette, colors);
-    palette
 }

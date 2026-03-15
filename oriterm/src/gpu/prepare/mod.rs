@@ -436,7 +436,7 @@ pub(crate) fn fill_frame_shaped(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg);
+            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
         }
     }
 

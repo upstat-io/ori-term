@@ -97,8 +97,11 @@ impl SettingsPanel {
         let cancel_id = WidgetId::next();
         let panel_id = WidgetId::next();
 
-        // Body: form wrapped in vertical scroll.
-        let scroll = ScrollWidget::vertical(Box::new(form));
+        // Body: form wrapped in vertical scroll. The scroll widget fills
+        // remaining height so the footer stays pinned at the bottom of the
+        // panel (sticky footer pattern).
+        let mut scroll = ScrollWidget::vertical(Box::new(form));
+        scroll.set_height(SizeSpec::Fill);
 
         // Footer: separator + right-aligned Cancel and Save buttons.
         let footer_sep = SeparatorWidget::horizontal();
@@ -142,9 +145,18 @@ impl SettingsPanel {
             SizeSpec::Fill
         };
 
+        // The container fills the available height so the footer stays
+        // pinned at the bottom. The scroll widget inside uses Fill to take
+        // remaining space after the fixed-height footer.
+        let height = if show_chrome {
+            SizeSpec::Hug
+        } else {
+            SizeSpec::Fill
+        };
+
         let mut container = ContainerWidget::column()
             .with_width(width)
-            .with_height(SizeSpec::Hug)
+            .with_height(height)
             .with_clip(true);
 
         if show_chrome {
@@ -297,9 +309,15 @@ impl Widget for SettingsPanel {
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
         let child_box = self.container.layout(ctx);
         let width = self.width_spec();
+        // Embedded mode fills the dialog height so the footer stays pinned.
+        let height = if self.show_chrome {
+            SizeSpec::Hug
+        } else {
+            SizeSpec::Fill
+        };
         LayoutBox::flex(Direction::Column, vec![child_box])
             .with_width(width)
-            .with_height(SizeSpec::Hug)
+            .with_height(height)
             .with_widget_id(self.id)
     }
 
@@ -325,6 +343,22 @@ impl Widget for SettingsPanel {
         // Draw the inner container.
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
+            // Sticky footer background: draw an opaque bar covering the
+            // separator + footer area BEFORE the container draws, so the
+            // container's separator and buttons render on top of it.
+            let children = &child_node.children;
+            if let Some(sep_idx) = children.len().checked_sub(2) {
+                if let Some(sep_node) = children.get(sep_idx) {
+                    let footer_bg = crate::geometry::Rect::new(
+                        ctx.bounds.x(),
+                        sep_node.rect.y(),
+                        ctx.bounds.width(),
+                        ctx.bounds.bottom() - sep_node.rect.y(),
+                    );
+                    ctx.draw_list.push_rect(footer_bg, RectStyle::filled(bg));
+                }
+            }
+
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
                 draw_list: ctx.draw_list,

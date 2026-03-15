@@ -201,10 +201,6 @@ impl SubpixelMode {
     /// Subpixel rendering over transparent backgrounds produces visible color
     /// fringing because the per-channel blending assumes an opaque background.
     /// When `opacity < 1.0`, forces grayscale regardless of scale factor.
-    #[allow(
-        dead_code,
-        reason = "wired when transparent backgrounds auto-disable subpixel"
-    )]
     pub fn for_display(scale_factor: f64, opacity: f64) -> Self {
         if opacity < 1.0 {
             Self::None

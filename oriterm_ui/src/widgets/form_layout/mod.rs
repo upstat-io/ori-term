@@ -155,7 +155,13 @@ impl Widget for FormLayout {
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        let visible_bounds = ctx.draw_list.current_clip_rect().unwrap_or(ctx.bounds);
+        // Use content-space clip rect so visibility culling works inside
+        // scroll transforms (where clip is in viewport space but child
+        // layout rects are in content space).
+        let visible_bounds = ctx
+            .draw_list
+            .current_clip_rect_in_content_space()
+            .map_or(ctx.bounds, |clip| clip.intersection(ctx.bounds));
 
         for (idx, section) in self.sections.iter().enumerate() {
             if let Some(section_node) = layout.children.get(idx) {

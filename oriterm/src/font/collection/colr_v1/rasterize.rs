@@ -135,7 +135,8 @@ pub(crate) fn try_rasterize_colr_v1(
     let bearing_x = clip.x_min.floor() as i32;
     let bearing_y = clip.y_max.ceil() as i32;
 
-    // Advance width from font metrics (matches the swash path in face.rs).
+    // Advance width from font metrics. COLR v1 is used for color emoji fonts
+    // which don't have weight variation axes, so empty variations is correct.
     let fr = font_ref(fd);
     let advance = fr.glyph_metrics(&[]).scale(size_px).advance_width(glyph_id);
 
@@ -154,6 +155,7 @@ pub(crate) fn try_rasterize_colr_v1(
 ///
 /// Uses the glyph advance width and font ascent/descent as a rough bounding
 /// box. Most COLR v1 fonts define clip boxes, so this is a rare fallback.
+/// Empty variations: color emoji fonts don't have weight variation axes.
 fn estimate_clip_box(fd: &FaceData, glyph_id: u16, size_px: f32) -> ClipBox {
     let fr = font_ref(fd);
     let metrics = fr.metrics(&[]).scale(size_px);

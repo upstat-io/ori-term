@@ -106,6 +106,12 @@ pub struct ScrollWidget {
     child_captured: bool,
     /// Pixels per mouse wheel line.
     line_height: f32,
+    /// Optional height override for the layout box.
+    ///
+    /// When set to `Fill`, the scroll container expands to fill the
+    /// remaining space in a column — creating a sticky footer effect
+    /// where siblings below it stay pinned at the bottom.
+    height_override: Option<SizeSpec>,
     /// Cached child natural size, keyed by viewport bounds.
     cached_child_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
 }
@@ -124,6 +130,7 @@ impl ScrollWidget {
             scrollbar: ScrollbarState::default(),
             child_captured: false,
             line_height: 20.0,
+            height_override: None,
             cached_child_layout: RefCell::new(None),
         }
     }
@@ -141,8 +148,18 @@ impl ScrollWidget {
             scrollbar: ScrollbarState::default(),
             child_captured: false,
             line_height: 20.0,
+            height_override: None,
             cached_child_layout: RefCell::new(None),
         }
+    }
+
+    /// Overrides the height sizing spec for the scroll container's layout box.
+    ///
+    /// By default, the scroll widget reports its child's natural height. Set
+    /// to `SizeSpec::Fill` to make it fill remaining space in a column layout,
+    /// creating a sticky footer effect where siblings below stay pinned.
+    pub fn set_height(&mut self, spec: SizeSpec) {
+        self.height_override = Some(spec);
     }
 
     /// Sets the scrollbar style.
@@ -239,6 +256,11 @@ impl Widget for ScrollWidget {
             ScrollDirection::Vertical => lb = lb.with_width(SizeSpec::Fill),
             ScrollDirection::Horizontal => lb = lb.with_height(SizeSpec::Fill),
             ScrollDirection::Both => {}
+        }
+
+        // Apply height override (e.g. Fill for sticky footer layouts).
+        if let Some(h_spec) = self.height_override {
+            lb = lb.with_height(h_spec);
         }
         lb
     }

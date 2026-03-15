@@ -141,6 +141,8 @@ fn fill_frame(
         );
 
         // Foreground glyph (skip spaces).
+        // Note: unshaped path is test-only and routes all glyphs to the mono
+        // writer — no subpixel rendering support (no AtlasKind dispatch).
         if cell.ch != ' ' {
             let style = glyph_style(cell.flags);
             if let Some(entry) = atlas.lookup(cell.ch, style) {

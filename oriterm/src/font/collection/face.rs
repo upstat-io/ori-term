@@ -8,10 +8,22 @@ use std::sync::Arc;
 
 use swash::scale::{Render, ScaleContext, Source, StrikeWith, image::Content};
 use swash::zeno::{Angle, Format, Transform, Vector};
-use swash::{CacheKey, FontRef};
+use swash::{CacheKey, FontRef, NormalizedCoord};
 
 use super::RasterizedGlyph;
 use crate::font::{GlyphFormat, SyntheticFlags};
+
+/// Convert variation settings to swash normalized coordinates.
+///
+/// Returns an empty `Vec` for non-variable fonts (empty settings).
+pub(super) fn normalize_coords(fr: &FontRef<'_>, settings: &[(&str, f32)]) -> Vec<NormalizedCoord> {
+    if settings.is_empty() {
+        return Vec::new();
+    }
+    fr.variations()
+        .normalized_coords(settings.iter().copied())
+        .collect()
+}
 
 /// A variable font axis with its valid range.
 ///
@@ -170,7 +182,11 @@ pub(super) fn rasterize_from_face(
     ctx: &mut ScaleContext,
 ) -> Option<RasterizedGlyph> {
     let fr = font_ref(fd);
-    let advance = fr.glyph_metrics(&[]).scale(size_px).advance_width(glyph_id);
+    let coords = normalize_coords(&fr, variations);
+    let advance = fr
+        .glyph_metrics(&coords)
+        .scale(size_px)
+        .advance_width(glyph_id);
 
     let builder = ctx.builder(fr).size(size_px).hint(hinted);
     let mut scaler = if variations.is_empty() {
@@ -276,14 +292,20 @@ pub(super) struct FontMetrics {
 /// OS/2 and post tables via swash.
 ///
 /// Returns `None` if `bytes` does not contain a valid font at `face_index`.
-pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> Option<FontMetrics> {
+pub(super) fn compute_metrics(
+    bytes: &[u8],
+    face_index: u32,
+    size_px: f32,
+    variations: &[(&str, f32)],
+) -> Option<FontMetrics> {
     let fr = FontRef::from_index(bytes, face_index as usize)?;
-    let metrics = fr.metrics(&[]).scale(size_px);
+    let coords = normalize_coords(&fr, variations);
+    let metrics = fr.metrics(&coords).scale(size_px);
     let baseline = metrics.ascent.ceil();
     let cell_height = baseline + metrics.descent.abs().ceil();
     let gid = fr.charmap().map('M');
     let cell_width = fr
-        .glyph_metrics(&[])
+        .glyph_metrics(&coords)
         .scale(size_px)
         .advance_width(gid)
         .ceil();
