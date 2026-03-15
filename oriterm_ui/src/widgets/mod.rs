@@ -36,7 +36,7 @@ use std::time::Instant;
 use crate::draw::{DrawList, SceneCache};
 use crate::geometry::Rect;
 use crate::icons::ResolvedIcons;
-use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent};
+use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -57,6 +57,17 @@ pub enum CaptureRequest {
     Acquire,
     /// Release any active mouse capture.
     Release,
+}
+
+impl CaptureRequest {
+    /// Whether the capture should be released based on the response and event.
+    ///
+    /// Returns `true` on explicit `Release`, or on `None` with a mouse-up
+    /// event (implicit release when the child didn't request anything).
+    pub fn should_release(self, event_kind: &MouseEventKind) -> bool {
+        matches!(self, Self::Release)
+            || (matches!(self, Self::None) && matches!(event_kind, MouseEventKind::Up(_)))
+    }
 }
 
 /// How a widget responded to an event, including an optional semantic action.
@@ -276,6 +287,23 @@ pub struct EventCtx<'a> {
     pub focused_widget: Option<WidgetId>,
     /// Active UI theme.
     pub theme: &'a UiTheme,
+}
+
+impl EventCtx<'_> {
+    /// Build a child context with child-specific bounds and focus state.
+    ///
+    /// `child_id` determines whether the child is focused (compared against
+    /// `self.focused_widget`). Pass `None` for non-focusable children.
+    #[must_use]
+    pub fn for_child(&self, child_bounds: Rect, child_id: Option<WidgetId>) -> Self {
+        Self {
+            measurer: self.measurer,
+            bounds: child_bounds,
+            is_focused: child_id.is_some_and(|id| self.focused_widget == Some(id)),
+            focused_widget: self.focused_widget,
+            theme: self.theme,
+        }
+    }
 }
 
 /// The core widget trait.

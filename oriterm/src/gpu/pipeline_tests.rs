@@ -185,6 +185,13 @@ const TEST_DPI: f32 = 96.0;
 ///
 /// Returns `None` if no GPU adapter or fonts are available.
 fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    headless_env_with_format(GlyphFormat::Alpha)
+}
+
+/// Headless environment with a specific glyph format (Alpha, SubpixelRgb, etc).
+fn headless_env_with_format(
+    format: GlyphFormat,
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
     let pipelines = GpuPipelines::new(&gpu);
     let font_set = FontSet::load(None, TEST_FONT_WEIGHT).ok()?;
@@ -192,7 +199,7 @@ fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
         font_set,
         TEST_FONT_SIZE_PT,
         TEST_DPI,
-        GlyphFormat::Alpha,
+        format,
         TEST_FONT_WEIGHT,
         HintingMode::Full,
     )
@@ -491,5 +498,78 @@ fn full_pipeline_extract_prepare_render_readback() {
     assert!(
         !all_same,
         "rendered frame should have pixel variation (text was rendered)",
+    );
+}
+
+// Subpixel GPU readback tests
+
+#[test]
+fn subpixel_zero_coverage_pixel_equals_background() {
+    if std::env::var("NO_GPU_TESTS").is_ok() {
+        eprintln!("skipped: NO_GPU_TESTS is set");
+        return;
+    }
+    let Some((gpu, pipelines, mut renderer)) = headless_env_with_format(GlyphFormat::SubpixelRgb)
+    else {
+        eprintln!("skipped: no GPU adapter or fonts available");
+        return;
+    };
+
+    let cell_metrics = renderer.cell_metrics();
+    let cols = 5u32;
+    let rows = 1u32;
+    let w = (cell_metrics.width * cols as f32).ceil() as u32;
+    let h = (cell_metrics.height * rows as f32).ceil() as u32;
+
+    // White text in cell 0, blue background everywhere. Cells 3-4 are empty
+    // (space) — their pixels should be pure background with zero glyph
+    // contamination from subpixel overhang.
+    let bg = Rgb { r: 0, g: 0, b: 200 };
+    let fg = Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
+    let mut input = FrameInput::test_grid(cols as usize, rows as usize, "W    ");
+    input.viewport = ViewportSize::new(w, h);
+    input.cell_size = cell_metrics;
+    input.palette.background = bg;
+    input.content.cursor.visible = false;
+    for cell in &mut input.content.cells {
+        cell.bg = bg;
+        cell.fg = fg;
+    }
+
+    let target = gpu.create_render_target(w, h);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
+
+    let pixels = gpu
+        .read_render_target(&target)
+        .expect("pixel readback should succeed");
+
+    // Sample the center of cell 4 (last cell, far from glyph).
+    // It should be the background color (blue) with no subpixel fringing.
+    let sample_x = (4.0 * cell_metrics.width + cell_metrics.width / 2.0) as u32;
+    let sample_y = (cell_metrics.height / 2.0) as u32;
+    let idx = ((sample_y * w + sample_x) * 4) as usize;
+
+    let r = pixels[idx];
+    let g = pixels[idx + 1];
+    let b = pixels[idx + 2];
+
+    // Zero-coverage guard should prevent any fg bleed into this cell.
+    // Allow small tolerance for GPU floating-point.
+    assert!(
+        r < 10,
+        "zero-coverage cell should have no red channel bleed, got R={r}"
+    );
+    assert!(
+        g < 10,
+        "zero-coverage cell should have no green channel bleed, got G={g}"
+    );
+    assert!(
+        b > 150,
+        "zero-coverage cell should retain blue background, got B={b}"
     );
 }

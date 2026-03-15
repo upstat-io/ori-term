@@ -182,11 +182,11 @@ fn segment_runs<C: ShapableCell>(
                 // text and byte_to_col already cleared by caller.
             } else {
                 runs.push(ShapingRun {
-                    text: String::new(),
+                    text: String::with_capacity(cols - col),
                     face_idx,
                     synthetic,
                     col_start: col,
-                    byte_to_col: Vec::new(),
+                    byte_to_col: Vec::with_capacity(cols - col),
                 });
             }
             append_cell_to_run(&mut runs[run_count], cell, col);

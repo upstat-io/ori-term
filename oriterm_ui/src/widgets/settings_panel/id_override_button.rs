@@ -15,8 +15,15 @@ use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetRes
 /// Needed because `ButtonWidget::new()` generates its own ID internally,
 /// but we need a known ID to intercept the `Clicked` action.
 pub(super) struct IdOverrideButton {
-    pub(super) inner: ButtonWidget,
-    pub(super) id_override: WidgetId,
+    inner: ButtonWidget,
+    id_override: WidgetId,
+}
+
+impl IdOverrideButton {
+    /// Create a new button with an externally-assigned ID.
+    pub(super) fn new(inner: ButtonWidget, id_override: WidgetId) -> Self {
+        Self { inner, id_override }
+    }
 }
 
 impl Widget for IdOverrideButton {
@@ -68,6 +75,10 @@ impl Widget for IdOverrideButton {
             },
             _ => resp,
         }
+    }
+
+    fn accept_action(&mut self, action: &WidgetAction) -> bool {
+        self.inner.accept_action(action)
     }
 
     fn focusable_children(&self) -> Vec<WidgetId> {

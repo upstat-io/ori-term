@@ -111,10 +111,7 @@ impl SettingsPanel {
             border_width: 1.0,
             ..ButtonStyle::default()
         });
-        let cancel_btn = IdOverrideButton {
-            inner: cancel_btn,
-            id_override: cancel_id,
-        };
+        let cancel_btn = IdOverrideButton::new(cancel_btn, cancel_id);
 
         let save_btn = ButtonWidget::new("Save").with_style(ButtonStyle {
             padding: Insets::vh(6.0, 20.0),
@@ -123,10 +120,7 @@ impl SettingsPanel {
             fg: Color::WHITE,
             ..ButtonStyle::default()
         });
-        let save_btn = IdOverrideButton {
-            inner: save_btn,
-            id_override: save_id,
-        };
+        let save_btn = IdOverrideButton::new(save_btn, save_id);
 
         let footer = ContainerWidget::row()
             .with_align(Align::Center)
@@ -173,10 +167,7 @@ impl SettingsPanel {
                     bg: Color::TRANSPARENT,
                     ..ButtonStyle::default()
                 });
-            let close_btn = IdOverrideButton {
-                inner: close_btn,
-                id_override: close_id,
-            };
+            let close_btn = IdOverrideButton::new(close_btn, close_id);
 
             let header = ContainerWidget::row()
                 .with_align(Align::Center)
@@ -346,7 +337,12 @@ impl Widget for SettingsPanel {
             // Sticky footer background: draw an opaque bar covering the
             // separator + footer area BEFORE the container draws, so the
             // container's separator and buttons render on top of it.
+            // Child layout: [header?, scroll_content, separator, footer].
             let children = &child_node.children;
+            debug_assert!(
+                children.len() >= 2,
+                "settings panel expects at least separator + footer"
+            );
             if let Some(sep_idx) = children.len().checked_sub(2) {
                 if let Some(sep_node) = children.get(sep_idx) {
                     let footer_bg = crate::geometry::Rect::new(

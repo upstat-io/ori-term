@@ -23,9 +23,26 @@ use brush::{make_paint, to_blend_mode};
 pub(super) struct ComposeCtx<'a> {
     width: u32,
     height: u32,
-    pub(super) scale: f32,
-    pub(super) clip: &'a ClipBox,
-    pub(super) xf: ColrTransform,
+    scale: f32,
+    clip: &'a ClipBox,
+    xf: ColrTransform,
+}
+
+impl ComposeCtx<'_> {
+    /// Uniform scale factor (`size_px` / `units_per_em`).
+    pub(super) fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    /// COLR clip box in font units.
+    pub(super) fn clip(&self) -> &ClipBox {
+        self.clip
+    }
+
+    /// Accumulated COLR transform.
+    pub(super) fn transform(&self) -> &ColrTransform {
+        &self.xf
+    }
 }
 
 /// Composite all paint commands onto the RGBA bitmap using tiny-skia.

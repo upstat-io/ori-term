@@ -974,6 +974,32 @@ fn scroll_hover_delegates_to_child() {
 }
 
 #[test]
+fn scroll_track_hovered_resets_on_leave() {
+    use crate::input::HoverEvent;
+
+    let mut scroll = ScrollWidget::vertical(tall_content());
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: false,
+        focused_widget: None,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    // Simulate scrollbar hover by setting track_hovered manually.
+    scroll.scrollbar.track_hovered = true;
+
+    // Leave event should reset track_hovered.
+    scroll.handle_hover(HoverEvent::Leave, &ctx);
+    assert!(
+        !scroll.scrollbar.track_hovered,
+        "track_hovered should be false after Leave event"
+    );
+}
+
+#[test]
 fn scroll_with_scrollbar_style() {
     use super::ScrollbarStyle;
     use crate::color::Color;

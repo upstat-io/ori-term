@@ -73,6 +73,9 @@ impl FormLayout {
     }
 
     /// Mutable access to sections.
+    ///
+    /// Must only be called during setup phase (before the first layout pass).
+    /// Mutating sections after layout may cause stale cached layout data.
     pub fn sections_mut(&mut self) -> &mut [FormSection] {
         &mut self.sections
     }
@@ -192,20 +195,10 @@ impl Widget for FormLayout {
             if let (Some(section), Some(node)) =
                 (self.sections.get_mut(cap_idx), layout.children.get(cap_idx))
             {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
+                let child_ctx = ctx.for_child(node.content_rect, None);
                 let resp = section.handle_mouse(event, &child_ctx);
-                match resp.capture {
-                    CaptureRequest::Release => self.captured_section = None,
-                    CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
-                        self.captured_section = None;
-                    }
-                    _ => {}
+                if resp.capture.should_release(&event.kind) {
+                    self.captured_section = None;
                 }
                 if resp.response.needs_layout() {
                     *self.cached_layout.borrow_mut() = None;
@@ -222,13 +215,7 @@ impl Widget for FormLayout {
         for (idx, section) in self.sections.iter_mut().enumerate() {
             if let Some(section_node) = layout.children.get(idx) {
                 if section_node.rect.contains(event.pos) {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: section_node.content_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
+                    let child_ctx = ctx.for_child(section_node.content_rect, None);
                     let resp = section.handle_mouse(event, &child_ctx);
                     if resp.capture == CaptureRequest::Acquire {
                         self.captured_section = Some(idx);
@@ -349,13 +336,7 @@ impl FormLayout {
             if let (Some(section), Some(node)) =
                 (self.sections.get_mut(old_idx), layout.children.get(old_idx))
             {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
+                let child_ctx = ctx.for_child(node.content_rect, None);
                 section.handle_hover(HoverEvent::Leave, &child_ctx);
             }
         }
@@ -365,13 +346,7 @@ impl FormLayout {
             if let (Some(section), Some(node)) =
                 (self.sections.get_mut(new_idx), layout.children.get(new_idx))
             {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
+                let child_ctx = ctx.for_child(node.content_rect, None);
                 let move_event = MouseEvent {
                     kind: MouseEventKind::Move,
                     pos,

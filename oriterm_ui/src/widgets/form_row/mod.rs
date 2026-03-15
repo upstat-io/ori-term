@@ -226,14 +226,12 @@ impl Widget for FormRow {
             let resp = self.control.handle_mouse(event, &child_ctx);
 
             // Update capture state from child's request.
-            match resp.capture {
-                CaptureRequest::Acquire => self.captured = true,
-                CaptureRequest::Release => self.captured = false,
-                CaptureRequest::None => {
-                    if matches!(event.kind, MouseEventKind::Up(_)) {
-                        self.captured = false;
-                    }
-                }
+            if matches!(resp.capture, CaptureRequest::Acquire) {
+                self.captured = true;
+            } else if resp.capture.should_release(&event.kind) {
+                self.captured = false;
+            } else {
+                // CaptureRequest::None with non-Up event: no capture change.
             }
             return resp;
         }

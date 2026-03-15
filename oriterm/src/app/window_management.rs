@@ -53,6 +53,7 @@ impl App {
         };
         let palette =
             crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
+        let clear_palette = palette.clone();
         let pane_id = match mux.spawn_pane(&spawn_config, theme) {
             Ok(pid) => {
                 mux.set_pane_theme(pid, theme, palette);
@@ -77,8 +78,7 @@ impl App {
         }
 
         // Clear frame and show.
-        let palette =
-            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
+        let palette = clear_palette;
         let opacity = self.config.window.effective_opacity();
         if let Some(gpu) = self.gpu.as_ref() {
             if let Some(ctx) = self.windows.get(&winit_id) {

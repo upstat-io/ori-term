@@ -22,7 +22,7 @@ fn glyph_style(flags: CellFlags) -> GlyphStyle {
 ///
 /// Used by tests to verify prepare logic without shaping complexity. Production
 /// rendering uses [`prepare_frame_shaped`](super::prepare_frame_shaped) instead.
-pub fn prepare_frame(
+pub(crate) fn prepare_frame(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     origin: (f32, f32),
@@ -46,7 +46,7 @@ pub fn prepare_frame(
 ///
 /// Used by tests. Production rendering uses
 /// [`prepare_frame_shaped_into`](super::prepare_frame_shaped_into) instead.
-pub fn prepare_frame_into(
+pub(crate) fn prepare_frame_into(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     out: &mut PreparedFrame,

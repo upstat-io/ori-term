@@ -45,7 +45,10 @@ pub(crate) struct RasterizedGlyph {
     /// Vertical bearing (pixels from baseline to top edge; positive = above).
     pub bearing_y: i32,
     /// Horizontal advance width in pixels.
-    #[allow(dead_code, reason = "font fields consumed in later sections")]
+    #[allow(
+        dead_code,
+        reason = "read in tests; production use pending shaped-advance integration"
+    )]
     pub advance: f32,
     /// Pixel format of the bitmap data.
     pub format: GlyphFormat,
