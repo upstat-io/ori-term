@@ -1568,7 +1568,9 @@ fn multiple_escapes_dismiss_stack_one_at_a_time() {
 
 #[test]
 fn scroll_outside_overlay_does_not_dismiss() {
-    // Scroll events are not clicks — should not dismiss.
+    // Scroll events are not clicks — should not dismiss. When a popup is
+    // open, scroll is routed to the popup (so the dropdown menu scrolls
+    // instead of the modal below stealing the wheel event).
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
@@ -1598,7 +1600,9 @@ fn scroll_outside_overlay_does_not_dismiss() {
         &mut animator,
         now,
     );
-    assert!(matches!(result, OverlayEventResult::PassThrough));
+    // Scroll is delivered to the popup (not PassThrough) so dropdown menus
+    // receive wheel events even when the cursor is over the modal below.
+    assert!(matches!(result, OverlayEventResult::Delivered { .. }));
     assert_eq!(mgr.count(), 1, "scroll should not dismiss overlay");
 }
 
