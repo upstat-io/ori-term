@@ -9,7 +9,7 @@
 
 use oriterm_core::{Column, CursorShape, Rgb};
 
-// ── Subpixel blend formula (mirrors subpixel_fg.wgsl logic) ──
+// Subpixel blend formula (mirrors subpixel_fg.wgsl logic)
 
 /// Mirror of the WGSL `subpixel_fg.wgsl` per-channel blend formula.
 ///
@@ -19,10 +19,15 @@ fn subpixel_blend(fg: [f32; 4], bg: [f32; 4], mask: [f32; 3]) -> [f32; 4] {
     fn mix(a: f32, b: f32, t: f32) -> f32 {
         a * (1.0 - t) + b * t
     }
-    let r = mix(bg[0], fg[0], mask[0]);
-    let g = mix(bg[1], fg[1], mask[1]);
-    let b = mix(bg[2], fg[2], mask[2]);
     if bg[3] > 0.001 {
+        let dim = fg[3];
+        let r = mix(bg[0], fg[0], mask[0] * dim);
+        let g = mix(bg[1], fg[1], mask[1] * dim);
+        let b = mix(bg[2], fg[2], mask[2] * dim);
+        let coverage = mask[0].max(mask[1]).max(mask[2]) * dim;
+        if coverage < 0.001 {
+            return [0.0, 0.0, 0.0, 0.0];
+        }
         return [r, g, b, 1.0];
     }
     let coverage = mask[0].max(mask[1]).max(mask[2]);
@@ -43,15 +48,17 @@ fn subpixel_blend_full_mask_returns_fg() {
 }
 
 #[test]
-fn subpixel_blend_zero_mask_returns_bg() {
+fn subpixel_blend_zero_mask_known_bg_returns_transparent() {
     let fg = [1.0, 1.0, 1.0, 1.0];
     let bg = [0.2, 0.4, 0.6, 1.0];
     let out = subpixel_blend(fg, bg, [0.0, 0.0, 0.0]);
-    // Known background branch: mask=(0,0,0) returns the background directly.
-    assert!((out[0] - 0.2).abs() < 1e-6, "R should be bg.r");
-    assert!((out[1] - 0.4).abs() < 1e-6, "G should be bg.g");
-    assert!((out[2] - 0.6).abs() < 1e-6, "B should be bg.b");
-    assert!((out[3] - 1.0).abs() < 1e-6, "A should be 1.0");
+    // Known background branch: zero coverage → transparent pass-through.
+    // Prevents bg color from leaking into neighboring cells via glyph
+    // quads that extend beyond cell boundaries due to bearing offsets.
+    assert!((out[0]).abs() < 1e-6, "R should be 0 (transparent)");
+    assert!((out[1]).abs() < 1e-6, "G should be 0 (transparent)");
+    assert!((out[2]).abs() < 1e-6, "B should be 0 (transparent)");
+    assert!((out[3]).abs() < 1e-6, "A should be 0 (transparent)");
 }
 
 #[test]
@@ -110,6 +117,57 @@ fn subpixel_blend_unknown_bg_falls_back_to_grayscale() {
     );
 }
 
+#[test]
+fn subpixel_blend_known_bg_dim_reduces_coverage() {
+    let fg = [1.0, 1.0, 1.0, 0.5]; // 50% dim factor
+    let bg = [0.0, 0.0, 0.0, 1.0]; // known black bg
+    let out = subpixel_blend(fg, bg, [1.0, 1.0, 1.0]);
+    // dim=0.5: mix(0, 1, 1*0.5) = mix(0, 1, 0.5) = 0.5 for each channel.
+    // Dimmed text appears lighter (midway between bg and fg).
+    assert!((out[0] - 0.5).abs() < 1e-6, "R should be 0.5 (dimmed)");
+    assert!((out[1] - 0.5).abs() < 1e-6, "G should be 0.5 (dimmed)");
+    assert!((out[2] - 0.5).abs() < 1e-6, "B should be 0.5 (dimmed)");
+    assert!((out[3] - 1.0).abs() < 1e-6, "A should be 1.0 (opaque)");
+}
+
+#[test]
+fn subpixel_blend_known_bg_zero_coverage_transparent() {
+    let fg = [0.8, 0.2, 0.5, 1.0];
+    let bg = [0.1, 0.9, 0.3, 1.0]; // known bg
+    let out = subpixel_blend(fg, bg, [0.0, 0.0, 0.0]);
+    // Zero coverage with known bg → transparent pass-through.
+    assert_eq!(out, [0.0, 0.0, 0.0, 0.0]);
+}
+
+#[test]
+fn subpixel_blend_known_bg_full_dim_returns_transparent() {
+    let fg = [1.0, 1.0, 1.0, 0.0]; // fg.a=0 → fully dimmed
+    let bg = [0.5, 0.5, 0.5, 1.0]; // known bg
+    let out = subpixel_blend(fg, bg, [1.0, 1.0, 1.0]);
+    // dim=0: coverage*dim = max(1,1,1)*0 = 0 < 0.001 → transparent.
+    // Prevents cross-cell contamination from fully-dimmed glyph overhang.
+    assert_eq!(out, [0.0, 0.0, 0.0, 0.0]);
+}
+
+#[test]
+fn subpixel_blend_known_bg_below_epsilon_transparent() {
+    let fg = [1.0, 1.0, 1.0, 1.0];
+    let bg = [0.5, 0.5, 0.5, 1.0]; // known bg
+    let out = subpixel_blend(fg, bg, [0.0005, 0.0003, 0.0001]);
+    // coverage*dim = 0.0005*1.0 = 0.0005 < 0.001 → transparent.
+    assert_eq!(out, [0.0, 0.0, 0.0, 0.0]);
+}
+
+#[test]
+fn subpixel_blend_known_bg_above_epsilon_composited() {
+    let fg = [1.0, 1.0, 1.0, 1.0];
+    let bg = [0.0, 0.0, 0.0, 1.0]; // known bg
+    let out = subpixel_blend(fg, bg, [0.002, 0.001, 0.001]);
+    // coverage*dim = 0.002*1.0 = 0.002 > 0.001 → composited.
+    assert!((out[0] - 0.002).abs() < 1e-5, "R: mix(0, 1, 0.002)");
+    assert!((out[3] - 1.0).abs() < 1e-6, "A: opaque");
+}
+
 use super::frame_input::{FrameInput, ViewportSize};
 use super::pipelines::GpuPipelines;
 use super::state::GpuState;
@@ -143,7 +201,7 @@ fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     Some((gpu, pipelines, renderer))
 }
 
-// ── Pipeline smoke tests ──
+// Pipeline smoke tests
 
 #[test]
 fn headless_gpu_adapter_found() {
@@ -213,7 +271,7 @@ fn wgpu_validation_layer_enabled_in_tests() {
     // here confirms the validation layer accepted our API usage.
 }
 
-// ── Pixel readback tests ──
+// Pixel readback tests
 
 #[test]
 fn render_colored_cell_correct_bg_color() {
@@ -386,7 +444,7 @@ fn render_cursor_pixels_at_expected_position() {
     );
 }
 
-// ── Full pipeline round-trip ──
+// Full pipeline round-trip
 
 #[test]
 fn full_pipeline_extract_prepare_render_readback() {

@@ -77,25 +77,39 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let fg = input.fg_color;
     let bg = input.bg_color;
 
-    // Per-channel compositing: each channel blended independently.
-    let r = mix(bg.r, fg.r, mask.r);
-    let g = mix(bg.g, fg.g, mask.g);
-    let b = mix(bg.b, fg.b, mask.b);
-
-    // When the background color is known (bg.a > 0), compositing is
-    // already complete — output the result directly as opaque. This
-    // avoids the "squared coverage" artifact that occurs when per-channel
-    // composited values are further multiplied by a single alpha channel.
+    // Known background — true per-channel LCD compositing.
+    //
+    // fg.a carries the dim factor (1.0 = normal, ~0.6 = dimmed pane).
+    // Scale coverage by dim so dimmed text appears lighter. When dim=0,
+    // all mask channels become 0, the zero-coverage guard fires, and the
+    // pixel passes through transparent — fully dimmed text is invisible.
+    //
+    // BlendState is PREMUL_ALPHA_BLEND: src*1 + dst*(1-src_alpha).
+    // - Opaque output vec4(r,g,b,1.0): src_alpha=1 → dst*(1-1)=0, dst
+    //   fully replaced. Correct: shader already composited fg over bg.
+    // - Transparent output vec4(0,0,0,0): src_alpha=0 → dst preserved.
+    //   Correct: zero-coverage pixel passes through to framebuffer.
     if bg.a > 0.001 {
+        let dim = fg.a;
+        let r = mix(bg.r, fg.r, mask.r * dim);
+        let g = mix(bg.g, fg.g, mask.g * dim);
+        let b = mix(bg.b, fg.b, mask.b * dim);
+        let coverage = max(mask.r, max(mask.g, mask.b)) * dim;
+        if coverage < 0.001 {
+            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        }
         return vec4<f32>(r, g, b, 1.0);
     }
 
-    // Unknown background — fall back to grayscale alpha blending.
+    // Unknown background — grayscale alpha fallback.
     // Without a real background hint, preserving independent RGB coverage
     // produces visible color fringing on non-default cell backgrounds.
     // Collapse the subpixel mask to a single coverage value so the glyph
     // blends like standard grayscale text over whatever background is
     // already in the framebuffer.
+    //
+    // BlendState: premultiplied vec4(fg.rgb*a, a) blends correctly over
+    // whatever is in the framebuffer.
     let coverage = max(mask.r, max(mask.g, mask.b));
     let a = coverage * fg.a;
     return vec4<f32>(fg.rgb * a, a);

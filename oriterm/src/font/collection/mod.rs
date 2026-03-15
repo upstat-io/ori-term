@@ -116,9 +116,20 @@ impl FontCollection {
             build_face(Arc::clone(&font_set.regular.data), font_set.regular.index)
                 .ok_or_else(|| FontError::InvalidFont("Regular font is invalid".into()))?;
 
-        // Compute metrics from Regular.
-        let font_metrics = compute_metrics(&font_set.regular.data, font_set.regular.index, size_px)
-            .ok_or_else(|| FontError::InvalidFont("Regular font metrics unavailable".into()))?;
+        // Compute metrics from Regular (with weight variations for variable fonts).
+        let regular_vars = face_variations(
+            FaceIdx::REGULAR,
+            SyntheticFlags::NONE,
+            weight,
+            &regular_face.axes,
+        );
+        let font_metrics = compute_metrics(
+            &font_set.regular.data,
+            font_set.regular.index,
+            size_px,
+            &regular_vars.settings,
+        )
+        .ok_or_else(|| FontError::InvalidFont("Regular font metrics unavailable".into()))?;
         let primary_cap = font_metrics.cap_height;
 
         // Validate optional primary variants.
@@ -141,7 +152,7 @@ impl FontCollection {
         for fd in &font_set.fallbacks {
             if let Some(face) = build_face(Arc::clone(&fd.data), fd.index) {
                 let fb_metrics =
-                    compute_metrics(&fd.data, fd.index, size_px).unwrap_or(font_metrics);
+                    compute_metrics(&fd.data, fd.index, size_px, &[]).unwrap_or(font_metrics);
                 let scale_factor = if fb_metrics.cap_height > 0.0 && primary_cap > 0.0 {
                     primary_cap / fb_metrics.cap_height
                 } else {
@@ -262,8 +273,10 @@ impl FontCollection {
             return None;
         }
         let size = effective_size_for(face_idx, self.size_px, &self.fallback_meta);
+        let vars = face_variations(face_idx, SyntheticFlags::NONE, self.weight, &fd.axes);
         let fr = font_ref(fd);
-        let advance = fr.glyph_metrics(&[]).scale(size).advance_width(gid);
+        let coords = face::normalize_coords(&fr, &vars.settings);
+        let advance = fr.glyph_metrics(&coords).scale(size).advance_width(gid);
         Some((gid, advance))
     }
 
@@ -331,17 +344,28 @@ impl FontCollection {
     pub fn set_size(&mut self, size_pt: f32, dpi: f32) -> Result<(), FontError> {
         let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
 
-        // Recompute metrics from Regular face.
+        // Recompute metrics from Regular face (with weight variations).
         let regular = self.primary[0]
             .as_ref()
             .ok_or_else(|| FontError::InvalidFont("Regular face required".into()))?;
-        let fm = compute_metrics(&regular.bytes, regular.face_index, size_px)
-            .ok_or_else(|| FontError::InvalidFont("Regular font metrics unavailable".into()))?;
+        let regular_vars = face_variations(
+            FaceIdx::REGULAR,
+            SyntheticFlags::NONE,
+            self.weight,
+            &regular.axes,
+        );
+        let fm = compute_metrics(
+            &regular.bytes,
+            regular.face_index,
+            size_px,
+            &regular_vars.settings,
+        )
+        .ok_or_else(|| FontError::InvalidFont("Regular font metrics unavailable".into()))?;
         let primary_cap = fm.cap_height;
 
         // Recalculate cap-height normalization for fallbacks.
         for (fb, meta) in self.fallbacks.iter().zip(self.fallback_meta.iter_mut()) {
-            let fb_m = compute_metrics(&fb.bytes, fb.face_index, size_px).unwrap_or(fm);
+            let fb_m = compute_metrics(&fb.bytes, fb.face_index, size_px, &[]).unwrap_or(fm);
             meta.scale_factor = if fb_m.cap_height > 0.0 && primary_cap > 0.0 {
                 primary_cap / fb_m.cap_height
             } else {

@@ -88,8 +88,12 @@ impl App {
         // Config overrides take priority over auto-detection.
         let hinting = config_reload::resolve_hinting(&self.config.font, scale);
         font_collection.set_hinting(hinting);
-        let subpixel_format =
-            config_reload::resolve_subpixel_mode(&self.config.font, scale).glyph_format();
+        let subpixel_format = config_reload::resolve_subpixel_mode(
+            &self.config.font,
+            scale,
+            f64::from(self.config.window.effective_opacity()),
+        )
+        .glyph_format();
         font_collection.set_format(subpixel_format);
 
         // 6d. Apply font config: features, per-fallback metadata, codepoint map.

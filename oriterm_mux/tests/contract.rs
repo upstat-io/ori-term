@@ -330,11 +330,34 @@ macro_rules! muxbackend_contract_tests {
                 );
                 thread::sleep(Duration::from_millis(50));
             }
-            // Drain all pending events so no late-arriving output resets
-            // the scroll position after we scroll up.
-            ctx.b().poll_events();
-            let mut n = Vec::new();
-            ctx.b().drain_notifications(&mut n);
+            // Send a second fence and wait for it — this ensures the shell
+            // prompt after the loop has fully rendered, preventing a race
+            // where late-arriving prompt output resets display_offset.
+            ctx.b().send_input(pid, b"echo QUIESCE_FENCE\n");
+            let deadline2 = Instant::now() + Duration::from_secs(30);
+            loop {
+                ctx.b().poll_events();
+                let mut n = Vec::new();
+                ctx.b().drain_notifications(&mut n);
+                if let Some(snap) = ctx.b().refresh_pane_snapshot(pid) {
+                    let count = snap
+                        .cells
+                        .iter()
+                        .filter(|row| {
+                            let line: String = row.iter().map(|c| c.ch).collect();
+                            line.contains("QUIESCE_FENCE")
+                        })
+                        .count();
+                    if count >= 2 {
+                        break;
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline2,
+                    "timed out waiting for quiesce fence"
+                );
+                thread::sleep(Duration::from_millis(50));
+            }
 
             // Scroll up.
             ctx.b().scroll_display(pid, 10);

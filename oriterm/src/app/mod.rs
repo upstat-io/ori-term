@@ -319,8 +319,9 @@ impl App {
 
         // Update hinting and subpixel mode for the new scale factor.
         let hinting = config_reload::resolve_hinting(&self.config.font, scale_factor);
-        let format =
-            config_reload::resolve_subpixel_mode(&self.config.font, scale_factor).glyph_format();
+        let opacity = f64::from(self.config.window.effective_opacity());
+        let format = config_reload::resolve_subpixel_mode(&self.config.font, scale_factor, opacity)
+            .glyph_format();
         renderer.set_hinting_and_format(hinting, format, gpu);
 
         ctx.pane_cache.invalidate_all();

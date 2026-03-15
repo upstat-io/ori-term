@@ -340,9 +340,13 @@ impl App {
         let scale = window.scale_factor() as f32;
         let physical_dpi = super::DEFAULT_DPI * scale;
         let hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
-        let format =
-            super::config_reload::resolve_subpixel_mode(&self.config.font, f64::from(scale))
-                .glyph_format();
+        let opacity = f64::from(self.config.window.effective_opacity());
+        let format = super::config_reload::resolve_subpixel_mode(
+            &self.config.font,
+            f64::from(scale),
+            opacity,
+        )
+        .glyph_format();
 
         let ui_fc = self.ui_font_set.as_ref().and_then(|fs| {
             crate::font::FontCollection::new(fs.clone(), 11.0, physical_dpi, format, 400, hinting)

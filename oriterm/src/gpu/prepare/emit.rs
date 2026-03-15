@@ -61,6 +61,7 @@ impl GlyphEmitter<'_> {
         x: f32,
         y: f32,
         fg: Rgb,
+        bg: Rgb,
     ) {
         let mut is_first = true;
         for (sg, &cs) in row_glyphs[start_idx..].iter().zip(&col_starts[start_idx..]) {
@@ -95,20 +96,23 @@ impl GlyphEmitter<'_> {
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                // Subpixel glyphs always use the no-bg-hint path here.
-                // Per-channel LCD compositing with a synthetic cell bg
-                // produces opaque glyph-sized rectangles that bleed beyond
-                // cell boundaries and create visible per-character boxes.
-                // Proper per-channel compositing requires dual-source
-                // blending (Alacritty approach), which wgpu/WebGPU doesn't
-                // support. The shader's no-bg-hint fallback collapses the
-                // mask to grayscale coverage so the glyph blends correctly
-                // over whatever background is already in the framebuffer.
-                //
-                // Mono and color glyphs are unaffected (shaders ignore bg_color).
+                // Subpixel glyphs receive the cell bg for per-channel LCD
+                // compositing. The shader's zero-coverage guard (Section 01)
+                // prevents cross-cell bleeding from glyph overhang.
+                // Mono/color glyphs use push_glyph (shaders ignore bg_color).
                 let writer = match entry.kind {
                     AtlasKind::Color => &mut self.frame.color_glyphs,
-                    AtlasKind::Subpixel => &mut self.frame.subpixel_glyphs,
+                    AtlasKind::Subpixel => {
+                        self.frame.subpixel_glyphs.push_glyph_with_bg(
+                            rect,
+                            uv,
+                            fg,
+                            bg,
+                            self.fg_dim,
+                            entry.page,
+                        );
+                        continue;
+                    }
                     AtlasKind::Mono => &mut self.frame.glyphs,
                 };
                 writer.push_glyph(rect, uv, fg, self.fg_dim, entry.page);

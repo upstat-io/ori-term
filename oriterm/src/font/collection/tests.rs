@@ -379,23 +379,23 @@ fn size_key_fractional() {
     assert_eq!(super::size_key(12.5), 800, "12.5 * 64 = 800");
 }
 
-// ── cap_height ──
+// cap_height
 
 #[test]
 fn cap_height_positive() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
     assert!(
         m.cap_height > 0.0,
         "cap height should be positive for embedded font"
     );
 }
 
-// ── compute_metrics ──
+// compute_metrics
 
 #[test]
 fn compute_metrics_stable() {
-    let m1 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
-    let m2 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m1 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
+    let m2 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
     assert!(
         (m1.cell_width - m2.cell_width).abs() < f32::EPSILON
             && (m1.cell_height - m2.cell_height).abs() < f32::EPSILON
@@ -406,7 +406,7 @@ fn compute_metrics_stable() {
 
 #[test]
 fn compute_metrics_positive() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
     assert!(m.cell_width > 0.0, "cell width must be positive");
     assert!(m.cell_height > 0.0, "cell height must be positive");
     assert!(m.baseline > 0.0, "baseline must be positive");
@@ -418,7 +418,7 @@ fn compute_metrics_positive() {
 
 #[test]
 fn compute_metrics_decoration_fields() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
     assert!(m.stroke_size > 0.0, "stroke_size must be positive");
     assert!(m.stroke_size.is_finite(), "stroke_size must be finite");
     assert!(
