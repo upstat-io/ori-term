@@ -454,6 +454,7 @@ impl ApplicationHandler<TermEvent> for App {
             next_toggle: self.cursor_blink.next_toggle(),
             budget_remaining: remaining,
             now,
+            scheduler_wake: None, // TODO(§05.5): Wire RenderScheduler::next_wake_time()
         };
         match compute_control_flow(&input) {
             ControlFlowDecision::Wait => event_loop.set_control_flow(ControlFlow::Wait),

@@ -171,6 +171,7 @@ fn control_button_hover_sets_pressed() {
         theme: &theme,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = left_down(23.0, 18.0);

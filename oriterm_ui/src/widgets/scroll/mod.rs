@@ -295,6 +295,7 @@ impl Widget for ScrollWidget {
             scene_cache: ctx.scene_cache.as_deref_mut(),
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
         self.child.draw(&mut child_ctx);
 
@@ -325,6 +326,7 @@ impl Widget for ScrollWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let resp = self.child.handle_mouse(event, &child_ctx);
             if resp.capture.should_release(&event.kind) {
@@ -374,6 +376,7 @@ impl Widget for ScrollWidget {
             theme: ctx.theme,
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
         let resp = self.child.handle_mouse(event, &child_ctx);
         if resp.capture == CaptureRequest::Acquire {
@@ -406,6 +409,7 @@ impl Widget for ScrollWidget {
             theme: ctx.theme,
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
         self.child.handle_hover(event, &child_ctx)
     }

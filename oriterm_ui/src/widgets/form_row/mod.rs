@@ -138,6 +138,7 @@ impl FormRow {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             self.control.handle_hover(HoverEvent::Enter, &child_ctx);
             return WidgetResponse::paint();
@@ -153,6 +154,7 @@ impl FormRow {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             self.control.handle_hover(HoverEvent::Leave, &child_ctx);
             return WidgetResponse::paint();
@@ -202,6 +204,7 @@ impl Widget for FormRow {
                 scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             self.control.draw(&mut child_ctx);
         }
@@ -230,6 +233,7 @@ impl Widget for FormRow {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let resp = self.control.handle_mouse(event, &child_ctx);
 
@@ -261,6 +265,7 @@ impl Widget for FormRow {
                         theme: ctx.theme,
                         interaction: None,
                         widget_id: None,
+                        frame_requests: None,
                     };
                     self.control.handle_hover(HoverEvent::Leave, &child_ctx);
                 }
@@ -282,6 +287,7 @@ impl Widget for FormRow {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             return self.control.handle_key(event, &child_ctx);
         }

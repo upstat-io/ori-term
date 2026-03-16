@@ -87,6 +87,7 @@ impl Widget for StackWidget {
                 scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             child.draw(&mut child_ctx);
         }
@@ -143,6 +144,7 @@ impl Widget for StackWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let resp = child.handle_key(event, &child_ctx);
             if resp.response.is_handled() {

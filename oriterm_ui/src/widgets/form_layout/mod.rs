@@ -183,6 +183,7 @@ impl Widget for FormLayout {
                     scene_cache: ctx.scene_cache.as_deref_mut(),
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 section.draw(&mut child_ctx);
             }
@@ -249,6 +250,7 @@ impl Widget for FormLayout {
                         theme: ctx.theme,
                         interaction: None,
                         widget_id: None,
+                        frame_requests: None,
                     };
                     section.handle_hover(HoverEvent::Leave, &child_ctx);
                 }
@@ -271,6 +273,7 @@ impl Widget for FormLayout {
                     theme: ctx.theme,
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 let resp = section.handle_key(event, &child_ctx);
                 if resp.response.is_handled() {
@@ -327,6 +330,7 @@ impl FormLayout {
                         theme: ctx.theme,
                         interaction: None,
                         widget_id: None,
+                        frame_requests: None,
                     };
                     let move_event = MouseEvent {
                         kind: MouseEventKind::Move,

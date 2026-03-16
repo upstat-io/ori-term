@@ -131,6 +131,7 @@ impl DialogWidget {
                 scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             button.draw(&mut btn_ctx);
         }

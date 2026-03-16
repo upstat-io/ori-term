@@ -195,6 +195,7 @@ impl Widget for PanelWidget {
                 scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             self.child.draw(&mut child_ctx);
         }
@@ -214,6 +215,7 @@ impl Widget for PanelWidget {
                     theme: ctx.theme,
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 return self.child.handle_mouse(event, &child_ctx);
             }
@@ -232,6 +234,7 @@ impl Widget for PanelWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             return self.child.handle_hover(event, &child_ctx);
         }
@@ -249,6 +252,7 @@ impl Widget for PanelWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             return self.child.handle_key(event, &child_ctx);
         }

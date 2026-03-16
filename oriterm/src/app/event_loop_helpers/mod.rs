@@ -236,6 +236,11 @@ pub(super) struct ControlFlowInput {
     pub budget_remaining: std::time::Duration,
     /// Current time.
     pub now: std::time::Instant,
+    /// Earliest deferred repaint from `RenderScheduler`.
+    ///
+    /// Feeds into `WaitUntil` when no animations or dirty state is active.
+    /// `None` when the scheduler has no deferred repaints.
+    pub scheduler_wake: Option<std::time::Instant>,
 }
 
 /// Result of the control flow decision.
@@ -257,7 +262,12 @@ pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecis
     } else if input.has_animations {
         ControlFlowDecision::WaitUntil(input.now + std::time::Duration::from_millis(16))
     } else if input.blinking_active {
-        ControlFlowDecision::WaitUntil(input.next_toggle)
+        match input.scheduler_wake {
+            Some(wake) => ControlFlowDecision::WaitUntil(wake.min(input.next_toggle)),
+            None => ControlFlowDecision::WaitUntil(input.next_toggle),
+        }
+    } else if let Some(wake) = input.scheduler_wake {
+        ControlFlowDecision::WaitUntil(wake)
     } else {
         ControlFlowDecision::Wait
     }

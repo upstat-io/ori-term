@@ -70,6 +70,7 @@ impl App {
             scene_cache: None,
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
         compose_scene(tab_bar, &mut ctx, invalidation, scene_cache);
         let animating = animations_running.get();
@@ -101,6 +102,7 @@ impl App {
                 scene_cache: None,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             tab_bar.draw_drag_overlay(&mut overlay_ctx);
             renderer.append_overlay_draw_list_with_text(draw_list, scale, 1.0, gpu);
@@ -176,6 +178,7 @@ impl App {
                 scene_cache: None,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let opacity = overlays.draw_overlay_at(i, &mut ctx, tree);
 

@@ -53,6 +53,7 @@ fn stack_draws_all_children() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     stack.draw(&mut ctx);
 
@@ -81,6 +82,7 @@ fn stack_key_routes_to_frontmost() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -113,6 +115,7 @@ fn stack_mouse_routes_to_frontmost() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let down = MouseEvent {
@@ -183,6 +186,7 @@ fn stack_draws_in_painter_order() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     stack.draw(&mut ctx);
 
@@ -218,6 +222,7 @@ fn stack_empty_mouse_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -240,6 +245,7 @@ fn stack_empty_key_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -264,6 +270,7 @@ fn stack_hover_routes_to_frontmost() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Hover enter should reach the frontmost child.
@@ -284,6 +291,7 @@ fn stack_mouse_outside_bounds_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Click outside the stack's bounds.
@@ -355,6 +363,7 @@ fn stack_single_child_receives_events() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -386,6 +395,7 @@ fn stack_mouse_falls_through_to_back_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let down = MouseEvent {

@@ -77,6 +77,7 @@ fn mouse_on_label_is_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     // Click in label zone (x < 100).
     let event = MouseEvent {
@@ -103,6 +104,7 @@ fn mouse_on_control_delegates() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     // Click in control zone (x > 100).
     let down = MouseEvent {
@@ -138,6 +140,7 @@ fn key_delegates_to_control() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -169,6 +172,7 @@ fn draw_produces_text_commands() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     row.draw(&mut ctx);
 

@@ -15,6 +15,7 @@ fn idle_input() -> ControlFlowInput {
         next_toggle: now + Duration::from_secs(1),
         budget_remaining: Duration::from_millis(16),
         now,
+        scheduler_wake: None,
     }
 }
 
@@ -102,6 +103,58 @@ fn animations_take_priority_over_blinking() {
 
     let result = compute_control_flow(&input);
     // Animations (16ms) take priority over blink (530ms).
+    let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(16));
+    assert_eq!(result, expected);
+}
+
+// Scheduler wake tests
+
+#[test]
+fn scheduler_wake_returns_wait_until_when_idle() {
+    let mut input = idle_input();
+    let wake = input.now + Duration::from_millis(200);
+    input.scheduler_wake = Some(wake);
+
+    let result = compute_control_flow(&input);
+    assert_eq!(result, ControlFlowDecision::WaitUntil(wake));
+}
+
+#[test]
+fn scheduler_wake_picks_earlier_of_blink_and_wake() {
+    let mut input = idle_input();
+    input.blinking_active = true;
+    input.next_toggle = input.now + Duration::from_millis(530);
+    // Scheduler wake is earlier than blink toggle.
+    input.scheduler_wake = Some(input.now + Duration::from_millis(100));
+
+    let result = compute_control_flow(&input);
+    assert_eq!(
+        result,
+        ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(100))
+    );
+}
+
+#[test]
+fn scheduler_wake_blink_wins_when_earlier() {
+    let mut input = idle_input();
+    input.blinking_active = true;
+    let toggle = input.now + Duration::from_millis(100);
+    input.next_toggle = toggle;
+    // Scheduler wake is later than blink toggle.
+    input.scheduler_wake = Some(input.now + Duration::from_millis(500));
+
+    let result = compute_control_flow(&input);
+    assert_eq!(result, ControlFlowDecision::WaitUntil(toggle));
+}
+
+#[test]
+fn animations_take_priority_over_scheduler_wake() {
+    let mut input = idle_input();
+    input.has_animations = true;
+    input.scheduler_wake = Some(input.now + Duration::from_millis(200));
+
+    let result = compute_control_flow(&input);
+    // Animations (16ms) take priority.
     let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(16));
     assert_eq!(result, expected);
 }

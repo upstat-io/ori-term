@@ -103,15 +103,17 @@ oriterm_ui/src/controllers/, oriterm_ui/src/action.rs
 ---
 
 ### Section 05: Animation Engine
-**File:** `section-05-animation-engine.md` | **Status:** Not Started
+**File:** `section-05-animation-engine.md` | **Status:** In Progress
 
 ```
 animation, anim_frame, request_anim_frame, request_paint, delta_time
 behavior, property_behavior, implicit_animation, explicit_animation
 transaction, animation_metadata, spring, spring_physics, damping
 easing, cubic_bezier, ease_in, ease_out, ease_in_out
-AnimFrame, AnimationBehavior, Transaction, SpringAnimation
-interpolation, lerp, animatable, animatable_property
+AnimFrameEvent, AnimBehavior, AnimCurve, AnimProperty, ActiveTransition
+Transaction, with_transaction, Spring, RenderScheduler, DeferredRepaint
+interpolation, lerp, animatable, tick, set_immediate
+scheduler_wake, ControlFlowInput, promote_deferred, has_pending_work
 oriterm_ui/src/animation/
 ```
 

@@ -19,6 +19,7 @@ fn event_ctx(bounds: Rect) -> EventCtx<'static> {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     }
 }
 
@@ -440,6 +441,7 @@ fn draw_signals_animations_running() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     btn.draw(&mut draw_ctx);
 

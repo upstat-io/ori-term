@@ -106,6 +106,7 @@ fn make_ctx<'a>(
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     }
 }
 
@@ -324,6 +325,7 @@ fn compose_and_collect(
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     compose_scene(root, &mut ctx, tracker, cache);
     draw_list.commands().to_vec()
@@ -434,6 +436,7 @@ fn equivalence_hovered_button_in_container() {
         theme: &TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     btn.handle_hover(HoverEvent::Enter, &event_ctx);
     let container = ContainerWidget::column().with_child(Box::new(btn));
@@ -1016,6 +1019,7 @@ fn matrix_button_invalidated_on_hover() {
         theme: &TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     btn.handle_hover(HoverEvent::Enter, &event_ctx);
 

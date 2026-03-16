@@ -97,6 +97,7 @@ fn scroll_draws_with_clip() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut ctx);
 
@@ -131,6 +132,7 @@ fn scroll_wheel_changes_offset() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Scroll down (negative delta_y means scroll down in our convention).
@@ -165,6 +167,7 @@ fn key_home_resets_to_top() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -191,6 +194,7 @@ fn key_end_scrolls_to_bottom() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -218,6 +222,7 @@ fn key_arrow_down_scrolls() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -245,6 +250,7 @@ fn key_page_down_scrolls_by_viewport() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -273,6 +279,7 @@ fn key_page_up_scrolls_by_viewport() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -301,6 +308,7 @@ fn key_page_down_clamps_at_bottom() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -327,6 +335,7 @@ fn key_page_up_clamps_at_top() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -359,6 +368,7 @@ fn scroll_clip_rect_matches_viewport() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut ctx);
 
@@ -391,6 +401,7 @@ fn scroll_child_drawn_offset_by_scroll() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut ctx);
 
@@ -444,6 +455,7 @@ fn scroll_draws_scrollbar_when_overflowing() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut ctx);
 
@@ -480,6 +492,7 @@ fn scroll_no_scrollbar_when_content_fits() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut ctx);
 
@@ -506,6 +519,7 @@ fn scroll_multiple_wheel_events_accumulate() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Scroll down 3 times.
@@ -535,6 +549,7 @@ fn scroll_wheel_clamps_at_bottom() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Scroll way past the bottom.
@@ -562,6 +577,7 @@ fn scroll_wheel_clamps_at_top() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Scroll up from top (should stay at 0).
@@ -587,6 +603,7 @@ fn scroll_pixel_delta_works() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Trackpad-style pixel delta.
@@ -616,6 +633,7 @@ fn scroll_delegates_non_scroll_mouse_to_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let down = MouseEvent {
@@ -656,6 +674,7 @@ fn scroll_delegates_click_with_nonzero_origin() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Click inside the button area (offset from bounds origin).
@@ -717,6 +736,7 @@ fn scroll_delegates_checkbox_toggle_through_form_hierarchy() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut draw_ctx);
 
@@ -732,6 +752,7 @@ fn scroll_delegates_checkbox_toggle_through_form_hierarchy() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Click in the right half of the form (control column area).
@@ -817,6 +838,7 @@ fn container_with_scroll_form_click_reaches_checkbox() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     container.draw(&mut draw_ctx);
 
@@ -843,6 +865,7 @@ fn container_with_scroll_form_click_reaches_checkbox() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let down = MouseEvent {
@@ -887,6 +910,7 @@ fn arrow_up_scrolls_upward() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -941,6 +965,7 @@ fn horizontal_scroll_draws_with_clip() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut ctx);
 
@@ -990,6 +1015,7 @@ fn scroll_content_exactly_fits_no_scrollbar() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut ctx);
 
@@ -1019,6 +1045,7 @@ fn scroll_hover_delegates_to_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Hover should delegate to the child.
@@ -1042,6 +1069,7 @@ fn scroll_track_hovered_resets_on_leave() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Simulate scrollbar hover by setting track_hovered manually.
@@ -1085,6 +1113,7 @@ fn scroll_with_scrollbar_style() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     scroll.draw(&mut ctx);
     assert!(!draw_list.is_empty());

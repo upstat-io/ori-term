@@ -1419,6 +1419,7 @@ fn update_control_hover_enters_and_leaves() {
         theme: &theme,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Hover over the first control button (minimize).
