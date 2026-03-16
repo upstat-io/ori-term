@@ -78,16 +78,26 @@ oriterm_ui/src/input/routing.rs (removed)
 ---
 
 ### Section 04: Event Controllers
-**File:** `section-04-event-controllers.md` | **Status:** Not Started
+**File:** `section-04-event-controllers.md` | **Status:** In Progress
 
 ```
 controller, hover_controller, click_controller, drag_controller
 scroll_controller, focus_controller, composable, reusable
-EventController, ControllerPhase, attach, detach
+EventController, handle_event, handle_lifecycle, phase, reset
+ControllerCtx, ControllerCtxArgs, ControllerRequests, PropagationState
+DispatchOutput, dispatch_to_controllers, dispatch_lifecycle_to_controllers
+emit_action, set_handled, is_handled, bitmask, requests
+WidgetAction relocation, action.rs, module dependency cycle
+HoverController, on_enter, on_leave, on_move, HotChanged
+ClickController, click_count, press_pos, click_threshold, multi_click_timeout
+DoubleClicked, TripleClicked, click_drag_handoff
+DragController, DragState, Idle, Pending, Dragging, drag_threshold
+DragStart, DragUpdate, DragEnd, total_delta, WidgetDisabled reset
+ScrollController, ScrollBy, ScrollDelta, line_height, Lines, Pixels
+FocusController, tab_index, FOCUS_NEXT, FOCUS_PREV, REQUEST_FOCUS
+KeyDown(Tab), KeyUp(Tab), focus_on_click, tab_navigation
 GtkEventControllerMotion, GtkGestureClick, GtkGestureDrag
-enter, leave, contains_pointer, is_pointer, double_click, long_press
-drag_threshold, drag_start, drag_move, drag_end
-oriterm_ui/src/controllers/
+oriterm_ui/src/controllers/, oriterm_ui/src/action.rs
 ```
 
 ---

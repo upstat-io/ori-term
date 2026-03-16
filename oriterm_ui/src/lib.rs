@@ -4,9 +4,11 @@
 //! and window management. Platform-specific glue lives in `#[cfg]`-gated
 //! submodules.
 
+pub mod action;
 pub mod animation;
 pub mod color;
 pub mod compositor;
+pub mod controllers;
 pub mod draw;
 pub mod focus;
 pub mod geometry;
