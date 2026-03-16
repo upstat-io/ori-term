@@ -120,7 +120,7 @@ oriterm_ui/src/animation/
 ---
 
 ### Section 06: Visual State Manager
-**File:** `section-06-visual-state-manager.md` | **Status:** Not Started
+**File:** `section-06-visual-state-manager.md` | **Status:** Complete
 
 ```
 visual_state, state_group, state_transition, common_states

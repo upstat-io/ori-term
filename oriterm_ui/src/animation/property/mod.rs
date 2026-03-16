@@ -76,6 +76,15 @@ impl<T: Lerp> AnimProperty<T> {
         }
     }
 
+    /// Replace the stored behavior without affecting any in-flight transition.
+    ///
+    /// Pass `None` to make future `set()` calls instant. Pass `Some(behavior)`
+    /// to make future `set()` calls animate. Does not interrupt a transition
+    /// already in progress.
+    pub fn set_behavior(&mut self, behavior: Option<AnimBehavior>) {
+        self.behavior = behavior;
+    }
+
     /// Set the target value.
     ///
     /// If a behavior is set (and no `Transaction` overrides it to instant),
@@ -132,7 +141,13 @@ impl<T: Lerp> AnimProperty<T> {
         match t.curve {
             AnimCurve::Easing { easing, duration } => {
                 let progress = easing_progress(t.start, now, duration, easing);
-                T::lerp(t.from, t.to, progress)
+                // Return target directly when complete to avoid floating-point
+                // rounding errors from `lerp(from, to, 1.0)`.
+                if progress >= 1.0 {
+                    t.to
+                } else {
+                    T::lerp(t.from, t.to, progress)
+                }
             }
             AnimCurve::Spring(_) => {
                 // Spring progress is advanced by tick(); return the cached current.
