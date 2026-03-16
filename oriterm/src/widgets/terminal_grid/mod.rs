@@ -5,6 +5,8 @@
 //! is handled by the existing GPU prepare pipeline (not `DrawList`); this
 //! widget participates in layout and event routing only.
 
+mod input_controller;
+
 use std::cell::Cell;
 
 use oriterm_ui::geometry::Rect;
