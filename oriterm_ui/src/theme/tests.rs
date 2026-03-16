@@ -76,6 +76,15 @@ fn light_differs_from_dark_on_all_colors() {
     assert_ne!(dark.accent, light.accent);
     assert_ne!(dark.border, light.border);
     assert_ne!(dark.shadow, light.shadow);
+    assert_ne!(dark.bg_input, light.bg_input);
+    assert_ne!(dark.bg_card, light.bg_card);
+    assert_ne!(dark.bg_card_hover, light.bg_card_hover);
+    assert_ne!(dark.fg_faint, light.fg_faint);
+    assert_ne!(dark.accent_bg, light.accent_bg);
+    assert_ne!(dark.accent_bg_strong, light.accent_bg_strong);
+    assert_ne!(dark.accent_hover, light.accent_hover);
+    assert_ne!(dark.danger, light.danger);
+    assert_ne!(dark.success, light.success);
 }
 
 #[test]
@@ -103,4 +112,34 @@ fn light_shadow_is_less_opaque() {
     let light = UiTheme::light();
     let dark = UiTheme::dark();
     assert!(light.shadow.a < dark.shadow.a);
+}
+
+#[test]
+fn dark_extended_tokens_are_non_default() {
+    let dark = UiTheme::dark();
+    let zero = Color::TRANSPARENT;
+    assert_ne!(dark.bg_input, zero);
+    assert_ne!(dark.bg_card, zero);
+    assert_ne!(dark.bg_card_hover, zero);
+    assert_ne!(dark.fg_faint, zero);
+    assert_ne!(dark.accent_bg, zero);
+    assert_ne!(dark.accent_bg_strong, zero);
+    assert_ne!(dark.accent_hover, zero);
+    assert_ne!(dark.danger, zero);
+    assert_ne!(dark.success, zero);
+}
+
+#[test]
+fn light_extended_tokens_are_non_default() {
+    let light = UiTheme::light();
+    let zero = Color::TRANSPARENT;
+    assert_ne!(light.bg_input, zero);
+    assert_ne!(light.bg_card, zero);
+    assert_ne!(light.bg_card_hover, zero);
+    assert_ne!(light.fg_faint, zero);
+    assert_ne!(light.accent_bg, zero);
+    assert_ne!(light.accent_bg_strong, zero);
+    assert_ne!(light.accent_hover, zero);
+    assert_ne!(light.danger, zero);
+    assert_ne!(light.success, zero);
 }

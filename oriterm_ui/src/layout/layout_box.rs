@@ -12,8 +12,21 @@ use crate::widget_id::WidgetId;
 use super::flex::{Align, Direction, Justify};
 use super::size_spec::SizeSpec;
 
-/// Content of a layout box — either a leaf with intrinsic size or a
-/// flex container with children.
+/// Column specification for grid layout.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GridColumns {
+    /// Fixed number of columns.
+    Fixed(usize),
+    /// Fill as many columns as fit, each at least `min_width` wide.
+    /// Remaining space distributed equally (CSS `auto-fill` behavior).
+    AutoFill {
+        /// Minimum column width in logical pixels.
+        min_width: f32,
+    },
+}
+
+/// Content of a layout box — either a leaf with intrinsic size, a
+/// flex container, or a grid container.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BoxContent {
     /// A leaf node with intrinsic dimensions.
@@ -33,6 +46,17 @@ pub enum BoxContent {
         justify: Justify,
         /// Spacing between children along the main axis.
         gap: f32,
+        /// Child layout boxes.
+        children: Vec<LayoutBox>,
+    },
+    /// A grid container that arranges children in rows and columns.
+    Grid {
+        /// Column specification.
+        columns: GridColumns,
+        /// Vertical gap between rows.
+        row_gap: f32,
+        /// Horizontal gap between columns.
+        column_gap: f32,
         /// Child layout boxes.
         children: Vec<LayoutBox>,
     },
@@ -91,6 +115,32 @@ impl LayoutBox {
             content: BoxContent::Leaf {
                 intrinsic_width,
                 intrinsic_height,
+            },
+            widget_id: None,
+            sense: Sense::all(),
+            hit_test_behavior: HitTestBehavior::default(),
+            clip: false,
+            disabled: false,
+            interact_radius: 0.0,
+        }
+    }
+
+    /// Creates a grid container with default gaps.
+    pub fn grid(columns: GridColumns, children: Vec<Self>) -> Self {
+        Self {
+            width: SizeSpec::Hug,
+            height: SizeSpec::Hug,
+            padding: Insets::default(),
+            margin: Insets::default(),
+            min_width: 0.0,
+            max_width: f32::INFINITY,
+            min_height: 0.0,
+            max_height: f32::INFINITY,
+            content: BoxContent::Grid {
+                columns,
+                row_gap: 0.0,
+                column_gap: 0.0,
+                children,
             },
             widget_id: None,
             sense: Sense::all(),
@@ -212,6 +262,31 @@ impl LayoutBox {
     #[must_use]
     pub fn with_gap(mut self, gap: f32) -> Self {
         if let BoxContent::Flex { gap: ref mut g, .. } = self.content {
+            *g = gap;
+        }
+        self
+    }
+
+    /// Sets the vertical gap between rows (only meaningful for grid containers).
+    #[must_use]
+    pub fn with_row_gap(mut self, gap: f32) -> Self {
+        if let BoxContent::Grid {
+            row_gap: ref mut g, ..
+        } = self.content
+        {
+            *g = gap;
+        }
+        self
+    }
+
+    /// Sets the horizontal gap between columns (only meaningful for grid containers).
+    #[must_use]
+    pub fn with_column_gap(mut self, gap: f32) -> Self {
+        if let BoxContent::Grid {
+            column_gap: ref mut g,
+            ..
+        } = self.content
+        {
             *g = gap;
         }
         self

@@ -38,7 +38,7 @@ impl PanelStyle {
     /// Derives a panel style from the given theme.
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
-            bg: theme.bg_primary,
+            bg: theme.bg_card,
             border_color: theme.border,
             border_width: 1.0,
             corner_radius: theme.corner_radius * 2.0,
