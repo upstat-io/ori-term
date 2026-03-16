@@ -4,7 +4,7 @@
 //! into the manager at specific frame-loop points: events before the main tree,
 //! layout after the main tree, drawing after the main tree.
 
-mod event_routing;
+pub(in crate::overlay) mod event_routing;
 mod lifecycle;
 
 use std::time::Duration;

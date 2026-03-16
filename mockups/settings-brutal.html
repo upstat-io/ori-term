@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ori_term — Settings</title>
+<title>ori_term — Settings [Brutal]</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   /* ── Reset & Base ─────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,28 +20,30 @@
     --bg-input:      #12121a;
     --border:        #2a2a36;
     --border-subtle: #1e1e28;
+    --border-strong: #3a3a48;
     --text:          #d4d4dc;
     --text-muted:    #9494a8;
-    --text-faint:    #6a6a80;
-    --accent:        #6c8cff;
-    --accent-hover:  #8aa4ff;
-    --accent-bg:     rgba(108, 140, 255, 0.08);
-    --accent-bg-strong: rgba(108, 140, 255, 0.14);
-    --danger:        #ff6b6b;
-    --danger-hover:  #ff8787;
-    --danger-bg:     rgba(255, 107, 107, 0.08);
+    --text-faint:    #8c8ca0;
+    --text-bright:   #eeeeef;
+    --accent:        #6d9be0;
+    --accent-hover:  #85ade8;
+    --accent-bg:     rgba(109, 155, 224, 0.08);
+    --accent-bg-strong: rgba(109, 155, 224, 0.14);
+    --danger:        #c87878;
+    --danger-hover:  #d89090;
+    --danger-bg:     rgba(200, 120, 120, 0.08);
     --success:       #6bffb8;
-    --warning:       #ffd96b;
-    --warning-bg:    rgba(255, 217, 107, 0.08);
-    --radius:        8px;
-    --radius-sm:     6px;
-    --radius-lg:     12px;
-    --shadow:        0 8px 32px rgba(0,0,0,0.4);
-    --transition:    150ms ease;
+    --warning:       #e0c454;
+    --warning-bg:    rgba(224, 196, 84, 0.08);
+    --radius:        0px;
+    --radius-sm:     0px;
+    --radius-lg:     0px;
+    --shadow:        none;
+    --transition:    0s;
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-family: 'IBM Plex Mono', 'Cascadia Code', monospace;
     font-size: 13px;
     line-height: 1.5;
     color: var(--text);
@@ -53,10 +58,8 @@
     height: 620px;
     margin: 40px auto;
     background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    border: 2px solid var(--border-strong);
     overflow: hidden;
-    box-shadow: var(--shadow);
   }
 
   /* ── Sidebar ──────────────────────────────────────────── */
@@ -64,7 +67,7 @@
     width: 200px;
     min-width: 200px;
     background: var(--bg-base);
-    border-right: 1px solid var(--border-subtle);
+    border-right: 2px solid var(--border);
     display: flex;
     flex-direction: column;
     padding: 16px 0;
@@ -82,14 +85,12 @@
     width: 100%;
     max-width: 100%;
     background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
+    border: 2px solid var(--border);
     color: var(--text);
     padding: 6px 8px 6px 26px;
     font-size: 12px;
     font-family: inherit;
     outline: none;
-    transition: border-color var(--transition);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236a6a80' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: 8px center;
@@ -99,13 +100,17 @@
   .sidebar-search input:focus { border-color: var(--accent); }
 
   .sidebar-title {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.15em;
     color: var(--text-faint);
     padding: 0 16px;
     margin-bottom: 8px;
+  }
+
+  .sidebar-title::before {
+    content: '// ';
   }
 
   .sidebar-title:not(:first-child) {
@@ -117,13 +122,12 @@
     align-items: center;
     gap: 10px;
     padding: 7px 16px;
-    margin: 1px 8px;
-    border-radius: var(--radius-sm);
+    margin: 1px 0;
     cursor: pointer;
-    transition: background var(--transition), color var(--transition);
     color: var(--text-muted);
     font-size: 13px;
     user-select: none;
+    border-left: 3px solid transparent;
   }
 
   .nav-item:hover {
@@ -134,6 +138,7 @@
   .nav-item.active {
     background: var(--accent-bg-strong);
     color: var(--accent);
+    border-left-color: var(--accent);
   }
 
   .nav-item svg {
@@ -148,7 +153,6 @@
   .nav-item .modified-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
     background: var(--warning);
     margin-left: auto;
     flex-shrink: 0;
@@ -177,18 +181,18 @@
     color: var(--accent);
     cursor: pointer;
     text-decoration: none;
-    transition: color var(--transition);
   }
 
   .sidebar-update:hover {
     color: var(--accent-hover);
     text-decoration: underline;
+    text-underline-offset: 2px;
   }
 
   .sidebar-config-path {
     font-size: 10px;
     color: var(--text-faint);
-    font-family: 'Cascadia Code', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     opacity: 0.7;
     white-space: nowrap;
     overflow: hidden;
@@ -224,14 +228,16 @@
   }
 
   .content-header h1 {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-bright);
     margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .content-header p {
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--text-muted);
     margin-bottom: 20px;
   }
@@ -247,7 +253,6 @@
   .content-body::-webkit-scrollbar-track { background: transparent; }
   .content-body::-webkit-scrollbar-thumb {
     background: var(--border);
-    border-radius: 3px;
   }
   .content-body::-webkit-scrollbar-thumb:hover {
     background: var(--text-faint);
@@ -263,20 +268,28 @@
   }
 
   .section-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-faint);
     margin-bottom: 12px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+  }
+
+  .section-title::before {
+    content: '//';
+    color: var(--text-faint);
+    letter-spacing: 0;
   }
 
   .section-title::after {
     content: '';
     flex: 1;
-    height: 1px;
-    background: var(--border-subtle);
+    height: 2px;
+    background: var(--border);
   }
 
   .section-desc {
@@ -293,8 +306,6 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 14px;
-    border-radius: var(--radius);
-    transition: background var(--transition);
     min-height: 44px;
   }
 
@@ -325,12 +336,12 @@
 
   .setting-label .name .tag {
     font-size: 9px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 1px 5px;
-    border-radius: 3px;
-    line-height: 1.4;
+    letter-spacing: 0.06em;
+    padding: 2px 5px;
+    border: 1px solid currentColor;
+    line-height: 1.3;
   }
 
   .tag-new {
@@ -362,15 +373,13 @@
   select {
     appearance: none;
     background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border: 2px solid var(--border);
     color: var(--text);
     padding: 6px 30px 6px 10px;
-    font-size: 12.5px;
+    font-size: 12px;
     font-family: inherit;
     cursor: pointer;
     outline: none;
-    transition: border-color var(--transition);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a7a8c'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 10px center;
@@ -380,7 +389,7 @@
   select:hover { border-color: var(--text-faint); }
   select:focus { border-color: var(--accent); }
 
-  /* Toggle Switch */
+  /* Toggle Switch — Brutalist */
   .toggle {
     position: relative;
     display: inline-block;
@@ -401,9 +410,7 @@
     position: absolute;
     inset: 0;
     background: var(--bg-active);
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    transition: background var(--transition), border-color var(--transition);
+    border: 2px solid var(--border);
     z-index: 0;
   }
 
@@ -411,57 +418,115 @@
     position: absolute;
     top: 3px;
     left: 3px;
-    width: 14px;
-    height: 14px;
-    background: var(--text-muted);
-    border-radius: 50%;
-    transition: transform var(--transition), background var(--transition);
+    width: 12px;
+    height: 12px;
+    background: var(--text-faint);
     z-index: 1;
     pointer-events: none;
   }
 
   .toggle input:checked ~ .track {
-    background: var(--accent);
+    background: var(--accent-bg-strong);
     border-color: var(--accent);
   }
 
   .toggle input:checked ~ .thumb {
     transform: translateX(18px);
-    background: #fff;
+    background: var(--accent);
   }
 
   /* Number input */
   input[type="number"] {
-    appearance: textfield;
+    appearance: none;
+    -moz-appearance: textfield;
     background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border: 2px solid var(--border);
     color: var(--text);
     padding: 6px 10px;
-    font-size: 12.5px;
+    font-size: 12px;
     font-family: inherit;
     width: 80px;
     text-align: center;
     outline: none;
-    transition: border-color var(--transition);
+    position: relative;
   }
 
   input[type="number"]:hover { border-color: var(--text-faint); }
   input[type="number"]:focus { border-color: var(--accent); }
-  input[type="number"]::-webkit-inner-spin-button { opacity: 0.5; }
+  input[type="number"]::-webkit-inner-spin-button { display: none; }
+
+  /* Custom stepper wrapper — single outer border */
+  .num-stepper {
+    display: inline-flex;
+    align-items: stretch;
+    height: 30px;
+    border: 2px solid var(--border);
+  }
+
+  .num-stepper:hover { border-color: var(--text-faint); }
+  .num-stepper:focus-within { border-color: var(--accent); }
+
+  .num-stepper input[type="number"] {
+    border: none;
+    width: 56px;
+    height: 100%;
+    padding: 0 6px;
+  }
+
+  .num-stepper input[type="number"]:hover { border-color: transparent; }
+  .num-stepper input[type="number"]:focus { border-color: transparent; }
+
+  .num-stepper-btns {
+    display: flex;
+    flex-direction: column;
+    width: 22px;
+    flex-shrink: 0;
+    border-left: 2px solid var(--border);
+  }
+
+  .num-stepper-btns button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-active);
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 0;
+    font-family: inherit;
+    font-size: 8px;
+    line-height: 1;
+  }
+
+  .num-stepper-btns button + button {
+    border-top: 1px solid var(--border);
+  }
+
+  .num-stepper-btns button:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .num-stepper-btns button:active {
+    background: var(--accent-bg-strong);
+    color: var(--accent);
+  }
+
+  .input-pair .num-stepper input[type="number"] {
+    width: 44px;
+  }
 
   /* Text input */
   input[type="text"] {
     background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border: 2px solid var(--border);
     color: var(--text);
     padding: 6px 10px;
-    font-size: 12.5px;
+    font-size: 12px;
     font-family: inherit;
     width: 200px;
     outline: none;
-    transition: border-color var(--transition);
   }
 
   input[type="text"]:hover { border-color: var(--text-faint); }
@@ -493,17 +558,15 @@
 
   .scheme-card {
     background: var(--bg-raised);
-    border: 2px solid transparent;
-    border-radius: var(--radius);
+    border: 2px solid var(--border);
     padding: 12px;
     cursor: pointer;
-    transition: border-color var(--transition), background var(--transition);
     position: relative;
   }
 
   .scheme-card:hover {
     background: var(--bg-hover);
-    border-color: var(--border);
+    border-color: var(--border-strong);
   }
 
   .scheme-card.active {
@@ -522,12 +585,14 @@
   }
 
   .scheme-card .scheme-name .badge {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 4px;
+    font-size: 9px;
+    padding: 2px 6px;
     background: var(--accent-bg-strong);
     color: var(--accent);
-    font-weight: 500;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border: 1px solid var(--accent);
   }
 
   .scheme-preview {
@@ -538,13 +603,13 @@
 
   .scheme-terminal {
     background: var(--preview-bg, #1a1b26);
-    border-radius: 5px;
     padding: 8px 10px;
-    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+    font-family: 'IBM Plex Mono', 'Cascadia Code', monospace;
     font-size: 11px;
     line-height: 1.4;
     height: 56px;
     overflow: hidden;
+    border: 1px solid var(--border);
   }
 
   .scheme-swatches {
@@ -555,7 +620,6 @@
   .swatch {
     width: 100%;
     height: 14px;
-    border-radius: 3px;
     flex: 1;
   }
 
@@ -563,8 +627,7 @@
   .color-editor {
     margin-top: 16px;
     background: var(--bg-raised);
-    border-radius: var(--radius);
-    border: 1px solid var(--border-subtle);
+    border: 2px solid var(--border);
     padding: 14px;
   }
 
@@ -576,11 +639,11 @@
   }
 
   .color-editor-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-faint);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.12em;
   }
 
   .color-editor-actions {
@@ -590,13 +653,14 @@
 
   .btn-sm {
     padding: 3px 10px;
-    border-radius: 4px;
     font-size: 11px;
     font-family: inherit;
     font-weight: 500;
     cursor: pointer;
-    border: 1px solid var(--border);
+    border: 2px solid var(--border);
     background: transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: var(--text-muted);
     transition: background var(--transition), color var(--transition);
   }
@@ -614,17 +678,14 @@
 
   .color-cell {
     height: 26px;
-    border-radius: 5px;
     cursor: pointer;
-    transition: transform var(--transition), box-shadow var(--transition);
     position: relative;
     border: 2px solid transparent;
   }
 
   .color-cell:hover {
-    transform: scale(1.12);
+    border-color: var(--text);
     z-index: 1;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
   }
 
   .color-cell-label {
@@ -656,9 +717,8 @@
     gap: 7px;
     padding: 6px 8px;
     background: var(--bg-input);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
     cursor: pointer;
-    transition: background var(--transition);
   }
 
   .special-color:hover { background: var(--bg-hover); }
@@ -666,9 +726,8 @@
   .special-color .swatch-lg {
     width: 22px;
     height: 22px;
-    border-radius: 5px;
     flex-shrink: 0;
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 2px solid rgba(255,255,255,0.1);
   }
 
   .special-color .sc-info {
@@ -684,27 +743,30 @@
   .special-color .sc-value {
     font-size: 10px;
     color: var(--text-faint);
-    font-family: 'Cascadia Code', monospace;
+    font-family: 'IBM Plex Mono', monospace;
   }
 
   /* ── Font Preview ─────────────────────────────────────── */
   .font-preview {
     background: var(--bg-raised);
-    border-radius: var(--radius);
-    border: 1px solid var(--border-subtle);
+    border: 2px solid var(--border);
     padding: 16px 20px;
     margin-bottom: 16px;
-    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+    font-family: 'IBM Plex Mono', 'Cascadia Code', monospace;
   }
 
   .font-preview-label {
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.15em;
     color: var(--text-faint);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-family: inherit;
     margin-bottom: 8px;
+  }
+
+  .font-preview-label::before {
+    content: '// ';
   }
 
   .font-preview-text {
@@ -727,8 +789,8 @@
     gap: 16px;
     margin-top: 10px;
     padding-top: 10px;
-    border-top: 1px solid var(--border-subtle);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    border-top: 2px solid var(--border);
+    font-family: inherit;
   }
 
   .font-preview-meta span {
@@ -756,16 +818,14 @@
     gap: 6px;
     padding: 12px 20px;
     background: var(--bg-raised);
-    border: 2px solid transparent;
-    border-radius: var(--radius);
+    border: 2px solid var(--border);
     cursor: pointer;
-    transition: border-color var(--transition), background var(--transition);
     min-width: 80px;
   }
 
   .cursor-option:hover {
     background: var(--bg-hover);
-    border-color: var(--border);
+    border-color: var(--border-strong);
   }
 
   .cursor-option.active {
@@ -774,7 +834,7 @@
   }
 
   .cursor-demo {
-    font-family: 'Cascadia Code', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 16px;
     color: var(--text);
     position: relative;
@@ -826,8 +886,6 @@
     align-items: center;
     justify-content: space-between;
     padding: 8px 14px;
-    border-radius: var(--radius);
-    transition: background var(--transition);
     cursor: pointer;
     user-select: none;
   }
@@ -852,9 +910,7 @@
     font-family: inherit;
     color: var(--text);
     background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 4px;
+    border: 2px solid var(--border);
     line-height: 1.4;
   }
 
@@ -867,13 +923,12 @@
   .keybind-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 100;
     opacity: 0;
-    transition: opacity 120ms ease;
     pointer-events: none;
   }
 
@@ -884,28 +939,25 @@
 
   .keybind-dialog {
     background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    border: 2px solid var(--border-strong);
     width: 380px;
     padding: 24px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 16px;
-    transform: scale(0.96);
-    transition: transform 120ms ease;
   }
 
   .keybind-overlay.open .keybind-dialog {
-    transform: scale(1);
   }
 
   .keybind-dialog-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-bright);
     text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .keybind-dialog-action {
@@ -919,7 +971,6 @@
     padding: 14px;
     background: var(--bg-input);
     border: 2px solid var(--accent);
-    border-radius: var(--radius);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -963,20 +1014,19 @@
     width: 100%;
     justify-content: flex-end;
     padding-top: 4px;
-    border-top: 1px solid var(--border-subtle);
+    border-top: 2px solid var(--border);
   }
 
   /* ── Color Picker Dialog ───────────────────────────────── */
   .color-picker-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 100;
     opacity: 0;
-    transition: opacity 120ms ease;
     pointer-events: none;
   }
 
@@ -987,20 +1037,15 @@
 
   .color-picker {
     background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    border: 2px solid var(--border-strong);
     width: 300px;
     padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 14px;
-    transform: scale(0.96);
-    transition: transform 120ms ease;
   }
 
   .color-picker-overlay.open .color-picker {
-    transform: scale(1);
   }
 
   .color-picker-header {
@@ -1025,9 +1070,9 @@
     position: relative;
     width: 100%;
     height: 160px;
-    border-radius: var(--radius-sm);
     overflow: hidden;
     cursor: crosshair;
+    border: 1px solid var(--border);
   }
 
   .color-area {
@@ -1039,11 +1084,9 @@
 
   .color-area-thumb {
     position: absolute;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border: 2px solid #fff;
-    border-radius: 50%;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.2);
     transform: translate(-50%, -50%);
     pointer-events: none;
     top: 20%;
@@ -1055,9 +1098,9 @@
     position: relative;
     width: 100%;
     height: 14px;
-    border-radius: 7px;
     overflow: hidden;
     cursor: pointer;
+    border: 1px solid var(--border);
   }
 
   .hue-strip {
@@ -1065,19 +1108,16 @@
     height: 100%;
     background: linear-gradient(to right,
       #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
-    border-radius: 7px;
   }
 
   .hue-strip-thumb {
     position: absolute;
     top: 50%;
     left: 0%;
-    width: 10px;
+    width: 8px;
     height: 18px;
     background: #fff;
-    border: 1px solid rgba(0,0,0,0.3);
-    border-radius: 3px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    border: 1px solid rgba(0,0,0,0.4);
     transform: translate(-50%, -50%);
     pointer-events: none;
   }
@@ -1087,10 +1127,10 @@
     position: relative;
     width: 100%;
     height: 14px;
-    border-radius: 7px;
     overflow: hidden;
     cursor: pointer;
     display: none;
+    border: 1px solid var(--border);
     background-image:
       linear-gradient(45deg, #333 25%, transparent 25%),
       linear-gradient(-45deg, #333 25%, transparent 25%),
@@ -1106,19 +1146,16 @@
     width: 100%;
     height: 100%;
     background: linear-gradient(to right, transparent, var(--picker-hue, #ff0000));
-    border-radius: 7px;
   }
 
   .alpha-strip-thumb {
     position: absolute;
     top: 50%;
     right: 0;
-    width: 10px;
+    width: 8px;
     height: 18px;
     background: #fff;
-    border: 1px solid rgba(0,0,0,0.3);
-    border-radius: 3px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    border: 1px solid rgba(0,0,0,0.4);
     transform: translate(-50%, -50%);
     pointer-events: none;
   }
@@ -1146,7 +1183,7 @@
 
   .color-input-group input[type="text"] {
     width: 100%;
-    font-family: 'Cascadia Code', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
     padding: 5px 8px;
     text-align: center;
@@ -1164,10 +1201,9 @@
   /* Preview bar (old → new) */
   .color-preview-bar {
     display: flex;
-    border-radius: var(--radius-sm);
     overflow: hidden;
     height: 32px;
-    border: 1px solid var(--border-subtle);
+    border: 2px solid var(--border);
   }
 
   .color-preview-half {
@@ -1192,7 +1228,7 @@
     gap: 8px;
     justify-content: flex-end;
     padding-top: 4px;
-    border-top: 1px solid var(--border-subtle);
+    border-top: 2px solid var(--border);
   }
 
   /* ── Footer — pinned to bottom of pane ─────────────────── */
@@ -1202,7 +1238,7 @@
     justify-content: flex-end;
     gap: 8px;
     padding: 12px 28px;
-    border-top: 1px solid var(--border-subtle);
+    border-top: 2px solid var(--border);
     background: var(--bg-surface);
     flex-shrink: 0;
   }
@@ -1218,10 +1254,11 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 11.5px;
+    font-size: 11px;
     color: var(--warning);
     opacity: 0;
-    transition: opacity var(--transition);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
 
   .unsaved-indicator.visible { opacity: 1; }
@@ -1233,13 +1270,13 @@
 
   .btn {
     padding: 6px 16px;
-    border-radius: var(--radius-sm);
-    font-size: 12.5px;
+    font-size: 12px;
     font-family: inherit;
     font-weight: 500;
     cursor: pointer;
-    border: 1px solid transparent;
-    transition: background var(--transition), border-color var(--transition), color var(--transition);
+    border: 2px solid transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .btn-ghost {
@@ -1251,6 +1288,7 @@
   .btn-ghost:hover {
     background: var(--bg-hover);
     color: var(--text);
+    border-color: var(--border-strong);
   }
 
   .btn-danger-ghost {
@@ -1261,14 +1299,15 @@
 
   .btn-danger-ghost:hover {
     background: var(--danger-bg);
-    border-color: rgba(255, 107, 107, 0.3);
+    border-color: var(--danger);
     color: var(--danger);
   }
 
   .btn-primary {
     background: var(--accent);
-    color: #fff;
+    color: #0e0e12;
     border-color: var(--accent);
+    font-weight: 700;
   }
 
   .btn-primary:hover {
@@ -1295,25 +1334,22 @@
     width: 120px;
     height: 4px;
     background: var(--border);
-    border-radius: 2px;
     outline: none;
   }
 
   input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 14px;
+    width: 12px;
     height: 14px;
-    border-radius: 50%;
     background: var(--accent);
     cursor: pointer;
     border: 2px solid var(--bg-surface);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
   }
 
   .range-value {
     font-size: 12px;
     color: var(--text-muted);
-    font-family: 'Cascadia Code', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     min-width: 32px;
     text-align: right;
   }
@@ -1325,8 +1361,8 @@
     gap: 10px;
     padding: 10px 14px;
     background: var(--accent-bg);
-    border: 1px solid rgba(108, 140, 255, 0.15);
-    border-radius: var(--radius-sm);
+    border: 2px solid rgba(109, 155, 224, 0.3);
+    border-left: 3px solid var(--accent);
     margin-bottom: 16px;
   }
 
@@ -1351,8 +1387,8 @@
     gap: 10px;
     padding: 10px 14px;
     background: var(--warning-bg);
-    border: 1px solid rgba(255, 217, 107, 0.15);
-    border-radius: var(--radius-sm);
+    border: 2px solid rgba(224, 196, 84, 0.3);
+    border-left: 3px solid var(--warning);
     margin-bottom: 16px;
   }
 
@@ -1372,19 +1408,18 @@
 
   /* ── Separator ────────────────────────────────────────── */
   .separator {
-    height: 1px;
-    background: var(--border-subtle);
+    height: 2px;
+    background: var(--border);
     margin: 4px 14px;
   }
 
   /* ── Shell preview box ────────────────────────────────── */
   .shell-preview {
     background: var(--bg-input);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
+    border: 2px solid var(--border);
     padding: 10px 14px;
     margin: 0 14px 8px;
-    font-family: 'Cascadia Code', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
     line-height: 1.5;
     color: var(--text-faint);
@@ -1396,8 +1431,7 @@
   /* ── Bell preview ─────────────────────────────────────── */
   .bell-preview {
     background: var(--bg-raised);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius);
+    border: 2px solid var(--border);
     padding: 16px;
     margin-bottom: 16px;
     display: flex;
@@ -1408,9 +1442,9 @@
   .bell-preview-terminal {
     flex: 1;
     background: var(--bg-input);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
     padding: 12px 16px;
-    font-family: 'Cascadia Code', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
     color: var(--text);
     min-height: 56px;
@@ -1437,21 +1471,22 @@
 
   .btn-test {
     padding: 6px 14px;
-    border-radius: var(--radius-sm);
-    font-size: 12px;
+    font-size: 11px;
     font-family: inherit;
     font-weight: 500;
     cursor: pointer;
-    border: 1px solid var(--border);
+    border: 2px solid var(--border);
     background: var(--bg-active);
     color: var(--text-muted);
-    transition: background var(--transition), color var(--transition);
     white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .btn-test:hover {
     background: var(--bg-hover);
     color: var(--text);
+    border-color: var(--border-strong);
   }
 
   /* ── Rendering stats ──────────────────────────────────── */
@@ -1464,16 +1499,15 @@
 
   .stat-card {
     background: var(--bg-raised);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
+    border: 2px solid var(--border);
     padding: 12px 14px;
   }
 
   .stat-card .stat-label {
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.12em;
     color: var(--text-faint);
     margin-bottom: 4px;
   }
@@ -1482,7 +1516,7 @@
     font-size: 18px;
     font-weight: 600;
     color: var(--text);
-    font-family: 'Cascadia Code', monospace;
+    font-family: 'IBM Plex Mono', monospace;
   }
 
   .stat-card .stat-value .stat-unit {
@@ -1974,7 +2008,7 @@
               <span class="desc">Font size in pixels</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="14" min="8" max="32" step="0.5">
+              <div class="num-stepper"><input type="number" value="14" min="8" max="32" step="0.5"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
           <div class="setting-row">
@@ -2029,7 +2063,7 @@
               <span class="desc">Multiplier applied to cell height</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="1.0" min="0.8" max="2.0" step="0.05">
+              <div class="num-stepper"><input type="number" value="1.0" min="0.8" max="2.0" step="0.05"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
           <div class="setting-row">
@@ -2038,7 +2072,7 @@
               <span class="desc">Fine-tune character spacing (px)</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="0" min="-2" max="4" step="0.5">
+              <div class="num-stepper"><input type="number" value="0" min="-2" max="4" step="0.5"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
         </div>
@@ -2105,7 +2139,7 @@
               <span class="desc">Milliseconds between on/off transitions</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="530" min="200" max="2000" step="10">
+              <div class="num-stepper"><input type="number" value="530" min="200" max="2000" step="10"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
         </div>
@@ -2118,7 +2152,7 @@
               <span class="desc">Number of lines retained above the viewport</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="10000" min="0" max="100000" step="1000">
+              <div class="num-stepper"><input type="number" value="10000" min="0" max="100000" step="1000"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
           <div class="setting-row">
@@ -2127,7 +2161,7 @@
               <span class="desc">Lines scrolled per mouse wheel notch</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="3" min="1" max="20" step="1">
+              <div class="num-stepper"><input type="number" value="3" min="1" max="20" step="1"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
         </div>
@@ -2140,7 +2174,7 @@
               <span class="desc">Program launched in new panes</span>
             </div>
             <div class="setting-control">
-              <input type="text" value="/usr/bin/zsh" style="width: 200px; font-family: 'Cascadia Code', monospace; font-size: 12px;">
+              <input type="text" value="/usr/bin/zsh" style="width: 200px; font-family: 'IBM Plex Mono', monospace; font-size: 12px;">
             </div>
           </div>
           <div class="setting-row">
@@ -2202,7 +2236,7 @@
               <span class="desc">Characters that separate words for double-click selection</span>
             </div>
             <div class="setting-control">
-              <input type="text" value=" /\\()&quot;'-.,:;<>~!@#$%^&*|+=[]{}~?" style="width: 200px; font-family: 'Cascadia Code', monospace; font-size: 11px;">
+              <input type="text" value=" /\\()&quot;'-.,:;<>~!@#$%^&*|+=[]{}~?" style="width: 200px; font-family: 'IBM Plex Mono', monospace; font-size: 11px;">
             </div>
           </div>
         </div>
@@ -2482,7 +2516,7 @@
               <span class="desc">Space between the window edge and terminal content (px)</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="6" min="0" max="40" step="2">
+              <div class="num-stepper"><input type="number" value="6" min="0" max="40" step="2"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
           <div class="setting-row">
@@ -2535,9 +2569,9 @@
             </div>
             <div class="setting-control">
               <div class="input-pair">
-                <input type="number" value="120" min="40" max="400">
+                <div class="num-stepper"><input type="number" value="120" min="40" max="400"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
                 <label>&times;</label>
-                <input type="number" value="30" min="10" max="200">
+                <div class="num-stepper"><input type="number" value="30" min="10" max="200"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
                 <label>cells</label>
               </div>
             </div>
@@ -2663,7 +2697,7 @@
               <span class="desc">Ignore bells within this window after the last one (ms)</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="100" min="0" max="5000" step="50">
+              <div class="num-stepper"><input type="number" value="100" min="0" max="5000" step="50"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
         </div>
@@ -2775,7 +2809,7 @@
               <span class="desc">Cap the render frame rate (0 = unlimited)</span>
             </div>
             <div class="setting-control">
-              <input type="number" value="0" min="0" max="240" step="10">
+              <div class="num-stepper"><input type="number" value="0" min="0" max="240" step="10"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
             </div>
           </div>
         </div>
@@ -2879,6 +2913,19 @@
 </div>
 
 <script>
+  function stepInput(btn, dir) {
+    const input = btn.closest('.num-stepper').querySelector('input[type="number"]');
+    const step = parseFloat(input.step) || 1;
+    const min = parseFloat(input.min);
+    const max = parseFloat(input.max);
+    let val = parseFloat(input.value) + step * dir;
+    if (!isNaN(min)) val = Math.max(min, val);
+    if (!isNaN(max)) val = Math.min(max, val);
+    input.value = parseFloat(val.toFixed(4));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function showPage(name) {
     document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
     document.getElementById('page-' + name).classList.remove('hidden');

@@ -343,6 +343,44 @@ impl InputEvent {
         }
     }
 
+    /// Converts from a legacy `MouseEvent` for the transition bridge.
+    ///
+    /// Inverse of `to_mouse_event()`. Used by the overlay manager to
+    /// convert legacy mouse events into `InputEvent` for controller dispatch.
+    pub fn from_mouse_event(event: &MouseEvent) -> Self {
+        match event.kind {
+            MouseEventKind::Down(button) => Self::MouseDown {
+                pos: event.pos,
+                button,
+                modifiers: event.modifiers,
+            },
+            MouseEventKind::Up(button) => Self::MouseUp {
+                pos: event.pos,
+                button,
+                modifiers: event.modifiers,
+            },
+            MouseEventKind::Move => Self::MouseMove {
+                pos: event.pos,
+                modifiers: event.modifiers,
+            },
+            MouseEventKind::Scroll(delta) => Self::Scroll {
+                pos: event.pos,
+                delta,
+                modifiers: event.modifiers,
+            },
+        }
+    }
+
+    /// Converts from a legacy `KeyEvent` for the transition bridge.
+    ///
+    /// Produces `KeyDown` — overlays only handle key presses, not releases.
+    pub fn from_key_event(event: KeyEvent) -> Self {
+        Self::KeyDown {
+            key: event.key,
+            modifiers: event.modifiers,
+        }
+    }
+
     /// Converts to a legacy `KeyEvent` for the transition bridge.
     ///
     /// Returns `None` for mouse events.

@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ori_term — Main Window [Brutal]</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-base:       #0e0e12;
+    --bg-surface:    #16161c;
+    --bg-raised:     #1c1c24;
+    --bg-hover:      #24242e;
+    --bg-active:     #2a2a36;
+    --bg-input:      #12121a;
+    --border:        #2a2a36;
+    --border-subtle: #1e1e28;
+    --border-strong: #3a3a48;
+    --text:          #d4d4dc;
+    --text-muted:    #8c8ca0;
+    --text-faint:    #8c8ca0;
+    --text-bright:   #eeeeef;
+    --accent:        #6d9be0;
+    --accent-hover:  #85ade8;
+    --accent-bg:     rgba(109, 155, 224, 0.08);
+    --accent-bg-strong: rgba(109, 155, 224, 0.14);
+    --danger:        #c87878;
+    --success:       #6bffb8;
+    --warning:       #e0c454;
+    --tab-height:    36px;
+  }
+
+  body {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+    background: #1a1a22;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  /* ── Window Frame ──────────────────────────────────── */
+  .window {
+    width: 960px;
+    height: 620px;
+    background: var(--bg-base);
+    border: 2px solid var(--border-strong);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── Tab Bar ───────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    align-items: stretch;
+    height: var(--tab-height);
+    background: var(--bg-surface);
+    border-bottom: 2px solid var(--border);
+    flex-shrink: 0;
+    -webkit-app-region: drag;
+  }
+
+  .tab-bar-tabs {
+    display: flex;
+    align-items: stretch;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    min-width: 0;
+    max-width: 200px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: inherit;
+    border-right: 1px solid var(--border);
+    position: relative;
+    -webkit-app-region: no-drag;
+    user-select: none;
+  }
+
+  .tab:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .tab.active {
+    background: var(--bg-base);
+    color: var(--text-bright);
+  }
+
+  /* Active tab — accent bar on top */
+  .tab.active::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+
+  /* Active tab bleeds into content — hide bottom border */
+  .tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--bg-base);
+  }
+
+  .tab-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    opacity: 0.5;
+  }
+
+  .tab.active .tab-icon { opacity: 0.8; }
+
+  .tab-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tab-close {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text-faint);
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0;
+  }
+
+  .tab:hover .tab-close { opacity: 1; }
+  .tab.active .tab-close { opacity: 0.6; }
+
+  .tab-close:hover {
+    color: var(--danger);
+    opacity: 1;
+  }
+
+  /* Modified indicator — square dot */
+  .tab-modified {
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+  /* ── Tab Bar Actions ───────────────────────────────── */
+  .tab-bar-actions {
+    display: flex;
+    align-items: stretch;
+    -webkit-app-region: no-drag;
+  }
+
+  .tab-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    cursor: pointer;
+    color: var(--text-muted);
+    border-left: 1px solid var(--border);
+  }
+
+  .tab-action:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .tab-action svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ── Window Controls ───────────────────────────────── */
+  .window-controls {
+    display: flex;
+    align-items: stretch;
+    -webkit-app-region: no-drag;
+    margin-left: auto;
+  }
+
+  .win-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+
+  .win-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .win-btn.close:hover {
+    background: var(--danger);
+    color: var(--text-bright);
+  }
+
+  .win-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* ── Terminal Content ──────────────────────────────── */
+  .terminal {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+
+  .pane {
+    flex: 1;
+    padding: 8px 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── Split Panes ───────────────────────────────────── */
+  .split-v {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .split-divider-v {
+    width: 2px;
+    background: var(--border);
+    cursor: col-resize;
+    flex-shrink: 0;
+  }
+
+  .split-divider-v:hover {
+    background: var(--accent);
+  }
+
+  .split-h {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .split-divider-h {
+    height: 2px;
+    background: var(--border);
+    cursor: row-resize;
+    flex-shrink: 0;
+  }
+
+  .split-divider-h:hover {
+    background: var(--accent);
+  }
+
+  /* ── Pane Focus Indicator ──────────────────────────── */
+  .pane.focused {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  /* ── Terminal Text Colors ──────────────────────────── */
+  .prompt { color: var(--accent); }
+  .path { color: #98c379; }
+  .cmd { color: var(--text-bright); }
+  .output { color: var(--text-muted); }
+  .comment { color: #5c6370; font-style: italic; }
+  .error { color: var(--danger); }
+  .success { color: #6bffb8; }
+  .yellow { color: var(--warning); }
+  .magenta { color: #c678dd; }
+  .cyan { color: #56b6c2; }
+  .dim { color: #5c6370; }
+
+  /* ── Cursor ────────────────────────────────────────── */
+  .cursor {
+    display: inline-block;
+    width: 8.4px;
+    height: 17px;
+    background: var(--accent);
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* ── Scrollbar ─────────────────────────────────────── */
+  .pane::-webkit-scrollbar { width: 6px; }
+  .pane::-webkit-scrollbar-track { background: transparent; }
+  .pane::-webkit-scrollbar-thumb { background: var(--border); }
+
+  /* ── Status Bar (optional) ─────────────────────────── */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 10px;
+    background: var(--bg-surface);
+    border-top: 2px solid var(--border);
+    font-size: 11px;
+    color: var(--text-faint);
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .status-separator { flex: 1; }
+
+  .status-accent { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="window">
+  <!-- ── Tab Bar ──────────────────────────────────── -->
+  <div class="tab-bar">
+    <div class="tab-bar-tabs">
+      <div class="tab active">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span class="tab-title">zsh</span>
+        <span class="tab-close">&times;</span>
+      </div>
+      <div class="tab">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span class="tab-title">nvim config.toml</span>
+        <span class="tab-modified"></span>
+        <span class="tab-close">&times;</span>
+      </div>
+      <div class="tab">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span class="tab-title">cargo build</span>
+        <span class="tab-close">&times;</span>
+      </div>
+    </div>
+
+    <div class="tab-bar-actions">
+      <div class="tab-action" title="New tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+      <div class="tab-action" title="Split pane">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+      </div>
+    </div>
+
+    <div class="window-controls">
+      <div class="win-btn minimize">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+      <div class="win-btn maximize">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14"/></svg>
+      </div>
+      <div class="win-btn close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Terminal Content — Split View ────────────── -->
+  <div class="terminal">
+    <div class="split-v">
+      <!-- Left pane (focused) -->
+      <div class="split-h" style="flex: 1.4;">
+        <div class="pane focused" style="flex: 1;">
+          <span class="prompt">~/projects/ori_term</span> <span class="path">main</span><br>
+          <span class="prompt">$</span> <span class="cmd">cargo build --release</span><br>
+          <span class="dim">   Compiling</span> <span class="magenta">oriterm_core</span> <span class="dim">v0.1.0</span><br>
+          <span class="dim">   Compiling</span> <span class="magenta">oriterm_gpu</span> <span class="dim">v0.1.0</span><br>
+          <span class="dim">   Compiling</span> <span class="magenta">oriterm_mux</span> <span class="dim">v0.1.0</span><br>
+          <span class="dim">   Compiling</span> <span class="magenta">oriterm_ui</span> <span class="dim">v0.1.0</span><br>
+          <span class="dim">   Compiling</span> <span class="magenta">oriterm</span> <span class="dim">v0.1.0</span><br>
+          <span class="success">    Finished</span> <span class="output">`release` profile [optimized] target(s) in 14.2s</span><br>
+          <br>
+          <span class="prompt">~/projects/ori_term</span> <span class="path">main</span><br>
+          <span class="prompt">$</span> <span class="cursor"></span>
+        </div>
+
+        <div class="split-divider-h"></div>
+
+        <!-- Bottom-left pane -->
+        <div class="pane" style="flex: 0.6;">
+          <span class="prompt">~/projects/ori_term</span> <span class="path">main</span><br>
+          <span class="prompt">$</span> <span class="cmd">cargo test -p oriterm_core</span><br>
+          <span class="output">running 47 tests</span><br>
+          <span class="success">test grid::tests::resize_wider ... ok</span><br>
+          <span class="success">test grid::tests::scroll_up ... ok</span><br>
+          <span class="success">test cell::tests::flags_round_trip ... ok</span><br>
+          <span class="dim">...</span><br>
+          <span class="output">test result: </span><span class="success">ok</span><span class="output">. 47 passed; 0 failed</span><br>
+        </div>
+      </div>
+
+      <div class="split-divider-v"></div>
+
+      <!-- Right pane -->
+      <div class="pane" style="flex: 0.8;">
+        <span class="prompt">~/projects/ori_term</span> <span class="path">main</span><br>
+        <span class="prompt">$</span> <span class="cmd">git log --oneline -8</span><br>
+        <span class="yellow">32344e7</span> <span class="output">feat(ui): add layout extensions</span><br>
+        <span class="yellow">191f41d</span> <span class="output">feat(ui): add visual state manager</span><br>
+        <span class="yellow">9f4db41</span> <span class="output">feat(ui): add animation engine</span><br>
+        <span class="yellow">21f2da1</span> <span class="output">feat(ui): add event controllers</span><br>
+        <span class="yellow">c6b4a33</span> <span class="output">feat(ui): add event propagation</span><br>
+        <span class="yellow">a1b2c3d</span> <span class="output">feat(ui): add base widget trait</span><br>
+        <span class="yellow">e4f5a6b</span> <span class="output">fix(grid): reflow wide chars</span><br>
+        <span class="yellow">789abcd</span> <span class="output">perf(gpu): batch glyph uploads</span><br>
+        <br>
+        <span class="prompt">~/projects/ori_term</span> <span class="path">main</span><br>
+        <span class="prompt">$</span> <span class="cmd">wc -l oriterm*/src/**/*.rs</span><br>
+        <span class="output">   1247 oriterm_core/src/grid/mod.rs</span><br>
+        <span class="output">    892 oriterm_gpu/src/renderer.rs</span><br>
+        <span class="output">    634 oriterm_mux/src/pane/mod.rs</span><br>
+        <span class="output">    428 oriterm_ui/src/widgets/mod.rs</span><br>
+        <span class="output">  12841 total</span><br>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Status Bar ──────────────────────────────── -->
+  <div class="status-bar">
+    <span class="status-item"><span class="status-accent">zsh</span></span>
+    <span class="status-item">3 panes</span>
+    <span class="status-item">120&times;30</span>
+    <span class="status-separator"></span>
+    <span class="status-item">UTF-8</span>
+    <span class="status-item"><span class="status-accent">xterm-256color</span></span>
+  </div>
+</div>
+
+</body>
+</html>

@@ -3,18 +3,102 @@
 //! Mouse events, key events, and hover events are routed through the overlay
 //! stack before reaching the main widget tree. Dismissals trigger compositor
 //! fade-out animations.
+//!
+//! Dispatch uses a controller-first strategy: each widget is offered the event
+//! via `dispatch_to_controllers()` first; if no controllers exist (the common
+//! case during the §08.3-08.5 migration), the legacy `handle_mouse()` /
+//! `handle_key()` fallback runs.
 
 use std::time::Instant;
 
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
+use crate::controllers::{ControllerCtxArgs, ControllerRequests, dispatch_to_controllers};
 use crate::geometry::Point;
-use crate::input::{HoverEvent, Key, KeyEvent, MouseEvent, MouseEventKind};
+use crate::input::{
+    EventPhase, EventResponse, HoverEvent, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind,
+};
+use crate::interaction::InteractionState;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
-use crate::widgets::{CaptureRequest, EventCtx, WidgetResponse};
+use crate::widgets::{CaptureRequest, EventCtx, Widget, WidgetResponse};
 
 use super::{OverlayEventResult, OverlayKind, OverlayManager};
+
+/// Converts a [`DispatchOutput`] into a [`WidgetResponse`].
+///
+/// Used by the overlay event routing layer to translate controller dispatch
+/// results into the `WidgetResponse` type that `OverlayEventResult` expects.
+///
+/// Mapping:
+/// - `handled` → `EventResponse::Handled` / `Ignored`
+/// - `PAINT` request → `RequestPaint`
+/// - `REQUEST_FOCUS` → `RequestFocus`
+/// - `SET_ACTIVE` → `CaptureRequest::Acquire`
+/// - `CLEAR_ACTIVE` → `CaptureRequest::Release`
+/// - First emitted action taken (singular slot in `WidgetResponse`)
+pub(in crate::overlay) fn bridge_dispatch_to_response(
+    output: crate::controllers::DispatchOutput,
+    source: WidgetId,
+) -> WidgetResponse {
+    let response = if output.requests.contains(ControllerRequests::PAINT) {
+        EventResponse::RequestPaint
+    } else if output.requests.contains(ControllerRequests::REQUEST_FOCUS) {
+        EventResponse::RequestFocus
+    } else if output.handled {
+        EventResponse::Handled
+    } else {
+        EventResponse::Ignored
+    };
+
+    let capture = if output.requests.contains(ControllerRequests::SET_ACTIVE) {
+        CaptureRequest::Acquire
+    } else if output.requests.contains(ControllerRequests::CLEAR_ACTIVE) {
+        CaptureRequest::Release
+    } else {
+        CaptureRequest::None
+    };
+
+    WidgetResponse {
+        response,
+        action: output.actions.into_iter().next(),
+        capture,
+        source: Some(source),
+    }
+}
+
+/// Attempts controller-based dispatch on a widget.
+///
+/// Returns `Some(response)` if controllers handled the event or emitted
+/// actions. Returns `None` if the widget has no controllers (fast path
+/// during the transition period — `controllers_mut()` returns `&mut []`).
+fn try_controllers(
+    widget: &mut dyn Widget,
+    event: &InputEvent,
+    bounds: crate::geometry::Rect,
+    now: Instant,
+) -> Option<WidgetResponse> {
+    let root_id = widget.id();
+    let controllers = widget.controllers_mut();
+    if controllers.is_empty() {
+        return None;
+    }
+
+    let interaction = InteractionState::default();
+    let args = ControllerCtxArgs {
+        widget_id: root_id,
+        bounds,
+        interaction: &interaction,
+        now,
+    };
+
+    let output = dispatch_to_controllers(controllers, event, EventPhase::Target, &args);
+    if output.handled || !output.actions.is_empty() {
+        Some(bridge_dispatch_to_response(output, root_id))
+    } else {
+        None
+    }
+}
 
 impl OverlayManager {
     /// Routes a mouse event through the overlay stack.
@@ -51,17 +135,28 @@ impl OverlayManager {
             if let Some(overlay) = self.overlays.get_mut(cap_idx) {
                 let id = overlay.id;
                 let root_id = overlay.widget.id();
-                let ctx = EventCtx {
-                    measurer,
-                    bounds: overlay.computed_rect,
-                    is_focused: focused_widget == Some(root_id),
-                    focused_widget,
-                    theme,
-                    interaction: None,
-                    widget_id: None,
-                    frame_requests: None,
-                };
-                let mut response = overlay.widget.handle_mouse(event, &ctx);
+                let input_event = InputEvent::from_mouse_event(event);
+                let mut response = try_controllers(
+                    overlay.widget.as_mut(),
+                    &input_event,
+                    overlay.computed_rect,
+                    now,
+                )
+                .unwrap_or_else(|| {
+                    let ctx = EventCtx {
+                        measurer,
+                        bounds: overlay.computed_rect,
+                        is_focused: focused_widget == Some(root_id),
+                        focused_widget,
+                        theme,
+                        interaction: None,
+                        widget_id: None,
+                        frame_requests: None,
+                    };
+                    let mut r = overlay.widget.handle_mouse(event, &ctx);
+                    r.inject_source(root_id);
+                    r
+                });
                 response.inject_source(root_id);
                 match response.capture {
                     CaptureRequest::Release => self.captured_overlay = None,
@@ -101,7 +196,8 @@ impl OverlayManager {
         // scroll widget from stealing wheel events intended for the popup
         // (e.g. a scrollable dropdown list over the settings panel).
         if matches!(event.kind, MouseEventKind::Scroll(_)) {
-            if let Some(result) = self.route_scroll_to_popup(event, measurer, focused_widget, theme)
+            if let Some(result) =
+                self.route_scroll_to_popup(event, measurer, focused_widget, theme, now)
             {
                 return result;
             }
@@ -111,7 +207,8 @@ impl OverlayManager {
         // Hit test from topmost to bottom.
         for i in (0..self.overlays.len()).rev() {
             if self.overlays[i].computed_rect.contains(event.pos) {
-                let result = self.deliver_to_overlay(i, event, measurer, focused_widget, theme);
+                let result =
+                    self.deliver_to_overlay(i, event, measurer, focused_widget, theme, now);
                 if let OverlayEventResult::Delivered { ref response, .. } = result {
                     if response.capture == CaptureRequest::Acquire {
                         self.captured_overlay = Some(i);
@@ -144,21 +241,28 @@ impl OverlayManager {
     /// Returns `Some(result)` if a popup was found and the event was
     /// delivered. Returns `None` if no popup exists (caller should fall
     /// through to normal hit-test routing).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "internal helper, params mirror caller + now for controller dispatch"
+    )]
     fn route_scroll_to_popup(
         &mut self,
         event: &MouseEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
         focused_widget: Option<WidgetId>,
         theme: &UiTheme,
+        now: Instant,
     ) -> Option<OverlayEventResult> {
         let idx = self
             .overlays
             .iter()
             .rposition(|o| o.kind == OverlayKind::Popup)?;
-        Some(self.deliver_to_overlay(idx, event, measurer, focused_widget, theme))
+        Some(self.deliver_to_overlay(idx, event, measurer, focused_widget, theme, now))
     }
 
     /// Delivers a mouse event to a specific overlay by index.
+    ///
+    /// Tries controller dispatch first; falls back to legacy `handle_mouse()`.
     #[expect(
         clippy::too_many_arguments,
         reason = "internal helper, params mirror caller"
@@ -170,21 +274,33 @@ impl OverlayManager {
         measurer: &dyn crate::widgets::TextMeasurer,
         focused_widget: Option<WidgetId>,
         theme: &UiTheme,
+        now: Instant,
     ) -> OverlayEventResult {
         let overlay = &mut self.overlays[idx];
         let id = overlay.id;
         let root_id = overlay.widget.id();
-        let ctx = EventCtx {
-            measurer,
-            bounds: overlay.computed_rect,
-            is_focused: focused_widget == Some(root_id),
-            focused_widget,
-            theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
-        };
-        let mut response = overlay.widget.handle_mouse(event, &ctx);
+        let input_event = InputEvent::from_mouse_event(event);
+        let mut response = try_controllers(
+            overlay.widget.as_mut(),
+            &input_event,
+            overlay.computed_rect,
+            now,
+        )
+        .unwrap_or_else(|| {
+            let ctx = EventCtx {
+                measurer,
+                bounds: overlay.computed_rect,
+                is_focused: focused_widget == Some(root_id),
+                focused_widget,
+                theme,
+                interaction: None,
+                widget_id: None,
+                frame_requests: None,
+            };
+            let mut r = overlay.widget.handle_mouse(event, &ctx);
+            r.inject_source(root_id);
+            r
+        });
         response.inject_source(root_id);
         if response.response.needs_layout() {
             self.layout_dirty = true;
@@ -201,6 +317,8 @@ impl OverlayManager {
     /// Modal overlays never pass through. The `focused_widget` parameter
     /// indicates which widget currently has keyboard focus (from the app
     /// layer's `FocusManager`).
+    ///
+    /// Tries controller dispatch first; falls back to legacy `handle_key()`.
     #[expect(
         clippy::too_many_arguments,
         reason = "event routing: event, measurer, theme, focus, tree, animator, now"
@@ -231,17 +349,28 @@ impl OverlayManager {
         let id = topmost.id;
         let is_modal = topmost.kind == OverlayKind::Modal;
         let root_id = topmost.widget.id();
-        let ctx = EventCtx {
-            measurer,
-            bounds: topmost.computed_rect,
-            is_focused: focused_widget == Some(root_id),
-            focused_widget,
-            theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
-        };
-        let mut response = topmost.widget.handle_key(event, &ctx);
+        let input_event = InputEvent::from_key_event(event);
+        let mut response = try_controllers(
+            topmost.widget.as_mut(),
+            &input_event,
+            topmost.computed_rect,
+            now,
+        )
+        .unwrap_or_else(|| {
+            let ctx = EventCtx {
+                measurer,
+                bounds: topmost.computed_rect,
+                is_focused: focused_widget == Some(root_id),
+                focused_widget,
+                theme,
+                interaction: None,
+                widget_id: None,
+                frame_requests: None,
+            };
+            let mut r = topmost.widget.handle_key(event, &ctx);
+            r.inject_source(root_id);
+            r
+        });
         response.inject_source(root_id);
         if response.response.needs_layout() {
             self.layout_dirty = true;
@@ -262,6 +391,11 @@ impl OverlayManager {
     /// Tracks which overlay was previously hovered. When the cursor moves
     /// between overlays, sends `HoverEvent::Leave` to the old overlay and
     /// `HoverEvent::Enter` to the new one.
+    ///
+    /// Hover enter/leave are lifecycle events in the new controller model
+    /// (`LifecycleEvent::HotChanged`), not input events. Migration to
+    /// `InteractionManager`-driven hover tracking will happen when overlays
+    /// integrate with the full widget tree (§08.6+).
     pub fn process_hover_event(
         &mut self,
         point: Point,

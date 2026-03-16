@@ -67,8 +67,10 @@ pub(crate) fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu-tests"))]
 mod pipeline_tests;
+#[cfg(test)]
+mod subpixel_blend_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(all(test, feature = "gpu-tests"))]
