@@ -89,7 +89,7 @@ impl Widget for StackWidget {
                 widget_id: None,
                 frame_requests: None,
             };
-            child.draw(&mut child_ctx);
+            child.paint(&mut child_ctx);
         }
     }
 

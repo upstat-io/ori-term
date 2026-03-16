@@ -151,17 +151,32 @@ oriterm_ui/src/widgets/rich_label/, oriterm_ui/src/theme/
 ---
 
 ### Section 08: Widget Trait Overhaul
-**File:** `section-08-widget-trait.md` | **Status:** Not Started
+**File:** `section-08-widget-trait.md` | **Status:** In Progress
 
 ```
 widget_trait, migration, sense, controllers, visual_states, paint
 handle_mouse, handle_hover, handle_key, deprecated, new_trait
-DrawCtx, EventCtx, LayoutCtx, is_hot, is_active, is_focused
+DrawCtx, EventCtx, LayoutCtx, LifecycleCtx, AnimCtx, is_hot, is_active, is_focused
+contexts.rs, framework_orchestration, per_frame_pipeline, DispatchResult
 Button, Toggle, Checkbox, Dropdown, Slider, TextInput, Scroll
-Container, Panel, FormLayout, FormRow, FormSection
+Container, Panel, Stack, FormLayout, FormRow, FormSection, Dialog, Menu
+WindowChrome, WindowControlButton, IdOverrideButton, TabBar
 TerminalGridWidget, TerminalPreviewWidget (oriterm crate)
+TextEditController, TerminalInputController, DropdownKeyController, MenuKeyController
+compose_scene, draw_to_paint, animations_running_removal
+file_size_splits, scroll_rendering, dialog_event_handling, prerequisites
+OverlayManager, event_routing, overlay_modal, DismissOverlay
+EventResponse, WidgetResponse, CaptureRequest, ContainerInputState, DirtyKind
+ControllerRequests, DispatchOutput, VisualStateAnimator, AnimProperty
 oriterm_ui/src/widgets/, oriterm/src/widgets/
 ```
+
+**Subsections:** 08.0 Prerequisites (contexts extraction + file size splits),
+08.1 New Widget Trait, 08.1a Framework Orchestration (per-frame widget pipeline),
+08.1b Custom Controllers (TextEdit, TerminalInput, MenuKey, DropdownKey),
+08.2 Migration Strategy, 08.3 Migrate Interactive Widgets,
+08.4 Migrate Layout Widgets, 08.5 Migrate Passive Widgets,
+08.6 Remove Legacy Event Methods, 08.7 Completion Checklist
 
 ---
 

@@ -4,6 +4,7 @@
 //! `FormLayout` body. The close button emits `WidgetAction::CancelSettings`
 //! (translated from the button's `Clicked` action).
 
+mod event_handling;
 mod id_override_button;
 
 use std::cell::RefCell;
@@ -12,7 +13,7 @@ use std::rc::Rc;
 use crate::color::Color;
 use crate::draw::{RectStyle, Shadow};
 use crate::geometry::{Insets, Point};
-use crate::input::{HoverEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{Align, Direction, LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::widget_id::WidgetId;
 
@@ -369,7 +370,7 @@ impl Widget for SettingsPanel {
                 widget_id: None,
                 frame_requests: None,
             };
-            self.container.draw(&mut child_ctx);
+            self.container.paint(&mut child_ctx);
         }
 
         if self.show_chrome {
@@ -378,97 +379,15 @@ impl Widget for SettingsPanel {
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Overlay mode: header drag support.
-        if self.show_chrome {
-            // Active drag: track movement and emit MoveOverlay deltas.
-            if let Some(origin) = self.drag_origin {
-                return match event.kind {
-                    MouseEventKind::Move => {
-                        let dx = event.pos.x - origin.x;
-                        let dy = event.pos.y - origin.y;
-                        self.drag_origin = Some(event.pos);
-                        WidgetResponse::paint().with_action(WidgetAction::MoveOverlay {
-                            delta_x: dx,
-                            delta_y: dy,
-                        })
-                    }
-                    MouseEventKind::Up(MouseButton::Left) => {
-                        self.drag_origin = None;
-                        WidgetResponse::paint().with_release_capture()
-                    }
-                    _ => WidgetResponse::handled(),
-                };
-            }
-
-            // Start drag on mouse-down in the header drag zone.
-            if matches!(event.kind, MouseEventKind::Down(MouseButton::Left))
-                && Self::is_header_drag_zone(event.pos, ctx.bounds)
-            {
-                self.drag_origin = Some(event.pos);
-                return WidgetResponse::handled().with_capture();
-            }
-        }
-
-        // Delegate non-drag events to children.
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        if let Some(child_node) = layout.children.first() {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: child_node.content_rect,
-                is_focused: false,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            let resp = self.container.handle_mouse(event, &child_ctx);
-            if resp.response.needs_layout() {
-                *self.cached_layout.borrow_mut() = None;
-            }
-            return self.translate_action(resp);
-        }
-        WidgetResponse::handled()
+        self.handle_mouse_impl(event, ctx)
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        if let Some(child_node) = layout.children.first() {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: child_node.content_rect,
-                is_focused: false,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            return self.container.handle_hover(event, &child_ctx);
-        }
-        WidgetResponse::handled()
+        self.handle_hover_impl(event, ctx)
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        if let Some(child_node) = layout.children.first() {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: child_node.content_rect,
-                is_focused: false,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            let resp = self.container.handle_key(event, &child_ctx);
-            if resp.response.needs_layout() {
-                *self.cached_layout.borrow_mut() = None;
-            }
-            return self.translate_action(resp);
-        }
-        WidgetResponse::handled()
+        self.handle_key_impl(event, ctx)
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {

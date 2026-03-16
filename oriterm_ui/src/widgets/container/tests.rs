@@ -296,7 +296,7 @@ fn draw_skips_children_fully_outside_active_clip() {
         frame_requests: None,
     };
 
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
     assert_eq!(draws.get(), 1, "only the visible child should draw");
 }
@@ -336,7 +336,7 @@ fn draw_delegates_to_children() {
         widget_id: None,
         frame_requests: None,
     };
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
     let text_cmds = draw_list
         .commands()
@@ -369,7 +369,7 @@ fn focused_widget_propagates_through_draw() {
         widget_id: None,
         frame_requests: None,
     };
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
     let rect_cmds = draw_list
         .commands()
@@ -1020,7 +1020,7 @@ fn needs_layout_bypasses_cache() {
         widget_id: None,
         frame_requests: None,
     };
-    c.draw(&mut ctx);
+    c.paint(&mut ctx);
     let cmd_count_1 = draw_list.commands().len();
 
     // Second draw with same bounds should use cache (same result).
@@ -1039,7 +1039,7 @@ fn needs_layout_bypasses_cache() {
         widget_id: None,
         frame_requests: None,
     };
-    c.draw(&mut ctx2);
+    c.paint(&mut ctx2);
     assert_eq!(
         draw_list.commands().len(),
         cmd_count_1,
@@ -1073,7 +1073,7 @@ fn needs_layout_bypasses_cache() {
         widget_id: None,
         frame_requests: None,
     };
-    c.draw(&mut ctx3);
+    c.paint(&mut ctx3);
     assert_eq!(
         draw_list.commands().len(),
         cmd_count_1,
@@ -1115,7 +1115,7 @@ fn scene_cache_skips_clean_children() {
         widget_id: None,
         frame_requests: None,
     };
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
     assert_eq!(draws.get(), 2, "both children drawn on first pass");
     assert!(cache.contains_key(id_a));
@@ -1138,7 +1138,7 @@ fn scene_cache_skips_clean_children() {
         widget_id: None,
         frame_requests: None,
     };
-    row.draw(&mut ctx2);
+    row.paint(&mut ctx2);
 
     assert_eq!(
         draws.get(),
@@ -1179,7 +1179,7 @@ fn scene_cache_redraws_invalidated_child() {
         widget_id: None,
         frame_requests: None,
     };
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
     // Invalidate child B only.
     cache.get_mut(id_b).unwrap().invalidate();
@@ -1202,7 +1202,7 @@ fn scene_cache_redraws_invalidated_child() {
         widget_id: None,
         frame_requests: None,
     };
-    row.draw(&mut ctx2);
+    row.paint(&mut ctx2);
 
     assert_eq!(draws_a.get(), 0, "child A should be replayed from cache");
     assert_eq!(
@@ -1246,7 +1246,7 @@ fn scene_cache_miss_on_bounds_mismatch() {
         widget_id: None,
         frame_requests: None,
     };
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
     assert_eq!(draws.get(), 1, "stale bounds should cause cache miss");
 }

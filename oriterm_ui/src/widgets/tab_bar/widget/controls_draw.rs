@@ -57,7 +57,7 @@ impl TabBarWidget {
                 widget_id: None,
                 frame_requests: None,
             };
-            ctrl.draw(&mut child_ctx);
+            ctrl.paint(&mut child_ctx);
         }
     }
 

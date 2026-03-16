@@ -43,7 +43,7 @@ impl Widget for IdOverrideButton {
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        self.inner.draw(ctx);
+        self.inner.paint(ctx);
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {

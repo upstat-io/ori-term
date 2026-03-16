@@ -99,7 +99,7 @@ fn scroll_draws_with_clip() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
     // Should have PushClip and PopClip commands (balanced).
     let push_count = draw_list
@@ -370,7 +370,7 @@ fn scroll_clip_rect_matches_viewport() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
     // The PushClip should use the scroll widget's bounds exactly.
     let clip = draw_list.commands().iter().find_map(|c| match c {
@@ -403,7 +403,7 @@ fn scroll_child_drawn_offset_by_scroll() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
     // The scroll widget clips to bounds (0,0,200,100) then applies a
     // PushTranslate(0, -40) to offset the child content. Children draw at
@@ -457,7 +457,7 @@ fn scroll_draws_scrollbar_when_overflowing() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
     // Should have a Rect command after PopClip (the scrollbar thumb).
     let after_pop = draw_list
@@ -494,7 +494,7 @@ fn scroll_no_scrollbar_when_content_fits() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
     // No Rect commands after PopClip (no scrollbar).
     let after_pop = draw_list
@@ -738,7 +738,7 @@ fn scroll_delegates_checkbox_toggle_through_form_hierarchy() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut draw_ctx);
+    scroll.paint(&mut draw_ctx);
 
     // Now send mouse events. The click target needs to be within the
     // control column of the form row. The label column is on the left,
@@ -840,7 +840,7 @@ fn container_with_scroll_form_click_reaches_checkbox() {
         widget_id: None,
         frame_requests: None,
     };
-    container.draw(&mut draw_ctx);
+    container.paint(&mut draw_ctx);
 
     // Compute layout to find exact scroll widget position for click targeting.
     let layout_ctx = LayoutCtx {
@@ -967,7 +967,7 @@ fn horizontal_scroll_draws_with_clip() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
     // Clip should be balanced.
     let push_count = draw_list
@@ -1017,7 +1017,7 @@ fn scroll_content_exactly_fits_no_scrollbar() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
     // No scrollbar rects after PopClip.
     let after_pop = draw_list
@@ -1115,6 +1115,6 @@ fn scroll_with_scrollbar_style() {
         widget_id: None,
         frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
     assert!(!draw_list.is_empty());
 }

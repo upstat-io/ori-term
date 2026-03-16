@@ -12,6 +12,7 @@ mod control_state;
 mod controls_draw;
 mod drag_draw;
 mod draw;
+mod event_handling;
 
 use std::time::{Duration, Instant};
 
