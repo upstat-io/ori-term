@@ -5,6 +5,8 @@
 //! trees as output.
 
 use crate::geometry::Insets;
+use crate::hit_test_behavior::HitTestBehavior;
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::flex::{Align, Direction, Justify};
@@ -62,6 +64,16 @@ pub struct LayoutBox {
     pub content: BoxContent,
     /// Optional widget ID for hit testing and event routing.
     pub widget_id: Option<WidgetId>,
+    /// Sense flags for hit-test filtering.
+    pub sense: Sense,
+    /// Hit-test behavior relative to children.
+    pub hit_test_behavior: HitTestBehavior,
+    /// Whether children are clipped to this box's bounds.
+    pub clip: bool,
+    /// Whether the widget is disabled (treated as `Sense::none()`).
+    pub disabled: bool,
+    /// Hit area expansion for small targets (pixels).
+    pub interact_radius: f32,
 }
 
 impl LayoutBox {
@@ -81,6 +93,11 @@ impl LayoutBox {
                 intrinsic_height,
             },
             widget_id: None,
+            sense: Sense::all(),
+            hit_test_behavior: HitTestBehavior::default(),
+            clip: false,
+            disabled: false,
+            interact_radius: 0.0,
         }
     }
 
@@ -103,6 +120,11 @@ impl LayoutBox {
                 children,
             },
             widget_id: None,
+            sense: Sense::all(),
+            hit_test_behavior: HitTestBehavior::default(),
+            clip: false,
+            disabled: false,
+            interact_radius: 0.0,
         }
     }
 
@@ -199,6 +221,41 @@ impl LayoutBox {
     #[must_use]
     pub fn with_widget_id(mut self, id: WidgetId) -> Self {
         self.widget_id = Some(id);
+        self
+    }
+
+    /// Sets sense flags for hit-test filtering.
+    #[must_use]
+    pub fn with_sense(mut self, sense: Sense) -> Self {
+        self.sense = sense;
+        self
+    }
+
+    /// Sets hit-test behavior relative to children.
+    #[must_use]
+    pub fn with_hit_test_behavior(mut self, behavior: HitTestBehavior) -> Self {
+        self.hit_test_behavior = behavior;
+        self
+    }
+
+    /// Sets the clip flag (children clipped to this box's bounds).
+    #[must_use]
+    pub fn with_clip(mut self, clip: bool) -> Self {
+        self.clip = clip;
+        self
+    }
+
+    /// Sets the disabled flag.
+    #[must_use]
+    pub fn with_disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Sets the interact radius for expanding hit areas.
+    #[must_use]
+    pub fn with_interact_radius(mut self, radius: f32) -> Self {
+        self.interact_radius = radius;
         self
     }
 }

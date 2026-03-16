@@ -1,7 +1,9 @@
 //! Tests for widget-level hit testing and input routing.
 
 use crate::geometry::{Point, Rect};
+use crate::hit_test_behavior::HitTestBehavior;
 use crate::layout::LayoutNode;
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::event::{
@@ -19,6 +21,11 @@ fn make_node(x: f32, y: f32, w: f32, h: f32, id: Option<WidgetId>) -> LayoutNode
         content_rect: rect,
         children: Vec::new(),
         widget_id: id,
+        sense: Sense::all(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: false,
+        disabled: false,
+        interact_radius: 0.0,
     }
 }
 
@@ -724,4 +731,147 @@ fn modifiers_bitmask_operations() {
 
     assert_eq!(Modifiers::NONE, Modifiers::default());
     assert!(!Modifiers::NONE.shift());
+}
+
+// ── Sense filtering ─────────────────────────────────────────────────
+
+#[test]
+fn hit_test_sense_none_skipped() {
+    let btn_id = WidgetId::next();
+    let label_id = WidgetId::next();
+
+    // Label (Sense::none) sits on top of button (Sense::click).
+    let button = make_node(0.0, 0.0, 100.0, 100.0, Some(btn_id));
+    let mut label = make_node(0.0, 0.0, 100.0, 100.0, Some(label_id));
+    label.sense = Sense::none();
+
+    let root = LayoutNode::new(
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+    )
+    .with_children(vec![button, label]);
+
+    // Label is last child (frontmost) but has Sense::none — button should win.
+    let hit = layout_hit_test(&root, Point::new(50.0, 50.0));
+    assert_eq!(hit, Some(btn_id));
+}
+
+#[test]
+fn hit_test_disabled_widget_skipped() {
+    let btn_id = WidgetId::next();
+    let disabled_id = WidgetId::next();
+
+    let button = make_node(0.0, 0.0, 100.0, 100.0, Some(btn_id));
+    let mut disabled = make_node(0.0, 0.0, 100.0, 100.0, Some(disabled_id));
+    disabled.disabled = true;
+
+    let root = LayoutNode::new(
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+    )
+    .with_children(vec![button, disabled]);
+
+    // Disabled widget on top — button behind should receive the hit.
+    let hit = layout_hit_test(&root, Point::new(50.0, 50.0));
+    assert_eq!(hit, Some(btn_id));
+}
+
+// ── interact_radius ─────────────────────────────────────────────────
+
+#[test]
+fn hit_test_interact_radius_expands_hit_area() {
+    let id = WidgetId::next();
+    let mut node = make_node(50.0, 50.0, 10.0, 10.0, Some(id));
+    node.interact_radius = 5.0;
+
+    let root = LayoutNode::new(
+        Rect::new(0.0, 0.0, 200.0, 200.0),
+        Rect::new(0.0, 0.0, 200.0, 200.0),
+    )
+    .with_children(vec![node]);
+
+    // Point outside the 10x10 widget but within 5px interact radius.
+    let hit = layout_hit_test(&root, Point::new(48.0, 55.0));
+    assert_eq!(hit, Some(id));
+}
+
+#[test]
+fn hit_test_interact_radius_tie_breaking() {
+    let left_id = WidgetId::next();
+    let right_id = WidgetId::next();
+
+    let mut left = make_node(10.0, 10.0, 10.0, 10.0, Some(left_id));
+    left.interact_radius = 10.0;
+    let mut right = make_node(30.0, 10.0, 10.0, 10.0, Some(right_id));
+    right.interact_radius = 10.0;
+
+    let root = LayoutNode::new(
+        Rect::new(0.0, 0.0, 200.0, 200.0),
+        Rect::new(0.0, 0.0, 200.0, 200.0),
+    )
+    .with_children(vec![left, right]);
+
+    // Point closer to left's center (15, 15) than right's center (35, 15).
+    let hit = layout_hit_test(&root, Point::new(20.0, 15.0));
+    assert_eq!(hit, Some(left_id));
+
+    // Point closer to right's center.
+    let hit = layout_hit_test(&root, Point::new(30.0, 15.0));
+    assert_eq!(hit, Some(right_id));
+}
+
+// ── HitTestBehavior ─────────────────────────────────────────────────
+
+use super::hit_test::layout_hit_test_path;
+
+#[test]
+fn hit_test_opaque_blocks_children() {
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+
+    let child = make_node(10.0, 10.0, 80.0, 80.0, Some(child_id));
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.hit_test_behavior = HitTestBehavior::Opaque;
+    parent.children = vec![child];
+
+    // Parent is opaque — child should NOT appear in hit test.
+    let hit = layout_hit_test(&parent, Point::new(50.0, 50.0));
+    assert_eq!(hit, Some(parent_id));
+}
+
+#[test]
+fn hit_test_translucent_includes_parent_and_child() {
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+
+    let child = make_node(10.0, 10.0, 80.0, 80.0, Some(child_id));
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.hit_test_behavior = HitTestBehavior::Translucent;
+    parent.children = vec![child];
+
+    // Translucent — both parent and child should be in the path.
+    let result = layout_hit_test_path(&parent, Point::new(50.0, 50.0));
+    assert_eq!(result.widget_ids(), vec![parent_id, child_id]);
+}
+
+// ── Clip ─────────────────────────────────────────────────────────────
+
+#[test]
+fn hit_test_clip_prevents_child_outside_bounds() {
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+
+    // Child extends beyond parent's rect.
+    let child = make_node(80.0, 0.0, 50.0, 50.0, Some(child_id));
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.clip = true;
+    parent.children = vec![child];
+
+    // Point at (110, 25) is inside child but outside parent's clip.
+    let hit = layout_hit_test(&parent, Point::new(110.0, 25.0));
+    assert_eq!(hit, None);
+
+    // Point at (90, 25) is inside child AND inside parent's clip.
+    let hit = layout_hit_test(&parent, Point::new(90.0, 25.0));
+    assert_eq!(hit, Some(child_id));
 }

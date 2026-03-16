@@ -10,6 +10,7 @@ pub mod lifecycle;
 mod manager;
 mod parent_map;
 
+pub use crate::sense::Sense;
 pub use manager::{InteractionManager, InteractionState};
 pub use parent_map::build_parent_map;
 
