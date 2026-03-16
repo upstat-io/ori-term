@@ -5,6 +5,30 @@ use crate::animation::behavior::AnimBehavior;
 use crate::animation::spring::Spring;
 
 #[test]
+fn set_behavior_enables_animation_on_previously_instant_property() {
+    let now = Instant::now();
+    let mut prop = AnimProperty::new(0.0_f32);
+
+    // No behavior — set is instant.
+    prop.set(1.0, now);
+    assert_eq!(prop.get(now), 1.0);
+    assert!(!prop.is_animating(now));
+
+    // Attach a behavior, then set a new target.
+    prop.set_behavior(Some(AnimBehavior::linear(200)));
+    prop.set(0.0, now);
+    assert!(prop.is_animating(now), "Should animate after set_behavior");
+
+    // At 100ms, linear should give ~0.5.
+    let mid = now + Duration::from_millis(100);
+    let val = prop.get(mid);
+    assert!(
+        (val - 0.5).abs() < 0.05,
+        "Expected ~0.5 at midpoint, got {val}"
+    );
+}
+
+#[test]
 fn anim_property_new_has_no_behavior() {
     let prop = AnimProperty::new(0.5_f32);
     let now = Instant::now();

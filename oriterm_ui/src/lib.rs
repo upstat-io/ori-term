@@ -25,6 +25,7 @@ pub mod sense;
 pub mod surface;
 pub mod text;
 pub mod theme;
+pub mod visual_state;
 pub mod widget_id;
 pub mod widgets;
 pub mod window;

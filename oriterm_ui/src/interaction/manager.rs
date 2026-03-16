@@ -91,6 +91,24 @@ impl InteractionState {
     }
 }
 
+#[cfg(test)]
+impl InteractionState {
+    /// Sets the `hot` flag. For use in unit tests only.
+    pub(crate) fn set_hot(&mut self, hot: bool) {
+        self.hot = hot;
+    }
+
+    /// Sets the `active` flag. For use in unit tests only.
+    pub(crate) fn set_active(&mut self, active: bool) {
+        self.active = active;
+    }
+
+    /// Sets the `focused` flag. For use in unit tests only.
+    pub(crate) fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+}
+
 impl Default for InteractionState {
     fn default() -> Self {
         Self::new()
