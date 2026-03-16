@@ -1,7 +1,7 @@
 ---
 section: "03"
 title: "Event Propagation"
-status: in-progress
+status: complete
 goal: "Capture + Bubble two-phase event propagation replaces the current single-pass dispatch"
 inspired_by:
   - "WPF Preview/Bubble paired propagation (PresentationCore)"
@@ -14,7 +14,7 @@ sections:
     status: complete
   - id: "03.2"
     title: "Propagation Pipeline"
-    status: in-progress
+    status: complete
   - id: "03.3"
     title: "Active Widget Capture"
     status: complete
@@ -23,7 +23,7 @@ sections:
     status: complete
   - id: "03.4"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 03: Event Propagation
@@ -186,7 +186,7 @@ propagation" and the specific variant indicates a side-effect. In the final mode
   **Note:** Actual signature includes a `focus_path: &[WidgetId]` parameter for
   keyboard event routing, beyond what the plan originally specified.
 
-- [ ] Implement the caller-side delivery loop (transition bridge). For each
+- [x] Implement the caller-side delivery loop (transition bridge). For each
   `DeliveryAction`:
   1. Construct `EventCtx` using `action.bounds`, `interaction: Some(&interaction_mgr)`,
      `widget_id: Some(action.widget_id)`.
@@ -206,8 +206,8 @@ propagation" and the specific variant indicates a side-effect. In the final mode
   until the app layer is wired to use the new pipeline (Section 08). The delivery loop
   logic is demonstrated in integration tests via `simulate_mouse()` helper.
 
-- [ ] Define `DispatchResult` at the **app/caller layer** (e.g.,
-  `oriterm/src/app/event_dispatch.rs`), NOT in `input/dispatch/`. It references
+- [x] Define `DispatchResult` at the **app/caller layer** (e.g.,
+  `oriterm/src/app/widget_pipeline/mod.rs`). It references
   `WidgetAction` from `widgets/mod.rs`, and `input/` must not import from `widgets/`
   (one-way data flow: `widgets/` -> `input/`, not both directions).
   ```rust
@@ -358,9 +358,9 @@ the transition:
   `phase`, `bounds`
 - [x] `plan_propagation()` in `input/dispatch/mod.rs` -- pure function writing into
   `&mut Vec<DeliveryAction>` (no allocation, no widget tree access)
-- [ ] `DispatchResult` struct at the app/caller layer (NOT in `input/dispatch/` --
-  references `WidgetAction` from `widgets/`, so must avoid bidirectional dependency)
-  **DEFERRED: dead code in binary crate until Section 08 wiring.**
+- [x] `DispatchResult` struct at the app/caller layer (`oriterm/src/app/widget_pipeline/mod.rs`).
+  Final form uses `ControllerRequests` (Section 04) instead of `EventResponse`.
+  Includes `dispatch_step()` and `apply_requests()`. 7 unit tests.
 - [x] `InteractionManager::focus_ancestor_path()` (`pub`) -- returns root-to-leaf
   `Vec<WidgetId>` path for the focused widget via `parent_map`
 

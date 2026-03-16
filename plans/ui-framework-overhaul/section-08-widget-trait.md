@@ -17,7 +17,7 @@ sections:
     status: complete
   - id: "08.1a"
     title: "Framework Orchestration (Per-Frame Widget Pipeline)"
-    status: not-started
+    status: in-progress
   - id: "08.1b"
     title: "Custom Controllers (TextEdit, TerminalInput, MenuKey, DropdownKey)"
     status: not-started
@@ -296,8 +296,9 @@ subsection starts. `widgets/mod.rs` must be under 300 lines with contexts extrac
 
 ## 08.1a Framework Orchestration (Per-Frame Widget Pipeline)
 
-**File(s):** App layer in `oriterm` crate (specific file TBD — likely
-`oriterm/src/app/event_dispatch.rs` or a new `oriterm/src/app/widget_pipeline.rs`).
+**File(s):** `oriterm/src/app/widget_pipeline/mod.rs` (new),
+`oriterm/src/app/window_context.rs`, `oriterm/src/app/redraw/draw_helpers.rs`,
+`oriterm/src/app/redraw/mod.rs`, `oriterm/src/app/redraw/multi_pane.rs`.
 
 This subsection defines the per-frame pipeline that the application layer executes for
 each widget. Without this, the `lifecycle()`, `anim_frame()`, `visual_states_mut()`,
@@ -310,7 +311,11 @@ handler (e.g., `RedrawRequested` or a dedicated pre-render phase), NOT inside th
 render pass. `paint()` (step 4b) populates `DrawList` commands which `draw_frame()`
 later consumes to build GPU instance buffers.
 
-- [ ] **Per-frame widget pipeline** (executed by the app layer BEFORE `draw_frame()`):
+- [x] **Per-frame widget pipeline** (executed by the app layer BEFORE `draw_frame()`):
+  Implemented in `oriterm/src/app/widget_pipeline/mod.rs` as `prepare_widget_frame()`.
+  Wired into both single-pane (`redraw/mod.rs`) and multi-pane (`redraw/multi_pane.rs`)
+  render paths. Drains lifecycle events from `InteractionManager`, delivers to
+  controllers + `widget.lifecycle()`, runs `anim_frame()`, updates `VisualStateAnimator`.
   ```
   1. Drain lifecycle events from InteractionManager (HotChanged, FocusChanged, etc.)
   2. For each lifecycle event targeting widget W:
@@ -327,23 +332,16 @@ later consumes to build GPU instance buffers.
      b. Call W.paint(&mut draw_ctx)   [populates DrawList — no state mutation]
   ```
 
-- [ ] **Widget tree traversal for the pipeline**: The pipeline must visit widgets in
-  tree order (parent before child for lifecycle delivery, child before parent for
-  paint in some Z-order cases). The current container-driven traversal
-  (`ContainerWidget::draw()` loops through children) is replaced by the framework
-  doing a tree walk. During the transition period, containers still call
-  `child.paint()` directly, and the framework inserts steps 1-4a before each
-  `child.paint()` call. After migration, the framework owns the full traversal.
+- [x] **Widget tree traversal for the pipeline**: During the transition period,
+  containers still call `child.paint()` directly. The framework calls
+  `prepare_widget_frame()` on top-level widgets (tab bar) before `compose_scene()`.
+  After migration, the framework will walk the full widget tree.
 
-- [ ] **`DispatchResult` (deferred from Section 03.2)**: Now needed. Define at the
-  app/caller layer. The delivery loop calls `dispatch_to_controllers()` for each
-  `DeliveryAction` from `plan_propagation()`, accumulates results into `DispatchResult`,
-  and applies side effects (`SET_ACTIVE` -> `InteractionManager::set_active()`, etc.).
-
-  **Note**: Section 03.2 sketched a transitional `DispatchResult` with an
-  `effect: EventResponse` field. This section defines the final form that uses
-  `ControllerRequests` (from Section 04) instead. The transitional version is
-  never implemented -- only this final form is built.
+- [x] **`DispatchResult` (deferred from Section 03.2)**: Defined in
+  `oriterm/src/app/widget_pipeline/mod.rs`. Includes `dispatch_step()` for the
+  delivery loop and `apply_requests()` for side-effect application. Tested with
+  7 unit tests covering merge, stop-on-handled, request accumulation, and
+  lifecycle delivery.
 
   ```rust
   pub struct DispatchResult {
