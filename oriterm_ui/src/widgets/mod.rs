@@ -35,10 +35,12 @@ use std::time::Instant;
 
 use crate::draw::{DrawList, SceneCache};
 use crate::geometry::Rect;
+use crate::hit_test_behavior::HitTestBehavior;
 use crate::icons::ResolvedIcons;
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, MouseEventKind};
 use crate::interaction::InteractionManager;
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
@@ -450,6 +452,24 @@ pub trait Widget {
         } else {
             Vec::new()
         }
+    }
+
+    /// Declares what interactions this widget cares about.
+    ///
+    /// Hit testing skips widgets with `Sense::none()`. The default returns
+    /// `Sense::all()` for backward compatibility (every widget participates
+    /// in hit testing). Override per-widget in Section 08.
+    fn sense(&self) -> Sense {
+        Sense::all()
+    }
+
+    /// Controls how this widget participates in hit testing relative to
+    /// its children.
+    ///
+    /// The default is `DeferToChild`: children are tested first, and the
+    /// widget itself is only hit if no child handles the point.
+    fn hit_test_behavior(&self) -> HitTestBehavior {
+        HitTestBehavior::DeferToChild
     }
 }
 

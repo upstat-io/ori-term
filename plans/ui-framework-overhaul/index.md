@@ -37,20 +37,26 @@ oriterm_ui/src/interaction/, oriterm_ui/src/input/hit_test.rs
 ---
 
 ### Section 02: Sense & Hit Testing
-**File:** `section-02-sense-hit-testing.md` | **Status:** Not Started
+**File:** `section-02-sense-hit-testing.md` | **Status:** Complete
 
 ```
 sense, hit_test, interact_radius, click, drag, hover, none, focusable
 Sense, HitTestBehavior, opaque, translucent, defer_to_child
-layout_hit_test, layout_hit_test_path, widget_at_point, pointer_over, ancestor_chain
+WidgetHitTestResult, HitEntry, widget_ids
+layout_hit_test, layout_hit_test_path, layout_hit_test_clipped
+LayoutNode sense/hit_test_behavior/clip fields
+LayoutBox sense/hit_test_behavior/clip fields, solver propagation
 egui, Flutter, hit testing pipeline
-oriterm_ui/src/input/hit_test.rs
+oriterm_ui/src/sense.rs, oriterm_ui/src/hit_test_behavior.rs
+oriterm_ui/src/input/hit_test.rs, oriterm_ui/src/layout/layout_node.rs
+oriterm_ui/src/layout/layout_box.rs, oriterm_ui/src/layout/solver.rs
 ```
 
 **Note:** `HitTestResult` is NOT a type introduced by this section — it is an existing
 type in `oriterm_ui/src/hit_test/mod.rs` that represents window chrome regions
-(Client/Caption/ResizeBorder). The widget ancestor path produced by `layout_hit_test_path`
-is a plain `Vec<WidgetId>`, not `HitTestResult`.
+(Client/Caption/ResizeBorder). The widget hit test result type is `WidgetHitTestResult`
+(distinct name). `layout_hit_test_path` returns `WidgetHitTestResult` in **root-to-leaf**
+order, matching `update_hot_path`'s expectation.
 
 ---
 

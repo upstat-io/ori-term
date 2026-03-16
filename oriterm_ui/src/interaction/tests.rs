@@ -556,8 +556,8 @@ fn hit_test_path_three_level_nesting() {
         .with_widget_id(root_id);
 
     // Point inside leaf.
-    let path = layout_hit_test_path(&root, Point::new(30.0, 30.0));
-    assert_eq!(path, vec![root_id, mid_id, leaf_id]);
+    let result = layout_hit_test_path(&root, Point::new(30.0, 30.0));
+    assert_eq!(result.widget_ids(), vec![root_id, mid_id, leaf_id]);
 }
 
 #[test]
@@ -566,8 +566,8 @@ fn hit_test_path_miss_returns_empty() {
     let root_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
     let root = LayoutNode::new(root_rect, root_rect).with_widget_id(root_id);
 
-    let path = layout_hit_test_path(&root, Point::new(200.0, 200.0));
-    assert!(path.is_empty());
+    let result = layout_hit_test_path(&root, Point::new(200.0, 200.0));
+    assert!(result.is_empty());
 }
 
 #[test]
@@ -576,8 +576,8 @@ fn hit_test_path_leaf_only() {
     let root_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
     let root = LayoutNode::new(root_rect, root_rect).with_widget_id(root_id);
 
-    let path = layout_hit_test_path(&root, Point::new(50.0, 50.0));
-    assert_eq!(path, vec![root_id]);
+    let result = layout_hit_test_path(&root, Point::new(50.0, 50.0));
+    assert_eq!(result.widget_ids(), vec![root_id]);
 }
 
 #[test]
@@ -592,8 +592,8 @@ fn hit_test_path_skips_nodes_without_widget_id() {
         .with_children(vec![mid_no_id])
         .with_widget_id(root_id);
 
-    let path = layout_hit_test_path(&root, Point::new(50.0, 50.0));
-    assert_eq!(path, vec![root_id, leaf_id]);
+    let result = layout_hit_test_path(&root, Point::new(50.0, 50.0));
+    assert_eq!(result.widget_ids(), vec![root_id, leaf_id]);
 }
 
 #[test]
@@ -610,6 +610,6 @@ fn hit_test_path_frontmost_child_wins() {
         .with_children(vec![back, front])
         .with_widget_id(root_id);
 
-    let path = layout_hit_test_path(&root, Point::new(50.0, 50.0));
-    assert_eq!(path, vec![root_id, front_id]);
+    let result = layout_hit_test_path(&root, Point::new(50.0, 50.0));
+    assert_eq!(result.widget_ids(), vec![root_id, front_id]);
 }

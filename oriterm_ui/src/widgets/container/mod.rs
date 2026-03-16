@@ -298,6 +298,7 @@ impl ContainerWidget {
             .with_width(self.width)
             .with_height(self.height)
             .with_widget_id(self.id)
+            .with_clip(self.clip_children)
     }
 
     /// Finds which direct child owns a `WidgetId` from hit testing.

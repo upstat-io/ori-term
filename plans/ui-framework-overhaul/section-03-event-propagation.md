@@ -129,8 +129,11 @@ double-duty as both propagation control and side-effect request. In the new mode
 Implement the two-phase dispatch.
 
 - [ ] Implement `dispatch_event(root, event, hit_path, interaction_mgr)`:
+  <!-- reviewed: completeness fix — hit_path is a WidgetHitTestResult from Section 02,
+  not a Vec<WidgetId>. Use result.widget_ids() for update_hot_path, and the full HitEntry
+  path for propagation (provides bounds and sense per widget). -->
   ```
-  1. Hit test to get path: [root, ..., parent, target]
+  1. Hit test to get path: WidgetHitTestResult [root, ..., parent, target]
 
   2. CAPTURE phase (root → target):
      for widget in path {

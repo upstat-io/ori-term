@@ -98,6 +98,11 @@ fn solve_leaf(
     let content_rect = rect.inset(layout_box.padding);
     let mut node = LayoutNode::new(rect, content_rect);
     node.widget_id = layout_box.widget_id;
+    node.sense = layout_box.sense;
+    node.hit_test_behavior = layout_box.hit_test_behavior;
+    node.clip = layout_box.clip;
+    node.disabled = layout_box.disabled;
+    node.interact_radius = layout_box.interact_radius;
     node
 }
 
@@ -325,6 +330,11 @@ fn arrange_children(
     let content_rect = rect.inset(layout_box.padding);
     let mut node = LayoutNode::new(rect, content_rect).with_children(child_nodes);
     node.widget_id = layout_box.widget_id;
+    node.sense = layout_box.sense;
+    node.hit_test_behavior = layout_box.hit_test_behavior;
+    node.clip = layout_box.clip;
+    node.disabled = layout_box.disabled;
+    node.interact_radius = layout_box.interact_radius;
     node
 }
 
@@ -351,6 +361,11 @@ fn solve_empty(
     let content_rect = rect.inset(layout_box.padding);
     let mut node = LayoutNode::new(rect, content_rect);
     node.widget_id = layout_box.widget_id;
+    node.sense = layout_box.sense;
+    node.hit_test_behavior = layout_box.hit_test_behavior;
+    node.clip = layout_box.clip;
+    node.disabled = layout_box.disabled;
+    node.interact_radius = layout_box.interact_radius;
     node
 }
 
