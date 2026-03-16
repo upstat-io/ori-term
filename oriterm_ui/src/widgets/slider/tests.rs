@@ -17,6 +17,7 @@ fn slider_ctx() -> EventCtx<'static> {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     }
 }
 

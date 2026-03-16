@@ -293,6 +293,7 @@ fn draw_skips_children_fully_outside_active_clip() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     row.draw(&mut ctx);
@@ -333,6 +334,7 @@ fn draw_delegates_to_children() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     row.draw(&mut ctx);
 
@@ -365,6 +367,7 @@ fn focused_widget_propagates_through_draw() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     row.draw(&mut ctx);
 
@@ -398,6 +401,7 @@ fn delegates_mouse_to_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let down = MouseEvent {
@@ -433,6 +437,7 @@ fn mouse_outside_children_is_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -458,6 +463,7 @@ fn mouse_on_gap_is_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -481,6 +487,7 @@ fn empty_container_mouse_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -507,6 +514,7 @@ fn mouse_capture_delivers_up_to_pressed_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Mouse down on button (x=50 is inside button area).
@@ -552,6 +560,7 @@ fn mouse_capture_fires_clicked_when_released_inside() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Mouse down on button.
@@ -590,6 +599,7 @@ fn capture_released_on_mouse_up() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Mouse down on child 0.
@@ -629,6 +639,7 @@ fn delegates_key_to_focused_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let event = KeyEvent {
@@ -655,6 +666,7 @@ fn empty_container_key_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -681,6 +693,7 @@ fn child_consumes_event_stops_propagation() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let down = MouseEvent {
@@ -753,6 +766,7 @@ fn deeply_nested_mouse_routing() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     let down = MouseEvent {
@@ -838,6 +852,7 @@ fn hover_leave_clears_child_state() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Move over child 0 to set hover.
@@ -870,6 +885,7 @@ fn hover_transition_between_children() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Move to child 0.
@@ -1002,6 +1018,7 @@ fn needs_layout_bypasses_cache() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     c.draw(&mut ctx);
     let cmd_count_1 = draw_list.commands().len();
@@ -1020,6 +1037,7 @@ fn needs_layout_bypasses_cache() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     c.draw(&mut ctx2);
     assert_eq!(
@@ -1053,6 +1071,7 @@ fn needs_layout_bypasses_cache() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     c.draw(&mut ctx3);
     assert_eq!(
@@ -1094,6 +1113,7 @@ fn scene_cache_skips_clean_children() {
         scene_cache: Some(&mut cache),
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     row.draw(&mut ctx);
 
@@ -1116,6 +1136,7 @@ fn scene_cache_skips_clean_children() {
         scene_cache: Some(&mut cache),
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     row.draw(&mut ctx2);
 
@@ -1156,6 +1177,7 @@ fn scene_cache_redraws_invalidated_child() {
         scene_cache: Some(&mut cache),
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     row.draw(&mut ctx);
 
@@ -1178,6 +1200,7 @@ fn scene_cache_redraws_invalidated_child() {
         scene_cache: Some(&mut cache),
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     row.draw(&mut ctx2);
 
@@ -1221,6 +1244,7 @@ fn scene_cache_miss_on_bounds_mismatch() {
         scene_cache: Some(&mut cache),
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     row.draw(&mut ctx);
 

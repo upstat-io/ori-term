@@ -33,6 +33,7 @@ pub mod window_chrome;
 use std::cell::Cell;
 use std::time::Instant;
 
+use crate::animation::FrameRequestFlags;
 use crate::draw::{DrawList, SceneCache};
 use crate::geometry::Rect;
 use crate::hit_test_behavior::HitTestBehavior;
@@ -242,6 +243,12 @@ pub struct DrawCtx<'a> {
     pub interaction: Option<&'a InteractionManager>,
     /// The widget being drawn. `None` at the root level (app frame).
     pub widget_id: Option<WidgetId>,
+    /// Shared animation frame and repaint request flags.
+    ///
+    /// `None` until the animation scheduling system is wired (Section 05.5).
+    /// Widgets use `request_anim_frame()` and `request_paint()` convenience
+    /// methods which are no-ops when this is `None`.
+    pub frame_requests: Option<&'a FrameRequestFlags>,
 }
 
 impl DrawCtx<'_> {
@@ -295,6 +302,26 @@ impl DrawCtx<'_> {
             scene_cache: self.scene_cache.as_deref_mut(),
             interaction: self.interaction,
             widget_id: Some(child_id),
+            frame_requests: self.frame_requests,
+        }
+    }
+
+    /// Request an animation frame on the next vsync.
+    ///
+    /// The widget will receive an `AnimFrameEvent` with the time delta
+    /// since the last frame. No-op until the scheduling system is wired.
+    pub fn request_anim_frame(&self) {
+        if let Some(flags) = self.frame_requests {
+            flags.request_anim_frame();
+        }
+    }
+
+    /// Request a repaint without an animation frame.
+    ///
+    /// No-op until the scheduling system is wired.
+    pub fn request_paint(&self) {
+        if let Some(flags) = self.frame_requests {
+            flags.request_paint();
         }
     }
 }
@@ -320,6 +347,12 @@ pub struct EventCtx<'a> {
     pub interaction: Option<&'a InteractionManager>,
     /// The widget receiving the event. `None` at the root level.
     pub widget_id: Option<WidgetId>,
+    /// Shared animation frame and repaint request flags.
+    ///
+    /// `None` until the animation scheduling system is wired (Section 05.5).
+    /// Widgets use `request_anim_frame()` and `request_paint()` convenience
+    /// methods which are no-ops when this is `None`.
+    pub frame_requests: Option<&'a FrameRequestFlags>,
 }
 
 impl EventCtx<'_> {
@@ -337,6 +370,26 @@ impl EventCtx<'_> {
             theme: self.theme,
             interaction: self.interaction,
             widget_id: child_id,
+            frame_requests: self.frame_requests,
+        }
+    }
+
+    /// Request an animation frame on the next vsync.
+    ///
+    /// The widget will receive an `AnimFrameEvent` with the time delta
+    /// since the last frame. No-op until the scheduling system is wired.
+    pub fn request_anim_frame(&self) {
+        if let Some(flags) = self.frame_requests {
+            flags.request_anim_frame();
+        }
+    }
+
+    /// Request a repaint without an animation frame.
+    ///
+    /// No-op until the scheduling system is wired.
+    pub fn request_paint(&self) {
+        if let Some(flags) = self.frame_requests {
+            flags.request_paint();
         }
     }
 

@@ -4,15 +4,27 @@
 //! [`Animation`] (raw `f32` interpolation), and [`AnimatedValue`] (widget-embeddable
 //! wrapper that manages animation lifecycle).
 
+pub mod anim_frame;
+pub mod behavior;
 pub mod builder;
 pub mod delegate;
 pub mod group;
+pub mod property;
+pub mod scheduler;
 pub mod sequence;
+pub mod spring;
+pub mod transaction;
 
+pub use anim_frame::{AnimFrameEvent, FrameRequestFlags};
+pub use behavior::{AnimBehavior, AnimCurve};
 pub use builder::AnimationBuilder;
 pub use delegate::{AnimatableProperty, AnimationDelegate};
 pub use group::{AnimationGroup, PropertyAnimation, TransitionTarget};
+pub use property::AnimProperty;
+pub use scheduler::RenderScheduler;
 pub use sequence::{AnimationSequence, AnimationStep, SequenceState};
+pub use spring::Spring;
+pub use transaction::{Transaction, with_transaction};
 
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -73,6 +85,17 @@ impl Lerp for crate::geometry::Transform2D {
             idx += 1;
         }
         Self::from_matrix(result)
+    }
+}
+
+impl Lerp for crate::geometry::Insets {
+    fn lerp(a: Self, b: Self, t: f32) -> Self {
+        Self {
+            top: f32::lerp(a.top, b.top, t),
+            right: f32::lerp(a.right, b.right, t),
+            bottom: f32::lerp(a.bottom, b.bottom, t),
+            left: f32::lerp(a.left, b.left, t),
+        }
     }
 }
 

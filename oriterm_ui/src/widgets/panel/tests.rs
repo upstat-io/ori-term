@@ -69,6 +69,7 @@ fn panel_draws_background_rect() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     panel.draw(&mut ctx);
 
@@ -135,6 +136,7 @@ fn panel_delegates_key_to_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -172,6 +174,7 @@ fn panel_delegates_mouse_to_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Click inside the child area (accounting for 12px padding).
@@ -213,6 +216,7 @@ fn panel_mouse_outside_child_ignored() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Click in the panel's padding area (outside child bounds).
@@ -242,6 +246,7 @@ fn panel_delegates_hover_to_child() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Hover should delegate to child.
@@ -273,6 +278,7 @@ fn panel_with_bg() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     panel.draw(&mut ctx);
 
@@ -308,6 +314,7 @@ fn panel_with_corner_radius() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     panel.draw(&mut ctx);
 
@@ -366,6 +373,7 @@ fn panel_with_shadow() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     panel.draw(&mut ctx);
 

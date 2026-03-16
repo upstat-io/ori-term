@@ -275,6 +275,7 @@ impl OverlayManager {
             scene_cache: None,
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
         overlay.widget.draw(&mut overlay_ctx);
 

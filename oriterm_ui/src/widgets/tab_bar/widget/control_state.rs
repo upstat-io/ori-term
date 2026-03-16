@@ -52,6 +52,7 @@ impl TabBarWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
             true
@@ -69,6 +70,7 @@ impl TabBarWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             self.controls[new].handle_hover(HoverEvent::Enter, &child_ctx);
             true
@@ -96,6 +98,7 @@ impl TabBarWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
         }
@@ -122,6 +125,7 @@ impl TabBarWidget {
                         theme: ctx.theme,
                         interaction: None,
                         widget_id: None,
+                        frame_requests: None,
                     };
                     return self.controls[i].handle_mouse(event, &child_ctx);
                 }
@@ -138,6 +142,7 @@ impl TabBarWidget {
                             theme: ctx.theme,
                             interaction: None,
                             widget_id: None,
+                            frame_requests: None,
                         };
                         return self.controls[i].handle_mouse(event, &child_ctx);
                     }

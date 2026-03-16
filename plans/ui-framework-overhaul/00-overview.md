@@ -64,8 +64,8 @@ is the first consumer, but the framework must be general-purpose.
                      ┌─────────────────▼───────────────────────┐
                      │         Animation Engine                 │
                      │                                         │
-                     │  AnimFrame(delta) timing pulses          │
-                     │  Property Behaviors (implicit anim)      │
+                     │  AnimFrameEvent timing pulses             │
+                     │  AnimBehavior / AnimProperty (implicit)   │
                      │  Transactions (animation metadata)       │
                      │  Spring physics                          │
                      │  request_anim_frame() / request_paint()  │
@@ -142,7 +142,7 @@ State Manager resolves which state is active and transitions between them.
   `static` icon path constants.
 - **`BoxContent` enum** (layout/layout_box.rs): Section 07 adds `Grid` variant. The solver
   match in `solver.rs` must handle it.
-- **`AnimCurve` enum** (animation/behavior.rs): Section 05 introduces `AnimCurve` wrapping
+- **`AnimCurve` enum** (animation/behavior/mod.rs): Section 05 introduces `AnimCurve` wrapping
   `Easing` and `Spring` as separate variants. `AnimBehavior` uses `AnimCurve` instead of
   separate `duration` + `easing` fields. The existing `Easing` enum is unchanged.
 - **`Widget` trait** (widgets/mod.rs): Section 08 adds 7+ new methods and removes 3. This is
@@ -239,14 +239,19 @@ declared as they are created:
 - Section 04: `pub mod controllers;`
 - Section 06: `pub mod visual_state;`
 
+**Module declarations** (`oriterm_ui/src/animation/mod.rs`): Section 05 adds submodules
+within the existing `animation` module (no `lib.rs` change needed):
+- Section 05: `pub mod anim_frame;`, `pub mod behavior;`, `pub mod property;`,
+  `pub mod spring;`, `pub mod transaction;`, `pub mod scheduler;`
+
 ## Quick Reference
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | Interaction State System | `section-01-interaction-state.md` | Not Started |
-| 02 | Sense & Hit Testing | `section-02-sense-hit-testing.md` | Not Started |
-| 03 | Event Propagation | `section-03-event-propagation.md` | Not Started |
-| 04 | Event Controllers | `section-04-event-controllers.md` | Not Started |
+| 01 | Interaction State System | `section-01-interaction-state.md` | In Progress |
+| 02 | Sense & Hit Testing | `section-02-sense-hit-testing.md` | Complete |
+| 03 | Event Propagation | `section-03-event-propagation.md` | In Progress |
+| 04 | Event Controllers | `section-04-event-controllers.md` | In Progress |
 | 05 | Animation Engine | `section-05-animation-engine.md` | Not Started |
 | 06 | Visual State Manager | `section-06-visual-state-manager.md` | Not Started |
 | 07 | Layout Extensions & Theme | `section-07-layout-theme.md` | Not Started |

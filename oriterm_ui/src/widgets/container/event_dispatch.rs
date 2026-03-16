@@ -89,6 +89,7 @@ impl ContainerWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let mut resp = child.handle_mouse(event, &child_ctx);
             resp.inject_source(child.id());
@@ -143,6 +144,7 @@ impl ContainerWidget {
                     theme: ctx.theme,
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 let resp = child.handle_hover(HoverEvent::Leave, &child_ctx);
                 if resp.response.is_handled() {
@@ -165,6 +167,7 @@ impl ContainerWidget {
                     theme: ctx.theme,
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 let resp = child.handle_hover(HoverEvent::Enter, &child_ctx);
                 if resp.response.is_handled() {
@@ -193,6 +196,7 @@ impl ContainerWidget {
                     theme: ctx.theme,
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 let mut resp = child.handle_key(event, &child_ctx);
                 if resp.response.is_handled() {

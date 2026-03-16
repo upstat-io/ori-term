@@ -19,6 +19,7 @@ fn event_ctx() -> EventCtx<'static> {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     }
 }
 
@@ -392,6 +393,7 @@ fn toggle_draw_signals_animations_running() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -424,6 +426,7 @@ fn toggle_draw_no_animation_signal_when_idle() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -458,6 +461,7 @@ fn toggle_draws_thumb_at_correct_position() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     t.draw(&mut draw_ctx);
 
@@ -509,6 +513,7 @@ fn toggle_draws_thumb_at_off_position() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     t.draw(&mut draw_ctx);
 

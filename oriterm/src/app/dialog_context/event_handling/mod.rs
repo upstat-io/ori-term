@@ -251,6 +251,7 @@ impl App {
             theme: &ui_theme,
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
 
         log::trace!(
@@ -294,6 +295,7 @@ impl App {
                 theme: &ui_theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let resp = ctx
                 .content

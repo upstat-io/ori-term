@@ -284,6 +284,7 @@ impl DialogWidget {
                     theme: ctx.theme,
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 button.handle_hover(HoverEvent::Leave, &btn_ctx);
             }
@@ -301,6 +302,7 @@ impl DialogWidget {
                     theme: ctx.theme,
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 button.handle_hover(HoverEvent::Enter, &btn_ctx);
             }
@@ -327,6 +329,7 @@ impl DialogWidget {
                         theme: ctx.theme,
                         interaction: None,
                         widget_id: None,
+                        frame_requests: None,
                     };
                     button.handle_hover(HoverEvent::Leave, &btn_ctx);
                 }
@@ -425,6 +428,7 @@ impl Widget for DialogWidget {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let response = button.handle_mouse(event, &btn_ctx);
             if let Some(WidgetAction::Clicked(id)) = &response.action {

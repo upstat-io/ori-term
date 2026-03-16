@@ -89,6 +89,7 @@ fn click_on_header_toggles_expanded() {
         theme: &super::super::tests::TEST_THEME,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
 
     // Click on header (y < HEADER_HEIGHT=28).
@@ -147,6 +148,7 @@ fn draw_produces_header_text() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     section.draw(&mut ctx);
 
@@ -182,6 +184,7 @@ fn draw_skips_rows_outside_active_clip() {
         scene_cache: None,
         interaction: None,
         widget_id: None,
+        frame_requests: None,
     };
     section.draw(&mut ctx);
 

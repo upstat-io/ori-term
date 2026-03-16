@@ -418,6 +418,7 @@ impl Widget for ContainerWidget {
                     scene_cache: ctx.scene_cache.as_deref_mut(),
                     interaction: None,
                     widget_id: None,
+                    frame_requests: None,
                 };
                 child.draw(&mut child_ctx);
                 Self::store_in_cache(ctx, child_id, bounds, start, log_start);
@@ -453,6 +454,7 @@ impl Widget for ContainerWidget {
                             theme: ctx.theme,
                             interaction: None,
                             widget_id: None,
+                            frame_requests: None,
                         };
                         child.handle_hover(HoverEvent::Leave, &child_ctx);
                     }

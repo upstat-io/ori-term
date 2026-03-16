@@ -286,6 +286,7 @@ impl App {
             theme: &self.ui_theme,
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
         let resp = ctx
             .content
@@ -326,6 +327,7 @@ impl App {
             theme: &ui_theme,
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
         let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
         if matches!(
@@ -348,6 +350,7 @@ impl App {
             theme: &ui_theme,
             interaction: None,
             widget_id: None,
+            frame_requests: None,
         };
         let resp = ctx
             .content

@@ -367,6 +367,7 @@ impl Widget for SettingsPanel {
                 scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             self.container.draw(&mut child_ctx);
         }
@@ -419,6 +420,7 @@ impl Widget for SettingsPanel {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let resp = self.container.handle_mouse(event, &child_ctx);
             if resp.response.needs_layout() {
@@ -440,6 +442,7 @@ impl Widget for SettingsPanel {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             return self.container.handle_hover(event, &child_ctx);
         }
@@ -457,6 +460,7 @@ impl Widget for SettingsPanel {
                 theme: ctx.theme,
                 interaction: None,
                 widget_id: None,
+                frame_requests: None,
             };
             let resp = self.container.handle_key(event, &child_ctx);
             if resp.response.needs_layout() {
