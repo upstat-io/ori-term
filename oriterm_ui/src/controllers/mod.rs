@@ -7,15 +7,21 @@
 
 mod click;
 mod drag;
+mod dropdown_key;
 mod focus;
 mod hover;
+mod menu_key;
 mod scroll;
+mod text_edit;
 
 pub use click::ClickController;
 pub use drag::DragController;
+pub use dropdown_key::DropdownKeyController;
 pub use focus::FocusController;
 pub use hover::HoverController;
+pub use menu_key::MenuKeyController;
 pub use scroll::ScrollController;
+pub use text_edit::TextEditController;
 
 use std::time::Instant;
 

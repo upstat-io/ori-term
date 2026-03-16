@@ -20,7 +20,7 @@ sections:
     status: complete
   - id: "08.1b"
     title: "Custom Controllers (TextEdit, TerminalInput, MenuKey, DropdownKey)"
-    status: not-started
+    status: complete
   - id: "08.2"
     title: "Migration Strategy"
     status: not-started
@@ -376,7 +376,7 @@ the migration waves that depend on them.
 **IMPORTANT**: These are all directory modules per test-organization.md (each `mod.rs`
 gets a sibling `tests.rs`).
 
-- [ ] **`TextEditController`** — `oriterm_ui/src/controllers/text_edit/mod.rs` (~120 lines)
+- [x] **`TextEditController`** — `oriterm_ui/src/controllers/text_edit/mod.rs` (~120 lines)
   + `controllers/text_edit/tests.rs`
   - Handles: cursor movement (Left/Right/Home/End), text selection (Shift+arrow),
     clipboard (Ctrl+C/V/X), character input, Backspace/Delete.
@@ -388,7 +388,7 @@ gets a sibling `tests.rs`).
     `controllers/mod.rs`.
   - File size projection: ~120 lines. Well under 500-line limit.
 
-- [ ] **`DropdownKeyController`** — `oriterm_ui/src/controllers/dropdown_key/mod.rs` (~60 lines)
+- [x] **`DropdownKeyController`** — `oriterm_ui/src/controllers/dropdown_key/mod.rs` (~60 lines)
   + `controllers/dropdown_key/tests.rs`
   - Handles: Up/Down arrow (change selection), Enter (confirm), Escape (close dropdown).
   - Phase: `EventPhase::Bubble`.
@@ -399,7 +399,7 @@ gets a sibling `tests.rs`).
   - Emits `WidgetAction::Selected(WidgetId, usize)` on Enter confirm.
   - **Dependency**: Used by `DropdownWidget` (Wave 1, 08.3).
 
-- [ ] **`MenuKeyController`** — `oriterm_ui/src/controllers/menu_key/mod.rs` (~60 lines)
+- [x] **`MenuKeyController`** — `oriterm_ui/src/controllers/menu_key/mod.rs` (~60 lines)
   + `controllers/menu_key/tests.rs`
   - Handles: ArrowUp/Down (navigate items), Enter/Space (select), Escape (dismiss).
   - Phase: `EventPhase::Bubble`.
@@ -407,7 +407,7 @@ gets a sibling `tests.rs`).
     `WidgetAction::DismissOverlay` on Escape.
   - **Dependency**: Used by `MenuWidget` (Wave 2, 08.4).
 
-- [ ] **`TerminalInputController`** — `oriterm/src/widgets/terminal_grid/input_controller.rs`
+- [x] **`TerminalInputController`** — `oriterm/src/widgets/terminal_grid/input_controller.rs`
   (~30 lines) (NOTE: this lives in the `oriterm` binary crate, NOT `oriterm_ui`,
   because it is tightly coupled to terminal grid behavior)
   - "Claim all" controller: returns `true` (consumed) for ALL `MouseDown`, `MouseUp`,
@@ -419,7 +419,7 @@ gets a sibling `tests.rs`).
     one `match` that returns `true`).
   - **Dependency**: Used by `TerminalGridWidget` (Wave 4, 08.2).
 
-- [ ] `./build-all.sh` green, `./clippy-all.sh` green, `./test-all.sh` green
+- [x] `./build-all.sh` green, `./clippy-all.sh` green, `./test-all.sh` green
 
 ---
 
@@ -851,11 +851,11 @@ and does not need migration. WindowChrome widgets are migrated in Wave 2b (Secti
   `draw()` to `paint()`, remove stub event handlers)
 
 ### Custom Controllers (08.1b)
-- [ ] `TextEditController` in `controllers/text_edit/` with `tests.rs`
-- [ ] `DropdownKeyController` in `controllers/dropdown_key/` with `tests.rs`
-- [ ] `MenuKeyController` in `controllers/menu_key/` with `tests.rs`
-- [ ] `TerminalInputController` in `oriterm/src/widgets/terminal_grid/input_controller.rs`
-- [ ] All custom controllers registered in `controllers/mod.rs` (except TerminalInputController)
+- [x] `TextEditController` in `controllers/text_edit/` with `tests.rs`
+- [x] `DropdownKeyController` in `controllers/dropdown_key/` with `tests.rs`
+- [x] `MenuKeyController` in `controllers/menu_key/` with `tests.rs`
+- [x] `TerminalInputController` in `oriterm/src/widgets/terminal_grid/input_controller.rs`
+- [x] All custom controllers registered in `controllers/mod.rs` (except TerminalInputController)
 
 ### Framework & Integration (08.1a)
 - [ ] Framework orchestration pipeline implemented: lifecycle delivery,
