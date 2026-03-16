@@ -12,31 +12,71 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::geometry::{Insets, Rect};
-use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, layout_hit_test};
+use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent};
 use crate::invalidation::{DirtyKind, InvalidationTracker};
-use crate::layout::{Align, Direction, Justify, LayoutBox, LayoutNode, SizeSpec, compute_layout};
-use crate::theme::UiTheme;
+use crate::layout::{Align, Direction, GridColumns, Justify, LayoutBox, LayoutNode, SizeSpec};
 use crate::widget_id::WidgetId;
 
 use super::{DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction, WidgetResponse};
 
 mod event_dispatch;
+mod layout_build;
 
-/// A widget that composes other widgets in a flex layout.
+/// Layout mode for a container — flex or grid.
+#[derive(Debug, Clone)]
+enum LayoutMode {
+    /// Flex layout along a direction with alignment and justification.
+    Flex {
+        direction: Direction,
+        align: Align,
+        justify: Justify,
+        gap: f32,
+    },
+    /// Grid layout with column specification and gaps.
+    Grid {
+        columns: GridColumns,
+        row_gap: f32,
+        column_gap: f32,
+    },
+}
+
+impl LayoutMode {
+    /// Builds a `LayoutBox` from child boxes using this layout mode.
+    fn build(&self, children: Vec<LayoutBox>) -> LayoutBox {
+        match self {
+            Self::Flex {
+                direction,
+                align,
+                justify,
+                gap,
+            } => LayoutBox::flex(*direction, children)
+                .with_gap(*gap)
+                .with_align(*align)
+                .with_justify(*justify),
+            Self::Grid {
+                columns,
+                row_gap,
+                column_gap,
+            } => LayoutBox::grid(*columns, children)
+                .with_row_gap(*row_gap)
+                .with_column_gap(*column_gap),
+        }
+    }
+}
+
+/// A widget that composes other widgets in a flex or grid layout.
 ///
 /// Arranges children along a main axis (horizontal for Row, vertical for
 /// Column) with configurable gap, alignment, justification, padding, and
-/// explicit sizing. Supports mouse capture so drag events stay on the
-/// pressed child.
+/// explicit sizing. Alternatively arranges children in a grid with
+/// configurable column count and gaps. Supports mouse capture so drag
+/// events stay on the pressed child.
 pub struct ContainerWidget {
     id: WidgetId,
     children: Vec<Box<dyn Widget>>,
 
     // Layout configuration.
-    direction: Direction,
-    align: Align,
-    justify: Justify,
-    gap: f32,
+    layout_mode: LayoutMode,
     padding: Insets,
     width: SizeSpec,
     height: SizeSpec,
@@ -73,10 +113,33 @@ impl ContainerWidget {
         Self {
             id: WidgetId::next(),
             children: Vec::new(),
-            direction,
-            align: Align::Start,
-            justify: Justify::Start,
-            gap: 0.0,
+            layout_mode: LayoutMode::Flex {
+                direction,
+                align: Align::Start,
+                justify: Justify::Start,
+                gap: 0.0,
+            },
+            padding: Insets::ZERO,
+            width: SizeSpec::Hug,
+            height: SizeSpec::Hug,
+            clip_children: false,
+            input_state: ContainerInputState::default(),
+            needs_layout: true,
+            needs_paint: true,
+            cached_layout: RefCell::new(None),
+        }
+    }
+
+    /// Creates a grid container with the given column spec and gap.
+    pub fn grid(columns: GridColumns, gap: f32) -> Self {
+        Self {
+            id: WidgetId::next(),
+            children: Vec::new(),
+            layout_mode: LayoutMode::Grid {
+                columns,
+                row_gap: gap,
+                column_gap: gap,
+            },
             padding: Insets::ZERO,
             width: SizeSpec::Hug,
             height: SizeSpec::Hug,
@@ -216,7 +279,9 @@ impl ContainerWidget {
     /// Sets the gap between children along the main axis.
     #[must_use]
     pub fn with_gap(mut self, gap: f32) -> Self {
-        self.gap = gap;
+        if let LayoutMode::Flex { gap: ref mut g, .. } = self.layout_mode {
+            *g = gap;
+        }
         self
     }
 
@@ -227,17 +292,27 @@ impl ContainerWidget {
         self
     }
 
-    /// Sets cross-axis alignment.
+    /// Sets cross-axis alignment (only meaningful for flex containers).
     #[must_use]
     pub fn with_align(mut self, align: Align) -> Self {
-        self.align = align;
+        if let LayoutMode::Flex {
+            align: ref mut a, ..
+        } = self.layout_mode
+        {
+            *a = align;
+        }
         self
     }
 
-    /// Sets main-axis justification.
+    /// Sets main-axis justification (only meaningful for flex containers).
     #[must_use]
     pub fn with_justify(mut self, justify: Justify) -> Self {
-        self.justify = justify;
+        if let LayoutMode::Flex {
+            justify: ref mut j, ..
+        } = self.layout_mode
+        {
+            *j = justify;
+        }
         self
     }
 
@@ -263,104 +338,7 @@ impl ContainerWidget {
     }
 }
 
-// Layout helpers.
-impl ContainerWidget {
-    /// Returns cached layout if bounds match and layout is clean, otherwise recomputes.
-    fn get_or_compute_layout(
-        &self,
-        measurer: &dyn TextMeasurer,
-        theme: &UiTheme,
-        bounds: Rect,
-    ) -> Rc<LayoutNode> {
-        if !self.needs_layout {
-            let cached = self.cached_layout.borrow();
-            if let Some((ref cb, ref node)) = *cached {
-                if *cb == bounds {
-                    return Rc::clone(node);
-                }
-            }
-        }
-        let ctx = LayoutCtx { measurer, theme };
-        let layout_box = self.build_layout_box(&ctx);
-        let node = Rc::new(compute_layout(&layout_box, bounds));
-        *self.cached_layout.borrow_mut() = Some((bounds, Rc::clone(&node)));
-        node
-    }
-
-    /// Builds the `LayoutBox` descriptor tree from children.
-    fn build_layout_box(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        let child_boxes: Vec<LayoutBox> = self.children.iter().map(|c| c.layout(ctx)).collect();
-        LayoutBox::flex(self.direction, child_boxes)
-            .with_gap(self.gap)
-            .with_align(self.align)
-            .with_justify(self.justify)
-            .with_padding(self.padding)
-            .with_width(self.width)
-            .with_height(self.height)
-            .with_widget_id(self.id)
-            .with_clip(self.clip_children)
-    }
-
-    /// Finds which direct child owns a `WidgetId` from hit testing.
-    fn find_child_index(&self, target: WidgetId) -> Option<usize> {
-        self.children.iter().position(|c| c.id() == target)
-    }
-
-    /// Finds the direct child widget under a point via hit testing.
-    fn hit_test_children(&self, layout: &LayoutNode, pos: crate::geometry::Point) -> Option<usize> {
-        let target_id = layout_hit_test(layout, pos)?;
-        if target_id == self.id {
-            return None;
-        }
-        // Check direct children first.
-        if let Some(idx) = self.find_child_index(target_id) {
-            return Some(idx);
-        }
-        // The target is nested inside a child — find which child contains it.
-        for (idx, child_node) in layout.children.iter().enumerate() {
-            if child_node.rect.contains(pos) {
-                return Some(idx);
-            }
-        }
-        None
-    }
-
-    // Scene cache helpers
-
-    /// Tries to replay cached draw commands for a child widget.
-    ///
-    /// Returns `true` if the cache hit and commands were replayed.
-    fn try_replay_cached(ctx: &mut DrawCtx<'_>, child_id: WidgetId, bounds: Rect) -> bool {
-        let cache = match ctx.scene_cache.as_ref() {
-            Some(c) => c,
-            None => return false,
-        };
-        let node = match cache.get(child_id) {
-            Some(n) if n.is_valid() && n.bounds() == bounds => n,
-            _ => return false,
-        };
-        ctx.draw_list.extend_from_cache(node.commands());
-        true
-    }
-
-    /// Stores a child's draw output in the scene cache for future reuse.
-    ///
-    /// `log_start` is the store-log position captured before the child's
-    /// draw. All IDs stored between then and now are recorded as contained
-    /// descendants of this child's cache entry.
-    fn store_in_cache(
-        ctx: &mut DrawCtx<'_>,
-        child_id: WidgetId,
-        bounds: Rect,
-        start: usize,
-        log_start: usize,
-    ) {
-        if let Some(cache) = ctx.scene_cache.as_deref_mut() {
-            let commands = ctx.draw_list.commands()[start..].to_vec();
-            cache.store(child_id, commands, bounds, log_start);
-        }
-    }
-}
+// Layout helpers live in `layout_build.rs`.
 
 impl Widget for ContainerWidget {
     fn id(&self) -> WidgetId {

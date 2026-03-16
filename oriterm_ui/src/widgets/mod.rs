@@ -18,6 +18,7 @@ pub mod form_section;
 pub mod label;
 pub mod menu;
 pub mod panel;
+pub mod rich_label;
 pub mod scroll;
 pub mod separator;
 pub mod settings_panel;

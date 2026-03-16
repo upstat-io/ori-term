@@ -56,7 +56,7 @@ impl TextInputStyle {
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
             fg: theme.fg_primary,
-            bg: theme.bg_primary,
+            bg: theme.bg_input,
             border_color: theme.border,
             focus_border_color: theme.accent,
             border_width: 1.0,

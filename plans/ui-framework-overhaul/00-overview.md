@@ -141,7 +141,9 @@ State Manager resolves which state is active and transitions between them.
   The test file (`icons/tests.rs`) must be updated alongside the match arm and any new
   `static` icon path constants.
 - **`BoxContent` enum** (layout/layout_box.rs): Section 07 adds `Grid` variant. The solver
-  match in `solver.rs` must handle it.
+  match in `solver.rs` must handle it. Additionally, `layout/tests.rs` `walk_invariant()`
+  helper (line 879) uses `if let BoxContent::Flex` to recurse — must be updated to also
+  handle `BoxContent::Grid` children.
 - **`AnimCurve` enum** (animation/behavior/mod.rs): Section 05 introduces `AnimCurve` wrapping
   `Easing` and `Spring` as separate variants. `AnimBehavior` uses `AnimCurve` instead of
   separate `duration` + `easing` fields. The existing `Easing` enum is unchanged.
@@ -252,9 +254,9 @@ within the existing `animation` module (no `lib.rs` change needed):
 | 02 | Sense & Hit Testing | `section-02-sense-hit-testing.md` | Complete |
 | 03 | Event Propagation | `section-03-event-propagation.md` | In Progress |
 | 04 | Event Controllers | `section-04-event-controllers.md` | In Progress |
-| 05 | Animation Engine | `section-05-animation-engine.md` | Not Started |
-| 06 | Visual State Manager | `section-06-visual-state-manager.md` | Not Started |
-| 07 | Layout Extensions & Theme | `section-07-layout-theme.md` | Not Started |
+| 05 | Animation Engine | `section-05-animation-engine.md` | In Progress |
+| 06 | Visual State Manager | `section-06-visual-state-manager.md` | Complete |
+| 07 | Layout Extensions & Theme | `section-07-layout-theme.md` | Complete |
 | 08 | Widget Trait Overhaul | `section-08-widget-trait.md` | Not Started |
 | 09 | New Widget Library | `section-09-new-widgets.md` | Not Started |
 | 10 | Settings Panel Rebuild | `section-10-settings-rebuild.md` | Not Started |

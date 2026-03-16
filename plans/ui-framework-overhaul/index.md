@@ -134,14 +134,18 @@ oriterm_ui/src/visual_state/
 ---
 
 ### Section 07: Layout Extensions & Theme
-**File:** `section-07-layout-theme.md` | **Status:** Not Started
+**File:** `section-07-layout-theme.md` | **Status:** Complete
 
 ```
-grid_layout, auto_fill, grid_columns, grid_gap, rich_text, styled_span
-number_input, range_slider, page_container, sidebar_layout
-UiTheme, bg_input, bg_card, text_faint, accent_bg
-theme_tokens, style_resolution, widget_style
-oriterm_ui/src/layout/, oriterm_ui/src/theme/
+grid_layout, auto_fill, GridColumns, Fixed, AutoFill, BoxContent::Grid
+grid_solver, solve_grid, row_gap, column_gap, LayoutMode
+RichLabel, TextSpan, rich_text, multi_span, push_text
+UiTheme, bg_input, bg_card, bg_card_hover, fg_faint
+accent_bg, accent_bg_strong, accent_hover, danger, success
+from_theme, theme_tokens, const_fn, light_differs_from_dark
+walk_invariant, container/layout_build.rs
+oriterm_ui/src/layout/, oriterm_ui/src/layout/grid_solver.rs
+oriterm_ui/src/widgets/rich_label/, oriterm_ui/src/theme/
 ```
 
 ---

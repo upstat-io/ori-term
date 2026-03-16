@@ -9,6 +9,7 @@ use crate::geometry::Rect;
 
 use super::constraints::LayoutConstraints;
 use super::flex::{Align, Direction, Justify};
+use super::grid_solver;
 use super::layout_box::{BoxContent, LayoutBox};
 use super::layout_node::LayoutNode;
 use super::size_spec::SizeSpec;
@@ -23,7 +24,7 @@ pub fn compute_layout(root: &LayoutBox, viewport: Rect) -> LayoutNode {
 }
 
 /// Recursively solves layout for a single box at a given position.
-fn solve(
+pub(super) fn solve(
     layout_box: &LayoutBox,
     constraints: LayoutConstraints,
     pos_x: f32,
@@ -60,6 +61,21 @@ fn solve(
             *justify,
             *gap,
             children,
+        ),
+        BoxContent::Grid {
+            columns,
+            row_gap,
+            column_gap,
+            children,
+        } => grid_solver::solve_grid(
+            layout_box,
+            columns,
+            *row_gap,
+            *column_gap,
+            children,
+            constrained,
+            mx,
+            my,
         ),
     }
 }

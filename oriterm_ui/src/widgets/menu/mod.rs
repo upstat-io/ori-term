@@ -104,7 +104,7 @@ impl MenuStyle {
             hover_radius: 4.0,
             checkmark_size: 10.0,
             checkmark_gap: 4.0,
-            bg: theme.bg_secondary,
+            bg: theme.bg_card,
             fg: theme.fg_primary,
             hover_bg: theme.bg_hover,
             selected_bg: Color::TRANSPARENT,

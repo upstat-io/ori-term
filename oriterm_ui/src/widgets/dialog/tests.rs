@@ -103,8 +103,8 @@ fn layout_produces_two_zone_children() {
                     // Title + message = 2 children (no content preview).
                     assert_eq!(content_children.len(), 2);
                 }
-                crate::layout::BoxContent::Leaf { .. } => {
-                    panic!("expected flex container for content zone, got leaf");
+                _ => {
+                    panic!("expected flex container for content zone, got non-flex");
                 }
             }
 
@@ -119,13 +119,13 @@ fn layout_produces_two_zone_children() {
                     // Cancel + OK = 2 children.
                     assert_eq!(footer_children.len(), 2);
                 }
-                crate::layout::BoxContent::Leaf { .. } => {
-                    panic!("expected flex container for footer zone, got leaf");
+                _ => {
+                    panic!("expected flex container for footer zone, got non-flex");
                 }
             }
         }
-        crate::layout::BoxContent::Leaf { .. } => {
-            panic!("expected flex container, got leaf");
+        _ => {
+            panic!("expected flex container, got non-flex");
         }
     }
 }
@@ -155,12 +155,12 @@ fn layout_with_content_adds_preview_child() {
                 } => {
                     assert_eq!(content_children.len(), 3);
                 }
-                crate::layout::BoxContent::Leaf { .. } => {
+                _ => {
                     panic!("expected flex container for content zone");
                 }
             }
         }
-        crate::layout::BoxContent::Leaf { .. } => {
+        _ => {
             panic!("expected flex container");
         }
     }
