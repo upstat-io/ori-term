@@ -4,21 +4,26 @@
 //! stack before reaching the main widget tree. Dismissals trigger compositor
 //! fade-out animations.
 //!
-//! Dispatch uses a controller-first strategy: each widget is offered the event
-//! via `dispatch_to_controllers()` first; if no controllers exist (the common
-//! case during the §08.3-08.5 migration), the legacy `handle_mouse()` /
-//! `handle_key()` fallback runs.
+//! Dispatch uses a two-phase propagation pipeline: hit-test the overlay's
+//! layout tree, plan Capture → Target → Bubble delivery, then dispatch to
+//! controllers at each matching phase. Legacy `handle_mouse()` / `handle_key()`
+//! fallback runs when no controllers exist (the common case during §08.3-08.5
+//! migration).
 
 use std::time::Instant;
 
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
-use crate::controllers::{ControllerCtxArgs, ControllerRequests, dispatch_to_controllers};
-use crate::geometry::Point;
+use crate::controllers::{
+    ControllerCtxArgs, ControllerRequests, DispatchOutput, dispatch_to_controllers,
+};
+use crate::geometry::{Point, Rect};
 use crate::input::{
-    EventPhase, EventResponse, HoverEvent, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind,
+    EventResponse, HitEntry, HoverEvent, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind,
+    WidgetHitTestResult, layout_hit_test_path, plan_propagation,
 };
 use crate::interaction::InteractionState;
+use crate::layout::LayoutNode;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 use crate::widgets::{CaptureRequest, EventCtx, Widget, WidgetResponse};
@@ -38,7 +43,7 @@ use super::{OverlayEventResult, OverlayKind, OverlayManager};
 /// - `CLEAR_ACTIVE` → `CaptureRequest::Release`
 /// - First emitted action taken (singular slot in `WidgetResponse`)
 pub(in crate::overlay) fn bridge_dispatch_to_response(
-    output: crate::controllers::DispatchOutput,
+    output: DispatchOutput,
     source: WidgetId,
 ) -> WidgetResponse {
     let response = if output.requests.contains(ControllerRequests::PAINT) {
@@ -67,33 +72,111 @@ pub(in crate::overlay) fn bridge_dispatch_to_response(
     }
 }
 
-/// Attempts controller-based dispatch on a widget.
+/// Runs the controller-first propagation pipeline for an overlay widget.
 ///
-/// Returns `Some(response)` if controllers handled the event or emitted
-/// actions. Returns `None` if the widget has no controllers (fast path
-/// during the transition period — `controllers_mut()` returns `&mut []`).
-fn try_controllers(
+/// Hit-tests the overlay's layout tree (if available) and plans
+/// Capture → Target → Bubble propagation. Dispatches to the root
+/// widget's controllers at each matching phase.
+///
+/// Returns `Some(response)` if controllers handled the event.
+/// Returns `None` if no controllers exist or none handled (caller
+/// falls back to legacy `handle_mouse()`/`handle_key()`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "pipeline dispatch: widget, event, rect, layout, captured, now"
+)]
+fn deliver_via_pipeline(
     widget: &mut dyn Widget,
     event: &InputEvent,
-    bounds: crate::geometry::Rect,
+    overlay_rect: Rect,
+    layout_node: Option<&LayoutNode>,
+    captured: bool,
     now: Instant,
 ) -> Option<WidgetResponse> {
     let root_id = widget.id();
+    let root_sense = widget.sense();
     let controllers = widget.controllers_mut();
     if controllers.is_empty() {
         return None;
     }
 
-    let interaction = InteractionState::default();
-    let args = ControllerCtxArgs {
-        widget_id: root_id,
-        bounds,
-        interaction: &interaction,
-        now,
+    // Build the hit path for plan_propagation.
+    let hit_result = if event.is_keyboard() {
+        // Keyboard: empty hit path, focus_path handles routing.
+        WidgetHitTestResult { path: Vec::new() }
+    } else if captured {
+        // Captured mouse: single-entry path for the root widget.
+        WidgetHitTestResult {
+            path: vec![HitEntry {
+                widget_id: root_id,
+                bounds: overlay_rect,
+                sense: root_sense,
+            }],
+        }
+    } else if let Some(node) = layout_node {
+        // Normal mouse: hit-test the overlay's layout tree with local-space point.
+        if let Some(pos) = event.pos() {
+            let local = Point::new(pos.x - overlay_rect.x(), pos.y - overlay_rect.y());
+            layout_hit_test_path(node, local)
+        } else {
+            WidgetHitTestResult { path: Vec::new() }
+        }
+    } else {
+        // No layout tree yet: single-entry hit path for root widget.
+        WidgetHitTestResult {
+            path: vec![HitEntry {
+                widget_id: root_id,
+                bounds: overlay_rect,
+                sense: root_sense,
+            }],
+        }
     };
 
-    let output = dispatch_to_controllers(controllers, event, EventPhase::Target, &args);
-    if output.handled || !output.actions.is_empty() {
+    // Plan propagation.
+    let focus_path = if event.is_keyboard() {
+        vec![root_id]
+    } else {
+        Vec::new()
+    };
+    let active_widget = if captured { Some(root_id) } else { None };
+    let mut actions = Vec::new();
+    plan_propagation(event, &hit_result, active_widget, &focus_path, &mut actions);
+
+    // Delivery loop: dispatch to controllers at each matching phase.
+    let interaction = InteractionState::default();
+    let mut merged_requests = ControllerRequests::NONE;
+    let mut merged_actions: Vec<crate::action::WidgetAction> = Vec::new();
+    let mut handled = false;
+
+    for action in &actions {
+        // During the transition, only the root widget has controllers.
+        // Skip actions targeting other widgets.
+        if action.widget_id != root_id {
+            continue;
+        }
+
+        let args = ControllerCtxArgs {
+            widget_id: root_id,
+            bounds: overlay_rect,
+            interaction: &interaction,
+            now,
+        };
+
+        let output = dispatch_to_controllers(controllers, event, action.phase, &args);
+        merged_requests = merged_requests.union(output.requests);
+        merged_actions.extend(output.actions);
+        if output.handled {
+            handled = true;
+            break;
+        }
+    }
+
+    if handled || !merged_actions.is_empty() {
+        let output = DispatchOutput {
+            requests: merged_requests,
+            actions: merged_actions,
+            handled,
+        };
         Some(bridge_dispatch_to_response(output, root_id))
     } else {
         None
@@ -136,10 +219,12 @@ impl OverlayManager {
                 let id = overlay.id;
                 let root_id = overlay.widget.id();
                 let input_event = InputEvent::from_mouse_event(event);
-                let mut response = try_controllers(
+                let mut response = deliver_via_pipeline(
                     overlay.widget.as_mut(),
                     &input_event,
                     overlay.computed_rect,
+                    overlay.layout_node.as_ref(),
+                    true,
                     now,
                 )
                 .unwrap_or_else(|| {
@@ -262,7 +347,7 @@ impl OverlayManager {
 
     /// Delivers a mouse event to a specific overlay by index.
     ///
-    /// Tries controller dispatch first; falls back to legacy `handle_mouse()`.
+    /// Runs the propagation pipeline first; falls back to legacy `handle_mouse()`.
     #[expect(
         clippy::too_many_arguments,
         reason = "internal helper, params mirror caller"
@@ -280,10 +365,12 @@ impl OverlayManager {
         let id = overlay.id;
         let root_id = overlay.widget.id();
         let input_event = InputEvent::from_mouse_event(event);
-        let mut response = try_controllers(
+        let mut response = deliver_via_pipeline(
             overlay.widget.as_mut(),
             &input_event,
             overlay.computed_rect,
+            overlay.layout_node.as_ref(),
+            false,
             now,
         )
         .unwrap_or_else(|| {
@@ -318,7 +405,7 @@ impl OverlayManager {
     /// indicates which widget currently has keyboard focus (from the app
     /// layer's `FocusManager`).
     ///
-    /// Tries controller dispatch first; falls back to legacy `handle_key()`.
+    /// Runs the propagation pipeline first; falls back to legacy `handle_key()`.
     #[expect(
         clippy::too_many_arguments,
         reason = "event routing: event, measurer, theme, focus, tree, animator, now"
@@ -350,10 +437,12 @@ impl OverlayManager {
         let is_modal = topmost.kind == OverlayKind::Modal;
         let root_id = topmost.widget.id();
         let input_event = InputEvent::from_key_event(event);
-        let mut response = try_controllers(
+        let mut response = deliver_via_pipeline(
             topmost.widget.as_mut(),
             &input_event,
             topmost.computed_rect,
+            topmost.layout_node.as_ref(),
+            false,
             now,
         )
         .unwrap_or_else(|| {

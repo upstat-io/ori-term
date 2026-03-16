@@ -14,7 +14,7 @@ use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
 use crate::geometry::LayerId;
 use crate::geometry::{Point, Rect, Size};
-use crate::layout::compute_layout;
+use crate::layout::{LayoutNode, compute_layout};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 use crate::widgets::{DrawCtx, LayoutCtx, Widget, WidgetResponse};
@@ -51,6 +51,11 @@ pub(in crate::overlay) struct Overlay {
     pub(in crate::overlay) kind: OverlayKind,
     /// Computed screen-space rectangle (set by `layout_overlays`).
     pub(in crate::overlay) computed_rect: Rect,
+    /// Layout tree root for this overlay's widget (set by `layout_overlays`).
+    ///
+    /// Used by the propagation pipeline to hit-test into the widget tree.
+    /// `None` before the first layout pass.
+    pub(in crate::overlay) layout_node: Option<LayoutNode>,
 
     // Compositor integration.
     /// Compositor layer for this overlay's content.
@@ -219,6 +224,7 @@ impl OverlayManager {
 
             overlay.computed_rect =
                 compute_overlay_rect(overlay.anchor, content_size, viewport, overlay.placement);
+            overlay.layout_node = Some(node);
         }
 
         self.layout_dirty = false;
