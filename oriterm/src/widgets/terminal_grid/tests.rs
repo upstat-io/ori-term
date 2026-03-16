@@ -141,7 +141,7 @@ fn draw_emits_no_commands() {
         frame_requests: None,
     };
 
-    widget.draw(&mut ctx);
+    widget.paint(&mut ctx);
 
     assert!(
         draw_list.is_empty(),

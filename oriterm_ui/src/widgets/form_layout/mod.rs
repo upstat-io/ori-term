@@ -185,7 +185,7 @@ impl Widget for FormLayout {
                     widget_id: None,
                     frame_requests: None,
                 };
-                section.draw(&mut child_ctx);
+                section.paint(&mut child_ctx);
             }
         }
     }

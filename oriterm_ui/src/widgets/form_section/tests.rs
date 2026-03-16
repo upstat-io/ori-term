@@ -150,7 +150,7 @@ fn draw_produces_header_text() {
         widget_id: None,
         frame_requests: None,
     };
-    section.draw(&mut ctx);
+    section.paint(&mut ctx);
 
     let text_cmds = draw_list
         .commands()
@@ -186,7 +186,7 @@ fn draw_skips_rows_outside_active_clip() {
         widget_id: None,
         frame_requests: None,
     };
-    section.draw(&mut ctx);
+    section.paint(&mut ctx);
 
     let text_cmds = draw_list
         .commands()

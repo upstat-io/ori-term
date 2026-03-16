@@ -462,17 +462,15 @@ impl Widget for TabBarWidget {
         self.draw_window_controls(ctx);
     }
 
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Hit testing and click dispatch are Section 16.3.
-        WidgetResponse::ignored()
+    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+        self.handle_mouse_impl(event, ctx)
     }
 
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Hover enter/leave routing is Section 16.3.
-        WidgetResponse::ignored()
+    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+        self.handle_hover_impl(event, ctx)
     }
 
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
+    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+        self.handle_key_impl(event, ctx)
     }
 }

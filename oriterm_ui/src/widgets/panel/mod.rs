@@ -197,7 +197,7 @@ impl Widget for PanelWidget {
                 widget_id: None,
                 frame_requests: None,
             };
-            self.child.draw(&mut child_ctx);
+            self.child.paint(&mut child_ctx);
         }
 
         ctx.draw_list.pop_layer();

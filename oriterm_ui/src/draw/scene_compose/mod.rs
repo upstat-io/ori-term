@@ -14,7 +14,7 @@ use crate::widgets::{DrawCtx, Widget};
 /// reports as dirty, then draws `root` with `ctx.scene_cache` enabled so
 /// container widgets can skip unchanged children.
 ///
-/// Call this instead of `root.draw(ctx)` to enable retained rendering.
+/// Call this instead of `root.paint(ctx)` to enable retained rendering.
 pub fn compose_scene<'a>(
     root: &dyn Widget,
     ctx: &mut DrawCtx<'a>,
@@ -26,7 +26,7 @@ pub fn compose_scene<'a>(
 
     let prev_cache = ctx.scene_cache.take();
     ctx.scene_cache = Some(cache);
-    root.draw(ctx);
+    root.paint(ctx);
     ctx.scene_cache = prev_cache;
 }
 

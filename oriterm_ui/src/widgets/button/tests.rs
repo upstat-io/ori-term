@@ -443,7 +443,7 @@ fn draw_signals_animations_running() {
         widget_id: None,
         frame_requests: None,
     };
-    btn.draw(&mut draw_ctx);
+    btn.paint(&mut draw_ctx);
 
     assert!(
         anim_flag.get(),

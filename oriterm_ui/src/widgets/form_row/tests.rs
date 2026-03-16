@@ -174,7 +174,7 @@ fn draw_produces_text_commands() {
         widget_id: None,
         frame_requests: None,
     };
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
     let text_cmds = draw_list
         .commands()

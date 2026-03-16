@@ -133,7 +133,7 @@ impl DialogWidget {
                 widget_id: None,
                 frame_requests: None,
             };
-            button.draw(&mut btn_ctx);
+            button.paint(&mut btn_ctx);
         }
     }
 

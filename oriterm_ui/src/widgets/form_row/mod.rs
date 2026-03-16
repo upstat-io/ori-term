@@ -206,7 +206,7 @@ impl Widget for FormRow {
                 widget_id: None,
                 frame_requests: None,
             };
-            self.control.draw(&mut child_ctx);
+            self.control.paint(&mut child_ctx);
         }
     }
 

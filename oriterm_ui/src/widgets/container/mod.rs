@@ -398,7 +398,7 @@ impl Widget for ContainerWidget {
                     widget_id: None,
                     frame_requests: None,
                 };
-                child.draw(&mut child_ctx);
+                child.paint(&mut child_ctx);
                 Self::store_in_cache(ctx, child_id, bounds, start, log_start);
             }
         }

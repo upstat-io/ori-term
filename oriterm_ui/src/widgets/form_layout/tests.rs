@@ -149,7 +149,7 @@ fn draw_produces_commands() {
         widget_id: None,
         frame_requests: None,
     };
-    form.draw(&mut ctx);
+    form.paint(&mut ctx);
 
     let text_cmds = draw_list
         .commands()
@@ -185,7 +185,7 @@ fn draw_skips_sections_outside_active_clip() {
         widget_id: None,
         frame_requests: None,
     };
-    form.draw(&mut ctx);
+    form.paint(&mut ctx);
 
     let text_cmds = draw_list
         .commands()

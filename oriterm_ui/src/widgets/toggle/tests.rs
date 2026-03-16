@@ -395,7 +395,7 @@ fn toggle_draw_signals_animations_running() {
         widget_id: None,
         frame_requests: None,
     };
-    t.draw(&mut draw_ctx);
+    t.paint(&mut draw_ctx);
 
     assert!(
         anim_flag.get(),
@@ -428,7 +428,7 @@ fn toggle_draw_no_animation_signal_when_idle() {
         widget_id: None,
         frame_requests: None,
     };
-    t.draw(&mut draw_ctx);
+    t.paint(&mut draw_ctx);
 
     assert!(
         !anim_flag.get(),
@@ -463,7 +463,7 @@ fn toggle_draws_thumb_at_correct_position() {
         widget_id: None,
         frame_requests: None,
     };
-    t.draw(&mut draw_ctx);
+    t.paint(&mut draw_ctx);
 
     // The toggle draws: [optional focus ring], track rect, thumb rect.
     // Thumb is the last Rect command.
@@ -515,7 +515,7 @@ fn toggle_draws_thumb_at_off_position() {
         widget_id: None,
         frame_requests: None,
     };
-    t.draw(&mut draw_ctx);
+    t.paint(&mut draw_ctx);
 
     let rects: Vec<_> = draw_list
         .commands()

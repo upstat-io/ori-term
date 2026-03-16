@@ -196,7 +196,7 @@ fn draws_without_panic() {
         widget_id: None,
         frame_requests: None,
     };
-    panel.draw(&mut ctx);
+    panel.paint(&mut ctx);
 
     // Should produce at least the PushLayer + background rect.
     assert!(
@@ -230,7 +230,7 @@ fn checkbox_click_emits_toggled() {
         widget_id: None,
         frame_requests: None,
     };
-    panel.draw(&mut draw_ctx);
+    panel.paint(&mut draw_ctx);
 
     // Click in the checkbox area: past header (48) + separator (~2) +
     // form padding top (16) + section header (28) + row gap (12) = 106,

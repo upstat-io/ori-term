@@ -121,7 +121,7 @@ State Manager resolves which state is active and transitions between them.
 
 - Sections 01, 02 are foundation — everything depends on them.
 - Sections 05, 07 are independent of the event system and can be built in parallel.
-- Section 08 (Widget Trait Migration) is the convergence point — requires Sections 01-06.
+- Section 08 (Widget Trait Migration) is the convergence point — requires Sections 01-07.
 - Sections 09, 10 are consumers — they use the new framework.
 - Section 11 verifies everything works together.
 
@@ -147,7 +147,8 @@ State Manager resolves which state is active and transitions between them.
 - **`AnimCurve` enum** (animation/behavior/mod.rs): Section 05 introduces `AnimCurve` wrapping
   `Easing` and `Spring` as separate variants. `AnimBehavior` uses `AnimCurve` instead of
   separate `duration` + `easing` fields. The existing `Easing` enum is unchanged.
-- **`Widget` trait** (widgets/mod.rs): Section 08 adds 7+ new methods and removes 3. This is
+- **`Widget` trait** (widgets/mod.rs): Section 08 adds 5+ new methods (not counting `sense()`
+  and `hit_test_behavior()` which exist already from Section 02) and removes 3. This is
   the single largest breaking change — must use the additive-then-remove strategy.
 - **`InputState` struct** (input/routing.rs): Removed in Section 03. Callers are internal
   to `oriterm_ui` only (routing.rs definition + tests.rs). `OverlayManager::process_mouse_event()`
@@ -162,13 +163,14 @@ State Manager resolves which state is active and transitions between them.
   `FocusManager` retains tab-order cycling (`focus_next`/`focus_prev`).
   `InteractionManager` calls `FocusManager::set_focus()`/`clear_focus()` internally
   and generates `FocusChanged` lifecycle events from the state change.
-- **`OverlayManager` event routing** (overlay/manager/event_routing.rs, 343 lines):
+- **`OverlayManager` event routing** (overlay/manager/event_routing.rs, 348 lines):
   Has its own `process_mouse_event()`, `process_hover_event()`, `process_key_event()`
   that dispatch events to overlay widgets. Must be updated alongside Section 03's event
   pipeline — overlay widgets cannot remain on the old event system while main widgets
-  use the new one. `process_mouse_event()` is called from `oriterm/src/app/mouse_input.rs`
-  (3 call sites: button, cursor move, scroll) and
-  `oriterm/src/app/dialog_context/event_handling/mouse.rs` (1 call site).
+  use the new one. `process_mouse_event()` is called from 3 sites:
+  `oriterm/src/app/mouse_input.rs` (1 site),
+  `oriterm/src/app/dialog_context/event_handling/mouse.rs` (1 site), and
+  `oriterm/src/app/dialog_context/event_handling/mod.rs` (1 site).
   `process_key_event()` is called from `oriterm/src/app/keyboard_input/mod.rs`.
   `process_hover_event()` is only exercised in `oriterm_ui` tests — it has no call site
   in the binary crate as of this writing.
@@ -221,12 +223,12 @@ Phase 6 — Verification
 | 05 Animation Engine | ~500 | High | — |
 | 06 Visual State Manager | ~400 | High | 05 |
 | 07 Layout & Theme | ~500 | Medium | — |
-| 08 Widget Trait Migration (25 widgets) | ~900 | High | 01-07 |
+| 08 Widget Trait Migration (26 widgets + 3 test) | ~1500 | **Very High** | 01-07 |
 | 09 New Widget Library | ~1500 | Medium | 08 |
 | 10 Settings Panel Rebuild | ~800 | Medium | 09 |
 | 11 Verification | ~600 | Medium | 10 |
-| **Total new** | **~7100** | | |
-| **Total deleted** | **~1500** | | |
+| **Total new** | **~7700** | | |
+| **Total deleted** | **~1800** | | |
 
 **Dependency changes** (oriterm_ui/Cargo.toml):
 - Section 02: Manual bitmask for Sense (no new dependency).
@@ -240,6 +242,14 @@ declared as they are created:
 - Section 02: `pub mod sense;` and `pub mod hit_test_behavior;`
 - Section 04: `pub mod controllers;`
 - Section 06: `pub mod visual_state;`
+
+**Module declarations** (`oriterm_ui/src/widgets/mod.rs`): Section 08 adds:
+- `pub mod contexts;` (extracted DrawCtx, EventCtx, LayoutCtx + new LifecycleCtx, AnimCtx)
+
+**Module declarations** (`oriterm_ui/src/controllers/mod.rs`): Section 08.1b adds:
+- `mod text_edit;` (TextEditController for TextInputWidget keyboard handling)
+- `mod dropdown_key;` (DropdownKeyController for DropdownWidget keyboard handling)
+- `mod menu_key;` (MenuKeyController for MenuWidget keyboard handling)
 
 **Module declarations** (`oriterm_ui/src/animation/mod.rs`): Section 05 adds submodules
 within the existing `animation` module (no `lib.rs` change needed):

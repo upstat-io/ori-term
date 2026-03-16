@@ -55,7 +55,7 @@ fn stack_draws_all_children() {
         widget_id: None,
         frame_requests: None,
     };
-    stack.draw(&mut ctx);
+    stack.paint(&mut ctx);
 
     let text_cmds = draw_list
         .commands()
@@ -188,7 +188,7 @@ fn stack_draws_in_painter_order() {
         widget_id: None,
         frame_requests: None,
     };
-    stack.draw(&mut ctx);
+    stack.paint(&mut ctx);
 
     // Both are Text commands — first drawn is "Back", second is "Front".
     let texts: Vec<&str> = draw_list

@@ -71,7 +71,7 @@ fn panel_draws_background_rect() {
         widget_id: None,
         frame_requests: None,
     };
-    panel.draw(&mut ctx);
+    panel.paint(&mut ctx);
 
     // First command is PushLayer, second is the background rect.
     let cmds = draw_list.commands();
@@ -280,7 +280,7 @@ fn panel_with_bg() {
         widget_id: None,
         frame_requests: None,
     };
-    panel.draw(&mut ctx);
+    panel.paint(&mut ctx);
 
     // First command is PushLayer, second is the background rect.
     assert!(matches!(
@@ -316,7 +316,7 @@ fn panel_with_corner_radius() {
         widget_id: None,
         frame_requests: None,
     };
-    panel.draw(&mut ctx);
+    panel.paint(&mut ctx);
 
     // First command is PushLayer, second is the background rect.
     match &draw_list.commands()[1] {
@@ -375,7 +375,7 @@ fn panel_with_shadow() {
         widget_id: None,
         frame_requests: None,
     };
-    panel.draw(&mut ctx);
+    panel.paint(&mut ctx);
 
     // First command is PushLayer, second is the background rect.
     match &draw_list.commands()[1] {

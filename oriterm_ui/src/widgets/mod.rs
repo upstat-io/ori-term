@@ -5,6 +5,7 @@
 //! is a concrete struct implementing `Widget`. Trait objects (`Box<dyn Widget>`)
 //! are used for dynamic dispatch in overlay and container contexts.
 
+pub mod contexts;
 pub mod text_measurer;
 
 pub mod button;
@@ -31,21 +32,17 @@ pub mod text_input;
 pub mod toggle;
 pub mod window_chrome;
 
-use std::cell::Cell;
-use std::time::Instant;
-
-use crate::animation::FrameRequestFlags;
-use crate::draw::{DrawList, SceneCache};
-use crate::geometry::Rect;
+use crate::animation::anim_frame::AnimFrameEvent;
+use crate::controllers::EventController;
 use crate::hit_test_behavior::HitTestBehavior;
-use crate::icons::ResolvedIcons;
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, MouseEventKind};
-use crate::interaction::InteractionManager;
+use crate::interaction::LifecycleEvent;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
-use crate::theme::UiTheme;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
+pub use contexts::{AnimCtx, DrawCtx, EventCtx, LayoutCtx, LifecycleCtx};
 pub use text_measurer::TextMeasurer;
 
 /// Whether a widget wants to acquire or release mouse capture.
@@ -202,249 +199,114 @@ impl WidgetResponse {
 // (`controllers -> widgets`). Re-exported here for backward compatibility.
 pub use crate::action::WidgetAction;
 
-/// Context passed to [`Widget::layout`].
-pub struct LayoutCtx<'a> {
-    /// Text measurement provider.
-    pub measurer: &'a dyn TextMeasurer,
-    /// Active UI theme.
-    pub theme: &'a UiTheme,
-}
-
-/// Context passed to [`Widget::draw`].
-pub struct DrawCtx<'a> {
-    /// Text shaping provider.
-    pub measurer: &'a dyn TextMeasurer,
-    /// The draw command list to append to.
-    pub draw_list: &'a mut DrawList,
-    /// The widget's computed bounds (from layout).
-    pub bounds: Rect,
-    /// The currently focused widget, if any.
-    pub focused_widget: Option<WidgetId>,
-    /// Current frame timestamp for animation interpolation.
-    pub now: Instant,
-    /// Set to `true` by widgets with running animations to request redraw.
-    pub animations_running: &'a Cell<bool>,
-    /// Active UI theme.
-    pub theme: &'a UiTheme,
-    /// Pre-resolved icon atlas entries for this frame.
-    ///
-    /// `None` in tests or when the GPU renderer is not available.
-    /// Widgets fall back to `push_line()` when this is `None`.
-    pub icons: Option<&'a ResolvedIcons>,
-    /// Per-widget scene cache for retained rendering.
-    ///
-    /// `None` during uncached draws (tests, first frame). When present,
-    /// container widgets check the cache before calling `child.draw()`.
-    pub scene_cache: Option<&'a mut SceneCache>,
-    /// Framework interaction state manager.
-    ///
-    /// `None` until the interaction system is fully wired (Section 03).
-    /// Widgets use `is_hot()`, `is_active()`, `is_focused()` convenience
-    /// methods which return `false` when this is `None`.
-    pub interaction: Option<&'a InteractionManager>,
-    /// The widget being drawn. `None` at the root level (app frame).
-    pub widget_id: Option<WidgetId>,
-    /// Shared animation frame and repaint request flags.
-    ///
-    /// `None` until the animation scheduling system is wired (Section 05.5).
-    /// Widgets use `request_anim_frame()` and `request_paint()` convenience
-    /// methods which are no-ops when this is `None`.
-    pub frame_requests: Option<&'a FrameRequestFlags>,
-}
-
-impl DrawCtx<'_> {
-    /// Whether the pointer is over this widget or any descendant.
-    pub fn is_hot(&self) -> bool {
-        match (self.interaction, self.widget_id) {
-            (Some(mgr), Some(id)) => mgr.get_state(id).is_hot(),
-            _ => false,
-        }
-    }
-
-    /// Whether the pointer is directly over this widget (not a descendant).
-    pub fn is_hot_direct(&self) -> bool {
-        match (self.interaction, self.widget_id) {
-            (Some(mgr), Some(id)) => mgr.get_state(id).is_hot_direct(),
-            _ => false,
-        }
-    }
-
-    /// Whether this widget has captured mouse events.
-    pub fn is_active(&self) -> bool {
-        match (self.interaction, self.widget_id) {
-            (Some(mgr), Some(id)) => mgr.get_state(id).is_active(),
-            _ => false,
-        }
-    }
-
-    /// Whether this widget has keyboard focus (via `InteractionManager`).
-    pub fn is_interaction_focused(&self) -> bool {
-        match (self.interaction, self.widget_id) {
-            (Some(mgr), Some(id)) => mgr.get_state(id).is_focused(),
-            _ => false,
-        }
-    }
-
-    /// Build a child draw context with child-specific bounds and widget ID.
-    ///
-    /// Reborrows `draw_list`, `scene_cache`, and `interaction` from `self`.
-    /// Copies all other fields. Containers should use this instead of
-    /// constructing `DrawCtx` struct literals directly.
-    pub fn for_child(&mut self, child_id: WidgetId, child_bounds: Rect) -> DrawCtx<'_> {
-        DrawCtx {
-            measurer: self.measurer,
-            draw_list: self.draw_list,
-            bounds: child_bounds,
-            focused_widget: self.focused_widget,
-            now: self.now,
-            animations_running: self.animations_running,
-            theme: self.theme,
-            icons: self.icons,
-            scene_cache: self.scene_cache.as_deref_mut(),
-            interaction: self.interaction,
-            widget_id: Some(child_id),
-            frame_requests: self.frame_requests,
-        }
-    }
-
-    /// Request an animation frame on the next vsync.
-    ///
-    /// The widget will receive an `AnimFrameEvent` with the time delta
-    /// since the last frame. No-op until the scheduling system is wired.
-    pub fn request_anim_frame(&self) {
-        if let Some(flags) = self.frame_requests {
-            flags.request_anim_frame();
-        }
-    }
-
-    /// Request a repaint without an animation frame.
-    ///
-    /// No-op until the scheduling system is wired.
-    pub fn request_paint(&self) {
-        if let Some(flags) = self.frame_requests {
-            flags.request_paint();
-        }
-    }
-}
-
-/// Context passed to mouse and keyboard event handlers.
-pub struct EventCtx<'a> {
-    /// Text measurement provider.
-    pub measurer: &'a dyn TextMeasurer,
-    /// The widget's computed bounds (from layout).
-    pub bounds: Rect,
-    /// Whether this widget currently has keyboard focus.
-    pub is_focused: bool,
-    /// The currently focused widget, if any.
-    ///
-    /// Containers use this to set per-child `is_focused` correctly,
-    /// so only the focused child responds to key events.
-    pub focused_widget: Option<WidgetId>,
-    /// Active UI theme.
-    pub theme: &'a UiTheme,
-    /// Framework interaction state manager.
-    ///
-    /// `None` until the interaction system is fully wired (Section 03).
-    pub interaction: Option<&'a InteractionManager>,
-    /// The widget receiving the event. `None` at the root level.
-    pub widget_id: Option<WidgetId>,
-    /// Shared animation frame and repaint request flags.
-    ///
-    /// `None` until the animation scheduling system is wired (Section 05.5).
-    /// Widgets use `request_anim_frame()` and `request_paint()` convenience
-    /// methods which are no-ops when this is `None`.
-    pub frame_requests: Option<&'a FrameRequestFlags>,
-}
-
-impl EventCtx<'_> {
-    /// Build a child context with child-specific bounds and focus state.
-    ///
-    /// `child_id` determines whether the child is focused (compared against
-    /// `self.focused_widget`). Pass `None` for non-focusable children.
-    #[must_use]
-    pub fn for_child(&self, child_bounds: Rect, child_id: Option<WidgetId>) -> Self {
-        Self {
-            measurer: self.measurer,
-            bounds: child_bounds,
-            is_focused: child_id.is_some_and(|id| self.focused_widget == Some(id)),
-            focused_widget: self.focused_widget,
-            theme: self.theme,
-            interaction: self.interaction,
-            widget_id: child_id,
-            frame_requests: self.frame_requests,
-        }
-    }
-
-    /// Request an animation frame on the next vsync.
-    ///
-    /// The widget will receive an `AnimFrameEvent` with the time delta
-    /// since the last frame. No-op until the scheduling system is wired.
-    pub fn request_anim_frame(&self) {
-        if let Some(flags) = self.frame_requests {
-            flags.request_anim_frame();
-        }
-    }
-
-    /// Request a repaint without an animation frame.
-    ///
-    /// No-op until the scheduling system is wired.
-    pub fn request_paint(&self) {
-        if let Some(flags) = self.frame_requests {
-            flags.request_paint();
-        }
-    }
-
-    /// Whether the pointer is over this widget or any descendant.
-    pub fn is_hot(&self) -> bool {
-        match (self.interaction, self.widget_id) {
-            (Some(mgr), Some(id)) => mgr.get_state(id).is_hot(),
-            _ => false,
-        }
-    }
-
-    /// Whether this widget has captured mouse events.
-    pub fn is_active(&self) -> bool {
-        match (self.interaction, self.widget_id) {
-            (Some(mgr), Some(id)) => mgr.get_state(id).is_active(),
-            _ => false,
-        }
-    }
-
-    /// Whether this widget has keyboard focus (via `InteractionManager`).
-    pub fn is_interaction_focused(&self) -> bool {
-        match (self.interaction, self.widget_id) {
-            (Some(mgr), Some(id)) => mgr.get_state(id).is_focused(),
-            _ => false,
-        }
-    }
-}
-
 /// The core widget trait.
 ///
 /// Each widget is a concrete struct that implements this trait. Widgets
 /// own their visual state (hovered, pressed) and app state (checked, value),
 /// plus a style struct with `Default` dark-theme defaults.
+///
+/// The trait is in transition: new methods (`paint`, `lifecycle`, `anim_frame`,
+/// `controllers`, `visual_states`) coexist with legacy methods (`draw`,
+/// `handle_mouse`, `handle_hover`, `handle_key`) during migration. Legacy
+/// methods are removed after all widgets are migrated (Section 08.6).
 pub trait Widget {
     /// Returns this widget's unique identifier.
     fn id(&self) -> WidgetId;
 
     /// Whether this widget can receive keyboard focus.
-    fn is_focusable(&self) -> bool;
+    ///
+    /// Default derives from `sense().has_focus()`. Override only if focusability
+    /// depends on runtime state (e.g., disabled widgets).
+    fn is_focusable(&self) -> bool {
+        self.sense().has_focus()
+    }
 
     /// Builds a layout descriptor for the layout solver.
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox;
 
+    // --- New methods (Section 08.1) ---
+
+    /// Paints the widget into the draw list.
+    ///
+    /// Use `ctx.is_hot()`, `ctx.is_active()`, `ctx.is_focused()` for
+    /// interaction-dependent rendering. Use `VisualStateAnimator` for
+    /// animated property interpolation.
+    ///
+    /// Default forwards to `draw()` for backward compatibility during
+    /// migration. Override this and stop implementing `draw()`.
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        #[allow(deprecated)]
+        self.draw(ctx);
+    }
+
+    /// Handles lifecycle events (hot/active/focus changes, widget add/remove).
+    ///
+    /// Called by the framework when interaction state changes. Default is a no-op.
+    fn lifecycle(&mut self, _event: &LifecycleEvent, _ctx: &mut LifecycleCtx<'_>) {}
+
+    /// Handles animation frame ticks.
+    ///
+    /// Called only when the widget previously requested an animation frame
+    /// via `ctx.request_anim_frame()`. Default is a no-op.
+    fn anim_frame(&mut self, _event: &AnimFrameEvent, _ctx: &mut AnimCtx<'_>) {}
+
+    /// Event controllers attached to this widget.
+    ///
+    /// Controllers handle input events (hover, click, drag, scroll, focus)
+    /// via the event propagation pipeline. Default returns an empty slice.
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &[]
+    }
+
+    /// Mutable access to controllers (for event dispatch).
+    ///
+    /// The framework calls this during event propagation to deliver events
+    /// to each controller. Default returns an empty slice.
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut []
+    }
+
+    /// Visual state groups for automatic state resolution and animation.
+    ///
+    /// Returns `None` if this widget doesn't use visual state management.
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        None
+    }
+
+    /// Mutable access to the visual state animator.
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        None
+    }
+
+    // --- Legacy methods (deprecated, removed in Section 08.6) ---
+
     /// Draws the widget into the draw list.
-    fn draw(&self, ctx: &mut DrawCtx<'_>);
+    ///
+    /// Deprecated: implement `paint()` instead. This method exists only for
+    /// backward compatibility during migration.
+    #[deprecated(note = "implement paint() instead — removed in Section 08.6")]
+    fn draw(&self, _ctx: &mut DrawCtx<'_>) {}
 
     /// Handles a mouse event. Returns a response with optional action.
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
+    ///
+    /// Deprecated: use event controllers instead.
+    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
+        WidgetResponse::ignored()
+    }
 
     /// Handles a synthetic hover event (enter/leave).
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
+    ///
+    /// Deprecated: use `HoverController` and `LifecycleEvent::HotChanged`.
+    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
+        WidgetResponse::ignored()
+    }
 
     /// Handles a keyboard event. Returns a response with optional action.
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
+    ///
+    /// Deprecated: use `FocusController` or custom controllers.
+    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
+        WidgetResponse::ignored()
+    }
 
     /// Propagates an externally-originated action to a descendant widget.
     ///
@@ -472,8 +334,8 @@ pub trait Widget {
     /// Declares what interactions this widget cares about.
     ///
     /// Hit testing skips widgets with `Sense::none()`. The default returns
-    /// `Sense::all()` for backward compatibility (every widget participates
-    /// in hit testing). Override per-widget in Section 08.
+    /// `Sense::all()` for backward compatibility — changed to `Sense::none()`
+    /// after all widgets provide explicit overrides.
     fn sense(&self) -> Sense {
         Sense::all()
     }

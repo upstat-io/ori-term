@@ -215,7 +215,7 @@ impl Widget for FormSection {
                         widget_id: None,
                         frame_requests: None,
                     };
-                    row.draw(&mut child_ctx);
+                    row.paint(&mut child_ctx);
                 }
             }
         }

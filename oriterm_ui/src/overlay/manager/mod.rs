@@ -277,7 +277,7 @@ impl OverlayManager {
             widget_id: None,
             frame_requests: None,
         };
-        overlay.widget.draw(&mut overlay_ctx);
+        overlay.widget.paint(&mut overlay_ctx);
 
         opacity
     }
