@@ -5,6 +5,8 @@ mod multi_pane;
 pub(in crate::app) mod preedit;
 mod search_bar;
 
+use std::time::Instant;
+
 use oriterm_core::{Column, CursorShape, TermMode};
 
 use super::App;
@@ -253,6 +255,20 @@ impl App {
             // Resolve icon atlas entries at physical pixel sizes.
             renderer.resolve_icons(gpu, scale);
 
+            // Pre-paint mutation phase: drain lifecycle events and
+            // prepare top-level widgets (tab bar) for the paint pass.
+            let now = Instant::now();
+            let lifecycle_events = ctx.interaction.drain_events();
+            ctx.frame_requests.reset();
+            super::widget_pipeline::prepare_widget_frame(
+                &mut ctx.tab_bar,
+                &ctx.interaction,
+                &lifecycle_events,
+                None,
+                Some(&ctx.frame_requests),
+                now,
+            );
+
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.
             let logical_w = (w as f32 / scale).round() as u32;
@@ -267,6 +283,8 @@ impl App {
                 &ctx.text_cache,
                 &ctx.invalidation,
                 &mut ctx.scene_cache,
+                &ctx.interaction,
+                &ctx.frame_requests,
             );
             if tab_bar_animating {
                 ctx.dirty = true;
@@ -286,6 +304,8 @@ impl App {
                 &ctx.text_cache,
                 &ctx.invalidation,
                 &mut ctx.scene_cache,
+                &ctx.interaction,
+                &ctx.frame_requests,
             );
             if overlays_animating {
                 ctx.dirty = true;

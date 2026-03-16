@@ -10,10 +10,12 @@ use oriterm_mux::id::PaneId;
 
 use crate::session::DividerLayout;
 
+use oriterm_ui::animation::FrameRequestFlags;
 use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;
 use oriterm_ui::draw::{DrawList, SceneCache};
 use oriterm_ui::geometry::Rect;
+use oriterm_ui::interaction::InteractionManager;
 use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::surface::{DamageSet, RenderStrategy};
@@ -60,6 +62,13 @@ pub(crate) struct WindowContext {
     pub(super) layer_tree: LayerTree,
     pub(super) layer_animator: LayerAnimator,
     pub(super) tab_slide: TabSlideState,
+
+    // Framework-managed widget interaction state (hot/active/focus trifecta).
+    pub(super) interaction: InteractionManager,
+    /// Shared frame request flags — widgets set these during paint,
+    /// the framework reads them after `compose_scene()` to schedule
+    /// animation frames and repaints.
+    pub(super) frame_requests: FrameRequestFlags,
 
     // Interaction state.
     pub(super) hovering_divider: Option<DividerLayout>,
@@ -135,6 +144,8 @@ impl WindowContext {
             layer_animator: LayerAnimator::new(),
             tab_slide: TabSlideState::new(),
             cached_dividers: None,
+            interaction: InteractionManager::new(),
+            frame_requests: FrameRequestFlags::new(),
             hovering_divider: None,
             divider_drag: None,
             floating_drag: None,

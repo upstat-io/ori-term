@@ -61,7 +61,7 @@ order, matching `update_hot_path`'s expectation.
 ---
 
 ### Section 03: Event Propagation
-**File:** `section-03-event-propagation.md` | **Status:** In Progress
+**File:** `section-03-event-propagation.md` | **Status:** Complete
 
 ```
 capture, bubble, tunnel, preview, propagation, phase, routing, dispatch

@@ -69,3 +69,17 @@ pub enum LifecycleEvent {
         disabled: bool,
     },
 }
+
+impl LifecycleEvent {
+    /// Returns the widget ID this event targets.
+    pub fn widget_id(&self) -> WidgetId {
+        match *self {
+            Self::HotChanged { widget_id, .. }
+            | Self::ActiveChanged { widget_id, .. }
+            | Self::FocusChanged { widget_id, .. }
+            | Self::WidgetAdded { widget_id }
+            | Self::WidgetRemoved { widget_id }
+            | Self::WidgetDisabled { widget_id, .. } => widget_id,
+        }
+    }
+}

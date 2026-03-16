@@ -407,6 +407,21 @@ impl App {
                 }
             }
 
+            // Pre-paint mutation phase for multi-pane path.
+            {
+                let now = std::time::Instant::now();
+                let lifecycle_events = ctx.interaction.drain_events();
+                ctx.frame_requests.reset();
+                super::super::widget_pipeline::prepare_widget_frame(
+                    &mut ctx.tab_bar,
+                    &ctx.interaction,
+                    &lifecycle_events,
+                    None,
+                    Some(&ctx.frame_requests),
+                    now,
+                );
+            }
+
             // Chrome, tab bar, overlays, search bar (shared with single-pane path).
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
@@ -421,6 +436,8 @@ impl App {
                 &ctx.text_cache,
                 &ctx.invalidation,
                 &mut ctx.scene_cache,
+                &ctx.interaction,
+                &ctx.frame_requests,
             );
             if tab_bar_animating {
                 ctx.dirty = true;
@@ -439,6 +456,8 @@ impl App {
                 &ctx.text_cache,
                 &ctx.invalidation,
                 &mut ctx.scene_cache,
+                &ctx.interaction,
+                &ctx.frame_requests,
             );
             if overlays_animating {
                 ctx.dirty = true;

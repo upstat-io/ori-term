@@ -5,7 +5,9 @@
 use std::cell::Cell;
 use std::time::Instant;
 
+use oriterm_ui::animation::FrameRequestFlags;
 use oriterm_ui::draw::{DrawList, SceneCache, compose_scene};
+use oriterm_ui::interaction::InteractionManager;
 use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
@@ -25,7 +27,7 @@ impl App {
     /// Returns `true` if the tab bar has running animations (e.g. bell pulse).
     #[expect(
         clippy::too_many_arguments,
-        reason = "tab bar drawing: widget, renderer, draw list, viewport, scale, GPU, theme, cache"
+        reason = "tab bar drawing: widget, renderer, draw list, viewport, scale, GPU, theme, cache, interaction, frame_requests"
     )]
     pub(in crate::app::redraw) fn draw_tab_bar(
         tab_bar: Option<&oriterm_ui::widgets::tab_bar::TabBarWidget>,
@@ -38,6 +40,8 @@ impl App {
         text_cache: &TextShapeCache,
         invalidation: &InvalidationTracker,
         scene_cache: &mut SceneCache,
+        interaction: &InteractionManager,
+        frame_requests: &FrameRequestFlags,
     ) -> bool {
         let Some(tab_bar) = tab_bar else {
             return false;
@@ -68,9 +72,9 @@ impl App {
             theme,
             icons: Some(icons),
             scene_cache: None,
-            interaction: None,
+            interaction: Some(interaction),
             widget_id: None,
-            frame_requests: None,
+            frame_requests: Some(frame_requests),
         };
         compose_scene(tab_bar, &mut ctx, invalidation, scene_cache);
         let animating = animations_running.get();
@@ -100,9 +104,9 @@ impl App {
                 theme,
                 icons: Some(icons),
                 scene_cache: None,
-                interaction: None,
+                interaction: Some(interaction),
                 widget_id: None,
-                frame_requests: None,
+                frame_requests: Some(frame_requests),
             };
             tab_bar.draw_drag_overlay(&mut overlay_ctx);
             renderer.append_overlay_draw_list_with_text(draw_list, scale, 1.0, gpu);
@@ -120,7 +124,7 @@ impl App {
     /// Returns `true` if overlays have running animations (fade-in/fade-out).
     #[expect(
         clippy::too_many_arguments,
-        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU, tree, theme, cache"
+        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU, tree, theme, cache, interaction, frame_requests"
     )]
     pub(in crate::app::redraw) fn draw_overlays(
         overlays: &mut OverlayManager,
@@ -134,6 +138,8 @@ impl App {
         text_cache: &TextShapeCache,
         _invalidation: &InvalidationTracker,
         _scene_cache: &mut SceneCache,
+        interaction: &InteractionManager,
+        frame_requests: &FrameRequestFlags,
     ) -> bool {
         let count = overlays.draw_count();
         if count == 0 {
@@ -176,9 +182,9 @@ impl App {
                 theme,
                 icons: Some(icons),
                 scene_cache: None,
-                interaction: None,
+                interaction: Some(interaction),
                 widget_id: None,
-                frame_requests: None,
+                frame_requests: Some(frame_requests),
             };
             let opacity = overlays.draw_overlay_at(i, &mut ctx, tree);
 
