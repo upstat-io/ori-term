@@ -882,3 +882,74 @@ fn hit_test_clip_prevents_child_outside_bounds() {
     let hit = layout_hit_test(&parent, Point::new(90.0, 25.0));
     assert_eq!(hit, Some(child_id));
 }
+
+// ── InputEvent from/to roundtrips ────────────────────────────────────
+
+use super::event::{Key, KeyEvent, MouseEvent, MouseEventKind};
+
+#[test]
+fn from_mouse_event_roundtrip_down() {
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(10.0, 20.0),
+        modifiers: Modifiers::CTRL_ONLY,
+    };
+    let input = InputEvent::from_mouse_event(&mouse);
+    let back = input.to_mouse_event().expect("should convert back");
+    assert_eq!(back, mouse);
+}
+
+#[test]
+fn from_mouse_event_roundtrip_up() {
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Right),
+        pos: Point::new(5.0, 15.0),
+        modifiers: Modifiers::NONE,
+    };
+    let input = InputEvent::from_mouse_event(&mouse);
+    let back = input.to_mouse_event().expect("should convert back");
+    assert_eq!(back, mouse);
+}
+
+#[test]
+fn from_mouse_event_roundtrip_move() {
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Move,
+        pos: Point::new(30.0, 40.0),
+        modifiers: Modifiers::SHIFT_ONLY,
+    };
+    let input = InputEvent::from_mouse_event(&mouse);
+    let back = input.to_mouse_event().expect("should convert back");
+    assert_eq!(back, mouse);
+}
+
+#[test]
+fn from_mouse_event_roundtrip_scroll() {
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: -3.0 }),
+        pos: Point::new(50.0, 60.0),
+        modifiers: Modifiers::ALT_ONLY,
+    };
+    let input = InputEvent::from_mouse_event(&mouse);
+    let back = input.to_mouse_event().expect("should convert back");
+    assert_eq!(back, mouse);
+}
+
+#[test]
+fn from_key_event_produces_key_down() {
+    let key = KeyEvent {
+        key: Key::Enter,
+        modifiers: Modifiers::CTRL_ONLY,
+    };
+    let input = InputEvent::from_key_event(key);
+    assert_eq!(
+        input,
+        InputEvent::KeyDown {
+            key: Key::Enter,
+            modifiers: Modifiers::CTRL_ONLY,
+        }
+    );
+    // Round-trips back to KeyEvent.
+    let back = input.to_key_event().expect("should convert back");
+    assert_eq!(back, key);
+}

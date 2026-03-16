@@ -12,7 +12,7 @@
 
 use std::time::Instant;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu-tests"))]
 use wgpu::TextureView;
 use wgpu::{
     Color, CommandEncoderDescriptor, Extent3d, LoadOp, Operations, RenderPassColorAttachment,
@@ -31,7 +31,7 @@ impl WindowRenderer {
     /// Reads from `self.prepared` (filled by [`prepare`](Self::prepare)).
     /// Accepts any `TextureView` as target — works for both surfaces and
     /// offscreen render targets (tab previews, headless testing).
-    #[cfg(test)]
+    #[cfg(all(test, feature = "gpu-tests"))]
     pub fn render_frame(&mut self, gpu: &GpuState, pipelines: &GpuPipelines, target: &TextureView) {
         let device = &gpu.device;
         let queue = &gpu.queue;

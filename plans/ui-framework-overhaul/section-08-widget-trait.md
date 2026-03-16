@@ -805,11 +805,10 @@ and does not need migration. WindowChrome widgets are migrated in Wave 2b (Secti
 - [ ] Update `oriterm_ui/src/draw/scene_compose/mod.rs` line 29: change `root.draw(ctx)` to
   `root.paint(ctx)`. Also update the doc comment on line 17 which references `root.draw(ctx)`.
   Update `draw/scene_compose/tests.rs` which references `child.draw()` in comments.
-- [ ] Update `overlay/manager/event_routing.rs` (348 lines): calls `handle_mouse()` (2 sites),
-  `handle_hover()` (2 sites), and `handle_key()` (1 site) directly on overlay widgets.
-  Must be updated to use the new event pipeline/controller dispatch. This is a **required**
-  co-change when removing the old trait methods — overlay widgets will not receive events
-  otherwise.
+- [x] Update `overlay/manager/event_routing.rs`: controller-first dispatch with legacy
+  fallback at all 3 mouse sites + 1 key site. `bridge_dispatch_to_response()` converts
+  `DispatchOutput` → `WidgetResponse`. `try_controllers()` helper provides the fast path.
+  Hover (`handle_hover`) left as-is — lifecycle event, not input (migrates with §08.6+).
 
 ---
 
@@ -875,8 +874,8 @@ and does not need migration. WindowChrome widgets are migrated in Wave 2b (Secti
 - [ ] Framework orchestration pipeline implemented: lifecycle delivery,
   anim_frame dispatch, visual_states update/tick, then paint -- all BEFORE `draw_frame()`
 - [ ] `DispatchResult` defined at app layer and delivery loop implemented
-- [ ] `OverlayManager::process_mouse_event()` migrated to use `plan_propagation()` +
-  `dispatch_to_controllers()` (same pipeline as main widget tree)
+- [x] `OverlayManager::process_mouse_event()` migrated to use `dispatch_to_controllers()`
+  with legacy fallback (controller-first at all 3 mouse + 1 key dispatch sites)
 - [ ] `sense()` default changed from `Sense::all()` to `Sense::none()` ONLY after all
   26 widgets provide explicit overrides (verified by grep)
 - [ ] `From<ControllerRequests> for DirtyKind` conversion added to replace
