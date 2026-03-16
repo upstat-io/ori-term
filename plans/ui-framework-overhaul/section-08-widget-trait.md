@@ -17,7 +17,7 @@ sections:
     status: complete
   - id: "08.1a"
     title: "Framework Orchestration (Per-Frame Widget Pipeline)"
-    status: in-progress
+    status: complete
   - id: "08.1b"
     title: "Custom Controllers (TextEdit, TerminalInput, MenuKey, DropdownKey)"
     status: not-started
@@ -352,29 +352,16 @@ later consumes to build GPU instance buffers.
   }
   ```
 
-- [ ] **OverlayManager integration** (**HIGH RISK -- 348-line rewrite**):
-  Overlay widgets must participate in the same pipeline.
-  `OverlayManager::process_mouse_event()` (348 lines in
-  `overlay/manager/event_routing.rs`) currently calls `handle_mouse()` /
-  `handle_hover()` / `handle_key()` directly. Replace with:
-  1. Hit test the overlay's layout tree (overlay has its own `LayoutNode` root).
-  2. `plan_propagation()` for the overlay hit path.
-  3. Delivery loop using `dispatch_to_controllers()` per `DeliveryAction`.
-  This is the same pipeline used for the main widget tree. The overlay just has
-  a separate layout root.
-
-  **WARNING — Overlay modal semantics**: Modal overlays currently consume ALL events
-  (clicks outside the overlay dismiss it). This behavior must be preserved. The new
-  pipeline must check whether the hit point is inside the overlay bounds BEFORE
-  running `plan_propagation()`. If outside and modal, emit `DismissOverlay` action
-  without propagating. This is NOT handled by the generic pipeline — it is
-  overlay-specific logic that must wrap the pipeline call.
-
-  **WARNING — Three caller sites** in `oriterm` binary:
-  - `app/mouse_input.rs` (1 site)
-  - `app/dialog_context/event_handling/mouse.rs` (1 site)
-  - `app/dialog_context/event_handling/mod.rs` (1 site)
-  All three must be updated simultaneously (old methods are removed in 08.6).
+- [x] **OverlayManager integration** (**HIGH RISK -- 348-line rewrite**):
+  Overlay widgets now participate in the same pipeline. `try_controllers()` replaced
+  with `deliver_via_pipeline()` which hit-tests the overlay's `LayoutNode` tree,
+  runs `plan_propagation()` for Capture → Target → Bubble delivery, and dispatches
+  to controllers at each matching phase. Legacy `handle_mouse()`/`handle_key()`
+  fallback preserved for un-migrated widgets. `Overlay` struct stores
+  `layout_node: Option<LayoutNode>` populated during `layout_overlays()`.
+  Modal semantics, click-outside dismiss, capture routing, and hover tracking
+  are all preserved. No caller changes — the three binary call sites are unaffected.
+  `bridge_dispatch_to_response()` retained for test compatibility.
 
 ---
 
