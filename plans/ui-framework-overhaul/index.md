@@ -61,14 +61,18 @@ order, matching `update_hot_path`'s expectation.
 ---
 
 ### Section 03: Event Propagation
-**File:** `section-03-event-propagation.md` | **Status:** Not Started
+**File:** `section-03-event-propagation.md` | **Status:** In Progress
 
 ```
-capture, bubble, tunnel, preview, propagation, phase, routing
-EventPhase, Capture, Bubble, Target, set_handled, stop_propagation
+capture, bubble, tunnel, preview, propagation, phase, routing, dispatch
+InputEvent, EventPhase, Capture, Bubble, Target, set_handled, stop_propagation
+DeliveryAction, plan_propagation, DispatchResult, delivery_loop
+focus_ancestor_path, keyboard_routing, active_widget, capture_bypass
 routed_event, event_dispatch, event_pipeline, event_flow
+CaptureRequest, EventResponse, WidgetResponse, transition_bridge
 WPF, GTK4, DOM, preview_mouse_down
-oriterm_ui/src/input/routing.rs, event.rs
+oriterm_ui/src/input/dispatch/mod.rs, oriterm_ui/src/input/event.rs
+oriterm_ui/src/input/routing.rs (removed)
 ```
 
 ---

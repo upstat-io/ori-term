@@ -395,6 +395,27 @@ impl InteractionManager {
         self.focused_widget
     }
 
+    /// Returns the root-to-leaf ancestor path for the focused widget.
+    ///
+    /// Walks the parent map from the focused widget to the root, then
+    /// reverses to produce a root-to-leaf path suitable for keyboard event
+    /// propagation (Capture: root → focused, Bubble: focused → root).
+    /// Returns an empty `Vec` if no widget is focused.
+    pub fn focus_ancestor_path(&self) -> Vec<WidgetId> {
+        let Some(focused) = self.focused_widget else {
+            return Vec::new();
+        };
+
+        let mut path = vec![focused];
+        let mut current = focused;
+        while let Some(&parent) = self.parent_map.get(&current) {
+            path.push(parent);
+            current = parent;
+        }
+        path.reverse();
+        path
+    }
+
     /// Collects all ancestors of `widget_id` using the parent map.
     fn ancestors(&self, widget_id: WidgetId) -> Vec<WidgetId> {
         let mut result = Vec::new();
