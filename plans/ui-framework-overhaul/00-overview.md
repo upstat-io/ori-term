@@ -160,7 +160,7 @@ State Manager resolves which state is active and transitions between them.
   `FocusManager` retains tab-order cycling (`focus_next`/`focus_prev`).
   `InteractionManager` calls `FocusManager::set_focus()`/`clear_focus()` internally
   and generates `FocusChanged` lifecycle events from the state change.
-- **`OverlayManager` event routing** (overlay/manager/event_routing.rs, 333 lines):
+- **`OverlayManager` event routing** (overlay/manager/event_routing.rs, 343 lines):
   Has its own `process_mouse_event()`, `process_hover_event()`, `process_key_event()`
   that dispatch events to overlay widgets. Must be updated alongside Section 03's event
   pipeline — overlay widgets cannot remain on the old event system while main widgets
@@ -213,7 +213,7 @@ Phase 6 — Verification
 | Section | Est. Lines | Complexity | Depends On |
 |---------|-----------|------------|------------|
 | 01 Interaction State | ~400 | Medium | — |
-| 02 Sense & Hit Testing | ~400 | Medium | 01 | <!-- reviewed: completeness fix — expanded to include LayoutNode/LayoutBox extensions, interact_radius, HitTestBehavior -->
+| 02 Sense & Hit Testing | ~400 | Medium | 01 |
 | 03 Event Propagation | ~500 | High | 01, 02 |
 | 04 Event Controllers | ~600 | Medium | 01, 02, 03 |
 | 05 Animation Engine | ~500 | High | — |
@@ -223,11 +223,11 @@ Phase 6 — Verification
 | 09 New Widget Library | ~1500 | Medium | 08 |
 | 10 Settings Panel Rebuild | ~800 | Medium | 09 |
 | 11 Verification | ~600 | Medium | 10 |
-| **Total new** | **~7100** | | | <!-- reviewed: completeness fix — adjusted for Section 02 expansion -->
+| **Total new** | **~7100** | | |
 | **Total deleted** | **~1500** | | |
 
 **Dependency changes** (oriterm_ui/Cargo.toml):
-- Section 02: Manual bitmask for Sense (no new dependency). <!-- reviewed: hygiene fix -->
+- Section 02: Manual bitmask for Sense (no new dependency).
   Same decision applies to `ControllerRequests` in Section 04 (5 flags). If both end up
   needing bitflags, add `bitflags = "2"` in Section 04 and migrate Sense then.
 - No other new crate dependencies expected. `smallvec`, `log` already present.
@@ -235,7 +235,7 @@ Phase 6 — Verification
 **Module declarations** (`oriterm_ui/src/lib.rs`): The following new modules must be
 declared as they are created:
 - Section 01: `pub mod interaction;`
-- Section 02: `pub mod sense;` and `pub mod hit_test_behavior;` <!-- reviewed: hygiene fix -->
+- Section 02: `pub mod sense;` and `pub mod hit_test_behavior;`
 - Section 04: `pub mod controllers;`
 - Section 06: `pub mod visual_state;`
 
