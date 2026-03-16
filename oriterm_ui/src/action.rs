@@ -1,0 +1,76 @@
+//! Semantic actions emitted by widgets for the application layer.
+//!
+//! `WidgetAction` is the sole communication channel between widgets and the
+//! application layer. Widgets emit actions; the app matches on variants and
+//! interprets them. No closures — keeps widgets stateless w.r.t. app logic.
+//!
+//! Lives in its own module (not `widgets/`) so that `controllers/` can import
+//! it without creating a circular dependency (`controllers -> widgets`).
+
+use crate::geometry::{Point, Rect};
+use crate::widget_id::WidgetId;
+
+/// A semantic action emitted by a widget for the application layer.
+///
+/// No closures — the app layer matches on variants and interprets them.
+/// This keeps widgets stateless with respect to application logic.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WidgetAction {
+    /// A button or clickable widget was activated.
+    Clicked(WidgetId),
+    /// A double-click was detected on a clickable widget.
+    DoubleClicked(WidgetId),
+    /// A triple-click was detected on a clickable widget.
+    TripleClicked(WidgetId),
+    /// A boolean value was toggled (checkbox, toggle switch).
+    Toggled { id: WidgetId, value: bool },
+    /// A numeric value changed (slider).
+    ValueChanged { id: WidgetId, value: f32 },
+    /// Text content changed (text input).
+    TextChanged { id: WidgetId, text: String },
+    /// An item was selected by index (dropdown, menu).
+    Selected { id: WidgetId, index: usize },
+    /// A dropdown trigger requests opening its popup list.
+    OpenDropdown {
+        /// The dropdown widget's ID (for routing selection back).
+        id: WidgetId,
+        /// Option labels.
+        options: Vec<String>,
+        /// Currently selected index.
+        selected: usize,
+        /// Screen-space anchor rect for popup placement.
+        anchor: Rect,
+    },
+    /// An overlay content widget requests its own dismissal.
+    DismissOverlay(WidgetId),
+    /// An overlay widget requests repositioning (e.g. header drag).
+    MoveOverlay { delta_x: f32, delta_y: f32 },
+    /// A drag gesture started (threshold exceeded).
+    DragStart { id: WidgetId, pos: Point },
+    /// A drag gesture moved.
+    DragUpdate {
+        id: WidgetId,
+        /// Movement since last `MouseMove`.
+        delta: Point,
+        /// Cumulative movement since `DragStart`.
+        total_delta: Point,
+    },
+    /// A drag gesture ended (mouse released while dragging).
+    DragEnd { id: WidgetId, pos: Point },
+    /// A scroll event with converted pixel deltas.
+    ScrollBy {
+        id: WidgetId,
+        delta_x: f32,
+        delta_y: f32,
+    },
+    /// The settings panel Save button was clicked — persist and dismiss.
+    SaveSettings,
+    /// The settings panel Cancel button was clicked — revert and dismiss.
+    CancelSettings,
+    /// Minimize the window.
+    WindowMinimize,
+    /// Maximize or restore the window.
+    WindowMaximize,
+    /// Close the window.
+    WindowClose,
+}
