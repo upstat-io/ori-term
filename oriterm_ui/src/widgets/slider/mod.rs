@@ -5,21 +5,18 @@
 //! adjustment (arrow keys, Home/End). Uses [`VisualStateAnimator`]
 //! with `common_states()` for smooth thumb color transitions.
 
+mod widget_impl;
+
 use crate::color::Color;
-use crate::controllers::{ClickController, EventController, HoverController};
-use crate::draw::RectStyle;
+use crate::controllers::{EventController, HoverController, ScrubController, SliderKeyController};
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
-use crate::layout::{LayoutBox, SizeSpec};
-use crate::sense::Sense;
-use crate::text::TextStyle;
 use crate::visual_state::common_states;
 use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::WidgetAction;
 
 /// Width reserved for the value label to the right of the track.
 const VALUE_LABEL_WIDTH: f32 = 48.0;
@@ -91,16 +88,18 @@ impl Default for SliderStyle {
 /// Arrow keys adjust by `step`, Home/End jump to min/max. Thumb
 /// hover transitions use [`VisualStateAnimator`] with `common_states()`.
 pub struct SliderWidget {
-    id: WidgetId,
-    value: f32,
-    min: f32,
-    max: f32,
-    step: f32,
-    disabled: bool,
-    style: SliderStyle,
-    controllers: Vec<Box<dyn EventController>>,
+    pub(super) id: WidgetId,
+    pub(super) value: f32,
+    pub(super) min: f32,
+    pub(super) max: f32,
+    pub(super) step: f32,
+    pub(super) disabled: bool,
+    pub(super) style: SliderStyle,
+    pub(super) controllers: Vec<Box<dyn EventController>>,
     /// Animator for thumb color transition.
-    animator: VisualStateAnimator,
+    pub(super) animator: VisualStateAnimator,
+    /// Position at scrub start, for computing value from `total_delta`.
+    pub(super) drag_origin: Option<Point>,
 }
 
 impl Default for SliderWidget {
@@ -122,7 +121,8 @@ impl SliderWidget {
             disabled: false,
             controllers: vec![
                 Box::new(HoverController::new()),
-                Box::new(ClickController::new()),
+                Box::new(ScrubController::new()),
+                Box::new(SliderKeyController::new(0.0, 1.0, 0.01)),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
                 style.thumb_color,
@@ -131,6 +131,7 @@ impl SliderWidget {
                 style.disabled_bg,
             )]),
             style,
+            drag_origin: None,
         }
     }
 
@@ -142,6 +143,7 @@ impl SliderWidget {
     /// Sets the value, clamping to [min, max].
     pub fn set_value(&mut self, value: f32) {
         self.value = value.clamp(self.min, self.max);
+        self.sync_key_controller();
     }
 
     /// Returns the minimum value.
@@ -165,6 +167,7 @@ impl SliderWidget {
         self.min = min;
         self.max = max;
         self.value = self.value.clamp(min, max);
+        self.sync_key_controller();
         self
     }
 
@@ -172,6 +175,7 @@ impl SliderWidget {
     #[must_use]
     pub fn with_step(mut self, step: f32) -> Self {
         self.step = step;
+        self.sync_key_controller();
         self
     }
 
@@ -179,6 +183,7 @@ impl SliderWidget {
     #[must_use]
     pub fn with_value(mut self, value: f32) -> Self {
         self.value = value.clamp(self.min, self.max);
+        self.sync_key_controller();
         self
     }
 
@@ -203,7 +208,7 @@ impl SliderWidget {
     }
 
     /// Returns the normalized position (0.0..1.0) of the current value.
-    fn normalized(&self) -> f32 {
+    pub(super) fn normalized(&self) -> f32 {
         if (self.max - self.min).abs() < f32::EPSILON {
             return 0.0;
         }
@@ -211,7 +216,7 @@ impl SliderWidget {
     }
 
     /// Converts a pixel X position within bounds to a value.
-    fn value_from_x(&self, x: f32, bounds: Rect) -> f32 {
+    pub(super) fn value_from_x(&self, x: f32, bounds: Rect) -> f32 {
         let half_thumb = self.style.thumb_size / 2.0;
         let track_left = bounds.x() + half_thumb;
         let track_width = bounds.width() - self.style.thumb_size;
@@ -224,7 +229,7 @@ impl SliderWidget {
     }
 
     /// Snaps a raw value to the nearest step.
-    fn snap_to_step(&self, raw: f32) -> f32 {
+    pub(super) fn snap_to_step(&self, raw: f32) -> f32 {
         if self.step <= 0.0 {
             return raw.clamp(self.min, self.max);
         }
@@ -233,14 +238,14 @@ impl SliderWidget {
     }
 
     /// Returns the track area (excluding value label space) within the given bounds.
-    fn track_bounds(&self, bounds: Rect) -> Rect {
+    pub(super) fn track_bounds(&self, bounds: Rect) -> Rect {
         let label_space = VALUE_LABEL_WIDTH + VALUE_GAP;
         let w = (bounds.width() - label_space).max(self.style.thumb_size);
         Rect::new(bounds.x(), bounds.y(), w, bounds.height())
     }
 
     /// Formats the current value for display based on step precision.
-    fn format_value(&self) -> String {
+    pub(super) fn format_value(&self) -> String {
         if self.step >= 1.0 {
             format!("{:.0}", self.value)
         } else if self.step >= 0.1 {
@@ -251,16 +256,29 @@ impl SliderWidget {
     }
 
     /// Sets value and returns action if it changed.
-    fn set_value_action(&mut self, new_value: f32) -> Option<WidgetAction> {
+    pub(super) fn set_value_action(&mut self, new_value: f32) -> Option<WidgetAction> {
         let clamped = new_value.clamp(self.min, self.max);
         if (clamped - self.value).abs() < f32::EPSILON {
             return None;
         }
         self.value = clamped;
+        self.sync_key_controller();
         Some(WidgetAction::ValueChanged {
             id: self.id,
             value: self.value,
         })
+    }
+
+    /// Syncs the `SliderKeyController` with the widget's current parameters.
+    ///
+    /// Replaces the controller at index 2 (after `HoverController` and
+    /// `ScrubController`) with a fresh instance reflecting current state.
+    /// Only called on parameter changes, not in the hot path.
+    fn sync_key_controller(&mut self) {
+        const KEY_CTRL_INDEX: usize = 2;
+        let mut ctrl = SliderKeyController::new(self.min, self.max, self.step);
+        ctrl.set_value(self.value);
+        self.controllers[KEY_CTRL_INDEX] = Box::new(ctrl);
     }
 }
 
@@ -276,193 +294,8 @@ impl std::fmt::Debug for SliderWidget {
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
+            .field("drag_origin", &self.drag_origin)
             .finish()
-    }
-}
-
-impl Widget for SliderWidget {
-    fn id(&self) -> WidgetId {
-        self.id
-    }
-
-    fn is_focusable(&self) -> bool {
-        !self.disabled
-    }
-
-    fn sense(&self) -> Sense {
-        Sense::click()
-    }
-
-    fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
-        let height = self.style.thumb_size.max(self.style.track_height);
-        LayoutBox::leaf(self.style.width, height)
-            .with_width(SizeSpec::Fill)
-            .with_widget_id(self.id)
-    }
-
-    fn controllers(&self) -> &[Box<dyn EventController>] {
-        &self.controllers
-    }
-
-    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
-        &mut self.controllers
-    }
-
-    fn visual_states(&self) -> Option<&VisualStateAnimator> {
-        Some(&self.animator)
-    }
-
-    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
-        Some(&mut self.animator)
-    }
-
-    fn paint(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
-        let s = &self.style;
-        let tb = self.track_bounds(ctx.bounds);
-
-        // Focus ring around track area.
-        if focused {
-            let ring = tb.inset(crate::geometry::Insets::all(-2.0));
-            let ring_style = RectStyle::filled(Color::TRANSPARENT)
-                .with_border(2.0, s.focus_ring_color)
-                .with_radius(s.track_radius + 2.0);
-            ctx.draw_list.push_rect(ring, ring_style);
-        }
-
-        // Track background.
-        let track_y = tb.y() + (tb.height() - s.track_height) / 2.0;
-        let track_rect = Rect::new(tb.x(), track_y, tb.width(), s.track_height);
-        let bg_color = if self.disabled {
-            s.disabled_bg
-        } else {
-            s.track_bg
-        };
-        let track_style = RectStyle::filled(bg_color).with_radius(s.track_radius);
-        ctx.draw_list.push_rect(track_rect, track_style);
-
-        // Filled portion (left of thumb).
-        let norm = self.normalized();
-        let fill_width = norm * tb.width();
-        if fill_width > 0.0 {
-            let fill_rect = Rect::new(tb.x(), track_y, fill_width, s.track_height);
-            let fill_color = if self.disabled {
-                s.disabled_fill
-            } else {
-                s.fill_color
-            };
-            let fill_style = RectStyle::filled(fill_color).with_radius(s.track_radius);
-            ctx.draw_list.push_rect(fill_rect, fill_style);
-        }
-
-        // Thumb.
-        let half_thumb = s.thumb_size / 2.0;
-        let travel = tb.width() - s.thumb_size;
-        let thumb_x = tb.x() + travel * norm;
-        let thumb_y = tb.y() + (tb.height() - s.thumb_size) / 2.0;
-        let thumb_rect = Rect::new(thumb_x, thumb_y, s.thumb_size, s.thumb_size);
-        let thumb_bg = if self.disabled {
-            s.disabled_bg
-        } else {
-            self.animator.get_bg_color(ctx.now)
-        };
-        let thumb_style = RectStyle::filled(thumb_bg)
-            .with_border(s.thumb_border_width, s.thumb_border_color)
-            .with_radius(half_thumb);
-        ctx.draw_list.push_rect(thumb_rect, thumb_style);
-
-        // Value label to the right of the track.
-        let value_text = self.format_value();
-        let text_style = TextStyle::new(ctx.theme.font_size, ctx.theme.fg_secondary);
-        let shaped = ctx
-            .measurer
-            .shape(&value_text, &text_style, VALUE_LABEL_WIDTH);
-        let label_x = tb.right() + VALUE_GAP;
-        // Right-align within the label area.
-        let text_x = label_x + VALUE_LABEL_WIDTH - shaped.width;
-        let text_y = ctx.bounds.y() + (ctx.bounds.height() - shaped.height) / 2.0;
-        ctx.draw_list
-            .push_text(Point::new(text_x, text_y), shaped, ctx.theme.fg_secondary);
-
-        // Signal continued redraws while the animator is transitioning.
-        if self.animator.is_animating(ctx.now) {
-            ctx.request_anim_frame();
-        }
-    }
-
-    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        let tb = self.track_bounds(ctx.bounds);
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                let new_val = self.value_from_x(event.pos.x, tb);
-                let action = self.set_value_action(new_val);
-                let mut r = WidgetResponse::focus().with_capture();
-                if let Some(a) = action {
-                    r = r.with_action(a);
-                }
-                r
-            }
-            MouseEventKind::Up(MouseButton::Left) => WidgetResponse::paint().with_release_capture(),
-            // Move events arrive via container capture — always update value.
-            MouseEventKind::Move => {
-                let new_val = self.value_from_x(event.pos.x, tb);
-                let action = self.set_value_action(new_val);
-                let mut r = WidgetResponse::paint();
-                if let Some(a) = action {
-                    r = r.with_action(a);
-                }
-                r
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event {
-            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled || !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        let delta = match event.key {
-            Key::ArrowRight | Key::ArrowUp => self.step,
-            Key::ArrowLeft | Key::ArrowDown => -self.step,
-            Key::Home => {
-                let action = self.set_value_action(self.min);
-                let mut r = WidgetResponse::paint();
-                if let Some(a) = action {
-                    r = r.with_action(a);
-                }
-                return r;
-            }
-            Key::End => {
-                let action = self.set_value_action(self.max);
-                let mut r = WidgetResponse::paint();
-                if let Some(a) = action {
-                    r = r.with_action(a);
-                }
-                return r;
-            }
-            _ => return WidgetResponse::ignored(),
-        };
-        let new_val = self.snap_to_step(self.value + delta);
-        let action = self.set_value_action(new_val);
-        let mut r = WidgetResponse::paint();
-        if let Some(a) = action {
-            r = r.with_action(a);
-        }
-        r
     }
 }
 

@@ -10,8 +10,11 @@ mod drag;
 mod dropdown_key;
 mod focus;
 mod hover;
+mod key_activation;
 mod menu_key;
 mod scroll;
+mod scrub;
+mod slider_key;
 mod text_edit;
 
 pub use click::ClickController;
@@ -19,8 +22,11 @@ pub use drag::DragController;
 pub use dropdown_key::DropdownKeyController;
 pub use focus::FocusController;
 pub use hover::HoverController;
+pub use key_activation::KeyActivationController;
 pub use menu_key::MenuKeyController;
 pub use scroll::ScrollController;
+pub use scrub::ScrubController;
+pub use slider_key::SliderKeyController;
 pub use text_edit::TextEditController;
 
 use std::time::Instant;

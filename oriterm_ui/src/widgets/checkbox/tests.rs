@@ -250,9 +250,9 @@ fn sense_returns_click() {
 }
 
 #[test]
-fn has_two_controllers() {
+fn has_three_controllers() {
     let cb = CheckboxWidget::new("X");
-    assert_eq!(cb.controllers().len(), 2);
+    assert_eq!(cb.controllers().len(), 3);
 }
 
 #[test]

@@ -768,14 +768,18 @@ generic controller pipeline and widget-specific behavior.
 **Missing controllers on widgets:**
 
 - [x] MenuWidget: add `ClickController` (was marked complete in §08.4 but never wired).
-- [ ] ButtonWidget: add `KeyActivationController` or extend ClickController for
-  Enter/Space → `Clicked` (needed to remove `handle_key` from Button).
-- [ ] ToggleWidget, CheckboxWidget: add keyboard controller for Space → toggle
-  (needed to remove `handle_key`).
-- [ ] SliderWidget: add `DragController` for drag-to-value and keyboard controller
-  for arrow/Home/End (needed to remove `handle_mouse` and `handle_key`).
+- [x] ButtonWidget: add `KeyActivationController` for Enter/Space → `Clicked`
+  (needed to remove `handle_key` from Button).
+- [x] ToggleWidget, CheckboxWidget: add `KeyActivationController` for Space → toggle
+  (needed to remove `handle_key`). Toggle/Checkbox `on_action` already transforms
+  `Clicked` → `toggle()`.
+- [x] SliderWidget: add `ScrubController` for immediate drag-to-value and
+  `SliderKeyController` for arrow/Home/End (needed to remove `handle_mouse` and
+  `handle_key`). Widget impl extracted to `widget_impl.rs` (500-line limit).
 - [ ] TextInputWidget: wire `TextEditController` for keyboard input and click-to-cursor
-  (needed to remove `handle_mouse` and `handle_key`).
+  (needed to remove `handle_mouse` and `handle_key`). Deferred — requires solving
+  state ownership between controller and widget (controller owns text/cursor/selection
+  but widget needs them for painting; no post-dispatch sync hook exists).
 
 **Dialog context integration:**
 
