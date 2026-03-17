@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::BoxContent;
+use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{CaptureRequest, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
@@ -46,12 +47,13 @@ fn space_key() -> KeyEvent {
     }
 }
 
+// -- Construction and state --
+
 #[test]
 fn default_state() {
     let t = ToggleWidget::new();
     assert!(!t.is_on());
     assert!(!t.is_disabled());
-    assert!(!t.is_hovered());
     assert!(t.is_focusable());
     assert_eq!(t.toggle_progress(), 0.0);
 }
@@ -62,6 +64,26 @@ fn with_on_builder() {
     assert!(t.is_on());
     assert_eq!(t.toggle_progress(), 1.0);
 }
+
+#[test]
+fn sense_returns_click() {
+    let t = ToggleWidget::new();
+    assert_eq!(t.sense(), Sense::click());
+}
+
+#[test]
+fn has_two_controllers() {
+    let t = ToggleWidget::new();
+    assert_eq!(t.controllers().len(), 2);
+}
+
+#[test]
+fn has_visual_state_animator() {
+    let t = ToggleWidget::new();
+    assert!(t.visual_states().is_some());
+}
+
+// -- Layout --
 
 #[test]
 fn layout_fixed_size() {
@@ -86,12 +108,13 @@ fn layout_fixed_size() {
     }
 }
 
+// -- Click and keyboard toggle (legacy compat) --
+
 #[test]
 fn click_toggles() {
     let mut t = ToggleWidget::new();
     let ctx = event_ctx();
 
-    // Down acquires capture, Up inside bounds toggles.
     let r = t.handle_mouse(&left_down(), &ctx);
     assert_eq!(r.capture, CaptureRequest::Acquire);
     let r = t.handle_mouse(&left_up(), &ctx);
@@ -157,18 +180,6 @@ fn disabled_ignores() {
 }
 
 #[test]
-fn hover_transitions() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    t.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(t.is_hovered());
-
-    t.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!t.is_hovered());
-}
-
-#[test]
 fn set_on_programmatic() {
     let mut t = ToggleWidget::new();
     t.set_on(true);
@@ -184,7 +195,6 @@ fn enter_key_does_not_toggle() {
     let mut t = ToggleWidget::new();
     let ctx = event_ctx();
 
-    // Only Space toggles, not Enter.
     let r = t.handle_key(
         KeyEvent {
             key: Key::Enter,
@@ -216,7 +226,6 @@ fn release_outside_bounds_no_toggle() {
     let mut t = ToggleWidget::new();
     let ctx = event_ctx();
 
-    // Press inside, then release outside — should not toggle but release capture.
     t.handle_mouse(&left_down(), &ctx);
     let outside_up = MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
@@ -227,18 +236,6 @@ fn release_outside_bounds_no_toggle() {
     assert!(!t.is_on());
     assert_eq!(r.capture, CaptureRequest::Release);
     assert!(r.action.is_none());
-}
-
-#[test]
-fn disable_while_hovered_clears_state() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    t.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(t.is_hovered());
-
-    t.set_disabled(true);
-    assert!(!t.is_hovered());
 }
 
 #[test]
@@ -254,7 +251,7 @@ fn rapid_toggle_maintains_consistency() {
     }
 }
 
-// Animation-specific tests
+// -- Animation --
 
 #[test]
 fn set_on_is_immediate_no_animation() {
@@ -262,7 +259,6 @@ fn set_on_is_immediate_no_animation() {
     let now = Instant::now();
     t.set_on(true);
 
-    // set_on uses set_immediate — no animation should be running.
     assert!(!t.toggle_progress.is_animating(now));
     assert_eq!(t.toggle_progress.get(now), 1.0);
 }
@@ -274,9 +270,7 @@ fn toggle_starts_animation() {
     t.handle_key(space_key(), &ctx);
 
     let now = Instant::now();
-    // Animation should be running right after toggle.
     assert!(t.toggle_progress.is_animating(now));
-    // Target is 1.0 (on).
     assert_eq!(t.toggle_progress.target(), 1.0);
 }
 
@@ -286,7 +280,6 @@ fn animation_completes_to_target() {
     let ctx = event_ctx();
     t.handle_key(space_key(), &ctx);
 
-    // After the animation duration, value should be at target.
     let later = Instant::now() + Duration::from_millis(200);
     assert!(!t.toggle_progress.is_animating(later));
     assert_eq!(t.toggle_progress.get(later), 1.0);
@@ -300,7 +293,7 @@ fn with_on_builder_is_immediate() {
     assert_eq!(t.toggle_progress.get(now), 1.0);
 }
 
-// with_style builder test
+// -- Style --
 
 #[test]
 fn with_style_applies_custom_style() {
@@ -320,7 +313,6 @@ fn with_style_applies_custom_style() {
     };
     let t = ToggleWidget::new().with_style(style);
 
-    // Layout should reflect the custom size.
     let m = MockMeasurer::new();
     let ctx = LayoutCtx {
         measurer: &m,
@@ -339,25 +331,22 @@ fn with_style_applies_custom_style() {
     }
 }
 
-// Animation interpolation output verification (Chromium blend tests)
+// -- Paint --
 
 #[test]
 fn toggle_animation_interpolates_thumb_position() {
     let mut t = ToggleWidget::new();
     let ctx = event_ctx();
 
-    // Toggle on — starts animation.
     t.handle_key(space_key(), &ctx);
     let now = Instant::now();
 
-    // At animation start, progress should be near 0 (starting from off).
     let start_progress = t.toggle_progress.get(now);
     assert!(
         start_progress < 0.1,
         "at start of toggle animation, progress should be near 0, got {start_progress}"
     );
 
-    // After animation completes, progress should be 1.0.
     let after = now + Duration::from_millis(200);
     let end_progress = t.toggle_progress.get(after);
     assert_eq!(
@@ -367,13 +356,11 @@ fn toggle_animation_interpolates_thumb_position() {
 }
 
 #[test]
-fn toggle_draw_signals_animations_running() {
+fn paint_signals_animation_while_toggling() {
     use crate::draw::DrawList;
 
     let mut t = ToggleWidget::new();
     let ctx = event_ctx();
-
-    // Toggle on to start animation.
     t.handle_key(space_key(), &ctx);
 
     let measurer = MockMeasurer::STANDARD;
@@ -399,12 +386,12 @@ fn toggle_draw_signals_animations_running() {
 
     assert!(
         anim_flag.get(),
-        "draw() should signal animations_running while toggle animates"
+        "paint() should signal animations_running while toggle animates"
     );
 }
 
 #[test]
-fn toggle_draw_no_animation_signal_when_idle() {
+fn paint_no_animation_signal_when_idle() {
     use crate::draw::DrawList;
 
     let t = ToggleWidget::new();
@@ -432,15 +419,14 @@ fn toggle_draw_no_animation_signal_when_idle() {
 
     assert!(
         !anim_flag.get(),
-        "draw() should not signal animations_running when idle"
+        "paint() should not signal animations_running when idle"
     );
 }
 
 #[test]
-fn toggle_draws_thumb_at_correct_position() {
+fn paint_thumb_at_on_position() {
     use crate::draw::{DrawCommand, DrawList};
 
-    // Toggle in ON state (immediate, no animation).
     let t = ToggleWidget::new().with_on(true);
     let style = ToggleStyle::default();
 
@@ -465,8 +451,6 @@ fn toggle_draws_thumb_at_correct_position() {
     };
     t.paint(&mut draw_ctx);
 
-    // The toggle draws: [optional focus ring], track rect, thumb rect.
-    // Thumb is the last Rect command.
     let rects: Vec<_> = draw_list
         .commands()
         .iter()
@@ -480,7 +464,6 @@ fn toggle_draws_thumb_at_correct_position() {
     let thumb_rect = rects.last().unwrap();
     let thumb_diameter = style.height - style.thumb_padding * 2.0;
     let travel = style.width - style.thumb_padding * 2.0 - thumb_diameter;
-    // ON state: thumb is at rightmost position.
     let expected_x = bounds.x() + style.thumb_padding + travel;
     assert!(
         (thumb_rect.x() - expected_x).abs() < 0.1,
@@ -490,10 +473,10 @@ fn toggle_draws_thumb_at_correct_position() {
 }
 
 #[test]
-fn toggle_draws_thumb_at_off_position() {
+fn paint_thumb_at_off_position() {
     use crate::draw::{DrawCommand, DrawList};
 
-    let t = ToggleWidget::new(); // OFF, no animation.
+    let t = ToggleWidget::new();
     let style = ToggleStyle::default();
 
     let measurer = MockMeasurer::STANDARD;
@@ -528,7 +511,6 @@ fn toggle_draws_thumb_at_off_position() {
     assert!(rects.len() >= 2, "should have track + thumb rects");
 
     let thumb_rect = rects.last().unwrap();
-    // OFF state: thumb is at leftmost position.
     let expected_x = bounds.x() + style.thumb_padding;
     assert!(
         (thumb_rect.x() - expected_x).abs() < 0.1,

@@ -10,8 +10,11 @@
 mod widget_impl;
 
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::geometry::Insets;
 use crate::text::TextStyle;
+use crate::visual_state::focus_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -84,8 +87,9 @@ impl Default for TextInputStyle {
 ///
 /// Manages text content, cursor position, and selection. Keyboard
 /// editing is handled internally; `WidgetAction::TextChanged` is
-/// emitted when content changes.
-#[derive(Debug, Clone)]
+/// emitted when content changes. Border color transitions between
+/// unfocused and focused states are handled by [`VisualStateAnimator`]
+/// with `focus_states()`.
 pub struct TextInputWidget {
     pub(super) id: WidgetId,
     pub(super) text: String,
@@ -93,8 +97,9 @@ pub struct TextInputWidget {
     pub(super) cursor: usize,
     pub(super) selection_anchor: Option<usize>,
     pub(super) disabled: bool,
-    pub(super) hovered: bool,
     pub(super) style: TextInputStyle,
+    pub(super) controllers: Vec<Box<dyn EventController>>,
+    pub(super) animator: VisualStateAnimator,
 }
 
 impl Default for TextInputWidget {
@@ -106,6 +111,7 @@ impl Default for TextInputWidget {
 impl TextInputWidget {
     /// Creates an empty text input.
     pub fn new() -> Self {
+        let style = TextInputStyle::default();
         Self {
             id: WidgetId::next(),
             text: String::new(),
@@ -113,8 +119,15 @@ impl TextInputWidget {
             cursor: 0,
             selection_anchor: None,
             disabled: false,
-            hovered: false,
-            style: TextInputStyle::default(),
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![focus_states(
+                style.border_color,
+                style.focus_border_color,
+            )]),
+            style,
         }
     }
 
@@ -154,17 +167,9 @@ impl TextInputWidget {
         self.disabled
     }
 
-    /// Returns whether the input is hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
-    }
-
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
-        if disabled {
-            self.hovered = false;
-        }
     }
 
     /// Sets placeholder text.
@@ -184,6 +189,10 @@ impl TextInputWidget {
     /// Sets the style.
     #[must_use]
     pub fn with_style(mut self, style: TextInputStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![focus_states(
+            style.border_color,
+            style.focus_border_color,
+        )]);
         self.style = style;
         self
     }
@@ -279,6 +288,22 @@ impl TextInputWidget {
         let style = self.text_style();
         let metrics = measurer.measure(prefix, &style, f32::INFINITY);
         metrics.width
+    }
+}
+
+impl std::fmt::Debug for TextInputWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextInputWidget")
+            .field("id", &self.id)
+            .field("text", &self.text)
+            .field("placeholder", &self.placeholder)
+            .field("cursor", &self.cursor)
+            .field("selection_anchor", &self.selection_anchor)
+            .field("disabled", &self.disabled)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
     }
 }
 

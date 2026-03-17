@@ -49,7 +49,6 @@ fn default_state() {
     let cb = CheckboxWidget::new("Accept");
     assert!(!cb.is_checked());
     assert!(!cb.is_disabled());
-    assert!(!cb.is_hovered());
     assert!(cb.is_focusable());
 }
 
@@ -153,15 +152,15 @@ fn disabled_ignores_events() {
 }
 
 #[test]
-fn hover_transitions() {
+fn hover_returns_paint() {
     let mut cb = CheckboxWidget::new("X");
     let ctx = event_ctx();
 
-    cb.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(cb.is_hovered());
+    let r = cb.handle_hover(HoverEvent::Enter, &ctx);
+    assert_eq!(r.response, crate::input::EventResponse::RequestPaint);
 
-    cb.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!cb.is_hovered());
+    let r = cb.handle_hover(HoverEvent::Leave, &ctx);
+    assert_eq!(r.response, crate::input::EventResponse::RequestPaint);
 }
 
 #[test]
@@ -237,13 +236,27 @@ fn release_outside_bounds_no_toggle() {
 }
 
 #[test]
-fn set_disabled_clears_hover() {
+fn set_disabled_affects_focusable() {
     let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
-
-    cb.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(cb.is_hovered());
-
+    assert!(cb.is_focusable());
     cb.set_disabled(true);
-    assert!(!cb.is_hovered());
+    assert!(!cb.is_focusable());
+}
+
+#[test]
+fn sense_returns_click() {
+    let cb = CheckboxWidget::new("X");
+    assert_eq!(cb.sense(), crate::sense::Sense::click());
+}
+
+#[test]
+fn has_two_controllers() {
+    let cb = CheckboxWidget::new("X");
+    assert_eq!(cb.controllers().len(), 2);
+}
+
+#[test]
+fn has_visual_state_animator() {
+    let cb = CheckboxWidget::new("X");
+    assert!(cb.visual_states().is_some());
 }

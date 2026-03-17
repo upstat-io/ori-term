@@ -3,15 +3,21 @@
 //! Displays the currently selected item and a dropdown indicator.
 //! On click or Enter/Space, emits `WidgetAction::OpenDropdown` for
 //! the app layer to open a popup overlay. Arrow keys cycle through
-//! items directly, emitting `WidgetAction::Selected`.
+//! items directly, emitting `WidgetAction::Selected`. Uses
+//! [`VisualStateAnimator`] with `common_states()` for smooth hover
+//! color transitions.
 
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point, Rect};
 use crate::icons::IconId;
 use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::TextStyle;
+use crate::visual_state::common_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -83,16 +89,19 @@ impl Default for DropdownStyle {
 ///
 /// Arrow Up/Down keys cycle through items directly. Enter/Space and
 /// mouse click emit `WidgetAction::OpenDropdown` for the app layer
-/// to open a popup overlay with the options list.
-#[derive(Debug, Clone)]
+/// to open a popup overlay with the options list. Hover transitions
+/// use [`VisualStateAnimator`] with `common_states()`.
 pub struct DropdownWidget {
     id: WidgetId,
     items: Vec<String>,
     selected: usize,
     disabled: bool,
-    hovered: bool,
-    pressed: bool,
     style: DropdownStyle,
+    controllers: Vec<Box<dyn EventController>>,
+    /// Animator for bg state transitions (Normal/Hovered/Pressed/Disabled).
+    animator: VisualStateAnimator,
+    /// Legacy pressed tracking for `handle_mouse()` compat (removed in S08.6).
+    pressed: bool,
 }
 
 impl DropdownWidget {
@@ -101,14 +110,24 @@ impl DropdownWidget {
     /// Panics if `items` is empty.
     pub fn new(items: Vec<String>) -> Self {
         assert!(!items.is_empty(), "dropdown requires at least one item");
+        let style = DropdownStyle::default();
         Self {
             id: WidgetId::next(),
             items,
             selected: 0,
             disabled: false,
-            hovered: false,
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![common_states(
+                style.bg,
+                style.hover_bg,
+                style.pressed_bg,
+                style.disabled_bg,
+            )]),
+            style,
             pressed: false,
-            style: DropdownStyle::default(),
         }
     }
 
@@ -137,16 +156,10 @@ impl DropdownWidget {
         self.disabled
     }
 
-    /// Returns whether the dropdown is hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
-    }
-
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
         if disabled {
-            self.hovered = false;
             self.pressed = false;
         }
     }
@@ -165,28 +178,20 @@ impl DropdownWidget {
         self
     }
 
-    /// Sets the style.
+    /// Sets the style, rebuilding the animator.
     #[must_use]
     pub fn with_style(mut self, style: DropdownStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![common_states(
+            style.bg,
+            style.hover_bg,
+            style.pressed_bg,
+            style.disabled_bg,
+        )]);
         self.style = style;
         self
     }
 
-    /// Returns the current background color.
-    fn current_bg(&self) -> Color {
-        if self.disabled {
-            return self.style.disabled_bg;
-        }
-        if self.pressed {
-            return self.style.pressed_bg;
-        }
-        if self.hovered {
-            return self.style.hover_bg;
-        }
-        self.style.bg
-    }
-
-    /// Returns the current text color.
+    /// Returns the current text color based on state.
     fn current_fg(&self) -> Color {
         if self.disabled {
             self.style.disabled_fg
@@ -223,6 +228,21 @@ impl DropdownWidget {
     }
 }
 
+impl std::fmt::Debug for DropdownWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DropdownWidget")
+            .field("id", &self.id)
+            .field("items", &self.items)
+            .field("selected", &self.selected)
+            .field("disabled", &self.disabled)
+            .field("pressed", &self.pressed)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
+    }
+}
+
 impl Widget for DropdownWidget {
     fn id(&self) -> WidgetId {
         self.id
@@ -230,6 +250,10 @@ impl Widget for DropdownWidget {
 
     fn is_focusable(&self) -> bool {
         !self.disabled
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::click()
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -247,8 +271,24 @@ impl Widget for DropdownWidget {
         LayoutBox::leaf(w, h).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.focused_widget == Some(self.id);
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
         let bounds = ctx.bounds;
         let s = &self.style;
 
@@ -261,11 +301,12 @@ impl Widget for DropdownWidget {
             ctx.draw_list.push_rect(ring, ring_style);
         }
 
-        // Layer captures the dropdown bg for subpixel text compositing.
-        let bg = self.current_bg();
+        // Background from visual state animator (transitions between Normal,
+        // Hovered, Pressed, Disabled states automatically).
+        let bg = self.animator.get_bg_color(ctx.now);
         ctx.draw_list.push_layer(bg);
 
-        // Background.
+        // Background rect.
         let bg_style = RectStyle::filled(bg)
             .with_border(s.border_width, s.border_color)
             .with_radius(s.corner_radius);
@@ -317,7 +358,15 @@ impl Widget for DropdownWidget {
         }
 
         ctx.draw_list.pop_layer();
+
+        // Signal continued redraws while the animator is transitioning.
+        if self.animator.is_animating(ctx.now) {
+            ctx.animations_running.set(true);
+            ctx.request_anim_frame();
+        }
     }
+
+    // --- Legacy methods (compat shim until containers migrate in S08.4) ---
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
@@ -352,12 +401,8 @@ impl Widget for DropdownWidget {
             return WidgetResponse::ignored();
         }
         match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter => WidgetResponse::paint(),
             HoverEvent::Leave => {
-                self.hovered = false;
                 self.pressed = false;
                 WidgetResponse::paint()
             }

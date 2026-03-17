@@ -1,6 +1,7 @@
 use crate::geometry::Rect;
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers};
 use crate::layout::BoxContent;
+use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
@@ -46,6 +47,8 @@ fn char_key(ch: char) -> KeyEvent {
     key(Key::Character(ch))
 }
 
+// -- Construction and state --
+
 #[test]
 fn default_state() {
     let ti = TextInputWidget::new();
@@ -55,6 +58,31 @@ fn default_state() {
     assert!(!ti.is_disabled());
     assert!(ti.is_focusable());
 }
+
+// -- Sense and controllers --
+
+#[test]
+fn sense_returns_click_drag_focusable() {
+    let ti = TextInputWidget::new();
+    assert_eq!(
+        ti.sense(),
+        Sense::click_and_drag().union(Sense::focusable())
+    );
+}
+
+#[test]
+fn has_two_controllers() {
+    let ti = TextInputWidget::new();
+    assert_eq!(ti.controllers().len(), 2);
+}
+
+#[test]
+fn has_visual_state_animator() {
+    let ti = TextInputWidget::new();
+    assert!(ti.visual_states().is_some());
+}
+
+// -- Text editing --
 
 #[test]
 fn type_characters() {
@@ -167,6 +195,8 @@ fn home_end_keys() {
     assert_eq!(ti.cursor(), 5);
 }
 
+// -- Selection --
+
 #[test]
 fn shift_arrow_selects() {
     let mut ti = TextInputWidget::new();
@@ -225,80 +255,6 @@ fn backspace_deletes_selection() {
     ti.handle_key(key(Key::Backspace), &ctx);
     assert_eq!(ti.text(), "ho");
     assert_eq!(ti.cursor(), 1);
-}
-
-#[test]
-fn disabled_ignores() {
-    let mut ti = TextInputWidget::new().with_disabled(true);
-    let ctx = event_ctx();
-
-    assert!(!ti.is_focusable());
-
-    let r = ti.handle_key(char_key('a'), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = ti.handle_hover(HoverEvent::Enter, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-}
-
-#[test]
-fn layout_uses_min_width() {
-    let ti = TextInputWidget::new();
-    let m = MockMeasurer::new();
-    let ctx = LayoutCtx {
-        measurer: &m,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    let layout = ti.layout(&ctx);
-    let s = TextInputStyle::default();
-
-    if let BoxContent::Leaf {
-        intrinsic_width, ..
-    } = &layout.content
-    {
-        // Empty text → placeholder empty → min_width applies.
-        assert!(*intrinsic_width >= s.min_width);
-    } else {
-        panic!("expected leaf layout");
-    }
-}
-
-#[test]
-fn placeholder_layout_measures_placeholder() {
-    let ti = TextInputWidget::new().with_placeholder("Type here...");
-    let m = MockMeasurer::new();
-    let ctx = LayoutCtx {
-        measurer: &m,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    let layout = ti.layout(&ctx);
-
-    if let BoxContent::Leaf {
-        intrinsic_width, ..
-    } = &layout.content
-    {
-        // "Type here..." = 12 chars * 8px = 96 + padding 16 = 112,
-        // but min_width = 120 so it should be at least 120.
-        assert!(*intrinsic_width >= 120.0);
-    } else {
-        panic!("expected leaf layout");
-    }
-}
-
-#[test]
-fn unicode_editing() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    // Type multi-byte chars.
-    ti.handle_key(char_key('é'), &ctx);
-    ti.handle_key(char_key('à'), &ctx);
-    assert_eq!(ti.text(), "éà");
-    assert_eq!(ti.cursor(), 4); // 2 bytes each.
-
-    ti.handle_key(key(Key::Backspace), &ctx);
-    assert_eq!(ti.text(), "é");
-    assert_eq!(ti.cursor(), 2);
 }
 
 #[test]
@@ -390,6 +346,123 @@ fn delete_with_selection_removes_selected() {
 }
 
 #[test]
+fn shift_left_then_right_cancels_selection() {
+    let mut ti = TextInputWidget::new();
+    let ctx = event_ctx();
+
+    ti.set_text("hello");
+    ti.cursor = 3;
+
+    // Select one char left.
+    ti.handle_key(shift_key(Key::ArrowLeft), &ctx);
+    assert_eq!(ti.selection_range(), Some((2, 3)));
+
+    // Select one char right — cursor back to anchor.
+    ti.handle_key(shift_key(Key::ArrowRight), &ctx);
+    // Anchor is still 3, cursor is 3 — selection is (3,3) which is empty.
+    assert_eq!(ti.cursor(), 3);
+    assert_eq!(ti.selection_anchor(), Some(3));
+}
+
+// -- Disabled --
+
+#[test]
+fn disabled_ignores() {
+    let mut ti = TextInputWidget::new().with_disabled(true);
+    let ctx = event_ctx();
+
+    assert!(!ti.is_focusable());
+
+    let r = ti.handle_key(char_key('a'), &ctx);
+    assert_eq!(r, WidgetResponse::ignored());
+
+    let r = ti.handle_hover(HoverEvent::Enter, &ctx);
+    assert_eq!(r, WidgetResponse::ignored());
+}
+
+// -- Layout --
+
+#[test]
+fn layout_uses_min_width() {
+    let ti = TextInputWidget::new();
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = ti.layout(&ctx);
+    let s = TextInputStyle::default();
+
+    if let BoxContent::Leaf {
+        intrinsic_width, ..
+    } = &layout.content
+    {
+        // Empty text -> placeholder empty -> min_width applies.
+        assert!(*intrinsic_width >= s.min_width);
+    } else {
+        panic!("expected leaf layout");
+    }
+}
+
+#[test]
+fn placeholder_layout_measures_placeholder() {
+    let ti = TextInputWidget::new().with_placeholder("Type here...");
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = ti.layout(&ctx);
+
+    if let BoxContent::Leaf {
+        intrinsic_width, ..
+    } = &layout.content
+    {
+        // "Type here..." = 12 chars * 8px = 96 + padding 16 = 112,
+        // but min_width = 120 so it should be at least 120.
+        assert!(*intrinsic_width >= 120.0);
+    } else {
+        panic!("expected leaf layout");
+    }
+}
+
+// -- Unicode --
+
+#[test]
+fn unicode_editing() {
+    let mut ti = TextInputWidget::new();
+    let ctx = event_ctx();
+
+    // Type multi-byte chars.
+    ti.handle_key(char_key('\u{e9}'), &ctx);
+    ti.handle_key(char_key('\u{e0}'), &ctx);
+    assert_eq!(ti.text(), "\u{e9}\u{e0}");
+    assert_eq!(ti.cursor(), 4); // 2 bytes each.
+
+    ti.handle_key(key(Key::Backspace), &ctx);
+    assert_eq!(ti.text(), "\u{e9}");
+    assert_eq!(ti.cursor(), 2);
+}
+
+#[test]
+fn four_byte_unicode_editing() {
+    let mut ti = TextInputWidget::new();
+    let ctx = event_ctx();
+
+    // Emoji are 4 bytes each in UTF-8.
+    ti.handle_key(char_key('\u{1F600}'), &ctx); // Grinning face.
+    ti.handle_key(char_key('\u{1F680}'), &ctx); // Rocket.
+    assert_eq!(ti.text().len(), 8); // 4 bytes each.
+    assert_eq!(ti.cursor(), 8);
+
+    ti.handle_key(key(Key::Backspace), &ctx);
+    assert_eq!(ti.text(), "\u{1F600}");
+    assert_eq!(ti.cursor(), 4);
+}
+
+// -- Edge cases --
+
+#[test]
 fn left_arrow_at_start_stays() {
     let mut ti = TextInputWidget::new();
     let ctx = event_ctx();
@@ -414,22 +487,6 @@ fn right_arrow_at_end_stays() {
 }
 
 #[test]
-fn four_byte_unicode_editing() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    // Emoji are 4 bytes each in UTF-8.
-    ti.handle_key(char_key('\u{1F600}'), &ctx); // Grinning face.
-    ti.handle_key(char_key('\u{1F680}'), &ctx); // Rocket.
-    assert_eq!(ti.text().len(), 8); // 4 bytes each.
-    assert_eq!(ti.cursor(), 8);
-
-    ti.handle_key(key(Key::Backspace), &ctx);
-    assert_eq!(ti.text(), "\u{1F600}");
-    assert_eq!(ti.cursor(), 4);
-}
-
-#[test]
 fn set_text_moves_cursor_to_end() {
     let mut ti = TextInputWidget::new();
     ti.set_text("abc");
@@ -446,25 +503,6 @@ fn escape_key_ignored() {
     let r = ti.handle_key(key(Key::Escape), &ctx);
     assert_eq!(r, WidgetResponse::ignored());
     assert_eq!(ti.text(), "hello");
-}
-
-#[test]
-fn shift_left_then_right_cancels_selection() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    ti.set_text("hello");
-    ti.cursor = 3;
-
-    // Select one char left.
-    ti.handle_key(shift_key(Key::ArrowLeft), &ctx);
-    assert_eq!(ti.selection_range(), Some((2, 3)));
-
-    // Select one char right — cursor back to anchor.
-    ti.handle_key(shift_key(Key::ArrowRight), &ctx);
-    // Anchor is still 3, cursor is 3 — selection is (3,3) which is empty.
-    assert_eq!(ti.cursor(), 3);
-    assert_eq!(ti.selection_anchor(), Some(3));
 }
 
 #[test]
