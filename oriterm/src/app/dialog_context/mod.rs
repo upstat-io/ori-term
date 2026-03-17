@@ -86,6 +86,8 @@ pub(crate) struct DialogWindowContext {
     pub(super) interaction: InteractionManager,
     /// Focus manager for keyboard navigation in this dialog.
     pub(super) focus: FocusManager,
+    /// Per-frame animation request flags for widget hover/press transitions.
+    pub(super) frame_requests: oriterm_ui::animation::FrameRequestFlags,
 
     /// Whether this dialog needs a redraw.
     pub(super) dirty: bool,
@@ -199,6 +201,7 @@ impl DialogWindowContext {
             damage: DamageSet::default(),
             interaction: InteractionManager::new(),
             focus: FocusManager::new(),
+            frame_requests: oriterm_ui::animation::FrameRequestFlags::new(),
             lifecycle: SurfaceLifecycle::CreatedHidden,
             dirty: true,
             urgent_redraw: false,

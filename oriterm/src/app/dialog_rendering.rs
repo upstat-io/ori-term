@@ -71,9 +71,11 @@ impl App {
             Err(e) => log::error!("dialog render error: {e}"),
         }
 
-        // TODO: when dialogs wire up FrameRequestFlags (Section 05.5),
-        // check `frame_requests.anim_frame_requested()` and set `ctx.dirty = true`
-        // so widget hover-fade animations get continued redraws.
+        // If any widget animator is mid-transition, schedule another redraw
+        // so the animation progresses to completion.
+        if ctx.frame_requests.anim_frame_requested() {
+            ctx.dirty = true;
+        }
     }
 
     /// Pre-paint mutation + scene composition for chrome and content.
@@ -105,12 +107,13 @@ impl App {
         // Pre-paint mutation: deliver lifecycle events and update animators.
         let now = Instant::now();
         let lifecycle_events = ctx.interaction.drain_events();
+        ctx.frame_requests = oriterm_ui::animation::FrameRequestFlags::new();
         prepare_widget_tree(
             &mut ctx.chrome,
             &ctx.interaction,
             &lifecycle_events,
             None,
-            None,
+            Some(&ctx.frame_requests),
             now,
         );
         prepare_widget_tree(
@@ -118,7 +121,7 @@ impl App {
             &ctx.interaction,
             &lifecycle_events,
             None,
-            None,
+            Some(&ctx.frame_requests),
             now,
         );
 
