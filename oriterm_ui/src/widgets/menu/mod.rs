@@ -5,6 +5,7 @@
 //! Supports scrolling via `max_height` for long lists.
 
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController};
 use crate::geometry::Point;
 use crate::text::TextStyle;
 use crate::theme::UiTheme;
@@ -140,7 +141,6 @@ const SCROLL_LINE_HEIGHT: f32 = 32.0;
 /// via mouse or navigated via keyboard arrows. Emits
 /// `WidgetAction::Selected { id, index }` when activated. When `max_height`
 /// is set in the style, long lists scroll with a scrollbar.
-#[derive(Debug)]
 pub struct MenuWidget {
     pub(super) id: WidgetId,
     pub(super) entries: Vec<MenuEntry>,
@@ -151,6 +151,21 @@ pub struct MenuWidget {
     pub(super) style: MenuStyle,
     /// Scroll offset in pixels from top of content.
     pub(super) scroll_offset: f32,
+    controllers: Vec<Box<dyn EventController>>,
+}
+
+impl std::fmt::Debug for MenuWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MenuWidget")
+            .field("id", &self.id)
+            .field("entries", &self.entries.len())
+            .field("hovered", &self.hovered)
+            .field("selected_index", &self.selected_index)
+            .field("style", &self.style)
+            .field("scroll_offset", &self.scroll_offset)
+            .field("controller_count", &self.controllers.len())
+            .finish()
+    }
 }
 
 impl MenuWidget {
@@ -162,6 +177,7 @@ impl MenuWidget {
             hovered: None,
             selected_index: None,
             style: MenuStyle::default(),
+            controllers: vec![Box::new(ClickController::new())],
             scroll_offset: 0.0,
         }
     }
