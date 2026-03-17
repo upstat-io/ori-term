@@ -5,6 +5,7 @@ use crate::input::{
 };
 use crate::invalidation::InvalidationTracker;
 use crate::layout::{Align, Justify, SizeSpec, compute_layout};
+use crate::sense::Sense;
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::panel::PanelWidget;
@@ -37,8 +38,8 @@ impl Widget for CountingWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> crate::layout::LayoutBox {
@@ -46,24 +47,8 @@ impl Widget for CountingWidget {
             .with_widget_id(self.id)
     }
 
-    fn draw(&self, _ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {
         self.draws.set(self.draws.get() + 1);
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(
-        &mut self,
-        _event: crate::input::HoverEvent,
-        _ctx: &EventCtx<'_>,
-    ) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 
     fn accept_action(&mut self, _action: &WidgetAction) -> bool {

@@ -4,13 +4,12 @@
 //! font preview in settings where different colors appear on the same line.
 
 use crate::geometry::Point;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::TextStyle;
 use crate::widget_id::WidgetId;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// A single styled text run within a [`RichLabel`].
 #[derive(Debug, Clone, PartialEq)]
@@ -65,7 +64,7 @@ impl Widget for RichLabel {
         LayoutBox::leaf(total_w, max_h).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let mut x = ctx.bounds.x();
         let y = ctx.bounds.y();
         let max_w = ctx.bounds.width();
@@ -81,18 +80,6 @@ impl Widget for RichLabel {
                 .push_text(Point::new(x, y), shaped, span.style.color);
             x += advance;
         }
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 }
 

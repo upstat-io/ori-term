@@ -5,15 +5,15 @@
 
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::Direction;
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::TextStyle;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Style for a [`SeparatorWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -107,8 +107,8 @@ impl Widget for SeparatorWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -135,24 +135,12 @@ impl Widget for SeparatorWidget {
         }
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let b = ctx.bounds;
         match self.direction {
             Direction::Row => self.draw_horizontal(ctx, b),
             Direction::Column => self.draw_vertical(ctx, b),
         }
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 }
 

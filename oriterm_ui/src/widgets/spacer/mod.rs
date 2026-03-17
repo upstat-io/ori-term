@@ -3,11 +3,11 @@
 //! Used within flex containers to push siblings apart or insert fixed gaps.
 //! Not interactive, not focusable.
 
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, SizeSpec};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// An empty-space widget for use in flex layouts.
 ///
@@ -48,8 +48,8 @@ impl Widget for SpacerWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -67,20 +67,8 @@ impl Widget for SpacerWidget {
             .with_widget_id(self.id)
     }
 
-    fn draw(&self, _ctx: &mut DrawCtx<'_>) {
-        // Spacers are invisible — no draw commands.
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {
+        // Spacers are invisible — no paint commands.
     }
 }
 

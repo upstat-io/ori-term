@@ -5,14 +5,14 @@
 
 use crate::color::Color;
 use crate::geometry::Point;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::{TextOverflow, TextStyle};
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Style for a [`LabelWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -91,8 +91,8 @@ impl Widget for LabelWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -101,7 +101,7 @@ impl Widget for LabelWidget {
         LayoutBox::leaf(metrics.width, metrics.height).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         if self.text.is_empty() {
             return;
         }
@@ -110,18 +110,6 @@ impl Widget for LabelWidget {
         let shaped = ctx.measurer.shape(&self.text, &style, max_width);
         let pos = Point::new(ctx.bounds.x(), ctx.bounds.y());
         ctx.draw_list.push_text(pos, shaped, self.style.color);
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 }
 
