@@ -1,11 +1,13 @@
+use crate::controllers::ControllerRequests;
 use crate::draw::{DrawCommand, DrawList};
 use crate::geometry::{Point, Rect};
-use crate::input::{Key, KeyEvent, Modifiers, MouseEvent, MouseEventKind, ScrollDelta};
+use crate::input::{InputEvent, Key, Modifiers, ScrollDelta};
+use crate::interaction::LifecycleEvent;
 use crate::layout::compute_layout;
 use crate::widgets::container::ContainerWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget};
+use crate::widgets::{DrawCtx, LayoutCtx, LifecycleCtx, Widget};
 
 use super::ScrollWidget;
 
@@ -25,6 +27,18 @@ fn tall_content() -> Box<dyn Widget> {
 
 fn make_scroll(child: Box<dyn Widget>) -> ScrollWidget {
     ScrollWidget::vertical(child)
+}
+
+/// Standard test bounds: 200x100 viewport.
+fn bounds() -> Rect {
+    Rect::new(0.0, 0.0, 200.0, 100.0)
+}
+
+/// Pre-populates the scroll widget's cached child layout by computing it.
+fn populate_cache(scroll: &ScrollWidget, bounds: Rect) {
+    let measurer = MockMeasurer::STANDARD;
+    let theme = super::super::tests::TEST_THEME;
+    scroll.child_natural_size(&measurer, &theme, bounds);
 }
 
 #[test]
@@ -113,204 +127,107 @@ fn scroll_draws_with_clip() {
 
 #[test]
 fn scroll_wheel_changes_offset() {
-    // tall_content = 20 labels * 16px = 320px tall.
     let mut scroll = ScrollWidget::vertical(tall_content());
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    // Viewport 100px tall — content (320px) overflows by 220px.
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    // Scroll down (negative delta_y means scroll down in our convention).
-    let event = MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: -3.0 }),
+    let event = InputEvent::Scroll {
         pos: Point::new(25.0, 25.0),
+        delta: ScrollDelta::Lines { x: 0.0, y: -3.0 },
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_mouse(&event, &ctx);
+    let handled = scroll.on_input(&event, bounds());
 
-    // Should have scrolled (redraw).
-    assert!(resp.response.is_handled());
-    // Offset should have increased (scrolled down).
-    assert!(scroll.scroll_offset() > 0.0);
+    assert!(handled, "scroll event should be handled");
+    assert!(scroll.scroll_offset() > 0.0, "offset should increase");
 }
 
 #[test]
 fn key_home_resets_to_top() {
-    // tall_content = 320px tall.
     let mut scroll = ScrollWidget::vertical(tall_content());
-    // Manually set offset.
     scroll.set_scroll_offset(100.0, 320.0, 100.0);
-    assert!(scroll.scroll_offset() > 0.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::Home,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let handled = scroll.on_input(&event, bounds());
+    assert!(handled);
     assert_eq!(scroll.scroll_offset(), 0.0);
 }
 
 #[test]
 fn key_end_scrolls_to_bottom() {
-    // tall_content = 320px tall, viewport 100px → max offset 220.
     let mut scroll = ScrollWidget::vertical(tall_content());
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::End,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let handled = scroll.on_input(&event, bounds());
+    assert!(handled);
     // Content 320px, view 100px → max offset = 220.
     assert_eq!(scroll.scroll_offset(), 220.0);
 }
 
 #[test]
 fn key_arrow_down_scrolls() {
-    // tall_content = 320px tall, viewport 100px.
     let mut scroll = ScrollWidget::vertical(tall_content());
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::ArrowDown,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let handled = scroll.on_input(&event, bounds());
+    assert!(handled);
     // Should have scrolled down by line_height (20px).
     assert_eq!(scroll.scroll_offset(), 20.0);
 }
 
 #[test]
 fn key_page_down_scrolls_by_viewport() {
-    // tall_content = 320px tall, viewport 100px.
     let mut scroll = ScrollWidget::vertical(tall_content());
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::PageDown,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let handled = scroll.on_input(&event, bounds());
+    assert!(handled);
     // Should scroll down by one viewport height (100px).
     assert_eq!(scroll.scroll_offset(), 100.0);
 }
 
 #[test]
 fn key_page_up_scrolls_by_viewport() {
-    // tall_content = 320px tall, viewport 100px.
     let mut scroll = ScrollWidget::vertical(tall_content());
     scroll.set_scroll_offset(200.0, 320.0, 100.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::PageUp,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let handled = scroll.on_input(&event, bounds());
+    assert!(handled);
     // Should scroll up by one viewport height (100px): 200 - 100 = 100.
     assert_eq!(scroll.scroll_offset(), 100.0);
 }
 
 #[test]
 fn key_page_down_clamps_at_bottom() {
-    // tall_content = 320px, viewport 100px → max offset 220.
     let mut scroll = ScrollWidget::vertical(tall_content());
     scroll.set_scroll_offset(200.0, 320.0, 100.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::PageDown,
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_key(event, &ctx);
+    scroll.on_input(&event, bounds());
     // 200 + 100 = 300, clamped to max 220.
     assert_eq!(scroll.scroll_offset(), 220.0);
 }
@@ -319,25 +236,13 @@ fn key_page_down_clamps_at_bottom() {
 fn key_page_up_clamps_at_top() {
     let mut scroll = ScrollWidget::vertical(tall_content());
     scroll.set_scroll_offset(30.0, 320.0, 100.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::PageUp,
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_key(event, &ctx);
+    scroll.on_input(&event, bounds());
     // 30 - 100 = -70, clamped to 0.
     assert_eq!(scroll.scroll_offset(), 0.0);
 }
@@ -396,12 +301,6 @@ fn scroll_child_drawn_offset_by_scroll() {
     };
     scroll.paint(&mut ctx);
 
-    // The scroll widget clips to bounds (0,0,200,100) then applies a
-    // PushTranslate(0, -40) to offset the child content. Children draw at
-    // their natural (unscrolled) positions — the GPU converter applies the
-    // translate at render time. Content-space visibility culling skips
-    // labels above the scrolled viewport, so the first drawn label is the
-    // one whose layout rect intersects the visible area [40, 140].
     let translate = draw_list.commands().iter().find_map(|c| match c {
         DrawCommand::PushTranslate { dx, dy } => Some((*dx, *dy)),
         _ => None,
@@ -418,8 +317,6 @@ fn scroll_child_drawn_offset_by_scroll() {
     });
     assert!(first_text.is_some(), "should have text commands");
     let pos = first_text.unwrap();
-    // Label 2 at y=32 (16px per label) is the first whose rect [32,48]
-    // intersects the scrolled viewport [40,140].
     assert_eq!(
         pos.y, 32.0,
         "first text should be the first label intersecting the scrolled viewport"
@@ -431,7 +328,6 @@ fn scroll_draws_scrollbar_when_overflowing() {
     let scroll = make_scroll(tall_content());
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    // Viewport 100px < content 320px → scrollbar should appear.
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
@@ -448,7 +344,6 @@ fn scroll_draws_scrollbar_when_overflowing() {
     };
     scroll.paint(&mut ctx);
 
-    // Should have a Rect command after PopClip (the scrollbar thumb).
     let after_pop = draw_list
         .commands()
         .iter()
@@ -466,7 +361,6 @@ fn scroll_no_scrollbar_when_content_fits() {
     let scroll = make_scroll(short_content());
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    // Viewport 100px > content 16px → no scrollbar.
     let bounds = Rect::new(0.0, 0.0, 1000.0, 100.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
@@ -483,7 +377,6 @@ fn scroll_no_scrollbar_when_content_fits() {
     };
     scroll.paint(&mut ctx);
 
-    // No Rect commands after PopClip (no scrollbar).
     let after_pop = draw_list
         .commands()
         .iter()
@@ -496,27 +389,15 @@ fn scroll_no_scrollbar_when_content_fits() {
 #[test]
 fn scroll_multiple_wheel_events_accumulate() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
+    populate_cache(&scroll, bounds());
 
-    // Scroll down 3 times.
     for _ in 0..3 {
-        let event = MouseEvent {
-            kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: -1.0 }),
+        let event = InputEvent::Scroll {
             pos: Point::new(25.0, 25.0),
+            delta: ScrollDelta::Lines { x: 0.0, y: -1.0 },
             modifiers: Modifiers::NONE,
         };
-        scroll.handle_mouse(&event, &ctx);
+        scroll.on_input(&event, bounds());
     }
 
     // 3 lines * 20px line_height = 60px offset.
@@ -526,26 +407,14 @@ fn scroll_multiple_wheel_events_accumulate() {
 #[test]
 fn scroll_wheel_clamps_at_bottom() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
+    populate_cache(&scroll, bounds());
 
-    // Scroll way past the bottom.
-    let event = MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: -999.0 }),
+    let event = InputEvent::Scroll {
         pos: Point::new(25.0, 25.0),
+        delta: ScrollDelta::Lines { x: 0.0, y: -999.0 },
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_mouse(&event, &ctx);
+    scroll.on_input(&event, bounds());
 
     // Content 320px, viewport 100px → max offset 220.
     assert_eq!(scroll.scroll_offset(), 220.0);
@@ -554,79 +423,42 @@ fn scroll_wheel_clamps_at_bottom() {
 #[test]
 fn scroll_wheel_clamps_at_top() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
+    populate_cache(&scroll, bounds());
 
-    // Scroll up from top (should stay at 0).
-    let event = MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: 5.0 }),
+    let event = InputEvent::Scroll {
         pos: Point::new(25.0, 25.0),
+        delta: ScrollDelta::Lines { x: 0.0, y: 5.0 },
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_mouse(&event, &ctx);
+    scroll.on_input(&event, bounds());
     assert_eq!(scroll.scroll_offset(), 0.0);
 }
 
 #[test]
 fn scroll_pixel_delta_works() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
+    populate_cache(&scroll, bounds());
 
-    // Trackpad-style pixel delta.
-    let event = MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Pixels { x: 0.0, y: -35.0 }),
+    let event = InputEvent::Scroll {
         pos: Point::new(25.0, 25.0),
+        delta: ScrollDelta::Pixels { x: 0.0, y: -35.0 },
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_mouse(&event, &ctx);
+    scroll.on_input(&event, bounds());
     assert_eq!(scroll.scroll_offset(), 35.0);
 }
 
 #[test]
 fn arrow_up_scrolls_upward() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    // Start scrolled down.
     scroll.set_scroll_offset(100.0, 320.0, 100.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::ArrowUp,
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_key(event, &ctx);
+    scroll.on_input(&event, bounds());
     assert_eq!(scroll.scroll_offset(), 80.0); // 100 - 20
 }
 
@@ -676,7 +508,6 @@ fn horizontal_scroll_draws_with_clip() {
     };
     scroll.paint(&mut ctx);
 
-    // Clip should be balanced.
     let push_count = draw_list
         .commands()
         .iter()
@@ -693,21 +524,17 @@ fn horizontal_scroll_draws_with_clip() {
 
 #[test]
 fn scroll_content_exactly_fits_viewport() {
-    // When content height == viewport height, max offset should be 0.
     let mut scroll = ScrollWidget::vertical(tall_content());
-    // tall_content = 320px. Set viewport to 320px.
     scroll.set_scroll_offset(50.0, 320.0, 320.0);
     assert_eq!(scroll.scroll_offset(), 0.0, "no scroll when content fits");
 }
 
 #[test]
 fn scroll_content_exactly_fits_no_scrollbar() {
-    // Content exactly fitting the viewport should not draw a scrollbar.
-    let label = LabelWidget::new("A".repeat(10)); // 80px wide, 16px tall
+    let label = LabelWidget::new("A".repeat(10));
     let scroll = ScrollWidget::vertical(Box::new(label));
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    // Viewport exactly matches content height (16px).
     let bounds = Rect::new(0.0, 0.0, 200.0, 16.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
@@ -724,7 +551,6 @@ fn scroll_content_exactly_fits_no_scrollbar() {
     };
     scroll.paint(&mut ctx);
 
-    // No scrollbar rects after PopClip.
     let after_pop = draw_list
         .commands()
         .iter()
@@ -736,30 +562,25 @@ fn scroll_content_exactly_fits_no_scrollbar() {
 
 #[test]
 fn scroll_track_hovered_resets_on_leave() {
-    use crate::input::HoverEvent;
-
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
 
     // Simulate scrollbar hover by setting track_hovered manually.
     scroll.scrollbar.track_hovered = true;
 
-    // Leave event should reset track_hovered.
-    scroll.handle_hover(HoverEvent::Leave, &ctx);
+    // HotChanged(false) lifecycle event should reset track_hovered.
+    let event = LifecycleEvent::HotChanged {
+        widget_id: scroll.id(),
+        is_hot: false,
+    };
+    let mut lctx = LifecycleCtx {
+        widget_id: scroll.id(),
+        interaction: &crate::interaction::InteractionState::default(),
+        requests: ControllerRequests::NONE,
+    };
+    scroll.lifecycle(&event, &mut lctx);
     assert!(
         !scroll.scrollbar.track_hovered,
-        "track_hovered should be false after Leave event"
+        "track_hovered should be false after HotChanged(false)"
     );
 }
 
@@ -776,7 +597,6 @@ fn scroll_with_scrollbar_style() {
         min_thumb_height: 30.0,
     };
     let scroll = ScrollWidget::vertical(tall_content()).with_scrollbar_style(custom_style);
-    // Just verify it doesn't panic and produces valid output.
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
