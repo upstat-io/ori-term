@@ -73,9 +73,9 @@ fn sense_returns_click() {
 }
 
 #[test]
-fn has_two_controllers() {
+fn has_three_controllers() {
     let btn = ButtonWidget::new("OK");
-    assert_eq!(btn.controllers().len(), 2);
+    assert_eq!(btn.controllers().len(), 3);
 }
 
 #[test]

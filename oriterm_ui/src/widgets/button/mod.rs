@@ -5,7 +5,9 @@
 //! with `common_states()` for smooth state color transitions.
 
 use crate::color::Color;
-use crate::controllers::{ClickController, EventController, HoverController};
+use crate::controllers::{
+    ClickController, EventController, HoverController, KeyActivationController,
+};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point};
 use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
@@ -100,6 +102,7 @@ impl ButtonWidget {
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
+                Box::new(KeyActivationController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
                 style.bg,

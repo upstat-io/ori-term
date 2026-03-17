@@ -284,15 +284,15 @@ fn set_value_clamps() {
 // -- Sense and controllers --
 
 #[test]
-fn sense_returns_click() {
+fn sense_returns_click_and_drag() {
     let s = SliderWidget::new();
-    assert_eq!(s.sense(), Sense::click());
+    assert_eq!(s.sense(), Sense::click_and_drag());
 }
 
 #[test]
-fn has_two_controllers() {
+fn has_three_controllers() {
     let s = SliderWidget::new();
-    assert_eq!(s.controllers().len(), 2);
+    assert_eq!(s.controllers().len(), 3);
 }
 
 #[test]
