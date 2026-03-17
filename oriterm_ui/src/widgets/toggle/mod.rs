@@ -288,6 +288,13 @@ impl Widget for ToggleWidget {
         }
     }
 
+    fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::Clicked(_) => Some(self.toggle()),
+            other => Some(other),
+        }
+    }
+
     // --- Legacy methods (compat shim until containers migrate in §08.4) ---
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {

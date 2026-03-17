@@ -83,6 +83,11 @@ pub fn dispatch_to_widget_tree(
         let controllers = widget.controllers_mut();
         if !controllers.is_empty() {
             let interaction = InteractionState::default();
+            // Collect bounds from the first matching action for on_action.
+            let widget_bounds = actions
+                .iter()
+                .find(|a| a.widget_id == id)
+                .map_or_else(Rect::default, |a| a.bounds);
             for action in actions.iter().filter(|a| a.widget_id == id) {
                 let args = ControllerCtxArgs {
                     widget_id: id,
@@ -93,8 +98,19 @@ pub fn dispatch_to_widget_tree(
                 let output = dispatch_to_controllers(controllers, event, action.phase, &args);
                 result.merge(output, id);
                 if result.handled {
-                    return;
+                    break;
                 }
+            }
+            // Let the widget transform controller actions into semantic actions.
+            // Done after controller dispatch to avoid borrow conflict with
+            // controllers_mut().
+            let raw_actions = std::mem::take(&mut result.actions);
+            result.actions = raw_actions
+                .into_iter()
+                .filter_map(|a| widget.on_action(a, widget_bounds))
+                .collect();
+            if result.handled {
+                return;
             }
         }
     }
