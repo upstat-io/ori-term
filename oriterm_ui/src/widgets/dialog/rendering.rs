@@ -113,17 +113,11 @@ impl DialogWidget {
     /// Draw the buttons inside the footer layout node.
     pub(super) fn draw_buttons(&self, ctx: &mut DrawCtx<'_>, footer_node: &LayoutNode) {
         for (i, btn_node) in footer_node.children.iter().enumerate() {
-            let (button, btn_kind) = self.button_at_index_ref(i);
-            let focused_id = if self.focus_visible && self.focused_button == btn_kind {
-                Some(button.id())
-            } else {
-                None
-            };
+            let (button, _btn_kind) = self.button_at_index_ref(i);
             let mut btn_ctx = DrawCtx {
                 measurer: ctx.measurer,
                 draw_list: ctx.draw_list,
                 bounds: btn_node.content_rect,
-                focused_widget: focused_id,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,

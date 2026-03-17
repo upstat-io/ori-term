@@ -52,7 +52,7 @@ impl Widget for SliderWidget {
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
+        let focused = ctx.is_interaction_focused();
         let s = &self.style;
         let tb = self.track_bounds(ctx.bounds);
 

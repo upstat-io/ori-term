@@ -32,8 +32,6 @@ pub struct DrawCtx<'a> {
     pub draw_list: &'a mut DrawList,
     /// The widget's computed bounds (from layout).
     pub bounds: Rect,
-    /// The currently focused widget, if any.
-    pub focused_widget: Option<WidgetId>,
     /// Current frame timestamp for animation interpolation.
     pub now: Instant,
     /// Active UI theme.
@@ -107,7 +105,6 @@ impl DrawCtx<'_> {
             measurer: self.measurer,
             draw_list: self.draw_list,
             bounds: child_bounds,
-            focused_widget: self.focused_widget,
             now: self.now,
             theme: self.theme,
             icons: self.icons,
@@ -144,13 +141,6 @@ pub struct EventCtx<'a> {
     pub measurer: &'a dyn TextMeasurer,
     /// The widget's computed bounds (from layout).
     pub bounds: Rect,
-    /// Whether this widget currently has keyboard focus.
-    pub is_focused: bool,
-    /// The currently focused widget, if any.
-    ///
-    /// Containers use this to set per-child `is_focused` correctly,
-    /// so only the focused child responds to key events.
-    pub focused_widget: Option<WidgetId>,
     /// Active UI theme.
     pub theme: &'a UiTheme,
     /// Framework interaction state manager.
@@ -168,17 +158,15 @@ pub struct EventCtx<'a> {
 }
 
 impl EventCtx<'_> {
-    /// Build a child context with child-specific bounds and focus state.
+    /// Build a child context with child-specific bounds and widget ID.
     ///
-    /// `child_id` determines whether the child is focused (compared against
-    /// `self.focused_widget`). Pass `None` for non-focusable children.
+    /// `child_id` identifies the child widget for `InteractionManager` lookups.
+    /// Pass `None` for non-focusable children.
     #[must_use]
     pub fn for_child(&self, child_bounds: Rect, child_id: Option<WidgetId>) -> Self {
         Self {
             measurer: self.measurer,
             bounds: child_bounds,
-            is_focused: child_id.is_some_and(|id| self.focused_widget == Some(id)),
-            focused_widget: self.focused_widget,
             theme: self.theme,
             interaction: self.interaction,
             widget_id: child_id,

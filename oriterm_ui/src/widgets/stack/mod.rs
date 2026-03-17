@@ -81,7 +81,6 @@ impl Widget for StackWidget {
                 measurer: ctx.measurer,
                 draw_list: ctx.draw_list,
                 bounds: ctx.bounds,
-                focused_widget: ctx.focused_widget,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,

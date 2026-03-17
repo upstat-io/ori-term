@@ -85,7 +85,6 @@ fn make_ctx<'a>(
         measurer,
         draw_list,
         bounds,
-        focused_widget: None,
         now: Instant::now(),
         theme: &TEST_THEME,
         icons: None,
@@ -277,7 +276,6 @@ fn compose_and_collect(
         measurer,
         draw_list: &mut draw_list,
         bounds,
-        focused_widget: None,
         now,
         theme: &TEST_THEME,
         icons: None,
@@ -310,7 +308,7 @@ fn assert_equivalence(root: &dyn Widget, bounds: Rect) {
     let full = compose_and_collect(root, &measurer, bounds, &mut cache, &full_tracker, now);
 
     // Retained: clean tracker, warm cache → container widgets replay cached
-    // commands via extend_from_cache instead of calling child.draw().
+    // commands via extend_from_cache instead of calling child.paint().
     let clean_tracker = InvalidationTracker::new();
     let retained = compose_and_collect(root, &measurer, bounds, &mut cache, &clean_tracker, now);
 

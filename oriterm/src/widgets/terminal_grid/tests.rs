@@ -128,7 +128,6 @@ fn draw_emits_no_commands() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::new(0.0, 0.0, 640.0, 384.0),
-        focused_widget: None,
         now: Instant::now(),
         theme: &theme,
         icons: None,

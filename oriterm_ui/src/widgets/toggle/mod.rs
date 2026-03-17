@@ -247,7 +247,7 @@ impl Widget for ToggleWidget {
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
+        let focused = ctx.is_interaction_focused();
         let s = &self.style;
         let radius = s.height / 2.0;
 

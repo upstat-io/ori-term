@@ -259,7 +259,6 @@ fn draw_skips_children_fully_outside_active_clip() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::new(0.0, 0.0, 100.0, 40.0),
-        focused_widget: None,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
@@ -298,7 +297,6 @@ fn draw_delegates_to_children() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
@@ -315,41 +313,6 @@ fn draw_delegates_to_children() {
         .filter(|c| matches!(c, DrawCommand::Text { .. }))
         .count();
     assert_eq!(text_cmds, 2);
-}
-
-#[test]
-fn focused_widget_propagates_through_draw() {
-    let btn = ButtonWidget::new("Focus Me");
-    let btn_id = btn.id();
-    let row = ContainerWidget::row().with_child(Box::new(btn));
-    let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let mut ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: Some(btn_id),
-        now: std::time::Instant::now(),
-        theme: &super::super::tests::TEST_THEME,
-        icons: None,
-        scene_cache: None,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-    row.paint(&mut ctx);
-
-    let rect_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
-    // Focus ring rect + button bg rect = 2 rects.
-    assert!(
-        rect_cmds >= 2,
-        "expected focus ring + bg, got {rect_cmds} rects"
-    );
 }
 
 // --- Nested container tests ---
@@ -464,7 +427,6 @@ fn scene_cache_skips_clean_children() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
@@ -486,7 +448,6 @@ fn scene_cache_skips_clean_children() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
@@ -525,7 +486,6 @@ fn scene_cache_redraws_invalidated_child() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
@@ -547,7 +507,6 @@ fn scene_cache_redraws_invalidated_child() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
@@ -589,7 +548,6 @@ fn scene_cache_miss_on_bounds_mismatch() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::new(0.0, 0.0, 100.0, 20.0),
-        focused_widget: None,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,

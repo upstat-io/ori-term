@@ -245,7 +245,7 @@ impl Widget for CheckboxWidget {
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
+        let focused = ctx.is_interaction_focused();
         let bounds = ctx.bounds;
         let s = &self.style;
 

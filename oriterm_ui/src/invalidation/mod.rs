@@ -10,7 +10,7 @@
 
 use std::collections::HashSet;
 
-use crate::input::EventResponse;
+use crate::controllers::ControllerRequests;
 use crate::widget_id::WidgetId;
 
 /// What kind of invalidation a widget event produced.
@@ -50,18 +50,18 @@ impl DirtyKind {
     }
 }
 
-impl From<EventResponse> for DirtyKind {
-    /// Maps an [`EventResponse`] to the corresponding [`DirtyKind`].
+impl From<ControllerRequests> for DirtyKind {
+    /// Maps controller request flags to the corresponding dirty kind.
     ///
-    /// - `Handled` / `Ignored` → `Clean` (event consumed with no visual change).
-    /// - `RequestPaint` → `Paint`.
-    /// - `RequestLayout` → `Layout`.
-    /// - `RequestFocus` → `Paint` (focus ring is a paint change).
-    fn from(response: EventResponse) -> Self {
-        match response {
-            EventResponse::Handled | EventResponse::Ignored => Self::Clean,
-            EventResponse::RequestPaint | EventResponse::RequestFocus => Self::Paint,
-            EventResponse::RequestLayout => Self::Layout,
+    /// - No paint/layout flags → `Clean`
+    /// - `PAINT` flag → `Paint` (visual change, no relayout)
+    /// - No explicit layout flag exists yet — layout invalidation is
+    ///   triggered by structural widget changes, not controller requests.
+    fn from(requests: ControllerRequests) -> Self {
+        if requests.contains(ControllerRequests::PAINT) {
+            Self::Paint
+        } else {
+            Self::Clean
         }
     }
 }

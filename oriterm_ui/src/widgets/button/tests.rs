@@ -186,7 +186,6 @@ fn paint_produces_draw_commands() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
-        focused_widget: None,
         now,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
@@ -199,53 +198,4 @@ fn paint_produces_draw_commands() {
 
     // Should have produced draw commands: layer + rect + text + pop_layer.
     assert!(!draw_list.is_empty());
-}
-
-#[test]
-fn paint_shows_focus_ring_when_focused() {
-    use crate::draw::DrawList;
-
-    let btn = ButtonWidget::new("OK");
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
-    let now = std::time::Instant::now();
-
-    // Render without focus.
-    let mut draw_list_unfocused = DrawList::new();
-    let mut ctx = super::super::DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list_unfocused,
-        bounds,
-        focused_widget: None,
-        now,
-        theme: &super::super::tests::TEST_THEME,
-        icons: None,
-        scene_cache: None,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-    btn.paint(&mut ctx);
-    let count_unfocused = draw_list_unfocused.len();
-
-    // Render with focus (via legacy focused_widget field).
-    let mut draw_list_focused = DrawList::new();
-    let mut ctx = super::super::DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list_focused,
-        bounds,
-        focused_widget: Some(btn.id()),
-        now,
-        theme: &super::super::tests::TEST_THEME,
-        icons: None,
-        scene_cache: None,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-    btn.paint(&mut ctx);
-    let count_focused = draw_list_focused.len();
-
-    // Focused should have one extra command (the focus ring rect).
-    assert_eq!(count_focused, count_unfocused + 1);
 }

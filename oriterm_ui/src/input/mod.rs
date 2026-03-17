@@ -11,8 +11,8 @@ mod hit_test;
 pub use crate::hit_test_behavior::HitTestBehavior;
 pub use dispatch::{DeliveryAction, plan_propagation};
 pub use event::{
-    EventPhase, EventResponse, HoverEvent, InputEvent, Key, KeyEvent, Modifiers, MouseButton,
-    MouseEvent, MouseEventKind, ScrollDelta,
+    EventPhase, InputEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind,
+    ScrollDelta,
 };
 pub use hit_test::{
     HitEntry, WidgetHitTestResult, layout_hit_test, layout_hit_test_clipped, layout_hit_test_path,

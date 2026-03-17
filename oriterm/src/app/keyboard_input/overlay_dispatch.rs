@@ -37,14 +37,14 @@ impl App {
             OverlayEventResult::Delivered { response, .. } => {
                 log::debug!("overlay Delivered: action={:?}", response.action);
 
-                if response.response.is_handled() {
+                if response.handled {
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.urgent_redraw = true;
                     }
                 }
 
                 let Some(action) = response.action else {
-                    if response.response.is_handled() {
+                    if response.handled {
                         if let Some(ctx) = self.focused_ctx_mut() {
                             ctx.dirty = true;
                         }
@@ -90,7 +90,7 @@ impl App {
                         self.dispatch_context_action(index);
                     }
                     _ => {
-                        if response.response.is_handled() {
+                        if response.handled {
                             if let Some(ctx) = self.focused_ctx_mut() {
                                 ctx.dirty = true;
                                 ctx.urgent_redraw = true;

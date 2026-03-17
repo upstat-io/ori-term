@@ -7,6 +7,7 @@ use oriterm_ui::input::dispatch::DeliveryAction;
 use oriterm_ui::input::{EventPhase, InputEvent, Modifiers, MouseButton};
 use oriterm_ui::interaction::{InteractionManager, InteractionState, LifecycleEvent};
 use oriterm_ui::layout::LayoutBox;
+use oriterm_ui::sense::Sense;
 use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::contexts::{DrawCtx, LayoutCtx};
@@ -40,6 +41,10 @@ impl StubWidget {
 impl Widget for StubWidget {
     fn id(&self) -> WidgetId {
         self.id
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::all()
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -348,6 +353,10 @@ impl Widget for ParentWidget {
         self.id
     }
 
+    fn sense(&self) -> Sense {
+        Sense::all()
+    }
+
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         LayoutBox::leaf(0.0, 0.0)
     }
@@ -437,6 +446,10 @@ fn prepare_widget_tree_processes_visual_states() {
             self.id
         }
 
+        fn sense(&self) -> Sense {
+            Sense::all()
+        }
+
         fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
             LayoutBox::leaf(0.0, 0.0)
         }
@@ -461,6 +474,10 @@ fn prepare_widget_tree_processes_visual_states() {
     impl Widget for AnimParent {
         fn id(&self) -> WidgetId {
             self.id
+        }
+
+        fn sense(&self) -> Sense {
+            Sense::all()
         }
 
         fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {

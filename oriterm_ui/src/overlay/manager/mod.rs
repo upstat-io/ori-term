@@ -9,6 +9,7 @@ mod lifecycle;
 
 use std::time::Duration;
 
+use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
@@ -17,7 +18,7 @@ use crate::geometry::{Point, Rect, Size};
 use crate::layout::{LayoutNode, compute_layout};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
-use crate::widgets::{DrawCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::overlay_id::OverlayId;
 use super::placement::{Placement, compute_overlay_rect};
@@ -64,6 +65,19 @@ pub(in crate::overlay) struct Overlay {
     pub(in crate::overlay) dim_layer_id: Option<LayerId>,
 }
 
+/// Response from delivering an event to an overlay widget.
+///
+/// Carries the semantic action (if any) and whether the event was consumed.
+/// Capture state and layout invalidation are handled internally by the
+/// overlay manager — callers only see action + handled.
+#[derive(Debug)]
+pub struct OverlayResponse {
+    /// Semantic action emitted by the widget, if any.
+    pub action: Option<WidgetAction>,
+    /// Whether the event was consumed by the overlay.
+    pub handled: bool,
+}
+
 /// Result of routing an event through the overlay stack.
 #[derive(Debug)]
 pub enum OverlayEventResult {
@@ -71,8 +85,8 @@ pub enum OverlayEventResult {
     Delivered {
         /// Which overlay received the event.
         overlay_id: OverlayId,
-        /// The widget's response.
-        response: WidgetResponse,
+        /// The overlay's response.
+        response: OverlayResponse,
     },
     /// A click outside dismissed the topmost overlay.
     Dismissed(OverlayId),
@@ -94,14 +108,15 @@ pub struct OverlayManager {
     /// Index of the overlay currently under the cursor.
     ///
     /// Tracked across `process_hover_event` calls so we can send
-    /// `HoverEvent::Leave` to the old overlay when hover transitions.
+    /// `LifecycleEvent::HotChanged` to the old overlay when hover transitions.
     pub(in crate::overlay) hovered_overlay: Option<usize>,
     /// Index of the overlay with active mouse capture (drag in progress).
     ///
     /// When set, all mouse events route to this overlay regardless of cursor
     /// position, and click-outside dismiss is suppressed. Cleared on `MouseUp`
-    /// or explicit `CaptureRequest::Release`. Benign if the cursor leaves the
-    /// window entirely — the next mouse event re-enters and routes correctly.
+    /// or explicit `CLEAR_ACTIVE` controller request. Benign if the cursor
+    /// leaves the window entirely — the next mouse event re-enters and routes
+    /// correctly.
     pub(in crate::overlay) captured_overlay: Option<usize>,
     /// Whether overlay placement needs recomputation.
     ///
@@ -283,7 +298,6 @@ impl OverlayManager {
             measurer: ctx.measurer,
             draw_list: ctx.draw_list,
             bounds: overlay.computed_rect,
-            focused_widget: ctx.focused_widget,
             now: ctx.now,
             theme: ctx.theme,
             icons: ctx.icons,
@@ -313,7 +327,7 @@ impl OverlayManager {
     ///
     /// Used to update child widget state after an external action (e.g.,
     /// updating a dropdown's selected index after its popup menu was dismissed).
-    pub fn accept_action_topmost(&mut self, action: &crate::widgets::WidgetAction) -> bool {
+    pub fn accept_action_topmost(&mut self, action: &WidgetAction) -> bool {
         self.overlays
             .last_mut()
             .is_some_and(|o| o.widget.accept_action(action))

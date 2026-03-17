@@ -2,7 +2,7 @@
 //!
 //! These events fire automatically when the framework detects interaction
 //! state transitions (hot, active, focus, disabled). They replace the
-//! current synthetic `HoverEvent::Enter/Leave` pattern.
+//! current hover tracking pattern.
 
 use crate::widget_id::WidgetId;
 
