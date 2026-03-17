@@ -16,57 +16,15 @@ use crate::controllers::{ControllerRequests, DispatchOutput};
 use crate::geometry::{Point, Rect};
 use crate::input::dispatch::tree::{TreeDispatchResult, dispatch_to_widget_tree};
 use crate::input::{
-    EventResponse, HitEntry, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind,
-    WidgetHitTestResult, layout_hit_test_path, plan_propagation,
+    HitEntry, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind, WidgetHitTestResult,
+    layout_hit_test_path, plan_propagation,
 };
 use crate::layout::LayoutNode;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
-use crate::widgets::{CaptureRequest, Widget, WidgetResponse};
+use crate::widgets::Widget;
 
-use super::{OverlayEventResult, OverlayKind, OverlayManager};
-
-/// Converts a [`DispatchOutput`] into a [`WidgetResponse`].
-///
-/// Used by the overlay event routing layer to translate controller dispatch
-/// results into the `WidgetResponse` type that `OverlayEventResult` expects.
-///
-/// Mapping:
-/// - `handled` → `EventResponse::Handled` / `Ignored`
-/// - `PAINT` request → `RequestPaint`
-/// - `REQUEST_FOCUS` → `RequestFocus`
-/// - `SET_ACTIVE` → `CaptureRequest::Acquire`
-/// - `CLEAR_ACTIVE` → `CaptureRequest::Release`
-/// - First emitted action taken (singular slot in `WidgetResponse`)
-pub(in crate::overlay) fn bridge_dispatch_to_response(
-    output: DispatchOutput,
-    source: WidgetId,
-) -> WidgetResponse {
-    let response = if output.requests.contains(ControllerRequests::PAINT) {
-        EventResponse::RequestPaint
-    } else if output.requests.contains(ControllerRequests::REQUEST_FOCUS) {
-        EventResponse::RequestFocus
-    } else if output.handled {
-        EventResponse::Handled
-    } else {
-        EventResponse::Ignored
-    };
-
-    let capture = if output.requests.contains(ControllerRequests::SET_ACTIVE) {
-        CaptureRequest::Acquire
-    } else if output.requests.contains(ControllerRequests::CLEAR_ACTIVE) {
-        CaptureRequest::Release
-    } else {
-        CaptureRequest::None
-    };
-
-    WidgetResponse {
-        response,
-        action: output.actions.into_iter().next(),
-        capture,
-        source: Some(source),
-    }
-}
+use super::{OverlayEventResult, OverlayKind, OverlayManager, OverlayResponse};
 
 /// Runs the propagation pipeline for an overlay widget tree.
 ///
@@ -74,7 +32,7 @@ pub(in crate::overlay) fn bridge_dispatch_to_response(
 /// delivery, then walks the widget tree to dispatch to controllers at
 /// each matching widget.
 ///
-/// Returns `Some(response)` if any controller handled the event.
+/// Returns `Some((output, source))` if any controller handled the event.
 /// Returns `None` if no widget in the hit path has controllers or none handled.
 #[expect(
     clippy::too_many_arguments,
@@ -87,7 +45,7 @@ fn deliver_via_pipeline(
     layout_node: Option<&LayoutNode>,
     captured: bool,
     now: Instant,
-) -> Option<WidgetResponse> {
+) -> Option<(DispatchOutput, WidgetId)> {
     let root_id = widget.id();
     let root_sense = widget.sense();
 
@@ -160,10 +118,7 @@ fn deliver_via_pipeline(
             actions: result.actions,
             handled: result.handled,
         };
-        Some(bridge_dispatch_to_response(
-            output,
-            result.source.unwrap_or(root_id),
-        ))
+        Some((output, result.source.unwrap_or(root_id)))
     } else {
         None
     }
@@ -203,28 +158,36 @@ impl OverlayManager {
         if let Some(cap_idx) = self.captured_overlay {
             if let Some(overlay) = self.overlays.get_mut(cap_idx) {
                 let id = overlay.id;
-                let root_id = overlay.widget.id();
                 let input_event = InputEvent::from_mouse_event(event);
-                let mut response = deliver_via_pipeline(
+                let pipeline_result = deliver_via_pipeline(
                     overlay.widget.as_mut(),
                     &input_event,
                     overlay.computed_rect,
                     overlay.layout_node.as_ref(),
                     true,
                     now,
-                )
-                .unwrap_or_else(|| WidgetResponse::ignored().with_source(root_id));
-                response.inject_source(root_id);
-                match response.capture {
-                    CaptureRequest::Release => self.captured_overlay = None,
-                    CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
+                );
+                let response = if let Some((output, _source)) = pipeline_result {
+                    // Release capture on explicit CLEAR_ACTIVE or implicit mouse-up.
+                    if output.requests.contains(ControllerRequests::CLEAR_ACTIVE)
+                        || matches!(event.kind, MouseEventKind::Up(_))
+                    {
                         self.captured_overlay = None;
                     }
-                    _ => {}
-                }
-                if response.response.needs_layout() {
-                    self.layout_dirty = true;
-                }
+                    OverlayResponse {
+                        action: output.actions.into_iter().next(),
+                        handled: output.handled,
+                    }
+                } else {
+                    // No controller handled — implicit release on mouse up.
+                    if matches!(event.kind, MouseEventKind::Up(_)) {
+                        self.captured_overlay = None;
+                    }
+                    OverlayResponse {
+                        action: None,
+                        handled: false,
+                    }
+                };
                 return OverlayEventResult::Delivered {
                     overlay_id: id,
                     response,
@@ -266,11 +229,6 @@ impl OverlayManager {
             if self.overlays[i].computed_rect.contains(event.pos) {
                 let result =
                     self.deliver_to_overlay(i, event, measurer, focused_widget, theme, now);
-                if let OverlayEventResult::Delivered { ref response, .. } = result {
-                    if response.capture == CaptureRequest::Acquire {
-                        self.captured_overlay = Some(i);
-                    }
-                }
                 return result;
             }
         }
@@ -319,9 +277,8 @@ impl OverlayManager {
 
     /// Delivers a mouse event to a specific overlay by index.
     ///
-    /// Delivers a mouse event to a specific overlay by index.
-    ///
     /// Runs the propagation pipeline through the overlay's widget tree.
+    /// Handles capture acquisition from controller requests internally.
     #[expect(
         clippy::too_many_arguments,
         reason = "internal helper, params mirror caller"
@@ -337,21 +294,31 @@ impl OverlayManager {
     ) -> OverlayEventResult {
         let overlay = &mut self.overlays[idx];
         let id = overlay.id;
-        let root_id = overlay.widget.id();
         let input_event = InputEvent::from_mouse_event(event);
-        let mut response = deliver_via_pipeline(
+        let pipeline_result = deliver_via_pipeline(
             overlay.widget.as_mut(),
             &input_event,
             overlay.computed_rect,
             overlay.layout_node.as_ref(),
             false,
             now,
-        )
-        .unwrap_or_else(|| WidgetResponse::ignored().with_source(root_id));
-        response.inject_source(root_id);
-        if response.response.needs_layout() {
-            self.layout_dirty = true;
-        }
+        );
+        let response = match pipeline_result {
+            Some((output, _source)) => {
+                // Acquire capture if controller requested SET_ACTIVE.
+                if output.requests.contains(ControllerRequests::SET_ACTIVE) {
+                    self.captured_overlay = Some(idx);
+                }
+                OverlayResponse {
+                    action: output.actions.into_iter().next(),
+                    handled: output.handled,
+                }
+            }
+            None => OverlayResponse {
+                action: None,
+                handled: false,
+            },
+        };
         OverlayEventResult::Delivered {
             overlay_id: id,
             response,
@@ -364,11 +331,6 @@ impl OverlayManager {
     /// Modal overlays never pass through. The `focused_widget` parameter
     /// indicates which widget currently has keyboard focus (from the app
     /// layer's `FocusManager`).
-    ///
-    /// Routes a key event through the overlay stack.
-    ///
-    /// Escape dismisses the topmost overlay with a fade-out animation.
-    /// Modal overlays never pass through.
     #[expect(
         clippy::too_many_arguments,
         reason = "event routing: event, measurer, theme, focus, tree, animator, now"
@@ -398,23 +360,35 @@ impl OverlayManager {
         let topmost = self.overlays.last_mut().expect("checked non-empty above");
         let id = topmost.id;
         let is_modal = topmost.kind == OverlayKind::Modal;
-        let root_id = topmost.widget.id();
         let input_event = InputEvent::from_key_event(event);
-        let mut response = deliver_via_pipeline(
+        let pipeline_result = deliver_via_pipeline(
             topmost.widget.as_mut(),
             &input_event,
             topmost.computed_rect,
             topmost.layout_node.as_ref(),
             false,
             now,
-        )
-        .unwrap_or_else(|| WidgetResponse::ignored().with_source(root_id));
-        response.inject_source(root_id);
-        if response.response.needs_layout() {
-            self.layout_dirty = true;
-        }
+        );
 
-        if response.response.is_handled() || is_modal {
+        let (is_handled, response) = match pipeline_result {
+            Some((output, _source)) => {
+                let handled = output.handled || !output.actions.is_empty();
+                let resp = OverlayResponse {
+                    action: output.actions.into_iter().next(),
+                    handled: output.handled,
+                };
+                (handled, resp)
+            }
+            None => (
+                false,
+                OverlayResponse {
+                    action: None,
+                    handled: false,
+                },
+            ),
+        };
+
+        if is_handled || is_modal {
             OverlayEventResult::Delivered {
                 overlay_id: id,
                 response,
@@ -427,8 +401,8 @@ impl OverlayManager {
     /// Routes a hover event through the overlay stack.
     ///
     /// Tracks which overlay was previously hovered. When the cursor moves
-    /// between overlays, sends `HoverEvent::Leave` to the old overlay and
-    /// `HoverEvent::Enter` to the new one.
+    /// between overlays, delivers `LifecycleEvent::HotChanged` to the old
+    /// overlay and the new one.
     ///
     /// Hover enter/leave are lifecycle events in the new controller model
     /// (`LifecycleEvent::HotChanged`), not input events. Migration to
@@ -467,19 +441,22 @@ impl OverlayManager {
         match new_hover {
             Some(idx) if hover_changed => {
                 let overlay = &self.overlays[idx];
-                let root_id = overlay.widget.id();
-                let mut response = WidgetResponse::paint();
-                response.inject_source(root_id);
                 OverlayEventResult::Delivered {
                     overlay_id: overlay.id,
-                    response,
+                    response: OverlayResponse {
+                        action: None,
+                        handled: true,
+                    },
                 }
             }
             Some(idx) => {
                 // Hover unchanged, still over this overlay — no re-enter.
                 OverlayEventResult::Delivered {
                     overlay_id: self.overlays[idx].id,
-                    response: WidgetResponse::handled(),
+                    response: OverlayResponse {
+                        action: None,
+                        handled: true,
+                    },
                 }
             }
             None => {

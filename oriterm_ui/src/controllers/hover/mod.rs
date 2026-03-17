@@ -1,6 +1,6 @@
 //! Hover controller — tracks enter/leave and emits actions.
 //!
-//! Replaces all manual `hovered: bool` + `HoverEvent::Enter/Leave` tracking
+//! Replaces all manual `hovered: bool` tracking
 //! in individual widgets. Purely observational: does not set active or
 //! capture events.
 

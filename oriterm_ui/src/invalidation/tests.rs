@@ -1,6 +1,6 @@
 //! Tests for `DirtyKind` and `InvalidationTracker`.
 
-use crate::input::EventResponse;
+use crate::controllers::ControllerRequests;
 use crate::widget_id::WidgetId;
 
 use super::{DirtyKind, InvalidationTracker};
@@ -62,40 +62,32 @@ fn layout_is_dirty() {
     assert!(DirtyKind::Layout.is_dirty());
 }
 
-// EventResponse → DirtyKind conversion tests.
+// ControllerRequests → DirtyKind conversion tests.
 
 #[test]
-fn event_response_handled_is_clean() {
-    assert_eq!(DirtyKind::from(EventResponse::Handled), DirtyKind::Clean);
+fn controller_requests_none_is_clean() {
+    assert_eq!(DirtyKind::from(ControllerRequests::NONE), DirtyKind::Clean);
 }
 
 #[test]
-fn event_response_ignored_is_clean() {
-    assert_eq!(DirtyKind::from(EventResponse::Ignored), DirtyKind::Clean);
+fn controller_requests_paint_is_paint() {
+    assert_eq!(DirtyKind::from(ControllerRequests::PAINT), DirtyKind::Paint);
 }
 
 #[test]
-fn event_response_request_paint_is_paint() {
+fn controller_requests_other_flags_are_clean() {
+    // Non-paint flags (e.g. ANIM_FRAME, SET_ACTIVE) don't imply paint dirty.
     assert_eq!(
-        DirtyKind::from(EventResponse::RequestPaint),
-        DirtyKind::Paint
+        DirtyKind::from(ControllerRequests::ANIM_FRAME),
+        DirtyKind::Clean
     );
 }
 
 #[test]
-fn event_response_request_layout_is_layout() {
-    assert_eq!(
-        DirtyKind::from(EventResponse::RequestLayout),
-        DirtyKind::Layout
-    );
-}
-
-#[test]
-fn event_response_request_focus_is_paint() {
-    assert_eq!(
-        DirtyKind::from(EventResponse::RequestFocus),
-        DirtyKind::Paint
-    );
+fn controller_requests_paint_combined_is_paint() {
+    // PAINT combined with other flags still yields Paint.
+    let combined = ControllerRequests::PAINT.union(ControllerRequests::ANIM_FRAME);
+    assert_eq!(DirtyKind::from(combined), DirtyKind::Paint);
 }
 
 // InvalidationTracker tests.

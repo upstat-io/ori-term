@@ -35,7 +35,6 @@ pub mod window_chrome;
 use crate::animation::anim_frame::AnimFrameEvent;
 use crate::controllers::EventController;
 use crate::hit_test_behavior::HitTestBehavior;
-use crate::input::{EventResponse, MouseEventKind};
 use crate::interaction::LifecycleEvent;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
@@ -44,156 +43,6 @@ use crate::widget_id::WidgetId;
 
 pub use contexts::{AnimCtx, DrawCtx, EventCtx, LayoutCtx, LifecycleCtx};
 pub use text_measurer::TextMeasurer;
-
-/// Whether a widget wants to acquire or release mouse capture.
-///
-/// Capture is a routing directive: when a widget acquires capture, all
-/// subsequent mouse events (Move, Up) are routed to that widget regardless
-/// of cursor position, until capture is released.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CaptureRequest {
-    /// No capture change requested.
-    #[default]
-    None,
-    /// Request mouse capture for the responding widget.
-    Acquire,
-    /// Release any active mouse capture.
-    Release,
-}
-
-impl CaptureRequest {
-    /// Whether the capture should be released based on the response and event.
-    ///
-    /// Returns `true` on explicit `Release`, or on `None` with a mouse-up
-    /// event (implicit release when the child didn't request anything).
-    pub fn should_release(self, event_kind: &MouseEventKind) -> bool {
-        matches!(self, Self::Release)
-            || (matches!(self, Self::None) && matches!(event_kind, MouseEventKind::Up(_)))
-    }
-}
-
-/// How a widget responded to an event, including an optional semantic action.
-///
-/// Widgets return this from event handlers. The `response` field tells the
-/// framework how to handle propagation; the `action` field carries semantic
-/// meaning for the application layer.
-#[derive(Debug, Clone, PartialEq)]
-pub struct WidgetResponse {
-    /// How the framework should handle this event.
-    pub response: EventResponse,
-    /// Optional semantic action for the application layer to interpret.
-    pub action: Option<WidgetAction>,
-    /// Whether the widget wants to acquire or release mouse capture.
-    pub capture: CaptureRequest,
-    /// The widget that produced this response (for invalidation tracking).
-    ///
-    /// Set by container-side injection: containers fill this with the child's
-    /// `WidgetId` after receiving a response. Widgets themselves leave it `None`.
-    pub source: Option<WidgetId>,
-}
-
-impl WidgetResponse {
-    /// Event handled, no action emitted.
-    pub fn handled() -> Self {
-        Self {
-            response: EventResponse::Handled,
-            action: None,
-            capture: CaptureRequest::None,
-            source: None,
-        }
-    }
-
-    /// Event ignored — propagate to parent.
-    pub fn ignored() -> Self {
-        Self {
-            response: EventResponse::Ignored,
-            action: None,
-            capture: CaptureRequest::None,
-            source: None,
-        }
-    }
-
-    /// Visual-only change (hover color, focus ring). Repaint needed, no relayout.
-    pub fn paint() -> Self {
-        Self {
-            response: EventResponse::RequestPaint,
-            action: None,
-            capture: CaptureRequest::None,
-            source: None,
-        }
-    }
-
-    /// Structural change (text content, visibility). Relayout + repaint needed.
-    pub fn layout() -> Self {
-        Self {
-            response: EventResponse::RequestLayout,
-            action: None,
-            capture: CaptureRequest::None,
-            source: None,
-        }
-    }
-
-    /// Event handled, focus requested, no action.
-    pub fn focus() -> Self {
-        Self {
-            response: EventResponse::RequestFocus,
-            action: None,
-            capture: CaptureRequest::None,
-            source: None,
-        }
-    }
-
-    /// Attaches an action to this response.
-    #[must_use]
-    pub fn with_action(mut self, action: WidgetAction) -> Self {
-        self.action = Some(action);
-        self
-    }
-
-    /// Requests mouse capture for the responding widget.
-    #[must_use]
-    pub fn with_capture(mut self) -> Self {
-        self.capture = CaptureRequest::Acquire;
-        self
-    }
-
-    /// Requests release of any active mouse capture.
-    #[must_use]
-    pub fn with_release_capture(mut self) -> Self {
-        self.capture = CaptureRequest::Release;
-        self
-    }
-
-    /// Sets the source widget ID (for invalidation tracking).
-    ///
-    /// Normally set by container-side injection rather than individual widgets.
-    #[must_use]
-    pub fn with_source(mut self, id: WidgetId) -> Self {
-        self.source = Some(id);
-        self
-    }
-
-    /// Sets the source widget ID if not already set.
-    ///
-    /// Used by containers to inject the child's ID without overwriting
-    /// a source that a nested container already set.
-    pub fn inject_source(&mut self, id: WidgetId) {
-        if self.source.is_none() {
-            self.source = Some(id);
-        }
-    }
-
-    /// Marks the tracker if this response carries a dirty source.
-    ///
-    /// Convenience for the application layer: extracts `source` and
-    /// `DirtyKind` from the response and calls `tracker.mark()`.
-    pub fn mark_tracker(&self, tracker: &mut crate::invalidation::InvalidationTracker) {
-        if let Some(source) = self.source {
-            let kind = crate::invalidation::DirtyKind::from(self.response);
-            tracker.mark(source, kind);
-        }
-    }
-}
 
 // `WidgetAction` lives in `crate::action` to avoid a circular dependency
 // (`controllers -> widgets`). Re-exported here for backward compatibility.
@@ -376,11 +225,10 @@ pub trait Widget {
 
     /// Declares what interactions this widget cares about.
     ///
-    /// Hit testing skips widgets with `Sense::none()`. The default returns
-    /// `Sense::all()` for backward compatibility — changed to `Sense::none()`
-    /// after all widgets provide explicit overrides.
+    /// Hit testing skips widgets with `Sense::none()`. All production widgets
+    /// provide explicit overrides. The default returns `Sense::none()`.
     fn sense(&self) -> Sense {
-        Sense::all()
+        Sense::none()
     }
 
     /// Controls how this widget participates in hit testing relative to

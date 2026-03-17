@@ -201,9 +201,8 @@ subsection starts. `widgets/mod.rs` must be under 300 lines with contexts extrac
       fn accept_action(&mut self, action: &WidgetAction) -> bool { false }
   }
   ```
-- [ ] Note: `handle_mouse()`, `handle_hover()`, `handle_key()` are REMOVED.
-  All input handling moves to controllers. (Deferred to 08.6 — methods have
-  default impls returning `ignored()` for now.)
+- [x] Note: `handle_mouse()`, `handle_hover()`, `handle_key()` are REMOVED.
+  All input handling moves to controllers. Completed in §08.6.
 - [x] `draw()` renamed to `paint()` for clarity (Druid convention).
   `draw()` deprecated with default empty impl; `paint()` added with default
   forwarding to `draw()`. All 14 production call sites + test call sites
@@ -222,8 +221,8 @@ subsection starts. `widgets/mod.rs` must be under 300 lines with contexts extrac
   that warns if a widget with `Sense::none()` previously had `Sense::all()` (detecting
   forgotten overrides). Alternatively, keep `Sense::all()` as the default permanently
   and rely on explicit overrides for correct behavior.
-- [ ] `WidgetResponse` and `CaptureRequest` types removed; controllers emit actions and
-  request capture via `ControllerCtx` instead. (Deferred to 08.6.)
+- [x] `WidgetResponse` and `CaptureRequest` types removed; controllers emit actions and
+  request capture via `ControllerCtx` instead. Completed in §08.6.
 - [x] **`draw()` / `paint()` coexistence during migration**: During step 1 (additive),
   both `draw()` and `paint()` must exist on the trait. Strategy:
   1. Add `paint()` with a default that calls `self.draw(ctx)` (backward compat).
@@ -838,8 +837,8 @@ generic controller pipeline and widget-specific behavior.
 - [x] Remove `handle_mouse()` from Widget trait
 - [x] Remove `handle_hover()` from Widget trait
 - [x] Remove `handle_key()` from Widget trait
-- [ ] Remove `HoverEvent` enum (replaced by `LifecycleEvent::HotChanged`)
-- [ ] Remove `is_focused: bool` and `focused_widget: Option<WidgetId>` from `EventCtx`.
+- [x] Remove `HoverEvent` enum (replaced by `LifecycleEvent::HotChanged`)
+- [x] Remove `is_focused: bool` and `focused_widget: Option<WidgetId>` from `EventCtx`.
   These are superseded by `InteractionManager` lookups via `ctx.is_interaction_focused()`.
   **Blast radius**: ~67 `EventCtx` struct literal constructions across ~20 test files,
   plus ~52 production sites (listed in Section 01.4). All `EventCtx::for_child()` calls
@@ -847,61 +846,39 @@ generic controller pipeline and widget-specific behavior.
   `for_child()` method (line 365 of `widgets/mod.rs`) currently computes
   `is_focused: child_id.is_some_and(|id| self.focused_widget == Some(id))` — this logic
   is removed since `InteractionManager` tracks focus per-widget.
-- [ ] Remove `focused_widget: Option<WidgetId>` from `DrawCtx`. Superseded by
+- [x] Remove `focused_widget: Option<WidgetId>` from `DrawCtx`. Superseded by
   `InteractionManager` lookup via `ctx.is_interaction_focused()`. Currently propagated
   through `DrawCtx::for_child()`. Blast radius: ~18 production sites + ~55 test sites.
 - [x] Remove `ContainerInputState` from `container/mod.rs` (replaced by framework propagation).
   Also removed: `update_dirty()`, `event_dispatch.rs` (213 lines), `find_child_index()`,
   `hit_test_children()`. ContainerWidget legacy `handle_mouse/hover/key` impls removed.
-- [ ] Remove `WidgetResponse` and `CaptureRequest` from `widgets/mod.rs`
-  (actions now emitted via controllers, capture via `ControllerCtx`)
-- [ ] Remove or update `From<EventResponse> for DirtyKind` in `invalidation/mod.rs`
-  (2 production usages: `container/mod.rs`, `widgets/mod.rs`; 5 test usages in
-  `invalidation/tests.rs`). The invalidation system needs a new conversion from
-  `ControllerRequests` bitflags to `DirtyKind` to replace the old `EventResponse`
-  path. This is a **required** co-change when removing `EventResponse`.
-- [ ] Replace `WidgetResponse::mark_tracker()` usage in the invalidation pipeline.
-  `WidgetResponse::mark_tracker(&self, tracker)` extracts `source` and `DirtyKind`
-  from the response and calls `tracker.mark()`. After removing `WidgetResponse`, the
-  framework must derive invalidation from `DispatchOutput`: `PAINT` request ->
-  `DirtyKind::Paint`, any structural change -> `DirtyKind::Layout`. Add
-  `impl From<ControllerRequests> for DirtyKind` to handle this mapping.
-- [ ] Remove `EventResponse` internal callers within `oriterm_ui` crate. Known sites:
-  - `input/event.rs` — `EventResponse` enum definition and `is_handled()` method.
-  - `invalidation/mod.rs` — `From<EventResponse> for DirtyKind` (covered above).
-  - `widgets/mod.rs` — `WidgetResponse.response: EventResponse` field.
-  - `container/event_dispatch.rs` — uses `EventResponse::Handled` / `Ignored` for
-    child dispatch decisions (removed with the file).
-  - `overlay/manager/event_routing.rs` — constructs `EventCtx`, reads `WidgetResponse`.
-  Note: `MouseEvent`, `KeyEvent`, `Key`, `Modifiers`, `ScrollDelta`, `MouseButton`,
-  `MouseEventKind` types in `input/event.rs` are NOT removed — they are still used by
-  `InputEvent` (Section 03) and controller implementations. Only `EventResponse` and
-  `HoverEvent` are removed.
-- [ ] Update all callers in `oriterm` crate:
-  - `dialog_context/content_actions.rs` — calls `handle_key` (1 site), `handle_hover` (2 sites)
-  - `dialog_rendering.rs` — renders dialog content via `compose_scene()` (calls `.draw()`
-    internally). Also constructs `DrawCtx` with `animations_running` field (7 sites).
-  - `dialog_context/event_handling/mod.rs` — calls `handle_hover`, `handle_mouse`, imports
-    `EventResponse, HoverEvent, MouseEvent, MouseEventKind`
-  - `dialog_context/event_handling/mouse.rs` — calls `handle_mouse` (3 sites)
-  - `app/settings_overlay/` — builds and manages settings panel
-  - `app/settings_overlay/action_handler/mod.rs` — routes widget actions to config
-  - `app/mouse_input.rs` — calls `process_mouse_event` on overlays (1 site)
-- [ ] Update all callers that use `EventResponse` / `HoverEvent` / `MouseEvent` types
-  from `oriterm_ui::input`. Search for `use oriterm_ui::input::` across the `oriterm`
-  crate to find all import sites. Known callers (8 files with `use` imports):
-  - `widgets/terminal_preview/mod.rs` — imports `HoverEvent, KeyEvent, MouseEvent`
-  - `widgets/terminal_grid/mod.rs` — imports `HoverEvent, KeyEvent, MouseEvent`
-  - `widgets/terminal_grid/tests.rs` — imports `HoverEvent, KeyEvent, Modifiers`
-  - `app/tab_bar_input.rs` — imports `MouseButton, MouseEvent, MouseEventKind`
-  - `app/keyboard_input/mod.rs` — imports `Key`
-  - `app/dialog_context/content_actions.rs` — imports `EventResponse, HoverEvent, Key, KeyEvent, Modifiers`
-  - `app/dialog_context/event_handling/mouse.rs` — imports `MouseButton, MouseEvent, MouseEventKind, ScrollDelta`
-  - `app/dialog_context/event_handling/mod.rs` — imports `EventResponse, HoverEvent, MouseEvent, MouseEventKind`
-  Additionally, `app/chrome/mod.rs` uses `oriterm_ui::input::EventResponse` via
-  fully-qualified paths (2 sites) without a `use` import.
+- [x] Remove `WidgetResponse` and `CaptureRequest` from `widgets/mod.rs`
+  (actions now emitted via controllers, capture via `ControllerCtx`).
+  Replaced by `OverlayResponse` in `overlay/manager/mod.rs` with just
+  `action: Option<WidgetAction>` and `handled: bool`.
+- [x] Remove or update `From<EventResponse> for DirtyKind` in `invalidation/mod.rs`.
+  Replaced with `From<ControllerRequests> for DirtyKind`. Maps `PAINT` flag
+  to `DirtyKind::Paint`, everything else to `Clean`.
+- [x] Replace `WidgetResponse::mark_tracker()` usage in the invalidation pipeline.
+  `mark_tracker` was dead code (never called). Removed with `WidgetResponse`.
+  `impl From<ControllerRequests> for DirtyKind` added as the replacement path.
+- [x] Remove `EventResponse` internal callers within `oriterm_ui` crate.
+  Removed `EventResponse` enum from `input/event.rs`, removed from re-exports
+  in `input/mod.rs`, removed `bridge_dispatch_to_response()` from
+  `overlay/manager/event_routing.rs`. `deliver_via_pipeline()` now returns
+  `Option<(DispatchOutput, WidgetId)>` directly.
+- [x] Update all callers in `oriterm` crate.
+  `overlay_dispatch.rs`: `response.response.is_handled()` → `response.handled`.
+  `content_actions.rs`: already used `response.action` (unchanged).
+  All legacy `handle_hover`/`handle_mouse`/`handle_key` calls already removed in
+  earlier §08.6 items. `DrawCtx` construction (`animations_running`, `focused_widget`)
+  already cleaned in earlier items.
+- [x] Update all callers that use `EventResponse` / `HoverEvent` types from
+  `oriterm_ui::input`. `EventResponse` and `HoverEvent` removed from exports.
+  Remaining imports (`MouseEvent`, `KeyEvent`, `Key`, `Modifiers`, etc.) are
+  still valid and unchanged.
 - [x] Remove `container/event_dispatch.rs` file entirely (all 213 lines)
-- [ ] Update `oriterm_ui/src/draw/scene_compose/mod.rs` line 29: change `root.draw(ctx)` to
+- [x] Update `oriterm_ui/src/draw/scene_compose/mod.rs` line 29: change `root.draw(ctx)` to
   `root.paint(ctx)`. Also update the doc comment on line 17 which references `root.draw(ctx)`.
   Update `draw/scene_compose/tests.rs` which references `child.draw()` in comments.
 - [x] Update `overlay/manager/event_routing.rs`: controller-first dispatch with legacy
@@ -952,15 +929,16 @@ generic controller pipeline and widget-specific behavior.
 - [x] All legacy `handle_mouse()`, `handle_hover()`, `handle_key()` overrides removed
   from every widget (not just from the trait — from every impl)
 - [x] Legacy `handle_mouse()`, `handle_hover()`, `handle_key()` removed from trait
-- [ ] `HoverEvent`, `ContainerInputState`, `WidgetResponse`, `CaptureRequest`,
-  `EventResponse` removed
+- [x] `WidgetResponse`, `CaptureRequest`, `EventResponse` removed
+  (`HoverEvent` removed, `ContainerInputState` removed)
 - [x] `DrawCtx::animations_running` field removed (framework owns scheduling)
-- [ ] `EventCtx.is_focused`, `EventCtx.focused_widget`, `DrawCtx.focused_widget`
+- [x] `EventCtx.is_focused`, `EventCtx.focused_widget`, `DrawCtx.focused_widget`
   fields removed (InteractionManager is the single source of truth)
 - [x] `container/event_dispatch.rs` file deleted (framework propagation replaces it)
 - [x] Window control button hover works via the unified pipeline (regression fixed)
-- [ ] Every widget's visual state driven by InteractionManager + VisualStateAnimator
-  — zero manual `hovered: bool` fields remain anywhere in the codebase
+- [x] Every widget's visual state driven by InteractionManager + VisualStateAnimator
+  — zero manual `hovered: bool` fields remain on any widget. `scroll/ScrollbarState.track_hovered`
+  is a sub-element detail (not a widget), `gpu/decorations.is_hovered` is a render param.
 
 ### Custom Controllers (08.1b)
 - [x] `TextEditController` in `controllers/text_edit/` with `tests.rs`
@@ -977,9 +955,9 @@ generic controller pipeline and widget-specific behavior.
   (`widget_pipeline/mod.rs:31` + `dispatch_step` + `apply_dispatch_requests`)
 - [x] `OverlayManager::process_mouse_event()` migrated to use `dispatch_to_controllers()`
   with full tree dispatch (legacy fallback removed from all 3 mouse + 1 key dispatch sites)
-- [ ] `sense()` default changed from `Sense::all()` to `Sense::none()` ONLY after all
+- [x] `sense()` default changed from `Sense::all()` to `Sense::none()` ONLY after all
   26 widgets provide explicit overrides (verified by grep)
-- [ ] `From<ControllerRequests> for DirtyKind` conversion added to replace
+- [x] `From<ControllerRequests> for DirtyKind` conversion added to replace
   `From<EventResponse> for DirtyKind`
 
 ### Verification
@@ -987,7 +965,7 @@ generic controller pipeline and widget-specific behavior.
 - [ ] Tab bar works with new trait
 - [ ] Overlay/popup system works with new propagation
 - [ ] No regressions in any existing UI functionality
-- [ ] `./test-all.sh` green, `./clippy-all.sh` green, `./build-all.sh` green
+- [x] `./test-all.sh` green, `./clippy-all.sh` green, `./build-all.sh` green
 
 **Exit Criteria:** Every single UI control — settings dialog buttons, window chrome
 buttons, tab bar, menu items, scroll thumbs, terminal grid — receives input and renders

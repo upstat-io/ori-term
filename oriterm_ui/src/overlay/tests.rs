@@ -1,3 +1,5 @@
+//! Tests for overlay placement, lifecycle, event routing, and drawing.
+
 use std::time::{Duration, Instant};
 
 use crate::compositor::layer_animator::LayerAnimator;
@@ -12,13 +14,8 @@ use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, Widget, WidgetAction};
 
-use crate::controllers::ControllerRequests;
-use crate::input::EventResponse;
-use crate::widgets::CaptureRequest;
-
 use super::OverlayManager;
 use super::manager::OverlayEventResult;
-use super::manager::event_routing::bridge_dispatch_to_response;
 use super::overlay_id::OverlayId;
 
 const TEST_THEME: UiTheme = UiTheme::dark();
@@ -1155,7 +1152,6 @@ fn draw_non_modal_no_dimming() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
-        focused_widget: None,
         now,
         theme: &TEST_THEME,
         icons: None,
@@ -1203,7 +1199,6 @@ fn draw_modal_emits_dimming_rect() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
-        focused_widget: None,
         now: future,
         theme: &TEST_THEME,
         icons: None,
@@ -1265,7 +1260,6 @@ fn draw_overlays_in_painter_order() {
             measurer: &measurer,
             draw_list: &mut draw_list,
             bounds: Rect::default(),
-            focused_widget: None,
             now,
             theme: &TEST_THEME,
             icons: None,
@@ -2009,7 +2003,6 @@ fn draw_stacked_modals_emits_two_dim_rects() {
             measurer: &measurer,
             draw_list: &mut draw_list,
             bounds: Rect::default(),
-            focused_widget: None,
             now: future,
             theme: &TEST_THEME,
             icons: None,
@@ -2165,7 +2158,6 @@ fn popup_starts_at_full_opacity() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
-        focused_widget: None,
         now,
         theme: &TEST_THEME,
         icons: None,
@@ -2206,7 +2198,6 @@ fn modal_fades_in_from_zero() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
-        focused_widget: None,
         now,
         theme: &TEST_THEME,
         icons: None,
@@ -2248,7 +2239,6 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
-        focused_widget: None,
         now,
         theme: &TEST_THEME,
         icons: None,
@@ -2273,78 +2263,4 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
         }
         other => panic!("expected dim Rect, got {other:?}"),
     }
-}
-
-// ── bridge_dispatch_to_response ──────────────────────────────────────
-
-fn make_dispatch_output(
-    handled: bool,
-    requests: ControllerRequests,
-    actions: Vec<WidgetAction>,
-) -> crate::controllers::DispatchOutput {
-    crate::controllers::DispatchOutput {
-        requests,
-        actions,
-        handled,
-    }
-}
-
-#[test]
-fn bridge_handled_produces_handled_response() {
-    let source = crate::widget_id::WidgetId::next();
-    let output = make_dispatch_output(true, ControllerRequests::NONE, vec![]);
-    let response = bridge_dispatch_to_response(output, source);
-    assert_eq!(response.response, EventResponse::Handled);
-    assert_eq!(response.capture, CaptureRequest::None);
-    assert_eq!(response.source, Some(source));
-}
-
-#[test]
-fn bridge_not_handled_produces_ignored() {
-    let source = crate::widget_id::WidgetId::next();
-    let output = make_dispatch_output(false, ControllerRequests::NONE, vec![]);
-    let response = bridge_dispatch_to_response(output, source);
-    assert_eq!(response.response, EventResponse::Ignored);
-}
-
-#[test]
-fn bridge_paint_request_produces_request_paint() {
-    let source = crate::widget_id::WidgetId::next();
-    let output = make_dispatch_output(false, ControllerRequests::PAINT, vec![]);
-    let response = bridge_dispatch_to_response(output, source);
-    assert_eq!(response.response, EventResponse::RequestPaint);
-}
-
-#[test]
-fn bridge_focus_request_produces_request_focus() {
-    let source = crate::widget_id::WidgetId::next();
-    let output = make_dispatch_output(false, ControllerRequests::REQUEST_FOCUS, vec![]);
-    let response = bridge_dispatch_to_response(output, source);
-    assert_eq!(response.response, EventResponse::RequestFocus);
-}
-
-#[test]
-fn bridge_set_active_produces_acquire() {
-    let source = crate::widget_id::WidgetId::next();
-    let output = make_dispatch_output(true, ControllerRequests::SET_ACTIVE, vec![]);
-    let response = bridge_dispatch_to_response(output, source);
-    assert_eq!(response.capture, CaptureRequest::Acquire);
-}
-
-#[test]
-fn bridge_clear_active_produces_release() {
-    let source = crate::widget_id::WidgetId::next();
-    let output = make_dispatch_output(true, ControllerRequests::CLEAR_ACTIVE, vec![]);
-    let response = bridge_dispatch_to_response(output, source);
-    assert_eq!(response.capture, CaptureRequest::Release);
-}
-
-#[test]
-fn bridge_takes_first_action() {
-    let source = crate::widget_id::WidgetId::next();
-    let a1 = WidgetAction::Clicked(source);
-    let a2 = WidgetAction::SaveSettings;
-    let output = make_dispatch_output(true, ControllerRequests::NONE, vec![a1.clone(), a2]);
-    let response = bridge_dispatch_to_response(output, source);
-    assert_eq!(response.action, Some(a1));
 }

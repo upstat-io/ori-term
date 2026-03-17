@@ -73,7 +73,6 @@ fn draw_produces_text_commands() {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,

@@ -217,7 +217,7 @@ impl Widget for ButtonWidget {
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
         // Focus ring: use InteractionManager when available, fall back to
         // legacy `focused_widget` field during transition (§08.6 removes it).
-        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
+        let focused = ctx.is_interaction_focused();
         if focused {
             let ring_rect = ctx.bounds.inset(Insets::all(-2.0));
             let ring_style = RectStyle::filled(Color::TRANSPARENT)

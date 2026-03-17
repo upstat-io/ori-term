@@ -351,7 +351,6 @@ impl Widget for ContainerWidget {
                     measurer: ctx.measurer,
                     draw_list: ctx.draw_list,
                     bounds,
-                    focused_widget: ctx.focused_widget,
                     now: ctx.now,
                     theme: ctx.theme,
                     icons: ctx.icons,

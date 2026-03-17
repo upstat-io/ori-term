@@ -119,24 +119,6 @@ fn widget_ids_are_unique() {
     }
 }
 
-#[test]
-fn widget_response_equality() {
-    use super::{WidgetAction, WidgetResponse};
-    use crate::widget_id::WidgetId;
-
-    let id = WidgetId::next();
-    let r1 = WidgetResponse::layout().with_action(WidgetAction::Clicked(id));
-    let r2 = WidgetResponse::layout().with_action(WidgetAction::Clicked(id));
-    assert_eq!(r1, r2);
-
-    let r3 = WidgetResponse::handled();
-    assert_ne!(r1, r3);
-
-    let r4 = WidgetResponse::ignored();
-    let r5 = WidgetResponse::ignored();
-    assert_eq!(r4, r5);
-}
-
 // -- OnInputResult --
 
 #[test]

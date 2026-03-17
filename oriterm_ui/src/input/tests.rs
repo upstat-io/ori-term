@@ -9,7 +9,7 @@ use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::dispatch::{DeliveryAction, plan_propagation};
-use super::event::{EventPhase, EventResponse, InputEvent, Modifiers, MouseButton, ScrollDelta};
+use super::event::{EventPhase, InputEvent, Modifiers, MouseButton, ScrollDelta};
 use super::hit_test::{layout_hit_test, layout_hit_test_clipped, layout_hit_test_path};
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -223,54 +223,6 @@ fn hit_test_clipped_excludes_outside_clip() {
     assert_eq!(
         layout_hit_test_clipped(&root, Point::new(10.0, 10.0), None),
         Some(id)
-    );
-}
-
-// ── Event Response ───────────────────────────────────────────────────
-
-#[test]
-fn event_response_is_handled() {
-    assert!(EventResponse::Handled.is_handled());
-    assert!(EventResponse::RequestFocus.is_handled());
-    assert!(EventResponse::RequestPaint.is_handled());
-    assert!(EventResponse::RequestLayout.is_handled());
-    assert!(!EventResponse::Ignored.is_handled());
-}
-
-#[test]
-fn event_response_merge_priority() {
-    // Layout beats everything.
-    assert_eq!(
-        EventResponse::RequestLayout.merge(EventResponse::RequestPaint),
-        EventResponse::RequestLayout,
-    );
-    assert_eq!(
-        EventResponse::RequestPaint.merge(EventResponse::RequestLayout),
-        EventResponse::RequestLayout,
-    );
-    // Paint beats focus/handled.
-    assert_eq!(
-        EventResponse::RequestPaint.merge(EventResponse::RequestFocus),
-        EventResponse::RequestPaint,
-    );
-    assert_eq!(
-        EventResponse::Handled.merge(EventResponse::RequestPaint),
-        EventResponse::RequestPaint,
-    );
-    // Focus beats handled.
-    assert_eq!(
-        EventResponse::RequestFocus.merge(EventResponse::Handled),
-        EventResponse::RequestFocus,
-    );
-    // Handled beats ignored.
-    assert_eq!(
-        EventResponse::Handled.merge(EventResponse::Ignored),
-        EventResponse::Handled,
-    );
-    // Ignored + ignored = ignored.
-    assert_eq!(
-        EventResponse::Ignored.merge(EventResponse::Ignored),
-        EventResponse::Ignored,
     );
 }
 

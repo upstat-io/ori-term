@@ -8,7 +8,7 @@ mod manager;
 mod overlay_id;
 mod placement;
 
-pub use manager::{OverlayEventResult, OverlayManager};
+pub use manager::{OverlayEventResult, OverlayManager, OverlayResponse};
 pub use overlay_id::OverlayId;
 pub use placement::Placement;
 

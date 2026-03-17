@@ -270,7 +270,6 @@ impl Widget for WindowChromeWidget {
                 measurer: ctx.measurer,
                 draw_list: ctx.draw_list,
                 bounds: ctrl_rect,
-                focused_widget: ctx.focused_widget,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
