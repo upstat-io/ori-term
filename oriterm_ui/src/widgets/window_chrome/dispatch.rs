@@ -66,6 +66,18 @@ impl WindowChromeWidget {
         result
     }
 
+    /// Returns the widget ID at the given point, if any control button is hit.
+    ///
+    /// Used by the dialog context to build the `InteractionManager` hot path
+    /// for hover state tracking.
+    pub fn widget_at_point(&self, point: crate::geometry::Point) -> Option<WidgetId> {
+        if !self.chrome_layout.visible {
+            return None;
+        }
+        self.control_at_point(point)
+            .map(|idx| self.controls[idx].id())
+    }
+
     /// Maps a widget ID to its window action (Minimize/Maximize/Close).
     ///
     /// Returns `None` if the ID doesn't match any control button.

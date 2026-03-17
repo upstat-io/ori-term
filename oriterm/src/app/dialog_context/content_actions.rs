@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::input::{
-    EventResponse, HoverEvent, Key as UiKey, KeyEvent as UiKeyEvent, Modifiers as UiModifiers,
+    EventResponse, Key as UiKey, KeyEvent as UiKeyEvent, Modifiers as UiModifiers,
 };
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
@@ -302,69 +302,15 @@ impl App {
     }
 
     /// Clear hover state for chrome and content.
+    ///
+    /// Clears the `InteractionManager`'s hot path (empty = no widget under cursor).
+    /// The next `prepare_widget_tree` will deliver `HotChanged(false)` lifecycle
+    /// events and the `VisualStateAnimator` transitions back to normal.
     pub(in crate::app) fn clear_dialog_hover(&mut self, window_id: WindowId) {
-        let ui_theme = self.ui_theme;
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let scale = ctx.scale_factor.factor() as f32;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-        let mut needs_redraw = false;
-
-        // Chrome hover clear.
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: Rect::default(),
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
-        };
-        let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
-        if matches!(
-            resp.response,
-            EventResponse::RequestPaint | EventResponse::RequestLayout
-        ) {
-            needs_redraw = true;
-        }
-
-        // Content hover clear.
-        let w = ctx.surface_config.width as f32 / scale;
-        let h = ctx.surface_config.height as f32 / scale;
-        let chrome_h = ctx.chrome.caption_height();
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: content_bounds,
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
-        };
-        let resp = ctx
-            .content
-            .content_widget_mut()
-            .handle_hover(HoverEvent::Leave, &event_ctx);
-        if matches!(
-            resp.response,
-            EventResponse::RequestPaint | EventResponse::RequestLayout
-        ) {
-            needs_redraw = true;
-        }
-
-        if needs_redraw {
-            ctx.request_urgent_redraw();
-        }
+        ctx.interaction.update_hot_path(&[]);
+        ctx.request_urgent_redraw();
     }
 }
