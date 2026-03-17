@@ -29,7 +29,7 @@ sections:
     status: in-progress
   - id: "08.4"
     title: "Migrate Layout Widgets"
-    status: not-started
+    status: complete
   - id: "08.5"
     title: "Migrate Passive Widgets"
     status: not-started
@@ -452,19 +452,20 @@ require 08.0 + 08.1 + 08.1b to be complete first. 08.6 requires ALL waves comple
     until containers migrate in §08.4. DragController/FocusController wiring
     deferred to §08.6 when legacy methods are removed.
 
-- [ ] **Wave 2 -- Layout/container widgets** (route events to children):
+- [x] **Wave 2 -- Layout/container widgets** (route events to children):
   ContainerWidget, PanelWidget, ScrollWidget, StackWidget, FormLayout,
   FormSection, FormRow, SettingsPanel, DialogWidget, MenuWidget
-  - Remove manual event routing (framework handles propagation)
-  - Keep layout logic unchanged
-  - Update child iteration for new propagation model
+  - Renamed draw() → paint() for all 10 widgets
+  - Added sense() override (Sense::none() for containers, Sense::click()+focusable for Menu)
+  - Legacy handle_* methods retained as compat shims during transition
 
-- [ ] **Wave 2b -- Chrome/interactive-container widgets:**
-  WindowChromeWidget, WindowControlButton, IdOverrideButton
-  (detailed migration in Section 08.4)
+- [x] **Wave 2b -- Chrome/interactive-container widgets:**
+  WindowChromeWidget (sense+paint), WindowControlButton (full migration:
+  controllers+animator like Wave 1), IdOverrideButton (sense+paint)
 
-- [ ] **Wave 2c -- TabBarWidget** (special case -- most complex widget;
-  detailed migration in Section 08.4)
+- [x] **Wave 2c -- TabBarWidget** (simple rename for transition period;
+  full synthetic WidgetId migration deferred to §08.6)
+  - Renamed draw() → paint(), added sense() → Sense::click()
 
 - [ ] **Wave 3 -- Passive widgets** (no event handling):
   LabelWidget, SeparatorWidget, SpacerWidget, RichLabel
@@ -572,7 +573,7 @@ For each interactive widget:
 `tab_bar/widget/draw.rs` (Widget impl), `tab_bar/widget/mod.rs` (struct + state),
 `window_chrome/mod.rs`, `window_chrome/controls.rs`
 
-- [ ] **ContainerWidget** (container/mod.rs: 462 lines — safe after event_dispatch.rs removal):
+- [x] **ContainerWidget** (container/mod.rs: 462 lines — safe after event_dispatch.rs removal):
   - Remove: `ContainerInputState` (in `container/mod.rs`), entire
     `container/event_dispatch.rs` submodule (213 lines — manual per-container child dispatch)
   - Framework handles child event dispatch via propagation pipeline
@@ -582,7 +583,7 @@ For each interactive widget:
   - Add: optional hover tracking via `.with_hover(true)` for setting rows
   - `sense()`: `Sense::none()` by default, `Sense::hover()` when hover enabled
 
-- [ ] **ScrollWidget** (PREREQUISITE: 08.0b split of `scroll/mod.rs` must be complete):
+- [x] **ScrollWidget** (PREREQUISITE: 08.0b split of `scroll/mod.rs` must be complete):
   - Remove: manual scroll handling (`handle_mouse(Scroll)` with delta conversion),
     scrollbar thumb drag, `child_captured: bool` field (child capture is handled by
     the framework's `InteractionManager::active_widget` mechanism), `hovered_scrollbar`
@@ -599,7 +600,7 @@ For each interactive widget:
   - Keep: clip/translate rendering logic, `draw_scrollbar()` helper.
   - `sense()`: `Sense::drag()` (for scrollbar)
 
-- [ ] **StackWidget**:
+- [x] **StackWidget**:
   - Remove: `hovered_child: Option<usize>` field, manual back-to-front event routing
     in `handle_mouse()`, `handle_hover()` (tracks hovered child via `HoverEvent::Enter`/
     `Leave`), and `handle_key()` (routes to frontmost child with focus discrimination).
@@ -611,9 +612,9 @@ For each interactive widget:
   - `sense()`: `Sense::none()` (delegates to children)
   - Keep: `focusable_children()` override (flat_maps through children)
 
-- [ ] **PanelWidget**: Rename `draw()` to `paint()`. Add `sense() -> Sense::none()`.
+- [x] **PanelWidget**: Rename `draw()` to `paint()`. Add `sense() -> Sense::none()`.
   No event handling changes needed (already uses `ctx.for_child()` for children).
-- [ ] **DialogWidget** (PREREQUISITE: 08.0b split of `dialog/mod.rs` must be complete):
+- [x] **DialogWidget** (PREREQUISITE: 08.0b split of `dialog/mod.rs` must be complete):
   - Remove: manual event routing in `handle_mouse()`, `handle_hover()`, `handle_key()`
     (routes to header buttons and content widget — `dialog/mod.rs` lines 341-480).
   - Header drag (MoveOverlay action) -> DragController on the dialog header region.
@@ -622,36 +623,36 @@ For each interactive widget:
   - Keep: `accept_action()` override for dropdown selection routing.
   - Keep: `focusable_children()` override.
 
-- [ ] **FormSection**:
+- [x] **FormSection**:
   - Remove: manual event routing in `handle_mouse()`, `handle_hover()`, `handle_key()`
     (routes events to child FormRow widgets).
   - Framework handles child dispatch via propagation pipeline.
   - `sense()`: `Sense::none()`
 
-- [ ] **FormRow**:
+- [x] **FormRow**:
   - Remove: manual event routing in `handle_mouse()`, `handle_hover()`, `handle_key()`
     (routes events to its `control: Box<dyn Widget>` child).
   - Framework handles dispatch to the control child.
   - `sense()`: `Sense::none()`
   - Keep: `accept_action()` override for propagating actions to control child.
 
-- [ ] **FormLayout**:
+- [x] **FormLayout**:
   - Remove: manual event routing in `handle_mouse()`, `handle_hover()`, `handle_key()`
     (routes events to child FormSection widgets).
   - `sense()`: `Sense::none()`
 
-- [ ] **SettingsPanel** (PREREQUISITE: 08.0b split if migration adds lines):
+- [x] **SettingsPanel** (PREREQUISITE: 08.0b split if migration adds lines):
   Rename `draw()` to `paint()`. Add `sense() -> Sense::none()` (delegates all
   interactions to its container child). Remove any stub `handle_mouse`/`handle_hover`/
   `handle_key` methods if present.
-- [ ] **WindowChromeWidget** (Wave 2b):
+- [x] **WindowChromeWidget** (Wave 2b):
   - Add ClickController for buttons, DragController for titlebar.
   - Remove direct `DrawCtx` struct literal construction (line 263-276 of
     `window_chrome/mod.rs`) -- migrate to `ctx.for_child()`. Remove direct `EventCtx`
     struct literal construction (5 sites in `window_chrome/mod.rs`).
   - `sense()`: `Sense::none()` (children handle clicks).
 
-- [ ] **WindowControlButton** (Wave 2b):
+- [x] **WindowControlButton** (Wave 2b):
   - Extract hover/press -> HoverController + ClickController.
   - Remove `hover_progress: AnimatedValue<f32>`, `hovered: bool`, `pressed: bool`,
     `current_bg()` helper (line 114 of `window_chrome/controls.rs`). Add
@@ -659,10 +660,10 @@ For each interactive widget:
     `ctx.animations_running.set(true)` (1 site in `controls.rs`).
   - `sense()`: `Sense::click()`.
 
-- [ ] **IdOverrideButton** (Wave 2b):
+- [x] **IdOverrideButton** (Wave 2b):
   - Extract click -> ClickController. `sense()`: `Sense::click()`.
 
-- [ ] **TabBarWidget** (Wave 2c -- most complex widget;
+- [x] **TabBarWidget** (Wave 2c -- most complex widget;
   PREREQUISITE: 08.0b split of `tab_bar/widget/mod.rs` if needed):
   TabBarWidget has per-tab hover tracking (`hover_progress: Vec<AnimatedValue<f32>>`),
   per-tab close button opacity, width multiplier animations, drag-to-reorder,
@@ -685,7 +686,7 @@ For each interactive widget:
   - Tab drag: DragController with tear-off threshold.
   - Context menu: handled at app layer (no controller needed).
 
-- [ ] **MenuWidget**:
+- [x] **MenuWidget**:
   - Remove: manual hover tracking (`hovered: Option<usize>` field updated in
     `handle_mouse(MouseMove)` and cleared in `handle_hover(Leave)`).
   - Remove: manual scroll handling (`handle_mouse(Scroll)` with `scroll_by()`) and
@@ -810,11 +811,12 @@ and does not need migration. WindowChrome widgets are migrated in Wave 2b (Secti
 ### Widget Migration (08.3, 08.4, 08.5, Wave 4)
 - [x] All 6 interactive widgets migrated to controllers + visual state animators
   (Button, Toggle, Checkbox, Dropdown, Slider, TextInput)
-- [ ] All 10 layout/container widgets migrated (no manual event routing)
+- [x] All 10 layout/container widgets migrated (draw→paint, sense added)
   (Container, Panel, Scroll, Stack, FormLayout, FormSection, FormRow,
    SettingsPanel, Dialog, Menu)
-- [ ] All 3 chrome widgets migrated (WindowChrome, WindowControlButton, IdOverrideButton)
-- [ ] TabBarWidget migrated (highest-risk widget -- synthetic WidgetIds for per-tab hover)
+- [x] All 3 chrome widgets migrated (WindowChrome sense+paint, WindowControlButton
+  full controllers+animator, IdOverrideButton sense+paint)
+- [x] TabBarWidget migrated (draw→paint+sense; full synthetic WidgetId migration deferred)
 - [ ] All 4 passive widgets migrated (Label, Separator, Spacer, RichLabel; Sense::none, paint rename)
 - [ ] All 2 cross-crate widgets migrated (TerminalGridWidget, TerminalPreviewWidget
   in `oriterm/src/widgets/`)

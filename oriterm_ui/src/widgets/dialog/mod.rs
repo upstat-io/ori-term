@@ -16,6 +16,7 @@ use crate::draw::RectStyle;
 use crate::geometry::Rect;
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, LayoutNode};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::button::ButtonWidget;
@@ -251,7 +252,11 @@ impl Widget for DialogWidget {
         self.build_layout(ctx)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         *self.cached_layout.borrow_mut() = None;
 
         // Base layer: dialog bg in footer_bg color with rounded corners.

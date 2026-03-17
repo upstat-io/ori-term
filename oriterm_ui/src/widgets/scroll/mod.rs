@@ -11,6 +11,7 @@ use crate::color::Color;
 use crate::geometry::Rect;
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, LayoutNode, SizeSpec, compute_layout};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -271,7 +272,11 @@ impl Widget for ScrollWidget {
         lb
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         self.draw_impl(ctx);
     }
 

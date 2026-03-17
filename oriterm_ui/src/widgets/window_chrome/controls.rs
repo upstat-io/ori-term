@@ -1,18 +1,23 @@
 //! Window control button widget (minimize, maximize/restore, close).
 //!
-//! Each button renders its symbol geometrically (lines for ─, rect outline
-//! for □, X lines for ×) — no font glyphs needed. Hover state uses
-//! [`AnimatedValue`] for smooth 100ms color transitions, matching the
-//! [`ButtonWidget`](super::super::button::ButtonWidget) pattern.
+//! Each button renders its symbol geometrically (lines for -, rect outline
+//! for square, X lines for x) -- no font glyphs needed. Uses
+//! [`VisualStateAnimator`] with `common_states()` for smooth 100ms color
+//! transitions, matching the [`ButtonWidget`](super::super::button::ButtonWidget)
+//! pattern.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use crate::animation::{AnimatedValue, Easing, Lerp};
+use crate::animation::Lerp;
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
 use crate::input::{HoverEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
+use crate::visual_state::common_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::icons::IconId;
@@ -20,9 +25,6 @@ use crate::icons::IconId;
 use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 use super::constants::{CONTROL_BUTTON_WIDTH, SYMBOL_SIZE};
 use super::layout::ControlKind;
-
-/// Duration of the hover color transition.
-const HOVER_DURATION: Duration = Duration::from_millis(100);
 
 /// Colors for a window control button.
 ///
@@ -44,45 +46,50 @@ pub struct ControlButtonColors {
 /// A window control button: minimize, maximize/restore, or close.
 ///
 /// Renders geometric symbols (no font dependency) with animated hover
-/// transitions. Emits `WidgetAction::WindowMinimize`, `WindowMaximize`,
-/// or `WindowClose` when clicked.
-#[derive(Debug, Clone)]
+/// transitions via [`VisualStateAnimator`]. Emits `WidgetAction::WindowMinimize`,
+/// `WindowMaximize`, or `WindowClose` when clicked.
 pub struct WindowControlButton {
     id: WidgetId,
     kind: ControlKind,
     /// Whether the window is currently maximized (affects the maximize
-    /// button symbol: □ vs ⧉).
+    /// button symbol: square vs overlapping squares).
     is_maximized: bool,
-    hovered: bool,
-    pressed: bool,
-    hover_progress: AnimatedValue<f32>,
-    /// Normal button colors (derived from theme).
+    /// Normal foreground (symbol) color.
     fg: Color,
-    bg: Color,
-    hover_bg: Color,
-    pressed_bg: Color,
     /// Close button hover background (from theme).
     close_hover_bg: Color,
     /// Close button pressed background (from theme).
     close_pressed_bg: Color,
+    controllers: Vec<Box<dyn EventController>>,
+    animator: VisualStateAnimator,
+    /// Legacy pressed tracking for `handle_mouse()` compat (removed in 08.6).
+    pressed: bool,
 }
 
 impl WindowControlButton {
     /// Creates a new control button of the given kind.
     pub fn new(kind: ControlKind, colors: ControlButtonColors) -> Self {
+        let (hover_bg, pressed_bg) = if kind == ControlKind::Close {
+            (colors.close_hover_bg, colors.close_pressed_bg)
+        } else {
+            (colors.hover_bg, colors.bg)
+        };
+
         Self {
             id: WidgetId::next(),
             kind,
             is_maximized: false,
-            hovered: false,
-            pressed: false,
-            hover_progress: AnimatedValue::new(0.0, HOVER_DURATION, Easing::EaseOut),
             fg: colors.fg,
-            bg: colors.bg,
-            hover_bg: colors.hover_bg,
-            pressed_bg: colors.bg,
             close_hover_bg: colors.close_hover_bg,
             close_pressed_bg: colors.close_pressed_bg,
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![common_states(
+                colors.bg, hover_bg, pressed_bg, colors.bg,
+            )]),
+            pressed: false,
         }
     }
 
@@ -104,46 +111,35 @@ impl WindowControlButton {
     /// Updates the button colors from a new theme palette.
     pub fn set_colors(&mut self, colors: ControlButtonColors) {
         self.fg = colors.fg;
-        self.bg = colors.bg;
-        self.hover_bg = colors.hover_bg;
         self.close_hover_bg = colors.close_hover_bg;
         self.close_pressed_bg = colors.close_pressed_bg;
+
+        let (hover_bg, pressed_bg) = if self.kind == ControlKind::Close {
+            (colors.close_hover_bg, colors.close_pressed_bg)
+        } else {
+            (colors.hover_bg, colors.bg)
+        };
+
+        self.animator = VisualStateAnimator::new(vec![common_states(
+            colors.bg, hover_bg, pressed_bg, colors.bg,
+        )]);
     }
 
-    /// Returns the current background color with hover interpolation.
-    fn current_bg(&self, now: Instant) -> Color {
-        if self.pressed {
-            return self.pressed_color();
-        }
-        let t = self.hover_progress.get(now);
-        Color::lerp(self.bg, self.hover_color(), t)
-    }
-
-    /// Returns the foreground (symbol) color — white on close hover.
+    /// Returns the foreground (symbol) color -- white on close hover.
     fn current_fg(&self, now: Instant) -> Color {
         if self.kind == ControlKind::Close {
-            let t = self.hover_progress.get(now);
-            Color::lerp(self.fg, Color::WHITE, t)
+            // Use animator bg to derive hover progress: if bg matches
+            // close_hover_bg or close_pressed_bg, use white fg.
+            let bg = self.animator.get_bg_color(now);
+            if bg == Color::TRANSPARENT {
+                self.fg
+            } else {
+                // Approximate: lerp fg toward white based on bg alpha.
+                let t = bg.a;
+                Color::lerp(self.fg, Color::WHITE, t)
+            }
         } else {
             self.fg
-        }
-    }
-
-    /// The hover background for this button kind.
-    fn hover_color(&self) -> Color {
-        if self.kind == ControlKind::Close {
-            self.close_hover_bg
-        } else {
-            self.hover_bg
-        }
-    }
-
-    /// The pressed background for this button kind.
-    fn pressed_color(&self) -> Color {
-        if self.kind == ControlKind::Close {
-            self.close_pressed_bg
-        } else {
-            self.pressed_bg
         }
     }
 
@@ -154,6 +150,22 @@ impl WindowControlButton {
             ControlKind::MaximizeRestore => WidgetAction::WindowMaximize,
             ControlKind::Close => WidgetAction::WindowClose,
         }
+    }
+}
+
+impl std::fmt::Debug for WindowControlButton {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WindowControlButton")
+            .field("id", &self.id)
+            .field("kind", &self.kind)
+            .field("is_maximized", &self.is_maximized)
+            .field("pressed", &self.pressed)
+            .field("fg", &self.fg)
+            .field("close_hover_bg", &self.close_hover_bg)
+            .field("close_pressed_bg", &self.close_pressed_bg)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
     }
 }
 
@@ -221,16 +233,36 @@ impl Widget for WindowControlButton {
         false
     }
 
+    fn sense(&self) -> Sense {
+        Sense::click()
+    }
+
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         LayoutBox::leaf(CONTROL_BUTTON_WIDTH, 0.0).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let bg = self.current_bg(ctx.now);
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let bg = self.animator.get_bg_color(ctx.now);
         let fg = self.current_fg(ctx.now);
 
         // Button background (only visible on hover/press).
-        if self.hovered || self.pressed || self.hover_progress.is_animating(ctx.now) {
+        if bg != Color::TRANSPARENT {
             let style = RectStyle::filled(bg);
             ctx.draw_list.push_rect(ctx.bounds, style);
         }
@@ -249,8 +281,9 @@ impl Widget for WindowControlButton {
         }
 
         // Request continued redraws during animation.
-        if self.hover_progress.is_animating(ctx.now) {
+        if self.animator.is_animating(ctx.now) {
             ctx.animations_running.set(true);
+            ctx.request_anim_frame();
         }
     }
 
@@ -274,17 +307,11 @@ impl Widget for WindowControlButton {
     }
 
     fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        let now = Instant::now();
         match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                self.hover_progress.set(1.0, now);
-                WidgetResponse::paint()
-            }
-            HoverEvent::Leave => {
-                self.hovered = false;
-                self.pressed = false;
-                self.hover_progress.set(0.0, now);
+            HoverEvent::Enter | HoverEvent::Leave => {
+                if matches!(event, HoverEvent::Leave) {
+                    self.pressed = false;
+                }
                 WidgetResponse::paint()
             }
         }

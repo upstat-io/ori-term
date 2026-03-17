@@ -15,6 +15,7 @@ use crate::draw::{RectStyle, Shadow};
 use crate::geometry::{Insets, Point};
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{Align, Direction, LayoutBox, LayoutNode, SizeSpec, compute_layout};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -313,7 +314,11 @@ impl Widget for SettingsPanel {
             .with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let bg = ctx.theme.bg_primary;
 
         if self.show_chrome {

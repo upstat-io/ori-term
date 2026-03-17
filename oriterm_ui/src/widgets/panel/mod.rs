@@ -11,6 +11,7 @@ use crate::draw::{RectStyle, Shadow};
 use crate::geometry::Insets;
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, LayoutNode, SizeSpec, compute_layout};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -162,7 +163,11 @@ impl Widget for PanelWidget {
             .with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         // Invalidate cache each frame so children with changed intrinsic sizes
         // get fresh layout.
         *self.cached_layout.borrow_mut() = None;

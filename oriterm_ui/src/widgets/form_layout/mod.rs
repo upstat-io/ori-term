@@ -10,6 +10,7 @@ use std::rc::Rc;
 use crate::geometry::{Insets, Point, Rect};
 use crate::input::{HoverEvent, KeyEvent, MouseEvent, MouseEventKind};
 use crate::layout::{Align, Direction, LayoutBox, LayoutNode, SizeSpec, compute_layout};
+use crate::sense::Sense;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
@@ -156,7 +157,11 @@ impl Widget for FormLayout {
         self.build_layout_box(ctx)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         // Use content-space clip rect so visibility culling works inside
         // scroll transforms (where clip is in viewport space but child
