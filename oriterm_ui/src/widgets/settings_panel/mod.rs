@@ -212,6 +212,18 @@ impl SettingsPanel {
         self.close_id
     }
 
+    /// Returns the save button's `WidgetId`.
+    #[cfg(test)]
+    pub(crate) fn save_id(&self) -> WidgetId {
+        self.save_id
+    }
+
+    /// Returns the cancel button's `WidgetId`.
+    #[cfg(test)]
+    pub(crate) fn cancel_id(&self) -> WidgetId {
+        self.cancel_id
+    }
+
     /// Returns the width spec for the panel's root layout box.
     fn width_spec(&self) -> SizeSpec {
         if self.show_chrome {

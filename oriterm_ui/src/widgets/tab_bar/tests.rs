@@ -1430,6 +1430,102 @@ fn dispatch_control_input_handles_click() {
     );
 }
 
+// -- Regression: action_for_control maps button IDs to window actions --
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn action_for_control_maps_minimize() {
+    let w = TabBarWidget::new(1200.0);
+    let rects = w.interactive_rects();
+    // Control buttons are the last 3 interactive rects.
+    // action_for_control uses widget IDs, so get the ID via control_widget_at_point.
+    let ctrl_rect = rects[rects.len() - 3]; // minimize
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    if let Some(id) = w.control_widget_at_point(center) {
+        let action = w.action_for_control(id);
+        assert_eq!(
+            action,
+            Some(crate::action::WidgetAction::WindowMinimize),
+            "first control button should map to WindowMinimize"
+        );
+    } else {
+        panic!("control_widget_at_point should find minimize button");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn action_for_control_maps_close() {
+    let w = TabBarWidget::new(1200.0);
+    let rects = w.interactive_rects();
+    let ctrl_rect = rects[rects.len() - 1]; // close (rightmost)
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    if let Some(id) = w.control_widget_at_point(center) {
+        let action = w.action_for_control(id);
+        assert_eq!(
+            action,
+            Some(crate::action::WidgetAction::WindowClose),
+            "last control button should map to WindowClose"
+        );
+    } else {
+        panic!("control_widget_at_point should find close button");
+    }
+}
+
+// -- Regression: update_control_hover_state drives animators --
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn update_control_hover_state_returns_animating() {
+    use std::time::Instant;
+
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+
+    let rects = w.interactive_rects();
+    let ctrl_rect = rects[rects.len() - 1]; // close button
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    let now = Instant::now();
+    let animating = w.update_control_hover_state(center, now);
+    // The animator should be mid-transition (Normal → Hovered).
+    assert!(
+        animating,
+        "hovering a control button should start an animation"
+    );
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn clear_control_hover_state_after_hover() {
+    use std::time::{Duration, Instant};
+
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+
+    let rects = w.interactive_rects();
+    let ctrl_rect = rects[rects.len() - 1];
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    let now = Instant::now();
+    w.update_control_hover_state(center, now);
+
+    // Clear: should also animate (Hovered → Normal).
+    let later = now + Duration::from_millis(200);
+    let animating = w.clear_control_hover_state(later);
+    assert!(animating, "clearing hover should start a reverse animation");
+}
+
 // cursor_in_tab_bar range
 
 #[test]
