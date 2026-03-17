@@ -9,6 +9,7 @@
 use oriterm_ui::draw::RectStyle;
 use oriterm_ui::input::{HoverEvent, KeyEvent, MouseEvent};
 use oriterm_ui::layout::LayoutBox;
+use oriterm_ui::sense::Sense;
 use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
@@ -69,15 +70,15 @@ impl Widget for TerminalPreviewWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         LayoutBox::leaf(self.preview_width, self.preview_height).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         // Placeholder: rounded rectangle frame with theme background.
         let style = RectStyle {
             fill: Some(ctx.theme.bg_secondary),

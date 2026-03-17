@@ -6,9 +6,10 @@ use std::time::Instant;
 
 use crate::draw::{DrawCommand, DrawList, SceneCache, SceneNode};
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
+use crate::input::HoverEvent;
 use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::checkbox::CheckboxWidget;
@@ -24,7 +25,7 @@ use crate::widgets::spacer::SpacerWidget;
 use crate::widgets::stack::StackWidget;
 use crate::widgets::tests::{MockMeasurer, TEST_THEME};
 use crate::widgets::text_input::TextInputWidget;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction};
 
 use super::compose_scene;
 
@@ -54,29 +55,17 @@ impl Widget for TrackingWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         LayoutBox::leaf(self.width, self.height).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         self.draw_count.set(self.draw_count.get() + 1);
         ctx.draw_list.push_rect(ctx.bounds, Default::default());
-    }
-
-    fn handle_mouse(&mut self, _: &MouseEvent, _: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _: HoverEvent, _: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _: KeyEvent, _: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 
     fn accept_action(&mut self, _: &WidgetAction) -> bool {
@@ -195,28 +184,16 @@ fn compose_passes_cache_to_draw_ctx() {
             self.id
         }
 
-        fn is_focusable(&self) -> bool {
-            false
+        fn sense(&self) -> Sense {
+            Sense::none()
         }
 
         fn layout(&self, _: &LayoutCtx<'_>) -> LayoutBox {
             LayoutBox::leaf(10.0, 10.0).with_widget_id(self.id)
         }
 
-        fn draw(&self, ctx: &mut DrawCtx<'_>) {
+        fn paint(&self, ctx: &mut DrawCtx<'_>) {
             self.saw_cache.set(ctx.scene_cache.is_some());
-        }
-
-        fn handle_mouse(&mut self, _: &MouseEvent, _: &EventCtx<'_>) -> WidgetResponse {
-            WidgetResponse::ignored()
-        }
-
-        fn handle_hover(&mut self, _: HoverEvent, _: &EventCtx<'_>) -> WidgetResponse {
-            WidgetResponse::ignored()
-        }
-
-        fn handle_key(&mut self, _: KeyEvent, _: &EventCtx<'_>) -> WidgetResponse {
-            WidgetResponse::ignored()
         }
 
         fn accept_action(&mut self, _: &WidgetAction) -> bool {

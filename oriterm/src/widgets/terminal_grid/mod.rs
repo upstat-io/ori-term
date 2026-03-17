@@ -12,6 +12,7 @@ use std::cell::Cell;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::input::{HoverEvent, KeyEvent, MouseEvent};
 use oriterm_ui::layout::{LayoutBox, SizeSpec};
+use oriterm_ui::sense::Sense;
 use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
@@ -104,8 +105,8 @@ impl Widget for TerminalGridWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        true
+    fn sense(&self) -> Sense {
+        Sense::click_and_drag().union(Sense::focusable())
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -118,7 +119,7 @@ impl Widget for TerminalGridWidget {
         .with_widget_id(self.id)
     }
 
-    fn draw(&self, _ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {
         // No DrawCommands — cell rendering is handled by the GPU prepare
         // phase. Bounds are set explicitly via `set_bounds()` from
         // `compute_window_layout`, which includes grid padding.

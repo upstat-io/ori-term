@@ -32,7 +32,7 @@ sections:
     status: complete
   - id: "08.5"
     title: "Migrate Passive Widgets"
-    status: not-started
+    status: complete
   - id: "08.6"
     title: "Remove Legacy Event Methods"
     status: not-started
@@ -467,36 +467,15 @@ require 08.0 + 08.1 + 08.1b to be complete first. 08.6 requires ALL waves comple
   full synthetic WidgetId migration deferred to §08.6)
   - Renamed draw() → paint(), added sense() → Sense::click()
 
-- [ ] **Wave 3 -- Passive widgets** (no event handling):
+- [x] **Wave 3 -- Passive widgets** (no event handling):
   LabelWidget, SeparatorWidget, SpacerWidget, RichLabel
-  - Add `sense() -> Sense::none()` (RichLabel already has this)
-  - Rename `draw()` to `paint()`
-  - Remove stub `handle_mouse`, `handle_hover`, `handle_key` implementations
-  - No other changes needed
-  - **Note:** StatusBadge does NOT implement `Widget` — it is a standalone drawing helper
-    and does not need migration.
+  - Added sense() → Sense::none(), renamed draw() → paint()
+  - Removed stub handle_mouse/handle_hover/handle_key and unused imports
+  - Removed is_focusable() overrides (now derived from sense())
 
-- [ ] **Wave 4 -- Cross-crate widgets** (in `oriterm` crate, not `oriterm_ui`):
-  TerminalGridWidget (`oriterm/src/widgets/terminal_grid/mod.rs`, 141 lines),
-  TerminalPreviewWidget (`oriterm/src/widgets/terminal_preview/mod.rs`, 106 lines)
-  - These live in the binary crate, not the library crate
-  - Both implement `Widget` and use `handle_mouse()`, `handle_hover()`, `handle_key()`
-  - Both import from `oriterm_ui::input::{HoverEvent, KeyEvent, MouseEvent}`
-  - Must migrate to new trait shape (add `sense()`, `paint()`, remove old methods)
-  - TerminalGridWidget: `Sense::click_and_drag().union(Sense::focusable())` (receives all input)
-  - TerminalPreviewWidget: `Sense::none()` (display only, 106 lines)
-  - **TerminalGridWidget input claim**: Currently `handle_mouse()` returns
-    `WidgetResponse::handled()` and `handle_key()` returns `WidgetResponse::handled()`
-    to claim all input (routing happens at the app layer, not in the widget). After
-    migration, this "claim all" behavior is preserved by `TerminalInputController`
-    (defined in Section 08.1b) — a trivial controller that returns `true` for all events.
-    The app layer handles actual terminal input dispatch (sending to PTY, updating
-    grid); the controller just prevents events from bubbling past the terminal grid.
-  - **IMPORTANT**: These must be migrated BEFORE Section 08.6 removes the old trait methods.
-    Cannot remove old methods from the trait while these still use them. Migration order:
-    Wave 4 (implement `paint()`, `sense()`, stop using old methods) -> then 08.6 (remove
-    old methods from trait). Wave 4 can run in parallel with Waves 1-3 since it only
-    requires the additive step (08.1) to have landed.
+- [x] **Wave 4 -- Cross-crate widgets** (in `oriterm` crate, not `oriterm_ui`):
+  TerminalGridWidget, TerminalPreviewWidget — renamed draw→paint, added sense(),
+  removed is_focusable() overrides. Legacy handle_* methods retained.
 
 ---
 
@@ -817,11 +796,12 @@ and does not need migration. WindowChrome widgets are migrated in Wave 2b (Secti
 - [x] All 3 chrome widgets migrated (WindowChrome sense+paint, WindowControlButton
   full controllers+animator, IdOverrideButton sense+paint)
 - [x] TabBarWidget migrated (draw→paint+sense; full synthetic WidgetId migration deferred)
-- [ ] All 4 passive widgets migrated (Label, Separator, Spacer, RichLabel; Sense::none, paint rename)
-- [ ] All 2 cross-crate widgets migrated (TerminalGridWidget, TerminalPreviewWidget
-  in `oriterm/src/widgets/`)
-- [ ] All 3 test-only Widget implementations migrated (CountingWidget, TrackingWidget,
-  CacheDetector)
+- [x] All 4 passive widgets migrated (Label, Separator, Spacer, RichLabel; Sense::none, paint rename,
+  stubs removed)
+- [x] All 2 cross-crate widgets migrated (TerminalGridWidget, TerminalPreviewWidget;
+  sense+paint, legacy handle_* retained)
+- [x] All 3 test-only Widget implementations migrated (CountingWidget, TrackingWidget,
+  CacheDetector; sense+paint, stubs removed)
 
 ### New Context Types (08.1)
 - [x] `LifecycleCtx` and `AnimCtx` defined in `contexts.rs` with correct field types
