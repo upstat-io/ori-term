@@ -15,6 +15,7 @@ use crate::geometry::{Insets, Rect};
 use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent};
 use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::layout::{Align, Direction, GridColumns, Justify, LayoutBox, LayoutNode, SizeSpec};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::{DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction, WidgetResponse};
@@ -353,7 +354,11 @@ impl Widget for ContainerWidget {
         self.build_layout_box(ctx)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         // Use content-space clip rect so visibility culling works inside
         // scroll transforms (where clip is in viewport space but child

@@ -16,6 +16,7 @@ use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
@@ -226,12 +227,16 @@ impl Widget for WindowChromeWidget {
         false
     }
 
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         LayoutBox::leaf(self.window_width, self.chrome_layout.caption_height)
             .with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         if !self.chrome_layout.visible {
             return;
         }

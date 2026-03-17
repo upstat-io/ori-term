@@ -13,6 +13,7 @@ use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::{TextOverflow, TextStyle};
 
 use super::super::constants::{
@@ -430,7 +431,11 @@ impl Widget for TabBarWidget {
         LayoutBox::leaf(self.window_width, TAB_BAR_HEIGHT).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::click()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         if self.tabs.is_empty() {
             return;
         }

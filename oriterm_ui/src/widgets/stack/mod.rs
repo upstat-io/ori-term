@@ -7,6 +7,7 @@
 use crate::geometry::Rect;
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, compute_layout};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
@@ -72,7 +73,11 @@ impl Widget for StackWidget {
         LayoutBox::leaf(max_w, max_h).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         // Draw children in order: first = backmost, last = frontmost.
         for child in &self.children {
             let mut child_ctx = DrawCtx {

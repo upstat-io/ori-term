@@ -11,6 +11,7 @@ use crate::input::{
     HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind, ScrollDelta,
 };
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::TextStyle;
 
 use super::super::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
@@ -44,7 +45,11 @@ impl Widget for MenuWidget {
         LayoutBox::leaf(width, height).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::click().union(Sense::focusable())
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let bounds = ctx.bounds;
         let s = &self.style;
         let scrollable = self.is_scrollable();

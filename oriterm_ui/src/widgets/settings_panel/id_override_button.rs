@@ -5,6 +5,7 @@
 
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::super::button::ButtonWidget;
@@ -35,6 +36,10 @@ impl Widget for IdOverrideButton {
         self.inner.is_focusable()
     }
 
+    fn sense(&self) -> Sense {
+        Sense::click()
+    }
+
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
         // Rewrite the widget id on the layout box.
         let mut lb = self.inner.layout(ctx);
@@ -42,7 +47,7 @@ impl Widget for IdOverrideButton {
         lb
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         self.inner.paint(ctx);
     }
 
