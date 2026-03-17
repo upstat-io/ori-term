@@ -286,6 +286,21 @@ pub trait Widget {
     /// default (no children).
     fn for_each_child_mut(&mut self, _visitor: &mut dyn FnMut(&mut dyn Widget)) {}
 
+    /// Handles input events not consumed by controllers.
+    ///
+    /// Called by the dispatch pipeline after controller dispatch when no
+    /// controller marked the event as handled. Used for widget-internal
+    /// interaction logic (e.g., menu item hover tracking) that doesn't fit
+    /// the generic controller model. Return `true` if the widget handled the
+    /// event.
+    fn on_input(
+        &mut self,
+        _event: &crate::input::InputEvent,
+        _bounds: crate::geometry::Rect,
+    ) -> bool {
+        false
+    }
+
     /// Transforms a controller-emitted action into a widget-specific action.
     ///
     /// Called by the dispatch pipeline after a controller on this widget emits

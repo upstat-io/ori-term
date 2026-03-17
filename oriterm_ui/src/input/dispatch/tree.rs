@@ -80,14 +80,15 @@ pub fn dispatch_to_widget_tree(
 
     // Dispatch any delivery actions targeting this widget.
     if actions.iter().any(|a| a.widget_id == id) {
+        // Collect bounds from the first matching action.
+        let widget_bounds = actions
+            .iter()
+            .find(|a| a.widget_id == id)
+            .map_or_else(Rect::default, |a| a.bounds);
+
         let controllers = widget.controllers_mut();
         if !controllers.is_empty() {
             let interaction = InteractionState::default();
-            // Collect bounds from the first matching action for on_action.
-            let widget_bounds = actions
-                .iter()
-                .find(|a| a.widget_id == id)
-                .map_or_else(Rect::default, |a| a.bounds);
             for action in actions.iter().filter(|a| a.widget_id == id) {
                 let args = ControllerCtxArgs {
                     widget_id: id,
@@ -101,17 +102,29 @@ pub fn dispatch_to_widget_tree(
                     break;
                 }
             }
-            // Let the widget transform controller actions into semantic actions.
-            // Done after controller dispatch to avoid borrow conflict with
-            // controllers_mut().
+        }
+
+        // Let the widget transform controller actions into semantic actions.
+        // Done after controller dispatch to avoid borrow conflict with
+        // controllers_mut().
+        if !result.actions.is_empty() {
             let raw_actions = std::mem::take(&mut result.actions);
             result.actions = raw_actions
                 .into_iter()
                 .filter_map(|a| widget.on_action(a, widget_bounds))
                 .collect();
-            if result.handled {
-                return;
-            }
+        }
+
+        // If controllers didn't handle the event, let the widget handle it
+        // directly for widget-internal interaction logic (e.g., menu item
+        // hover tracking).
+        if !result.handled && widget.on_input(event, widget_bounds) {
+            result.handled = true;
+            result.source = Some(id);
+        }
+
+        if result.handled {
+            return;
         }
     }
 
