@@ -97,8 +97,6 @@ pub struct SliderWidget {
     max: f32,
     step: f32,
     disabled: bool,
-    /// Legacy drag tracking for `handle_mouse()` compat (removed in §08.6).
-    dragging: bool,
     style: SliderStyle,
     controllers: Vec<Box<dyn EventController>>,
     /// Animator for thumb color transition.
@@ -122,7 +120,6 @@ impl SliderWidget {
             max: 1.0,
             step: 0.01,
             disabled: false,
-            dragging: false,
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
@@ -160,11 +157,6 @@ impl SliderWidget {
     /// Returns whether the slider is disabled.
     pub fn is_disabled(&self) -> bool {
         self.disabled
-    }
-
-    /// Returns whether the thumb is being dragged.
-    pub fn is_dragging(&self) -> bool {
-        self.dragging
     }
 
     /// Sets the range.
@@ -281,7 +273,6 @@ impl std::fmt::Debug for SliderWidget {
             .field("max", &self.max)
             .field("step", &self.step)
             .field("disabled", &self.disabled)
-            .field("dragging", &self.dragging)
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
@@ -372,8 +363,6 @@ impl Widget for SliderWidget {
         let thumb_rect = Rect::new(thumb_x, thumb_y, s.thumb_size, s.thumb_size);
         let thumb_bg = if self.disabled {
             s.disabled_bg
-        } else if self.dragging {
-            s.thumb_hover_color
         } else {
             self.animator.get_bg_color(ctx.now)
         };
@@ -410,7 +399,6 @@ impl Widget for SliderWidget {
         let tb = self.track_bounds(ctx.bounds);
         match event.kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                self.dragging = true;
                 let new_val = self.value_from_x(event.pos.x, tb);
                 let action = self.set_value_action(new_val);
                 let mut r = WidgetResponse::focus().with_capture();
@@ -419,11 +407,9 @@ impl Widget for SliderWidget {
                 }
                 r
             }
-            MouseEventKind::Up(MouseButton::Left) => {
-                self.dragging = false;
-                WidgetResponse::paint().with_release_capture()
-            }
-            MouseEventKind::Move if self.dragging => {
+            MouseEventKind::Up(MouseButton::Left) => WidgetResponse::paint().with_release_capture(),
+            // Move events arrive via container capture — always update value.
+            MouseEventKind::Move => {
                 let new_val = self.value_from_x(event.pos.x, tb);
                 let action = self.set_value_action(new_val);
                 let mut r = WidgetResponse::paint();

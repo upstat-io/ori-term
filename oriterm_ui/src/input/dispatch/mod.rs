@@ -8,6 +8,12 @@
 //! and active-widget state, then writes a sequence of `DeliveryAction`s
 //! into a caller-owned buffer. The caller iterates actions and delivers
 //! each to the appropriate widget, stopping on first handled response.
+//!
+//! `tree` submodule provides `dispatch_to_widget_tree` and
+//! `deliver_event_to_tree` for walking a widget tree and dispatching
+//! to controllers at each matching node.
+
+pub mod tree;
 
 use crate::geometry::Rect;
 use crate::widget_id::WidgetId;

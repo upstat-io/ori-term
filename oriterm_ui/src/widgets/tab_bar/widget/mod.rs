@@ -124,6 +124,9 @@ pub struct TabBarWidget {
     /// Index of the currently hovered control button (`None` if not hovering).
     #[cfg(not(target_os = "macos"))]
     hovered_control: Option<usize>,
+    /// Index of the currently pressed control button (for routing mouse-up).
+    #[cfg(not(target_os = "macos"))]
+    pressed_control: Option<usize>,
 
     /// Extra left margin for platform chrome (macOS traffic lights).
     left_inset: f32,
@@ -158,6 +161,8 @@ impl TabBarWidget {
             controls: create_controls(control_colors_from_theme(theme)),
             #[cfg(not(target_os = "macos"))]
             hovered_control: None,
+            #[cfg(not(target_os = "macos"))]
+            pressed_control: None,
             left_inset: 0.0,
         }
     }

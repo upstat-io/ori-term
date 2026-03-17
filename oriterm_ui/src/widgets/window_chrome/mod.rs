@@ -50,6 +50,8 @@ pub struct WindowChromeWidget {
     controls: Vec<WindowControlButton>,
     /// Index of the currently hovered control button (None if no hover).
     hovered_control: Option<usize>,
+    /// Index of the currently pressed control button (for routing mouse-up).
+    pressed_control: Option<usize>,
     /// Caption background color (active).
     caption_bg: Color,
     /// Caption background color (inactive / unfocused).
@@ -113,6 +115,7 @@ impl WindowChromeWidget {
             chrome_layout,
             controls,
             hovered_control: None,
+            pressed_control: None,
             caption_bg,
             caption_bg_inactive: darken(caption_bg, 0.3),
             caption_fg: theme.fg_secondary,
@@ -296,6 +299,7 @@ impl Widget for WindowChromeWidget {
         match event.kind {
             MouseEventKind::Down(MouseButton::Left) => {
                 if let Some(idx) = self.control_at_point(event.pos) {
+                    self.pressed_control = Some(idx);
                     let ctrl_rect = self.chrome_layout.controls[idx].rect;
                     let child_ctx = EventCtx {
                         measurer: ctx.measurer,
@@ -313,9 +317,9 @@ impl Widget for WindowChromeWidget {
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 // Route release to the control that was pressed.
-                for (i, ctrl) in self.controls.iter_mut().enumerate() {
-                    if ctrl.is_pressed() {
-                        let ctrl_rect = self.chrome_layout.controls[i].rect;
+                if let Some(idx) = self.pressed_control.take() {
+                    if let Some(ctrl_layout) = self.chrome_layout.controls.get(idx) {
+                        let ctrl_rect = ctrl_layout.rect;
                         let child_ctx = EventCtx {
                             measurer: ctx.measurer,
                             bounds: ctrl_rect,
@@ -326,7 +330,7 @@ impl Widget for WindowChromeWidget {
                             widget_id: None,
                             frame_requests: None,
                         };
-                        return ctrl.handle_mouse(event, &child_ctx);
+                        return self.controls[idx].handle_mouse(event, &child_ctx);
                     }
                 }
                 WidgetResponse::ignored()

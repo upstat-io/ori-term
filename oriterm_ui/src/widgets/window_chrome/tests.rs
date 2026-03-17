@@ -158,9 +158,8 @@ fn control_button_not_focusable() {
 }
 
 #[test]
-fn control_button_press_sets_pressed() {
+fn control_button_down_returns_paint() {
     let mut btn = WindowControlButton::new(ControlKind::MaximizeRestore, test_button_colors());
-    assert!(!btn.is_pressed());
 
     let measurer = MockMeasurer::STANDARD;
     let theme = UiTheme::dark();
@@ -176,8 +175,11 @@ fn control_button_press_sets_pressed() {
     };
 
     let event = left_down(23.0, 18.0);
-    btn.handle_mouse(&event, &ctx);
-    assert!(btn.is_pressed());
+    let resp = btn.handle_mouse(&event, &ctx);
+    assert_eq!(
+        resp.response,
+        super::super::super::input::EventResponse::RequestPaint
+    );
 }
 
 #[test]

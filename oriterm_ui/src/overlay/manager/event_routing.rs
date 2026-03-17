@@ -12,16 +12,13 @@ use std::time::Instant;
 
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
-use crate::controllers::{
-    ControllerCtxArgs, ControllerRequests, DispatchOutput, dispatch_to_controllers,
-};
+use crate::controllers::{ControllerRequests, DispatchOutput};
 use crate::geometry::{Point, Rect};
-use crate::input::dispatch::DeliveryAction;
+use crate::input::dispatch::tree::{TreeDispatchResult, dispatch_to_widget_tree};
 use crate::input::{
     EventResponse, HitEntry, HoverEvent, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind,
     WidgetHitTestResult, layout_hit_test_path, plan_propagation,
 };
-use crate::interaction::InteractionState;
 use crate::layout::LayoutNode;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -155,7 +152,7 @@ fn deliver_via_pipeline(
 
     // Walk the widget tree and dispatch to controllers of matching widgets.
     let mut result = TreeDispatchResult::new();
-    dispatch_actions_in_tree(widget, event, &delivery_actions, now, &mut result);
+    dispatch_to_widget_tree(widget, event, &delivery_actions, now, &mut result);
 
     if result.handled || !result.actions.is_empty() {
         let output = DispatchOutput {
@@ -170,76 +167,6 @@ fn deliver_via_pipeline(
     } else {
         None
     }
-}
-
-/// Accumulated result of dispatching delivery actions through a widget tree.
-struct TreeDispatchResult {
-    handled: bool,
-    actions: Vec<crate::action::WidgetAction>,
-    requests: ControllerRequests,
-    source: Option<WidgetId>,
-}
-
-impl TreeDispatchResult {
-    fn new() -> Self {
-        Self {
-            handled: false,
-            actions: Vec::new(),
-            requests: ControllerRequests::NONE,
-            source: None,
-        }
-    }
-
-    fn merge(&mut self, output: DispatchOutput, widget_id: WidgetId) {
-        self.actions.extend(output.actions);
-        self.requests = self.requests.union(output.requests);
-        if output.handled && !self.handled {
-            self.handled = true;
-            self.source = Some(widget_id);
-        }
-    }
-}
-
-/// Walks the widget tree, dispatching delivery actions to controllers of
-/// widgets whose ID matches a delivery action target.
-fn dispatch_actions_in_tree(
-    widget: &mut dyn Widget,
-    event: &InputEvent,
-    actions: &[DeliveryAction],
-    now: Instant,
-    result: &mut TreeDispatchResult,
-) {
-    if result.handled {
-        return;
-    }
-
-    let id = widget.id();
-
-    // Dispatch any delivery actions targeting this widget.
-    if actions.iter().any(|a| a.widget_id == id) {
-        let controllers = widget.controllers_mut();
-        if !controllers.is_empty() {
-            let interaction = InteractionState::default();
-            for action in actions.iter().filter(|a| a.widget_id == id) {
-                let args = ControllerCtxArgs {
-                    widget_id: id,
-                    bounds: action.bounds,
-                    interaction: &interaction,
-                    now,
-                };
-                let output = dispatch_to_controllers(controllers, event, action.phase, &args);
-                result.merge(output, id);
-                if result.handled {
-                    return;
-                }
-            }
-        }
-    }
-
-    // Recurse into children.
-    widget.for_each_child_mut(&mut |child| {
-        dispatch_actions_in_tree(child, event, actions, now, result);
-    });
 }
 
 impl OverlayManager {

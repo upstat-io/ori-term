@@ -117,6 +117,7 @@ impl TabBarWidget {
             MouseEventKind::Down(MouseButton::Left) => {
                 let idx = (0..3).find(|&i| self.control_rect(i).contains(event.pos));
                 if let Some(i) = idx {
+                    self.pressed_control = Some(i);
                     let child_ctx = EventCtx {
                         measurer: ctx.measurer,
                         bounds: self.control_rect(i),
@@ -132,20 +133,18 @@ impl TabBarWidget {
                 WidgetResponse::ignored()
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                for i in 0..3 {
-                    if self.controls[i].is_pressed() {
-                        let child_ctx = EventCtx {
-                            measurer: ctx.measurer,
-                            bounds: self.control_rect(i),
-                            is_focused: false,
-                            focused_widget: ctx.focused_widget,
-                            theme: ctx.theme,
-                            interaction: None,
-                            widget_id: None,
-                            frame_requests: None,
-                        };
-                        return self.controls[i].handle_mouse(event, &child_ctx);
-                    }
+                if let Some(i) = self.pressed_control.take() {
+                    let child_ctx = EventCtx {
+                        measurer: ctx.measurer,
+                        bounds: self.control_rect(i),
+                        is_focused: false,
+                        focused_widget: ctx.focused_widget,
+                        theme: ctx.theme,
+                        interaction: None,
+                        widget_id: None,
+                        frame_requests: None,
+                    };
+                    return self.controls[i].handle_mouse(event, &child_ctx);
                 }
                 WidgetResponse::ignored()
             }
