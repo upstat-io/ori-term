@@ -6,13 +6,12 @@
 //! rendering boundary.
 //!
 //! The widget implements [`Widget`] for draw integration. Event handling
-//! stubs are provided here; full hit-test dispatch is Section 16.3.
+//! dispatch is Section 16.3.
 
 mod control_state;
 mod controls_draw;
 mod drag_draw;
 mod draw;
-mod event_handling;
 
 use std::time::{Duration, Instant};
 

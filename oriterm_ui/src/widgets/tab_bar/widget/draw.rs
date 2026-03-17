@@ -11,7 +11,6 @@ use crate::animation::Lerp;
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::{TextOverflow, TextStyle};
@@ -24,7 +23,7 @@ use super::super::hit::TabBarHit;
 use super::{TabBarWidget, TabEntry, TabIcon};
 
 use crate::icons::IconId;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 // Drawing constants (logical pixels).
 
@@ -465,17 +464,5 @@ impl Widget for TabBarWidget {
         self.draw_dropdown_button(ctx, &strip);
         #[cfg(not(target_os = "macos"))]
         self.draw_window_controls(ctx);
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_mouse_impl(event, ctx)
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_hover_impl(event, ctx)
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_key_impl(event, ctx)
     }
 }

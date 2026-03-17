@@ -8,17 +8,17 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::color::Color;
-use crate::geometry::Rect;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
+use crate::geometry::{Point, Rect};
+use crate::input::{InputEvent, Key, Modifiers, MouseButton, ScrollDelta};
+use crate::interaction::LifecycleEvent;
 use crate::layout::{LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, LifecycleCtx, Widget, WidgetAction};
 
-mod event_handling;
 mod rendering;
 mod scrollbar;
 
@@ -101,12 +101,6 @@ pub struct ScrollWidget {
     scrollbar_style: ScrollbarStyle,
     scrollbar_policy: ScrollbarPolicy,
     scrollbar: ScrollbarState,
-    /// Whether the child widget has active mouse capture (drag in progress).
-    ///
-    /// Mutually exclusive with `scrollbar.dragging`. When active, scroll
-    /// events and scrollbar hit-testing are bypassed — all mouse events
-    /// route directly to the child.
-    child_captured: bool,
     /// Pixels per mouse wheel line.
     line_height: f32,
     /// Optional height override for the layout box.
@@ -135,7 +129,6 @@ impl ScrollWidget {
             scrollbar_style: ScrollbarStyle::default(),
             scrollbar_policy: ScrollbarPolicy::default(),
             scrollbar: ScrollbarState::default(),
-            child_captured: false,
             line_height: 20.0,
             height_override: None,
             cached_child_layout: RefCell::new(None),
@@ -153,7 +146,6 @@ impl ScrollWidget {
             scrollbar_style: ScrollbarStyle::default(),
             scrollbar_policy: ScrollbarPolicy::default(),
             scrollbar: ScrollbarState::default(),
-            child_captured: false,
             line_height: 20.0,
             height_override: None,
             cached_child_layout: RefCell::new(None),
@@ -235,6 +227,101 @@ impl ScrollWidget {
         self.scroll_offset = (self.scroll_offset + delta_y).clamp(0.0, max);
         (self.scroll_offset - old).abs() > f32::EPSILON
     }
+
+    /// Returns the cached child content height, falling back to viewport height.
+    fn cached_content_height(&self, viewport: Rect) -> f32 {
+        self.cached_child_layout
+            .borrow()
+            .as_ref()
+            .map_or_else(|| viewport.height(), |(_, node)| node.rect.height())
+    }
+
+    /// Handles scroll-related key presses (arrows, PageUp/Down, Home/End).
+    fn handle_scroll_key(&mut self, key: Key, content_h: f32, view_h: f32) -> bool {
+        match key {
+            Key::ArrowUp => {
+                self.scroll_by(-self.line_height, content_h, view_h);
+                true
+            }
+            Key::ArrowDown => {
+                self.scroll_by(self.line_height, content_h, view_h);
+                true
+            }
+            Key::PageUp => {
+                self.scroll_by(-view_h, content_h, view_h);
+                true
+            }
+            Key::PageDown => {
+                self.scroll_by(view_h, content_h, view_h);
+                true
+            }
+            Key::Home => {
+                self.scroll_offset = 0.0;
+                true
+            }
+            Key::End => {
+                self.scroll_offset = (content_h - view_h).max(0.0);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Handles mouse-down on the scrollbar (thumb drag start or track click).
+    fn handle_scrollbar_down(
+        &mut self,
+        pos: Point,
+        viewport: Rect,
+        content_h: f32,
+        view_h: f32,
+    ) -> bool {
+        if self.scrollbar_policy == ScrollbarPolicy::Hidden {
+            return false;
+        }
+        let thumb = self.scrollbar_thumb_rect(viewport, content_h, view_h);
+        if thumb.contains(pos) {
+            self.scrollbar.dragging = true;
+            self.scrollbar.drag_start_y = pos.y;
+            self.scrollbar.drag_start_offset = self.scroll_offset;
+            return true;
+        }
+        let track = self.scrollbar_track_rect(viewport);
+        if track.contains(pos) {
+            let ratio = (pos.y - track.y()) / track.height();
+            let max = (content_h - view_h).max(0.0);
+            self.scroll_offset = (ratio * max).clamp(0.0, max);
+            return true;
+        }
+        false
+    }
+
+    /// Handles mouse-move for scrollbar drag and track hover detection.
+    fn handle_scrollbar_move(
+        &mut self,
+        pos: Point,
+        viewport: Rect,
+        content_h: f32,
+        view_h: f32,
+    ) -> bool {
+        if self.scrollbar.dragging {
+            let track = self.scrollbar_track_rect(viewport);
+            let delta_y = pos.y - self.scrollbar.drag_start_y;
+            let track_h = track.height();
+            let max = (content_h - view_h).max(0.0);
+            let scroll_delta = if track_h > 0.0 {
+                delta_y * max / track_h
+            } else {
+                0.0
+            };
+            self.scroll_offset = (self.scrollbar.drag_start_offset + scroll_delta).clamp(0.0, max);
+            return true;
+        }
+        // Track hover detection.
+        let track = self.scrollbar_track_rect(viewport);
+        let was_hovered = self.scrollbar.track_hovered;
+        self.scrollbar.track_hovered = track.contains(pos);
+        was_hovered != self.scrollbar.track_hovered
+    }
 }
 
 impl Widget for ScrollWidget {
@@ -274,7 +361,7 @@ impl Widget for ScrollWidget {
     }
 
     fn sense(&self) -> Sense {
-        Sense::none()
+        Sense::hover()
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
@@ -285,16 +372,43 @@ impl Widget for ScrollWidget {
         visitor(self.child.as_mut());
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_mouse_impl(event, ctx)
+    fn lifecycle(&mut self, event: &LifecycleEvent, _ctx: &mut LifecycleCtx<'_>) {
+        // Reset scrollbar hover when cursor leaves the scroll container.
+        if let LifecycleEvent::HotChanged { is_hot: false, .. } = event {
+            self.scrollbar.track_hovered = false;
+        }
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_hover_impl(event, ctx)
-    }
+    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> bool {
+        let view_h = bounds.height();
+        let content_h = self.cached_content_height(bounds);
 
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_key_impl(event, ctx)
+        match event {
+            InputEvent::Scroll { delta, .. } => {
+                let delta_y = match delta {
+                    ScrollDelta::Pixels { y, .. } => -*y,
+                    ScrollDelta::Lines { y, .. } => -*y * self.line_height,
+                };
+                self.scroll_by(delta_y, content_h, view_h);
+                true
+            }
+            InputEvent::KeyDown { key, modifiers } if *modifiers == Modifiers::NONE => {
+                self.handle_scroll_key(*key, content_h, view_h)
+            }
+            InputEvent::MouseDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => self.handle_scrollbar_down(*pos, bounds, content_h, view_h),
+            InputEvent::MouseMove { pos, .. } => {
+                self.handle_scrollbar_move(*pos, bounds, content_h, view_h)
+            }
+            InputEvent::MouseUp { .. } if self.scrollbar.dragging => {
+                self.scrollbar.dragging = false;
+                true
+            }
+            _ => false,
+        }
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
