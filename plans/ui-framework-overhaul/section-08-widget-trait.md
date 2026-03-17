@@ -35,7 +35,7 @@ sections:
     status: complete
   - id: "08.6"
     title: "Remove Legacy Event Methods"
-    status: not-started
+    status: in-progress
   - id: "08.7"
     title: "Completion Checklist"
     status: not-started
@@ -723,6 +723,78 @@ states don't work (this is the current regression on window control buttons).
   ~31 files). The framework pipeline now owns animation scheduling via
   `FrameRequestFlags`. Widgets use `ctx.request_anim_frame()` exclusively.
   ~55 test `DrawCtx` constructions lose the field.
+
+### Pipeline Prerequisites — Make Controller Dispatch Complete
+
+The pipeline (`deliver_event_to_tree`) must handle ALL input for ALL widgets
+before legacy methods can be removed. These items close gaps between the
+generic controller pipeline and widget-specific behavior.
+
+**Widget trait extensions:**
+
+- [x] `Widget::on_action(&mut self, action, bounds) -> Option<WidgetAction>` — transforms
+  generic controller actions (e.g., `Clicked`) into widget-specific semantic actions
+  (e.g., `OpenDropdown`, `Toggled`). Called by `dispatch_to_widget_tree` after controller
+  dispatch. Default: passthrough. Implemented on DropdownWidget, ToggleWidget,
+  CheckboxWidget, MenuWidget.
+- [x] `Widget::on_input(&mut self, event, bounds) -> bool` — fallback for input events not
+  consumed by controllers. Called by `dispatch_to_widget_tree` when no controller
+  handles the event. Used for widget-internal interaction (e.g., MenuWidget item hover
+  tracking on MouseMove, scroll handling). Default: false.
+
+**Layout tree completeness (hit testing must reach ALL widgets):**
+
+- [x] `ScrollWidget::layout()` returns `LayoutBox::flex()` wrapping child layout with
+  `clip=true`, not `LayoutBox::leaf()`. Without this, hit testing through
+  `layout_hit_test_path` never finds widgets inside scroll containers.
+- [ ] Verify `SettingsPanel` layout tree includes Save/Cancel footer buttons in the
+  hit test path (they may be outside the scroll widget, in a separate flex child).
+- [ ] Verify all container widgets' `layout()` methods include children's layout boxes
+  (not just leaf size reporting). Check: FormLayout, FormSection, FormRow,
+  DialogWidget, PanelWidget, StackWidget, ContainerWidget.
+
+**Coordinate space reconciliation:**
+
+- [ ] `deliver_event_to_tree` converts cursor positions to local space (subtracts
+  `bounds.origin`) before hit testing, then offsets hit entry bounds back to screen
+  space. Callers must compute layout in LOCAL space (`Rect::new(0, 0, w, h)`) not
+  screen space (`Rect::new(0, chrome_h, w, h)`). Verified for dialog content dispatch.
+- [ ] `on_action` receives screen-space bounds (offset by `deliver_event_to_tree`).
+  DropdownWidget uses these as the popup anchor rect — verify anchor positions match
+  the old `ctx.bounds` from legacy `handle_mouse`.
+- [ ] Captured mouse events (MouseMove/MouseUp during press) use bounds from the hit
+  path instead of `Rect::default()`. Fixed in `plan_captured_mouse`.
+
+**Missing controllers on widgets:**
+
+- [x] MenuWidget: add `ClickController` (was marked complete in §08.4 but never wired).
+- [ ] ButtonWidget: add `KeyActivationController` or extend ClickController for
+  Enter/Space → `Clicked` (needed to remove `handle_key` from Button).
+- [ ] ToggleWidget, CheckboxWidget: add keyboard controller for Space → toggle
+  (needed to remove `handle_key`).
+- [ ] SliderWidget: add `DragController` for drag-to-value and keyboard controller
+  for arrow/Home/End (needed to remove `handle_mouse` and `handle_key`).
+- [ ] TextInputWidget: wire `TextEditController` for keyboard input and click-to-cursor
+  (needed to remove `handle_mouse` and `handle_key`).
+
+**Dialog context integration:**
+
+- [x] Add `InteractionManager` and `FocusManager` to `DialogWindowContext`.
+- [x] Add `prepare_widget_tree` to dialog rendering (delivers lifecycle events,
+  updates visual state animators from InteractionManager state).
+- [x] Chrome click dispatch: `WindowChromeWidget::dispatch_input()` with controller
+  pipeline, `action_for_widget()` maps `Clicked(id)` → window actions.
+- [x] Chrome hover: `InteractionManager::update_hot_path()` from cursor move,
+  lifecycle events delivered via `prepare_widget_tree`.
+- [ ] Content click dispatch: `deliver_event_to_tree` with on-demand layout computation.
+  Currently has coordinate space issues — dropdown anchors in wrong position,
+  Save/Cancel buttons not in hit path.
+- [ ] Content scroll dispatch: same pipeline as click, with `ScrollController` on
+  `ScrollWidget` handling `InputEvent::Scroll`.
+- [ ] Content keyboard: `deliver_event_to_tree` with focus_path for keyboard routing.
+  Requires `KeyActivationController` on buttons.
+- [ ] Cursor leave: `InteractionManager::update_hot_path(&[])` clears hover.
+- [x] Overlay dispatch: already on controller pipeline via `deliver_via_pipeline`.
 
 ### Remove Legacy Compat Shims from Wave 1 Widgets
 
