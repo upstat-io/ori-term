@@ -142,12 +142,12 @@ fn plan_captured_mouse(
     match event {
         InputEvent::MouseMove { .. } | InputEvent::MouseUp { .. } => {
             // Direct delivery to active widget — capture bypass.
-            // Use bounds from the hit path if available (the caller builds
-            // a single-entry path with the captured widget's rect). Falls
-            // back to default if the path is empty.
+            // Use bounds from the last (innermost) hit entry — this is the
+            // leaf widget closest to the active widget's actual position.
+            // The hit path is root-to-leaf, so last() gives the target bounds.
             let bounds = hit_path
                 .path
-                .first()
+                .last()
                 .map_or_else(Rect::default, |e| e.bounds);
             out.push(DeliveryAction {
                 widget_id: active_id,
