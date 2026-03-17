@@ -177,13 +177,37 @@ pub fn deliver_event_to_tree(
     let hit_result = if event.is_keyboard() {
         WidgetHitTestResult { path: Vec::new() }
     } else if active_widget.is_some() {
-        // During capture, route to root (plan_propagation handles active routing).
-        WidgetHitTestResult {
-            path: vec![HitEntry {
-                widget_id: root_id,
-                bounds,
-                sense: root_sense,
-            }],
+        // During capture, hit test to get the active widget's actual bounds
+        // (needed for on_action anchor rects). plan_propagation routes to the
+        // active widget regardless of hit position.
+        if let (Some(node), Some(pos)) = (layout_node, event.pos()) {
+            let local = Point::new(pos.x - bounds.x(), pos.y - bounds.y());
+            let mut result = layout_hit_test_path(node, local);
+            for entry in &mut result.path {
+                entry.bounds = Rect::new(
+                    entry.bounds.x() + bounds.x(),
+                    entry.bounds.y() + bounds.y(),
+                    entry.bounds.width(),
+                    entry.bounds.height(),
+                );
+            }
+            // If hit test is empty (cursor outside), fall back to root bounds.
+            if result.path.is_empty() {
+                result.path.push(HitEntry {
+                    widget_id: root_id,
+                    bounds,
+                    sense: root_sense,
+                });
+            }
+            result
+        } else {
+            WidgetHitTestResult {
+                path: vec![HitEntry {
+                    widget_id: root_id,
+                    bounds,
+                    sense: root_sense,
+                }],
+            }
         }
     } else if let Some(node) = layout_node {
         if let Some(pos) = event.pos() {
