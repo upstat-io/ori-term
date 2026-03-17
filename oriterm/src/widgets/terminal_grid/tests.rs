@@ -4,12 +4,11 @@ use std::time::Instant;
 
 use oriterm_ui::draw::DrawList;
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::input::{HoverEvent, KeyEvent, Modifiers};
 use oriterm_ui::layout::SizeSpec;
 use oriterm_ui::text::{ShapedText, TextMetrics, TextStyle};
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::text_measurer::TextMeasurer;
-use oriterm_ui::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget};
+use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::TerminalGridWidget;
 
@@ -48,7 +47,7 @@ fn make_layout_ctx() -> LayoutCtx<'static> {
     }
 }
 
-// ── Layout ──
+// -- Layout --
 
 #[test]
 fn layout_returns_fill_fill() {
@@ -87,7 +86,7 @@ fn layout_intrinsic_size_matches_grid() {
     }
 }
 
-// ── Focusable ──
+// -- Focusable --
 
 #[test]
 fn is_focusable() {
@@ -95,7 +94,7 @@ fn is_focusable() {
     assert!(widget.is_focusable());
 }
 
-// ── Bounds via set_bounds ──
+// -- Bounds via set_bounds --
 
 #[test]
 fn bounds_none_before_set() {
@@ -147,7 +146,7 @@ fn draw_emits_no_commands() {
     );
 }
 
-// ── Grid size updates ──
+// -- Grid size updates --
 
 #[test]
 fn set_grid_size_updates_dimensions() {
@@ -169,50 +168,4 @@ fn set_cell_metrics_updates_dimensions() {
     widget.set_cell_metrics(9.0, 18.0);
     assert_eq!(widget.cell_width(), 9.0);
     assert_eq!(widget.cell_height(), 18.0);
-}
-
-// ── Event handling ──
-
-#[test]
-fn handle_key_returns_handled() {
-    let mut widget = make_widget();
-    let theme = UiTheme::dark();
-    let measurer = TestMeasurer;
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds: Rect::new(0.0, 0.0, 640.0, 384.0),
-        is_focused: true,
-        focused_widget: Some(widget.id()),
-        theme: &theme,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
-        key: oriterm_ui::input::Key::Character('a'),
-        modifiers: Modifiers::NONE,
-    };
-    let response = widget.handle_key(event, &ctx);
-    assert!(response.response.is_handled());
-}
-
-#[test]
-fn handle_hover_returns_ignored() {
-    let mut widget = make_widget();
-    let theme = UiTheme::dark();
-    let measurer = TestMeasurer;
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds: Rect::new(0.0, 0.0, 640.0, 384.0),
-        is_focused: true,
-        focused_widget: Some(widget.id()),
-        theme: &theme,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let response = widget.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(!response.response.is_handled());
 }

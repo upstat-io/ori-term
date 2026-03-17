@@ -21,8 +21,6 @@ use oriterm_ui::widgets::WidgetAction;
 use oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH;
 
 use super::App;
-#[cfg(not(target_os = "macos"))]
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 use crate::window_manager::platform::{ChromeMode, chrome_ops};
 
 /// Install frameless window chrome via the platform trait.
@@ -297,9 +295,8 @@ impl App {
 
     /// Drive control button hover animation for the focused window.
     ///
-    /// Forwards the cursor position and hit result to the tab bar's
-    /// control hover handler, which manages fade-in/fade-out animations
-    /// on minimize, maximize, and close buttons.
+    /// Dispatches a `MouseMove` `InputEvent` to the tab bar's control button
+    /// controllers so `HoverController` fires enter/leave state transitions.
     #[cfg(not(target_os = "macos"))]
     fn update_control_hover_animation(
         &mut self,
@@ -324,31 +321,17 @@ impl App {
         let scale = ctx.window.scale_factor().factor() as f32;
         let pos =
             oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
+        let now = Instant::now();
+        let event = oriterm_ui::input::InputEvent::MouseMove {
+            pos,
+            modifiers: oriterm_ui::input::Modifiers::NONE,
         };
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-        let event_ctx = oriterm_ui::widgets::EventCtx {
-            measurer: &measurer,
-            bounds: Rect::default(),
-            is_focused: false,
-            focused_widget: None,
-            theme: &self.ui_theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
-        };
-        let resp = ctx.tab_bar.update_control_hover(pos, &event_ctx);
-        if matches!(
-            resp.response,
-            oriterm_ui::input::EventResponse::RequestPaint
-                | oriterm_ui::input::EventResponse::RequestLayout
-        ) {
-            resp.mark_tracker(&mut ctx.invalidation);
+        let result = ctx.tab_bar.dispatch_control_input(&event, now);
+        if result.handled
+            || result
+                .requests
+                .contains(oriterm_ui::controllers::ControllerRequests::PAINT)
+        {
             ctx.dirty = true;
             ctx.ui_stale = true;
         }
@@ -371,26 +354,16 @@ impl App {
                 Instant::now(),
             );
         }
-        // Clear control button hover animation (not on macOS — native traffic lights).
+        // Clear control button hover state (not on macOS — native traffic lights).
+        // Dispatch a mouse-move to an impossible position to trigger HoverController leave.
         #[cfg(not(target_os = "macos"))]
-        if let Some(renderer) = ctx.renderer.as_ref() {
-            let scale = ctx.window.scale_factor().factor() as f32;
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                &ctx.text_cache,
-                scale,
-            );
-            let event_ctx = oriterm_ui::widgets::EventCtx {
-                measurer: &measurer,
-                bounds: Rect::default(),
-                is_focused: false,
-                focused_widget: None,
-                theme: &self.ui_theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
+        {
+            let now = Instant::now();
+            let event = oriterm_ui::input::InputEvent::MouseMove {
+                pos: oriterm_ui::geometry::Point::new(-1.0, -1.0),
+                modifiers: oriterm_ui::input::Modifiers::NONE,
             };
-            ctx.tab_bar.clear_control_hover(&event_ctx);
+            ctx.tab_bar.dispatch_control_input(&event, now);
         }
         if had_hover {
             ctx.dirty = true;

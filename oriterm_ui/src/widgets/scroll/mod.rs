@@ -17,7 +17,7 @@ use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, LayoutCtx, LifecycleCtx, Widget, WidgetAction};
+use super::{DrawCtx, LayoutCtx, LifecycleCtx, OnInputResult, Widget, WidgetAction};
 
 mod rendering;
 mod scrollbar;
@@ -379,11 +379,11 @@ impl Widget for ScrollWidget {
         }
     }
 
-    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> bool {
+    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> OnInputResult {
         let view_h = bounds.height();
         let content_h = self.cached_content_height(bounds);
 
-        match event {
+        let handled = match event {
             InputEvent::Scroll { delta, .. } => {
                 let delta_y = match delta {
                     ScrollDelta::Pixels { y, .. } => -*y,
@@ -408,6 +408,11 @@ impl Widget for ScrollWidget {
                 true
             }
             _ => false,
+        };
+        if handled {
+            OnInputResult::handled()
+        } else {
+            OnInputResult::ignored()
         }
     }
 

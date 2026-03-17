@@ -9,6 +9,8 @@
 
 mod widget_impl;
 
+use std::cell::RefCell;
+
 use crate::color::Color;
 use crate::controllers::{ClickController, EventController, HoverController};
 use crate::geometry::Insets;
@@ -100,6 +102,12 @@ pub struct TextInputWidget {
     pub(super) style: TextInputStyle,
     pub(super) controllers: Vec<Box<dyn EventController>>,
     pub(super) animator: VisualStateAnimator,
+    /// Cached character boundary X-offsets from last layout.
+    ///
+    /// Each entry is `(byte_position, x_offset)`. Populated during `layout()`
+    /// (which has access to the text measurer) and read during `on_input()`
+    /// for click-to-cursor mapping.
+    char_offsets: RefCell<Vec<(usize, f32)>>,
 }
 
 impl Default for TextInputWidget {
@@ -128,6 +136,7 @@ impl TextInputWidget {
                 style.focus_border_color,
             )]),
             style,
+            char_offsets: RefCell::new(Vec::new()),
         }
     }
 
@@ -303,6 +312,7 @@ impl std::fmt::Debug for TextInputWidget {
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
+            .field("char_offsets_len", &self.char_offsets.borrow().len())
             .finish()
     }
 }

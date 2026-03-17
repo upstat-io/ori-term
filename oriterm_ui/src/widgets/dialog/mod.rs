@@ -19,7 +19,7 @@ use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::button::ButtonWidget;
-use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
+use super::{DrawCtx, LayoutCtx, OnInputResult, Widget, WidgetAction};
 
 pub use style::DialogStyle;
 
@@ -292,14 +292,14 @@ impl Widget for DialogWidget {
         visitor(&mut self.cancel_button);
     }
 
-    fn on_input(&mut self, event: &InputEvent, _bounds: Rect) -> bool {
+    fn on_input(&mut self, event: &InputEvent, _bounds: Rect) -> OnInputResult {
         if let InputEvent::KeyDown { key, .. } = event {
             match key {
                 Key::Enter | Key::Space => {
                     // Activate the focused button — handled via on_action.
-                    return true;
+                    return OnInputResult::handled();
                 }
-                Key::Escape => return true,
+                Key::Escape => return OnInputResult::handled(),
                 Key::Tab => {
                     if self.buttons == DialogButtons::OkCancel {
                         self.focus_visible = true;
@@ -307,13 +307,13 @@ impl Widget for DialogWidget {
                             DialogButton::Ok => DialogButton::Cancel,
                             DialogButton::Cancel => DialogButton::Ok,
                         };
-                        return true;
+                        return OnInputResult::handled();
                     }
                 }
                 _ => {}
             }
         }
-        false
+        OnInputResult::ignored()
     }
 
     fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {

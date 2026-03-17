@@ -24,7 +24,7 @@ use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use super::form_row::FormRow;
-use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
+use super::{DrawCtx, LayoutCtx, OnInputResult, TextMeasurer, Widget, WidgetAction};
 
 /// Height of the section header in pixels.
 const HEADER_HEIGHT: f32 = 28.0;
@@ -170,7 +170,7 @@ impl Widget for FormSection {
         Sense::click()
     }
 
-    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> bool {
+    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> OnInputResult {
         // Toggle expand/collapse on left-click in the header zone.
         if let InputEvent::MouseDown {
             pos,
@@ -182,10 +182,10 @@ impl Widget for FormSection {
             if pos.y >= bounds.y() && pos.y < header_bottom {
                 self.expanded = !self.expanded;
                 *self.cached_layout.borrow_mut() = None;
-                return true;
+                return OnInputResult::handled();
             }
         }
-        false
+        OnInputResult::ignored()
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {

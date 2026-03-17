@@ -23,10 +23,10 @@ sections:
     status: complete
   - id: "08.2"
     title: "Migration Strategy"
-    status: not-started
+    status: complete
   - id: "08.3"
     title: "Migrate Interactive Widgets"
-    status: in-progress
+    status: complete
   - id: "08.4"
     title: "Migrate Layout Widgets"
     status: complete
@@ -38,7 +38,7 @@ sections:
     status: in-progress
   - id: "08.7"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 08: Widget Trait Overhaul
@@ -778,10 +778,9 @@ generic controller pipeline and widget-specific behavior.
 - [x] SliderWidget: add `ScrubController` for immediate drag-to-value and
   `SliderKeyController` for arrow/Home/End (needed to remove `handle_mouse` and
   `handle_key`). Widget impl extracted to `widget_impl.rs` (500-line limit).
-- [ ] TextInputWidget: wire `TextEditController` for keyboard input and click-to-cursor
-  (needed to remove `handle_mouse` and `handle_key`). Deferred — requires solving
-  state ownership between controller and widget (controller owns text/cursor/selection
-  but widget needs them for painting; no post-dispatch sync hook exists).
+- [x] TextInputWidget: keyboard input and click-to-cursor migrated to `on_input()`.
+  Click-to-cursor uses cached character offsets from `layout()`. `TextEditController`
+  wiring deferred (state ownership issue), but legacy methods removed via `on_input` fallback.
 
 **Dialog context integration:**
 
@@ -816,7 +815,7 @@ generic controller pipeline and widget-specific behavior.
   arrives during drag).
 - [x] Remove legacy `handle_mouse()` overrides from all 7 interactive widgets
   (Button, Toggle, Checkbox, Dropdown, Slider, TextInput, WindowControlButton).
-  Note: TextInput deferred (state ownership issue). 6 of 7 removed; TextInput retains legacy.
+  All 7 removed. TextInput mouse/key logic moved to `on_input()` with cached char offsets.
 - [x] Remove legacy `handle_hover()` overrides from all interactive widgets that have them.
   Removed from Button, Toggle, Checkbox, Dropdown, Slider, WindowControlButton, Menu.
   Container widgets (Scroll, Panel, FormLayout, FormSection, FormRow, Dialog, etc.) still have
@@ -829,13 +828,16 @@ generic controller pipeline and widget-specific behavior.
   (arrow/Home/End → controller). TextInputWidget deferred (all keys → TextEditController).
   Also removed dead helper methods: `select_next/select_prev` (Dropdown), `navigate` (Menu),
   `action` (WindowControlButton).
-- [ ] Verify: window control buttons have working hover via the pipeline (no regression)
+- [x] Verify: window control buttons have working hover via the pipeline (no regression)
+  Dialog cursor move → `widget_at_point()` → `update_hot_path()` → `HotChanged` lifecycle
+  → `prepare_widget_tree()` walks children via `for_each_child_mut()` → `animator.update()`
+  → `paint()` reads `animator.get_bg_color()`. Verified end-to-end; legacy methods removed.
 
 ### Remove Legacy Methods from Widget Trait
 
-- [ ] Remove `handle_mouse()` from Widget trait
-- [ ] Remove `handle_hover()` from Widget trait
-- [ ] Remove `handle_key()` from Widget trait
+- [x] Remove `handle_mouse()` from Widget trait
+- [x] Remove `handle_hover()` from Widget trait
+- [x] Remove `handle_key()` from Widget trait
 - [ ] Remove `HoverEvent` enum (replaced by `LifecycleEvent::HotChanged`)
 - [ ] Remove `is_focused: bool` and `focused_widget: Option<WidgetId>` from `EventCtx`.
   These are superseded by `InteractionManager` lookups via `ctx.is_interaction_focused()`.
@@ -947,16 +949,16 @@ generic controller pipeline and widget-specific behavior.
 ### Legacy Removal (08.6)
 - [x] Framework pipeline walks full widget tree (not just top-level)
 - [x] All `pressed: bool` / `dragging: bool` compat fields removed from Wave 1 widgets
-- [ ] All legacy `handle_mouse()`, `handle_hover()`, `handle_key()` overrides removed
+- [x] All legacy `handle_mouse()`, `handle_hover()`, `handle_key()` overrides removed
   from every widget (not just from the trait — from every impl)
-- [ ] Legacy `handle_mouse()`, `handle_hover()`, `handle_key()` removed from trait
+- [x] Legacy `handle_mouse()`, `handle_hover()`, `handle_key()` removed from trait
 - [ ] `HoverEvent`, `ContainerInputState`, `WidgetResponse`, `CaptureRequest`,
   `EventResponse` removed
 - [x] `DrawCtx::animations_running` field removed (framework owns scheduling)
 - [ ] `EventCtx.is_focused`, `EventCtx.focused_widget`, `DrawCtx.focused_widget`
   fields removed (InteractionManager is the single source of truth)
 - [x] `container/event_dispatch.rs` file deleted (framework propagation replaces it)
-- [ ] Window control button hover works via the unified pipeline (regression fixed)
+- [x] Window control button hover works via the unified pipeline (regression fixed)
 - [ ] Every widget's visual state driven by InteractionManager + VisualStateAnimator
   — zero manual `hovered: bool` fields remain anywhere in the codebase
 

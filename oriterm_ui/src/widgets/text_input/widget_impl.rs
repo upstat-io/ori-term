@@ -5,13 +5,13 @@
 use crate::controllers::EventController;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crate::input::{InputEvent, Key, Modifiers, MouseButton};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
-use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::super::{DrawCtx, LayoutCtx, OnInputResult, Widget, WidgetAction};
 use super::TextInputWidget;
 
 impl Widget for TextInputWidget {
@@ -27,6 +27,10 @@ impl Widget for TextInputWidget {
         Sense::click_and_drag().union(Sense::focusable())
     }
 
+    #[expect(
+        clippy::string_slice,
+        reason = "char_indices guarantees valid boundaries"
+    )]
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
         let style = self.text_style();
         let metrics = ctx.measurer.measure(
@@ -40,6 +44,24 @@ impl Widget for TextInputWidget {
         );
         let w = (metrics.width + self.style.padding.width()).max(self.style.min_width);
         let h = metrics.height + self.style.padding.height();
+
+        // Cache character X-offsets for click-to-cursor in on_input.
+        let mut offsets = self.char_offsets.borrow_mut();
+        offsets.clear();
+        for (i, _) in self.text.char_indices() {
+            let x = ctx
+                .measurer
+                .measure(&self.text[..i], &style, f32::INFINITY)
+                .width;
+            offsets.push((i, x));
+        }
+        // End-of-text position.
+        let end_x = ctx
+            .measurer
+            .measure(&self.text, &style, f32::INFINITY)
+            .width;
+        offsets.push((self.text.len(), end_x));
+
         LayoutBox::leaf(w, h).with_widget_id(self.id)
     }
 
@@ -138,132 +160,115 @@ impl Widget for TextInputWidget {
         }
     }
 
-    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
-
-    #[expect(clippy::string_slice, reason = "cursor always on char boundary")]
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> OnInputResult {
         if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        if event.kind == MouseEventKind::Down(MouseButton::Left) {
-            let inner = ctx.bounds.inset(self.style.padding);
-            let rel_x = (event.pos.x - inner.x()).max(0.0);
-            let style = self.text_style();
-
-            // Walk char boundaries; pick the one closest to click X.
-            let mut best_pos = 0;
-            let mut best_dist = rel_x;
-            for (i, _) in self.text.char_indices() {
-                let w = ctx
-                    .measurer
-                    .measure(&self.text[..i], &style, f32::INFINITY)
-                    .width;
-                let dist = (w - rel_x).abs();
-                if dist < best_dist {
-                    best_dist = dist;
-                    best_pos = i;
-                }
-            }
-            // Check end position.
-            let end_w = ctx
-                .measurer
-                .measure(&self.text, &style, f32::INFINITY)
-                .width;
-            if (end_w - rel_x).abs() < best_dist {
-                best_pos = self.text.len();
-            }
-
-            self.cursor = best_pos;
-            self.selection_anchor = None;
-            return WidgetResponse::focus();
-        }
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
+            return OnInputResult::ignored();
         }
         match event {
-            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled || !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        let shift = event.modifiers.shift();
-        let ctrl = event.modifiers.ctrl();
-
-        match event.key {
-            Key::Character(ch) => self.handle_character(ch, ctrl),
-            Key::Backspace => self.handle_backspace(),
-            Key::Delete => self.handle_delete(),
-            Key::ArrowLeft => {
-                self.move_left(shift);
-                WidgetResponse::paint()
-            }
-            Key::ArrowRight => {
-                self.move_right(shift);
-                WidgetResponse::paint()
-            }
-            Key::Home => self.handle_home_end(0, shift),
-            Key::End => self.handle_home_end(self.text.len(), shift),
-            _ => WidgetResponse::ignored(),
+            InputEvent::MouseDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => self.handle_click(*pos, bounds),
+            InputEvent::KeyDown { key, modifiers } => self.handle_key_input(*key, *modifiers),
+            _ => OnInputResult::ignored(),
         }
     }
 }
 
 impl TextInputWidget {
+    /// Handles a left-click: positions cursor at the closest character boundary.
+    fn handle_click(&mut self, pos: Point, bounds: Rect) -> OnInputResult {
+        let inner = bounds.inset(self.style.padding);
+        let rel_x = (pos.x - inner.x()).max(0.0);
+
+        let offsets = self.char_offsets.borrow();
+        let mut best_pos = 0;
+        let mut best_dist = f32::MAX;
+        for &(byte_pos, x_offset) in offsets.iter() {
+            let dist = (x_offset - rel_x).abs();
+            if dist < best_dist {
+                best_dist = dist;
+                best_pos = byte_pos;
+            }
+        }
+
+        self.cursor = best_pos;
+        self.selection_anchor = None;
+        OnInputResult::handled()
+    }
+
+    /// Handles keyboard input: editing, navigation, and selection.
+    fn handle_key_input(&mut self, key: Key, modifiers: Modifiers) -> OnInputResult {
+        let shift = modifiers.shift();
+        let ctrl = modifiers.ctrl();
+
+        match key {
+            Key::Character(ch) => self.handle_character(ch, ctrl),
+            Key::Backspace => self.handle_backspace(),
+            Key::Delete => self.handle_delete(),
+            Key::ArrowLeft => {
+                self.move_left(shift);
+                OnInputResult::handled()
+            }
+            Key::ArrowRight => {
+                self.move_right(shift);
+                OnInputResult::handled()
+            }
+            Key::Home => self.handle_home_end(0, shift),
+            Key::End => self.handle_home_end(self.text.len(), shift),
+            _ => OnInputResult::ignored(),
+        }
+    }
+
     /// Handles a character insertion (or Ctrl+A).
-    fn handle_character(&mut self, ch: char, ctrl: bool) -> WidgetResponse {
+    fn handle_character(&mut self, ch: char, ctrl: bool) -> OnInputResult {
         if ctrl {
             if ch == 'a' {
                 self.selection_anchor = Some(0);
                 self.cursor = self.text.len();
-                return WidgetResponse::paint();
+                return OnInputResult::handled();
             }
-            return WidgetResponse::ignored();
+            return OnInputResult::ignored();
         }
         self.delete_selection();
         self.text.insert(self.cursor, ch);
         self.cursor += ch.len_utf8();
-        WidgetResponse::layout().with_action(WidgetAction::TextChanged {
+        OnInputResult::handled().with_action(WidgetAction::TextChanged {
             id: self.id,
             text: self.text.clone(),
         })
     }
 
     /// Handles Backspace: delete selection or previous character.
-    fn handle_backspace(&mut self) -> WidgetResponse {
+    fn handle_backspace(&mut self) -> OnInputResult {
         if self.delete_selection() {
-            return self.text_changed_response();
+            return self.text_changed_result();
         }
         if self.cursor > 0 {
             let prev = self.prev_char_boundary(self.cursor);
             self.text.drain(prev..self.cursor);
             self.cursor = prev;
-            return self.text_changed_response();
+            return self.text_changed_result();
         }
-        WidgetResponse::handled()
+        OnInputResult::handled()
     }
 
     /// Handles Delete: delete selection or next character.
-    fn handle_delete(&mut self) -> WidgetResponse {
+    fn handle_delete(&mut self) -> OnInputResult {
         if self.delete_selection() {
-            return self.text_changed_response();
+            return self.text_changed_result();
         }
         if self.cursor < self.text.len() {
             let next = self.next_char_boundary(self.cursor);
             self.text.drain(self.cursor..next);
-            return self.text_changed_response();
+            return self.text_changed_result();
         }
-        WidgetResponse::handled()
+        OnInputResult::handled()
     }
 
     /// Handles Home/End with optional Shift selection.
-    fn handle_home_end(&mut self, target: usize, shift: bool) -> WidgetResponse {
+    fn handle_home_end(&mut self, target: usize, shift: bool) -> OnInputResult {
         if shift && self.selection_anchor.is_none() {
             self.selection_anchor = Some(self.cursor);
         }
@@ -271,12 +276,12 @@ impl TextInputWidget {
         if !shift {
             self.selection_anchor = None;
         }
-        WidgetResponse::paint()
+        OnInputResult::handled()
     }
 
-    /// Returns a layout response with `TextChanged` action.
-    fn text_changed_response(&self) -> WidgetResponse {
-        WidgetResponse::layout().with_action(WidgetAction::TextChanged {
+    /// Returns a handled result with `TextChanged` action.
+    fn text_changed_result(&self) -> OnInputResult {
+        OnInputResult::handled().with_action(WidgetAction::TextChanged {
             id: self.id,
             text: self.text.clone(),
         })

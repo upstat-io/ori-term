@@ -120,9 +120,6 @@ pub struct TabBarWidget {
     // Window control buttons: [minimize, maximize/restore, close].
     #[cfg(not(target_os = "macos"))]
     controls: [WindowControlButton; 3],
-    /// Index of the currently hovered control button (`None` if not hovering).
-    #[cfg(not(target_os = "macos"))]
-    hovered_control: Option<usize>,
     /// Index of the currently pressed control button (for routing mouse-up).
     #[cfg(not(target_os = "macos"))]
     pressed_control: Option<usize>,
@@ -158,8 +155,6 @@ impl TabBarWidget {
             closing_tabs: Vec::new(),
             #[cfg(not(target_os = "macos"))]
             controls: create_controls(control_colors_from_theme(theme)),
-            #[cfg(not(target_os = "macos"))]
-            hovered_control: None,
             #[cfg(not(target_os = "macos"))]
             pressed_control: None,
             left_inset: 0.0,

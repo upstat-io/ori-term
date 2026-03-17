@@ -62,7 +62,7 @@ impl TabBarWidget {
 
     /// Returns the bounding rectangle for the control button at `index`.
     ///
-    /// Used by [`update_control_hover`](Self::update_control_hover) and
+    /// Used by [`dispatch_control_input`](Self::dispatch_control_input) and
     /// [`interactive_rects`](Self::interactive_rects) to determine control
     /// button positions without duplicating geometry logic.
     pub(super) fn control_rect(&self, index: usize) -> Rect {

@@ -16,13 +16,13 @@ use crate::controllers::{ControllerRequests, DispatchOutput};
 use crate::geometry::{Point, Rect};
 use crate::input::dispatch::tree::{TreeDispatchResult, dispatch_to_widget_tree};
 use crate::input::{
-    EventResponse, HitEntry, HoverEvent, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind,
+    EventResponse, HitEntry, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind,
     WidgetHitTestResult, layout_hit_test_path, plan_propagation,
 };
 use crate::layout::LayoutNode;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
-use crate::widgets::{CaptureRequest, EventCtx, Widget, WidgetResponse};
+use crate::widgets::{CaptureRequest, Widget, WidgetResponse};
 
 use super::{OverlayEventResult, OverlayKind, OverlayManager};
 
@@ -439,7 +439,7 @@ impl OverlayManager {
         point: Point,
         measurer: &dyn crate::widgets::TextMeasurer,
         theme: &UiTheme,
-        focused_widget: Option<WidgetId>,
+        _focused_widget: Option<WidgetId>,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
             self.hovered_overlay = None;
@@ -457,46 +457,21 @@ impl OverlayManager {
         let hover_changed = self.hovered_overlay != new_hover;
 
         if hover_changed {
-            // Send Leave to old overlay.
-            if let Some(old_idx) = self.hovered_overlay {
-                if let Some(old_overlay) = self.overlays.get_mut(old_idx) {
-                    let root_id = old_overlay.widget.id();
-                    let ctx = EventCtx {
-                        measurer,
-                        bounds: old_overlay.computed_rect,
-                        is_focused: focused_widget == Some(root_id),
-                        focused_widget,
-                        theme,
-                        interaction: None,
-                        widget_id: None,
-                        frame_requests: None,
-                    };
-                    old_overlay.widget.handle_hover(HoverEvent::Leave, &ctx);
-                }
-            }
             self.hovered_overlay = new_hover;
         }
 
+        // Hover enter/leave visual state changes are driven by the
+        // InteractionManager + LifecycleEvent::HotChanged pipeline,
+        // not by explicit handle_hover calls. We just track which
+        // overlay is hovered for event routing purposes.
         match new_hover {
             Some(idx) if hover_changed => {
-                // Send Enter to newly hovered overlay.
-                let overlay = &mut self.overlays[idx];
-                let id = overlay.id;
+                let overlay = &self.overlays[idx];
                 let root_id = overlay.widget.id();
-                let ctx = EventCtx {
-                    measurer,
-                    bounds: overlay.computed_rect,
-                    is_focused: focused_widget == Some(root_id),
-                    focused_widget,
-                    theme,
-                    interaction: None,
-                    widget_id: None,
-                    frame_requests: None,
-                };
-                let mut response = overlay.widget.handle_hover(HoverEvent::Enter, &ctx);
+                let mut response = WidgetResponse::paint();
                 response.inject_source(root_id);
                 OverlayEventResult::Delivered {
-                    overlay_id: id,
+                    overlay_id: overlay.id,
                     response,
                 }
             }

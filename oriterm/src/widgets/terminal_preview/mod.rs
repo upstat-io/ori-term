@@ -7,11 +7,10 @@
 #![allow(dead_code, reason = "scaffold — wired in tab hover preview section")]
 
 use oriterm_ui::draw::RectStyle;
-use oriterm_ui::input::{HoverEvent, KeyEvent, MouseEvent};
 use oriterm_ui::layout::LayoutBox;
 use oriterm_ui::sense::Sense;
 use oriterm_ui::widget_id::WidgetId;
-use oriterm_ui::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 /// Default preview width in logical pixels.
 const DEFAULT_PREVIEW_WIDTH: f32 = 320.0;
@@ -88,18 +87,6 @@ impl Widget for TerminalPreviewWidget {
             gradient: None,
         };
         ctx.draw_list.push_rect(ctx.bounds, style);
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 }
 

@@ -35,7 +35,7 @@ pub mod window_chrome;
 use crate::animation::anim_frame::AnimFrameEvent;
 use crate::controllers::EventController;
 use crate::hit_test_behavior::HitTestBehavior;
-use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, MouseEventKind};
+use crate::input::{EventResponse, MouseEventKind};
 use crate::interaction::LifecycleEvent;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
@@ -199,16 +199,53 @@ impl WidgetResponse {
 // (`controllers -> widgets`). Re-exported here for backward compatibility.
 pub use crate::action::WidgetAction;
 
+/// Result of `Widget::on_input()` fallback handling.
+///
+/// Returned by widgets that handle input events directly (not via controllers).
+/// Carries an optional semantic action for the application layer.
+#[derive(Debug, Default)]
+pub struct OnInputResult {
+    /// Whether the event was handled.
+    pub handled: bool,
+    /// Semantic action emitted, if any.
+    pub action: Option<WidgetAction>,
+}
+
+impl OnInputResult {
+    /// Event was handled, no action emitted.
+    pub fn handled() -> Self {
+        Self {
+            handled: true,
+            action: None,
+        }
+    }
+
+    /// Event was not handled.
+    pub fn ignored() -> Self {
+        Self {
+            handled: false,
+            action: None,
+        }
+    }
+
+    /// Attaches a semantic action to this result.
+    #[must_use]
+    pub fn with_action(mut self, action: WidgetAction) -> Self {
+        self.action = Some(action);
+        self
+    }
+}
+
 /// The core widget trait.
 ///
 /// Each widget is a concrete struct that implements this trait. Widgets
 /// own their visual state (hovered, pressed) and app state (checked, value),
 /// plus a style struct with `Default` dark-theme defaults.
 ///
-/// The trait is in transition: new methods (`paint`, `lifecycle`, `anim_frame`,
-/// `controllers`, `visual_states`) coexist with legacy methods (`draw`,
-/// `handle_mouse`, `handle_hover`, `handle_key`) during migration. Legacy
-/// methods are removed after all widgets are migrated (Section 08.6).
+/// Input is handled by event controllers (`controllers()`), with `on_input()`
+/// as a fallback for widget-internal logic. Visual state transitions are
+/// driven by `VisualStateAnimator` (`visual_states()`). Lifecycle events
+/// (`lifecycle()`) notify widgets of hot/active/focus changes.
 pub trait Widget {
     /// Returns this widget's unique identifier.
     fn id(&self) -> WidgetId;
@@ -231,13 +268,7 @@ pub trait Widget {
     /// Use `ctx.is_hot()`, `ctx.is_active()`, `ctx.is_focused()` for
     /// interaction-dependent rendering. Use `VisualStateAnimator` for
     /// animated property interpolation.
-    ///
-    /// Default forwards to `draw()` for backward compatibility during
-    /// migration. Override this and stop implementing `draw()`.
-    fn paint(&self, ctx: &mut DrawCtx<'_>) {
-        #[allow(deprecated)]
-        self.draw(ctx);
-    }
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
 
     /// Handles lifecycle events (hot/active/focus changes, widget add/remove).
     ///
@@ -297,8 +328,8 @@ pub trait Widget {
         &mut self,
         _event: &crate::input::InputEvent,
         _bounds: crate::geometry::Rect,
-    ) -> bool {
-        false
+    ) -> OnInputResult {
+        OnInputResult::ignored()
     }
 
     /// Transforms a controller-emitted action into a widget-specific action.
@@ -318,36 +349,6 @@ pub trait Widget {
         _bounds: crate::geometry::Rect,
     ) -> Option<WidgetAction> {
         Some(action)
-    }
-
-    // --- Legacy methods (deprecated, removed in Section 08.6) ---
-
-    /// Draws the widget into the draw list.
-    ///
-    /// Deprecated: implement `paint()` instead. This method exists only for
-    /// backward compatibility during migration.
-    #[deprecated(note = "implement paint() instead — removed in Section 08.6")]
-    fn draw(&self, _ctx: &mut DrawCtx<'_>) {}
-
-    /// Handles a mouse event. Returns a response with optional action.
-    ///
-    /// Deprecated: use event controllers instead.
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    /// Handles a synthetic hover event (enter/leave).
-    ///
-    /// Deprecated: use `HoverController` and `LifecycleEvent::HotChanged`.
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    /// Handles a keyboard event. Returns a response with optional action.
-    ///
-    /// Deprecated: use `FocusController` or custom controllers.
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 
     /// Propagates an externally-originated action to a descendant widget.
