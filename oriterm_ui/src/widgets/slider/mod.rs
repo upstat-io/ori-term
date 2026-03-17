@@ -2,14 +2,19 @@
 //!
 //! Emits `WidgetAction::ValueChanged` when the value changes via drag
 //! or arrow keys. Supports configurable min/max/step and keyboard
-//! adjustment (arrow keys, Home/End).
+//! adjustment (arrow keys, Home/End). Uses [`VisualStateAnimator`]
+//! with `common_states()` for smooth thumb color transitions.
 
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::{LayoutBox, SizeSpec};
+use crate::sense::Sense;
 use crate::text::TextStyle;
+use crate::visual_state::common_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -83,8 +88,8 @@ impl Default for SliderStyle {
 /// A horizontal slider with track and draggable thumb.
 ///
 /// Value ranges from `min` to `max` with optional `step` snapping.
-/// Arrow keys adjust by `step`, Home/End jump to min/max.
-#[derive(Debug, Clone)]
+/// Arrow keys adjust by `step`, Home/End jump to min/max. Thumb
+/// hover transitions use [`VisualStateAnimator`] with `common_states()`.
 pub struct SliderWidget {
     id: WidgetId,
     value: f32,
@@ -92,9 +97,12 @@ pub struct SliderWidget {
     max: f32,
     step: f32,
     disabled: bool,
-    hovered: bool,
+    /// Legacy drag tracking for `handle_mouse()` compat (removed in §08.6).
     dragging: bool,
     style: SliderStyle,
+    controllers: Vec<Box<dyn EventController>>,
+    /// Animator for thumb color transition.
+    animator: VisualStateAnimator,
 }
 
 impl Default for SliderWidget {
@@ -106,6 +114,7 @@ impl Default for SliderWidget {
 impl SliderWidget {
     /// Creates a slider with value 0.0, range 0.0..1.0, step 0.01.
     pub fn new() -> Self {
+        let style = SliderStyle::default();
         Self {
             id: WidgetId::next(),
             value: 0.0,
@@ -113,9 +122,18 @@ impl SliderWidget {
             max: 1.0,
             step: 0.01,
             disabled: false,
-            hovered: false,
             dragging: false,
-            style: SliderStyle::default(),
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![common_states(
+                style.thumb_color,
+                style.thumb_hover_color,
+                style.thumb_hover_color,
+                style.disabled_bg,
+            )]),
+            style,
         }
     }
 
@@ -142,11 +160,6 @@ impl SliderWidget {
     /// Returns whether the slider is disabled.
     pub fn is_disabled(&self) -> bool {
         self.disabled
-    }
-
-    /// Returns whether the slider is hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
     }
 
     /// Returns whether the thumb is being dragged.
@@ -187,6 +200,12 @@ impl SliderWidget {
     /// Sets the style.
     #[must_use]
     pub fn with_style(mut self, style: SliderStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![common_states(
+            style.thumb_color,
+            style.thumb_hover_color,
+            style.thumb_hover_color,
+            style.disabled_bg,
+        )]);
         self.style = style;
         self
     }
@@ -253,6 +272,23 @@ impl SliderWidget {
     }
 }
 
+impl std::fmt::Debug for SliderWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SliderWidget")
+            .field("id", &self.id)
+            .field("value", &self.value)
+            .field("min", &self.min)
+            .field("max", &self.max)
+            .field("step", &self.step)
+            .field("disabled", &self.disabled)
+            .field("dragging", &self.dragging)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
+    }
+}
+
 impl Widget for SliderWidget {
     fn id(&self) -> WidgetId {
         self.id
@@ -262,6 +298,10 @@ impl Widget for SliderWidget {
         !self.disabled
     }
 
+    fn sense(&self) -> Sense {
+        Sense::click()
+    }
+
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         let height = self.style.thumb_size.max(self.style.track_height);
         LayoutBox::leaf(self.style.width, height)
@@ -269,8 +309,24 @@ impl Widget for SliderWidget {
             .with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.focused_widget == Some(self.id);
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
         let s = &self.style;
         let tb = self.track_bounds(ctx.bounds);
 
@@ -316,10 +372,10 @@ impl Widget for SliderWidget {
         let thumb_rect = Rect::new(thumb_x, thumb_y, s.thumb_size, s.thumb_size);
         let thumb_bg = if self.disabled {
             s.disabled_bg
-        } else if self.hovered || self.dragging {
+        } else if self.dragging {
             s.thumb_hover_color
         } else {
-            s.thumb_color
+            self.animator.get_bg_color(ctx.now)
         };
         let thumb_style = RectStyle::filled(thumb_bg)
             .with_border(s.thumb_border_width, s.thumb_border_color)
@@ -338,7 +394,15 @@ impl Widget for SliderWidget {
         let text_y = ctx.bounds.y() + (ctx.bounds.height() - shaped.height) / 2.0;
         ctx.draw_list
             .push_text(Point::new(text_x, text_y), shaped, ctx.theme.fg_secondary);
+
+        // Signal continued redraws while the animator is transitioning.
+        if self.animator.is_animating(ctx.now) {
+            ctx.animations_running.set(true);
+            ctx.request_anim_frame();
+        }
     }
+
+    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
@@ -378,14 +442,7 @@ impl Widget for SliderWidget {
             return WidgetResponse::ignored();
         }
         match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                WidgetResponse::paint()
-            }
-            HoverEvent::Leave => {
-                self.hovered = false;
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
         }
     }
 

@@ -1,6 +1,7 @@
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::BoxContent;
+use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetResponse};
 
@@ -59,7 +60,6 @@ fn default_state() {
     assert_eq!(s.min(), 0.0);
     assert_eq!(s.max(), 1.0);
     assert!(!s.is_disabled());
-    assert!(!s.is_hovered());
     assert!(!s.is_dragging());
     assert!(s.is_focusable());
 }
@@ -107,12 +107,12 @@ fn drag_changes_value() {
     let ctx = slider_ctx();
 
     // Track area is 140px (200 - 48 value label - 12 gap).
-    // Center of track: x=70 → normalized 0.5 → value 50.
+    // Center of track: x=70 -> normalized 0.5 -> value 50.
     s.handle_mouse(&mouse_down(70.0), &ctx);
     assert!(s.is_dragging());
     assert!((s.value() - 50.0).abs() < 2.0);
 
-    // Drag to right edge of track (x=132 → normalized 1.0 → value 100).
+    // Drag to right edge of track (x=132 -> normalized 1.0 -> value 100).
     s.handle_mouse(&mouse_move(132.0), &ctx);
     assert!((s.value() - 100.0).abs() < 2.0);
 
@@ -195,15 +195,15 @@ fn disabled_ignores() {
 }
 
 #[test]
-fn hover_transitions() {
+fn hover_returns_paint() {
     let mut s = SliderWidget::new();
     let ctx = slider_ctx();
 
-    s.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(s.is_hovered());
+    let r = s.handle_hover(HoverEvent::Enter, &ctx);
+    assert_eq!(r.response, crate::input::EventResponse::RequestPaint);
 
-    s.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!s.is_hovered());
+    let r = s.handle_hover(HoverEvent::Leave, &ctx);
+    assert_eq!(r.response, crate::input::EventResponse::RequestPaint);
 }
 
 #[test]
@@ -226,23 +226,6 @@ fn drag_beyond_right_clamps_to_max() {
     // Drag far to the right.
     s.handle_mouse(&mouse_move(500.0), &ctx);
     assert_eq!(s.value(), 100.0);
-}
-
-#[test]
-fn leave_during_drag_clears_hover_not_dragging() {
-    let mut s = SliderWidget::new().with_range(0.0, 100.0);
-    let ctx = slider_ctx();
-
-    s.handle_hover(HoverEvent::Enter, &ctx);
-    s.handle_mouse(&mouse_down(100.0), &ctx);
-    assert!(s.is_dragging());
-    assert!(s.is_hovered());
-
-    // Mouse leaves — hover clears but drag continues (capture semantics).
-    s.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!s.is_hovered());
-    // Drag should still be active (would be released on mouse up).
-    // Note: current impl doesn't clear dragging on leave, which is correct.
 }
 
 #[test]
@@ -299,4 +282,24 @@ fn set_value_clamps() {
     assert_eq!(s.value(), 10.0);
     s.set_value(-5.0);
     assert_eq!(s.value(), 0.0);
+}
+
+// -- Sense and controllers --
+
+#[test]
+fn sense_returns_click() {
+    let s = SliderWidget::new();
+    assert_eq!(s.sense(), Sense::click());
+}
+
+#[test]
+fn has_two_controllers() {
+    let s = SliderWidget::new();
+    assert_eq!(s.controllers().len(), 2);
+}
+
+#[test]
+fn has_visual_state_animator() {
+    let s = SliderWidget::new();
+    assert!(s.visual_states().is_some());
 }

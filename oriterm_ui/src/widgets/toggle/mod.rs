@@ -1,16 +1,21 @@
 //! Toggle switch widget — a pill-shaped on/off switch.
 //!
-//! Emits `WidgetAction::Toggled` when clicked or activated via Space.
-//! Uses [`AnimatedValue`] for smooth thumb sliding (150ms, `EaseInOut`).
+//! Emits `WidgetAction::Toggled` when clicked (via [`ClickController`]) or
+//! activated via Space. Uses [`AnimatedValue`] for smooth thumb sliding
+//! (150ms, `EaseInOut`) and [`VisualStateAnimator`] for hover color transitions.
 
 use std::time::{Duration, Instant};
 
 use crate::animation::{AnimatedValue, Easing};
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
 use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
+use crate::visual_state::common_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -72,21 +77,20 @@ impl Default for ToggleStyle {
 /// A pill-shaped toggle switch.
 ///
 /// The thumb slides smoothly between on (1.0) and off (0.0) positions
-/// using an [`AnimatedValue`] with `EaseInOut` easing over 150ms.
-#[derive(Debug, Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "independent UI state flags: on, disabled, hovered, pressed"
-)]
+/// using an [`AnimatedValue`] with `EaseInOut` easing over 150ms. Track
+/// hover transitions use [`VisualStateAnimator`] with `common_states()`.
 pub struct ToggleWidget {
     id: WidgetId,
     on: bool,
     disabled: bool,
-    hovered: bool,
-    pressed: bool,
     /// Animated thumb position: 0.0 = off, 1.0 = on.
     toggle_progress: AnimatedValue<f32>,
     style: ToggleStyle,
+    controllers: Vec<Box<dyn EventController>>,
+    /// Animator for off-state hover bg transition.
+    animator: VisualStateAnimator,
+    /// Legacy pressed tracking for `handle_mouse()` compat (removed in §08.6).
+    pressed: bool,
 }
 
 impl Default for ToggleWidget {
@@ -98,14 +102,24 @@ impl Default for ToggleWidget {
 impl ToggleWidget {
     /// Creates a toggle in the off state.
     pub fn new() -> Self {
+        let style = ToggleStyle::default();
         Self {
             id: WidgetId::next(),
             on: false,
             disabled: false,
-            hovered: false,
-            pressed: false,
             toggle_progress: AnimatedValue::new(0.0, TOGGLE_DURATION, Easing::EaseInOut),
-            style: ToggleStyle::default(),
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![common_states(
+                style.off_bg,
+                style.off_hover_bg,
+                style.off_hover_bg,
+                style.disabled_bg,
+            )]),
+            style,
+            pressed: false,
         }
     }
 
@@ -131,22 +145,20 @@ impl ToggleWidget {
         self.disabled
     }
 
-    /// Returns whether the toggle is hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
-    }
-
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
-        if disabled {
-            self.hovered = false;
-        }
     }
 
     /// Sets the style.
     #[must_use]
     pub fn with_style(mut self, style: ToggleStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![common_states(
+            style.off_bg,
+            style.off_hover_bg,
+            style.off_hover_bg,
+            style.disabled_bg,
+        )]);
         self.style = style;
         self
     }
@@ -178,20 +190,6 @@ impl ToggleWidget {
         }
     }
 
-    /// Returns the track background based on state.
-    fn track_bg(&self) -> Color {
-        if self.disabled {
-            return self.style.disabled_bg;
-        }
-        if self.on {
-            return self.style.on_bg;
-        }
-        if self.pressed || self.hovered {
-            return self.style.off_hover_bg;
-        }
-        self.style.off_bg
-    }
-
     /// Returns the thumb color based on state.
     fn thumb_color(&self) -> Color {
         if self.disabled {
@@ -199,6 +197,21 @@ impl ToggleWidget {
         } else {
             self.style.thumb_color
         }
+    }
+}
+
+impl std::fmt::Debug for ToggleWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToggleWidget")
+            .field("id", &self.id)
+            .field("on", &self.on)
+            .field("disabled", &self.disabled)
+            .field("pressed", &self.pressed)
+            .field("toggle_progress", &self.toggle_progress)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
     }
 }
 
@@ -211,12 +224,32 @@ impl Widget for ToggleWidget {
         !self.disabled
     }
 
+    fn sense(&self) -> Sense {
+        Sense::click()
+    }
+
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         LayoutBox::leaf(self.style.width, self.style.height).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.focused_widget == Some(self.id);
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
         let s = &self.style;
         let radius = s.height / 2.0;
 
@@ -229,8 +262,15 @@ impl Widget for ToggleWidget {
             ctx.draw_list.push_rect(ring, ring_style);
         }
 
-        // Track.
-        let track_style = RectStyle::filled(self.track_bg()).with_radius(radius);
+        // Track bg: on_bg when on, animator-driven hover transition when off.
+        let track_bg = if self.disabled {
+            s.disabled_bg
+        } else if self.on {
+            s.on_bg
+        } else {
+            self.animator.get_bg_color(ctx.now)
+        };
+        let track_style = RectStyle::filled(track_bg).with_radius(radius);
         ctx.draw_list.push_rect(ctx.bounds, track_style);
 
         // Thumb — a circle within the track, position driven by animation.
@@ -244,11 +284,16 @@ impl Widget for ToggleWidget {
         let thumb_style = RectStyle::filled(self.thumb_color()).with_radius(thumb_radius);
         ctx.draw_list.push_rect(thumb_rect, thumb_style);
 
-        // Signal that we need continued redraws while animating.
-        if self.toggle_progress.is_animating(ctx.now) {
+        // Signal continued redraws while animating.
+        let animating =
+            self.toggle_progress.is_animating(ctx.now) || self.animator.is_animating(ctx.now);
+        if animating {
             ctx.animations_running.set(true);
+            ctx.request_anim_frame();
         }
     }
+
+    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
@@ -260,9 +305,9 @@ impl Widget for ToggleWidget {
                 WidgetResponse::paint().with_capture()
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                let was_pressed = self.pressed;
+                let was = self.pressed;
                 self.pressed = false;
-                if was_pressed && ctx.bounds.contains(event.pos) {
+                if was && ctx.bounds.contains(event.pos) {
                     let action = self.toggle();
                     WidgetResponse::focus()
                         .with_action(action)
@@ -280,12 +325,9 @@ impl Widget for ToggleWidget {
             return WidgetResponse::ignored();
         }
         match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter => WidgetResponse::paint(),
             HoverEvent::Leave => {
-                self.hovered = false;
+                self.pressed = false;
                 WidgetResponse::paint()
             }
         }

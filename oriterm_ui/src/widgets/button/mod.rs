@@ -1,26 +1,24 @@
-//! Button widget with hover, pressed, and disabled states.
+//! Button widget with hover, pressed, and disabled visual states.
 //!
-//! Emits `WidgetAction::Clicked` on mouse click or keyboard activation
-//! (Enter/Space when focused). Uses [`AnimatedValue`] for smooth hover
-//! color transitions (100ms, `EaseOut`).
+//! Emits `WidgetAction::Clicked` on mouse click (via [`ClickController`]) or
+//! keyboard activation (Enter/Space when focused). Uses [`VisualStateAnimator`]
+//! with `common_states()` for smooth state color transitions.
 
-use std::time::{Duration, Instant};
-
-use crate::animation::{AnimatedValue, Easing, Lerp};
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point};
 use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::TextStyle;
+use crate::visual_state::common_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
 use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
-
-/// Duration of the hover color transition.
-const HOVER_DURATION: Duration = Duration::from_millis(100);
 
 /// Visual style for a [`ButtonWidget`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -79,31 +77,40 @@ impl Default for ButtonStyle {
 
 /// Interactive button widget.
 ///
-/// Emits `WidgetAction::Clicked(id)` when clicked or keyboard-activated.
-/// Hover state transitions use smooth color interpolation.
-#[derive(Debug, Clone)]
+/// Emits `WidgetAction::Clicked(id)` when clicked (via [`ClickController`])
+/// or keyboard-activated (Enter/Space). Hover, pressed, and disabled visual
+/// state transitions are handled by [`VisualStateAnimator`] with `common_states()`.
 pub struct ButtonWidget {
     id: WidgetId,
     label: String,
     disabled: bool,
-    hovered: bool,
-    pressed: bool,
-    /// Animated hover progress: 0.0 = not hovered, 1.0 = fully hovered.
-    hover_progress: AnimatedValue<f32>,
     style: ButtonStyle,
+    controllers: Vec<Box<dyn EventController>>,
+    animator: VisualStateAnimator,
+    /// Legacy pressed tracking for `handle_mouse()` compat (removed in §08.6).
+    pressed: bool,
 }
 
 impl ButtonWidget {
     /// Creates a button with the given label text.
     pub fn new(label: impl Into<String>) -> Self {
+        let style = ButtonStyle::default();
         Self {
             id: WidgetId::next(),
             label: label.into(),
             disabled: false,
-            hovered: false,
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![common_states(
+                style.bg,
+                style.hover_bg,
+                style.pressed_bg,
+                style.disabled_bg,
+            )]),
+            style,
             pressed: false,
-            hover_progress: AnimatedValue::new(0.0, HOVER_DURATION, Easing::EaseOut),
-            style: ButtonStyle::default(),
         }
     }
 
@@ -117,29 +124,20 @@ impl ButtonWidget {
         self.disabled
     }
 
-    /// Returns whether the button is currently hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
-    }
-
-    /// Returns whether the button is currently pressed.
-    pub fn is_pressed(&self) -> bool {
-        self.pressed
-    }
-
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
-        if disabled {
-            self.hovered = false;
-            self.pressed = false;
-            self.hover_progress.set_immediate(0.0);
-        }
     }
 
     /// Sets the button style.
     #[must_use]
     pub fn with_style(mut self, style: ButtonStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![common_states(
+            style.bg,
+            style.hover_bg,
+            style.pressed_bg,
+            style.disabled_bg,
+        )]);
         self.style = style;
         self
     }
@@ -149,18 +147,6 @@ impl ButtonWidget {
     pub fn with_disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
-    }
-
-    /// Returns the current background color, interpolating for hover.
-    fn current_bg(&self, now: Instant) -> Color {
-        if self.disabled {
-            return self.style.disabled_bg;
-        }
-        if self.pressed {
-            return self.style.pressed_bg;
-        }
-        let t = self.hover_progress.get(now);
-        Color::lerp(self.style.bg, self.style.hover_bg, t)
     }
 
     /// Returns the current text color based on state.
@@ -178,6 +164,20 @@ impl ButtonWidget {
     }
 }
 
+impl std::fmt::Debug for ButtonWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ButtonWidget")
+            .field("id", &self.id)
+            .field("label", &self.label)
+            .field("disabled", &self.disabled)
+            .field("pressed", &self.pressed)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
+    }
+}
+
 impl Widget for ButtonWidget {
     fn id(&self) -> WidgetId {
         self.id
@@ -185,6 +185,10 @@ impl Widget for ButtonWidget {
 
     fn is_focusable(&self) -> bool {
         !self.disabled
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::click()
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -195,10 +199,26 @@ impl Widget for ButtonWidget {
         LayoutBox::leaf(w, h).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.focused_widget == Some(self.id);
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
 
-        // Focus ring (drawn outside the layer).
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        // Focus ring: use InteractionManager when available, fall back to
+        // legacy `focused_widget` field during transition (§08.6 removes it).
+        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
         if focused {
             let ring_rect = ctx.bounds.inset(Insets::all(-2.0));
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
@@ -207,11 +227,11 @@ impl Widget for ButtonWidget {
             ctx.draw_list.push_rect(ring_rect, ring_style);
         }
 
-        // Layer captures the button bg for subpixel text compositing.
-        let bg = self.current_bg(ctx.now);
+        // Background from visual state animator (transitions between Normal,
+        // Hovered, Pressed, Disabled states automatically).
+        let bg = self.animator.get_bg_color(ctx.now);
         ctx.draw_list.push_layer(bg);
 
-        // Button background with animated hover color.
         let bg_style = RectStyle::filled(bg)
             .with_border(self.style.border_width, self.style.border_color)
             .with_radius(self.style.corner_radius);
@@ -230,11 +250,14 @@ impl Widget for ButtonWidget {
 
         ctx.draw_list.pop_layer();
 
-        // Signal that we need continued redraws while animating.
-        if self.hover_progress.is_animating(ctx.now) {
+        // Signal continued redraws while the animator is transitioning.
+        if self.animator.is_animating(ctx.now) {
             ctx.animations_running.set(true);
+            ctx.request_anim_frame();
         }
     }
+
+    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
@@ -246,9 +269,9 @@ impl Widget for ButtonWidget {
                 WidgetResponse::focus()
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                let was_pressed = self.pressed;
+                let was = self.pressed;
                 self.pressed = false;
-                if was_pressed && ctx.bounds.contains(event.pos) {
+                if was && ctx.bounds.contains(event.pos) {
                     WidgetResponse::paint().with_action(WidgetAction::Clicked(self.id))
                 } else {
                     WidgetResponse::paint()
@@ -262,17 +285,10 @@ impl Widget for ButtonWidget {
         if self.disabled {
             return WidgetResponse::ignored();
         }
-        let now = Instant::now();
         match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                self.hover_progress.set(1.0, now);
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter => WidgetResponse::paint(),
             HoverEvent::Leave => {
-                self.hovered = false;
                 self.pressed = false;
-                self.hover_progress.set(0.0, now);
                 WidgetResponse::paint()
             }
         }

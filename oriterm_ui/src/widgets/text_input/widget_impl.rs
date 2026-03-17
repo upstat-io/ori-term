@@ -2,10 +2,13 @@
 //!
 //! Separated from `mod.rs` to keep files under 500 lines.
 
+use crate::controllers::EventController;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
@@ -18,6 +21,10 @@ impl Widget for TextInputWidget {
 
     fn is_focusable(&self) -> bool {
         !self.disabled
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::click_and_drag().union(Sense::focusable())
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -36,22 +43,34 @@ impl Widget for TextInputWidget {
         LayoutBox::leaf(w, h).with_widget_id(self.id)
     }
 
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
     #[expect(
         clippy::string_slice,
         reason = "selection bounds always on char boundaries"
     )]
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.focused_widget == Some(self.id);
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
         let bounds = ctx.bounds;
         let s = &self.style;
 
         // Background + border.
         let bg = if self.disabled { s.disabled_bg } else { s.bg };
-        let border_color = if focused {
-            s.focus_border_color
-        } else {
-            s.border_color
-        };
+        let border_color = self.animator.get_border_color(ctx.now);
 
         // Layer captures the input bg for subpixel text compositing.
         ctx.draw_list.push_layer(bg);
@@ -112,7 +131,15 @@ impl Widget for TextInputWidget {
 
         ctx.draw_list.pop_clip();
         ctx.draw_list.pop_layer();
+
+        // Signal continued redraws while the animator is transitioning.
+        if self.animator.is_animating(ctx.now) {
+            ctx.animations_running.set(true);
+            ctx.request_anim_frame();
+        }
     }
+
+    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
 
     #[expect(clippy::string_slice, reason = "cursor always on char boundary")]
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
@@ -159,14 +186,7 @@ impl Widget for TextInputWidget {
             return WidgetResponse::ignored();
         }
         match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                WidgetResponse::paint()
-            }
-            HoverEvent::Leave => {
-                self.hovered = false;
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
         }
     }
 

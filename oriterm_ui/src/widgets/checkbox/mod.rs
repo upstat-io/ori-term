@@ -1,14 +1,19 @@
 //! Checkbox widget — a toggleable check box with label.
 //!
-//! Emits `WidgetAction::Toggled` when clicked or activated via Space.
-//! The check box and label are laid out horizontally with a configurable gap.
+//! Emits `WidgetAction::Toggled` when clicked (via [`ClickController`]) or
+//! activated via Space. Uses [`VisualStateAnimator`] with `common_states()`
+//! for hover color transitions on the unchecked box.
 
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::TextStyle;
+use crate::visual_state::common_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -79,33 +84,42 @@ impl Default for CheckboxStyle {
 /// A checkbox with label text.
 ///
 /// Toggles between checked and unchecked on click or Space.
-/// Emits `WidgetAction::Toggled { id, value }`.
-#[derive(Debug, Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "independent UI state flags: checked, disabled, hovered, pressed"
-)]
+/// Emits `WidgetAction::Toggled { id, value }`. Hover transitions
+/// use [`VisualStateAnimator`] with `common_states()`.
 pub struct CheckboxWidget {
     id: WidgetId,
     label: String,
     checked: bool,
     disabled: bool,
-    hovered: bool,
-    pressed: bool,
     style: CheckboxStyle,
+    controllers: Vec<Box<dyn EventController>>,
+    /// Animator for unchecked-state hover bg transition.
+    animator: VisualStateAnimator,
+    /// Legacy pressed tracking for `handle_mouse()` compat (removed in §08.6).
+    pressed: bool,
 }
 
 impl CheckboxWidget {
     /// Creates an unchecked checkbox with the given label.
     pub fn new(label: impl Into<String>) -> Self {
+        let style = CheckboxStyle::default();
         Self {
             id: WidgetId::next(),
             label: label.into(),
             checked: false,
             disabled: false,
-            hovered: false,
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![common_states(
+                style.bg,
+                style.hover_bg,
+                style.hover_bg,
+                style.disabled_bg,
+            )]),
+            style,
             pressed: false,
-            style: CheckboxStyle::default(),
         }
     }
 
@@ -127,19 +141,17 @@ impl CheckboxWidget {
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
-        if disabled {
-            self.hovered = false;
-        }
-    }
-
-    /// Returns whether the checkbox is hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
     }
 
     /// Sets the style.
     #[must_use]
     pub fn with_style(mut self, style: CheckboxStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![common_states(
+            style.bg,
+            style.hover_bg,
+            style.hover_bg,
+            style.disabled_bg,
+        )]);
         self.style = style;
         self
     }
@@ -167,20 +179,6 @@ impl CheckboxWidget {
         }
     }
 
-    /// Returns the box background color based on state.
-    fn box_bg(&self) -> Color {
-        if self.disabled {
-            return self.style.disabled_bg;
-        }
-        if self.checked {
-            return self.style.checked_bg;
-        }
-        if self.pressed || self.hovered {
-            return self.style.hover_bg;
-        }
-        self.style.bg
-    }
-
     /// Returns the label text color based on state.
     fn label_fg(&self) -> Color {
         if self.disabled {
@@ -196,6 +194,21 @@ impl CheckboxWidget {
     }
 }
 
+impl std::fmt::Debug for CheckboxWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CheckboxWidget")
+            .field("id", &self.id)
+            .field("label", &self.label)
+            .field("checked", &self.checked)
+            .field("disabled", &self.disabled)
+            .field("pressed", &self.pressed)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
+    }
+}
+
 impl Widget for CheckboxWidget {
     fn id(&self) -> WidgetId {
         self.id
@@ -203,6 +216,10 @@ impl Widget for CheckboxWidget {
 
     fn is_focusable(&self) -> bool {
         !self.disabled
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::click()
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -213,8 +230,24 @@ impl Widget for CheckboxWidget {
         LayoutBox::leaf(w, h).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.focused_widget == Some(self.id);
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let focused = ctx.is_interaction_focused() || ctx.focused_widget == Some(self.id);
         let bounds = ctx.bounds;
         let s = &self.style;
 
@@ -231,8 +264,15 @@ impl Widget for CheckboxWidget {
             ctx.draw_list.push_rect(ring, ring_style);
         }
 
-        // Box background + border.
-        let box_style = RectStyle::filled(self.box_bg())
+        // Box bg: checked_bg when checked, animator-driven hover when unchecked.
+        let box_bg = if self.disabled {
+            s.disabled_bg
+        } else if self.checked {
+            s.checked_bg
+        } else {
+            self.animator.get_bg_color(ctx.now)
+        };
+        let box_style = RectStyle::filled(box_bg)
             .with_border(s.border_width, s.border_color)
             .with_radius(s.corner_radius);
         ctx.draw_list.push_rect(box_rect, box_style);
@@ -268,7 +308,15 @@ impl Widget for CheckboxWidget {
             ctx.draw_list
                 .push_text(Point::new(text_x, text_y), shaped, self.label_fg());
         }
+
+        // Signal continued redraws while the animator is transitioning.
+        if self.animator.is_animating(ctx.now) {
+            ctx.animations_running.set(true);
+            ctx.request_anim_frame();
+        }
     }
+
+    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
@@ -280,9 +328,9 @@ impl Widget for CheckboxWidget {
                 WidgetResponse::handled().with_capture()
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                let was_pressed = self.pressed;
+                let was = self.pressed;
                 self.pressed = false;
-                if was_pressed && ctx.bounds.contains(event.pos) {
+                if was && ctx.bounds.contains(event.pos) {
                     let action = self.toggle();
                     WidgetResponse::focus()
                         .with_action(action)
@@ -300,12 +348,9 @@ impl Widget for CheckboxWidget {
             return WidgetResponse::ignored();
         }
         match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter => WidgetResponse::paint(),
             HoverEvent::Leave => {
-                self.hovered = false;
+                self.pressed = false;
                 WidgetResponse::paint()
             }
         }
