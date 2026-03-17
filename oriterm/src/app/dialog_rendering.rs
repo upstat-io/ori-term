@@ -13,6 +13,7 @@ use oriterm_ui::geometry::Rect;
 use oriterm_ui::widgets::DrawCtx;
 
 use super::App;
+use super::widget_pipeline::prepare_widget_tree;
 use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
 impl App {
@@ -31,30 +32,68 @@ impl App {
         if !ctx.has_surface_area() {
             return;
         }
-        let Some(renderer) = ctx.renderer.as_mut() else {
-            return;
-        };
-
         let w = ctx.surface_config.width;
         let h = ctx.surface_config.height;
         let scale = ctx.scale_factor.factor() as f32;
 
         // Prepare the UI-only frame.
-        let c = ui_theme.bg_primary;
-        let bg = oriterm_core::Rgb {
-            r: (c.r * 255.0) as u8,
-            g: (c.g * 255.0) as u8,
-            b: (c.b * 255.0) as u8,
-        };
-        renderer.prepare_ui_frame(w, h, bg, 1.0);
-
-        // Resolve icons.
-        renderer.resolve_icons(gpu, scale);
+        {
+            let renderer = ctx.renderer.as_mut().expect("checked above");
+            let c = ui_theme.bg_primary;
+            let bg = oriterm_core::Rgb {
+                r: (c.r * 255.0) as u8,
+                g: (c.g * 255.0) as u8,
+                b: (c.b * 255.0) as u8,
+            };
+            renderer.prepare_ui_frame(w, h, bg, 1.0);
+            renderer.resolve_icons(gpu, scale);
+        }
 
         let logical_w = w as f32 / scale;
         let logical_h = h as f32 / scale;
-        let chrome_h = ctx.chrome.caption_height();
 
+        Self::compose_dialog_widgets(ctx, &ui_theme, scale, logical_w, logical_h, gpu);
+
+        // Draw overlay popups (dropdown lists) on top.
+        // Re-borrow renderer inside the helper to avoid split-borrow conflict.
+        Self::render_dialog_overlays(ctx, scale, &ui_theme, gpu);
+
+        // Re-borrow renderer for final surface render.
+        let renderer = ctx.renderer.as_mut().expect("checked above");
+        // Render to surface. Dialogs always re-render content (no cursor blink).
+        let result = renderer.render_to_surface(gpu, pipelines, &ctx.surface, true);
+        match result {
+            Ok(()) => {}
+            Err(crate::gpu::SurfaceError::Lost) => {
+                log::warn!("dialog surface lost, reconfiguring");
+                ctx.resize_surface(w, h, gpu);
+            }
+            Err(e) => log::error!("dialog render error: {e}"),
+        }
+
+        // TODO: when dialogs wire up FrameRequestFlags (Section 05.5),
+        // check `frame_requests.anim_frame_requested()` and set `ctx.dirty = true`
+        // so widget hover-fade animations get continued redraws.
+    }
+
+    /// Pre-paint mutation + scene composition for chrome and content.
+    ///
+    /// Delivers lifecycle events, updates visual state animators, then
+    /// draws chrome and content widgets to the draw list.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "extracted helper: ctx, theme, scale, dimensions, gpu"
+    )]
+    fn compose_dialog_widgets(
+        ctx: &mut super::dialog_context::DialogWindowContext,
+        ui_theme: &oriterm_ui::theme::UiTheme,
+        scale: f32,
+        logical_w: f32,
+        logical_h: f32,
+        gpu: &crate::gpu::state::GpuState,
+    ) {
+        let renderer = ctx.renderer.as_mut().expect("caller checked renderer");
+        let chrome_h = ctx.chrome.caption_height();
         ctx.draw_list.clear();
         let measurer = CachedTextMeasurer::new(
             UiFontMeasurer::new(renderer.active_ui_collection(), scale),
@@ -62,6 +101,26 @@ impl App {
             scale,
         );
         let icons = renderer.resolved_icons();
+
+        // Pre-paint mutation: deliver lifecycle events and update animators.
+        let now = Instant::now();
+        let lifecycle_events = ctx.interaction.drain_events();
+        prepare_widget_tree(
+            &mut ctx.chrome,
+            &ctx.interaction,
+            &lifecycle_events,
+            None,
+            None,
+            now,
+        );
+        prepare_widget_tree(
+            ctx.content.content_widget_mut(),
+            &ctx.interaction,
+            &lifecycle_events,
+            None,
+            None,
+            now,
+        );
 
         // Draw the chrome title bar via scene composition.
         let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
@@ -72,7 +131,7 @@ impl App {
                 bounds: chrome_bounds,
                 focused_widget: None,
                 now: Instant::now(),
-                theme: &ui_theme,
+                theme: ui_theme,
                 icons: Some(icons),
                 scene_cache: None,
                 interaction: None,
@@ -96,7 +155,7 @@ impl App {
                 bounds: content_bounds,
                 focused_widget: None,
                 now: Instant::now(),
-                theme: &ui_theme,
+                theme: ui_theme,
                 icons: Some(icons),
                 scene_cache: None,
                 interaction: None,
@@ -113,27 +172,6 @@ impl App {
 
         // Convert draw list to GPU instances.
         renderer.append_ui_draw_list_with_text(&ctx.draw_list, scale, 1.0, gpu);
-
-        // Draw overlay popups (dropdown lists) on top.
-        // Re-borrow renderer inside the helper to avoid split-borrow conflict.
-        Self::render_dialog_overlays(ctx, scale, &ui_theme, gpu);
-
-        // Re-borrow renderer for final surface render.
-        let renderer = ctx.renderer.as_mut().expect("checked above");
-        // Render to surface. Dialogs always re-render content (no cursor blink).
-        let result = renderer.render_to_surface(gpu, pipelines, &ctx.surface, true);
-        match result {
-            Ok(()) => {}
-            Err(crate::gpu::SurfaceError::Lost) => {
-                log::warn!("dialog surface lost, reconfiguring");
-                ctx.resize_surface(w, h, gpu);
-            }
-            Err(e) => log::error!("dialog render error: {e}"),
-        }
-
-        // TODO: when dialogs wire up FrameRequestFlags (Section 05.5),
-        // check `frame_requests.anim_frame_requested()` and set `ctx.dirty = true`
-        // so widget hover-fade animations get continued redraws.
     }
 
     /// Draw overlay popups (dropdown lists) on top of dialog content.

@@ -11,9 +11,10 @@ mod mouse;
 use std::time::Instant;
 
 use oriterm_ui::geometry::{Point, Rect};
-use oriterm_ui::input::{EventResponse, HoverEvent, MouseEvent, MouseEventKind};
+use oriterm_ui::input::{MouseEvent, MouseEventKind};
+use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
-use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
+use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
 use winit::event::WindowEvent;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
@@ -35,14 +36,6 @@ enum DialogClickResult {
     Action(WidgetAction),
     /// No action needed.
     None,
-}
-
-/// Whether an `EventResponse` indicates a repaint is needed.
-fn wants_repaint(resp: EventResponse) -> bool {
-    matches!(
-        resp,
-        EventResponse::RequestPaint | EventResponse::RequestLayout
-    )
 }
 
 impl App {
@@ -219,7 +212,6 @@ impl App {
             scale,
         );
         let chrome_h = ctx.chrome.caption_height();
-        let mut needs_redraw = false;
 
         // Route to overlay manager first (dropdown popup hover).
         if !ctx.overlays.is_empty() {
@@ -243,17 +235,6 @@ impl App {
             }
         }
 
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: Rect::default(),
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
-        };
-
         log::trace!(
             "dialog cursor: phys=({:.0},{:.0}) log=({:.1},{:.1}) s={scale:.2} ch={chrome_h:.1} \
              rects={:?}",
@@ -264,50 +245,43 @@ impl App {
             ctx.chrome.interactive_rects(),
         );
 
+        // Build the hot path from cursor position.
+        // The InteractionManager uses this to generate HotChanged lifecycle
+        // events, which are delivered during prepare_widget_tree.
+        let mut hot_path = Vec::new();
         if logical_pos.y < chrome_h {
-            // Chrome hover (close button highlight).
-            let resp = ctx.chrome.update_hover(logical_pos, &event_ctx);
-            if wants_repaint(resp.response) {
-                resp.mark_tracker(&mut ctx.invalidation);
-                needs_redraw = true;
+            // Chrome: check which control button is under the cursor.
+            if let Some(btn_id) = ctx.chrome.widget_at_point(logical_pos) {
+                hot_path.push(ctx.chrome.id());
+                hot_path.push(btn_id);
             }
         } else {
-            // Content area hover — clear any active chrome hover first.
-            let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
-            if wants_repaint(resp.response) {
-                resp.mark_tracker(&mut ctx.invalidation);
-                needs_redraw = true;
-            }
-
+            // Content area: hit test the layout tree.
             let w = ctx.surface_config.width as f32 / scale;
             let h = ctx.surface_config.height as f32 / scale;
             let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-            let hover_event = MouseEvent {
-                kind: MouseEventKind::Move,
-                pos: logical_pos,
-                modifiers: oriterm_ui::input::Modifiers::NONE,
-            };
-            let content_ctx = EventCtx {
+            let layout_ctx = LayoutCtx {
                 measurer: &measurer,
-                bounds: content_bounds,
-                is_focused: false,
-                focused_widget: None,
                 theme: &ui_theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
             };
-            let resp = ctx
-                .content
-                .content_widget_mut()
-                .handle_mouse(&hover_event, &content_ctx);
-            if wants_repaint(resp.response) {
-                resp.mark_tracker(&mut ctx.invalidation);
-                needs_redraw = true;
+            let layout_box = ctx.content.content_widget().layout(&layout_ctx);
+            let layout_node = compute_layout(&layout_box, content_bounds);
+            let local = Point::new(
+                logical_pos.x - content_bounds.x(),
+                logical_pos.y - content_bounds.y(),
+            );
+            let hit = oriterm_ui::input::layout_hit_test_path(&layout_node, local);
+            for entry in &hit.path {
+                hot_path.push(entry.widget_id);
             }
         }
-        if needs_redraw {
-            ctx.request_urgent_redraw();
-        }
+
+        // Update the InteractionManager's hot path. HotChanged lifecycle events
+        // are stored internally and delivered during the next prepare_widget_tree.
+        ctx.interaction.update_hot_path(&hot_path);
+        // Always request a redraw after a cursor move so the next
+        // prepare_widget_tree delivers any pending HotChanged events and
+        // updates the VisualStateAnimator accordingly.
+        ctx.request_urgent_redraw();
     }
 }
