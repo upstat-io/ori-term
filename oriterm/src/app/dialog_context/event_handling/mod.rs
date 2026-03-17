@@ -11,7 +11,7 @@ mod mouse;
 use std::time::Instant;
 
 use oriterm_ui::geometry::{Point, Rect};
-use oriterm_ui::input::{MouseEvent, MouseEventKind};
+use oriterm_ui::input::{EventResponse, MouseEvent, MouseEventKind};
 use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
@@ -36,6 +36,14 @@ enum DialogClickResult {
     Action(WidgetAction),
     /// No action needed.
     None,
+}
+
+/// Whether an `EventResponse` indicates a repaint is needed.
+fn wants_repaint(resp: EventResponse) -> bool {
+    matches!(
+        resp,
+        EventResponse::RequestPaint | EventResponse::RequestLayout
+    )
 }
 
 impl App {
