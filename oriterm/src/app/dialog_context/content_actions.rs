@@ -314,9 +314,18 @@ impl App {
             ctx.request_urgent_redraw();
         }
 
-        // Actions are already transformed by deliver_event_to_tree
-        // through the root widget's on_action.
-        result.actions.into_iter().next()
+        // Transform Clicked(id) through the content widget's on_action
+        // (e.g., SettingsPanel maps Clicked(save_id) → SaveSettings).
+        result.actions.into_iter().next().map(|a| {
+            if let WidgetAction::Clicked(id) = a {
+                ctx.content
+                    .content_widget_mut()
+                    .on_action(WidgetAction::Clicked(id), content_bounds)
+                    .unwrap_or(WidgetAction::Clicked(id))
+            } else {
+                a
+            }
+        })
     }
 
     /// Clear hover state for chrome and content.

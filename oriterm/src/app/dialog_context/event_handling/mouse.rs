@@ -210,9 +210,18 @@ impl App {
                 ctx.request_urgent_redraw();
             }
 
-            // Extract first action, if any. Actions are already transformed
-            // by deliver_event_to_tree through the root widget's on_action.
+            // Transform Clicked(id) through the content widget's on_action
+            // (e.g., SettingsPanel maps Clicked(save_id) → SaveSettings).
+            // Other actions (OpenDropdown, Toggled, etc.) pass through unchanged.
             match result.actions.into_iter().next() {
+                Some(WidgetAction::Clicked(id)) => {
+                    let action = ctx
+                        .content
+                        .content_widget_mut()
+                        .on_action(WidgetAction::Clicked(id), content_bounds)
+                        .unwrap_or(WidgetAction::Clicked(id));
+                    DialogClickResult::Action(action)
+                }
                 Some(action) => DialogClickResult::Action(action),
                 None => DialogClickResult::None,
             }
