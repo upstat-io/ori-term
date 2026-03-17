@@ -49,6 +49,14 @@ impl Widget for MenuWidget {
         Sense::click().union(Sense::focusable())
     }
 
+    fn controllers(&self) -> &[Box<dyn crate::controllers::EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn crate::controllers::EventController>] {
+        &mut self.controllers
+    }
+
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let bounds = ctx.bounds;
         let s = &self.style;
