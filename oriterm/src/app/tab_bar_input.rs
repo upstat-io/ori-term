@@ -244,7 +244,14 @@ impl App {
             ctx.dirty = true;
             ctx.ui_stale = true;
         }
-        result.actions.into_iter().next()
+        // Map Clicked(btn_id) → WindowMinimize/Maximize/Close.
+        result.actions.into_iter().find_map(|a| {
+            if let WidgetAction::Clicked(id) = a {
+                ctx.tab_bar.action_for_control(id)
+            } else {
+                Some(a)
+            }
+        })
     }
 
     /// Handle a click in the tab bar drag area.

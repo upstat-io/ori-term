@@ -107,6 +107,50 @@ impl TabBarWidget {
             .map(|i| self.controls[i].id())
     }
 
+    /// Updates control button visual states based on cursor position.
+    ///
+    /// Directly drives `VisualStateAnimator` on each control button: the
+    /// hovered button gets `InteractionState::with_hot()`, others get default.
+    /// Returns `true` if any animator is mid-transition (caller should redraw).
+    pub fn update_control_hover_state(&mut self, pos: Point, now: Instant) -> bool {
+        let hovered_idx = (0..3).find(|&i| self.control_rect(i).contains(pos));
+        let mut animating = false;
+        for (i, ctrl) in self.controls.iter_mut().enumerate() {
+            let state = if hovered_idx == Some(i) {
+                InteractionState::new().with_hot()
+            } else {
+                InteractionState::new()
+            };
+            if let Some(animator) = ctrl.visual_states_mut() {
+                animator.update(&state, now);
+                animator.tick(now);
+                if animator.is_animating(now) {
+                    animating = true;
+                }
+            }
+        }
+        animating
+    }
+
+    /// Clears hover state on all control buttons.
+    ///
+    /// Called when the cursor leaves the window or moves out of the control area.
+    /// Returns `true` if any animator is mid-transition.
+    pub fn clear_control_hover_state(&mut self, now: Instant) -> bool {
+        let normal = InteractionState::new();
+        let mut animating = false;
+        for ctrl in &mut self.controls {
+            if let Some(animator) = ctrl.visual_states_mut() {
+                animator.update(&normal, now);
+                animator.tick(now);
+                if animator.is_animating(now) {
+                    animating = true;
+                }
+            }
+        }
+        animating
+    }
+
     /// Maps a widget ID to its window action (Minimize/Maximize/Close).
     ///
     /// Returns `None` if the ID doesn't match any control button.
