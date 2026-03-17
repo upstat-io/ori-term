@@ -14,7 +14,9 @@ use winit::window::Window;
 use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;
 use oriterm_ui::draw::{DrawList, SceneCache};
+use oriterm_ui::focus::FocusManager;
 use oriterm_ui::geometry::Rect;
+use oriterm_ui::interaction::InteractionManager;
 use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::scale::ScaleFactor;
@@ -79,6 +81,11 @@ pub(crate) struct DialogWindowContext {
     pub(super) damage: DamageSet,
     /// Lifecycle state for framework-managed visibility transitions.
     pub(super) lifecycle: SurfaceLifecycle,
+
+    /// Framework-managed widget interaction state for this dialog.
+    pub(super) interaction: InteractionManager,
+    /// Focus manager for keyboard navigation in this dialog.
+    pub(super) focus: FocusManager,
 
     /// Whether this dialog needs a redraw.
     pub(super) dirty: bool,
@@ -190,6 +197,8 @@ impl DialogWindowContext {
             last_cursor_pos: oriterm_ui::geometry::Point::new(0.0, 0.0),
             render_strategy: RenderStrategy::UiRetained,
             damage: DamageSet::default(),
+            interaction: InteractionManager::new(),
+            focus: FocusManager::new(),
             lifecycle: SurfaceLifecycle::CreatedHidden,
             dirty: true,
             urgent_redraw: false,
