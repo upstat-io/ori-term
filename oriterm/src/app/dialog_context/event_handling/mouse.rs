@@ -183,7 +183,12 @@ impl App {
                 theme: &ui_theme,
             };
             let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-            let layout_node = compute_layout(&layout_box, content_bounds);
+            // Solve layout in local space (0,0) — deliver_event_to_tree converts
+            // cursor positions to local space before hit testing, then offsets
+            // hit entry bounds back to screen space.
+            let local_viewport =
+                Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+            let layout_node = compute_layout(&layout_box, local_viewport);
             let input_event = InputEvent::from_mouse_event(&mouse_event);
             let active = ctx.interaction.active_widget();
             let result = deliver_event_to_tree(
@@ -274,7 +279,8 @@ impl App {
             theme: &ui_theme,
         };
         let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-        let layout_node = compute_layout(&layout_box, content_bounds);
+        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+        let layout_node = compute_layout(&layout_box, local_viewport);
         let input_event = InputEvent::from_mouse_event(&mouse_event);
         let now = Instant::now();
         let active = ctx.interaction.active_widget();

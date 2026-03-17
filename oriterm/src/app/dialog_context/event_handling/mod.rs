@@ -259,13 +259,15 @@ impl App {
             // Content area: hit test the layout tree.
             let w = ctx.surface_config.width as f32 / scale;
             let h = ctx.surface_config.height as f32 / scale;
-            let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
+            let content_bounds: Rect = Rect::new(0.0, chrome_h, w, h - chrome_h);
             let layout_ctx = LayoutCtx {
                 measurer: &measurer,
                 theme: &ui_theme,
             };
             let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-            let layout_node = compute_layout(&layout_box, content_bounds);
+            let local_viewport: Rect =
+                Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+            let layout_node = compute_layout(&layout_box, local_viewport);
             let local = Point::new(
                 logical_pos.x - content_bounds.x(),
                 logical_pos.y - content_bounds.y(),
