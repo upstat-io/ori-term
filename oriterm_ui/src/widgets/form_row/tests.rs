@@ -159,14 +159,12 @@ fn draw_produces_text_commands() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 400.0, 50.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,

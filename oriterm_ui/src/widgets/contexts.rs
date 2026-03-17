@@ -3,7 +3,6 @@
 //! These types are passed to [`Widget`] trait methods to provide access to
 //! shared framework state during layout, rendering, and event dispatch.
 
-use std::cell::Cell;
 use std::time::Instant;
 
 use crate::animation::FrameRequestFlags;
@@ -37,8 +36,6 @@ pub struct DrawCtx<'a> {
     pub focused_widget: Option<WidgetId>,
     /// Current frame timestamp for animation interpolation.
     pub now: Instant,
-    /// Set to `true` by widgets with running animations to request redraw.
-    pub animations_running: &'a Cell<bool>,
     /// Active UI theme.
     pub theme: &'a UiTheme,
     /// Pre-resolved icon atlas entries for this frame.
@@ -112,7 +109,6 @@ impl DrawCtx<'_> {
             bounds: child_bounds,
             focused_widget: self.focused_widget,
             now: self.now,
-            animations_running: self.animations_running,
             theme: self.theme,
             icons: self.icons,
             scene_cache: self.scene_cache.as_deref_mut(),

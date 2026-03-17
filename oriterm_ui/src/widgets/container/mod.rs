@@ -395,7 +395,6 @@ impl Widget for ContainerWidget {
                     bounds,
                     focused_widget: ctx.focused_widget,
                     now: ctx.now,
-                    animations_running: ctx.animations_running,
                     theme: ctx.theme,
                     icons: ctx.icons,
                     scene_cache: ctx.scene_cache.as_deref_mut(),
@@ -410,6 +409,12 @@ impl Widget for ContainerWidget {
 
         if self.clip_children {
             ctx.draw_list.pop_clip();
+        }
+    }
+
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        for child in &mut self.children {
+            visitor(child.as_mut());
         }
     }
 

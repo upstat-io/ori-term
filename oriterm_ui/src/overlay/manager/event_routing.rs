@@ -5,10 +5,8 @@
 //! fade-out animations.
 //!
 //! Dispatch uses a two-phase propagation pipeline: hit-test the overlay's
-//! layout tree, plan Capture → Target → Bubble delivery, then dispatch to
-//! controllers at each matching phase. Legacy `handle_mouse()` / `handle_key()`
-//! fallback runs when no controllers exist (the common case during §08.3-08.5
-//! migration).
+//! layout tree, plan Capture → Target → Bubble delivery, then walk the widget
+//! tree to dispatch to controllers at each matching widget.
 
 use std::time::Instant;
 
@@ -18,6 +16,7 @@ use crate::controllers::{
     ControllerCtxArgs, ControllerRequests, DispatchOutput, dispatch_to_controllers,
 };
 use crate::geometry::{Point, Rect};
+use crate::input::dispatch::DeliveryAction;
 use crate::input::{
     EventResponse, HitEntry, HoverEvent, InputEvent, Key, KeyEvent, MouseEvent, MouseEventKind,
     WidgetHitTestResult, layout_hit_test_path, plan_propagation,
@@ -72,15 +71,14 @@ pub(in crate::overlay) fn bridge_dispatch_to_response(
     }
 }
 
-/// Runs the controller-first propagation pipeline for an overlay widget.
+/// Runs the propagation pipeline for an overlay widget tree.
 ///
-/// Hit-tests the overlay's layout tree (if available) and plans
-/// Capture → Target → Bubble propagation. Dispatches to the root
-/// widget's controllers at each matching phase.
+/// Hit-tests the overlay's layout tree, plans Capture → Target → Bubble
+/// delivery, then walks the widget tree to dispatch to controllers at
+/// each matching widget.
 ///
-/// Returns `Some(response)` if controllers handled the event.
-/// Returns `None` if no controllers exist or none handled (caller
-/// falls back to legacy `handle_mouse()`/`handle_key()`).
+/// Returns `Some(response)` if any controller handled the event.
+/// Returns `None` if no widget in the hit path has controllers or none handled.
 #[expect(
     clippy::too_many_arguments,
     reason = "pipeline dispatch: widget, event, rect, layout, captured, now"
@@ -95,17 +93,11 @@ fn deliver_via_pipeline(
 ) -> Option<WidgetResponse> {
     let root_id = widget.id();
     let root_sense = widget.sense();
-    let controllers = widget.controllers_mut();
-    if controllers.is_empty() {
-        return None;
-    }
 
     // Build the hit path for plan_propagation.
     let hit_result = if event.is_keyboard() {
-        // Keyboard: empty hit path, focus_path handles routing.
         WidgetHitTestResult { path: Vec::new() }
     } else if captured {
-        // Captured mouse: single-entry path for the root widget.
         WidgetHitTestResult {
             path: vec![HitEntry {
                 widget_id: root_id,
@@ -114,15 +106,24 @@ fn deliver_via_pipeline(
             }],
         }
     } else if let Some(node) = layout_node {
-        // Normal mouse: hit-test the overlay's layout tree with local-space point.
         if let Some(pos) = event.pos() {
             let local = Point::new(pos.x - overlay_rect.x(), pos.y - overlay_rect.y());
-            layout_hit_test_path(node, local)
+            let mut result = layout_hit_test_path(node, local);
+            // Hit test returns local-space bounds. Offset to overlay-space
+            // so controller bounds match the screen-space event coordinates.
+            for entry in &mut result.path {
+                entry.bounds = Rect::new(
+                    entry.bounds.x() + overlay_rect.x(),
+                    entry.bounds.y() + overlay_rect.y(),
+                    entry.bounds.width(),
+                    entry.bounds.height(),
+                );
+            }
+            result
         } else {
             WidgetHitTestResult { path: Vec::new() }
         }
     } else {
-        // No layout tree yet: single-entry hit path for root widget.
         WidgetHitTestResult {
             path: vec![HitEntry {
                 widget_id: root_id,
@@ -139,48 +140,106 @@ fn deliver_via_pipeline(
         Vec::new()
     };
     let active_widget = if captured { Some(root_id) } else { None };
-    let mut actions = Vec::new();
-    plan_propagation(event, &hit_result, active_widget, &focus_path, &mut actions);
+    let mut delivery_actions = Vec::new();
+    plan_propagation(
+        event,
+        &hit_result,
+        active_widget,
+        &focus_path,
+        &mut delivery_actions,
+    );
 
-    // Delivery loop: dispatch to controllers at each matching phase.
-    let interaction = InteractionState::default();
-    let mut merged_requests = ControllerRequests::NONE;
-    let mut merged_actions: Vec<crate::action::WidgetAction> = Vec::new();
-    let mut handled = false;
-
-    for action in &actions {
-        // During the transition, only the root widget has controllers.
-        // Skip actions targeting other widgets.
-        if action.widget_id != root_id {
-            continue;
-        }
-
-        let args = ControllerCtxArgs {
-            widget_id: root_id,
-            bounds: overlay_rect,
-            interaction: &interaction,
-            now,
-        };
-
-        let output = dispatch_to_controllers(controllers, event, action.phase, &args);
-        merged_requests = merged_requests.union(output.requests);
-        merged_actions.extend(output.actions);
-        if output.handled {
-            handled = true;
-            break;
-        }
+    if delivery_actions.is_empty() {
+        return None;
     }
 
-    if handled || !merged_actions.is_empty() {
+    // Walk the widget tree and dispatch to controllers of matching widgets.
+    let mut result = TreeDispatchResult::new();
+    dispatch_actions_in_tree(widget, event, &delivery_actions, now, &mut result);
+
+    if result.handled || !result.actions.is_empty() {
         let output = DispatchOutput {
-            requests: merged_requests,
-            actions: merged_actions,
-            handled,
+            requests: result.requests,
+            actions: result.actions,
+            handled: result.handled,
         };
-        Some(bridge_dispatch_to_response(output, root_id))
+        Some(bridge_dispatch_to_response(
+            output,
+            result.source.unwrap_or(root_id),
+        ))
     } else {
         None
     }
+}
+
+/// Accumulated result of dispatching delivery actions through a widget tree.
+struct TreeDispatchResult {
+    handled: bool,
+    actions: Vec<crate::action::WidgetAction>,
+    requests: ControllerRequests,
+    source: Option<WidgetId>,
+}
+
+impl TreeDispatchResult {
+    fn new() -> Self {
+        Self {
+            handled: false,
+            actions: Vec::new(),
+            requests: ControllerRequests::NONE,
+            source: None,
+        }
+    }
+
+    fn merge(&mut self, output: DispatchOutput, widget_id: WidgetId) {
+        self.actions.extend(output.actions);
+        self.requests = self.requests.union(output.requests);
+        if output.handled && !self.handled {
+            self.handled = true;
+            self.source = Some(widget_id);
+        }
+    }
+}
+
+/// Walks the widget tree, dispatching delivery actions to controllers of
+/// widgets whose ID matches a delivery action target.
+fn dispatch_actions_in_tree(
+    widget: &mut dyn Widget,
+    event: &InputEvent,
+    actions: &[DeliveryAction],
+    now: Instant,
+    result: &mut TreeDispatchResult,
+) {
+    if result.handled {
+        return;
+    }
+
+    let id = widget.id();
+
+    // Dispatch any delivery actions targeting this widget.
+    if actions.iter().any(|a| a.widget_id == id) {
+        let controllers = widget.controllers_mut();
+        if !controllers.is_empty() {
+            let interaction = InteractionState::default();
+            for action in actions.iter().filter(|a| a.widget_id == id) {
+                let args = ControllerCtxArgs {
+                    widget_id: id,
+                    bounds: action.bounds,
+                    interaction: &interaction,
+                    now,
+                };
+                let output = dispatch_to_controllers(controllers, event, action.phase, &args);
+                result.merge(output, id);
+                if result.handled {
+                    return;
+                }
+            }
+        }
+    }
+
+    // Recurse into children.
+    widget.for_each_child_mut(&mut |child| {
+        dispatch_actions_in_tree(child, event, actions, now, result);
+    });
 }
 
 impl OverlayManager {
@@ -227,21 +286,7 @@ impl OverlayManager {
                     true,
                     now,
                 )
-                .unwrap_or_else(|| {
-                    let ctx = EventCtx {
-                        measurer,
-                        bounds: overlay.computed_rect,
-                        is_focused: focused_widget == Some(root_id),
-                        focused_widget,
-                        theme,
-                        interaction: None,
-                        widget_id: None,
-                        frame_requests: None,
-                    };
-                    let mut r = overlay.widget.handle_mouse(event, &ctx);
-                    r.inject_source(root_id);
-                    r
-                });
+                .unwrap_or_else(|| WidgetResponse::ignored().with_source(root_id));
                 response.inject_source(root_id);
                 match response.capture {
                     CaptureRequest::Release => self.captured_overlay = None,
@@ -347,7 +392,9 @@ impl OverlayManager {
 
     /// Delivers a mouse event to a specific overlay by index.
     ///
-    /// Runs the propagation pipeline first; falls back to legacy `handle_mouse()`.
+    /// Delivers a mouse event to a specific overlay by index.
+    ///
+    /// Runs the propagation pipeline through the overlay's widget tree.
     #[expect(
         clippy::too_many_arguments,
         reason = "internal helper, params mirror caller"
@@ -356,9 +403,9 @@ impl OverlayManager {
         &mut self,
         idx: usize,
         event: &MouseEvent,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        focused_widget: Option<WidgetId>,
-        theme: &UiTheme,
+        _measurer: &dyn crate::widgets::TextMeasurer,
+        _focused_widget: Option<WidgetId>,
+        _theme: &UiTheme,
         now: Instant,
     ) -> OverlayEventResult {
         let overlay = &mut self.overlays[idx];
@@ -373,21 +420,7 @@ impl OverlayManager {
             false,
             now,
         )
-        .unwrap_or_else(|| {
-            let ctx = EventCtx {
-                measurer,
-                bounds: overlay.computed_rect,
-                is_focused: focused_widget == Some(root_id),
-                focused_widget,
-                theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            let mut r = overlay.widget.handle_mouse(event, &ctx);
-            r.inject_source(root_id);
-            r
-        });
+        .unwrap_or_else(|| WidgetResponse::ignored().with_source(root_id));
         response.inject_source(root_id);
         if response.response.needs_layout() {
             self.layout_dirty = true;
@@ -405,7 +438,10 @@ impl OverlayManager {
     /// indicates which widget currently has keyboard focus (from the app
     /// layer's `FocusManager`).
     ///
-    /// Runs the propagation pipeline first; falls back to legacy `handle_key()`.
+    /// Routes a key event through the overlay stack.
+    ///
+    /// Escape dismisses the topmost overlay with a fade-out animation.
+    /// Modal overlays never pass through.
     #[expect(
         clippy::too_many_arguments,
         reason = "event routing: event, measurer, theme, focus, tree, animator, now"
@@ -413,9 +449,9 @@ impl OverlayManager {
     pub fn process_key_event(
         &mut self,
         event: KeyEvent,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        theme: &UiTheme,
-        focused_widget: Option<WidgetId>,
+        _measurer: &dyn crate::widgets::TextMeasurer,
+        _theme: &UiTheme,
+        _focused_widget: Option<WidgetId>,
         tree: &mut LayerTree,
         animator: &mut LayerAnimator,
         now: Instant,
@@ -445,21 +481,7 @@ impl OverlayManager {
             false,
             now,
         )
-        .unwrap_or_else(|| {
-            let ctx = EventCtx {
-                measurer,
-                bounds: topmost.computed_rect,
-                is_focused: focused_widget == Some(root_id),
-                focused_widget,
-                theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            let mut r = topmost.widget.handle_key(event, &ctx);
-            r.inject_source(root_id);
-            r
-        });
+        .unwrap_or_else(|| WidgetResponse::ignored().with_source(root_id));
         response.inject_source(root_id);
         if response.response.needs_layout() {
             self.layout_dirty = true;

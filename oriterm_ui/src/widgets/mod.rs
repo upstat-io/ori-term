@@ -278,6 +278,14 @@ pub trait Widget {
         None
     }
 
+    /// Visits each mutable child widget for tree traversal.
+    ///
+    /// The framework calls this to walk the widget tree during the pre-paint
+    /// pipeline (lifecycle delivery, animation ticks, visual state updates).
+    /// Containers override to yield their children; leaf widgets use the
+    /// default (no children).
+    fn for_each_child_mut(&mut self, _visitor: &mut dyn FnMut(&mut dyn Widget)) {}
+
     // --- Legacy methods (deprecated, removed in Section 08.6) ---
 
     /// Draws the widget into the draw list.

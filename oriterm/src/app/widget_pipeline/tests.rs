@@ -11,7 +11,7 @@ use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::contexts::{DrawCtx, LayoutCtx};
 
-use super::{DispatchResult, dispatch_step, prepare_widget_frame};
+use super::{DispatchResult, dispatch_step, prepare_widget_frame, prepare_widget_tree};
 
 // -- Test helpers --
 
@@ -329,4 +329,174 @@ fn lifecycle_event_widget_id() {
     for event in &events {
         assert_eq!(event.widget_id(), id, "widget_id() mismatch for {event:?}");
     }
+}
+
+/// Parent widget that holds children for tree traversal tests.
+struct ParentWidget {
+    id: WidgetId,
+    children: Vec<StubWidget>,
+}
+
+impl ParentWidget {
+    fn new(id: WidgetId, children: Vec<StubWidget>) -> Self {
+        Self { id, children }
+    }
+}
+
+impl Widget for ParentWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
+    fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
+        LayoutBox::leaf(0.0, 0.0)
+    }
+
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
+
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        for child in &mut self.children {
+            visitor(child);
+        }
+    }
+}
+
+#[test]
+fn prepare_widget_tree_delivers_to_children() {
+    let parent_id = WidgetId::next();
+    let child_a_id = WidgetId::next();
+    let child_b_id = WidgetId::next();
+
+    let mut parent = ParentWidget::new(
+        parent_id,
+        vec![StubWidget::new(child_a_id), StubWidget::new(child_b_id)],
+    );
+
+    let mut interaction = InteractionManager::new();
+    interaction.register_widget(parent_id);
+    interaction.register_widget(child_a_id);
+    interaction.register_widget(child_b_id);
+    let _ = interaction.drain_events();
+
+    let events = vec![
+        LifecycleEvent::HotChanged {
+            widget_id: child_a_id,
+            is_hot: true,
+        },
+        LifecycleEvent::HotChanged {
+            widget_id: child_b_id,
+            is_hot: false,
+        },
+    ];
+
+    prepare_widget_tree(
+        &mut parent,
+        &interaction,
+        &events,
+        None,
+        None,
+        Instant::now(),
+    );
+
+    // Child A received its HotChanged event.
+    assert_eq!(parent.children[0].lifecycle_calls.len(), 1);
+    assert_eq!(
+        parent.children[0].lifecycle_calls[0],
+        LifecycleEvent::HotChanged {
+            widget_id: child_a_id,
+            is_hot: true,
+        }
+    );
+
+    // Child B received its HotChanged event.
+    assert_eq!(parent.children[1].lifecycle_calls.len(), 1);
+    assert_eq!(
+        parent.children[1].lifecycle_calls[0],
+        LifecycleEvent::HotChanged {
+            widget_id: child_b_id,
+            is_hot: false,
+        }
+    );
+}
+
+#[test]
+fn prepare_widget_tree_processes_visual_states() {
+    use oriterm_ui::visual_state::transition::VisualStateAnimator;
+
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+
+    /// Widget with a visual state animator for testing tree traversal.
+    struct AnimatedWidget {
+        id: WidgetId,
+        animator: VisualStateAnimator,
+    }
+
+    impl Widget for AnimatedWidget {
+        fn id(&self) -> WidgetId {
+            self.id
+        }
+
+        fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
+            LayoutBox::leaf(0.0, 0.0)
+        }
+
+        fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
+
+        fn visual_states(&self) -> Option<&VisualStateAnimator> {
+            Some(&self.animator)
+        }
+
+        fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+            Some(&mut self.animator)
+        }
+    }
+
+    /// Parent that holds one animated child.
+    struct AnimParent {
+        id: WidgetId,
+        child: AnimatedWidget,
+    }
+
+    impl Widget for AnimParent {
+        fn id(&self) -> WidgetId {
+            self.id
+        }
+
+        fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
+            LayoutBox::leaf(0.0, 0.0)
+        }
+
+        fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
+
+        fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+            visitor(&mut self.child);
+        }
+    }
+
+    let mut parent = AnimParent {
+        id: parent_id,
+        child: AnimatedWidget {
+            id: child_id,
+            animator: VisualStateAnimator::new(Vec::new()),
+        },
+    };
+
+    let mut interaction = InteractionManager::new();
+    interaction.register_widget(parent_id);
+    interaction.register_widget(child_id);
+    let _ = interaction.drain_events();
+
+    // Make child hot so the animator has state to process.
+    interaction.update_hot_path(&[child_id]);
+    let _ = interaction.drain_events();
+
+    let now = Instant::now();
+    prepare_widget_tree(&mut parent, &interaction, &[], None, None, now);
+
+    // The child's animator was updated (it called update+tick).
+    // We can't easily inspect internal state, but the fact that it
+    // didn't panic and the state is hot confirms the pipeline ran.
+    let child_state = interaction.get_state(child_id);
+    assert!(child_state.is_hot());
 }

@@ -306,6 +306,11 @@ impl Widget for DialogWidget {
         ctx.draw_list.pop_layer();
     }
 
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        visitor(&mut self.ok_button);
+        visitor(&mut self.cancel_button);
+    }
+
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         self.handle_mouse_impl(event, ctx)
     }

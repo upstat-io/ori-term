@@ -2,7 +2,6 @@
 //!
 //! Extracted from `mod.rs` to keep the module under the 500-line limit.
 
-use std::cell::Cell;
 use std::time::Instant;
 
 use oriterm_ui::animation::FrameRequestFlags;
@@ -54,7 +53,6 @@ impl App {
         let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_width, tab_bar_h);
 
         draw_list.clear();
-        let animations_running = Cell::new(false);
         let measurer = CachedTextMeasurer::new(
             UiFontMeasurer::new(renderer.active_ui_collection(), scale),
             text_cache,
@@ -68,7 +66,6 @@ impl App {
             bounds,
             focused_widget: None,
             now: Instant::now(),
-            animations_running: &animations_running,
             theme,
             icons: Some(icons),
             scene_cache: None,
@@ -77,7 +74,7 @@ impl App {
             frame_requests: Some(frame_requests),
         };
         compose_scene(tab_bar, &mut ctx, invalidation, scene_cache);
-        let animating = animations_running.get();
+        let animating = frame_requests.anim_frame_requested();
 
         // Tab bar contains text — use text-aware conversion to rasterize
         // tab title glyphs into the chrome tier.
@@ -100,7 +97,6 @@ impl App {
                 bounds,
                 focused_widget: None,
                 now: Instant::now(),
-                animations_running: &animations_running,
                 theme,
                 icons: Some(icons),
                 scene_cache: None,
@@ -147,7 +143,6 @@ impl App {
         }
 
         let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_size.0, logical_size.1);
-        let animations_running = Cell::new(false);
         let mut animating = false;
 
         // Layout + draw phase: measurer borrows renderer immutably, then
@@ -178,7 +173,6 @@ impl App {
                 bounds,
                 focused_widget: None,
                 now: Instant::now(),
-                animations_running: &animations_running,
                 theme,
                 icons: Some(icons),
                 scene_cache: None,
@@ -199,6 +193,6 @@ impl App {
             renderer.append_overlay_draw_list_with_text(draw_list, scale, opacity, gpu);
         }
 
-        animating || animations_running.get()
+        animating || frame_requests.anim_frame_requested()
     }
 }

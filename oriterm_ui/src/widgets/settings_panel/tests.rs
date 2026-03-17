@@ -181,14 +181,12 @@ fn draws_without_panic() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = super::super::DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -215,14 +213,12 @@ fn checkbox_click_emits_toggled() {
 
     // Draw first to populate layout caches throughout the widget tree.
     let mut draw_list = DrawList::new();
-    let anim_flag = std::cell::Cell::new(false);
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,

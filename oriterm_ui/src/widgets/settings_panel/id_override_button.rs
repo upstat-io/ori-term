@@ -82,6 +82,10 @@ impl Widget for IdOverrideButton {
         }
     }
 
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        visitor(&mut self.inner);
+    }
+
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
         self.inner.accept_action(action)
     }

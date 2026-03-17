@@ -100,8 +100,6 @@ pub struct DropdownWidget {
     controllers: Vec<Box<dyn EventController>>,
     /// Animator for bg state transitions (Normal/Hovered/Pressed/Disabled).
     animator: VisualStateAnimator,
-    /// Legacy pressed tracking for `handle_mouse()` compat (removed in S08.6).
-    pressed: bool,
 }
 
 impl DropdownWidget {
@@ -127,7 +125,6 @@ impl DropdownWidget {
                 style.disabled_bg,
             )]),
             style,
-            pressed: false,
         }
     }
 
@@ -159,9 +156,6 @@ impl DropdownWidget {
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
-        if disabled {
-            self.pressed = false;
-        }
     }
 
     /// Sets the selected index via builder.
@@ -235,7 +229,6 @@ impl std::fmt::Debug for DropdownWidget {
             .field("items", &self.items)
             .field("selected", &self.selected)
             .field("disabled", &self.disabled)
-            .field("pressed", &self.pressed)
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
@@ -361,7 +354,6 @@ impl Widget for DropdownWidget {
 
         // Signal continued redraws while the animator is transitioning.
         if self.animator.is_animating(ctx.now) {
-            ctx.animations_running.set(true);
             ctx.request_anim_frame();
         }
     }
@@ -373,14 +365,9 @@ impl Widget for DropdownWidget {
             return WidgetResponse::ignored();
         }
         match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.pressed = true;
-                WidgetResponse::focus()
-            }
+            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::focus(),
             MouseEventKind::Up(MouseButton::Left) => {
-                let was_pressed = self.pressed;
-                self.pressed = false;
-                if was_pressed && ctx.bounds.contains(event.pos) {
+                if ctx.bounds.contains(event.pos) {
                     let action = WidgetAction::OpenDropdown {
                         id: self.id,
                         options: self.items.clone(),
@@ -401,11 +388,7 @@ impl Widget for DropdownWidget {
             return WidgetResponse::ignored();
         }
         match event {
-            HoverEvent::Enter => WidgetResponse::paint(),
-            HoverEvent::Leave => {
-                self.pressed = false;
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
         }
     }
 

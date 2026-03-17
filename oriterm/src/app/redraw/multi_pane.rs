@@ -412,7 +412,7 @@ impl App {
                 let now = std::time::Instant::now();
                 let lifecycle_events = ctx.interaction.drain_events();
                 ctx.frame_requests.reset();
-                super::super::widget_pipeline::prepare_widget_frame(
+                super::super::widget_pipeline::prepare_widget_tree(
                     &mut ctx.tab_bar,
                     &ctx.interaction,
                     &lifecycle_events,
@@ -420,6 +420,19 @@ impl App {
                     Some(&ctx.frame_requests),
                     now,
                 );
+                // Prepare overlay widget trees.
+                let interaction = &ctx.interaction;
+                let flags = &ctx.frame_requests;
+                ctx.overlays.for_each_widget_mut(|widget| {
+                    super::super::widget_pipeline::prepare_widget_tree(
+                        widget,
+                        interaction,
+                        &lifecycle_events,
+                        None,
+                        Some(flags),
+                        now,
+                    );
+                });
             }
 
             // Chrome, tab bar, overlays, search bar (shared with single-pane path).
