@@ -142,14 +142,17 @@ fn plan_captured_mouse(
     match event {
         InputEvent::MouseMove { .. } | InputEvent::MouseUp { .. } => {
             // Direct delivery to active widget — capture bypass.
-            // Use Rect::default() since the widget may be outside the hit path.
-            // The active widget's actual bounds are not available from the hit
-            // test (pointer may be outside its bounds). The delivery loop can
-            // look up bounds from the layout tree if needed.
+            // Use bounds from the hit path if available (the caller builds
+            // a single-entry path with the captured widget's rect). Falls
+            // back to default if the path is empty.
+            let bounds = hit_path
+                .path
+                .first()
+                .map_or_else(Rect::default, |e| e.bounds);
             out.push(DeliveryAction {
                 widget_id: active_id,
                 phase: EventPhase::Target,
-                bounds: Rect::default(),
+                bounds,
             });
         }
         InputEvent::Scroll { .. } => {
