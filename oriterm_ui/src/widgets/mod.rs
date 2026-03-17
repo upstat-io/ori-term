@@ -286,6 +286,25 @@ pub trait Widget {
     /// default (no children).
     fn for_each_child_mut(&mut self, _visitor: &mut dyn FnMut(&mut dyn Widget)) {}
 
+    /// Transforms a controller-emitted action into a widget-specific action.
+    ///
+    /// Called by the dispatch pipeline after a controller on this widget emits
+    /// an action. The widget can replace generic actions (e.g., `Clicked`) with
+    /// semantic actions (e.g., `OpenDropdown`, `Toggled`) using its own state,
+    /// and perform side effects (e.g., toggling internal state, starting
+    /// animations). The `bounds` parameter is the widget's layout bounds from
+    /// hit testing (used by dropdowns for popup anchor positioning).
+    ///
+    /// Return `Some(action)` to propagate (original or transformed), or `None`
+    /// to suppress the action.
+    fn on_action(
+        &mut self,
+        action: WidgetAction,
+        _bounds: crate::geometry::Rect,
+    ) -> Option<WidgetAction> {
+        Some(action)
+    }
+
     // --- Legacy methods (deprecated, removed in Section 08.6) ---
 
     /// Draws the widget into the draw list.

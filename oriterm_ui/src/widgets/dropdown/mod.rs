@@ -358,6 +358,21 @@ impl Widget for DropdownWidget {
         }
     }
 
+    fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::Clicked(_) => {
+                // Transform generic click into dropdown open with widget state.
+                Some(WidgetAction::OpenDropdown {
+                    id: self.id,
+                    options: self.items.clone(),
+                    selected: self.selected,
+                    anchor: bounds,
+                })
+            }
+            other => Some(other),
+        }
+    }
+
     // --- Legacy methods (compat shim until containers migrate in S08.4) ---
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {

@@ -53,12 +53,19 @@ impl WindowChromeWidget {
                     interaction: &interaction,
                     now,
                 };
-                let output = dispatch_to_controllers(
+                let mut output = dispatch_to_controllers(
                     btn.controllers_mut(),
                     event,
                     EventPhase::Target,
                     &args,
                 );
+                // Let the button transform controller actions via on_action.
+                let bounds = ctrl_layout.rect;
+                output.actions = output
+                    .actions
+                    .into_iter()
+                    .filter_map(|a| btn.on_action(a, bounds))
+                    .collect();
                 result.merge(output, btn.id());
             }
         }
