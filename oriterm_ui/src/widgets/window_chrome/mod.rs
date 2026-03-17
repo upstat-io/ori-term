@@ -8,6 +8,7 @@
 
 pub mod constants;
 pub mod controls;
+pub mod dispatch;
 pub mod layout;
 
 use crate::animation::Lerp;

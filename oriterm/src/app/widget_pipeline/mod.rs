@@ -215,9 +215,24 @@ pub(crate) fn apply_requests(
     interaction: &mut InteractionManager,
     focus_manager: &mut oriterm_ui::focus::FocusManager,
 ) {
-    let requests = result.requests;
-    let source = result.source;
+    apply_dispatch_requests(result.requests, result.source, interaction, focus_manager);
+}
 
+/// Applies controller request side effects from any dispatch result.
+///
+/// Translates request flags into `InteractionManager` mutations:
+/// - `SET_ACTIVE` → `interaction.set_active(source)`.
+/// - `CLEAR_ACTIVE` → `interaction.clear_active()`.
+/// - `REQUEST_FOCUS` → `interaction.request_focus(source, focus_manager)`.
+///
+/// `PAINT` and `ANIM_FRAME` are handled by the caller (mark dirty,
+/// schedule animation frame).
+pub(crate) fn apply_dispatch_requests(
+    requests: ControllerRequests,
+    source: Option<WidgetId>,
+    interaction: &mut InteractionManager,
+    focus_manager: &mut oriterm_ui::focus::FocusManager,
+) {
     if requests.contains(ControllerRequests::SET_ACTIVE) {
         if let Some(id) = source {
             interaction.set_active(id);

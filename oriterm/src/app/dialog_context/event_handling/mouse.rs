@@ -2,16 +2,20 @@
 
 use std::time::Instant;
 
+use oriterm_ui::controllers::ControllerRequests;
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::input::{MouseButton, MouseEvent, MouseEventKind, ScrollDelta};
+use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
+use oriterm_ui::input::{InputEvent, MouseButton, MouseEvent, MouseEventKind, ScrollDelta};
+use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
-use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
+use oriterm_ui::widgets::{LayoutCtx, WidgetAction};
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::app::widget_pipeline::apply_dispatch_requests;
 use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
-use super::{DialogClickResult, wants_repaint};
+use super::DialogClickResult;
 
 impl App {
     /// Handle mouse button events within a dialog window.
@@ -117,36 +121,40 @@ impl App {
             pos: logical_pos,
             modifiers: oriterm_ui::input::Modifiers::NONE,
         };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return DialogClickResult::None;
-        };
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
+        let now = Instant::now();
 
         if logical_pos.y < chrome_h {
-            let event_ctx = EventCtx {
-                measurer: &measurer,
-                bounds: Rect::default(),
-                is_focused: false,
-                focused_widget: None,
-                theme: &ui_theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            let resp = ctx.chrome.handle_mouse(&mouse_event, &event_ctx);
-            if wants_repaint(resp.response) {
-                resp.mark_tracker(&mut ctx.invalidation);
+            // Chrome area: dispatch to control button controllers.
+            let input_event = InputEvent::from_mouse_event(&mouse_event);
+            let result = ctx.chrome.dispatch_input(&input_event, now);
+
+            // Apply interaction state changes (active/focus).
+            apply_dispatch_requests(
+                result.requests,
+                result.source,
+                &mut ctx.interaction,
+                &mut ctx.focus,
+            );
+
+            if result.requests.contains(ControllerRequests::PAINT) {
                 ctx.request_urgent_redraw();
             }
-            if resp.action.as_ref() == Some(&WidgetAction::WindowClose) {
-                DialogClickResult::Close
-            } else if button == winit::event::MouseButton::Left
+
+            // Map controller actions to dialog results.
+            for action in &result.actions {
+                if let WidgetAction::Clicked(id) = action {
+                    if let Some(window_action) = ctx.chrome.action_for_widget(*id) {
+                        if window_action == WidgetAction::WindowClose {
+                            return DialogClickResult::Close;
+                        }
+                        return DialogClickResult::Action(window_action);
+                    }
+                }
+            }
+
+            // No button clicked — check if we should initiate window drag.
+            if button == winit::event::MouseButton::Left
                 && state == winit::event::ElementState::Pressed
-                && resp.action.is_none()
                 && !ctx
                     .chrome
                     .interactive_rects()
@@ -158,28 +166,50 @@ impl App {
                 DialogClickResult::None
             }
         } else {
+            // Content area: dispatch through the controller pipeline.
+            let Some(renderer) = ctx.renderer.as_ref() else {
+                return DialogClickResult::None;
+            };
+            let measurer = CachedTextMeasurer::new(
+                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                &ctx.text_cache,
+                scale,
+            );
             let w = ctx.surface_config.width as f32 / scale;
             let h = ctx.surface_config.height as f32 / scale;
             let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-            let event_ctx = EventCtx {
+            let layout_ctx = LayoutCtx {
                 measurer: &measurer,
-                bounds: content_bounds,
-                is_focused: false,
-                focused_widget: None,
                 theme: &ui_theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
             };
-            let resp = ctx
-                .content
-                .content_widget_mut()
-                .handle_mouse(&mouse_event, &event_ctx);
-            if wants_repaint(resp.response) {
-                resp.mark_tracker(&mut ctx.invalidation);
+            let layout_box = ctx.content.content_widget().layout(&layout_ctx);
+            let layout_node = compute_layout(&layout_box, content_bounds);
+            let input_event = InputEvent::from_mouse_event(&mouse_event);
+            let active = ctx.interaction.active_widget();
+            let result = deliver_event_to_tree(
+                ctx.content.content_widget_mut(),
+                &input_event,
+                content_bounds,
+                Some(&layout_node),
+                active,
+                &[],
+                now,
+            );
+
+            // Apply interaction state changes.
+            apply_dispatch_requests(
+                result.requests,
+                result.source,
+                &mut ctx.interaction,
+                &mut ctx.focus,
+            );
+
+            if result.requests.contains(ControllerRequests::PAINT) {
                 ctx.request_urgent_redraw();
             }
-            match resp.action {
+
+            // Extract first action, if any.
+            match result.actions.into_iter().next() {
                 Some(action) => DialogClickResult::Action(action),
                 None => DialogClickResult::None,
             }
@@ -239,22 +269,31 @@ impl App {
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let event_ctx = EventCtx {
+        let layout_ctx = LayoutCtx {
             measurer: &measurer,
-            bounds: content_bounds,
-            is_focused: false,
-            focused_widget: None,
             theme: &ui_theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
         };
-        let resp = ctx
-            .content
-            .content_widget_mut()
-            .handle_mouse(&mouse_event, &event_ctx);
-        if wants_repaint(resp.response) {
-            resp.mark_tracker(&mut ctx.invalidation);
+        let layout_box = ctx.content.content_widget().layout(&layout_ctx);
+        let layout_node = compute_layout(&layout_box, content_bounds);
+        let input_event = InputEvent::from_mouse_event(&mouse_event);
+        let now = Instant::now();
+        let active = ctx.interaction.active_widget();
+        let result = deliver_event_to_tree(
+            ctx.content.content_widget_mut(),
+            &input_event,
+            content_bounds,
+            Some(&layout_node),
+            active,
+            &[],
+            now,
+        );
+        apply_dispatch_requests(
+            result.requests,
+            result.source,
+            &mut ctx.interaction,
+            &mut ctx.focus,
+        );
+        if result.requests.contains(ControllerRequests::PAINT) {
             ctx.request_urgent_redraw();
         }
     }
