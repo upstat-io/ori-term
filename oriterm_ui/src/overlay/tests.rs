@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 use crate::compositor::layer_animator::LayerAnimator;
@@ -1152,14 +1151,12 @@ fn draw_non_modal_no_dimming() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -1202,14 +1199,12 @@ fn draw_modal_emits_dimming_rect() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
         focused_widget: None,
         now: future,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -1263,7 +1258,6 @@ fn draw_overlays_in_painter_order() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
 
     // Draw all overlays into the same draw list to verify order.
     for i in 0..mgr.draw_count() {
@@ -1273,7 +1267,6 @@ fn draw_overlays_in_painter_order() {
             bounds: Rect::default(),
             focused_widget: None,
             now,
-            animations_running: &anim_flag,
             theme: &TEST_THEME,
             icons: None,
             scene_cache: None,
@@ -2010,7 +2003,6 @@ fn draw_stacked_modals_emits_two_dim_rects() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
 
     for i in 0..mgr.draw_count() {
         let mut ctx = DrawCtx {
@@ -2019,7 +2011,6 @@ fn draw_stacked_modals_emits_two_dim_rects() {
             bounds: Rect::default(),
             focused_widget: None,
             now: future,
-            animations_running: &anim_flag,
             theme: &TEST_THEME,
             icons: None,
             scene_cache: None,
@@ -2170,14 +2161,12 @@ fn popup_starts_at_full_opacity() {
     // Popups appear instantly at full opacity (no fade-in).
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -2213,14 +2202,12 @@ fn modal_fades_in_from_zero() {
     // At t=0 (before tick), opacity is still 0.0 (the initial value).
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -2257,14 +2244,12 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
     // Modal appears instantly — dim layer starts at opacity 1.0 (no fade-in).
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::default(),
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,

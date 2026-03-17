@@ -203,7 +203,6 @@ impl Widget for FormRow {
                 bounds: control_node.content_rect,
                 focused_widget: ctx.focused_widget,
                 now: ctx.now,
-                animations_running: ctx.animations_running,
                 theme: ctx.theme,
                 icons: ctx.icons,
                 scene_cache: ctx.scene_cache.as_deref_mut(),
@@ -213,6 +212,10 @@ impl Widget for FormRow {
             };
             self.control.paint(&mut child_ctx);
         }
+    }
+
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        visitor(self.control.as_mut());
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {

@@ -357,6 +357,7 @@ fn toggle_animation_interpolates_thumb_position() {
 
 #[test]
 fn paint_signals_animation_while_toggling() {
+    use crate::animation::FrameRequestFlags;
     use crate::draw::DrawList;
 
     let mut t = ToggleWidget::new();
@@ -366,7 +367,7 @@ fn paint_signals_animation_while_toggling() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
-    let anim_flag = std::cell::Cell::new(false);
+    let flags = FrameRequestFlags::new();
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
@@ -374,24 +375,24 @@ fn paint_signals_animation_while_toggling() {
         bounds,
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
         interaction: None,
         widget_id: None,
-        frame_requests: None,
+        frame_requests: Some(&flags),
     };
     t.paint(&mut draw_ctx);
 
     assert!(
-        anim_flag.get(),
-        "paint() should signal animations_running while toggle animates"
+        flags.anim_frame_requested(),
+        "paint() should request anim frame while toggle animates"
     );
 }
 
 #[test]
 fn paint_no_animation_signal_when_idle() {
+    use crate::animation::FrameRequestFlags;
     use crate::draw::DrawList;
 
     let t = ToggleWidget::new();
@@ -399,7 +400,7 @@ fn paint_no_animation_signal_when_idle() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
-    let anim_flag = std::cell::Cell::new(false);
+    let flags = FrameRequestFlags::new();
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
@@ -407,19 +408,18 @@ fn paint_no_animation_signal_when_idle() {
         bounds,
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
         interaction: None,
         widget_id: None,
-        frame_requests: None,
+        frame_requests: Some(&flags),
     };
     t.paint(&mut draw_ctx);
 
     assert!(
-        !anim_flag.get(),
-        "paint() should not signal animations_running when idle"
+        !flags.anim_frame_requested(),
+        "paint() should not request anim frame when idle"
     );
 }
 
@@ -433,7 +433,6 @@ fn paint_thumb_at_on_position() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, style.width, style.height);
-    let anim_flag = std::cell::Cell::new(false);
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
@@ -441,7 +440,6 @@ fn paint_thumb_at_on_position() {
         bounds,
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -482,7 +480,6 @@ fn paint_thumb_at_off_position() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, style.width, style.height);
-    let anim_flag = std::cell::Cell::new(false);
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
@@ -490,7 +487,6 @@ fn paint_thumb_at_off_position() {
         bounds,
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,

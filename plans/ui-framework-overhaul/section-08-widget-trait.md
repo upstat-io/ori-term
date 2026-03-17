@@ -716,10 +716,10 @@ so every child widget gets:
 Without this, child widgets' animators are never updated and hover/pressed visual
 states don't work (this is the current regression on window control buttons).
 
-- [ ] Extend `prepare_widget_frame()` (or add a new tree-walk function) to visit all
+- [x] Extend `prepare_widget_frame()` (or add a new tree-walk function) to visit all
   widgets in the tree, not just top-level. Containers must expose their children for
   traversal — add `fn children(&self) -> &[Box<dyn Widget>]` or similar to the trait.
-- [ ] Remove `DrawCtx::animations_running: &Cell<bool>` field (~88 usages across
+- [x] Remove `DrawCtx::animations_running: &Cell<bool>` field (~88 usages across
   ~31 files). The framework pipeline now owns animation scheduling via
   `FrameRequestFlags`. Widgets use `ctx.request_anim_frame()` exclusively.
   ~55 test `DrawCtx` constructions lose the field.
@@ -853,14 +853,14 @@ states don't work (this is the current regression on window control buttons).
   (`LifecycleCtx.interaction: &InteractionState`, `AnimCtx.frame_requests: Option<&FrameRequestFlags>`)
 
 ### Legacy Removal (08.6)
-- [ ] Framework pipeline walks full widget tree (not just top-level)
+- [x] Framework pipeline walks full widget tree (not just top-level)
 - [ ] All `pressed: bool` / `dragging: bool` compat fields removed from Wave 1 widgets
 - [ ] All legacy `handle_mouse()`, `handle_hover()`, `handle_key()` overrides removed
   from every widget (not just from the trait — from every impl)
 - [ ] Legacy `handle_mouse()`, `handle_hover()`, `handle_key()` removed from trait
 - [ ] `HoverEvent`, `ContainerInputState`, `WidgetResponse`, `CaptureRequest`,
   `EventResponse` removed
-- [ ] `DrawCtx::animations_running` field removed (framework owns scheduling)
+- [x] `DrawCtx::animations_running` field removed (framework owns scheduling)
 - [ ] `EventCtx.is_focused`, `EventCtx.focused_widget`, `DrawCtx.focused_widget`
   fields removed (InteractionManager is the single source of truth)
 - [ ] `container/event_dispatch.rs` file deleted (framework propagation replaces it)
@@ -880,7 +880,7 @@ states don't work (this is the current regression on window control buttons).
   anim_frame dispatch, visual_states update/tick, then paint -- all BEFORE `draw_frame()`
 - [ ] `DispatchResult` defined at app layer and delivery loop implemented
 - [x] `OverlayManager::process_mouse_event()` migrated to use `dispatch_to_controllers()`
-  with legacy fallback (controller-first at all 3 mouse + 1 key dispatch sites)
+  with full tree dispatch (legacy fallback removed from all 3 mouse + 1 key dispatch sites)
 - [ ] `sense()` default changed from `Sense::all()` to `Sense::none()` ONLY after all
   26 widgets provide explicit overrides (verified by grep)
 - [ ] `From<ControllerRequests> for DirtyKind` conversion added to replace

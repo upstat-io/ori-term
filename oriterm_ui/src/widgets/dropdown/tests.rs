@@ -282,15 +282,14 @@ fn single_item_arrows_stay() {
 }
 
 #[test]
-fn leave_clears_pressed() {
+fn leave_returns_paint() {
     let mut dd = DropdownWidget::new(items());
     let ctx = event_ctx();
 
     dd.handle_mouse(&mouse_down(), &ctx);
-    assert!(dd.pressed);
 
-    dd.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!dd.pressed);
+    let r = dd.handle_hover(HoverEvent::Leave, &ctx);
+    assert_eq!(r.response, crate::input::EventResponse::RequestPaint);
 }
 
 #[test]
@@ -308,25 +307,23 @@ fn right_click_ignored() {
 }
 
 #[test]
-fn release_without_press_no_clicked() {
+fn release_inside_bounds_emits_open() {
     let mut dd = DropdownWidget::new(items());
     let ctx = event_ctx();
 
-    // Mouse up without prior press.
+    // Mouse up inside bounds always emits OpenDropdown (capture pipeline
+    // guarantees Up only reaches the widget that received Down).
     let r = dd.handle_mouse(&mouse_up(), &ctx);
-    assert!(r.action.is_none());
+    assert!(r.action.is_some());
 }
 
 #[test]
-fn set_disabled_clears_pressed() {
+fn set_disabled_prevents_interaction() {
     let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    dd.handle_mouse(&mouse_down(), &ctx);
-    assert!(dd.pressed);
 
     dd.set_disabled(true);
-    assert!(!dd.pressed);
+    assert!(dd.is_disabled());
+    assert!(!dd.is_focusable());
 }
 
 #[test]
@@ -346,9 +343,8 @@ fn release_outside_bounds_no_clicked() {
     let mut dd = DropdownWidget::new(items());
     let ctx = event_ctx();
 
-    // Press inside bounds, release outside — no Clicked action.
+    // Press inside bounds, release outside — no action emitted.
     dd.handle_mouse(&mouse_down(), &ctx);
-    assert!(dd.pressed);
 
     let outside_up = MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
@@ -357,7 +353,6 @@ fn release_outside_bounds_no_clicked() {
     };
     let r = dd.handle_mouse(&outside_up, &ctx);
     assert!(r.action.is_none());
-    assert!(!dd.pressed);
 }
 
 #[test]

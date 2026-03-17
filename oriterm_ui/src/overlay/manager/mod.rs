@@ -195,6 +195,16 @@ impl OverlayManager {
         true
     }
 
+    /// Visits each active overlay's root widget mutably.
+    ///
+    /// Used by the framework pipeline to walk overlay widget trees for
+    /// lifecycle delivery, animation ticks, and visual state updates.
+    pub fn for_each_widget_mut(&mut self, mut visitor: impl FnMut(&mut dyn Widget)) {
+        for overlay in &mut self.overlays {
+            visitor(overlay.widget.as_mut());
+        }
+    }
+
     // Frame-loop API
 
     /// Computes layout for all overlays (active + dismissing).
@@ -275,7 +285,6 @@ impl OverlayManager {
             bounds: overlay.computed_rect,
             focused_widget: ctx.focused_widget,
             now: ctx.now,
-            animations_running: ctx.animations_running,
             theme: ctx.theme,
             icons: ctx.icons,
             scene_cache: None,

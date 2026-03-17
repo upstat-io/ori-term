@@ -134,7 +134,6 @@ impl Widget for TextInputWidget {
 
         // Signal continued redraws while the animator is transitioning.
         if self.animator.is_animating(ctx.now) {
-            ctx.animations_running.set(true);
             ctx.request_anim_frame();
         }
     }

@@ -133,6 +133,19 @@ Plans are the source of truth for multi-session work. Keep them in sync with rea
 
 ---
 
+## UI Framework — Zero Exceptions Rule
+
+Every single UI control — buttons, toggles, sliders, dropdowns, text inputs, window chrome buttons, tab bar tabs, close buttons, menu items, scroll thumbs, dialog headers — goes through the unified controller + animator + propagation pipeline. No special cases, no manual `hovered: bool` fields, no one-off `handle_mouse()` implementations. One system, one path, no exceptions.
+
+- **InteractionManager** is the single source of truth for all interaction state (hot, active, focused, disabled).
+- **VisualStateAnimator** drives all state-dependent visual transitions (hover colors, focus rings, pressed states).
+- **EventControllers** (HoverController, ClickController, DragController, etc.) handle all input — no widget implements raw event methods directly.
+- **The propagation pipeline** routes events through the widget tree — no container manually calls `child.handle_mouse()`.
+
+If you find a widget doing its own hover/press/focus tracking outside this system, that is a bug. Fix it.
+
+---
+
 ## Current State
 
 See [plans/roadmap/](plans/roadmap/) — the roadmap is the current state. 28 sections, 8 tiers. Use `/continue-roadmap` to resume work. Old prototype in `_old/` for reference.

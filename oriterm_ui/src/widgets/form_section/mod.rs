@@ -212,7 +212,6 @@ impl Widget for FormSection {
                         bounds: row_node.content_rect,
                         focused_widget: ctx.focused_widget,
                         now: ctx.now,
-                        animations_running: ctx.animations_running,
                         theme: ctx.theme,
                         icons: ctx.icons,
                         scene_cache: ctx.scene_cache.as_deref_mut(),
@@ -223,6 +222,12 @@ impl Widget for FormSection {
                     row.paint(&mut child_ctx);
                 }
             }
+        }
+    }
+
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        for row in &mut self.rows {
+            visitor(row);
         }
     }
 

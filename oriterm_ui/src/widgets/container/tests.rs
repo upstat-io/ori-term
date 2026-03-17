@@ -265,14 +265,12 @@ fn draw_skips_children_fully_outside_active_clip() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     draw_list.push_clip(Rect::new(0.0, 0.0, 100.0, 20.0));
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds: Rect::new(0.0, 0.0, 100.0, 40.0),
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -306,14 +304,12 @@ fn draw_delegates_to_children() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -339,14 +335,12 @@ fn focused_widget_propagates_through_draw() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: Some(btn_id),
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -990,14 +984,12 @@ fn needs_layout_bypasses_cache() {
 
     // First draw populates the cache.
     let mut draw_list = DrawList::new();
-    let anim = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim,
         theme,
         icons: None,
         scene_cache: None,
@@ -1016,7 +1008,6 @@ fn needs_layout_bypasses_cache() {
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim,
         theme,
         icons: None,
         scene_cache: None,
@@ -1050,7 +1041,6 @@ fn needs_layout_bypasses_cache() {
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim,
         theme,
         icons: None,
         scene_cache: None,
@@ -1081,7 +1071,6 @@ fn scene_cache_skips_clean_children() {
 
     let measurer = MockMeasurer::STANDARD;
     let bounds = Rect::new(0.0, 0.0, 100.0, 40.0);
-    let anim = std::cell::Cell::new(false);
     let mut cache = crate::draw::SceneCache::new();
 
     // First draw populates the cache.
@@ -1092,7 +1081,6 @@ fn scene_cache_skips_clean_children() {
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
@@ -1115,7 +1103,6 @@ fn scene_cache_skips_clean_children() {
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
@@ -1145,7 +1132,6 @@ fn scene_cache_redraws_invalidated_child() {
 
     let measurer = MockMeasurer::STANDARD;
     let bounds = Rect::new(0.0, 0.0, 100.0, 40.0);
-    let anim = std::cell::Cell::new(false);
     let mut cache = crate::draw::SceneCache::new();
 
     // First draw populates cache.
@@ -1156,7 +1142,6 @@ fn scene_cache_redraws_invalidated_child() {
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
@@ -1179,7 +1164,6 @@ fn scene_cache_redraws_invalidated_child() {
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),
@@ -1207,7 +1191,6 @@ fn scene_cache_miss_on_bounds_mismatch() {
     let row = ContainerWidget::column().with_child(Box::new(child));
 
     let measurer = MockMeasurer::STANDARD;
-    let anim = std::cell::Cell::new(false);
     let mut cache = SceneCache::new();
 
     // Pre-populate cache with WRONG bounds for the child.
@@ -1223,7 +1206,6 @@ fn scene_cache_miss_on_bounds_mismatch() {
         bounds: Rect::new(0.0, 0.0, 100.0, 20.0),
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: Some(&mut cache),

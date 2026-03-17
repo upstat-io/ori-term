@@ -31,7 +31,6 @@ impl ScrollWidget {
             bounds: child_bounds,
             focused_widget: ctx.focused_widget,
             now: ctx.now,
-            animations_running: ctx.animations_running,
             theme: ctx.theme,
             icons: ctx.icons,
             scene_cache: ctx.scene_cache.as_deref_mut(),

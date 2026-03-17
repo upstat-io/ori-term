@@ -98,15 +98,47 @@ pub(crate) fn dispatch_step(
     result.handled
 }
 
-/// Runs the pre-paint mutation phase for a single widget.
+/// Runs the pre-paint mutation phase for a widget and all its descendants.
+///
+/// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
+/// executing lifecycle delivery, animation ticks, and visual state updates
+/// at every node. Must be called BEFORE the immutable paint phase.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "pre-paint pipeline: widget, interaction, lifecycle events, anim event, frame flags, timestamp"
+)]
+pub(super) fn prepare_widget_tree(
+    widget: &mut dyn Widget,
+    interaction: &InteractionManager,
+    lifecycle_events: &[LifecycleEvent],
+    anim_event: Option<&oriterm_ui::animation::AnimFrameEvent>,
+    frame_requests: Option<&FrameRequestFlags>,
+    now: Instant,
+) {
+    prepare_widget_frame(
+        widget,
+        interaction,
+        lifecycle_events,
+        anim_event,
+        frame_requests,
+        now,
+    );
+    widget.for_each_child_mut(&mut |child| {
+        prepare_widget_tree(
+            child,
+            interaction,
+            lifecycle_events,
+            anim_event,
+            frame_requests,
+            now,
+        );
+    });
+}
+
+/// Runs the pre-paint mutation phase for a single widget (non-recursive).
 ///
 /// Executes lifecycle event delivery, animation frame ticks, and visual
-/// state animator updates. Must be called BEFORE the immutable paint
-/// phase (`compose_scene` / `widget.paint()`).
-///
-/// During the transition period (widgets being migrated to controllers),
-/// this is called on top-level widgets only (tab bar, overlay roots).
-/// After migration, the framework will walk the full widget tree.
+/// state animator updates. Called by `prepare_widget_tree` at each node.
 ///
 /// # Steps
 ///
@@ -117,7 +149,7 @@ pub(crate) fn dispatch_step(
     clippy::too_many_arguments,
     reason = "pre-paint pipeline: widget, interaction, lifecycle events, anim event, frame flags, timestamp"
 )]
-pub(super) fn prepare_widget_frame(
+fn prepare_widget_frame(
     widget: &mut dyn Widget,
     interaction: &InteractionManager,
     lifecycle_events: &[LifecycleEvent],

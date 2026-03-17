@@ -238,7 +238,6 @@ fn paint_produces_draw_commands() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
-    let anim_flag = std::cell::Cell::new(false);
     let now = std::time::Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
@@ -246,7 +245,6 @@ fn paint_produces_draw_commands() {
         bounds,
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -267,7 +265,6 @@ fn paint_shows_focus_ring_when_focused() {
     let btn = ButtonWidget::new("OK");
     let measurer = MockMeasurer::STANDARD;
     let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
-    let anim_flag = std::cell::Cell::new(false);
     let now = std::time::Instant::now();
 
     // Render without focus.
@@ -278,7 +275,6 @@ fn paint_shows_focus_ring_when_focused() {
         bounds,
         focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -297,7 +293,6 @@ fn paint_shows_focus_ring_when_focused() {
         bounds,
         focused_widget: Some(btn.id()),
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,

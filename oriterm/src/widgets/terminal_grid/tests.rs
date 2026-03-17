@@ -124,7 +124,6 @@ fn draw_emits_no_commands() {
     let theme = UiTheme::dark();
     let measurer = TestMeasurer;
     let mut draw_list = DrawList::new();
-    let animations_running = std::cell::Cell::new(false);
 
     let mut ctx = DrawCtx {
         measurer: &measurer,
@@ -132,7 +131,6 @@ fn draw_emits_no_commands() {
         bounds: Rect::new(0.0, 0.0, 640.0, 384.0),
         focused_widget: None,
         now: Instant::now(),
-        animations_running: &animations_running,
         theme: &theme,
         icons: None,
         scene_cache: None,

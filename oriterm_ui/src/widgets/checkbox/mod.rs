@@ -95,8 +95,6 @@ pub struct CheckboxWidget {
     controllers: Vec<Box<dyn EventController>>,
     /// Animator for unchecked-state hover bg transition.
     animator: VisualStateAnimator,
-    /// Legacy pressed tracking for `handle_mouse()` compat (removed in §08.6).
-    pressed: bool,
 }
 
 impl CheckboxWidget {
@@ -119,7 +117,6 @@ impl CheckboxWidget {
                 style.disabled_bg,
             )]),
             style,
-            pressed: false,
         }
     }
 
@@ -201,7 +198,6 @@ impl std::fmt::Debug for CheckboxWidget {
             .field("label", &self.label)
             .field("checked", &self.checked)
             .field("disabled", &self.disabled)
-            .field("pressed", &self.pressed)
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
@@ -311,7 +307,6 @@ impl Widget for CheckboxWidget {
 
         // Signal continued redraws while the animator is transitioning.
         if self.animator.is_animating(ctx.now) {
-            ctx.animations_running.set(true);
             ctx.request_anim_frame();
         }
     }
@@ -323,14 +318,9 @@ impl Widget for CheckboxWidget {
             return WidgetResponse::ignored();
         }
         match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.pressed = true;
-                WidgetResponse::handled().with_capture()
-            }
+            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::handled().with_capture(),
             MouseEventKind::Up(MouseButton::Left) => {
-                let was = self.pressed;
-                self.pressed = false;
-                if was && ctx.bounds.contains(event.pos) {
+                if ctx.bounds.contains(event.pos) {
                     let action = self.toggle();
                     WidgetResponse::focus()
                         .with_action(action)
@@ -348,11 +338,7 @@ impl Widget for CheckboxWidget {
             return WidgetResponse::ignored();
         }
         match event {
-            HoverEvent::Enter => WidgetResponse::paint(),
-            HoverEvent::Leave => {
-                self.pressed = false;
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
         }
     }
 

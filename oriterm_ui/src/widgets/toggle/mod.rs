@@ -89,8 +89,6 @@ pub struct ToggleWidget {
     controllers: Vec<Box<dyn EventController>>,
     /// Animator for off-state hover bg transition.
     animator: VisualStateAnimator,
-    /// Legacy pressed tracking for `handle_mouse()` compat (removed in §08.6).
-    pressed: bool,
 }
 
 impl Default for ToggleWidget {
@@ -119,7 +117,6 @@ impl ToggleWidget {
                 style.disabled_bg,
             )]),
             style,
-            pressed: false,
         }
     }
 
@@ -206,7 +203,6 @@ impl std::fmt::Debug for ToggleWidget {
             .field("id", &self.id)
             .field("on", &self.on)
             .field("disabled", &self.disabled)
-            .field("pressed", &self.pressed)
             .field("toggle_progress", &self.toggle_progress)
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
@@ -288,7 +284,6 @@ impl Widget for ToggleWidget {
         let animating =
             self.toggle_progress.is_animating(ctx.now) || self.animator.is_animating(ctx.now);
         if animating {
-            ctx.animations_running.set(true);
             ctx.request_anim_frame();
         }
     }
@@ -300,14 +295,9 @@ impl Widget for ToggleWidget {
             return WidgetResponse::ignored();
         }
         match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.pressed = true;
-                WidgetResponse::paint().with_capture()
-            }
+            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::paint().with_capture(),
             MouseEventKind::Up(MouseButton::Left) => {
-                let was = self.pressed;
-                self.pressed = false;
-                if was && ctx.bounds.contains(event.pos) {
+                if ctx.bounds.contains(event.pos) {
                     let action = self.toggle();
                     WidgetResponse::focus()
                         .with_action(action)
@@ -325,11 +315,7 @@ impl Widget for ToggleWidget {
             return WidgetResponse::ignored();
         }
         match event {
-            HoverEvent::Enter => WidgetResponse::paint(),
-            HoverEvent::Leave => {
-                self.pressed = false;
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
         }
     }
 

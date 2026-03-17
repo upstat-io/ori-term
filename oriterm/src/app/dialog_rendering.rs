@@ -4,7 +4,6 @@
 //! dialog) to the dialog window's GPU surface. Overlay popups (dropdown
 //! lists) are drawn on top.
 
-use std::cell::Cell;
 use std::time::Instant;
 
 use winit::window::WindowId;
@@ -57,7 +56,6 @@ impl App {
         let chrome_h = ctx.chrome.caption_height();
 
         ctx.draw_list.clear();
-        let animations_running = Cell::new(false);
         let measurer = CachedTextMeasurer::new(
             UiFontMeasurer::new(renderer.active_ui_collection(), scale),
             &ctx.text_cache,
@@ -74,7 +72,6 @@ impl App {
                 bounds: chrome_bounds,
                 focused_widget: None,
                 now: Instant::now(),
-                animations_running: &animations_running,
                 theme: &ui_theme,
                 icons: Some(icons),
                 scene_cache: None,
@@ -99,7 +96,6 @@ impl App {
                 bounds: content_bounds,
                 focused_widget: None,
                 now: Instant::now(),
-                animations_running: &animations_running,
                 theme: &ui_theme,
                 icons: Some(icons),
                 scene_cache: None,
@@ -120,7 +116,7 @@ impl App {
 
         // Draw overlay popups (dropdown lists) on top.
         // Re-borrow renderer inside the helper to avoid split-borrow conflict.
-        Self::render_dialog_overlays(ctx, scale, &animations_running, &ui_theme, gpu);
+        Self::render_dialog_overlays(ctx, scale, &ui_theme, gpu);
 
         // Re-borrow renderer for final surface render.
         let renderer = ctx.renderer.as_mut().expect("checked above");
@@ -135,17 +131,15 @@ impl App {
             Err(e) => log::error!("dialog render error: {e}"),
         }
 
-        // Widget animations (e.g. hover fade) need continued redraws.
-        if animations_running.get() {
-            ctx.dirty = true;
-        }
+        // TODO: when dialogs wire up FrameRequestFlags (Section 05.5),
+        // check `frame_requests.anim_frame_requested()` and set `ctx.dirty = true`
+        // so widget hover-fade animations get continued redraws.
     }
 
     /// Draw overlay popups (dropdown lists) on top of dialog content.
     fn render_dialog_overlays(
         ctx: &mut super::dialog_context::DialogWindowContext,
         scale: f32,
-        animations_running: &Cell<bool>,
         ui_theme: &oriterm_ui::theme::UiTheme,
         gpu: &crate::gpu::state::GpuState,
     ) {
@@ -182,7 +176,6 @@ impl App {
                 bounds: overlay_bounds,
                 focused_widget: None,
                 now: Instant::now(),
-                animations_running,
                 theme: ui_theme,
                 icons: Some(icons),
                 scene_cache: None,

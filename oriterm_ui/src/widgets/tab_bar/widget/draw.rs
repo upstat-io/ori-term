@@ -237,7 +237,7 @@ impl TabBarWidget {
             self.draw_tab(ctx, i, strip);
 
             if strip.bell > 0.0 {
-                ctx.animations_running.set(true);
+                ctx.request_anim_frame();
             }
         }
 
@@ -257,7 +257,7 @@ impl TabBarWidget {
             .any(|o| o.is_animating(ctx.now));
         let width_animating = self.has_width_animation(ctx.now);
         if hover_animating || close_animating || width_animating {
-            ctx.animations_running.set(true);
+            ctx.request_anim_frame();
         }
     }
 

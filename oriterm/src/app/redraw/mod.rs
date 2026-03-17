@@ -256,11 +256,11 @@ impl App {
             renderer.resolve_icons(gpu, scale);
 
             // Pre-paint mutation phase: drain lifecycle events and
-            // prepare top-level widgets (tab bar) for the paint pass.
+            // prepare the full widget tree for the paint pass.
             let now = Instant::now();
             let lifecycle_events = ctx.interaction.drain_events();
             ctx.frame_requests.reset();
-            super::widget_pipeline::prepare_widget_frame(
+            super::widget_pipeline::prepare_widget_tree(
                 &mut ctx.tab_bar,
                 &ctx.interaction,
                 &lifecycle_events,
@@ -268,6 +268,20 @@ impl App {
                 Some(&ctx.frame_requests),
                 now,
             );
+            // Prepare overlay widget trees. Reborrow fields to satisfy
+            // split-borrow: mutable overlays + immutable interaction/flags.
+            let interaction = &ctx.interaction;
+            let flags = &ctx.frame_requests;
+            ctx.overlays.for_each_widget_mut(|widget| {
+                super::widget_pipeline::prepare_widget_tree(
+                    widget,
+                    interaction,
+                    &lifecycle_events,
+                    None,
+                    Some(flags),
+                    now,
+                );
+            });
 
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.

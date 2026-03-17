@@ -80,7 +80,6 @@ impl Widget for TrackingWidget {
 fn make_ctx<'a>(
     measurer: &'a MockMeasurer,
     draw_list: &'a mut DrawList,
-    anim: &'a Cell<bool>,
     bounds: Rect,
 ) -> DrawCtx<'a> {
     DrawCtx {
@@ -89,7 +88,6 @@ fn make_ctx<'a>(
         bounds,
         focused_widget: None,
         now: Instant::now(),
-        animations_running: anim,
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -107,9 +105,8 @@ fn first_compose_draws_widget() {
     let widget = TrackingWidget::new(100.0, 20.0, counter.clone());
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim = Cell::new(false);
     let bounds = Rect::new(0.0, 0.0, 100.0, 20.0);
-    let mut ctx = make_ctx(&measurer, &mut draw_list, &anim, bounds);
+    let mut ctx = make_ctx(&measurer, &mut draw_list, bounds);
     let tracker = InvalidationTracker::new();
     let mut cache = SceneCache::new();
 
@@ -213,13 +210,7 @@ fn compose_passes_cache_to_draw_ctx() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim = Cell::new(false);
-    let mut ctx = make_ctx(
-        &measurer,
-        &mut draw_list,
-        &anim,
-        Rect::new(0.0, 0.0, 10.0, 10.0),
-    );
+    let mut ctx = make_ctx(&measurer, &mut draw_list, Rect::new(0.0, 0.0, 10.0, 10.0));
     let tracker = InvalidationTracker::new();
     let mut cache = SceneCache::new();
 
@@ -234,13 +225,7 @@ fn compose_restores_previous_cache_state() {
     let widget = TrackingWidget::new(10.0, 10.0, counter);
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let anim = Cell::new(false);
-    let mut ctx = make_ctx(
-        &measurer,
-        &mut draw_list,
-        &anim,
-        Rect::new(0.0, 0.0, 10.0, 10.0),
-    );
+    let mut ctx = make_ctx(&measurer, &mut draw_list, Rect::new(0.0, 0.0, 10.0, 10.0));
     let tracker = InvalidationTracker::new();
     let mut cache = SceneCache::new();
 
@@ -289,14 +274,12 @@ fn compose_and_collect(
     now: Instant,
 ) -> Vec<DrawCommand> {
     let mut draw_list = DrawList::new();
-    let anim = Cell::new(false);
     let mut ctx = DrawCtx {
         measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now,
-        animations_running: &anim,
         theme: &TEST_THEME,
         icons: None,
         scene_cache: None,

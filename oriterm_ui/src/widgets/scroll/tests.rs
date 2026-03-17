@@ -84,14 +84,12 @@ fn scroll_draws_with_clip() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -355,14 +353,12 @@ fn scroll_clip_rect_matches_viewport() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(10.0, 20.0, 150.0, 80.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -388,14 +384,12 @@ fn scroll_child_drawn_offset_by_scroll() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -442,14 +436,12 @@ fn scroll_draws_scrollbar_when_overflowing() {
     let mut draw_list = DrawList::new();
     // Viewport 100px < content 320px → scrollbar should appear.
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -479,14 +471,12 @@ fn scroll_no_scrollbar_when_content_fits() {
     let mut draw_list = DrawList::new();
     // Viewport 100px > content 16px → no scrollbar.
     let bounds = Rect::new(0.0, 0.0, 1000.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -723,14 +713,12 @@ fn scroll_delegates_checkbox_toggle_through_form_hierarchy() {
 
     // First, draw to populate layout caches (matching real app behavior).
     let mut draw_list = DrawList::new();
-    let anim_flag = std::cell::Cell::new(false);
     let mut draw_ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -825,14 +813,12 @@ fn container_with_scroll_form_click_reaches_checkbox() {
 
     // Draw first to populate caches.
     let mut draw_list = DrawList::new();
-    let anim_flag = std::cell::Cell::new(false);
     let mut draw_ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -952,14 +938,12 @@ fn horizontal_scroll_draws_with_clip() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -1002,14 +986,12 @@ fn scroll_content_exactly_fits_no_scrollbar() {
     let mut draw_list = DrawList::new();
     // Viewport exactly matches content height (16px).
     let bounds = Rect::new(0.0, 0.0, 200.0, 16.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,
@@ -1100,14 +1082,12 @@ fn scroll_with_scrollbar_style() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
         scene_cache: None,

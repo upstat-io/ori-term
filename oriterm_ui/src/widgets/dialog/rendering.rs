@@ -125,7 +125,6 @@ impl DialogWidget {
                 bounds: btn_node.content_rect,
                 focused_widget: focused_id,
                 now: ctx.now,
-                animations_running: ctx.animations_running,
                 theme: ctx.theme,
                 icons: ctx.icons,
                 scene_cache: ctx.scene_cache.as_deref_mut(),

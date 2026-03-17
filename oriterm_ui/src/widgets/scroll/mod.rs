@@ -280,6 +280,10 @@ impl Widget for ScrollWidget {
         self.draw_impl(ctx);
     }
 
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        visitor(self.child.as_mut());
+    }
+
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         self.handle_mouse_impl(event, ctx)
     }
