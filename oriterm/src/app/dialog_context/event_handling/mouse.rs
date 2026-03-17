@@ -210,13 +210,9 @@ impl App {
                 ctx.request_urgent_redraw();
             }
 
-            // Transform actions through the content widget's on_action
-            // (e.g., SettingsPanel maps Clicked(save_id) → SaveSettings).
-            match result.actions.into_iter().find_map(|a| {
-                ctx.content
-                    .content_widget_mut()
-                    .on_action(a, content_bounds)
-            }) {
+            // Extract first action, if any. Actions are already transformed
+            // by deliver_event_to_tree through the root widget's on_action.
+            match result.actions.into_iter().next() {
                 Some(action) => DialogClickResult::Action(action),
                 None => DialogClickResult::None,
             }

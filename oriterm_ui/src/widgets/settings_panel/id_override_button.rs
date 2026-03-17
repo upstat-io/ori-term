@@ -77,9 +77,11 @@ impl Widget for IdOverrideButton {
         }
     }
 
-    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
-        visitor(&mut self.inner);
-    }
+    // No for_each_child_mut: this widget delegates controllers() and
+    // visual_states() to its inner ButtonWidget, so the inner button must
+    // NOT be visited separately by prepare_widget_tree — that would
+    // double-update the animator with the inner button's (non-hot) ID,
+    // overriding the correct update from this wrapper's ID.
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
         self.inner.accept_action(action)

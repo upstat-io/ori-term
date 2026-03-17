@@ -314,13 +314,9 @@ impl App {
             ctx.request_urgent_redraw();
         }
 
-        // Transform actions through the content widget's on_action
-        // (e.g., SettingsPanel maps Clicked(save_id) → SaveSettings).
-        result.actions.into_iter().find_map(|a| {
-            ctx.content
-                .content_widget_mut()
-                .on_action(a, content_bounds)
-        })
+        // Actions are already transformed by deliver_event_to_tree
+        // through the root widget's on_action.
+        result.actions.into_iter().next()
     }
 
     /// Clear hover state for chrome and content.
@@ -356,7 +352,8 @@ impl App {
             scale,
         );
 
-        // Register all content widgets with InteractionManager.
+        // Register all widgets (chrome + content) with InteractionManager.
+        crate::app::widget_pipeline::register_widget_tree(&mut ctx.chrome, &mut ctx.interaction);
         crate::app::widget_pipeline::register_widget_tree(
             ctx.content.content_widget_mut(),
             &mut ctx.interaction,
