@@ -201,6 +201,32 @@ fn prepare_widget_frame(
     }
 }
 
+/// Registers all widgets in a tree with `InteractionManager`.
+///
+/// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
+/// calling `register_widget` on each node. Idempotent — safe to call
+/// multiple times.
+pub(crate) fn register_widget_tree(widget: &mut dyn Widget, interaction: &mut InteractionManager) {
+    interaction.register_widget(widget.id());
+    widget.for_each_child_mut(&mut |child| {
+        register_widget_tree(child, interaction);
+    });
+}
+
+/// Collects focusable widget IDs in tree traversal order.
+///
+/// Walks the widget tree depth-first, appending IDs of widgets where
+/// `is_focusable()` returns `true`. The resulting order is suitable for
+/// `FocusManager::set_focus_order()`.
+pub(crate) fn collect_focusable_ids(widget: &mut dyn Widget, out: &mut Vec<WidgetId>) {
+    if widget.is_focusable() {
+        out.push(widget.id());
+    }
+    widget.for_each_child_mut(&mut |child| {
+        collect_focusable_ids(child, out);
+    });
+}
+
 /// Applies `ControllerRequests` side effects from a `DispatchResult`.
 ///
 /// Translates request flags into `InteractionManager` mutations:
@@ -244,6 +270,18 @@ pub(crate) fn apply_dispatch_requests(
     if requests.contains(ControllerRequests::REQUEST_FOCUS) {
         if let Some(id) = source {
             interaction.request_focus(id, focus_manager);
+        }
+    }
+    if requests.contains(ControllerRequests::FOCUS_NEXT) {
+        focus_manager.focus_next();
+        if let Some(new_id) = focus_manager.focused() {
+            interaction.request_focus(new_id, focus_manager);
+        }
+    }
+    if requests.contains(ControllerRequests::FOCUS_PREV) {
+        focus_manager.focus_prev();
+        if let Some(new_id) = focus_manager.focused() {
+            interaction.request_focus(new_id, focus_manager);
         }
     }
 }

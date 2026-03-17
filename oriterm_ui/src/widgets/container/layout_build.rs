@@ -4,8 +4,7 @@
 
 use std::rc::Rc;
 
-use crate::geometry::{Point, Rect};
-use crate::input::layout_hit_test;
+use crate::geometry::Rect;
 use crate::layout::{LayoutBox, LayoutNode, compute_layout};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -45,30 +44,6 @@ impl ContainerWidget {
             .with_height(self.height)
             .with_widget_id(self.id)
             .with_clip(self.clip_children)
-    }
-
-    /// Finds which direct child owns a `WidgetId` from hit testing.
-    pub(super) fn find_child_index(&self, target: WidgetId) -> Option<usize> {
-        self.children.iter().position(|c| c.id() == target)
-    }
-
-    /// Finds the direct child widget under a point via hit testing.
-    pub(super) fn hit_test_children(&self, layout: &LayoutNode, pos: Point) -> Option<usize> {
-        let target_id = layout_hit_test(layout, pos)?;
-        if target_id == self.id {
-            return None;
-        }
-        // Check direct children first.
-        if let Some(idx) = self.find_child_index(target_id) {
-            return Some(idx);
-        }
-        // The target is nested inside a child — find which child contains it.
-        for (idx, child_node) in layout.children.iter().enumerate() {
-            if child_node.rect.contains(pos) {
-                return Some(idx);
-            }
-        }
-        None
     }
 
     // Scene cache helpers

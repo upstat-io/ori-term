@@ -6,14 +6,13 @@ use crate::color::Color;
 use crate::controllers::EventController;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::{LayoutBox, SizeSpec};
 use crate::sense::Sense;
 use crate::text::TextStyle;
 use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
-use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 use super::{SliderWidget, VALUE_GAP, VALUE_LABEL_WIDTH};
 
 impl Widget for SliderWidget {
@@ -155,80 +154,5 @@ impl Widget for SliderWidget {
             }
             other => Some(other),
         }
-    }
-
-    // --- Legacy methods (compat shim until containers migrate in §08.6) ---
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        let tb = self.track_bounds(ctx.bounds);
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                let new_val = self.value_from_x(event.pos.x, tb);
-                let action = self.set_value_action(new_val);
-                let mut r = WidgetResponse::focus().with_capture();
-                if let Some(a) = action {
-                    r = r.with_action(a);
-                }
-                r
-            }
-            MouseEventKind::Up(MouseButton::Left) => WidgetResponse::paint().with_release_capture(),
-            // Move events arrive via container capture — always update value.
-            MouseEventKind::Move => {
-                let new_val = self.value_from_x(event.pos.x, tb);
-                let action = self.set_value_action(new_val);
-                let mut r = WidgetResponse::paint();
-                if let Some(a) = action {
-                    r = r.with_action(a);
-                }
-                r
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event {
-            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled || !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        let delta = match event.key {
-            Key::ArrowRight | Key::ArrowUp => self.step,
-            Key::ArrowLeft | Key::ArrowDown => -self.step,
-            Key::Home => {
-                let action = self.set_value_action(self.min);
-                let mut r = WidgetResponse::paint();
-                if let Some(a) = action {
-                    r = r.with_action(a);
-                }
-                return r;
-            }
-            Key::End => {
-                let action = self.set_value_action(self.max);
-                let mut r = WidgetResponse::paint();
-                if let Some(a) = action {
-                    r = r.with_action(a);
-                }
-                return r;
-            }
-            _ => return WidgetResponse::ignored(),
-        };
-        let new_val = self.snap_to_step(self.value + delta);
-        let action = self.set_value_action(new_val);
-        let mut r = WidgetResponse::paint();
-        if let Some(a) = action {
-            r = r.with_action(a);
-        }
-        r
     }
 }

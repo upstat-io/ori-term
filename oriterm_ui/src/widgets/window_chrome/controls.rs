@@ -13,7 +13,6 @@ use crate::color::Color;
 use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::visual_state::common_states;
@@ -22,7 +21,7 @@ use crate::widget_id::WidgetId;
 
 use crate::icons::IconId;
 
-use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::super::{DrawCtx, LayoutCtx, Widget};
 use super::constants::{CONTROL_BUTTON_WIDTH, SYMBOL_SIZE};
 use super::layout::ControlKind;
 
@@ -132,15 +131,6 @@ impl WindowControlButton {
             }
         } else {
             self.fg
-        }
-    }
-
-    /// Maps this button kind to the corresponding `WidgetAction`.
-    fn action(&self) -> WidgetAction {
-        match self.kind {
-            ControlKind::Minimize => WidgetAction::WindowMinimize,
-            ControlKind::MaximizeRestore => WidgetAction::WindowMaximize,
-            ControlKind::Close => WidgetAction::WindowClose,
         }
     }
 }
@@ -275,31 +265,5 @@ impl Widget for WindowControlButton {
         if self.animator.is_animating(ctx.now) {
             ctx.request_anim_frame();
         }
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::paint(),
-            MouseEventKind::Up(MouseButton::Left) => {
-                // Parent tracks which button was pressed and routes Up here.
-                // Emit action if cursor is still within bounds at release.
-                if ctx.bounds.contains(event.pos) {
-                    WidgetResponse::paint().with_action(self.action())
-                } else {
-                    WidgetResponse::paint()
-                }
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event {
-            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
-        }
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 }

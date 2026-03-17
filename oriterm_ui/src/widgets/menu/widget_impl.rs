@@ -7,14 +7,12 @@
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{
-    HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind, ScrollDelta,
-};
+use crate::input::ScrollDelta;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::TextStyle;
 
-use super::super::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::super::{LayoutCtx, Widget, WidgetAction};
 use super::{MenuEntry, MenuWidget, SCROLL_LINE_HEIGHT, SCROLLBAR_MIN_THUMB, SCROLLBAR_WIDTH};
 
 use super::DrawCtx;
@@ -126,104 +124,6 @@ impl Widget for MenuWidget {
                 None
             }
             other => Some(other),
-        }
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event.kind {
-            MouseEventKind::Move => {
-                let rel_y = event.pos.y - ctx.bounds.y();
-                let new_hover = self.entry_at_y(rel_y);
-                if new_hover != self.hovered {
-                    self.hovered = new_hover;
-                    return WidgetResponse::paint();
-                }
-                WidgetResponse::handled()
-            }
-            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::handled(),
-            MouseEventKind::Up(MouseButton::Left) => {
-                if let Some(idx) = self.hovered {
-                    if self.entries[idx].is_clickable() {
-                        return WidgetResponse::paint().with_action(WidgetAction::Selected {
-                            id: self.id,
-                            index: idx,
-                        });
-                    }
-                }
-                WidgetResponse::handled()
-            }
-            MouseEventKind::Scroll(delta) => {
-                // Negate: winit positive y = wheel-up, but positive
-                // delta_y means "scroll down" in our scroll_by convention.
-                let delta_y = match delta {
-                    ScrollDelta::Pixels { y, .. } => -y,
-                    ScrollDelta::Lines { y, .. } => -y * SCROLL_LINE_HEIGHT,
-                };
-                if self.scroll_by(delta_y) {
-                    let rel_y = event.pos.y - ctx.bounds.y();
-                    self.hovered = self.entry_at_y(rel_y);
-                    return WidgetResponse::paint();
-                }
-                WidgetResponse::handled()
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event {
-            HoverEvent::Enter => WidgetResponse::handled(),
-            HoverEvent::Leave => {
-                if self.hovered.is_some() {
-                    self.hovered = None;
-                    WidgetResponse::paint()
-                } else {
-                    WidgetResponse::handled()
-                }
-            }
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        match event.key {
-            Key::ArrowDown => {
-                if self.navigate(true) {
-                    if let Some(idx) = self.hovered {
-                        self.ensure_visible(idx);
-                    }
-                    WidgetResponse::paint()
-                } else {
-                    WidgetResponse::handled()
-                }
-            }
-            Key::ArrowUp => {
-                if self.navigate(false) {
-                    if let Some(idx) = self.hovered {
-                        self.ensure_visible(idx);
-                    }
-                    WidgetResponse::paint()
-                } else {
-                    WidgetResponse::handled()
-                }
-            }
-            Key::Enter | Key::Space => {
-                if let Some(idx) = self.hovered {
-                    if self.entries[idx].is_clickable() {
-                        return WidgetResponse::paint().with_action(WidgetAction::Selected {
-                            id: self.id,
-                            index: idx,
-                        });
-                    }
-                }
-                WidgetResponse::handled()
-            }
-            Key::Escape => {
-                WidgetResponse::paint().with_action(WidgetAction::DismissOverlay(self.id))
-            }
-            _ => WidgetResponse::ignored(),
         }
     }
 }

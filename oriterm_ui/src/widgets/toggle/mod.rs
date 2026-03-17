@@ -13,7 +13,6 @@ use crate::controllers::{
 };
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::visual_state::common_states;
@@ -22,7 +21,7 @@ use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 /// Duration of the toggle slide animation.
 const TOGGLE_DURATION: Duration = Duration::from_millis(150);
@@ -296,48 +295,6 @@ impl Widget for ToggleWidget {
             WidgetAction::Clicked(_) => Some(self.toggle()),
             other => Some(other),
         }
-    }
-
-    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::paint().with_capture(),
-            MouseEventKind::Up(MouseButton::Left) => {
-                if ctx.bounds.contains(event.pos) {
-                    let action = self.toggle();
-                    WidgetResponse::focus()
-                        .with_action(action)
-                        .with_release_capture()
-                } else {
-                    WidgetResponse::paint().with_release_capture()
-                }
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event {
-            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled || !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        if event.key == Key::Space {
-            let action = self.toggle();
-            return WidgetResponse::paint().with_action(action);
-        }
-        WidgetResponse::ignored()
     }
 }
 

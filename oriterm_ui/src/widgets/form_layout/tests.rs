@@ -1,13 +1,12 @@
 use crate::draw::DrawList;
-use crate::geometry::{Point, Rect};
-use crate::input::{Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::geometry::Rect;
 use crate::layout::{SizeSpec, compute_layout};
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::form_row::FormRow;
 use crate::widgets::form_section::FormSection;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::FormLayout;
 
@@ -97,35 +96,6 @@ fn collapsed_section_excluded_from_focusable() {
             .expanded(false),
     );
     assert!(form.focusable_children().is_empty());
-}
-
-#[test]
-fn mouse_delegates_to_section() {
-    let mut form = test_form();
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 400.0, 600.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    // Click on the first section header (past FORM_PADDING top=16,
-    // within HEADER_HEIGHT=28, so y=26 is in the header area).
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(50.0, 26.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = form.handle_mouse(&event, &ctx);
-    // Should toggle the first section (layout response).
-    assert_eq!(resp, WidgetResponse::layout());
-    assert!(!form.sections()[0].is_expanded());
 }
 
 #[test]

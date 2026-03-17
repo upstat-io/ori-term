@@ -5,23 +5,21 @@
 //! events first). Used for absolute positioning within a relative container.
 
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, compute_layout};
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// A Z-axis container that overlays children on top of each other.
 ///
 /// All children share the same bounds (the stack's bounds). Children
 /// are drawn in order — the last child is frontmost. Events are routed
-/// back-to-front: the frontmost child that handles the event wins.
+/// back-to-front through the propagation pipeline (last child = highest
+/// z-order = wins hit tests).
 pub struct StackWidget {
     id: WidgetId,
     children: Vec<Box<dyn Widget>>,
-    /// Index of the child currently hovered (set by hover Enter).
-    hovered_child: Option<usize>,
 }
 
 impl StackWidget {
@@ -30,7 +28,6 @@ impl StackWidget {
         Self {
             id: WidgetId::next(),
             children,
-            hovered_child: None,
         }
     }
 
@@ -101,67 +98,6 @@ impl Widget for StackWidget {
         for child in &mut self.children {
             visitor(child.as_mut());
         }
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if !ctx.bounds.contains(event.pos) {
-            return WidgetResponse::ignored();
-        }
-        // Route back-to-front: frontmost child that handles it wins.
-        for child in self.children.iter_mut().rev() {
-            let resp = child.handle_mouse(event, ctx);
-            if resp.response.is_handled() {
-                return resp;
-            }
-        }
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event {
-            HoverEvent::Enter => {
-                // Enter the frontmost child that accepts hover.
-                for (idx, child) in self.children.iter_mut().enumerate().rev() {
-                    let resp = child.handle_hover(HoverEvent::Enter, ctx);
-                    if resp.response.is_handled() {
-                        self.hovered_child = Some(idx);
-                        return resp;
-                    }
-                }
-                WidgetResponse::ignored()
-            }
-            HoverEvent::Leave => {
-                // Leave only the tracked hovered child.
-                if let Some(idx) = self.hovered_child.take() {
-                    if let Some(child) = self.children.get_mut(idx) {
-                        return child.handle_hover(HoverEvent::Leave, ctx);
-                    }
-                }
-                WidgetResponse::handled()
-            }
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Key events go to frontmost child that handles them,
-        // with per-child focus discrimination.
-        for child in self.children.iter_mut().rev() {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: ctx.bounds,
-                is_focused: ctx.focused_widget == Some(child.id()),
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            let resp = child.handle_key(event, &child_ctx);
-            if resp.response.is_handled() {
-                return resp;
-            }
-        }
-        WidgetResponse::ignored()
     }
 
     fn focusable_children(&self) -> Vec<WidgetId> {

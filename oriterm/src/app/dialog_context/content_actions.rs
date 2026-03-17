@@ -7,16 +7,19 @@
 
 use std::time::Instant;
 
+use oriterm_ui::controllers::ControllerRequests;
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::input::{
-    EventResponse, Key as UiKey, KeyEvent as UiKeyEvent, Modifiers as UiModifiers,
-};
+use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
+use oriterm_ui::input::{InputEvent, Key as UiKey, Modifiers as UiModifiers};
+use oriterm_ui::interaction::build_parent_map;
+use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
-use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
+use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
 use crate::app::settings_overlay;
+use crate::app::widget_pipeline::{apply_dispatch_requests, collect_focusable_ids};
 use crate::event::ConfirmationKind;
 use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
@@ -241,32 +244,20 @@ impl App {
         self.close_dialog(window_id);
     }
 
-    /// Try routing a key event to the dialog content widget.
+    /// Route a key event through the controller pipeline to dialog content.
     ///
-    /// Returns the emitted `WidgetAction` if the content handled the key.
-    /// Only confirmation dialogs handle key events (Tab/Enter/Space for
-    /// button focus cycling and activation).
-    pub(in crate::app) fn try_dialog_content_key(
+    /// Converts the winit key event to an `InputEvent`, computes the layout
+    /// tree for parent map and focus path, then dispatches via
+    /// `deliver_event_to_tree`. Returns the first emitted `WidgetAction`.
+    pub(in crate::app) fn dispatch_dialog_content_key(
         &mut self,
         window_id: WindowId,
         event: &winit::event::KeyEvent,
     ) -> Option<WidgetAction> {
-        let ui_key = match &event.logical_key {
-            Key::Named(NamedKey::Tab) => UiKey::Tab,
-            Key::Named(NamedKey::Enter) => UiKey::Enter,
-            Key::Named(NamedKey::Space) => UiKey::Space,
-            _ => return None,
-        };
+        let input_event = winit_key_to_input_event(event, self.modifiers)?;
 
+        let ui_theme = self.ui_theme;
         let ctx = self.dialogs.get_mut(&window_id)?;
-        if !matches!(ctx.content, DialogContent::Confirmation { .. }) {
-            return None;
-        }
-
-        let ui_event = UiKeyEvent {
-            key: ui_key,
-            modifiers: UiModifiers::NONE,
-        };
         let renderer = ctx.renderer.as_ref()?;
         let scale = ctx.scale_factor.factor() as f32;
         let measurer = CachedTextMeasurer::new(
@@ -274,31 +265,56 @@ impl App {
             &ctx.text_cache,
             scale,
         );
+
+        // Compute layout for parent map (needed by focus_ancestor_path).
         let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let event_ctx = EventCtx {
+        let layout_ctx = LayoutCtx {
             measurer: &measurer,
-            bounds: content_bounds,
-            is_focused: true,
-            focused_widget: None,
-            theme: &self.ui_theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
+            theme: &ui_theme,
         };
-        let resp = ctx
-            .content
-            .content_widget_mut()
-            .handle_key(ui_event, &event_ctx);
-        if matches!(
-            resp.response,
-            EventResponse::RequestPaint | EventResponse::RequestLayout
-        ) {
+        let layout_box = ctx.content.content_widget().layout(&layout_ctx);
+        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+        let layout_node = compute_layout(&layout_box, local_viewport);
+
+        // Update parent map and focus order from the current layout.
+        let parent_map = build_parent_map(&layout_node);
+        ctx.interaction.set_parent_map(parent_map);
+
+        let mut focusable = Vec::new();
+        collect_focusable_ids(ctx.content.content_widget_mut(), &mut focusable);
+        ctx.focus.set_focus_order(focusable);
+
+        // Build focus path for keyboard routing.
+        let focus_path = ctx.interaction.focus_ancestor_path();
+        let active = ctx.interaction.active_widget();
+        let now = Instant::now();
+
+        let result = deliver_event_to_tree(
+            ctx.content.content_widget_mut(),
+            &input_event,
+            content_bounds,
+            Some(&layout_node),
+            active,
+            &focus_path,
+            now,
+        );
+
+        // Apply interaction state changes (focus cycling, active).
+        apply_dispatch_requests(
+            result.requests,
+            result.source,
+            &mut ctx.interaction,
+            &mut ctx.focus,
+        );
+
+        if result.requests.contains(ControllerRequests::PAINT) {
             ctx.request_urgent_redraw();
         }
-        resp.action
+
+        result.actions.into_iter().next()
     }
 
     /// Clear hover state for chrome and content.
@@ -313,4 +329,119 @@ impl App {
         ctx.interaction.update_hot_path(&[]);
         ctx.request_urgent_redraw();
     }
+
+    /// Initialize focus infrastructure for a dialog's content widgets.
+    ///
+    /// Registers all content widgets with `InteractionManager`, builds the
+    /// parent map from the layout tree, sets focus order, and focuses the
+    /// default button (if a confirmation dialog).
+    pub(in crate::app) fn setup_dialog_focus(&mut self, window_id: WindowId) {
+        let ui_theme = self.ui_theme;
+        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+            return;
+        };
+        let Some(renderer) = ctx.renderer.as_ref() else {
+            return;
+        };
+        let scale = ctx.scale_factor.factor() as f32;
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
+
+        // Register all content widgets with InteractionManager.
+        crate::app::widget_pipeline::register_widget_tree(
+            ctx.content.content_widget_mut(),
+            &mut ctx.interaction,
+        );
+        // Drain registration lifecycle events (WidgetAdded).
+        let _ = ctx.interaction.drain_events();
+
+        // Compute layout and build parent map.
+        let chrome_h = ctx.chrome.caption_height();
+        let w = ctx.surface_config.width as f32 / scale;
+        let h = ctx.surface_config.height as f32 / scale;
+        let layout_ctx = LayoutCtx {
+            measurer: &measurer,
+            theme: &ui_theme,
+        };
+        let layout_box = ctx.content.content_widget().layout(&layout_ctx);
+        let local_viewport = Rect::new(0.0, 0.0, w, h - chrome_h);
+        let layout_node = compute_layout(&layout_box, local_viewport);
+        let parent_map = build_parent_map(&layout_node);
+        ctx.interaction.set_parent_map(parent_map);
+
+        // Collect focusable widgets and set tab order.
+        let mut focusable = Vec::new();
+        collect_focusable_ids(ctx.content.content_widget_mut(), &mut focusable);
+
+        // Set initial focus on the first focusable widget (typically OK button).
+        let initial_focus = focusable.first().copied();
+        ctx.focus.set_focus_order(focusable);
+        if let Some(id) = initial_focus {
+            ctx.interaction.request_focus(id, &mut ctx.focus);
+            // Drain focus lifecycle events.
+            let _ = ctx.interaction.drain_events();
+        }
+    }
+}
+
+/// Converts a winit key event to a UI `InputEvent`.
+///
+/// Returns `None` for keys that the UI widget system doesn't handle
+/// (e.g., function keys, media keys). Maps both Pressed → `KeyDown`
+/// and Released → `KeyUp` so controllers can consume matching releases.
+fn winit_key_to_input_event(
+    event: &winit::event::KeyEvent,
+    winit_mods: winit::keyboard::ModifiersState,
+) -> Option<InputEvent> {
+    let key = match &event.logical_key {
+        Key::Named(named) => match named {
+            NamedKey::Tab => UiKey::Tab,
+            NamedKey::Enter => UiKey::Enter,
+            NamedKey::Space => UiKey::Space,
+            NamedKey::Backspace => UiKey::Backspace,
+            NamedKey::Delete => UiKey::Delete,
+            NamedKey::Home => UiKey::Home,
+            NamedKey::End => UiKey::End,
+            NamedKey::ArrowUp => UiKey::ArrowUp,
+            NamedKey::ArrowDown => UiKey::ArrowDown,
+            NamedKey::ArrowLeft => UiKey::ArrowLeft,
+            NamedKey::ArrowRight => UiKey::ArrowRight,
+            NamedKey::PageUp => UiKey::PageUp,
+            NamedKey::PageDown => UiKey::PageDown,
+            _ => return None,
+        },
+        Key::Character(ch) => {
+            let c = ch.chars().next()?;
+            UiKey::Character(c)
+        }
+        _ => return None,
+    };
+
+    let modifiers = winit_mods_to_ui(winit_mods);
+
+    Some(match event.state {
+        winit::event::ElementState::Pressed => InputEvent::KeyDown { key, modifiers },
+        winit::event::ElementState::Released => InputEvent::KeyUp { key, modifiers },
+    })
+}
+
+/// Converts winit modifier state to UI modifier flags.
+fn winit_mods_to_ui(m: winit::keyboard::ModifiersState) -> UiModifiers {
+    let mut mods = UiModifiers::NONE;
+    if m.shift_key() {
+        mods = mods.union(UiModifiers::SHIFT_ONLY);
+    }
+    if m.control_key() {
+        mods = mods.union(UiModifiers::CTRL_ONLY);
+    }
+    if m.alt_key() {
+        mods = mods.union(UiModifiers::ALT_ONLY);
+    }
+    if m.super_key() {
+        mods = mods.union(UiModifiers::LOGO_ONLY);
+    }
+    mods
 }

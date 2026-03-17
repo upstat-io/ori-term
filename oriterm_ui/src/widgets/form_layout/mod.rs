@@ -7,18 +7,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::geometry::{Insets, Point, Rect};
-use crate::input::{HoverEvent, KeyEvent, MouseEvent, MouseEventKind};
+use crate::geometry::{Insets, Rect};
 use crate::layout::{Align, Direction, LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::sense::Sense;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use super::form_section::FormSection;
-use super::{
-    CaptureRequest, DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction,
-    WidgetResponse,
-};
+use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
 
 /// Padding added to the computed label width for breathing room.
 const LABEL_PADDING: f32 = 12.0;
@@ -39,10 +35,6 @@ pub struct FormLayout {
 
     /// Computed label column width (widest label + padding).
     label_column_width: f32,
-    /// Index of the section with active mouse capture (drag in progress).
-    captured_section: Option<usize>,
-    /// Index of the section currently under the cursor (for hover tracking).
-    hovered_section: Option<usize>,
 
     /// Cached layout result, keyed by bounds.
     cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
@@ -55,8 +47,6 @@ impl FormLayout {
             id: WidgetId::next(),
             sections: Vec::new(),
             label_column_width: 100.0,
-            captured_section: None,
-            hovered_section: None,
             cached_layout: RefCell::new(None),
         }
     }
@@ -200,103 +190,6 @@ impl Widget for FormLayout {
         }
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-
-        // During capture, route all events to the captured section.
-        if let Some(cap_idx) = self.captured_section {
-            if let (Some(section), Some(node)) =
-                (self.sections.get_mut(cap_idx), layout.children.get(cap_idx))
-            {
-                let child_ctx = ctx.for_child(node.content_rect, None);
-                let resp = section.handle_mouse(event, &child_ctx);
-                if resp.capture.should_release(&event.kind) {
-                    self.captured_section = None;
-                }
-                if resp.response.needs_layout() {
-                    *self.cached_layout.borrow_mut() = None;
-                }
-                return resp;
-            }
-        }
-
-        // Move events: position-based hover tracking.
-        if event.kind == MouseEventKind::Move {
-            return self.update_section_hover(&layout, event.pos, ctx);
-        }
-
-        for (idx, section) in self.sections.iter_mut().enumerate() {
-            if let Some(section_node) = layout.children.get(idx) {
-                if section_node.rect.contains(event.pos) {
-                    let child_ctx = ctx.for_child(section_node.content_rect, None);
-                    let resp = section.handle_mouse(event, &child_ctx);
-                    if resp.capture == CaptureRequest::Acquire {
-                        self.captured_section = Some(idx);
-                    }
-                    if resp.response.needs_layout() {
-                        *self.cached_layout.borrow_mut() = None;
-                    }
-                    return resp;
-                }
-            }
-        }
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if event == HoverEvent::Leave {
-            self.captured_section = None;
-            // Send Leave to the currently hovered section.
-            if let Some(old_idx) = self.hovered_section.take() {
-                let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-                if let (Some(section), Some(node)) =
-                    (self.sections.get_mut(old_idx), layout.children.get(old_idx))
-                {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: node.content_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                        interaction: None,
-                        widget_id: None,
-                        frame_requests: None,
-                    };
-                    section.handle_hover(HoverEvent::Leave, &child_ctx);
-                }
-                return WidgetResponse::paint();
-            }
-        }
-        // Enter is handled by Move-based hover tracking.
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        for (idx, section) in self.sections.iter_mut().enumerate() {
-            if let Some(section_node) = layout.children.get(idx) {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: section_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                    interaction: None,
-                    widget_id: None,
-                    frame_requests: None,
-                };
-                let resp = section.handle_key(event, &child_ctx);
-                if resp.response.is_handled() {
-                    if resp.response.needs_layout() {
-                        *self.cached_layout.borrow_mut() = None;
-                    }
-                    return resp;
-                }
-            }
-        }
-        WidgetResponse::ignored()
-    }
-
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
         self.sections.iter_mut().any(|s| s.accept_action(action))
     }
@@ -306,80 +199,6 @@ impl Widget for FormLayout {
             .iter()
             .flat_map(Widget::focusable_children)
             .collect()
-    }
-}
-
-// Hover tracking.
-impl FormLayout {
-    /// Updates section hover state based on cursor position.
-    fn update_section_hover(
-        &mut self,
-        layout: &LayoutNode,
-        pos: Point,
-        ctx: &EventCtx<'_>,
-    ) -> WidgetResponse {
-        let new_hover = self.sections.iter().enumerate().find_map(|(i, _)| {
-            layout
-                .children
-                .get(i)
-                .filter(|n| n.rect.contains(pos))
-                .map(|_| i)
-        });
-
-        if new_hover == self.hovered_section {
-            // Same section — forward Move so it can update row hover.
-            if let Some(idx) = new_hover {
-                if let (Some(section), Some(node)) =
-                    (self.sections.get_mut(idx), layout.children.get(idx))
-                {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: node.content_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                        interaction: None,
-                        widget_id: None,
-                        frame_requests: None,
-                    };
-                    let move_event = MouseEvent {
-                        kind: MouseEventKind::Move,
-                        pos,
-                        modifiers: crate::input::Modifiers::NONE,
-                    };
-                    return section.handle_mouse(&move_event, &child_ctx);
-                }
-            }
-            return WidgetResponse::ignored();
-        }
-
-        // Leave old section.
-        if let Some(old_idx) = self.hovered_section {
-            if let (Some(section), Some(node)) =
-                (self.sections.get_mut(old_idx), layout.children.get(old_idx))
-            {
-                let child_ctx = ctx.for_child(node.content_rect, None);
-                section.handle_hover(HoverEvent::Leave, &child_ctx);
-            }
-        }
-
-        // Enter new section (forward Move so it sets up row hover).
-        if let Some(new_idx) = new_hover {
-            if let (Some(section), Some(node)) =
-                (self.sections.get_mut(new_idx), layout.children.get(new_idx))
-            {
-                let child_ctx = ctx.for_child(node.content_rect, None);
-                let move_event = MouseEvent {
-                    kind: MouseEventKind::Move,
-                    pos,
-                    modifiers: crate::input::Modifiers::NONE,
-                };
-                section.handle_mouse(&move_event, &child_ctx);
-            }
-        }
-
-        self.hovered_section = new_hover;
-        WidgetResponse::paint()
     }
 }
 

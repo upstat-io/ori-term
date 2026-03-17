@@ -305,42 +305,6 @@ impl MenuWidget {
         None
     }
 
-    /// Moves hover to the next clickable item in the given direction.
-    pub(super) fn navigate(&mut self, forward: bool) -> bool {
-        let count = self.entries.len();
-        if count == 0 {
-            return false;
-        }
-        let start = match self.hovered {
-            Some(i) => {
-                if forward {
-                    i + 1
-                } else {
-                    i + count - 1
-                }
-            }
-            None => {
-                if forward {
-                    0
-                } else {
-                    count - 1
-                }
-            }
-        };
-        for offset in 0..count {
-            let idx = if forward {
-                (start + offset) % count
-            } else {
-                (start + count - offset) % count
-            };
-            if self.entries[idx].is_clickable() {
-                self.hovered = Some(idx);
-                return true;
-            }
-        }
-        false
-    }
-
     /// Whether any entry has a check mark (affects left padding).
     pub(super) fn has_checks(&self) -> bool {
         self.entries

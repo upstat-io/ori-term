@@ -6,12 +6,10 @@
 //! remain: these types are still used for layout computation and button
 //! rendering within the tab bar.
 
-use crate::geometry::{Point, Rect};
-use crate::input::{Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::geometry::Rect;
 use crate::sense::Sense;
 use crate::theme::UiTheme;
-use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, Widget};
+use crate::widgets::Widget;
 
 use super::constants::{
     CAPTION_HEIGHT, CAPTION_HEIGHT_MAXIMIZED, CONTROL_BUTTON_WIDTH, RESIZE_BORDER_WIDTH,
@@ -30,15 +28,6 @@ fn test_button_colors() -> ControlButtonColors {
         hover_bg: crate::color::Color::WHITE,
         close_hover_bg: theme.close_hover_bg,
         close_pressed_bg: theme.close_pressed_bg,
-    }
-}
-
-/// Left mouse button press at the given position.
-fn left_down(x: f32, y: f32) -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(x, y),
-        modifiers: Modifiers::NONE,
     }
 }
 
@@ -155,31 +144,6 @@ fn control_button_kind() {
 fn control_button_not_focusable() {
     let btn = WindowControlButton::new(ControlKind::Minimize, test_button_colors());
     assert!(!btn.is_focusable());
-}
-
-#[test]
-fn control_button_down_returns_paint() {
-    let mut btn = WindowControlButton::new(ControlKind::MaximizeRestore, test_button_colors());
-
-    let measurer = MockMeasurer::STANDARD;
-    let theme = UiTheme::dark();
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds: Rect::new(0.0, 0.0, 46.0, 36.0),
-        is_focused: false,
-        focused_widget: None,
-        theme: &theme,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = left_down(23.0, 18.0);
-    let resp = btn.handle_mouse(&event, &ctx);
-    assert_eq!(
-        resp.response,
-        super::super::super::input::EventResponse::RequestPaint
-    );
 }
 
 #[test]

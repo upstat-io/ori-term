@@ -9,14 +9,13 @@ use std::rc::Rc;
 use crate::color::Color;
 use crate::draw::{RectStyle, Shadow};
 use crate::geometry::Insets;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::{LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Visual style for a [`PanelWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -209,62 +208,6 @@ impl Widget for PanelWidget {
 
     fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
         visitor(self.child.as_mut());
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        if let Some(child_node) = layout.children.first() {
-            if child_node.rect.contains(event.pos) {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: child_node.content_rect,
-                    is_focused: ctx.focused_widget == Some(self.child.id()),
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                    interaction: None,
-                    widget_id: None,
-                    frame_requests: None,
-                };
-                return self.child.handle_mouse(event, &child_ctx);
-            }
-        }
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        if let Some(child_node) = layout.children.first() {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: child_node.content_rect,
-                is_focused: ctx.focused_widget == Some(self.child.id()),
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            return self.child.handle_hover(event, &child_ctx);
-        }
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        if let Some(child_node) = layout.children.first() {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: child_node.content_rect,
-                is_focused: ctx.focused_widget == Some(self.child.id()),
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            return self.child.handle_key(event, &child_ctx);
-        }
-        WidgetResponse::ignored()
     }
 
     fn focusable_children(&self) -> Vec<WidgetId> {

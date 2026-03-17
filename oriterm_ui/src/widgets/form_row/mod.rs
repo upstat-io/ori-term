@@ -8,17 +8,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, KeyEvent, MouseEvent, MouseEventKind};
 use crate::layout::{Align, Direction, LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::sense::Sense;
 use crate::text::TextStyle;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
-use super::{
-    CaptureRequest, DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction,
-    WidgetResponse,
-};
+use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
 
 /// A form row containing a label and a control widget.
 ///
@@ -32,10 +28,6 @@ pub struct FormRow {
 
     /// Fixed label column width (set by parent `FormLayout` for alignment).
     label_width: f32,
-    /// Whether the control widget has active mouse capture (drag in progress).
-    captured: bool,
-    /// Whether the control widget is currently hovered.
-    control_hovered: bool,
 
     /// Cached layout result, keyed by bounds.
     cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
@@ -49,8 +41,6 @@ impl FormRow {
             label: label.into(),
             control,
             label_width: 100.0,
-            captured: false,
-            control_hovered: false,
             cached_layout: RefCell::new(None),
         }
     }
@@ -118,52 +108,6 @@ impl FormRow {
     }
 }
 
-// Hover tracking.
-impl FormRow {
-    /// Updates hover state based on cursor position within the row.
-    fn update_control_hover(
-        &mut self,
-        control_node: &LayoutNode,
-        pos: Point,
-        ctx: &EventCtx<'_>,
-    ) -> WidgetResponse {
-        let inside = control_node.rect.contains(pos);
-        if inside && !self.control_hovered {
-            // Entering the control.
-            self.control_hovered = true;
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: control_node.content_rect,
-                is_focused: ctx.focused_widget == Some(self.control.id()),
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            self.control.handle_hover(HoverEvent::Enter, &child_ctx);
-            return WidgetResponse::paint();
-        }
-        if !inside && self.control_hovered {
-            // Leaving the control.
-            self.control_hovered = false;
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: control_node.content_rect,
-                is_focused: ctx.focused_widget == Some(self.control.id()),
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            self.control.handle_hover(HoverEvent::Leave, &child_ctx);
-            return WidgetResponse::paint();
-        }
-        WidgetResponse::ignored()
-    }
-}
-
 impl Widget for FormRow {
     fn id(&self) -> WidgetId {
         self.id
@@ -216,90 +160,6 @@ impl Widget for FormRow {
 
     fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
         visitor(self.control.as_mut());
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-
-        let Some(control_node) = layout.children.get(1) else {
-            return WidgetResponse::ignored();
-        };
-
-        // Move events: update hover tracking (unless captured).
-        if event.kind == MouseEventKind::Move && !self.captured {
-            return self.update_control_hover(control_node, event.pos, ctx);
-        }
-
-        // During capture, route all events to the control regardless of position.
-        let hit = self.captured || control_node.rect.contains(event.pos);
-        if hit {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: control_node.content_rect,
-                is_focused: ctx.focused_widget == Some(self.control.id()),
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            let resp = self.control.handle_mouse(event, &child_ctx);
-
-            // Update capture state from child's request.
-            if matches!(resp.capture, CaptureRequest::Acquire) {
-                self.captured = true;
-            } else if resp.capture.should_release(&event.kind) {
-                self.captured = false;
-            } else {
-                // CaptureRequest::None with non-Up event: no capture change.
-            }
-            return resp;
-        }
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if event == HoverEvent::Leave {
-            self.captured = false;
-            if self.control_hovered {
-                self.control_hovered = false;
-                let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-                if let Some(control_node) = layout.children.get(1) {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: control_node.content_rect,
-                        is_focused: ctx.focused_widget == Some(self.control.id()),
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                        interaction: None,
-                        widget_id: None,
-                        frame_requests: None,
-                    };
-                    self.control.handle_hover(HoverEvent::Leave, &child_ctx);
-                }
-                return WidgetResponse::paint();
-            }
-        }
-        // Enter is handled by Move-based hover tracking — ignore here.
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        if let Some(control_node) = layout.children.get(1) {
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: control_node.content_rect,
-                is_focused: ctx.focused_widget == Some(self.control.id()),
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-                interaction: None,
-                widget_id: None,
-                frame_requests: None,
-            };
-            return self.control.handle_key(event, &child_ctx);
-        }
-        WidgetResponse::ignored()
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {

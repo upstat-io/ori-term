@@ -684,10 +684,10 @@ For each interactive widget:
 **File(s):** `oriterm_ui/src/widgets/label/mod.rs`, `separator/mod.rs`, `spacer/mod.rs`,
 `rich_label/mod.rs`
 
-- [ ] LabelWidget: `sense() -> Sense::none()`, rename `draw()` to `paint()`
-- [ ] SeparatorWidget: same
-- [ ] SpacerWidget: same
-- [ ] RichLabel: already has `sense() -> Sense::none()`, rename `draw()` to `paint()`,
+- [x] LabelWidget: `sense() -> Sense::none()`, rename `draw()` to `paint()`
+- [x] SeparatorWidget: same
+- [x] SpacerWidget: same
+- [x] RichLabel: already has `sense() -> Sense::none()`, rename `draw()` to `paint()`,
   remove stub `handle_mouse`, `handle_hover`, `handle_key` that return `WidgetResponse::ignored()`
 **Note:** StatusBadge does not implement `Widget` (it is a standalone drawing helper)
 and does not need migration. WindowChrome widgets are migrated in Wave 2b (Section 08.4).
@@ -747,23 +747,25 @@ generic controller pipeline and widget-specific behavior.
 - [x] `ScrollWidget::layout()` returns `LayoutBox::flex()` wrapping child layout with
   `clip=true`, not `LayoutBox::leaf()`. Without this, hit testing through
   `layout_hit_test_path` never finds widgets inside scroll containers.
-- [ ] Verify `SettingsPanel` layout tree includes Save/Cancel footer buttons in the
-  hit test path (they may be outside the scroll widget, in a separate flex child).
-- [ ] Verify all container widgets' `layout()` methods include children's layout boxes
-  (not just leaf size reporting). Check: FormLayout, FormSection, FormRow,
-  DialogWidget, PanelWidget, StackWidget, ContainerWidget.
+- [x] Verify `SettingsPanel` layout tree includes Save/Cancel footer buttons in the
+  hit test path. SettingsPanel returns `LayoutBox::flex(Column, [child_box])`;
+  DialogWidget returns `flex(Column, [content_zone, footer_zone])` with buttons.
+- [x] Verify all container widgets' `layout()` methods include children's layout boxes
+  (not just leaf size reporting). Verified: FormLayout, FormSection, FormRow,
+  DialogWidget, PanelWidget, ContainerWidget — all return `flex()` with children.
+  **Exception:** StackWidget returns `leaf()` (no children in layout tree) — z-stack
+  layout support not yet implemented. StackWidget is NOT used in production code.
 
 **Coordinate space reconciliation:**
 
-- [ ] `deliver_event_to_tree` converts cursor positions to local space (subtracts
+- [x] `deliver_event_to_tree` converts cursor positions to local space (subtracts
   `bounds.origin`) before hit testing, then offsets hit entry bounds back to screen
-  space. Callers must compute layout in LOCAL space (`Rect::new(0, 0, w, h)`) not
-  screen space (`Rect::new(0, chrome_h, w, h)`). Verified for dialog content dispatch.
-- [ ] `on_action` receives screen-space bounds (offset by `deliver_event_to_tree`).
-  DropdownWidget uses these as the popup anchor rect — verify anchor positions match
-  the old `ctx.bounds` from legacy `handle_mouse`.
-- [ ] Captured mouse events (MouseMove/MouseUp during press) use bounds from the hit
-  path instead of `Rect::default()`. Fixed in `plan_captured_mouse`.
+  space. Callers compute layout in LOCAL space (`Rect::new(0, 0, w, h)`).
+- [x] `on_action` receives screen-space bounds (offset by `deliver_event_to_tree`).
+  DropdownWidget uses these as the popup anchor rect.
+- [x] Captured mouse events (MouseMove/MouseUp during press) use bounds from the hit
+  path (`plan_captured_mouse` reads first entry bounds). `deliver_event_to_tree`
+  builds a single-entry path with root bounds for the active widget case.
 
 **Missing controllers on widgets:**
 
@@ -790,14 +792,15 @@ generic controller pipeline and widget-specific behavior.
   pipeline, `action_for_widget()` maps `Clicked(id)` → window actions.
 - [x] Chrome hover: `InteractionManager::update_hot_path()` from cursor move,
   lifecycle events delivered via `prepare_widget_tree`.
-- [ ] Content click dispatch: `deliver_event_to_tree` with on-demand layout computation.
-  Currently has coordinate space issues — dropdown anchors in wrong position,
-  Save/Cancel buttons not in hit path.
-- [ ] Content scroll dispatch: same pipeline as click, with `ScrollController` on
+- [x] Content click dispatch: `deliver_event_to_tree` with on-demand layout computation.
+  Coordinate space: hit test in local space, bounds offset to screen space.
+- [x] Content scroll dispatch: same pipeline as click, with `ScrollController` on
   `ScrollWidget` handling `InputEvent::Scroll`.
-- [ ] Content keyboard: `deliver_event_to_tree` with focus_path for keyboard routing.
-  Requires `KeyActivationController` on buttons.
-- [ ] Cursor leave: `InteractionManager::update_hot_path(&[])` clears hover.
+- [x] Content keyboard: `deliver_event_to_tree` with focus_path from
+  `InteractionManager::focus_ancestor_path()`. FocusController on ButtonWidget
+  handles Tab cycling, KeyActivationController handles Enter/Space.
+- [x] Cursor leave: `InteractionManager::update_hot_path(&[])` clears hover
+  via `clear_dialog_hover()`.
 - [x] Overlay dispatch: already on controller pipeline via `deliver_via_pipeline`.
 
 ### Remove Legacy Compat Shims from Wave 1 Widgets
@@ -811,15 +814,21 @@ generic controller pipeline and widget-specific behavior.
 - [x] Remove `dragging: bool` from SliderWidget. Animator already returns pressed-state
   color. Move events always update value (container capture semantics ensure Move only
   arrives during drag).
-- [ ] Remove legacy `handle_mouse()` overrides from all 7 interactive widgets
-  (Button, Toggle, Checkbox, Dropdown, Slider, TextInput, WindowControlButton)
-- [ ] Remove legacy `handle_hover()` overrides from all widgets that have them
-- [ ] Remove legacy `handle_key()` from ButtonWidget (keyboard activation moves to
+- [x] Remove legacy `handle_mouse()` overrides from all 7 interactive widgets
+  (Button, Toggle, Checkbox, Dropdown, Slider, TextInput, WindowControlButton).
+  Note: TextInput deferred (state ownership issue). 6 of 7 removed; TextInput retains legacy.
+- [x] Remove legacy `handle_hover()` overrides from all interactive widgets that have them.
+  Removed from Button, Toggle, Checkbox, Dropdown, Slider, WindowControlButton, Menu.
+  Container widgets (Scroll, Panel, FormLayout, FormSection, FormRow, Dialog, etc.) still have
+  delegation chains — these become no-ops since children use trait defaults.
+- [x] Remove legacy `handle_key()` from ButtonWidget (keyboard activation moves to
   a controller — either extend ClickController for Enter/Space, or add
   `KeyActivationController`)
-- [ ] Remove legacy `handle_key()` from ToggleWidget, CheckboxWidget (Space toggle →
+- [x] Remove legacy `handle_key()` from ToggleWidget, CheckboxWidget (Space toggle →
   controller), DropdownWidget (arrow nav → DropdownKeyController), SliderWidget
-  (arrow/Home/End → controller), TextInputWidget (all keys → TextEditController)
+  (arrow/Home/End → controller). TextInputWidget deferred (all keys → TextEditController).
+  Also removed dead helper methods: `select_next/select_prev` (Dropdown), `navigate` (Menu),
+  `action` (WindowControlButton).
 - [ ] Verify: window control buttons have working hover via the pipeline (no regression)
 
 ### Remove Legacy Methods from Widget Trait
@@ -839,7 +848,9 @@ generic controller pipeline and widget-specific behavior.
 - [ ] Remove `focused_widget: Option<WidgetId>` from `DrawCtx`. Superseded by
   `InteractionManager` lookup via `ctx.is_interaction_focused()`. Currently propagated
   through `DrawCtx::for_child()`. Blast radius: ~18 production sites + ~55 test sites.
-- [ ] Remove `ContainerInputState` from `container/mod.rs` (replaced by framework propagation)
+- [x] Remove `ContainerInputState` from `container/mod.rs` (replaced by framework propagation).
+  Also removed: `update_dirty()`, `event_dispatch.rs` (213 lines), `find_child_index()`,
+  `hit_test_children()`. ContainerWidget legacy `handle_mouse/hover/key` impls removed.
 - [ ] Remove `WidgetResponse` and `CaptureRequest` from `widgets/mod.rs`
   (actions now emitted via controllers, capture via `ControllerCtx`)
 - [ ] Remove or update `From<EventResponse> for DirtyKind` in `invalidation/mod.rs`
@@ -887,7 +898,7 @@ generic controller pipeline and widget-specific behavior.
   - `app/dialog_context/event_handling/mod.rs` — imports `EventResponse, HoverEvent, MouseEvent, MouseEventKind`
   Additionally, `app/chrome/mod.rs` uses `oriterm_ui::input::EventResponse` via
   fully-qualified paths (2 sites) without a `use` import.
-- [ ] Remove `container/event_dispatch.rs` file entirely (all 213 lines)
+- [x] Remove `container/event_dispatch.rs` file entirely (all 213 lines)
 - [ ] Update `oriterm_ui/src/draw/scene_compose/mod.rs` line 29: change `root.draw(ctx)` to
   `root.paint(ctx)`. Also update the doc comment on line 17 which references `root.draw(ctx)`.
   Update `draw/scene_compose/tests.rs` which references `child.draw()` in comments.
@@ -944,7 +955,7 @@ generic controller pipeline and widget-specific behavior.
 - [x] `DrawCtx::animations_running` field removed (framework owns scheduling)
 - [ ] `EventCtx.is_focused`, `EventCtx.focused_widget`, `DrawCtx.focused_widget`
   fields removed (InteractionManager is the single source of truth)
-- [ ] `container/event_dispatch.rs` file deleted (framework propagation replaces it)
+- [x] `container/event_dispatch.rs` file deleted (framework propagation replaces it)
 - [ ] Window control button hover works via the unified pipeline (regression fixed)
 - [ ] Every widget's visual state driven by InteractionManager + VisualStateAnimator
   — zero manual `hovered: bool` fields remain anywhere in the codebase
@@ -957,9 +968,11 @@ generic controller pipeline and widget-specific behavior.
 - [x] All custom controllers registered in `controllers/mod.rs` (except TerminalInputController)
 
 ### Framework & Integration (08.1a)
-- [ ] Framework orchestration pipeline implemented: lifecycle delivery,
+- [x] Framework orchestration pipeline implemented: lifecycle delivery,
   anim_frame dispatch, visual_states update/tick, then paint -- all BEFORE `draw_frame()`
-- [ ] `DispatchResult` defined at app layer and delivery loop implemented
+  (`prepare_widget_tree` in `widget_pipeline/mod.rs`)
+- [x] `DispatchResult` defined at app layer and delivery loop implemented
+  (`widget_pipeline/mod.rs:31` + `dispatch_step` + `apply_dispatch_requests`)
 - [x] `OverlayManager::process_mouse_event()` migrated to use `dispatch_to_controllers()`
   with full tree dispatch (legacy fallback removed from all 3 mouse + 1 key dispatch sites)
 - [ ] `sense()` default changed from `Sense::all()` to `Sense::none()` ONLY after all
