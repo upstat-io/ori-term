@@ -135,9 +135,9 @@ fn scroll_wheel_changes_offset() {
         delta: ScrollDelta::Lines { x: 0.0, y: -3.0 },
         modifiers: Modifiers::NONE,
     };
-    let handled = scroll.on_input(&event, bounds());
+    let result = scroll.on_input(&event, bounds());
 
-    assert!(handled, "scroll event should be handled");
+    assert!(result.handled, "scroll event should be handled");
     assert!(scroll.scroll_offset() > 0.0, "offset should increase");
 }
 
@@ -151,8 +151,8 @@ fn key_home_resets_to_top() {
         key: Key::Home,
         modifiers: Modifiers::NONE,
     };
-    let handled = scroll.on_input(&event, bounds());
-    assert!(handled);
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     assert_eq!(scroll.scroll_offset(), 0.0);
 }
 
@@ -165,8 +165,8 @@ fn key_end_scrolls_to_bottom() {
         key: Key::End,
         modifiers: Modifiers::NONE,
     };
-    let handled = scroll.on_input(&event, bounds());
-    assert!(handled);
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     // Content 320px, view 100px → max offset = 220.
     assert_eq!(scroll.scroll_offset(), 220.0);
 }
@@ -180,8 +180,8 @@ fn key_arrow_down_scrolls() {
         key: Key::ArrowDown,
         modifiers: Modifiers::NONE,
     };
-    let handled = scroll.on_input(&event, bounds());
-    assert!(handled);
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     // Should have scrolled down by line_height (20px).
     assert_eq!(scroll.scroll_offset(), 20.0);
 }
@@ -195,8 +195,8 @@ fn key_page_down_scrolls_by_viewport() {
         key: Key::PageDown,
         modifiers: Modifiers::NONE,
     };
-    let handled = scroll.on_input(&event, bounds());
-    assert!(handled);
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     // Should scroll down by one viewport height (100px).
     assert_eq!(scroll.scroll_offset(), 100.0);
 }
@@ -211,8 +211,8 @@ fn key_page_up_scrolls_by_viewport() {
         key: Key::PageUp,
         modifiers: Modifiers::NONE,
     };
-    let handled = scroll.on_input(&event, bounds());
-    assert!(handled);
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     // Should scroll up by one viewport height (100px): 200 - 100 = 100.
     assert_eq!(scroll.scroll_offset(), 100.0);
 }

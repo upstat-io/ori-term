@@ -1392,59 +1392,42 @@ fn layout_with_left_inset_controls_stay_right() {
     );
 }
 
-// update_control_hover
-
-#[cfg(not(target_os = "macos"))]
-use crate::geometry::Rect;
-#[cfg(not(target_os = "macos"))]
-use crate::input::EventResponse;
-#[cfg(not(target_os = "macos"))]
-use crate::widgets::EventCtx;
-#[cfg(not(target_os = "macos"))]
-use crate::widgets::tests::MockMeasurer;
+// dispatch_control_input
 
 #[cfg(not(target_os = "macos"))]
 #[test]
-fn update_control_hover_enters_and_leaves() {
+fn dispatch_control_input_handles_click() {
+    use std::time::Instant;
+
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
 
-    let measurer = MockMeasurer::STANDARD;
-    let theme = UiTheme::dark();
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds: Rect::new(0.0, 0.0, 1200.0, TAB_BAR_HEIGHT),
-        is_focused: false,
-        focused_widget: None,
-        theme: &theme,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    // Hover over the first control button (minimize).
+    // Click on the first control button (minimize).
     let ctrl_rect = w.interactive_rects()[w.tab_count() + 2]; // first control
     let center = crate::geometry::Point::new(
         ctrl_rect.x() + ctrl_rect.width() / 2.0,
         ctrl_rect.y() + ctrl_rect.height() / 2.0,
     );
-    let resp = w.update_control_hover(center, &ctx);
-    assert_eq!(
-        resp.response,
-        EventResponse::RequestPaint,
-        "entering a control should request paint"
-    );
+    let now = Instant::now();
 
-    // Hover same position again — no change.
-    let resp2 = w.update_control_hover(center, &ctx);
-    assert_eq!(
-        resp2.response,
-        EventResponse::Ignored,
-        "re-hovering same control should not request redraw"
-    );
+    let down = crate::input::InputEvent::MouseDown {
+        pos: center,
+        button: crate::input::MouseButton::Left,
+        modifiers: crate::input::Modifiers::NONE,
+    };
+    let result = w.dispatch_control_input(&down, now);
+    assert!(result.handled, "mouse down on control should be handled");
 
-    // Clear hover.
-    w.clear_control_hover(&ctx);
+    let up = crate::input::InputEvent::MouseUp {
+        pos: center,
+        button: crate::input::MouseButton::Left,
+        modifiers: crate::input::Modifiers::NONE,
+    };
+    let result = w.dispatch_control_input(&up, now);
+    assert!(
+        !result.actions.is_empty(),
+        "mouse up should emit a window action"
+    );
 }
 
 // cursor_in_tab_bar range

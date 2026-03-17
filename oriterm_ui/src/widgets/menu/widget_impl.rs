@@ -84,7 +84,11 @@ impl Widget for MenuWidget {
         ctx.draw_list.pop_layer();
     }
 
-    fn on_input(&mut self, event: &crate::input::InputEvent, bounds: Rect) -> bool {
+    fn on_input(
+        &mut self,
+        event: &crate::input::InputEvent,
+        bounds: Rect,
+    ) -> crate::widgets::OnInputResult {
         match event {
             crate::input::InputEvent::MouseMove { pos, .. } => {
                 let rel_y = pos.y - bounds.y();
@@ -92,7 +96,7 @@ impl Widget for MenuWidget {
                 if new_hover != self.hovered {
                     self.hovered = new_hover;
                 }
-                true
+                crate::widgets::OnInputResult::handled()
             }
             crate::input::InputEvent::Scroll { delta, pos, .. } => {
                 let delta_y = match *delta {
@@ -103,9 +107,9 @@ impl Widget for MenuWidget {
                     let rel_y = pos.y - bounds.y();
                     self.hovered = self.entry_at_y(rel_y);
                 }
-                true
+                crate::widgets::OnInputResult::handled()
             }
-            _ => false,
+            _ => crate::widgets::OnInputResult::ignored(),
         }
     }
 

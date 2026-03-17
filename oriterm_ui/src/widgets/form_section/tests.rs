@@ -87,8 +87,8 @@ fn click_on_header_toggles_expanded() {
         button: MouseButton::Left,
         modifiers: Modifiers::NONE,
     };
-    let handled = section.on_input(&event, bounds);
-    assert!(handled);
+    let result = section.on_input(&event, bounds);
+    assert!(result.handled);
     assert!(!section.is_expanded());
 
     // Click again to re-expand.

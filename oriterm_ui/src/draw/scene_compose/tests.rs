@@ -6,7 +6,6 @@ use std::time::Instant;
 
 use crate::draw::{DrawCommand, DrawList, SceneCache, SceneNode};
 use crate::geometry::Rect;
-use crate::input::HoverEvent;
 use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
@@ -25,7 +24,7 @@ use crate::widgets::spacer::SpacerWidget;
 use crate::widgets::stack::StackWidget;
 use crate::widgets::tests::{MockMeasurer, TEST_THEME};
 use crate::widgets::text_input::TextInputWidget;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 use super::compose_scene;
 
@@ -386,22 +385,9 @@ fn equivalence_button_in_container() {
 }
 
 #[test]
-fn equivalence_hovered_button_in_container() {
-    let mut btn = ButtonWidget::new("Hover me");
-    let event_ctx = EventCtx {
-        measurer: &MockMeasurer::STANDARD,
-        bounds: Rect::new(0.0, 0.0, 200.0, 30.0),
-        is_focused: false,
-        focused_widget: None,
-        theme: &TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-    btn.handle_hover(HoverEvent::Enter, &event_ctx);
+fn equivalence_button_in_container_with_label() {
+    let btn = ButtonWidget::new("Hover me");
     let container = ContainerWidget::column().with_child(Box::new(btn));
-    // Both renders use the same fixed `now` from assert_equivalence, so the
-    // animated hover_progress interpolates to the same value in both paths.
     assert_equivalence(&container, Rect::new(0.0, 0.0, 200.0, 50.0));
 }
 
@@ -969,19 +955,8 @@ fn matrix_button_cached_after_warmup() {
 fn matrix_button_invalidated_on_hover() {
     let counter = Rc::new(Cell::new(0));
     let sibling = TrackingWidget::new(50.0, 10.0, counter.clone());
-    let mut btn = ButtonWidget::new("Hover me");
+    let btn = ButtonWidget::new("Hover me");
     let btn_id = btn.id();
-    let event_ctx = EventCtx {
-        measurer: &MockMeasurer::STANDARD,
-        bounds: Rect::new(0.0, 0.0, 200.0, 30.0),
-        is_focused: false,
-        focused_widget: None,
-        theme: &TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-    btn.handle_hover(HoverEvent::Enter, &event_ctx);
 
     let container = ContainerWidget::column()
         .with_child(Box::new(btn))

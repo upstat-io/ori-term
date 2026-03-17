@@ -13,18 +13,15 @@ use winit::event_loop::ActiveEventLoop;
 use oriterm_ui::geometry::Point;
 use oriterm_ui::geometry::Rect;
 #[cfg(not(target_os = "macos"))]
-use oriterm_ui::input::{MouseButton, MouseEvent, MouseEventKind};
+use oriterm_ui::input::MouseButton;
 use oriterm_ui::overlay::Placement;
+#[cfg(not(target_os = "macos"))]
+use oriterm_ui::widgets::WidgetAction;
 use oriterm_ui::widgets::menu::{MenuStyle, MenuWidget};
 use oriterm_ui::widgets::tab_bar::TabBarHit;
 use oriterm_ui::widgets::tab_bar::constants::{
     DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_TOP_MARGIN,
 };
-#[cfg(not(target_os = "macos"))]
-use oriterm_ui::widgets::{EventCtx, WidgetAction};
-
-#[cfg(not(target_os = "macos"))]
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
 use super::{App, context_menu};
 
@@ -215,52 +212,39 @@ impl App {
 
     /// Route a mouse event to the tab bar's window control buttons.
     ///
-    /// Delegates to [`TabBarWidget::handle_control_mouse`] which manages
-    /// the press/release cycle on [`WindowControlButton`]s. Returns the
-    /// emitted [`WidgetAction`] (if any) — the caller dispatches it.
+    /// Delegates to [`TabBarWidget::dispatch_control_input`] which dispatches
+    /// through the controller pipeline on [`WindowControlButton`]s. Returns
+    /// the emitted [`WidgetAction`] (if any) — the caller dispatches it.
     #[cfg(not(target_os = "macos"))]
     fn route_control_mouse(&mut self, button: MouseButton, is_down: bool) -> Option<WidgetAction> {
         let pos = self.mouse.cursor_pos();
-        let ui_theme = self.ui_theme;
         let ctx = self.focused_ctx_mut()?;
         let scale = ctx.window.scale_factor().factor() as f32;
         let logical_pos = Point::new(pos.x as f32 / scale, pos.y as f32 / scale);
-        let kind = if is_down {
-            MouseEventKind::Down(button)
+        let now = Instant::now();
+        let event = if is_down {
+            oriterm_ui::input::InputEvent::MouseDown {
+                pos: logical_pos,
+                button,
+                modifiers: oriterm_ui::input::Modifiers::NONE,
+            }
         } else {
-            MouseEventKind::Up(button)
+            oriterm_ui::input::InputEvent::MouseUp {
+                pos: logical_pos,
+                button,
+                modifiers: oriterm_ui::input::Modifiers::NONE,
+            }
         };
-        let mouse_event = MouseEvent {
-            kind,
-            pos: logical_pos,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
-        };
-        let renderer = ctx.renderer.as_ref()?;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: Rect::default(),
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-            interaction: None,
-            widget_id: None,
-            frame_requests: None,
-        };
-        let resp = ctx.tab_bar.handle_control_mouse(&mouse_event, &event_ctx);
-        if matches!(
-            resp.response,
-            oriterm_ui::input::EventResponse::RequestPaint
-                | oriterm_ui::input::EventResponse::RequestLayout
-        ) {
+        let result = ctx.tab_bar.dispatch_control_input(&event, now);
+        if result.handled
+            || result
+                .requests
+                .contains(oriterm_ui::controllers::ControllerRequests::PAINT)
+        {
             ctx.dirty = true;
             ctx.ui_stale = true;
         }
-        resp.action
+        result.actions.into_iter().next()
     }
 
     /// Handle a click in the tab bar drag area.

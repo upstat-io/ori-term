@@ -10,11 +10,10 @@ mod input_controller;
 use std::cell::Cell;
 
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::input::{HoverEvent, KeyEvent, MouseEvent};
 use oriterm_ui::layout::{LayoutBox, SizeSpec};
 use oriterm_ui::sense::Sense;
 use oriterm_ui::widget_id::WidgetId;
-use oriterm_ui::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 /// The terminal grid as a UI widget.
 ///
@@ -123,20 +122,6 @@ impl Widget for TerminalGridWidget {
         // No DrawCommands — cell rendering is handled by the GPU prepare
         // phase. Bounds are set explicitly via `set_bounds()` from
         // `compute_window_layout`, which includes grid padding.
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Claim all mouse events within the grid area.
-        WidgetResponse::handled()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Claim all key events when focused — they go to the PTY.
-        WidgetResponse::handled()
     }
 }
 

@@ -199,8 +199,8 @@ fn tab_is_noop_for_ok_only() {
 
     assert_eq!(dialog.focused_button, DialogButton::Ok);
 
-    let handled = dialog.on_input(&key_down(Key::Tab), bounds);
-    assert!(!handled);
+    let result = dialog.on_input(&key_down(Key::Tab), bounds);
+    assert!(!result.handled);
     assert_eq!(dialog.focused_button, DialogButton::Ok);
 }
 
@@ -209,8 +209,8 @@ fn escape_handled_by_on_input() {
     let mut dialog = DialogWidget::new("Test");
     let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
 
-    let handled = dialog.on_input(&key_down(Key::Escape), bounds);
-    assert!(handled);
+    let result = dialog.on_input(&key_down(Key::Escape), bounds);
+    assert!(result.handled);
 }
 
 // -- on_action: button click mapping --

@@ -117,10 +117,16 @@ pub fn dispatch_to_widget_tree(
 
         // If controllers didn't handle the event, let the widget handle it
         // directly for widget-internal interaction logic (e.g., menu item
-        // hover tracking).
-        if !result.handled && widget.on_input(event, widget_bounds) {
-            result.handled = true;
-            result.source = Some(id);
+        // hover tracking, text input keyboard editing).
+        if !result.handled {
+            let input_result = widget.on_input(event, widget_bounds);
+            if input_result.handled {
+                result.handled = true;
+                result.source = Some(id);
+            }
+            if let Some(action) = input_result.action {
+                result.actions.push(action);
+            }
         }
 
         if result.handled {
