@@ -75,6 +75,7 @@ impl App {
         // so the animation progresses to completion.
         if ctx.frame_requests.anim_frame_requested() {
             ctx.dirty = true;
+            ctx.window.request_redraw();
         }
     }
 
@@ -124,6 +125,13 @@ impl App {
             Some(&ctx.frame_requests),
             now,
         );
+
+        // If any lifecycle events were delivered (hover enter/leave) or
+        // animators are mid-transition, invalidate all scene nodes so
+        // compose_scene re-renders widgets with updated animation colors.
+        if !lifecycle_events.is_empty() || ctx.frame_requests.anim_frame_requested() {
+            ctx.invalidation.invalidate_all();
+        }
 
         // Draw the chrome title bar via scene composition.
         let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
