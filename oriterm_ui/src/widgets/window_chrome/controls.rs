@@ -62,8 +62,6 @@ pub struct WindowControlButton {
     close_pressed_bg: Color,
     controllers: Vec<Box<dyn EventController>>,
     animator: VisualStateAnimator,
-    /// Legacy pressed tracking for `handle_mouse()` compat (removed in 08.6).
-    pressed: bool,
 }
 
 impl WindowControlButton {
@@ -89,18 +87,12 @@ impl WindowControlButton {
             animator: VisualStateAnimator::new(vec![common_states(
                 colors.bg, hover_bg, pressed_bg, colors.bg,
             )]),
-            pressed: false,
         }
     }
 
     /// Returns this button's kind.
     pub fn kind(&self) -> ControlKind {
         self.kind
-    }
-
-    /// Returns whether this button is currently pressed.
-    pub fn is_pressed(&self) -> bool {
-        self.pressed
     }
 
     /// Updates the maximized state (affects maximize/restore symbol).
@@ -159,7 +151,6 @@ impl std::fmt::Debug for WindowControlButton {
             .field("id", &self.id)
             .field("kind", &self.kind)
             .field("is_maximized", &self.is_maximized)
-            .field("pressed", &self.pressed)
             .field("fg", &self.fg)
             .field("close_hover_bg", &self.close_hover_bg)
             .field("close_pressed_bg", &self.close_pressed_bg)
@@ -288,14 +279,11 @@ impl Widget for WindowControlButton {
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.pressed = true;
-                WidgetResponse::paint()
-            }
+            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::paint(),
             MouseEventKind::Up(MouseButton::Left) => {
-                let was_pressed = self.pressed;
-                self.pressed = false;
-                if was_pressed && ctx.bounds.contains(event.pos) {
+                // Parent tracks which button was pressed and routes Up here.
+                // Emit action if cursor is still within bounds at release.
+                if ctx.bounds.contains(event.pos) {
                     WidgetResponse::paint().with_action(self.action())
                 } else {
                     WidgetResponse::paint()
@@ -307,12 +295,7 @@ impl Widget for WindowControlButton {
 
     fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         match event {
-            HoverEvent::Enter | HoverEvent::Leave => {
-                if matches!(event, HoverEvent::Leave) {
-                    self.pressed = false;
-                }
-                WidgetResponse::paint()
-            }
+            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
         }
     }
 

@@ -726,10 +726,15 @@ states don't work (this is the current regression on window control buttons).
 
 ### Remove Legacy Compat Shims from Wave 1 Widgets
 
-- [ ] Remove `pressed: bool` from ButtonWidget, ToggleWidget, CheckboxWidget,
+- [x] Remove `pressed: bool` from ButtonWidget, ToggleWidget, CheckboxWidget,
   DropdownWidget, SliderWidget, WindowControlButton (6 widgets). The framework's
   `InteractionManager::active_widget` replaces manual pressed tracking.
-- [ ] Remove `dragging: bool` from SliderWidget. Replace with `ctx.is_active()`.
+  Note: Button/Toggle/Checkbox/Dropdown already removed in §08.3. WindowControlButton
+  removed in §08.6; pressed routing moved to parent (`pressed_control: Option<usize>`
+  on WindowChromeWidget and TabBarWidget).
+- [x] Remove `dragging: bool` from SliderWidget. Animator already returns pressed-state
+  color. Move events always update value (container capture semantics ensure Move only
+  arrives during drag).
 - [ ] Remove legacy `handle_mouse()` overrides from all 7 interactive widgets
   (Button, Toggle, Checkbox, Dropdown, Slider, TextInput, WindowControlButton)
 - [ ] Remove legacy `handle_hover()` overrides from all widgets that have them
@@ -854,7 +859,7 @@ states don't work (this is the current regression on window control buttons).
 
 ### Legacy Removal (08.6)
 - [x] Framework pipeline walks full widget tree (not just top-level)
-- [ ] All `pressed: bool` / `dragging: bool` compat fields removed from Wave 1 widgets
+- [x] All `pressed: bool` / `dragging: bool` compat fields removed from Wave 1 widgets
 - [ ] All legacy `handle_mouse()`, `handle_hover()`, `handle_key()` overrides removed
   from every widget (not just from the trait — from every impl)
 - [ ] Legacy `handle_mouse()`, `handle_hover()`, `handle_key()` removed from trait

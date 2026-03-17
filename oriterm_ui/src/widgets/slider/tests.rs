@@ -60,7 +60,6 @@ fn default_state() {
     assert_eq!(s.min(), 0.0);
     assert_eq!(s.max(), 1.0);
     assert!(!s.is_disabled());
-    assert!(!s.is_dragging());
     assert!(s.is_focusable());
 }
 
@@ -109,7 +108,6 @@ fn drag_changes_value() {
     // Track area is 140px (200 - 48 value label - 12 gap).
     // Center of track: x=70 -> normalized 0.5 -> value 50.
     s.handle_mouse(&mouse_down(70.0), &ctx);
-    assert!(s.is_dragging());
     assert!((s.value() - 50.0).abs() < 2.0);
 
     // Drag to right edge of track (x=132 -> normalized 1.0 -> value 100).
@@ -118,7 +116,6 @@ fn drag_changes_value() {
 
     // Release.
     s.handle_mouse(&mouse_up(192.0), &ctx);
-    assert!(!s.is_dragging());
 }
 
 #[test]
@@ -261,18 +258,18 @@ fn right_click_ignored() {
     };
     let r = s.handle_mouse(&right_down, &ctx);
     assert_eq!(r, WidgetResponse::ignored());
-    assert!(!s.is_dragging());
 }
 
 #[test]
-fn move_without_drag_ignored() {
+fn move_updates_value() {
     let mut s = SliderWidget::new().with_range(0.0, 100.0).with_value(50.0);
     let ctx = slider_ctx();
 
-    // Mouse move without prior mouse down — no drag started.
-    let r = s.handle_mouse(&mouse_move(150.0), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-    assert_eq!(s.value(), 50.0);
+    // Move events update value (container capture ensures Move only arrives
+    // during an active drag; the guard is at the container level, not here).
+    let r = s.handle_mouse(&mouse_move(132.0), &ctx);
+    assert!(r.response != super::super::super::input::EventResponse::Ignored);
+    assert!((s.value() - 100.0).abs() < 2.0);
 }
 
 #[test]
