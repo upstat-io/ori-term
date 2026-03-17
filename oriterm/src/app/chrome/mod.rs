@@ -295,8 +295,8 @@ impl App {
 
     /// Drive control button hover animation for the focused window.
     ///
-    /// Dispatches a `MouseMove` `InputEvent` to the tab bar's control button
-    /// controllers so `HoverController` fires enter/leave state transitions.
+    /// Directly updates `VisualStateAnimator` on each control button based
+    /// on cursor position. The hovered button gets hot state, others normal.
     #[cfg(not(target_os = "macos"))]
     fn update_control_hover_animation(
         &mut self,
@@ -322,16 +322,8 @@ impl App {
         let pos =
             oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
         let now = Instant::now();
-        let event = oriterm_ui::input::InputEvent::MouseMove {
-            pos,
-            modifiers: oriterm_ui::input::Modifiers::NONE,
-        };
-        let result = ctx.tab_bar.dispatch_control_input(&event, now);
-        if result.handled
-            || result
-                .requests
-                .contains(oriterm_ui::controllers::ControllerRequests::PAINT)
-        {
+        let animating = ctx.tab_bar.update_control_hover_state(pos, now);
+        if animating || is_control_hit {
             ctx.dirty = true;
             ctx.ui_stale = true;
         }
@@ -354,16 +346,14 @@ impl App {
                 Instant::now(),
             );
         }
-        // Clear control button hover state (not on macOS — native traffic lights).
-        // Dispatch a mouse-move to an impossible position to trigger HoverController leave.
+        // Clear control button hover animations (not on macOS — native traffic lights).
         #[cfg(not(target_os = "macos"))]
         {
             let now = Instant::now();
-            let event = oriterm_ui::input::InputEvent::MouseMove {
-                pos: oriterm_ui::geometry::Point::new(-1.0, -1.0),
-                modifiers: oriterm_ui::input::Modifiers::NONE,
-            };
-            ctx.tab_bar.dispatch_control_input(&event, now);
+            if ctx.tab_bar.clear_control_hover_state(now) {
+                ctx.dirty = true;
+                ctx.ui_stale = true;
+            }
         }
         if had_hover {
             ctx.dirty = true;

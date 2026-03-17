@@ -60,6 +60,14 @@ impl InteractionState {
         }
     }
 
+    /// Returns a copy with `hot` and `hot_direct` set.
+    #[must_use]
+    pub fn with_hot(mut self) -> Self {
+        self.hot = true;
+        self.hot_direct = true;
+        self
+    }
+
     /// True when the pointer is over this widget or any descendant.
     pub fn is_hot(&self) -> bool {
         self.hot
