@@ -696,7 +696,52 @@ and does not need migration. WindowChrome widgets are migrated in Wave 2b (Secti
 
 ## 08.6 Remove Legacy Event Methods
 
-**File(s):** `oriterm_ui/src/widgets/mod.rs`
+**MANDATE: Every single UI control — buttons, toggles, sliders, dropdowns, text inputs,
+window chrome buttons, tab bar tabs, close buttons, menu items, scroll thumbs, dialog
+headers — goes through the unified controller + animator + propagation pipeline. Zero
+special cases, zero manual `hovered: bool` fields, zero one-off `handle_mouse()`
+implementations. One system, one path, no exceptions.**
+
+**File(s):** `oriterm_ui/src/widgets/mod.rs` and across the full codebase.
+
+### Framework Pipeline — Full Tree Traversal
+
+The framework pipeline (`prepare_widget_frame()`) currently only runs on top-level
+widgets (tab bar, overlay roots). For §08.6 to work, it MUST walk the full widget tree
+so every child widget gets:
+- Lifecycle events delivered to its controllers and `lifecycle()`
+- `animator.update(&interaction_state, now)` called before `paint()`
+- `anim_frame()` calls when requested
+
+Without this, child widgets' animators are never updated and hover/pressed visual
+states don't work (this is the current regression on window control buttons).
+
+- [ ] Extend `prepare_widget_frame()` (or add a new tree-walk function) to visit all
+  widgets in the tree, not just top-level. Containers must expose their children for
+  traversal — add `fn children(&self) -> &[Box<dyn Widget>]` or similar to the trait.
+- [ ] Remove `DrawCtx::animations_running: &Cell<bool>` field (~88 usages across
+  ~31 files). The framework pipeline now owns animation scheduling via
+  `FrameRequestFlags`. Widgets use `ctx.request_anim_frame()` exclusively.
+  ~55 test `DrawCtx` constructions lose the field.
+
+### Remove Legacy Compat Shims from Wave 1 Widgets
+
+- [ ] Remove `pressed: bool` from ButtonWidget, ToggleWidget, CheckboxWidget,
+  DropdownWidget, SliderWidget, WindowControlButton (6 widgets). The framework's
+  `InteractionManager::active_widget` replaces manual pressed tracking.
+- [ ] Remove `dragging: bool` from SliderWidget. Replace with `ctx.is_active()`.
+- [ ] Remove legacy `handle_mouse()` overrides from all 7 interactive widgets
+  (Button, Toggle, Checkbox, Dropdown, Slider, TextInput, WindowControlButton)
+- [ ] Remove legacy `handle_hover()` overrides from all widgets that have them
+- [ ] Remove legacy `handle_key()` from ButtonWidget (keyboard activation moves to
+  a controller — either extend ClickController for Enter/Space, or add
+  `KeyActivationController`)
+- [ ] Remove legacy `handle_key()` from ToggleWidget, CheckboxWidget (Space toggle →
+  controller), DropdownWidget (arrow nav → DropdownKeyController), SliderWidget
+  (arrow/Home/End → controller), TextInputWidget (all keys → TextEditController)
+- [ ] Verify: window control buttons have working hover via the pipeline (no regression)
+
+### Remove Legacy Methods from Widget Trait
 
 - [ ] Remove `handle_mouse()` from Widget trait
 - [ ] Remove `handle_hover()` from Widget trait
@@ -808,22 +853,20 @@ and does not need migration. WindowChrome widgets are migrated in Wave 2b (Secti
   (`LifecycleCtx.interaction: &InteractionState`, `AnimCtx.frame_requests: Option<&FrameRequestFlags>`)
 
 ### Legacy Removal (08.6)
+- [ ] Framework pipeline walks full widget tree (not just top-level)
+- [ ] All `pressed: bool` / `dragging: bool` compat fields removed from Wave 1 widgets
+- [ ] All legacy `handle_mouse()`, `handle_hover()`, `handle_key()` overrides removed
+  from every widget (not just from the trait — from every impl)
 - [ ] Legacy `handle_mouse()`, `handle_hover()`, `handle_key()` removed from trait
-- [ ] `HoverEvent`, `ContainerInputState` removed
-- [ ] `draw()` to `paint()` rename complete: all 26 widget impls, all container
-  `child.draw()` call sites, `compose_scene()` in `draw/scene_compose/mod.rs`,
-  `dialog/rendering.rs` button draw calls, and all test files updated
-- [ ] `DrawCtx::animations_running: &Cell<bool>` field removed (~88 usages across
-  ~31 files). Production widgets migrate to `ctx.request_anim_frame()`. Container
-  propagation removed (framework owns scheduling). ~55 test `DrawCtx` constructions
-  lose the field.
-- [ ] `EventCtx.is_focused` and `EventCtx.focused_widget` fields removed (~67 test
-  sites + ~52 production sites). Strategy: remove only after all widgets use
-  `ctx.is_interaction_focused()` instead.
-- [ ] `DrawCtx.focused_widget` field removed (~18 production + ~55 test sites).
-- [ ] Test-only Widget implementations migrated (3 total: CountingWidget,
-  TrackingWidget, CacheDetector -- add `sense() -> Sense::none()`, rename
-  `draw()` to `paint()`, remove stub event handlers)
+- [ ] `HoverEvent`, `ContainerInputState`, `WidgetResponse`, `CaptureRequest`,
+  `EventResponse` removed
+- [ ] `DrawCtx::animations_running` field removed (framework owns scheduling)
+- [ ] `EventCtx.is_focused`, `EventCtx.focused_widget`, `DrawCtx.focused_widget`
+  fields removed (InteractionManager is the single source of truth)
+- [ ] `container/event_dispatch.rs` file deleted (framework propagation replaces it)
+- [ ] Window control button hover works via the unified pipeline (regression fixed)
+- [ ] Every widget's visual state driven by InteractionManager + VisualStateAnimator
+  — zero manual `hovered: bool` fields remain anywhere in the codebase
 
 ### Custom Controllers (08.1b)
 - [x] `TextEditController` in `controllers/text_edit/` with `tests.rs`
@@ -850,7 +893,12 @@ and does not need migration. WindowChrome widgets are migrated in Wave 2b (Secti
 - [ ] No regressions in any existing UI functionality
 - [ ] `./test-all.sh` green, `./clippy-all.sh` green, `./build-all.sh` green
 
-**Exit Criteria:** The settings dialog opens, all dropdowns/toggles/checkboxes work with
-hover animations, keyboard navigation (tab) works, and the dialog closes with Save/Cancel.
-All via the new Widget trait, controllers, and visual state animators. Zero legacy event
-methods remain in the codebase.
+**Exit Criteria:** Every single UI control — settings dialog buttons, window chrome
+buttons, tab bar, menu items, scroll thumbs, terminal grid — receives input and renders
+visual state through the unified controller + propagation + animator pipeline. No widget
+implements `handle_mouse()`, `handle_hover()`, or `handle_key()`. No widget has manual
+`hovered: bool` or `pressed: bool` fields. `InteractionManager` is the single source of
+truth for all interaction state. `VisualStateAnimator` drives all state-dependent
+rendering. The old types (`WidgetResponse`, `EventResponse`, `HoverEvent`,
+`ContainerInputState`) do not exist. Zero legacy event methods, zero special cases,
+zero one-off implementations.
