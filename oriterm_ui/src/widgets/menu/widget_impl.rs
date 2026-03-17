@@ -78,6 +78,49 @@ impl Widget for MenuWidget {
         ctx.draw_list.pop_layer();
     }
 
+    fn on_input(&mut self, event: &crate::input::InputEvent, bounds: Rect) -> bool {
+        match event {
+            crate::input::InputEvent::MouseMove { pos, .. } => {
+                let rel_y = pos.y - bounds.y();
+                let new_hover = self.entry_at_y(rel_y);
+                if new_hover != self.hovered {
+                    self.hovered = new_hover;
+                }
+                true
+            }
+            crate::input::InputEvent::Scroll { delta, pos, .. } => {
+                let delta_y = match *delta {
+                    ScrollDelta::Pixels { y, .. } => -y,
+                    ScrollDelta::Lines { y, .. } => -y * SCROLL_LINE_HEIGHT,
+                };
+                if self.scroll_by(delta_y) {
+                    let rel_y = pos.y - bounds.y();
+                    self.hovered = self.entry_at_y(rel_y);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::Clicked(_) => {
+                // Transform generic click into item selection based on hover.
+                if let Some(idx) = self.hovered {
+                    if self.entries[idx].is_clickable() {
+                        return Some(WidgetAction::Selected {
+                            id: self.id,
+                            index: idx,
+                        });
+                    }
+                }
+                None
+            }
+            other => Some(other),
+        }
+    }
+
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         match event.kind {
             MouseEventKind::Move => {
