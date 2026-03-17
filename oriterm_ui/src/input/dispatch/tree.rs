@@ -226,16 +226,5 @@ pub fn deliver_event_to_tree(
     // Dispatch through widget tree.
     let mut result = TreeDispatchResult::new();
     dispatch_to_widget_tree(widget, event, &delivery_actions, now, &mut result);
-
-    // Pass actions through the root widget's on_action for transformation
-    // (e.g., SettingsPanel maps Clicked(save_id) → SaveSettings).
-    if !result.actions.is_empty() {
-        result.actions = result
-            .actions
-            .into_iter()
-            .filter_map(|a| widget.on_action(a, bounds))
-            .collect();
-    }
-
     result
 }
