@@ -1,33 +1,10 @@
 use crate::geometry::{Insets, Rect};
-use crate::input::{Key, KeyEvent, Modifiers};
 use crate::layout::BoxContent;
 use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{LayoutCtx, Widget};
 
 use super::{ButtonStyle, ButtonWidget};
-
-static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
-
-fn event_ctx(bounds: Rect) -> EventCtx<'static> {
-    EventCtx {
-        measurer: &MEASURER,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    }
-}
-
-fn key_event(key: Key) -> KeyEvent {
-    KeyEvent {
-        key,
-        modifiers: Modifiers::NONE,
-    }
-}
 
 // -- Construction and state --
 
@@ -73,9 +50,9 @@ fn sense_returns_click() {
 }
 
 #[test]
-fn has_three_controllers() {
+fn has_four_controllers() {
     let btn = ButtonWidget::new("OK");
-    assert_eq!(btn.controllers().len(), 3);
+    assert_eq!(btn.controllers().len(), 4);
 }
 
 #[test]
@@ -131,40 +108,6 @@ fn empty_label_layout() {
     } else {
         panic!("expected leaf layout");
     }
-}
-
-// -- Keyboard activation (legacy, retained until §08.6) --
-
-#[test]
-fn keyboard_activation_enter() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-    let r = btn.handle_key(key_event(Key::Enter), &ctx);
-    assert_eq!(r.action, Some(WidgetAction::Clicked(btn.id())));
-}
-
-#[test]
-fn keyboard_activation_space() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-    let r = btn.handle_key(key_event(Key::Space), &ctx);
-    assert_eq!(r.action, Some(WidgetAction::Clicked(btn.id())));
-}
-
-#[test]
-fn keyboard_other_ignored() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-    let r = btn.handle_key(key_event(Key::Escape), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-}
-
-#[test]
-fn disabled_ignores_keyboard() {
-    let mut btn = ButtonWidget::new("OK").with_disabled(true);
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-    let r = btn.handle_key(key_event(Key::Enter), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
 }
 
 // -- Style --

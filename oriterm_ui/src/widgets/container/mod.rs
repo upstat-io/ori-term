@@ -12,15 +12,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::geometry::{Insets, Rect};
-use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent};
-use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::layout::{Align, Direction, GridColumns, Justify, LayoutBox, LayoutNode, SizeSpec};
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
 
-mod event_dispatch;
 mod layout_build;
 
 /// Layout mode for a container — flex or grid.
@@ -85,9 +82,6 @@ pub struct ContainerWidget {
     // Whether to clip children to the container's bounds.
     clip_children: bool,
 
-    // Per-container input state (hover/capture tracking among children).
-    input_state: ContainerInputState,
-
     /// Whether this container's layout needs recomputation.
     needs_layout: bool,
     /// Whether this container's paint is dirty.
@@ -96,15 +90,6 @@ pub struct ContainerWidget {
     /// Computed layout cache. Uses `RefCell` because `draw(&self)` and
     /// `layout(&self)` take shared references but need to update the cache.
     cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
-}
-
-/// Tracks mouse interaction state within a container's children.
-#[derive(Debug, Default)]
-struct ContainerInputState {
-    /// Child currently under the cursor (receives hover events).
-    hovered_child: Option<usize>,
-    /// Child that captured the mouse (receives all events until release).
-    captured_child: Option<usize>,
 }
 
 // Constructors and child management.
@@ -124,7 +109,7 @@ impl ContainerWidget {
             width: SizeSpec::Hug,
             height: SizeSpec::Hug,
             clip_children: false,
-            input_state: ContainerInputState::default(),
+
             needs_layout: true,
             needs_paint: true,
             cached_layout: RefCell::new(None),
@@ -145,7 +130,7 @@ impl ContainerWidget {
             width: SizeSpec::Hug,
             height: SizeSpec::Hug,
             clip_children: false,
-            input_state: ContainerInputState::default(),
+
             needs_layout: true,
             needs_paint: true,
             cached_layout: RefCell::new(None),
@@ -185,10 +170,7 @@ impl ContainerWidget {
     }
 
     /// Removes a child by index, returning ownership.
-    ///
-    /// Resets hover/capture state since child indices shift.
     pub fn remove_child(&mut self, index: usize) -> Box<dyn Widget> {
-        self.input_state = ContainerInputState::default();
         self.children.remove(index)
     }
 
@@ -220,30 +202,6 @@ impl ContainerWidget {
 
 // Dirty tracking.
 impl ContainerWidget {
-    /// Updates dirty flags based on a child's event response.
-    ///
-    /// Sets the container's boolean flags and, if a tracker is provided,
-    /// marks the source widget in the tracker for scoped invalidation.
-    pub fn update_dirty(
-        &mut self,
-        response: &WidgetResponse,
-        tracker: Option<&mut InvalidationTracker>,
-    ) {
-        match response.response {
-            EventResponse::RequestLayout => {
-                self.needs_layout = true;
-                self.needs_paint = true;
-            }
-            EventResponse::RequestPaint => {
-                self.needs_paint = true;
-            }
-            _ => {}
-        }
-        if let (Some(tracker), Some(source)) = (tracker, response.source) {
-            tracker.mark(source, DirtyKind::from(response.response));
-        }
-    }
-
     /// Whether this container needs layout recomputation.
     pub fn needs_layout(&self) -> bool {
         self.needs_layout
@@ -416,44 +374,6 @@ impl Widget for ContainerWidget {
         for child in &mut self.children {
             visitor(child.as_mut());
         }
-    }
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.dispatch_mouse(event, ctx)
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event {
-            HoverEvent::Enter => {
-                // Position unknown — defer to next mouse Move for targeting.
-                WidgetResponse::handled()
-            }
-            HoverEvent::Leave => {
-                if let Some(idx) = self.input_state.hovered_child.take() {
-                    let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-                    if let (Some(child), Some(child_node)) =
-                        (self.children.get_mut(idx), layout.children.get(idx))
-                    {
-                        let child_ctx = EventCtx {
-                            measurer: ctx.measurer,
-                            bounds: child_node.content_rect,
-                            is_focused: ctx.focused_widget == Some(child.id()),
-                            focused_widget: ctx.focused_widget,
-                            theme: ctx.theme,
-                            interaction: None,
-                            widget_id: None,
-                            frame_requests: None,
-                        };
-                        child.handle_hover(HoverEvent::Leave, &child_ctx);
-                    }
-                }
-                WidgetResponse::handled()
-            }
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.dispatch_key(event, ctx)
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {

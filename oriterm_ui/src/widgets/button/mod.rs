@@ -6,11 +6,10 @@
 
 use crate::color::Color;
 use crate::controllers::{
-    ClickController, EventController, HoverController, KeyActivationController,
+    ClickController, EventController, FocusController, HoverController, KeyActivationController,
 };
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point};
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::TextStyle;
@@ -20,7 +19,7 @@ use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Visual style for a [`ButtonWidget`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -103,6 +102,7 @@ impl ButtonWidget {
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
                 Box::new(KeyActivationController::new()),
+                Box::new(FocusController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
                 style.bg,
@@ -252,46 +252,6 @@ impl Widget for ButtonWidget {
         // Signal continued redraws while the animator is transitioning.
         if self.animator.is_animating(ctx.now) {
             ctx.request_anim_frame();
-        }
-    }
-
-    // --- Legacy methods (compat shim until containers migrate in §08.4) ---
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::focus(),
-            MouseEventKind::Up(MouseButton::Left) => {
-                if ctx.bounds.contains(event.pos) {
-                    WidgetResponse::paint().with_action(WidgetAction::Clicked(self.id))
-                } else {
-                    WidgetResponse::paint()
-                }
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event {
-            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled || !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        match event.key {
-            Key::Enter | Key::Space => {
-                WidgetResponse::paint().with_action(WidgetAction::Clicked(self.id))
-            }
-            _ => WidgetResponse::ignored(),
         }
     }
 }

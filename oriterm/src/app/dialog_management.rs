@@ -183,6 +183,7 @@ impl App {
             parts.parent_wid,
         ));
         self.dialogs.insert(winit_id, ctx);
+        self.setup_dialog_focus(winit_id);
         self.install_dialog_chrome(winit_id);
         self.render_dialog(winit_id);
 

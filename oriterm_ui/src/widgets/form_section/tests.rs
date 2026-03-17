@@ -1,12 +1,12 @@
 use crate::draw::DrawList;
 use crate::geometry::{Point, Rect};
-use crate::input::{Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::input::{InputEvent, Modifiers, MouseButton};
 use crate::layout::{SizeSpec, compute_layout};
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::form_row::FormRow;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::FormSection;
 
@@ -79,31 +79,20 @@ fn click_on_header_toggles_expanded() {
     let mut section = test_section();
     assert!(section.is_expanded());
 
-    let measurer = MockMeasurer::STANDARD;
     let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
 
-    // Click on header (y < HEADER_HEIGHT=28).
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
+    // Click on header (y=10 < HEADER_HEIGHT=28) via on_input.
+    let event = InputEvent::MouseDown {
         pos: Point::new(50.0, 10.0),
+        button: MouseButton::Left,
         modifiers: Modifiers::NONE,
     };
-    let resp = section.handle_mouse(&event, &ctx);
+    let handled = section.on_input(&event, bounds);
+    assert!(handled);
     assert!(!section.is_expanded());
-    assert_eq!(resp, WidgetResponse::layout());
 
     // Click again to re-expand.
-    let _ = section.handle_mouse(&event, &ctx);
+    section.on_input(&event, bounds);
     assert!(section.is_expanded());
 }
 

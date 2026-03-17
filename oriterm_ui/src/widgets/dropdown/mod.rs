@@ -12,7 +12,6 @@ use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point, Rect};
 use crate::icons::IconId;
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::TextStyle;
@@ -22,7 +21,7 @@ use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 /// Visual style for a [`DropdownWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -198,28 +197,6 @@ impl DropdownWidget {
     fn text_style(&self) -> TextStyle {
         TextStyle::new(self.style.font_size, self.current_fg())
     }
-
-    /// Selects the next item, wrapping at the end.
-    fn select_next(&mut self) -> WidgetAction {
-        self.selected = (self.selected + 1) % self.items.len();
-        WidgetAction::Selected {
-            id: self.id,
-            index: self.selected,
-        }
-    }
-
-    /// Selects the previous item, wrapping at the start.
-    fn select_prev(&mut self) -> WidgetAction {
-        self.selected = if self.selected == 0 {
-            self.items.len() - 1
-        } else {
-            self.selected - 1
-        };
-        WidgetAction::Selected {
-            id: self.id,
-            index: self.selected,
-        }
-    }
 }
 
 impl std::fmt::Debug for DropdownWidget {
@@ -370,66 +347,6 @@ impl Widget for DropdownWidget {
                 })
             }
             other => Some(other),
-        }
-    }
-
-    // --- Legacy methods (compat shim until containers migrate in S08.4) ---
-
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => WidgetResponse::focus(),
-            MouseEventKind::Up(MouseButton::Left) => {
-                if ctx.bounds.contains(event.pos) {
-                    let action = WidgetAction::OpenDropdown {
-                        id: self.id,
-                        options: self.items.clone(),
-                        selected: self.selected,
-                        anchor: ctx.bounds,
-                    };
-                    WidgetResponse::layout().with_action(action)
-                } else {
-                    WidgetResponse::paint()
-                }
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event {
-            HoverEvent::Enter | HoverEvent::Leave => WidgetResponse::paint(),
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled || !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        match event.key {
-            Key::ArrowDown => {
-                let action = self.select_next();
-                WidgetResponse::paint().with_action(action)
-            }
-            Key::ArrowUp => {
-                let action = self.select_prev();
-                WidgetResponse::paint().with_action(action)
-            }
-            Key::Enter | Key::Space => {
-                let action = WidgetAction::OpenDropdown {
-                    id: self.id,
-                    options: self.items.clone(),
-                    selected: self.selected,
-                    anchor: ctx.bounds,
-                };
-                WidgetResponse::layout().with_action(action)
-            }
-            _ => WidgetResponse::ignored(),
         }
     }
 

@@ -1,21 +1,15 @@
 use crate::draw::{DrawCommand, DrawList};
-use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::geometry::Rect;
 use crate::layout::compute_layout;
-use crate::widgets::button::ButtonWidget;
 use crate::widgets::container::ContainerWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::StackWidget;
 
 fn label(text: &str) -> Box<dyn Widget> {
     Box::new(LabelWidget::new(text))
-}
-
-fn button(text: &str) -> Box<ButtonWidget> {
-    Box::new(ButtonWidget::new(text))
 }
 
 #[test]
@@ -61,79 +55,6 @@ fn stack_draws_all_children() {
         .filter(|c| matches!(c, DrawCommand::Text { .. }))
         .count();
     assert_eq!(text_cmds, 2, "both children should be drawn");
-}
-
-#[test]
-fn stack_key_routes_to_frontmost() {
-    let btn_back = button("Back");
-    let btn_front = button("Front");
-    let front_id = btn_front.id();
-    let mut stack = StackWidget::new(vec![btn_back, btn_front]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: Some(front_id),
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
-        key: Key::Enter,
-        modifiers: Modifiers::NONE,
-    };
-    let resp = stack.handle_key(event, &ctx);
-
-    // The frontmost (last) button should receive the event.
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, front_id),
-        other => panic!("expected Clicked from front button, got {other:?}"),
-    }
-}
-
-#[test]
-fn stack_mouse_routes_to_frontmost() {
-    let btn_back = button("Back");
-    let btn_front = button("Front");
-    let front_id = btn_front.id();
-    let mut stack = StackWidget::new(vec![btn_back, btn_front]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = stack.handle_mouse(&down, &ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = stack.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, front_id),
-        other => panic!("expected Clicked from front button, got {other:?}"),
-    }
 }
 
 #[test]
@@ -206,100 +127,6 @@ fn stack_draws_in_painter_order() {
 }
 
 #[test]
-fn stack_empty_mouse_ignored() {
-    let mut stack = StackWidget::new(vec![]);
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(50.0, 50.0),
-        modifiers: Modifiers::NONE,
-    };
-    assert_eq!(stack.handle_mouse(&event, &ctx), WidgetResponse::ignored());
-}
-
-#[test]
-fn stack_empty_key_ignored() {
-    let mut stack = StackWidget::new(vec![]);
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-    let event = KeyEvent {
-        key: Key::Enter,
-        modifiers: Modifiers::NONE,
-    };
-    assert_eq!(stack.handle_key(event, &ctx), WidgetResponse::ignored());
-}
-
-#[test]
-fn stack_hover_routes_to_frontmost() {
-    let btn_back = button("Back");
-    let btn_front = button("Front");
-    let mut stack = StackWidget::new(vec![btn_back, btn_front]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    // Hover enter should reach the frontmost child.
-    let resp = stack.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(resp.response.is_handled());
-}
-
-#[test]
-fn stack_mouse_outside_bounds_ignored() {
-    let mut stack = StackWidget::new(vec![button("A")]);
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(10.0, 10.0, 50.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    // Click outside the stack's bounds.
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(5.0, 5.0),
-        modifiers: Modifiers::NONE,
-    };
-    assert_eq!(stack.handle_mouse(&event, &ctx), WidgetResponse::ignored());
-}
-
-#[test]
 fn stack_sizes_to_flex_child() {
     // A Flex (Column) child with two labels should contribute its natural size.
     // 2 labels * 16px = 32px tall, "Hello" = 5*8 = 40px wide.
@@ -341,75 +168,4 @@ fn stack_sizes_to_largest_including_flex() {
     // Width from label (96px), height from column (48px).
     assert_eq!(node.rect.width(), 96.0);
     assert_eq!(node.rect.height(), 48.0);
-}
-
-#[test]
-fn stack_single_child_receives_events() {
-    let btn = button("Solo");
-    let btn_id = btn.id();
-    let mut stack = StackWidget::new(vec![btn]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: Some(btn_id),
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let event = KeyEvent {
-        key: Key::Enter,
-        modifiers: Modifiers::NONE,
-    };
-    let resp = stack.handle_key(event, &ctx);
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked, got {other:?}"),
-    }
-}
-
-#[test]
-fn stack_mouse_falls_through_to_back_child() {
-    // Label (non-interactive) on top, button behind it.
-    // Click should fall through the label to reach the button.
-    let btn = button("Behind");
-    let btn_id = btn.id();
-    let mut stack = StackWidget::new(vec![btn, label("Overlay")]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-        interaction: None,
-        widget_id: None,
-        frame_requests: None,
-    };
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = stack.handle_mouse(&down, &ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = stack.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected click to fall through to back button, got {other:?}"),
-    }
 }

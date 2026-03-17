@@ -4,7 +4,6 @@
 //! `FormLayout` body. The close button emits `WidgetAction::CancelSettings`
 //! (translated from the button's `Clicked` action).
 
-mod event_handling;
 mod id_override_button;
 
 use std::cell::RefCell;
@@ -12,8 +11,7 @@ use std::rc::Rc;
 
 use crate::color::Color;
 use crate::draw::{RectStyle, Shadow};
-use crate::geometry::{Insets, Point};
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
+use crate::geometry::Insets;
 use crate::layout::{Align, Direction, LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
@@ -27,7 +25,7 @@ use super::label::{LabelStyle, LabelWidget};
 use super::scroll::ScrollWidget;
 use super::separator::SeparatorWidget;
 use super::spacer::SpacerWidget;
-use super::{DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
 
 use id_override_button::IdOverrideButton;
 
@@ -66,8 +64,6 @@ pub struct SettingsPanel {
     cancel_id: WidgetId,
     container: ContainerWidget,
     cached_layout: RefCell<Option<(crate::geometry::Rect, Rc<LayoutNode>)>>,
-    /// Last cursor position during a header drag (screen-space).
-    drag_origin: Option<Point>,
     /// Whether the panel draws its own chrome (header, shadow, border).
     /// `false` when embedded in a dialog window.
     show_chrome: bool,
@@ -200,7 +196,6 @@ impl SettingsPanel {
             cancel_id,
             container,
             cached_layout: RefCell::new(None),
-            drag_origin: None,
             show_chrome,
         }
     }
@@ -254,39 +249,6 @@ impl SettingsPanel {
         let node = Rc::new(compute_layout(&wrapper, bounds));
         *self.cached_layout.borrow_mut() = Some((bounds, Rc::clone(&node)));
         node
-    }
-
-    /// Returns `true` if the position is within the header drag zone.
-    ///
-    /// The drag zone covers the full header except the close button area
-    /// (rightmost ~50px). This prevents drag from intercepting close clicks.
-    fn is_header_drag_zone(pos: Point, bounds: crate::geometry::Rect) -> bool {
-        let header_bottom = bounds.y() + HEADER_HEIGHT;
-        let close_btn_left = bounds.x() + bounds.width() - 50.0;
-        pos.y >= bounds.y() && pos.y < header_bottom && pos.x < close_btn_left
-    }
-
-    /// Intercepts button `Clicked` actions and translates to semantic actions.
-    ///
-    /// Close (×) and Cancel → `CancelSettings`. Save → `SaveSettings`.
-    fn translate_action(&self, response: WidgetResponse) -> WidgetResponse {
-        match response.action {
-            Some(WidgetAction::Clicked(id)) if id == self.close_id || id == self.cancel_id => {
-                WidgetResponse {
-                    response: response.response,
-                    action: Some(WidgetAction::CancelSettings),
-                    capture: response.capture,
-                    source: response.source,
-                }
-            }
-            Some(WidgetAction::Clicked(id)) if id == self.save_id => WidgetResponse {
-                response: response.response,
-                action: Some(WidgetAction::SaveSettings),
-                capture: response.capture,
-                source: response.source,
-            },
-            _ => response,
-        }
     }
 }
 
@@ -386,16 +348,19 @@ impl Widget for SettingsPanel {
         visitor(&mut self.container);
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_mouse_impl(event, ctx)
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_hover_impl(event, ctx)
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_key_impl(event, ctx)
+    fn on_action(
+        &mut self,
+        action: WidgetAction,
+        _bounds: crate::geometry::Rect,
+    ) -> Option<WidgetAction> {
+        // Translate button clicks to semantic settings actions.
+        match action {
+            WidgetAction::Clicked(id) if id == self.close_id || id == self.cancel_id => {
+                Some(WidgetAction::CancelSettings)
+            }
+            WidgetAction::Clicked(id) if id == self.save_id => Some(WidgetAction::SaveSettings),
+            _ => Some(action),
+        }
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {

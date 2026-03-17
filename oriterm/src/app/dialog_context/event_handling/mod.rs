@@ -153,15 +153,13 @@ impl App {
     /// Handle keyboard input within a dialog window.
     ///
     /// Escape closes the dialog (or dismisses a dropdown popup).
-    /// Tab/Enter/Space route to confirmation dialog widgets.
-    /// Global keybindings are dispatched normally.
+    /// All other keys are dispatched through the controller pipeline to
+    /// content widgets. Global keybindings are checked as a fallback.
     fn handle_dialog_keyboard(&mut self, window_id: WindowId, event: &winit::event::KeyEvent) {
-        if event.state != winit::event::ElementState::Pressed {
-            return;
-        }
-
-        // Escape: dismiss dropdown popup, or close dialog.
-        if event.logical_key == Key::Named(NamedKey::Escape) {
+        // Only handle Escape inline — all other keys go through the pipeline.
+        if event.state == winit::event::ElementState::Pressed
+            && event.logical_key == Key::Named(NamedKey::Escape)
+        {
             if self.dialog_has_overlay(window_id) {
                 self.dismiss_dialog_overlay(window_id);
                 return;
@@ -170,20 +168,24 @@ impl App {
             return;
         }
 
-        // Route Tab/Enter/Space to confirmation dialog content widgets.
-        let action = self.try_dialog_content_key(window_id, event);
+        // Route through the controller pipeline (handles Tab focus cycling,
+        // Enter/Space activation, and any other widget keyboard input).
+        let action = self.dispatch_dialog_content_key(window_id, event);
         if let Some(action) = action {
             self.handle_dialog_content_action(window_id, action);
             return;
         }
 
         // Global keybindings: actions that work from any window.
-        let mods = self.modifiers.into();
-        if let Some(binding_key) = keybindings::key_to_binding_key(&event.logical_key) {
-            if let Some(action) = keybindings::find_binding(&self.bindings, &binding_key, mods) {
-                if action.is_global() {
-                    let action = action.clone();
-                    self.execute_action(&action);
+        if event.state == winit::event::ElementState::Pressed {
+            let mods = self.modifiers.into();
+            if let Some(binding_key) = keybindings::key_to_binding_key(&event.logical_key) {
+                if let Some(action) = keybindings::find_binding(&self.bindings, &binding_key, mods)
+                {
+                    if action.is_global() {
+                        let action = action.clone();
+                        self.execute_action(&action);
+                    }
                 }
             }
         }

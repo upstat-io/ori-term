@@ -5,7 +5,6 @@
 //! footer by a 1px line. Composes [`ButtonWidget`] instances for interactive
 //! buttons and manages keyboard focus cycling between them.
 
-mod event_handling;
 mod rendering;
 mod style;
 
@@ -14,13 +13,13 @@ use std::rc::Rc;
 
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
+use crate::input::{InputEvent, Key};
 use crate::layout::{LayoutBox, LayoutNode};
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::button::ButtonWidget;
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 pub use style::DialogStyle;
 
@@ -83,8 +82,6 @@ pub struct DialogWidget {
     /// Tab (`:focus-visible` behavior). This avoids a subtle focus-ring
     /// artifact on the default button when the dialog first opens.
     focus_visible: bool,
-    /// Index of the button currently hovered by the mouse (footer child index).
-    hovered_button: Option<usize>,
     /// Cached layout result, keyed by bounds.
     cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
 }
@@ -112,7 +109,6 @@ impl DialogWidget {
             style,
             focused_button: DialogButton::Ok,
             focus_visible: false,
-            hovered_button: None,
             cached_layout: RefCell::new(None),
         }
     }
@@ -215,21 +211,6 @@ impl DialogWidget {
         }
     }
 
-    /// Get a mutable reference to the button at the given layout index.
-    ///
-    /// In `OkCancel` mode: index 0 = cancel, index 1 = ok (layout order).
-    /// In `OkOnly` mode: index 0 = ok.
-    fn button_at_index(&mut self, index: usize) -> (&mut ButtonWidget, DialogButton) {
-        match self.buttons {
-            DialogButtons::OkCancel if index == 0 => {
-                (&mut self.cancel_button, DialogButton::Cancel)
-            }
-            DialogButtons::OkOnly | DialogButtons::OkCancel => {
-                (&mut self.ok_button, DialogButton::Ok)
-            }
-        }
-    }
-
     /// Get an immutable reference to the button at the given layout index.
     fn button_at_index_ref(&self, index: usize) -> (&ButtonWidget, DialogButton) {
         match self.buttons {
@@ -311,16 +292,41 @@ impl Widget for DialogWidget {
         visitor(&mut self.cancel_button);
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_mouse_impl(event, ctx)
+    fn on_input(&mut self, event: &InputEvent, _bounds: Rect) -> bool {
+        if let InputEvent::KeyDown { key, .. } = event {
+            match key {
+                Key::Enter | Key::Space => {
+                    // Activate the focused button — handled via on_action.
+                    return true;
+                }
+                Key::Escape => return true,
+                Key::Tab => {
+                    if self.buttons == DialogButtons::OkCancel {
+                        self.focus_visible = true;
+                        self.focused_button = match self.focused_button {
+                            DialogButton::Ok => DialogButton::Cancel,
+                            DialogButton::Cancel => DialogButton::Ok,
+                        };
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_hover_impl(event, ctx)
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.handle_key_impl(event, ctx)
+    fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::Clicked(id) => {
+                // Map button clicks to dialog-level actions.
+                match self.button_for_id(id) {
+                    Some(DialogButton::Cancel) => Some(WidgetAction::DismissOverlay(self.id)),
+                    Some(DialogButton::Ok) | None => Some(WidgetAction::Clicked(id)),
+                }
+            }
+            other => Some(other),
+        }
     }
 
     fn focusable_children(&self) -> Vec<WidgetId> {

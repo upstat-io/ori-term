@@ -3,13 +3,13 @@
 //! Used by the settings panel to intercept `Clicked` actions from buttons
 //! whose IDs are allocated externally (Save, Cancel, Close).
 
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
+use crate::geometry::Rect;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::super::button::ButtonWidget;
-use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 /// Wrapper around `ButtonWidget` that overrides its `WidgetId`.
 ///
@@ -51,34 +51,11 @@ impl Widget for IdOverrideButton {
         self.inner.paint(ctx);
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let resp = self.inner.handle_mouse(event, ctx);
+    fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
         // Rewrite the clicked id to our override.
-        match resp.action {
-            Some(WidgetAction::Clicked(_)) => WidgetResponse {
-                response: resp.response,
-                action: Some(WidgetAction::Clicked(self.id_override)),
-                capture: resp.capture,
-                source: resp.source,
-            },
-            _ => resp,
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.inner.handle_hover(event, ctx)
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let resp = self.inner.handle_key(event, ctx);
-        match resp.action {
-            Some(WidgetAction::Clicked(_)) => WidgetResponse {
-                response: resp.response,
-                action: Some(WidgetAction::Clicked(self.id_override)),
-                capture: resp.capture,
-                source: resp.source,
-            },
-            _ => resp,
+        match action {
+            WidgetAction::Clicked(_) => Some(WidgetAction::Clicked(self.id_override)),
+            _ => Some(action),
         }
     }
 
