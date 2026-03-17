@@ -137,6 +137,32 @@ fn widget_response_equality() {
     assert_eq!(r4, r5);
 }
 
+// -- OnInputResult --
+
+#[test]
+fn on_input_result_handled() {
+    let r = super::OnInputResult::handled();
+    assert!(r.handled);
+    assert!(r.action.is_none());
+}
+
+#[test]
+fn on_input_result_ignored() {
+    let r = super::OnInputResult::ignored();
+    assert!(!r.handled);
+    assert!(r.action.is_none());
+}
+
+#[test]
+fn on_input_result_with_action() {
+    use crate::widget_id::WidgetId;
+
+    let id = WidgetId::next();
+    let r = super::OnInputResult::handled().with_action(super::WidgetAction::Clicked(id));
+    assert!(r.handled);
+    assert_eq!(r.action, Some(super::WidgetAction::Clicked(id)));
+}
+
 #[test]
 fn mock_measurer_empty_text() {
     let m = MockMeasurer::new();

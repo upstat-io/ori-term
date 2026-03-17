@@ -352,3 +352,70 @@ fn child_handles_in_target_prevents_parent_bubble() {
 
     assert!(target_idx < bubble_idx);
 }
+
+// -- Regression: captured mouse uses leaf bounds, not root bounds --
+
+#[test]
+fn captured_mouse_up_uses_leaf_widget_bounds() {
+    // Hit path: [scroll_container(wide), dropdown(narrow)] — root-to-leaf.
+    // plan_captured_mouse must use the LAST entry (dropdown) for bounds,
+    // not the FIRST (scroll container). Using first() caused dropdown
+    // popup menus to be full-width.
+    let scroll = WidgetId::next();
+    let dropdown = WidgetId::next();
+    let scroll_bounds = rect(0.0, 0.0, 400.0, 300.0);
+    let dropdown_bounds = rect(120.0, 80.0, 150.0, 24.0);
+
+    let event = mouse_up_event(150.0, 90.0);
+    let hit = hit_path(&[(scroll, scroll_bounds), (dropdown, dropdown_bounds)]);
+    let mut out = Vec::new();
+
+    plan_propagation(&event, &hit, Some(dropdown), &[], &mut out);
+
+    assert_eq!(
+        out.len(),
+        1,
+        "captured mouse-up should produce one delivery"
+    );
+    assert_eq!(out[0].widget_id, dropdown);
+    assert_eq!(
+        out[0].bounds, dropdown_bounds,
+        "bounds must come from the leaf (dropdown), not the root (scroll)"
+    );
+}
+
+#[test]
+fn captured_mouse_up_single_entry_uses_that_entry() {
+    let widget = WidgetId::next();
+    let bounds = rect(50.0, 100.0, 120.0, 28.0);
+
+    let event = mouse_up_event(80.0, 110.0);
+    let hit = hit_path(&[(widget, bounds)]);
+    let mut out = Vec::new();
+
+    plan_propagation(&event, &hit, Some(widget), &[], &mut out);
+
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].bounds, bounds);
+}
+
+#[test]
+fn captured_mouse_move_uses_leaf_bounds() {
+    let root = WidgetId::next();
+    let leaf = WidgetId::next();
+    let root_bounds = rect(0.0, 0.0, 800.0, 600.0);
+    let leaf_bounds = rect(100.0, 200.0, 80.0, 20.0);
+
+    let event = mouse_move_event(120.0, 210.0);
+    let hit = hit_path(&[(root, root_bounds), (leaf, leaf_bounds)]);
+    let mut out = Vec::new();
+
+    plan_propagation(&event, &hit, Some(leaf), &[], &mut out);
+
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].widget_id, leaf);
+    assert_eq!(
+        out[0].bounds, leaf_bounds,
+        "move during capture must use leaf bounds"
+    );
+}
