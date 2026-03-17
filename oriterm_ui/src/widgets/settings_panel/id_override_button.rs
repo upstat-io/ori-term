@@ -3,9 +3,11 @@
 //! Used by the settings panel to intercept `Clicked` actions from buttons
 //! whose IDs are allocated externally (Save, Cancel, Close).
 
+use crate::controllers::EventController;
 use crate::geometry::Rect;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use super::super::button::ButtonWidget;
@@ -45,6 +47,22 @@ impl Widget for IdOverrideButton {
         let mut lb = self.inner.layout(ctx);
         lb = lb.with_widget_id(self.id_override);
         lb
+    }
+
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        self.inner.controllers()
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        self.inner.controllers_mut()
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        self.inner.visual_states()
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        self.inner.visual_states_mut()
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {

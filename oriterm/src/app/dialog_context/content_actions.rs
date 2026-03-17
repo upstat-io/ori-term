@@ -314,7 +314,13 @@ impl App {
             ctx.request_urgent_redraw();
         }
 
-        result.actions.into_iter().next()
+        // Transform actions through the content widget's on_action
+        // (e.g., SettingsPanel maps Clicked(save_id) → SaveSettings).
+        result.actions.into_iter().find_map(|a| {
+            ctx.content
+                .content_widget_mut()
+                .on_action(a, content_bounds)
+        })
     }
 
     /// Clear hover state for chrome and content.
