@@ -247,12 +247,13 @@ impl Widget for ScrollWidget {
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        // Measure child's unconstrained size via the cache-aware helper.
-        // Uses an infinite viewport to get the natural size, which also
-        // populates cached_child_layout for later draw/event use.
-        let unconstrained = Rect::new(0.0, 0.0, f32::INFINITY, f32::INFINITY);
-        let (w, h) = self.child_natural_size(ctx.measurer, ctx.theme, unconstrained);
-        let mut lb = LayoutBox::leaf(w, h).with_widget_id(self.id);
+        // Include the child's layout so hit testing can reach widgets inside
+        // the scroll area. The child's natural size determines the scroll
+        // extent, and clip=true ensures hit testing is clipped to the viewport.
+        let child_box = self.child.layout(ctx);
+        let mut lb = LayoutBox::flex(crate::layout::Direction::Column, vec![child_box])
+            .with_widget_id(self.id)
+            .with_clip(true);
 
         // For vertical scrolling, use Fill width so the scroll container
         // expands to the parent's available width. The child's natural width
