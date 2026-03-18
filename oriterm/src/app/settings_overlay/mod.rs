@@ -50,7 +50,7 @@ impl App {
             }
         }
 
-        let panel = SettingsPanel::new(form);
+        let panel = SettingsPanel::new(Box::new(form));
 
         // Now take the mutable borrow for overlay push.
         let Some(ctx) = self.focused_ctx_mut() else {

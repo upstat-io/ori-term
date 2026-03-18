@@ -67,6 +67,8 @@ pub enum WidgetAction {
     SaveSettings,
     /// The settings panel Cancel button was clicked — revert and dismiss.
     CancelSettings,
+    /// The settings panel Reset to Defaults button was clicked.
+    ResetDefaults,
     /// Minimize the window.
     WindowMinimize,
     /// Maximize or restore the window.

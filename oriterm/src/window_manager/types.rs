@@ -91,7 +91,7 @@ impl DialogKind {
     /// Default logical inner size `(width, height)` for this dialog kind.
     pub fn default_size(self) -> (u32, u32) {
         match self {
-            Self::Settings => (720, 560),
+            Self::Settings => (860, 620),
             Self::Confirmation => (440, 240),
             Self::About => (400, 300),
         }

@@ -8,7 +8,7 @@ use crate::widgets::{LayoutCtx, Widget};
 use super::SettingsPanel;
 
 fn make_panel() -> SettingsPanel {
-    SettingsPanel::new(FormLayout::new())
+    SettingsPanel::new(Box::new(FormLayout::new()))
 }
 
 #[test]
@@ -47,11 +47,11 @@ fn layout_has_fixed_width() {
         theme: &super::super::tests::TEST_THEME,
     };
     let lb = panel.layout(&ctx);
-    let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+    let viewport = Rect::new(0.0, 0.0, 1200.0, 800.0);
     let node = compute_layout(&lb, viewport);
 
-    // Panel should be 600px wide (PANEL_WIDTH).
-    assert_eq!(node.rect.width(), 600.0);
+    // Panel should be 860px wide (PANEL_WIDTH).
+    assert_eq!(node.rect.width(), 860.0);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn draws_without_panic() {
     let panel = make_panel();
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
+    let bounds = Rect::new(0.0, 0.0, 860.0, 620.0);
     let mut ctx = super::super::DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,

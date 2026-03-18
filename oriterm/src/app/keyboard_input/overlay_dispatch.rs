@@ -65,6 +65,9 @@ impl App {
                     WidgetAction::CancelSettings => {
                         self.cancel_settings();
                     }
+                    WidgetAction::ResetDefaults => {
+                        self.reset_overlay_settings();
+                    }
                     WidgetAction::DismissOverlay(_) => {
                         self.dismiss_topmost_overlay();
                     }
@@ -179,6 +182,14 @@ impl App {
     fn cancel_settings(&mut self) {
         self.settings_pending = None;
         self.dismiss_topmost_overlay();
+    }
+
+    /// Reset overlay settings to defaults.
+    fn reset_overlay_settings(&mut self) {
+        if let Some(pending) = &mut self.settings_pending {
+            log::info!("settings: resetting to defaults");
+            *pending = Config::default();
+        }
     }
 
     /// Apply config changes after Save commits the pending config.
