@@ -196,11 +196,13 @@ requires human judgement rather than mechanical fixes.}
 
 ### Step 6: Update Review Gate
 
-After the review completes (any verdict except NEEDS MANUAL ATTENTION), update the plan's frontmatter to mark it as reviewed:
+After the review completes (any verdict except NEEDS MANUAL ATTENTION), update `reviewed: false` → `reviewed: true` **ONLY on the specific section file that was reviewed**.
 
-- If the plan file has `reviewed: false`, change it to `reviewed: true`
-- If the plan file has no `reviewed` field, add `reviewed: true` after the `status` field
-- This clears the review gate so `/continue-roadmap` can proceed without warning
+- The review target must be a **single section file** (e.g., `plans/roadmap/section-05.md`). That file — and only that file — gets `reviewed: true`.
+- Do NOT mark any other section files as reviewed. Ever.
+- If a **directory** was specified (e.g., `plans/mux-flatten/`), run the review agents across the plan for context, but do NOT flip `reviewed` on any section. The caller (`/continue-roadmap` or the user) decides which specific section to gate.
+
+**Why only one section at a time:** As you implement Section N, reality diverges from the plan — new constraints, architectural decisions, deviations from assumptions. Sections N+1, N+2, etc. were written against the *original* assumptions. Marking them `reviewed: true` before they're about to be implemented defeats the purpose — they'd be "reviewed" against stale context. Each section gets reviewed right before implementation, either by the user running `/review-plan` on that section directly, or by `/continue-roadmap` triggering a review when it encounters `reviewed: false`.
 
 ## Important Rules
 

@@ -20,7 +20,7 @@ fn settings_ids_all_distinct() {
     let theme = UiTheme::default();
     let (_content, ids) = build_settings_dialog(&config, &theme);
     let all = collect_ids(&ids);
-    assert_eq!(all.len(), 10, "all 10 widget IDs must be distinct");
+    assert_eq!(all.len(), 22, "all 22 widget IDs must be distinct");
 }
 
 #[test]
@@ -28,21 +28,51 @@ fn content_widget_has_valid_id() {
     let config = Config::default();
     let theme = UiTheme::default();
     let (content, _ids) = build_settings_dialog(&config, &theme);
-    // Content widget should have a non-placeholder ID.
     assert_ne!(content.id().raw(), 0);
+}
+
+#[test]
+fn all_page_ids_are_set() {
+    let config = Config::default();
+    let theme = UiTheme::default();
+    let (_content, ids) = build_settings_dialog(&config, &theme);
+    let all = collect_ids(&ids);
+    // Every ID must be non-placeholder.
+    assert!(
+        all.iter().all(|id| *id != 0),
+        "no placeholder IDs should remain"
+    );
 }
 
 fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {
     let mut set = HashSet::new();
+    // Appearance.
     set.insert(ids.theme_dropdown.raw());
-    set.insert(ids.opacity_dropdown.raw());
-    set.insert(ids.font_size_dropdown.raw());
+    set.insert(ids.opacity_slider.raw());
+    set.insert(ids.blur_toggle.raw());
+    // Font.
+    set.insert(ids.font_family_dropdown.raw());
+    set.insert(ids.font_size_input.raw());
     set.insert(ids.font_weight_dropdown.raw());
-    set.insert(ids.ligatures_checkbox.raw());
-    set.insert(ids.paste_warning_dropdown.raw());
-    set.insert(ids.cursor_style_dropdown.raw());
+    set.insert(ids.ligatures_toggle.raw());
+    set.insert(ids.line_height_input.raw());
+    // Terminal.
+    set.insert(ids.cursor_picker.raw());
     set.insert(ids.cursor_blink_toggle.raw());
+    set.insert(ids.scrollback_input.raw());
+    set.insert(ids.shell_input.raw());
+    set.insert(ids.paste_warning_dropdown.raw());
+    // Window.
+    set.insert(ids.tab_bar_position_dropdown.raw());
+    set.insert(ids.grid_padding_input.raw());
+    set.insert(ids.restore_session_toggle.raw());
+    set.insert(ids.initial_columns_input.raw());
+    set.insert(ids.initial_rows_input.raw());
+    // Bell.
     set.insert(ids.bell_animation_dropdown.raw());
     set.insert(ids.bell_duration_dropdown.raw());
+    // Rendering.
+    set.insert(ids.gpu_backend_dropdown.raw());
+    set.insert(ids.subpixel_toggle.raw());
     set
 }

@@ -24,22 +24,22 @@ sections:
     status: in-progress
   - id: "10.2"
     title: "Appearance Page"
-    status: not-started
+    status: complete
   - id: "10.3"
     title: "Colors Page"
-    status: not-started
+    status: complete
   - id: "10.4"
     title: "Font Page"
-    status: not-started
+    status: complete
   - id: "10.5"
     title: "Terminal Page"
-    status: not-started
+    status: complete
   - id: "10.6"
     title: "Keybindings Page"
-    status: not-started
+    status: complete
   - id: "10.7"
     title: "Window, Bell, Rendering Pages"
-    status: not-started
+    status: complete
   - id: "10.8"
     title: "Action Wiring & Config Persistence"
     status: not-started
@@ -400,23 +400,23 @@ Extract the `paint()` method's chrome/footer background drawing logic into
 
 ## 10.2 Appearance Page
 
-- [ ] Content header: "Appearance" title + description text
-- [ ] Theme section:
+- [x] Content header: "Appearance" title + description text
+- [x] Theme section:
   - SettingRow: "Color scheme" dropdown (all built-in schemes)
-- [ ] Window section:
-  - SettingRow: "Opacity" RangeSlider (30-100%)
+- [x] Window section:
+  - SettingRow: "Opacity" SliderWidget (30-100%, displayed as integer percentage)
   - SettingRow: "Blur behind" Toggle
 
 ---
 
 ## 10.3 Colors Page
 
-- [ ] Content header: "Colors" title + description text
-- [ ] Schemes section:
-  - SchemeCard grid (AutoFill 240px) showing all built-in color schemes
+- [x] Content header: "Colors" title + description text
+- [x] Schemes section:
+  - SchemeCard grid (AutoFill 210px) showing all built-in color schemes
   - Each card: terminal preview + swatch bar
   - Active card: accent border + "Active" StatusBadge
-- [ ] Palette editor (below card grid):
+- [x] Palette editor (below card grid):
   - Title: "Palette — {scheme name}"
   - Special colors row: Foreground, Background, Cursor, Selection (4-column grid of
     SpecialColorSwatches)
@@ -427,12 +427,12 @@ Extract the `paint()` method's chrome/footer background drawing logic into
 
 ## 10.4 Font Page
 
-- [ ] CodePreview widget: syntax-highlighted Rust code with current font settings
-- [ ] Typeface section:
-  - SettingRow: "Font family" dropdown
+- [x] CodePreview widget: syntax-highlighted Rust code with current font settings
+- [x] Typeface section:
+  - SettingRow: "Font family" dropdown (12 common monospace fonts + Default)
   - SettingRow: "Size" NumberInput (8-32, step 0.5)
-  - SettingRow: "Weight" dropdown (300-700)
-- [ ] Features section:
+  - SettingRow: "Weight" dropdown (100-900)
+- [x] Features section:
   - SettingRow: "Ligatures" Toggle
   - SettingRow: "Line height" NumberInput (0.8-2.0, step 0.05)
 
@@ -440,46 +440,46 @@ Extract the `paint()` method's chrome/footer background drawing logic into
 
 ## 10.5 Terminal Page
 
-- [ ] Content header: "Terminal" title + description text
-- [ ] Cursor section:
+- [x] Content header: "Terminal" title + description text
+- [x] Cursor section:
   - CursorPicker: 3 visual options (Block, Bar, Underline)
   - SettingRow: "Cursor blink" Toggle
-- [ ] Scrollback section:
+- [x] Scrollback section:
   - SettingRow: "Maximum lines" NumberInput (0-100000, step 1000)
-- [ ] Shell section:
-  - SettingRow: "Default shell" TextInput (monospace font)
+- [x] Shell section:
+  - SettingRow: "Default shell" TextInput with placeholder "System default"
   - SettingRow: "Paste warning" dropdown (Always/Never)
 
 ---
 
 ## 10.6 Keybindings Page
 
-- [ ] Content header: "Keybindings" title + description text
-- [ ] Tabs & Panes section:
+- [x] Content header: "Keybindings" title + description text
+- [x] Tabs & Panes section:
   - KeybindRows: New tab, Close tab, Split vertically, Split horizontally,
     Next tab, Previous tab
-- [ ] Clipboard section:
+- [x] Clipboard section:
   - KeybindRows: Copy, Paste
-- [ ] Navigation section:
+- [x] Navigation section:
   - KeybindRows: Scroll up, Scroll down, Search, Settings
 
 ---
 
 ## 10.7 Window, Bell, Rendering Pages
 
-- [ ] **Window page**:
+- [x] **Window page**:
   - Chrome section: "Tab bar position" dropdown (Top/Bottom/Hidden)
   - Padding section: "Grid padding" NumberInput (0-40, step 2)
   - Startup section: "Restore previous session" Toggle,
     "Initial columns" NumberInput, "Initial rows" NumberInput
 
-- [ ] **Bell page**:
+- [x] **Bell page**:
   - Visual Bell section: "Animation" dropdown (Ease Out/Linear/None),
     "Duration" dropdown (Off/50ms/150ms/300ms/500ms)
 
-- [ ] **Rendering page**:
+- [x] **Rendering page**:
   - GPU section: "Backend" dropdown (Auto/Vulkan/DirectX 12/Metal).
-    Show "restart required" label — GPU backend changes apply on next launch only.
+    Description notes "restart required to apply".
   - Text section: "LCD subpixel rendering" Toggle (maps to `font.subpixel_mode`)
 
 ---
