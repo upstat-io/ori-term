@@ -12,7 +12,6 @@ use std::time::Instant;
 
 use oriterm_ui::geometry::{Point, Rect};
 use oriterm_ui::input::{MouseEvent, MouseEventKind};
-use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
 use winit::event::WindowEvent;
@@ -258,18 +257,28 @@ impl App {
                 hot_path.push(btn_id);
             }
         } else {
-            // Content area: hit test the layout tree.
+            // Content area: hit test the layout tree (cached).
             let w = ctx.surface_config.width as f32 / scale;
             let h = ctx.surface_config.height as f32 / scale;
             let content_bounds: Rect = Rect::new(0.0, chrome_h, w, h - chrome_h);
-            let layout_ctx = LayoutCtx {
-                measurer: &measurer,
-                theme: &ui_theme,
-            };
-            let layout_box = ctx.content.content_widget().layout(&layout_ctx);
             let local_viewport: Rect =
                 Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-            let layout_node = compute_layout(&layout_box, local_viewport);
+            let layout_node = match &ctx.cached_layout {
+                Some((vp, node)) if *vp == local_viewport => std::rc::Rc::clone(node),
+                _ => {
+                    let layout_ctx = LayoutCtx {
+                        measurer: &measurer,
+                        theme: &ui_theme,
+                    };
+                    let layout_box = ctx.content.content_widget().layout(&layout_ctx);
+                    let node = std::rc::Rc::new(oriterm_ui::layout::compute_layout(
+                        &layout_box,
+                        local_viewport,
+                    ));
+                    ctx.cached_layout = Some((local_viewport, std::rc::Rc::clone(&node)));
+                    node
+                }
+            };
             let local = Point::new(
                 logical_pos.x - content_bounds.x(),
                 logical_pos.y - content_bounds.y(),

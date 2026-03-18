@@ -15,7 +15,36 @@ use crate::app::App;
 use crate::app::widget_pipeline::apply_dispatch_requests;
 use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
+use super::super::DialogWindowContext;
 use super::DialogClickResult;
+
+/// Returns cached layout or recomputes. Avoids expensive tree walk per event.
+fn cached_content_layout(
+    ctx: &mut DialogWindowContext,
+    scale: f32,
+    ui_theme: &oriterm_ui::theme::UiTheme,
+    local_viewport: Rect,
+) -> Option<std::rc::Rc<oriterm_ui::layout::LayoutNode>> {
+    if let Some((vp, node)) = &ctx.cached_layout {
+        if *vp == local_viewport {
+            return Some(std::rc::Rc::clone(node));
+        }
+    }
+    let renderer = ctx.renderer.as_ref()?;
+    let measurer = CachedTextMeasurer::new(
+        UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+        &ctx.text_cache,
+        scale,
+    );
+    let layout_ctx = LayoutCtx {
+        measurer: &measurer,
+        theme: ui_theme,
+    };
+    let layout_box = ctx.content.content_widget().layout(&layout_ctx);
+    let node = std::rc::Rc::new(compute_layout(&layout_box, local_viewport));
+    ctx.cached_layout = Some((local_viewport, std::rc::Rc::clone(&node)));
+    Some(node)
+}
 
 impl App {
     /// Handle mouse button events within a dialog window.
@@ -167,25 +196,15 @@ impl App {
             }
         } else {
             // Content area: dispatch through the controller pipeline.
-            let Some(renderer) = ctx.renderer.as_ref() else {
-                return DialogClickResult::None;
-            };
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                &ctx.text_cache,
-                scale,
-            );
             let w = ctx.surface_config.width as f32 / scale;
             let h = ctx.surface_config.height as f32 / scale;
             let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-            let layout_ctx = LayoutCtx {
-                measurer: &measurer,
-                theme: &ui_theme,
-            };
-            let layout_box = ctx.content.content_widget().layout(&layout_ctx);
             let local_viewport =
                 Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-            let layout_node = compute_layout(&layout_box, local_viewport);
+            let Some(layout_node) = cached_content_layout(ctx, scale, &ui_theme, local_viewport)
+            else {
+                return DialogClickResult::None;
+            };
             let input_event = InputEvent::from_mouse_event(&mouse_event);
             let active = ctx.interaction.active_widget();
             let result = deliver_event_to_tree(
@@ -269,25 +288,14 @@ impl App {
             pos: ctx.last_cursor_pos,
             modifiers: oriterm_ui::input::Modifiers::NONE,
         };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
         let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let layout_ctx = LayoutCtx {
-            measurer: &measurer,
-            theme: &ui_theme,
-        };
-        let layout_box = ctx.content.content_widget().layout(&layout_ctx);
         let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-        let layout_node = compute_layout(&layout_box, local_viewport);
+        let Some(layout_node) = cached_content_layout(ctx, scale, &ui_theme, local_viewport) else {
+            return;
+        };
         let input_event = InputEvent::from_mouse_event(&mouse_event);
         let now = Instant::now();
         let active = ctx.interaction.active_widget();
@@ -307,6 +315,9 @@ impl App {
             &mut ctx.focus,
         );
         if result.requests.contains(ControllerRequests::PAINT) {
+            // Scroll changed content_offset — invalidate cached layout so the
+            // next click/cursor event recomputes with the new offset.
+            ctx.cached_layout = None;
             ctx.request_urgent_redraw();
         }
     }
