@@ -93,6 +93,13 @@ pub(crate) struct DialogWindowContext {
     pub(super) dirty: bool,
     /// Whether this dialog should bypass the normal frame budget once.
     pub(super) urgent_redraw: bool,
+    /// Cached content layout node, keyed by viewport bounds.
+    ///
+    /// Avoids recomputing the full layout tree on every scroll/mouse event.
+    /// Invalidated on resize, widget structural changes, and `content_offset`
+    /// changes. The cache dramatically reduces per-scroll-tick cost from
+    /// 3-4 tree walks to 0-1.
+    pub(super) cached_layout: Option<(Rect, std::rc::Rc<oriterm_ui::layout::LayoutNode>)>,
 }
 
 /// Dialog-specific content and associated state.
@@ -205,6 +212,7 @@ impl DialogWindowContext {
             lifecycle: SurfaceLifecycle::CreatedHidden,
             dirty: true,
             urgent_redraw: false,
+            cached_layout: None,
         }
     }
 
@@ -224,6 +232,7 @@ impl DialogWindowContext {
             .set_viewport(Rect::new(0.0, 0.0, logical_w, logical_h));
         self.scene_cache.clear();
         self.invalidation.invalidate_all();
+        self.cached_layout = None;
         self.dirty = true;
     }
 
