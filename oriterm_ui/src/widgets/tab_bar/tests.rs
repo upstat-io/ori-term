@@ -521,33 +521,33 @@ fn bell_phase_zero_after_duration() {
     assert!((phase - 0.0).abs() < f32::EPSILON);
 }
 
-// AnimatedValue<Color> smoke test
+// AnimProperty<Color> smoke test
 
-use crate::animation::{AnimatedValue, Easing};
+use crate::animation::{AnimBehavior, AnimProperty};
 use crate::color::Color;
 
 #[test]
-fn animated_value_color_interpolates() {
+fn anim_property_color_interpolates() {
     let now = Instant::now();
-    let mut av = AnimatedValue::new(Color::BLACK, Duration::from_millis(100), Easing::Linear);
-    av.set(Color::WHITE, now);
+    let mut ap = AnimProperty::with_behavior(Color::BLACK, AnimBehavior::linear(100));
+    ap.set(Color::WHITE, now);
 
     // At t=0, should be black (start).
-    let c0 = av.get(now);
+    let c0 = ap.get(now);
     assert!((c0.r - 0.0).abs() < 0.01);
     assert!((c0.g - 0.0).abs() < 0.01);
     assert!((c0.b - 0.0).abs() < 0.01);
 
     // At t=50ms (50%), should be mid-gray.
     let mid = now + Duration::from_millis(50);
-    let c50 = av.get(mid);
+    let c50 = ap.get(mid);
     assert!((c50.r - 0.5).abs() < 0.05, "r at 50%: {}", c50.r);
     assert!((c50.g - 0.5).abs() < 0.05, "g at 50%: {}", c50.g);
     assert!((c50.b - 0.5).abs() < 0.05, "b at 50%: {}", c50.b);
 
     // At t=100ms+, should be white (target).
     let end = now + Duration::from_millis(100);
-    let c100 = av.get(end);
+    let c100 = ap.get(end);
     assert!((c100.r - 1.0).abs() < 0.01);
     assert!((c100.g - 1.0).abs() < 0.01);
     assert!((c100.b - 1.0).abs() < 0.01);

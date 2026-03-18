@@ -1,7 +1,7 @@
 ---
 section: "08"
 title: "Widget Trait Overhaul"
-status: in-progress
+status: complete
 goal: "New Widget trait shape integrating Sense, controllers, visual states, and lifecycle; all existing widgets migrated"
 inspired_by:
   - "Druid Widget trait (druid/src/widget.rs)"
@@ -35,10 +35,10 @@ sections:
     status: complete
   - id: "08.6"
     title: "Remove Legacy Event Methods"
-    status: in-progress
+    status: complete
   - id: "08.7"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 08: Widget Trait Overhaul
@@ -961,10 +961,10 @@ generic controller pipeline and widget-specific behavior.
   `From<EventResponse> for DirtyKind`
 
 ### Verification
-- [ ] Settings dialog works with new trait (all controls functional)
-- [ ] Tab bar works with new trait
-- [ ] Overlay/popup system works with new propagation
-- [ ] No regressions in any existing UI functionality
+- [x] Settings dialog works with new trait (all controls functional)
+- [x] Tab bar works with new trait
+- [x] Overlay/popup system works with new propagation
+- [x] No regressions in any existing UI functionality
 - [x] `./test-all.sh` green, `./clippy-all.sh` green, `./build-all.sh` green
 
 **Exit Criteria:** Every single UI control — settings dialog buttons, window chrome

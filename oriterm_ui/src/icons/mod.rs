@@ -61,6 +61,22 @@ pub enum IconId {
     Restore,
     /// Window close button (×, slightly larger proportions than tab close).
     WindowClose,
+    /// Sun icon — Appearance settings page.
+    Sun,
+    /// Palette icon — Colors settings page.
+    Palette,
+    /// Type/font icon — Font settings page.
+    Type,
+    /// Terminal prompt icon — Terminal settings page.
+    Terminal,
+    /// Keyboard icon — Keybindings settings page.
+    Keyboard,
+    /// Window frame icon — Window settings page.
+    Window,
+    /// Bell icon — Bell settings page.
+    Bell,
+    /// Activity/pulse icon — Rendering settings page.
+    Activity,
 }
 
 impl IconId {
@@ -74,6 +90,14 @@ impl IconId {
             Self::Maximize => &ICON_MAXIMIZE,
             Self::Restore => &ICON_RESTORE,
             Self::WindowClose => &ICON_WINDOW_CLOSE,
+            Self::Sun => &ICON_SUN,
+            Self::Palette => &ICON_PALETTE,
+            Self::Type => &ICON_TYPE,
+            Self::Terminal => &ICON_TERMINAL,
+            Self::Keyboard => &ICON_KEYBOARD,
+            Self::Window => &ICON_WINDOW,
+            Self::Bell => &ICON_BELL,
+            Self::Activity => &ICON_ACTIVITY,
         }
     }
 }
@@ -235,6 +259,207 @@ static ICON_WINDOW_CLOSE: IconPath = IconPath {
         PathCommand::LineTo(0.0, 1.0),
     ],
     style: IconStyle::Stroke(CHROME_STROKE),
+};
+
+/// Stroke width for settings nav icons (logical pixels).
+const NAV_STROKE: f32 = 1.0;
+
+/// Sun icon: circle with 4 rays at cardinal + 4 at diagonal positions.
+///
+/// Circle at center (radius ~0.2 of unit), rays extend outward.
+/// Simplified from the mockup's 8-ray SVG sun.
+static ICON_SUN: IconPath = IconPath {
+    commands: &[
+        // Top ray.
+        PathCommand::MoveTo(0.5, 0.04),
+        PathCommand::LineTo(0.5, 0.21),
+        // Bottom ray.
+        PathCommand::MoveTo(0.5, 0.79),
+        PathCommand::LineTo(0.5, 0.96),
+        // Left ray.
+        PathCommand::MoveTo(0.04, 0.5),
+        PathCommand::LineTo(0.21, 0.5),
+        // Right ray.
+        PathCommand::MoveTo(0.79, 0.5),
+        PathCommand::LineTo(0.96, 0.5),
+        // Top-left diagonal.
+        PathCommand::MoveTo(0.17, 0.17),
+        PathCommand::LineTo(0.29, 0.29),
+        // Top-right diagonal.
+        PathCommand::MoveTo(0.83, 0.17),
+        PathCommand::LineTo(0.71, 0.29),
+        // Bottom-left diagonal.
+        PathCommand::MoveTo(0.17, 0.83),
+        PathCommand::LineTo(0.29, 0.71),
+        // Bottom-right diagonal.
+        PathCommand::MoveTo(0.83, 0.83),
+        PathCommand::LineTo(0.71, 0.71),
+        // Center circle (approximated as octagon for stroke rendering).
+        PathCommand::MoveTo(0.5, 0.29),
+        PathCommand::LineTo(0.65, 0.35),
+        PathCommand::LineTo(0.71, 0.5),
+        PathCommand::LineTo(0.65, 0.65),
+        PathCommand::LineTo(0.5, 0.71),
+        PathCommand::LineTo(0.35, 0.65),
+        PathCommand::LineTo(0.29, 0.5),
+        PathCommand::LineTo(0.35, 0.35),
+        PathCommand::Close,
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
+};
+
+/// Palette icon: circle with 4 color dots inside.
+///
+/// Outer circle with 4 dots at compass positions (simulating color spots).
+static ICON_PALETTE: IconPath = IconPath {
+    commands: &[
+        // Outer circle (approximated as octagon).
+        PathCommand::MoveTo(0.5, 0.08),
+        PathCommand::LineTo(0.79, 0.21),
+        PathCommand::LineTo(0.92, 0.5),
+        PathCommand::LineTo(0.79, 0.79),
+        PathCommand::LineTo(0.5, 0.92),
+        PathCommand::LineTo(0.21, 0.79),
+        PathCommand::LineTo(0.08, 0.5),
+        PathCommand::LineTo(0.21, 0.21),
+        PathCommand::Close,
+        // Dot top-left.
+        PathCommand::MoveTo(0.27, 0.46),
+        PathCommand::LineTo(0.33, 0.46),
+        // Dot top.
+        PathCommand::MoveTo(0.40, 0.31),
+        PathCommand::LineTo(0.46, 0.31),
+        // Dot top-right.
+        PathCommand::MoveTo(0.58, 0.31),
+        PathCommand::LineTo(0.64, 0.31),
+        // Dot right.
+        PathCommand::MoveTo(0.71, 0.46),
+        PathCommand::LineTo(0.77, 0.46),
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
+};
+
+/// Type/font icon: capital T with serifs.
+///
+/// Horizontal crossbar at top, vertical stem centered, serifs at bottom.
+static ICON_TYPE: IconPath = IconPath {
+    commands: &[
+        // Top crossbar.
+        PathCommand::MoveTo(0.17, 0.17),
+        PathCommand::LineTo(0.83, 0.17),
+        // Vertical stem.
+        PathCommand::MoveTo(0.5, 0.17),
+        PathCommand::LineTo(0.5, 0.83),
+        // Bottom serif.
+        PathCommand::MoveTo(0.33, 0.83),
+        PathCommand::LineTo(0.67, 0.83),
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
+};
+
+/// Terminal prompt icon: > cursor and input line.
+///
+/// Chevron on left, horizontal line on right (classic terminal prompt).
+static ICON_TERMINAL: IconPath = IconPath {
+    commands: &[
+        // Prompt chevron >.
+        PathCommand::MoveTo(0.17, 0.21),
+        PathCommand::LineTo(0.42, 0.46),
+        PathCommand::LineTo(0.17, 0.71),
+        // Input line.
+        PathCommand::MoveTo(0.50, 0.79),
+        PathCommand::LineTo(0.83, 0.79),
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
+};
+
+/// Keyboard icon: rounded rectangle with key indicators inside.
+///
+/// Outer frame with 3 rows of key marks.
+static ICON_KEYBOARD: IconPath = IconPath {
+    commands: &[
+        // Outer frame.
+        PathCommand::MoveTo(0.08, 0.17),
+        PathCommand::LineTo(0.92, 0.17),
+        PathCommand::LineTo(0.92, 0.83),
+        PathCommand::LineTo(0.08, 0.83),
+        PathCommand::Close,
+        // Top row keys (3 dots).
+        PathCommand::MoveTo(0.25, 0.33),
+        PathCommand::LineTo(0.29, 0.33),
+        PathCommand::MoveTo(0.50, 0.33),
+        PathCommand::LineTo(0.54, 0.33),
+        PathCommand::MoveTo(0.71, 0.33),
+        PathCommand::LineTo(0.75, 0.33),
+        // Middle row keys (2 dots).
+        PathCommand::MoveTo(0.33, 0.50),
+        PathCommand::LineTo(0.37, 0.50),
+        PathCommand::MoveTo(0.63, 0.50),
+        PathCommand::LineTo(0.67, 0.50),
+        // Space bar.
+        PathCommand::MoveTo(0.33, 0.67),
+        PathCommand::LineTo(0.67, 0.67),
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
+};
+
+/// Window frame icon: square with title bar line.
+///
+/// Outer rectangle with a horizontal divider near top (title bar).
+static ICON_WINDOW: IconPath = IconPath {
+    commands: &[
+        // Outer frame.
+        PathCommand::MoveTo(0.12, 0.12),
+        PathCommand::LineTo(0.88, 0.12),
+        PathCommand::LineTo(0.88, 0.88),
+        PathCommand::LineTo(0.12, 0.88),
+        PathCommand::Close,
+        // Title bar line.
+        PathCommand::MoveTo(0.12, 0.33),
+        PathCommand::LineTo(0.88, 0.33),
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
+};
+
+/// Bell icon: bell shape with clapper.
+///
+/// Bell body (trapezoidal top widening down) with a clapper dot at bottom.
+static ICON_BELL: IconPath = IconPath {
+    commands: &[
+        // Bell top.
+        PathCommand::MoveTo(0.50, 0.08),
+        PathCommand::LineTo(0.50, 0.17),
+        // Bell body (left side).
+        PathCommand::MoveTo(0.25, 0.71),
+        PathCommand::LineTo(0.25, 0.50),
+        PathCommand::CubicTo(0.25, 0.29, 0.38, 0.17, 0.50, 0.17),
+        // Bell body (right side).
+        PathCommand::CubicTo(0.62, 0.17, 0.75, 0.29, 0.75, 0.50),
+        PathCommand::LineTo(0.75, 0.71),
+        // Bell brim.
+        PathCommand::MoveTo(0.17, 0.71),
+        PathCommand::LineTo(0.83, 0.71),
+        // Clapper.
+        PathCommand::MoveTo(0.42, 0.83),
+        PathCommand::LineTo(0.58, 0.83),
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
+};
+
+/// Activity/pulse icon: EKG-style heartbeat line.
+///
+/// Horizontal baseline with a sharp peak in the middle.
+static ICON_ACTIVITY: IconPath = IconPath {
+    commands: &[
+        PathCommand::MoveTo(0.04, 0.50),
+        PathCommand::LineTo(0.25, 0.50),
+        PathCommand::LineTo(0.38, 0.12),
+        PathCommand::LineTo(0.50, 0.88),
+        PathCommand::LineTo(0.62, 0.25),
+        PathCommand::LineTo(0.75, 0.50),
+        PathCommand::LineTo(0.96, 0.50),
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
 };
 
 #[cfg(test)]

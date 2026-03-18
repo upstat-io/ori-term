@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "Animation Engine"
-status: in-progress
+status: complete
 goal: "Unified animation system with AnimFrameEvent timing, AnimProperty/AnimBehavior, transactions, and springs"
 inspired_by:
   - "Druid request_anim_frame() / AnimFrame(delta) (druid/src/contexts.rs)"
@@ -28,7 +28,7 @@ sections:
     status: complete
   - id: "05.6"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 05: Animation Engine
@@ -692,22 +692,15 @@ Centralized tracking of which widgets need animation frames and repaints.
 - [x] `DeferredRepaint`: `Debug, Clone, Copy, Eq, PartialEq` + manual `Ord`/`PartialOrd`
 
 ### Migration (deferred to Section 08)
-- [ ] Existing `AnimatedValue` usage migrated to `AnimProperty`. Known usages:
-  - `ButtonWidget::hover_progress: AnimatedValue<f32>` (button/mod.rs)
-  - `ToggleWidget::toggle_progress: AnimatedValue<f32>` (toggle/mod.rs) — thumb slide
-  - `WindowControlButton::hover_progress: AnimatedValue<f32>` (window_chrome/controls.rs)
-  - `TabBarWidget::hover_progress: Vec<AnimatedValue<f32>>` (tab_bar/widget/mod.rs)
-  - `TabBarWidget::close_btn_opacity: Vec<AnimatedValue<f32>>` (tab_bar/widget/mod.rs)
-  - `TabBarWidget::width_multipliers: Vec<AnimatedValue<f32>>` (tab_bar/widget/mod.rs)
-  - Note: CheckboxWidget, DropdownWidget, and SliderWidget do NOT currently use
-    `AnimatedValue` — they will get animated transitions through the VisualStateManager
-    in Section 06.
-  - Note: `AnimationGroup`, `AnimationSequence`, `AnimationDelegate`, and
-    `AnimationBuilder` do NOT use `AnimatedValue` — they operate on `PropertyAnimation`,
-    `TransitionTarget`, `Easing`, and `Duration` directly. These higher-level constructs
-    are independent and do not need migration.
-- [ ] `AnimatedValue<T>` type retained for backward compatibility during migration but
-  marked `#[deprecated]`. Remove after all usages are migrated (Section 08).
+- [x] Existing `AnimatedValue` usage migrated to `AnimProperty`. Known usages:
+  - `ButtonWidget` — migrated to `VisualStateAnimator` (no `AnimatedValue`)
+  - `ToggleWidget::toggle_progress: AnimProperty<f32>` — migrated from `AnimatedValue`
+  - `WindowControlButton` — migrated to `VisualStateAnimator` (no `AnimatedValue`)
+  - `TabBarWidget::hover_progress: Vec<AnimProperty<f32>>` — migrated
+  - `TabBarWidget::close_btn_opacity: Vec<AnimProperty<f32>>` — migrated
+  - `TabBarWidget::width_multipliers: Vec<AnimProperty<f32>>` — migrated
+- [x] `AnimatedValue<T>` type retained for backward compatibility during migration but
+  marked `#[deprecated]`. Tests in `animation/tests.rs` still exercise it.
 
 ### Test files and test cases
 - [x] `oriterm_ui/src/animation/tests.rs` — expand with `Lerp for Insets` tests:

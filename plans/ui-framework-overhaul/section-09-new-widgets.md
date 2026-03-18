@@ -1,16 +1,16 @@
 ---
 section: "09"
 title: "New Widget Library"
-status: not-started
+status: in-progress
 goal: "All new widgets needed by the settings mockup, built on the new framework"
 inspired_by:
-  - "mockups/settings.html — the design spec"
+  - "mockups/settings-brutal.html — the design spec"
 depends_on: ["08"]
-reviewed: false
+reviewed: true
 sections:
   - id: "09.1"
     title: "SidebarNav"
-    status: not-started
+    status: in-progress
   - id: "09.2"
     title: "PageContainer"
     status: not-started
@@ -43,12 +43,13 @@ sections:
 # Section 09: New Widget Library
 
 **Status:** Not Started
-**Goal:** Every widget needed by `mockups/settings.html` exists, renders correctly, and uses
+**Goal:** Every widget needed by `mockups/settings-brutal.html` exists, renders correctly, and uses
 the new framework (controllers, visual states, animation behaviors).
 
-**Context:** The settings mockup requires 12 new widgets (plus RichLabel from Section 07). Each is built on the new framework
-established in Sections 01-08: interaction state for hover, controllers for click/drag,
-visual state animators for transitions, and the new theme tokens for colors.
+**Context:** The settings mockup (`mockups/settings-brutal.html`) requires 12 new widgets
+(plus RichLabel from Section 07). Each is built on the new framework established in
+Sections 01-08: interaction state for hover, controllers for click/drag, visual state
+animators for transitions, and the new theme tokens for colors.
 
 **File size warning**: The following widgets are likely to approach 300+ lines and should be
 monitored during implementation. If any exceeds 400 lines, split into submodules BEFORE
@@ -87,7 +88,7 @@ This is a sync point: all 4 locations must be updated together.
 
 The left navigation panel from the mockup: section titles, nav items with icons, active indicator.
 
-- [ ] Define `NavItem`:
+- [x] Define `NavItem`:
   ```rust
   pub struct NavItem {
       pub label: String,
@@ -95,18 +96,21 @@ The left navigation panel from the mockup: section titles, nav items with icons,
       pub page_index: usize,
   }
   ```
-- [ ] Define `SidebarNavWidget`:
+- [x] Define `SidebarNavWidget`:
   - Fixed width (200px logical)
   - Background: `theme.bg_secondary` (darker than primary surface)
   - Section titles: uppercase, small font, `fg_faint` color
-  - Nav items: HoverController + ClickController
+  - Nav items: per-item VisualStateAnimator for hover transitions
   - Active item: `accent_bg_strong` background, `accent` text color
-  - Hover: `bg_hover` background transition (100ms EaseOut)
-  - Emits: `WidgetAction::Selected { id, index: page_index }`
-  - Rounded corners on items (6px)
+  - Hover: `bg_hover` background via VisualStateAnimator
+  - Emits: `WidgetAction::Selected { id, index: page_index }` via `on_input`
   - Version label at bottom: `fg_faint`, small font
-- [ ] Visual states: `CommonStates { Normal, Hovered, Active }` per nav item
+- [x] Visual states: `CommonStates { Normal, Hovered, Active }` per nav item
   (Active here means "selected page", not mouse-down)
+- [ ] `for_each_child_mut()`: iterate over nav items for tree dispatch
+- [x] `layout()`: fixed-width column with vertical stack of items
+- [x] Tests in `sidebar_nav/tests.rs`: construction, layout width, nav item count,
+  hit testing, page index resolution, active index tracking
 
 ---
 
@@ -128,7 +132,10 @@ Shows one child at a time, switches on command.
 - [ ] `paint()`: only paint the active page.
 - [ ] `set_active_page(index)`: switch pages, `request_paint()`
 - [ ] `accept_action()`: handle `Selected` from SidebarNav to switch pages
+- [ ] `for_each_child_mut()`: iterate over all pages (needed for widget registration)
 - [ ] `sense()`: `Sense::none()` (delegates to active page's children)
+- [ ] Tests in `page_container/tests.rs`: page switching, layout only measures active page,
+  `accept_action` routes `Selected`, child count
 
 ---
 
@@ -146,6 +153,9 @@ Two-line label with hover background highlight.
   - HoverController for hover state
   - Visual states: `CommonStates { Normal, Hovered }`
   - `sense()`: `Sense::hover()` (row itself is hoverable, control handles clicks)
+  - `for_each_child_mut()`: yields the right-side control widget
+  - Tests in `setting_row/tests.rs`: layout height >= 44px, two-line label rendering,
+    hover state, child control delegation
 
 ---
 
@@ -171,6 +181,10 @@ Color scheme preview card with terminal preview and swatch bar.
   - Render 2 lines of monospace text using scheme's foreground/ANSI colors
   - Text content: `$ cargo build --release` + `Compiling ori_term v0.1.0`
   - Uses current terminal font at 11px size
+- [ ] Data type: `SchemeCardData { name: String, bg: Color, fg: Color, ansi: [Color; 8], selected: bool }`
+  passed via constructor — widget does not own scheme definitions
+- [ ] Tests in `scheme_card/tests.rs`: layout dimensions, swatch bar renders 8 colors,
+  selection state, click emits `Selected`
 
 ---
 
@@ -187,7 +201,9 @@ Clickable color grids for palette editing.
   - Hover: enlarge cell slightly (redraw at 115% size, not transform)
   - Click: emit `Selected { id, index }` for future color picker
   - HoverController + ClickController per cell
-  - Use grid layout from Section 07
+  - Use grid layout from Section 07 (`GridColumns::Fixed(8)`)
+  - Tests in `color_swatch/tests.rs`: grid layout produces 8 columns,
+    click emits `Selected` with correct index, hover enlargement
 
 - [ ] Define `SpecialColorSwatch`:
   - Large swatch (28x28px, 6px corners) + label + hex value
@@ -212,6 +228,8 @@ Syntax-highlighted font preview panel.
   - Colors from hardcoded syntax theme (keyword=purple, function=blue,
     string=green, comment=gray, number=orange)
   - `sense()`: `Sense::none()` (display only)
+  - Tests in `code_preview/tests.rs`: layout dimensions, produces RichLabel spans,
+    sense is none
 
 ---
 
@@ -233,6 +251,8 @@ Visual cursor style selector with 3 options.
   - ClickController per card
   - Emits: `WidgetAction::Selected { id, index }` (0=Block, 1=Bar, 2=Underline)
   - `sense()`: `Sense::click()`
+  - Tests in `cursor_picker/tests.rs`: 3 cards rendered, selection state,
+    click emits `Selected` with correct index
 
 ---
 
@@ -254,6 +274,8 @@ Keybinding display with styled key badges.
   - Hover: `bg_card` background
   - `sense()`: `Sense::hover()`
   - Future: click to rebind (not in initial implementation)
+  - Tests in `keybind/tests.rs`: badge renders key text, row layout with badges,
+    hover state
 
 ---
 
@@ -262,14 +284,11 @@ Keybinding display with styled key badges.
 **File(s):** `oriterm_ui/src/widgets/number_input/mod.rs`,
   `oriterm_ui/src/widgets/range_slider/mod.rs`
 
-**WidgetAction additions**: Review whether existing `WidgetAction` variants suffice
-for all new widgets. Current variants cover: `Clicked`, `Toggled`, `ValueChanged`,
-`TextChanged`, `Selected`, `OpenDropdown`, `DismissOverlay`, `MoveOverlay`,
-`SaveSettings`, `CancelSettings`, `WindowMinimize/Maximize/Close`. The new widgets
-primarily use `Selected` (SidebarNav, SchemeCard, CursorPicker, ColorSwatch) and
-`ValueChanged` (NumberInput, RangeSlider). No new variants needed unless
-`DoubleClicked`/`TripleClicked` are added for ClickController (Section 04). If they
-are, add them to the `WidgetAction` enum in `widgets/mod.rs`.
+**WidgetAction coverage**: Existing `WidgetAction` variants in `oriterm_ui/src/action.rs`
+suffice for all new widgets. The new widgets primarily use `Selected` (SidebarNav,
+SchemeCard, CursorPicker, ColorSwatch) and `ValueChanged` (NumberInput, RangeSlider).
+`DoubleClicked`/`TripleClicked`/`DragStart`/`DragUpdate`/`DragEnd`/`ScrollBy` were
+added in Section 04. No new variants needed.
 
 - [ ] **NumberInput**:
   - Numeric text input with min/max/step constraints
@@ -279,6 +298,8 @@ are, add them to the `WidgetAction` enum in `widgets/mod.rs`.
   - Focus: accent border
   - FocusController + ClickController
   - Emits: `WidgetAction::ValueChanged { id, value }`
+  - Tests in `number_input/tests.rs`: min/max clamping, step increment,
+    arrow key behavior, `ValueChanged` emission
 
 - [ ] **RangeSlider** (enhanced Slider):
   - Horizontal track with filled portion (accent color)
@@ -286,8 +307,12 @@ are, add them to the `WidgetAction` enum in `widgets/mod.rs`.
   - Value label to the right (monospace, `fg_secondary`)
   - DragController for thumb
   - HoverController for thumb highlight
-  - `sense()`: `Sense::drag().union(Sense::FOCUS)`
+  - `sense()`: `Sense::drag().union(Sense::focusable())`
   - Emits: `WidgetAction::ValueChanged { id, value }`
+  - Note: existing `SliderWidget` (`oriterm_ui/src/widgets/slider/`) can serve as a
+    reference or base — evaluate extending it vs. creating new widget
+  - Tests in `range_slider/tests.rs`: drag updates value, value clamping,
+    filled track proportion, `ValueChanged` emission
 
 ---
 
@@ -306,7 +331,7 @@ are, add them to the `WidgetAction` enum in `widgets/mod.rs`.
 - [ ] RangeSlider shows filled track + value label
 - [ ] All widgets use new framework (controllers, visual states, sense)
 - [ ] All widgets render correctly at 100% and 150% DPI
-- [ ] 8 new `IconId` variants added with SVG path definitions and test coverage
+- [x] 8 new `IconId` variants added with SVG path definitions and test coverage
 - [ ] Each new widget has a `tests.rs` sibling file (per test organization rules):
   `sidebar_nav/tests.rs`, `page_container/tests.rs`, `setting_row/tests.rs`,
   `scheme_card/tests.rs`, `color_swatch/tests.rs`, `code_preview/tests.rs`,

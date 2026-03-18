@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Event Controllers"
-status: in-progress
+status: complete
 goal: "Composable controller objects replace monolithic event() methods on widgets"
 inspired_by:
   - "GTK4 EventController architecture (gtk/gtkeventcontroller.c)"
@@ -29,7 +29,7 @@ sections:
     status: complete
   - id: "04.7"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 04: Event Controllers
@@ -210,7 +210,7 @@ GTK4 solved this by extracting input handling into composable controller objects
   across `oriterm_ui` and `oriterm`. Plan for this as a mechanical but high-touch
   change. Run `./clippy-all.sh` and `./build-all.sh` immediately after to catch
   any missed import sites.
-- [ ] Widgets expose controllers via `fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>]`
+- [x] Widgets expose controllers via `fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>]`
   for event dispatch (requires `&mut self` since `handle_event` takes `&mut self`).
   A read-only accessor `fn controllers(&self) -> &[Box<dyn EventController>]` is also
   provided for introspection. See Section 08 for Widget trait integration.
@@ -541,8 +541,8 @@ Keyboard focus management with tab navigation.
   `DragStart`, `DragUpdate`, `DragEnd`, `ScrollBy`
 - [x] `use crate::geometry::Point;` added to `action.rs` imports (needed by
   `DragStart`, `DragUpdate`, `DragEnd` variants)
-- [ ] Callers in `oriterm` binary that should handle new variants updated with explicit
-  arms (wildcard arms prevent compilation failure but mean events are silently dropped)
+- [x] Callers in `oriterm` binary that should handle new variants updated with explicit
+  arms (wildcard arms replaced with exhaustive match in content_actions.rs + overlay_dispatch.rs)
 
 ### LifecycleEvent prerequisite
 - [x] `LifecycleEvent` variant fields are already accessible — `pub enum` variant fields

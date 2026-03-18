@@ -23,6 +23,7 @@ pub mod rich_label;
 pub mod scroll;
 pub mod separator;
 pub mod settings_panel;
+pub mod sidebar_nav;
 pub mod slider;
 pub mod spacer;
 pub mod stack;

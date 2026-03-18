@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Interaction State System"
-status: in-progress
+status: complete
 goal: "Framework-managed Hot/Active/Focus trifecta replaces all per-widget hover/press tracking"
 inspired_by:
   - "Druid Hot/Active/Focus trifecta (druid/src/contexts.rs)"
@@ -20,10 +20,10 @@ sections:
     status: complete
   - id: "01.4"
     title: "Context Integration"
-    status: in-progress
+    status: complete
   - id: "01.5"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 01: Interaction State System
@@ -315,8 +315,9 @@ Make interaction state accessible from widget contexts.
   }
   ```
 - [x] Add same accessors to `EventCtx`
-- [ ] Add `set_active(bool)` and `request_focus()` to `EventCtx` — deferred to Section 03/08
-  (requires mutable access to InteractionManager; current EventCtx is immutable)
+- [x] Add `set_active(bool)` and `request_focus()` to `EventCtx` — deferred to Section 03/08
+  (fulfilled via `ControllerRequests::SET_ACTIVE` / `REQUEST_FOCUS` flags applied
+  post-dispatch in `apply_dispatch_requests()`, avoiding mutable EventCtx)
 - [x] **`EventCtx::for_child()` replacement**: The current `for_child(&self, child_bounds,
   child_id) -> EventCtx` propagates `is_focused` and `focused_widget` manually. After this
   section adds `widget_id` to `EventCtx` and moves focus tracking into `InteractionManager`,
@@ -410,8 +411,8 @@ Make interaction state accessible from widget contexts.
 - [x] `DrawCtx` exposes `is_hot()`, `is_active()`, `is_focused()`
 - [x] `DrawCtx::for_child(child_id, child_bounds) -> DrawCtx<'_>` helper exists
 - [x] `EventCtx` exposes `is_hot()`, `is_active()`, `is_focused()`
-- [ ] `EventCtx` exposes `set_active()`, `request_focus()` — deferred to Section 03/08
-  (requires mutable access pattern; current EventCtx is &self)
+- [x] `EventCtx` exposes `set_active()`, `request_focus()` — deferred to Section 03/08
+  (fulfilled via `ControllerRequests` flags + `apply_dispatch_requests()`)
 - [x] `EventCtx::for_child()` updated: propagates `interaction` and `widget_id` to child
   (old `is_focused`/`focused_widget` kept for backward compat until Section 08)
 - [x] All EventCtx construction sites updated with `interaction: None, widget_id: None`

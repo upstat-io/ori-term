@@ -89,7 +89,21 @@ impl App {
                         log::info!("overlay Selected: index={index}");
                         self.dispatch_context_action(index);
                     }
-                    _ => {
+                    // Controller-emitted actions not handled by overlays.
+                    // Still mark dirty if the event was handled (visual feedback).
+                    WidgetAction::Clicked(_)
+                    | WidgetAction::DoubleClicked(_)
+                    | WidgetAction::TripleClicked(_)
+                    | WidgetAction::Toggled { .. }
+                    | WidgetAction::ValueChanged { .. }
+                    | WidgetAction::TextChanged { .. }
+                    | WidgetAction::DragStart { .. }
+                    | WidgetAction::DragUpdate { .. }
+                    | WidgetAction::DragEnd { .. }
+                    | WidgetAction::ScrollBy { .. }
+                    | WidgetAction::WindowMinimize
+                    | WidgetAction::WindowMaximize
+                    | WidgetAction::WindowClose => {
                         if response.handled {
                             if let Some(ctx) = self.focused_ctx_mut() {
                                 ctx.dirty = true;

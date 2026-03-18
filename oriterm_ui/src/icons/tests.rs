@@ -114,6 +114,14 @@ const ALL_ICONS: &[IconId] = &[
     IconId::Maximize,
     IconId::Restore,
     IconId::WindowClose,
+    IconId::Sun,
+    IconId::Palette,
+    IconId::Type,
+    IconId::Terminal,
+    IconId::Keyboard,
+    IconId::Window,
+    IconId::Bell,
+    IconId::Activity,
 ];
 
 fn extract_coords(cmd: &PathCommand) -> Vec<(f32, f32)> {
