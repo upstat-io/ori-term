@@ -4,13 +4,20 @@
 //! that reflect the current `Config`. Widget IDs are captured in
 //! `SettingsIds` for action dispatch in Section 04.
 
+use oriterm_ui::icons::IconId;
+use oriterm_ui::layout::SizeSpec;
+use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::checkbox::CheckboxWidget;
+use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
 use oriterm_ui::widgets::form_layout::FormLayout;
 use oriterm_ui::widgets::form_row::FormRow;
 use oriterm_ui::widgets::form_section::FormSection;
+use oriterm_ui::widgets::label::LabelWidget;
+use oriterm_ui::widgets::page_container::PageContainerWidget;
+use oriterm_ui::widgets::sidebar_nav::{NavItem, NavSection, SidebarNavWidget};
 use oriterm_ui::widgets::toggle::ToggleWidget;
 
 use crate::config::{BellAnimation, Config, CursorStyle, PasteWarning};
@@ -41,24 +48,111 @@ pub(crate) struct SettingsIds {
     pub bell_duration_dropdown: WidgetId,
 }
 
-/// Builds the complete settings form from the current config.
+/// Builds the settings dialog with sidebar navigation and 8 pages.
 ///
-/// Returns the populated `FormLayout` and the ID map for action dispatch.
-/// The caller must call `form.compute_label_widths(measurer, theme)` before
-/// pushing the panel into the overlay.
-pub(in crate::app) fn build_settings_form(config: &Config) -> (FormLayout, SettingsIds) {
+/// Returns the content widget (sidebar + pages in a horizontal row) and the
+/// ID map for action dispatch. Existing sections (Appearance, Font, Terminal,
+/// Bell, Behavior) are wrapped as individual pages. New pages (Colors,
+/// Keybindings, Window, Rendering) use placeholder content until sections
+/// 10.2-10.7 implement them.
+pub(in crate::app) fn build_settings_dialog(
+    config: &Config,
+    theme: &UiTheme,
+) -> (Box<dyn Widget>, SettingsIds) {
+    // Build existing sections — preserves all controls and their IDs.
     let (appearance, theme_id, opacity_id) = build_appearance_section(config);
     let (font, size_id, weight_id, liga_id) = build_font_section(config);
     let (behavior, paste_id) = build_behavior_section(config);
     let (terminal, style_id, blink_id) = build_terminal_section(config);
     let (bell, anim_id, dur_id) = build_bell_section(config);
 
-    let form = FormLayout::new()
-        .with_section(appearance)
-        .with_section(font)
-        .with_section(behavior)
+    // Wrap each section in a FormLayout as individual pages.
+    let page_appearance = FormLayout::new().with_section(appearance);
+    let page_font = FormLayout::new().with_section(font);
+    let page_terminal = FormLayout::new()
         .with_section(terminal)
-        .with_section(bell);
+        .with_section(behavior);
+    let page_bell = FormLayout::new().with_section(bell);
+
+    // Placeholder pages for content not yet implemented (10.2-10.7).
+    let page_colors = placeholder_page("Colors");
+    let page_keybindings = placeholder_page("Keybindings");
+    let page_window = placeholder_page("Window");
+    let page_rendering = placeholder_page("Rendering");
+
+    let sidebar = SidebarNavWidget::new(
+        vec![
+            NavSection {
+                title: "General".into(),
+                items: vec![
+                    NavItem {
+                        label: "Appearance".into(),
+                        icon: Some(IconId::Sun),
+                        page_index: 0,
+                    },
+                    NavItem {
+                        label: "Colors".into(),
+                        icon: Some(IconId::Palette),
+                        page_index: 1,
+                    },
+                    NavItem {
+                        label: "Font".into(),
+                        icon: Some(IconId::Type),
+                        page_index: 2,
+                    },
+                    NavItem {
+                        label: "Terminal".into(),
+                        icon: Some(IconId::Terminal),
+                        page_index: 3,
+                    },
+                    NavItem {
+                        label: "Keybindings".into(),
+                        icon: Some(IconId::Keyboard),
+                        page_index: 4,
+                    },
+                    NavItem {
+                        label: "Window".into(),
+                        icon: Some(IconId::Window),
+                        page_index: 5,
+                    },
+                ],
+            },
+            NavSection {
+                title: "Advanced".into(),
+                items: vec![
+                    NavItem {
+                        label: "Bell".into(),
+                        icon: Some(IconId::Bell),
+                        page_index: 6,
+                    },
+                    NavItem {
+                        label: "Rendering".into(),
+                        icon: Some(IconId::Activity),
+                        page_index: 7,
+                    },
+                ],
+            },
+        ],
+        theme,
+    );
+
+    let pages = PageContainerWidget::new(vec![
+        Box::new(page_appearance),
+        Box::new(page_colors),
+        Box::new(page_font),
+        Box::new(page_terminal),
+        Box::new(page_keybindings),
+        Box::new(page_window),
+        Box::new(page_bell),
+        Box::new(page_rendering),
+    ]);
+
+    // Horizontal layout: sidebar (fixed 200px) | pages (fill).
+    let content = ContainerWidget::row()
+        .with_width(SizeSpec::Fill)
+        .with_height(SizeSpec::Fill)
+        .with_child(Box::new(sidebar))
+        .with_child(Box::new(pages));
 
     let ids = SettingsIds {
         theme_dropdown: theme_id,
@@ -73,7 +167,16 @@ pub(in crate::app) fn build_settings_form(config: &Config) -> (FormLayout, Setti
         bell_duration_dropdown: dur_id,
     };
 
-    (form, ids)
+    (Box::new(content), ids)
+}
+
+/// Creates a placeholder page with a title label.
+fn placeholder_page(title: &str) -> ContainerWidget {
+    let label = LabelWidget::new(title);
+    ContainerWidget::column()
+        .with_width(SizeSpec::Fill)
+        .with_height(SizeSpec::Fill)
+        .with_child(Box::new(label))
 }
 
 /// Appearance section: Theme dropdown, Opacity dropdown.

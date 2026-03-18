@@ -33,24 +33,11 @@ impl App {
         // Create a working copy of the config for pending edits.
         self.settings_pending = Some(self.config.clone());
 
-        // Build form from current config (no borrow on self.windows).
-        let (mut form, ids) = form_builder::build_settings_form(&self.config);
+        // Build sidebar + pages layout from current config.
+        let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme);
         self.settings_ids = Some(ids);
 
-        // Compute aligned label column widths before first layout/draw.
-        if let Some(ctx) = self.focused_ctx() {
-            let scale = ctx.window.scale_factor().factor() as f32;
-            if let Some(renderer) = ctx.renderer.as_ref() {
-                let measurer = crate::font::CachedTextMeasurer::new(
-                    crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                    &ctx.text_cache,
-                    scale,
-                );
-                form.compute_label_widths(&measurer, &self.ui_theme);
-            }
-        }
-
-        let panel = SettingsPanel::new(Box::new(form));
+        let panel = SettingsPanel::new(content);
 
         // Now take the mutable borrow for overlay push.
         let Some(ctx) = self.focused_ctx_mut() else {

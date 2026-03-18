@@ -148,7 +148,9 @@ impl App {
     /// Try dispatching a widget action as a settings control change.
     ///
     /// Mutates the pending config copy — does NOT touch `self.config`.
-    /// Changes only take effect when the user clicks Save.
+    /// Changes only take effect when the user clicks Save. Always propagates
+    /// to the overlay panel so widgets can update visuals (page switching,
+    /// dropdown selection display).
     fn try_dispatch_settings_action(&mut self, action: &WidgetAction) -> bool {
         let Some(ids) = &self.settings_ids else {
             return false;
@@ -156,15 +158,25 @@ impl App {
         let Some(pending) = self.settings_pending.as_mut() else {
             return false;
         };
-        if !settings_overlay::action_handler::handle_settings_action(action, ids, pending) {
-            return false;
+        let config_changed =
+            settings_overlay::action_handler::handle_settings_action(action, ids, pending);
+        if config_changed {
+            log::info!("settings: pending config updated (deferred until Save)");
         }
 
-        log::info!("settings: pending config updated (deferred until Save)");
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+        // Always propagate — widgets update visuals (page switch, selection).
+        let widget_handled = self
+            .focused_ctx_mut()
+            .is_some_and(|ctx| ctx.overlays.accept_action_topmost(action));
+
+        if config_changed || widget_handled {
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
+            return true;
         }
-        true
+
+        false
     }
 
     /// Save settings: apply pending config, persist to disk, and dismiss.
