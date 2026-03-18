@@ -22,7 +22,7 @@ pub(crate) enum NotifyOnCommandFinish {
     clippy::struct_excessive_bools,
     reason = "config toggles are naturally boolean"
 )]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct BehaviorConfig {
     /// Auto-copy on selection release (default: true).
