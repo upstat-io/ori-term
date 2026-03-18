@@ -1013,3 +1013,219 @@ fn hit_test_path_with_content_offset() {
         btn_bounds.y()
     );
 }
+
+/// Helper: builds a scroll container with N children evenly spaced.
+fn scroll_with_children(
+    scroll_id: WidgetId,
+    children: Vec<(WidgetId, f32, f32)>, // (id, y, height)
+    viewport_h: f32,
+    offset_y: f32,
+) -> LayoutNode {
+    let rect = Rect::new(0.0, 0.0, 200.0, viewport_h);
+    let child_nodes = children
+        .into_iter()
+        .map(|(id, y, h)| make_node(0.0, y, 200.0, h, Some(id)))
+        .collect();
+    LayoutNode {
+        rect,
+        content_rect: rect,
+        children: child_nodes,
+        widget_id: Some(scroll_id),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, offset_y),
+    }
+}
+
+#[test]
+fn scroll_zero_offset_is_identity() {
+    // No scroll: content_offset = (0, 0). Child at y=50 hit at y=50.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![(btn, 50.0, 40.0)], 200.0, 0.0);
+
+    assert_eq!(layout_hit_test(&scroll, Point::new(100.0, 70.0)), Some(btn));
+    let path = layout_hit_test_path(&scroll, Point::new(100.0, 70.0));
+    assert_eq!(path.path.len(), 2);
+    // Bounds unchanged when offset is zero.
+    assert!((path.path[1].bounds.y() - 50.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn scroll_multiple_children_hit_correct_one() {
+    // Three buttons at y=0, 100, 200 in content space.
+    // Scroll offset -150 → visible content y=150..350.
+    // Button B (y=200) is at viewport y=50; button C (y=300 if existed) not present.
+    let a = WidgetId::next();
+    let b = WidgetId::next();
+    let c = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(
+        scr,
+        vec![(a, 0.0, 40.0), (b, 100.0, 40.0), (c, 200.0, 40.0)],
+        200.0,
+        -150.0,
+    );
+
+    // y=10 in viewport → content y=160. Button B is at 100..140 → miss.
+    // Button A at 0..40 → miss. Button C at 200..240 → miss.
+    // Hits scroll container only.
+    assert_eq!(layout_hit_test(&scroll, Point::new(100.0, 10.0)), Some(scr));
+
+    // y=60 in viewport → content y=210. Button C at 200..240 → hit!
+    assert_eq!(layout_hit_test(&scroll, Point::new(100.0, 60.0)), Some(c));
+
+    // Verify bounds are in viewport space.
+    let path = layout_hit_test_path(&scroll, Point::new(100.0, 60.0));
+    let c_bounds = path.path.last().unwrap().bounds;
+    assert!(
+        (c_bounds.y() - 50.0).abs() < f32::EPSILON,
+        "button C bounds should be viewport y=50, got {}",
+        c_bounds.y()
+    );
+}
+
+#[test]
+fn scroll_child_above_viewport_not_hittable() {
+    // Button at y=0 in content, scroll offset -100. Button at viewport y=-100.
+    // Clipped: not hittable.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![(btn, 0.0, 40.0)], 200.0, -100.0);
+
+    // Click in the viewport — button is above, only scroll container is hit.
+    assert_eq!(layout_hit_test(&scroll, Point::new(100.0, 50.0)), Some(scr));
+}
+
+#[test]
+fn scroll_child_below_viewport_not_hittable() {
+    // Button at y=500 in content, scroll offset -100. Button at viewport y=400.
+    // Viewport is 200px tall, so button is below — clipped.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![(btn, 500.0, 40.0)], 200.0, -100.0);
+
+    assert_eq!(
+        layout_hit_test(&scroll, Point::new(100.0, 150.0)),
+        Some(scr)
+    );
+}
+
+#[test]
+fn scroll_child_partially_visible_still_hittable() {
+    // Button at y=180 in content (height 40), scroll offset 0.
+    // Button spans y=180..220 but viewport is 0..200.
+    // Top 20px visible. Click at y=190 should hit.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![(btn, 180.0, 40.0)], 200.0, 0.0);
+
+    assert_eq!(
+        layout_hit_test(&scroll, Point::new(100.0, 190.0)),
+        Some(btn)
+    );
+}
+
+#[test]
+fn scroll_horizontal_offset() {
+    // Horizontal scroll: content_offset.x = -100.
+    // Button at x=150 in content → viewport x=50.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let button = make_node(150.0, 0.0, 40.0, 200.0, Some(btn));
+    let scroll = LayoutNode {
+        rect,
+        content_rect: rect,
+        children: vec![button],
+        widget_id: Some(scr),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (-100.0, 0.0),
+    };
+
+    // Click at viewport x=50 → content x=150 → hits button.
+    assert_eq!(layout_hit_test(&scroll, Point::new(50.0, 100.0)), Some(btn));
+
+    // Verify bounds translated to viewport space.
+    let path = layout_hit_test_path(&scroll, Point::new(50.0, 100.0));
+    let b = path.path.last().unwrap().bounds;
+    assert!(
+        (b.x() - 50.0).abs() < f32::EPSILON,
+        "button x should be 50 in viewport, got {}",
+        b.x()
+    );
+}
+
+#[test]
+fn scroll_container_itself_always_hittable() {
+    // Even with large scroll offset, clicking anywhere in the viewport
+    // should at least hit the scroll container.
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![], 200.0, -99999.0);
+
+    assert_eq!(
+        layout_hit_test(&scroll, Point::new(100.0, 100.0)),
+        Some(scr)
+    );
+}
+
+#[test]
+fn scroll_path_bounds_all_in_viewport_space() {
+    // Deep path: scroll → container → button.
+    // Verify ALL entries have viewport-space bounds.
+    let btn = WidgetId::next();
+    let ctr = WidgetId::next();
+    let scr = WidgetId::next();
+
+    let button = make_node(10.0, 400.0, 180.0, 30.0, Some(btn));
+    let container = LayoutNode {
+        rect: Rect::new(0.0, 380.0, 200.0, 70.0),
+        content_rect: Rect::new(0.0, 380.0, 200.0, 70.0),
+        children: vec![button],
+        widget_id: Some(ctr),
+        sense: Sense::all(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: false,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, 0.0),
+    };
+    let scroll = LayoutNode {
+        rect: Rect::new(0.0, 0.0, 200.0, 200.0),
+        content_rect: Rect::new(0.0, 0.0, 200.0, 200.0),
+        children: vec![container],
+        widget_id: Some(scr),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, -350.0),
+    };
+
+    // Click at viewport y=60 → content y=410 → button at 400..430 → hit.
+    let path = layout_hit_test_path(&scroll, Point::new(100.0, 60.0));
+    assert_eq!(path.path.len(), 3, "should hit scroll, container, button");
+
+    // Scroll bounds: unchanged (viewport space).
+    assert!((path.path[0].bounds.y() - 0.0).abs() < f32::EPSILON);
+    // Container bounds: content y=380, offset -350 → viewport y=30.
+    assert!(
+        (path.path[1].bounds.y() - 30.0).abs() < f32::EPSILON,
+        "container viewport y should be 30, got {}",
+        path.path[1].bounds.y()
+    );
+    // Button bounds: content y=400, offset -350 → viewport y=50.
+    assert!(
+        (path.path[2].bounds.y() - 50.0).abs() < f32::EPSILON,
+        "button viewport y should be 50, got {}",
+        path.path[2].bounds.y()
+    );
+}
