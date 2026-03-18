@@ -50,6 +50,25 @@ fn blur_toggled_updates_config() {
     assert!(!config.window.blur);
 }
 
+// Colors page tests.
+
+#[test]
+fn scheme_card_selected_updates_scheme() {
+    let (mut config, ids) = default_ids();
+    assert!(
+        !ids.scheme_card_ids.is_empty(),
+        "scheme cards must be captured"
+    );
+    // Click the second scheme card.
+    let action = WidgetAction::Selected {
+        id: ids.scheme_card_ids[1],
+        index: 1,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    let names = crate::scheme::builtin_names();
+    assert_eq!(config.colors.scheme, names[1]);
+}
+
 // Font page tests.
 
 #[test]

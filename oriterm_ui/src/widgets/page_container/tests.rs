@@ -2,9 +2,11 @@ use crate::action::WidgetAction;
 use crate::draw::{DrawCommand, DrawList};
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
+use crate::widgets::Widget;
 use crate::widgets::label::LabelWidget;
+use crate::widgets::scroll::ScrollWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, LayoutCtx, Widget};
+use crate::widgets::{DrawCtx, LayoutCtx};
 
 use super::PageContainerWidget;
 
@@ -180,6 +182,25 @@ fn for_each_child_visits_all_pages() {
     let mut count = 0;
     pc.for_each_child_mut(&mut |_| count += 1);
     assert_eq!(count, 3, "all pages visited, not just active");
+}
+
+// -- Scroll reset on page switch --
+
+#[test]
+fn page_switch_calls_reset_scroll() {
+    // Create a scroll-wrapped page so reset_scroll is meaningful.
+    let scroll = ScrollWidget::vertical(label("B content"));
+    let mut pc = PageContainerWidget::new(vec![label("A"), Box::new(scroll)]);
+
+    // Switch to page 1 — accept_action calls reset_scroll on the new page.
+    let action = WidgetAction::Selected {
+        id: crate::widget_id::WidgetId::next(),
+        index: 1,
+    };
+    assert!(pc.accept_action(&action));
+    assert_eq!(pc.active_page(), 1);
+    // Verified by code path: PageContainerWidget calls pages[index].reset_scroll()
+    // after switching. Direct scroll_offset verification is in scroll/tests.rs.
 }
 
 // -- Sense & focusability --

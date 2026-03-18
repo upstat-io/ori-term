@@ -47,7 +47,7 @@ layout_hit_test, layout_hit_test_path, layout_hit_test_clipped
 LayoutNode sense/hit_test_behavior/clip fields
 LayoutBox sense/hit_test_behavior/clip fields, solver propagation
 egui, Flutter, hit testing pipeline
-oriterm_ui/src/sense.rs, oriterm_ui/src/hit_test_behavior.rs
+oriterm_ui/src/sense/mod.rs, oriterm_ui/src/hit_test_behavior.rs
 oriterm_ui/src/input/hit_test.rs, oriterm_ui/src/layout/layout_node.rs
 oriterm_ui/src/layout/layout_box.rs, oriterm_ui/src/layout/solver.rs
 ```
@@ -125,7 +125,7 @@ oriterm_ui/src/animation/
 ```
 visual_state, state_group, state_transition, common_states
 normal, hovered, pressed, disabled, focused, unfocused
-VisualStateManager, VisualStateGroup, VisualState, StateTransition
+VisualStateAnimator, VisualStateGroup, VisualState, StateTransition
 property_per_state, animated_transition, go_to_state
 WPF, VisualStateManager, ControlTemplate
 oriterm_ui/src/visual_state/
@@ -181,7 +181,7 @@ oriterm_ui/src/widgets/, oriterm/src/widgets/
 ---
 
 ### Section 09: New Widget Library
-**File:** `section-09-new-widgets.md` | **Status:** Not Started
+**File:** `section-09-new-widgets.md` | **Status:** Complete
 
 ```
 sidebar_nav, page_container, setting_row, scheme_card
@@ -195,7 +195,7 @@ oriterm_ui/src/widgets/
 ---
 
 ### Section 10: Settings Panel Rebuild
-**File:** `section-10-settings-rebuild.md` | **Status:** Not Started | **Reviewed:** Yes
+**File:** `section-10-settings-rebuild.md` | **Status:** Complete | **Reviewed:** Yes
 
 ```
 settings, settings_panel, settings_dialog, form_builder
@@ -227,8 +227,18 @@ Persistence (incl. expanded dispatch table, new config types, apply expansion),
 ```
 test, verification, visual_regression, performance, idle_cpu
 animation_test, hover_test, controller_test, state_test
-test_measurer, test_backend, snapshot, frame_time
+mock_measurer, MockMeasurer, snapshot, frame_time
 build_all, clippy_all, test_all
+widget_trait_methods, reset_scroll, accept_action, on_input, for_each_child_mut
+settings_action_wiring, ValueChanged, TextChanged, ResetDefaults
+scroll_widget_wrapping, page_scroll, settings_pages
+sync_point_verification, WidgetAction_variants, IconId_variants, BoxContent_Grid
+legacy_removal, EventResponse, WidgetResponse, CaptureRequest, InputState, ContainerInputState
+cross_platform, windows, linux, macos, cfg_target_os
+documentation, module_docs, doc_comments, file_size_compliance
+dirty_state, pending_config, original_config, PartialEq
+prepare_widget_frame, widget_pipeline, DispatchResult, OverlayManager
+TerminalInputController, input_controller.rs, 37_widgets
 ```
 
 ---

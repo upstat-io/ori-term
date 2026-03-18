@@ -85,6 +85,7 @@ impl App {
             != (self.config.window.effective_opacity() < 1.0);
 
         let font_changed = (new.font.size - old.size).abs() > f32::EPSILON
+            || (new.font.line_height - old.line_height).abs() > f32::EPSILON
             || new.font.family != old.family
             || new.font.weight != old.weight
             || new.font.features != old.features

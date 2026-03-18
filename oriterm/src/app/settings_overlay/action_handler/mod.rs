@@ -22,6 +22,7 @@ pub(in crate::app) fn handle_settings_action(
     config: &mut Config,
 ) -> bool {
     handle_appearance(action, ids, config)
+        || handle_colors(action, ids, config)
         || handle_font(action, ids, config)
         || handle_terminal(action, ids, config)
         || handle_window(action, ids, config)
@@ -45,6 +46,22 @@ fn handle_appearance(action: &WidgetAction, ids: &SettingsIds, config: &mut Conf
         }
         WidgetAction::Toggled { id, value } if *id == ids.blur_toggle => {
             config.window.blur = *value;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Colors page: scheme card selection.
+fn handle_colors(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {
+    match action {
+        WidgetAction::Selected { id, index }
+            if ids.scheme_card_ids.iter().any(|card_id| card_id == id) =>
+        {
+            let names = crate::scheme::builtin_names();
+            if let Some(name) = names.get(*index) {
+                (*name).clone_into(&mut config.colors.scheme);
+            }
             true
         }
         _ => false,

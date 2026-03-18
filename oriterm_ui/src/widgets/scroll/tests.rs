@@ -608,3 +608,15 @@ fn scroll_with_scrollbar_style() {
     scroll.paint(&mut ctx);
     assert!(!draw_list.is_empty());
 }
+
+// -- reset_scroll --
+
+#[test]
+fn reset_scroll_clears_offset() {
+    let mut scroll = make_scroll(tall_content());
+    scroll.set_scroll_offset(100.0, 320.0, 100.0);
+    assert!((scroll.scroll_offset() - 100.0).abs() < f32::EPSILON);
+
+    scroll.reset_scroll();
+    assert!((scroll.scroll_offset()).abs() < f32::EPSILON);
+}

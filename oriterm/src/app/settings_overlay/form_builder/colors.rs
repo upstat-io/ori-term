@@ -12,6 +12,7 @@ use oriterm_ui::widgets::color_swatch::{ColorSwatchGrid, SpecialColorSwatch};
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::label::{LabelStyle, LabelWidget};
 use oriterm_ui::widgets::scheme_card::{SchemeCardData, SchemeCardWidget};
+use oriterm_ui::widgets::scroll::ScrollWidget;
 
 use crate::config::Config;
 use crate::scheme::{self, ColorScheme};
@@ -33,10 +34,15 @@ const PALETTE_GAP: f32 = 12.0;
 /// Builds the Colors page content widget.
 ///
 /// Displays a grid of `SchemeCardWidget`s for all built-in schemes and
-/// a palette editor for the currently active scheme.
-pub(super) fn build_page(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
+/// a palette editor for the currently active scheme. Captures scheme card
+/// IDs into `ids` for action dispatch.
+pub(super) fn build_page(
+    config: &Config,
+    ids: &mut super::SettingsIds,
+    theme: &UiTheme,
+) -> Box<dyn Widget> {
     let header = build_header(theme);
-    let schemes_section = build_schemes_section(config, theme);
+    let schemes_section = build_schemes_section(config, ids, theme);
     let palette_section = build_palette_section(config, theme);
 
     let page = ContainerWidget::column()
@@ -47,7 +53,9 @@ pub(super) fn build_page(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
         .with_child(schemes_section)
         .with_child(palette_section);
 
-    Box::new(page)
+    let mut scroll = ScrollWidget::vertical(Box::new(page));
+    scroll.set_height(SizeSpec::Fill);
+    Box::new(scroll)
 }
 
 /// Page header: title + description.
@@ -72,7 +80,14 @@ fn build_header(theme: &UiTheme) -> Box<dyn Widget> {
 }
 
 /// Schemes section: auto-fill grid of scheme cards.
-fn build_schemes_section(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
+///
+/// Captures each card's `WidgetId` into `ids.scheme_card_ids` so the
+/// action handler can match `Selected` actions from card clicks.
+fn build_schemes_section(
+    config: &Config,
+    ids: &mut super::SettingsIds,
+    theme: &UiTheme,
+) -> Box<dyn Widget> {
     let names = scheme::builtin_names();
     let mut grid = ContainerWidget::grid(
         GridColumns::AutoFill {
@@ -88,6 +103,7 @@ fn build_schemes_section(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
             None => continue,
         };
         let card = SchemeCardWidget::new(data, i, theme);
+        ids.scheme_card_ids.push(card.id());
         grid = grid.with_child(Box::new(card));
     }
 

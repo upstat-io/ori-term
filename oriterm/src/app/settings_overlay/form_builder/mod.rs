@@ -35,6 +35,8 @@ pub(crate) struct SettingsIds {
     pub theme_dropdown: WidgetId,
     pub opacity_slider: WidgetId,
     pub blur_toggle: WidgetId,
+    // Colors page — per-card IDs (each SchemeCard has its own ID).
+    pub scheme_card_ids: Vec<WidgetId>,
     // Font page.
     pub font_family_dropdown: WidgetId,
     pub font_size_input: WidgetId,
@@ -73,7 +75,7 @@ pub(in crate::app) fn build_settings_dialog(
     let mut ids = SettingsIds::placeholder();
 
     let page_appearance = appearance::build_page(config, &mut ids, theme);
-    let page_colors = colors::build_page(config, theme);
+    let page_colors = colors::build_page(config, &mut ids, theme);
     let page_font = font::build_page(config, &mut ids, theme);
     let page_terminal = terminal::build_page(config, &mut ids, theme);
     let page_keybindings = keybindings::build_page(theme);
@@ -110,6 +112,7 @@ impl SettingsIds {
             theme_dropdown: WidgetId::placeholder(),
             opacity_slider: WidgetId::placeholder(),
             blur_toggle: WidgetId::placeholder(),
+            scheme_card_ids: Vec::new(),
             font_family_dropdown: WidgetId::placeholder(),
             font_size_input: WidgetId::placeholder(),
             font_weight_dropdown: WidgetId::placeholder(),
