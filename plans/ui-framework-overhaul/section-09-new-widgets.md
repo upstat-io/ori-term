@@ -10,34 +10,34 @@ reviewed: true
 sections:
   - id: "09.1"
     title: "SidebarNav"
-    status: in-progress
+    status: complete
   - id: "09.2"
     title: "PageContainer"
-    status: not-started
+    status: complete
   - id: "09.3"
     title: "SettingRow"
-    status: not-started
+    status: complete
   - id: "09.4"
     title: "SchemeCard"
-    status: not-started
+    status: complete
   - id: "09.5"
     title: "ColorSwatchGrid & SpecialColorSwatch"
-    status: not-started
+    status: complete
   - id: "09.6"
     title: "CodePreview"
-    status: not-started
+    status: complete
   - id: "09.7"
     title: "CursorPicker"
-    status: not-started
+    status: complete
   - id: "09.8"
     title: "KeybindRow & KbdBadge"
-    status: not-started
+    status: complete
   - id: "09.9"
     title: "NumberInput & RangeSlider"
-    status: not-started
+    status: complete
   - id: "09.10"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 09: New Widget Library
@@ -107,7 +107,7 @@ The left navigation panel from the mockup: section titles, nav items with icons,
   - Version label at bottom: `fg_faint`, small font
 - [x] Visual states: `CommonStates { Normal, Hovered, Active }` per nav item
   (Active here means "selected page", not mouse-down)
-- [ ] `for_each_child_mut()`: iterate over nav items for tree dispatch
+- [x] `for_each_child_mut()`: leaf widget — no child widgets, default no-op is correct
 - [x] `layout()`: fixed-width column with vertical stack of items
 - [x] Tests in `sidebar_nav/tests.rs`: construction, layout width, nav item count,
   hit testing, page index resolution, active index tracking
@@ -120,7 +120,7 @@ The left navigation panel from the mockup: section titles, nav items with icons,
 
 Shows one child at a time, switches on command.
 
-- [ ] Define `PageContainerWidget`:
+- [x] Define `PageContainerWidget`:
   ```rust
   pub struct PageContainerWidget {
       id: WidgetId,
@@ -128,13 +128,13 @@ Shows one child at a time, switches on command.
       active_page: usize,
   }
   ```
-- [ ] `layout()`: only lay out the active page. Other pages get zero-size layout.
-- [ ] `paint()`: only paint the active page.
-- [ ] `set_active_page(index)`: switch pages, `request_paint()`
-- [ ] `accept_action()`: handle `Selected` from SidebarNav to switch pages
-- [ ] `for_each_child_mut()`: iterate over all pages (needed for widget registration)
-- [ ] `sense()`: `Sense::none()` (delegates to active page's children)
-- [ ] Tests in `page_container/tests.rs`: page switching, layout only measures active page,
+- [x] `layout()`: only lay out the active page. Other pages get zero-size layout.
+- [x] `paint()`: only paint the active page.
+- [x] `set_active_page(index)`: switch pages, `request_paint()`
+- [x] `accept_action()`: handle `Selected` from SidebarNav to switch pages
+- [x] `for_each_child_mut()`: iterate over all pages (needed for widget registration)
+- [x] `sense()`: `Sense::none()` (delegates to active page's children)
+- [x] Tests in `page_container/tests.rs`: page switching, layout only measures active page,
   `accept_action` routes `Selected`, child count
 
 ---
@@ -145,7 +145,7 @@ Shows one child at a time, switches on command.
 
 Two-line label with hover background highlight.
 
-- [ ] Define `SettingRowWidget`:
+- [x] Define `SettingRowWidget`:
   - Left side: name (13px, `fg_primary`) + description (11.5px, `fg_secondary`)
   - Right side: control widget (dropdown, toggle, slider, etc.)
   - Full-width hover background: rounded rect, `bg_card` on hover (100ms fade)
@@ -165,7 +165,7 @@ Two-line label with hover background highlight.
 
 Color scheme preview card with terminal preview and swatch bar.
 
-- [ ] Define `SchemeCardWidget`:
+- [x] Define `SchemeCardWidget`:
   - Rounded container (8px corners)
   - Title bar: scheme name + optional "Active" badge
   - Mini terminal preview: monospace text on scheme's background color
@@ -176,14 +176,14 @@ Color scheme preview card with terminal preview and swatch bar.
   - ClickController to select
   - `sense()`: `Sense::click()`
   - Emits: `WidgetAction::Selected { id, index: scheme_index }`
-- [ ] Terminal preview rendering:
+- [x] Terminal preview rendering:
   - Fixed-height area (56px) with scheme background
   - Render 2 lines of monospace text using scheme's foreground/ANSI colors
   - Text content: `$ cargo build --release` + `Compiling ori_term v0.1.0`
   - Uses current terminal font at 11px size
-- [ ] Data type: `SchemeCardData { name: String, bg: Color, fg: Color, ansi: [Color; 8], selected: bool }`
+- [x] Data type: `SchemeCardData { name: String, bg: Color, fg: Color, ansi: [Color; 8], selected: bool }`
   passed via constructor — widget does not own scheme definitions
-- [ ] Tests in `scheme_card/tests.rs`: layout dimensions, swatch bar renders 8 colors,
+- [x] Tests in `scheme_card/tests.rs`: layout dimensions, swatch bar renders 8 colors,
   selection state, click emits `Selected`
 
 ---
@@ -194,7 +194,7 @@ Color scheme preview card with terminal preview and swatch bar.
 
 Clickable color grids for palette editing.
 
-- [ ] Define `ColorSwatchGrid`:
+- [x] Define `ColorSwatchGrid`:
   - 8 columns, dynamic rows
   - Each cell: colored rounded square (6px corners)
   - Cell label below: index number (9.5px, `fg_faint`)
@@ -205,7 +205,7 @@ Clickable color grids for palette editing.
   - Tests in `color_swatch/tests.rs`: grid layout produces 8 columns,
     click emits `Selected` with correct index, hover enlargement
 
-- [ ] Define `SpecialColorSwatch`:
+- [x] Define `SpecialColorSwatch`:
   - Large swatch (28x28px, 6px corners) + label + hex value
   - Label: 11px `fg_primary`
   - Hex value: 10px monospace `fg_faint`
@@ -220,7 +220,7 @@ Clickable color grids for palette editing.
 
 Syntax-highlighted font preview panel.
 
-- [ ] Define `CodePreviewWidget`:
+- [x] Define `CodePreviewWidget`:
   - Background: `bg_card` with rounded corners (8px)
   - Label: "Preview" in uppercase small text
   - Content: multi-line `RichLabel` with syntax-highlighted Rust code
@@ -239,7 +239,7 @@ Syntax-highlighted font preview panel.
 
 Visual cursor style selector with 3 options.
 
-- [ ] Define `CursorPickerWidget`:
+- [x] Define `CursorPickerWidget`:
   - 3 card options side by side (Block, Bar, Underline)
   - Each card: rounded container (8px) with cursor demo + label
   - Cursor demos:
@@ -262,13 +262,13 @@ Visual cursor style selector with 3 options.
 
 Keybinding display with styled key badges.
 
-- [ ] Define `KbdBadge`:
+- [x] Define `KbdBadge`:
   - Small rounded rect (4px corners) with bottom border thicker (2px for keycap depth)
   - Background: `bg_input`, border: `border` color
   - Text: 11px `fg_primary`
   - `sense()`: `Sense::none()` (display only)
 
-- [ ] Define `KeybindRow`:
+- [x] Define `KeybindRow`:
   - Left: action name label (13px `fg_primary`)
   - Right: row of KbdBadge widgets separated by "+" labels
   - Hover: `bg_card` background
@@ -290,7 +290,7 @@ SchemeCard, CursorPicker, ColorSwatch) and `ValueChanged` (NumberInput, RangeSli
 `DoubleClicked`/`TripleClicked`/`DragStart`/`DragUpdate`/`DragEnd`/`ScrollBy` were
 added in Section 04. No new variants needed.
 
-- [ ] **NumberInput**:
+- [x] **NumberInput**:
   - Numeric text input with min/max/step constraints
   - Centered text, compact width (80px)
   - Arrow key increment/decrement
@@ -301,7 +301,7 @@ added in Section 04. No new variants needed.
   - Tests in `number_input/tests.rs`: min/max clamping, step increment,
     arrow key behavior, `ValueChanged` emission
 
-- [ ] **RangeSlider** (enhanced Slider):
+- [x] **RangeSlider** (enhanced Slider) — existing `SliderWidget` satisfies all requirements:
   - Horizontal track with filled portion (accent color)
   - Rounded thumb (14px circle) with shadow
   - Value label to the right (monospace, `fg_secondary`)
@@ -318,27 +318,27 @@ added in Section 04. No new variants needed.
 
 ## 09.10 Completion Checklist
 
-- [ ] SidebarNav renders with section titles, nav items, icons, active state
-- [ ] PageContainer switches pages on nav selection
-- [ ] SettingRow shows name + description with hover background
-- [ ] SchemeCard renders terminal preview + swatch bar with selection state
-- [ ] ColorSwatchGrid renders 8-column grid with hover enlargement
-- [ ] SpecialColorSwatch renders swatch + label + hex value
-- [ ] CodePreview renders syntax-highlighted code with terminal font
-- [ ] CursorPicker shows 3 cursor options with selection state
-- [ ] KeybindRow shows action name + KbdBadge key labels
-- [ ] NumberInput accepts numeric input with constraints
-- [ ] RangeSlider shows filled track + value label
-- [ ] All widgets use new framework (controllers, visual states, sense)
+- [x] SidebarNav renders with section titles, nav items, icons, active state
+- [x] PageContainer switches pages on nav selection
+- [x] SettingRow shows name + description with hover background
+- [x] SchemeCard renders terminal preview + swatch bar with selection state
+- [x] ColorSwatchGrid renders 8-column grid with hover enlargement
+- [x] SpecialColorSwatch renders swatch + label + hex value
+- [x] CodePreview renders syntax-highlighted code with terminal font
+- [x] CursorPicker shows 3 cursor options with selection state
+- [x] KeybindRow shows action name + KbdBadge key labels
+- [x] NumberInput accepts numeric input with constraints
+- [x] RangeSlider shows filled track + value label (existing `SliderWidget`)
+- [x] All widgets use new framework (controllers, visual states, sense)
 - [ ] All widgets render correctly at 100% and 150% DPI
 - [x] 8 new `IconId` variants added with SVG path definitions and test coverage
-- [ ] Each new widget has a `tests.rs` sibling file (per test organization rules):
+- [x] Each new widget has a `tests.rs` sibling file (per test organization rules):
   `sidebar_nav/tests.rs`, `page_container/tests.rs`, `setting_row/tests.rs`,
   `scheme_card/tests.rs`, `color_swatch/tests.rs`, `code_preview/tests.rs`,
-  `cursor_picker/tests.rs`, `keybind/tests.rs`, `number_input/tests.rs`,
-  `range_slider/tests.rs`
-- [ ] Each new widget module declared in `oriterm_ui/src/widgets/mod.rs`
-- [ ] `./test-all.sh` green, `./clippy-all.sh` green, `./build-all.sh` green
+  `cursor_picker/tests.rs`, `keybind/tests.rs`, `number_input/tests.rs`
+  (RangeSlider covered by existing `slider/tests.rs`)
+- [x] Each new widget module declared in `oriterm_ui/src/widgets/mod.rs`
+- [x] `./test-all.sh` green, `./clippy-all.sh` green, `./build-all.sh` green
 
 **Exit Criteria:** Each new widget renders correctly in isolation (verified via test or
 manual inspection). All widgets use the new framework — no manual hover tracking, no
