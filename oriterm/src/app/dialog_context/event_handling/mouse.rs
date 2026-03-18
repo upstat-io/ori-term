@@ -314,9 +314,9 @@ impl App {
             &mut ctx.interaction,
             &mut ctx.focus,
         );
-        if result.requests.contains(ControllerRequests::PAINT) {
-            // Scroll changed content_offset — invalidate cached layout and
-            // scene cache so the next render repaints scrolled content.
+        if result.handled {
+            // Scroll offset changed — invalidate cached layout and scene
+            // cache so the next render repaints scrolled content.
             ctx.cached_layout = None;
             ctx.invalidation.invalidate_all();
             ctx.request_urgent_redraw();
