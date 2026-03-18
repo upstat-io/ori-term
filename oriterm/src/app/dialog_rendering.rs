@@ -126,10 +126,17 @@ impl App {
             now,
         );
 
-        // If any lifecycle events were delivered (hover enter/leave) or
-        // animators are mid-transition, invalidate all scene nodes so
-        // compose_scene re-renders widgets with updated animation colors.
-        if !lifecycle_events.is_empty() || ctx.frame_requests.anim_frame_requested() {
+        // Invalidate specific widgets whose visual state changed (hover
+        // enter/leave), not the entire scene. Also invalidate when animation
+        // frames were requested (animator mid-transition).
+        for event in &lifecycle_events {
+            if let oriterm_ui::interaction::LifecycleEvent::HotChanged { widget_id, .. } = event {
+                ctx.invalidation
+                    .mark(*widget_id, oriterm_ui::invalidation::DirtyKind::Paint);
+            }
+        }
+        if ctx.frame_requests.anim_frame_requested() {
+            // Animation running — invalidate all to ensure smooth transitions.
             ctx.invalidation.invalidate_all();
         }
 
