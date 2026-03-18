@@ -337,10 +337,12 @@ impl Widget for ScrollWidget {
         // Include the child's layout so hit testing can reach widgets inside
         // the scroll area. The child's natural size determines the scroll
         // extent, and clip=true ensures hit testing is clipped to the viewport.
+        // content_offset matches the translate applied during rendering.
         let child_box = self.child.layout(ctx);
         let mut lb = LayoutBox::flex(crate::layout::Direction::Column, vec![child_box])
             .with_widget_id(self.id)
-            .with_clip(true);
+            .with_clip(true)
+            .with_content_offset(-self.scroll_offset_x, -self.scroll_offset);
 
         // For vertical scrolling, use Fill width so the scroll container
         // expands to the parent's available width. The child's natural width

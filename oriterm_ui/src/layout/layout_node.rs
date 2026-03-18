@@ -34,6 +34,11 @@ pub struct LayoutNode {
     /// Expands the hit area beyond `rect` for small targets.
     /// `0.0` means no expansion (default).
     pub interact_radius: f32,
+    /// Content offset applied to children (scroll offset).
+    ///
+    /// Hit testing translates the test point by this offset before checking
+    /// children. Matches the visual translate applied during rendering.
+    pub content_offset: (f32, f32),
 }
 
 impl LayoutNode {
@@ -49,6 +54,7 @@ impl LayoutNode {
             clip: false,
             disabled: false,
             interact_radius: 0.0,
+            content_offset: (0.0, 0.0),
         }
     }
 

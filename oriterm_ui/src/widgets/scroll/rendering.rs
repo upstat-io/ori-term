@@ -33,9 +33,9 @@ impl ScrollWidget {
             theme: ctx.theme,
             icons: ctx.icons,
             scene_cache: ctx.scene_cache.as_deref_mut(),
-            interaction: None,
+            interaction: ctx.interaction,
             widget_id: None,
-            frame_requests: None,
+            frame_requests: ctx.frame_requests,
         };
         self.child.paint(&mut child_ctx);
 

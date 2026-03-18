@@ -26,6 +26,7 @@ fn make_node(x: f32, y: f32, w: f32, h: f32, id: Option<WidgetId>) -> LayoutNode
         clip: false,
         disabled: false,
         interact_radius: 0.0,
+        content_offset: (0.0, 0.0),
     }
 }
 
@@ -904,4 +905,102 @@ fn from_key_event_produces_key_down() {
     // Round-trips back to KeyEvent.
     let back = input.to_key_event().expect("should convert back");
     assert_eq!(back, key);
+}
+
+// ── Scroll offset hit testing ─────────────────────────────────────────
+
+#[test]
+fn hit_test_with_content_offset_translates_point() {
+    // Simulate a scroll container (200px tall viewport) with a child
+    // button at y=300 in content space. After scrolling down 250px,
+    // the button is visually at y=50 in the viewport.
+    let btn_id = WidgetId::next();
+    let scroll_id = WidgetId::next();
+
+    let button = make_node(0.0, 300.0, 200.0, 40.0, Some(btn_id));
+
+    let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let scroll = LayoutNode {
+        rect,
+        content_rect: rect,
+        children: vec![button],
+        widget_id: Some(scroll_id),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        // Scrolled down 250px: content_offset = (0, -250).
+        content_offset: (0.0, -250.0),
+    };
+
+    // Click at y=50 in viewport → should hit button at y=300 in content
+    // because the scroll offset translates the point.
+    let result = layout_hit_test(&scroll, Point::new(100.0, 50.0));
+    assert_eq!(
+        result,
+        Some(btn_id),
+        "should hit button through scroll offset"
+    );
+}
+
+#[test]
+fn hit_test_with_content_offset_misses_outside_clip() {
+    // Button at y=300, scroll offset 50px → button visually at y=250,
+    // which is outside the 200px viewport.
+    let btn_id = WidgetId::next();
+    let scroll_id = WidgetId::next();
+
+    let button = make_node(0.0, 300.0, 200.0, 40.0, Some(btn_id));
+
+    let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let scroll = LayoutNode {
+        rect,
+        content_rect: rect,
+        children: vec![button],
+        widget_id: Some(scroll_id),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, -50.0),
+    };
+
+    // Click at y=50 → adjusted to y=100 in content space.
+    // Button is at y=300..340, so this should miss.
+    let result = layout_hit_test(&scroll, Point::new(100.0, 50.0));
+    assert_eq!(
+        result,
+        Some(scroll_id),
+        "should hit scroll container, not button"
+    );
+}
+
+#[test]
+fn hit_test_path_with_content_offset() {
+    let btn_id = WidgetId::next();
+    let scroll_id = WidgetId::next();
+
+    let button = make_node(0.0, 300.0, 200.0, 40.0, Some(btn_id));
+
+    let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let scroll = LayoutNode {
+        rect,
+        content_rect: rect,
+        children: vec![button],
+        widget_id: Some(scroll_id),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, -250.0),
+    };
+
+    // Click at y=50 → should produce path [scroll, button].
+    let result = layout_hit_test_path(&scroll, Point::new(100.0, 50.0));
+    assert_eq!(result.path.len(), 2);
+    assert_eq!(result.path[0].widget_id, scroll_id);
+    assert_eq!(result.path[1].widget_id, btn_id);
 }

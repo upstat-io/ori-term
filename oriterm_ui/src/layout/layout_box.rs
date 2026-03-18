@@ -98,6 +98,13 @@ pub struct LayoutBox {
     pub disabled: bool,
     /// Hit area expansion for small targets (pixels).
     pub interact_radius: f32,
+    /// Content offset applied to children (scroll offset).
+    ///
+    /// When non-zero, hit testing translates the test point by this offset
+    /// before checking children. Rendering applies the same offset via
+    /// `push_translate`. Used by `ScrollWidget` to keep layout stable
+    /// (children at natural positions) while offsetting interaction.
+    pub content_offset: (f32, f32),
 }
 
 impl LayoutBox {
@@ -122,6 +129,7 @@ impl LayoutBox {
             clip: false,
             disabled: false,
             interact_radius: 0.0,
+            content_offset: (0.0, 0.0),
         }
     }
 
@@ -148,6 +156,7 @@ impl LayoutBox {
             clip: false,
             disabled: false,
             interact_radius: 0.0,
+            content_offset: (0.0, 0.0),
         }
     }
 
@@ -175,6 +184,7 @@ impl LayoutBox {
             clip: false,
             disabled: false,
             interact_radius: 0.0,
+            content_offset: (0.0, 0.0),
         }
     }
 
@@ -331,6 +341,17 @@ impl LayoutBox {
     #[must_use]
     pub fn with_interact_radius(mut self, radius: f32) -> Self {
         self.interact_radius = radius;
+        self
+    }
+
+    /// Sets the content offset for scroll containers.
+    ///
+    /// The offset translates children during hit testing, matching the
+    /// visual translate applied during rendering. Positive values scroll
+    /// content upward (revealing content below).
+    #[must_use]
+    pub fn with_content_offset(mut self, x: f32, y: f32) -> Self {
+        self.content_offset = (x, y);
         self
     }
 }
