@@ -196,7 +196,7 @@ and has no `ZERO` or `PLACEHOLDER` constant. Add a `WidgetId::placeholder()` con
 that returns `WidgetId(0)` (never matches real IDs since the counter starts at 1) to
 `oriterm_ui/src/widget_id.rs`. Then implement `SettingsIds::placeholder()` using it.
 
-- [ ] Add `WidgetId::placeholder()` constructor returning `WidgetId(0)` to
+- [x] Add `WidgetId::placeholder()` constructor returning `WidgetId(0)` to
   `oriterm_ui/src/widget_id.rs`.
 - [ ] Implement `build_settings_dialog()` replacing `build_settings_form()`:
   ```rust

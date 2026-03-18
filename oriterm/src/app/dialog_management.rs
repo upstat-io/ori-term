@@ -395,7 +395,7 @@ impl App {
         }
 
         DialogContent::Settings {
-            panel: Box::new(SettingsPanel::embedded(form)),
+            panel: Box::new(SettingsPanel::embedded(Box::new(form))),
             ids,
             pending_config: Box::new(self.config.clone()),
             original_config: Box::new(self.config.clone()),

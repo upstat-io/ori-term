@@ -20,9 +20,7 @@ use crate::theme::UiTheme;
 
 use super::button::{ButtonStyle, ButtonWidget};
 use super::container::ContainerWidget;
-use super::form_layout::FormLayout;
 use super::label::{LabelStyle, LabelWidget};
-use super::scroll::ScrollWidget;
 use super::separator::SeparatorWidget;
 use super::spacer::SpacerWidget;
 use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
@@ -30,7 +28,7 @@ use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
 use id_override_button::IdOverrideButton;
 
 /// Fixed width of the settings panel in logical pixels.
-const PANEL_WIDTH: f32 = 600.0;
+const PANEL_WIDTH: f32 = 860.0;
 
 /// Height of the header bar in logical pixels.
 const HEADER_HEIGHT: f32 = 48.0;
@@ -62,6 +60,7 @@ pub struct SettingsPanel {
     close_id: WidgetId,
     save_id: WidgetId,
     cancel_id: WidgetId,
+    reset_id: WidgetId,
     container: ContainerWidget,
     cached_layout: RefCell<Option<(crate::geometry::Rect, Rc<LayoutNode>)>>,
     /// Whether the panel draws its own chrome (header, shadow, border).
@@ -70,13 +69,15 @@ pub struct SettingsPanel {
 }
 
 impl SettingsPanel {
-    /// Creates a settings panel wrapping the given form layout.
+    /// Creates a settings panel wrapping the given content widget.
     ///
-    /// Includes a header bar (title + close button), panel chrome (shadow,
-    /// border, rounded corners), and drag support. Use this when the panel
-    /// is shown as an overlay inside a terminal window.
-    pub fn new(form: FormLayout) -> Self {
-        Self::build(form, true)
+    /// The content widget is the pre-built body (e.g. sidebar + pages).
+    /// Each page inside should handle its own scrolling. Includes a header
+    /// bar (title + close button), panel chrome (shadow, border, rounded
+    /// corners), and drag support. Use this when the panel is shown as an
+    /// overlay inside a terminal window.
+    pub fn new(content: Box<dyn Widget>) -> Self {
+        Self::build(content, true)
     }
 
     /// Creates a settings panel without header or chrome.
@@ -84,31 +85,38 @@ impl SettingsPanel {
     /// Omits the title bar, close button, shadow, border, and rounded
     /// corners — all of which are provided by the dialog window's own
     /// chrome. Use this when the panel is embedded in a dialog OS window.
-    pub fn embedded(form: FormLayout) -> Self {
-        Self::build(form, false)
+    pub fn embedded(content: Box<dyn Widget>) -> Self {
+        Self::build(content, false)
     }
 
     /// Internal builder shared by `new()` and `embedded()`.
-    fn build(form: FormLayout, show_chrome: bool) -> Self {
+    fn build(content: Box<dyn Widget>, show_chrome: bool) -> Self {
         let close_id = WidgetId::next();
         let save_id = WidgetId::next();
         let cancel_id = WidgetId::next();
+        let reset_id = WidgetId::next();
         let panel_id = WidgetId::next();
 
-        // Body: form wrapped in vertical scroll. The scroll widget fills
-        // remaining height so the footer stays pinned at the bottom of the
-        // panel (sticky footer pattern).
-        let mut scroll = ScrollWidget::vertical(Box::new(form));
-        scroll.set_height(SizeSpec::Fill);
+        // Body: the content widget fills remaining height so the footer
+        // stays pinned at the bottom (sticky footer pattern).
+        let body = ContainerWidget::row()
+            .with_width(SizeSpec::Fill)
+            .with_height(SizeSpec::Fill)
+            .with_child(content);
 
-        // Footer: separator + right-aligned Cancel and Save buttons.
+        // Footer: separator + Reset to Defaults (left) | Cancel + Save (right).
         let footer_sep = SeparatorWidget::horizontal();
 
-        let cancel_btn = ButtonWidget::new("Cancel").with_style(ButtonStyle {
+        let ghost_style = ButtonStyle {
             padding: Insets::vh(6.0, 16.0),
             border_width: 1.0,
             ..ButtonStyle::default()
-        });
+        };
+
+        let reset_btn = ButtonWidget::new("Reset to Defaults").with_style(ghost_style);
+        let reset_btn = IdOverrideButton::new(reset_btn, reset_id);
+
+        let cancel_btn = ButtonWidget::new("Cancel").with_style(ghost_style);
         let cancel_btn = IdOverrideButton::new(cancel_btn, cancel_id);
 
         let save_btn = ButtonWidget::new("Save").with_style(ButtonStyle {
@@ -124,6 +132,8 @@ impl SettingsPanel {
             .with_align(Align::Center)
             .with_width(SizeSpec::Fill)
             .with_height(SizeSpec::Fixed(FOOTER_HEIGHT))
+            .with_child(Box::new(SpacerWidget::fixed(HEADER_PADDING.left, 0.0)))
+            .with_child(Box::new(reset_btn))
             .with_child(Box::new(SpacerWidget::fill()))
             .with_child(Box::new(cancel_btn))
             .with_child(Box::new(SpacerWidget::fixed(8.0, 0.0)))
@@ -138,7 +148,7 @@ impl SettingsPanel {
         };
 
         // The container fills the available height so the footer stays
-        // pinned at the bottom. The scroll widget inside uses Fill to take
+        // pinned at the bottom. The content widget inside uses Fill to take
         // remaining space after the fixed-height footer.
         let height = if show_chrome {
             SizeSpec::Hug
@@ -185,7 +195,7 @@ impl SettingsPanel {
         }
 
         container = container
-            .with_child(Box::new(scroll))
+            .with_child(Box::new(body))
             .with_child(Box::new(footer_sep))
             .with_child(Box::new(footer));
 
@@ -194,6 +204,7 @@ impl SettingsPanel {
             close_id,
             save_id,
             cancel_id,
+            reset_id,
             container,
             cached_layout: RefCell::new(None),
             show_chrome,
@@ -370,6 +381,7 @@ impl Widget for SettingsPanel {
                 Some(WidgetAction::CancelSettings)
             }
             WidgetAction::Clicked(id) if id == self.save_id => Some(WidgetAction::SaveSettings),
+            WidgetAction::Clicked(id) if id == self.reset_id => Some(WidgetAction::ResetDefaults),
             _ => Some(action),
         }
     }

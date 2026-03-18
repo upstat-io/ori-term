@@ -25,6 +25,7 @@ use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
 use super::DialogContent;
 use crate::app::App;
+use crate::config::Config;
 
 impl App {
     /// Process a `WidgetAction` emitted by dialog content widgets.
@@ -52,8 +53,14 @@ impl App {
             } => {
                 self.open_dialog_dropdown(window_id, id, options, selected, anchor);
             }
-            WidgetAction::Toggled { .. } | WidgetAction::Selected { .. } => {
+            WidgetAction::Toggled { .. }
+            | WidgetAction::Selected { .. }
+            | WidgetAction::ValueChanged { .. }
+            | WidgetAction::TextChanged { .. } => {
                 self.dispatch_dialog_settings_action(window_id, &action);
+            }
+            WidgetAction::ResetDefaults => {
+                self.reset_dialog_settings(window_id);
             }
             WidgetAction::Clicked(_) => {
                 // OK button clicked in a confirmation dialog.
@@ -66,8 +73,6 @@ impl App {
             // Controller-emitted actions that don't apply to dialog content.
             WidgetAction::DoubleClicked(_)
             | WidgetAction::TripleClicked(_)
-            | WidgetAction::ValueChanged { .. }
-            | WidgetAction::TextChanged { .. }
             | WidgetAction::DragStart { .. }
             | WidgetAction::DragUpdate { .. }
             | WidgetAction::DragEnd { .. }
@@ -97,6 +102,19 @@ impl App {
         self.config.save();
 
         self.close_dialog(window_id);
+    }
+
+    /// Reset the pending settings config to defaults.
+    fn reset_dialog_settings(&mut self, window_id: WindowId) {
+        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+            return;
+        };
+        let DialogContent::Settings { pending_config, .. } = &mut ctx.content else {
+            return;
+        };
+        log::info!("settings dialog: resetting to defaults");
+        **pending_config = Config::default();
+        ctx.dirty = true;
     }
 
     /// Dispatch a settings widget action to update the pending config.
