@@ -151,8 +151,28 @@ fn hit_test_node(node: &LayoutNode, point: Point, clip: Option<Rect>) -> Option<
         clip
     };
 
+    // Translate test point and clip rect by content_offset (scroll offset).
+    // Both must be in the same coordinate space (content space) for children.
+    let (child_point, child_clip) = if node.content_offset == (0.0, 0.0) {
+        (point, child_clip)
+    } else {
+        let p = Point::new(
+            point.x - node.content_offset.0,
+            point.y - node.content_offset.1,
+        );
+        let c = child_clip.map(|r| {
+            Rect::new(
+                r.x() - node.content_offset.0,
+                r.y() - node.content_offset.1,
+                r.width(),
+                r.height(),
+            )
+        });
+        (p, c)
+    };
+
     // Walk children back-to-front. Handle interact_radius tie-breaking.
-    let child_hit = hit_test_children(node, point, child_clip);
+    let child_hit = hit_test_children(node, child_point, child_clip);
 
     // DeferToChild (default) and Translucent both try children first.
     if let Some(id) = child_hit {
@@ -263,9 +283,28 @@ fn hit_test_path_node(
         clip
     };
 
+    // Translate test point and clip rect by content_offset (scroll offset).
+    let (child_point, child_clip) = if node.content_offset == (0.0, 0.0) {
+        (point, child_clip)
+    } else {
+        let p = Point::new(
+            point.x - node.content_offset.0,
+            point.y - node.content_offset.1,
+        );
+        let c = child_clip.map(|r| {
+            Rect::new(
+                r.x() - node.content_offset.0,
+                r.y() - node.content_offset.1,
+                r.width(),
+                r.height(),
+            )
+        });
+        (p, c)
+    };
+
     // Translucent: keep this node in the path AND recurse into children.
     // DeferToChild: keep this node only if a child is also hit.
-    let child_hit = hit_test_path_children(node, point, child_clip, path);
+    let child_hit = hit_test_path_children(node, child_point, child_clip, path);
 
     if child_hit {
         return true;
