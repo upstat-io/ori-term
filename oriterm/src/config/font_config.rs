@@ -34,11 +34,14 @@ pub(crate) struct CodepointMapConfig {
 }
 
 /// Font configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct FontConfig {
     /// Font size in points.
     pub size: f32,
+    /// Line height multiplier (default: 1.0). Applied to cell height.
+    #[serde(default = "default_line_height")]
+    pub line_height: f32,
     /// Primary font family name.
     pub family: Option<String>,
     /// CSS-style font weight (100-900). Default: 400 (Regular).
@@ -91,6 +94,7 @@ impl Default for FontConfig {
     fn default() -> Self {
         Self {
             size: 11.0,
+            line_height: 1.0,
             family: None,
             weight: 400,
             tab_bar_font_weight: None,
@@ -109,6 +113,11 @@ impl Default for FontConfig {
 /// Serde default for `true` booleans.
 fn default_true() -> bool {
     true
+}
+
+/// Serde default for line height (1.0).
+fn default_line_height() -> f32 {
+    1.0
 }
 
 impl FontConfig {

@@ -23,6 +23,12 @@ fn default_config_roundtrip() {
     assert_eq!(parsed.terminal.cursor_blink_interval_ms, 530);
     assert_eq!(parsed.window.decorations, Decorations::None);
     assert!(parsed.window.resize_increments);
+    // New fields added in Section 10.
+    assert_eq!(parsed.window.tab_bar_position, TabBarPosition::Top);
+    assert!((parsed.window.grid_padding - 0.0).abs() < f32::EPSILON);
+    assert!(!parsed.window.restore_session);
+    assert!((parsed.font.line_height - 1.0).abs() < f32::EPSILON);
+    assert_eq!(parsed.rendering.gpu_backend, GpuBackend::Auto);
 }
 
 #[test]
@@ -1959,4 +1965,160 @@ fn process_model_survives_full_roundtrip() {
     let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
     let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
     assert_eq!(parsed.process_model, ProcessModel::Embedded);
+}
+
+// Tab bar position
+
+#[test]
+fn tab_bar_position_default_is_top() {
+    let cfg = Config::default();
+    assert_eq!(cfg.window.tab_bar_position, TabBarPosition::Top);
+}
+
+#[test]
+fn tab_bar_position_deserializes_all_variants() {
+    for (input, expected) in [
+        (r#"tab_bar_position = "top""#, TabBarPosition::Top),
+        (r#"tab_bar_position = "bottom""#, TabBarPosition::Bottom),
+        (r#"tab_bar_position = "hidden""#, TabBarPosition::Hidden),
+    ] {
+        let toml_str = format!("[window]\n{input}");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(
+            parsed.window.tab_bar_position, expected,
+            "for input: {input}"
+        );
+    }
+}
+
+#[test]
+fn tab_bar_position_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.tab_bar_position = TabBarPosition::Bottom;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.window.tab_bar_position, TabBarPosition::Bottom);
+}
+
+// GPU backend
+
+#[test]
+fn gpu_backend_default_is_auto() {
+    let cfg = Config::default();
+    assert_eq!(cfg.rendering.gpu_backend, GpuBackend::Auto);
+}
+
+#[test]
+fn gpu_backend_deserializes_all_variants() {
+    for (input, expected) in [
+        (r#"gpu_backend = "auto""#, GpuBackend::Auto),
+        (r#"gpu_backend = "vulkan""#, GpuBackend::Vulkan),
+        (r#"gpu_backend = "directx12""#, GpuBackend::DirectX12),
+        (r#"gpu_backend = "dx12""#, GpuBackend::DirectX12),
+        (r#"gpu_backend = "metal""#, GpuBackend::Metal),
+    ] {
+        let toml_str = format!("[rendering]\n{input}");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(parsed.rendering.gpu_backend, expected, "for input: {input}");
+    }
+}
+
+#[test]
+fn gpu_backend_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.rendering.gpu_backend = GpuBackend::Vulkan;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.rendering.gpu_backend, GpuBackend::Vulkan);
+}
+
+// Rendering config
+
+#[test]
+fn rendering_config_absent_uses_defaults() {
+    let toml_str = "";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.rendering.gpu_backend, GpuBackend::Auto);
+}
+
+// Font line height
+
+#[test]
+fn font_line_height_default_is_1() {
+    let cfg = Config::default();
+    assert!((cfg.font.line_height - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn font_line_height_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.font.line_height = 1.5;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!((parsed.font.line_height - 1.5).abs() < f32::EPSILON);
+}
+
+#[test]
+fn font_line_height_absent_uses_default() {
+    let toml_str = "[font]\nsize = 14.0";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!((parsed.font.line_height - 1.0).abs() < f32::EPSILON);
+}
+
+// Window new fields
+
+#[test]
+fn window_grid_padding_default_is_zero() {
+    let cfg = Config::default();
+    assert!((cfg.window.grid_padding - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn window_grid_padding_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.grid_padding = 8.0;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!((parsed.window.grid_padding - 8.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn window_restore_session_default_is_false() {
+    let cfg = Config::default();
+    assert!(!cfg.window.restore_session);
+}
+
+#[test]
+fn window_restore_session_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.restore_session = true;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!(parsed.window.restore_session);
+}
+
+// Config PartialEq
+
+#[test]
+fn config_partial_eq_detects_differences() {
+    let a = Config::default();
+    let mut b = Config::default();
+    assert_eq!(a, b);
+    b.window.opacity = 0.5;
+    assert_ne!(a, b);
+}
+
+#[test]
+fn config_partial_eq_all_sections() {
+    let a = Config::default();
+    let b = Config::default();
+    assert_eq!(a, b);
+    assert_eq!(a.font, b.font);
+    assert_eq!(a.terminal, b.terminal);
+    assert_eq!(a.window, b.window);
+    assert_eq!(a.behavior, b.behavior);
+    assert_eq!(a.bell, b.bell);
+    assert_eq!(a.pane, b.pane);
+    assert_eq!(a.rendering, b.rendering);
+    assert_eq!(a.colors, b.colors);
 }

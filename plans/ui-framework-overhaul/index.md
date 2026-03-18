@@ -195,17 +195,29 @@ oriterm_ui/src/widgets/
 ---
 
 ### Section 10: Settings Panel Rebuild
-**File:** `section-10-settings-rebuild.md` | **Status:** Not Started
+**File:** `section-10-settings-rebuild.md` | **Status:** Not Started | **Reviewed:** Yes
 
 ```
 settings, settings_panel, settings_dialog, form_builder
 sidebar, page_router, appearance, colors, font, terminal
 keybindings, window, bell, rendering, config
-scheme_grid, palette_editor, font_preview, cursor_selector
-save, cancel, reset_defaults, settings_ids
+SchemeCard, palette_editor, CodePreview, CursorPicker
+save, cancel, reset_defaults, settings_ids, ResetDefaults
+overlay_mode, dialog_mode, dual_rendering, SettingsPanel::embedded
 oriterm/src/app/settings_overlay/, dialog_management.rs, dialog_context/content_actions.rs
 form_builder split: mod.rs + per-page submodules (appearance.rs, colors.rs, etc.)
+scroll, dirty_state, keyboard_nav, PageContainerWidget, SidebarNavWidget
+WidgetAction::ValueChanged, WidgetAction::TextChanged, WidgetAction::ResetDefaults
+TabBarPosition, GpuBackend, RenderingConfig, Config PartialEq
+WidgetId::placeholder, SettingsIds, NumberInput, RangeSlider, Toggle, KeybindRow
 ```
+
+**Subsections:** 10.0 Dual Rendering Mode, 10.0a Legacy Form Builder Cleanup,
+10.0b Dependency Ordering (config types before page builders),
+10.1 Dialog Layout & SettingsPanel Restructuring (incl. page builder signatures, scroll
+behavior, keyboard nav, dirty state), 10.2-10.7 Pages, 10.8 Action Wiring & Config
+Persistence (incl. expanded dispatch table, new config types, apply expansion),
+10.9 Completion Checklist
 
 ---
 

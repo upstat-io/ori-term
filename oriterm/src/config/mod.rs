@@ -46,7 +46,7 @@ pub(crate) enum ProcessModel {
 }
 
 /// Top-level configuration structure.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Config {
     pub process_model: ProcessModel,
@@ -57,6 +57,7 @@ pub(crate) struct Config {
     pub behavior: BehaviorConfig,
     pub bell: BellConfig,
     pub pane: PaneConfig,
+    pub rendering: RenderingConfig,
     #[serde(default)]
     pub keybind: Vec<KeybindConfig>,
 }
@@ -87,7 +88,7 @@ impl CursorStyle {
 }
 
 /// Terminal behavior configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct TerminalConfig {
     /// Override shell (default: system shell).
@@ -156,8 +157,21 @@ pub(crate) enum Decorations {
     Buttonless,
 }
 
+/// Tab bar position in the window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TabBarPosition {
+    /// Tab bar at top of window (default).
+    #[default]
+    Top,
+    /// Tab bar at bottom of window.
+    Bottom,
+    /// Tab bar hidden.
+    Hidden,
+}
+
 /// Window size and opacity configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct WindowConfig {
     /// Initial terminal columns (default: 120).
@@ -174,6 +188,15 @@ pub(crate) struct WindowConfig {
     pub decorations: Decorations,
     /// Snap resize to cell boundaries (default: true).
     pub resize_increments: bool,
+    /// Tab bar position (default: `Top`).
+    #[serde(default)]
+    pub tab_bar_position: TabBarPosition,
+    /// Grid padding in logical pixels (default: 0.0).
+    #[serde(default)]
+    pub grid_padding: f32,
+    /// Restore previous session on launch (default: false).
+    #[serde(default)]
+    pub restore_session: bool,
 }
 
 impl Default for WindowConfig {
@@ -186,6 +209,9 @@ impl Default for WindowConfig {
             blur: true,
             decorations: Decorations::default(),
             resize_increments: true,
+            tab_bar_position: TabBarPosition::default(),
+            grid_padding: 0.0,
+            restore_session: false,
         }
     }
 }
@@ -204,13 +230,18 @@ impl WindowConfig {
     }
 }
 
+mod rendering;
+
 pub(crate) use behavior::{BehaviorConfig, NotifyOnCommandFinish};
 pub(crate) use paste_warning::PasteWarning;
+#[allow(unused_imports, reason = "used in settings panel rebuild (Section 10)")]
+pub(crate) use rendering::GpuBackend;
+pub(crate) use rendering::RenderingConfig;
 
 pub(crate) use bell::{BellAnimation, BellConfig};
 
 /// Pane splitting and layout configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct PaneConfig {
     /// Divider thickness in logical pixels between split panes.
@@ -277,7 +308,7 @@ impl PaneConfig {
 }
 
 /// TOML-serializable keybinding entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct KeybindConfig {
     /// Key name (e.g. "c", "Tab", "F1").
     pub key: String,

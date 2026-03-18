@@ -1,7 +1,7 @@
 ---
 section: "09"
 title: "New Widget Library"
-status: in-progress
+status: complete
 goal: "All new widgets needed by the settings mockup, built on the new framework"
 inspired_by:
   - "mockups/settings-brutal.html — the design spec"
@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "09.10"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 09: New Widget Library
@@ -330,7 +330,7 @@ added in Section 04. No new variants needed.
 - [x] NumberInput accepts numeric input with constraints
 - [x] RangeSlider shows filled track + value label (existing `SliderWidget`)
 - [x] All widgets use new framework (controllers, visual states, sense)
-- [ ] All widgets render correctly at 100% and 150% DPI
+- [x] All widgets render correctly at 100% and 150% DPI
 - [x] 8 new `IconId` variants added with SVG path definitions and test coverage
 - [x] Each new widget has a `tests.rs` sibling file (per test organization rules):
   `sidebar_nav/tests.rs`, `page_container/tests.rs`, `setting_row/tests.rs`,
