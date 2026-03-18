@@ -63,7 +63,19 @@ impl App {
                 // Cancel button clicked in a confirmation dialog.
                 self.close_dialog(window_id);
             }
-            _ => {}
+            // Controller-emitted actions that don't apply to dialog content.
+            WidgetAction::DoubleClicked(_)
+            | WidgetAction::TripleClicked(_)
+            | WidgetAction::ValueChanged { .. }
+            | WidgetAction::TextChanged { .. }
+            | WidgetAction::DragStart { .. }
+            | WidgetAction::DragUpdate { .. }
+            | WidgetAction::DragEnd { .. }
+            | WidgetAction::ScrollBy { .. }
+            | WidgetAction::MoveOverlay { .. }
+            | WidgetAction::WindowMinimize
+            | WidgetAction::WindowMaximize
+            | WidgetAction::WindowClose => {}
         }
     }
 

@@ -64,6 +64,14 @@ fn all_icons_rasterize_to_nonempty() {
         IconId::Maximize,
         IconId::Restore,
         IconId::WindowClose,
+        IconId::Sun,
+        IconId::Palette,
+        IconId::Type,
+        IconId::Terminal,
+        IconId::Keyboard,
+        IconId::Window,
+        IconId::Bell,
+        IconId::Activity,
     ];
     for id in icons {
         let data = rasterize_icon(id.path(), 16, TEST_SCALE);

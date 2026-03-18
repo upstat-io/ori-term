@@ -15,7 +15,7 @@ mod draw;
 
 use std::time::{Duration, Instant};
 
-use crate::animation::{AnimatedValue, Easing};
+use crate::animation::{AnimBehavior, AnimProperty};
 #[cfg(not(target_os = "macos"))]
 use crate::color::Color;
 use crate::theme::UiTheme;
@@ -106,13 +106,13 @@ pub struct TabBarWidget {
     anim_offsets: Vec<f32>,
 
     // Per-tab hover animation progress (0.0 = inactive, 1.0 = hovered).
-    hover_progress: Vec<AnimatedValue<f32>>,
+    hover_progress: Vec<AnimProperty<f32>>,
 
     // Per-tab close button fade (0.0 = hidden, 1.0 = visible).
-    close_btn_opacity: Vec<AnimatedValue<f32>>,
+    close_btn_opacity: Vec<AnimProperty<f32>>,
 
     // Per-tab width multiplier for open/close animation (0.0 = collapsed, 1.0 = full).
-    width_multipliers: Vec<AnimatedValue<f32>>,
+    width_multipliers: Vec<AnimProperty<f32>>,
 
     // Per-tab closing flag (true = tab is animating closed, skip interaction).
     closing_tabs: Vec<bool>,
@@ -186,15 +186,24 @@ impl TabBarWidget {
         self.tabs = tabs;
         self.hover_progress.clear();
         self.hover_progress.resize_with(n, || {
-            AnimatedValue::new(0.0, TAB_HOVER_DURATION, Easing::EaseOut)
+            AnimProperty::with_behavior(
+                0.0,
+                AnimBehavior::ease_out(TAB_HOVER_DURATION.as_millis() as u64),
+            )
         });
         self.close_btn_opacity.clear();
         self.close_btn_opacity.resize_with(n, || {
-            AnimatedValue::new(0.0, CLOSE_BTN_FADE_DURATION, Easing::EaseOut)
+            AnimProperty::with_behavior(
+                0.0,
+                AnimBehavior::ease_out(CLOSE_BTN_FADE_DURATION.as_millis() as u64),
+            )
         });
         self.width_multipliers.clear();
         self.width_multipliers.resize_with(n, || {
-            AnimatedValue::new(1.0, TAB_OPEN_DURATION, Easing::EaseOut)
+            AnimProperty::with_behavior(
+                1.0,
+                AnimBehavior::ease_out(TAB_OPEN_DURATION.as_millis() as u64),
+            )
         });
         self.closing_tabs.clear();
         self.closing_tabs.resize(n, false);
@@ -287,7 +296,10 @@ impl TabBarWidget {
     /// which tab to remove.
     pub fn animate_tab_close(&mut self, index: usize, now: Instant) {
         if let Some(m) = self.width_multipliers.get_mut(index) {
-            *m = AnimatedValue::new(1.0, TAB_CLOSE_DURATION, Easing::EaseOut);
+            *m = AnimProperty::with_behavior(
+                1.0,
+                AnimBehavior::ease_out(TAB_CLOSE_DURATION.as_millis() as u64),
+            );
             m.set(0.0, now);
         }
         if let Some(c) = self.closing_tabs.get_mut(index) {
@@ -392,7 +404,7 @@ impl TabBarWidget {
     /// Recomputes layout with current animated width multipliers.
     ///
     /// Called during draw when width animations are running. Samples
-    /// each `AnimatedValue` at `now` and passes the snapshot to layout.
+    /// each `AnimProperty` at `now` and passes the snapshot to layout.
     fn recompute_layout_animated(&mut self, now: Instant) {
         let multipliers: Vec<f32> = self.width_multipliers.iter().map(|m| m.get(now)).collect();
         self.layout = TabBarLayout::compute_with_multipliers(

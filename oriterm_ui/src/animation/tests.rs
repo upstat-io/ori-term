@@ -1,5 +1,7 @@
 //! Unit tests for the animation system.
 
+#![allow(deprecated)] // Tests exercise legacy AnimatedValue alongside AnimProperty.
+
 use std::time::{Duration, Instant};
 
 use super::{AnimatedValue, Animation, Easing, Lerp};

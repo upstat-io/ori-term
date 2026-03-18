@@ -270,6 +270,7 @@ impl Animation {
 }
 
 /// An in-flight animation for [`AnimatedValue`].
+#[allow(deprecated)]
 #[derive(Debug, Clone, Copy)]
 struct ActiveAnimation<T: Lerp> {
     from: T,
@@ -282,6 +283,11 @@ struct ActiveAnimation<T: Lerp> {
 /// Embeddable in widget structs. Stores the resting value plus an optional
 /// in-flight animation. Query with [`get`](Self::get) using the current
 /// frame timestamp.
+///
+/// **Deprecated**: Use [`AnimProperty`] instead, which supports optional
+/// auto-animation via [`AnimBehavior`](behavior::AnimBehavior) and
+/// spring physics.
+#[deprecated(note = "use AnimProperty with AnimBehavior instead")]
 pub struct AnimatedValue<T: Lerp> {
     /// The target (resting) value.
     value: T,
@@ -293,6 +299,7 @@ pub struct AnimatedValue<T: Lerp> {
     easing: Easing,
 }
 
+#[allow(deprecated)]
 impl<T: Lerp> AnimatedValue<T> {
     /// Creates an animated value with no active animation.
     pub fn new(value: T, duration: Duration, easing: Easing) -> Self {
@@ -353,6 +360,7 @@ impl<T: Lerp> AnimatedValue<T> {
     }
 }
 
+#[allow(deprecated)]
 impl<T: Lerp + fmt::Debug> fmt::Debug for AnimatedValue<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AnimatedValue")
@@ -364,6 +372,7 @@ impl<T: Lerp + fmt::Debug> fmt::Debug for AnimatedValue<T> {
     }
 }
 
+#[allow(deprecated)]
 impl<T: Lerp + Clone> Clone for AnimatedValue<T> {
     fn clone(&self) -> Self {
         Self {

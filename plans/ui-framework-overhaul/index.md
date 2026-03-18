@@ -20,7 +20,7 @@ order: 1
 ---
 
 ### Section 01: Interaction State System
-**File:** `section-01-interaction-state.md` | **Status:** In Progress
+**File:** `section-01-interaction-state.md` | **Status:** Complete
 
 ```
 hot, active, focus, hover, pressed, trifecta, is_hot, is_active, is_focused
@@ -78,7 +78,7 @@ oriterm_ui/src/input/routing.rs (removed)
 ---
 
 ### Section 04: Event Controllers
-**File:** `section-04-event-controllers.md` | **Status:** In Progress
+**File:** `section-04-event-controllers.md` | **Status:** Complete
 
 ```
 controller, hover_controller, click_controller, drag_controller
@@ -103,7 +103,7 @@ oriterm_ui/src/controllers/, oriterm_ui/src/action.rs
 ---
 
 ### Section 05: Animation Engine
-**File:** `section-05-animation-engine.md` | **Status:** In Progress
+**File:** `section-05-animation-engine.md` | **Status:** Complete
 
 ```
 animation, anim_frame, request_anim_frame, request_paint, delta_time
@@ -151,7 +151,7 @@ oriterm_ui/src/widgets/rich_label/, oriterm_ui/src/theme/
 ---
 
 ### Section 08: Widget Trait Overhaul
-**File:** `section-08-widget-trait.md` | **Status:** In Progress
+**File:** `section-08-widget-trait.md` | **Status:** Complete
 
 ```
 widget_trait, migration, sense, controllers, visual_states, paint

@@ -1,12 +1,12 @@
 //! Toggle switch widget — a pill-shaped on/off switch.
 //!
 //! Emits `WidgetAction::Toggled` when clicked (via [`ClickController`]) or
-//! activated via Space. Uses [`AnimatedValue`] for smooth thumb sliding
+//! activated via Space. Uses [`AnimProperty`] for smooth thumb sliding
 //! (150ms, `EaseInOut`) and [`VisualStateAnimator`] for hover color transitions.
 
 use std::time::{Duration, Instant};
 
-use crate::animation::{AnimatedValue, Easing};
+use crate::animation::{AnimBehavior, AnimProperty};
 use crate::color::Color;
 use crate::controllers::{
     ClickController, EventController, HoverController, KeyActivationController,
@@ -78,14 +78,14 @@ impl Default for ToggleStyle {
 /// A pill-shaped toggle switch.
 ///
 /// The thumb slides smoothly between on (1.0) and off (0.0) positions
-/// using an [`AnimatedValue`] with `EaseInOut` easing over 150ms. Track
+/// using an [`AnimProperty`] with `EaseInOut` easing over 150ms. Track
 /// hover transitions use [`VisualStateAnimator`] with `common_states()`.
 pub struct ToggleWidget {
     id: WidgetId,
     on: bool,
     disabled: bool,
     /// Animated thumb position: 0.0 = off, 1.0 = on.
-    toggle_progress: AnimatedValue<f32>,
+    toggle_progress: AnimProperty<f32>,
     style: ToggleStyle,
     controllers: Vec<Box<dyn EventController>>,
     /// Animator for off-state hover bg transition.
@@ -106,7 +106,10 @@ impl ToggleWidget {
             id: WidgetId::next(),
             on: false,
             disabled: false,
-            toggle_progress: AnimatedValue::new(0.0, TOGGLE_DURATION, Easing::EaseInOut),
+            toggle_progress: AnimProperty::with_behavior(
+                0.0,
+                AnimBehavior::ease_in_out(TOGGLE_DURATION.as_millis() as u64),
+            ),
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
