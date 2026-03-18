@@ -1,34 +1,29 @@
-//! Builds the settings form from current config state.
+//! Builds the settings dialog with sidebar navigation and 8 pages.
 //!
-//! Constructs a `FormLayout` populated with sections and controls
-//! that reflect the current `Config`. Widget IDs are captured in
-//! `SettingsIds` for action dispatch in Section 04.
+//! Each page is built by its own submodule. Widget IDs are captured
+//! in `SettingsIds` for action dispatch.
+
+mod appearance;
+mod bell;
+mod colors;
+mod font;
+mod keybindings;
+mod rendering;
+mod terminal;
+mod window;
 
 use oriterm_ui::icons::IconId;
 use oriterm_ui::layout::SizeSpec;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::Widget;
-use oriterm_ui::widgets::checkbox::CheckboxWidget;
 use oriterm_ui::widgets::container::ContainerWidget;
-use oriterm_ui::widgets::dropdown::DropdownWidget;
-use oriterm_ui::widgets::form_layout::FormLayout;
-use oriterm_ui::widgets::form_row::FormRow;
-use oriterm_ui::widgets::form_section::FormSection;
-use oriterm_ui::widgets::label::LabelWidget;
 use oriterm_ui::widgets::page_container::PageContainerWidget;
 use oriterm_ui::widgets::sidebar_nav::{NavItem, NavSection, SidebarNavWidget};
-use oriterm_ui::widgets::toggle::ToggleWidget;
 
-use crate::config::{BellAnimation, Config, CursorStyle, PasteWarning};
+use crate::config::Config;
 
-/// Opacity dropdown values (display label → actual value).
-pub(in crate::app) const OPACITY_VALUES: [f32; 8] = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-
-/// Font size dropdown values.
-pub(in crate::app) const FONT_SIZE_VALUES: [f32; 15] = [
-    8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 18.0, 20.0, 22.0, 24.0, 28.0, 32.0,
-];
+pub(in crate::app) use font::FONT_FAMILIES;
 
 /// Bell duration dropdown values in milliseconds.
 pub(in crate::app) const BELL_DURATION_VALUES: [u16; 7] = [0, 50, 100, 150, 200, 300, 500];
@@ -36,51 +31,111 @@ pub(in crate::app) const BELL_DURATION_VALUES: [u16; 7] = [0, 50, 100, 150, 200,
 /// Widget IDs for all settings controls, used to match actions in both
 /// overlay dispatch and dialog window event handling.
 pub(crate) struct SettingsIds {
+    // Appearance page.
     pub theme_dropdown: WidgetId,
-    pub opacity_dropdown: WidgetId,
-    pub font_size_dropdown: WidgetId,
+    pub opacity_slider: WidgetId,
+    pub blur_toggle: WidgetId,
+    // Font page.
+    pub font_family_dropdown: WidgetId,
+    pub font_size_input: WidgetId,
     pub font_weight_dropdown: WidgetId,
-    pub ligatures_checkbox: WidgetId,
-    pub paste_warning_dropdown: WidgetId,
-    pub cursor_style_dropdown: WidgetId,
+    pub ligatures_toggle: WidgetId,
+    pub line_height_input: WidgetId,
+    // Terminal page.
+    pub cursor_picker: WidgetId,
     pub cursor_blink_toggle: WidgetId,
+    pub scrollback_input: WidgetId,
+    pub shell_input: WidgetId,
+    pub paste_warning_dropdown: WidgetId,
+    // Window page.
+    pub tab_bar_position_dropdown: WidgetId,
+    pub grid_padding_input: WidgetId,
+    pub restore_session_toggle: WidgetId,
+    pub initial_columns_input: WidgetId,
+    pub initial_rows_input: WidgetId,
+    // Bell page.
     pub bell_animation_dropdown: WidgetId,
     pub bell_duration_dropdown: WidgetId,
+    // Rendering page.
+    pub gpu_backend_dropdown: WidgetId,
+    pub subpixel_toggle: WidgetId,
 }
 
 /// Builds the settings dialog with sidebar navigation and 8 pages.
 ///
 /// Returns the content widget (sidebar + pages in a horizontal row) and the
-/// ID map for action dispatch. Existing sections (Appearance, Font, Terminal,
-/// Bell, Behavior) are wrapped as individual pages. New pages (Colors,
-/// Keybindings, Window, Rendering) use placeholder content until sections
-/// 10.2-10.7 implement them.
+/// ID map for action dispatch.
 pub(in crate::app) fn build_settings_dialog(
     config: &Config,
     theme: &UiTheme,
 ) -> (Box<dyn Widget>, SettingsIds) {
-    // Build existing sections — preserves all controls and their IDs.
-    let (appearance, theme_id, opacity_id) = build_appearance_section(config);
-    let (font, size_id, weight_id, liga_id) = build_font_section(config);
-    let (behavior, paste_id) = build_behavior_section(config);
-    let (terminal, style_id, blink_id) = build_terminal_section(config);
-    let (bell, anim_id, dur_id) = build_bell_section(config);
+    // Initialize IDs with placeholders; page builders overwrite their fields.
+    let mut ids = SettingsIds::placeholder();
 
-    // Wrap each section in a FormLayout as individual pages.
-    let page_appearance = FormLayout::new().with_section(appearance);
-    let page_font = FormLayout::new().with_section(font);
-    let page_terminal = FormLayout::new()
-        .with_section(terminal)
-        .with_section(behavior);
-    let page_bell = FormLayout::new().with_section(bell);
+    let page_appearance = appearance::build_page(config, &mut ids, theme);
+    let page_colors = colors::build_page(config, theme);
+    let page_font = font::build_page(config, &mut ids, theme);
+    let page_terminal = terminal::build_page(config, &mut ids, theme);
+    let page_keybindings = keybindings::build_page(theme);
+    let page_window = window::build_page(config, &mut ids, theme);
+    let page_bell = bell::build_page(config, &mut ids, theme);
+    let page_rendering = rendering::build_page(config, &mut ids, theme);
 
-    // Placeholder pages for content not yet implemented (10.2-10.7).
-    let page_colors = placeholder_page("Colors");
-    let page_keybindings = placeholder_page("Keybindings");
-    let page_window = placeholder_page("Window");
-    let page_rendering = placeholder_page("Rendering");
+    let sidebar = build_sidebar(theme);
 
-    let sidebar = SidebarNavWidget::new(
+    let pages = PageContainerWidget::new(vec![
+        page_appearance,
+        page_colors,
+        page_font,
+        page_terminal,
+        page_keybindings,
+        page_window,
+        page_bell,
+        page_rendering,
+    ]);
+
+    let content = ContainerWidget::row()
+        .with_width(SizeSpec::Fill)
+        .with_height(SizeSpec::Fill)
+        .with_child(Box::new(sidebar))
+        .with_child(Box::new(pages));
+
+    (Box::new(content), ids)
+}
+
+impl SettingsIds {
+    /// Creates a `SettingsIds` with all fields set to `WidgetId::placeholder()`.
+    fn placeholder() -> Self {
+        Self {
+            theme_dropdown: WidgetId::placeholder(),
+            opacity_slider: WidgetId::placeholder(),
+            blur_toggle: WidgetId::placeholder(),
+            font_family_dropdown: WidgetId::placeholder(),
+            font_size_input: WidgetId::placeholder(),
+            font_weight_dropdown: WidgetId::placeholder(),
+            ligatures_toggle: WidgetId::placeholder(),
+            line_height_input: WidgetId::placeholder(),
+            cursor_picker: WidgetId::placeholder(),
+            cursor_blink_toggle: WidgetId::placeholder(),
+            scrollback_input: WidgetId::placeholder(),
+            shell_input: WidgetId::placeholder(),
+            paste_warning_dropdown: WidgetId::placeholder(),
+            tab_bar_position_dropdown: WidgetId::placeholder(),
+            grid_padding_input: WidgetId::placeholder(),
+            restore_session_toggle: WidgetId::placeholder(),
+            initial_columns_input: WidgetId::placeholder(),
+            initial_rows_input: WidgetId::placeholder(),
+            bell_animation_dropdown: WidgetId::placeholder(),
+            bell_duration_dropdown: WidgetId::placeholder(),
+            gpu_backend_dropdown: WidgetId::placeholder(),
+            subpixel_toggle: WidgetId::placeholder(),
+        }
+    }
+}
+
+/// Builds the sidebar with 8 navigation items across 2 sections.
+fn build_sidebar(theme: &UiTheme) -> SidebarNavWidget {
+    SidebarNavWidget::new(
         vec![
             NavSection {
                 title: "General".into(),
@@ -134,193 +189,7 @@ pub(in crate::app) fn build_settings_dialog(
             },
         ],
         theme,
-    );
-
-    let pages = PageContainerWidget::new(vec![
-        Box::new(page_appearance),
-        Box::new(page_colors),
-        Box::new(page_font),
-        Box::new(page_terminal),
-        Box::new(page_keybindings),
-        Box::new(page_window),
-        Box::new(page_bell),
-        Box::new(page_rendering),
-    ]);
-
-    // Horizontal layout: sidebar (fixed 200px) | pages (fill).
-    let content = ContainerWidget::row()
-        .with_width(SizeSpec::Fill)
-        .with_height(SizeSpec::Fill)
-        .with_child(Box::new(sidebar))
-        .with_child(Box::new(pages));
-
-    let ids = SettingsIds {
-        theme_dropdown: theme_id,
-        opacity_dropdown: opacity_id,
-        font_size_dropdown: size_id,
-        font_weight_dropdown: weight_id,
-        ligatures_checkbox: liga_id,
-        paste_warning_dropdown: paste_id,
-        cursor_style_dropdown: style_id,
-        cursor_blink_toggle: blink_id,
-        bell_animation_dropdown: anim_id,
-        bell_duration_dropdown: dur_id,
-    };
-
-    (Box::new(content), ids)
-}
-
-/// Creates a placeholder page with a title label.
-fn placeholder_page(title: &str) -> ContainerWidget {
-    let label = LabelWidget::new(title);
-    ContainerWidget::column()
-        .with_width(SizeSpec::Fill)
-        .with_height(SizeSpec::Fill)
-        .with_child(Box::new(label))
-}
-
-/// Appearance section: Theme dropdown, Opacity dropdown.
-fn build_appearance_section(config: &Config) -> (FormSection, WidgetId, WidgetId) {
-    let names = crate::scheme::builtin_names();
-    let selected = names
-        .iter()
-        .position(|n| *n == config.colors.scheme)
-        .unwrap_or(0);
-    let items: Vec<String> = names.iter().map(|s| (*s).to_owned()).collect();
-    let theme_dropdown = DropdownWidget::new(items).with_selected(selected);
-    let theme_id = theme_dropdown.id();
-
-    let opacity_items: Vec<String> = OPACITY_VALUES
-        .iter()
-        .map(|v| format!("{:.0}%", v * 100.0))
-        .collect();
-    let opacity_idx = OPACITY_VALUES
-        .iter()
-        .position(|v| (*v - config.window.opacity).abs() < 0.01)
-        .unwrap_or(OPACITY_VALUES.len() - 1);
-    let opacity_dropdown = DropdownWidget::new(opacity_items).with_selected(opacity_idx);
-    let opacity_id = opacity_dropdown.id();
-
-    let section = FormSection::new("Appearance")
-        .with_row(FormRow::new("Theme", Box::new(theme_dropdown)))
-        .with_row(FormRow::new("Opacity", Box::new(opacity_dropdown)));
-
-    (section, theme_id, opacity_id)
-}
-
-/// Font section: Size dropdown, Weight dropdown, Ligatures checkbox.
-fn build_font_section(config: &Config) -> (FormSection, WidgetId, WidgetId, WidgetId) {
-    let size_items: Vec<String> = FONT_SIZE_VALUES.iter().map(|v| format!("{v:.0}")).collect();
-    let size_idx = FONT_SIZE_VALUES
-        .iter()
-        .position(|v| (*v - config.font.size).abs() < 0.1)
-        .unwrap_or(4); // Default to 12.0
-    let size_dropdown = DropdownWidget::new(size_items).with_selected(size_idx);
-    let size_id = size_dropdown.id();
-
-    let weight_items: Vec<String> = [100, 200, 300, 400, 500, 600, 700, 800, 900]
-        .iter()
-        .map(i32::to_string)
-        .collect();
-    let weight_idx = match config.font.weight {
-        w if w <= 100 => 0,
-        w if w <= 200 => 1,
-        w if w <= 300 => 2,
-        w if w <= 400 => 3,
-        w if w <= 500 => 4,
-        w if w <= 600 => 5,
-        w if w <= 700 => 6,
-        w if w <= 800 => 7,
-        _ => 8,
-    };
-    let weight_dropdown = DropdownWidget::new(weight_items).with_selected(weight_idx);
-    let weight_id = weight_dropdown.id();
-
-    // Ligatures are enabled if "liga" is in features without a "-liga" override.
-    let has_liga = config.font.features.iter().any(|f| f == "liga");
-    let has_neg_liga = config.font.features.iter().any(|f| f == "-liga");
-    let ligatures_on = has_liga && !has_neg_liga;
-    let liga_checkbox = CheckboxWidget::new("Enabled").with_checked(ligatures_on);
-    let liga_id = liga_checkbox.id();
-
-    let section = FormSection::new("Font")
-        .with_row(FormRow::new("Size", Box::new(size_dropdown)))
-        .with_row(FormRow::new("Weight", Box::new(weight_dropdown)))
-        .with_row(FormRow::new("Ligatures", Box::new(liga_checkbox)));
-
-    (section, size_id, weight_id, liga_id)
-}
-
-/// Behavior section: Paste Warning dropdown.
-fn build_behavior_section(config: &Config) -> (FormSection, WidgetId) {
-    let paste_items = vec!["Always".to_owned(), "Never".to_owned()];
-    let paste_idx = match config.behavior.warn_on_paste {
-        PasteWarning::Always | PasteWarning::Threshold(_) => 0,
-        PasteWarning::Never => 1,
-    };
-    let paste_dropdown = DropdownWidget::new(paste_items).with_selected(paste_idx);
-    let paste_id = paste_dropdown.id();
-
-    let section = FormSection::new("Behavior")
-        .with_row(FormRow::new("Paste Warning", Box::new(paste_dropdown)));
-
-    (section, paste_id)
-}
-
-/// Terminal section: Cursor Style dropdown, Cursor Blink toggle.
-fn build_terminal_section(config: &Config) -> (FormSection, WidgetId, WidgetId) {
-    let style_items = vec!["Block".to_owned(), "Bar".to_owned(), "Underline".to_owned()];
-    let style_idx = match config.terminal.cursor_style {
-        CursorStyle::Block => 0,
-        CursorStyle::Bar => 1,
-        CursorStyle::Underline => 2,
-    };
-    let style_dropdown = DropdownWidget::new(style_items).with_selected(style_idx);
-    let style_id = style_dropdown.id();
-
-    let blink_toggle = ToggleWidget::new().with_on(config.terminal.cursor_blink);
-    let blink_id = blink_toggle.id();
-
-    let section = FormSection::new("Terminal")
-        .with_row(FormRow::new("Cursor Style", Box::new(style_dropdown)))
-        .with_row(FormRow::new("Cursor Blink", Box::new(blink_toggle)));
-
-    (section, style_id, blink_id)
-}
-
-/// Bell section: Animation dropdown, Duration dropdown.
-fn build_bell_section(config: &Config) -> (FormSection, WidgetId, WidgetId) {
-    let anim_items = vec!["EaseOut".to_owned(), "Linear".to_owned(), "None".to_owned()];
-    let anim_idx = match config.bell.animation {
-        BellAnimation::EaseOut => 0,
-        BellAnimation::Linear => 1,
-        BellAnimation::None => 2,
-    };
-    let anim_dropdown = DropdownWidget::new(anim_items).with_selected(anim_idx);
-    let anim_id = anim_dropdown.id();
-
-    let dur_items: Vec<String> = BELL_DURATION_VALUES
-        .iter()
-        .map(|v| {
-            if *v == 0 {
-                "Off".to_owned()
-            } else {
-                format!("{v}ms")
-            }
-        })
-        .collect();
-    let dur_idx = BELL_DURATION_VALUES
-        .iter()
-        .position(|v| *v == config.bell.duration_ms)
-        .unwrap_or(3); // Default to 150ms
-    let dur_dropdown = DropdownWidget::new(dur_items).with_selected(dur_idx);
-    let dur_id = dur_dropdown.id();
-
-    let section = FormSection::new("Bell")
-        .with_row(FormRow::new("Animation", Box::new(anim_dropdown)))
-        .with_row(FormRow::new("Duration", Box::new(dur_dropdown)));
-
-    (section, anim_id, dur_id)
+    )
 }
 
 #[cfg(test)]

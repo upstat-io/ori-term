@@ -232,6 +232,7 @@ Each section file follows this structure. Sections range from focused (single su
 section: "{NN}"
 title: "{Title}"
 status: not-started
+reviewed: true/false             # true for Section 01; false for all others
 goal: "{One-line measurable goal}"
 inspired_by:             # Reference implementations studied
   - "{Emulator} {pattern} ({file path})"
@@ -354,6 +355,15 @@ that proves this section is complete. Include specific commands, test names,
 metric thresholds. Not "X works" but "X produces Y output when Z command
 is run, with 0 regressions in test suite."}
 ```
+
+### The `reviewed` Field
+
+- **Section 01**: Always `reviewed: true` — it's the plan's starting point, already vetted during creation.
+- **All other sections**: `reviewed: false` — they must be re-reviewed before implementation.
+
+**Why:** As you implement sections sequentially, reality diverges from the original plan. You discover new constraints, make architectural decisions, and deviate from assumptions that later sections depend on. A section written when the plan was first created may reference files that were renamed, assume types that were redesigned, or propose approaches that conflict with decisions made during earlier sections. The `reviewed: false` gate forces `/review-plan` to run on each section right before implementation, when the actual codebase state is known — catching stale assumptions before they waste work.
+
+**`/review-plan` marks only the reviewed section as `reviewed: true`**, not all sections. Each section gets its own review checkpoint.
 
 ---
 

@@ -88,9 +88,13 @@ Create overview with:
 
 For each section, create `section-{NN}-{name}.md` with:
 - YAML frontmatter (section ID, title, status: not-started, goal)
+- **`reviewed: true` for Section 01 ONLY** — it's the starting point and was vetted during plan creation
+- **`reviewed: false` for ALL other sections** — they need re-review before implementation because earlier sections will cause deviations that have downstream impacts
 - Section header with status emoji
 - Placeholder subsections with `- [ ]` checkboxes
 - Completion checklist at the end
+
+**Why the reviewed gate matters:** As you implement sections sequentially, reality diverges from the original plan — you discover new constraints, make architectural decisions, and deviate from assumptions. Later sections were written against the *original* assumptions, not the *actual* state after prior sections landed. `reviewed: false` forces a review checkpoint before each section to catch stale assumptions, incorrect file paths, wrong dependencies, and outdated design decisions. Without this gate, you'd implement plans that are already wrong.
 
 ### Step 8: Report Progress
 

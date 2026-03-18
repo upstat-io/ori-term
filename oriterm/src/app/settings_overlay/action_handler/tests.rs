@@ -14,6 +14,8 @@ fn default_ids() -> (Config, SettingsIds) {
     (config, ids)
 }
 
+// Appearance page tests.
+
 #[test]
 fn theme_selected_updates_scheme() {
     let (mut config, ids) = default_ids();
@@ -27,22 +29,55 @@ fn theme_selected_updates_scheme() {
 }
 
 #[test]
-fn opacity_selected_updates_config() {
+fn opacity_value_changed_updates_config() {
     let (mut config, ids) = default_ids();
-    let action = WidgetAction::Selected {
-        id: ids.opacity_dropdown,
-        index: 2, // 50%
+    let action = WidgetAction::ValueChanged {
+        id: ids.opacity_slider,
+        value: 75.0,
     };
     assert!(handle_settings_action(&action, &ids, &mut config));
-    assert!((config.window.opacity - 0.5).abs() < f32::EPSILON);
+    assert!((config.window.opacity - 0.75).abs() < f32::EPSILON);
 }
 
 #[test]
-fn font_size_selected_updates_config() {
+fn blur_toggled_updates_config() {
     let (mut config, ids) = default_ids();
+    let action = WidgetAction::Toggled {
+        id: ids.blur_toggle,
+        value: false,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert!(!config.window.blur);
+}
+
+// Font page tests.
+
+#[test]
+fn font_family_selected_updates_config() {
+    let (mut config, ids) = default_ids();
+    // Index 0 = "Default (System)" → None.
     let action = WidgetAction::Selected {
-        id: ids.font_size_dropdown,
-        index: 8, // 16.0
+        id: ids.font_family_dropdown,
+        index: 0,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert!(config.font.family.is_none());
+
+    // Index 1 = "JetBrains Mono" → Some.
+    let action = WidgetAction::Selected {
+        id: ids.font_family_dropdown,
+        index: 1,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.family.as_deref(), Some("JetBrains Mono"));
+}
+
+#[test]
+fn font_size_value_changed_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::ValueChanged {
+        id: ids.font_size_input,
+        value: 16.0,
     };
     assert!(handle_settings_action(&action, &ids, &mut config));
     assert!((config.font.size - 16.0).abs() < f32::EPSILON);
@@ -62,9 +97,8 @@ fn font_weight_selected_updates_config() {
 #[test]
 fn ligatures_toggled_off_removes_liga() {
     let (mut config, ids) = default_ids();
-    // Default has "liga" in features.
     let action = WidgetAction::Toggled {
-        id: ids.ligatures_checkbox,
+        id: ids.ligatures_toggle,
         value: false,
     };
     assert!(handle_settings_action(&action, &ids, &mut config));
@@ -75,17 +109,73 @@ fn ligatures_toggled_off_removes_liga() {
 #[test]
 fn ligatures_toggled_on_adds_liga() {
     let (mut config, ids) = default_ids();
-    // Start with liga removed.
     config.font.features.retain(|f| f != "liga");
     config.font.features.push("-liga".to_owned());
 
     let action = WidgetAction::Toggled {
-        id: ids.ligatures_checkbox,
+        id: ids.ligatures_toggle,
         value: true,
     };
     assert!(handle_settings_action(&action, &ids, &mut config));
     assert!(config.font.features.iter().any(|f| f == "liga"));
     assert!(!config.font.features.iter().any(|f| f == "-liga"));
+}
+
+#[test]
+fn line_height_value_changed_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::ValueChanged {
+        id: ids.line_height_input,
+        value: 1.5,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert!((config.font.line_height - 1.5).abs() < f32::EPSILON);
+}
+
+// Terminal page tests.
+
+#[test]
+fn cursor_picker_selected_updates_style() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.cursor_picker,
+        index: 1, // Bar
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.terminal.cursor_style,
+        crate::config::CursorStyle::Bar
+    );
+}
+
+#[test]
+fn scrollback_value_changed_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::ValueChanged {
+        id: ids.scrollback_input,
+        value: 50_000.0,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.terminal.scrollback, 50_000);
+}
+
+#[test]
+fn shell_text_changed_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::TextChanged {
+        id: ids.shell_input,
+        text: "/usr/bin/fish".to_owned(),
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.terminal.shell.as_deref(), Some("/usr/bin/fish"));
+
+    // Empty text → None.
+    let action = WidgetAction::TextChanged {
+        id: ids.shell_input,
+        text: String::new(),
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert!(config.terminal.shell.is_none());
 }
 
 #[test]
@@ -118,6 +208,58 @@ fn unknown_widget_id_returns_false() {
         value: 1.0,
     };
     assert!(!handle_settings_action(&action, &ids, &mut config));
+}
+
+// Window page tests.
+
+#[test]
+fn tab_bar_position_selected_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.tab_bar_position_dropdown,
+        index: 2, // Hidden
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.window.tab_bar_position,
+        crate::config::TabBarPosition::Hidden
+    );
+}
+
+#[test]
+fn grid_padding_value_changed_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::ValueChanged {
+        id: ids.grid_padding_input,
+        value: 8.0,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert!((config.window.grid_padding - 8.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn gpu_backend_selected_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.gpu_backend_dropdown,
+        index: 1, // Vulkan
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.rendering.gpu_backend,
+        crate::config::GpuBackend::Vulkan
+    );
+}
+
+#[test]
+fn subpixel_toggled_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Toggled {
+        id: ids.subpixel_toggle,
+        value: true,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.subpixel_mode.as_deref(), Some("rgb"));
 }
 
 #[test]
