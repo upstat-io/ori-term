@@ -10,6 +10,7 @@ use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::keybind::KeybindRow;
 use oriterm_ui::widgets::label::{LabelStyle, LabelWidget};
+use oriterm_ui::widgets::scroll::ScrollWidget;
 
 use super::appearance::{
     DESC_FONT_SIZE, PAGE_PADDING, ROW_GAP, SECTION_GAP, TITLE_FONT_SIZE, section_title,
@@ -31,7 +32,9 @@ pub(super) fn build_page(theme: &UiTheme) -> Box<dyn Widget> {
         .with_child(clipboard_section)
         .with_child(nav_section);
 
-    Box::new(page)
+    let mut scroll = ScrollWidget::vertical(Box::new(page));
+    scroll.set_height(SizeSpec::Fill);
+    Box::new(scroll)
 }
 
 /// Page header: title + description.

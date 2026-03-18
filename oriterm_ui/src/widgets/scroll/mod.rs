@@ -430,6 +430,11 @@ impl Widget for ScrollWidget {
         ids.extend(self.child.focusable_children());
         ids
     }
+
+    fn reset_scroll(&mut self) {
+        self.scroll_offset = 0.0;
+        self.scroll_offset_x = 0.0;
+    }
 }
 
 #[cfg(test)]

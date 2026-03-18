@@ -20,7 +20,9 @@ fn settings_ids_all_distinct() {
     let theme = UiTheme::default();
     let (_content, ids) = build_settings_dialog(&config, &theme);
     let all = collect_ids(&ids);
-    assert_eq!(all.len(), 22, "all 22 widget IDs must be distinct");
+    // 22 fixed control IDs + N scheme card IDs.
+    let expected = 22 + ids.scheme_card_ids.len();
+    assert_eq!(all.len(), expected, "all widget IDs must be distinct");
 }
 
 #[test]
@@ -44,12 +46,28 @@ fn all_page_ids_are_set() {
     );
 }
 
+#[test]
+fn scheme_card_ids_captured() {
+    let config = Config::default();
+    let theme = UiTheme::default();
+    let (_content, ids) = build_settings_dialog(&config, &theme);
+    // Scheme cards are captured during colors page building.
+    assert!(
+        !ids.scheme_card_ids.is_empty(),
+        "scheme card IDs must be captured"
+    );
+}
+
 fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {
     let mut set = HashSet::new();
     // Appearance.
     set.insert(ids.theme_dropdown.raw());
     set.insert(ids.opacity_slider.raw());
     set.insert(ids.blur_toggle.raw());
+    // Colors — per-card IDs.
+    for card_id in &ids.scheme_card_ids {
+        set.insert(card_id.raw());
+    }
     // Font.
     set.insert(ids.font_family_dropdown.raw());
     set.insert(ids.font_size_input.raw());

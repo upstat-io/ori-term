@@ -248,6 +248,13 @@ pub trait Widget {
     fn hit_test_behavior(&self) -> HitTestBehavior {
         HitTestBehavior::DeferToChild
     }
+
+    /// Resets scroll state to the top.
+    ///
+    /// Called by container widgets (e.g. `PageContainerWidget`) when a child
+    /// becomes the active page. Default is a no-op; `ScrollWidget` overrides
+    /// to reset its scroll offset to zero.
+    fn reset_scroll(&mut self) {}
 }
 
 #[cfg(test)]

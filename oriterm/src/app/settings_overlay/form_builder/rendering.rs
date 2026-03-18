@@ -6,6 +6,7 @@ use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
 use oriterm_ui::widgets::label::{LabelStyle, LabelWidget};
+use oriterm_ui::widgets::scroll::ScrollWidget;
 use oriterm_ui::widgets::setting_row::SettingRowWidget;
 use oriterm_ui::widgets::toggle::ToggleWidget;
 
@@ -34,7 +35,9 @@ pub(super) fn build_page(
         .with_child(gpu)
         .with_child(text);
 
-    Box::new(page)
+    let mut scroll = ScrollWidget::vertical(Box::new(page));
+    scroll.set_height(SizeSpec::Fill);
+    Box::new(scroll)
 }
 
 /// Page header.

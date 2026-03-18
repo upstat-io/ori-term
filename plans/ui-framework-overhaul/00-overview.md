@@ -1,7 +1,7 @@
 ---
 plan: "ui-framework-overhaul"
 title: "UI Framework Overhaul: Exhaustive Implementation Plan"
-status: queued
+status: active
 references:
   - "plans/gui-framework-research.md"
   - "mockups/settings.html"
@@ -223,7 +223,7 @@ Phase 6 — Verification
 | 05 Animation Engine | ~500 | High | — |
 | 06 Visual State Manager | ~400 | High | 05 |
 | 07 Layout & Theme | ~500 | Medium | — |
-| 08 Widget Trait Migration (26 widgets + 3 test) | ~1500 | **Very High** | 01-07 |
+| 08 Widget Trait Migration (35 oriterm_ui + 2 oriterm widgets) | ~1500 | **Very High** | 01-07 |
 | 09 New Widget Library | ~1500 | Medium | 08 |
 | 10 Settings Panel Rebuild | ~800 | Medium | 09 |
 | 11 Verification | ~600 | Medium | 10 |
@@ -260,14 +260,14 @@ within the existing `animation` module (no `lib.rs` change needed):
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | Interaction State System | `section-01-interaction-state.md` | In Progress |
+| 01 | Interaction State System | `section-01-interaction-state.md` | Complete |
 | 02 | Sense & Hit Testing | `section-02-sense-hit-testing.md` | Complete |
-| 03 | Event Propagation | `section-03-event-propagation.md` | In Progress |
-| 04 | Event Controllers | `section-04-event-controllers.md` | In Progress |
-| 05 | Animation Engine | `section-05-animation-engine.md` | In Progress |
+| 03 | Event Propagation | `section-03-event-propagation.md` | Complete |
+| 04 | Event Controllers | `section-04-event-controllers.md` | Complete |
+| 05 | Animation Engine | `section-05-animation-engine.md` | Complete |
 | 06 | Visual State Manager | `section-06-visual-state-manager.md` | Complete |
 | 07 | Layout Extensions & Theme | `section-07-layout-theme.md` | Complete |
-| 08 | Widget Trait Overhaul | `section-08-widget-trait.md` | Not Started |
-| 09 | New Widget Library | `section-09-new-widgets.md` | Not Started |
-| 10 | Settings Panel Rebuild | `section-10-settings-rebuild.md` | Not Started |
+| 08 | Widget Trait Overhaul | `section-08-widget-trait.md` | Complete |
+| 09 | New Widget Library | `section-09-new-widgets.md` | Complete |
+| 10 | Settings Panel Rebuild | `section-10-settings-rebuild.md` | Complete |
 | 11 | Verification | `section-11-verification.md` | Not Started |

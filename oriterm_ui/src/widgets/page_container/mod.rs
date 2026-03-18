@@ -112,6 +112,8 @@ impl Widget for PageContainerWidget {
         if let WidgetAction::Selected { index, .. } = action {
             if *index < self.pages.len() && *index != self.active_page {
                 self.active_page = *index;
+                // Reset scroll on the newly-active page.
+                self.pages[self.active_page].reset_scroll();
                 return true;
             }
         }
