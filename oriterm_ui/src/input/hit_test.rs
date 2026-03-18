@@ -304,7 +304,20 @@ fn hit_test_path_node(
 
     // Translucent: keep this node in the path AND recurse into children.
     // DeferToChild: keep this node only if a child is also hit.
+    let pre_len = path.len();
     let child_hit = hit_test_path_children(node, child_point, child_clip, path);
+
+    // Translate child entry bounds from content space back to viewport space.
+    if node.content_offset != (0.0, 0.0) {
+        for entry in &mut path[pre_len..] {
+            entry.bounds = Rect::new(
+                entry.bounds.x() + node.content_offset.0,
+                entry.bounds.y() + node.content_offset.1,
+                entry.bounds.width(),
+                entry.bounds.height(),
+            );
+        }
+    }
 
     if child_hit {
         return true;

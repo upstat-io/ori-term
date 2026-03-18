@@ -1003,4 +1003,13 @@ fn hit_test_path_with_content_offset() {
     assert_eq!(result.path.len(), 2);
     assert_eq!(result.path[0].widget_id, scroll_id);
     assert_eq!(result.path[1].widget_id, btn_id);
+
+    // Button bounds should be in viewport space, not content space.
+    // Content-space y=300, content_offset=(0,-250) → viewport y=50.
+    let btn_bounds = result.path[1].bounds;
+    assert!(
+        (btn_bounds.y() - 50.0).abs() < f32::EPSILON,
+        "button bounds should be in viewport space (y=50), got y={}",
+        btn_bounds.y()
+    );
 }
