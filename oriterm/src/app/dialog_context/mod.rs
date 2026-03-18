@@ -6,6 +6,7 @@
 
 mod content_actions;
 mod event_handling;
+pub(in crate::app) mod key_conversion;
 
 use std::sync::Arc;
 
@@ -119,11 +120,7 @@ pub(crate) enum DialogContent {
         ids: SettingsIds,
         /// Working copy of the config being edited. Applied on Save.
         pending_config: Box<Config>,
-        /// Original config snapshot for Cancel / diff detection.
-        #[expect(
-            dead_code,
-            reason = "reserved for dirty detection in future cancel-guard UX"
-        )]
+        /// Original config snapshot for dirty detection (pending != original).
         original_config: Box<Config>,
     },
     /// Confirmation prompt (e.g. paste with newlines, close with running processes).

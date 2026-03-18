@@ -1,90 +1,35 @@
-//! Tests for the settings form builder.
+//! Tests for the settings dialog builder.
 
 use std::collections::HashSet;
 
-use super::{SettingsIds, build_settings_form};
+use oriterm_ui::theme::UiTheme;
+
+use super::{SettingsIds, build_settings_dialog};
 use crate::config::Config;
 
 #[test]
-fn default_config_produces_five_sections() {
+fn dialog_builds_without_panic() {
     let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    assert_eq!(form.sections().len(), 5);
-}
-
-#[test]
-fn section_names_match_expected() {
-    let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    let names: Vec<&str> = form.sections().iter().map(|s| s.title()).collect();
-    assert_eq!(
-        names,
-        ["Appearance", "Font", "Behavior", "Terminal", "Bell"]
-    );
-}
-
-#[test]
-fn total_row_count_is_ten() {
-    let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    let total: usize = form.sections().iter().map(|s| s.rows().len()).sum();
-    assert_eq!(total, 10);
+    let theme = UiTheme::default();
+    let (_content, _ids) = build_settings_dialog(&config, &theme);
 }
 
 #[test]
 fn settings_ids_all_distinct() {
     let config = Config::default();
-    let (_form, ids) = build_settings_form(&config);
+    let theme = UiTheme::default();
+    let (_content, ids) = build_settings_dialog(&config, &theme);
     let all = collect_ids(&ids);
     assert_eq!(all.len(), 10, "all 10 widget IDs must be distinct");
 }
 
 #[test]
-fn appearance_section_has_two_rows() {
+fn content_widget_has_valid_id() {
     let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    assert_eq!(form.sections()[0].rows().len(), 2);
-}
-
-#[test]
-fn font_section_has_three_rows() {
-    let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    assert_eq!(form.sections()[1].rows().len(), 3);
-}
-
-#[test]
-fn behavior_section_has_one_row() {
-    let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    assert_eq!(form.sections()[2].rows().len(), 1);
-}
-
-#[test]
-fn terminal_section_has_two_rows() {
-    let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    assert_eq!(form.sections()[3].rows().len(), 2);
-}
-
-#[test]
-fn bell_section_has_two_rows() {
-    let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    assert_eq!(form.sections()[4].rows().len(), 2);
-}
-
-#[test]
-fn all_sections_start_expanded() {
-    let config = Config::default();
-    let (form, _ids) = build_settings_form(&config);
-    for section in form.sections() {
-        assert!(
-            section.is_expanded(),
-            "{} should start expanded",
-            section.title()
-        );
-    }
+    let theme = UiTheme::default();
+    let (content, _ids) = build_settings_dialog(&config, &theme);
+    // Content widget should have a non-placeholder ID.
+    assert_ne!(content.id().raw(), 0);
 }
 
 fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {

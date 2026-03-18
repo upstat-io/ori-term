@@ -19,7 +19,6 @@ use super::App;
 use super::dialog_context::{DialogContent, DialogWindowContext};
 use super::settings_overlay::form_builder;
 use crate::event::ConfirmationRequest;
-use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
 use crate::window_manager::platform::platform_ops;
@@ -55,7 +54,7 @@ impl App {
             .window
             .set_min_inner_size(Some(winit::dpi::LogicalSize::new(600u32, 400u32)));
 
-        let content = self.build_settings_content(&parts.window, parts.renderer.as_ref());
+        let content = self.build_settings_content();
         self.finalize_dialog(parts, kind, content);
     }
 
@@ -375,27 +374,11 @@ impl App {
     }
 
     /// Build dialog content for the settings panel.
-    fn build_settings_content(
-        &self,
-        window: &Arc<winit::window::Window>,
-        renderer: Option<&WindowRenderer>,
-    ) -> DialogContent {
-        let (mut form, ids) = form_builder::build_settings_form(&self.config);
-
-        // Compute label widths for aligned form layout.
-        if let Some(renderer) = renderer {
-            let scale = window.scale_factor() as f32;
-            let cache = TextShapeCache::new();
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                &cache,
-                scale,
-            );
-            form.compute_label_widths(&measurer, &self.ui_theme);
-        }
+    fn build_settings_content(&self) -> DialogContent {
+        let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme);
 
         DialogContent::Settings {
-            panel: Box::new(SettingsPanel::embedded(Box::new(form))),
+            panel: Box::new(SettingsPanel::embedded(content)),
             ids,
             pending_config: Box::new(self.config.clone()),
             original_config: Box::new(self.config.clone()),

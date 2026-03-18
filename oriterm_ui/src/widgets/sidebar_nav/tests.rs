@@ -1,7 +1,11 @@
 //! Tests for the sidebar navigation widget.
 
+use crate::action::WidgetAction;
+use crate::geometry::Rect;
+use crate::input::{InputEvent, Key, Modifiers};
 use crate::layout::BoxContent;
 use crate::sense::Sense;
+use crate::widget_id::WidgetId;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{LayoutCtx, Widget};
 
@@ -158,4 +162,121 @@ fn debug_impl() {
     let dbg = format!("{w:?}");
     assert!(dbg.contains("SidebarNavWidget"));
     assert!(dbg.contains("active_page"));
+}
+
+// -- Focusability --
+
+#[test]
+fn is_focusable() {
+    let theme = crate::theme::UiTheme::dark();
+    let w = SidebarNavWidget::new(test_sections(), &theme);
+    assert!(w.is_focusable());
+}
+
+// -- accept_action for page sync --
+
+#[test]
+fn accept_action_updates_active_page() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let action = WidgetAction::Selected {
+        id: WidgetId::next(),
+        index: 2,
+    };
+    assert!(w.accept_action(&action));
+    assert_eq!(w.active_page(), 2);
+}
+
+#[test]
+fn accept_action_ignores_same_page() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let action = WidgetAction::Selected {
+        id: WidgetId::next(),
+        index: 0,
+    };
+    assert!(!w.accept_action(&action));
+}
+
+// -- Arrow key navigation --
+
+fn arrow_down() -> InputEvent {
+    InputEvent::KeyDown {
+        key: Key::ArrowDown,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+fn arrow_up() -> InputEvent {
+    InputEvent::KeyDown {
+        key: Key::ArrowUp,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+#[test]
+fn arrow_down_emits_selected() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let bounds = Rect::new(0.0, 0.0, SIDEBAR_WIDTH, 400.0);
+    let result = w.on_input(&arrow_down(), bounds);
+    assert!(result.handled);
+    match result.action {
+        Some(WidgetAction::Selected { index, .. }) => assert_eq!(index, 1),
+        other => panic!("expected Selected(1), got {other:?}"),
+    }
+}
+
+#[test]
+fn arrow_up_at_top_is_ignored() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let bounds = Rect::new(0.0, 0.0, SIDEBAR_WIDTH, 400.0);
+    let result = w.on_input(&arrow_up(), bounds);
+    assert!(!result.handled);
+}
+
+#[test]
+fn arrow_down_at_bottom_is_ignored() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    w.set_active_page(2); // Last item.
+    let bounds = Rect::new(0.0, 0.0, SIDEBAR_WIDTH, 400.0);
+    let result = w.on_input(&arrow_down(), bounds);
+    assert!(!result.handled);
+}
+
+#[test]
+fn home_key_goes_to_first() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    w.set_active_page(2);
+    let bounds = Rect::new(0.0, 0.0, SIDEBAR_WIDTH, 400.0);
+    let event = InputEvent::KeyDown {
+        key: Key::Home,
+        modifiers: Modifiers::NONE,
+    };
+    let result = w.on_input(&event, bounds);
+    assert!(result.handled);
+    match result.action {
+        Some(WidgetAction::Selected { index, .. }) => assert_eq!(index, 0),
+        other => panic!("expected Selected(0), got {other:?}"),
+    }
+}
+
+#[test]
+fn end_key_goes_to_last() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let bounds = Rect::new(0.0, 0.0, SIDEBAR_WIDTH, 400.0);
+    let event = InputEvent::KeyDown {
+        key: Key::End,
+        modifiers: Modifiers::NONE,
+    };
+    let result = w.on_input(&event, bounds);
+    assert!(result.handled);
+    match result.action {
+        Some(WidgetAction::Selected { index, .. }) => assert_eq!(index, 2),
+        other => panic!("expected Selected(2), got {other:?}"),
+    }
 }

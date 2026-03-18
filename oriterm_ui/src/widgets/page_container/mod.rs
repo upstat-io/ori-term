@@ -4,8 +4,7 @@
 //! Switches pages in response to `WidgetAction::Selected` from a paired
 //! navigation widget (e.g., `SidebarNav`).
 
-use crate::geometry::Rect;
-use crate::layout::{LayoutBox, compute_layout};
+use crate::layout::{Direction, LayoutBox, SizeSpec};
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
@@ -50,18 +49,6 @@ impl PageContainerWidget {
     pub fn page_count(&self) -> usize {
         self.pages.len()
     }
-
-    /// Computes the active page's natural size via the layout solver.
-    fn active_page_size(&self, ctx: &LayoutCtx<'_>) -> (f32, f32) {
-        if let Some(page) = self.pages.get(self.active_page) {
-            let child_box = page.layout(ctx);
-            let unconstrained = Rect::new(0.0, 0.0, f32::INFINITY, f32::INFINITY);
-            let node = compute_layout(&child_box, unconstrained);
-            (node.rect.width(), node.rect.height())
-        } else {
-            (0.0, 0.0)
-        }
-    }
 }
 
 impl Widget for PageContainerWidget {
@@ -78,8 +65,15 @@ impl Widget for PageContainerWidget {
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        let (w, h) = self.active_page_size(ctx);
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        if let Some(page) = self.pages.get(self.active_page) {
+            let child = page.layout(ctx);
+            LayoutBox::flex(Direction::Column, vec![child])
+                .with_width(SizeSpec::Fill)
+                .with_height(SizeSpec::Fill)
+                .with_widget_id(self.id)
+        } else {
+            LayoutBox::leaf(0.0, 0.0).with_widget_id(self.id)
+        }
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {

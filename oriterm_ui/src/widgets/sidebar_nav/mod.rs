@@ -140,6 +140,11 @@ impl SidebarNavWidget {
         self
     }
 
+    /// Returns the total number of nav items across all sections.
+    fn total_item_count(&self) -> usize {
+        self.sections.iter().map(|s| s.items.len()).sum()
+    }
+
     /// Returns the `page_index` for a flat item index.
     fn page_for_flat_index(&self, flat_idx: usize) -> Option<usize> {
         self.sections
@@ -275,6 +280,10 @@ impl Widget for SidebarNavWidget {
         self.id
     }
 
+    fn is_focusable(&self) -> bool {
+        true
+    }
+
     fn sense(&self) -> Sense {
         Sense::click()
     }
@@ -337,20 +346,59 @@ impl Widget for SidebarNavWidget {
         }
     }
 
-    fn on_input(&mut self, event: &crate::input::InputEvent, bounds: Rect) -> super::OnInputResult {
-        // Route click events to nav items by position.
-        if let crate::input::InputEvent::MouseDown { pos, .. } = event {
-            let local_y = pos.y - bounds.y() - SIDEBAR_PADDING_Y;
-            if let Some(flat_idx) = self.hit_test_item(local_y) {
-                if let Some(page_idx) = self.page_for_flat_index(flat_idx) {
-                    return super::OnInputResult::handled().with_action(WidgetAction::Selected {
-                        id: self.id,
-                        index: page_idx,
-                    });
-                }
+    fn accept_action(&mut self, action: &WidgetAction) -> bool {
+        if let WidgetAction::Selected { index, .. } = action {
+            if *index != self.active_page {
+                self.set_active_page(*index);
+                return true;
             }
         }
-        super::OnInputResult::ignored()
+        false
+    }
+
+    fn on_input(&mut self, event: &crate::input::InputEvent, bounds: Rect) -> super::OnInputResult {
+        use crate::input::{InputEvent, Key};
+
+        match event {
+            // Route click events to nav items by position.
+            InputEvent::MouseDown { pos, .. } => {
+                let local_y = pos.y - bounds.y() - SIDEBAR_PADDING_Y;
+                if let Some(flat_idx) = self.hit_test_item(local_y) {
+                    if let Some(page_idx) = self.page_for_flat_index(flat_idx) {
+                        return super::OnInputResult::handled().with_action(
+                            WidgetAction::Selected {
+                                id: self.id,
+                                index: page_idx,
+                            },
+                        );
+                    }
+                }
+                super::OnInputResult::ignored()
+            }
+            // Arrow keys switch the active nav item.
+            InputEvent::KeyDown { key, .. } => {
+                let total = self.total_item_count();
+                if total == 0 {
+                    return super::OnInputResult::ignored();
+                }
+                let new_page = match key {
+                    Key::ArrowUp if self.active_page > 0 => Some(self.active_page - 1),
+                    Key::ArrowDown if self.active_page + 1 < total => Some(self.active_page + 1),
+                    Key::Home => Some(0),
+                    Key::End => Some(total - 1),
+                    _ => None,
+                };
+                if let Some(page_idx) = new_page {
+                    super::OnInputResult::handled().with_action(WidgetAction::Selected {
+                        id: self.id,
+                        index: page_idx,
+                    })
+                } else {
+                    super::OnInputResult::ignored()
+                }
+            }
+            _ => super::OnInputResult::ignored(),
+        }
     }
 }
 

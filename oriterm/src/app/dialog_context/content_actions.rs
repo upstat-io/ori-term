@@ -10,12 +10,10 @@ use std::time::Instant;
 use oriterm_ui::controllers::ControllerRequests;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
-use oriterm_ui::input::{InputEvent, Key as UiKey, Modifiers as UiModifiers};
 use oriterm_ui::interaction::build_parent_map;
 use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
-use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
 use crate::app::settings_overlay;
@@ -109,15 +107,32 @@ impl App {
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
-        let DialogContent::Settings { pending_config, .. } = &mut ctx.content else {
+        let DialogContent::Settings {
+            pending_config,
+            original_config,
+            ..
+        } = &mut ctx.content
+        else {
             return;
         };
         log::info!("settings dialog: resetting to defaults");
         **pending_config = Config::default();
+        let dirty = **pending_config != **original_config;
+        let title = if dirty {
+            "Settings \u{2022}"
+        } else {
+            "Settings"
+        };
+        ctx.window.set_title(title);
         ctx.dirty = true;
     }
 
     /// Dispatch a settings widget action to update the pending config.
+    ///
+    /// Always propagates to the panel via `accept_action`, even when the config
+    /// is unchanged — widgets may need to update visuals (e.g. sidebar page
+    /// switching, dropdown selection display). After config changes, compares
+    /// pending vs original to track dirty state.
     fn dispatch_dialog_settings_action(&mut self, window_id: WindowId, action: &WidgetAction) {
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
@@ -126,16 +141,29 @@ impl App {
             ids,
             pending_config,
             panel,
-            ..
+            original_config,
         } = &mut ctx.content
         else {
             return;
         };
 
-        if settings_overlay::action_handler::handle_settings_action(action, ids, pending_config) {
+        let config_changed =
+            settings_overlay::action_handler::handle_settings_action(action, ids, pending_config);
+        if config_changed {
             log::info!("settings dialog: pending config updated (deferred until Save)");
-            // Propagate selection back to widget so it updates its display.
-            panel.accept_action(action);
+            // Update dirty indicator — shows in taskbar/alt-tab title.
+            let dirty = **pending_config != **original_config;
+            let title = if dirty {
+                "Settings \u{2022}"
+            } else {
+                "Settings"
+            };
+            ctx.window.set_title(title);
+        }
+
+        // Always propagate — widgets update visuals (page switch, selection).
+        let widget_handled = panel.accept_action(action);
+        if config_changed || widget_handled {
             ctx.request_urgent_redraw();
         }
     }
@@ -284,7 +312,7 @@ impl App {
         window_id: WindowId,
         event: &winit::event::KeyEvent,
     ) -> Option<WidgetAction> {
-        let input_event = winit_key_to_input_event(event, self.modifiers)?;
+        let input_event = super::key_conversion::winit_key_to_input_event(event, self.modifiers)?;
 
         let ui_theme = self.ui_theme;
         let ctx = self.dialogs.get_mut(&window_id)?;
@@ -427,63 +455,4 @@ impl App {
             let _ = ctx.interaction.drain_events();
         }
     }
-}
-
-/// Converts a winit key event to a UI `InputEvent`.
-///
-/// Returns `None` for keys that the UI widget system doesn't handle
-/// (e.g., function keys, media keys). Maps both Pressed → `KeyDown`
-/// and Released → `KeyUp` so controllers can consume matching releases.
-fn winit_key_to_input_event(
-    event: &winit::event::KeyEvent,
-    winit_mods: winit::keyboard::ModifiersState,
-) -> Option<InputEvent> {
-    let key = match &event.logical_key {
-        Key::Named(named) => match named {
-            NamedKey::Tab => UiKey::Tab,
-            NamedKey::Enter => UiKey::Enter,
-            NamedKey::Space => UiKey::Space,
-            NamedKey::Backspace => UiKey::Backspace,
-            NamedKey::Delete => UiKey::Delete,
-            NamedKey::Home => UiKey::Home,
-            NamedKey::End => UiKey::End,
-            NamedKey::ArrowUp => UiKey::ArrowUp,
-            NamedKey::ArrowDown => UiKey::ArrowDown,
-            NamedKey::ArrowLeft => UiKey::ArrowLeft,
-            NamedKey::ArrowRight => UiKey::ArrowRight,
-            NamedKey::PageUp => UiKey::PageUp,
-            NamedKey::PageDown => UiKey::PageDown,
-            _ => return None,
-        },
-        Key::Character(ch) => {
-            let c = ch.chars().next()?;
-            UiKey::Character(c)
-        }
-        _ => return None,
-    };
-
-    let modifiers = winit_mods_to_ui(winit_mods);
-
-    Some(match event.state {
-        winit::event::ElementState::Pressed => InputEvent::KeyDown { key, modifiers },
-        winit::event::ElementState::Released => InputEvent::KeyUp { key, modifiers },
-    })
-}
-
-/// Converts winit modifier state to UI modifier flags.
-fn winit_mods_to_ui(m: winit::keyboard::ModifiersState) -> UiModifiers {
-    let mut mods = UiModifiers::NONE;
-    if m.shift_key() {
-        mods = mods.union(UiModifiers::SHIFT_ONLY);
-    }
-    if m.control_key() {
-        mods = mods.union(UiModifiers::CTRL_ONLY);
-    }
-    if m.alt_key() {
-        mods = mods.union(UiModifiers::ALT_ONLY);
-    }
-    if m.super_key() {
-        mods = mods.union(UiModifiers::LOGO_ONLY);
-    }
-    mods
 }

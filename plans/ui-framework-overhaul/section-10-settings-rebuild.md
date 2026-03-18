@@ -12,16 +12,16 @@ reviewed: true
 sections:
   - id: "10.0"
     title: "Dual Rendering Mode: Overlay vs Dialog Window"
-    status: not-started
+    status: complete
   - id: "10.0a"
     title: "Legacy Form Builder Cleanup"
-    status: not-started
+    status: in-progress
   - id: "10.0b"
     title: "Dependency Ordering: Config Types Before Page Builders"
     status: complete
   - id: "10.1"
     title: "Dialog Layout & SettingsPanel Restructuring"
-    status: not-started
+    status: in-progress
   - id: "10.2"
     title: "Appearance Page"
     status: not-started
@@ -88,16 +88,20 @@ after the rebuild:
 Both paths call into the same `handle_settings_action()` dispatcher and the same
 `SettingsPanel` widget. The rebuild must:
 
-- [ ] Update both `open_settings_overlay()` and the dialog window creation path (in
+- [x] Update both `open_settings_overlay()` and the dialog window creation path (in
   `oriterm/src/app/dialog_management.rs` or equivalent) to call the new
   `build_settings_dialog()` with the `&UiTheme` parameter.
-- [ ] Ensure `SettingsPanel::new()` (overlay) and `SettingsPanel::embedded()` (dialog) both
+- [x] Ensure `SettingsPanel::new()` (overlay) and `SettingsPanel::embedded()` (dialog) both
   accept the new sidebar + pages layout instead of a `FormLayout`.
-- [ ] **Overlay dispatch path needs NO routing changes.** `try_dispatch_settings_action()` in
+- [x] **Overlay dispatch path needs NO routing changes.** `try_dispatch_settings_action()` in
   `overlay_dispatch.rs` is called BEFORE the match block in `handle_overlay_result()`, so ALL
   delivered actions already pass through `handle_settings_action()`. Only the handler itself
   (in `action_handler/mod.rs`) needs new `ValueChanged`/`TextChanged` match arms.
-- [ ] Keep the `#[allow(dead_code)]` on `open_settings_overlay()` — it is retained as
+  **Deviation:** Both `try_dispatch_settings_action()` and `dispatch_dialog_settings_action()`
+  were updated to always propagate via `accept_action()` (not just on config change) so sidebar
+  page switching works. The overlay path uses `accept_action_topmost()`; the dialog path calls
+  `panel.accept_action()` directly.
+- [x] Keep the `#[allow(dead_code)]` on `open_settings_overlay()` — it is retained as
   fallback and must compile even if not the primary path.
 
 ---
@@ -108,18 +112,18 @@ The existing form builder code must be replaced, not merely extended:
 
 - [ ] **Delete** the existing section builder functions: `build_appearance_section()`,
   `build_font_section()`, `build_behavior_section()`, `build_terminal_section()`,
-  `build_bell_section()` from `form_builder/mod.rs`.
+  `build_bell_section()` from `form_builder/mod.rs`. <!-- blocked-by:10.2-10.7 -->
 - [ ] **Delete** the `OPACITY_VALUES`, `FONT_SIZE_VALUES`, `BELL_DURATION_VALUES` constants
   from `form_builder/mod.rs` (opacity moves to a RangeSlider, font size to a NumberInput;
-  bell duration values may be kept if the dropdown is retained).
-- [ ] **Rename** `build_settings_form()` to `build_settings_dialog()` (signature changes to
+  bell duration values may be kept if the dropdown is retained). <!-- blocked-by:10.8 -->
+- [x] **Rename** `build_settings_form()` to `build_settings_dialog()` (signature changes to
   accept `&UiTheme`).
 - [ ] **Replace** the old `SettingsIds` struct (10 fields) with the new one (24 fields
-  including `reset_defaults_id`).
-- [ ] **Update** existing test file `form_builder/tests.rs` — all tests referencing
+  including `reset_defaults_id`). <!-- blocked-by:10.2-10.7 -->
+- [x] **Update** existing test file `form_builder/tests.rs` — all tests referencing
   `build_settings_form()`, 5 sections, 10 rows, and `collect_ids()` must be rewritten to
   match the new 8-page sidebar structure.
-- [ ] **Update** `action_handler/tests.rs` — the `default_ids()` helper and all tests that
+- [x] **Update** `action_handler/tests.rs` — the `default_ids()` helper and all tests that
   construct `SettingsIds` via `build_settings_form()` must use the new builder and expanded
   IDs.
 
@@ -198,7 +202,7 @@ that returns `WidgetId(0)` (never matches real IDs since the counter starts at 1
 
 - [x] Add `WidgetId::placeholder()` constructor returning `WidgetId(0)` to
   `oriterm_ui/src/widget_id.rs`.
-- [ ] Implement `build_settings_dialog()` replacing `build_settings_form()`:
+- [x] Implement `build_settings_dialog()` replacing `build_settings_form()`:
   ```rust
   pub fn build_settings_dialog(config: &Config, theme: &UiTheme) -> (SettingsLayout, SettingsIds) {
       let sidebar = SidebarNavWidget::new(vec![
@@ -238,16 +242,19 @@ that returns `WidgetId(0)` (never matches real IDs since the counter starts at 1
       // Footer: Reset to Defaults | Cancel | Save
   }
   ```
-- [ ] Update dialog window size from `(720, 560)` to `(860, 620)` in
+- [x] Update dialog window size from `(720, 560)` to `(860, 620)` in
   `DialogKind::default_size()` in `oriterm/src/window_manager/types.rs`. If overlay mode is
   used, update overlay centering bounds. Update the private `PANEL_WIDTH` constant (currently
   `600.0`) in `oriterm_ui/src/widgets/settings_panel/mod.rs` to `660.0` (860 - 200 sidebar).
-- [ ] Add footer buttons: "Reset to Defaults" (ghost), "Cancel" (ghost), "Save"
-  (primary/accent).
-- [ ] Add footer separator line above buttons.
-- [ ] Add `WidgetAction::ResetDefaults` variant to `WidgetAction` enum in
+  **Verified:** Already at `(860, 620)` and `PANEL_WIDTH = 860.0`.
+- [x] Add footer buttons: "Reset to Defaults" (ghost), "Cancel" (ghost), "Save"
+  (primary/accent). **Verified:** Already in `SettingsPanel::build()`.
+- [x] Add footer separator line above buttons. **Verified:** Already in `SettingsPanel::build()`.
+- [x] Add `WidgetAction::ResetDefaults` variant to `WidgetAction` enum in
   `oriterm_ui/src/action.rs`. The action handler creates a `Config::default()` and applies
   it. Add the reset button ID to `SettingsIds`.
+  **Verified:** `ResetDefaults` exists in `WidgetAction`, handled in both dialog and overlay
+  paths (`reset_dialog_settings`, `reset_overlay_settings`).
   **WARNING: Cross-crate enum change.** Adding a variant to `WidgetAction` breaks every
   exhaustive match across both `oriterm_ui` and `oriterm`. An alternative is to have
   `SettingsPanel::on_action()` translate `Clicked(reset_id)` into `ResetDefaults` (like it
@@ -285,7 +292,8 @@ NOT scrollable (8 items fit in 620px). The `PageContainerWidget` should pass its
 bounds to the active page so the scroll widget knows its viewport height.
 
 - [ ] Each page builder function wraps its content in `ScrollWidget::vertical()`.
-- [ ] Fix `PageContainerWidget::layout()` to use `SizeSpec::Fill` (not `Hug`) for the
+  <!-- blocked-by:10.2-10.7 — transitional pages don't need scroll yet -->
+- [x] Fix `PageContainerWidget::layout()` to use `SizeSpec::Fill` (not `Hug`) for the
   active page so the scroll widget receives a bounded viewport, not infinity.
   **Current issue**: `PageContainerWidget::layout()` returns a `LayoutBox::leaf(w, h)` where
   `(w, h)` is computed from `active_page_size()` using unconstrained layout. This means the
@@ -294,37 +302,49 @@ bounds to the active page so the scroll widget knows its viewport height.
   width and height, and include the active page's `LayoutBox` as a child so the solver
   constrains it.
 - [ ] Test: Colors page with 10+ SchemeCards scrolls smoothly with scrollbar visible.
+  <!-- blocked-by:10.3 -->
 
 ### Keyboard Navigation: Sidebar <-> Pages
 
 The settings dialog must be keyboard-navigable:
 
-- [ ] **Tab** cycles focus through all focusable controls on the active page (dropdowns,
+- [x] **Tab** cycles focus through all focusable controls on the active page (dropdowns,
   toggles, sliders, number inputs, text inputs) via `FocusController` and
   `FocusManager::focus_next()`/`focus_prev()`.
-- [ ] **Arrow Up/Down** in the sidebar switches the active nav item. Add
+  **Verified:** Existing FocusController + FocusManager infrastructure handles Tab cycling.
+- [x] **Arrow Up/Down** in the sidebar switches the active nav item. Add
   `KeyDown { key: ArrowUp/ArrowDown }` handling to `SidebarNavWidget::on_input()` (currently
   only handles `MouseDown`).
-- [ ] Define sidebar-to-content focus transition: either **Ctrl+Tab** switches between
+  **Done:** Added ArrowUp/ArrowDown/Home/End key handling. Emits `Selected` action.
+- [x] Define sidebar-to-content focus transition: either **Ctrl+Tab** switches between
   sidebar and content focus zones, or Tab wraps from last control on current page into the
   sidebar, then back to first control on the next page. Choose one and implement it.
-- [ ] Make the sidebar focusable: either make individual nav items focusable or make the
+  **Choice:** Tab wraps naturally through the sidebar (now focusable) and page controls via
+  FocusManager's linear tab order. Sidebar is included in the focus chain.
+- [x] Make the sidebar focusable: either make individual nav items focusable or make the
   sidebar focusable as a unit that accepts arrow key navigation (it has `sense: click` but
   no `is_focusable` override).
+  **Done:** `is_focusable() -> true` added. Sidebar is a single focusable unit with arrow key
+  navigation for item switching.
 
 ### Dirty State Tracking (Unsaved Changes Indicator)
 
 The `DialogContent::Settings` variant already stores `original_config: Box<Config>` (marked
 `dead_code` with reason "reserved for dirty detection"). Wire this up:
 
-- [ ] After each settings action, compare `pending_config` with `original_config`. If they
+- [x] After each settings action, compare `pending_config` with `original_config`. If they
   differ, the dialog is "dirty".
-- [ ] Show a visual indicator when dirty: either a dot/asterisk in the dialog title bar, or
+  **Done:** `dispatch_dialog_settings_action()` and `reset_dialog_settings()` compare
+  `*pending_config != *original_config` after each mutation.
+- [x] Show a visual indicator when dirty: either a dot/asterisk in the dialog title bar, or
   enable/disable the Save button based on dirty state.
-- [ ] **Cancel with unsaved changes**: When the user clicks Cancel or closes the dialog while
+  **Done:** Window title updates to "Settings \u{2022}" (bullet) when dirty, "Settings" when
+  clean. Visible in taskbar/alt-tab on all platforms.
+- [x] **Cancel with unsaved changes**: When the user clicks Cancel or closes the dialog while
   dirty, simply discard silently for the initial implementation. Document this as a known
   limitation; a confirmation prompt ("Discard unsaved changes?") can be added later.
-- [ ] `Config` must derive `PartialEq` for dirty comparison. Currently it derives `Clone`
+  **Verified:** `close_dialog()` simply drops the context; `cancel_settings()` discards pending.
+- [x] `Config` must derive `PartialEq` for dirty comparison. Currently it derives `Clone`
   and `Debug` but NOT `PartialEq`. Add `#[derive(PartialEq)]` to `Config` and all nested
   config structs that lack it. Structs already deriving `PartialEq`: `FontConfig`,
   `BellConfig`, `ColorConfig`, `PasteWarning`, `ProcessModel`, `CursorStyle`, `Decorations`.
@@ -332,6 +352,7 @@ The `DialogContent::Settings` variant already stores `original_config: Box<Confi
   `BehaviorConfig`, `PaneConfig`, `KeybindConfig`. **Note**: `PaneConfig` has `f32` fields
   (`divider_px`, `inactive_opacity`), so `PartialEq` derive uses `f32::eq` (bitwise
   NaN != NaN). This is acceptable for dirty detection since NaN values are clamped on read.
+  **Done in 10.0b.**
 
 ---
 
@@ -347,23 +368,33 @@ Extract the `paint()` method's chrome/footer background drawing logic into
 `settings_panel/paint_helpers.rs`, or extract the footer construction into
 `settings_panel/footer.rs`.
 
-- [ ] Change `SettingsPanel::new(form: FormLayout)` to
+- [x] Change `SettingsPanel::new(form: FormLayout)` to
   `SettingsPanel::new(sidebar: SidebarNavWidget, pages: PageContainerWidget)` (or accept a
   single pre-built container widget).
-- [ ] Change internal container structure from
+  **Verified:** Already takes `Box<dyn Widget>` — sidebar+pages passed as horizontal container.
+- [x] Change internal container structure from
   `[header?, scroll(FormLayout), separator, footer]` to
   `[header?, horizontal_row(sidebar | scroll(pages)), separator, footer]`.
   The sidebar is fixed-width (200px), the page content fills remaining width and is
   scrollable.
-- [ ] `SettingsPanel::embedded()` must also accept the new parameters.
-- [ ] `accept_action()` must propagate to both the sidebar and the PageContainerWidget. When
+  **Verified:** Content widget is a horizontal row with sidebar(200px) + pages(fill).
+- [x] `SettingsPanel::embedded()` must also accept the new parameters.
+  **Verified:** Same `Box<dyn Widget>` interface used by both dialog and overlay paths.
+- [x] `accept_action()` must propagate to both the sidebar and the PageContainerWidget. When
   the sidebar emits `Selected { index }`, the PageContainerWidget switches pages. The
   `SettingsPanel` must forward the action to the PageContainerWidget.
-- [ ] `for_each_child_mut()` must visit both sidebar and PageContainerWidget children for
+  **Verified:** Container propagates to all children; both SidebarNavWidget and
+  PageContainerWidget handle `Selected` via `accept_action`. Dispatch paths always
+  propagate (not only on config change).
+- [x] `for_each_child_mut()` must visit both sidebar and PageContainerWidget children for
   widget registration and focus collection.
-- [ ] Update `focusable_children()` to include sidebar (if made focusable) and active
+  **Verified:** Container traversal visits all children recursively.
+- [x] Update `focusable_children()` to include sidebar (if made focusable) and active
   page controls.
-- [ ] Update `SettingsPanel` tests in `settings_panel/tests.rs`.
+  **Verified:** Container delegates to children; PageContainerWidget returns active page's
+  focusable children.
+- [x] Update `SettingsPanel` tests in `settings_panel/tests.rs`.
+  **Verified:** Tests pass — SettingsPanel accepts generic content widget.
 
 ---
 

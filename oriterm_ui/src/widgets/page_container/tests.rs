@@ -54,32 +54,16 @@ fn set_active_page_out_of_range_is_noop() {
 // -- Layout --
 
 #[test]
-fn layout_sizes_to_active_page() {
-    // "AB" = 16px wide, "ABCDEF" = 48px wide. Active page 0 → 16px.
+fn layout_fills_parent_bounds() {
+    // PageContainerWidget uses SizeSpec::Fill — it takes the full parent bounds
+    // so scroll widgets inside pages get a finite viewport.
     let pc = PageContainerWidget::new(vec![label("AB"), label("ABCDEF")]);
     let ctx = make_ctx();
     let lb = pc.layout(&ctx);
     let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
 
-    assert_eq!(node.rect.width(), 16.0);
-    assert_eq!(node.rect.height(), 16.0);
-}
-
-#[test]
-fn layout_changes_with_active_page() {
-    let mut pc = PageContainerWidget::new(vec![label("AB"), label("ABCDEF")]);
-    let ctx = make_ctx();
-
-    // Page 0: "AB" = 16px wide.
-    let lb0 = pc.layout(&ctx);
-    let node0 = compute_layout(&lb0, Rect::new(0.0, 0.0, 400.0, 300.0));
-    assert_eq!(node0.rect.width(), 16.0);
-
-    // Page 1: "ABCDEF" = 48px wide.
-    pc.set_active_page(1);
-    let lb1 = pc.layout(&ctx);
-    let node1 = compute_layout(&lb1, Rect::new(0.0, 0.0, 400.0, 300.0));
-    assert_eq!(node1.rect.width(), 48.0);
+    assert_eq!(node.rect.width(), 400.0);
+    assert_eq!(node.rect.height(), 300.0);
 }
 
 #[test]
