@@ -8,9 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::animation::{AnimBehavior, AnimProperty};
 use crate::color::Color;
-use crate::controllers::{
-    ClickController, EventController, HoverController, KeyActivationController,
-};
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
 use crate::layout::LayoutBox;
@@ -113,7 +111,6 @@ impl ToggleWidget {
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
-                Box::new(KeyActivationController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
                 style.off_bg,

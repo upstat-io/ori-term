@@ -1,14 +1,13 @@
 //! Button widget with hover, pressed, and disabled visual states.
 //!
 //! Emits `WidgetAction::Clicked` on mouse click (via [`ClickController`]) or
-//! keyboard activation (Enter/Space when focused). Uses [`VisualStateAnimator`]
-//! with `common_states()` for smooth state color transitions.
+//! keyboard activation (Enter/Space via keymap `Activate` action when focused).
+//! Uses [`VisualStateAnimator`] with `common_states()` for smooth state color
+//! transitions.
 
 use crate::action::WidgetAction;
 use crate::color::Color;
-use crate::controllers::{
-    ClickController, EventController, FocusController, HoverController, KeyActivationController,
-};
+use crate::controllers::{ClickController, EventController, FocusController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point, Rect};
 use crate::layout::LayoutBox;
@@ -107,7 +106,6 @@ impl ButtonWidget {
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
-                Box::new(KeyActivationController::new()),
                 Box::new(FocusController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(

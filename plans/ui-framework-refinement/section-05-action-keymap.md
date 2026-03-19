@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "Action & Keymap System"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Separate keyboard shortcuts from event handlers via a data-driven keymap. Actions are typed enums declared by widgets. Keybindings are data (not code) that map keystrokes to actions. Dispatch routes through context-scoped focus path."
 inspired_by:
@@ -26,10 +26,10 @@ sections:
     status: complete
   - id: "05.5"
     title: "Default Keybindings & Controller Migration"
-    status: not-started
+    status: complete
   - id: "05.6"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 05: Action & Keymap System
@@ -492,7 +492,7 @@ mutated via `Keymap::rebind()` for runtime customization.
 | `SliderKeyController` | YES | Arrow keys and Home/End are rebindable. |
 | `TextEditController` | NO | Complex stateful behavior (cursor movement, selection, character input, Backspace/Delete). Not suitable for simple key->action mapping. Stays as controller permanently. |
 
-- [ ] Define defaults for all existing keyboard-activated widgets:
+- [x] Define defaults for all existing keyboard-activated widgets:
   - Enter/Space -> Activate, `context: Some("Button")` (replaces `KeyActivationController`)
   - Tab/Shift+Tab -> FocusNext/FocusPrev, `context: None` (replaces `FocusController` key handling — safe with `context: None` because TextEditController does not handle Tab)
   - ArrowDown/ArrowUp -> NavigateDown/NavigateUp, `context: Some("Dropdown")` (replaces `DropdownKeyController`)
@@ -502,7 +502,7 @@ mutated via `Keymap::rebind()` for runtime customization.
   - Escape -> Dismiss, `context: Some("Dropdown")` and `context: Some("Menu")` and `context: Some("Dialog")`
   - Arrow Left/Down -> DecrementValue, Arrow Right/Up -> IncrementValue, Home -> ValueToMin, End -> ValueToMax, all `context: Some("Slider")` (replaces `SliderKeyController`)
 
-- [ ] **Arrow key context scoping:** ArrowUp/ArrowDown are used by BOTH dropdown/menu
+- [x] **Arrow key context scoping:** ArrowUp/ArrowDown are used by BOTH dropdown/menu
   navigation AND slider increment/decrement. These MUST be scoped to different contexts:
   - `context: Some("Dropdown")` for dropdown arrow navigation
   - `context: Some("Menu")` for menu arrow navigation
@@ -510,12 +510,12 @@ mutated via `Keymap::rebind()` for runtime customization.
   Without context scoping, a global ArrowDown binding would conflict across all three
   widget types. This is the primary motivation for the context system.
 
-- [ ] **Coexistence during migration:** Both systems run simultaneously.
+- [x] **Coexistence during migration:** Both systems run simultaneously.
   Keymap is checked first; if no binding matches, controllers handle it.
   Controllers are removed one at a time after their bindings are in the keymap
   and integration tests pass. This is a gradual migration, not a big-bang switch.
 
-- [ ] **Migration order (with file sync points):**
+- [x] **Migration order (with file sync points):**
   1. Add keymap infrastructure (05.0-05.4).
   2. Add default bindings for `KeyActivationController` (Enter/Space -> Activate, `context: Some("Button")`).
   3. Verify button activation works via keymap (test harness: `key_press(Key::Enter)` on focused button -> `Clicked` action).
@@ -550,38 +550,38 @@ mutated via `Keymap::rebind()` for runtime customization.
 
 ## 05.6 Completion Checklist
 
-- [ ] Tests for action submodules follow sibling `tests.rs` pattern:
+- [x] Tests for action submodules follow sibling `tests.rs` pattern:
   - `action/keymap_action/tests.rs` — trait, macro expansion, `name()` correctness
   - `action/keymap/tests.rs` — `lookup()`, context precedence, `rebind()`, `defaults()`
   - Each submodule's `mod.rs` ends with `#[cfg(test)] mod tests;`
-- [ ] `action.rs` converted to `action/mod.rs` directory module with all imports preserved
-- [ ] `KeymapAction` trait defined with `name()` and `boxed_clone()`
-- [ ] `actions!` macro for declaring actions
-- [ ] `Keymap` struct with `Vec<KeyBinding>`, hardcoded defaults in Rust (TOML config deferred to follow-up)
-- [ ] `Keystroke` type defined with `Eq + Hash` (reuse `KeyEvent` fields or thin wrapper)
-- [ ] `Widget::handle_keymap_action()` method on the Widget trait with default no-op
-- [ ] `KeyContext` scope gating on widgets via `key_context()` trait method
-- [ ] Actions declared as typed data, not inline key checks
-- [ ] Keymap binds keystrokes to actions with context gating
-- [ ] Dispatch routes through focus path with deepest-context-wins precedence
-- [ ] `find_widget_mut()` helper for walking tree to focused widget (needed by keymap dispatch)
-- [ ] Keymap lookup integrated BEFORE existing controller dispatch (unmatched keys fall through)
-- [ ] Default bindings cover all existing keyboard interactions (except TextEditController)
-- [ ] `KeyActivationController` migrated to keymap and removed from button/toggle/checkbox
-- [ ] Runtime rebinding works (change binding -> new key activates action)
-- [ ] `TextEditController` documented as NOT migrating to keymap (complex stateful behavior)
-- [ ] **Test: keymap lookup** — `Keymap::lookup()` returns correct action for exact keystroke match
-- [ ] **Test: keymap lookup with modifiers** — Shift+Tab matches `FocusPrev`, not `FocusNext`
-- [ ] **Test: context scoping** — ArrowDown in "Dropdown" context returns `NavigateDown`, not `DecrementValue`
-- [ ] **Test: context precedence** — deeper context overrides shallower context for same keystroke
-- [ ] **Test: unmatched fallthrough** — unrecognized key returns `None` from lookup, controllers still handle it
-- [ ] **Test: harness keymap integration** — `harness.key_press(Key::Enter)` on focused button produces `Clicked` action via keymap path
-- [ ] **Test: rebind** — after `keymap.rebind(Key::Enter -> SomeOtherAction)`, Enter no longer activates buttons
-- [ ] **Test: KeyUp suppression** — after keymap handles `KeyDown(Enter)`, the matching `KeyUp(Enter)` does not leak to parent widgets
-- [ ] **Test: TextEditController unaffected** — text input still works after keymap is active (character keys not in keymap fall through to controller)
-- [ ] **Test: coexistence** — during migration, controller-handled keys still work for controllers not yet migrated
-- [ ] `./build-all.sh` passes
-- [ ] `./clippy-all.sh` clean
-- [ ] `./test-all.sh` passes
+- [x] `action.rs` converted to `action/mod.rs` directory module with all imports preserved
+- [x] `KeymapAction` trait defined with `name()` and `boxed_clone()`
+- [x] `actions!` macro for declaring actions
+- [x] `Keymap` struct with `Vec<KeyBinding>`, hardcoded defaults in Rust (TOML config deferred to follow-up)
+- [x] `Keystroke` type defined with `Eq + Hash` (reuse `KeyEvent` fields or thin wrapper)
+- [x] `Widget::handle_keymap_action()` method on the Widget trait with default no-op
+- [x] `KeyContext` scope gating on widgets via `key_context()` trait method
+- [x] Actions declared as typed data, not inline key checks
+- [x] Keymap binds keystrokes to actions with context gating
+- [x] Dispatch routes through focus path with deepest-context-wins precedence
+- [x] `find_widget_mut()` helper for walking tree to focused widget (needed by keymap dispatch)
+- [x] Keymap lookup integrated BEFORE existing controller dispatch (unmatched keys fall through)
+- [x] Default bindings cover all existing keyboard interactions (except TextEditController)
+- [x] `KeyActivationController` migrated to keymap and removed from button/toggle/checkbox
+- [x] Runtime rebinding works (change binding -> new key activates action)
+- [x] `TextEditController` documented as NOT migrating to keymap (complex stateful behavior)
+- [x] **Test: keymap lookup** — `Keymap::lookup()` returns correct action for exact keystroke match
+- [x] **Test: keymap lookup with modifiers** — Shift+Tab matches `FocusPrev`, not `FocusNext`
+- [x] **Test: context scoping** — ArrowDown in "Dropdown" context returns `NavigateDown`, not `DecrementValue`
+- [x] **Test: context precedence** — deeper context overrides shallower context for same keystroke
+- [x] **Test: unmatched fallthrough** — unrecognized key returns `None` from lookup, controllers still handle it
+- [x] **Test: harness keymap integration** — `harness.key_press(Key::Enter)` on focused button produces `Clicked` action via keymap path
+- [x] **Test: rebind** — after `keymap.rebind(Key::Enter -> SomeOtherAction)`, Enter no longer activates buttons
+- [x] **Test: KeyUp suppression** — after keymap handles `KeyDown(Enter)`, the matching `KeyUp(Enter)` does not leak to parent widgets
+- [x] **Test: TextEditController unaffected** — text input still works after keymap is active (character keys not in keymap fall through to controller)
+- [x] **Test: coexistence** — during migration, controller-handled keys still work for controllers not yet migrated
+- [x] `./build-all.sh` passes
+- [x] `./clippy-all.sh` clean
+- [x] `./test-all.sh` passes
 
 **Exit Criteria:** Pressing Enter on a focused button triggers `KeymapAction::Activate`, routed through the keymap, not a hardcoded `Key::Enter` check. The binding is rebindable via `Keymap::rebind()`. `KeyActivationController` is removed from all widgets that used it. `TextEditController` continues working unchanged.

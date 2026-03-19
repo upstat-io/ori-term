@@ -76,9 +76,9 @@ fn sense_returns_click_and_drag() {
 }
 
 #[test]
-fn has_three_controllers() {
+fn has_two_controllers() {
     let s = SliderWidget::new();
-    assert_eq!(s.controllers().len(), 3);
+    assert_eq!(s.controllers().len(), 2);
 }
 
 #[test]

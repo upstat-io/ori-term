@@ -134,6 +134,36 @@ impl Widget for MenuWidget {
     fn key_context(&self) -> Option<&'static str> {
         Some("Menu")
     }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn crate::action::KeymapAction,
+        _bounds: Rect,
+    ) -> Option<WidgetAction> {
+        match action.name() {
+            "widget::NavigateDown" => {
+                self.navigate_keyboard(true);
+                None
+            }
+            "widget::NavigateUp" => {
+                self.navigate_keyboard(false);
+                None
+            }
+            "widget::Confirm" => {
+                if let Some(idx) = self.hovered {
+                    if self.entries[idx].is_clickable() {
+                        return Some(WidgetAction::Selected {
+                            id: self.id,
+                            index: idx,
+                        });
+                    }
+                }
+                None
+            }
+            "widget::Dismiss" => Some(WidgetAction::DismissOverlay(self.id)),
+            _ => None,
+        }
+    }
 }
 
 // Drawing helpers.

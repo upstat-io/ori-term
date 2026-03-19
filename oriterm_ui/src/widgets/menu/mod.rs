@@ -326,6 +326,45 @@ impl MenuWidget {
         TextStyle::new(self.style.font_size, self.style.fg)
     }
 
+    /// Navigates keyboard highlight to the next/previous clickable entry.
+    ///
+    /// Wraps around at list boundaries. Skips separators (non-clickable).
+    /// Scrolls the target entry into view if the menu is scrollable.
+    fn navigate_keyboard(&mut self, forward: bool) {
+        let count = self.entries.len();
+        if count == 0 {
+            return;
+        }
+
+        let Some(start) = self.hovered else {
+            // No current hover — find first/last clickable.
+            let idx = if forward {
+                self.entries.iter().position(MenuEntry::is_clickable)
+            } else {
+                self.entries.iter().rposition(MenuEntry::is_clickable)
+            };
+            if let Some(idx) = idx {
+                self.hovered = Some(idx);
+                self.ensure_visible(idx);
+            }
+            return;
+        };
+
+        // From current position, scan in direction for next clickable entry.
+        for i in 1..=count {
+            let idx = if forward {
+                (start + i) % count
+            } else {
+                (start + count - i) % count
+            };
+            if self.entries[idx].is_clickable() {
+                self.hovered = Some(idx);
+                self.ensure_visible(idx);
+                return;
+            }
+        }
+    }
+
     /// Draws a checkmark at the given position.
     pub(super) fn draw_checkmark(&self, ctx: &mut DrawCtx<'_>, x: f32, y: f32) {
         let s = self.style.checkmark_size;

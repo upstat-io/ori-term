@@ -8,7 +8,7 @@
 mod widget_impl;
 
 use crate::color::Color;
-use crate::controllers::{EventController, HoverController, ScrubController, SliderKeyController};
+use crate::controllers::{EventController, HoverController, ScrubController};
 use crate::geometry::{Point, Rect};
 use crate::visual_state::common_states;
 use crate::visual_state::transition::VisualStateAnimator;
@@ -122,7 +122,6 @@ impl SliderWidget {
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ScrubController::new()),
-                Box::new(SliderKeyController::new(0.0, 1.0, 0.01)),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
                 style.thumb_color,
@@ -143,7 +142,6 @@ impl SliderWidget {
     /// Sets the value, clamping to [min, max].
     pub fn set_value(&mut self, value: f32) {
         self.value = value.clamp(self.min, self.max);
-        self.sync_key_controller();
     }
 
     /// Returns the minimum value.
@@ -167,7 +165,6 @@ impl SliderWidget {
         self.min = min;
         self.max = max;
         self.value = self.value.clamp(min, max);
-        self.sync_key_controller();
         self
     }
 
@@ -175,7 +172,6 @@ impl SliderWidget {
     #[must_use]
     pub fn with_step(mut self, step: f32) -> Self {
         self.step = step;
-        self.sync_key_controller();
         self
     }
 
@@ -183,7 +179,6 @@ impl SliderWidget {
     #[must_use]
     pub fn with_value(mut self, value: f32) -> Self {
         self.value = value.clamp(self.min, self.max);
-        self.sync_key_controller();
         self
     }
 
@@ -262,23 +257,10 @@ impl SliderWidget {
             return None;
         }
         self.value = clamped;
-        self.sync_key_controller();
         Some(WidgetAction::ValueChanged {
             id: self.id,
             value: self.value,
         })
-    }
-
-    /// Syncs the `SliderKeyController` with the widget's current parameters.
-    ///
-    /// Replaces the controller at index 2 (after `HoverController` and
-    /// `ScrubController`) with a fresh instance reflecting current state.
-    /// Only called on parameter changes, not in the hot path.
-    fn sync_key_controller(&mut self) {
-        const KEY_CTRL_INDEX: usize = 2;
-        let mut ctrl = SliderKeyController::new(self.min, self.max, self.step);
-        ctrl.set_value(self.value);
-        self.controllers[KEY_CTRL_INDEX] = Box::new(ctrl);
     }
 }
 

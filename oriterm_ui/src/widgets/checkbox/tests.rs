@@ -78,9 +78,9 @@ fn sense_returns_click() {
 }
 
 #[test]
-fn has_three_controllers() {
+fn has_two_controllers() {
     let cb = CheckboxWidget::new("X");
-    assert_eq!(cb.controllers().len(), 3);
+    assert_eq!(cb.controllers().len(), 2);
 }
 
 #[test]

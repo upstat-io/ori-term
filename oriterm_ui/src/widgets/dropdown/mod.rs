@@ -363,6 +363,39 @@ impl Widget for DropdownWidget {
     fn key_context(&self) -> Option<&'static str> {
         Some("Dropdown")
     }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn crate::action::KeymapAction,
+        _bounds: Rect,
+    ) -> Option<WidgetAction> {
+        match action.name() {
+            "widget::NavigateDown" => {
+                self.selected = (self.selected + 1) % self.items.len();
+                Some(WidgetAction::Selected {
+                    id: self.id,
+                    index: self.selected,
+                })
+            }
+            "widget::NavigateUp" => {
+                self.selected = if self.selected == 0 {
+                    self.items.len() - 1
+                } else {
+                    self.selected - 1
+                };
+                Some(WidgetAction::Selected {
+                    id: self.id,
+                    index: self.selected,
+                })
+            }
+            "widget::Confirm" => Some(WidgetAction::Selected {
+                id: self.id,
+                index: self.selected,
+            }),
+            "widget::Dismiss" => Some(WidgetAction::DismissOverlay(self.id)),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
