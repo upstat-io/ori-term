@@ -28,7 +28,8 @@ fn make_ctx<'a>(
 }
 
 #[test]
-fn tab_sets_focus_next() {
+fn tab_not_handled_by_controller() {
+    // Tab/Shift+Tab are handled by the keymap system, not the controller.
     let id = WidgetId::next();
     let mut ctrl = FocusController::new();
     let interaction = InteractionState::default();
@@ -43,13 +44,12 @@ fn tab_sets_focus_next() {
     };
     let consumed = ctrl.handle_event(&event, &mut ctx);
 
-    assert!(consumed);
-    assert!(ctx.requests.contains(ControllerRequests::FOCUS_NEXT));
-    assert!(!ctx.requests.contains(ControllerRequests::FOCUS_PREV));
+    assert!(!consumed);
+    assert!(ctx.requests.is_empty());
 }
 
 #[test]
-fn shift_tab_sets_focus_prev() {
+fn shift_tab_not_handled_by_controller() {
     let id = WidgetId::next();
     let mut ctrl = FocusController::new();
     let interaction = InteractionState::default();
@@ -64,29 +64,7 @@ fn shift_tab_sets_focus_prev() {
     };
     let consumed = ctrl.handle_event(&event, &mut ctx);
 
-    assert!(consumed);
-    assert!(ctx.requests.contains(ControllerRequests::FOCUS_PREV));
-    assert!(!ctx.requests.contains(ControllerRequests::FOCUS_NEXT));
-}
-
-#[test]
-fn key_up_tab_consumed() {
-    let id = WidgetId::next();
-    let mut ctrl = FocusController::new();
-    let interaction = InteractionState::default();
-
-    let mut actions = Vec::new();
-    let mut prop = PropagationState::default();
-    let mut ctx = make_ctx(id, &interaction, &mut actions, &mut prop);
-
-    let event = InputEvent::KeyUp {
-        key: Key::Tab,
-        modifiers: Modifiers::NONE,
-    };
-    let consumed = ctrl.handle_event(&event, &mut ctx);
-
-    assert!(consumed);
-    // No requests set — consuming the up event is just to prevent leaking.
+    assert!(!consumed);
     assert!(ctx.requests.is_empty());
 }
 

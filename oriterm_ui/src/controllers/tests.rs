@@ -244,7 +244,7 @@ fn composition_hover_click_focus() {
     assert_eq!(result.actions[0], WidgetAction::Clicked(id));
     assert!(result.requests.contains(ControllerRequests::CLEAR_ACTIVE));
 
-    // Tab key — FocusController requests FOCUS_NEXT.
+    // Tab key — no longer handled by FocusController (moved to keymap system).
     let tab = InputEvent::KeyDown {
         key: Key::Tab,
         modifiers: Modifiers::NONE,
@@ -255,7 +255,8 @@ fn composition_hover_click_focus() {
         EventPhase::Bubble,
         &make_args_now(id, &interaction),
     );
-    assert!(result.requests.contains(ControllerRequests::FOCUS_NEXT));
+    assert!(!result.handled);
+    assert!(result.requests.is_empty());
 }
 
 #[test]

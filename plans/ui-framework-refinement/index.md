@@ -101,7 +101,7 @@ GPUI Element request_layout prepaint paint
 ---
 
 ### Section 05: Action & Keymap System
-**File:** `section-05-action-keymap.md` | **Status:** Not Started
+**File:** `section-05-action-keymap.md` | **Status:** Complete
 
 ```
 action, keymap, keybinding, keyboard shortcut, rebind

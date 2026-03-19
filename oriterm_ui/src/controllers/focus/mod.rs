@@ -1,11 +1,12 @@
-//! Focus controller — keyboard focus management with tab navigation.
+//! Focus controller — click-to-focus and focus lifecycle management.
 //!
-//! Handles Tab/Shift+Tab focus cycling and click-to-focus. Communicates
+//! Handles click-to-focus. Tab/Shift+Tab focus cycling is handled by
+//! the keymap system (`FocusNext`/`FocusPrev` actions). Communicates
 //! via `ControllerRequests` flags rather than calling `FocusManager`
 //! directly — the framework reads the flags after dispatch and applies
 //! them.
 
-use crate::input::{EventPhase, InputEvent, Key};
+use crate::input::{EventPhase, InputEvent};
 use crate::interaction::LifecycleEvent;
 
 use super::{ControllerCtx, ControllerRequests, EventController};
@@ -55,20 +56,6 @@ impl EventController for FocusController {
 
     fn handle_event(&mut self, event: &InputEvent, ctx: &mut ControllerCtx<'_>) -> bool {
         match event {
-            InputEvent::KeyDown {
-                key: Key::Tab,
-                modifiers,
-            } => {
-                if modifiers.shift() {
-                    ctx.requests.insert(ControllerRequests::FOCUS_PREV);
-                } else {
-                    ctx.requests.insert(ControllerRequests::FOCUS_NEXT);
-                }
-                true
-            }
-            // Consume the matching KeyUp to prevent it from leaking to
-            // parent widgets as an unmatched key-up event.
-            InputEvent::KeyUp { key: Key::Tab, .. } => true,
             // Click-to-focus: request focus when the widget is clicked.
             InputEvent::MouseDown { .. } => {
                 ctx.requests.insert(ControllerRequests::REQUEST_FOCUS);

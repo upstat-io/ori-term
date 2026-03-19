@@ -5,9 +5,7 @@
 //! for hover color transitions on the unchecked box.
 
 use crate::color::Color;
-use crate::controllers::{
-    ClickController, EventController, HoverController, KeyActivationController,
-};
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::layout::LayoutBox;
@@ -110,7 +108,6 @@ impl CheckboxWidget {
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
-                Box::new(KeyActivationController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
                 style.bg,

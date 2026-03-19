@@ -32,9 +32,9 @@ fn sense_returns_click() {
 }
 
 #[test]
-fn has_three_controllers() {
+fn has_two_controllers() {
     let t = ToggleWidget::new();
-    assert_eq!(t.controllers().len(), 3);
+    assert_eq!(t.controllers().len(), 2);
 }
 
 #[test]

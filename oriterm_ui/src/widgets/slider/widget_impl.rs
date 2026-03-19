@@ -144,19 +144,31 @@ impl Widget for SliderWidget {
                 self.drag_origin = None;
                 None
             }
-            // SliderKeyController emits ValueChanged — sync widget value.
-            WidgetAction::ValueChanged { value, .. } => {
-                self.value = value.clamp(self.min, self.max);
-                Some(WidgetAction::ValueChanged {
-                    id: self.id,
-                    value: self.value,
-                })
-            }
             other => Some(other),
         }
     }
 
     fn key_context(&self) -> Option<&'static str> {
         Some("Slider")
+    }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn crate::action::KeymapAction,
+        _bounds: Rect,
+    ) -> Option<WidgetAction> {
+        match action.name() {
+            "widget::IncrementValue" => {
+                let v = self.snap_to_step(self.value + self.step);
+                self.set_value_action(v)
+            }
+            "widget::DecrementValue" => {
+                let v = self.snap_to_step(self.value - self.step);
+                self.set_value_action(v)
+            }
+            "widget::ValueToMin" => self.set_value_action(self.min),
+            "widget::ValueToMax" => self.set_value_action(self.max),
+            _ => None,
+        }
     }
 }
