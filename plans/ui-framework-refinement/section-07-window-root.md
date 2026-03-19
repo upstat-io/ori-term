@@ -83,9 +83,9 @@ GPUI, Masonry, and Druid all solve this by having the framework own a `Window`/`
       frame_requests: FrameRequestFlags,
       scheduler: RenderScheduler,
 
-      // Invalidation
-      scene_cache: SceneCache,
+      // Invalidation & damage
       invalidation: InvalidationTracker,
+      damage: DamageTracker,
 
       // Redraw tracking
       dirty: bool,
@@ -133,9 +133,7 @@ GPUI, Masonry, and Druid all solve this by having the framework own a `Window`/`
       pub fn scheduler(&self) -> &RenderScheduler;
       pub fn scheduler_mut(&mut self) -> &mut RenderScheduler;
 
-      // Invalidation
-      pub fn scene_cache(&self) -> &SceneCache;
-      pub fn scene_cache_mut(&mut self) -> &mut SceneCache;
+      // Invalidation & damage
       pub fn invalidation(&self) -> &InvalidationTracker;
       pub fn invalidation_mut(&mut self) -> &mut InvalidationTracker;
 
@@ -205,7 +203,7 @@ GPUI, Masonry, and Druid all solve this by having the framework own a `Window`/`
   7. Collect emitted actions into `pending_actions`.
   8. Forward `PAINT`/`ANIM_FRAME` request flags to `RenderScheduler` and mark dirty as needed.
 
-- [ ] **What WindowRoot does NOT own:** Terminal-specific widgets (`TabBarWidget`, `TerminalGridWidget`), GPU resources (`WindowRenderer`, `PaneRenderCache`), platform handles (`TermWindow`, `Arc<Window>`), drag states with `PaneId` dependencies (`FloatingDragState`, `DividerDragState`, `TabDragState`), and render caches (`DrawList`, `FrameInput`, `chrome_draw_list`). These remain on `WindowContext`/`DialogWindowContext`. WindowRoot is the pure UI framework composition unit — it holds the machinery for processing events and managing interaction state, not the terminal-specific content.
+- [ ] **What WindowRoot does NOT own:** Terminal-specific widgets (`TabBarWidget`, `TerminalGridWidget`), GPU resources (`WindowRenderer`, `PaneRenderCache`), platform handles (`TermWindow`, `Arc<Window>`), drag states with `PaneId` dependencies (`FloatingDragState`, `DividerDragState`, `TabDragState`), and render caches (`Scene`, `FrameInput`, `chrome_scene`). These remain on `WindowContext`/`DialogWindowContext`. WindowRoot is the pure UI framework composition unit — it holds the machinery for processing events and managing interaction state, not the terminal-specific content.
 
 - [ ] **Widget tree ownership differs by window type:**
   - **`DialogWindowContext`**: The dialog content widget (e.g., `SettingsPanel`, `DialogWidget`) plus `WindowChromeWidget` form the widget tree. DialogWindowContext wraps WindowRoot; the content widget is the root widget passed to `WindowRoot::new()`. The chrome widget may remain outside WindowRoot (it has its own layout pass offset by chrome height) or be composed as a parent container wrapping the content.
@@ -242,8 +240,8 @@ This mirrors the existing pattern where `pipeline.rs` is a separate module for o
           layer_animator: LayerAnimator::new(),
           frame_requests: FrameRequestFlags::new(),
           scheduler: RenderScheduler::new(),
-          scene_cache: SceneCache::new(),
           invalidation: InvalidationTracker::new(),
+          damage: DamageTracker::new(),
           dirty: true,
           urgent_redraw: false,
           pending_actions: Vec::new(),
@@ -289,8 +287,8 @@ Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus pl
   overlays: OverlayManager,
   layer_tree: LayerTree,
   layer_animator: LayerAnimator,
-  scene_cache: SceneCache,
   invalidation: InvalidationTracker,
+  damage: DamageTracker,
   dirty: bool,
   urgent_redraw: bool,
   // NOTE: WindowContext does NOT currently have FocusManager or RenderScheduler.
@@ -313,8 +311,8 @@ Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus pl
   overlays: OverlayManager,
   layer_tree: LayerTree,
   layer_animator: LayerAnimator,
-  scene_cache: SceneCache,
   invalidation: InvalidationTracker,
+  damage: DamageTracker,
   dirty: bool,
   urgent_redraw: bool,
   // NOTE: DialogWindowContext also has lifecycle: SurfaceLifecycle and
@@ -350,7 +348,7 @@ Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus pl
   - `tab_bar: TabBarWidget`, `terminal_grid: TerminalGridWidget` — terminal widgets
   - `pane_cache: PaneRenderCache` — terminal pane rendering
   - `frame: Option<FrameInput>` — GPU frame input
-  - `chrome_draw_list: DrawList` — reusable draw list for chrome rendering
+  - `chrome_scene: Scene` — reusable Scene for chrome rendering
   - `last_rendered_pane: Option<PaneId>` — pane contamination detection
   - `cached_dividers: Option<Vec<DividerLayout>>` — layout cache
   - `tab_slide: TabSlideState` — tab slide animation state
@@ -386,7 +384,7 @@ Refactor `WidgetTestHarness` to wrap a `WindowRoot` instead of owning the same f
       frame_requests: FrameRequestFlags,
       mouse_pos: Point,
       // NOTE: harness currently does NOT have OverlayManager, LayerTree,
-      // LayerAnimator, SceneCache, or InvalidationTracker — those live
+      // LayerAnimator, DamageTracker, or InvalidationTracker — those live
       // only in WindowContext/DialogWindowContext. WindowRoot adds them.
   }
 

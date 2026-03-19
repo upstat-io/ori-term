@@ -9,22 +9,30 @@
 //! [`InvalidationTracker`] records which widgets are dirty and at what level,
 //! replacing the coarse-grained `dirty: bool` flags on window contexts.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use crate::controllers::ControllerRequests;
 use crate::widget_id::WidgetId;
 
 /// What kind of invalidation a widget event produced.
 ///
-/// Two-level: `Clean` (no change) and `Layout` (structural change).
-/// Paint-only invalidation is handled by full-scene rebuild + damage
-/// diffing, so there is no `Paint` variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Four levels in ascending severity. Variant declaration order matches
+/// severity for `derive(PartialOrd, Ord)`: `Clean < Paint < Prepaint < Layout`.
+///
+/// - `Clean` — no change, skip all phases.
+/// - `Paint` — visual-only change (cursor blink), skip layout + prepaint.
+/// - `Prepaint` — interaction state change (hover), skip layout.
+/// - `Layout` — structural change, run all three phases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DirtyKind {
     /// No change — skip redraw entirely.
     Clean,
+    /// Visual-only change (cursor blink) — skip layout + prepaint, run paint.
+    Paint,
+    /// Interaction state change (hover) — skip layout, run prepaint + paint.
+    Prepaint,
     /// Structural change (text content, child add/remove, visibility).
-    /// Recompute layout from this widget upward, then repaint.
+    /// Recompute layout from this widget upward, then prepaint + repaint.
     Layout,
 }
 
@@ -37,6 +45,8 @@ impl DirtyKind {
     pub fn merge(self, other: Self) -> Self {
         match (self, other) {
             (Self::Layout, _) | (_, Self::Layout) => Self::Layout,
+            (Self::Prepaint, _) | (_, Self::Prepaint) => Self::Prepaint,
+            (Self::Paint, _) | (_, Self::Paint) => Self::Paint,
             _ => Self::Clean,
         }
     }
@@ -50,11 +60,14 @@ impl DirtyKind {
 impl From<ControllerRequests> for DirtyKind {
     /// Maps controller request flags to the corresponding dirty kind.
     ///
-    /// Paint-only invalidation is handled by full-scene rebuild + damage
-    /// diffing, so `PAINT` maps to `Clean`. Only structural layout flags
-    /// (when added) would map to `Layout`.
-    fn from(_requests: ControllerRequests) -> Self {
-        Self::Clean
+    /// `PAINT` flag maps to `Paint` (visual-only invalidation). Other flags
+    /// don't imply dirty state on their own.
+    fn from(requests: ControllerRequests) -> Self {
+        if requests.contains(ControllerRequests::PAINT) {
+            Self::Paint
+        } else {
+            Self::Clean
+        }
     }
 }
 
@@ -64,8 +77,8 @@ impl From<ControllerRequests> for DirtyKind {
 /// The render path queries this to decide what to rebuild. A full
 /// invalidation (resize, theme change) overrides per-widget tracking.
 pub struct InvalidationTracker {
-    /// Layout-dirty widgets (need relayout + redraw).
-    layout_dirty: HashSet<WidgetId>,
+    /// Per-widget dirty level (highest severity wins).
+    dirty_map: HashMap<WidgetId, DirtyKind>,
     /// Whether the entire scene needs rebuild (e.g. theme change, resize).
     full_invalidation: bool,
 }
@@ -74,31 +87,70 @@ impl InvalidationTracker {
     /// Creates a tracker with no dirty state.
     pub fn new() -> Self {
         Self {
-            layout_dirty: HashSet::new(),
+            dirty_map: HashMap::new(),
             full_invalidation: false,
         }
     }
 
     /// Marks a widget as dirty at the given level.
     ///
-    /// `Layout` adds to the layout set. `Clean` is a no-op.
+    /// Merges with existing dirty level: marking `Paint` then `Prepaint`
+    /// on the same widget promotes to `Prepaint`. `Clean` is a no-op.
     pub fn mark(&mut self, id: WidgetId, kind: DirtyKind) {
-        match kind {
-            DirtyKind::Clean => {}
-            DirtyKind::Layout => {
-                self.layout_dirty.insert(id);
-            }
+        if kind == DirtyKind::Clean {
+            return;
         }
+        self.dirty_map
+            .entry(id)
+            .and_modify(|existing| *existing = existing.merge(kind))
+            .or_insert(kind);
     }
 
     /// Returns `true` if the widget needs relayout.
     pub fn is_layout_dirty(&self, id: WidgetId) -> bool {
-        self.full_invalidation || self.layout_dirty.contains(&id)
+        self.full_invalidation
+            || self
+                .dirty_map
+                .get(&id)
+                .is_some_and(|k| *k >= DirtyKind::Layout)
+    }
+
+    /// Returns `true` if the widget needs prepaint (or higher).
+    pub fn is_prepaint_dirty(&self, id: WidgetId) -> bool {
+        self.full_invalidation
+            || self
+                .dirty_map
+                .get(&id)
+                .is_some_and(|k| *k >= DirtyKind::Prepaint)
+    }
+
+    /// Returns `true` if the widget needs paint (or higher).
+    pub fn is_paint_dirty(&self, id: WidgetId) -> bool {
+        self.full_invalidation
+            || self
+                .dirty_map
+                .get(&id)
+                .is_some_and(|k| *k >= DirtyKind::Paint)
+    }
+
+    /// Returns the highest dirty level across all tracked widgets.
+    ///
+    /// Used by the app layer to decide which pipeline phases to run.
+    /// Returns `Layout` when `full_invalidation` is set.
+    pub fn max_dirty_kind(&self) -> DirtyKind {
+        if self.full_invalidation {
+            return DirtyKind::Layout;
+        }
+        self.dirty_map
+            .values()
+            .copied()
+            .max()
+            .unwrap_or(DirtyKind::Clean)
     }
 
     /// Returns `true` if any widget is dirty or a full invalidation is pending.
     pub fn is_any_dirty(&self) -> bool {
-        self.full_invalidation || !self.layout_dirty.is_empty()
+        self.full_invalidation || !self.dirty_map.is_empty()
     }
 
     /// Returns `true` if a full scene rebuild is needed.
@@ -108,7 +160,7 @@ impl InvalidationTracker {
 
     /// Clears all dirty state after a render pass completes.
     pub fn clear(&mut self) {
-        self.layout_dirty.clear();
+        self.dirty_map.clear();
         self.full_invalidation = false;
     }
 

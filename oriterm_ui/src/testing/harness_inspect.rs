@@ -80,9 +80,11 @@ impl WidgetTestHarness {
 
     /// Paints the widget tree and returns a copy of the scene primitives.
     ///
+    /// Runs prepaint first to resolve visual state, then paints.
     /// Uses `MockMeasurer` and test theme. No GPU required — returns
     /// the raw `Scene` that would be sent to the GPU renderer.
     pub fn render(&mut self) -> Scene {
+        self.run_prepaint();
         let mut scene = Scene::new();
         let bounds = self.layout.rect;
         let mut ctx = DrawCtx {

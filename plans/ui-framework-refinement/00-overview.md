@@ -31,10 +31,10 @@ The test harness is the highest priority: it unblocks fast iteration on everythi
 │  Safety Rails    │ │ Scene Abstract  │ │ Action/Keymap   │
 │  (Section 02)    │ │ (Section 03)    │ │ (Section 05)    │
 │                  │ │                 │ │                 │
-│ Debug assertions │ │ DrawList →      │ │ Actions as data │
-│ on child visit,  │ │ Type-separated  │ │ Keymap routing  │
-│ double-visit,    │ │ Scene + damage  │ │ Context-scoped  │
-│ lifecycle order  │ │ tracking        │ │ dispatch        │
+│ Debug assertions │ │ Type-separated  │ │ Actions as data │
+│ on child visit,  │ │ Scene + damage  │ │ Keymap routing  │
+│ double-visit,    │ │ tracking        │ │ Context-scoped  │
+│ lifecycle order  │ │                 │ │ dispatch        │
 └──────────────────┘ └────────┬────────┘ └─────────────────┘
                               │
                      ┌────────▼────────┐
@@ -81,7 +81,7 @@ Every framework except makepad has headless widget testing. We have none. This i
 Masonry proved that debug assertions on tree traversal (all children visited, no double-visits, lifecycle ordering validated) catch the most common container bugs. These are cheap to add and high value: they turn silent logic errors into immediate panics with clear messages.
 
 **3. Correct rendering architecture via type-separated Scene.**
-GPUI collects paint primitives into typed arrays (quads, text, paths) with per-primitive resolved state (ContentMask). Our DrawList is a flat interleaved command buffer with stack commands processed at GPU time. A type-separated Scene replaces DrawList: primitives carry resolved clip rects, GPU consumes typed arrays directly, and per-widget damage tracking identifies changed regions between frames. Opacity is applied at GPU conversion time via `base_opacity`, not per-primitive.
+GPUI collects paint primitives into typed arrays (quads, text, paths) with per-primitive resolved state (ContentMask). The type-separated Scene (completed in Section 03) replaced DrawList: primitives carry resolved clip rects, GPU consumes typed arrays directly, and per-widget damage tracking via `DamageTracker` identifies changed regions between frames. Opacity is applied at GPU conversion time via `base_opacity`, not per-primitive.
 
 ## Section Dependency Graph
 
@@ -176,7 +176,7 @@ Phase 3 — Verification
 | 01 Test Harness | ~1400 | 7 | ~250 | High | pipeline move (01.2a) |
 | 02 Safety Rails | ~350 | 4 | ~200 | Medium | pipeline move (01.2a) |
 | 03 Scene Architecture | ~2000 new, ~2000 modified, ~500 removed | 8 new + ~80 modified + ~5 removed | ~250 | High | -- |
-| 04 Prepaint Phase | ~500 | 3 | ~200 | High | 03 (recommended), pipeline (01.2a) |
+| 04 Prepaint Phase | ~700 | 9 | ~200 | High | 03 (recommended), pipeline (01.2a) |
 | 05 Action/Keymap System | ~900 | 5 | ~150 | Medium | -- |
 | 07 WindowRoot Extraction | ~500 | 4 | ~300 | High | 01 |
 | 08 Pure Logic Migration | ~475 moved, ~395 restructured | 12 | ~200 | Medium | 07 |
@@ -192,7 +192,7 @@ Phase 3 — Verification
 | 01 | Headless Test Harness | `section-01-test-harness.md` | Complete |
 | 02 | Safety Rails | `section-02-safety-rails.md` | Complete |
 | 03 | Scene Architecture | `section-03-scene-abstraction.md` | Complete |
-| 04 | Prepaint Phase | `section-04-prepaint-phase.md` | Not Started |
+| 04 | Prepaint Phase | `section-04-prepaint-phase.md` | Complete |
 | 05 | Action/Keymap System | `section-05-action-keymap.md` | Not Started |
 | 06 | Verification | `section-06-verification.md` | Not Started |
 | 07 | WindowRoot Extraction | `section-07-window-root.md` | Not Started |

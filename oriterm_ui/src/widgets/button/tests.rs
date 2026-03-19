@@ -199,6 +199,92 @@ fn paint_produces_draw_commands() {
     assert!(!scene.is_empty());
 }
 
+// -- Prepaint resolved fields --
+
+#[test]
+fn prepaint_resolves_bg_from_animator() {
+    use std::time::Instant;
+
+    use crate::theme::UiTheme;
+    use crate::widgets::PrepaintCtx;
+
+    let style = ButtonStyle::default();
+    let mut btn = ButtonWidget::new("Bg Test");
+    let now = Instant::now();
+    let theme = UiTheme::dark();
+
+    let mut ctx = PrepaintCtx {
+        widget_id: btn.id(),
+        bounds: Rect::new(0.0, 0.0, 100.0, 30.0),
+        interaction: None,
+        theme: &theme,
+        now,
+        frame_requests: None,
+    };
+    btn.prepaint(&mut ctx);
+
+    // Before any state transitions: resolved_bg should be the normal bg.
+    assert_eq!(btn.resolved_bg(), style.bg);
+}
+
+#[test]
+fn prepaint_resolves_focused_false_without_interaction() {
+    use std::time::Instant;
+
+    use crate::theme::UiTheme;
+    use crate::widgets::PrepaintCtx;
+
+    let mut btn = ButtonWidget::new("Focus Test");
+    let now = Instant::now();
+    let theme = UiTheme::dark();
+
+    let mut ctx = PrepaintCtx {
+        widget_id: btn.id(),
+        bounds: Rect::new(0.0, 0.0, 100.0, 30.0),
+        interaction: None,
+        theme: &theme,
+        now,
+        frame_requests: None,
+    };
+    btn.prepaint(&mut ctx);
+
+    // Without InteractionManager, resolved_focused should be false.
+    assert!(!btn.resolved_focused());
+}
+
+#[test]
+fn prepaint_resolves_focused_from_interaction_manager() {
+    use std::time::Instant;
+
+    use crate::focus::FocusManager;
+    use crate::interaction::InteractionManager;
+    use crate::theme::UiTheme;
+    use crate::widgets::PrepaintCtx;
+
+    let mut btn = ButtonWidget::new("IM Focus Test");
+    let btn_id = btn.id();
+    let now = Instant::now();
+    let theme = UiTheme::dark();
+
+    let mut interaction = InteractionManager::new();
+    interaction.register_widget(btn_id);
+    let mut focus = FocusManager::new();
+    focus.set_focus_order(vec![btn_id]);
+    interaction.request_focus(btn_id, &mut focus);
+
+    let mut ctx = PrepaintCtx {
+        widget_id: btn_id,
+        bounds: Rect::new(0.0, 0.0, 100.0, 30.0),
+        interaction: Some(&interaction),
+        theme: &theme,
+        now,
+        frame_requests: None,
+    };
+    btn.prepaint(&mut ctx);
+
+    assert!(btn.resolved_focused());
+}
+
 // -- Harness integration tests --
 
 #[test]
@@ -237,6 +323,46 @@ fn harness_full_click_cycle() {
     // Move away -> not hot.
     h.mouse_move(crate::geometry::Point::new(9999.0, 9999.0));
     assert!(!h.is_hot(btn_id));
+}
+
+#[test]
+fn harness_hover_renders_hover_bg_in_scene() {
+    use std::time::Duration;
+
+    use crate::testing::WidgetTestHarness;
+
+    let style = ButtonStyle::default();
+    let btn = ButtonWidget::new("Hover me");
+    let btn_id = btn.id();
+    let mut h = WidgetTestHarness::new(btn);
+
+    // Hover the button.
+    h.mouse_move_to(btn_id);
+
+    // Advance time to let the hover animation complete (~300ms).
+    h.advance_time(Duration::from_millis(350));
+
+    // Render the scene with fully-resolved hover state.
+    let scene = h.render();
+
+    // The scene should contain a quad with the hover background color.
+    let hover_bg = style.hover_bg;
+    let fills: Vec<_> = scene.quads().iter().filter_map(|q| q.style.fill).collect();
+    let has_hover_quad = fills.iter().any(|&c| color_approx_eq(c, hover_bg));
+    assert!(
+        has_hover_quad,
+        "Scene should contain a quad with hover_bg ({hover_bg:?}), \
+         fills: {fills:?}"
+    );
+}
+
+/// Approximate color equality (within 0.02 per channel) to handle
+/// animation interpolation rounding.
+fn color_approx_eq(a: crate::color::Color, b: crate::color::Color) -> bool {
+    (a.r - b.r).abs() < 0.02
+        && (a.g - b.g).abs() < 0.02
+        && (a.b - b.b).abs() < 0.02
+        && (a.a - b.a).abs() < 0.02
 }
 
 #[test]

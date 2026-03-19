@@ -375,3 +375,201 @@ fn build_scene_damage_cycle() {
     tracker.compute_damage(&scene2);
     assert!(!tracker.has_damage());
 }
+
+// --- Zero-size and degenerate primitive tests ---
+
+#[test]
+fn zero_size_rect_accepted() {
+    let mut scene = Scene::new();
+    scene.push_quad(Rect::new(10.0, 20.0, 0.0, 0.0), RectStyle::default());
+    assert_eq!(scene.quads().len(), 1);
+    assert_eq!(scene.quads()[0].bounds.width(), 0.0);
+    assert_eq!(scene.quads()[0].bounds.height(), 0.0);
+}
+
+#[test]
+fn zero_length_line_accepted() {
+    let mut scene = Scene::new();
+    let p = Point::new(50.0, 50.0);
+    scene.push_line(p, p, 1.0, Color::WHITE);
+    assert_eq!(scene.lines().len(), 1);
+    assert_eq!(scene.lines()[0].from, scene.lines()[0].to);
+}
+
+#[test]
+fn empty_text_run_accepted() {
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(0.0, 0.0), empty_shaped(), Color::WHITE);
+    assert_eq!(scene.text_runs().len(), 1);
+}
+
+// --- Primitive struct size regression ---
+
+#[test]
+fn primitive_structs_under_cache_line() {
+    use std::mem::size_of;
+
+    use super::primitives::{IconPrimitive, ImagePrimitive, LinePrimitive, Quad, TextRun};
+
+    // Regression guards: prevent unintentional growth of scene primitives.
+    // Quad is large (includes RectStyle with gradient/shadow/border fields).
+    // These thresholds are current size + 32 bytes headroom.
+    assert!(
+        size_of::<Quad>() <= 208,
+        "Quad is {} bytes, expected <= 208",
+        size_of::<Quad>()
+    );
+    assert!(
+        size_of::<LinePrimitive>() <= 80,
+        "LinePrimitive is {} bytes, expected <= 80",
+        size_of::<LinePrimitive>()
+    );
+    assert!(
+        size_of::<IconPrimitive>() <= 120,
+        "IconPrimitive is {} bytes, expected <= 120",
+        size_of::<IconPrimitive>()
+    );
+    assert!(
+        size_of::<ImagePrimitive>() <= 120,
+        "ImagePrimitive is {} bytes, expected <= 120",
+        size_of::<ImagePrimitive>()
+    );
+    // TextRun owns ShapedText (Vec allocation), so it's inherently larger.
+    assert!(
+        size_of::<TextRun>() <= 128,
+        "TextRun is {} bytes, expected <= 128",
+        size_of::<TextRun>()
+    );
+}
+
+// --- Capacity management ---
+
+#[test]
+fn clear_does_not_shrink_small_allocations() {
+    let mut scene = Scene::new();
+    // Push enough quads to grow, then clear.
+    for _ in 0..50 {
+        scene.push_quad(Rect::new(0.0, 0.0, 10.0, 10.0), RectStyle::default());
+    }
+    let cap_after_grow = scene.quads.capacity();
+    scene.clear();
+    // Small allocations should retain capacity (no shrink).
+    assert_eq!(scene.quads.capacity(), cap_after_grow);
+}
+
+// --- Widget ID absent during push ---
+
+#[test]
+fn push_without_widget_id_has_none() {
+    let mut scene = Scene::new();
+    // Do NOT call set_widget_id — widget_id should be None.
+    scene.push_quad(Rect::new(0.0, 0.0, 10.0, 10.0), RectStyle::default());
+    assert!(scene.quads()[0].widget_id.is_none());
+}
+
+#[test]
+fn push_line_without_widget_id_has_none() {
+    let mut scene = Scene::new();
+    scene.push_line(
+        Point::new(0.0, 0.0),
+        Point::new(10.0, 10.0),
+        1.0,
+        Color::WHITE,
+    );
+    assert!(scene.lines()[0].widget_id.is_none());
+}
+
+// --- Negative coordinates ---
+
+#[test]
+fn negative_coordinate_rect_accepted() {
+    let mut scene = Scene::new();
+    scene.push_quad(Rect::new(-10.0, -20.0, 100.0, 50.0), RectStyle::default());
+    let quad = &scene.quads()[0];
+    assert_eq!(quad.bounds.x(), -10.0);
+    assert_eq!(quad.bounds.y(), -20.0);
+}
+
+#[test]
+fn negative_offset_produces_negative_bounds() {
+    let mut scene = Scene::new();
+    scene.push_offset(-50.0, -100.0);
+    scene.push_quad(Rect::new(10.0, 20.0, 30.0, 40.0), RectStyle::default());
+    let quad = &scene.quads()[0];
+    assert_eq!(quad.bounds, Rect::new(-40.0, -80.0, 30.0, 40.0));
+    scene.pop_offset();
+}
+
+// --- Deeply nested clips ---
+
+#[test]
+fn deeply_nested_clips_intersect_correctly() {
+    let mut scene = Scene::new();
+    // 10 nested clips, each inset by 10px from the previous.
+    for i in 0..10 {
+        let off = i as f32 * 10.0;
+        scene.push_clip(Rect::new(off, off, 200.0 - off * 2.0, 200.0 - off * 2.0));
+    }
+
+    scene.push_quad(Rect::new(0.0, 0.0, 5.0, 5.0), RectStyle::default());
+    let quad = &scene.quads()[0];
+    // Innermost clip should be (90, 90, 20, 20).
+    assert_eq!(quad.content_mask.clip, Rect::new(90.0, 90.0, 20.0, 20.0));
+
+    for _ in 0..10 {
+        scene.pop_clip();
+    }
+}
+
+// --- Empty intersection clip ---
+
+#[test]
+fn non_overlapping_clips_produce_empty_content_mask() {
+    let mut scene = Scene::new();
+    let left = Rect::new(0.0, 0.0, 50.0, 50.0);
+    let right = Rect::new(100.0, 100.0, 50.0, 50.0);
+    scene.push_clip(left);
+    scene.push_clip(right);
+
+    scene.push_quad(Rect::new(0.0, 0.0, 10.0, 10.0), RectStyle::default());
+    let quad = &scene.quads()[0];
+    // left ∩ right = empty rect.
+    let clip = quad.content_mask.clip;
+    assert!(
+        clip.width() <= 0.0 || clip.height() <= 0.0,
+        "expected empty intersection, got {clip:?}"
+    );
+
+    scene.pop_clip();
+    scene.pop_clip();
+}
+
+// --- Primitive ordering preservation ---
+
+#[test]
+fn quad_ordering_preserved() {
+    let mut scene = Scene::new();
+    let red = RectStyle::filled(Color::rgb(1.0, 0.0, 0.0));
+    let green = RectStyle::filled(Color::rgb(0.0, 1.0, 0.0));
+    let blue = RectStyle::filled(Color::rgb(0.0, 0.0, 1.0));
+
+    scene.push_quad(Rect::new(0.0, 0.0, 10.0, 10.0), red.clone());
+    scene.push_quad(Rect::new(10.0, 0.0, 10.0, 10.0), green.clone());
+    scene.push_quad(Rect::new(20.0, 0.0, 10.0, 10.0), blue.clone());
+
+    assert_eq!(scene.quads().len(), 3);
+    assert_eq!(scene.quads()[0].style, red);
+    assert_eq!(scene.quads()[1].style, green);
+    assert_eq!(scene.quads()[2].style, blue);
+}
+
+// --- ContentMask sentinel ---
+
+#[test]
+fn unclipped_content_mask_has_infinite_bounds() {
+    let mask = ContentMask::unclipped();
+    assert!(mask.clip.width().is_infinite());
+    assert!(mask.clip.height().is_infinite());
+    assert!(mask.clip.x().is_infinite() && mask.clip.x() < 0.0);
+    assert!(mask.clip.y().is_infinite() && mask.clip.y() < 0.0);
+}

@@ -19,7 +19,7 @@ use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, LayoutCtx, Widget};
+use super::{DrawCtx, LayoutCtx, PrepaintCtx, Widget};
 
 /// Visual style for a [`ButtonWidget`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -88,12 +88,17 @@ pub struct ButtonWidget {
     style: ButtonStyle,
     controllers: Vec<Box<dyn EventController>>,
     animator: VisualStateAnimator,
+    /// Pre-resolved background color from prepaint (animator interpolation).
+    resolved_bg: Color,
+    /// Pre-resolved focus state from prepaint (interaction query).
+    resolved_focused: bool,
 }
 
 impl ButtonWidget {
     /// Creates a button with the given label text.
     pub fn new(label: impl Into<String>) -> Self {
         let style = ButtonStyle::default();
+        let bg = style.bg;
         Self {
             id: WidgetId::next(),
             label: label.into(),
@@ -111,6 +116,8 @@ impl ButtonWidget {
                 style.disabled_bg,
             )]),
             style,
+            resolved_bg: bg,
+            resolved_focused: false,
         }
     }
 
@@ -122,6 +129,16 @@ impl ButtonWidget {
     /// Returns whether the button is disabled.
     pub fn is_disabled(&self) -> bool {
         self.disabled
+    }
+
+    /// Returns the pre-resolved background color from the last prepaint.
+    pub fn resolved_bg(&self) -> Color {
+        self.resolved_bg
+    }
+
+    /// Returns the pre-resolved focus state from the last prepaint.
+    pub fn resolved_focused(&self) -> bool {
+        self.resolved_focused
     }
 
     /// Sets the disabled state.
@@ -173,6 +190,8 @@ impl std::fmt::Debug for ButtonWidget {
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
+            .field("resolved_bg", &self.resolved_bg)
+            .field("resolved_focused", &self.resolved_focused)
             .finish()
     }
 }
@@ -214,11 +233,14 @@ impl Widget for ButtonWidget {
         Some(&mut self.animator)
     }
 
+    fn prepaint(&mut self, ctx: &mut PrepaintCtx<'_>) {
+        self.resolved_bg = self.animator.get_bg_color(ctx.now);
+        self.resolved_focused = ctx.is_interaction_focused();
+    }
+
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
-        // Focus ring: use InteractionManager when available, fall back to
-        // legacy `focused_widget` field during transition (§08.6 removes it).
-        let focused = ctx.is_interaction_focused();
-        if focused {
+        // Focus ring from pre-resolved interaction state.
+        if self.resolved_focused {
             let ring_rect = ctx.bounds.inset(Insets::all(-2.0));
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
                 .with_border(2.0, self.style.focus_ring_color)
@@ -226,9 +248,8 @@ impl Widget for ButtonWidget {
             ctx.scene.push_quad(ring_rect, ring_style);
         }
 
-        // Background from visual state animator (transitions between Normal,
-        // Hovered, Pressed, Disabled states automatically).
-        let bg = self.animator.get_bg_color(ctx.now);
+        // Background from pre-resolved animator state.
+        let bg = self.resolved_bg;
         ctx.scene.push_layer_bg(bg);
 
         let bg_style = RectStyle::filled(bg)

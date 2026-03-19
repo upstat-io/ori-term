@@ -130,6 +130,79 @@ impl DrawCtx<'_> {
     }
 }
 
+/// Context passed to [`Widget::prepaint`].
+///
+/// Resolves visual states and caches interaction state queries between
+/// layout and paint. Widgets read interaction state here and store
+/// resolved values on `self`, so `paint()` only reads pre-resolved fields.
+pub struct PrepaintCtx<'a> {
+    /// The widget being prepainted.
+    pub widget_id: WidgetId,
+    /// The widget's computed bounds (from layout).
+    pub bounds: Rect,
+    /// Framework interaction state manager.
+    ///
+    /// `None` until the interaction system is fully wired.
+    /// Convenience methods return `false` when this is `None`.
+    pub interaction: Option<&'a InteractionManager>,
+    /// Active UI theme.
+    pub theme: &'a UiTheme,
+    /// Current frame timestamp for animation interpolation.
+    pub now: Instant,
+    /// Shared frame request flags for scheduling.
+    ///
+    /// `None` until the scheduling system is wired.
+    pub frame_requests: Option<&'a FrameRequestFlags>,
+}
+
+impl PrepaintCtx<'_> {
+    /// Whether the pointer is over this widget or any descendant.
+    pub fn is_hot(&self) -> bool {
+        match self.interaction {
+            Some(mgr) => mgr.get_state(self.widget_id).is_hot(),
+            None => false,
+        }
+    }
+
+    /// Whether the pointer is directly over this widget (not a descendant).
+    pub fn is_hot_direct(&self) -> bool {
+        match self.interaction {
+            Some(mgr) => mgr.get_state(self.widget_id).is_hot_direct(),
+            None => false,
+        }
+    }
+
+    /// Whether this widget has captured mouse events.
+    pub fn is_active(&self) -> bool {
+        match self.interaction {
+            Some(mgr) => mgr.get_state(self.widget_id).is_active(),
+            None => false,
+        }
+    }
+
+    /// Whether this widget has keyboard focus (via `InteractionManager`).
+    pub fn is_interaction_focused(&self) -> bool {
+        match self.interaction {
+            Some(mgr) => mgr.get_state(self.widget_id).is_focused(),
+            None => false,
+        }
+    }
+
+    /// Request an animation frame on the next vsync.
+    pub fn request_anim_frame(&self) {
+        if let Some(flags) = self.frame_requests {
+            flags.request_anim_frame();
+        }
+    }
+
+    /// Request a repaint without an animation frame.
+    pub fn request_paint(&self) {
+        if let Some(flags) = self.frame_requests {
+            flags.request_paint();
+        }
+    }
+}
+
 /// Context passed to mouse and keyboard event handlers.
 pub struct EventCtx<'a> {
     /// Text measurement provider.

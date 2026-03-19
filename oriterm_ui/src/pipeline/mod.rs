@@ -5,6 +5,7 @@
 //! visual state updates). Both the app layer and the test harness call
 //! these functions to run a complete per-frame pipeline.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 #[cfg(debug_assertions)]
@@ -21,9 +22,11 @@ use crate::geometry::Rect;
 use crate::input::InputEvent;
 use crate::input::dispatch::DeliveryAction;
 use crate::interaction::{InteractionManager, InteractionState, LifecycleEvent};
+use crate::layout::LayoutNode;
+use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
-use crate::widgets::contexts::{AnimCtx, LifecycleCtx};
+use crate::widgets::contexts::{AnimCtx, LifecycleCtx, PrepaintCtx};
 
 /// Result of running the event delivery loop across a propagation plan.
 ///
@@ -245,6 +248,63 @@ pub fn prepare_widget_frame(
     }
 }
 
+/// Collects per-widget bounds from a `LayoutNode` tree into a flat map.
+///
+/// Walks the layout tree depth-first, recording `widget_id -> rect` for
+/// every node that has a `widget_id`. Used by `prepaint_widget_tree` to
+/// resolve per-widget bounds without parallel tree walking.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "always default hasher, matches collect_layout_widget_ids pattern"
+)]
+pub fn collect_layout_bounds(node: &LayoutNode, out: &mut HashMap<WidgetId, Rect>) {
+    if let Some(id) = node.widget_id {
+        out.insert(id, node.rect);
+    }
+    for child in &node.children {
+        collect_layout_bounds(child, out);
+    }
+}
+
+/// Runs the prepaint phase for a widget and all its descendants.
+///
+/// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
+/// calling `widget.prepaint()` on each node with the resolved bounds from
+/// the layout map. Must be called AFTER `prepare_widget_tree` and layout,
+/// BEFORE `build_scene` (paint).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "prepaint pipeline: widget, bounds map, interaction, theme, timestamp, frame flags"
+)]
+#[expect(
+    clippy::implicit_hasher,
+    reason = "always default hasher, matches collect_layout_widget_ids pattern"
+)]
+pub fn prepaint_widget_tree(
+    widget: &mut dyn Widget,
+    bounds_map: &HashMap<WidgetId, Rect>,
+    interaction: Option<&InteractionManager>,
+    theme: &UiTheme,
+    now: Instant,
+    frame_requests: Option<&FrameRequestFlags>,
+) {
+    let id = widget.id();
+    let bounds = bounds_map.get(&id).copied().unwrap_or_default();
+    let mut ctx = PrepaintCtx {
+        widget_id: id,
+        bounds,
+        interaction,
+        theme,
+        now,
+        frame_requests,
+    };
+    widget.prepaint(&mut ctx);
+
+    widget.for_each_child_mut(&mut |child| {
+        prepaint_widget_tree(child, bounds_map, interaction, theme, now, frame_requests);
+    });
+}
+
 /// Registers all widgets in a tree with `InteractionManager`.
 ///
 /// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
@@ -319,7 +379,7 @@ pub fn apply_dispatch_requests(
     clippy::implicit_hasher,
     reason = "debug-only function, always default hasher"
 )]
-pub fn collect_layout_widget_ids(node: &crate::layout::LayoutNode, out: &mut HashSet<WidgetId>) {
+pub fn collect_layout_widget_ids(node: &LayoutNode, out: &mut HashSet<WidgetId>) {
     if let Some(id) = node.widget_id {
         out.insert(id);
     }
