@@ -12,8 +12,6 @@ use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::{FontWeight, TextStyle};
 use crate::theme::UiTheme;
-use crate::visual_state::common_states;
-use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use super::{DrawCtx, LayoutCtx, Widget};
@@ -53,10 +51,11 @@ pub struct NavItem {
     pub page_index: usize,
 }
 
-/// Per-item interactive state (hover animation).
-struct NavItemState {
-    animator: VisualStateAnimator,
-}
+/// Index of the nav item currently hovered by the pointer (`None` if no item).
+///
+/// Used for instant hover background highlight. Does not use animation
+/// because the dialog paint path does not schedule animation frames.
+type HoveredItem = Option<usize>;
 
 /// Sidebar navigation widget.
 ///
@@ -67,7 +66,7 @@ pub struct SidebarNavWidget {
     sections: Vec<NavSection>,
     active_page: usize,
     version: String,
-    item_states: Vec<NavItemState>,
+    hovered_item: HoveredItem,
     style: SidebarNavStyle,
 }
 
@@ -112,12 +111,11 @@ impl SidebarNavWidget {
     /// Creates a new sidebar nav with the given sections.
     pub fn new(sections: Vec<NavSection>, theme: &UiTheme) -> Self {
         let style = SidebarNavStyle::from_theme(theme);
-        let item_states = build_item_states(&sections, &style);
         Self {
             id: WidgetId::next(),
             sections,
             active_page: 0,
-            item_states,
+            hovered_item: None,
             version: String::new(),
             style,
         }
@@ -170,8 +168,12 @@ impl SidebarNavWidget {
         // Background.
         let bg = if is_active {
             self.style.active_bg
-        } else if let Some(state) = self.item_states.get(flat_idx) {
-            state.animator.get_bg_color(ctx.now)
+        } else if self.hovered_item == Some(flat_idx) {
+            log::info!(
+                "sidebar paint: item {flat_idx} hovered, bg={:?}",
+                self.style.hover_bg
+            );
+            self.style.hover_bg
         } else {
             Color::TRANSPARENT
         };
@@ -234,18 +236,6 @@ impl SidebarNavWidget {
             .push_text(Point::new(x + 6.0, y), shaped, self.style.version_fg);
     }
 
-    /// Computes total content height including padding.
-    fn total_content_height(&self) -> f32 {
-        let mut h = SIDEBAR_PADDING_Y * 2.0;
-        for section in &self.sections {
-            h += SECTION_TITLE_HEIGHT;
-            h += ITEM_HEIGHT * section.items.len() as f32;
-        }
-        // Version label space.
-        h += 24.0;
-        h
-    }
-
     /// Hit-tests a local Y coordinate to a flat item index.
     fn hit_test_item(&self, local_y: f32) -> Option<usize> {
         let mut y = 0.0;
@@ -270,7 +260,7 @@ impl std::fmt::Debug for SidebarNavWidget {
             .field("id", &self.id)
             .field("active_page", &self.active_page)
             .field("section_count", &self.sections.len())
-            .field("item_count", &self.item_states.len())
+            .field("hovered_item", &self.hovered_item)
             .finish_non_exhaustive()
     }
 }
@@ -289,8 +279,10 @@ impl Widget for SidebarNavWidget {
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
-        let total_height = self.total_content_height();
-        LayoutBox::leaf(SIDEBAR_WIDTH, total_height).with_widget_id(self.id)
+        LayoutBox::leaf(SIDEBAR_WIDTH, 0.0)
+            .with_width(crate::layout::SizeSpec::Fixed(SIDEBAR_WIDTH))
+            .with_height(crate::layout::SizeSpec::Fill)
+            .with_widget_id(self.id)
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
@@ -335,15 +327,6 @@ impl Widget for SidebarNavWidget {
         }
 
         self.paint_version_label(ctx, x, item_w);
-
-        // Request anim frame if any hover is animating.
-        if self
-            .item_states
-            .iter()
-            .any(|s| s.animator.is_animating(ctx.now))
-        {
-            ctx.request_anim_frame();
-        }
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
@@ -360,11 +343,42 @@ impl Widget for SidebarNavWidget {
         use crate::input::{InputEvent, Key};
 
         match event {
+            // Track which item is hovered for instant per-item highlight.
+            InputEvent::MouseMove { pos, .. } => {
+                let local_y = pos.y - bounds.y() - SIDEBAR_PADDING_Y;
+                let prev = self.hovered_item;
+                self.hovered_item = self.hit_test_item(local_y);
+                if self.hovered_item != prev {
+                    log::info!(
+                        "sidebar hover: pos=({:.0},{:.0}) bounds=({:.0},{:.0},{:.0},{:.0}) local_y={:.0} item={:?}",
+                        pos.x,
+                        pos.y,
+                        bounds.x(),
+                        bounds.y(),
+                        bounds.width(),
+                        bounds.height(),
+                        local_y,
+                        self.hovered_item,
+                    );
+                }
+                super::OnInputResult::handled()
+            }
             // Route click events to nav items by position.
             InputEvent::MouseDown { pos, .. } => {
                 let local_y = pos.y - bounds.y() - SIDEBAR_PADDING_Y;
+                log::info!(
+                    "sidebar click: pos=({:.0},{:.0}) bounds=({:.0},{:.0},{:.0},{:.0}) local_y={:.0}",
+                    pos.x,
+                    pos.y,
+                    bounds.x(),
+                    bounds.y(),
+                    bounds.width(),
+                    bounds.height(),
+                    local_y,
+                );
                 if let Some(flat_idx) = self.hit_test_item(local_y) {
                     if let Some(page_idx) = self.page_for_flat_index(flat_idx) {
+                        log::info!("sidebar click: flat_idx={flat_idx} page_idx={page_idx}");
                         return super::OnInputResult::handled().with_action(
                             WidgetAction::Selected {
                                 id: self.id,
@@ -373,6 +387,7 @@ impl Widget for SidebarNavWidget {
                         );
                     }
                 }
+                log::info!("sidebar click: no item hit");
                 super::OnInputResult::ignored()
             }
             // Arrow keys switch the active nav item.
@@ -400,22 +415,18 @@ impl Widget for SidebarNavWidget {
             _ => super::OnInputResult::ignored(),
         }
     }
-}
 
-/// Builds per-item interactive state with controllers and animators.
-fn build_item_states(sections: &[NavSection], style: &SidebarNavStyle) -> Vec<NavItemState> {
-    sections
-        .iter()
-        .flat_map(|s| s.items.iter())
-        .map(|_| NavItemState {
-            animator: VisualStateAnimator::new(vec![common_states(
-                Color::TRANSPARENT,
-                style.hover_bg,
-                style.hover_bg,
-                Color::TRANSPARENT,
-            )]),
-        })
-        .collect()
+    fn lifecycle(
+        &mut self,
+        event: &crate::interaction::LifecycleEvent,
+        _ctx: &mut crate::widgets::LifecycleCtx<'_>,
+    ) {
+        use crate::interaction::LifecycleEvent;
+        // When the cursor leaves the sidebar entirely, clear item hover.
+        if matches!(event, LifecycleEvent::HotChanged { is_hot: false, .. }) {
+            self.hovered_item = None;
+        }
+    }
 }
 
 #[cfg(test)]

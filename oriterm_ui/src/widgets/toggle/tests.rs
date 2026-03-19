@@ -339,3 +339,38 @@ fn paint_thumb_at_off_position() {
         thumb_rect.x()
     );
 }
+
+// -- Harness integration test --
+
+#[test]
+fn harness_toggle_click_flips_value() {
+    use std::time::Duration;
+
+    use crate::action::WidgetAction;
+    use crate::testing::WidgetTestHarness;
+
+    let toggle = ToggleWidget::new();
+    let toggle_id = toggle.id();
+    let mut h = WidgetTestHarness::new(toggle);
+
+    // First click -> toggled ON.
+    let actions = h.click(toggle_id);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Toggled { id, value: true } if *id == toggle_id)),
+        "first click should produce Toggled(true), got: {actions:?}"
+    );
+
+    // Advance clock past double-click timeout before second click.
+    h.advance_time(Duration::from_millis(600));
+
+    // Second click -> toggled OFF.
+    let actions = h.click(toggle_id);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Toggled { id, value: false } if *id == toggle_id)),
+        "second click should produce Toggled(false), got: {actions:?}"
+    );
+}

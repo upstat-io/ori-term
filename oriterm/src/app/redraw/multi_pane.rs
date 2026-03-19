@@ -414,14 +414,14 @@ impl App {
                 ctx.frame_requests.reset();
                 super::super::widget_pipeline::prepare_widget_tree(
                     &mut ctx.tab_bar,
-                    &ctx.interaction,
+                    &mut ctx.interaction,
                     &lifecycle_events,
                     None,
                     Some(&ctx.frame_requests),
                     now,
                 );
                 // Prepare overlay widget trees.
-                let interaction = &ctx.interaction;
+                let interaction = &mut ctx.interaction;
                 let flags = &ctx.frame_requests;
                 ctx.overlays.for_each_widget_mut(|widget| {
                     super::super::widget_pipeline::prepare_widget_tree(

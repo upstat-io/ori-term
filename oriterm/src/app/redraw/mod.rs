@@ -262,15 +262,15 @@ impl App {
             ctx.frame_requests.reset();
             super::widget_pipeline::prepare_widget_tree(
                 &mut ctx.tab_bar,
-                &ctx.interaction,
+                &mut ctx.interaction,
                 &lifecycle_events,
                 None,
                 Some(&ctx.frame_requests),
                 now,
             );
             // Prepare overlay widget trees. Reborrow fields to satisfy
-            // split-borrow: mutable overlays + immutable interaction/flags.
-            let interaction = &ctx.interaction;
+            // split-borrow: mutable overlays + mutable interaction/flags.
+            let interaction = &mut ctx.interaction;
             let flags = &ctx.frame_requests;
             ctx.overlays.for_each_widget_mut(|widget| {
                 super::widget_pipeline::prepare_widget_tree(

@@ -10,7 +10,8 @@ use crate::widget_id::WidgetId;
 
 use super::build_parent_map;
 use super::lifecycle::LifecycleEvent;
-use super::manager::{InteractionManager, InteractionState};
+use super::manager::InteractionManager;
+use super::state::InteractionState;
 
 // --- InteractionState ---
 
@@ -60,8 +61,8 @@ fn register_widget_is_idempotent() {
 
     mgr.register_widget(id);
     let events = mgr.drain_events();
-    // Still emits WidgetAdded (idempotent on state, not on events).
-    assert_eq!(events.len(), 1);
+    // Second registration is a no-op — no duplicate WidgetAdded.
+    assert_eq!(events.len(), 0);
 }
 
 #[test]

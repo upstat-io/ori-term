@@ -110,7 +110,7 @@ fn deliver_via_pipeline(
 
     // Walk the widget tree and dispatch to controllers of matching widgets.
     let mut result = TreeDispatchResult::new();
-    dispatch_to_widget_tree(widget, event, &delivery_actions, now, &mut result);
+    dispatch_to_widget_tree(widget, event, &delivery_actions, now, &mut result, None);
 
     if result.handled || !result.actions.is_empty() {
         let output = DispatchOutput {

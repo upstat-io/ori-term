@@ -111,7 +111,7 @@ impl App {
         ctx.frame_requests = oriterm_ui::animation::FrameRequestFlags::new();
         prepare_widget_tree(
             &mut ctx.chrome,
-            &ctx.interaction,
+            &mut ctx.interaction,
             &lifecycle_events,
             None,
             Some(&ctx.frame_requests),
@@ -119,7 +119,7 @@ impl App {
         );
         prepare_widget_tree(
             ctx.content.content_widget_mut(),
-            &ctx.interaction,
+            &mut ctx.interaction,
             &lifecycle_events,
             None,
             Some(&ctx.frame_requests),

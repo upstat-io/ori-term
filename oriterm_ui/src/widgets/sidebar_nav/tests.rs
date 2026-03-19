@@ -3,7 +3,7 @@
 use crate::action::WidgetAction;
 use crate::geometry::Rect;
 use crate::input::{InputEvent, Key, Modifiers};
-use crate::layout::BoxContent;
+use crate::layout::{BoxContent, SizeSpec};
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 use crate::widgets::tests::MockMeasurer;
@@ -47,7 +47,7 @@ fn construction_default_state() {
     let w = SidebarNavWidget::new(test_sections(), &theme);
     assert_eq!(w.active_page(), 0);
     assert_eq!(w.sections.len(), 2);
-    assert_eq!(w.item_states.len(), 3);
+    assert!(w.hovered_item.is_none());
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn layout_width_is_sidebar_width() {
 }
 
 #[test]
-fn layout_height_accounts_for_all_items() {
+fn layout_height_fills_parent() {
     let theme = crate::theme::UiTheme::dark();
     let w = SidebarNavWidget::new(test_sections(), &theme);
     let m = MockMeasurer::new();
@@ -90,19 +90,8 @@ fn layout_height_accounts_for_all_items() {
     };
     let layout = w.layout(&ctx);
 
-    if let BoxContent::Leaf {
-        intrinsic_height, ..
-    } = &layout.content
-    {
-        // 2 sections * SECTION_TITLE_HEIGHT + 3 items * ITEM_HEIGHT + padding + version
-        let expected = 16.0 * 2.0 // SIDEBAR_PADDING_Y * 2
-            + SECTION_TITLE_HEIGHT * 2.0
-            + ITEM_HEIGHT * 3.0
-            + 24.0; // version space
-        assert_eq!(*intrinsic_height, expected);
-    } else {
-        panic!("expected leaf layout");
-    }
+    // Sidebar uses SizeSpec::Fill for height — it stretches to fill parent.
+    assert_eq!(layout.height, SizeSpec::Fill);
 }
 
 #[test]
