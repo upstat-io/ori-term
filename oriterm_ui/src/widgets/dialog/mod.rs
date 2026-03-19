@@ -337,6 +337,10 @@ impl Widget for DialogWidget {
             }
         }
     }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Dialog")
+    }
 }
 
 #[cfg(test)]

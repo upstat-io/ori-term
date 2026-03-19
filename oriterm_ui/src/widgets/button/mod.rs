@@ -4,12 +4,13 @@
 //! keyboard activation (Enter/Space when focused). Uses [`VisualStateAnimator`]
 //! with `common_states()` for smooth state color transitions.
 
+use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::controllers::{
     ClickController, EventController, FocusController, HoverController, KeyActivationController,
 };
 use crate::draw::RectStyle;
-use crate::geometry::{Insets, Point};
+use crate::geometry::{Insets, Point, Rect};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::TextStyle;
@@ -273,6 +274,22 @@ impl Widget for ButtonWidget {
         // Signal continued redraws while the animator is transitioning.
         if self.animator.is_animating(ctx.now) {
             ctx.request_anim_frame();
+        }
+    }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Button")
+    }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn crate::action::KeymapAction,
+        _bounds: Rect,
+    ) -> Option<WidgetAction> {
+        if action.name() == "widget::Activate" {
+            Some(WidgetAction::Clicked(self.id))
+        } else {
+            None
         }
     }
 }

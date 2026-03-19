@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "Action & Keymap System"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Separate keyboard shortcuts from event handlers via a data-driven keymap. Actions are typed enums declared by widgets. Keybindings are data (not code) that map keystrokes to actions. Dispatch routes through context-scoped focus path."
 inspired_by:
@@ -11,19 +11,19 @@ depends_on: []
 sections:
   - id: "05.0"
     title: "Prerequisite: Restructure Action Module"
-    status: not-started
+    status: complete
   - id: "05.1"
     title: "Action Trait & Registration"
-    status: not-started
+    status: complete
   - id: "05.2"
     title: "Keymap Data Structure"
-    status: not-started
+    status: complete
   - id: "05.3"
     title: "KeyContext for Scope Gating"
-    status: not-started
+    status: complete
   - id: "05.4"
     title: "Action Dispatch Pipeline"
-    status: not-started
+    status: complete
   - id: "05.5"
     title: "Default Keybindings & Controller Migration"
     status: not-started
@@ -84,8 +84,8 @@ Expected structure after restructure:
 
 All source files well under 500-line limit. Test files are exempt from the limit.
 
-- [ ] Convert `action.rs` to `action/mod.rs` (move existing `WidgetAction` enum into the directory module)
-- [ ] Add `pub use` re-exports in `action/mod.rs` for all new submodule types:
+- [x] Convert `action.rs` to `action/mod.rs` (move existing `WidgetAction` enum into the directory module)
+- [x] Add `pub use` re-exports in `action/mod.rs` for all new submodule types:
   ```rust
   mod keymap_action;
   mod keymap;
@@ -97,8 +97,8 @@ All source files well under 500-line limit. Test files are exempt from the limit
   ```
   Note: `keymap_action` and `keymap` are directory modules (each has a sibling `tests.rs`).
   `context` can remain a flat file (no tests expected). `lib.rs` already has `pub mod action;` — no change needed there.
-- [ ] Verify all imports (`crate::action::WidgetAction`) still resolve — grep for `crate::action` and `oriterm_ui::action` across both `oriterm_ui` and `oriterm` crates
-- [ ] `./build-all.sh` && `./clippy-all.sh` && `./test-all.sh` pass after restructure
+- [x] Verify all imports (`crate::action::WidgetAction`) still resolve — grep for `crate::action` and `oriterm_ui::action` across both `oriterm_ui` and `oriterm` crates
+- [x] `./build-all.sh` && `./clippy-all.sh` && `./test-all.sh` pass after restructure
 
 ---
 
@@ -106,7 +106,7 @@ All source files well under 500-line limit. Test files are exempt from the limit
 
 **File(s):** `oriterm_ui/src/action/keymap_action/mod.rs` (+ `tests.rs` sibling)
 
-- [ ] Define `KeymapAction` trait:
+- [x] Define `KeymapAction` trait:
   ```rust
   pub trait KeymapAction: std::any::Any + std::fmt::Debug {
       fn name(&self) -> &'static str;
@@ -118,7 +118,7 @@ All source files well under 500-line limit. Test files are exempt from the limit
   (the keymap retains ownership of its binding list). `boxed_clone()` enables cloning
   trait objects without requiring `Clone` on `dyn KeymapAction`.
 
-- [ ] Macro for action declaration:
+- [x] Macro for action declaration:
   ```rust
   /// Declares keymappable actions.
   ///
@@ -128,7 +128,7 @@ All source files well under 500-line limit. Test files are exempt from the limit
   macro_rules! actions { ... }
   ```
 
-- [ ] Declare the core widget actions needed for controller migration:
+- [x] Declare the core widget actions needed for controller migration:
   ```rust
   actions!(widget, [
       Activate,           // Enter/Space -> Clicked (replaces KeyActivationController)
@@ -153,7 +153,7 @@ result instead of calling `handle_keymap_action()`. Use `KeymapAction::name()` t
 `"widget::FocusNext"` and `"widget::FocusPrev"` are framework-level, everything else
 is widget-level.
 
-- [ ] `./build-all.sh` && `./clippy-all.sh` pass
+- [x] `./build-all.sh` && `./clippy-all.sh` pass
 
 ---
 
@@ -161,7 +161,7 @@ is widget-level.
 
 **File(s):** `oriterm_ui/src/action/keymap/mod.rs` (+ `tests.rs` sibling)
 
-- [ ] Define `Keymap`, `KeyBinding`, and `Keystroke`:
+- [x] Define `Keymap`, `KeyBinding`, and `Keystroke`:
   ```rust
   pub struct Keymap {
       bindings: Vec<KeyBinding>,
@@ -184,12 +184,12 @@ is widget-level.
   Consider reusing `KeyEvent` directly (after adding `Hash`), or define `Keystroke` as a thin wrapper
   that adds `Hash` for keymap lookup.
 
-- [ ] If reusing `KeyEvent` as `Keystroke`: add `Hash` derive to `KeyEvent` in
+- [x] If reusing `KeyEvent` as `Keystroke`: add `Hash` derive to `KeyEvent` in
   `oriterm_ui/src/input/event.rs` (line ~156: `#[derive(Debug, Clone, Copy, PartialEq, Eq)]`
   -> `#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]`). If defining `Keystroke` separately,
   ensure it derives `Eq + Hash` and has a `From<KeyEvent>` impl for conversion convenience.
 
-- [ ] Implement `Keymap::lookup()`:
+- [x] Implement `Keymap::lookup()`:
   ```rust
   impl Keymap {
       /// Finds the best-matching action for a keystroke given a context stack.
@@ -207,7 +207,7 @@ is widget-level.
   }
   ```
 
-- [ ] Hardcode default keybindings in Rust code (no config file yet):
+- [x] Hardcode default keybindings in Rust code (no config file yet):
   ```rust
   impl Keymap {
       pub fn defaults() -> Self {
@@ -236,8 +236,8 @@ is widget-level.
 - [ ] **[follow-up, not this plan]** TOML config loading for keybindings -- requires keystroke
   parsing, action name registry, config file discovery (XDG/Library/AppData), and
   cross-platform path handling. Tracked separately.
-- [ ] Implement `Keymap::rebind()` for runtime user overrides (merge with defaults)
-- [ ] `./build-all.sh` && `./clippy-all.sh` pass
+- [x] Implement `Keymap::rebind()` for runtime user overrides (merge with defaults)
+- [x] `./build-all.sh` && `./clippy-all.sh` pass
 
 ---
 
@@ -245,7 +245,7 @@ is widget-level.
 
 **File(s):** `oriterm_ui/src/action/context.rs`, `oriterm_ui/src/widgets/mod.rs`
 
-- [ ] Add `key_context()` method to the `Widget` trait in `oriterm_ui/src/widgets/mod.rs`:
+- [x] Add `key_context()` method to the `Widget` trait in `oriterm_ui/src/widgets/mod.rs`:
   ```rust
   /// Returns the key context tag for this widget, if any.
   ///
@@ -258,7 +258,7 @@ is widget-level.
   Place after `hit_test_behavior()` and before `reset_scroll()` (same region as
   other metadata methods).
 
-- [ ] Override `key_context()` on widgets that need scoped bindings:
+- [x] Override `key_context()` on widgets that need scoped bindings:
   - `ButtonWidget` -> `Some("Button")` (needed because Activate must be scoped, not global)
   - `ToggleWidget` -> `Some("Button")` (same Activate context as button)
   - `CheckboxWidget` -> `Some("Button")` (same Activate context as button)
@@ -275,7 +275,7 @@ is widget-level.
   so Enter/Space with `context: Some("Button")` will not match when a text input
   is focused.
 
-- [ ] Define `build_context_stack` helper in `action/context.rs`:
+- [x] Define `build_context_stack` helper in `action/context.rs`:
   ```rust
   /// Builds a context stack from a focus path using a pre-collected context map.
   ///
@@ -294,9 +294,9 @@ is widget-level.
   `HashMap<WidgetId, &'static str>` of widgets that return `Some` from
   `key_context()`. Pass this map to `build_context_stack` at dispatch time.
 
-- [ ] During dispatch, build context stack from focus path (ancestor chain of key_context values)
-- [ ] Bindings with `context: Some("Dialog")` only fire when a Dialog widget is in the focus ancestor chain
-- [ ] `./build-all.sh` && `./clippy-all.sh` pass
+- [x] During dispatch, build context stack from focus path (ancestor chain of key_context values)
+- [x] Bindings with `context: Some("Dialog")` only fire when a Dialog widget is in the focus ancestor chain
+- [x] `./build-all.sh` && `./clippy-all.sh` pass
 
 ---
 
@@ -442,13 +442,13 @@ This means existing controllers continue to work as fallbacks for any key not in
 All three locations use `Keymap::defaults()` initially. The `App`-level keymap can be
 mutated via `Keymap::rebind()` for runtime customization.
 
-- [ ] Add `Widget::handle_keymap_action()` method to the Widget trait in `oriterm_ui/src/widgets/mod.rs`
+- [x] Add `Widget::handle_keymap_action()` method to the Widget trait in `oriterm_ui/src/widgets/mod.rs`
   (default returns `None`, place after `on_action()`)
-- [ ] Add `find_widget_mut()` tree walk helper to `oriterm_ui/src/pipeline/mod.rs`
+- [x] Add `find_widget_mut()` tree walk helper to `oriterm_ui/src/pipeline/mod.rs`
   (walks `for_each_child_mut` to find a widget by ID, returns `Option<&mut dyn Widget>`)
-- [ ] Add `keymap: Keymap` field to `WidgetTestHarness` in `oriterm_ui/src/testing/harness.rs`
-- [ ] Add `keymap: Keymap` field to `DialogWindowContext` in `oriterm/src/app/dialog_context/mod.rs`
-- [ ] Add context map collection: extend `register_widget_tree()` in `oriterm_ui/src/pipeline/mod.rs`
+- [x] Add `keymap: Keymap` field to `WidgetTestHarness` in `oriterm_ui/src/testing/harness.rs`
+- [x] Add `keymap: Keymap` field to `DialogWindowContext` in `oriterm/src/app/dialog_context/mod.rs`
+- [x] Add context map collection: extend `register_widget_tree()` in `oriterm_ui/src/pipeline/mod.rs`
   to also collect `key_context()` from each widget. Either:
   - Add an `out_context: &mut HashMap<WidgetId, &'static str>` parameter (only inserts for
     widgets where `key_context()` returns `Some`), or
@@ -457,16 +457,16 @@ mutated via `Keymap::rebind()` for runtime customization.
   and `DialogWindowContext` alongside the existing `InteractionManager`.
   **Do NOT store on `InteractionManager`** — that struct owns interaction state (hot/active/focus),
   not keymap metadata. Keep concerns separated per module boundary discipline.
-- [ ] Modify `process_event()` in `harness_dispatch.rs` to intercept keyboard events before
+- [x] Modify `process_event()` in `harness_dispatch.rs` to intercept keyboard events before
   `deliver_event_to_tree()` and try keymap lookup first
-- [ ] Modify `dispatch_dialog_content_key()` in `content_actions.rs` to intercept keyboard
+- [x] Modify `dispatch_dialog_content_key()` in `content_actions.rs` to intercept keyboard
   events before `deliver_event_to_tree()` and try keymap lookup first
-- [ ] On `KeyDown`, look up matching binding in keymap
-- [ ] Walk focus path, checking context stack for scope matches
-- [ ] Deepest matching context wins (child overrides parent)
-- [ ] Deliver matched action to widget's action handler
-- [ ] Unmatched keys fall through to existing controller dispatch unchanged
-- [ ] **KeyUp handling:** During coexistence, controllers still consume matching `KeyUp`
+- [x] On `KeyDown`, look up matching binding in keymap
+- [x] Walk focus path, checking context stack for scope matches
+- [x] Deepest matching context wins (child overrides parent)
+- [x] Deliver matched action to widget's action handler
+- [x] Unmatched keys fall through to existing controller dispatch unchanged
+- [x] **KeyUp handling:** During coexistence, controllers still consume matching `KeyUp`
   events. After a controller is fully removed, orphaned `KeyUp` events for keymap-handled
   keys would leak to parent widgets. Add `KeyUp` suppression: if the keymap handled a
   `KeyDown` for a key, also suppress the matching `KeyUp`. Track the last keymap-handled
@@ -475,7 +475,7 @@ mutated via `Keymap::rebind()` for runtime customization.
   across `process_event()` calls (it's set on `KeyDown`, consumed on next `KeyUp`).
   In the harness: add field to `WidgetTestHarness`. In app layer: add field to
   `DialogWindowContext`. This is per-dispatch-path state, not per-frame.
-- [ ] `./build-all.sh` && `./clippy-all.sh` && `./test-all.sh` pass
+- [x] `./build-all.sh` && `./clippy-all.sh` && `./test-all.sh` pass
 
 ---
 
