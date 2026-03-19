@@ -11,7 +11,8 @@ mod mouse;
 use std::time::Instant;
 
 use oriterm_ui::geometry::{Point, Rect};
-use oriterm_ui::input::{MouseEvent, MouseEventKind};
+use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
+use oriterm_ui::input::{InputEvent, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
 use winit::event::WindowEvent;
@@ -292,9 +293,78 @@ impl App {
         // Update the InteractionManager's hot path. HotChanged lifecycle events
         // are stored internally and delivered during the next prepare_widget_tree.
         ctx.interaction.update_hot_path(&hot_path);
+
+        // Dispatch MouseMove to content widgets for per-item hover tracking.
+        if logical_pos.y >= chrome_h {
+            log::info!(
+                "dialog cursor dispatch: pos=({:.0},{:.0})",
+                logical_pos.x,
+                logical_pos.y
+            );
+            self.dispatch_dialog_content_move(window_id, logical_pos);
+        }
+
         // Always request a redraw after a cursor move so the next
         // prepare_widget_tree delivers any pending HotChanged events and
         // updates the VisualStateAnimator accordingly.
-        ctx.request_urgent_redraw();
+        if let Some(ctx) = self.dialogs.get_mut(&window_id) {
+            ctx.request_urgent_redraw();
+        }
+    }
+
+    /// Dispatch a `MouseMove` input event to the dialog content widget tree.
+    ///
+    /// Allows widgets like `SidebarNavWidget` to track per-item hover state
+    /// using `on_input(MouseMove)`.
+    fn dispatch_dialog_content_move(&mut self, window_id: WindowId, logical_pos: Point) {
+        let ui_theme = self.ui_theme;
+        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+            log::info!("dispatch_dialog_content_move: no dialog context");
+            return;
+        };
+        let scale = ctx.scale_factor.factor() as f32;
+        let chrome_h = ctx.chrome.caption_height();
+        let w = ctx.surface_config.width as f32 / scale;
+        let h = ctx.surface_config.height as f32 / scale;
+        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
+        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+        let Some(layout_node) = mouse::cached_content_layout(ctx, scale, &ui_theme, local_viewport)
+        else {
+            return;
+        };
+        #[cfg(debug_assertions)]
+        let layout_ids = {
+            let mut ids = std::collections::HashSet::new();
+            oriterm_ui::pipeline::collect_layout_widget_ids(&layout_node, &mut ids);
+            ids
+        };
+        let move_event = MouseEvent {
+            kind: MouseEventKind::Move,
+            pos: logical_pos,
+            modifiers: oriterm_ui::input::Modifiers::NONE,
+        };
+        let input_event = InputEvent::from_mouse_event(&move_event);
+        let active = ctx.interaction.active_widget();
+        let now = Instant::now();
+        let result = deliver_event_to_tree(
+            ctx.content.content_widget_mut(),
+            &input_event,
+            content_bounds,
+            Some(&layout_node),
+            active,
+            &[],
+            now,
+            #[cfg(debug_assertions)]
+            Some(&layout_ids),
+            #[cfg(not(debug_assertions))]
+            None,
+        );
+        if result.handled
+            || result
+                .requests
+                .contains(oriterm_ui::controllers::ControllerRequests::PAINT)
+        {
+            ctx.request_urgent_redraw();
+        }
     }
 }

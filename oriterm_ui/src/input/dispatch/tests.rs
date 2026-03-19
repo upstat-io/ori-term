@@ -419,3 +419,83 @@ fn captured_mouse_move_uses_leaf_bounds() {
         "move during capture must use leaf bounds"
     );
 }
+
+// -- Safety rail: double-visit in dispatch --
+
+/// Container that yields two children with the same WidgetId.
+struct DoubleVisitDispatchContainer {
+    id: WidgetId,
+    child_a: StubDispatchWidget,
+    child_b: StubDispatchWidget,
+}
+
+/// Minimal widget for dispatch double-visit test.
+struct StubDispatchWidget {
+    id: WidgetId,
+}
+
+impl crate::widgets::Widget for StubDispatchWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn layout(&self, _ctx: &crate::widgets::contexts::LayoutCtx<'_>) -> crate::layout::LayoutBox {
+        crate::layout::LayoutBox::leaf(10.0, 10.0)
+    }
+
+    fn paint(&self, _ctx: &mut crate::widgets::contexts::DrawCtx<'_>) {}
+}
+
+impl crate::widgets::Widget for DoubleVisitDispatchContainer {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn layout(&self, _ctx: &crate::widgets::contexts::LayoutCtx<'_>) -> crate::layout::LayoutBox {
+        crate::layout::LayoutBox::leaf(100.0, 100.0)
+    }
+
+    fn paint(&self, _ctx: &mut crate::widgets::contexts::DrawCtx<'_>) {}
+
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn crate::widgets::Widget)) {
+        visitor(&mut self.child_a);
+        visitor(&mut self.child_b); // same ID — triggers assertion
+    }
+}
+
+#[test]
+#[should_panic(expected = "visited child")]
+fn double_visit_in_dispatch_to_widget_tree_panics() {
+    use std::time::Instant;
+
+    use super::tree::{TreeDispatchResult, dispatch_to_widget_tree};
+
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+    let mut container = DoubleVisitDispatchContainer {
+        id: parent_id,
+        child_a: StubDispatchWidget { id: child_id },
+        child_b: StubDispatchWidget { id: child_id },
+    };
+    let event = InputEvent::MouseMove {
+        pos: Point::new(5.0, 5.0),
+        modifiers: Modifiers::NONE,
+    };
+    let mut result = TreeDispatchResult::new();
+    dispatch_to_widget_tree(
+        &mut container,
+        &event,
+        &[],
+        Instant::now(),
+        &mut result,
+        None,
+    );
+}

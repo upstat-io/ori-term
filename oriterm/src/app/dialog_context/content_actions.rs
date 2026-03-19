@@ -345,6 +345,13 @@ impl App {
         collect_focusable_ids(ctx.content.content_widget_mut(), &mut focusable);
         ctx.focus.set_focus_order(focusable);
 
+        #[cfg(debug_assertions)]
+        let layout_ids = {
+            let mut ids = std::collections::HashSet::new();
+            oriterm_ui::pipeline::collect_layout_widget_ids(&layout_node, &mut ids);
+            ids
+        };
+
         // Build focus path for keyboard routing.
         let focus_path = ctx.interaction.focus_ancestor_path();
         let active = ctx.interaction.active_widget();
@@ -358,6 +365,10 @@ impl App {
             active,
             &focus_path,
             now,
+            #[cfg(debug_assertions)]
+            Some(&layout_ids),
+            #[cfg(not(debug_assertions))]
+            None,
         );
 
         // Apply interaction state changes (focus cycling, active).

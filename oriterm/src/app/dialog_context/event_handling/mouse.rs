@@ -19,7 +19,7 @@ use super::super::DialogWindowContext;
 use super::DialogClickResult;
 
 /// Returns cached layout or recomputes. Avoids expensive tree walk per event.
-fn cached_content_layout(
+pub(super) fn cached_content_layout(
     ctx: &mut DialogWindowContext,
     scale: f32,
     ui_theme: &oriterm_ui::theme::UiTheme,
@@ -205,6 +205,12 @@ impl App {
             else {
                 return DialogClickResult::None;
             };
+            #[cfg(debug_assertions)]
+            let layout_ids = {
+                let mut ids = std::collections::HashSet::new();
+                oriterm_ui::pipeline::collect_layout_widget_ids(&layout_node, &mut ids);
+                ids
+            };
             let input_event = InputEvent::from_mouse_event(&mouse_event);
             let active = ctx.interaction.active_widget();
             let result = deliver_event_to_tree(
@@ -215,6 +221,10 @@ impl App {
                 active,
                 &[],
                 now,
+                #[cfg(debug_assertions)]
+                Some(&layout_ids),
+                #[cfg(not(debug_assertions))]
+                None,
             );
 
             // Apply interaction state changes.
@@ -296,6 +306,12 @@ impl App {
         let Some(layout_node) = cached_content_layout(ctx, scale, &ui_theme, local_viewport) else {
             return;
         };
+        #[cfg(debug_assertions)]
+        let layout_ids = {
+            let mut ids = std::collections::HashSet::new();
+            oriterm_ui::pipeline::collect_layout_widget_ids(&layout_node, &mut ids);
+            ids
+        };
         let input_event = InputEvent::from_mouse_event(&mouse_event);
         let now = Instant::now();
         let active = ctx.interaction.active_widget();
@@ -307,6 +323,10 @@ impl App {
             active,
             &[],
             now,
+            #[cfg(debug_assertions)]
+            Some(&layout_ids),
+            #[cfg(not(debug_assertions))]
+            None,
         );
         apply_dispatch_requests(
             result.requests,

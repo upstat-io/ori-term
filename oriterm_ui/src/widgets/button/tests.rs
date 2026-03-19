@@ -199,3 +199,76 @@ fn paint_produces_draw_commands() {
     // Should have produced draw commands: layer + rect + text + pop_layer.
     assert!(!draw_list.is_empty());
 }
+
+// -- Harness integration tests --
+
+#[test]
+fn harness_full_click_cycle() {
+    use crate::action::WidgetAction;
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+
+    let btn = ButtonWidget::new("Click me");
+    let btn_id = btn.id();
+    let mut h = WidgetTestHarness::new(btn);
+
+    // Layout produces non-zero bounds.
+    let bounds = h.widget_bounds(btn_id);
+    assert!(bounds.width() > 0.0);
+    assert!(bounds.height() > 0.0);
+
+    // Hover.
+    h.mouse_move_to(btn_id);
+    assert!(h.is_hot(btn_id));
+
+    // Press.
+    h.mouse_down(MouseButton::Left);
+    assert!(h.is_active(btn_id));
+
+    // Release -> Clicked action.
+    h.mouse_up(MouseButton::Left);
+    assert!(!h.is_active(btn_id));
+    let actions = h.take_actions();
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn_id))
+    );
+
+    // Move away -> not hot.
+    h.mouse_move(crate::geometry::Point::new(9999.0, 9999.0));
+    assert!(!h.is_hot(btn_id));
+}
+
+#[test]
+fn harness_keyboard_activation() {
+    use crate::action::WidgetAction;
+    use crate::input::{Key, Modifiers};
+    use crate::testing::WidgetTestHarness;
+
+    let btn = ButtonWidget::new("KB");
+    let btn_id = btn.id();
+    let mut h = WidgetTestHarness::new(btn);
+
+    // Focus the button via click.
+    h.click(btn_id);
+    assert!(h.is_focused(btn_id));
+
+    // Enter key -> Clicked.
+    let actions = h.key_press(Key::Enter, Modifiers::NONE);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn_id)),
+        "Enter should produce Clicked action, got: {actions:?}"
+    );
+
+    // Space key -> Clicked.
+    let actions = h.key_press(Key::Space, Modifiers::NONE);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn_id)),
+        "Space should produce Clicked action, got: {actions:?}"
+    );
+}

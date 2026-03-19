@@ -23,6 +23,9 @@ windows-sys = { version = "0.60", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+[features]
+testing = []
+
 [build-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
 

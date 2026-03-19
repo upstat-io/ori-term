@@ -20,6 +20,7 @@ pub mod interaction;
 pub mod invalidation;
 pub mod layout;
 pub mod overlay;
+pub mod pipeline;
 pub mod scale;
 pub mod sense;
 pub mod surface;
@@ -29,6 +30,9 @@ pub mod visual_state;
 pub mod widget_id;
 pub mod widgets;
 pub mod window;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 #[cfg(target_os = "linux")]
 pub mod platform_linux;

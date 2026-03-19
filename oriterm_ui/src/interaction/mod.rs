@@ -9,11 +9,13 @@
 pub mod lifecycle;
 mod manager;
 mod parent_map;
+pub(crate) mod state;
 
 pub use crate::sense::Sense;
 pub use lifecycle::LifecycleEvent;
-pub use manager::{InteractionManager, InteractionState};
+pub use manager::InteractionManager;
 pub use parent_map::build_parent_map;
+pub use state::InteractionState;
 
 #[cfg(test)]
 mod tests;

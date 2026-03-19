@@ -251,8 +251,18 @@ fn prepare_widget_frame_delivers_lifecycle() {
     let mut widget = StubWidget::new(id);
     let mut interaction = InteractionManager::new();
     interaction.register_widget(id);
-    // Drain the WidgetAdded event from registration.
-    let _ = interaction.drain_events();
+
+    // Deliver initial WidgetAdded so ordering assertion passes.
+    let added = interaction.drain_events();
+    prepare_widget_frame(
+        &mut widget,
+        &mut interaction,
+        &added,
+        None,
+        None,
+        Instant::now(),
+    );
+    widget.lifecycle_calls.clear();
 
     // Simulate a HotChanged event.
     let events = vec![LifecycleEvent::HotChanged {
@@ -262,7 +272,7 @@ fn prepare_widget_frame_delivers_lifecycle() {
 
     prepare_widget_frame(
         &mut widget,
-        &interaction,
+        &mut interaction,
         &events,
         None,
         None,
@@ -286,7 +296,18 @@ fn prepare_widget_frame_skips_other_widget_events() {
     let mut widget = StubWidget::new(id_a);
     let mut interaction = InteractionManager::new();
     interaction.register_widget(id_a);
-    let _ = interaction.drain_events();
+
+    // Deliver initial WidgetAdded so ordering assertion passes.
+    let added = interaction.drain_events();
+    prepare_widget_frame(
+        &mut widget,
+        &mut interaction,
+        &added,
+        None,
+        None,
+        Instant::now(),
+    );
+    widget.lifecycle_calls.clear();
 
     // Event targets id_b, not id_a.
     let events = vec![LifecycleEvent::HotChanged {
@@ -296,7 +317,7 @@ fn prepare_widget_frame_skips_other_widget_events() {
 
     prepare_widget_frame(
         &mut widget,
-        &interaction,
+        &mut interaction,
         &events,
         None,
         None,
@@ -385,7 +406,20 @@ fn prepare_widget_tree_delivers_to_children() {
     interaction.register_widget(parent_id);
     interaction.register_widget(child_a_id);
     interaction.register_widget(child_b_id);
-    let _ = interaction.drain_events();
+
+    // Deliver initial WidgetAdded events so ordering assertion passes.
+    let added_events = interaction.drain_events();
+    prepare_widget_tree(
+        &mut parent,
+        &mut interaction,
+        &added_events,
+        None,
+        None,
+        Instant::now(),
+    );
+    for child in &mut parent.children {
+        child.lifecycle_calls.clear();
+    }
 
     let events = vec![
         LifecycleEvent::HotChanged {
@@ -400,7 +434,7 @@ fn prepare_widget_tree_delivers_to_children() {
 
     prepare_widget_tree(
         &mut parent,
-        &interaction,
+        &mut interaction,
         &events,
         None,
         None,
@@ -502,14 +536,24 @@ fn prepare_widget_tree_processes_visual_states() {
     let mut interaction = InteractionManager::new();
     interaction.register_widget(parent_id);
     interaction.register_widget(child_id);
-    let _ = interaction.drain_events();
+
+    // Deliver initial WidgetAdded events so ordering assertion passes.
+    let added_events = interaction.drain_events();
+    let now = Instant::now();
+    prepare_widget_tree(
+        &mut parent,
+        &mut interaction,
+        &added_events,
+        None,
+        None,
+        now,
+    );
 
     // Make child hot so the animator has state to process.
     interaction.update_hot_path(&[child_id]);
     let _ = interaction.drain_events();
 
-    let now = Instant::now();
-    prepare_widget_tree(&mut parent, &interaction, &[], None, None, now);
+    prepare_widget_tree(&mut parent, &mut interaction, &[], None, None, now);
 
     // The child's animator was updated (it called update+tick).
     // We can't easily inspect internal state, but the fact that it

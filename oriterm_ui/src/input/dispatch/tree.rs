@@ -4,6 +4,7 @@
 //! actions) and `deliver_event_to_tree` (high-level: combines hit testing,
 //! propagation planning, and controller dispatch in one call).
 
+use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::action::WidgetAction;
@@ -65,18 +66,27 @@ impl Default for TreeDispatchResult {
 ///
 /// Recurses depth-first via `Widget::for_each_child_mut`. Stops early
 /// if any controller marks the event as handled.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "dispatch: widget, event, actions, now, result, dispatch_ids for cross-phase tracking"
+)]
+#[expect(clippy::implicit_hasher, reason = "always used with default hasher")]
 pub fn dispatch_to_widget_tree(
     widget: &mut dyn Widget,
     event: &InputEvent,
     actions: &[DeliveryAction],
     now: Instant,
     result: &mut TreeDispatchResult,
+    mut dispatch_ids: Option<&mut HashSet<WidgetId>>,
 ) {
     if result.handled {
         return;
     }
 
     let id = widget.id();
+    if let Some(ref mut ids) = dispatch_ids {
+        ids.insert(id);
+    }
 
     // Dispatch any delivery actions targeting this widget.
     if actions.iter().any(|a| a.widget_id == id) {
@@ -135,8 +145,27 @@ pub fn dispatch_to_widget_tree(
     }
 
     // Recurse into children.
+    #[cfg(debug_assertions)]
+    let mut visited = HashSet::new();
     widget.for_each_child_mut(&mut |child| {
-        dispatch_to_widget_tree(child, event, actions, now, result);
+        #[cfg(debug_assertions)]
+        {
+            let child_id = child.id();
+            let is_new = visited.insert(child_id);
+            assert!(
+                is_new,
+                "Container widget {:?} visited child {:?} twice during event dispatch",
+                id, child_id
+            );
+        }
+        dispatch_to_widget_tree(
+            child,
+            event,
+            actions,
+            now,
+            result,
+            dispatch_ids.as_deref_mut(),
+        );
     });
 }
 
@@ -159,8 +188,9 @@ pub fn dispatch_to_widget_tree(
 /// - `now` — current frame timestamp.
 #[expect(
     clippy::too_many_arguments,
-    reason = "pipeline dispatch: widget, event, bounds, layout, active, focus, timestamp"
+    reason = "pipeline dispatch: widget, event, bounds, layout, active, focus, timestamp, layout_ids"
 )]
+#[expect(clippy::implicit_hasher, reason = "always used with default hasher")]
 pub fn deliver_event_to_tree(
     widget: &mut dyn Widget,
     event: &InputEvent,
@@ -169,7 +199,9 @@ pub fn deliver_event_to_tree(
     active_widget: Option<WidgetId>,
     focus_path: &[WidgetId],
     now: Instant,
+    layout_ids: Option<&HashSet<WidgetId>>,
 ) -> TreeDispatchResult {
+    let _ = &layout_ids; // used only in debug_assertions
     let root_id = widget.id();
     let root_sense = widget.sense();
 
@@ -237,6 +269,16 @@ pub fn deliver_event_to_tree(
         }
     };
 
+    // Log hit path for mouse move events (diagnostic — remove after debugging).
+    if matches!(event, InputEvent::MouseMove { .. }) && !hit_result.path.is_empty() {
+        let ids: Vec<_> = hit_result.path.iter().map(|e| e.widget_id.raw()).collect();
+        log::info!(
+            "hit_path: {:?} active={:?}",
+            ids,
+            active_widget.map(WidgetId::raw)
+        );
+    }
+
     // Plan propagation.
     let mut delivery_actions = Vec::new();
     plan_propagation(
@@ -249,6 +291,27 @@ pub fn deliver_event_to_tree(
 
     // Dispatch through widget tree.
     let mut result = TreeDispatchResult::new();
-    dispatch_to_widget_tree(widget, event, &delivery_actions, now, &mut result);
+
+    #[cfg(debug_assertions)]
+    let mut dispatch_ids_set = HashSet::new();
+    #[cfg(debug_assertions)]
+    let dispatch_ids_param = Some(&mut dispatch_ids_set);
+    #[cfg(not(debug_assertions))]
+    let dispatch_ids_param: Option<&mut HashSet<WidgetId>> = None;
+
+    dispatch_to_widget_tree(
+        widget,
+        event,
+        &delivery_actions,
+        now,
+        &mut result,
+        dispatch_ids_param,
+    );
+
+    #[cfg(debug_assertions)]
+    if let Some(li) = layout_ids {
+        crate::pipeline::check_cross_phase_consistency(li, &dispatch_ids_set);
+    }
+
     result
 }

@@ -118,7 +118,8 @@ impl RenderScheduler {
             if entry.wake_at > now {
                 break;
             }
-            let entry = self.deferred_repaints.pop().unwrap().0;
+            // Safe: `peek()` returned `Some`, so `pop()` will too.
+            let Reverse(entry) = self.deferred_repaints.pop().expect("peek succeeded");
             // Lazy removal: skip entries for removed widgets.
             if !self.removed_widgets.contains(&entry.widget_id) {
                 self.paint_requests.insert(entry.widget_id);
