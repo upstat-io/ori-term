@@ -7,11 +7,15 @@
 mod content_actions;
 mod event_handling;
 pub(in crate::app) mod key_conversion;
+mod keymap_dispatch;
 
 use std::sync::Arc;
 
 use winit::window::Window;
 
+use std::collections::HashMap;
+
+use oriterm_ui::action::Keymap;
 use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;
 use oriterm_ui::draw::{DamageTracker, Scene};
@@ -89,6 +93,12 @@ pub(crate) struct DialogWindowContext {
     pub(super) focus: FocusManager,
     /// Per-frame animation request flags for widget hover/press transitions.
     pub(super) frame_requests: oriterm_ui::animation::FrameRequestFlags,
+    /// Keymap for widget-level action dispatch.
+    pub(super) keymap: Keymap,
+    /// Per-widget key context tags for keymap scope gating.
+    pub(super) key_contexts: HashMap<oriterm_ui::widget_id::WidgetId, &'static str>,
+    /// Last key handled by keymap (for `KeyUp` suppression).
+    pub(super) last_keymap_handled: Option<oriterm_ui::input::Key>,
 
     /// Whether this dialog needs a redraw.
     pub(super) dirty: bool,
@@ -209,6 +219,9 @@ impl DialogWindowContext {
             interaction: InteractionManager::new(),
             focus: FocusManager::new(),
             frame_requests: oriterm_ui::animation::FrameRequestFlags::new(),
+            keymap: Keymap::defaults(),
+            key_contexts: HashMap::new(),
+            last_keymap_handled: None,
             lifecycle: SurfaceLifecycle::CreatedHidden,
             dirty: true,
             urgent_redraw: false,

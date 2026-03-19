@@ -392,6 +392,10 @@ impl Widget for SettingsPanel {
     fn focusable_children(&self) -> Vec<WidgetId> {
         self.container.focusable_children()
     }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Settings")
+    }
 }
 
 #[cfg(test)]

@@ -217,6 +217,23 @@ pub trait Widget {
         Some(action)
     }
 
+    /// Handles a keymap-resolved action.
+    ///
+    /// Called by the dispatch pipeline when a keystroke matched a keymap
+    /// binding. The widget maps the semantic `KeymapAction` to a
+    /// `WidgetAction` using its own state (e.g., `NavigateDown` + current
+    /// selection -> `Selected { id, index: current + 1 }`).
+    ///
+    /// Return `Some(action)` to emit a `WidgetAction`, or `None` to
+    /// suppress. Default returns `None` (widget does not handle keymap actions).
+    fn handle_keymap_action(
+        &mut self,
+        _action: &dyn crate::action::KeymapAction,
+        _bounds: crate::geometry::Rect,
+    ) -> Option<WidgetAction> {
+        None
+    }
+
     /// Propagates an externally-originated action to a descendant widget.
     ///
     /// Used when an action from a popup overlay (e.g. dropdown menu selection)
@@ -255,6 +272,18 @@ pub trait Widget {
     /// widget itself is only hit if no child handles the point.
     fn hit_test_behavior(&self) -> HitTestBehavior {
         HitTestBehavior::DeferToChild
+    }
+
+    /// Returns the key context tag for keymap scope gating.
+    ///
+    /// The keymap dispatch pipeline builds a context stack from the focus
+    /// path by collecting `key_context()` values from ancestor widgets.
+    /// Bindings with `context: Some("Button")` only fire when a widget
+    /// returning `Some("Button")` is in the focus ancestor chain.
+    ///
+    /// Default is `None` (no context tag — does not affect keymap scoping).
+    fn key_context(&self) -> Option<&'static str> {
+        None
     }
 
     /// Resets scroll state to the top.

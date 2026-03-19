@@ -155,4 +155,8 @@ impl Widget for SliderWidget {
             other => Some(other),
         }
     }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Slider")
+    }
 }

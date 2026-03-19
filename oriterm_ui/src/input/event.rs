@@ -153,7 +153,7 @@ pub enum Key {
 }
 
 /// A keyboard event in the widget event model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KeyEvent {
     /// Which key was pressed.
     pub key: Key,

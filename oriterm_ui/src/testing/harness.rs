@@ -5,13 +5,15 @@
 //! lifecycle events, and animation scheduling — without requiring a GPU,
 //! window, or real font stack.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::action::WidgetAction;
+use crate::action::{Keymap, WidgetAction, collect_key_contexts};
 use crate::animation::FrameRequestFlags;
 use crate::animation::scheduler::RenderScheduler;
 use crate::focus::FocusManager;
 use crate::geometry::{Point, Rect};
+use crate::input::Key;
 use crate::interaction::{InteractionManager, build_parent_map};
 use crate::layout::{LayoutNode, compute_layout};
 use crate::pipeline::{collect_focusable_ids, register_widget_tree};
@@ -63,6 +65,12 @@ pub struct WidgetTestHarness {
     pub(super) frame_requests: FrameRequestFlags,
     /// Current mouse position (for mouse_down/mouse_up without explicit pos).
     pub(super) mouse_pos: Point,
+    /// Keymap for action dispatch (defaults loaded at construction).
+    pub(super) keymap: Keymap,
+    /// Per-widget key context tags (collected during `rebuild_layout()`).
+    pub(super) key_contexts: HashMap<WidgetId, &'static str>,
+    /// Last key handled by keymap (for `KeyUp` suppression).
+    pub(super) last_keymap_handled: Option<Key>,
 }
 
 /// Default viewport width for the test harness (800px).
@@ -91,6 +99,9 @@ impl WidgetTestHarness {
             pending_actions: Vec::new(),
             frame_requests: FrameRequestFlags::new(),
             mouse_pos: Point::new(0.0, 0.0),
+            keymap: Keymap::defaults(),
+            key_contexts: HashMap::new(),
+            last_keymap_handled: None,
         };
         harness.rebuild_layout();
         // Deliver initial WidgetAdded lifecycle events so that subsequent
@@ -118,6 +129,10 @@ impl WidgetTestHarness {
 
         // Register all widget IDs with InteractionManager (idempotent).
         register_widget_tree(&mut *self.widget, &mut self.interaction);
+
+        // Collect key contexts for keymap scope gating.
+        self.key_contexts.clear();
+        collect_key_contexts(&mut *self.widget, &mut self.key_contexts);
 
         // Rebuild focus order from tree traversal.
         self.rebuild_focus_order();

@@ -319,6 +319,22 @@ impl Widget for CheckboxWidget {
             other => Some(other),
         }
     }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Button")
+    }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn crate::action::KeymapAction,
+        _bounds: Rect,
+    ) -> Option<WidgetAction> {
+        if action.name() == "widget::Activate" {
+            Some(WidgetAction::Clicked(self.id))
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]

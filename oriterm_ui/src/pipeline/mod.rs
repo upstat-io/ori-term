@@ -11,7 +11,7 @@ use std::time::Instant;
 #[cfg(debug_assertions)]
 use std::collections::HashSet;
 
-use crate::action::WidgetAction;
+use crate::action::{KeymapAction, WidgetAction};
 use crate::animation::{AnimFrameEvent, FrameRequestFlags};
 use crate::controllers::{
     ControllerCtxArgs, ControllerRequests, DispatchOutput, dispatch_lifecycle_to_controllers,
@@ -315,6 +315,31 @@ pub fn register_widget_tree(widget: &mut dyn Widget, interaction: &mut Interacti
     widget.for_each_child_mut(&mut |child| {
         register_widget_tree(child, interaction);
     });
+}
+
+/// Dispatches a keymap action to the target widget by ID.
+///
+/// Walks the widget tree depth-first to find the widget with `target` ID,
+/// then calls `handle_keymap_action()` on it. Returns the resulting
+/// `WidgetAction` if the widget handled the action.
+///
+/// O(n) in tree size — only runs on keymap-matched keyboard events.
+pub fn dispatch_keymap_action(
+    widget: &mut dyn Widget,
+    target: WidgetId,
+    action: &dyn KeymapAction,
+    bounds: Rect,
+) -> Option<WidgetAction> {
+    if widget.id() == target {
+        return widget.handle_keymap_action(action, bounds);
+    }
+    let mut result = None;
+    widget.for_each_child_mut(&mut |child| {
+        if result.is_none() {
+            result = dispatch_keymap_action(child, target, action, bounds);
+        }
+    });
+    result
 }
 
 /// Collects focusable widget IDs in tree traversal order.

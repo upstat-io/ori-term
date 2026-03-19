@@ -6,6 +6,19 @@
 //!
 //! Lives in its own module (not `widgets/`) so that `controllers/` can import
 //! it without creating a circular dependency (`controllers -> widgets`).
+//!
+//! Submodules:
+//! - `keymap_action`: Typed actions bound to keystrokes via the keymap system.
+//! - `keymap`: Keymap data structure mapping keystrokes to actions.
+//! - `context`: Key context for scope-gated binding dispatch.
+
+pub mod context;
+pub mod keymap;
+pub mod keymap_action;
+
+pub use context::{build_context_stack, collect_key_contexts};
+pub use keymap::{KeyBinding, Keymap, Keystroke};
+pub use keymap_action::KeymapAction;
 
 use crate::geometry::{Point, Rect};
 use crate::widget_id::WidgetId;

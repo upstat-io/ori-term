@@ -9,7 +9,6 @@ use std::time::Instant;
 
 use oriterm_ui::controllers::ControllerRequests;
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
 use oriterm_ui::interaction::build_parent_map;
 use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
@@ -357,18 +356,17 @@ impl App {
         let active = ctx.interaction.active_widget();
         let now = Instant::now();
 
-        let result = deliver_event_to_tree(
-            ctx.content.content_widget_mut(),
+        // Dispatch via keymap (for KeyDown) or fall through to controllers.
+        let result = super::keymap_dispatch::dispatch_dialog_key_event(
             &input_event,
-            content_bounds,
-            Some(&layout_node),
-            active,
+            ctx,
             &focus_path,
+            active,
+            content_bounds,
+            &layout_node,
             now,
             #[cfg(debug_assertions)]
-            Some(&layout_ids),
-            #[cfg(not(debug_assertions))]
-            None,
+            &layout_ids,
         );
 
         // Apply interaction state changes (focus cycling, active).
@@ -438,6 +436,14 @@ impl App {
         );
         // Drain registration lifecycle events (WidgetAdded).
         let _ = ctx.interaction.drain_events();
+
+        // Collect key contexts for keymap scope gating.
+        ctx.key_contexts.clear();
+        oriterm_ui::action::collect_key_contexts(&mut ctx.chrome, &mut ctx.key_contexts);
+        oriterm_ui::action::collect_key_contexts(
+            ctx.content.content_widget_mut(),
+            &mut ctx.key_contexts,
+        );
 
         // Compute layout and build parent map.
         let chrome_h = ctx.chrome.caption_height();

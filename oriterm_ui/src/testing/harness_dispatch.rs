@@ -4,16 +4,18 @@
 //! dispatch pipeline) and `deliver_lifecycle_events()` (pre-paint mutation
 //! phase for lifecycle and animation frame delivery).
 
+use std::collections::HashMap;
 use std::time::Duration;
 
+use crate::action::{Keystroke, build_context_stack};
 use crate::animation::AnimFrameEvent;
+use crate::controllers::ControllerRequests;
 use crate::input::InputEvent;
-use crate::input::dispatch::tree::deliver_event_to_tree;
+use crate::input::dispatch::tree::{TreeDispatchResult, deliver_event_to_tree};
 use crate::input::layout_hit_test_path;
-use std::collections::HashMap;
-
 use crate::pipeline::{
-    apply_dispatch_requests, collect_layout_bounds, prepaint_widget_tree, prepare_widget_tree,
+    apply_dispatch_requests, collect_layout_bounds, dispatch_keymap_action, prepaint_widget_tree,
+    prepare_widget_tree,
 };
 
 use super::harness::WidgetTestHarness;
@@ -42,17 +44,70 @@ impl WidgetTestHarness {
         self.deliver_lifecycle_events();
 
         // Step 3: dispatch event through widget tree.
+        // For keyboard events, try keymap lookup first. If a binding matches,
+        // dispatch the action directly; otherwise fall through to controllers.
         let focus_path = self.interaction.focus_ancestor_path();
-        let result = deliver_event_to_tree(
-            &mut *self.widget,
-            &event,
-            self.viewport,
-            Some(&self.layout),
-            self.interaction.active_widget(),
-            &focus_path,
-            self.clock,
-            None,
-        );
+        let result = match event {
+            InputEvent::KeyDown { key, modifiers } => {
+                let keystroke = Keystroke::new(key, modifiers);
+                let context_stack = build_context_stack(&self.key_contexts, &focus_path);
+                if let Some(action) = self.keymap.lookup(keystroke, &context_stack) {
+                    let mut r = TreeDispatchResult::new();
+                    r.handled = true;
+                    match action.name() {
+                        "widget::FocusNext" => {
+                            r.requests = ControllerRequests::FOCUS_NEXT;
+                            r.source = focus_path.last().copied();
+                        }
+                        "widget::FocusPrev" => {
+                            r.requests = ControllerRequests::FOCUS_PREV;
+                            r.source = focus_path.last().copied();
+                        }
+                        _ => {
+                            if let Some(focused_id) = focus_path.last().copied() {
+                                if let Some(widget_action) = dispatch_keymap_action(
+                                    &mut *self.widget,
+                                    focused_id,
+                                    &*action,
+                                    self.viewport,
+                                ) {
+                                    r.actions.push(widget_action);
+                                }
+                                r.source = Some(focused_id);
+                            }
+                        }
+                    }
+                    self.last_keymap_handled = Some(key);
+                    r
+                } else {
+                    deliver_event_to_tree(
+                        &mut *self.widget,
+                        &event,
+                        self.viewport,
+                        Some(&self.layout),
+                        self.interaction.active_widget(),
+                        &focus_path,
+                        self.clock,
+                        None,
+                    )
+                }
+            }
+            InputEvent::KeyUp { key, .. } if self.last_keymap_handled == Some(key) => {
+                // Suppress KeyUp for keys the keymap already handled.
+                self.last_keymap_handled = None;
+                TreeDispatchResult::new()
+            }
+            _ => deliver_event_to_tree(
+                &mut *self.widget,
+                &event,
+                self.viewport,
+                Some(&self.layout),
+                self.interaction.active_widget(),
+                &focus_path,
+                self.clock,
+                None,
+            ),
+        };
 
         // Step 4: apply controller requests.
         apply_dispatch_requests(

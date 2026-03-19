@@ -359,6 +359,10 @@ impl Widget for DropdownWidget {
         }
         false
     }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Dropdown")
+    }
 }
 
 #[cfg(test)]

@@ -130,6 +130,10 @@ impl Widget for MenuWidget {
             other => Some(other),
         }
     }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Menu")
+    }
 }
 
 // Drawing helpers.
