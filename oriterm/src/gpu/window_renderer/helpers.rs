@@ -127,7 +127,7 @@ pub(super) fn shape_frame(
 /// Callers build [`RasterKey`] iterators from their specific context:
 /// - Grid caller: iterates `ShapedFrame::all_glyphs()`, builds keys with
 ///   [`FontRealm::Terminal`] and `subpx_bin(glyph.x_offset)`.
-/// - UI caller: iterates `DrawList` text commands, builds keys with
+/// - UI caller: iterates Scene text runs, builds keys with
 ///   [`FontRealm::Ui`] and `subpx_bin(cursor_x + glyph.x_offset)`.
 #[expect(
     clippy::too_many_arguments,
@@ -192,26 +192,20 @@ pub(super) fn grid_raster_keys(
     })
 }
 
-/// Collect [`RasterKey`]s from UI draw list text commands into `keys`.
+/// Collect [`RasterKey`]s from Scene text runs into `keys`.
 ///
-/// The caller owns the buffer and should `clear()` before calling.
-/// Reusing the same `Vec` across frames avoids per-frame allocation.
-pub(super) fn ui_text_raster_keys(
-    draw_list: &oriterm_ui::draw::DrawList,
+/// Iterates typed `text_runs()` directly. The caller owns the buffer
+/// and should `clear()` before calling.
+pub(super) fn scene_raster_keys(
+    scene: &oriterm_ui::draw::Scene,
     size_q6: u32,
     hinted: bool,
     scale: f32,
     keys: &mut Vec<RasterKey>,
 ) {
-    for cmd in draw_list.commands() {
-        let oriterm_ui::draw::DrawCommand::Text {
-            position, shaped, ..
-        } = cmd
-        else {
-            continue;
-        };
-        let mut cursor_x = position.x * scale;
-        for glyph in &shaped.glyphs {
+    for text_run in scene.text_runs() {
+        let mut cursor_x = text_run.position.x * scale;
+        for glyph in &text_run.shaped.glyphs {
             let advance = glyph.x_advance;
             if glyph.glyph_id == 0 {
                 cursor_x += advance;
@@ -298,76 +292,16 @@ pub(super) fn record_draw(
     pass.draw(0..4, 0..instance_count);
 }
 
-/// Record an instanced draw call with scissor rect splitting.
+/// Record an instanced draw call for a sub-range `[start..end)`.
 ///
-/// Like [`record_draw`] but splits the draw into sub-ranges at each
-/// [`ClipSegment`] boundary, calling `set_scissor_rect` between them.
-/// Resets the scissor to the full viewport after the last segment.
-///
-/// When `clips` is empty, behaves identically to a single full draw.
+/// Like [`record_draw`] but draws only instances in `[start..end)`.
+/// Used for overlay draw ranges where each overlay occupies a contiguous
+/// sub-range of the shared buffer.
 #[expect(
     clippy::too_many_arguments,
-    reason = "GPU render pass + clip segments: pipeline, bind groups, buffer, count, clips, viewport"
+    reason = "GPU render pass + range: pipeline, bind groups, buffer, range"
 )]
-pub(super) fn record_draw_clipped(
-    pass: &mut RenderPass<'_>,
-    pipeline: &RenderPipeline,
-    uniform_bg: &BindGroup,
-    atlas_bg: Option<&BindGroup>,
-    buffer: Option<&Buffer>,
-    instance_count: u32,
-    clips: &[super::super::draw_list_convert::ClipSegment],
-    viewport_w: u32,
-    viewport_h: u32,
-) {
-    if instance_count == 0 {
-        return;
-    }
-    let Some(buf) = buffer else { return };
-
-    pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, uniform_bg, &[]);
-    if let Some(atlas) = atlas_bg {
-        pass.set_bind_group(1, atlas, &[]);
-    }
-    pass.set_vertex_buffer(0, buf.slice(..));
-
-    if clips.is_empty() {
-        pass.draw(0..4, 0..instance_count);
-        return;
-    }
-
-    let mut cursor = 0u32;
-    for seg in clips {
-        // Draw instances before this clip change.
-        if seg.instance_offset > cursor {
-            pass.draw(0..4, cursor..seg.instance_offset);
-        }
-        // Apply new scissor.
-        if let Some(r) = seg.rect {
-            pass.set_scissor_rect(r[0], r[1], r[2], r[3]);
-        } else {
-            pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
-        }
-        cursor = seg.instance_offset;
-    }
-    // Draw remaining instances after the last clip change.
-    if cursor < instance_count {
-        pass.draw(0..4, cursor..instance_count);
-    }
-    // Reset scissor to full viewport.
-    pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
-}
-
-/// Record an instanced draw call for a sub-range `[start..end)` with clips.
-///
-/// Like [`record_draw_clipped`] but draws only instances in `[start..end)`.
-/// Clip segment offsets are absolute (matching the buffer's instance indices).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "GPU render pass + range: pipeline, bind groups, buffer, range, clips, viewport"
-)]
-pub(super) fn record_draw_range_clipped(
+pub(super) fn record_draw_range(
     pass: &mut RenderPass<'_>,
     pipeline: &RenderPipeline,
     uniform_bg: &BindGroup,
@@ -375,56 +309,18 @@ pub(super) fn record_draw_range_clipped(
     buffer: Option<&Buffer>,
     start: u32,
     end: u32,
-    clips: &[super::super::draw_list_convert::ClipSegment],
-    viewport_w: u32,
-    viewport_h: u32,
 ) {
     if start >= end {
         return;
     }
     let Some(buf) = buffer else { return };
-
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, uniform_bg, &[]);
     if let Some(atlas) = atlas_bg {
         pass.set_bind_group(1, atlas, &[]);
     }
     pass.set_vertex_buffer(0, buf.slice(..));
-
-    if clips.is_empty() {
-        pass.draw(0..4, start..end);
-        return;
-    }
-
-    let mut cursor = start;
-    for seg in clips {
-        // Skip clips outside our range.
-        if seg.instance_offset < start {
-            // Apply the scissor but don't draw — it affects later segments.
-            if let Some(r) = seg.rect {
-                pass.set_scissor_rect(r[0], r[1], r[2], r[3]);
-            } else {
-                pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
-            }
-            continue;
-        }
-        if seg.instance_offset >= end {
-            break;
-        }
-        if seg.instance_offset > cursor {
-            pass.draw(0..4, cursor..seg.instance_offset);
-        }
-        if let Some(r) = seg.rect {
-            pass.set_scissor_rect(r[0], r[1], r[2], r[3]);
-        } else {
-            pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
-        }
-        cursor = seg.instance_offset;
-    }
-    if cursor < end {
-        pass.draw(0..4, cursor..end);
-    }
-    pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
+    pass.draw(0..4, start..end);
 }
 
 /// Pre-cache printable ASCII glyphs (Regular + Bold) into the given atlas.

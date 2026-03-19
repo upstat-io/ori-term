@@ -14,7 +14,7 @@ use winit::window::Window;
 
 use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;
-use oriterm_ui::draw::{DrawList, SceneCache};
+use oriterm_ui::draw::{DamageTracker, Scene};
 use oriterm_ui::focus::FocusManager;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::interaction::InteractionManager;
@@ -59,16 +59,16 @@ pub(crate) struct DialogWindowContext {
     pub(super) layer_animator: LayerAnimator,
     /// Text shaping cache (persists across frames for cached UI text measurer).
     pub(super) text_cache: TextShapeCache,
-    /// Scratch draw list for rendering the dialog frame.
-    pub(super) draw_list: DrawList,
+    /// Scratch scene for rendering the dialog frame.
+    pub(super) scene: Scene,
     /// DPI scale factor for this window's display.
     pub(super) scale_factor: ScaleFactor,
     /// Last cursor position in logical pixels (for mouse click handlers).
     pub(super) last_cursor_pos: oriterm_ui::geometry::Point,
-    /// Per-widget scene cache for retained UI rendering.
-    pub(super) scene_cache: SceneCache,
     /// Per-widget invalidation tracker.
     pub(super) invalidation: InvalidationTracker,
+    /// Per-widget damage tracker (scene diffing for future partial repaints).
+    pub(super) damage_tracker: DamageTracker,
     // Surface strategy, damage tracking, and lifecycle.
     #[expect(
         dead_code,
@@ -196,9 +196,9 @@ impl DialogWindowContext {
             layer_tree: LayerTree::new(viewport),
             layer_animator: LayerAnimator::new(),
             text_cache: TextShapeCache::new(),
-            draw_list: DrawList::new(),
-            scene_cache: SceneCache::new(),
+            scene: Scene::new(),
             invalidation: InvalidationTracker::new(),
+            damage_tracker: DamageTracker::new(),
             scale_factor,
             last_cursor_pos: oriterm_ui::geometry::Point::new(0.0, 0.0),
             render_strategy: RenderStrategy::UiRetained,
@@ -227,8 +227,8 @@ impl DialogWindowContext {
         let logical_h = h as f32 / scale;
         self.overlays
             .set_viewport(Rect::new(0.0, 0.0, logical_w, logical_h));
-        self.scene_cache.clear();
         self.invalidation.invalidate_all();
+        self.damage_tracker.reset();
         self.cached_layout = None;
         self.dirty = true;
     }

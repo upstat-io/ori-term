@@ -193,7 +193,7 @@ impl Widget for SettingRowWidget {
         let bg = self.animator.get_bg_color(ctx.now);
         if bg.a > 0.001 {
             let rect_style = RectStyle::filled(bg).with_radius(CORNER_RADIUS);
-            ctx.draw_list.push_rect(ctx.bounds, rect_style);
+            ctx.scene.push_quad(ctx.bounds, rect_style);
         }
 
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
@@ -207,7 +207,7 @@ impl Widget for SettingRowWidget {
                     .measurer
                     .shape(&self.name, &style, name_node.content_rect.width());
                 let pos = Point::new(name_node.content_rect.x(), name_node.content_rect.y());
-                ctx.draw_list.push_text(pos, shaped, ctx.theme.fg_primary);
+                ctx.scene.push_text(pos, shaped, ctx.theme.fg_primary);
             }
             // Description label (second child of the column).
             if let Some(desc_node) = label_col.children.get(1) {
@@ -216,7 +216,7 @@ impl Widget for SettingRowWidget {
                     ctx.measurer
                         .shape(&self.description, &style, desc_node.content_rect.width());
                 let pos = Point::new(desc_node.content_rect.x(), desc_node.content_rect.y());
-                ctx.draw_list.push_text(pos, shaped, ctx.theme.fg_secondary);
+                ctx.scene.push_text(pos, shaped, ctx.theme.fg_secondary);
             }
         }
 
@@ -224,12 +224,11 @@ impl Widget for SettingRowWidget {
         if let Some(control_node) = layout.children.get(1) {
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
+                scene: ctx.scene,
                 bounds: control_node.content_rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,

@@ -2,7 +2,7 @@
 //!
 //! Implements the [`Widget`] trait with `Fill × Fill` sizing so the grid
 //! expands to fill remaining space after tab bar, status bar, etc. Rendering
-//! is handled by the existing GPU prepare pipeline (not `DrawList`); this
+//! is handled by the existing GPU prepare pipeline (not the Scene); this
 //! widget participates in layout and event routing only.
 
 mod input_controller;
@@ -17,7 +17,7 @@ use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 /// The terminal grid as a UI widget.
 ///
-/// Does not render cells via `DrawList` — the existing prepare pipeline
+/// Does not render cells via Scene — the existing prepare pipeline
 /// handles cell rendering. This widget exists to participate in layout
 /// (reporting `Fill × Fill` sizing) and event routing (claiming keyboard
 /// and mouse events when focused).
@@ -119,7 +119,7 @@ impl Widget for TerminalGridWidget {
     }
 
     fn paint(&self, _ctx: &mut DrawCtx<'_>) {
-        // No DrawCommands — cell rendering is handled by the GPU prepare
+        // No Scene primitives — cell rendering is handled by the GPU prepare
         // phase. Bounds are set explicitly via `set_bounds()` from
         // `compute_window_layout`, which includes grid padding.
     }

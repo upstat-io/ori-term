@@ -184,25 +184,24 @@ fn toggle_animation_interpolates_thumb_position() {
 #[test]
 fn paint_signals_animation_while_toggling() {
     use crate::animation::FrameRequestFlags;
-    use crate::draw::DrawList;
+    use crate::draw::Scene;
     use crate::geometry::Rect;
 
     let mut t = ToggleWidget::new();
     t.toggle();
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
     let flags = FrameRequestFlags::new();
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: Some(&flags),
@@ -218,24 +217,23 @@ fn paint_signals_animation_while_toggling() {
 #[test]
 fn paint_no_animation_signal_when_idle() {
     use crate::animation::FrameRequestFlags;
-    use crate::draw::DrawList;
+    use crate::draw::Scene;
     use crate::geometry::Rect;
 
     let t = ToggleWidget::new();
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
     let flags = FrameRequestFlags::new();
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: Some(&flags),
@@ -250,38 +248,30 @@ fn paint_no_animation_signal_when_idle() {
 
 #[test]
 fn paint_thumb_at_on_position() {
-    use crate::draw::{DrawCommand, DrawList};
+    use crate::draw::Scene;
     use crate::geometry::Rect;
 
     let t = ToggleWidget::new().with_on(true);
     let style = ToggleStyle::default();
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, style.width, style.height);
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     t.paint(&mut draw_ctx);
 
-    let rects: Vec<_> = draw_list
-        .commands()
-        .iter()
-        .filter_map(|c| match c {
-            DrawCommand::Rect { rect, .. } => Some(*rect),
-            _ => None,
-        })
-        .collect();
+    let rects: Vec<_> = scene.quads().iter().map(|q| q.bounds).collect();
     assert!(rects.len() >= 2, "should have track + thumb rects");
 
     let thumb_rect = rects.last().unwrap();
@@ -297,38 +287,30 @@ fn paint_thumb_at_on_position() {
 
 #[test]
 fn paint_thumb_at_off_position() {
-    use crate::draw::{DrawCommand, DrawList};
+    use crate::draw::Scene;
     use crate::geometry::Rect;
 
     let t = ToggleWidget::new();
     let style = ToggleStyle::default();
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, style.width, style.height);
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     t.paint(&mut draw_ctx);
 
-    let rects: Vec<_> = draw_list
-        .commands()
-        .iter()
-        .filter_map(|c| match c {
-            DrawCommand::Rect { rect, .. } => Some(*rect),
-            _ => None,
-        })
-        .collect();
+    let rects: Vec<_> = scene.quads().iter().map(|q| q.bounds).collect();
     assert!(rects.len() >= 2, "should have track + thumb rects");
 
     let thumb_rect = rects.last().unwrap();

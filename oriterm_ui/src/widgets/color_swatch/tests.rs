@@ -1,6 +1,6 @@
 use crate::action::WidgetAction;
 use crate::color::Color;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::{Point, Rect};
 use crate::input::InputEvent;
 use crate::layout::compute_layout;
@@ -74,16 +74,15 @@ fn grid_layout_two_rows() {
 fn grid_paint_produces_rects_and_labels() {
     let grid = ColorSwatchGrid::new(ansi_colors(), theme());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 300.0, 100.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: theme(),
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -91,19 +90,8 @@ fn grid_paint_produces_rects_and_labels() {
     grid.paint(&mut ctx);
 
     // 8 colored rects + 8 index labels.
-    let rects = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
-    assert_eq!(rects, 8, "one rect per color cell");
-
-    let texts = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(texts, 8, "one index label per cell");
+    assert_eq!(scene.quads().len(), 8, "one rect per color cell");
+    assert_eq!(scene.text_runs().len(), 8, "one index label per cell");
 }
 
 #[test]
@@ -152,16 +140,15 @@ fn special_swatch_set_color() {
 fn special_swatch_paint_produces_swatch_and_labels() {
     let swatch = SpecialColorSwatch::new("Cursor", Color::hex(0x00_FF_00), theme());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 80.0, 56.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: theme(),
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -169,20 +156,9 @@ fn special_swatch_paint_produces_swatch_and_labels() {
     swatch.paint(&mut ctx);
 
     // 1 swatch rect.
-    let rects = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
-    assert_eq!(rects, 1, "one color swatch rect");
-
-    // 2 text commands: label + hex value.
-    let texts = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(texts, 2, "label + hex value");
+    assert_eq!(scene.quads().len(), 1, "one color swatch rect");
+    // 2 text runs: label + hex value.
+    assert_eq!(scene.text_runs().len(), 2, "label + hex value");
 }
 
 #[test]

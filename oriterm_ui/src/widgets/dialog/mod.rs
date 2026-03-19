@@ -244,7 +244,7 @@ impl Widget for DialogWidget {
         // The footer inherits this as its background; the content zone is
         // overlaid with the lighter bg color. This avoids per-corner radius
         // issues (the GPU shader only supports uniform radius).
-        ctx.draw_list.push_layer(self.style.footer_bg);
+        ctx.scene.push_layer_bg(self.style.footer_bg);
 
         let mut base_style =
             RectStyle::filled(self.style.footer_bg).with_radius(self.style.corner_radius);
@@ -254,12 +254,12 @@ impl Widget for DialogWidget {
         if let Some(shadow) = self.style.shadow {
             base_style = base_style.with_shadow(shadow);
         }
-        ctx.draw_list.push_rect(ctx.bounds, base_style);
+        ctx.scene.push_quad(ctx.bounds, base_style);
 
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         let children = &layout.children;
         if children.len() < 2 {
-            ctx.draw_list.pop_layer();
+            ctx.scene.pop_layer_bg();
             return;
         }
 
@@ -270,21 +270,21 @@ impl Widget for DialogWidget {
         let content_rect = children[0]
             .rect
             .inset(crate::geometry::Insets::tlbr(bw, bw, 0.0, bw));
-        ctx.draw_list.push_layer(self.style.bg);
+        ctx.scene.push_layer_bg(self.style.bg);
         // Radius inset by border width so the content overlay sits inside
         // the base rect's rounded corners. Bottom corners also get this
         // radius, but the gap reveals footer_bg which is seamless.
         let inner_radius = (self.style.corner_radius - bw).max(0.0);
-        ctx.draw_list.push_rect(
+        ctx.scene.push_quad(
             content_rect,
             RectStyle::filled(self.style.bg).with_radius(inner_radius),
         );
         self.draw_content(ctx, &children[0]);
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
 
         self.draw_footer(ctx, &children[1]);
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
     }
 
     fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {

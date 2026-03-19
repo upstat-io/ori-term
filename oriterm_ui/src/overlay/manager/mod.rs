@@ -288,20 +288,19 @@ impl OverlayManager {
                 MODAL_DIM_COLOR.b,
                 MODAL_DIM_COLOR.a * dim_opacity,
             );
-            ctx.draw_list
-                .push_rect(self.viewport, RectStyle::filled(dim_color));
+            ctx.scene
+                .push_quad(self.viewport, RectStyle::filled(dim_color));
         }
 
         // Content widget draws at full alpha — the returned opacity is
         // applied by the GPU converter to all emitted instances.
         let mut overlay_ctx = DrawCtx {
             measurer: ctx.measurer,
-            draw_list: ctx.draw_list,
+            scene: ctx.scene,
             bounds: overlay.computed_rect,
             now: ctx.now,
             theme: ctx.theme,
             icons: ctx.icons,
-            scene_cache: None,
             interaction: None,
             widget_id: None,
             frame_requests: None,

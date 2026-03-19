@@ -132,7 +132,7 @@ impl SchemeCardWidget {
     fn paint_title(&self, ctx: &mut DrawCtx<'_>, x: f32, y: f32, w: f32) {
         let style = TextStyle::new(TITLE_FONT_SIZE, ctx.theme.fg_primary);
         let shaped = ctx.measurer.shape(&self.data.name, &style, w);
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(x, y), shaped, ctx.theme.fg_primary);
 
         // "Active" badge when selected.
@@ -142,7 +142,7 @@ impl SchemeCardWidget {
             let badge_shaped = ctx.measurer.shape(badge_text, &badge_style, w);
             let badge_x = x + w - badge_shaped.width - 4.0;
             let badge_y = y + 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(badge_x, badge_y), badge_shaped, ctx.theme.accent);
         }
     }
@@ -151,7 +151,7 @@ impl SchemeCardWidget {
     fn paint_preview(&self, ctx: &mut DrawCtx<'_>, area: Rect) {
         // Preview background.
         let bg_style = RectStyle::filled(self.data.bg).with_radius(4.0);
-        ctx.draw_list.push_rect(area, bg_style);
+        ctx.scene.push_quad(area, bg_style);
 
         let x = area.x() + 6.0;
         let line_h = PREVIEW_FONT_SIZE + 4.0;
@@ -161,7 +161,7 @@ impl SchemeCardWidget {
         let y1 = area.y() + 6.0;
         let line1 = "$ cargo build --release";
         let shaped1 = ctx.measurer.shape(line1, &style, area.width() - 12.0);
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(x, y1), shaped1, self.data.fg);
 
         // Line 2: `Compiling ori_term v0.1.0` in green (ansi[2]).
@@ -170,7 +170,7 @@ impl SchemeCardWidget {
         let green_style = TextStyle::new(PREVIEW_FONT_SIZE, green);
         let line2 = "Compiling ori_term v0.1.0";
         let shaped2 = ctx.measurer.shape(line2, &green_style, area.width() - 12.0);
-        ctx.draw_list.push_text(Point::new(x, y2), shaped2, green);
+        ctx.scene.push_text(Point::new(x, y2), shaped2, green);
     }
 
     /// Paints the 8-color swatch bar.
@@ -183,7 +183,7 @@ impl SchemeCardWidget {
             let sx = x + i as f32 * (swatch_w + SWATCH_GAP);
             let rect = Rect::new(sx, y, swatch_w, SWATCH_HEIGHT);
             let style = RectStyle::filled(color).with_radius(SWATCH_RADIUS);
-            ctx.draw_list.push_rect(rect, style);
+            ctx.scene.push_quad(rect, style);
         }
     }
 }
@@ -251,7 +251,7 @@ impl Widget for SchemeCardWidget {
         let card_style = RectStyle::filled(card_bg)
             .with_radius(CORNER_RADIUS)
             .with_border(border_width, border_color);
-        ctx.draw_list.push_rect(bounds, card_style);
+        ctx.scene.push_quad(bounds, card_style);
 
         let x = bounds.x() + CARD_PADDING_H;
         let w = bounds.width() - CARD_PADDING_H * 2.0;

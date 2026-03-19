@@ -8,7 +8,7 @@ use oriterm_ui::text::ShapedText;
 
 use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subpx_offset};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
-use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 
 use super::TextContext;
 
@@ -125,16 +125,29 @@ fn emit_text_glyph(
         AtlasKind::Subpixel => {
             if let Some(bg) = subpixel_bg {
                 // Known background — per-channel compositing in the shader.
-                ctx.subpixel_writer
-                    .push_glyph_with_bg(rect, uv, fg, bg, alpha, entry.page);
+                ctx.subpixel_writer.push_glyph_with_bg(
+                    rect,
+                    uv,
+                    fg,
+                    bg,
+                    alpha,
+                    entry.page,
+                    CLIP_UNCLIPPED,
+                );
             } else {
                 // No background hint — fall back to alpha blending.
                 ctx.subpixel_writer
-                    .push_glyph(rect, uv, fg, alpha, entry.page);
+                    .push_glyph(rect, uv, fg, alpha, entry.page, CLIP_UNCLIPPED);
             }
         }
-        AtlasKind::Mono => ctx.mono_writer.push_glyph(rect, uv, fg, alpha, entry.page),
-        AtlasKind::Color => ctx.color_writer.push_glyph(rect, uv, fg, alpha, entry.page),
+        AtlasKind::Mono => {
+            ctx.mono_writer
+                .push_glyph(rect, uv, fg, alpha, entry.page, CLIP_UNCLIPPED);
+        }
+        AtlasKind::Color => {
+            ctx.color_writer
+                .push_glyph(rect, uv, fg, alpha, entry.page, CLIP_UNCLIPPED);
+        }
     }
 }
 
@@ -166,7 +179,7 @@ pub(super) fn convert_icon(
     let h = (rect.height() * scale).round();
     let screen = ScreenRect { x, y, w, h };
     ctx.mono_writer
-        .push_glyph(screen, uv, fg, alpha, atlas_page);
+        .push_glyph(screen, uv, fg, alpha, atlas_page, CLIP_UNCLIPPED);
 }
 
 /// Convert an [`oriterm_ui::color::Color`] (f32 RGBA) to [`oriterm_core::Rgb`] (u8 RGB).

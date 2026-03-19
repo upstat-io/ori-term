@@ -8,7 +8,7 @@
 //! - [`TabBarHit`] — hit-test result identifying which tab bar element the
 //!   cursor targets.
 //! - [`TabBarWidget`] — rendering widget that draws tabs, buttons, and
-//!   separators into a [`DrawList`](crate::draw::DrawList).
+//!   separators into a [`Scene`](crate::draw::Scene).
 //!
 //! All coordinates are in logical pixels; the rendering layer applies the
 //! DPI scale factor at the boundary. Follows the same pattern as

@@ -36,7 +36,7 @@ impl App {
             self.focused_window_id = Some(wid);
             self.active_window = mux_wid;
             self.handle_redraw();
-            // Clear invalidation after render so compose_scene sees dirty widgets.
+            // Clear invalidation after render so build_scene sees dirty widgets.
             if let Some(ctx) = self.windows.get_mut(&wid) {
                 ctx.invalidation.clear();
             }
@@ -59,7 +59,7 @@ impl App {
                 ctx.dirty = false;
             }
             self.render_dialog(wid);
-            // Clear invalidation after render so compose_scene sees dirty widgets.
+            // Clear invalidation after render so build_scene sees dirty widgets.
             if let Some(ctx) = self.dialogs.get_mut(&wid) {
                 ctx.invalidation.clear();
             }

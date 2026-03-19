@@ -1,5 +1,5 @@
 use crate::action::WidgetAction;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::{Point, Rect};
 use crate::input::{InputEvent, Modifiers, MouseButton};
 use crate::layout::compute_layout;
@@ -46,16 +46,15 @@ fn layout_dimensions() {
 fn paint_renders_three_cards() {
     let p = make_picker(0);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, TOTAL_WIDTH, CARD_HEIGHT);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: theme(),
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -63,23 +62,13 @@ fn paint_renders_three_cards() {
     p.paint(&mut ctx);
 
     // 3 card backgrounds + 3 cursor demo elements = 6+ rects.
-    let rects = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
+    let rects = scene.quads().len();
     assert!(
         rects >= 6,
         "3 cards + 3 cursor demos = 6+ rects, got {rects}"
     );
-
-    // 3 labels + 3 demo characters = 6 text commands.
-    let texts = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(texts, 6, "3 labels + 3 demo chars");
+    // 3 labels + 3 demo characters = 6 text runs.
+    assert_eq!(scene.text_runs().len(), 6, "3 labels + 3 demo chars");
 }
 
 #[test]

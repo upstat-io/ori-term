@@ -3,7 +3,7 @@
 //! After simulating input, tests need to inspect widget state: interaction
 //! state, layout bounds, visual state animator progress, controller state.
 
-use crate::draw::DrawList;
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::interaction::InteractionState;
 use crate::layout::LayoutNode;
@@ -78,27 +78,26 @@ impl WidgetTestHarness {
 
     // -- Paint capture --
 
-    /// Paints the widget tree and returns a copy of the draw commands.
+    /// Paints the widget tree and returns a copy of the scene primitives.
     ///
     /// Uses `MockMeasurer` and test theme. No GPU required — returns
-    /// the raw `DrawList` that would be sent to the GPU renderer.
-    pub fn render(&mut self) -> DrawList {
-        let mut draw_list = DrawList::new();
+    /// the raw `Scene` that would be sent to the GPU renderer.
+    pub fn render(&mut self) -> Scene {
+        let mut scene = Scene::new();
         let bounds = self.layout.rect;
         let mut ctx = DrawCtx {
             measurer: &self.measurer,
-            draw_list: &mut draw_list,
+            scene: &mut scene,
             bounds,
             now: self.clock,
             theme: &self.theme,
             icons: None,
-            scene_cache: None,
             interaction: Some(&self.interaction),
             widget_id: Some(self.widget.id()),
             frame_requests: Some(&self.frame_requests),
         };
         self.widget.paint(&mut ctx);
-        draw_list
+        scene
     }
 
     // -- WidgetRef --

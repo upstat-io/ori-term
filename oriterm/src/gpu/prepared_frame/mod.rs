@@ -10,7 +10,6 @@
 use oriterm_core::Rgb;
 use oriterm_core::image::ImageId;
 
-use super::draw_list_convert::TierClips;
 use super::frame_input::{SelectionDamageSnapshot, ViewportSize};
 use super::instance_writer::InstanceWriter;
 use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
@@ -32,8 +31,6 @@ pub struct OverlayDrawRange {
     pub subpixel: (u32, u32),
     /// `[start..end)` in `overlay_color_glyphs`.
     pub color: (u32, u32),
-    /// Clip segments for this overlay (absolute instance offsets).
-    pub clips: TierClips,
 }
 
 /// A single image quad ready for GPU rendering.
@@ -102,10 +99,6 @@ pub struct PreparedFrame {
     pub(crate) overlay_subpixel_glyphs: InstanceWriter,
     /// Overlay color glyph instances (drawn after overlay rects).
     pub(crate) overlay_color_glyphs: InstanceWriter,
-    /// Clip segments for the chrome tier (draws 6–9), one per writer.
-    pub(crate) ui_clips: TierClips,
-    /// Clip segments for the overlay tier (draws 10–13), one per writer.
-    pub(crate) overlay_clips: TierClips,
     /// Per-overlay draw ranges for correct z-ordering between stacked overlays.
     ///
     /// Each entry corresponds to one overlay (back-to-front order). The render
@@ -156,8 +149,6 @@ impl PreparedFrame {
             overlay_glyphs: InstanceWriter::new(),
             overlay_subpixel_glyphs: InstanceWriter::new(),
             overlay_color_glyphs: InstanceWriter::new(),
-            ui_clips: TierClips::default(),
-            overlay_clips: TierClips::default(),
             overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
@@ -197,8 +188,6 @@ impl PreparedFrame {
             overlay_glyphs: InstanceWriter::new(),
             overlay_subpixel_glyphs: InstanceWriter::new(),
             overlay_color_glyphs: InstanceWriter::new(),
-            ui_clips: TierClips::default(),
-            overlay_clips: TierClips::default(),
             overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
@@ -306,8 +295,6 @@ impl PreparedFrame {
         self.overlay_glyphs.clear();
         self.overlay_subpixel_glyphs.clear();
         self.overlay_color_glyphs.clear();
-        self.ui_clips.clear();
-        self.overlay_clips.clear();
         self.overlay_draw_ranges.clear();
         self.image_quads_below.clear();
         self.image_quads_above.clear();
@@ -329,8 +316,6 @@ impl PreparedFrame {
         self.overlay_glyphs.clear();
         self.overlay_subpixel_glyphs.clear();
         self.overlay_color_glyphs.clear();
-        self.ui_clips.clear();
-        self.overlay_clips.clear();
         self.overlay_draw_ranges.clear();
     }
 
@@ -355,24 +340,6 @@ impl PreparedFrame {
             .extend_from(&other.overlay_subpixel_glyphs);
         self.overlay_color_glyphs
             .extend_from(&other.overlay_color_glyphs);
-        self.ui_clips.extend_from(
-            &other.ui_clips,
-            [
-                self.ui_rects.len() as u32,
-                self.ui_glyphs.len() as u32,
-                self.ui_subpixel_glyphs.len() as u32,
-                self.ui_color_glyphs.len() as u32,
-            ],
-        );
-        self.overlay_clips.extend_from(
-            &other.overlay_clips,
-            [
-                self.overlay_rects.len() as u32,
-                self.overlay_glyphs.len() as u32,
-                self.overlay_subpixel_glyphs.len() as u32,
-                self.overlay_color_glyphs.len() as u32,
-            ],
-        );
         // Shift per-overlay draw ranges by current buffer lengths.
         let bases = [
             self.overlay_rects.len() as u32,
@@ -386,7 +353,6 @@ impl PreparedFrame {
             shifted.mono = (range.mono.0 + bases[1], range.mono.1 + bases[1]);
             shifted.subpixel = (range.subpixel.0 + bases[2], range.subpixel.1 + bases[2]);
             shifted.color = (range.color.0 + bases[3], range.color.1 + bases[3]);
-            shifted.clips.shift_offsets(bases);
             self.overlay_draw_ranges.push(shifted);
         }
         self.image_quads_below

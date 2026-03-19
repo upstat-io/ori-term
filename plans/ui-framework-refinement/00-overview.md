@@ -32,8 +32,8 @@ The test harness is the highest priority: it unblocks fast iteration on everythi
 │  (Section 02)    │ │ (Section 03)    │ │ (Section 05)    │
 │                  │ │                 │ │                 │
 │ Debug assertions │ │ DrawList →      │ │ Actions as data │
-│ on child visit,  │ │ PaintScene with │ │ Keymap routing  │
-│ double-visit,    │ │ z-order, damage │ │ Context-scoped  │
+│ on child visit,  │ │ Type-separated  │ │ Keymap routing  │
+│ double-visit,    │ │ Scene + damage  │ │ Context-scoped  │
 │ lifecycle order  │ │ tracking        │ │ dispatch        │
 └──────────────────┘ └────────┬────────┘ └─────────────────┘
                               │
@@ -80,8 +80,8 @@ Every framework except makepad has headless widget testing. We have none. This i
 **2. Defensive correctness via safety rails.**
 Masonry proved that debug assertions on tree traversal (all children visited, no double-visits, lifecycle ordering validated) catch the most common container bugs. These are cheap to add and high value: they turn silent logic errors into immediate panics with clear messages.
 
-**3. Incremental rendering via scene abstraction.**
-GPUI collects paint primitives into a Scene, enabling damage tracking and z-order sorting. Our DrawList is flat and has no damage tracking. A PaintScene abstraction between widgets and GPU enables incremental rendering (only repaint dirty regions).
+**3. Correct rendering architecture via type-separated Scene.**
+GPUI collects paint primitives into typed arrays (quads, text, paths) with per-primitive resolved state (ContentMask). Our DrawList is a flat interleaved command buffer with stack commands processed at GPU time. A type-separated Scene replaces DrawList: primitives carry resolved clip rects, GPU consumes typed arrays directly, and per-widget damage tracking identifies changed regions between frames. Opacity is applied at GPU conversion time via `base_opacity`, not per-primitive.
 
 ## Section Dependency Graph
 
@@ -128,7 +128,7 @@ GPUI collects paint primitives into a Scene, enabling damage tracking and z-orde
 
 **Cross-section interactions:**
 - **Section 01 + 02**: Test harness validates that safety rail assertions fire correctly. Tests for safety rails ARE harness tests.
-- **Section 03 + 04**: Scene abstraction and prepaint phase are complementary but not blocking. PaintScene benefits from `DirtyKind::Prepaint` (Section 04) for finer damage tracking. Prepaint works without PaintScene.
+- **Section 03 + 04**: Scene abstraction and prepaint phase are complementary but not blocking. Scene benefits from `DirtyKind::Prepaint` (Section 04) for finer damage tracking. Prepaint works without Scene.
 - **Section 01.2a prerequisite:** Moving shared pipeline functions (`prepare_widget_tree`, `register_widget_tree`, `collect_focusable_ids`, `apply_dispatch_requests`, `DispatchResult`, `dispatch_step`) from `oriterm/src/app/widget_pipeline/` to `oriterm_ui/src/pipeline.rs` is a prerequisite for the test harness, safety rails, and prepaint phase. This is a mechanical refactor (~290 lines moved, visibility changed from `pub(crate)`/`pub(super)` to `pub`).
 - **Section 05 + existing controllers:** The keymap system coexists with existing EventControllers during migration. Keymap lookup runs first; unmatched keys fall through to controllers. Controllers are removed one at a time after keymap migration is verified.
 - **Section 07 + 01**: WindowRoot is the formalization of what `WidgetTestHarness` already does — wrapping widget tree + framework state. The harness is refactored to wrap WindowRoot.
@@ -175,7 +175,7 @@ Phase 3 — Verification
 |---------|-----------|-------|----------|------------|------------|
 | 01 Test Harness | ~1400 | 7 | ~250 | High | pipeline move (01.2a) |
 | 02 Safety Rails | ~350 | 4 | ~200 | Medium | pipeline move (01.2a) |
-| 03 Scene Abstraction | ~600 | 3 | ~200 | Medium | -- |
+| 03 Scene Architecture | ~2000 new, ~2000 modified, ~500 removed | 8 new + ~80 modified + ~5 removed | ~250 | High | -- |
 | 04 Prepaint Phase | ~500 | 3 | ~200 | High | 03 (recommended), pipeline (01.2a) |
 | 05 Action/Keymap System | ~900 | 5 | ~150 | Medium | -- |
 | 07 WindowRoot Extraction | ~500 | 4 | ~300 | High | 01 |
@@ -191,7 +191,7 @@ Phase 3 — Verification
 |----|-------|------|--------|
 | 01 | Headless Test Harness | `section-01-test-harness.md` | Complete |
 | 02 | Safety Rails | `section-02-safety-rails.md` | Complete |
-| 03 | Scene Abstraction | `section-03-scene-abstraction.md` | Not Started |
+| 03 | Scene Architecture | `section-03-scene-abstraction.md` | Complete |
 | 04 | Prepaint Phase | `section-04-prepaint-phase.md` | Not Started |
 | 05 | Action/Keymap System | `section-05-action-keymap.md` | Not Started |
 | 06 | Verification | `section-06-verification.md` | Not Started |

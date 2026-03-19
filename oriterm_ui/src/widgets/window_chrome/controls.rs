@@ -158,7 +158,7 @@ fn draw_minimize(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
     let icon_size = SYMBOL_SIZE.round() as u32;
     if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(IconId::Minimize, icon_size)) {
         let icon_rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
-        ctx.draw_list
+        ctx.scene
             .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
     }
 }
@@ -171,7 +171,7 @@ fn draw_maximize(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
     let icon_size = SYMBOL_SIZE.round() as u32;
     if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(IconId::Maximize, icon_size)) {
         let icon_rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
-        ctx.draw_list
+        ctx.scene
             .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
     }
 }
@@ -184,7 +184,7 @@ fn draw_restore(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
     let icon_size = SYMBOL_SIZE.round() as u32;
     if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(IconId::Restore, icon_size)) {
         let icon_rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
-        ctx.draw_list
+        ctx.scene
             .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
     }
 }
@@ -200,7 +200,7 @@ fn draw_close(ctx: &mut DrawCtx<'_>, bounds: Rect, fg: Color) {
         .and_then(|ic| ic.get(IconId::WindowClose, icon_size))
     {
         let icon_rect = Rect::new(cx - half, cy - half, SYMBOL_SIZE, SYMBOL_SIZE);
-        ctx.draw_list
+        ctx.scene
             .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
     }
 }
@@ -245,7 +245,7 @@ impl Widget for WindowControlButton {
         // Button background (only visible on hover/press).
         if bg != Color::TRANSPARENT {
             let style = RectStyle::filled(bg);
-            ctx.draw_list.push_rect(ctx.bounds, style);
+            ctx.scene.push_quad(ctx.bounds, style);
         }
 
         // Symbol glyph.

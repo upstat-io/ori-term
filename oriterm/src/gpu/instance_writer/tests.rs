@@ -2,7 +2,7 @@
 
 use oriterm_core::Rgb;
 
-use super::{INSTANCE_SIZE, InstanceKind, InstanceWriter, ScreenRect};
+use super::{CLIP_UNCLIPPED, INSTANCE_SIZE, InstanceKind, InstanceWriter, ScreenRect};
 use crate::gpu::srgb_to_linear;
 
 /// Read a little-endian `f32` from the given byte offset.
@@ -26,12 +26,12 @@ const RED: Rgb = Rgb { r: 255, g: 0, b: 0 };
 // --- Record layout ---
 
 #[test]
-fn instance_size_is_80_bytes() {
-    assert_eq!(INSTANCE_SIZE, 80);
+fn instance_size_is_96_bytes() {
+    assert_eq!(INSTANCE_SIZE, 96);
 }
 
 #[test]
-fn push_rect_produces_80_byte_record() {
+fn push_rect_produces_96_byte_record() {
     let mut w = InstanceWriter::new();
     w.push_rect(
         ScreenRect {
@@ -45,7 +45,7 @@ fn push_rect_produces_80_byte_record() {
     );
 
     assert_eq!(w.len(), 1);
-    assert_eq!(w.byte_len(), 80);
+    assert_eq!(w.byte_len(), 96);
 }
 
 #[test]
@@ -114,6 +114,7 @@ fn push_glyph_field_offsets() {
         WHITE,
         1.0,
         0,
+        CLIP_UNCLIPPED,
     );
 
     let rec = w.as_bytes();
@@ -195,6 +196,7 @@ fn push_glyph_with_bg_field_offsets() {
         RED,   // bg
         0.9,
         3,
+        CLIP_UNCLIPPED,
     );
 
     let rec = w.as_bytes();
@@ -337,6 +339,7 @@ fn multiple_pushes_accumulate() {
         WHITE,
         1.0,
         0,
+        CLIP_UNCLIPPED,
     );
     w.push_cursor(
         ScreenRect {
@@ -350,13 +353,13 @@ fn multiple_pushes_accumulate() {
     );
 
     assert_eq!(w.len(), 3);
-    assert_eq!(w.byte_len(), 240);
+    assert_eq!(w.byte_len(), 288);
 
     // Each record starts at the right offset.
     let bytes = w.as_bytes();
     assert_eq!(read_u32(bytes, 64), InstanceKind::Rect as u32);
-    assert_eq!(read_u32(bytes, 80 + 64), InstanceKind::Glyph as u32);
-    assert_eq!(read_u32(bytes, 160 + 64), InstanceKind::Cursor as u32);
+    assert_eq!(read_u32(bytes, 96 + 64), InstanceKind::Glyph as u32);
+    assert_eq!(read_u32(bytes, 192 + 64), InstanceKind::Cursor as u32);
 }
 
 #[test]
@@ -410,6 +413,7 @@ fn clear_and_reuse() {
         WHITE,
         1.0,
         0,
+        CLIP_UNCLIPPED,
     );
 
     assert_eq!(w.len(), 1);
@@ -432,7 +436,7 @@ fn push_raw_valid() {
 }
 
 #[test]
-#[should_panic(expected = "raw instance must be exactly 80 bytes")]
+#[should_panic(expected = "raw instance must be exactly 96 bytes")]
 fn push_raw_wrong_size_panics() {
     let mut w = InstanceWriter::new();
     w.push_raw(&[0u8; 40]);
@@ -474,6 +478,7 @@ fn push_ui_rect_field_offsets() {
         border,
         8.0,
         2.0,
+        CLIP_UNCLIPPED,
     );
 
     let rec = w.as_bytes();
@@ -527,6 +532,7 @@ fn push_ui_rect_no_border() {
         [0.0; 4],
         0.0,
         0.0,
+        CLIP_UNCLIPPED,
     );
 
     let rec = w.as_bytes();

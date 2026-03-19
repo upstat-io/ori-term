@@ -268,19 +268,19 @@ impl Widget for DropdownWidget {
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
                 .with_border(2.0, s.focus_ring_color)
                 .with_radius(s.corner_radius + 2.0);
-            ctx.draw_list.push_rect(ring, ring_style);
+            ctx.scene.push_quad(ring, ring_style);
         }
 
         // Background from visual state animator (transitions between Normal,
         // Hovered, Pressed, Disabled states automatically).
         let bg = self.animator.get_bg_color(ctx.now);
-        ctx.draw_list.push_layer(bg);
+        ctx.scene.push_layer_bg(bg);
 
         // Background rect.
         let bg_style = RectStyle::filled(bg)
             .with_border(s.border_width, s.border_color)
             .with_radius(s.corner_radius);
-        ctx.draw_list.push_rect(bounds, bg_style);
+        ctx.scene.push_quad(bounds, bg_style);
 
         // Selected item text.
         let inner = bounds.inset(s.padding);
@@ -288,7 +288,7 @@ impl Widget for DropdownWidget {
         let style = self.text_style();
         let shaped = ctx.measurer.shape(self.selected_text(), &style, text_w);
         let y = inner.y() + (inner.height() - shaped.height) / 2.0;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(inner.x(), y), shaped, self.current_fg());
 
         // Dropdown indicator (downward-pointing chevron).
@@ -313,7 +313,7 @@ impl Widget for DropdownWidget {
                 arrow_half * 2.0,
                 arrow_half,
             );
-            ctx.draw_list
+            ctx.scene
                 .push_icon(icon_rect, resolved.atlas_page, resolved.uv, ind_color);
         } else {
             // Text fallback when icon atlas is not available.
@@ -323,11 +323,11 @@ impl Widget for DropdownWidget {
                 .shape("\u{25BE}", &chevron_style, s.indicator_width);
             let chevron_y = ind_center_y - shaped.height / 2.0;
             let chevron_x = ind_center_x - shaped.width / 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(chevron_x, chevron_y), shaped, ind_color);
         }
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
 
         // Signal continued redraws while the animator is transitioning.
         if self.animator.is_animating(ctx.now) {

@@ -40,7 +40,7 @@ Build a comprehensive test matrix covering every feature through the new infrast
   - Input simulation covers all event types (mouse, keyboard, scroll, drag)
   - State inspection covers all interaction states (hot, active, focused, disabled)
   - Time control advances animations deterministically
-  - Paint capture produces expected DrawList commands
+  - Paint capture produces expected Scene primitives (quads, text_runs, etc.)
   - Widget queries find by ID, name, sense, position
   - RenderScheduler integration: anim frame and deferred repaint scheduling works
   - apply_requests handles all flags: SET_ACTIVE, CLEAR_ACTIVE, REQUEST_FOCUS, FOCUS_NEXT, FOCUS_PREV
@@ -53,12 +53,14 @@ Build a comprehensive test matrix covering every feature through the new infrast
   - All existing container widgets pass all assertions without modification
   - Stashed/hidden widget handling produces no false positives
 
-- [ ] **Scene Abstraction (Section 03):**
-  - PaintScene wraps DrawList and records metadata for all 11 DrawCommand variants
-  - Damage tracking identifies changed regions via per-widget hash diff
-  - Z-order computation matches paint order
-  - SceneCache + compose_scene interop works (PaintScene wraps compose_scene output)
-  - LayerTree compositor interaction documented and tested
+- [ ] **Scene Architecture (Section 03):**
+  - Scene typed arrays (quads, text_runs, lines, icons, images) populated correctly by all widget paint() methods
+  - ContentMask resolved at push time from clip/offset stacks — no stack commands in output
+  - DamageTracker identifies changed regions via per-widget primitive hash diff
+  - build_scene() produces correct Scene with balanced stacks (debug assertion)
+  - convert_scene() produces correct GPU instances with per-instance clip fields
+  - Shader-side clipping works on all three backends (Vulkan, DX12, Metal)
+  - No DrawList, DrawCommand, SceneCache, or ClipSegment references remain
 
 - [ ] **Prepaint Phase (Section 04):**
   - Layout-only changes (structural) run all three phases
@@ -80,7 +82,7 @@ Build a comprehensive test matrix covering every feature through the new infrast
 ## 06.2 Performance Validation
 
 - [ ] **Idle CPU:** Verify zero idle CPU beyond cursor blink (existing invariant preserved)
-- [ ] **Frame time:** Measure frame time with PaintScene vs old DrawList -- target: no regression >5%
+- [ ] **Frame time:** Measure frame time with Scene vs old DrawList -- target: no regression >5%
 - [ ] **Damage tracking benefit:** Measure frames skipped due to clean regions
 - [ ] **Layout caching benefit:** Measure layout passes skipped due to prepaint-only or paint-only dirty
 
@@ -103,7 +105,7 @@ Verify each context type exposes only phase-appropriate methods (masonry pattern
 
 - [ ] Update CLAUDE.md with new test infrastructure (how to run harness tests, how to write new harness tests)
 - [ ] Update CLAUDE.md with action/keymap pattern (how to declare actions, how to add keybindings)
-- [ ] Add module-level doc comments to `testing/mod.rs`, `action/keymap.rs`, `draw/paint_scene.rs`, `draw/damage.rs`, `pipeline.rs`
+- [ ] Add module-level doc comments to `testing/mod.rs`, `action/keymap.rs`, `draw/scene/mod.rs`, `draw/damage/mod.rs`, `pipeline.rs`
 
 ---
 

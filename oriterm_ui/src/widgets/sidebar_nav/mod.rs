@@ -178,7 +178,7 @@ impl SidebarNavWidget {
             Color::TRANSPARENT
         };
         if bg.a > 0.001 {
-            ctx.draw_list.push_rect(item_rect, RectStyle::filled(bg));
+            ctx.scene.push_quad(item_rect, RectStyle::filled(bg));
         }
 
         // Icon.
@@ -192,7 +192,7 @@ impl SidebarNavWidget {
                     } else {
                         self.style.item_fg.with_alpha(0.6)
                     };
-                    ctx.draw_list.push_icon(
+                    ctx.scene.push_icon(
                         Rect::new(x + 8.0, icon_y, icon_size as f32, icon_size as f32),
                         resolved.atlas_page,
                         resolved.uv,
@@ -217,8 +217,7 @@ impl SidebarNavWidget {
         };
         let label_y = y + (ITEM_HEIGHT - 13.0) / 2.0;
         let shaped = ctx.measurer.shape(&item.label, &style, item_w);
-        ctx.draw_list
-            .push_text(Point::new(text_x, label_y), shaped, fg);
+        ctx.scene.push_text(Point::new(text_x, label_y), shaped, fg);
     }
 
     /// Paints the version label at the bottom of the sidebar.
@@ -232,7 +231,7 @@ impl SidebarNavWidget {
         };
         let y = ctx.bounds.y() + ctx.bounds.height() - 24.0;
         let shaped = ctx.measurer.shape(&self.version, &style, item_w);
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(x + 6.0, y), shaped, self.style.version_fg);
     }
 
@@ -289,16 +288,16 @@ impl Widget for SidebarNavWidget {
         let bounds = ctx.bounds;
 
         // Background + right border.
-        ctx.draw_list
-            .push_rect(bounds, RectStyle::filled(self.style.bg));
+        ctx.scene
+            .push_quad(bounds, RectStyle::filled(self.style.bg));
         let border_rect = Rect::new(
             bounds.x() + bounds.width() - 1.0,
             bounds.y(),
             1.0,
             bounds.height(),
         );
-        ctx.draw_list
-            .push_rect(border_rect, RectStyle::filled(self.style.border));
+        ctx.scene
+            .push_quad(border_rect, RectStyle::filled(self.style.border));
 
         let mut y = bounds.y() + SIDEBAR_PADDING_Y;
         let x = bounds.x() + SIDEBAR_PADDING_X;
@@ -314,7 +313,7 @@ impl Widget for SidebarNavWidget {
             };
             let title_text = section.title.to_uppercase();
             let shaped = ctx.measurer.shape(&title_text, &title_style, item_w);
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(x + 6.0, y), shaped, self.style.section_title_fg);
             y += SECTION_TITLE_HEIGHT;
 

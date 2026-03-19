@@ -260,7 +260,7 @@ impl Widget for ToggleWidget {
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
                 .with_border(2.0, s.focus_ring_color)
                 .with_radius(radius + 2.0);
-            ctx.draw_list.push_rect(ring, ring_style);
+            ctx.scene.push_quad(ring, ring_style);
         }
 
         // Track bg: on_bg when on, animator-driven hover transition when off.
@@ -272,7 +272,7 @@ impl Widget for ToggleWidget {
             self.animator.get_bg_color(ctx.now)
         };
         let track_style = RectStyle::filled(track_bg).with_radius(radius);
-        ctx.draw_list.push_rect(ctx.bounds, track_style);
+        ctx.scene.push_quad(ctx.bounds, track_style);
 
         // Thumb — a circle within the track, position driven by animation.
         let progress = self.toggle_progress.get(ctx.now);
@@ -283,7 +283,7 @@ impl Widget for ToggleWidget {
         let thumb_y = ctx.bounds.y() + s.thumb_padding;
         let thumb_rect = Rect::new(thumb_x, thumb_y, thumb_diameter, thumb_diameter);
         let thumb_style = RectStyle::filled(self.thumb_color()).with_radius(thumb_radius);
-        ctx.draw_list.push_rect(thumb_rect, thumb_style);
+        ctx.scene.push_quad(thumb_rect, thumb_style);
 
         // Signal continued redraws while animating.
         let animating =

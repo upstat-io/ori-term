@@ -73,7 +73,7 @@ impl ScrollWidget {
             let track = self.scrollbar_track_rect(ctx.bounds);
             let track_style =
                 RectStyle::filled(s.track_color.with_alpha(0.15)).with_radius(s.thumb_radius);
-            ctx.draw_list.push_rect(track, track_style);
+            ctx.scene.push_quad(track, track_style);
         }
 
         // Draw thumb.
@@ -86,6 +86,6 @@ impl ScrollWidget {
             s.thumb_color
         };
         let style = RectStyle::filled(thumb_color).with_radius(s.thumb_radius);
-        ctx.draw_list.push_rect(thumb, style);
+        ctx.scene.push_quad(thumb, style);
     }
 }

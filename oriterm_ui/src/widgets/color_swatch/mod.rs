@@ -142,7 +142,7 @@ impl Widget for ColorSwatchGrid {
             // Color cell.
             let cell_rect = Rect::new(x, y, CELL_SIZE, CELL_SIZE);
             let style = RectStyle::filled(color).with_radius(CELL_RADIUS);
-            ctx.draw_list.push_rect(cell_rect, style);
+            ctx.scene.push_quad(cell_rect, style);
 
             // Index label.
             let label = i.to_string();
@@ -150,7 +150,7 @@ impl Widget for ColorSwatchGrid {
             let shaped = ctx.measurer.shape(&label, &label_style, CELL_SIZE);
             let lx = x + (CELL_SIZE - shaped.width) / 2.0;
             let ly = y + CELL_SIZE + 1.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(lx, ly), shaped, ctx.theme.fg_faint);
         }
 
@@ -280,7 +280,7 @@ impl Widget for SpecialColorSwatch {
         let bg = self.animator.get_bg_color(ctx.now);
         if bg.a > 0.001 {
             let rect_style = RectStyle::filled(bg).with_radius(4.0);
-            ctx.draw_list.push_rect(bounds, rect_style);
+            ctx.scene.push_quad(bounds, rect_style);
         }
 
         // Color swatch (centered horizontally).
@@ -288,7 +288,7 @@ impl Widget for SpecialColorSwatch {
         let sy = bounds.y() + 4.0;
         let swatch_rect = Rect::new(sx, sy, SPECIAL_SWATCH_SIZE, SPECIAL_SWATCH_SIZE);
         let swatch_style = RectStyle::filled(self.color).with_radius(SPECIAL_SWATCH_RADIUS);
-        ctx.draw_list.push_rect(swatch_rect, swatch_style);
+        ctx.scene.push_quad(swatch_rect, swatch_style);
 
         // Label.
         let label_style = TextStyle::new(SPECIAL_LABEL_SIZE, ctx.theme.fg_primary);
@@ -297,7 +297,7 @@ impl Widget for SpecialColorSwatch {
             .shape(&self.label, &label_style, bounds.width());
         let lx = bounds.x() + (bounds.width() - shaped.width) / 2.0;
         let ly = sy + SPECIAL_SWATCH_SIZE + 2.0;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(lx, ly), shaped, ctx.theme.fg_primary);
 
         // Hex value.
@@ -306,7 +306,7 @@ impl Widget for SpecialColorSwatch {
         let hex_shaped = ctx.measurer.shape(&hex, &hex_style, bounds.width());
         let hx = bounds.x() + (bounds.width() - hex_shaped.width) / 2.0;
         let hy = ly + SPECIAL_LABEL_SIZE + 1.0;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(hx, hy), hex_shaped, ctx.theme.fg_faint);
 
         if self.animator.is_animating(ctx.now) {

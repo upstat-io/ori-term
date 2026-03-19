@@ -116,7 +116,7 @@ impl Widget for KbdBadge {
         let body_style = RectStyle::filled(ctx.theme.bg_input)
             .with_radius(BADGE_RADIUS)
             .with_border(1.0, ctx.theme.border);
-        ctx.draw_list.push_rect(body, body_style);
+        ctx.scene.push_quad(body, body_style);
 
         // Bottom border for keycap depth.
         let bottom = Rect::new(
@@ -126,14 +126,14 @@ impl Widget for KbdBadge {
             BADGE_BOTTOM_BORDER,
         );
         let bottom_style = RectStyle::filled(ctx.theme.border);
-        ctx.draw_list.push_rect(bottom, bottom_style);
+        ctx.scene.push_quad(bottom, bottom_style);
 
         // Key text centered in body.
         let text_style = TextStyle::new(BADGE_FONT_SIZE, ctx.theme.fg_primary);
         let shaped = ctx.measurer.shape(&self.key, &text_style, body.width());
         let tx = body.x() + (body.width() - shaped.width) / 2.0;
         let ty = body.y() + BADGE_PAD_V;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(tx, ty), shaped, ctx.theme.fg_primary);
     }
 }
@@ -238,7 +238,7 @@ impl Widget for KeybindRow {
         let bg = self.animator.get_bg_color(ctx.now);
         if bg.a > 0.001 {
             let style = RectStyle::filled(bg).with_radius(ROW_RADIUS);
-            ctx.draw_list.push_rect(bounds, style);
+            ctx.scene.push_quad(bounds, style);
         }
 
         // Action name (left-aligned, vertically centered).
@@ -247,7 +247,7 @@ impl Widget for KeybindRow {
             .measurer
             .shape(&self.action_name, &action_style, bounds.width());
         let ay = bounds.y() + (bounds.height() - shaped.height) / 2.0;
-        ctx.draw_list.push_text(
+        ctx.scene.push_text(
             Point::new(bounds.x() + ROW_PAD_H, ay),
             shaped,
             ctx.theme.fg_primary,
@@ -269,7 +269,7 @@ impl Widget for KeybindRow {
                 bx += BADGE_GAP;
                 let plus_shaped = ctx.measurer.shape("+", &plus_style, 20.0);
                 let py = by + BADGE_PAD_V;
-                ctx.draw_list
+                ctx.scene
                     .push_text(Point::new(bx, py), plus_shaped, ctx.theme.fg_faint);
                 bx += ctx.measurer.measure("+", &plus_style, f32::INFINITY).width + BADGE_GAP;
             }
@@ -283,7 +283,7 @@ impl Widget for KeybindRow {
             let body_s = RectStyle::filled(ctx.theme.bg_input)
                 .with_radius(BADGE_RADIUS)
                 .with_border(1.0, ctx.theme.border);
-            ctx.draw_list.push_rect(body, body_s);
+            ctx.scene.push_quad(body, body_s);
 
             // Bottom border.
             let bottom = Rect::new(
@@ -292,14 +292,14 @@ impl Widget for KeybindRow {
                 bw - 2.0,
                 BADGE_BOTTOM_BORDER,
             );
-            ctx.draw_list
-                .push_rect(bottom, RectStyle::filled(ctx.theme.border));
+            ctx.scene
+                .push_quad(bottom, RectStyle::filled(ctx.theme.border));
 
             // Key text.
             let shaped = ctx.measurer.shape(key, &badge_style, bw);
             let tx = bx + (bw - shaped.width) / 2.0;
             let ty = by + BADGE_PAD_V;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(tx, ty), shaped, ctx.theme.fg_primary);
 
             bx += bw;

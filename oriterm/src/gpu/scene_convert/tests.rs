@@ -1,9 +1,9 @@
-//! Unit tests for DrawList → InstanceWriter conversion.
+//! Unit tests for Scene → InstanceWriter conversion.
 
 use std::collections::HashMap;
 
 use oriterm_ui::color::Color;
-use oriterm_ui::draw::{DrawList, RectStyle, Shadow};
+use oriterm_ui::draw::{RectStyle, Scene, Shadow};
 use oriterm_ui::geometry::Logical;
 use oriterm_ui::text::{ShapedGlyph, ShapedText};
 
@@ -12,7 +12,7 @@ use crate::gpu::atlas::{AtlasEntry, AtlasKind};
 use crate::gpu::instance_writer::{INSTANCE_SIZE, InstanceWriter};
 use crate::gpu::prepare::AtlasLookup;
 
-use super::{TextContext, convert_draw_list};
+use super::{TextContext, convert_scene};
 
 type Rect = oriterm_ui::geometry::Rect<Logical>;
 type Point = oriterm_ui::geometry::Point<Logical>;
@@ -30,23 +30,23 @@ fn read_u32(buf: &[u8], offset: usize) -> u32 {
 // --- Basic rect conversion ---
 
 #[test]
-fn empty_draw_list_produces_no_instances() {
-    let dl = DrawList::new();
+fn empty_scene_produces_no_instances() {
+    let scene = Scene::new();
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
     assert!(writer.is_empty());
 }
 
 #[test]
 fn filled_rect_produces_one_instance() {
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(10.0, 20.0, 100.0, 50.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
 
@@ -73,14 +73,14 @@ fn filled_rect_produces_one_instance() {
 
 #[test]
 fn rect_with_border_writes_border_fields() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::BLACK)
         .with_border(2.0, Color::WHITE)
         .with_radius(8.0);
-    dl.push_rect(Rect::new(0.0, 0.0, 200.0, 100.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 200.0, 100.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
 
@@ -100,7 +100,7 @@ fn rect_with_border_writes_border_fields() {
 
 #[test]
 fn rect_with_shadow_produces_two_instances() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE).with_shadow(Shadow {
         offset_x: 0.0,
         offset_y: 4.0,
@@ -108,10 +108,10 @@ fn rect_with_shadow_produces_two_instances() {
         spread: 2.0,
         color: Color::rgba(0.0, 0.0, 0.0, 0.5),
     });
-    dl.push_rect(Rect::new(100.0, 100.0, 200.0, 150.0), style);
+    scene.push_quad(Rect::new(100.0, 100.0, 200.0, 150.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     // Shadow + main rect.
     assert_eq!(writer.len(), 2);
@@ -119,7 +119,7 @@ fn rect_with_shadow_produces_two_instances() {
     let bytes = writer.as_bytes();
 
     // First instance is the shadow (expanded).
-    let shadow_rec = &bytes[..80];
+    let shadow_rec = &bytes[..INSTANCE_SIZE];
     let expand = 2.0 + 8.0; // spread + blur
     assert_eq!(read_f32(shadow_rec, 0), 100.0 - expand); // x
     assert_eq!(read_f32(shadow_rec, 4), 100.0 + 4.0 - expand); // y + offset_y
@@ -127,7 +127,7 @@ fn rect_with_shadow_produces_two_instances() {
     assert_eq!(read_f32(shadow_rec, 12), 150.0 + expand * 2.0); // h
 
     // Second instance is the main rect.
-    let main_rec = &bytes[80..160];
+    let main_rec = &bytes[INSTANCE_SIZE..INSTANCE_SIZE * 2];
     assert_eq!(read_f32(main_rec, 0), 100.0);
     assert_eq!(read_f32(main_rec, 4), 100.0);
 }
@@ -136,8 +136,8 @@ fn rect_with_shadow_produces_two_instances() {
 
 #[test]
 fn horizontal_line_converts_to_rect() {
-    let mut dl = DrawList::new();
-    dl.push_line(
+    let mut scene = Scene::new();
+    scene.push_line(
         Point::new(10.0, 50.0),
         Point::new(110.0, 50.0),
         2.0,
@@ -145,7 +145,7 @@ fn horizontal_line_converts_to_rect() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
 
@@ -159,8 +159,8 @@ fn horizontal_line_converts_to_rect() {
 
 #[test]
 fn zero_length_line_produces_nothing() {
-    let mut dl = DrawList::new();
-    dl.push_line(
+    let mut scene = Scene::new();
+    scene.push_line(
         Point::new(50.0, 50.0),
         Point::new(50.0, 50.0),
         2.0,
@@ -168,263 +168,31 @@ fn zero_length_line_produces_nothing() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert!(writer.is_empty());
-}
-
-// --- Deferred commands ---
-
-#[test]
-fn image_command_is_noop() {
-    let mut dl = DrawList::new();
-    dl.push_image(Rect::new(0.0, 0.0, 64.0, 64.0), 1, [0.0, 0.0, 1.0, 1.0]);
-
-    let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
-
-    assert!(writer.is_empty());
-}
-
-#[test]
-fn clip_commands_without_context_are_noop() {
-    let mut dl = DrawList::new();
-    dl.push_clip(Rect::new(0.0, 0.0, 100.0, 100.0));
-    dl.push_rect(
-        Rect::new(10.0, 10.0, 50.0, 50.0),
-        RectStyle::filled(Color::WHITE),
-    );
-    dl.pop_clip();
-
-    let mut writer = InstanceWriter::new();
-    // No clip context → clips are silently ignored.
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
-    assert_eq!(writer.len(), 1);
-}
-
-#[test]
-fn clip_commands_produce_segments() {
-    use super::{ClipContext, TierClips};
-
-    let mut dl = DrawList::new();
-    dl.push_clip(Rect::new(0.0, 0.0, 100.0, 100.0));
-    dl.push_rect(
-        Rect::new(10.0, 10.0, 50.0, 50.0),
-        RectStyle::filled(Color::WHITE),
-    );
-    dl.pop_clip();
-
-    let mut writer = InstanceWriter::new();
-    let mut clips = TierClips::default();
-    let mut stack = Vec::new();
-    let mut clip_ctx = ClipContext {
-        clips: &mut clips,
-        stack: &mut stack,
-        viewport_w: 800,
-        viewport_h: 600,
-    };
-    convert_draw_list(&dl, &mut writer, None, Some(&mut clip_ctx), 1.0, 1.0);
-
-    // Rect should still be emitted.
-    assert_eq!(writer.len(), 1);
-    // PushClip + PopClip = 2 segments in rects writer.
-    assert_eq!(clips.rects.len(), 2);
-    // First segment: push clip at instance 0 with rect [0,0,100,100].
-    assert_eq!(clips.rects[0].instance_offset, 0);
-    assert!(clips.rects[0].rect.is_some());
-    let r = clips.rects[0].rect.unwrap();
-    assert_eq!(r, [0, 0, 100, 100]);
-    // Second segment: pop clip at instance 1 (after the rect), restoring full viewport.
-    assert_eq!(clips.rects[1].instance_offset, 1);
-    assert!(clips.rects[1].rect.is_none());
-}
-
-#[test]
-fn nested_clips_intersect() {
-    use super::{ClipContext, TierClips};
-
-    let mut dl = DrawList::new();
-    dl.push_clip(Rect::new(10.0, 10.0, 200.0, 200.0)); // outer: [10,10,200,200]
-    dl.push_clip(Rect::new(50.0, 50.0, 100.0, 100.0)); // inner: [50,50,100,100]
-    dl.push_rect(
-        Rect::new(60.0, 60.0, 20.0, 20.0),
-        RectStyle::filled(Color::WHITE),
-    );
-    dl.pop_clip(); // back to outer
-    dl.pop_clip(); // back to full viewport
-
-    let mut writer = InstanceWriter::new();
-    let mut clips = TierClips::default();
-    let mut stack = Vec::new();
-    let mut clip_ctx = ClipContext {
-        clips: &mut clips,
-        stack: &mut stack,
-        viewport_w: 800,
-        viewport_h: 600,
-    };
-    convert_draw_list(&dl, &mut writer, None, Some(&mut clip_ctx), 1.0, 1.0);
-
-    assert_eq!(writer.len(), 1);
-    // 4 segments: push outer, push inner (intersected), pop inner, pop outer.
-    assert_eq!(clips.rects.len(), 4);
-
-    // Inner clip = intersection of [10,10,200,200] and [50,50,100,100] = [50,50,100,100].
-    let inner = clips.rects[1].rect.unwrap();
-    assert_eq!(inner, [50, 50, 100, 100]);
-
-    // After inner pop: restores to outer [10,10,200,200].
-    let restored = clips.rects[2].rect.unwrap();
-    assert_eq!(restored, [10, 10, 200, 200]);
-
-    // After outer pop: full viewport (None).
-    assert!(clips.rects[3].rect.is_none());
-}
-
-#[test]
-fn clip_with_scale_factor() {
-    use super::{ClipContext, TierClips};
-
-    let mut dl = DrawList::new();
-    dl.push_clip(Rect::new(10.0, 20.0, 100.0, 50.0));
-    dl.push_rect(
-        Rect::new(15.0, 25.0, 20.0, 20.0),
-        RectStyle::filled(Color::WHITE),
-    );
-    dl.pop_clip();
-
-    let mut writer = InstanceWriter::new();
-    let mut clips = TierClips::default();
-    let mut stack = Vec::new();
-    let mut clip_ctx = ClipContext {
-        clips: &mut clips,
-        stack: &mut stack,
-        viewport_w: 1600,
-        viewport_h: 1200,
-    };
-    // Scale 2.0: logical → physical.
-    convert_draw_list(&dl, &mut writer, None, Some(&mut clip_ctx), 2.0, 1.0);
-
-    let r = clips.rects[0].rect.unwrap();
-    // [10*2, 20*2, 100*2, 50*2] = [20, 40, 200, 100].
-    assert_eq!(r, [20, 40, 200, 100]);
-}
-
-#[test]
-fn clip_clamped_to_viewport() {
-    use super::{ClipContext, TierClips};
-
-    let mut dl = DrawList::new();
-    // Clip extends beyond viewport (800x600).
-    dl.push_clip(Rect::new(-10.0, -10.0, 900.0, 700.0));
-    dl.pop_clip();
-
-    let mut writer = InstanceWriter::new();
-    let mut clips = TierClips::default();
-    let mut stack = Vec::new();
-    let mut clip_ctx = ClipContext {
-        clips: &mut clips,
-        stack: &mut stack,
-        viewport_w: 800,
-        viewport_h: 600,
-    };
-    convert_draw_list(&dl, &mut writer, None, Some(&mut clip_ctx), 1.0, 1.0);
-
-    let r = clips.rects[0].rect.unwrap();
-    // Clamped to [0, 0, 800, 600].
-    assert_eq!(r, [0, 0, 800, 600]);
-}
-
-#[test]
-fn clip_push_pop_restores_full_viewport() {
-    use super::{ClipContext, TierClips};
-
-    let mut dl = DrawList::new();
-    dl.push_clip(Rect::new(10.0, 10.0, 100.0, 100.0));
-    dl.push_rect(
-        Rect::new(20.0, 20.0, 30.0, 30.0),
-        RectStyle::filled(Color::WHITE),
-    );
-    dl.pop_clip();
-    // After pop, draw a rect without any clip — should not have segments after it.
-    dl.push_rect(
-        Rect::new(50.0, 50.0, 30.0, 30.0),
-        RectStyle::filled(Color::rgba(1.0, 0.0, 0.0, 1.0)),
-    );
-
-    let mut writer = InstanceWriter::new();
-    let mut clips = TierClips::default();
-    let mut stack = Vec::new();
-    let mut clip_ctx = ClipContext {
-        clips: &mut clips,
-        stack: &mut stack,
-        viewport_w: 800,
-        viewport_h: 600,
-    };
-    convert_draw_list(&dl, &mut writer, None, Some(&mut clip_ctx), 1.0, 1.0);
-
-    // Two rects emitted.
-    assert_eq!(writer.len(), 2);
-    // 2 segments: push (at instance 0), pop (at instance 1, restoring full viewport).
-    assert_eq!(clips.rects.len(), 2);
-    assert!(clips.rects[0].rect.is_some());
-    assert!(clips.rects[1].rect.is_none()); // Full viewport restored.
-    // Second rect (instance 1) is drawn after the pop — under full viewport.
-    assert_eq!(clips.rects[1].instance_offset, 1);
-}
-
-#[test]
-fn empty_clip_intersection_still_emits_content() {
-    use super::{ClipContext, TierClips};
-
-    let mut dl = DrawList::new();
-    // Two non-overlapping rects → intersection is empty (zero area).
-    dl.push_clip(Rect::new(0.0, 0.0, 50.0, 50.0));
-    dl.push_clip(Rect::new(100.0, 100.0, 50.0, 50.0));
-    dl.push_rect(
-        Rect::new(0.0, 0.0, 200.0, 200.0),
-        RectStyle::filled(Color::WHITE),
-    );
-    dl.pop_clip();
-    dl.pop_clip();
-
-    let mut writer = InstanceWriter::new();
-    let mut clips = TierClips::default();
-    let mut stack = Vec::new();
-    let mut clip_ctx = ClipContext {
-        clips: &mut clips,
-        stack: &mut stack,
-        viewport_w: 800,
-        viewport_h: 600,
-    };
-    convert_draw_list(&dl, &mut writer, None, Some(&mut clip_ctx), 1.0, 1.0);
-
-    // Content still emitted (GPU discards via scissor, not CPU-side filtering).
-    assert_eq!(writer.len(), 1);
-    // Inner clip has zero-area intersection → [0,0,0,0].
-    let inner = clips.rects[1].rect.unwrap();
-    assert_eq!(inner, [0, 0, 0, 0]);
 }
 
 // --- Multiple commands ---
 
 #[test]
 fn multiple_rects_accumulate() {
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(0.0, 0.0, 50.0, 50.0),
         RectStyle::filled(Color::BLACK),
     );
-    dl.push_rect(
+    scene.push_quad(
         Rect::new(60.0, 0.0, 50.0, 50.0),
         RectStyle::filled(Color::WHITE),
     );
-    dl.push_rect(
+    scene.push_quad(
         Rect::new(120.0, 0.0, 50.0, 50.0),
         RectStyle::filled(Color::BLACK),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 3);
 }
@@ -433,11 +201,11 @@ fn multiple_rects_accumulate() {
 
 #[test]
 fn invisible_rect_still_writes_instance() {
-    let mut dl = DrawList::new();
-    dl.push_rect(Rect::new(0.0, 0.0, 50.0, 50.0), RectStyle::default());
+    let mut scene = Scene::new();
+    scene.push_quad(Rect::new(0.0, 0.0, 50.0, 50.0), RectStyle::default());
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     // An unstyled rect writes a transparent instance (the GPU will discard it).
     assert_eq!(writer.len(), 1);
@@ -504,7 +272,7 @@ fn shaped_text(glyphs: Vec<ShapedGlyph>) -> ShapedText {
 
 #[test]
 fn text_without_context_is_noop() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
@@ -513,12 +281,12 @@ fn text_without_context_is_noop() {
         x_offset: 0.0,
         y_offset: 0.0,
     }]);
-    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+    scene.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
-    // No text context → text is deferred, no instances.
+    // No text context → text is skipped, no instances.
     assert!(writer.is_empty());
 }
 
@@ -538,8 +306,8 @@ fn text_single_glyph_produces_one_instance() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
 
     let mut ui_writer = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -550,7 +318,7 @@ fn text_single_glyph_produces_one_instance() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui_writer, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui_writer, Some(&mut ctx), 1.0, 1.0);
 
     // No UI rect instances (only text).
     assert!(ui_writer.is_empty());
@@ -611,8 +379,8 @@ fn text_spaces_are_advance_only() {
         },
     ]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -623,7 +391,7 @@ fn text_spaces_are_advance_only() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // Only 2 glyph instances (space skipped).
     assert_eq!(mono.len(), 2);
@@ -654,13 +422,13 @@ fn text_mixed_with_rects() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(0.0, 0.0, 50.0, 50.0),
         RectStyle::filled(Color::BLACK),
     );
-    dl.push_text(Point::new(60.0, 10.0), st, Color::WHITE);
-    dl.push_rect(
+    scene.push_text(Point::new(60.0, 10.0), st, Color::WHITE);
+    scene.push_quad(
         Rect::new(80.0, 0.0, 50.0, 50.0),
         RectStyle::filled(Color::WHITE),
     );
@@ -674,7 +442,7 @@ fn text_mixed_with_rects() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // 2 UI rect instances, 1 glyph instance.
     assert_eq!(ui.len(), 2);
@@ -699,8 +467,8 @@ fn text_empty_shaped_produces_nothing() {
 
     let st = ShapedText::new(Vec::new(), 0.0, 14.0, 12.0);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -711,7 +479,7 @@ fn text_empty_shaped_produces_nothing() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert!(mono.is_empty());
 }
@@ -743,8 +511,8 @@ fn text_atlas_miss_skips_glyph() {
         },
     ]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -755,9 +523,9 @@ fn text_atlas_miss_skips_glyph() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
-    // Only 1 instance (glyph 99 missed in atlas → skipped).
+    // Only 1 instance (glyph 99 missed in atlas -> skipped).
     assert_eq!(mono.len(), 1);
 }
 
@@ -804,8 +572,8 @@ fn text_color_glyph_routes_to_color_writer() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -816,7 +584,7 @@ fn text_color_glyph_routes_to_color_writer() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // Color glyph routes to color writer.
     assert!(mono.is_empty());
@@ -828,12 +596,12 @@ fn text_color_glyph_routes_to_color_writer() {
 
 #[test]
 fn uniform_radius_picks_max_of_four_corners() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE).with_per_corner_radius(2.0, 8.0, 4.0, 6.0);
-    dl.push_rect(Rect::new(0.0, 0.0, 200.0, 100.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 200.0, 100.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     let rec = writer.as_bytes();
     assert_eq!(read_f32(rec, 72), 8.0, "should pick max(2, 8, 4, 6) = 8");
@@ -841,26 +609,26 @@ fn uniform_radius_picks_max_of_four_corners() {
 
 #[test]
 fn all_corners_zero_is_sharp_rect() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE).with_per_corner_radius(0.0, 0.0, 0.0, 0.0);
-    dl.push_rect(Rect::new(0.0, 0.0, 50.0, 50.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 50.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     let rec = writer.as_bytes();
-    assert_eq!(read_f32(rec, 72), 0.0, "all-zero radii → sharp rect");
+    assert_eq!(read_f32(rec, 72), 0.0, "all-zero radii -> sharp rect");
 }
 
 #[test]
 fn radius_larger_than_half_dimension_passes_through() {
-    // Chromium clamps, but our SDF shader handles this — verify it passes.
-    let mut dl = DrawList::new();
+    // Chromium clamps, but our SDF shader handles this -- verify it passes.
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE).with_radius(30.0);
-    dl.push_rect(Rect::new(0.0, 0.0, 20.0, 10.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 20.0, 10.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     let rec = writer.as_bytes();
     // The converter passes the radius as-is; the SDF shader clamps internally.
@@ -871,14 +639,14 @@ fn radius_larger_than_half_dimension_passes_through() {
 
 #[test]
 fn zero_width_rect_produces_instance() {
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(10.0, 20.0, 0.0, 50.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -888,14 +656,14 @@ fn zero_width_rect_produces_instance() {
 
 #[test]
 fn zero_height_rect_produces_instance() {
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(10.0, 20.0, 100.0, 0.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -907,7 +675,7 @@ fn zero_height_rect_produces_instance() {
 
 #[test]
 fn shadow_with_zero_blur_and_spread() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE).with_shadow(Shadow {
         offset_x: 5.0,
         offset_y: 5.0,
@@ -915,10 +683,10 @@ fn shadow_with_zero_blur_and_spread() {
         spread: 0.0,
         color: Color::BLACK,
     });
-    dl.push_rect(Rect::new(100.0, 100.0, 200.0, 150.0), style);
+    scene.push_quad(Rect::new(100.0, 100.0, 200.0, 150.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 2);
     let bytes = writer.as_bytes();
@@ -936,7 +704,7 @@ fn shadow_with_zero_blur_and_spread() {
 
 #[test]
 fn shadow_with_negative_offset() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE).with_shadow(Shadow {
         offset_x: -10.0,
         offset_y: -10.0,
@@ -944,10 +712,10 @@ fn shadow_with_negative_offset() {
         spread: 0.0,
         color: Color::BLACK,
     });
-    dl.push_rect(Rect::new(100.0, 100.0, 50.0, 50.0), style);
+    scene.push_quad(Rect::new(100.0, 100.0, 50.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     let bytes = writer.as_bytes();
     let sx = read_f32(bytes, 0);
@@ -958,7 +726,7 @@ fn shadow_with_negative_offset() {
 
 #[test]
 fn shadow_radius_inherits_rect_corner_radius() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE)
         .with_radius(10.0)
         .with_shadow(Shadow {
@@ -968,10 +736,10 @@ fn shadow_radius_inherits_rect_corner_radius() {
             spread: 2.0,
             color: Color::BLACK,
         });
-    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 100.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 100.0, 100.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     let bytes = writer.as_bytes();
     // Shadow corner_radius = original(10) + expand(4+2) = 16.
@@ -987,8 +755,8 @@ fn shadow_radius_inherits_rect_corner_radius() {
 
 #[test]
 fn vertical_line_converts_to_rect() {
-    let mut dl = DrawList::new();
-    dl.push_line(
+    let mut scene = Scene::new();
+    scene.push_line(
         Point::new(50.0, 10.0),
         Point::new(50.0, 110.0),
         2.0,
@@ -996,7 +764,7 @@ fn vertical_line_converts_to_rect() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -1011,8 +779,8 @@ fn vertical_line_converts_to_rect() {
 
 #[test]
 fn diagonal_line_produces_stepping_rects() {
-    let mut dl = DrawList::new();
-    dl.push_line(
+    let mut scene = Scene::new();
+    scene.push_line(
         Point::new(0.0, 0.0),
         Point::new(10.0, 10.0),
         1.0,
@@ -1020,13 +788,13 @@ fn diagonal_line_produces_stepping_rects() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
-    // 10px diagonal → 11 stepping rects (0..=10).
+    // 10px diagonal -> 11 stepping rects (0..=10).
     assert_eq!(writer.len(), 11);
 
     let bytes = writer.as_bytes();
-    // Each rect should be 1×1 (stroke_width × stroke_width).
+    // Each rect should be 1x1 (stroke_width x stroke_width).
     for i in 0..11 {
         let offset = i * INSTANCE_SIZE;
         let w = read_f32(bytes, offset + 8);
@@ -1065,16 +833,16 @@ fn diagonal_line_produces_stepping_rects() {
 fn diagonal_line_x_pattern_no_overlap() {
     // Two crossed diagonals (the close button X pattern) should produce
     // separate stepping rects, not a single filled square.
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     // Top-left to bottom-right.
-    dl.push_line(
+    scene.push_line(
         Point::new(0.0, 0.0),
         Point::new(10.0, 10.0),
         1.0,
         Color::BLACK,
     );
     // Top-right to bottom-left.
-    dl.push_line(
+    scene.push_line(
         Point::new(10.0, 0.0),
         Point::new(0.0, 10.0),
         1.0,
@@ -1082,7 +850,7 @@ fn diagonal_line_x_pattern_no_overlap() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     // 11 rects per diagonal = 22 total.
     assert_eq!(writer.len(), 22);
@@ -1124,8 +892,8 @@ fn text_subpixel_glyph_routes_to_subpixel_writer() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1136,7 +904,7 @@ fn text_subpixel_glyph_routes_to_subpixel_writer() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert!(mono.is_empty(), "should not go to mono");
     assert_eq!(subpx.len(), 1, "should route to subpixel writer");
@@ -1167,8 +935,8 @@ fn text_many_glyphs_cursor_accumulates() {
         .collect();
     let st = shaped_text(glyphs);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1179,7 +947,7 @@ fn text_many_glyphs_cursor_accumulates() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert_eq!(mono.len(), 50);
 
@@ -1216,9 +984,9 @@ fn text_two_commands_independent_cursors() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(100.0, 0.0), st1, Color::WHITE);
-    dl.push_text(Point::new(200.0, 0.0), st2, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(100.0, 0.0), st1, Color::WHITE);
+    scene.push_text(Point::new(200.0, 0.0), st2, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1229,11 +997,11 @@ fn text_two_commands_independent_cursors() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert_eq!(mono.len(), 2);
 
-    // Each text command starts its own cursor — positions should be independent.
+    // Each text command starts its own cursor -- positions should be independent.
     let bytes = mono.as_bytes();
     let x1 = read_f32(bytes, 0);
     let x2 = read_f32(&bytes[INSTANCE_SIZE..], 0);
@@ -1281,8 +1049,8 @@ fn text_negative_bearing_extends_left() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1293,7 +1061,7 @@ fn text_negative_bearing_extends_left() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert_eq!(mono.len(), 1);
     let gx = read_f32(mono.as_bytes(), 0);
@@ -1339,8 +1107,8 @@ fn text_all_spaces_produces_no_glyph_instances() {
     ];
     let st = shaped_text(glyphs);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1351,7 +1119,7 @@ fn text_all_spaces_produces_no_glyph_instances() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert!(
         mono.is_empty(),
@@ -1388,8 +1156,8 @@ fn text_fractional_position_applies_subpixel_phase() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(10.5, 20.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(10.5, 20.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1400,7 +1168,7 @@ fn text_fractional_position_applies_subpixel_phase() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // If the subpixel phase key matches, the atlas lookup succeeds and
     // we get one glyph instance.
@@ -1415,14 +1183,14 @@ fn text_fractional_position_applies_subpixel_phase() {
 
 #[test]
 fn border_only_rect_has_transparent_fill() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::default()
         .with_border(2.0, Color::WHITE)
         .with_radius(4.0);
-    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 100.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -1441,14 +1209,14 @@ fn border_only_rect_has_transparent_fill() {
 
 #[test]
 fn scale_factor_applies_to_rect_position_and_size() {
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(100.0, 200.0, 300.0, 150.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.25, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.25, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -1460,14 +1228,14 @@ fn scale_factor_applies_to_rect_position_and_size() {
 
 #[test]
 fn scale_factor_applies_to_border_and_radius() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE)
         .with_border(2.0, Color::BLACK)
         .with_radius(8.0);
-    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 100.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 2.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 2.0, 1.0);
 
     let rec = writer.as_bytes();
     assert_eq!(read_f32(rec, 72), 16.0); // radius 8 * 2
@@ -1476,14 +1244,14 @@ fn scale_factor_applies_to_border_and_radius() {
 
 #[test]
 fn scale_factor_one_is_identity() {
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(10.0, 20.0, 100.0, 50.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     let rec = writer.as_bytes();
     assert_eq!(read_f32(rec, 0), 10.0);
@@ -1492,24 +1260,7 @@ fn scale_factor_one_is_identity() {
     assert_eq!(read_f32(rec, 12), 50.0);
 }
 
-// --- Layer commands ---
-
-#[test]
-fn layer_commands_are_noop_in_converter() {
-    let mut dl = DrawList::new();
-    dl.push_layer(Color::WHITE);
-    dl.push_rect(
-        Rect::new(0.0, 0.0, 50.0, 50.0),
-        RectStyle::filled(Color::WHITE),
-    );
-    dl.pop_layer();
-
-    let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
-
-    // Only the rect should produce an instance; layer commands are no-ops.
-    assert_eq!(writer.len(), 1);
-}
+// --- Layer bg hint ---
 
 #[test]
 fn text_with_layer_bg_hint_routes_subpixel_with_bg() {
@@ -1546,11 +1297,11 @@ fn text_with_layer_bg_hint_routes_subpixel_with_bg() {
         y_offset: 0.0,
     }]);
 
-    // Use layer stack so push_text captures the bg.
-    let mut dl = DrawList::new();
-    dl.push_layer(Color::rgba(0.2, 0.2, 0.2, 1.0));
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
-    dl.pop_layer();
+    // Use layer bg stack so push_text captures the bg.
+    let mut scene = Scene::new();
+    scene.push_layer_bg(Color::rgba(0.2, 0.2, 0.2, 1.0));
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    scene.pop_layer_bg();
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1561,7 +1312,7 @@ fn text_with_layer_bg_hint_routes_subpixel_with_bg() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 1.0);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // Subpixel glyph should route to subpixel writer with bg_hint.
     assert!(mono.is_empty());
@@ -1572,7 +1323,7 @@ fn text_with_layer_bg_hint_routes_subpixel_with_bg() {
 #[test]
 fn text_without_layer_has_no_bg_hint() {
     // Verify text drawn without a layer has bg_hint=None.
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let st = shaped_text(vec![ShapedGlyph {
         glyph_id: 42,
         face_index: 0,
@@ -1581,31 +1332,26 @@ fn text_without_layer_has_no_bg_hint() {
         x_offset: 0.0,
         y_offset: 0.0,
     }]);
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
 
-    match &dl.commands()[0] {
-        oriterm_ui::draw::DrawCommand::Text { bg_hint, .. } => {
-            assert!(
-                bg_hint.is_none(),
-                "text outside layer should have no bg_hint"
-            );
-        }
-        _ => panic!("expected Text command"),
-    }
+    assert!(
+        scene.text_runs()[0].bg_hint.is_none(),
+        "text outside layer should have no bg_hint"
+    );
 }
 
 // --- Opacity parameter ---
 
 #[test]
 fn opacity_half_halves_rect_fill_alpha() {
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(10.0, 20.0, 100.0, 50.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 0.5);
+    convert_scene(&scene, &mut writer, None, 1.0, 0.5);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -1618,14 +1364,14 @@ fn opacity_half_halves_rect_fill_alpha() {
 
 #[test]
 fn opacity_half_halves_border_alpha() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::BLACK)
         .with_border(2.0, Color::WHITE)
         .with_radius(4.0);
-    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 100.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 0.5);
+    convert_scene(&scene, &mut writer, None, 1.0, 0.5);
 
     let rec = writer.as_bytes();
     // Border alpha = 1.0 * 0.5 = 0.5.
@@ -1644,15 +1390,15 @@ fn opacity_half_halves_border_alpha() {
 
 #[test]
 fn opacity_composes_with_semi_transparent_source() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     // Source color has alpha = 0.5.
-    dl.push_rect(
+    scene.push_quad(
         Rect::new(0.0, 0.0, 50.0, 50.0),
         RectStyle::filled(Color::rgba(1.0, 1.0, 1.0, 0.5)),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 0.5);
+    convert_scene(&scene, &mut writer, None, 1.0, 0.5);
 
     let rec = writer.as_bytes();
     // Fill alpha = 0.5 * 0.5 = 0.25.
@@ -1665,14 +1411,14 @@ fn opacity_composes_with_semi_transparent_source() {
 
 #[test]
 fn opacity_zero_produces_fully_transparent_output() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE)
         .with_border(2.0, Color::WHITE)
         .with_radius(4.0);
-    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
+    scene.push_quad(Rect::new(0.0, 0.0, 100.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 0.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 0.0);
 
     let rec = writer.as_bytes();
     // Fill alpha = 0.
@@ -1683,7 +1429,7 @@ fn opacity_zero_produces_fully_transparent_output() {
 
 #[test]
 fn opacity_applies_to_shadow() {
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let style = RectStyle::filled(Color::WHITE).with_shadow(Shadow {
         offset_x: 0.0,
         offset_y: 4.0,
@@ -1691,10 +1437,10 @@ fn opacity_applies_to_shadow() {
         spread: 2.0,
         color: Color::rgba(0.0, 0.0, 0.0, 0.5),
     });
-    dl.push_rect(Rect::new(100.0, 100.0, 200.0, 150.0), style);
+    scene.push_quad(Rect::new(100.0, 100.0, 200.0, 150.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 0.5);
+    convert_scene(&scene, &mut writer, None, 1.0, 0.5);
 
     assert_eq!(writer.len(), 2);
     let bytes = writer.as_bytes();
@@ -1730,8 +1476,8 @@ fn opacity_applies_to_text_glyph_alpha() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+    let mut scene = Scene::new();
+    scene.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1742,7 +1488,7 @@ fn opacity_applies_to_text_glyph_alpha() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 0.5);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 0.5);
 
     assert_eq!(mono.len(), 1);
     // Glyph fg_color alpha = color.a(1.0) * opacity(0.5) = 0.5.
@@ -1756,14 +1502,14 @@ fn opacity_applies_to_text_glyph_alpha() {
 
 #[test]
 fn scale_and_opacity_are_independent() {
-    let mut dl = DrawList::new();
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_quad(
         Rect::new(100.0, 200.0, 300.0, 150.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 2.0, 0.5);
+    convert_scene(&scene, &mut writer, None, 2.0, 0.5);
 
     let rec = writer.as_bytes();
     // Position and size scaled by 2.0.
@@ -1780,8 +1526,8 @@ fn scale_and_opacity_are_independent() {
 
 #[test]
 fn opacity_applies_to_line() {
-    let mut dl = DrawList::new();
-    dl.push_line(
+    let mut scene = Scene::new();
+    scene.push_line(
         Point::new(10.0, 50.0),
         Point::new(110.0, 50.0),
         2.0,
@@ -1789,7 +1535,7 @@ fn opacity_applies_to_line() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 0.5);
+    convert_scene(&scene, &mut writer, None, 1.0, 0.5);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -1836,10 +1582,10 @@ fn opacity_applies_to_text_with_bg_hint() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_layer(Color::rgba(0.2, 0.2, 0.2, 1.0));
-    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
-    dl.pop_layer();
+    let mut scene = Scene::new();
+    scene.push_layer_bg(Color::rgba(0.2, 0.2, 0.2, 1.0));
+    scene.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    scene.pop_layer_bg();
 
     let mut ui = InstanceWriter::new();
     let mut ctx = TextContext {
@@ -1850,7 +1596,7 @@ fn opacity_applies_to_text_with_bg_hint() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), None, 1.0, 0.5);
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 0.5);
 
     assert_eq!(subpx.len(), 1, "should route to subpixel writer");
     // Glyph fg alpha = 1.0 * 0.5 = 0.5.
@@ -1865,9 +1611,7 @@ fn opacity_applies_to_text_with_bg_hint() {
 // --- Clip + text interaction ---
 
 #[test]
-fn clip_with_text_emits_segments_into_all_writers() {
-    use super::{ClipContext, TierClips};
-
+fn clip_with_text_still_emits_content() {
     let atlas = text_atlas_with(&[42]);
     let mut mono = InstanceWriter::new();
     let mut subpx = InstanceWriter::new();
@@ -1882,24 +1626,16 @@ fn clip_with_text_emits_segments_into_all_writers() {
         y_offset: 0.0,
     }]);
 
-    let mut dl = DrawList::new();
-    dl.push_clip(Rect::new(0.0, 0.0, 200.0, 100.0));
-    dl.push_rect(
+    let mut scene = Scene::new();
+    scene.push_clip(Rect::new(0.0, 0.0, 200.0, 100.0));
+    scene.push_quad(
         Rect::new(5.0, 5.0, 30.0, 20.0),
         RectStyle::filled(Color::WHITE),
     );
-    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
-    dl.pop_clip();
+    scene.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+    scene.pop_clip();
 
     let mut ui_writer = InstanceWriter::new();
-    let mut clips = TierClips::default();
-    let mut stack = Vec::new();
-    let mut clip_ctx = ClipContext {
-        clips: &mut clips,
-        stack: &mut stack,
-        viewport_w: 800,
-        viewport_h: 600,
-    };
     let mut ctx = TextContext {
         atlas: &atlas,
         mono_writer: &mut mono,
@@ -1908,102 +1644,27 @@ fn clip_with_text_emits_segments_into_all_writers() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(
-        &dl,
-        &mut ui_writer,
-        Some(&mut ctx),
-        Some(&mut clip_ctx),
-        1.0,
-        1.0,
-    );
+    convert_scene(&scene, &mut ui_writer, Some(&mut ctx), 1.0, 1.0);
 
     // Content emitted: 1 rect + 1 mono glyph.
     assert_eq!(ui_writer.len(), 1);
     assert_eq!(mono.len(), 1);
-
-    // All 4 writers got clip segments (push + pop = 2 each).
-    assert_eq!(clips.rects.len(), 2, "rects clips");
-    assert_eq!(clips.mono.len(), 2, "mono clips");
-    assert_eq!(clips.subpixel.len(), 2, "subpixel clips");
-    assert_eq!(clips.color.len(), 2, "color clips");
-
-    // Rects writer: push at 0, pop at 1 (after the rect).
-    assert_eq!(clips.rects[0].instance_offset, 0);
-    assert_eq!(clips.rects[0].rect.unwrap(), [0, 0, 200, 100]);
-    assert_eq!(clips.rects[1].instance_offset, 1);
-    assert!(clips.rects[1].rect.is_none());
-
-    // Mono writer: push at 0 (before the glyph), pop at 1 (after the glyph).
-    assert_eq!(clips.mono[0].instance_offset, 0);
-    assert_eq!(clips.mono[0].rect.unwrap(), [0, 0, 200, 100]);
-    assert_eq!(clips.mono[1].instance_offset, 1);
-    assert!(clips.mono[1].rect.is_none());
-
-    // Subpixel + color: push at 0, pop at 0 (no glyphs routed there).
-    assert_eq!(clips.subpixel[0].instance_offset, 0);
-    assert_eq!(clips.subpixel[1].instance_offset, 0);
-    assert_eq!(clips.color[0].instance_offset, 0);
-    assert_eq!(clips.color[1].instance_offset, 0);
 }
 
-#[test]
-fn scroll_widget_clip_pattern_produces_segments() {
-    use super::{ClipContext, TierClips};
-
-    // Simulates what ScrollWidget::draw emits:
-    // push_clip(visible_bounds) → child content → pop_clip.
-    let visible_bounds = Rect::new(0.0, 40.0, 400.0, 300.0);
-
-    let mut dl = DrawList::new();
-    dl.push_clip(visible_bounds);
-    // Child content that extends beyond visible bounds (scroll overflow).
-    dl.push_rect(
-        Rect::new(0.0, 0.0, 400.0, 600.0),
-        RectStyle::filled(Color::WHITE),
-    );
-    dl.push_rect(
-        Rect::new(10.0, 310.0, 100.0, 50.0),
-        RectStyle::filled(Color::rgba(1.0, 0.0, 0.0, 1.0)),
-    );
-    dl.pop_clip();
-
-    let mut writer = InstanceWriter::new();
-    let mut clips = TierClips::default();
-    let mut stack = Vec::new();
-    let mut clip_ctx = ClipContext {
-        clips: &mut clips,
-        stack: &mut stack,
-        viewport_w: 400,
-        viewport_h: 400,
-    };
-    convert_draw_list(&dl, &mut writer, None, Some(&mut clip_ctx), 1.0, 1.0);
-
-    // Both rects emitted (GPU clips, not CPU).
-    assert_eq!(writer.len(), 2);
-    // Push + pop = 2 segments.
-    assert_eq!(clips.rects.len(), 2);
-    // Scissor matches visible bounds.
-    assert_eq!(clips.rects[0].rect.unwrap(), [0, 40, 400, 300]);
-    assert_eq!(clips.rects[0].instance_offset, 0);
-    // Pop restores full viewport after 2 rects.
-    assert!(clips.rects[1].rect.is_none());
-    assert_eq!(clips.rects[1].instance_offset, 2);
-}
-
-// --- Transform stack tests ---
+// --- Offset (translate) tests ---
 
 #[test]
-fn translate_offsets_rect_position() {
-    let mut dl = DrawList::new();
-    dl.push_translate(10.0, 20.0);
-    dl.push_rect(
+fn offset_shifts_rect_position() {
+    let mut scene = Scene::new();
+    scene.push_offset(10.0, 20.0);
+    scene.push_quad(
         Rect::new(0.0, 0.0, 50.0, 30.0),
         RectStyle::filled(Color::WHITE),
     );
-    dl.pop_translate();
+    scene.pop_offset();
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -2014,133 +1675,133 @@ fn translate_offsets_rect_position() {
 }
 
 #[test]
-fn translate_does_not_affect_rects_outside_scope() {
-    let mut dl = DrawList::new();
-    dl.push_translate(100.0, 200.0);
-    dl.push_rect(
+fn offset_does_not_affect_rects_outside_scope() {
+    let mut scene = Scene::new();
+    scene.push_offset(100.0, 200.0);
+    scene.push_quad(
         Rect::new(5.0, 5.0, 10.0, 10.0),
         RectStyle::filled(Color::WHITE),
     );
-    dl.pop_translate();
-    // Second rect is outside the translate scope.
-    dl.push_rect(
+    scene.pop_offset();
+    // Second rect is outside the offset scope.
+    scene.push_quad(
         Rect::new(5.0, 5.0, 10.0, 10.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 2);
     let rec = writer.as_bytes();
-    // First rect: translated.
+    // First rect: offset applied.
     assert_eq!(read_f32(rec, 0), 105.0);
     assert_eq!(read_f32(rec, 4), 205.0);
-    // Second rect: not translated.
+    // Second rect: no offset.
     let r2 = &rec[INSTANCE_SIZE..];
     assert_eq!(read_f32(r2, 0), 5.0);
     assert_eq!(read_f32(r2, 4), 5.0);
 }
 
 #[test]
-fn nested_translates_compose_additively() {
-    let mut dl = DrawList::new();
-    dl.push_translate(10.0, 20.0);
-    dl.push_translate(5.0, 3.0);
-    dl.push_rect(
+fn nested_offsets_compose_additively() {
+    let mut scene = Scene::new();
+    scene.push_offset(10.0, 20.0);
+    scene.push_offset(5.0, 3.0);
+    scene.push_quad(
         Rect::new(0.0, 0.0, 1.0, 1.0),
         RectStyle::filled(Color::WHITE),
     );
-    dl.pop_translate();
-    // After inner pop, only outer translate active.
-    dl.push_rect(
+    scene.pop_offset();
+    // After inner pop, only outer offset active.
+    scene.push_quad(
         Rect::new(0.0, 0.0, 1.0, 1.0),
         RectStyle::filled(Color::WHITE),
     );
-    dl.pop_translate();
+    scene.pop_offset();
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 2);
     let rec = writer.as_bytes();
-    // First rect: both translates active (10+5=15, 20+3=23).
+    // First rect: both offsets active (10+5=15, 20+3=23).
     assert_eq!(read_f32(rec, 0), 15.0);
     assert_eq!(read_f32(rec, 4), 23.0);
-    // Second rect: only outer translate (10, 20).
+    // Second rect: only outer offset (10, 20).
     let r2 = &rec[INSTANCE_SIZE..];
     assert_eq!(read_f32(r2, 0), 10.0);
     assert_eq!(read_f32(r2, 4), 20.0);
 }
 
 #[test]
-fn translate_offsets_line_endpoints() {
-    let mut dl = DrawList::new();
-    dl.push_translate(50.0, 60.0);
+fn offset_shifts_line_endpoints() {
+    let mut scene = Scene::new();
+    scene.push_offset(50.0, 60.0);
     // Horizontal line: from (0,10) to (100,10).
-    dl.push_line(
+    scene.push_line(
         Point::new(0.0, 10.0),
         Point::new(100.0, 10.0),
         2.0,
         Color::WHITE,
     );
-    dl.pop_translate();
+    scene.pop_offset();
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 1.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
-    // Horizontal line: x = min(from.x, to.x) + translate = 0 + 50 = 50.
+    // Horizontal line: x = min(from.x, to.x) + offset = 0 + 50 = 50.
     assert_eq!(read_f32(rec, 0), 50.0, "line x should be offset by dx");
-    // y = from.y - hw + translate = 10 - 1 + 60 = 69.
+    // y = from.y - hw + offset = 10 - 1 + 60 = 69.
     assert_eq!(read_f32(rec, 4), 69.0, "line y should be offset by dy");
 }
 
 #[test]
-fn translate_equivalent_to_bounds_shift() {
-    // Behavioral equivalence: translate-based drawing must produce the same
-    // GPU output as manually shifting positions (the old ScrollWidget approach).
+fn offset_equivalent_to_bounds_shift() {
+    // Behavioral equivalence: offset-based drawing must produce the same
+    // GPU output as manually shifting positions.
     let offset_x = 15.0_f32;
     let offset_y = 40.0_f32;
 
-    // Approach A: PushTranslate + draw at (10, 20).
-    let mut dl_a = DrawList::new();
-    dl_a.push_translate(-offset_x, -offset_y);
-    dl_a.push_rect(
+    // Approach A: push_offset + draw at (10, 20).
+    let mut scene_a = Scene::new();
+    scene_a.push_offset(-offset_x, -offset_y);
+    scene_a.push_quad(
         Rect::new(10.0, 20.0, 100.0, 50.0),
         RectStyle::filled(Color::WHITE),
     );
-    dl_a.pop_translate();
+    scene_a.pop_offset();
 
     let mut writer_a = InstanceWriter::new();
-    convert_draw_list(&dl_a, &mut writer_a, None, None, 1.0, 1.0);
+    convert_scene(&scene_a, &mut writer_a, None, 1.0, 1.0);
 
     // Approach B: draw at (10 - offset_x, 20 - offset_y) directly.
-    let mut dl_b = DrawList::new();
-    dl_b.push_rect(
+    let mut scene_b = Scene::new();
+    scene_b.push_quad(
         Rect::new(10.0 - offset_x, 20.0 - offset_y, 100.0, 50.0),
         RectStyle::filled(Color::WHITE),
     );
 
     let mut writer_b = InstanceWriter::new();
-    convert_draw_list(&dl_b, &mut writer_b, None, None, 1.0, 1.0);
+    convert_scene(&scene_b, &mut writer_b, None, 1.0, 1.0);
 
     assert_eq!(writer_a.as_bytes(), writer_b.as_bytes());
 }
 
 #[test]
-fn translate_with_scale() {
-    let mut dl = DrawList::new();
-    dl.push_translate(10.0, 20.0);
-    dl.push_rect(
+fn offset_with_scale() {
+    let mut scene = Scene::new();
+    scene.push_offset(10.0, 20.0);
+    scene.push_quad(
         Rect::new(5.0, 5.0, 50.0, 30.0),
         RectStyle::filled(Color::WHITE),
     );
-    dl.pop_translate();
+    scene.pop_offset();
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, None, 2.0, 1.0);
+    convert_scene(&scene, &mut writer, None, 2.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();

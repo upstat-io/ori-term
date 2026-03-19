@@ -1,5 +1,5 @@
 use crate::action::WidgetAction;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::input::{InputEvent, Key, Modifiers};
 use crate::layout::compute_layout;
@@ -118,35 +118,23 @@ fn layout_dimensions() {
 fn paint_produces_rect_and_text() {
     let w = make_input(42.0, 0.0, 100.0, 1.0);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, INPUT_WIDTH, INPUT_HEIGHT);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: theme(),
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     w.paint(&mut ctx);
 
-    let rects = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
-    assert_eq!(rects, 1, "background rect");
-
-    let texts = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(texts, 1, "value text");
+    assert_eq!(scene.quads().len(), 1, "background rect");
+    assert_eq!(scene.text_runs().len(), 1, "value text");
 }
 
 // -- Sense & focusability --

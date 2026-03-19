@@ -1,5 +1,6 @@
 use crate::controllers::ControllerRequests;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
+use crate::draw::scene::ContentMask;
 use crate::geometry::{Point, Rect};
 use crate::input::{InputEvent, Key, Modifiers, ScrollDelta};
 use crate::interaction::LifecycleEvent;
@@ -93,35 +94,31 @@ fn scroll_is_focusable() {
 fn scroll_draws_with_clip() {
     let scroll = make_scroll(tall_content());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     scroll.paint(&mut ctx);
 
-    // Should have PushClip and PopClip commands (balanced).
-    let push_count = draw_list
-        .commands()
+    // Content primitives should have a clipped ContentMask (not unclipped).
+    let clipped_texts = scene
+        .text_runs()
         .iter()
-        .filter(|c| matches!(c, DrawCommand::PushClip { .. }))
+        .filter(|t| t.content_mask != ContentMask::unclipped())
         .count();
-    let pop_count = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::PopClip))
-        .count();
-    assert_eq!(push_count, 1);
-    assert_eq!(pop_count, 1);
+    assert!(
+        clipped_texts > 0,
+        "text runs should be clipped to scroll viewport"
+    );
 }
 
 #[test]
@@ -252,28 +249,28 @@ fn key_page_up_clamps_at_top() {
 fn scroll_clip_rect_matches_viewport() {
     let scroll = make_scroll(tall_content());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(10.0, 20.0, 150.0, 80.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     scroll.paint(&mut ctx);
 
-    // The PushClip should use the scroll widget's bounds exactly.
-    let clip = draw_list.commands().iter().find_map(|c| match c {
-        DrawCommand::PushClip { rect } => Some(*rect),
-        _ => None,
-    });
-    assert_eq!(clip, Some(bounds), "clip rect must match scroll viewport");
+    // Content primitives should be clipped to the scroll viewport bounds.
+    let first_clip = scene.text_runs().first().map(|t| t.content_mask.clip);
+    assert_eq!(
+        first_clip,
+        Some(bounds),
+        "clip rect must match scroll viewport"
+    );
 }
 
 #[test]
@@ -282,41 +279,31 @@ fn scroll_child_drawn_offset_by_scroll() {
     scroll.set_scroll_offset(40.0, 320.0, 100.0);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     scroll.paint(&mut ctx);
 
-    let translate = draw_list.commands().iter().find_map(|c| match c {
-        DrawCommand::PushTranslate { dx, dy } => Some((*dx, *dy)),
-        _ => None,
-    });
+    // Scene bakes the translate offset into positions directly.
+    // With 40px scroll offset, the first visible text (y=32 content space)
+    // should have position y = 32 - 40 = -8, but labels outside the clip
+    // are culled. The first drawn text should be the one intersecting the viewport.
+    let first_text = scene.text_runs().first();
+    assert!(first_text.is_some(), "should have text runs");
+    let pos = first_text.unwrap().position;
     assert_eq!(
-        translate,
-        Some((0.0, -40.0)),
-        "PushTranslate should offset by scroll amount"
-    );
-
-    let first_text = draw_list.commands().iter().find_map(|c| match c {
-        DrawCommand::Text { position, .. } => Some(*position),
-        _ => None,
-    });
-    assert!(first_text.is_some(), "should have text commands");
-    let pos = first_text.unwrap();
-    assert_eq!(
-        pos.y, 32.0,
-        "first text should be the first label intersecting the scrolled viewport"
+        pos.y, -8.0,
+        "first text y should be offset by scroll amount (32 - 40 = -8)"
     );
 }
 
@@ -324,31 +311,30 @@ fn scroll_child_drawn_offset_by_scroll() {
 fn scroll_draws_scrollbar_when_overflowing() {
     let scroll = make_scroll(tall_content());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     scroll.paint(&mut ctx);
 
-    let after_pop = draw_list
-        .commands()
+    // Scrollbar rects are drawn outside the clip scope (unclipped).
+    let unclipped_rects = scene
+        .quads()
         .iter()
-        .skip_while(|c| !matches!(c, DrawCommand::PopClip))
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+        .filter(|q| q.content_mask == ContentMask::unclipped())
         .count();
     assert!(
-        after_pop >= 1,
-        "scrollbar thumb rect should be drawn after clip"
+        unclipped_rects >= 1,
+        "scrollbar thumb rect should be unclipped"
     );
 }
 
@@ -356,29 +342,28 @@ fn scroll_draws_scrollbar_when_overflowing() {
 fn scroll_no_scrollbar_when_content_fits() {
     let scroll = make_scroll(short_content());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 1000.0, 100.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     scroll.paint(&mut ctx);
 
-    let after_pop = draw_list
-        .commands()
+    // No unclipped rects when content fits (no scrollbar).
+    let unclipped_rects = scene
+        .quads()
         .iter()
-        .skip_while(|c| !matches!(c, DrawCommand::PopClip))
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+        .filter(|q| q.content_mask == ContentMask::unclipped())
         .count();
-    assert_eq!(after_pop, 0, "no scrollbar when content fits");
+    assert_eq!(unclipped_rects, 0, "no scrollbar when content fits");
 }
 
 #[test]
@@ -486,34 +471,31 @@ fn both_direction_new_constructor() {
 fn horizontal_scroll_draws_with_clip() {
     let scroll = ScrollWidget::new(wide_content(), super::ScrollDirection::Horizontal);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     scroll.paint(&mut ctx);
 
-    let push_count = draw_list
-        .commands()
+    // Content primitives should be clipped to the scroll viewport.
+    let clipped_texts = scene
+        .text_runs()
         .iter()
-        .filter(|c| matches!(c, DrawCommand::PushClip { .. }))
+        .filter(|t| t.content_mask != ContentMask::unclipped())
         .count();
-    let pop_count = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::PopClip))
-        .count();
-    assert_eq!(push_count, 1);
-    assert_eq!(pop_count, 1);
+    assert!(
+        clipped_texts > 0,
+        "text runs should be clipped to scroll viewport"
+    );
 }
 
 #[test]
@@ -528,29 +510,28 @@ fn scroll_content_exactly_fits_no_scrollbar() {
     let label = LabelWidget::new("A".repeat(10));
     let scroll = ScrollWidget::vertical(Box::new(label));
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 16.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     scroll.paint(&mut ctx);
 
-    let after_pop = draw_list
-        .commands()
+    // No unclipped rects when content exactly fits (no scrollbar).
+    let unclipped_rects = scene
+        .quads()
         .iter()
-        .skip_while(|c| !matches!(c, DrawCommand::PopClip))
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+        .filter(|q| q.content_mask == ContentMask::unclipped())
         .count();
-    assert_eq!(after_pop, 0, "no scrollbar when content exactly fits");
+    assert_eq!(unclipped_rects, 0, "no scrollbar when content exactly fits");
 }
 
 #[test]
@@ -591,22 +572,21 @@ fn scroll_with_scrollbar_style() {
     };
     let scroll = ScrollWidget::vertical(tall_content()).with_scrollbar_style(custom_style);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     scroll.paint(&mut ctx);
-    assert!(!draw_list.is_empty());
+    assert!(!scene.is_empty());
 }
 
 // -- reset_scroll --

@@ -1,6 +1,6 @@
 //! GPU render pipelines: WGSL shaders, vertex layout, and pipeline factories.
 //!
-//! Six pipelines share a single 80-byte instance buffer layout:
+//! Six pipelines share a single 96-byte instance buffer layout:
 //! - **Background** ([`create_bg_pipeline`]): solid-color quads, no texture.
 //! - **Foreground** ([`create_fg_pipeline`]): `R8Unorm` atlas-sampled glyph quads.
 //! - **Subpixel foreground** ([`create_subpixel_fg_pipeline`]): `Rgba8Unorm`
@@ -49,10 +49,10 @@ pub use image::{
 /// Instance buffer stride in bytes.
 pub const INSTANCE_STRIDE: u64 = INSTANCE_SIZE as u64;
 
-/// Vertex attributes for the 80-byte instance record.
+/// Vertex attributes for the 96-byte instance record.
 ///
 /// Maps to the `InstanceInput` struct in the WGSL shaders.
-pub const INSTANCE_ATTRS: [VertexAttribute; 7] = [
+pub const INSTANCE_ATTRS: [VertexAttribute; 8] = [
     // location 0: pos (vec2<f32>) at offset 0.
     VertexAttribute {
         format: VertexFormat::Float32x2,
@@ -95,6 +95,12 @@ pub const INSTANCE_ATTRS: [VertexAttribute; 7] = [
         offset: 68,
         shader_location: 6,
     },
+    // location 7: clip (vec4<f32>) at offset 80.
+    VertexAttribute {
+        format: VertexFormat::Float32x4,
+        offset: 80,
+        shader_location: 7,
+    },
 ];
 
 /// Premultiplied alpha blend state: `src * 1 + dst * (1 - src_alpha)`.
@@ -126,11 +132,11 @@ pub(super) const QUAD_PRIMITIVE: PrimitiveState = PrimitiveState {
     conservative: false,
 };
 
-/// Vertex attributes for the 80-byte UI rect instance record.
+/// Vertex attributes for the 96-byte UI rect instance record.
 ///
-/// Extends [`INSTANCE_ATTRS`] with two additional fields at offsets 72 and 76
-/// for corner radius and border width used by the SDF rounded rect shader.
-pub const UI_RECT_ATTRS: [VertexAttribute; 9] = [
+/// Extends [`INSTANCE_ATTRS`] with three additional fields: corner radius
+/// and border width at offsets 72–79, and a clip rect at offset 80.
+pub const UI_RECT_ATTRS: [VertexAttribute; 10] = [
     // Shared attributes (locations 0–6) — same as INSTANCE_ATTRS.
     VertexAttribute {
         format: VertexFormat::Float32x2,
@@ -179,6 +185,12 @@ pub const UI_RECT_ATTRS: [VertexAttribute; 9] = [
         format: VertexFormat::Float32,
         offset: 76,
         shader_location: 8,
+    },
+    // location 9: clip (vec4<f32>) at offset 80.
+    VertexAttribute {
+        format: VertexFormat::Float32x4,
+        offset: 80,
+        shader_location: 9,
     },
 ];
 

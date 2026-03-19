@@ -289,16 +289,15 @@ impl App {
             let tab_bar_animating = Self::draw_tab_bar(
                 Some(&ctx.tab_bar),
                 renderer,
-                &mut ctx.chrome_draw_list,
+                &mut ctx.chrome_scene,
                 logical_w as f32,
                 scale,
                 gpu,
                 &self.ui_theme,
                 &ctx.text_cache,
-                &ctx.invalidation,
-                &mut ctx.scene_cache,
                 &ctx.interaction,
                 &ctx.frame_requests,
+                &mut ctx.damage_tracker,
             );
             if tab_bar_animating {
                 ctx.dirty = true;
@@ -309,15 +308,13 @@ impl App {
             let overlays_animating = Self::draw_overlays(
                 &mut ctx.overlays,
                 renderer,
-                &mut ctx.chrome_draw_list,
+                &mut ctx.chrome_scene,
                 logical_size,
                 scale,
                 gpu,
                 &ctx.layer_tree,
                 &self.ui_theme,
                 &ctx.text_cache,
-                &ctx.invalidation,
-                &mut ctx.scene_cache,
                 &ctx.interaction,
                 &ctx.frame_requests,
             );
@@ -332,7 +329,7 @@ impl App {
                 Self::draw_search_bar(
                     search,
                     renderer,
-                    &mut ctx.chrome_draw_list,
+                    &mut ctx.chrome_scene,
                     &mut ctx.search_bar_buf,
                     logical_w as f32,
                     chrome_h,

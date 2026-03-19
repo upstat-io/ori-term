@@ -308,7 +308,7 @@ impl Widget for SettingsPanel {
 
         if self.show_chrome {
             // Overlay mode: panel background with rounded corners and shadow.
-            ctx.draw_list.push_layer(bg);
+            ctx.scene.push_layer_bg(bg);
             let bg_style = RectStyle::filled(bg)
                 .with_border(1.0, ctx.theme.border)
                 .with_radius(CORNER_RADIUS)
@@ -319,7 +319,7 @@ impl Widget for SettingsPanel {
                     spread: 0.0,
                     color: ctx.theme.shadow,
                 });
-            ctx.draw_list.push_rect(ctx.bounds, bg_style);
+            ctx.scene.push_quad(ctx.bounds, bg_style);
         }
 
         // Draw the inner container.
@@ -342,18 +342,17 @@ impl Widget for SettingsPanel {
                         ctx.bounds.width(),
                         ctx.bounds.bottom() - sep_node.rect.y(),
                     );
-                    ctx.draw_list.push_rect(footer_bg, RectStyle::filled(bg));
+                    ctx.scene.push_quad(footer_bg, RectStyle::filled(bg));
                 }
             }
 
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
+                scene: ctx.scene,
                 bounds: child_node.content_rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,
@@ -362,7 +361,7 @@ impl Widget for SettingsPanel {
         }
 
         if self.show_chrome {
-            ctx.draw_list.pop_layer();
+            ctx.scene.pop_layer_bg();
         }
     }
 

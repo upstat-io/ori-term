@@ -1,4 +1,4 @@
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
 use crate::sense::Sense;
@@ -42,16 +42,15 @@ fn badge_layout_has_positive_size() {
 fn badge_paint_produces_rects_and_text() {
     let b = KbdBadge::new("Tab");
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 40.0, 28.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: theme(),
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -59,19 +58,11 @@ fn badge_paint_produces_rects_and_text() {
     b.paint(&mut ctx);
 
     // 2 rects: body + bottom border.
-    let rects = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
+    let rects = scene.quads().len();
     assert_eq!(rects, 2, "body + bottom border");
 
     // 1 text: key label.
-    let texts = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
+    let texts = scene.text_runs().len();
     assert_eq!(texts, 1);
 }
 
@@ -107,16 +98,15 @@ fn row_layout_has_positive_size() {
 fn row_paint_produces_action_label_and_badges() {
     let row = KeybindRow::new("Copy", vec!["Ctrl".into(), "C".into()], theme());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 300.0, 36.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: theme(),
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -124,19 +114,11 @@ fn row_paint_produces_action_label_and_badges() {
     row.paint(&mut ctx);
 
     // Rects: 2 badge bodies + 2 bottom borders = 4.
-    let rects = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
+    let rects = scene.quads().len();
     assert_eq!(rects, 4, "2 badge bodies + 2 bottom borders");
 
     // Texts: 1 action name + 1 "+" separator + 2 key labels = 4.
-    let texts = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
+    let texts = scene.text_runs().len();
     assert_eq!(texts, 4, "action + plus + 2 keys");
 }
 

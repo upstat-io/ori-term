@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use oriterm_ui::draw::DrawList;
+use oriterm_ui::draw::Scene;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::layout::SizeSpec;
 use oriterm_ui::text::{ShapedText, TextMetrics, TextStyle};
@@ -122,16 +122,15 @@ fn draw_emits_no_commands() {
     let widget = make_widget();
     let theme = UiTheme::dark();
     let measurer = TestMeasurer;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
 
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::new(0.0, 0.0, 640.0, 384.0),
         now: Instant::now(),
         theme: &theme,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -140,7 +139,7 @@ fn draw_emits_no_commands() {
     widget.paint(&mut ctx);
 
     assert!(
-        draw_list.is_empty(),
+        scene.is_empty(),
         "grid widget should not emit draw commands"
     );
 }

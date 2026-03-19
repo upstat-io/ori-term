@@ -121,24 +121,23 @@ impl CursorPickerWidget {
             0 => {
                 // Block: accent background behind character.
                 let block = Rect::new(tx - 2.0, cy, char_w + 4.0, char_h);
-                ctx.draw_list.push_rect(block, RectStyle::filled(accent));
-                ctx.draw_list
+                ctx.scene.push_quad(block, RectStyle::filled(accent));
+                ctx.scene
                     .push_text(Point::new(tx, cy), shaped, ctx.theme.bg_primary);
             }
             1 => {
                 // Bar: 2px accent bar on left of character.
-                ctx.draw_list
+                ctx.scene
                     .push_text(Point::new(tx, cy), shaped, ctx.theme.fg_primary);
                 let bar = Rect::new(tx - 3.0, cy, 2.0, char_h);
-                ctx.draw_list.push_rect(bar, RectStyle::filled(accent));
+                ctx.scene.push_quad(bar, RectStyle::filled(accent));
             }
             _ => {
                 // Underline: 2px accent line on bottom of character.
-                ctx.draw_list
+                ctx.scene
                     .push_text(Point::new(tx, cy), shaped, ctx.theme.fg_primary);
                 let underline = Rect::new(tx - 2.0, cy + char_h - 2.0, char_w + 4.0, 2.0);
-                ctx.draw_list
-                    .push_rect(underline, RectStyle::filled(accent));
+                ctx.scene.push_quad(underline, RectStyle::filled(accent));
             }
         }
     }
@@ -197,7 +196,7 @@ impl Widget for CursorPickerWidget {
             let style = RectStyle::filled(bg)
                 .with_radius(CARD_RADIUS)
                 .with_border(border_w, border_color);
-            ctx.draw_list.push_rect(card, style);
+            ctx.scene.push_quad(card, style);
 
             // Cursor demo.
             Self::paint_cursor_demo(ctx, card, i, accent);
@@ -207,7 +206,7 @@ impl Widget for CursorPickerWidget {
             let shaped = ctx.measurer.shape(label, &lbl_style, CARD_WIDTH);
             let lx = x + (CARD_WIDTH - shaped.width) / 2.0;
             let ly = y0 + CARD_HEIGHT - 16.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(lx, ly), shaped, ctx.theme.fg_secondary);
         }
 

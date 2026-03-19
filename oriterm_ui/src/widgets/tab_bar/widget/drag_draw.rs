@@ -44,15 +44,15 @@ impl TabBarWidget {
         let style = RectStyle::filled(self.colors.active_bg)
             .with_per_corner_radius(ACTIVE_TAB_RADIUS, ACTIVE_TAB_RADIUS, 0.0, 0.0)
             .with_shadow(shadow);
-        ctx.draw_list.push_layer(self.colors.active_bg);
-        ctx.draw_list.push_rect(tab_rect, style);
+        ctx.scene.push_layer_bg(self.colors.active_bg);
+        ctx.scene.push_quad(tab_rect, style);
 
         self.draw_tab_label(ctx, tab, visual_x, strip);
 
         // Close button (always visible on dragged tab).
         self.draw_close_icon(ctx, index, visual_x, strip);
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
     }
 
     /// Draws the × icon at a given tab X position (no hover — for drag overlay).
@@ -70,7 +70,7 @@ impl TabBarWidget {
                 CLOSE_BUTTON_WIDTH - 2.0 * CLOSE_ICON_INSET,
                 CLOSE_BUTTON_WIDTH - 2.0 * CLOSE_ICON_INSET,
             );
-            ctx.draw_list
+            ctx.scene
                 .push_icon(icon_rect, resolved.atlas_page, resolved.uv, fg);
         }
     }

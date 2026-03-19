@@ -204,8 +204,8 @@ impl App {
         if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.url_cache.invalidate();
             ctx.hovered_url = None; // Segments contain stale absolute rows.
-            ctx.scene_cache.clear();
             ctx.invalidation.invalidate_all();
+            ctx.damage_tracker.reset();
             ctx.dirty = true;
         }
     }

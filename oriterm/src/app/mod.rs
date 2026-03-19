@@ -332,8 +332,8 @@ impl App {
 
         ctx.pane_cache.invalidate_all();
         ctx.text_cache.clear();
-        ctx.scene_cache.clear();
         ctx.invalidation.invalidate_all();
+        ctx.damage_tracker.reset();
         ctx.dirty = true;
 
         // Mark all grid lines dirty so the frame extraction re-reads every
@@ -372,8 +372,8 @@ impl App {
             ctx.tab_bar.apply_theme(&self.ui_theme);
             ctx.pane_cache.invalidate_all();
             ctx.text_cache.clear();
-            ctx.scene_cache.clear();
             ctx.invalidation.invalidate_all();
+            ctx.damage_tracker.reset();
             ctx.dirty = true;
         }
     }

@@ -1,4 +1,4 @@
-use crate::draw::DrawList;
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::{SizeSpec, compute_layout};
 use crate::widgets::button::ButtonWidget;
@@ -102,27 +102,22 @@ fn collapsed_section_excluded_from_focusable() {
 fn draw_produces_commands() {
     let form = test_form();
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 400.0, 600.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     form.paint(&mut ctx);
 
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, crate::draw::DrawCommand::Text { .. }))
-        .count();
+    let text_cmds = scene.text_runs().len();
     // At minimum: 2 section headers (indicator + title each) + row labels/controls.
     assert!(
         text_cmds >= 4,
@@ -134,28 +129,23 @@ fn draw_produces_commands() {
 fn draw_skips_sections_outside_active_clip() {
     let form = test_form();
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    draw_list.push_clip(Rect::new(0.0, 0.0, 400.0, 110.0));
+    let mut scene = Scene::new();
+    scene.push_clip(Rect::new(0.0, 0.0, 400.0, 110.0));
     let bounds = Rect::new(0.0, 0.0, 400.0, 600.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     form.paint(&mut ctx);
 
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, crate::draw::DrawCommand::Text { .. }))
-        .count();
+    let text_cmds = scene.text_runs().len();
     assert_eq!(text_cmds, 6, "only the first visible section should draw");
 }
 

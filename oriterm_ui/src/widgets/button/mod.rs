@@ -223,18 +223,18 @@ impl Widget for ButtonWidget {
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
                 .with_border(2.0, self.style.focus_ring_color)
                 .with_radius(self.style.corner_radius + 2.0);
-            ctx.draw_list.push_rect(ring_rect, ring_style);
+            ctx.scene.push_quad(ring_rect, ring_style);
         }
 
         // Background from visual state animator (transitions between Normal,
         // Hovered, Pressed, Disabled states automatically).
         let bg = self.animator.get_bg_color(ctx.now);
-        ctx.draw_list.push_layer(bg);
+        ctx.scene.push_layer_bg(bg);
 
         let bg_style = RectStyle::filled(bg)
             .with_border(self.style.border_width, self.style.border_color)
             .with_radius(self.style.corner_radius);
-        ctx.draw_list.push_rect(ctx.bounds, bg_style);
+        ctx.scene.push_quad(ctx.bounds, bg_style);
 
         // Label text, centered in the padded area.
         if !self.label.is_empty() {
@@ -243,11 +243,11 @@ impl Widget for ButtonWidget {
             let shaped = ctx.measurer.shape(&self.label, &style, inner.width());
             let x = inner.x() + (inner.width() - shaped.width) / 2.0;
             let y = inner.y() + (inner.height() - shaped.height) / 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(x, y), shaped, self.current_fg());
         }
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
 
         // Signal continued redraws while the animator is transitioning.
         if self.animator.is_animating(ctx.now) {

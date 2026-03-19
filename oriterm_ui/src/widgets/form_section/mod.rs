@@ -194,8 +194,8 @@ impl Widget for FormSection {
         // scroll transforms (where clip is in viewport space but child
         // layout rects are in content space).
         let visible_bounds = ctx
-            .draw_list
-            .current_clip_rect_in_content_space()
+            .scene
+            .current_clip_in_content_space()
             .map_or(ctx.bounds, |clip| clip.intersection(ctx.bounds));
 
         // Draw header.
@@ -215,12 +215,11 @@ impl Widget for FormSection {
                     }
                     let mut child_ctx = DrawCtx {
                         measurer: ctx.measurer,
-                        draw_list: ctx.draw_list,
+                        scene: ctx.scene,
                         bounds: row_node.content_rect,
                         now: ctx.now,
                         theme: ctx.theme,
                         icons: ctx.icons,
-                        scene_cache: ctx.scene_cache.as_deref_mut(),
                         interaction: None,
                         widget_id: None,
                         frame_requests: None,
@@ -264,7 +263,7 @@ impl FormSection {
 
         // Draw indicator.
         let ind_shaped = ctx.measurer.shape(indicator, &style, f32::INFINITY);
-        ctx.draw_list.push_text(
+        ctx.scene.push_text(
             Point::new(bounds.x(), text_y),
             ind_shaped,
             ctx.theme.fg_primary,
@@ -277,7 +276,7 @@ impl FormSection {
             &style,
             bounds.width() - ind_metrics.width - 6.0,
         );
-        ctx.draw_list.push_text(
+        ctx.scene.push_text(
             Point::new(title_x, text_y),
             title_shaped,
             ctx.theme.fg_primary,
@@ -287,8 +286,8 @@ impl FormSection {
         let line_y = bounds.bottom() - 1.0;
         let line_rect = Rect::new(bounds.x(), line_y, bounds.width(), 1.0);
         let line_color = ctx.theme.border.with_alpha(0.3);
-        ctx.draw_list
-            .push_rect(line_rect, RectStyle::filled(line_color));
+        ctx.scene
+            .push_quad(line_rect, RectStyle::filled(line_color));
     }
 }
 

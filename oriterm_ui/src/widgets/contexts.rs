@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use crate::animation::FrameRequestFlags;
 use crate::controllers::ControllerRequests;
-use crate::draw::{DrawList, SceneCache};
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::icons::ResolvedIcons;
 use crate::interaction::{InteractionManager, InteractionState};
@@ -28,8 +28,8 @@ pub struct LayoutCtx<'a> {
 pub struct DrawCtx<'a> {
     /// Text shaping provider.
     pub measurer: &'a dyn TextMeasurer,
-    /// The draw command list to append to.
-    pub draw_list: &'a mut DrawList,
+    /// The scene to paint into.
+    pub scene: &'a mut Scene,
     /// The widget's computed bounds (from layout).
     pub bounds: Rect,
     /// Current frame timestamp for animation interpolation.
@@ -41,11 +41,6 @@ pub struct DrawCtx<'a> {
     /// `None` in tests or when the GPU renderer is not available.
     /// Widgets fall back to `push_line()` when this is `None`.
     pub icons: Option<&'a ResolvedIcons>,
-    /// Per-widget scene cache for retained rendering.
-    ///
-    /// `None` during uncached draws (tests, first frame). When present,
-    /// container widgets check the cache before calling `child.draw()`.
-    pub scene_cache: Option<&'a mut SceneCache>,
     /// Framework interaction state manager.
     ///
     /// `None` until the interaction system is fully wired (Section 03).
@@ -97,18 +92,18 @@ impl DrawCtx<'_> {
 
     /// Build a child draw context with child-specific bounds and widget ID.
     ///
-    /// Reborrows `draw_list`, `scene_cache`, and `interaction` from `self`.
+    /// Reborrows `scene` and `interaction` from `self`.
     /// Copies all other fields. Containers should use this instead of
     /// constructing `DrawCtx` struct literals directly.
     pub fn for_child(&mut self, child_id: WidgetId, child_bounds: Rect) -> DrawCtx<'_> {
+        self.scene.set_widget_id(Some(child_id));
         DrawCtx {
             measurer: self.measurer,
-            draw_list: self.draw_list,
+            scene: self.scene,
             bounds: child_bounds,
             now: self.now,
             theme: self.theme,
             icons: self.icons,
-            scene_cache: self.scene_cache.as_deref_mut(),
             interaction: self.interaction,
             widget_id: Some(child_id),
             frame_requests: self.frame_requests,

@@ -1,4 +1,4 @@
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
 use crate::widgets::container::ContainerWidget;
@@ -32,28 +32,22 @@ fn stack_sizes_to_largest_child() {
 fn stack_draws_all_children() {
     let stack = StackWidget::new(vec![label("A"), label("B")]);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     stack.paint(&mut ctx);
 
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(text_cmds, 2, "both children should be drawn");
+    assert_eq!(scene.text_runs().len(), 2, "both children should be drawn");
 }
 
 #[test]
@@ -89,36 +83,32 @@ fn stack_draws_in_painter_order() {
     // Verify the first child is drawn before the last (painter's order).
     let stack = StackWidget::new(vec![label("Back"), label("Front")]);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     stack.paint(&mut ctx);
 
-    // Both are Text commands — first drawn is "Back", second is "Front".
-    let texts: Vec<&str> = draw_list
-        .commands()
+    // Both are text runs — first drawn is "Back", second is "Front".
+    let texts: Vec<&str> = scene
+        .text_runs()
         .iter()
-        .filter_map(|c| match c {
-            DrawCommand::Text { shaped, .. } => {
-                // Use glyph count as proxy — "Back" has 4 glyphs, "Front" has 5.
-                Some(if shaped.glyph_count() == 4 {
-                    "Back"
-                } else {
-                    "Front"
-                })
+        .map(|t| {
+            // Use glyph count as proxy — "Back" has 4 glyphs, "Front" has 5.
+            if t.shaped.glyph_count() == 4 {
+                "Back"
+            } else {
+                "Front"
             }
-            _ => None,
         })
         .collect();
     assert_eq!(texts, vec!["Back", "Front"]);

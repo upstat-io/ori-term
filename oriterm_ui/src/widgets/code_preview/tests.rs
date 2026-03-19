@@ -1,4 +1,4 @@
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
 use crate::sense::Sense;
@@ -30,16 +30,15 @@ fn layout_has_positive_dimensions() {
 fn paint_produces_rect_and_text() {
     let w = CodePreviewWidget::new();
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 280.0, 120.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -47,19 +46,9 @@ fn paint_produces_rect_and_text() {
     w.paint(&mut ctx);
 
     // 1 background rect.
-    let rects = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
-    assert_eq!(rects, 1);
-
+    assert_eq!(scene.quads().len(), 1);
     // "PREVIEW" label + multiple code spans.
-    let texts = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
+    let texts = scene.text_runs().len();
     assert!(texts > 5, "should have label + code spans, got {texts}");
 }
 

@@ -29,7 +29,7 @@ sections:
 
 **Context:** GPUI's Element trait has three phases with associated type state that flows between them. Our simpler retained-mode architecture doesn't need the full associated-type machinery, but the phase separation is valuable. When a button changes hover color, we currently relayout + repaint. With prepaint, we'd skip layout (unchanged) and only run prepaint (resolve visual state) + paint (emit draw commands with resolved state).
 
-**Depends on:** Section 03 is recommended but not required. Prepaint works without PaintScene -- widgets still paint to DrawList. PaintScene benefits from prepaint's `DirtyKind::Prepaint` for finer-grained damage tracking, but the dependency is bidirectional enhancement, not blocking.
+**Depends on:** Section 03 is recommended but not required. Prepaint works without Scene -- widgets still paint to DrawList. Scene's DamageTracker benefits from prepaint's `DirtyKind::Prepaint` for finer-grained damage tracking, but the dependency is bidirectional enhancement, not blocking.
 
 ---
 

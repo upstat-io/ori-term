@@ -1,67 +1,49 @@
-//! DrawList assertion helpers for rendering verification.
+//! Scene assertion helpers for rendering verification.
 //!
-//! Provides convenience functions for asserting properties of draw commands
+//! Provides convenience functions for asserting properties of draw primitives
 //! produced by widget painting.
 
 use crate::color::Color;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 
-/// Returns the number of draw commands.
-pub fn command_count(draw_list: &DrawList) -> usize {
-    draw_list.commands().len()
+/// Returns the total number of primitives.
+pub fn command_count(scene: &Scene) -> usize {
+    scene.len()
 }
 
-/// Returns all rect commands in the draw list.
-pub fn rects(draw_list: &DrawList) -> Vec<&DrawCommand> {
-    draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .collect()
+/// Returns all quad primitives in the scene.
+pub fn rects(scene: &Scene) -> Vec<&crate::draw::Quad> {
+    scene.quads().iter().collect()
 }
 
-/// Returns all text commands in the draw list.
-pub fn texts(draw_list: &DrawList) -> Vec<&DrawCommand> {
-    draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .collect()
+/// Returns all text run primitives in the scene.
+pub fn texts(scene: &Scene) -> Vec<&crate::draw::TextRun> {
+    scene.text_runs().iter().collect()
 }
 
-/// Asserts that the draw list contains a rect with the given fill color.
+/// Asserts that the scene contains a quad with the given fill color.
 ///
 /// # Panics
 ///
-/// Panics if no rect command has the specified fill color.
-pub fn assert_has_rect_with_color(draw_list: &DrawList, color: Color) {
-    let has = draw_list.commands().iter().any(|c| {
-        if let DrawCommand::Rect { style, .. } = c {
-            style.fill == Some(color)
-        } else {
-            false
-        }
-    });
+/// Panics if no quad has the specified fill color.
+pub fn assert_has_rect_with_color(scene: &Scene, color: Color) {
+    let has = scene.quads().iter().any(|q| q.style.fill == Some(color));
     assert!(
         has,
-        "expected a rect with fill color {color:?}, found none in {} commands",
-        draw_list.commands().len()
+        "expected a quad with fill color {color:?}, found none in {} primitives",
+        scene.len()
     );
 }
 
-/// Asserts that the draw list contains at least one text command.
+/// Asserts that the scene contains at least one text run.
 ///
 /// # Panics
 ///
-/// Panics if no text draw command is present.
-pub fn assert_has_text(draw_list: &DrawList) {
-    let has = draw_list
-        .commands()
-        .iter()
-        .any(|c| matches!(c, DrawCommand::Text { .. }));
+/// Panics if no text run is present.
+pub fn assert_has_text(scene: &Scene) {
     assert!(
-        has,
-        "expected at least one text command, found none in {} commands",
-        draw_list.commands().len()
+        !scene.text_runs().is_empty(),
+        "expected at least one text run, found none in {} primitives",
+        scene.len()
     );
 }

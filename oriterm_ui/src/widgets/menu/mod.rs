@@ -337,13 +337,13 @@ impl MenuWidget {
         let x2 = x + s - inset;
         let y2 = y + inset;
 
-        ctx.draw_list.push_line(
+        ctx.scene.push_line(
             Point::new(x0, y0),
             Point::new(x1, y1),
             2.0,
             self.style.check_color,
         );
-        ctx.draw_list.push_line(
+        ctx.scene.push_line(
             Point::new(x1, y1),
             Point::new(x2, y2),
             2.0,

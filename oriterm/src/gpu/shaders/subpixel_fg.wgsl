@@ -4,6 +4,7 @@
 // subpixel coverage masks (from swash Format::Subpixel). Each color
 // channel is blended independently: mix(bg, fg, mask_channel). This
 // achieves ~3x effective horizontal resolution on LCD displays.
+// Per-instance clip rect discards out-of-bounds fragments.
 
 struct Uniform {
     screen_size: vec2<f32>,
@@ -27,6 +28,7 @@ struct InstanceInput {
     @location(4) bg_color: vec4<f32>,
     @location(5) kind: u32,
     @location(6) atlas_page: u32,
+    @location(7) clip: vec4<f32>,
 }
 
 struct VertexOutput {
@@ -35,6 +37,8 @@ struct VertexOutput {
     @location(1) bg_color: vec4<f32>,
     @location(2) tex_coord: vec2<f32>,
     @location(3) @interpolate(flat) atlas_page: u32,
+    @location(4) clip_min: vec2<f32>,
+    @location(5) clip_max: vec2<f32>,
 }
 
 @vertex
@@ -65,13 +69,22 @@ fn vs_main(
     out.bg_color = instance.bg_color;
     out.tex_coord = tex_coord;
     out.atlas_page = instance.atlas_page;
+    out.clip_min = instance.clip.xy;
+    out.clip_max = instance.clip.xy + instance.clip.zw;
     return out;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    // Per-instance clip rect test.
+    let frag_pos = input.position.xy;
+    if frag_pos.x < input.clip_min.x || frag_pos.x > input.clip_max.x
+        || frag_pos.y < input.clip_min.y || frag_pos.y > input.clip_max.y {
+        discard;
+    }
+
     // Sample per-channel coverage mask from the subpixel atlas.
-    // R/G/B contain independent subpixel coverage (0.0–1.0).
+    // R/G/B contain independent subpixel coverage (0.0-1.0).
     let mask = textureSample(subpixel_atlas_texture, subpixel_atlas_sampler, input.tex_coord, input.atlas_page);
 
     let fg = input.fg_color;
@@ -85,9 +98,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // pixel passes through transparent — fully dimmed text is invisible.
     //
     // BlendState is PREMUL_ALPHA_BLEND: src*1 + dst*(1-src_alpha).
-    // - Opaque output vec4(r,g,b,1.0): src_alpha=1 → dst*(1-1)=0, dst
+    // - Opaque output vec4(r,g,b,1.0): src_alpha=1 -> dst*(1-1)=0, dst
     //   fully replaced. Correct: shader already composited fg over bg.
-    // - Transparent output vec4(0,0,0,0): src_alpha=0 → dst preserved.
+    // - Transparent output vec4(0,0,0,0): src_alpha=0 -> dst preserved.
     //   Correct: zero-coverage pixel passes through to framebuffer.
     if bg.a > 0.001 {
         let dim = fg.a;

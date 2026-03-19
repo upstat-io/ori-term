@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::{Point, Rect, Size};
 use crate::input::{Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::theme::UiTheme;
@@ -1147,15 +1147,14 @@ fn draw_non_modal_no_dimming() {
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
         now,
         theme: &TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -1164,12 +1163,11 @@ fn draw_non_modal_no_dimming() {
     assert_eq!(mgr.draw_count(), 1);
     let _opacity = mgr.draw_overlay_at(0, &mut ctx, &tree);
 
-    // Should have text command but no dim rect.
-    let has_rect = draw_list
-        .commands()
-        .iter()
-        .any(|c| matches!(c, DrawCommand::Rect { .. }));
-    assert!(!has_rect, "non-modal should not emit dim rect");
+    // Should have text run but no dim rect.
+    assert!(
+        scene.quads().is_empty(),
+        "non-modal should not emit dim rect"
+    );
 }
 
 #[test]
@@ -1194,15 +1192,14 @@ fn draw_modal_emits_dimming_rect() {
     animator.tick(&mut tree, future);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
         now: future,
         theme: &TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -1211,18 +1208,13 @@ fn draw_modal_emits_dimming_rect() {
     assert_eq!(mgr.draw_count(), 1);
     let _opacity = mgr.draw_overlay_at(0, &mut ctx, &tree);
 
-    // First command should be the dim rect covering the viewport.
-    let first = &draw_list.commands()[0];
-    match first {
-        DrawCommand::Rect { rect, style } => {
-            assert_eq!(*rect, viewport());
-            assert!(style.fill.is_some());
-            let fill = style.fill.unwrap();
-            assert!(fill.a < 1.0, "dim rect should be semi-transparent");
-            assert!(fill.a > 0.0, "dim rect should be visible");
-        }
-        other => panic!("expected Rect command for dimming, got {other:?}"),
-    }
+    // First quad should be the dim rect covering the viewport.
+    assert!(!scene.quads().is_empty(), "modal should emit dim rect");
+    let dim_quad = &scene.quads()[0];
+    assert_eq!(dim_quad.bounds, viewport());
+    let fill = dim_quad.style.fill.expect("dim rect should have fill");
+    assert!(fill.a < 1.0, "dim rect should be semi-transparent");
+    assert!(fill.a > 0.0, "dim rect should be visible");
 }
 
 #[test]
@@ -1252,18 +1244,17 @@ fn draw_overlays_in_painter_order() {
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
 
     // Draw all overlays into the same draw list to verify order.
     for i in 0..mgr.draw_count() {
         let mut ctx = DrawCtx {
             measurer: &measurer,
-            draw_list: &mut draw_list,
+            scene: &mut scene,
             bounds: Rect::default(),
             now,
             theme: &TEST_THEME,
             icons: None,
-            scene_cache: None,
             interaction: None,
             widget_id: None,
             frame_requests: None,
@@ -1271,13 +1262,10 @@ fn draw_overlays_in_painter_order() {
         mgr.draw_overlay_at(i, &mut ctx, &tree);
     }
 
-    let glyph_counts: Vec<usize> = draw_list
-        .commands()
+    let glyph_counts: Vec<usize> = scene
+        .text_runs()
         .iter()
-        .filter_map(|c| match c {
-            DrawCommand::Text { shaped, .. } => Some(shaped.glyph_count()),
-            _ => None,
-        })
+        .map(|t| t.shaped.glyph_count())
         .collect();
     // First overlay drawn first (back), second drawn last (front).
     assert_eq!(glyph_counts, vec![2, 5]);
@@ -1996,17 +1984,16 @@ fn draw_stacked_modals_emits_two_dim_rects() {
     animator.tick(&mut tree, future);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
 
     for i in 0..mgr.draw_count() {
         let mut ctx = DrawCtx {
             measurer: &measurer,
-            draw_list: &mut draw_list,
+            scene: &mut scene,
             bounds: Rect::default(),
             now: future,
             theme: &TEST_THEME,
             icons: None,
-            scene_cache: None,
             interaction: None,
             widget_id: None,
             frame_requests: None,
@@ -2014,13 +2001,10 @@ fn draw_stacked_modals_emits_two_dim_rects() {
         mgr.draw_overlay_at(i, &mut ctx, &tree);
     }
 
-    let dim_rects: Vec<_> = draw_list
-        .commands()
+    let dim_rects: Vec<_> = scene
+        .quads()
         .iter()
-        .filter(|c| match c {
-            DrawCommand::Rect { style, .. } => style.fill.is_some_and(|f| f.a > 0.0 && f.a < 1.0),
-            _ => false,
-        })
+        .filter(|q| q.style.fill.is_some_and(|f| f.a > 0.0 && f.a < 1.0))
         .collect();
     assert_eq!(dim_rects.len(), 2, "each modal should emit a dim rect");
 }
@@ -2153,15 +2137,14 @@ fn popup_starts_at_full_opacity() {
 
     // Popups appear instantly at full opacity (no fade-in).
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
         now,
         theme: &TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -2193,15 +2176,14 @@ fn modal_fades_in_from_zero() {
 
     // At t=0 (before tick), opacity is still 0.0 (the initial value).
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
         now,
         theme: &TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -2234,15 +2216,14 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
 
     // Modal appears instantly — dim layer starts at opacity 1.0 (no fade-in).
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
         now,
         theme: &TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -2250,17 +2231,12 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
 
     mgr.draw_overlay_at(0, &mut ctx, &tree);
 
-    // Dim rect is the first command — alpha should be 0.5 immediately.
-    let dim_cmd = &draw_list.commands()[0];
-    match dim_cmd {
-        DrawCommand::Rect { style, .. } => {
-            let fill = style.fill.expect("dim rect has fill");
-            assert!(
-                fill.a > 0.4,
-                "dim alpha at t=0 should be ~0.5 (instant), got {}",
-                fill.a,
-            );
-        }
-        other => panic!("expected dim Rect, got {other:?}"),
-    }
+    // Dim rect is the first quad — alpha should be 0.5 immediately.
+    assert!(!scene.quads().is_empty(), "should emit dim rect");
+    let fill = scene.quads()[0].style.fill.expect("dim rect has fill");
+    assert!(
+        fill.a > 0.4,
+        "dim alpha at t=0 should be ~0.5 (instant), got {}",
+        fill.a,
+    );
 }

@@ -339,6 +339,7 @@ impl App {
             // cache so the next render repaints scrolled content.
             ctx.cached_layout = None;
             ctx.invalidation.invalidate_all();
+            ctx.damage_tracker.reset();
             ctx.request_urgent_redraw();
         }
     }

@@ -4,11 +4,11 @@
 //! Each window gets its own renderer so DPI scaling, atlas caches, and
 //! shaping state are fully isolated — no cross-window contamination.
 
-mod draw_list;
 mod font_config;
 mod helpers;
 mod multi_pane;
 mod render;
+mod scene_append;
 mod ui_only;
 
 pub use ui_only::RendererMode;
@@ -130,10 +130,6 @@ pub struct WindowRenderer {
 
     // Per-frame reusable scratch buffers.
     ui_raster_keys: Vec<RasterKey>,
-    /// Reusable clip stack for `convert_draw_list` (avoids per-frame allocation).
-    clip_stack: Vec<oriterm_ui::geometry::Rect>,
-    /// Scratch clips for per-overlay draw range recording.
-    overlay_scratch_clips: super::draw_list_convert::TierClips,
     shaping: ShapingScratch,
     /// GPU-ready instances for the current frame.
     ///
@@ -220,8 +216,6 @@ impl WindowRenderer {
             font_collection,
             ui_font_collection,
             ui_raster_keys: Vec::new(),
-            clip_stack: Vec::new(),
-            overlay_scratch_clips: super::draw_list_convert::TierClips::default(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             bg_buffer: None,

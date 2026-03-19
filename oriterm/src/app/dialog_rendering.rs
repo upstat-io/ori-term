@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use winit::window::WindowId;
 
-use oriterm_ui::draw::compose_scene;
+use oriterm_ui::draw::build_scene;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::widgets::DrawCtx;
 
@@ -97,7 +97,7 @@ impl App {
     ) {
         let renderer = ctx.renderer.as_mut().expect("caller checked renderer");
         let chrome_h = ctx.chrome.caption_height();
-        ctx.draw_list.clear();
+        ctx.scene.clear();
         let measurer = CachedTextMeasurer::new(
             UiFontMeasurer::new(renderer.active_ui_collection(), scale),
             &ctx.text_cache,
@@ -126,68 +126,51 @@ impl App {
             now,
         );
 
-        // Invalidate specific widgets whose visual state changed (hover
-        // enter/leave), not the entire scene. Also invalidate when animation
-        // frames were requested (animator mid-transition).
-        for event in &lifecycle_events {
-            if let oriterm_ui::interaction::LifecycleEvent::HotChanged { widget_id, .. } = event {
-                ctx.invalidation
-                    .mark(*widget_id, oriterm_ui::invalidation::DirtyKind::Paint);
-            }
-        }
+        // If animation frames were requested (animator mid-transition),
+        // invalidate all to ensure smooth transitions.
         if ctx.frame_requests.anim_frame_requested() {
-            // Animation running — invalidate all to ensure smooth transitions.
             ctx.invalidation.invalidate_all();
         }
 
-        // Draw the chrome title bar via scene composition.
+        // Draw the chrome title bar via build_scene.
         let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
         {
             let mut draw_ctx = DrawCtx {
                 measurer: &measurer,
-                draw_list: &mut ctx.draw_list,
+                scene: &mut ctx.scene,
                 bounds: chrome_bounds,
                 now: Instant::now(),
                 theme: ui_theme,
                 icons: Some(icons),
-                scene_cache: None,
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,
             };
-            compose_scene(
-                &ctx.chrome,
-                &mut draw_ctx,
-                &ctx.invalidation,
-                &mut ctx.scene_cache,
-            );
+            build_scene(&ctx.chrome, &mut draw_ctx);
         }
 
-        // Draw the dialog content below the chrome via scene composition.
+        // Draw the dialog content below the chrome.
         let content_bounds = Rect::new(0.0, chrome_h, logical_w, logical_h - chrome_h);
         {
             let mut draw_ctx = DrawCtx {
                 measurer: &measurer,
-                draw_list: &mut ctx.draw_list,
+                scene: &mut ctx.scene,
                 bounds: content_bounds,
                 now: Instant::now(),
                 theme: ui_theme,
                 icons: Some(icons),
-                scene_cache: None,
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,
             };
-            compose_scene(
-                ctx.content.content_widget(),
-                &mut draw_ctx,
-                &ctx.invalidation,
-                &mut ctx.scene_cache,
-            );
+            build_scene(ctx.content.content_widget(), &mut draw_ctx);
         }
 
-        // Convert draw list to GPU instances.
-        renderer.append_ui_draw_list_with_text(&ctx.draw_list, scale, 1.0, gpu);
+        // Compute per-widget damage for future partial repaint support.
+        ctx.damage_tracker.compute_damage(&ctx.scene);
+
+        // Convert scene to GPU instances.
+        renderer.append_ui_scene_with_text(&ctx.scene, scale, 1.0, gpu);
     }
 
     /// Draw overlay popups (dropdown lists) on top of dialog content.
@@ -217,7 +200,7 @@ impl App {
         }
 
         for i in 0..overlay_count {
-            ctx.draw_list.clear();
+            ctx.scene.clear();
             let measurer = CachedTextMeasurer::new(
                 UiFontMeasurer::new(renderer.active_ui_collection(), scale),
                 &ctx.text_cache,
@@ -226,12 +209,11 @@ impl App {
             let icons = renderer.resolved_icons();
             let mut overlay_draw_ctx = DrawCtx {
                 measurer: &measurer,
-                draw_list: &mut ctx.draw_list,
+                scene: &mut ctx.scene,
                 bounds: overlay_bounds,
                 now: Instant::now(),
                 theme: ui_theme,
                 icons: Some(icons),
-                scene_cache: None,
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,
@@ -239,7 +221,7 @@ impl App {
             let opacity = ctx
                 .overlays
                 .draw_overlay_at(i, &mut overlay_draw_ctx, &ctx.layer_tree);
-            renderer.append_overlay_draw_list_with_text(&ctx.draw_list, scale, opacity, gpu);
+            renderer.append_overlay_scene_with_text(&ctx.scene, scale, opacity, gpu);
         }
     }
 }

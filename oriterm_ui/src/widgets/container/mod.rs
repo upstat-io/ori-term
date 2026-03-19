@@ -322,12 +322,12 @@ impl Widget for ContainerWidget {
         // scroll transforms (where clip is in viewport space but child
         // layout rects are in content space).
         let visible_bounds = ctx
-            .draw_list
-            .current_clip_rect_in_content_space()
+            .scene
+            .current_clip_in_content_space()
             .map_or(ctx.bounds, |clip| clip.intersection(ctx.bounds));
 
         if self.clip_children {
-            ctx.draw_list.push_clip(ctx.bounds);
+            ctx.scene.push_clip(ctx.bounds);
         }
 
         for (idx, child) in self.children.iter().enumerate() {
@@ -338,34 +338,13 @@ impl Widget for ContainerWidget {
 
                 let child_id = child.id();
                 let bounds = child_node.content_rect;
-
-                // Scene cache hit — replay cached commands.
-                if Self::try_replay_cached(ctx, child_id, bounds) {
-                    continue;
-                }
-
-                // Cache miss — draw and capture for future reuse.
-                let start = ctx.draw_list.len();
-                let log_start = ctx.scene_cache.as_ref().map_or(0, |c| c.log_position());
-                let mut child_ctx = DrawCtx {
-                    measurer: ctx.measurer,
-                    draw_list: ctx.draw_list,
-                    bounds,
-                    now: ctx.now,
-                    theme: ctx.theme,
-                    icons: ctx.icons,
-                    scene_cache: ctx.scene_cache.as_deref_mut(),
-                    interaction: None,
-                    widget_id: None,
-                    frame_requests: None,
-                };
+                let mut child_ctx = ctx.for_child(child_id, bounds);
                 child.paint(&mut child_ctx);
-                Self::store_in_cache(ctx, child_id, bounds, start, log_start);
             }
         }
 
         if self.clip_children {
-            ctx.draw_list.pop_clip();
+            ctx.scene.pop_clip();
         }
     }
 

@@ -157,8 +157,8 @@ impl Widget for FormLayout {
         // scroll transforms (where clip is in viewport space but child
         // layout rects are in content space).
         let visible_bounds = ctx
-            .draw_list
-            .current_clip_rect_in_content_space()
+            .scene
+            .current_clip_in_content_space()
             .map_or(ctx.bounds, |clip| clip.intersection(ctx.bounds));
 
         for (idx, section) in self.sections.iter().enumerate() {
@@ -168,12 +168,11 @@ impl Widget for FormLayout {
                 }
                 let mut child_ctx = DrawCtx {
                     measurer: ctx.measurer,
-                    draw_list: ctx.draw_list,
+                    scene: ctx.scene,
                     bounds: section_node.content_rect,
                     now: ctx.now,
                     theme: ctx.theme,
                     icons: ctx.icons,
-                    scene_cache: ctx.scene_cache.as_deref_mut(),
                     interaction: None,
                     widget_id: None,
                     frame_requests: None,

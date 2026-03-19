@@ -162,7 +162,7 @@ impl Widget for NumberInputWidget {
         let style = RectStyle::filled(bg)
             .with_radius(CORNER_RADIUS)
             .with_border(BORDER_WIDTH, border_color);
-        ctx.draw_list.push_rect(bounds, style);
+        ctx.scene.push_quad(bounds, style);
 
         // Value text, centered.
         let text = self.format_value();
@@ -170,7 +170,7 @@ impl Widget for NumberInputWidget {
         let shaped = ctx.measurer.shape(&text, &text_style, bounds.width());
         let tx = bounds.x() + (bounds.width() - shaped.width) / 2.0;
         let ty = bounds.y() + (bounds.height() - shaped.height) / 2.0;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(tx, ty), shaped, ctx.theme.fg_primary);
 
         if self.animator.is_animating(ctx.now) {

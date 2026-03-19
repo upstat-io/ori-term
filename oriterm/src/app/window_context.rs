@@ -13,7 +13,7 @@ use crate::session::DividerLayout;
 use oriterm_ui::animation::FrameRequestFlags;
 use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;
-use oriterm_ui::draw::{DrawList, SceneCache};
+use oriterm_ui::draw::{DamageTracker, Scene};
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::interaction::InteractionManager;
 use oriterm_ui::invalidation::InvalidationTracker;
@@ -49,7 +49,7 @@ pub(crate) struct WindowContext {
     // Render caches.
     pub(super) pane_cache: PaneRenderCache,
     pub(super) frame: Option<FrameInput>,
-    pub(super) chrome_draw_list: DrawList,
+    pub(super) chrome_scene: Scene,
     /// Pane rendered in the previous single-pane frame. Used to detect
     /// tab switches / tear-off so `renderable_cache` contamination from
     /// `swap_renderable_content` is flushed with a forced refresh.
@@ -66,7 +66,7 @@ pub(crate) struct WindowContext {
     // Framework-managed widget interaction state (hot/active/focus trifecta).
     pub(super) interaction: InteractionManager,
     /// Shared frame request flags — widgets set these during paint,
-    /// the framework reads them after `compose_scene()` to schedule
+    /// the framework reads them after `build_scene()` to schedule
     /// animation frames and repaints.
     pub(super) frame_requests: FrameRequestFlags,
 
@@ -87,11 +87,10 @@ pub(crate) struct WindowContext {
     // Reusable buffers.
     pub(super) search_bar_buf: String,
 
-    // Scene cache for retained UI rendering.
-    pub(super) scene_cache: SceneCache,
-
     // Invalidation tracking.
     pub(super) invalidation: InvalidationTracker,
+    // Per-widget damage tracker (scene diffing for future partial repaints).
+    pub(super) damage_tracker: DamageTracker,
 
     // Surface strategy and damage tracking.
     #[expect(
@@ -138,7 +137,7 @@ impl WindowContext {
             terminal_grid,
             pane_cache: PaneRenderCache::new(),
             frame: None,
-            chrome_draw_list: DrawList::new(),
+            chrome_scene: Scene::new(),
             last_rendered_pane: None,
             layer_tree: LayerTree::new(Rect::default()),
             layer_animator: LayerAnimator::new(),
@@ -157,8 +156,8 @@ impl WindowContext {
             last_drag_area_press: None,
             text_cache: TextShapeCache::new(),
             search_bar_buf: String::new(),
-            scene_cache: SceneCache::new(),
             invalidation: InvalidationTracker::new(),
+            damage_tracker: DamageTracker::new(),
             render_strategy: RenderStrategy::TerminalCached,
             damage: DamageSet::default(),
             dirty: true,

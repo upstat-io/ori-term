@@ -6,7 +6,7 @@
 //! toast notifications, scroll position displays.
 
 use crate::color::Color;
-use crate::draw::{DrawList, RectStyle};
+use crate::draw::{RectStyle, Scene};
 use crate::geometry::{Insets, Point, Rect};
 use crate::text::{TextOverflow, TextStyle};
 use crate::theme::UiTheme;
@@ -63,7 +63,7 @@ impl Default for StatusBadgeStyle {
 /// let badge = StatusBadge::new("Search: foo  2 of 5");
 /// let (w, _h) = badge.measure(&measurer, max_width);
 /// let pos = Point::new(viewport_w - w - margin, top_y);
-/// badge.draw(&mut draw_list, &measurer, pos, max_width);
+/// badge.draw(&mut scene, &measurer, pos, max_width);
 /// ```
 #[derive(Debug)]
 pub struct StatusBadge<'a> {
@@ -99,13 +99,13 @@ impl<'a> StatusBadge<'a> {
         )
     }
 
-    /// Draws the badge at `pos` (top-left corner) into the draw list.
+    /// Draws the badge at `pos` (top-left corner) into the scene.
     ///
     /// `max_text_width` constrains the text; text exceeding this width is
     /// truncated with an ellipsis. Returns the bounds of the drawn badge.
     pub fn draw(
         &self,
-        draw_list: &mut DrawList,
+        scene: &mut Scene,
         measurer: &dyn TextMeasurer,
         pos: Point,
         max_text_width: f32,
@@ -115,12 +115,12 @@ impl<'a> StatusBadge<'a> {
         let h = shaped.height + self.style.padding.height();
         let rect = Rect::new(pos.x, pos.y, w, h);
 
-        draw_list.push_layer(self.style.bg);
-        draw_list.push_rect(
+        scene.push_layer_bg(self.style.bg);
+        scene.push_quad(
             rect,
             RectStyle::filled(self.style.bg).with_radius(self.style.corner_radius),
         );
-        draw_list.push_text(
+        scene.push_text(
             Point::new(
                 pos.x + self.style.padding.left,
                 pos.y + self.style.padding.top,
@@ -128,7 +128,7 @@ impl<'a> StatusBadge<'a> {
             shaped,
             self.style.fg,
         );
-        draw_list.pop_layer();
+        scene.pop_layer_bg();
 
         rect
     }

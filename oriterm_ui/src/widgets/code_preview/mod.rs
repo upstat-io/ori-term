@@ -176,7 +176,7 @@ impl Widget for CodePreviewWidget {
 
         // Card background.
         let bg_style = RectStyle::filled(ctx.theme.bg_card).with_radius(CORNER_RADIUS);
-        ctx.draw_list.push_rect(bounds, bg_style);
+        ctx.scene.push_quad(bounds, bg_style);
 
         let x = bounds.x() + PADDING;
         let w = bounds.width() - PADDING * 2.0;
@@ -186,7 +186,7 @@ impl Widget for CodePreviewWidget {
         let label_style = TextStyle::new(LABEL_FONT_SIZE, ctx.theme.fg_faint);
         let label = "PREVIEW";
         let shaped = ctx.measurer.shape(label, &label_style, w);
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(x, y), shaped, ctx.theme.fg_faint);
         y += LABEL_HEIGHT;
 
@@ -199,8 +199,7 @@ impl Widget for CodePreviewWidget {
                 let style = TextStyle::new(CODE_FONT_SIZE, span.color);
                 let shaped = ctx.measurer.shape(span.text, &style, w);
                 let advance = shaped.width;
-                ctx.draw_list
-                    .push_text(Point::new(lx, y), shaped, span.color);
+                ctx.scene.push_text(Point::new(lx, y), shaped, span.color);
                 lx += advance;
             }
             y += line_h;

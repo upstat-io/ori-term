@@ -158,7 +158,7 @@ impl SeparatorWidget {
             // Left line segment.
             let left_end = label_x - gap;
             if left_end > bounds.x() {
-                ctx.draw_list.push_line(
+                ctx.scene.push_line(
                     Point::new(bounds.x(), y),
                     Point::new(left_end, y),
                     self.style.thickness,
@@ -169,7 +169,7 @@ impl SeparatorWidget {
             // Right line segment.
             let right_start = label_x + shaped.width + gap;
             if right_start < bounds.right() {
-                ctx.draw_list.push_line(
+                ctx.scene.push_line(
                     Point::new(right_start, y),
                     Point::new(bounds.right(), y),
                     self.style.thickness,
@@ -179,11 +179,11 @@ impl SeparatorWidget {
 
             // Label text — vertically centered.
             let text_y = bounds.y() + (bounds.height() - shaped.height) / 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(label_x, text_y), shaped, self.style.label_color);
         } else {
             // Plain line across full width.
-            ctx.draw_list.push_line(
+            ctx.scene.push_line(
                 Point::new(bounds.x(), y),
                 Point::new(bounds.right(), y),
                 self.style.thickness,
@@ -195,7 +195,7 @@ impl SeparatorWidget {
     /// Draws a vertical separator.
     fn draw_vertical(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
         let x = bounds.x() + bounds.width() / 2.0;
-        ctx.draw_list.push_line(
+        ctx.scene.push_line(
             Point::new(x, bounds.y()),
             Point::new(x, bounds.bottom()),
             self.style.thickness,
