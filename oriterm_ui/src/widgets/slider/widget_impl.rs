@@ -62,7 +62,7 @@ impl Widget for SliderWidget {
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
                 .with_border(2.0, s.focus_ring_color)
                 .with_radius(s.track_radius + 2.0);
-            ctx.draw_list.push_rect(ring, ring_style);
+            ctx.scene.push_quad(ring, ring_style);
         }
 
         // Track background.
@@ -74,7 +74,7 @@ impl Widget for SliderWidget {
             s.track_bg
         };
         let track_style = RectStyle::filled(bg_color).with_radius(s.track_radius);
-        ctx.draw_list.push_rect(track_rect, track_style);
+        ctx.scene.push_quad(track_rect, track_style);
 
         // Filled portion (left of thumb).
         let norm = self.normalized();
@@ -87,7 +87,7 @@ impl Widget for SliderWidget {
                 s.fill_color
             };
             let fill_style = RectStyle::filled(fill_color).with_radius(s.track_radius);
-            ctx.draw_list.push_rect(fill_rect, fill_style);
+            ctx.scene.push_quad(fill_rect, fill_style);
         }
 
         // Thumb.
@@ -104,7 +104,7 @@ impl Widget for SliderWidget {
         let thumb_style = RectStyle::filled(thumb_bg)
             .with_border(s.thumb_border_width, s.thumb_border_color)
             .with_radius(half_thumb);
-        ctx.draw_list.push_rect(thumb_rect, thumb_style);
+        ctx.scene.push_quad(thumb_rect, thumb_style);
 
         // Value label to the right of the track.
         let value_text = self.format_value();
@@ -116,7 +116,7 @@ impl Widget for SliderWidget {
         // Right-align within the label area.
         let text_x = label_x + VALUE_LABEL_WIDTH - shaped.width;
         let text_y = ctx.bounds.y() + (ctx.bounds.height() - shaped.height) / 2.0;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(text_x, text_y), shaped, ctx.theme.fg_secondary);
 
         // Signal continued redraws while the animator is transitioning.

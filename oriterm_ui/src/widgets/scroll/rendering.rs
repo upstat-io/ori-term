@@ -16,31 +16,30 @@ impl ScrollWidget {
 
         // Clip to the viewport — emitted before the translate so it stays
         // in viewport space (the scroll container's visible area).
-        ctx.draw_list.push_clip(ctx.bounds);
+        ctx.scene.push_clip(ctx.bounds);
 
         // Apply scroll offset as a translate transform. The child draws at
         // its natural (unscrolled) position — bounds stay stable so the
-        // child's SceneNode cache key (bounds) doesn't change on scroll.
-        ctx.draw_list
-            .push_translate(-self.scroll_offset_x, -self.scroll_offset);
+        // child's layout key (bounds) doesn't change on scroll.
+        ctx.scene
+            .push_offset(-self.scroll_offset_x, -self.scroll_offset);
 
         let child_bounds = Rect::new(ctx.bounds.x(), ctx.bounds.y(), content_w, content_h);
         let mut child_ctx = DrawCtx {
             measurer: ctx.measurer,
-            draw_list: ctx.draw_list,
+            scene: ctx.scene,
             bounds: child_bounds,
             now: ctx.now,
             theme: ctx.theme,
             icons: ctx.icons,
-            scene_cache: ctx.scene_cache.as_deref_mut(),
             interaction: ctx.interaction,
             widget_id: None,
             frame_requests: ctx.frame_requests,
         };
         self.child.paint(&mut child_ctx);
 
-        ctx.draw_list.pop_translate();
-        ctx.draw_list.pop_clip();
+        ctx.scene.pop_offset();
+        ctx.scene.pop_clip();
 
         // Draw scrollbar on top of content (outside translate).
         self.draw_scrollbar(ctx, content_h, ctx.bounds.height());

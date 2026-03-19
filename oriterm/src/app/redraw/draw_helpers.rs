@@ -5,9 +5,8 @@
 use std::time::Instant;
 
 use oriterm_ui::animation::FrameRequestFlags;
-use oriterm_ui::draw::{DrawList, SceneCache, compose_scene};
+use oriterm_ui::draw::{DamageTracker, Scene, build_scene};
 use oriterm_ui::interaction::InteractionManager;
-use oriterm_ui::invalidation::InvalidationTracker;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::DrawCtx;
@@ -20,27 +19,26 @@ impl App {
     /// Draw the tab bar (unified chrome bar).
     ///
     /// Tab bar coordinates are in logical pixels, positioned at y=0.
-    /// Uses [`append_ui_draw_list_with_text`](crate::gpu::WindowRenderer::append_ui_draw_list_with_text)
+    /// Uses [`append_ui_scene_with_text`](crate::gpu::WindowRenderer::append_ui_scene_with_text)
     /// because tab titles are rendered as shaped text.
     ///
     /// Returns `true` if the tab bar has running animations (e.g. bell pulse).
     #[expect(
         clippy::too_many_arguments,
-        reason = "tab bar drawing: widget, renderer, draw list, viewport, scale, GPU, theme, cache, interaction, frame_requests"
+        reason = "tab bar drawing: widget, renderer, scene, viewport, scale, GPU, theme, cache, interaction, frame_requests, damage"
     )]
     pub(in crate::app::redraw) fn draw_tab_bar(
         tab_bar: Option<&oriterm_ui::widgets::tab_bar::TabBarWidget>,
         renderer: &mut crate::gpu::WindowRenderer,
-        draw_list: &mut DrawList,
+        scene: &mut Scene,
         logical_width: f32,
         scale: f32,
         gpu: &GpuState,
         theme: &UiTheme,
         text_cache: &TextShapeCache,
-        invalidation: &InvalidationTracker,
-        scene_cache: &mut SceneCache,
         interaction: &InteractionManager,
         frame_requests: &FrameRequestFlags,
+        damage_tracker: &mut DamageTracker,
     ) -> bool {
         let Some(tab_bar) = tab_bar else {
             return false;
@@ -52,7 +50,6 @@ impl App {
         let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
         let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_width, tab_bar_h);
 
-        draw_list.clear();
         let measurer = CachedTextMeasurer::new(
             UiFontMeasurer::new(renderer.active_ui_collection(), scale),
             text_cache,
@@ -62,28 +59,28 @@ impl App {
 
         let mut ctx = DrawCtx {
             measurer: &measurer,
-            draw_list,
+            scene,
             bounds,
             now: Instant::now(),
             theme,
             icons: Some(icons),
-            scene_cache: None,
             interaction: Some(interaction),
             widget_id: None,
             frame_requests: Some(frame_requests),
         };
-        compose_scene(tab_bar, &mut ctx, invalidation, scene_cache);
+        build_scene(tab_bar, &mut ctx);
+        damage_tracker.compute_damage(scene);
         let animating = frame_requests.anim_frame_requested();
 
         // Tab bar contains text — use text-aware conversion to rasterize
         // tab title glyphs into the chrome tier.
-        renderer.append_ui_draw_list_with_text(draw_list, scale, 1.0, gpu);
+        renderer.append_ui_scene_with_text(scene, scale, 1.0, gpu);
 
-        // Dragged tab overlay: render in the overlay tier (draws 10–13) so it
+        // Dragged tab overlay: render in the overlay tier (draws 10-13) so it
         // paints ON TOP of all chrome text. Without this, regular tab text from
         // the chrome tier (draw 7) would show through the dragged tab's bg.
         if tab_bar.has_drag_overlay() {
-            draw_list.clear();
+            scene.clear();
             let measurer = CachedTextMeasurer::new(
                 UiFontMeasurer::new(renderer.active_ui_collection(), scale),
                 text_cache,
@@ -92,18 +89,17 @@ impl App {
             let icons = renderer.resolved_icons();
             let mut overlay_ctx = DrawCtx {
                 measurer: &measurer,
-                draw_list,
+                scene,
                 bounds,
                 now: Instant::now(),
                 theme,
                 icons: Some(icons),
-                scene_cache: None,
                 interaction: Some(interaction),
                 widget_id: None,
                 frame_requests: Some(frame_requests),
             };
             tab_bar.draw_drag_overlay(&mut overlay_ctx);
-            renderer.append_overlay_draw_list_with_text(draw_list, scale, 1.0, gpu);
+            renderer.append_overlay_scene_with_text(scene, scale, 1.0, gpu);
         }
 
         animating
@@ -118,20 +114,18 @@ impl App {
     /// Returns `true` if overlays have running animations (fade-in/fade-out).
     #[expect(
         clippy::too_many_arguments,
-        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU, tree, theme, cache, interaction, frame_requests"
+        reason = "overlay drawing: manager, renderer, scene, viewport, scale, GPU, tree, theme, cache, interaction, frame_requests"
     )]
     pub(in crate::app::redraw) fn draw_overlays(
         overlays: &mut OverlayManager,
         renderer: &mut crate::gpu::WindowRenderer,
-        draw_list: &mut DrawList,
+        scene: &mut Scene,
         logical_size: (f32, f32),
         scale: f32,
         gpu: &GpuState,
         tree: &oriterm_ui::compositor::layer_tree::LayerTree,
         theme: &UiTheme,
         text_cache: &TextShapeCache,
-        _invalidation: &InvalidationTracker,
-        _scene_cache: &mut SceneCache,
         interaction: &InteractionManager,
         frame_requests: &FrameRequestFlags,
     ) -> bool {
@@ -144,7 +138,7 @@ impl App {
         let mut animating = false;
 
         // Layout + draw phase: measurer borrows renderer immutably, then
-        // drops before the mutable append_ui_draw_list_with_text call.
+        // drops before the mutable append_ui_scene_with_text call.
         // We collect (opacity) per overlay, then append after the borrow ends.
         {
             let measurer = CachedTextMeasurer::new(
@@ -156,7 +150,7 @@ impl App {
         }
 
         for i in 0..count {
-            draw_list.clear();
+            scene.clear();
             // Re-create measurer per iteration — cheap (no allocation), and
             // the immutable borrow drops before the mutable append below.
             let measurer = CachedTextMeasurer::new(
@@ -167,12 +161,11 @@ impl App {
             let icons = renderer.resolved_icons();
             let mut ctx = DrawCtx {
                 measurer: &measurer,
-                draw_list,
+                scene,
                 bounds,
                 now: Instant::now(),
                 theme,
                 icons: Some(icons),
-                scene_cache: None,
                 interaction: Some(interaction),
                 widget_id: None,
                 frame_requests: Some(frame_requests),
@@ -185,9 +178,9 @@ impl App {
             }
 
             // measurer (immutable borrow on renderer) is dropped here by NLL.
-            // Overlays write to the overlay tier (draws 10–13) so their
-            // backgrounds render ON TOP of chrome text (draws 7–9).
-            renderer.append_overlay_draw_list_with_text(draw_list, scale, opacity, gpu);
+            // Overlays write to the overlay tier (draws 10-13) so their
+            // backgrounds render ON TOP of chrome text (draws 7-9).
+            renderer.append_overlay_scene_with_text(scene, scale, opacity, gpu);
         }
 
         animating || frame_requests.anim_frame_requested()

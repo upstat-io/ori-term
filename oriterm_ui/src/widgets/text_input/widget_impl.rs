@@ -95,16 +95,16 @@ impl Widget for TextInputWidget {
         let border_color = self.animator.get_border_color(ctx.now);
 
         // Layer captures the input bg for subpixel text compositing.
-        ctx.draw_list.push_layer(bg);
+        ctx.scene.push_layer_bg(bg);
 
         let bg_style = RectStyle::filled(bg)
             .with_border(s.border_width, border_color)
             .with_radius(s.corner_radius);
-        ctx.draw_list.push_rect(bounds, bg_style);
+        ctx.scene.push_quad(bounds, bg_style);
 
         // Clip to inner area.
         let inner = bounds.inset(s.padding);
-        ctx.draw_list.push_clip(inner);
+        ctx.scene.push_clip(inner);
 
         let style = self.text_style();
 
@@ -113,7 +113,7 @@ impl Widget for TextInputWidget {
             if !self.placeholder.is_empty() {
                 let shaped = ctx.measurer.shape(&self.placeholder, &style, inner.width());
                 let y = inner.y() + (inner.height() - shaped.height) / 2.0;
-                ctx.draw_list
+                ctx.scene
                     .push_text(Point::new(inner.x(), y), shaped, s.placeholder_color);
             }
         } else {
@@ -130,8 +130,8 @@ impl Widget for TextInputWidget {
                         .width;
                     let sel_rect =
                         Rect::new(inner.x() + prefix_w, inner.y(), sel_w, inner.height());
-                    ctx.draw_list
-                        .push_rect(sel_rect, RectStyle::filled(s.selection_color));
+                    ctx.scene
+                        .push_quad(sel_rect, RectStyle::filled(s.selection_color));
                 }
             }
 
@@ -139,20 +139,19 @@ impl Widget for TextInputWidget {
             let shaped = ctx.measurer.shape(&self.text, &style, f32::INFINITY);
             let fg = if self.disabled { s.disabled_fg } else { s.fg };
             let y = inner.y() + (inner.height() - shaped.height) / 2.0;
-            ctx.draw_list
-                .push_text(Point::new(inner.x(), y), shaped, fg);
+            ctx.scene.push_text(Point::new(inner.x(), y), shaped, fg);
         }
 
         // Cursor (only when focused).
         if focused && !self.disabled {
             let cursor_x = inner.x() + self.cursor_x(ctx.measurer);
             let cursor_rect = Rect::new(cursor_x, inner.y(), s.cursor_width, inner.height());
-            ctx.draw_list
-                .push_rect(cursor_rect, RectStyle::filled(s.cursor_color));
+            ctx.scene
+                .push_quad(cursor_rect, RectStyle::filled(s.cursor_color));
         }
 
-        ctx.draw_list.pop_clip();
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_clip();
+        ctx.scene.pop_layer_bg();
 
         // Signal continued redraws while the animator is transitioning.
         if self.animator.is_animating(ctx.now) {

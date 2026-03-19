@@ -1,6 +1,6 @@
 use crate::action::WidgetAction;
 use crate::color::Color;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
 use crate::widgets::tests::MockMeasurer;
@@ -69,16 +69,15 @@ fn layout_dimensions() {
 fn paint_renders_rects_and_text() {
     let card = make_card(false);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, CARD_WIDTH, CARD_HEIGHT);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -86,49 +85,36 @@ fn paint_renders_rects_and_text() {
     card.paint(&mut ctx);
 
     // Should have: card bg rect, preview bg rect, 8 swatch rects = 10 rects.
-    let rect_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
-    assert_eq!(rect_cmds, 10, "card bg + preview bg + 8 swatches");
-
-    // Should have: title text + 2 preview lines = 3 text commands.
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(text_cmds, 3, "title + 2 preview lines");
+    assert_eq!(scene.quads().len(), 10, "card bg + preview bg + 8 swatches");
+    // Should have: title text + 2 preview lines = 3 text runs.
+    assert_eq!(scene.text_runs().len(), 3, "title + 2 preview lines");
 }
 
 #[test]
 fn paint_selected_includes_badge() {
     let card = make_card(true);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, CARD_WIDTH, CARD_HEIGHT);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     card.paint(&mut ctx);
 
-    // Selected card adds "Active" badge = 4 text commands total.
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(text_cmds, 4, "title + badge + 2 preview lines");
+    // Selected card adds "Active" badge = 4 text runs total.
+    assert_eq!(
+        scene.text_runs().len(),
+        4,
+        "title + badge + 2 preview lines"
+    );
 }
 
 // -- Sense & controllers --

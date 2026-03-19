@@ -231,15 +231,15 @@ fn harness_all_widget_ids() {
 fn harness_render_button_has_rect_and_text() {
     let button = ButtonWidget::new("Render test");
     let mut harness = WidgetTestHarness::new(button);
-    let draw_list = harness.render();
+    let scene = harness.render();
 
-    let rects = super::render_assert::rects(&draw_list);
+    let rects = super::render_assert::rects(&scene);
     assert!(!rects.is_empty(), "button should paint at least one rect");
-    let texts = super::render_assert::texts(&draw_list);
+    let texts = super::render_assert::texts(&scene);
     assert!(!texts.is_empty(), "button should paint text");
     assert!(
-        super::render_assert::command_count(&draw_list) >= 2,
-        "button should have at least 2 draw commands (rect + text)"
+        super::render_assert::command_count(&scene) >= 2,
+        "button should have at least 2 primitives (quad + text)"
     );
 }
 

@@ -1,4 +1,4 @@
-//! Layout construction and cache management for `ContainerWidget`.
+//! Layout construction helpers for `ContainerWidget`.
 //!
 //! Extracted from `mod.rs` to keep the main file under 500 lines.
 
@@ -7,9 +7,8 @@ use std::rc::Rc;
 use crate::geometry::Rect;
 use crate::layout::{LayoutBox, LayoutNode, compute_layout};
 use crate::theme::UiTheme;
-use crate::widget_id::WidgetId;
 
-use super::{ContainerWidget, DrawCtx, LayoutCtx, TextMeasurer};
+use super::{ContainerWidget, LayoutCtx, TextMeasurer};
 
 impl ContainerWidget {
     /// Returns cached layout if bounds match and layout is clean, otherwise recomputes.
@@ -44,45 +43,5 @@ impl ContainerWidget {
             .with_height(self.height)
             .with_widget_id(self.id)
             .with_clip(self.clip_children)
-    }
-
-    // Scene cache helpers
-
-    /// Tries to replay cached draw commands for a child widget.
-    ///
-    /// Returns `true` if the cache hit and commands were replayed.
-    pub(super) fn try_replay_cached(
-        ctx: &mut DrawCtx<'_>,
-        child_id: WidgetId,
-        bounds: Rect,
-    ) -> bool {
-        let cache = match ctx.scene_cache.as_ref() {
-            Some(c) => c,
-            None => return false,
-        };
-        let node = match cache.get(child_id) {
-            Some(n) if n.is_valid() && n.bounds() == bounds => n,
-            _ => return false,
-        };
-        ctx.draw_list.extend_from_cache(node.commands());
-        true
-    }
-
-    /// Stores a child's draw output in the scene cache for future reuse.
-    ///
-    /// `log_start` is the store-log position captured before the child's
-    /// draw. All IDs stored between then and now are recorded as contained
-    /// descendants of this child's cache entry.
-    pub(super) fn store_in_cache(
-        ctx: &mut DrawCtx<'_>,
-        child_id: WidgetId,
-        bounds: Rect,
-        start: usize,
-        log_start: usize,
-    ) {
-        if let Some(cache) = ctx.scene_cache.as_deref_mut() {
-            let commands = ctx.draw_list.commands()[start..].to_vec();
-            cache.store(child_id, commands, bounds, log_start);
-        }
     }
 }

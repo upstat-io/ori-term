@@ -14,7 +14,7 @@ use super::emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hove
 use super::shaped_frame::ShapedFrame;
 use super::{AtlasLookup, FrameInput, resolve_cell_colors, resolve_cursor};
 use crate::gpu::frame_input::SelectionDamageSnapshot;
-use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use crate::gpu::prepared_frame::PreparedFrame;
 
 /// Per-row byte ranges in the terminal-tier instance buffers.
@@ -432,7 +432,9 @@ pub(crate) fn fill_frame_incremental(
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                frame.glyphs.push_glyph(rect, uv, fg, fg_dim, entry.page);
+                frame
+                    .glyphs
+                    .push_glyph(rect, uv, fg, fg_dim, entry.page, CLIP_UNCLIPPED);
             }
             continue;
         }

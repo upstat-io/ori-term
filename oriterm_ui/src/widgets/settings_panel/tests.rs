@@ -85,31 +85,27 @@ fn not_focusable() {
 
 #[test]
 fn draws_without_panic() {
-    use crate::draw::DrawList;
+    use crate::draw::Scene;
 
     let panel = make_panel();
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 860.0, 620.0);
     let mut ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     panel.paint(&mut ctx);
 
-    // Should produce at least the PushLayer + background rect.
-    assert!(
-        draw_list.commands().len() >= 2,
-        "panel should produce draw commands"
-    );
+    // Should produce at least a background rect.
+    assert!(scene.len() >= 2, "panel should produce draw primitives");
 }
 
 // -- Regression: on_action maps Clicked(save/cancel/close) → semantic actions --

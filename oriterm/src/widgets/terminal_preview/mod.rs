@@ -27,7 +27,7 @@ const CORNER_RADIUS: f32 = 6.0;
 /// Scaled-down live preview of a terminal tab.
 ///
 /// Currently a placeholder that draws a rounded rectangle frame.
-/// Full rendering (offscreen texture → `DrawCommand::Image`) is deferred
+/// Full rendering (offscreen texture → `ImagePrimitive`) is deferred
 /// until the Image pipeline and overlay system are available.
 pub(crate) struct TerminalPreviewWidget {
     /// Unique widget ID.
@@ -86,7 +86,7 @@ impl Widget for TerminalPreviewWidget {
             shadow: None,
             gradient: None,
         };
-        ctx.draw_list.push_rect(ctx.bounds, style);
+        ctx.scene.push_quad(ctx.bounds, style);
     }
 }
 

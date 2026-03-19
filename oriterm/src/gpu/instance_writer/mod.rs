@@ -1,11 +1,11 @@
 //! GPU instance buffer writer for batched quad rendering.
 //!
 //! Each visible element (background rect, glyph, cursor, underline) becomes
-//! one 80-byte instance record in a GPU buffer. [`InstanceWriter`] accumulates
+//! one 96-byte instance record in a GPU buffer. [`InstanceWriter`] accumulates
 //! these records on the CPU side, then the Render phase uploads the backing
 //! `Vec<u8>` to a `wgpu::Buffer` in one copy.
 //!
-//! The 80-byte layout is designed for a single `VertexBufferLayout` with
+//! The 96-byte layout is designed for a single `VertexBufferLayout` with
 //! known offsets — no padding, no alignment surprises. All multi-byte fields
 //! are little-endian (matching GPU expectations on all target platforms).
 
@@ -39,9 +39,9 @@ impl ScreenRect {
 }
 
 /// Bytes per instance record in the GPU buffer.
-pub const INSTANCE_SIZE: usize = 80;
+pub const INSTANCE_SIZE: usize = 96;
 
-// Field offsets within the 80-byte record.
+// Field offsets within the 96-byte record.
 const OFF_POS_X: usize = 0; //  f32  — pixel X
 const OFF_POS_Y: usize = 4; //  f32  — pixel Y
 const OFF_SIZE_W: usize = 8; //  f32  — width in pixels
@@ -62,9 +62,21 @@ const OFF_KIND: usize = 64; //  u32  — instance kind (rect/glyph/cursor)
 const OFF_ATLAS_PAGE: usize = 68; //  u32  — atlas texture array layer index
 const OFF_CORNER_RADIUS: usize = 72; //  f32  — corner radius (UI rect)
 const OFF_BORDER_WIDTH: usize = 76; //  f32  — border width (UI rect)
+const OFF_CLIP_X: usize = 80; //  f32  — clip rect origin X
+const OFF_CLIP_Y: usize = 84; //  f32  — clip rect origin Y
+const OFF_CLIP_W: usize = 88; //  f32  — clip rect width
+const OFF_CLIP_H: usize = 92; //  f32  — clip rect height
 
 // Compile-time check: the last field's end must equal the declared record size.
-const _: () = assert!(OFF_BORDER_WIDTH + 4 == INSTANCE_SIZE);
+const _: () = assert!(OFF_CLIP_H + 4 == INSTANCE_SIZE);
+
+/// Clip rect that never discards any fragment (used by terminal-tier instances).
+pub const CLIP_UNCLIPPED: [f32; 4] = [
+    f32::NEG_INFINITY,
+    f32::NEG_INFINITY,
+    f32::INFINITY,
+    f32::INFINITY,
+];
 
 /// Instance kind tag written into the record at offset 64.
 ///
@@ -190,9 +202,10 @@ impl InstanceWriter {
     ///
     /// `uv` is `[u_left, v_top, u_width, v_height]` in atlas texture
     /// coordinates (0..1). `atlas_page` selects the texture array layer.
+    /// `clip` is `[x, y, w, h]` in physical pixels for per-fragment clipping.
     #[expect(
         clippy::too_many_arguments,
-        reason = "glyph instance: screen rect, UV coords, color, atlas page"
+        reason = "glyph instance: screen rect, UV coords, color, atlas page, clip"
     )]
     pub fn push_glyph(
         &mut self,
@@ -201,6 +214,7 @@ impl InstanceWriter {
         fg: Rgb,
         alpha: f32,
         atlas_page: u32,
+        clip: [f32; 4],
     ) {
         self.push_instance(
             rect.x,
@@ -213,6 +227,13 @@ impl InstanceWriter {
             InstanceKind::Glyph,
             atlas_page,
         );
+        // Overwrite the default unclipped values with the provided clip.
+        let start = self.buf.len() - INSTANCE_SIZE;
+        let rec = &mut self.buf[start..];
+        write_f32(rec, OFF_CLIP_X, clip[0]);
+        write_f32(rec, OFF_CLIP_Y, clip[1]);
+        write_f32(rec, OFF_CLIP_W, clip[2]);
+        write_f32(rec, OFF_CLIP_H, clip[3]);
     }
 
     /// Push a texture-sampled glyph instance with background color.
@@ -221,9 +242,10 @@ impl InstanceWriter {
     /// background color into the `bg_color` instance field. The subpixel
     /// fragment shader reads `bg_color` for per-channel `mix()` blending.
     /// Mono and color pipelines ignore the `bg_color` field.
+    /// `clip` is `[x, y, w, h]` in physical pixels for per-fragment clipping.
     #[expect(
         clippy::too_many_arguments,
-        reason = "glyph instance: screen rect, UV coords, fg/bg colors, atlas page"
+        reason = "glyph instance: screen rect, UV coords, fg/bg colors, atlas page, clip"
     )]
     pub fn push_glyph_with_bg(
         &mut self,
@@ -233,6 +255,7 @@ impl InstanceWriter {
         bg: Rgb,
         alpha: f32,
         atlas_page: u32,
+        clip: [f32; 4],
     ) {
         self.push_instance(
             rect.x,
@@ -245,6 +268,13 @@ impl InstanceWriter {
             InstanceKind::Glyph,
             atlas_page,
         );
+        // Overwrite the default unclipped values with the provided clip.
+        let start = self.buf.len() - INSTANCE_SIZE;
+        let rec = &mut self.buf[start..];
+        write_f32(rec, OFF_CLIP_X, clip[0]);
+        write_f32(rec, OFF_CLIP_Y, clip[1]);
+        write_f32(rec, OFF_CLIP_W, clip[2]);
+        write_f32(rec, OFF_CLIP_H, clip[3]);
     }
 
     /// Push a cursor rectangle instance.
@@ -269,9 +299,10 @@ impl InstanceWriter {
     ///
     /// Uses `bg_color` for fill, `fg_color` for border color, and the
     /// previously reserved offsets 72–79 for `corner_radius` and `border_width`.
+    /// `clip` is `[x, y, w, h]` in physical pixels for per-fragment clipping.
     #[expect(
         clippy::too_many_arguments,
-        reason = "UI rect instance: screen rect, fill, border color, corner radius, border width"
+        reason = "UI rect instance: screen rect, fill, border color, corner radius, border width, clip"
     )]
     pub fn push_ui_rect(
         &mut self,
@@ -280,6 +311,7 @@ impl InstanceWriter {
         border_color: [f32; 4],
         corner_radius: f32,
         border_width: f32,
+        clip: [f32; 4],
     ) {
         let start = self.buf.len();
         self.buf.resize(start + INSTANCE_SIZE, 0);
@@ -308,6 +340,10 @@ impl InstanceWriter {
         write_u32(rec, OFF_ATLAS_PAGE, 0);
         write_f32(rec, OFF_CORNER_RADIUS, corner_radius);
         write_f32(rec, OFF_BORDER_WIDTH, border_width);
+        write_f32(rec, OFF_CLIP_X, clip[0]);
+        write_f32(rec, OFF_CLIP_Y, clip[1]);
+        write_f32(rec, OFF_CLIP_W, clip[2]);
+        write_f32(rec, OFF_CLIP_H, clip[3]);
     }
 
     /// Push a raw pre-encoded instance record.
@@ -325,10 +361,10 @@ impl InstanceWriter {
         self.buf.extend_from_slice(bytes);
     }
 
-    /// Encode and append one 80-byte instance record.
+    /// Encode and append one 96-byte instance record.
     #[expect(
         clippy::too_many_arguments,
-        reason = "private 80-byte GPU record encoder: position, UV, colors, kind, page"
+        reason = "private 96-byte GPU record encoder: position, UV, colors, kind, page"
     )]
     fn push_instance(
         &mut self,
@@ -368,7 +404,12 @@ impl InstanceWriter {
 
         write_u32(rec, OFF_KIND, kind as u32);
         write_u32(rec, OFF_ATLAS_PAGE, atlas_page);
-        // Remaining padding already zeroed by resize.
+        // Corner radius / border width zeroed by resize.
+        // Clip: unclipped by default (terminal-tier instances).
+        write_f32(rec, OFF_CLIP_X, CLIP_UNCLIPPED[0]);
+        write_f32(rec, OFF_CLIP_Y, CLIP_UNCLIPPED[1]);
+        write_f32(rec, OFF_CLIP_W, CLIP_UNCLIPPED[2]);
+        write_f32(rec, OFF_CLIP_H, CLIP_UNCLIPPED[3]);
     }
 }
 

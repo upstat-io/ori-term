@@ -172,7 +172,7 @@ impl Widget for PanelWidget {
         *self.cached_layout.borrow_mut() = None;
 
         // Layer captures the panel bg for subpixel text compositing.
-        ctx.draw_list.push_layer(self.style.bg);
+        ctx.scene.push_layer_bg(self.style.bg);
 
         // Draw panel background.
         let mut rect_style = RectStyle::filled(self.style.bg).with_radius(self.style.corner_radius);
@@ -182,19 +182,18 @@ impl Widget for PanelWidget {
         if let Some(shadow) = self.style.shadow {
             rect_style = rect_style.with_shadow(shadow);
         }
-        ctx.draw_list.push_rect(ctx.bounds, rect_style);
+        ctx.scene.push_quad(ctx.bounds, rect_style);
 
         // Compute child layout and draw child.
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         if let Some(child_node) = layout.children.first() {
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
+                scene: ctx.scene,
                 bounds: child_node.content_rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,
@@ -202,7 +201,7 @@ impl Widget for PanelWidget {
             self.child.paint(&mut child_ctx);
         }
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
     }
 
     fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {

@@ -45,12 +45,11 @@ impl TabBarWidget {
             );
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
+                scene: ctx.scene,
                 bounds: btn_rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,

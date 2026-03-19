@@ -98,9 +98,9 @@ impl TabBarWidget {
         let content_opacity = (width_t * 2.0).min(1.0);
 
         // Clip tab content to its bounds — prevents overflow into adjacent tabs.
-        ctx.draw_list.push_clip(tab_rect);
-        ctx.draw_list.push_layer(bg);
-        ctx.draw_list.push_rect(tab_rect, style);
+        ctx.scene.push_clip(tab_rect);
+        ctx.scene.push_layer_bg(bg);
+        ctx.scene.push_quad(tab_rect, style);
 
         // Only draw content when somewhat visible.
         if content_opacity > 0.01 {
@@ -121,8 +121,8 @@ impl TabBarWidget {
             }
         }
 
-        ctx.draw_list.pop_layer();
-        ctx.draw_list.pop_clip();
+        ctx.scene.pop_layer_bg();
+        ctx.scene.pop_clip();
     }
 
     /// Resolves the background color for a tab.
@@ -160,7 +160,7 @@ impl TabBarWidget {
             let icon_x = x + TAB_PADDING;
             let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;
             let icon_w = icon_shaped.width;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(icon_x, icon_y), icon_shaped, color);
             icon_w + ICON_TEXT_GAP
         } else {
@@ -178,7 +178,7 @@ impl TabBarWidget {
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
         let text_x = x + TAB_PADDING + text_offset;
         let text_y = strip.y + (strip.h - shaped.height) / 2.0;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(text_x, text_y), shaped, color);
     }
 
@@ -204,7 +204,7 @@ impl TabBarWidget {
         if self.hover_hit == TabBarHit::CloseTab(index) {
             let style = RectStyle::filled(self.colors.button_hover_bg.with_alpha(opacity))
                 .with_radius(BUTTON_HOVER_RADIUS);
-            ctx.draw_list.push_rect(btn, style);
+            ctx.scene.push_quad(btn, style);
         }
 
         // × icon.
@@ -283,7 +283,7 @@ impl TabBarWidget {
             let x = self.layout.tab_x(i);
             let y1 = strip.y + SEPARATOR_INSET;
             let y2 = strip.y + strip.h - SEPARATOR_INSET;
-            ctx.draw_list.push_line(
+            ctx.scene.push_line(
                 Point::new(x, y1),
                 Point::new(x, y2),
                 1.0,
@@ -300,7 +300,7 @@ impl TabBarWidget {
         if self.hover_hit == TabBarHit::NewTab {
             let style =
                 RectStyle::filled(self.colors.button_hover_bg).with_radius(BUTTON_HOVER_RADIUS);
-            ctx.draw_list.push_rect(btn, style);
+            ctx.scene.push_quad(btn, style);
         }
 
         // + icon.
@@ -320,7 +320,7 @@ impl TabBarWidget {
         if self.hover_hit == TabBarHit::Dropdown {
             let style =
                 RectStyle::filled(self.colors.button_hover_bg).with_radius(BUTTON_HOVER_RADIUS);
-            ctx.draw_list.push_rect(btn, style);
+            ctx.scene.push_quad(btn, style);
         }
 
         // ▾ chevron.
@@ -343,7 +343,7 @@ impl TabBarWidget {
 /// No-ops when `ctx.icons` is `None` (tests) or the icon wasn't resolved.
 fn draw_icon(ctx: &mut DrawCtx<'_>, id: IconId, rect: Rect, size_px: u32, color: Color) {
     if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(id, size_px)) {
-        ctx.draw_list
+        ctx.scene
             .push_icon(rect, resolved.atlas_page, resolved.uv, color);
     }
 }
@@ -444,8 +444,8 @@ impl Widget for TabBarWidget {
 
         // 1. Tab bar background.
         let bar = Rect::new(0.0, y0, w, TAB_BAR_HEIGHT);
-        ctx.draw_list
-            .push_rect(bar, RectStyle::filled(self.colors.bar_bg));
+        ctx.scene
+            .push_quad(bar, RectStyle::filled(self.colors.bar_bg));
 
         let mut strip = TabStrip {
             y: y0 + TAB_TOP_MARGIN,

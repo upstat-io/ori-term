@@ -71,17 +71,17 @@ impl Widget for MenuWidget {
                 bounds.width() - inset * 2.0,
                 bounds.height() - inset * 2.0,
             );
-            ctx.draw_list.push_clip(clip);
+            ctx.scene.push_clip(clip);
         }
 
         self.draw_entries(ctx, bounds);
 
         if scrollable {
-            ctx.draw_list.pop_clip();
+            ctx.scene.pop_clip();
             self.draw_scrollbar(ctx, bounds);
         }
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
     }
 
     fn on_input(
@@ -145,15 +145,15 @@ impl MenuWidget {
                 bounds.width(),
                 bounds.height(),
             );
-            ctx.draw_list.push_rect(
+            ctx.scene.push_quad(
                 shadow_rect,
                 RectStyle::filled(s.shadow_color).with_radius(s.corner_radius),
             );
         }
 
-        ctx.draw_list.push_layer(s.bg);
+        ctx.scene.push_layer_bg(s.bg);
 
-        ctx.draw_list.push_rect(
+        ctx.scene.push_quad(
             bounds,
             RectStyle::filled(s.bg)
                 .with_border(s.border_width, s.border_color)
@@ -198,7 +198,7 @@ impl MenuWidget {
     fn draw_separator(&self, ctx: &mut DrawCtx<'_>, bounds: Rect, y: f32) {
         let s = &self.style;
         let sep_y = y + s.separator_height / 2.0;
-        ctx.draw_list.push_line(
+        ctx.scene.push_line(
             Point::new(bounds.x() + s.hover_inset, sep_y),
             Point::new(bounds.right() - s.hover_inset, sep_y),
             1.0,
@@ -229,7 +229,7 @@ impl MenuWidget {
                 bounds.width() - s.hover_inset * 2.0,
                 s.item_height,
             );
-            ctx.draw_list.push_rect(
+            ctx.scene.push_quad(
                 rect,
                 RectStyle::filled(s.selected_bg).with_radius(s.hover_radius),
             );
@@ -243,7 +243,7 @@ impl MenuWidget {
                 bounds.width() - s.hover_inset * 2.0,
                 s.item_height,
             );
-            ctx.draw_list.push_rect(
+            ctx.scene.push_quad(
                 rect,
                 RectStyle::filled(s.hover_bg).with_radius(s.hover_radius),
             );
@@ -261,7 +261,7 @@ impl MenuWidget {
         let text_w = bounds.width() - left_margin - s.padding_x;
         let shaped = ctx.measurer.shape(label, text_style, text_w);
         let text_y = y + (s.item_height - shaped.height) / 2.0;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(text_x, text_y), shaped, s.fg);
     }
 
@@ -289,7 +289,7 @@ impl MenuWidget {
 
         let thumb_rect = Rect::new(track_x, thumb_y, SCROLLBAR_WIDTH, thumb_h);
         let thumb_color = Color::WHITE.with_alpha(0.25);
-        ctx.draw_list.push_rect(
+        ctx.scene.push_quad(
             thumb_rect,
             RectStyle::filled(thumb_color).with_radius(SCROLLBAR_WIDTH / 2.0),
         );

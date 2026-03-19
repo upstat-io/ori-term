@@ -135,7 +135,7 @@ impl Widget for FormRow {
                 let max_w = label_node.content_rect.width();
                 let shaped = ctx.measurer.shape(&self.label, &style, max_w);
                 let pos = Point::new(label_node.content_rect.x(), label_node.content_rect.y());
-                ctx.draw_list.push_text(pos, shaped, ctx.theme.fg_secondary);
+                ctx.scene.push_text(pos, shaped, ctx.theme.fg_secondary);
             }
         }
 
@@ -143,12 +143,11 @@ impl Widget for FormRow {
         if let Some(control_node) = layout.children.get(1) {
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
+                scene: ctx.scene,
                 bounds: control_node.content_rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,

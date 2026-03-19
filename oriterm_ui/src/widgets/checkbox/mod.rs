@@ -259,7 +259,7 @@ impl Widget for CheckboxWidget {
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
                 .with_border(2.0, s.focus_ring_color)
                 .with_radius(s.corner_radius + 2.0);
-            ctx.draw_list.push_rect(ring, ring_style);
+            ctx.scene.push_quad(ring, ring_style);
         }
 
         // Box bg: checked_bg when checked, animator-driven hover when unchecked.
@@ -273,7 +273,7 @@ impl Widget for CheckboxWidget {
         let box_style = RectStyle::filled(box_bg)
             .with_border(s.border_width, s.border_color)
             .with_radius(s.corner_radius);
-        ctx.draw_list.push_rect(box_rect, box_style);
+        ctx.scene.push_quad(box_rect, box_style);
 
         // Check mark — simple diagonal lines forming a check.
         if self.checked {
@@ -290,9 +290,9 @@ impl Widget for CheckboxWidget {
             let x2 = box_rect.right() - inset;
             let y2 = box_rect.y() + inset;
 
-            ctx.draw_list
+            ctx.scene
                 .push_line(Point::new(x0, y0), Point::new(x1, y1), 2.0, color);
-            ctx.draw_list
+            ctx.scene
                 .push_line(Point::new(x1, y1), Point::new(x2, y2), 2.0, color);
         }
 
@@ -303,7 +303,7 @@ impl Widget for CheckboxWidget {
             let text_w = bounds.width() - s.box_size - s.gap;
             let shaped = ctx.measurer.shape(&self.label, &style, text_w);
             let text_y = bounds.y() + (bounds.height() - shaped.height) / 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(text_x, text_y), shaped, self.label_fg());
         }
 

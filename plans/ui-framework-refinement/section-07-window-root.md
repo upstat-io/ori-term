@@ -32,7 +32,7 @@ sections:
 **Status:** Not Started
 **Goal:** `oriterm_ui::WindowRoot` becomes the per-window composition unit that owns all pure UI state. `WidgetTestHarness` wraps a `WindowRoot` (not raw fields). `WindowContext` and `DialogWindowContext` wrap a `WindowRoot` plus platform/GPU resources. Every layer — widgets, interaction, focus, overlays, windows — is headless-testable.
 
-**Context:** Today the test harness (`WidgetTestHarness`) and app-layer window contexts (`WindowContext`, `DialogWindowContext`) independently compose overlapping sets of framework types — `InteractionManager`, `FocusManager` (harness + dialog only), `FrameRequestFlags`, `RenderScheduler` (harness only), etc. The window contexts additionally own `OverlayManager`, `LayerTree`, `LayerAnimator`, `SceneCache`, and `InvalidationTracker` that the harness does not yet have. This duplication and inconsistency means:
+**Context:** Today the test harness (`WidgetTestHarness`) and app-layer window contexts (`WindowContext`, `DialogWindowContext`) independently compose overlapping sets of framework types — `InteractionManager`, `FocusManager` (harness + dialog only), `FrameRequestFlags`, `RenderScheduler` (harness only), etc. The window contexts additionally own `OverlayManager`, `LayerTree`, `LayerAnimator`, `DamageTracker`, and `InvalidationTracker` that the harness does not yet have. This duplication and inconsistency means:
 - Bugs in framework wiring (e.g. "hover doesn't bubble to this button inside this dialog") can't be tested without launching the full app with a GPU and display server.
 - Every new framework feature must be wired in 3 places (harness + 2 window contexts).
 - There's no single type that represents "a window's UI state" — the concept is scattered.

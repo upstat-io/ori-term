@@ -175,21 +175,20 @@ fn with_style_rebuilds_animator() {
 
 #[test]
 fn paint_produces_draw_commands() {
-    use crate::draw::DrawList;
+    use crate::draw::Scene;
 
     let btn = ButtonWidget::new("OK");
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
     let now = std::time::Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
@@ -197,7 +196,7 @@ fn paint_produces_draw_commands() {
     btn.paint(&mut draw_ctx);
 
     // Should have produced draw commands: layer + rect + text + pop_layer.
-    assert!(!draw_list.is_empty());
+    assert!(!scene.is_empty());
 }
 
 // -- Harness integration tests --

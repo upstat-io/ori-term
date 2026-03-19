@@ -81,8 +81,7 @@ impl TabEntry {
 ///
 /// Holds all visual state needed to draw the tab strip. The application
 /// layer updates state through setter methods; the widget's [`draw`]
-/// implementation emits [`DrawCommand`](crate::draw::DrawCommand)s into
-/// the draw list.
+/// implementation emits primitives into the [`Scene`](crate::draw::Scene).
 pub struct TabBarWidget {
     id: WidgetId,
 

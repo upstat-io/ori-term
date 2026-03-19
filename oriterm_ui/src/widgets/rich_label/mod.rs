@@ -76,7 +76,7 @@ impl Widget for RichLabel {
             let remaining = max_w - (x - ctx.bounds.x());
             let shaped = ctx.measurer.shape(&span.text, &span.style, remaining);
             let advance = shaped.width;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(x, y), shaped, span.style.color);
             x += advance;
         }

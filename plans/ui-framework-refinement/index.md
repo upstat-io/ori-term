@@ -30,7 +30,7 @@ integration test, widget test, unit test, test infrastructure
 input simulation, mouse_move, click, key_press, tab, drag
 state inspection, is_hot, is_active, is_focused, WidgetRef
 time control, advance_time, deterministic, animation test
-paint capture, DrawList, render, snapshot, visual regression
+paint capture, DrawList, Scene, render, snapshot, visual regression
 widget query, find_by_name, widget_at, widgets_with_sense
 RenderScheduler, animation scheduling, deferred repaint
 overlay testing, OverlayManager, dialog, dropdown
@@ -60,16 +60,21 @@ pipeline directory module conversion, pipeline/tests.rs
 
 ---
 
-### Section 03: Scene Abstraction & Damage Tracking
-**File:** `section-03-scene-abstraction.md` | **Status:** Not Started
+### Section 03: Type-Separated Scene Architecture
+**File:** `section-03-scene-abstraction.md` | **Status:** Complete
 
 ```
-PaintScene, scene abstraction, damage tracking, dirty region
-z-order, paint primitive, DrawCommand, DrawList, DamageTracker
-incremental rendering, partial repaint, changed regions
-SceneCache, compose_scene, InvalidationTracker, compositor
-LayerTree, LayerAnimator, per-widget hash
-GPUI Scene, BoundsTree, makepad DrawList, instanced rendering
+Scene, type-separated, typed arrays, primitive types
+Quad, TextRun, LinePrimitive, IconPrimitive, ImagePrimitive
+ContentMask, resolved clip, shader-side clip, base_opacity at GPU convert time
+push_quad, push_text, push_line, push_icon, push_image
+push_clip, pop_clip, push_offset, pop_offset, push_layer_bg, pop_layer_bg
+build_scene, full repaint, SceneCache removal, compose_scene removal
+DamageTracker, per-widget hash, dirty region, damage tracking
+DrawList removal, DrawCommand removal, ClipContext removal, ClipSegment removal
+convert_scene, GPU typed array consumption, instance layout 96-byte
+widget paint migration, DrawCtx scene field, state stack resolution
+GPUI Scene, ContentMask pattern, instanced rendering
 ```
 
 ---
@@ -129,7 +134,7 @@ WidgetTestHarness unification, harness refactor
 WindowContext decomposition, DialogWindowContext decomposition
 widget tree ownership, framework state consolidation
 InteractionManager ownership, FocusManager ownership, OverlayManager ownership
-LayerTree, LayerAnimator, SceneCache, InvalidationTracker
+LayerTree, LayerAnimator, InvalidationTracker, DamageTracker
 TextMeasurer trait, MockMeasurer, compute_layout
 dispatch_event, prepare, rebuild, pipeline methods
 GPUI Window, masonry WindowRoot, druid Window<T>
@@ -182,7 +187,7 @@ drift prevention, regression guardrail
 |----|-------|------|
 | 01 | Headless Test Harness | `section-01-test-harness.md` |
 | 02 | Safety Rails | `section-02-safety-rails.md` |
-| 03 | Scene Abstraction & Damage Tracking | `section-03-scene-abstraction.md` |
+| 03 | Type-Separated Scene Architecture | `section-03-scene-abstraction.md` |
 | 04 | Prepaint Phase (3-Pass Rendering) | `section-04-prepaint-phase.md` |
 | 05 | Action & Keymap System | `section-05-action-keymap.md` |
 | 06 | Verification & Polish | `section-06-verification.md` |

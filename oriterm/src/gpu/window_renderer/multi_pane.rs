@@ -9,7 +9,7 @@ use oriterm_core::Rgb;
 
 use crate::gpu::builtin_glyphs;
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
-use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use crate::gpu::prepare;
 use crate::gpu::prepared_frame::PreparedFrame;
 use crate::gpu::state::GpuState;
@@ -164,6 +164,7 @@ impl WindowRenderer {
             border_color,
             2.0, // corner radius
             1.0, // border width
+            CLIP_UNCLIPPED,
         );
     }
 

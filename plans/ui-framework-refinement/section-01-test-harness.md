@@ -173,8 +173,8 @@ The harness wraps a root widget and provides the full framework pipeline: layout
       frame_requests: FrameRequestFlags,
       /// Current mouse position (for mouse_down/mouse_up without explicit pos).
       mouse_pos: Point,
-      /// Invalidation tracker for scene caching (added when PaintScene
-      /// integration is built in Section 03; can be omitted for v1).
+      /// Invalidation tracker for layout dirty tracking (simplified when
+      /// Section 03 replaces paint-dirty tracking with DamageTracker).
       invalidation: InvalidationTracker,
   }
   ```

@@ -89,7 +89,14 @@ fn populate_and_count() {
     };
     frame.backgrounds.push_rect(r1, BLACK, 1.0);
     frame.backgrounds.push_rect(r2, BLACK, 1.0);
-    frame.glyphs.push_glyph(r1, [0.0; 4], WHITE, 1.0, 0);
+    frame.glyphs.push_glyph(
+        r1,
+        [0.0; 4],
+        WHITE,
+        1.0,
+        0,
+        crate::gpu::instance_writer::CLIP_UNCLIPPED,
+    );
     frame.cursors.push_cursor(r1, WHITE, 1.0);
 
     assert!(!frame.is_empty());
@@ -109,7 +116,14 @@ fn clear_resets_all_buffers() {
         h: 16.0,
     };
     frame.backgrounds.push_rect(r, BLACK, 1.0);
-    frame.glyphs.push_glyph(r, [0.0; 4], WHITE, 1.0, 0);
+    frame.glyphs.push_glyph(
+        r,
+        [0.0; 4],
+        WHITE,
+        1.0,
+        0,
+        crate::gpu::instance_writer::CLIP_UNCLIPPED,
+    );
     frame.cursors.push_cursor(r, WHITE, 1.0);
 
     frame.clear();
@@ -137,13 +151,27 @@ fn clear_and_reuse() {
     assert!(frame.is_empty());
 
     // Second frame.
-    frame.glyphs.push_glyph(r, [0.0; 4], WHITE, 1.0, 0);
+    frame.glyphs.push_glyph(
+        r,
+        [0.0; 4],
+        WHITE,
+        1.0,
+        0,
+        crate::gpu::instance_writer::CLIP_UNCLIPPED,
+    );
     let r2 = ScreenRect {
         x: 8.0,
         y: 0.0,
         w: 8.0,
         h: 16.0,
     };
-    frame.glyphs.push_glyph(r2, [0.0; 4], WHITE, 1.0, 0);
+    frame.glyphs.push_glyph(
+        r2,
+        [0.0; 4],
+        WHITE,
+        1.0,
+        0,
+        crate::gpu::instance_writer::CLIP_UNCLIPPED,
+    );
     assert_eq!(frame.total_instances(), 2);
 }

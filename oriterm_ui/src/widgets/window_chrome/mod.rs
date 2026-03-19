@@ -244,11 +244,11 @@ impl Widget for WindowChromeWidget {
 
         // Layer captures the caption bg for subpixel title text compositing.
         let bg = self.current_caption_bg();
-        ctx.draw_list.push_layer(bg);
+        ctx.scene.push_layer_bg(bg);
 
         // Caption background bar.
         let caption_rect = Rect::new(0.0, 0.0, ctx.bounds.width(), self.caption_height());
-        ctx.draw_list.push_rect(caption_rect, RectStyle::filled(bg));
+        ctx.scene.push_quad(caption_rect, RectStyle::filled(bg));
 
         // Title text (centered vertically in the title area).
         if !self.title.is_empty() {
@@ -257,23 +257,22 @@ impl Widget for WindowChromeWidget {
             let shaped = ctx.measurer.shape(&self.title, &style, title_rect.width());
             let x = title_rect.x() + 8.0;
             let y = title_rect.y() + (title_rect.height() - shaped.height) / 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(x, y), shaped, self.caption_fg);
         }
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
 
         // Control buttons (outside the caption layer — each button has its own bg).
         for (i, ctrl) in self.controls.iter().enumerate() {
             let ctrl_rect = self.chrome_layout.controls[i].rect;
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
+                scene: ctx.scene,
                 bounds: ctrl_rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                scene_cache: ctx.scene_cache.as_deref_mut(),
                 interaction: None,
                 widget_id: None,
                 frame_requests: None,

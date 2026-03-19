@@ -1,4 +1,4 @@
-use crate::draw::DrawList;
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
 use crate::widgets::button::ButtonWidget;
@@ -67,29 +67,23 @@ fn focusable_children_returns_control_ids() {
 fn draw_produces_text_commands() {
     let row = label_control("Name", "value");
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 400.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     row.paint(&mut ctx);
 
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, crate::draw::DrawCommand::Text { .. }))
-        .count();
-    // Label text + control label text = 2 text commands.
-    assert_eq!(text_cmds, 2);
+    // Label text + control label text = 2 text runs.
+    assert_eq!(scene.text_runs().len(), 2);
 }
 
 #[test]

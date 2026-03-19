@@ -1,22 +1,22 @@
 //! Drawing primitives for UI rendering.
 //!
 //! GPU-agnostic types for describing what to draw. The actual conversion
-//! to GPU instances lives in the `oriterm` crate's `draw_list_convert` module.
+//! to GPU instances lives in the `oriterm` crate's GPU module.
 
 mod border;
-mod draw_list;
+pub mod damage;
 mod gradient;
 mod rect_style;
-pub mod scene_compose;
-pub mod scene_node;
+pub mod scene;
 mod shadow;
 
 pub use border::Border;
-pub use draw_list::{DrawCommand, DrawList};
+pub use damage::DamageTracker;
 pub use gradient::{Gradient, GradientStop};
 pub use rect_style::RectStyle;
-pub use scene_compose::compose_scene;
-pub use scene_node::{SceneCache, SceneNode};
+pub use scene::{
+    ContentMask, IconPrimitive, ImagePrimitive, LinePrimitive, Quad, Scene, TextRun, build_scene,
+};
 pub use shadow::Shadow;
 
 #[cfg(test)]

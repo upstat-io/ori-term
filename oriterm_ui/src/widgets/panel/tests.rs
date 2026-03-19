@@ -1,4 +1,4 @@
-use crate::draw::DrawList;
+use crate::draw::Scene;
 use crate::geometry::{Insets, Rect};
 use crate::layout::compute_layout;
 use crate::widgets::label::LabelWidget;
@@ -53,35 +53,27 @@ fn panel_child_gets_content_rect() {
 fn panel_draws_background_rect() {
     let panel = make_panel_with_label("Test");
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(10.0, 20.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     panel.paint(&mut ctx);
 
-    // First command is PushLayer, second is the background rect.
-    let cmds = draw_list.commands();
-    assert!(!cmds.is_empty(), "panel should produce draw commands");
-    assert!(matches!(
-        cmds[0],
-        crate::draw::DrawCommand::PushLayer { .. }
-    ));
-    match &cmds[1] {
-        crate::draw::DrawCommand::Rect { rect, .. } => {
-            assert_eq!(*rect, bounds);
-        }
-        other => panic!("expected Rect command, got {other:?}"),
-    }
+    // First quad is the background rect.
+    assert!(
+        !scene.quads().is_empty(),
+        "panel should produce draw primitives"
+    );
+    assert_eq!(scene.quads()[0].bounds, bounds);
 }
 
 #[test]
@@ -122,62 +114,46 @@ fn panel_with_bg() {
 
     let panel = make_panel_with_label("Test").with_bg(Color::WHITE);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     panel.paint(&mut ctx);
 
-    // First command is PushLayer, second is the background rect.
-    assert!(matches!(
-        draw_list.commands()[0],
-        crate::draw::DrawCommand::PushLayer { .. },
-    ));
-    match &draw_list.commands()[1] {
-        crate::draw::DrawCommand::Rect { style, .. } => {
-            assert_eq!(style.fill, Some(Color::WHITE));
-        }
-        other => panic!("expected Rect command, got {other:?}"),
-    }
+    // First quad is the background rect with white fill.
+    assert_eq!(scene.quads()[0].style.fill, Some(Color::WHITE));
 }
 
 #[test]
 fn panel_with_corner_radius() {
     let panel = make_panel_with_label("R").with_corner_radius(20.0);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     panel.paint(&mut ctx);
 
-    // First command is PushLayer, second is the background rect.
-    match &draw_list.commands()[1] {
-        crate::draw::DrawCommand::Rect { style, .. } => {
-            assert_eq!(style.corner_radius, [20.0; 4]);
-        }
-        other => panic!("expected Rect command, got {other:?}"),
-    }
+    // First quad is the background rect with the specified corner radius.
+    assert_eq!(scene.quads()[0].style.corner_radius, [20.0; 4]);
 }
 
 #[test]
@@ -211,30 +187,25 @@ fn panel_with_shadow() {
     };
     let panel = make_panel_with_label("S").with_shadow(shadow);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     panel.paint(&mut ctx);
 
-    // First command is PushLayer, second is the background rect.
-    match &draw_list.commands()[1] {
-        crate::draw::DrawCommand::Rect { style, .. } => {
-            assert!(style.shadow.is_some(), "shadow should be set on panel rect");
-            let s = style.shadow.unwrap();
-            assert_eq!(s.offset_y, 4.0);
-            assert_eq!(s.blur_radius, 8.0);
-        }
-        other => panic!("expected Rect command, got {other:?}"),
-    }
+    // First quad is the background rect with shadow.
+    let style = &scene.quads()[0].style;
+    assert!(style.shadow.is_some(), "shadow should be set on panel rect");
+    let s = style.shadow.unwrap();
+    assert_eq!(s.offset_y, 4.0);
+    assert_eq!(s.blur_radius, 8.0);
 }

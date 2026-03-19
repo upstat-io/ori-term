@@ -21,7 +21,7 @@ use wgpu::{
 
 use super::super::pipeline::IMAGE_INSTANCE_STRIDE;
 use super::super::state::GpuState;
-use super::helpers::{record_draw, record_draw_clipped, record_draw_range_clipped, upload_buffer};
+use super::helpers::{record_draw, record_draw_range, upload_buffer};
 use super::{SurfaceError, WindowRenderer};
 use crate::gpu::pipelines::GpuPipelines;
 
@@ -554,53 +554,38 @@ impl WindowRenderer {
             p.image_quads_below.len(), // buffer offset: above quads start after below
         );
 
-        let vw = p.viewport.width;
-        let vh = p.viewport.height;
-
-        // Chrome tier — with scissor rect clipping.
-        record_draw_clipped(
+        // Chrome tier — per-instance clip rects handle clipping in the shader.
+        record_draw(
             pass,
             &pipelines.ui_rect_pipeline,
             bg,
             None,
             renderer.ui_rect_buffer.as_ref(),
             p.ui_rects.len() as u32,
-            &p.ui_clips.rects,
-            vw,
-            vh,
         );
-        record_draw_clipped(
+        record_draw(
             pass,
             &pipelines.fg_pipeline,
             bg,
             mono,
             renderer.ui_fg_buffer.as_ref(),
             p.ui_glyphs.len() as u32,
-            &p.ui_clips.mono,
-            vw,
-            vh,
         );
-        record_draw_clipped(
+        record_draw(
             pass,
             &pipelines.subpixel_fg_pipeline,
             bg,
             sub,
             renderer.ui_subpixel_fg_buffer.as_ref(),
             p.ui_subpixel_glyphs.len() as u32,
-            &p.ui_clips.subpixel,
-            vw,
-            vh,
         );
-        record_draw_clipped(
+        record_draw(
             pass,
             &pipelines.color_fg_pipeline,
             bg,
             color,
             renderer.ui_color_fg_buffer.as_ref(),
             p.ui_color_glyphs.len() as u32,
-            &p.ui_clips.color,
-            vw,
-            vh,
         );
     }
 
@@ -615,11 +600,9 @@ impl WindowRenderer {
         let sub = Some(renderer.subpixel_atlas_bind_group.bind_group());
         let color = Some(renderer.color_atlas_bind_group.bind_group());
         let p = &renderer.prepared;
-        let vw = p.viewport.width;
-        let vh = p.viewport.height;
 
         for range in &p.overlay_draw_ranges {
-            record_draw_range_clipped(
+            record_draw_range(
                 pass,
                 &pipelines.ui_rect_pipeline,
                 bg,
@@ -627,11 +610,8 @@ impl WindowRenderer {
                 renderer.overlay_rect_buffer.as_ref(),
                 range.rects.0,
                 range.rects.1,
-                &range.clips.rects,
-                vw,
-                vh,
             );
-            record_draw_range_clipped(
+            record_draw_range(
                 pass,
                 &pipelines.fg_pipeline,
                 bg,
@@ -639,11 +619,8 @@ impl WindowRenderer {
                 renderer.overlay_fg_buffer.as_ref(),
                 range.mono.0,
                 range.mono.1,
-                &range.clips.mono,
-                vw,
-                vh,
             );
-            record_draw_range_clipped(
+            record_draw_range(
                 pass,
                 &pipelines.subpixel_fg_pipeline,
                 bg,
@@ -651,11 +628,8 @@ impl WindowRenderer {
                 renderer.overlay_subpixel_fg_buffer.as_ref(),
                 range.subpixel.0,
                 range.subpixel.1,
-                &range.clips.subpixel,
-                vw,
-                vh,
             );
-            record_draw_range_clipped(
+            record_draw_range(
                 pass,
                 &pipelines.color_fg_pipeline,
                 bg,
@@ -663,9 +637,6 @@ impl WindowRenderer {
                 renderer.overlay_color_fg_buffer.as_ref(),
                 range.color.0,
                 range.color.1,
-                &range.clips.color,
-                vw,
-                vh,
             );
         }
     }

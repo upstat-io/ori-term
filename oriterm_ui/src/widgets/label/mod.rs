@@ -109,7 +109,7 @@ impl Widget for LabelWidget {
         let max_width = ctx.bounds.width();
         let shaped = ctx.measurer.shape(&self.text, &style, max_width);
         let pos = Point::new(ctx.bounds.x(), ctx.bounds.y());
-        ctx.draw_list.push_text(pos, shaped, self.style.color);
+        ctx.scene.push_text(pos, shaped, self.style.color);
     }
 }
 

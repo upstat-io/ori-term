@@ -1,4 +1,4 @@
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
 use crate::sense::Sense;
@@ -68,29 +68,27 @@ fn layout_uses_available_width() {
 fn paint_produces_text_commands() {
     let row = make_row();
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 400.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     row.paint(&mut ctx);
 
-    // Should produce text commands for: name, description, and control label.
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(text_cmds, 3, "name + description + control label");
+    // Should produce text runs for: name, description, and control label.
+    assert_eq!(
+        scene.text_runs().len(),
+        3,
+        "name + description + control label"
+    );
 }
 
 // -- Sense & controllers --

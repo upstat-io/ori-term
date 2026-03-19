@@ -13,7 +13,6 @@ use super::WindowRenderer;
 use super::helpers::ShapingScratch;
 use crate::font::FontCollection;
 use crate::gpu::bind_groups::{AtlasBindGroup, UniformBuffer};
-use crate::gpu::draw_list_convert::TierClips;
 use crate::gpu::frame_input::ViewportSize;
 use crate::gpu::icon_rasterizer::IconCache;
 use crate::gpu::image_render::ImageTextureCache;
@@ -87,8 +86,6 @@ impl WindowRenderer {
             font_collection: ui_font_collection,
             ui_font_collection: None,
             ui_raster_keys: Vec::new(),
-            clip_stack: Vec::new(),
-            overlay_scratch_clips: TierClips::default(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             // Terminal buffers intentionally None — render skips absent draws.
@@ -126,7 +123,7 @@ impl WindowRenderer {
     ///
     /// Clears all instance buffers, sets the viewport and background color,
     /// and begins atlas frame tracking. After this call, the caller appends
-    /// draw lists via [`append_ui_draw_list_with_text`] then calls
+    /// scenes via [`append_ui_scene_with_text`] then calls
     /// [`render_to_surface`].
     pub fn prepare_ui_frame(&mut self, width: u32, height: u32, background: Rgb, opacity: f64) {
         self.prepared.viewport = ViewportSize::new(width, height);

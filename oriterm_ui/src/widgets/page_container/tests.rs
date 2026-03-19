@@ -1,5 +1,5 @@
 use crate::action::WidgetAction;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
 use crate::widgets::Widget;
@@ -84,51 +84,48 @@ fn layout_empty_is_zero() {
 fn paint_only_active_page() {
     let pc = PageContainerWidget::new(vec![label("A"), label("B")]);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     pc.paint(&mut ctx);
 
-    // Only one text command should be emitted (the active page).
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(text_cmds, 1, "only active page should be painted");
+    // Only one text run should be emitted (the active page).
+    assert_eq!(
+        scene.text_runs().len(),
+        1,
+        "only active page should be painted"
+    );
 }
 
 #[test]
 fn paint_empty_does_nothing() {
     let pc = PageContainerWidget::new(vec![]);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
         now: std::time::Instant::now(),
         theme: &super::super::tests::TEST_THEME,
         icons: None,
-        scene_cache: None,
         interaction: None,
         widget_id: None,
         frame_requests: None,
     };
     pc.paint(&mut ctx);
-    assert!(draw_list.commands().is_empty());
+    assert!(scene.is_empty());
 }
 
 // -- accept_action --
