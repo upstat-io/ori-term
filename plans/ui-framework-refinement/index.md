@@ -22,7 +22,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: Headless Test Harness
-**File:** `section-01-test-harness.md` | **Status:** Not Started
+**File:** `section-01-test-harness.md` | **Status:** Complete
 
 ```
 test, harness, headless, WidgetTestHarness, MockMeasurer
@@ -30,7 +30,7 @@ integration test, widget test, unit test, test infrastructure
 input simulation, mouse_move, click, key_press, tab, drag
 state inspection, is_hot, is_active, is_focused, WidgetRef
 time control, advance_time, deterministic, animation test
-paint capture, DrawList, Scene, render, snapshot, visual regression
+paint capture, Scene, render, snapshot, visual regression
 widget query, find_by_name, widget_at, widgets_with_sense
 RenderScheduler, animation scheduling, deferred repaint
 overlay testing, OverlayManager, dialog, dropdown
@@ -80,15 +80,21 @@ GPUI Scene, ContentMask pattern, instanced rendering
 ---
 
 ### Section 04: Prepaint Phase (3-Pass Rendering)
-**File:** `section-04-prepaint-phase.md` | **Status:** Not Started
+**File:** `section-04-prepaint-phase.md` | **Status:** Complete
 
 ```
 prepaint, 3-pass, three-pass, rendering pipeline
-layout caching, paint-only dirty, phase separation
+layout caching, paint-only dirty, phase separation, phase gating
 PrepaintCtx, visual state resolution, interaction state queries
-DirtyKind::Prepaint, FrameRequestFlags, prepaint_widget_tree
-VisualStateAnimator, resolved fields, widget migration
-DrawCtx.interaction removal, gradual migration
+DirtyKind::Prepaint, DirtyKind::Paint, FrameRequestFlags, prepaint_widget_tree
+VisualStateAnimator, resolved fields, resolved_bg, widget migration
+DrawCtx.interaction removal, gradual migration, atomic migration
+overlay prepaint, for_each_widget_mut, overlay interaction state
+test harness prepaint, harness render, deliver_lifecycle_events
+control_state bypass, tab_bar control_state, WindowControlButton
+InvalidationTracker HashMap, max_dirty_kind, DirtyKind Ord
+app layer call sites, widget_pipeline re-export, multi_pane hygiene
+container delegation, flat map, parallel tree walk, bounds resolution
 GPUI Element request_layout prepaint paint
 ```
 
@@ -99,14 +105,16 @@ GPUI Element request_layout prepaint paint
 
 ```
 action, keymap, keybinding, keyboard shortcut, rebind
-KeymapAction, Keystroke, KeyBinding, KeyContext
-context scoping, focus path, dispatch tree
+KeymapAction, Keystroke, KeyBinding, KeyContext, boxed_clone
+context scoping, focus path, build_context_stack, key_context
+Widget::key_context, Widget::handle_keymap_action, find_widget_mut
 runtime rebinding, macro recording, accessibility
 controller migration, KeyActivationController, DropdownKeyController
 MenuKeyController, SliderKeyController, TextEditController, FocusController
-coexistence, fallback, gradual migration
+coexistence, fallback, gradual migration, KeyUp suppression
 TOML config deferred, hardcoded defaults, action module restructure
-action/mod.rs, action/keymap.rs, action/keymap_action.rs, action/context.rs
+action/mod.rs, action/keymap/mod.rs, action/keymap_action/mod.rs, action/context.rs
+TreeDispatchResult, FocusNext, FocusPrev, Activate, Dismiss, Confirm
 GPUI key_dispatch, DispatchTree, actions! macro
 ```
 

@@ -3,8 +3,8 @@ section: "06"
 title: "Verification & Polish"
 status: not-started
 reviewed: false
-goal: "Comprehensive integration testing, visual regression verification, performance validation, and documentation for all changes introduced in Sections 01-05."
-depends_on: ["01", "02", "03", "04", "05"]
+goal: "Comprehensive integration testing, visual regression verification, performance validation, and documentation for all changes introduced in Sections 01-09."
+depends_on: ["01", "02", "03", "04", "05", "07", "08", "09"]
 sections:
   - id: "06.1"
     title: "Test Matrix"
@@ -26,9 +26,9 @@ sections:
 # Section 06: Verification & Polish
 
 **Status:** Not Started
-**Goal:** Prove all changes from Sections 01-05 work together as a cohesive system. Verify no performance regressions. Audit context types for capability restrictions. Update documentation.
+**Goal:** Prove all changes from Sections 01-09 work together as a cohesive system. Verify no performance regressions. Audit context types for capability restrictions. Update documentation.
 
-**Depends on:** All prior sections.
+**Depends on:** All prior sections (01-05, 07-09).
 
 ---
 
@@ -77,12 +77,30 @@ Build a comprehensive test matrix covering every feature through the new infrast
   - TextEditController still handles text editing keys after keymap integration
   - KeyActivationController removed, button/toggle/checkbox behavior unchanged
 
+- [ ] **WindowRoot (Section 07):**
+  - WindowRoot constructable in a `#[test]` without GPU or platform dependencies
+  - WidgetTestHarness wraps WindowRoot (not raw fields)
+  - WindowContext and DialogWindowContext wrap WindowRoot + platform/GPU state
+  - Event routing through WindowRoot: overlays take priority over widget tree
+  - All existing harness tests pass after WindowRoot unification
+
+- [ ] **Pure Logic Migration (Section 08):**
+  - CursorBlink tests pass in oriterm_ui (moved from oriterm)
+  - ResizeEdge and hit testing pass in oriterm_ui
+  - Mark mode motion functions pass in oriterm_ui
+  - No pure UI logic without oriterm_mux dependencies remains in oriterm/src/app/
+
+- [ ] **Boundary Enforcement (Section 09):**
+  - Architectural tests pass: WindowRoot headless, event propagation, overlay routing
+  - Crate dependency direction test passes (oriterm_ui has no oriterm/oriterm_mux deps)
+  - CLAUDE.md and crate-boundaries.md are up to date
+
 ---
 
 ## 06.2 Performance Validation
 
 - [ ] **Idle CPU:** Verify zero idle CPU beyond cursor blink (existing invariant preserved)
-- [ ] **Frame time:** Measure frame time with Scene vs old DrawList -- target: no regression >5%
+- [ ] **Frame time:** Measure frame time with current Scene architecture -- target: no regression >5% from pre-refinement baseline
 - [ ] **Damage tracking benefit:** Measure frames skipped due to clean regions
 - [ ] **Layout caching benefit:** Measure layout passes skipped due to prepaint-only or paint-only dirty
 
@@ -93,7 +111,7 @@ Build a comprehensive test matrix covering every feature through the new infrast
 Verify each context type exposes only phase-appropriate methods (masonry pattern).
 
 - [ ] `LayoutCtx` -- can measure text, read theme. CANNOT request paint, set active, access interaction state
-- [ ] `DrawCtx` -- can emit draw commands, read interaction state (during migration). CANNOT modify widget state
+- [ ] `DrawCtx` -- can emit draw commands to Scene. CANNOT modify widget state, SHOULD NOT read interaction state (use PrepaintCtx instead)
 - [ ] `PrepaintCtx` -- can read interaction state, resolve visual state properties, cache results on widget. CANNOT emit draw commands, CANNOT modify layout (hitboxes come from LayoutNode, not prepaint)
 - [ ] `EventCtx` -- can read interaction state. CANNOT emit draw commands
 - [ ] `LifecycleCtx` -- can request paint (via `ControllerRequests`). CANNOT emit draw commands
@@ -105,7 +123,7 @@ Verify each context type exposes only phase-appropriate methods (masonry pattern
 
 - [ ] Update CLAUDE.md with new test infrastructure (how to run harness tests, how to write new harness tests)
 - [ ] Update CLAUDE.md with action/keymap pattern (how to declare actions, how to add keybindings)
-- [ ] Add module-level doc comments to `testing/mod.rs`, `action/keymap.rs`, `draw/scene/mod.rs`, `draw/damage/mod.rs`, `pipeline.rs`
+- [ ] Add module-level doc comments to `testing/mod.rs`, `action/keymap/mod.rs`, `draw/scene/mod.rs`, `draw/damage/mod.rs`, `pipeline/mod.rs`, `window_root/mod.rs`
 
 ---
 
@@ -119,4 +137,4 @@ Verify each context type exposes only phase-appropriate methods (masonry pattern
 - [ ] `./clippy-all.sh` green
 - [ ] `./build-all.sh` green
 
-**Exit Criteria:** All 5 prior sections validated by integration tests. Frame time within 5% of baseline. Context types enforce phase-appropriate restrictions. `./test-all.sh && ./clippy-all.sh && ./build-all.sh` all pass cleanly.
+**Exit Criteria:** All 8 prior sections (01-05, 07-09) validated by integration tests. Frame time within 5% of baseline. Context types enforce phase-appropriate restrictions. `./test-all.sh && ./clippy-all.sh && ./build-all.sh` all pass cleanly.

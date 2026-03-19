@@ -10,7 +10,11 @@ use crate::animation::AnimFrameEvent;
 use crate::input::InputEvent;
 use crate::input::dispatch::tree::deliver_event_to_tree;
 use crate::input::layout_hit_test_path;
-use crate::pipeline::{apply_dispatch_requests, prepare_widget_tree};
+use std::collections::HashMap;
+
+use crate::pipeline::{
+    apply_dispatch_requests, collect_layout_bounds, prepaint_widget_tree, prepare_widget_tree,
+};
 
 use super::harness::WidgetTestHarness;
 
@@ -86,6 +90,7 @@ impl WidgetTestHarness {
             Some(&self.frame_requests),
             self.clock,
         );
+        self.run_prepaint();
         self.flush_frame_requests();
     }
 
@@ -114,6 +119,7 @@ impl WidgetTestHarness {
             Some(&self.frame_requests),
             self.clock,
         );
+        self.run_prepaint();
         self.flush_frame_requests();
     }
 
@@ -154,6 +160,7 @@ impl WidgetTestHarness {
                     Some(&self.frame_requests),
                     self.clock,
                 );
+                self.run_prepaint();
                 self.flush_frame_requests();
             }
             if i == 299 {
@@ -163,6 +170,23 @@ impl WidgetTestHarness {
                 );
             }
         }
+    }
+
+    /// Runs the prepaint phase for the widget tree.
+    ///
+    /// Collects layout bounds from the layout tree and calls
+    /// `prepaint_widget_tree` to resolve visual state on each widget.
+    pub(super) fn run_prepaint(&mut self) {
+        let mut bounds_map = HashMap::new();
+        collect_layout_bounds(&self.layout, &mut bounds_map);
+        prepaint_widget_tree(
+            &mut *self.widget,
+            &bounds_map,
+            Some(&self.interaction),
+            &self.theme,
+            self.clock,
+            Some(&self.frame_requests),
+        );
     }
 
     /// Forwards accumulated frame request flags to the scheduler.

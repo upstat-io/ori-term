@@ -10,10 +10,11 @@ use winit::window::WindowId;
 
 use oriterm_ui::draw::build_scene;
 use oriterm_ui::geometry::Rect;
+use oriterm_ui::invalidation::DirtyKind;
 use oriterm_ui::widgets::DrawCtx;
 
 use super::App;
-use super::widget_pipeline::prepare_widget_tree;
+use super::widget_pipeline::{prepaint_widget_tree, prepare_widget_tree};
 use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
 impl App {
@@ -71,9 +72,9 @@ impl App {
             Err(e) => log::error!("dialog render error: {e}"),
         }
 
-        // If any widget animator is mid-transition, schedule another redraw
-        // so the animation progresses to completion.
-        if ctx.frame_requests.anim_frame_requested() {
+        // Track animation state for phase gating on the next frame.
+        ctx.ui_stale = ctx.frame_requests.anim_frame_requested();
+        if ctx.ui_stale {
             ctx.dirty = true;
             ctx.window.request_redraw();
         }
@@ -105,31 +106,58 @@ impl App {
         );
         let icons = renderer.resolved_icons();
 
-        // Pre-paint mutation: deliver lifecycle events and update animators.
+        // Phase gating: compute dirty level from lifecycle events,
+        // animation state, and invalidation tracker.
         let now = Instant::now();
         let lifecycle_events = ctx.interaction.drain_events();
+        let widget_dirty = {
+            let mut d = ctx.invalidation.max_dirty_kind();
+            if !lifecycle_events.is_empty() {
+                d = d.merge(DirtyKind::Prepaint);
+            }
+            if ctx.ui_stale {
+                d = d.merge(DirtyKind::Prepaint);
+            }
+            d
+        };
         ctx.frame_requests = oriterm_ui::animation::FrameRequestFlags::new();
-        prepare_widget_tree(
-            &mut ctx.chrome,
-            &mut ctx.interaction,
-            &lifecycle_events,
-            None,
-            Some(&ctx.frame_requests),
-            now,
-        );
-        prepare_widget_tree(
-            ctx.content.content_widget_mut(),
-            &mut ctx.interaction,
-            &lifecycle_events,
-            None,
-            Some(&ctx.frame_requests),
-            now,
-        );
 
-        // If animation frames were requested (animator mid-transition),
-        // invalidate all to ensure smooth transitions.
-        if ctx.frame_requests.anim_frame_requested() {
-            ctx.invalidation.invalidate_all();
+        if widget_dirty >= DirtyKind::Prepaint {
+            prepare_widget_tree(
+                &mut ctx.chrome,
+                &mut ctx.interaction,
+                &lifecycle_events,
+                None,
+                Some(&ctx.frame_requests),
+                now,
+            );
+            prepare_widget_tree(
+                ctx.content.content_widget_mut(),
+                &mut ctx.interaction,
+                &lifecycle_events,
+                None,
+                Some(&ctx.frame_requests),
+                now,
+            );
+
+            // Prepaint: resolve visual state into widget fields.
+            let prepaint_bounds = std::collections::HashMap::new();
+            prepaint_widget_tree(
+                &mut ctx.chrome,
+                &prepaint_bounds,
+                Some(&ctx.interaction),
+                ui_theme,
+                now,
+                Some(&ctx.frame_requests),
+            );
+            prepaint_widget_tree(
+                ctx.content.content_widget_mut(),
+                &prepaint_bounds,
+                Some(&ctx.interaction),
+                ui_theme,
+                now,
+                Some(&ctx.frame_requests),
+            );
         }
 
         // Draw the chrome title bar via build_scene.

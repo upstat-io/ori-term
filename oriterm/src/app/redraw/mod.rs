@@ -8,6 +8,7 @@ mod search_bar;
 use std::time::Instant;
 
 use oriterm_core::{Column, CursorShape, TermMode};
+use oriterm_ui::invalidation::DirtyKind;
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
@@ -255,33 +256,76 @@ impl App {
             // Resolve icon atlas entries at physical pixel sizes.
             renderer.resolve_icons(gpu, scale);
 
-            // Pre-paint mutation phase: drain lifecycle events and
-            // prepare the full widget tree for the paint pass.
+            // Phase gating: compute widget dirty level from lifecycle
+            // events, animation state, and per-widget invalidation.
+            // On cursor-blink-only frames (no UI changes), skip the
+            // entire prepare + prepaint pipeline.
             let now = Instant::now();
             let lifecycle_events = ctx.interaction.drain_events();
+            let widget_dirty = {
+                let mut d = ctx.invalidation.max_dirty_kind();
+                if !lifecycle_events.is_empty() {
+                    d = d.merge(DirtyKind::Prepaint);
+                }
+                if ctx.ui_stale {
+                    d = d.merge(DirtyKind::Prepaint);
+                }
+                d
+            };
             ctx.frame_requests.reset();
-            super::widget_pipeline::prepare_widget_tree(
-                &mut ctx.tab_bar,
-                &mut ctx.interaction,
-                &lifecycle_events,
-                None,
-                Some(&ctx.frame_requests),
-                now,
-            );
-            // Prepare overlay widget trees. Reborrow fields to satisfy
-            // split-borrow: mutable overlays + mutable interaction/flags.
-            let interaction = &mut ctx.interaction;
-            let flags = &ctx.frame_requests;
-            ctx.overlays.for_each_widget_mut(|widget| {
+
+            if widget_dirty >= DirtyKind::Prepaint {
                 super::widget_pipeline::prepare_widget_tree(
-                    widget,
-                    interaction,
+                    &mut ctx.tab_bar,
+                    &mut ctx.interaction,
                     &lifecycle_events,
                     None,
-                    Some(flags),
+                    Some(&ctx.frame_requests),
                     now,
                 );
-            });
+                // Prepare overlay widget trees. Reborrow fields to satisfy
+                // split-borrow: mutable overlays + mutable interaction/flags.
+                let interaction = &mut ctx.interaction;
+                let flags = &ctx.frame_requests;
+                ctx.overlays.for_each_widget_mut(|widget| {
+                    super::widget_pipeline::prepare_widget_tree(
+                        widget,
+                        interaction,
+                        &lifecycle_events,
+                        None,
+                        Some(flags),
+                        now,
+                    );
+                });
+
+                // Prepaint: resolve visual state (interaction + animator)
+                // into widget fields. Empty bounds map is correct here —
+                // widget layout happens inside containers' paint() methods.
+                let prepaint_bounds = std::collections::HashMap::new();
+                super::widget_pipeline::prepaint_widget_tree(
+                    &mut ctx.tab_bar,
+                    &prepaint_bounds,
+                    Some(&ctx.interaction),
+                    &self.ui_theme,
+                    now,
+                    Some(&ctx.frame_requests),
+                );
+                {
+                    let interaction = &ctx.interaction;
+                    let theme = &self.ui_theme;
+                    let flags = &ctx.frame_requests;
+                    ctx.overlays.for_each_widget_mut(|widget| {
+                        super::widget_pipeline::prepaint_widget_tree(
+                            widget,
+                            &prepaint_bounds,
+                            Some(interaction),
+                            theme,
+                            now,
+                            Some(flags),
+                        );
+                    });
+                }
+            }
 
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.

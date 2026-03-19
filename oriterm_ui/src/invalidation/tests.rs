@@ -5,11 +5,33 @@ use crate::widget_id::WidgetId;
 
 use super::{DirtyKind, InvalidationTracker};
 
-// DirtyKind::merge tests.
+// DirtyKind ordering tests.
+
+#[test]
+fn dirty_kind_ordering() {
+    assert!(DirtyKind::Clean < DirtyKind::Paint);
+    assert!(DirtyKind::Paint < DirtyKind::Prepaint);
+    assert!(DirtyKind::Prepaint < DirtyKind::Layout);
+}
+
+// DirtyKind::merge tests — all 16 combinations.
 
 #[test]
 fn merge_clean_clean() {
     assert_eq!(DirtyKind::Clean.merge(DirtyKind::Clean), DirtyKind::Clean);
+}
+
+#[test]
+fn merge_clean_paint() {
+    assert_eq!(DirtyKind::Clean.merge(DirtyKind::Paint), DirtyKind::Paint);
+}
+
+#[test]
+fn merge_clean_prepaint() {
+    assert_eq!(
+        DirtyKind::Clean.merge(DirtyKind::Prepaint),
+        DirtyKind::Prepaint
+    );
 }
 
 #[test]
@@ -18,8 +40,76 @@ fn merge_clean_layout() {
 }
 
 #[test]
+fn merge_paint_clean() {
+    assert_eq!(DirtyKind::Paint.merge(DirtyKind::Clean), DirtyKind::Paint);
+}
+
+#[test]
+fn merge_paint_paint() {
+    assert_eq!(DirtyKind::Paint.merge(DirtyKind::Paint), DirtyKind::Paint);
+}
+
+#[test]
+fn merge_paint_prepaint() {
+    assert_eq!(
+        DirtyKind::Paint.merge(DirtyKind::Prepaint),
+        DirtyKind::Prepaint
+    );
+}
+
+#[test]
+fn merge_paint_layout() {
+    assert_eq!(DirtyKind::Paint.merge(DirtyKind::Layout), DirtyKind::Layout);
+}
+
+#[test]
+fn merge_prepaint_clean() {
+    assert_eq!(
+        DirtyKind::Prepaint.merge(DirtyKind::Clean),
+        DirtyKind::Prepaint
+    );
+}
+
+#[test]
+fn merge_prepaint_paint() {
+    assert_eq!(
+        DirtyKind::Prepaint.merge(DirtyKind::Paint),
+        DirtyKind::Prepaint
+    );
+}
+
+#[test]
+fn merge_prepaint_prepaint() {
+    assert_eq!(
+        DirtyKind::Prepaint.merge(DirtyKind::Prepaint),
+        DirtyKind::Prepaint
+    );
+}
+
+#[test]
+fn merge_prepaint_layout() {
+    assert_eq!(
+        DirtyKind::Prepaint.merge(DirtyKind::Layout),
+        DirtyKind::Layout
+    );
+}
+
+#[test]
 fn merge_layout_clean() {
     assert_eq!(DirtyKind::Layout.merge(DirtyKind::Clean), DirtyKind::Layout);
+}
+
+#[test]
+fn merge_layout_paint() {
+    assert_eq!(DirtyKind::Layout.merge(DirtyKind::Paint), DirtyKind::Layout);
+}
+
+#[test]
+fn merge_layout_prepaint() {
+    assert_eq!(
+        DirtyKind::Layout.merge(DirtyKind::Prepaint),
+        DirtyKind::Layout
+    );
 }
 
 #[test]
@@ -38,6 +128,16 @@ fn clean_is_not_dirty() {
 }
 
 #[test]
+fn paint_is_dirty() {
+    assert!(DirtyKind::Paint.is_dirty());
+}
+
+#[test]
+fn prepaint_is_dirty() {
+    assert!(DirtyKind::Prepaint.is_dirty());
+}
+
+#[test]
 fn layout_is_dirty() {
     assert!(DirtyKind::Layout.is_dirty());
 }
@@ -50,15 +150,12 @@ fn controller_requests_none_is_clean() {
 }
 
 #[test]
-fn controller_requests_paint_maps_to_clean() {
-    // Paint-only invalidation is handled by full-scene rebuild + damage
-    // diffing, so PAINT flag maps to Clean (no per-widget tracking needed).
-    assert_eq!(DirtyKind::from(ControllerRequests::PAINT), DirtyKind::Clean);
+fn controller_requests_paint_maps_to_paint() {
+    assert_eq!(DirtyKind::from(ControllerRequests::PAINT), DirtyKind::Paint);
 }
 
 #[test]
 fn controller_requests_other_flags_are_clean() {
-    // Non-paint flags (e.g. ANIM_FRAME, SET_ACTIVE) don't imply layout dirty.
     assert_eq!(
         DirtyKind::from(ControllerRequests::ANIM_FRAME),
         DirtyKind::Clean
@@ -66,10 +163,9 @@ fn controller_requests_other_flags_are_clean() {
 }
 
 #[test]
-fn controller_requests_paint_combined_is_clean() {
-    // PAINT combined with other flags still yields Clean (no per-widget paint tracking).
+fn controller_requests_paint_combined_is_paint() {
     let combined = ControllerRequests::PAINT.union(ControllerRequests::ANIM_FRAME);
-    assert_eq!(DirtyKind::from(combined), DirtyKind::Clean);
+    assert_eq!(DirtyKind::from(combined), DirtyKind::Paint);
 }
 
 // InvalidationTracker tests.
@@ -79,6 +175,7 @@ fn new_tracker_is_clean() {
     let tracker = InvalidationTracker::new();
     assert!(!tracker.is_any_dirty());
     assert!(!tracker.needs_full_rebuild());
+    assert_eq!(tracker.max_dirty_kind(), DirtyKind::Clean);
 }
 
 #[test]
@@ -88,7 +185,34 @@ fn mark_layout_sets_layout_dirty() {
     tracker.mark(id, DirtyKind::Layout);
 
     assert!(tracker.is_layout_dirty(id));
+    assert!(tracker.is_prepaint_dirty(id));
+    assert!(tracker.is_paint_dirty(id));
     assert!(tracker.is_any_dirty());
+    assert_eq!(tracker.max_dirty_kind(), DirtyKind::Layout);
+}
+
+#[test]
+fn mark_prepaint_sets_prepaint_dirty() {
+    let mut tracker = InvalidationTracker::new();
+    let id = WidgetId::next();
+    tracker.mark(id, DirtyKind::Prepaint);
+
+    assert!(!tracker.is_layout_dirty(id));
+    assert!(tracker.is_prepaint_dirty(id));
+    assert!(tracker.is_paint_dirty(id));
+    assert_eq!(tracker.max_dirty_kind(), DirtyKind::Prepaint);
+}
+
+#[test]
+fn mark_paint_sets_paint_dirty() {
+    let mut tracker = InvalidationTracker::new();
+    let id = WidgetId::next();
+    tracker.mark(id, DirtyKind::Paint);
+
+    assert!(!tracker.is_layout_dirty(id));
+    assert!(!tracker.is_prepaint_dirty(id));
+    assert!(tracker.is_paint_dirty(id));
+    assert_eq!(tracker.max_dirty_kind(), DirtyKind::Paint);
 }
 
 #[test]
@@ -99,6 +223,18 @@ fn mark_clean_is_noop() {
 
     assert!(!tracker.is_layout_dirty(id));
     assert!(!tracker.is_any_dirty());
+}
+
+#[test]
+fn mark_promotes_severity() {
+    let mut tracker = InvalidationTracker::new();
+    let id = WidgetId::next();
+    tracker.mark(id, DirtyKind::Paint);
+    tracker.mark(id, DirtyKind::Prepaint);
+
+    assert!(tracker.is_prepaint_dirty(id));
+    assert!(!tracker.is_layout_dirty(id));
+    assert_eq!(tracker.max_dirty_kind(), DirtyKind::Prepaint);
 }
 
 #[test]
@@ -117,15 +253,16 @@ fn clear_resets_all_state() {
     let a = WidgetId::next();
     let b = WidgetId::next();
     tracker.mark(a, DirtyKind::Layout);
-    tracker.mark(b, DirtyKind::Layout);
+    tracker.mark(b, DirtyKind::Prepaint);
     tracker.invalidate_all();
 
     tracker.clear();
 
     assert!(!tracker.is_layout_dirty(a));
-    assert!(!tracker.is_layout_dirty(b));
+    assert!(!tracker.is_prepaint_dirty(b));
     assert!(!tracker.is_any_dirty());
     assert!(!tracker.needs_full_rebuild());
+    assert_eq!(tracker.max_dirty_kind(), DirtyKind::Clean);
 }
 
 #[test]
@@ -135,10 +272,27 @@ fn invalidate_all_marks_full_rebuild() {
 
     assert!(tracker.needs_full_rebuild());
     assert!(tracker.is_any_dirty());
+    assert_eq!(tracker.max_dirty_kind(), DirtyKind::Layout);
 
     // Every widget reports dirty under full invalidation.
     let id = WidgetId::next();
     assert!(tracker.is_layout_dirty(id));
+    assert!(tracker.is_prepaint_dirty(id));
+    assert!(tracker.is_paint_dirty(id));
+}
+
+#[test]
+fn max_dirty_kind_across_multiple_widgets() {
+    let mut tracker = InvalidationTracker::new();
+    let a = WidgetId::next();
+    let b = WidgetId::next();
+    let c = WidgetId::next();
+
+    tracker.mark(a, DirtyKind::Paint);
+    tracker.mark(b, DirtyKind::Prepaint);
+    tracker.mark(c, DirtyKind::Paint);
+
+    assert_eq!(tracker.max_dirty_kind(), DirtyKind::Prepaint);
 }
 
 #[test]

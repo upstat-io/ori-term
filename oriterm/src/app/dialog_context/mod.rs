@@ -94,6 +94,9 @@ pub(crate) struct DialogWindowContext {
     pub(super) dirty: bool,
     /// Whether this dialog should bypass the normal frame budget once.
     pub(super) urgent_redraw: bool,
+    /// Whether the previous frame had widget animations in progress.
+    /// Used for phase gating: when true, prepare + prepaint must run.
+    pub(super) ui_stale: bool,
     /// Cached content layout node, keyed by viewport bounds.
     ///
     /// Avoids recomputing the full layout tree on every scroll/mouse event.
@@ -209,6 +212,7 @@ impl DialogWindowContext {
             lifecycle: SurfaceLifecycle::CreatedHidden,
             dirty: true,
             urgent_redraw: false,
+            ui_stale: true,
             cached_layout: None,
         }
     }

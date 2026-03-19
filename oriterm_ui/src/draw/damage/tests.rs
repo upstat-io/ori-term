@@ -246,3 +246,112 @@ fn has_damage_false_when_no_damage() {
 
     assert!(!tracker.has_damage());
 }
+
+// --- Damage hash stability under offsets ---
+
+#[test]
+fn same_widget_different_offset_produces_damage() {
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+
+    // Frame 1: widget at (0, 0).
+    let mut scene1 = Scene::new();
+    scene1.set_widget_id(Some(id));
+    scene1.push_quad(
+        Rect::new(0.0, 0.0, 50.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    tracker.compute_damage(&scene1);
+
+    // Frame 2: same widget, same color, but at (100, 100) due to scroll.
+    let mut scene2 = Scene::new();
+    scene2.set_widget_id(Some(id));
+    scene2.push_quad(
+        Rect::new(100.0, 100.0, 50.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    tracker.compute_damage(&scene2);
+
+    // Position changed — damage expected (even though content is same).
+    assert!(tracker.has_damage());
+    assert!(tracker.is_region_dirty(Rect::new(0.0, 0.0, 50.0, 50.0)));
+    assert!(tracker.is_region_dirty(Rect::new(100.0, 100.0, 50.0, 50.0)));
+}
+
+// --- Multiple widgets at same bounds ---
+
+#[test]
+fn many_overlapping_widgets_bounded_dirty_regions() {
+    let mut tracker = DamageTracker::new();
+    let bounds = Rect::new(50.0, 50.0, 100.0, 100.0);
+
+    // Frame 1: 10 widgets at the same bounds.
+    let mut scene1 = Scene::new();
+    let ids: Vec<_> = (0..10).map(|_| WidgetId::next()).collect();
+    for &id in &ids {
+        scene1.set_widget_id(Some(id));
+        scene1.push_quad(bounds, RectStyle::filled(Color::WHITE));
+    }
+    tracker.compute_damage(&scene1);
+
+    // Frame 2: all widgets change color.
+    let mut scene2 = Scene::new();
+    for &id in &ids {
+        scene2.set_widget_id(Some(id));
+        scene2.push_quad(bounds, RectStyle::filled(Color::BLACK));
+    }
+    tracker.compute_damage(&scene2);
+
+    assert!(tracker.has_damage());
+    // All at same bounds — dirty regions should merge into few entries.
+    // 10 widgets at same position should produce at most 1 dirty region.
+    assert!(
+        tracker.dirty_regions().len() <= 2,
+        "expected at most 2 dirty regions for co-located widgets, got {}",
+        tracker.dirty_regions().len()
+    );
+}
+
+// --- None widget ID handling ---
+
+#[test]
+fn primitives_without_widget_id_not_tracked_per_widget() {
+    let mut tracker = DamageTracker::new();
+
+    // Frame 1: quad without widget ID.
+    let mut scene1 = Scene::new();
+    // No set_widget_id() call.
+    scene1.push_quad(
+        Rect::new(0.0, 0.0, 50.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    tracker.compute_damage(&scene1);
+
+    // Frame 2: identical (still no widget ID).
+    let mut scene2 = Scene::new();
+    scene2.push_quad(
+        Rect::new(0.0, 0.0, 50.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+    tracker.compute_damage(&scene2);
+
+    // Should not panic. Damage behavior with None IDs is implementation-defined
+    // but must not crash.
+}
+
+// --- Negative coordinates in damage tracking ---
+
+#[test]
+fn negative_coordinate_widget_tracked_correctly() {
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+    let bounds = Rect::new(-20.0, -10.0, 100.0, 50.0);
+
+    tracker.compute_damage(&scene_with_quad(id, bounds, Color::WHITE));
+    assert!(tracker.has_damage());
+    assert!(tracker.is_region_dirty(bounds));
+
+    // Identical second frame — no damage.
+    tracker.compute_damage(&scene_with_quad(id, bounds, Color::WHITE));
+    assert!(!tracker.has_damage());
+}

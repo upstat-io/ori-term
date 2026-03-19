@@ -50,7 +50,7 @@ use crate::sense::Sense;
 use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
-pub use contexts::{AnimCtx, DrawCtx, EventCtx, LayoutCtx, LifecycleCtx};
+pub use contexts::{AnimCtx, DrawCtx, EventCtx, LayoutCtx, LifecycleCtx, PrepaintCtx};
 pub use text_measurer::TextMeasurer;
 
 // `WidgetAction` lives in `crate::action` to avoid a circular dependency
@@ -121,7 +121,15 @@ pub trait Widget {
 
     // --- New methods (Section 08.1) ---
 
-    /// Paints the widget into the draw list.
+    /// Resolves visual states and caches interaction state queries.
+    ///
+    /// Called after layout, before paint. Widgets override this to read
+    /// interaction state (`ctx.is_hot()`, `ctx.is_active()`) and animator
+    /// values, storing resolved results on `self` for `paint()` to read.
+    /// Default is a no-op.
+    fn prepaint(&mut self, _ctx: &mut PrepaintCtx<'_>) {}
+
+    /// Paints the widget into the scene.
     ///
     /// Use `ctx.is_hot()`, `ctx.is_active()`, `ctx.is_focused()` for
     /// interaction-dependent rendering. Use `VisualStateAnimator` for

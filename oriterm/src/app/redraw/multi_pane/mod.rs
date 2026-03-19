@@ -5,7 +5,9 @@
 //! its layout-computed pixel offset, and instances accumulate into one shared
 //! `PreparedFrame` for a single GPU submission.
 
-use crate::session::{DividerLayout, LayoutDescriptor, PaneLayout, Rect, compute_all};
+mod pane_layouts;
+
+use crate::session::{DividerLayout, PaneLayout};
 use oriterm_core::{Column, CursorShape, TermMode};
 
 use super::App;
@@ -24,75 +26,6 @@ fn should_reextract_multi_pane_scratch(
 }
 
 impl App {
-    /// Compute pane layouts for the active tab.
-    ///
-    /// Returns `None` if the tab has a single pane (use the fast path).
-    /// Returns `Some((pane_layouts, divider_layouts))` when multi-pane.
-    pub(in crate::app) fn compute_pane_layouts(
-        &self,
-    ) -> Option<(Vec<PaneLayout>, Vec<DividerLayout>)> {
-        let win_id = self.active_window?;
-        let win = self.session.get_window(win_id)?;
-        let tab_id = win.active_tab()?;
-        let tab = self.session.get_tab(tab_id)?;
-
-        let is_zoomed = tab.zoomed_pane().is_some();
-
-        if !is_zoomed && tab.tree().pane_count() <= 1 && tab.floating().is_empty() {
-            return None;
-        }
-
-        let ctx = self.focused_ctx()?;
-        let bounds = ctx.terminal_grid.bounds()?;
-        let cell = ctx.renderer.as_ref()?.cell_metrics();
-
-        // Zoomed: single pane fills the entire available area.
-        if let Some(zoomed_id) = tab.zoomed_pane() {
-            let avail = Rect {
-                x: bounds.x(),
-                y: bounds.y(),
-                width: bounds.width(),
-                height: bounds.height(),
-            };
-            let cols = (avail.width / cell.width).floor() as u16;
-            let rows = (avail.height / cell.height).floor() as u16;
-            let snapped_w = cols as f32 * cell.width;
-            let snapped_h = rows as f32 * cell.height;
-            return Some((
-                vec![PaneLayout {
-                    pane_id: zoomed_id,
-                    pixel_rect: Rect {
-                        x: avail.x,
-                        y: avail.y,
-                        width: snapped_w,
-                        height: snapped_h,
-                    },
-                    cols: cols.max(1),
-                    rows: rows.max(1),
-                    is_focused: true,
-                    is_floating: false,
-                }],
-                vec![],
-            ));
-        }
-
-        let desc = LayoutDescriptor {
-            available: Rect {
-                x: bounds.x(),
-                y: bounds.y(),
-                width: bounds.width(),
-                height: bounds.height(),
-            },
-            cell_width: cell.width,
-            cell_height: cell.height,
-            divider_px: self.config.pane.divider_px,
-            min_pane_cells: self.config.pane.min_cells,
-        };
-
-        let (panes, dividers) = compute_all(tab.tree(), tab.floating(), tab.active_pane(), &desc);
-        Some((panes, dividers))
-    }
-
     /// Execute the multi-pane rendering pipeline.
     ///
     /// Iterates all pane layouts, extracts and prepares each pane at its
@@ -407,32 +340,69 @@ impl App {
                 }
             }
 
-            // Pre-paint mutation phase for multi-pane path.
+            // Phase gating: skip prepare + prepaint on cursor-blink frames.
             {
                 let now = std::time::Instant::now();
                 let lifecycle_events = ctx.interaction.drain_events();
+                let widget_dirty = {
+                    let mut d = ctx.invalidation.max_dirty_kind();
+                    if !lifecycle_events.is_empty() {
+                        d = d.merge(oriterm_ui::invalidation::DirtyKind::Prepaint);
+                    }
+                    if ctx.ui_stale {
+                        d = d.merge(oriterm_ui::invalidation::DirtyKind::Prepaint);
+                    }
+                    d
+                };
                 ctx.frame_requests.reset();
-                super::super::widget_pipeline::prepare_widget_tree(
-                    &mut ctx.tab_bar,
-                    &mut ctx.interaction,
-                    &lifecycle_events,
-                    None,
-                    Some(&ctx.frame_requests),
-                    now,
-                );
-                // Prepare overlay widget trees.
-                let interaction = &mut ctx.interaction;
-                let flags = &ctx.frame_requests;
-                ctx.overlays.for_each_widget_mut(|widget| {
+
+                if widget_dirty >= oriterm_ui::invalidation::DirtyKind::Prepaint {
                     super::super::widget_pipeline::prepare_widget_tree(
-                        widget,
-                        interaction,
+                        &mut ctx.tab_bar,
+                        &mut ctx.interaction,
                         &lifecycle_events,
                         None,
-                        Some(flags),
+                        Some(&ctx.frame_requests),
                         now,
                     );
-                });
+                    // Prepare overlay widget trees.
+                    let interaction = &mut ctx.interaction;
+                    let flags = &ctx.frame_requests;
+                    ctx.overlays.for_each_widget_mut(|widget| {
+                        super::super::widget_pipeline::prepare_widget_tree(
+                            widget,
+                            interaction,
+                            &lifecycle_events,
+                            None,
+                            Some(flags),
+                            now,
+                        );
+                    });
+
+                    // Prepaint: resolve visual state into widget fields.
+                    let prepaint_bounds = std::collections::HashMap::new();
+                    super::super::widget_pipeline::prepaint_widget_tree(
+                        &mut ctx.tab_bar,
+                        &prepaint_bounds,
+                        Some(&ctx.interaction),
+                        &self.ui_theme,
+                        now,
+                        Some(&ctx.frame_requests),
+                    );
+                    let interaction = &ctx.interaction;
+                    let theme = &self.ui_theme;
+                    let flags = &ctx.frame_requests;
+                    ctx.overlays.for_each_widget_mut(|widget| {
+                        super::super::widget_pipeline::prepaint_widget_tree(
+                            widget,
+                            &prepaint_bounds,
+                            Some(interaction),
+                            theme,
+                            now,
+                            Some(flags),
+                        );
+                    });
+                }
             }
 
             // Chrome, tab bar, overlays, search bar (shared with single-pane path).
@@ -521,22 +491,4 @@ impl App {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::should_reextract_multi_pane_scratch;
-
-    #[test]
-    fn reextracts_when_shared_scratch_belongs_to_another_pane() {
-        assert!(should_reextract_multi_pane_scratch(false, false, false));
-    }
-
-    #[test]
-    fn skips_reextract_only_when_scratch_already_matches_clean_pane() {
-        assert!(!should_reextract_multi_pane_scratch(false, false, true));
-    }
-
-    #[test]
-    fn reextracts_when_content_changed_or_frame_missing() {
-        assert!(should_reextract_multi_pane_scratch(true, false, true));
-        assert!(should_reextract_multi_pane_scratch(false, true, true));
-    }
-}
+mod tests;

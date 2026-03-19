@@ -244,3 +244,241 @@ fn register_widget_only_emits_widget_added_once() {
     let events = mgr.drain_events();
     assert!(events.is_empty());
 }
+
+// -- prepaint_widget_tree tests --
+
+/// Tracks whether prepaint was called via a flag.
+struct PrepaintTracker {
+    id: WidgetId,
+    prepainted: bool,
+}
+
+impl PrepaintTracker {
+    fn new(id: WidgetId) -> Self {
+        Self {
+            id,
+            prepainted: false,
+        }
+    }
+}
+
+impl Widget for PrepaintTracker {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn layout(&self, _ctx: &LayoutCtx<'_>) -> crate::layout::LayoutBox {
+        crate::layout::LayoutBox::leaf(10.0, 10.0)
+    }
+
+    fn prepaint(&mut self, _ctx: &mut crate::widgets::PrepaintCtx<'_>) {
+        self.prepainted = true;
+    }
+
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
+}
+
+#[test]
+fn prepaint_widget_tree_calls_prepaint() {
+    use std::collections::HashMap;
+
+    use super::prepaint_widget_tree;
+    use crate::theme::UiTheme;
+
+    let id = WidgetId::next();
+    let mut widget = PrepaintTracker::new(id);
+    let bounds_map = HashMap::new();
+    let theme = UiTheme::dark();
+
+    prepaint_widget_tree(&mut widget, &bounds_map, None, &theme, Instant::now(), None);
+
+    assert!(widget.prepainted);
+}
+
+/// Container with a child that tracks prepaint.
+struct PrepaintContainer {
+    id: WidgetId,
+    child: PrepaintTracker,
+}
+
+impl Widget for PrepaintContainer {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn layout(&self, _ctx: &LayoutCtx<'_>) -> crate::layout::LayoutBox {
+        crate::layout::LayoutBox::leaf(100.0, 100.0)
+    }
+
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
+
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        visitor(&mut self.child);
+    }
+}
+
+#[test]
+fn prepaint_widget_tree_traverses_children() {
+    use std::collections::HashMap;
+
+    use super::prepaint_widget_tree;
+    use crate::theme::UiTheme;
+
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+    let mut container = PrepaintContainer {
+        id: parent_id,
+        child: PrepaintTracker::new(child_id),
+    };
+    let bounds_map = HashMap::new();
+    let theme = UiTheme::dark();
+
+    prepaint_widget_tree(
+        &mut container,
+        &bounds_map,
+        None,
+        &theme,
+        Instant::now(),
+        None,
+    );
+
+    assert!(container.child.prepainted);
+}
+
+#[test]
+fn prepaint_widget_tree_passes_correct_bounds() {
+    use std::collections::HashMap;
+
+    use super::prepaint_widget_tree;
+    use crate::theme::UiTheme;
+
+    /// Widget that captures the bounds from PrepaintCtx.
+    struct BoundsCapture {
+        id: WidgetId,
+        captured_bounds: Option<Rect>,
+    }
+
+    impl Widget for BoundsCapture {
+        fn id(&self) -> WidgetId {
+            self.id
+        }
+
+        fn sense(&self) -> Sense {
+            Sense::none()
+        }
+
+        fn layout(&self, _ctx: &LayoutCtx<'_>) -> crate::layout::LayoutBox {
+            crate::layout::LayoutBox::leaf(10.0, 10.0)
+        }
+
+        fn prepaint(&mut self, ctx: &mut crate::widgets::PrepaintCtx<'_>) {
+            self.captured_bounds = Some(ctx.bounds);
+        }
+
+        fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
+    }
+
+    let id = WidgetId::next();
+    let mut widget = BoundsCapture {
+        id,
+        captured_bounds: None,
+    };
+
+    let expected = Rect::new(10.0, 20.0, 100.0, 50.0);
+    let mut bounds_map = HashMap::new();
+    bounds_map.insert(id, expected);
+    let theme = UiTheme::dark();
+
+    prepaint_widget_tree(&mut widget, &bounds_map, None, &theme, Instant::now(), None);
+
+    assert_eq!(widget.captured_bounds, Some(expected));
+}
+
+// -- Phase gating tests --
+
+/// Widget that counts layout/prepaint/paint invocations via shared counters.
+struct PhaseCountWidget {
+    id: WidgetId,
+    layout_count: std::rc::Rc<std::cell::Cell<u32>>,
+    prepaint_count: std::rc::Rc<std::cell::Cell<u32>>,
+    paint_count: std::rc::Rc<std::cell::Cell<u32>>,
+}
+
+impl Widget for PhaseCountWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::hover()
+    }
+
+    fn layout(&self, _ctx: &LayoutCtx<'_>) -> crate::layout::LayoutBox {
+        self.layout_count.set(self.layout_count.get() + 1);
+        crate::layout::LayoutBox::leaf(100.0, 30.0).with_widget_id(self.id)
+    }
+
+    fn prepaint(&mut self, _ctx: &mut crate::widgets::PrepaintCtx<'_>) {
+        self.prepaint_count.set(self.prepaint_count.get() + 1);
+    }
+
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {
+        self.paint_count.set(self.paint_count.get() + 1);
+    }
+}
+
+/// Hover triggers prepaint + paint but NOT layout.
+///
+/// The harness separates layout (computed once at construction and on
+/// resize) from the event pipeline (prepare → prepaint → paint). A hover
+/// mouse move should trigger prepaint (interaction state changed) and
+/// paint (via render) but never re-run layout.
+#[test]
+fn hover_triggers_prepaint_and_paint_not_layout() {
+    use crate::testing::WidgetTestHarness;
+
+    let id = WidgetId::next();
+    let layout_count = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+    let prepaint_count = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+    let paint_count = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+
+    let widget = PhaseCountWidget {
+        id,
+        layout_count: layout_count.clone(),
+        prepaint_count: prepaint_count.clone(),
+        paint_count: paint_count.clone(),
+    };
+    let mut h = WidgetTestHarness::new(widget);
+
+    // Layout was called during harness construction.
+    let init_layout = layout_count.get();
+    assert!(init_layout > 0, "layout should run during construction");
+
+    // Reset counters after construction.
+    layout_count.set(0);
+    prepaint_count.set(0);
+    paint_count.set(0);
+
+    // Hover: move mouse into widget bounds.
+    h.mouse_move_to(id);
+
+    // Render the scene.
+    let _scene = h.render();
+
+    // Layout must NOT have been called (hover doesn't change structure).
+    assert_eq!(layout_count.get(), 0, "hover should not trigger layout");
+
+    // Prepaint must have been called (interaction state changed).
+    assert!(prepaint_count.get() > 0, "hover should trigger prepaint");
+
+    // Paint must have been called (render produces a scene).
+    assert!(paint_count.get() > 0, "render should trigger paint");
+}

@@ -5,8 +5,8 @@
 //! share the same code.
 
 pub(crate) use oriterm_ui::pipeline::{
-    DispatchResult, apply_dispatch_requests, collect_focusable_ids, prepare_widget_tree,
-    register_widget_tree,
+    DispatchResult, apply_dispatch_requests, collect_focusable_ids, prepaint_widget_tree,
+    prepare_widget_tree, register_widget_tree,
 };
 #[cfg(test)]
 pub(crate) use oriterm_ui::pipeline::{dispatch_step, prepare_widget_frame};
