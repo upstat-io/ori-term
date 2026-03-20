@@ -98,7 +98,7 @@ fn harness_process_mouse_move() {
 
     // Button should now be hot.
     assert!(
-        harness.interaction.get_state(button_id).is_hot(),
+        harness.is_hot(button_id),
         "button should be hot after mouse move to its center"
     );
 }
@@ -128,7 +128,7 @@ fn harness_process_click() {
         modifiers: Modifiers::NONE,
     });
     assert!(
-        harness.interaction.get_state(button_id).is_active(),
+        harness.is_active(button_id),
         "button should be active after mouse down"
     );
 
@@ -139,7 +139,7 @@ fn harness_process_click() {
         modifiers: Modifiers::NONE,
     });
     assert!(
-        !harness.interaction.get_state(button_id).is_active(),
+        !harness.is_active(button_id),
         "button should not be active after mouse up"
     );
 
@@ -154,12 +154,12 @@ fn harness_process_click() {
 }
 
 #[test]
-fn harness_tick_animation_frame() {
+fn harness_advance_time() {
     let button = ButtonWidget::new("Animated");
     let mut harness = WidgetTestHarness::new(button);
 
-    // Tick an animation frame (should not panic even with no pending animations).
-    harness.tick_animation_frame(Duration::from_millis(16));
+    // Advance time (should not panic even with no pending animations).
+    harness.advance_time(Duration::from_millis(16));
 
     // Verify clock accessor works.
     let _now = harness.now();
@@ -189,7 +189,7 @@ fn harness_mouse_move_to_makes_hot() {
 
     harness.mouse_move_to(button_id);
     assert!(
-        harness.interaction.get_state(button_id).is_hot(),
+        harness.is_hot(button_id),
         "button should be hot after mouse_move_to"
     );
 }
@@ -341,9 +341,41 @@ fn harness_rebuild_layout_updates_focus_order() {
     let harness = WidgetTestHarness::new(button);
 
     // Button should be in focus order.
-    let focusable = harness.focus.focus_order();
+    let focusable = harness.focusable_widgets();
     assert!(
         focusable.contains(&button_id),
         "focusable button should be in focus order"
     );
+}
+
+// -- Overlay test helpers --
+
+#[test]
+fn harness_overlay_push_and_dismiss() {
+    use crate::geometry::Rect;
+    use crate::widgets::spacer::SpacerWidget;
+
+    let button = ButtonWidget::new("Main");
+    let mut h = WidgetTestHarness::new(button);
+
+    assert!(!h.has_overlays());
+
+    // Push a popup overlay.
+    let overlay = SpacerWidget::fixed(100.0, 40.0);
+    h.push_popup(overlay, Rect::new(50.0, 50.0, 100.0, 40.0));
+    assert!(h.has_overlays());
+
+    // Dismiss all overlays.
+    h.dismiss_overlays();
+    assert!(!h.has_overlays());
+}
+
+#[test]
+fn harness_root_accessor() {
+    let button = ButtonWidget::new("Root");
+    let harness = WidgetTestHarness::new(button);
+
+    // Should be able to access WindowRoot directly.
+    assert!(harness.root().is_dirty());
+    assert!(!harness.root().has_pending_actions());
 }

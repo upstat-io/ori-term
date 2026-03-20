@@ -320,6 +320,20 @@ impl WindowRoot {
     pub fn has_pending_actions(&self) -> bool {
         !self.pending_actions.is_empty()
     }
+
+    /// Clears the pending action queue without returning its contents.
+    pub fn clear_actions(&mut self) {
+        self.pending_actions.clear();
+    }
+
+    /// Removes and returns the first pending action, or `None`.
+    pub fn pop_action(&mut self) -> Option<WidgetAction> {
+        if self.pending_actions.is_empty() {
+            None
+        } else {
+            Some(self.pending_actions.remove(0))
+        }
+    }
 }
 
 #[cfg(test)]

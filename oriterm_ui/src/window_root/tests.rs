@@ -218,7 +218,7 @@ fn rebuild_reregisters_widgets() {
 fn prepare_runs_cleanly() {
     let mut root = WindowRoot::new(LabelWidget::new("prepare"));
     root.compute_layout(&measurer(), &theme());
-    root.prepare(Instant::now());
+    root.prepare(Instant::now(), &theme());
 }
 
 // -- Overlay tests --

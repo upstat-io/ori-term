@@ -1,7 +1,7 @@
 ---
 section: "07"
 title: "WindowRoot Extraction"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Extract WindowRoot as oriterm_ui's per-window composition unit — owning widget tree, interaction, focus, overlays, compositor, and pipeline execution — so every layer including windows is headless-testable."
 inspired_by:
@@ -21,10 +21,10 @@ sections:
     status: complete
   - id: "07.4"
     title: "Test Harness Unification"
-    status: not-started
+    status: complete
   - id: "07.5"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 07: WindowRoot Extraction
@@ -367,7 +367,7 @@ Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus pl
 
 Refactor `WidgetTestHarness` to wrap a `WindowRoot` instead of owning the same fields independently.
 
-- [ ] Replace raw fields with `WindowRoot`:
+- [x] Replace raw fields with `WindowRoot`:
   ```rust
   // BEFORE (current harness fields):
   pub struct WidgetTestHarness {
@@ -398,7 +398,7 @@ Refactor `WidgetTestHarness` to wrap a `WindowRoot` instead of owning the same f
   }
   ```
 
-- [ ] Update all harness methods to delegate to `WindowRoot`:
+- [x] Update all harness methods to delegate to `WindowRoot`:
   - `rebuild_layout()` → `self.root.compute_layout(&self.measurer, &self.theme)`
   - Tree-level event dispatch (in `harness_dispatch.rs`) → `self.root.dispatch_event(event, &self.measurer, &self.theme, self.clock)`
   - `interaction()` → `self.root.interaction()`
@@ -406,11 +406,11 @@ Refactor `WidgetTestHarness` to wrap a `WindowRoot` instead of owning the same f
   - `take_actions()` → `self.root.take_actions()`
   - `find_widget_bounds()` → search `self.root.layout()`
 
-- [ ] Update all test helpers (`harness_dispatch.rs`, `harness_input.rs`, `harness_inspect.rs`) for the new delegation pattern.
+- [x] Update all test helpers (`harness_dispatch.rs`, `harness_input.rs`, `harness_inspect.rs`) for the new delegation pattern.
 
-- [ ] Verify all existing harness tests still pass — this is a pure refactor, no behavioral change.
+- [x] Verify all existing harness tests still pass — this is a pure refactor, no behavioral change.
 
-- [ ] Add new window-level test capabilities now possible:
+- [x] Add new window-level test capabilities now possible:
   ```rust
   impl WidgetTestHarness {
       /// Returns the WindowRoot for direct framework state access.
@@ -419,7 +419,7 @@ Refactor `WidgetTestHarness` to wrap a `WindowRoot` instead of owning the same f
   }
   ```
 
-- [ ] With WindowRoot wrapping, the harness now has `OverlayManager`, `LayerTree`, and `LayerAnimator` for the first time. This resolves the `TODO: OverlayTestHarness for end-to-end overlay flow testing` comment in `harness.rs` (line 40). Add overlay test helpers:
+- [x] With WindowRoot wrapping, the harness now has `OverlayManager`, `LayerTree`, and `LayerAnimator` for the first time. This resolves the `TODO: OverlayTestHarness for end-to-end overlay flow testing` comment in `harness.rs` (line 40). Add overlay test helpers:
   ```rust
   impl WidgetTestHarness {
       /// Pushes a popup overlay at the given anchor.
@@ -435,25 +435,25 @@ Refactor `WidgetTestHarness` to wrap a `WindowRoot` instead of owning the same f
 
 ## 07.5 Completion Checklist
 
-- [ ] `oriterm_ui/src/window_root/mod.rs` stays under 500 lines (pipeline logic in `pipeline.rs` submodule)
-- [ ] `WindowRoot` type exists in `oriterm_ui/src/window_root/mod.rs`
-- [ ] `WindowRoot` owns: widget tree, layout, interaction, focus, overlays, compositor, scheduler, invalidation, dirty flags, action queue
-- [ ] `WindowRoot` has NO GPU, platform, or terminal dependencies
-- [ ] `WindowRoot::new()` constructs a fully functional instance in a `#[test]`
-- [ ] `WindowRoot::compute_layout()` accepts `&dyn TextMeasurer` + `&UiTheme` (not concrete GPU types)
-- [ ] `WindowRoot::dispatch_event()` processes events through the full pipeline
-- [ ] `WidgetTestHarness` wraps `WindowRoot` (not raw fields)
-- [ ] All existing harness tests pass without modification
-- [ ] `WindowContext` wraps `WindowRoot` + platform/GPU state
-- [ ] `DialogWindowContext` wraps `WindowRoot` + platform/GPU state
-- [ ] No duplicate framework field declarations across WindowRoot, WindowContext, DialogWindowContext
-- [ ] `WindowRoot::dispatch_event()` routes overlay events before widget tree events
-- [ ] Overlay test helpers available on `WidgetTestHarness` (push_popup, has_overlays, dismiss_overlays)
-- [ ] `RenderScheduler` is available in production via `WindowRoot` (previously test-only)
-- [ ] Unit tests for WindowRoot in `oriterm_ui/src/window_root/tests.rs`
-- [ ] `timeout 150 cargo test -p oriterm_ui` passes
-- [ ] `timeout 150 cargo test -p oriterm` passes
-- [ ] `./clippy-all.sh` clean
-- [ ] `./build-all.sh` clean
+- [x] `oriterm_ui/src/window_root/mod.rs` stays under 500 lines (pipeline logic in `pipeline.rs` submodule)
+- [x] `WindowRoot` type exists in `oriterm_ui/src/window_root/mod.rs`
+- [x] `WindowRoot` owns: widget tree, layout, interaction, focus, overlays, compositor, scheduler, invalidation, dirty flags, action queue
+- [x] `WindowRoot` has NO GPU, platform, or terminal dependencies
+- [x] `WindowRoot::new()` constructs a fully functional instance in a `#[test]`
+- [x] `WindowRoot::compute_layout()` accepts `&dyn TextMeasurer` + `&UiTheme` (not concrete GPU types)
+- [x] `WindowRoot::dispatch_event()` processes events through the full pipeline
+- [x] `WidgetTestHarness` wraps `WindowRoot` (not raw fields)
+- [x] All existing harness tests pass without modification
+- [x] `WindowContext` wraps `WindowRoot` + platform/GPU state
+- [x] `DialogWindowContext` wraps `WindowRoot` + platform/GPU state
+- [x] No duplicate framework field declarations across WindowRoot, WindowContext, DialogWindowContext
+- [x] `WindowRoot::dispatch_event()` routes overlay events before widget tree events
+- [x] Overlay test helpers available on `WidgetTestHarness` (push_popup, has_overlays, dismiss_overlays)
+- [x] `RenderScheduler` is available in production via `WindowRoot` (previously test-only)
+- [x] Unit tests for WindowRoot in `oriterm_ui/src/window_root/tests.rs`
+- [x] `timeout 150 cargo test -p oriterm_ui` passes
+- [x] `timeout 150 cargo test -p oriterm` passes
+- [x] `./clippy-all.sh` clean
+- [x] `./build-all.sh` clean
 
 **Exit Criteria:** A `WindowRoot` can be constructed in a `#[test]` with no GPU or platform dependencies. A test can build a widget hierarchy (e.g., Dialog → Panel → Button), dispatch events through `WindowRoot`, and assert that interaction state, focus, and actions behave correctly — all headlessly. `WidgetTestHarness` and both `WindowContext`/`DialogWindowContext` use `WindowRoot` as their composition core, eliminating all duplicated framework wiring.
