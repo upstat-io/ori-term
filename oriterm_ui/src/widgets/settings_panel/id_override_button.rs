@@ -13,6 +13,8 @@ use crate::widget_id::WidgetId;
 use super::super::button::ButtonWidget;
 use super::super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
+use crate::widgets::PrepaintCtx;
+
 /// Wrapper around `ButtonWidget` that overrides its `WidgetId`.
 ///
 /// Needed because `ButtonWidget::new()` generates its own ID internally,
@@ -63,6 +65,10 @@ impl Widget for IdOverrideButton {
 
     fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
         self.inner.visual_states_mut()
+    }
+
+    fn prepaint(&mut self, ctx: &mut PrepaintCtx<'_>) {
+        self.inner.prepaint(ctx);
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {

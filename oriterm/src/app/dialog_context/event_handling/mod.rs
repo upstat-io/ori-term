@@ -355,12 +355,29 @@ impl App {
             #[cfg(not(debug_assertions))]
             None,
         );
-        if result.handled
+        // Apply interaction state changes (active capture for scrub drag).
+        let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+        crate::app::widget_pipeline::apply_dispatch_requests(
+            result.requests,
+            result.source,
+            interaction,
+            focus,
+        );
+
+        let needs_redraw = result.handled
             || result
                 .requests
-                .contains(oriterm_ui::controllers::ControllerRequests::PAINT)
-        {
+                .contains(oriterm_ui::controllers::ControllerRequests::PAINT);
+        let action = result.actions.into_iter().next();
+
+        if needs_redraw {
             ctx.request_urgent_redraw();
+        }
+
+        // Route emitted actions (e.g., ValueChanged from slider drag).
+        // Extracted before this block to release the &mut ctx borrow.
+        if let Some(action) = action {
+            self.handle_dialog_content_action(window_id, action);
         }
     }
 }
