@@ -1,7 +1,7 @@
 ---
 section: "07"
 title: "WindowRoot Extraction"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Extract WindowRoot as oriterm_ui's per-window composition unit — owning widget tree, interaction, focus, overlays, compositor, and pipeline execution — so every layer including windows is headless-testable."
 inspired_by:
@@ -12,10 +12,10 @@ depends_on: ["01"]
 sections:
   - id: "07.1"
     title: "WindowRoot Type Design"
-    status: not-started
+    status: complete
   - id: "07.2"
     title: "WindowRoot Implementation"
-    status: not-started
+    status: complete
   - id: "07.3"
     title: "WindowContext & DialogWindowContext Decomposition"
     status: not-started
@@ -56,7 +56,7 @@ GPUI, Masonry, and Druid all solve this by having the framework own a `Window`/`
 
 **Design principle:** If a field can't be constructed in a `#[test]` without a GPU, window, or display server, it does NOT belong in `WindowRoot`.
 
-- [ ] Define `WindowRoot` struct with fields extracted from `WidgetTestHarness` and `WindowContext`/`DialogWindowContext`:
+- [x] Define `WindowRoot` struct with fields extracted from `WidgetTestHarness` and `WindowContext`/`DialogWindowContext`:
   ```rust
   /// Per-window UI composition unit.
   ///
@@ -96,7 +96,7 @@ GPUI, Masonry, and Druid all solve this by having the framework own a `Window`/`
   }
   ```
 
-- [ ] Define the public API surface — accessors and mutators:
+- [x] Define the public API surface — accessors and mutators:
   ```rust
   impl WindowRoot {
       // Construction
@@ -150,7 +150,7 @@ GPUI, Masonry, and Druid all solve this by having the framework own a `Window`/`
   }
   ```
 
-- [ ] Decide whether `WindowRoot` should expose pipeline methods directly (layout, dispatch, prepaint) or leave those as free functions that accept `&mut WindowRoot`. Recommendation: **methods on WindowRoot** — this is the composition unit, it should orchestrate its own pipeline:
+- [x] Decide whether `WindowRoot` should expose pipeline methods directly (layout, dispatch, prepaint) or leave those as free functions that accept `&mut WindowRoot`. Recommendation: **methods on WindowRoot** — this is the composition unit, it should orchestrate its own pipeline:
   ```rust
   impl WindowRoot {
       /// Recomputes layout from the root widget.
@@ -173,9 +173,9 @@ GPUI, Masonry, and Druid all solve this by having the framework own a `Window`/`
   }
   ```
 
-- [ ] `TextMeasurer` and `UiTheme` parameters for `compute_layout` — the test harness passes `MockMeasurer` + `UiTheme::dark()`, production passes `CachedTextMeasurer<UiFontMeasurer>` (wrapping `TextShapeCache`) + the current theme. This keeps WindowRoot GPU-free and theme-agnostic. Note: the `TextMeasurer` trait already exists at `oriterm_ui/src/widgets/text_measurer.rs` with `measure()` and `shape()` methods — no new trait definition needed.
+- [x] `TextMeasurer` and `UiTheme` parameters for `compute_layout` — the test harness passes `MockMeasurer` + `UiTheme::dark()`, production passes `CachedTextMeasurer<UiFontMeasurer>` (wrapping `TextShapeCache`) + the current theme. This keeps WindowRoot GPU-free and theme-agnostic. Note: the `TextMeasurer` trait already exists at `oriterm_ui/src/widgets/text_measurer.rs` with `measure()` and `shape()` methods — no new trait definition needed.
 
-- [ ] **OverlayManager event routing design:** `OverlayManager` sits alongside the widget tree (not inside it). Today, the app layer calls `overlays.process_mouse_event()` before dispatching to the main widget tree, passing `&MouseEvent`, `&dyn TextMeasurer`, `&UiTheme`, `Option<WidgetId>` (focused widget), `&mut LayerTree`, `&mut LayerAnimator`, and `Instant`. Since WindowRoot owns all of these (`overlays`, `layer_tree`, `layer_animator`, `focus`), WindowRoot can orchestrate this priority routing internally:
+- [x] **OverlayManager event routing design:** `OverlayManager` sits alongside the widget tree (not inside it). Today, the app layer calls `overlays.process_mouse_event()` before dispatching to the main widget tree, passing `&MouseEvent`, `&dyn TextMeasurer`, `&UiTheme`, `Option<WidgetId>` (focused widget), `&mut LayerTree`, `&mut LayerAnimator`, and `Instant`. Since WindowRoot owns all of these (`overlays`, `layer_tree`, `layer_animator`, `focus`), WindowRoot can orchestrate this priority routing internally:
   ```rust
   impl WindowRoot {
       /// Dispatches an event through overlays first, then the widget tree.
@@ -203,13 +203,13 @@ GPUI, Masonry, and Druid all solve this by having the framework own a `Window`/`
   7. Collect emitted actions into `pending_actions`.
   8. Forward `PAINT`/`ANIM_FRAME` request flags to `RenderScheduler` and mark dirty as needed.
 
-- [ ] **What WindowRoot does NOT own:** Terminal-specific widgets (`TabBarWidget`, `TerminalGridWidget`), GPU resources (`WindowRenderer`, `PaneRenderCache`), platform handles (`TermWindow`, `Arc<Window>`), drag states with `PaneId` dependencies (`FloatingDragState`, `DividerDragState`, `TabDragState`), and render caches (`Scene`, `FrameInput`, `chrome_scene`). These remain on `WindowContext`/`DialogWindowContext`. WindowRoot is the pure UI framework composition unit — it holds the machinery for processing events and managing interaction state, not the terminal-specific content.
+- [x] **What WindowRoot does NOT own:** Terminal-specific widgets (`TabBarWidget`, `TerminalGridWidget`), GPU resources (`WindowRenderer`, `PaneRenderCache`), platform handles (`TermWindow`, `Arc<Window>`), drag states with `PaneId` dependencies (`FloatingDragState`, `DividerDragState`, `TabDragState`), and render caches (`Scene`, `FrameInput`, `chrome_scene`). These remain on `WindowContext`/`DialogWindowContext`. WindowRoot is the pure UI framework composition unit — it holds the machinery for processing events and managing interaction state, not the terminal-specific content.
 
-- [ ] **Widget tree ownership differs by window type:**
+- [x] **Widget tree ownership differs by window type:**
   - **`DialogWindowContext`**: The dialog content widget (e.g., `SettingsPanel`, `DialogWidget`) plus `WindowChromeWidget` form the widget tree. DialogWindowContext wraps WindowRoot; the content widget is the root widget passed to `WindowRoot::new()`. The chrome widget may remain outside WindowRoot (it has its own layout pass offset by chrome height) or be composed as a parent container wrapping the content.
   - **`WindowContext`**: The tab bar and terminal grid are NOT generic widgets managed by WindowRoot's pipeline. They are terminal-specific, rendered by the GPU renderer, and their interaction is handled by app-level code (tab drag, selection, mouse reporting). WindowContext uses WindowRoot only for framework state (interaction, focus, overlays, compositor) — the widget tree in WindowRoot may be empty or contain only overlay-managed widgets. This is an important design decision to document.
 
-- [ ] **Widget tree rebuild triggers:** When tabs change (add, remove, reorder, switch), the app layer must call `WindowRoot::rebuild()` to re-register widgets and rebuild the focus order. This is triggered from `tab_management.rs` (add/close/switch tab), `tab_drag` (reorder), and `pane_ops` (split/close pane). Today, `register_widget_tree` and `collect_focusable_ids` are called ad hoc after structural changes — WindowRoot consolidates these into a single `rebuild()` call. The caller (App) is responsible for calling `root.rebuild()` after any structural change.
+- [x] **Widget tree rebuild triggers:** When tabs change (add, remove, reorder, switch), the app layer must call `WindowRoot::rebuild()` to re-register widgets and rebuild the focus order. This is triggered from `tab_management.rs` (add/close/switch tab), `tab_drag` (reorder), and `pane_ops` (split/close pane). Today, `register_widget_tree` and `collect_focusable_ids` are called ad hoc after structural changes — WindowRoot consolidates these into a single `rebuild()` call. The caller (App) is responsible for calling `root.rebuild()` after any structural change.
 
 ---
 
@@ -226,7 +226,7 @@ This mirrors the existing pattern where `pipeline.rs` is a separate module for o
 
 **File(s):** `oriterm_ui/src/window_root/mod.rs`, `oriterm_ui/src/window_root/pipeline.rs`, `oriterm_ui/src/window_root/tests.rs`
 
-- [ ] Implement `WindowRoot::new()` — initializes all framework state, runs initial `rebuild()`. Note: `RenderScheduler` is currently only in `WidgetTestHarness`, not in `WindowContext` or `DialogWindowContext`. Adding it to WindowRoot makes it available in production for the first time — verify event loop integration (see `event_loop.rs` line 457, TODO for `RenderScheduler::next_wake_time()`):
+- [x] Implement `WindowRoot::new()` — initializes all framework state, runs initial `rebuild()`. Note: `RenderScheduler` is currently only in `WidgetTestHarness`, not in `WindowContext` or `DialogWindowContext`. Adding it to WindowRoot makes it available in production for the first time — verify event loop integration (see `event_loop.rs` line 457, TODO for `RenderScheduler::next_wake_time()`):
   ```rust
   pub fn new(widget: impl Widget + 'static) -> Self {
       let mut root = Self {
@@ -251,17 +251,17 @@ This mirrors the existing pattern where `pipeline.rs` is a separate module for o
   }
   ```
 
-- [ ] Implement `compute_layout()` — calls widget's `layout()`, runs `compute_layout`, rebuilds parent map, registers widgets, rebuilds focus order. Mirrors the current `WidgetTestHarness::rebuild_layout()` logic.
+- [x] Implement `compute_layout()` — calls widget's `layout()`, runs `compute_layout`, rebuilds parent map, registers widgets, rebuilds focus order. Mirrors the current `WidgetTestHarness::rebuild_layout()` logic.
 
-- [ ] Implement `dispatch_event()` — routes through `OverlayManager::process_mouse_event()` first (for overlay priority), then calls `deliver_event_to_tree` from `input::dispatch::tree` for the main widget tree, collects actions, updates interaction state via `apply_dispatch_requests`. The overlay-first routing mirrors what `dialog_context/event_handling/mod.rs` does today (lines 219-237). Note: `deliver_event_to_tree` (not `dispatch_step`) is the correct entry point — it does the full tree walk with hit testing and propagation. **Borrow splitting:** `dispatch_event` needs simultaneous `&mut` access to `self.overlays`, `self.layer_tree`, `self.layer_animator`, and `self.widget`. Use field destructuring (`let Self { overlays, layer_tree, .. } = self;`) to satisfy the borrow checker.
+- [x] Implement `dispatch_event()` — routes through `OverlayManager::process_mouse_event()` first (for overlay priority), then calls `deliver_event_to_tree` from `input::dispatch::tree` for the main widget tree, collects actions, updates interaction state via `apply_dispatch_requests`. The overlay-first routing mirrors what `dialog_context/event_handling/mod.rs` does today (lines 219-237). Note: `deliver_event_to_tree` (not `dispatch_step`) is the correct entry point — it does the full tree walk with hit testing and propagation. **Borrow splitting:** `dispatch_event` needs simultaneous `&mut` access to `self.overlays`, `self.layer_tree`, `self.layer_animator`, and `self.widget`. Use field destructuring (`let Self { overlays, layer_tree, .. } = self;`) to satisfy the borrow checker.
 
-- [ ] Implement `prepare()` — calls `prepare_widget_tree` for lifecycle delivery and animation ticks. Mirrors the dialog_rendering pre-paint path.
+- [x] Implement `prepare()` — calls `prepare_widget_tree` for lifecycle delivery and animation ticks. Mirrors the dialog_rendering pre-paint path.
 
-- [ ] Implement `rebuild()` — registers widget tree with InteractionManager, rebuilds focus order. Called after structural changes.
+- [x] Implement `rebuild()` — registers widget tree with InteractionManager, rebuilds focus order. Called after structural changes.
 
-- [ ] Add `window_root` module to `oriterm_ui/src/lib.rs`.
+- [x] Add `window_root` module to `oriterm_ui/src/lib.rs`.
 
-- [ ] Unit tests in `oriterm_ui/src/window_root/tests.rs`:
+- [x] Unit tests in `oriterm_ui/src/window_root/tests.rs`:
   - Construct a WindowRoot with a simple widget, verify layout computes.
   - Dispatch a mouse move, verify interaction state updates.
   - Dispatch a click on a button, verify action fires.

@@ -30,6 +30,7 @@ pub mod visual_state;
 pub mod widget_id;
 pub mod widgets;
 pub mod window;
+pub mod window_root;
 
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
