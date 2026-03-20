@@ -34,7 +34,7 @@ impl App {
         self.settings_pending = Some(self.config.clone());
 
         // Build sidebar + pages layout from current config.
-        let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme);
+        let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0);
         self.settings_ids = Some(ids);
 
         let panel = SettingsPanel::new(content);

@@ -342,6 +342,7 @@ impl Widget for ScrollWidget {
         let mut lb = LayoutBox::flex(crate::layout::Direction::Column, vec![child_box])
             .with_widget_id(self.id)
             .with_clip(true)
+            .with_overflow()
             .with_content_offset(-self.scroll_offset_x, -self.scroll_offset);
 
         // For vertical scrolling, use Fill width so the scroll container

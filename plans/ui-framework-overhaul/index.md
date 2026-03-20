@@ -222,7 +222,7 @@ Persistence (incl. expanded dispatch table, new config types, apply expansion),
 ---
 
 ### Section 11: Verification
-**File:** `section-11-verification.md` | **Status:** Not Started
+**File:** `section-11-verification.md` | **Status:** In Progress
 
 ```
 test, verification, visual_regression, performance, idle_cpu

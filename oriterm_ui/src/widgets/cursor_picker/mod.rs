@@ -5,7 +5,7 @@
 //! style index.
 
 use crate::color::Color;
-use crate::controllers::{ClickController, EventController, HoverController};
+use crate::controllers::{EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::layout::LayoutBox;
@@ -65,10 +65,7 @@ impl CursorPickerWidget {
         Self {
             id: WidgetId::next(),
             selected: selected.min(OPTION_COUNT - 1),
-            controllers: vec![
-                Box::new(HoverController::new()),
-                Box::new(ClickController::new()),
-            ],
+            controllers: vec![Box::new(HoverController::new())],
             animator: VisualStateAnimator::new(vec![common_states(
                 Color::TRANSPARENT,
                 theme.bg_hover,

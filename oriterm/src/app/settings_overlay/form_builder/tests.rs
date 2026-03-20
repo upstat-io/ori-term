@@ -11,14 +11,14 @@ use crate::config::Config;
 fn dialog_builds_without_panic() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, _ids) = build_settings_dialog(&config, &theme);
+    let (_content, _ids) = build_settings_dialog(&config, &theme, 0);
 }
 
 #[test]
 fn settings_ids_all_distinct() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme);
+    let (_content, ids) = build_settings_dialog(&config, &theme, 0);
     let all = collect_ids(&ids);
     // 22 fixed control IDs + N scheme card IDs.
     let expected = 22 + ids.scheme_card_ids.len();
@@ -29,7 +29,7 @@ fn settings_ids_all_distinct() {
 fn content_widget_has_valid_id() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids) = build_settings_dialog(&config, &theme);
+    let (content, _ids) = build_settings_dialog(&config, &theme, 0);
     assert_ne!(content.id().raw(), 0);
 }
 
@@ -37,7 +37,7 @@ fn content_widget_has_valid_id() {
 fn all_page_ids_are_set() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme);
+    let (_content, ids) = build_settings_dialog(&config, &theme, 0);
     let all = collect_ids(&ids);
     // Every ID must be non-placeholder.
     assert!(
@@ -50,7 +50,7 @@ fn all_page_ids_are_set() {
 fn scheme_card_ids_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme);
+    let (_content, ids) = build_settings_dialog(&config, &theme, 0);
     // Scheme cards are captured during colors page building.
     assert!(
         !ids.scheme_card_ids.is_empty(),

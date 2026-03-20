@@ -2,6 +2,7 @@ use crate::action::WidgetAction;
 use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
+use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::scroll::ScrollWidget;
@@ -19,6 +20,18 @@ fn make_ctx() -> LayoutCtx<'static> {
         measurer: &MockMeasurer::STANDARD,
         theme: &super::super::tests::TEST_THEME,
     }
+}
+
+/// Creates a page container with a registered nav source ID for testing.
+fn make_pc_with_nav(pages: Vec<Box<dyn Widget>>) -> (PageContainerWidget, WidgetId) {
+    let nav_id = WidgetId::next();
+    let pc = PageContainerWidget::new(pages).with_nav_source(nav_id);
+    (pc, nav_id)
+}
+
+/// Creates a `Selected` action from the given source.
+fn nav_selected(nav_id: WidgetId, index: usize) -> WidgetAction {
+    WidgetAction::Selected { id: nav_id, index }
 }
 
 // -- Construction --
@@ -53,12 +66,69 @@ fn set_active_page_out_of_range_is_noop() {
     assert_eq!(pc.active_page(), 0);
 }
 
+// -- accept_action with nav_source --
+
+#[test]
+fn accept_action_switches_page_on_nav_selected() {
+    let (mut pc, nav_id) = make_pc_with_nav(vec![label("A"), label("B"), label("C")]);
+    let action = nav_selected(nav_id, 2);
+    assert!(pc.accept_action(&action));
+    assert_eq!(pc.active_page(), 2);
+}
+
+#[test]
+fn accept_action_ignores_selected_from_non_nav_source() {
+    let (mut pc, _nav_id) = make_pc_with_nav(vec![label("A"), label("B"), label("C")]);
+    // Selected from a different widget (e.g., SchemeCard) — should NOT switch pages.
+    let other_id = WidgetId::next();
+    let action = WidgetAction::Selected {
+        id: other_id,
+        index: 2,
+    };
+    assert!(!pc.accept_action(&action));
+    assert_eq!(pc.active_page(), 0);
+}
+
+#[test]
+fn accept_action_ignores_out_of_range() {
+    let (mut pc, nav_id) = make_pc_with_nav(vec![label("A"), label("B")]);
+    let action = nav_selected(nav_id, 99);
+    assert!(!pc.accept_action(&action));
+    assert_eq!(pc.active_page(), 0);
+}
+
+#[test]
+fn accept_action_ignores_same_page() {
+    let (mut pc, nav_id) = make_pc_with_nav(vec![label("A"), label("B")]);
+    let action = nav_selected(nav_id, 0);
+    // Already on page 0 — should return false.
+    assert!(!pc.accept_action(&action));
+}
+
+#[test]
+fn accept_action_ignores_non_selected() {
+    let (mut pc, _nav_id) = make_pc_with_nav(vec![label("A"), label("B")]);
+    let action = WidgetAction::Clicked(WidgetId::next());
+    assert!(!pc.accept_action(&action));
+    assert_eq!(pc.active_page(), 0);
+}
+
+#[test]
+fn accept_action_without_nav_source_ignores_all_selected() {
+    // No nav_source_id set — all Selected actions are ignored.
+    let mut pc = PageContainerWidget::new(vec![label("A"), label("B")]);
+    let action = WidgetAction::Selected {
+        id: WidgetId::next(),
+        index: 1,
+    };
+    assert!(!pc.accept_action(&action));
+    assert_eq!(pc.active_page(), 0);
+}
+
 // -- Layout --
 
 #[test]
 fn layout_fills_parent_bounds() {
-    // PageContainerWidget uses SizeSpec::Fill — it takes the full parent bounds
-    // so scroll widgets inside pages get a finite viewport.
     let pc = PageContainerWidget::new(vec![label("AB"), label("ABCDEF")]);
     let ctx = make_ctx();
     let lb = pc.layout(&ctx);
@@ -128,49 +198,6 @@ fn paint_empty_does_nothing() {
     assert!(scene.is_empty());
 }
 
-// -- accept_action --
-
-#[test]
-fn accept_action_switches_page_on_selected() {
-    let mut pc = PageContainerWidget::new(vec![label("A"), label("B"), label("C")]);
-    let action = WidgetAction::Selected {
-        id: crate::widget_id::WidgetId::next(),
-        index: 2,
-    };
-    assert!(pc.accept_action(&action));
-    assert_eq!(pc.active_page(), 2);
-}
-
-#[test]
-fn accept_action_ignores_out_of_range() {
-    let mut pc = PageContainerWidget::new(vec![label("A"), label("B")]);
-    let action = WidgetAction::Selected {
-        id: crate::widget_id::WidgetId::next(),
-        index: 99,
-    };
-    assert!(!pc.accept_action(&action));
-    assert_eq!(pc.active_page(), 0);
-}
-
-#[test]
-fn accept_action_ignores_same_page() {
-    let mut pc = PageContainerWidget::new(vec![label("A"), label("B")]);
-    let action = WidgetAction::Selected {
-        id: crate::widget_id::WidgetId::next(),
-        index: 0,
-    };
-    // Already on page 0 — should return false.
-    assert!(!pc.accept_action(&action));
-}
-
-#[test]
-fn accept_action_ignores_non_selected() {
-    let mut pc = PageContainerWidget::new(vec![label("A"), label("B")]);
-    let action = WidgetAction::Clicked(crate::widget_id::WidgetId::next());
-    assert!(!pc.accept_action(&action));
-    assert_eq!(pc.active_page(), 0);
-}
-
 // -- for_each_child_mut --
 
 #[test]
@@ -185,26 +212,18 @@ fn for_each_child_visits_all_pages() {
 
 #[test]
 fn page_switch_calls_reset_scroll() {
-    // Create a scroll-wrapped page so reset_scroll is meaningful.
     let scroll = ScrollWidget::vertical(label("B content"));
-    let mut pc = PageContainerWidget::new(vec![label("A"), Box::new(scroll)]);
+    let (mut pc, nav_id) = make_pc_with_nav(vec![label("A"), Box::new(scroll)]);
 
-    // Switch to page 1 — accept_action calls reset_scroll on the new page.
-    let action = WidgetAction::Selected {
-        id: crate::widget_id::WidgetId::next(),
-        index: 1,
-    };
+    let action = nav_selected(nav_id, 1);
     assert!(pc.accept_action(&action));
     assert_eq!(pc.active_page(), 1);
-    // Verified by code path: PageContainerWidget calls pages[index].reset_scroll()
-    // after switching. Direct scroll_offset verification is in scroll/tests.rs.
 }
 
 // -- Layout staleness after page switch --
 
 #[test]
 fn layout_only_contains_active_page_widgets() {
-    // Page 0 has a button, page 1 has a different button.
     let btn0 = crate::widgets::button::ButtonWidget::new("Page0");
     let btn0_id = btn0.id();
     let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
@@ -215,7 +234,6 @@ fn layout_only_contains_active_page_widgets() {
     let lb = pc.layout(&ctx);
     let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
 
-    // Page 0 is active — only btn0 should appear in the layout tree.
     assert!(
         find_id_in_layout(&node, btn0_id),
         "active page's widget should be in layout"
@@ -233,17 +251,12 @@ fn layout_updates_after_page_switch_and_recompute() {
     let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
     let btn1_id = btn1.id();
 
-    let mut pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+    let (mut pc, nav_id) = make_pc_with_nav(vec![Box::new(btn0), Box::new(btn1)]);
 
-    // Switch to page 1.
-    let action = WidgetAction::Selected {
-        id: crate::widget_id::WidgetId::next(),
-        index: 1,
-    };
+    let action = nav_selected(nav_id, 1);
     assert!(pc.accept_action(&action));
     assert_eq!(pc.active_page(), 1);
 
-    // Recompute layout — now btn1 should appear, btn0 should not.
     let ctx = make_ctx();
     let lb = pc.layout(&ctx);
     let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
@@ -260,28 +273,20 @@ fn layout_updates_after_page_switch_and_recompute() {
 
 #[test]
 fn stale_layout_does_not_contain_new_page_widgets() {
-    // Demonstrates the bug: if layout is computed BEFORE page switch,
-    // it won't contain the new page's widgets.
     let btn0 = crate::widgets::button::ButtonWidget::new("Page0");
     let btn0_id = btn0.id();
     let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
     let btn1_id = btn1.id();
 
-    let mut pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+    let (mut pc, nav_id) = make_pc_with_nav(vec![Box::new(btn0), Box::new(btn1)]);
 
-    // Compute layout while page 0 is active.
     let ctx = make_ctx();
     let lb = pc.layout(&ctx);
     let stale_node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
 
-    // Switch to page 1 WITHOUT recomputing layout.
-    let action = WidgetAction::Selected {
-        id: crate::widget_id::WidgetId::next(),
-        index: 1,
-    };
+    let action = nav_selected(nav_id, 1);
     pc.accept_action(&action);
 
-    // The stale layout still has btn0, not btn1.
     assert!(
         find_id_in_layout(&stale_node, btn0_id),
         "stale layout retains old page's widget"
@@ -293,7 +298,7 @@ fn stale_layout_does_not_contain_new_page_widgets() {
 }
 
 /// Recursively searches a layout tree for a widget ID.
-fn find_id_in_layout(node: &crate::layout::LayoutNode, target: crate::widget_id::WidgetId) -> bool {
+fn find_id_in_layout(node: &crate::layout::LayoutNode, target: WidgetId) -> bool {
     if node.widget_id == Some(target) {
         return true;
     }
@@ -313,7 +318,6 @@ fn harness_button_on_page0_is_clickable() {
     let pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
     let mut h = WidgetTestHarness::new(pc);
 
-    // Click button on page 0 — should produce Clicked action.
     let actions = h.click(btn0_id);
     assert!(
         actions
@@ -331,19 +335,15 @@ fn harness_button_on_switched_page_is_clickable_after_rebuild() {
     let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
     let btn1_id = btn1.id();
 
-    let mut pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+    let nav_id = WidgetId::next();
+    let mut pc =
+        PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]).with_nav_source(nav_id);
 
-    // Switch to page 1.
-    let action = WidgetAction::Selected {
-        id: crate::widget_id::WidgetId::next(),
-        index: 1,
-    };
+    let action = nav_selected(nav_id, 1);
     pc.accept_action(&action);
 
-    // Create harness AFTER page switch — layout is fresh.
     let mut h = WidgetTestHarness::new(pc);
 
-    // Click button on page 1 — should produce Clicked action.
     let actions = h.click(btn1_id);
     assert!(
         actions
@@ -361,24 +361,19 @@ fn harness_page_switch_requires_layout_rebuild_for_new_page_widgets() {
     let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
     let btn1_id = btn1.id();
 
-    let pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+    let nav_id = WidgetId::next();
+    let pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]).with_nav_source(nav_id);
     let mut h = WidgetTestHarness::new(pc);
 
-    // Switch page via accept_action (simulating what production does).
-    let action = WidgetAction::Selected {
-        id: crate::widget_id::WidgetId::next(),
-        index: 1,
-    };
+    let action = nav_selected(nav_id, 1);
     h.widget_mut().accept_action(&action);
 
-    // WITHOUT rebuild: new page's button is not in the layout tree.
     let bounds = h.try_widget_bounds(btn1_id);
     assert!(
         bounds.is_none(),
         "before layout rebuild, new page's widget should not be in layout (this is the bug)"
     );
 
-    // WITH rebuild: new page's button appears.
     h.rebuild_layout();
     let bounds = h.try_widget_bounds(btn1_id);
     assert!(
@@ -386,7 +381,6 @@ fn harness_page_switch_requires_layout_rebuild_for_new_page_widgets() {
         "after layout rebuild, new page's widget should be in layout"
     );
 
-    // Now click should work.
     let actions = h.click(btn1_id);
     assert!(
         actions

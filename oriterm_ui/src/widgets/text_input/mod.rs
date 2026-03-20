@@ -12,7 +12,7 @@ mod widget_impl;
 use std::cell::RefCell;
 
 use crate::color::Color;
-use crate::controllers::{ClickController, EventController, HoverController};
+use crate::controllers::{ClickController, EventController, FocusController, HoverController};
 use crate::geometry::Insets;
 use crate::text::TextStyle;
 use crate::visual_state::focus_states;
@@ -130,6 +130,7 @@ impl TextInputWidget {
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ClickController::new()),
+                Box::new(FocusController::new()),
             ],
             animator: VisualStateAnimator::new(vec![focus_states(
                 style.border_color,

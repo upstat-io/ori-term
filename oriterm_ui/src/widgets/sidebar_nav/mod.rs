@@ -329,8 +329,10 @@ impl Widget for SidebarNavWidget {
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
-        if let WidgetAction::Selected { index, .. } = action {
-            if *index != self.active_page {
+        if let WidgetAction::Selected { id, index } = action {
+            // Only react to our own nav item selections, not external
+            // Selected actions from other widgets (SchemeCard, CursorPicker).
+            if *id == self.id && *index != self.active_page {
                 self.set_active_page(*index);
                 return true;
             }

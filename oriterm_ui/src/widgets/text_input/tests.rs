@@ -65,9 +65,9 @@ fn sense_returns_click_drag_focusable() {
 }
 
 #[test]
-fn has_two_controllers() {
+fn has_three_controllers() {
     let ti = TextInputWidget::new();
-    assert_eq!(ti.controllers().len(), 2);
+    assert_eq!(ti.controllers().len(), 3);
 }
 
 #[test]

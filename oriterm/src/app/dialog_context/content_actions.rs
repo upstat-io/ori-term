@@ -116,6 +116,7 @@ impl App {
             original_config,
             ids,
             panel,
+            active_page,
         } = &mut ctx.content
         else {
             return;
@@ -124,8 +125,12 @@ impl App {
         **pending_config = Config::default();
 
         // Rebuild the form widgets so they reflect the default config values.
-        let (content, new_ids) =
-            settings_overlay::form_builder::build_settings_dialog(pending_config, &ui_theme);
+        // Preserve the current page so the user stays where they were.
+        let (content, new_ids) = settings_overlay::form_builder::build_settings_dialog(
+            pending_config,
+            &ui_theme,
+            *active_page,
+        );
         *ids = new_ids;
         **panel = SettingsPanel::embedded(content);
 
@@ -161,6 +166,7 @@ impl App {
             pending_config,
             panel,
             original_config,
+            active_page,
         } = &mut ctx.content
         else {
             return;
@@ -182,6 +188,14 @@ impl App {
 
         // Always propagate — widgets update visuals (page switch, selection).
         let widget_handled = panel.accept_action(action);
+
+        // Track page switches for reset preservation.
+        if let WidgetAction::Selected { index, .. } = action {
+            if widget_handled && *index < 8 {
+                *active_page = *index;
+            }
+        }
+
         if config_changed || widget_handled {
             // Invalidate both layout caches: the dialog context's cached
             // layout tree AND the panel's internal paint-time cache. Page
