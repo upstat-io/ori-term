@@ -260,21 +260,16 @@ impl App {
             let content_bounds: Rect = Rect::new(0.0, chrome_h, w, h - chrome_h);
             let local_viewport: Rect =
                 Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-            let layout_node = match &ctx.cached_layout {
-                Some((vp, node)) if *vp == local_viewport => std::rc::Rc::clone(node),
-                _ => {
-                    let layout_ctx = LayoutCtx {
-                        measurer: &measurer,
-                        theme: &ui_theme,
-                    };
-                    let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-                    let node = std::rc::Rc::new(oriterm_ui::layout::compute_layout(
-                        &layout_box,
-                        local_viewport,
-                    ));
-                    ctx.cached_layout = Some((local_viewport, std::rc::Rc::clone(&node)));
-                    node
-                }
+            let layout_node = {
+                let layout_ctx = LayoutCtx {
+                    measurer: &measurer,
+                    theme: &ui_theme,
+                };
+                let layout_box = ctx.content.content_widget().layout(&layout_ctx);
+                std::rc::Rc::new(oriterm_ui::layout::compute_layout(
+                    &layout_box,
+                    local_viewport,
+                ))
             };
             let local = Point::new(
                 logical_pos.x - content_bounds.x(),
@@ -324,7 +319,8 @@ impl App {
         let h = ctx.surface_config.height as f32 / scale;
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
         let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-        let Some(layout_node) = mouse::cached_content_layout(ctx, scale, &ui_theme, local_viewport)
+        let Some(layout_node) =
+            mouse::compute_content_layout(ctx, scale, &ui_theme, local_viewport)
         else {
             return;
         };

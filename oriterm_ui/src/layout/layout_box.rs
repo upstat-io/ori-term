@@ -105,6 +105,10 @@ pub struct LayoutBox {
     /// `push_translate`. Used by `ScrollWidget` to keep layout stable
     /// (children at natural positions) while offsetting interaction.
     pub content_offset: (f32, f32),
+    /// When true, children are measured with infinite main-axis constraints
+    /// instead of the container's available space. Used by scroll containers
+    /// so content can grow beyond the viewport.
+    pub overflow: bool,
 }
 
 impl LayoutBox {
@@ -130,6 +134,7 @@ impl LayoutBox {
             disabled: false,
             interact_radius: 0.0,
             content_offset: (0.0, 0.0),
+            overflow: false,
         }
     }
 
@@ -157,6 +162,7 @@ impl LayoutBox {
             disabled: false,
             interact_radius: 0.0,
             content_offset: (0.0, 0.0),
+            overflow: false,
         }
     }
 
@@ -185,6 +191,7 @@ impl LayoutBox {
             disabled: false,
             interact_radius: 0.0,
             content_offset: (0.0, 0.0),
+            overflow: false,
         }
     }
 
@@ -352,6 +359,14 @@ impl LayoutBox {
     #[must_use]
     pub fn with_content_offset(mut self, x: f32, y: f32) -> Self {
         self.content_offset = (x, y);
+        self
+    }
+
+    /// Marks this container as overflow-scroll: children are measured with
+    /// infinite main-axis constraints so they can grow beyond the viewport.
+    #[must_use]
+    pub fn with_overflow(mut self) -> Self {
+        self.overflow = true;
         self
     }
 }

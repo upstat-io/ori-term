@@ -168,8 +168,9 @@ fn is_focusable() {
 fn accept_action_updates_active_page() {
     let theme = crate::theme::UiTheme::dark();
     let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let own_id = w.id();
     let action = WidgetAction::Selected {
-        id: WidgetId::next(),
+        id: own_id,
         index: 2,
     };
     assert!(w.accept_action(&action));
@@ -180,11 +181,25 @@ fn accept_action_updates_active_page() {
 fn accept_action_ignores_same_page() {
     let theme = crate::theme::UiTheme::dark();
     let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let own_id = w.id();
     let action = WidgetAction::Selected {
-        id: WidgetId::next(),
+        id: own_id,
         index: 0,
     };
     assert!(!w.accept_action(&action));
+}
+
+#[test]
+fn accept_action_ignores_external_selected() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    // Selected from a different widget (e.g., SchemeCard) should be ignored.
+    let action = WidgetAction::Selected {
+        id: WidgetId::next(),
+        index: 2,
+    };
+    assert!(!w.accept_action(&action));
+    assert_eq!(w.active_page(), 0);
 }
 
 // -- Arrow key navigation --

@@ -18,18 +18,17 @@ use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 use super::super::DialogWindowContext;
 use super::DialogClickResult;
 
-/// Returns cached layout or recomputes. Avoids expensive tree walk per event.
-pub(super) fn cached_content_layout(
-    ctx: &mut DialogWindowContext,
+/// Computes the content layout tree fresh from the current widget state.
+///
+/// Always recomputes rather than caching, because scroll offset changes
+/// invalidate the layout's `content_offset` fields — and cursor-move
+/// events can race with scroll events to re-cache stale layouts.
+pub(super) fn compute_content_layout(
+    ctx: &DialogWindowContext,
     scale: f32,
     ui_theme: &oriterm_ui::theme::UiTheme,
     local_viewport: Rect,
 ) -> Option<std::rc::Rc<oriterm_ui::layout::LayoutNode>> {
-    if let Some((vp, node)) = &ctx.cached_layout {
-        if *vp == local_viewport {
-            return Some(std::rc::Rc::clone(node));
-        }
-    }
     let renderer = ctx.renderer.as_ref()?;
     let measurer = CachedTextMeasurer::new(
         UiFontMeasurer::new(renderer.active_ui_collection(), scale),
@@ -42,7 +41,6 @@ pub(super) fn cached_content_layout(
     };
     let layout_box = ctx.content.content_widget().layout(&layout_ctx);
     let node = std::rc::Rc::new(compute_layout(&layout_box, local_viewport));
-    ctx.cached_layout = Some((local_viewport, std::rc::Rc::clone(&node)));
     Some(node)
 }
 
@@ -205,7 +203,7 @@ impl App {
         let h = ctx.surface_config.height as f32 / scale;
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
         let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-        let Some(layout_node) = cached_content_layout(ctx, scale, ui_theme, local_viewport) else {
+        let Some(layout_node) = compute_content_layout(ctx, scale, ui_theme, local_viewport) else {
             return DialogClickResult::None;
         };
         #[cfg(debug_assertions)]
@@ -301,7 +299,8 @@ impl App {
         let h = ctx.surface_config.height as f32 / scale;
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
         let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-        let Some(layout_node) = cached_content_layout(ctx, scale, &ui_theme, local_viewport) else {
+        let Some(layout_node) = compute_content_layout(ctx, scale, &ui_theme, local_viewport)
+        else {
             return;
         };
         #[cfg(debug_assertions)]
@@ -329,16 +328,6 @@ impl App {
         let (interaction, focus) = ctx.root.interaction_and_focus_mut();
         apply_dispatch_requests(result.requests, result.source, interaction, focus);
         if result.handled {
-            // Scroll offset changed — request repaint. The SettingsPanel
-            // reads scroll offset fresh during paint (push_clip+push_offset).
-            //
-            // Do NOT invalidate cached_layout here: the layout structure and
-            // sizes haven't changed (only the scroll widget's internal
-            // offset moved). The stale content_offset in the cached layout
-            // is acceptable for hit testing during scroll — the scroll
-            // widget handles all wheel events in its area regardless of
-            // exact content_offset. A click after scrolling stops will
-            // trigger a cursor-move that refreshes the layout.
             ctx.request_urgent_redraw();
         }
     }

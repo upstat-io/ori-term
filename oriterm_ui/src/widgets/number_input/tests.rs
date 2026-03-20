@@ -133,8 +133,18 @@ fn paint_produces_rect_and_text() {
     };
     w.paint(&mut ctx);
 
-    assert_eq!(scene.quads().len(), 1, "background rect");
-    assert_eq!(scene.text_runs().len(), 1, "value text");
+    // 1 background + 2 dividers = 3 quads.
+    assert_eq!(
+        scene.quads().len(),
+        3,
+        "background + vertical divider + horizontal divider"
+    );
+    // 1 value text + 2 arrow labels = 3 text runs.
+    assert_eq!(
+        scene.text_runs().len(),
+        3,
+        "value text + up arrow + down arrow"
+    );
 }
 
 // -- Sense & focusability --

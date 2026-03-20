@@ -66,10 +66,12 @@ pub(crate) struct SettingsIds {
 /// Builds the settings dialog with sidebar navigation and 8 pages.
 ///
 /// Returns the content widget (sidebar + pages in a horizontal row) and the
-/// ID map for action dispatch.
+/// ID map for action dispatch. `active_page` sets the initial page (use 0
+/// for first open, or preserve the current page across rebuilds like reset).
 pub(in crate::app) fn build_settings_dialog(
     config: &Config,
     theme: &UiTheme,
+    active_page: usize,
 ) -> (Box<dyn Widget>, SettingsIds) {
     // Initialize IDs with placeholders; page builders overwrite their fields.
     let mut ids = SettingsIds::placeholder();
@@ -83,9 +85,11 @@ pub(in crate::app) fn build_settings_dialog(
     let page_bell = bell::build_page(config, &mut ids, theme);
     let page_rendering = rendering::build_page(config, &mut ids, theme);
 
-    let sidebar = build_sidebar(theme);
+    let mut sidebar = build_sidebar(theme);
+    sidebar.set_active_page(active_page);
+    let sidebar_id = sidebar.id();
 
-    let pages = PageContainerWidget::new(vec![
+    let mut pages = PageContainerWidget::new(vec![
         page_appearance,
         page_colors,
         page_font,
@@ -94,7 +98,9 @@ pub(in crate::app) fn build_settings_dialog(
         page_window,
         page_bell,
         page_rendering,
-    ]);
+    ])
+    .with_nav_source(sidebar_id);
+    pages.set_active_page(active_page);
 
     let content = ContainerWidget::row()
         .with_width(SizeSpec::Fill)

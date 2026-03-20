@@ -101,6 +101,8 @@ pub(crate) enum DialogContent {
         pending_config: Box<Config>,
         /// Original config snapshot for dirty detection (pending != original).
         original_config: Box<Config>,
+        /// Current sidebar page index, preserved across rebuilds (e.g., reset).
+        active_page: usize,
     },
     /// Confirmation prompt (e.g. paste with newlines, close with running processes).
     Confirmation {

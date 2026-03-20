@@ -227,6 +227,18 @@ impl Widget for SchemeCardWidget {
         }
     }
 
+    fn accept_action(&mut self, action: &WidgetAction) -> bool {
+        // When any scheme card emits Selected, update this card's visual state.
+        if let WidgetAction::Selected { index, .. } = action {
+            let should_be_selected = *index == self.scheme_index;
+            if self.data.selected != should_be_selected {
+                self.data.selected = should_be_selected;
+                return true;
+            }
+        }
+        false
+    }
+
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let bounds = ctx.bounds;
 

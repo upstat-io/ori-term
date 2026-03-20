@@ -180,7 +180,14 @@ fn solve_flex(
         f32::INFINITY
     };
 
-    let measured = measure_children(children, dir, content_main, content_cross, gap);
+    // Scroll containers use infinite main-axis constraints so children can
+    // grow beyond the viewport. The container itself stays at viewport size.
+    let measure_main = if layout_box.overflow {
+        f32::INFINITY
+    } else {
+        content_main
+    };
+    let measured = measure_children(children, dir, measure_main, content_cross, gap);
 
     // Resolve container's own size.
     let container_main = resolve_container_main(

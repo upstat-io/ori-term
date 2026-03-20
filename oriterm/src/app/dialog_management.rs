@@ -337,7 +337,7 @@ impl App {
         gpu: &GpuState,
         pipelines: &crate::gpu::GpuPipelines,
     ) -> Option<WindowRenderer> {
-        let scale = window.scale_factor() as f32;
+        let scale = ScaleFactor::new(window.scale_factor()).factor() as f32;
         let physical_dpi = super::DEFAULT_DPI * scale;
         let hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
         let opacity = f64::from(self.config.window.effective_opacity());
@@ -375,13 +375,14 @@ impl App {
 
     /// Build dialog content for the settings panel.
     fn build_settings_content(&self) -> DialogContent {
-        let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme);
+        let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0);
 
         DialogContent::Settings {
             panel: Box::new(SettingsPanel::embedded(content)),
             ids,
             pending_config: Box::new(self.config.clone()),
             original_config: Box::new(self.config.clone()),
+            active_page: 0,
         }
     }
 

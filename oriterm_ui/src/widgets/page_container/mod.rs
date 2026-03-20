@@ -2,7 +2,10 @@
 //!
 //! Holds a vector of page widgets and displays only the active page.
 //! Switches pages in response to `WidgetAction::Selected` from a paired
-//! navigation widget (e.g., `SidebarNav`).
+//! navigation widget (e.g., `SidebarNav`). Only `Selected` actions whose
+//! `id` matches the registered navigation source trigger page switches;
+//! other `Selected` actions (e.g., from `SchemeCard`, `CursorPicker`) are
+//! ignored by the page container.
 
 use crate::layout::{Direction, LayoutBox, SizeSpec};
 use crate::sense::Sense;
@@ -14,11 +17,14 @@ use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 ///
 /// Pages are stored as `Box<dyn Widget>`. Only the active page participates
 /// in layout and paint. Switches pages when it receives a `Selected` action
-/// that no child widget handles (typically from a `SidebarNavWidget`).
+/// whose `id` matches the registered navigation source.
 pub struct PageContainerWidget {
     id: WidgetId,
     pages: Vec<Box<dyn Widget>>,
     active_page: usize,
+    /// Widget ID of the paired navigation source (e.g., `SidebarNavWidget`).
+    /// Only `Selected` actions from this source trigger page switches.
+    nav_source_id: Option<WidgetId>,
 }
 
 impl PageContainerWidget {
@@ -28,7 +34,19 @@ impl PageContainerWidget {
             id: WidgetId::next(),
             pages,
             active_page: 0,
+            nav_source_id: None,
         }
+    }
+
+    /// Registers the navigation source whose `Selected` actions trigger page switches.
+    ///
+    /// Only `Selected` actions with an `id` matching this source will switch pages.
+    /// All other `Selected` actions (from child widgets like `SchemeCard`,
+    /// `CursorPicker`, etc.) are passed through without triggering a page switch.
+    #[must_use]
+    pub fn with_nav_source(mut self, id: WidgetId) -> Self {
+        self.nav_source_id = Some(id);
+        self
     }
 
     /// Returns the active page index.
@@ -107,9 +125,10 @@ impl Widget for PageContainerWidget {
                 return true;
             }
         }
-        // No child handled it — check for page switch.
-        if let WidgetAction::Selected { index, .. } = action {
-            if *index < self.pages.len() && *index != self.active_page {
+        // Check for page switch — only from the paired navigation source.
+        if let WidgetAction::Selected { id, index } = action {
+            let from_nav = self.nav_source_id.is_some_and(|nav_id| nav_id == *id);
+            if from_nav && *index < self.pages.len() && *index != self.active_page {
                 self.active_page = *index;
                 // Reset scroll on the newly-active page.
                 self.pages[self.active_page].reset_scroll();
