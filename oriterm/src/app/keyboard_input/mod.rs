@@ -246,14 +246,14 @@ impl App {
             self.cursor_blink.reset();
 
             // Hide the mouse cursor while the user types.
-            let hide_ctx = super::cursor_hide::HideContext {
+            let hide_ctx = oriterm_ui::interaction::cursor_hide::HideContext {
                 config_enabled: self.config.behavior.hide_mouse_when_typing,
                 already_hidden: self.mouse_cursor_hidden,
                 key: &event.logical_key,
                 mouse_reporting: mode.intersects(oriterm_core::TermMode::ANY_MOUSE),
                 ime_active: self.ime.should_suppress_key(),
             };
-            if super::cursor_hide::should_hide_cursor(&hide_ctx) {
+            if oriterm_ui::interaction::cursor_hide::should_hide_cursor(&hide_ctx) {
                 self.mouse_cursor_hidden = true;
                 if let Some(ctx) = self.focused_ctx() {
                     ctx.window.window().set_cursor_visible(false);

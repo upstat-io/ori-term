@@ -20,7 +20,7 @@ const DEFAULT_BLINK_INTERVAL: Duration = Duration::from_millis(530);
 /// Visibility alternates every [`interval`](Self::interval) based on
 /// elapsed time since [`epoch`](Self::epoch). Reset on keypress to keep
 /// the cursor visible while the user types.
-pub(crate) struct CursorBlink {
+pub struct CursorBlink {
     /// When the current blink cycle started (reset on keypress/focus).
     epoch: Instant,
     /// Duration of each blink phase (on/off).
@@ -32,7 +32,7 @@ pub(crate) struct CursorBlink {
 
 impl CursorBlink {
     /// Create a new blink state with the given interval, starting visible.
-    pub(crate) fn new(interval: Duration) -> Self {
+    pub fn new(interval: Duration) -> Self {
         Self {
             epoch: Instant::now(),
             interval,
@@ -44,21 +44,21 @@ impl CursorBlink {
     ///
     /// Pure function of elapsed time: phase 0 (visible), phase 1 (hidden),
     /// phase 2 (visible), etc. No accumulated drift.
-    pub(crate) fn is_visible(&self) -> bool {
+    pub fn is_visible(&self) -> bool {
         let elapsed_ms = self.epoch.elapsed().as_millis() as u64;
         let interval_ms = self.interval.as_millis().max(1) as u64;
         (elapsed_ms / interval_ms).is_multiple_of(2)
     }
 
     /// Update the blink interval (e.g. on config reload).
-    pub(crate) fn set_interval(&mut self, interval: Duration) {
+    pub fn set_interval(&mut self, interval: Duration) {
         self.interval = interval;
     }
 
     /// Reset blink to the visible phase.
     ///
     /// Called on keypress so the cursor stays visible while the user types.
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.epoch = Instant::now();
         self.last_visible = true;
     }
@@ -66,7 +66,7 @@ impl CursorBlink {
     /// Check whether visibility changed since the last call.
     ///
     /// Returns `true` if the phase transitioned (caller should mark dirty).
-    pub(crate) fn update(&mut self) -> bool {
+    pub fn update(&mut self) -> bool {
         let vis = self.is_visible();
         let changed = vis != self.last_visible;
         self.last_visible = vis;
@@ -77,7 +77,7 @@ impl CursorBlink {
     ///
     /// Used with `ControlFlow::WaitUntil` to schedule the event loop
     /// wakeup without busy-waiting.
-    pub(crate) fn next_toggle(&self) -> Instant {
+    pub fn next_toggle(&self) -> Instant {
         let elapsed_ms = self.epoch.elapsed().as_millis() as u64;
         let interval_ms = self.interval.as_millis().max(1) as u64;
         let current_phase = elapsed_ms / interval_ms;

@@ -154,21 +154,24 @@ borrow splitting, field destructuring, overlay priority routing
 ---
 
 ### Section 08: Pure Logic Migration
-**File:** `section-08-pure-logic-migration.md` | **Status:** Not Started
+**File:** `section-08-pure-logic-migration.md` | **Status:** Complete
 
 ```
 pure logic, migration, move to oriterm_ui
 CursorBlink, cursor blink, animation timer
 cursor_hide, should_hide_cursor, HideContext
-ResizeEdge, resize edge, hit test zone, resize cursor
+ResizeEdge, resize edge, HitZone, hit test zone, resize cursor
+hit_test_floating_zone, compute_resize, HitTestConfig
 consolidation, extraction, reusable geometry
-FloatingDragState, HitZone, DividerDragState
-drag state machine, floating drag, divider drag
-ContextMenuState, context menu, menu builder
-MarkAction, Motion, MarkModeResult, mark mode
-handle_mark_mode_key, SelectionUpdate
-pure function extraction, headless testable
-oriterm_mux dependency blocker, PaneId, TabId, MarkCursor
+FloatingDragState, DividerDragState, DragInfo
+drag state machine, floating drag, divider drag, evaluation-only
+ContextMenuState, ContextAction, context menu, menu builder
+MarkAction, SelectionUpdate, MarkModeResult, mark mode
+handle_mark_mode_key, AbsCursor, GridBounds, WordContext
+motion.rs, move_left, move_right, motion functions
+pure function extraction, headless testable, visibility upgrade
+oriterm_mux dependency blocker, PaneId, TabId, MarkCursor, SnapshotGrid
+test split, motion tests, dispatch tests, audit completeness
 ```
 
 ---

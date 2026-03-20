@@ -8,6 +8,7 @@ use winit::dpi::PhysicalPosition;
 use winit::window::CursorIcon;
 
 use oriterm_mux::PaneId;
+use oriterm_ui::interaction::resize::{self, HitTestConfig, HitZone, ResizeEdge, resize_cursor};
 
 use crate::session::{Rect, snap_to_edge};
 
@@ -25,18 +26,12 @@ const CORNER_SIZE: f32 = 10.0;
 /// Minimum floating pane dimension in physical pixels.
 const MIN_SIZE_PX: f32 = 100.0;
 
-/// Which edge or corner of a floating pane is being resized.
-#[derive(Debug, Clone, Copy)]
-pub(super) enum ResizeEdge {
-    Top,
-    Bottom,
-    Left,
-    Right,
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
+/// Hit-test thresholds for floating panes.
+const HIT_CFG: HitTestConfig = HitTestConfig {
+    edge_threshold: EDGE_THRESHOLD,
+    corner_size: CORNER_SIZE,
+    title_bar_height: TITLE_BAR_HEIGHT,
+};
 
 /// Active floating pane drag or resize state.
 #[derive(Debug)]
@@ -59,74 +54,18 @@ pub(super) enum FloatingDragState {
     },
 }
 
-/// Result of hit-testing a point against a floating pane's zones.
-#[derive(Debug, Clone, Copy)]
-enum HitZone {
-    /// Over the title bar (drag to move).
-    TitleBar,
-    /// Over an edge or corner (drag to resize).
-    Edge(ResizeEdge),
-    /// Over the interior (no drag, just click-through).
-    Interior,
-}
-
 /// Hit-test a point against a floating pane's zones.
 ///
-/// Returns `None` if the point is outside the pane rect.
+/// Delegates to `oriterm_ui::interaction::resize::hit_test_floating_zone`
+/// with the floating pane's local thresholds.
 fn hit_test_zone(px: f32, py: f32, rect: &Rect) -> Option<HitZone> {
-    if !rect.contains_point(px, py) {
-        return None;
-    }
-
-    let dx_left = px - rect.x;
-    let dx_right = (rect.x + rect.width) - px;
-    let dy_top = py - rect.y;
-    let dy_bottom = (rect.y + rect.height) - py;
-
-    // Corners (highest priority).
-    if dx_left < CORNER_SIZE && dy_top < CORNER_SIZE {
-        return Some(HitZone::Edge(ResizeEdge::TopLeft));
-    }
-    if dx_right < CORNER_SIZE && dy_top < CORNER_SIZE {
-        return Some(HitZone::Edge(ResizeEdge::TopRight));
-    }
-    if dx_left < CORNER_SIZE && dy_bottom < CORNER_SIZE {
-        return Some(HitZone::Edge(ResizeEdge::BottomLeft));
-    }
-    if dx_right < CORNER_SIZE && dy_bottom < CORNER_SIZE {
-        return Some(HitZone::Edge(ResizeEdge::BottomRight));
-    }
-
-    // Edges.
-    if dx_left < EDGE_THRESHOLD {
-        return Some(HitZone::Edge(ResizeEdge::Left));
-    }
-    if dx_right < EDGE_THRESHOLD {
-        return Some(HitZone::Edge(ResizeEdge::Right));
-    }
-    if dy_top < EDGE_THRESHOLD {
-        return Some(HitZone::Edge(ResizeEdge::Top));
-    }
-    if dy_bottom < EDGE_THRESHOLD {
-        return Some(HitZone::Edge(ResizeEdge::Bottom));
-    }
-
-    // Title bar (top region excluding edges).
-    if dy_top < TITLE_BAR_HEIGHT {
-        return Some(HitZone::TitleBar);
-    }
-
-    Some(HitZone::Interior)
-}
-
-/// Map a resize edge to a cursor icon.
-fn edge_cursor(edge: ResizeEdge) -> CursorIcon {
-    match edge {
-        ResizeEdge::Top | ResizeEdge::Bottom => CursorIcon::NsResize,
-        ResizeEdge::Left | ResizeEdge::Right => CursorIcon::EwResize,
-        ResizeEdge::TopLeft | ResizeEdge::BottomRight => CursorIcon::NwseResize,
-        ResizeEdge::TopRight | ResizeEdge::BottomLeft => CursorIcon::NeswResize,
-    }
+    let rr = resize::ResizeRect {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+    };
+    resize::hit_test_floating_zone(px, py, &rr, &HIT_CFG)
 }
 
 impl App {
@@ -170,7 +109,7 @@ impl App {
 
         if let Some((_pane_id, _rect, zone)) = floating_hit {
             let icon = match zone {
-                HitZone::Edge(edge) => edge_cursor(edge),
+                HitZone::Edge(edge) => resize_cursor(edge),
                 HitZone::TitleBar => CursorIcon::Grab,
                 HitZone::Interior => CursorIcon::Default,
             };
@@ -326,7 +265,20 @@ impl App {
                 let dx = px - origin_x;
                 let dy = py - origin_y;
 
-                let (new_rect, needs_move) = compute_resize(ir, edge, dx, dy);
+                let ir_rr = resize::ResizeRect {
+                    x: ir.x,
+                    y: ir.y,
+                    width: ir.width,
+                    height: ir.height,
+                };
+                let result = resize::compute_resize(&ir_rr, edge, dx, dy, MIN_SIZE_PX);
+                let new_rect = Rect {
+                    x: result.x,
+                    y: result.y,
+                    width: result.width,
+                    height: result.height,
+                };
+                let needs_move = result.needs_move;
 
                 if let Some(tab) = self.session.get_tab_mut(tab_id) {
                     if needs_move {
@@ -392,63 +344,4 @@ enum DragInfo {
         origin_x: f32,
         origin_y: f32,
     },
-}
-
-/// Compute the new rect after a resize drag.
-///
-/// Returns `(new_rect, needs_move)`. `needs_move` is true when the drag
-/// affects the top or left edge, shifting the origin.
-fn compute_resize(initial: Rect, edge: ResizeEdge, dx: f32, dy: f32) -> (Rect, bool) {
-    let mut r = initial;
-    let mut moved = false;
-
-    match edge {
-        ResizeEdge::Right => {
-            r.width = (initial.width + dx).max(MIN_SIZE_PX);
-        }
-        ResizeEdge::Bottom => {
-            r.height = (initial.height + dy).max(MIN_SIZE_PX);
-        }
-        ResizeEdge::Left => {
-            let new_w = (initial.width - dx).max(MIN_SIZE_PX);
-            r.x = initial.x + initial.width - new_w;
-            r.width = new_w;
-            moved = true;
-        }
-        ResizeEdge::Top => {
-            let new_h = (initial.height - dy).max(MIN_SIZE_PX);
-            r.y = initial.y + initial.height - new_h;
-            r.height = new_h;
-            moved = true;
-        }
-        ResizeEdge::TopLeft => {
-            let new_w = (initial.width - dx).max(MIN_SIZE_PX);
-            let new_h = (initial.height - dy).max(MIN_SIZE_PX);
-            r.x = initial.x + initial.width - new_w;
-            r.y = initial.y + initial.height - new_h;
-            r.width = new_w;
-            r.height = new_h;
-            moved = true;
-        }
-        ResizeEdge::TopRight => {
-            r.width = (initial.width + dx).max(MIN_SIZE_PX);
-            let new_h = (initial.height - dy).max(MIN_SIZE_PX);
-            r.y = initial.y + initial.height - new_h;
-            r.height = new_h;
-            moved = true;
-        }
-        ResizeEdge::BottomLeft => {
-            let new_w = (initial.width - dx).max(MIN_SIZE_PX);
-            r.x = initial.x + initial.width - new_w;
-            r.width = new_w;
-            r.height = (initial.height + dy).max(MIN_SIZE_PX);
-            moved = true;
-        }
-        ResizeEdge::BottomRight => {
-            r.width = (initial.width + dx).max(MIN_SIZE_PX);
-            r.height = (initial.height + dy).max(MIN_SIZE_PX);
-        }
-    }
-
-    (r, moved)
 }

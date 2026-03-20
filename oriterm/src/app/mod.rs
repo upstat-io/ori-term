@@ -10,8 +10,6 @@ mod clipboard_ops;
 pub(crate) mod config_reload;
 mod constructors;
 mod context_menu;
-mod cursor_blink;
-mod cursor_hide;
 mod cursor_hover;
 pub(crate) mod dialog_context;
 mod dialog_management;
@@ -59,7 +57,6 @@ use oriterm_mux::{MarkCursor, PaneId};
 use crate::session::{SessionRegistry, WindowId as SessionWindowId};
 use crate::window_manager::WindowManager;
 
-use self::cursor_blink::CursorBlink;
 use self::dialog_context::DialogWindowContext;
 use self::event_loop_helpers::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};
 use self::keyboard_input::ImeState;
@@ -75,6 +72,7 @@ use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
 use crate::keybindings::KeyBinding;
 use oriterm_mux::MuxNotification;
 use oriterm_mux::backend::MuxBackend;
+use oriterm_ui::animation::CursorBlink;
 
 use oriterm_ui::theme::UiTheme;
 

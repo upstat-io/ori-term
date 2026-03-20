@@ -9,7 +9,6 @@ use winit::keyboard::ModifiersState;
 
 use oriterm_mux::backend::MuxBackend;
 
-use super::cursor_blink::CursorBlink;
 use super::event_loop_helpers::resolve_ui_theme;
 use super::keyboard_input::ImeState;
 use super::mouse_selection::MouseState;
@@ -22,6 +21,7 @@ use crate::event::TermEvent;
 use crate::keybindings;
 use crate::session::SessionRegistry;
 use crate::window_manager::WindowManager;
+use oriterm_ui::animation::CursorBlink;
 
 impl App {
     /// Create a new application instance in daemon mode.

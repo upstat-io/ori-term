@@ -3,8 +3,7 @@
 //! Hides the OS mouse cursor when the user types in the terminal grid,
 //! restoring it on any mouse movement. The decision logic is a pure
 //! function for testability — the actual `set_cursor_visible()` calls
-//! happen at the integration points in `event_loop.rs` and
-//! `keyboard_input/mod.rs`.
+//! happen at the integration points in the app layer.
 
 use winit::keyboard::{Key, NamedKey};
 
@@ -13,7 +12,7 @@ use winit::keyboard::{Key, NamedKey};
     clippy::struct_excessive_bools,
     reason = "state flags are naturally boolean"
 )]
-pub(crate) struct HideContext<'a> {
+pub struct HideContext<'a> {
     /// Whether `hide_mouse_when_typing` is enabled in config.
     pub config_enabled: bool,
     /// Whether the mouse cursor is already hidden.
@@ -34,7 +33,7 @@ pub(crate) struct HideContext<'a> {
 /// - The key is not a modifier-only press (Shift, Ctrl, Alt, Super).
 /// - The terminal does not have mouse reporting active.
 /// - IME composition is not in progress.
-pub(crate) fn should_hide_cursor(ctx: &HideContext<'_>) -> bool {
+pub fn should_hide_cursor(ctx: &HideContext<'_>) -> bool {
     if !ctx.config_enabled || ctx.already_hidden || ctx.mouse_reporting || ctx.ime_active {
         return false;
     }

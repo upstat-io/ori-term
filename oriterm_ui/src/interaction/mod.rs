@@ -6,9 +6,12 @@
 //! set/clear calls, then delivers `LifecycleEvent`s to notify widgets
 //! of changes.
 
+pub mod cursor_hide;
 pub mod lifecycle;
 mod manager;
+pub mod mark_mode;
 mod parent_map;
+pub mod resize;
 pub(crate) mod state;
 
 pub use crate::sense::Sense;
