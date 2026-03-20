@@ -29,7 +29,7 @@ impl App {
         let Some(ctx) = self.dialogs.get_mut(&winit_id) else {
             return;
         };
-        ctx.urgent_redraw = false;
+        ctx.root.set_urgent_redraw(false);
         if !ctx.has_surface_area() {
             return;
         }
@@ -73,9 +73,9 @@ impl App {
         }
 
         // Track animation state for phase gating on the next frame.
-        ctx.ui_stale = ctx.frame_requests.anim_frame_requested();
+        ctx.ui_stale = ctx.root.frame_requests().anim_frame_requested();
         if ctx.ui_stale {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
             ctx.window.request_redraw();
         }
     }
@@ -109,9 +109,9 @@ impl App {
         // Phase gating: compute dirty level from lifecycle events,
         // animation state, and invalidation tracker.
         let now = Instant::now();
-        let lifecycle_events = ctx.interaction.drain_events();
+        let lifecycle_events = ctx.root.interaction_mut().drain_events();
         let widget_dirty = {
-            let mut d = ctx.invalidation.max_dirty_kind();
+            let mut d = ctx.root.invalidation().max_dirty_kind();
             if !lifecycle_events.is_empty() {
                 d = d.merge(DirtyKind::Prepaint);
             }
@@ -120,43 +120,47 @@ impl App {
             }
             d
         };
-        ctx.frame_requests = oriterm_ui::animation::FrameRequestFlags::new();
+        *ctx.root.frame_requests_mut() = oriterm_ui::animation::FrameRequestFlags::new();
 
         if widget_dirty >= DirtyKind::Prepaint {
+            let (interaction, frame_requests) = ctx.root.interaction_mut_and_frame_requests();
             prepare_widget_tree(
                 &mut ctx.chrome,
-                &mut ctx.interaction,
+                interaction,
                 &lifecycle_events,
                 None,
-                Some(&ctx.frame_requests),
+                Some(frame_requests),
                 now,
             );
+            let (interaction, frame_requests) = ctx.root.interaction_mut_and_frame_requests();
             prepare_widget_tree(
                 ctx.content.content_widget_mut(),
-                &mut ctx.interaction,
+                interaction,
                 &lifecycle_events,
                 None,
-                Some(&ctx.frame_requests),
+                Some(frame_requests),
                 now,
             );
 
             // Prepaint: resolve visual state into widget fields.
             let prepaint_bounds = std::collections::HashMap::new();
+            let (interaction, frame_requests) = ctx.root.interaction_and_frame_requests();
             prepaint_widget_tree(
                 &mut ctx.chrome,
                 &prepaint_bounds,
-                Some(&ctx.interaction),
+                Some(interaction),
                 ui_theme,
                 now,
-                Some(&ctx.frame_requests),
+                Some(frame_requests),
             );
+            let (interaction, frame_requests) = ctx.root.interaction_and_frame_requests();
             prepaint_widget_tree(
                 ctx.content.content_widget_mut(),
                 &prepaint_bounds,
-                Some(&ctx.interaction),
+                Some(interaction),
                 ui_theme,
                 now,
-                Some(&ctx.frame_requests),
+                Some(frame_requests),
             );
         }
 
@@ -195,7 +199,7 @@ impl App {
         }
 
         // Compute per-widget damage for future partial repaint support.
-        ctx.damage_tracker.compute_damage(&ctx.scene);
+        ctx.root.damage_mut().compute_damage(&ctx.scene);
 
         // Convert scene to GPU instances.
         renderer.append_ui_scene_with_text(&ctx.scene, scale, 1.0, gpu);
@@ -208,7 +212,7 @@ impl App {
         ui_theme: &oriterm_ui::theme::UiTheme,
         gpu: &crate::gpu::state::GpuState,
     ) {
-        let overlay_count = ctx.overlays.draw_count();
+        let overlay_count = ctx.root.overlay_draw_count();
         if overlay_count == 0 {
             return;
         }
@@ -224,7 +228,7 @@ impl App {
                 &ctx.text_cache,
                 scale,
             );
-            ctx.overlays.layout_overlays(&measurer, ui_theme);
+            ctx.root.overlays_mut().layout_overlays(&measurer, ui_theme);
         }
 
         for i in 0..overlay_count {
@@ -246,9 +250,7 @@ impl App {
                 widget_id: None,
                 frame_requests: None,
             };
-            let opacity = ctx
-                .overlays
-                .draw_overlay_at(i, &mut overlay_draw_ctx, &ctx.layer_tree);
+            let opacity = ctx.root.draw_overlay_at(i, &mut overlay_draw_ctx);
             renderer.append_overlay_scene_with_text(&ctx.scene, scale, opacity, gpu);
         }
     }

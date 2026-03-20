@@ -18,7 +18,7 @@ sections:
     status: complete
   - id: "07.3"
     title: "WindowContext & DialogWindowContext Decomposition"
-    status: not-started
+    status: in-progress
   - id: "07.4"
     title: "Test Harness Unification"
     status: not-started
@@ -302,7 +302,7 @@ Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus pl
 
   > **Behavior change:** Adding `FocusManager` and `RenderScheduler` to `WindowContext` via `WindowRoot` is not a pure refactor — it introduces keyboard Tab navigation and animation scheduling in terminal windows for the first time. Both need explicit integration points: focus order rebuild after tab changes, scheduler wake times fed into the event loop. These must be wired in this section, not deferred.
 
-- [ ] Add `WindowRoot` field to `DialogWindowContext`, remove individual framework fields:
+- [x] Add `WindowRoot` field to `DialogWindowContext`, remove individual framework fields:
   ```rust
   // BEFORE (DialogWindowContext) — fields that move into WindowRoot:
   interaction: InteractionManager,
@@ -338,7 +338,7 @@ Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus pl
 
 - [ ] Update `WindowContext` construction sites (in `window_management.rs`, `init/mod.rs`) to create a `WindowRoot` and pass it in.
 
-- [ ] Update `DialogWindowContext` construction site (in `dialog_management.rs`) similarly.
+- [x] Update `DialogWindowContext` construction site (in `dialog_management.rs`) similarly.
 
 - [ ] Verify all pipeline calls (`prepare_widget_tree`, `deliver_event_to_tree`, etc.) now go through `WindowRoot` methods rather than being called directly with individual framework fields.
 

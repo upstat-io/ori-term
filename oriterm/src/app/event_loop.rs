@@ -411,7 +411,7 @@ impl ApplicationHandler<TermEvent> for App {
 
         // Check if any window (terminal or dialog) is dirty and render it.
         let any_dirty = self.windows.values().any(|ctx| ctx.dirty)
-            || self.dialogs.values().any(|ctx| ctx.dirty);
+            || self.dialogs.values().any(|ctx| ctx.root.is_dirty());
         let now = std::time::Instant::now();
         let urgent_redraw = self
             .windows
@@ -420,7 +420,7 @@ impl ApplicationHandler<TermEvent> for App {
             || self
                 .dialogs
                 .values()
-                .any(|ctx| ctx.dirty && ctx.urgent_redraw);
+                .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw());
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
         if any_dirty && (budget_elapsed || urgent_redraw) {
@@ -432,8 +432,8 @@ impl ApplicationHandler<TermEvent> for App {
         self.perf.maybe_log();
 
         // Decide ControlFlow via pure function (testable without winit).
-        let still_dirty =
-            self.windows.values().any(|c| c.dirty) || self.dialogs.values().any(|c| c.dirty);
+        let still_dirty = self.windows.values().any(|c| c.dirty)
+            || self.dialogs.values().any(|c| c.root.is_dirty());
         let has_animations = self
             .windows
             .values()
@@ -441,7 +441,7 @@ impl ApplicationHandler<TermEvent> for App {
             || self
                 .dialogs
                 .values()
-                .any(|c| c.layer_animator.is_any_animating());
+                .any(|c| c.root.layer_animator().is_any_animating());
         let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
         let input = ControlFlowInput {

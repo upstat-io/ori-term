@@ -91,8 +91,8 @@ impl App {
                         // with DPI even when logical bounds stay the same.
                         ctx.content.invalidate_cache();
                         ctx.text_cache.clear();
-                        ctx.invalidation.invalidate_all();
-                        ctx.damage_tracker.reset();
+                        ctx.root.invalidation_mut().invalidate_all();
+                        ctx.root.damage_mut().reset();
                         // TODO: re-rasterize UI fonts at new DPI.
                         ctx.request_urgent_redraw();
                     }
@@ -133,9 +133,7 @@ impl App {
         } else {
             let mut removed = 0;
             if let Some(ctx) = self.dialogs.get_mut(&window_id) {
-                removed = ctx
-                    .overlays
-                    .clear_popups(&mut ctx.layer_tree, &mut ctx.layer_animator);
+                removed = ctx.root.clear_popups();
                 if removed > 0 {
                     ctx.request_urgent_redraw();
                 }
@@ -216,19 +214,17 @@ impl App {
         let chrome_h = ctx.chrome.caption_height();
 
         // Route to overlay manager first (dropdown popup hover).
-        if !ctx.overlays.is_empty() {
+        if !ctx.root.overlays().is_empty() {
             let move_event = MouseEvent {
                 kind: MouseEventKind::Move,
                 pos: logical_pos,
                 modifiers: oriterm_ui::input::Modifiers::NONE,
             };
-            let result = ctx.overlays.process_mouse_event(
+            let result = ctx.root.process_overlay_mouse_event(
                 &move_event,
                 &measurer,
                 &ui_theme,
                 None,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
                 Instant::now(),
             );
             if matches!(result, OverlayEventResult::Delivered { .. }) {
@@ -292,7 +288,7 @@ impl App {
 
         // Update the InteractionManager's hot path. HotChanged lifecycle events
         // are stored internally and delivered during the next prepare_widget_tree.
-        ctx.interaction.update_hot_path(&hot_path);
+        ctx.root.interaction_mut().update_hot_path(&hot_path);
 
         // Dispatch MouseMove to content widgets for per-item hover tracking.
         if logical_pos.y >= chrome_h {
@@ -344,7 +340,7 @@ impl App {
             modifiers: oriterm_ui::input::Modifiers::NONE,
         };
         let input_event = InputEvent::from_mouse_event(&move_event);
-        let active = ctx.interaction.active_widget();
+        let active = ctx.root.interaction().active_widget();
         let now = Instant::now();
         let result = deliver_event_to_tree(
             ctx.content.content_widget_mut(),
