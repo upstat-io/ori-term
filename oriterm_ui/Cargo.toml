@@ -23,8 +23,15 @@ windows-sys = { version = "0.60", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
 [features]
 testing = []
+
+[[bench]]
+name = "scene_pipeline"
+harness = false
 
 [build-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }

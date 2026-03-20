@@ -122,6 +122,8 @@ impl App {
         };
         *ctx.root.frame_requests_mut() = oriterm_ui::animation::FrameRequestFlags::new();
 
+        log::debug!("dialog phase gating: widget_dirty={widget_dirty:?}");
+
         if widget_dirty >= DirtyKind::Prepaint {
             let (interaction, frame_requests) = ctx.root.interaction_mut_and_frame_requests();
             prepare_widget_tree(

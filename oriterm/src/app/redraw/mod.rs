@@ -274,6 +274,10 @@ impl App {
             };
             ctx.root.frame_requests_mut().reset();
 
+            log::debug!(
+                "phase gating: widget_dirty={widget_dirty:?} (Layout=full, Prepaint=hover/lifecycle, Paint=blink, Clean=skip)"
+            );
+
             if widget_dirty >= DirtyKind::Prepaint {
                 let (interaction, flags) = ctx.root.interaction_mut_and_frame_requests();
                 super::widget_pipeline::prepare_widget_tree(

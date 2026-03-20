@@ -70,6 +70,11 @@ impl App {
         };
         build_scene(tab_bar, &mut ctx);
         damage_tracker.compute_damage(scene);
+        log::debug!(
+            "damage: has_damage={}, dirty_regions={}",
+            damage_tracker.has_damage(),
+            damage_tracker.dirty_regions().len()
+        );
         let animating = frame_requests.anim_frame_requested();
 
         // Tab bar contains text — use text-aware conversion to rasterize

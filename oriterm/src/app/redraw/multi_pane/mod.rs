@@ -356,6 +356,8 @@ impl App {
                 };
                 ctx.root.frame_requests_mut().reset();
 
+                log::debug!("multi-pane phase gating: widget_dirty={widget_dirty:?}");
+
                 if widget_dirty >= oriterm_ui::invalidation::DirtyKind::Prepaint {
                     let (interaction, flags) = ctx.root.interaction_mut_and_frame_requests();
                     super::super::widget_pipeline::prepare_widget_tree(

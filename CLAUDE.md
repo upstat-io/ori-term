@@ -168,6 +168,45 @@ If you find a widget doing its own hover/press/focus tracking outside this syste
 
 ---
 
+## Widget Test Harness
+
+`WidgetTestHarness` (`oriterm_ui/src/testing/`) enables headless widget testing without GPU, display server, or platform dependencies. It wraps `WindowRoot` and provides input simulation, state inspection, and paint capture.
+
+**Running harness tests**: `cargo test -p oriterm_ui` runs all widget and harness tests. Architecture tests: `cargo test -p oriterm --test architecture`.
+
+**Writing new harness tests** (in any `tests.rs` file within `oriterm_ui`):
+```rust
+let mut h = WidgetTestHarness::new(ButtonWidget::new("OK"));
+h.mouse_move_to(center);      // Input simulation
+assert!(h.is_hot(button_id)); // State inspection
+h.click(center);              // Click helper (move + down + up)
+let scene = h.render();       // Paint capture (returns Scene)
+```
+
+Key APIs: `mouse_move()`, `mouse_down()`, `mouse_up()`, `click()`, `key_press()`, `tab()`, `shift_tab()`, `scroll()`, `drag()`, `type_text()`, `advance_time()`, `render()`, `is_hot()`, `is_active()`, `is_focused()`, `interaction_state()`, `get_widget()`, `all_widget_ids()`, `widgets_with_sense()`, `push_popup()`, `has_overlays()`, `dismiss_overlays()`.
+
+---
+
+## Action & Keymap System
+
+Actions are typed enums declared by widgets. Keybindings are data (not code) that map keystrokes to actions. Dispatch routes through context-scoped focus path.
+
+**Declaring an action** (in `oriterm_ui/src/action/keymap_action/mod.rs`):
+```rust
+actions!(widget, [Activate, Dismiss, NavigateDown, NavigateUp, Confirm]);
+```
+
+**Adding a keybinding** (in `oriterm_ui/src/action/keymap/defaults.rs`):
+```rust
+KeyBinding::new(Keystroke::new(Key::Enter), None, Box::new(widget::Activate))
+```
+
+**Context scoping**: Widgets return `key_context() -> Option<&'static str>` (e.g., `"Button"`, `"Dropdown"`). Bindings match only when the focused widget's context stack includes the binding's context.
+
+**Widget integration**: Implement `handle_keymap_action(&mut self, action: &dyn KeymapAction) -> Option<WidgetAction>` to receive dispatched actions.
+
+---
+
 ## Current State
 
 See [plans/roadmap/](plans/roadmap/) — the roadmap is the current state. 28 sections, 8 tiers. Use `/continue-roadmap` to resume work. Old prototype in `_old/` for reference.
