@@ -180,9 +180,9 @@ Phase 3 — Verification
 | 05 Action/Keymap System | ~900 | 5 | ~150 | Medium | -- |
 | 07 WindowRoot Extraction | ~500 | 4 | ~300 | High | 01 |
 | 08 Pure Logic Migration | ~475 moved, ~395 restructured | 12 | ~200 | Medium | 07 |
-| 09 Boundary Enforcement | ~200 | 4 | ~150 | Low | 07, 08 |
-| 06 Verification | ~600 | -- | -- | Medium | 01-09 |
-| **Total new** | **~5020** | | | | |
+| 09 Boundary Enforcement | ~450 | 4 | ~250 | Low | 07, 08 |
+| 06 Verification | ~600 | 4-5 new/modified | ~150 | Medium | 01-09 |
+| **Total new** | **~5120** | | | | |
 | **Total deleted/moved** | **~875** | | | | |
 
 ## Quick Reference
@@ -197,4 +197,4 @@ Phase 3 — Verification
 | 06 | Verification | `section-06-verification.md` | Not Started |
 | 07 | WindowRoot Extraction | `section-07-window-root.md` | Complete |
 | 08 | Pure Logic Migration | `section-08-pure-logic-migration.md` | Complete |
-| 09 | Boundary Enforcement | `section-09-boundary-enforcement.md` | Not Started |
+| 09 | Boundary Enforcement | `section-09-boundary-enforcement.md` | Complete |

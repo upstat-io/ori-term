@@ -107,7 +107,7 @@ GPUI Element request_layout prepaint paint
 action, keymap, keybinding, keyboard shortcut, rebind
 KeymapAction, Keystroke, KeyBinding, KeyContext, boxed_clone
 context scoping, focus path, build_context_stack, key_context
-Widget::key_context, Widget::handle_keymap_action, find_widget_mut
+Widget::key_context, Widget::handle_keymap_action, dispatch_keymap_action
 runtime rebinding, macro recording, accessibility
 controller migration, KeyActivationController, DropdownKeyController
 MenuKeyController, SliderKeyController, TextEditController, FocusController
@@ -124,10 +124,17 @@ GPUI key_dispatch, DispatchTree, actions! macro
 **File:** `section-06-verification.md` | **Status:** Not Started
 
 ```
-verification, test matrix, performance validation
-context capability audit, LayoutCtx, DrawCtx, PrepaintCtx
-documentation, CLAUDE.md update
-frame time, idle CPU, damage tracking benefit
+verification, test matrix, performance validation, integration test
+context capability audit, LayoutCtx, DrawCtx, PrepaintCtx, EventCtx, LifecycleCtx, AnimCtx
+documentation, CLAUDE.md update, module doc comments, crate-boundaries.md
+frame time, idle CPU, damage tracking benefit, layout caching benefit
+allocation regression, scene alloc test, zero alloc, global allocator
+buffer shrink, maybe_shrink, Scene, DamageTracker
+instance buffer, 96 bytes, GPU upload
+Criterion benchmark, scene_convert, build_scene, convert_scene
+shader clipping, manual verification, visual regression
+build gates, test-all, clippy-all, build-all, dead code, 500-line limit
+completion checklist, exit criteria
 ```
 
 ---
@@ -177,15 +184,19 @@ test split, motion tests, dispatch tests, audit completeness
 ---
 
 ### Section 09: Architectural Boundary Enforcement
-**File:** `section-09-boundary-enforcement.md` | **Status:** Not Started
+**File:** `section-09-boundary-enforcement.md` | **Status:** Complete
 
 ```
 boundary enforcement, crate boundaries, architectural test
 crate responsibility, ownership rules, litmus test
 oriterm thin shell, oriterm_ui framework
-GPU-free test, headless test, platform-free
-architecture.rs, boundary validation
-CLAUDE.md update, impl-hygiene update
+oriterm_core independence, oriterm_mux boundary, oriterm_ipc standalone
+dependency direction, allowed dependency graph, upstream deps
+GPU-free test, headless test, platform-free, no wgpu
+architecture.rs, boundary validation, dep_names helper
+Cargo.toml section-aware parsing, dependency validation
+code review checklist, semantic boundary, structural violation
+CLAUDE.md update, impl-hygiene update, Key Paths update
 crate-boundaries.md, rules file
 drift prevention, regression guardrail
 ```
