@@ -160,6 +160,10 @@ Phase 5 - Integration & Verification
 | Empty prepaint_bounds in compose_dialog_widgets | `HashMap::new()` instead of populated bounds map | Section 03.3b | Not Started |
 | Empty prepaint_bounds in redraw/mod.rs | Same bug as above, also in main window tab bar rendering | Section 03.3b | Not Started |
 | Empty prepaint_bounds in redraw/multi_pane/mod.rs | Same bug as above, also in multi-pane tab bar rendering | Section 03.3b | Not Started |
+| MouseMove handler drops controller actions | `dispatch_dialog_content_move` dispatched events but dropped `result.actions` (DragUpdate/ValueChanged) and didn't call `apply_dispatch_requests` | Fixed in current session | Fixed |
+| Slider/toggle hit areas too small | No `interact_radius` on toggle (40x22) or slider layouts | Fixed in current session | Fixed |
+| Stale layout cache after page switch | `cached_layout` not invalidated after `accept_action(Selected)` | Fixed in current session | Fixed |
+| ContainerWidget::accept_action short-circuits | `Iterator::any()` stopped at first handler, preventing PageContainer from seeing Selected | Fixed in current session | Fixed |
 
 ## Quick Reference
 
