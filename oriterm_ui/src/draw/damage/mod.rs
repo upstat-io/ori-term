@@ -12,6 +12,7 @@ use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::widget_id::WidgetId;
 
+use super::maybe_shrink_vec;
 use hash_primitives::hash_scene_widget;
 
 /// Per-widget frame state for damage comparison.
@@ -30,6 +31,7 @@ struct WidgetFrameState {
 pub struct DamageTracker {
     dirty_regions: Vec<Rect>,
     merge_scratch: Vec<Rect>,
+    merge_used: Vec<bool>,
     prev_state: HashMap<WidgetId, WidgetFrameState>,
     current_scratch: HashMap<WidgetId, WidgetFrameState>,
     first_frame: bool,
@@ -42,6 +44,7 @@ impl DamageTracker {
         Self {
             dirty_regions: Vec::new(),
             merge_scratch: Vec::new(),
+            merge_used: Vec::new(),
             prev_state: HashMap::new(),
             current_scratch: HashMap::new(),
             first_frame: true,
@@ -125,9 +128,19 @@ impl DamageTracker {
     /// Call this after resize, theme change, font change, or scale change.
     pub fn reset(&mut self) {
         self.dirty_regions.clear();
+        self.merge_used.clear();
         self.prev_state.clear();
         self.current_scratch.clear();
         self.first_frame = true;
+    }
+
+    /// Shrinks internal buffers if capacity vastly exceeds usage.
+    ///
+    /// Applies the standard threshold: shrink when capacity > 4x len and > 4096.
+    pub fn maybe_shrink(&mut self) {
+        maybe_shrink_vec(&mut self.dirty_regions);
+        maybe_shrink_vec(&mut self.merge_scratch);
+        maybe_shrink_vec(&mut self.merge_used);
     }
 }
 
@@ -158,10 +171,6 @@ fn full_scene_bounds(scene: &Scene) -> Option<Rect> {
 
 impl DamageTracker {
     /// Greedy merge of overlapping dirty rects using pre-allocated scratch.
-    #[expect(
-        clippy::needless_range_loop,
-        reason = "parallel indexing of `used` and `self.dirty_regions` — iterators don't help"
-    )]
     fn merge_overlapping(&mut self) {
         if self.dirty_regions.len() <= 1 {
             return;
@@ -170,20 +179,23 @@ impl DamageTracker {
         loop {
             self.merge_scratch.clear();
             let mut merged_any = false;
-            let mut used = vec![false; self.dirty_regions.len()];
+
+            // Reuse the bool scratch buffer instead of allocating each call.
+            self.merge_used.clear();
+            self.merge_used.resize(self.dirty_regions.len(), false);
 
             for i in 0..self.dirty_regions.len() {
-                if used[i] {
+                if self.merge_used[i] {
                     continue;
                 }
                 let mut r = self.dirty_regions[i];
                 for j in (i + 1)..self.dirty_regions.len() {
-                    if used[j] {
+                    if self.merge_used[j] {
                         continue;
                     }
                     if r.intersects(self.dirty_regions[j]) {
                         r = r.union(self.dirty_regions[j]);
-                        used[j] = true;
+                        self.merge_used[j] = true;
                         merged_any = true;
                     }
                 }

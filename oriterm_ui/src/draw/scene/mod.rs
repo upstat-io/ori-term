@@ -12,6 +12,7 @@ mod stacks;
 pub use content_mask::ContentMask;
 pub use primitives::{IconPrimitive, ImagePrimitive, LinePrimitive, Quad, TextRun};
 
+use super::maybe_shrink_vec;
 use crate::color::Color;
 use crate::geometry::Rect;
 use crate::widget_id::WidgetId;
@@ -112,6 +113,17 @@ impl Scene {
             + self.lines.len()
             + self.icons.len()
             + self.images.len()
+    }
+
+    /// Shrinks internal buffers if capacity vastly exceeds usage.
+    ///
+    /// Applies the standard threshold: shrink when capacity > 4x len and > 4096.
+    pub fn maybe_shrink(&mut self) {
+        maybe_shrink_vec(&mut self.quads);
+        maybe_shrink_vec(&mut self.text_runs);
+        maybe_shrink_vec(&mut self.lines);
+        maybe_shrink_vec(&mut self.icons);
+        maybe_shrink_vec(&mut self.images);
     }
 
     /// Clears all primitives and resets stacks, retaining allocated memory.

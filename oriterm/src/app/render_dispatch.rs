@@ -73,11 +73,14 @@ impl App {
             if let Some(renderer) = ctx.renderer.as_mut() {
                 renderer.maybe_shrink_buffers();
             }
+            ctx.chrome_scene.maybe_shrink();
+            ctx.root.damage_mut().maybe_shrink();
         }
         for ctx in self.dialogs.values_mut() {
             if let Some(renderer) = ctx.renderer.as_mut() {
                 renderer.maybe_shrink_buffers();
             }
+            ctx.root.damage_mut().maybe_shrink();
         }
         if let Some(mux) = self.mux.as_mut() {
             mux.maybe_shrink_renderable_caches();

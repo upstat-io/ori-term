@@ -1919,6 +1919,7 @@ dependencies = [
 name = "oriterm_ui"
 version = "0.2.0-alpha.20260314"
 dependencies = [
+ "criterion",
  "image",
  "log",
  "oriterm_core",
