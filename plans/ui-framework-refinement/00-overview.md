@@ -108,7 +108,7 @@ GPUI collects paint primitives into typed arrays (quads, text, paths) with per-p
        (depends on 01 — extracts from test harness)         │
                                                             │
   08 Pure Logic Migration ──────────────────────────────────┤
-       (depends on 07 — WindowRoot is the target)           │
+       (soft dep on 07 — migrate after boundary is set)     │
                                                             │
   09 Boundary Enforcement ──────────────────────────────────┤
        (depends on 07, 08 — enforces what they establish)   │
@@ -122,7 +122,7 @@ GPUI collects paint primitives into typed arrays (quads, text, paths) with per-p
 - Sections 01, 02, 03, 04, 05 are **parallelizable** after 01.2a (with 03 before 04 recommended).
 - Section 05 is **fully independent** — no dependency on 01.2a or any other section.
 - **Section 07 depends on 01** — WindowRoot extracts from the test harness pattern established in 01.
-- **Section 08 depends on 07** — migrated logic integrates with WindowRoot.
+- **Section 08 softly depends on 07** — pure logic migrates to `oriterm_ui` after WindowRoot establishes the architectural boundary between `oriterm_ui` and `oriterm`, avoiding rework.
 - **Section 09 depends on 07 + 08** — enforces the boundaries they establish.
 - Section 06 requires all prior sections (updated to include 07-09).
 
@@ -193,8 +193,8 @@ Phase 3 — Verification
 | 02 | Safety Rails | `section-02-safety-rails.md` | Complete |
 | 03 | Scene Architecture | `section-03-scene-abstraction.md` | Complete |
 | 04 | Prepaint Phase | `section-04-prepaint-phase.md` | Complete |
-| 05 | Action/Keymap System | `section-05-action-keymap.md` | Not Started |
+| 05 | Action/Keymap System | `section-05-action-keymap.md` | Complete |
 | 06 | Verification | `section-06-verification.md` | Not Started |
-| 07 | WindowRoot Extraction | `section-07-window-root.md` | Not Started |
-| 08 | Pure Logic Migration | `section-08-pure-logic-migration.md` | Not Started |
+| 07 | WindowRoot Extraction | `section-07-window-root.md` | Complete |
+| 08 | Pure Logic Migration | `section-08-pure-logic-migration.md` | Complete |
 | 09 | Boundary Enforcement | `section-09-boundary-enforcement.md` | Not Started |

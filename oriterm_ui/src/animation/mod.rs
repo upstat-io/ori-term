@@ -7,6 +7,7 @@
 pub mod anim_frame;
 pub mod behavior;
 pub mod builder;
+pub mod cursor_blink;
 pub mod delegate;
 pub mod group;
 pub mod property;
@@ -18,6 +19,7 @@ pub mod transaction;
 pub use anim_frame::{AnimFrameEvent, FrameRequestFlags};
 pub use behavior::{AnimBehavior, AnimCurve};
 pub use builder::AnimationBuilder;
+pub use cursor_blink::CursorBlink;
 pub use delegate::{AnimatableProperty, AnimationDelegate};
 pub use group::{AnimationGroup, PropertyAnimation, TransitionTarget};
 pub use property::AnimProperty;
