@@ -97,7 +97,7 @@ impl App {
     ) -> Option<OverlayEventResult> {
         let ui_theme = self.ui_theme;
         let ctx = self.dialogs.get_mut(&window_id)?;
-        if ctx.overlays.is_empty() {
+        if !ctx.root.has_overlays() {
             return None;
         }
         let scale = ctx.scale_factor.factor() as f32;
@@ -112,13 +112,11 @@ impl App {
             pos: ctx.last_cursor_pos,
             modifiers: oriterm_ui::input::Modifiers::NONE,
         };
-        let result = ctx.overlays.process_mouse_event(
+        let result = ctx.root.process_overlay_mouse_event(
             &mouse_event,
             &measurer,
             &ui_theme,
             None,
-            &mut ctx.layer_tree,
-            &mut ctx.layer_animator,
             Instant::now(),
         );
         match &result {
@@ -142,7 +140,6 @@ impl App {
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return DialogClickResult::None;
         };
-        let scale = ctx.scale_factor.factor() as f32;
         let logical_pos = ctx.last_cursor_pos;
         let chrome_h = ctx.chrome.caption_height();
         let mouse_event = MouseEvent {
@@ -158,12 +155,8 @@ impl App {
             let result = ctx.chrome.dispatch_input(&input_event, now);
 
             // Apply interaction state changes (active/focus).
-            apply_dispatch_requests(
-                result.requests,
-                result.source,
-                &mut ctx.interaction,
-                &mut ctx.focus,
-            );
+            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+            apply_dispatch_requests(result.requests, result.source, interaction, focus);
 
             if result.requests.contains(ControllerRequests::PAINT) {
                 ctx.request_urgent_redraw();
@@ -195,65 +188,70 @@ impl App {
                 DialogClickResult::None
             }
         } else {
-            // Content area: dispatch through the controller pipeline.
-            let w = ctx.surface_config.width as f32 / scale;
-            let h = ctx.surface_config.height as f32 / scale;
-            let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-            let local_viewport =
-                Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-            let Some(layout_node) = cached_content_layout(ctx, scale, &ui_theme, local_viewport)
-            else {
-                return DialogClickResult::None;
-            };
+            Self::dispatch_dialog_content_click(ctx, &mouse_event, &ui_theme, now)
+        }
+    }
+
+    /// Dispatch a click within the dialog content area (below chrome).
+    fn dispatch_dialog_content_click(
+        ctx: &mut DialogWindowContext,
+        mouse_event: &MouseEvent,
+        ui_theme: &oriterm_ui::theme::UiTheme,
+        now: Instant,
+    ) -> DialogClickResult {
+        let scale = ctx.scale_factor.factor() as f32;
+        let chrome_h = ctx.chrome.caption_height();
+        let w = ctx.surface_config.width as f32 / scale;
+        let h = ctx.surface_config.height as f32 / scale;
+        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
+        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+        let Some(layout_node) = cached_content_layout(ctx, scale, ui_theme, local_viewport) else {
+            return DialogClickResult::None;
+        };
+        #[cfg(debug_assertions)]
+        let layout_ids = {
+            let mut ids = std::collections::HashSet::new();
+            oriterm_ui::pipeline::collect_layout_widget_ids(&layout_node, &mut ids);
+            ids
+        };
+        let input_event = InputEvent::from_mouse_event(mouse_event);
+        let active = ctx.root.interaction().active_widget();
+        let result = deliver_event_to_tree(
+            ctx.content.content_widget_mut(),
+            &input_event,
+            content_bounds,
+            Some(&layout_node),
+            active,
+            &[],
+            now,
             #[cfg(debug_assertions)]
-            let layout_ids = {
-                let mut ids = std::collections::HashSet::new();
-                oriterm_ui::pipeline::collect_layout_widget_ids(&layout_node, &mut ids);
-                ids
-            };
-            let input_event = InputEvent::from_mouse_event(&mouse_event);
-            let active = ctx.interaction.active_widget();
-            let result = deliver_event_to_tree(
-                ctx.content.content_widget_mut(),
-                &input_event,
-                content_bounds,
-                Some(&layout_node),
-                active,
-                &[],
-                now,
-                #[cfg(debug_assertions)]
-                Some(&layout_ids),
-                #[cfg(not(debug_assertions))]
-                None,
-            );
+            Some(&layout_ids),
+            #[cfg(not(debug_assertions))]
+            None,
+        );
 
-            // Apply interaction state changes.
-            apply_dispatch_requests(
-                result.requests,
-                result.source,
-                &mut ctx.interaction,
-                &mut ctx.focus,
-            );
+        // Apply interaction state changes.
+        let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+        apply_dispatch_requests(result.requests, result.source, interaction, focus);
 
-            if result.requests.contains(ControllerRequests::PAINT) {
-                ctx.request_urgent_redraw();
+        if result.requests.contains(ControllerRequests::PAINT) {
+            ctx.request_urgent_redraw();
+        }
+
+        // Transform Clicked(id) through the content widget's on_action
+        // (e.g., SettingsPanel maps Clicked(save_id) -> SaveSettings).
+        // Other actions (OpenDropdown, Toggled, etc.) pass through unchanged.
+        match result.actions.into_iter().next() {
+            Some(WidgetAction::Clicked(id)) => {
+                let action = ctx
+                    .content
+                    .content_widget_mut()
+                    .on_action(WidgetAction::Clicked(id), content_bounds)
+                    .unwrap_or(WidgetAction::Clicked(id));
+                DialogClickResult::Action(action)
             }
-
-            // Transform Clicked(id) through the content widget's on_action
-            // (e.g., SettingsPanel maps Clicked(save_id) → SaveSettings).
-            // Other actions (OpenDropdown, Toggled, etc.) pass through unchanged.
-            match result.actions.into_iter().next() {
-                Some(WidgetAction::Clicked(id)) => {
-                    let action = ctx
-                        .content
-                        .content_widget_mut()
-                        .on_action(WidgetAction::Clicked(id), content_bounds)
-                        .unwrap_or(WidgetAction::Clicked(id));
-                    DialogClickResult::Action(action)
-                }
-                Some(action) => DialogClickResult::Action(action),
-                None => DialogClickResult::None,
-            }
+            Some(action) => DialogClickResult::Action(action),
+            None => DialogClickResult::None,
         }
     }
 
@@ -314,7 +312,7 @@ impl App {
         };
         let input_event = InputEvent::from_mouse_event(&mouse_event);
         let now = Instant::now();
-        let active = ctx.interaction.active_widget();
+        let active = ctx.root.interaction().active_widget();
         let result = deliver_event_to_tree(
             ctx.content.content_widget_mut(),
             &input_event,
@@ -328,18 +326,14 @@ impl App {
             #[cfg(not(debug_assertions))]
             None,
         );
-        apply_dispatch_requests(
-            result.requests,
-            result.source,
-            &mut ctx.interaction,
-            &mut ctx.focus,
-        );
+        let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+        apply_dispatch_requests(result.requests, result.source, interaction, focus);
         if result.handled {
             // Scroll offset changed — invalidate cached layout and scene
             // cache so the next render repaints scrolled content.
             ctx.cached_layout = None;
-            ctx.invalidation.invalidate_all();
-            ctx.damage_tracker.reset();
+            ctx.root.invalidation_mut().invalidate_all();
+            ctx.root.damage_mut().reset();
             ctx.request_urgent_redraw();
         }
     }

@@ -200,13 +200,8 @@ impl App {
         }
         let now = std::time::Instant::now();
         for ctx in self.dialogs.values_mut() {
-            if ctx.layer_animator.is_any_animating() {
-                let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
-                ctx.overlays
-                    .cleanup_dismissed(&mut ctx.layer_tree, &ctx.layer_animator);
-                if animating {
-                    ctx.dirty = true;
-                }
+            if ctx.root.tick_overlay_animations(now) {
+                ctx.root.mark_dirty();
             }
         }
     }

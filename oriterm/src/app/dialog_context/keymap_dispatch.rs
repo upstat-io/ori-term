@@ -35,8 +35,8 @@ pub(super) fn dispatch_dialog_key_event(
 ) -> TreeDispatchResult {
     if let InputEvent::KeyDown { key, modifiers } = *input_event {
         let keystroke = Keystroke::new(key, modifiers);
-        let context_stack = build_context_stack(&ctx.key_contexts, focus_path);
-        if let Some(action) = ctx.keymap.lookup(keystroke, &context_stack) {
+        let context_stack = build_context_stack(ctx.root.key_contexts(), focus_path);
+        if let Some(action) = ctx.root.keymap().lookup(keystroke, &context_stack) {
             let mut r = TreeDispatchResult::new();
             r.handled = true;
             match action.name() {
@@ -62,7 +62,7 @@ pub(super) fn dispatch_dialog_key_event(
                     }
                 }
             }
-            ctx.last_keymap_handled = Some(key);
+            ctx.root.set_last_keymap_handled(Some(key));
             return r;
         }
     }

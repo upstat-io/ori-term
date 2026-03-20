@@ -13,17 +13,8 @@ use std::sync::Arc;
 
 use winit::window::Window;
 
-use std::collections::HashMap;
-
-use oriterm_ui::action::Keymap;
-use oriterm_ui::compositor::layer_animator::LayerAnimator;
-use oriterm_ui::compositor::layer_tree::LayerTree;
-use oriterm_ui::draw::{DamageTracker, Scene};
-use oriterm_ui::focus::FocusManager;
+use oriterm_ui::draw::Scene;
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::interaction::InteractionManager;
-use oriterm_ui::invalidation::InvalidationTracker;
-use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::scale::ScaleFactor;
 use oriterm_ui::surface::{DamageSet, RenderStrategy, SurfaceLifecycle};
 use oriterm_ui::widgets::Widget;
@@ -55,12 +46,8 @@ pub(crate) struct DialogWindowContext {
     pub(super) content: DialogContent,
     /// Dialog title bar with close button only (dialog chrome mode).
     pub(super) chrome: WindowChromeWidget,
-    /// Overlay manager for popups within the dialog (e.g. dropdowns).
-    pub(super) overlays: OverlayManager,
-    /// Compositor layer tree for overlay animations.
-    pub(super) layer_tree: LayerTree,
-    /// Compositor layer animator for overlay fade transitions.
-    pub(super) layer_animator: LayerAnimator,
+    /// Pure UI framework state (interaction, focus, overlays, compositor, keymap, animation).
+    pub(super) root: oriterm_ui::window_root::WindowRoot,
     /// Text shaping cache (persists across frames for cached UI text measurer).
     pub(super) text_cache: TextShapeCache,
     /// Scratch scene for rendering the dialog frame.
@@ -69,10 +56,6 @@ pub(crate) struct DialogWindowContext {
     pub(super) scale_factor: ScaleFactor,
     /// Last cursor position in logical pixels (for mouse click handlers).
     pub(super) last_cursor_pos: oriterm_ui::geometry::Point,
-    /// Per-widget invalidation tracker.
-    pub(super) invalidation: InvalidationTracker,
-    /// Per-widget damage tracker (scene diffing for future partial repaints).
-    pub(super) damage_tracker: DamageTracker,
     // Surface strategy, damage tracking, and lifecycle.
     #[expect(
         dead_code,
@@ -87,23 +70,6 @@ pub(crate) struct DialogWindowContext {
     /// Lifecycle state for framework-managed visibility transitions.
     pub(super) lifecycle: SurfaceLifecycle,
 
-    /// Framework-managed widget interaction state for this dialog.
-    pub(super) interaction: InteractionManager,
-    /// Focus manager for keyboard navigation in this dialog.
-    pub(super) focus: FocusManager,
-    /// Per-frame animation request flags for widget hover/press transitions.
-    pub(super) frame_requests: oriterm_ui::animation::FrameRequestFlags,
-    /// Keymap for widget-level action dispatch.
-    pub(super) keymap: Keymap,
-    /// Per-widget key context tags for keymap scope gating.
-    pub(super) key_contexts: HashMap<oriterm_ui::widget_id::WidgetId, &'static str>,
-    /// Last key handled by keymap (for `KeyUp` suppression).
-    pub(super) last_keymap_handled: Option<oriterm_ui::input::Key>,
-
-    /// Whether this dialog needs a redraw.
-    pub(super) dirty: bool,
-    /// Whether this dialog should bypass the normal frame budget once.
-    pub(super) urgent_redraw: bool,
     /// Whether the previous frame had widget animations in progress.
     /// Used for phase gating: when true, prepare + prepaint must run.
     pub(super) ui_stale: bool,
@@ -205,26 +171,17 @@ impl DialogWindowContext {
             kind,
             content,
             chrome,
-            overlays: OverlayManager::new(viewport),
-            layer_tree: LayerTree::new(viewport),
-            layer_animator: LayerAnimator::new(),
+            root: oriterm_ui::window_root::WindowRoot::with_viewport(
+                oriterm_ui::widgets::label::LabelWidget::new(""),
+                viewport,
+            ),
             text_cache: TextShapeCache::new(),
             scene: Scene::new(),
-            invalidation: InvalidationTracker::new(),
-            damage_tracker: DamageTracker::new(),
             scale_factor,
             last_cursor_pos: oriterm_ui::geometry::Point::new(0.0, 0.0),
             render_strategy: RenderStrategy::UiRetained,
             damage: DamageSet::default(),
-            interaction: InteractionManager::new(),
-            focus: FocusManager::new(),
-            frame_requests: oriterm_ui::animation::FrameRequestFlags::new(),
-            keymap: Keymap::defaults(),
-            key_contexts: HashMap::new(),
-            last_keymap_handled: None,
             lifecycle: SurfaceLifecycle::CreatedHidden,
-            dirty: true,
-            urgent_redraw: false,
             ui_stale: true,
             cached_layout: None,
         }
@@ -242,18 +199,18 @@ impl DialogWindowContext {
         self.chrome.set_window_width(logical_w);
         let logical_w = w as f32 / scale;
         let logical_h = h as f32 / scale;
-        self.overlays
+        self.root
             .set_viewport(Rect::new(0.0, 0.0, logical_w, logical_h));
-        self.invalidation.invalidate_all();
-        self.damage_tracker.reset();
+        self.root.invalidation_mut().invalidate_all();
+        self.root.damage_mut().reset();
         self.cached_layout = None;
-        self.dirty = true;
+        self.root.mark_dirty();
     }
 
     /// Schedule an immediate redraw for latency-sensitive UI feedback.
     pub(super) fn request_urgent_redraw(&mut self) {
-        self.dirty = true;
-        self.urgent_redraw = true;
+        self.root.mark_dirty();
+        self.root.set_urgent_redraw(true);
     }
 
     /// Whether this dialog has a non-zero surface area for rendering.

@@ -50,18 +50,18 @@ impl App {
         self.scratch_dirty_windows.extend(
             self.dialogs
                 .iter()
-                .filter(|(_, ctx)| ctx.dirty)
+                .filter(|(_, ctx)| ctx.root.is_dirty())
                 .map(|(&id, _)| id),
         );
         for i in 0..self.scratch_dirty_windows.len() {
             let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.dialogs.get_mut(&wid) {
-                ctx.dirty = false;
+                ctx.root.clear_dirty();
             }
             self.render_dialog(wid);
             // Clear invalidation after render so build_scene sees dirty widgets.
             if let Some(ctx) = self.dialogs.get_mut(&wid) {
-                ctx.invalidation.clear();
+                ctx.root.invalidation_mut().clear();
             }
         }
 

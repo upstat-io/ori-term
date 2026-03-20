@@ -123,7 +123,7 @@ impl App {
             "Settings"
         };
         ctx.window.set_title(title);
-        ctx.dirty = true;
+        ctx.root.mark_dirty();
     }
 
     /// Dispatch a settings widget action to update the pending config.
@@ -210,14 +210,8 @@ impl App {
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
-        ctx.overlays.replace_popup(
-            Box::new(widget),
-            anchor,
-            Placement::BelowFlush,
-            &mut ctx.layer_tree,
-            &mut ctx.layer_animator,
-            now,
-        );
+        ctx.root
+            .replace_popup(Box::new(widget), anchor, Placement::BelowFlush, now);
         ctx.request_urgent_redraw();
     }
 
@@ -254,15 +248,14 @@ impl App {
     pub(in crate::app) fn dialog_has_overlay(&self, window_id: WindowId) -> bool {
         self.dialogs
             .get(&window_id)
-            .is_some_and(|ctx| !ctx.overlays.is_empty())
+            .is_some_and(|ctx| ctx.root.has_overlays())
     }
 
     /// Dismiss the topmost overlay in a dialog window.
     pub(in crate::app) fn dismiss_dialog_overlay(&mut self, window_id: WindowId) {
         let now = Instant::now();
         if let Some(ctx) = self.dialogs.get_mut(&window_id) {
-            ctx.overlays
-                .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
+            ctx.root.dismiss_topmost(now);
             ctx.request_urgent_redraw();
         }
         self.pending_dropdown_id = None;
@@ -338,11 +331,11 @@ impl App {
 
         // Update parent map and focus order from the current layout.
         let parent_map = build_parent_map(&layout_node);
-        ctx.interaction.set_parent_map(parent_map);
+        ctx.root.interaction_mut().set_parent_map(parent_map);
 
         let mut focusable = Vec::new();
         collect_focusable_ids(ctx.content.content_widget_mut(), &mut focusable);
-        ctx.focus.set_focus_order(focusable);
+        ctx.root.focus_mut().set_focus_order(focusable);
 
         #[cfg(debug_assertions)]
         let layout_ids = {
@@ -352,8 +345,8 @@ impl App {
         };
 
         // Build focus path for keyboard routing.
-        let focus_path = ctx.interaction.focus_ancestor_path();
-        let active = ctx.interaction.active_widget();
+        let focus_path = ctx.root.interaction().focus_ancestor_path();
+        let active = ctx.root.interaction().active_widget();
         let now = Instant::now();
 
         // Dispatch via keymap (for KeyDown) or fall through to controllers.
@@ -370,12 +363,8 @@ impl App {
         );
 
         // Apply interaction state changes (focus cycling, active).
-        apply_dispatch_requests(
-            result.requests,
-            result.source,
-            &mut ctx.interaction,
-            &mut ctx.focus,
-        );
+        let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+        apply_dispatch_requests(result.requests, result.source, interaction, focus);
 
         if result.requests.contains(ControllerRequests::PAINT) {
             ctx.request_urgent_redraw();
@@ -404,7 +393,7 @@ impl App {
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
-        ctx.interaction.update_hot_path(&[]);
+        ctx.root.interaction_mut().update_hot_path(&[]);
         ctx.request_urgent_redraw();
     }
 
@@ -429,20 +418,23 @@ impl App {
         );
 
         // Register all widgets (chrome + content) with InteractionManager.
-        crate::app::widget_pipeline::register_widget_tree(&mut ctx.chrome, &mut ctx.interaction);
+        crate::app::widget_pipeline::register_widget_tree(
+            &mut ctx.chrome,
+            ctx.root.interaction_mut(),
+        );
         crate::app::widget_pipeline::register_widget_tree(
             ctx.content.content_widget_mut(),
-            &mut ctx.interaction,
+            ctx.root.interaction_mut(),
         );
         // Drain registration lifecycle events (WidgetAdded).
-        let _ = ctx.interaction.drain_events();
+        let _ = ctx.root.interaction_mut().drain_events();
 
         // Collect key contexts for keymap scope gating.
-        ctx.key_contexts.clear();
-        oriterm_ui::action::collect_key_contexts(&mut ctx.chrome, &mut ctx.key_contexts);
+        ctx.root.key_contexts_mut().clear();
+        oriterm_ui::action::collect_key_contexts(&mut ctx.chrome, ctx.root.key_contexts_mut());
         oriterm_ui::action::collect_key_contexts(
             ctx.content.content_widget_mut(),
-            &mut ctx.key_contexts,
+            ctx.root.key_contexts_mut(),
         );
 
         // Compute layout and build parent map.
@@ -457,7 +449,7 @@ impl App {
         let local_viewport = Rect::new(0.0, 0.0, w, h - chrome_h);
         let layout_node = compute_layout(&layout_box, local_viewport);
         let parent_map = build_parent_map(&layout_node);
-        ctx.interaction.set_parent_map(parent_map);
+        ctx.root.interaction_mut().set_parent_map(parent_map);
 
         // Collect focusable widgets and set tab order.
         let mut focusable = Vec::new();
@@ -465,11 +457,12 @@ impl App {
 
         // Set initial focus on the first focusable widget (typically OK button).
         let initial_focus = focusable.first().copied();
-        ctx.focus.set_focus_order(focusable);
+        ctx.root.focus_mut().set_focus_order(focusable);
         if let Some(id) = initial_focus {
-            ctx.interaction.request_focus(id, &mut ctx.focus);
+            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+            interaction.request_focus(id, focus);
             // Drain focus lifecycle events.
-            let _ = ctx.interaction.drain_events();
+            let _ = interaction.drain_events();
         }
     }
 }
