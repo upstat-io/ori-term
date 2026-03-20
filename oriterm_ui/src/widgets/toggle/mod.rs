@@ -227,7 +227,12 @@ impl Widget for ToggleWidget {
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
-        LayoutBox::leaf(self.style.width, self.style.height).with_widget_id(self.id)
+        // Expand hit area so users don't need pixel-perfect aim on the
+        // small 40x22 toggle. The radius extends the clickable zone by
+        // 8px in each direction without affecting visual bounds.
+        LayoutBox::leaf(self.style.width, self.style.height)
+            .with_widget_id(self.id)
+            .with_interact_radius(8.0)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {

@@ -12,6 +12,7 @@ use oriterm_ui::geometry::Rect;
 use oriterm_ui::interaction::build_parent_map;
 use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayEventResult;
+use oriterm_ui::widgets::settings_panel::SettingsPanel;
 use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
 use winit::window::WindowId;
 
@@ -102,28 +103,47 @@ impl App {
     }
 
     /// Reset the pending settings config to defaults.
+    ///
+    /// Rebuilds the entire form panel from the default config so all widgets
+    /// (dropdowns, toggles, sliders, number inputs) reflect the new values.
     fn reset_dialog_settings(&mut self, window_id: WindowId) {
+        let ui_theme = self.ui_theme;
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
         let DialogContent::Settings {
             pending_config,
             original_config,
-            ..
+            ids,
+            panel,
         } = &mut ctx.content
         else {
             return;
         };
         log::info!("settings dialog: resetting to defaults");
         **pending_config = Config::default();
-        let dirty = **pending_config != **original_config;
+
+        // Rebuild the form widgets so they reflect the default config values.
+        let (content, new_ids) =
+            settings_overlay::form_builder::build_settings_dialog(pending_config, &ui_theme);
+        *ids = new_ids;
+        **panel = SettingsPanel::embedded(content);
+
+        // Re-register widgets and rebuild focus order for the new tree.
+        crate::app::widget_pipeline::register_widget_tree(&mut **panel, ctx.root.interaction_mut());
+        let _ = ctx.root.interaction_mut().drain_events();
+
+        // Invalidate all caches.
+        ctx.cached_layout = None;
+
+        let dirty = *pending_config != *original_config;
         let title = if dirty {
             "Settings \u{2022}"
         } else {
             "Settings"
         };
         ctx.window.set_title(title);
-        ctx.root.mark_dirty();
+        ctx.request_urgent_redraw();
     }
 
     /// Dispatch a settings widget action to update the pending config.
