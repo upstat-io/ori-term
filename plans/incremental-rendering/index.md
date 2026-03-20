@@ -122,8 +122,13 @@ prepare_widget_tree, prepaint_widget_tree, render_to_surface
 event_coalescing, frame_coalescing, scroll_batch
 render_dialog_overlays, overlay_rendering, scratch_scene
 chrome_content_separation, WindowChromeWidget, SettingsPanel
+dispatch_dialog_content_move, dispatch_dialog_content_click
+handle_dialog_content_action, apply_dispatch_requests
+DragUpdate, ValueChanged, ScrubController, SET_ACTIVE, CLEAR_ACTIVE
+action_routing, controller_actions, result.actions, drag_capture
 oriterm/src/app/dialog_rendering.rs, oriterm/src/app/dialog_context/
 oriterm/src/app/dialog_context/content_actions.rs
+oriterm/src/app/dialog_context/event_handling/mod.rs
 oriterm/src/app/render_dispatch.rs, oriterm/src/app/event_loop.rs
 ```
 

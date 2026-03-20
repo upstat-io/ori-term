@@ -119,11 +119,19 @@ The overlay rendering path (`render_dialog_overlays`) clears the scene for each 
 Update event handlers to use granular invalidation instead of global dirty marking.
 
 - [ ] `handle_dialog_scroll`: Mark only the ScrollWidget as dirty (Paint level), not the entire dialog
-- [ ] `handle_dialog_cursor_move`: Mark only the hovered widget as dirty (Prepaint level)
+- [ ] `handle_dialog_cursor_move` / `dispatch_dialog_content_move`: Mark only the hovered widget as dirty (Prepaint level). **Critical:** preserve the existing action routing and `apply_dispatch_requests` — `dispatch_dialog_content_move` now routes `result.actions` (e.g., slider `DragUpdate` → `ValueChanged`) through `handle_dialog_content_action` and applies `SET_ACTIVE`/`CLEAR_ACTIVE` requests for drag capture. The incremental pipeline must not regress this.
 - [ ] `dispatch_dialog_settings_action`: Mark the affected widget subtree as dirty (Layout level for page switch)
 - [ ] `handle_dialog_keyboard`: Mark the focused widget as dirty (Prepaint level)
 
 - [ ] Remove `invalidation_mut().invalidate_all()` calls — replace with targeted `mark_widget_dirty(id, level)`
+
+**Invariant:** All three dialog event dispatch paths (click, move, scroll) must:
+1. Dispatch the event via `deliver_event_to_tree` with the correct `active` widget
+2. Call `apply_dispatch_requests` to update interaction state (active, focus)
+3. Route `result.actions` to `handle_dialog_content_action` (not drop them)
+4. Request urgent redraw when PAINT requested
+
+This was a bug (MouseMove dropped actions, breaking slider drag) and must not regress during the incremental pipeline integration.
 
 ---
 
