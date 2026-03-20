@@ -67,6 +67,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 [dev-dependencies]
 anyhow = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
+oriterm_ui = { path = "../oriterm_ui", features = ["testing"] }
 tempfile = "3"
 
 [lints]

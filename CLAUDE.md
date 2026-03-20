@@ -86,13 +86,34 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 ## Key Paths
 
-**oriterm (GUI binary):** `oriterm/src/app/` — App struct, winit event loop, input dispatch | `oriterm/src/session/` — GUI session model (tabs, windows, layouts) | `oriterm/src/session/split_tree/` — SplitTree pane tiling | `oriterm/src/session/floating/` — FloatingLayer pane overlay | `oriterm/src/session/compute/` — Layout computation (pixel-space) | `oriterm/src/session/nav/` — Directional pane navigation
+**oriterm (GUI binary — thin shell):** `oriterm/src/app/` — App struct, winit event loop, GPU init, input dispatch — thin shell delegating to WindowRoot | `oriterm/src/session/` — GUI session model (tabs, windows, layouts) | `oriterm/src/session/split_tree/` — SplitTree pane tiling | `oriterm/src/session/floating/` — FloatingLayer pane overlay | `oriterm/src/session/compute/` — Layout computation (pixel-space) | `oriterm/src/session/nav/` — Directional pane navigation
+
+**oriterm_ui (UI framework):** `oriterm_ui/src/widgets/` — Widget trait + all widget implementations | `oriterm_ui/src/window_root/` — WindowRoot (per-window UI composition unit) | `oriterm_ui/src/interaction/` — Pure interaction utilities (resize geometry, cursor hiding, mark mode motion) | `oriterm_ui/src/pipeline/` — Pipeline orchestration (layout → prepaint → paint → dispatch) | `oriterm_ui/src/testing/` — WidgetTestHarness (headless testing)
 
 **oriterm_mux (pane server):** `oriterm_mux/src/in_process/` — InProcessMux (pane CRUD, event pump) | `oriterm_mux/src/registry/` — PaneRegistry (flat pane storage) | `oriterm_mux/src/pane/` — Pane (terminal state, PTY I/O) | `oriterm_mux/src/backend/` — MuxBackend trait (embedded + daemon) | `oriterm_mux/src/server/` — Daemon server (IPC protocol) | `oriterm_mux/src/protocol/` — Wire protocol (PDU codec)
 
 **oriterm_core (terminal emulation):** `oriterm_core/src/grid/` — Grid (rows, cursor, scrollback, reflow) | `oriterm_core/src/term_handler.rs` — VTE Handler impl | `oriterm_core/src/cell.rs` — Rich Cell + CellFlags | `oriterm_core/src/palette.rs` — Color palette | `oriterm_core/src/selection.rs` — Selection model | `oriterm_core/src/search.rs` — Search (plain + regex)
 
 **oriterm_gpu (rendering):** `oriterm_gpu/src/renderer.rs` — GPU rendering (wgpu, draw_frame) | `oriterm_gpu/src/atlas.rs` — Glyph atlas | `oriterm_gpu/src/pipeline.rs` — WGSL shader pipelines
+
+## Crate Boundaries
+
+**`oriterm_core`** — Terminal emulation library (grid, VTE, selection, search). Standalone, no workspace deps.
+**`oriterm_ui`** — UI framework (widgets, WindowRoot, interaction, pipeline, animation, testing). Depends on `oriterm_core` only.
+**`oriterm_mux`** — Pane server (PTY I/O, pane lifecycle, mux backend). Depends on `oriterm_core` + `oriterm_ipc`.
+**`oriterm_ipc`** — Platform IPC transport (Unix sockets, Windows named pipes). Standalone, no workspace deps.
+**`oriterm`** — Application shell (winit event loop, GPU, font pipeline, session model). Consumes all other crates.
+
+**Allowed dependency direction:**
+```
+oriterm_ipc  (standalone)
+oriterm_core (standalone)
+oriterm_ui   → oriterm_core
+oriterm_mux  → oriterm_core, oriterm_ipc
+oriterm      → oriterm_core, oriterm_ui, oriterm_mux
+```
+
+**Litmus test:** Can this code be tested in a `#[test]` without a GPU, display server, or terminal? If yes → `oriterm_ui`. If no → `oriterm`. See `.claude/rules/crate-boundaries.md` for full ownership rules.
 
 ## Reference Repos (`~/projects/reference_repos/console_repos/`)
 
@@ -137,6 +158,7 @@ Plans are the source of truth for multi-session work. Keep them in sync with rea
 
 Every single UI control — buttons, toggles, sliders, dropdowns, text inputs, window chrome buttons, tab bar tabs, close buttons, menu items, scroll thumbs, dialog headers — goes through the unified controller + animator + propagation pipeline. No special cases, no manual `hovered: bool` fields, no one-off `handle_mouse()` implementations. One system, one path, no exceptions.
 
+- **WindowRoot** is the per-window composition unit — owns widget tree, InteractionManager, FocusManager, OverlayManager, compositor, and pipeline. Both WidgetTestHarness and production windows wrap WindowRoot. No framework state should be owned outside WindowRoot.
 - **InteractionManager** is the single source of truth for all interaction state (hot, active, focused, disabled).
 - **VisualStateAnimator** drives all state-dependent visual transitions (hover colors, focus rings, pressed states).
 - **EventControllers** (HoverController, ClickController, DragController, etc.) handle all input — no widget implements raw event methods directly.
