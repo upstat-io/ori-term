@@ -355,7 +355,17 @@ impl Widget for ContainerWidget {
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
-        self.children.iter_mut().any(|c| c.accept_action(action))
+        // Propagate to ALL children — do not short-circuit. Actions like
+        // `Selected` must reach both SidebarNav (visual update) and
+        // PageContainer (page switch). `any()` would stop at the first
+        // child that handles it.
+        let mut handled = false;
+        for child in &mut self.children {
+            if child.accept_action(action) {
+                handled = true;
+            }
+        }
+        handled
     }
 
     fn focusable_children(&self) -> Vec<WidgetId> {

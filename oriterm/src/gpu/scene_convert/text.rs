@@ -8,7 +8,7 @@ use oriterm_ui::text::ShapedText;
 
 use crate::font::{FaceIdx, FontRealm, RasterKey, SyntheticFlags, subpx_bin, subpx_offset};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
-use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
+use crate::gpu::instance_writer::ScreenRect;
 
 use super::TextContext;
 
@@ -21,7 +21,7 @@ use super::TextContext;
 /// no scaling of glyph bitmap dimensions, which would cause blurriness.
 #[expect(
     clippy::too_many_arguments,
-    reason = "text conversion: position, shaped, color, bg_hint, text context, scale, opacity"
+    reason = "text conversion: position, shaped, color, bg_hint, text context, scale, opacity, clip"
 )]
 pub(super) fn convert_text(
     position: Point,
@@ -31,6 +31,7 @@ pub(super) fn convert_text(
     ctx: &mut TextContext<'_>,
     scale: f32,
     opacity: f32,
+    clip: [f32; 4],
 ) {
     let fg = color_to_rgb(color);
     let subpixel_bg = bg_hint.map(color_to_rgb);
@@ -81,6 +82,7 @@ pub(super) fn convert_text(
                 alpha,
                 subpx,
                 ctx,
+                clip,
             );
         }
 
@@ -95,7 +97,7 @@ pub(super) fn convert_text(
 /// at the font's physical pixel size).
 #[expect(
     clippy::too_many_arguments,
-    reason = "text glyph instance: position components, glyph data, atlas entry, color, bg"
+    reason = "text glyph instance: position, glyph data, atlas entry, color, bg, clip"
 )]
 fn emit_text_glyph(
     cursor_x: f32,
@@ -108,6 +110,7 @@ fn emit_text_glyph(
     alpha: f32,
     subpx: u8,
     ctx: &mut TextContext<'_>,
+    clip: [f32; 4],
 ) {
     let absorbed = subpx_offset(subpx);
     let gx = cursor_x + glyph.x_offset - absorbed + entry.bearing_x as f32;
@@ -125,28 +128,21 @@ fn emit_text_glyph(
         AtlasKind::Subpixel => {
             if let Some(bg) = subpixel_bg {
                 // Known background — per-channel compositing in the shader.
-                ctx.subpixel_writer.push_glyph_with_bg(
-                    rect,
-                    uv,
-                    fg,
-                    bg,
-                    alpha,
-                    entry.page,
-                    CLIP_UNCLIPPED,
-                );
+                ctx.subpixel_writer
+                    .push_glyph_with_bg(rect, uv, fg, bg, alpha, entry.page, clip);
             } else {
                 // No background hint — fall back to alpha blending.
                 ctx.subpixel_writer
-                    .push_glyph(rect, uv, fg, alpha, entry.page, CLIP_UNCLIPPED);
+                    .push_glyph(rect, uv, fg, alpha, entry.page, clip);
             }
         }
         AtlasKind::Mono => {
             ctx.mono_writer
-                .push_glyph(rect, uv, fg, alpha, entry.page, CLIP_UNCLIPPED);
+                .push_glyph(rect, uv, fg, alpha, entry.page, clip);
         }
         AtlasKind::Color => {
             ctx.color_writer
-                .push_glyph(rect, uv, fg, alpha, entry.page, CLIP_UNCLIPPED);
+                .push_glyph(rect, uv, fg, alpha, entry.page, clip);
         }
     }
 }
@@ -157,7 +153,7 @@ fn emit_text_glyph(
 /// by the `fg.wgsl` shader (same as monochrome text glyphs).
 #[expect(
     clippy::too_many_arguments,
-    reason = "icon conversion: rect, atlas_page, uv, color, text context, scale, opacity"
+    reason = "icon conversion: rect, atlas_page, uv, color, text context, scale, opacity, clip"
 )]
 pub(super) fn convert_icon(
     rect: Rect,
@@ -167,6 +163,7 @@ pub(super) fn convert_icon(
     ctx: &mut TextContext<'_>,
     scale: f32,
     opacity: f32,
+    clip: [f32; 4],
 ) {
     let fg = color_to_rgb(color);
     let alpha = color.a * opacity;
@@ -179,7 +176,7 @@ pub(super) fn convert_icon(
     let h = (rect.height() * scale).round();
     let screen = ScreenRect { x, y, w, h };
     ctx.mono_writer
-        .push_glyph(screen, uv, fg, alpha, atlas_page, CLIP_UNCLIPPED);
+        .push_glyph(screen, uv, fg, alpha, atlas_page, clip);
 }
 
 /// Convert an [`oriterm_ui::color::Color`] (f32 RGBA) to [`oriterm_core::Rgb`] (u8 RGB).

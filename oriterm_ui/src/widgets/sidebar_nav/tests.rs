@@ -269,3 +269,80 @@ fn end_key_goes_to_last() {
         other => panic!("expected Selected(2), got {other:?}"),
     }
 }
+
+// -- Harness integration: single click emits Selected --
+
+#[test]
+fn harness_single_click_emits_selected() {
+    use crate::geometry::Point;
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+
+    let theme = crate::theme::UiTheme::dark();
+    let sidebar = SidebarNavWidget::new(test_sections(), &theme);
+    let _sidebar_id = sidebar.id();
+
+    let mut h = WidgetTestHarness::new(sidebar);
+
+    // Compute click target: second item (Colors, page_index=1).
+    // Y = SECTION_TITLE_HEIGHT (General) + ITEM_HEIGHT (Appearance) + half ITEM_HEIGHT.
+    let target_y = SECTION_TITLE_HEIGHT + ITEM_HEIGHT + ITEM_HEIGHT / 2.0;
+    let target_x = SIDEBAR_WIDTH / 2.0;
+    let target = Point::new(target_x, target_y);
+
+    h.root_mut().clear_actions();
+    // Single click: move → down → up.
+    h.mouse_move(target);
+    h.mouse_down(MouseButton::Left);
+    h.mouse_up(MouseButton::Left);
+    let actions = h.take_actions();
+
+    // Should emit Selected { index: 1 } for the Colors item.
+    let selected = actions
+        .iter()
+        .find(|a| matches!(a, WidgetAction::Selected { .. }));
+    assert!(
+        selected.is_some(),
+        "single click on sidebar item should emit Selected, got: {actions:?}"
+    );
+    if let Some(WidgetAction::Selected { index, .. }) = selected {
+        assert_eq!(*index, 1, "should select Colors (page_index=1)");
+    }
+}
+
+#[test]
+fn harness_single_click_on_first_item_emits_selected() {
+    use crate::geometry::Point;
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+
+    let theme = crate::theme::UiTheme::dark();
+    let mut sidebar = SidebarNavWidget::new(test_sections(), &theme);
+    // Start on page 2 so clicking page 0 is a real switch.
+    sidebar.set_active_page(2);
+    let _sidebar_id = sidebar.id();
+
+    let mut h = WidgetTestHarness::new(sidebar);
+
+    // Click first item (Appearance, page_index=0).
+    let target_y = SECTION_TITLE_HEIGHT + ITEM_HEIGHT / 2.0;
+    let target_x = SIDEBAR_WIDTH / 2.0;
+    let target = Point::new(target_x, target_y);
+
+    h.root_mut().clear_actions();
+    h.mouse_move(target);
+    h.mouse_down(MouseButton::Left);
+    h.mouse_up(MouseButton::Left);
+    let actions = h.take_actions();
+
+    let selected = actions
+        .iter()
+        .find(|a| matches!(a, WidgetAction::Selected { .. }));
+    assert!(
+        selected.is_some(),
+        "single click on first sidebar item should emit Selected, got: {actions:?}"
+    );
+    if let Some(WidgetAction::Selected { index, .. }) = selected {
+        assert_eq!(*index, 0, "should select Appearance (page_index=0)");
+    }
+}

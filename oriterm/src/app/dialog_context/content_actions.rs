@@ -163,6 +163,13 @@ impl App {
         // Always propagate — widgets update visuals (page switch, selection).
         let widget_handled = panel.accept_action(action);
         if config_changed || widget_handled {
+            // Invalidate both layout caches: the dialog context's cached
+            // layout tree AND the panel's internal paint-time cache. Page
+            // switching changes which widgets appear in the layout tree, so
+            // stale cached layouts would cause hit testing against the old
+            // page's widgets — making the new page's controls unresponsive.
+            ctx.cached_layout = None;
+            panel.invalidate_cache();
             ctx.request_urgent_redraw();
         }
     }

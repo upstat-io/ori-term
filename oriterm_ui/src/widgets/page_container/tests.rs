@@ -200,6 +200,202 @@ fn page_switch_calls_reset_scroll() {
     // after switching. Direct scroll_offset verification is in scroll/tests.rs.
 }
 
+// -- Layout staleness after page switch --
+
+#[test]
+fn layout_only_contains_active_page_widgets() {
+    // Page 0 has a button, page 1 has a different button.
+    let btn0 = crate::widgets::button::ButtonWidget::new("Page0");
+    let btn0_id = btn0.id();
+    let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
+    let btn1_id = btn1.id();
+
+    let pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+    let ctx = make_ctx();
+    let lb = pc.layout(&ctx);
+    let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
+
+    // Page 0 is active — only btn0 should appear in the layout tree.
+    assert!(
+        find_id_in_layout(&node, btn0_id),
+        "active page's widget should be in layout"
+    );
+    assert!(
+        !find_id_in_layout(&node, btn1_id),
+        "inactive page's widget should NOT be in layout"
+    );
+}
+
+#[test]
+fn layout_updates_after_page_switch_and_recompute() {
+    let btn0 = crate::widgets::button::ButtonWidget::new("Page0");
+    let btn0_id = btn0.id();
+    let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
+    let btn1_id = btn1.id();
+
+    let mut pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+
+    // Switch to page 1.
+    let action = WidgetAction::Selected {
+        id: crate::widget_id::WidgetId::next(),
+        index: 1,
+    };
+    assert!(pc.accept_action(&action));
+    assert_eq!(pc.active_page(), 1);
+
+    // Recompute layout — now btn1 should appear, btn0 should not.
+    let ctx = make_ctx();
+    let lb = pc.layout(&ctx);
+    let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
+
+    assert!(
+        find_id_in_layout(&node, btn1_id),
+        "new active page's widget should be in layout after recompute"
+    );
+    assert!(
+        !find_id_in_layout(&node, btn0_id),
+        "old page's widget should NOT be in layout after recompute"
+    );
+}
+
+#[test]
+fn stale_layout_does_not_contain_new_page_widgets() {
+    // Demonstrates the bug: if layout is computed BEFORE page switch,
+    // it won't contain the new page's widgets.
+    let btn0 = crate::widgets::button::ButtonWidget::new("Page0");
+    let btn0_id = btn0.id();
+    let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
+    let btn1_id = btn1.id();
+
+    let mut pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+
+    // Compute layout while page 0 is active.
+    let ctx = make_ctx();
+    let lb = pc.layout(&ctx);
+    let stale_node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
+
+    // Switch to page 1 WITHOUT recomputing layout.
+    let action = WidgetAction::Selected {
+        id: crate::widget_id::WidgetId::next(),
+        index: 1,
+    };
+    pc.accept_action(&action);
+
+    // The stale layout still has btn0, not btn1.
+    assert!(
+        find_id_in_layout(&stale_node, btn0_id),
+        "stale layout retains old page's widget"
+    );
+    assert!(
+        !find_id_in_layout(&stale_node, btn1_id),
+        "stale layout does not contain new page's widget — this is the bug"
+    );
+}
+
+/// Recursively searches a layout tree for a widget ID.
+fn find_id_in_layout(node: &crate::layout::LayoutNode, target: crate::widget_id::WidgetId) -> bool {
+    if node.widget_id == Some(target) {
+        return true;
+    }
+    node.children.iter().any(|c| find_id_in_layout(c, target))
+}
+
+// -- Harness integration: page switch + click --
+
+#[test]
+fn harness_button_on_page0_is_clickable() {
+    use crate::testing::WidgetTestHarness;
+
+    let btn0 = crate::widgets::button::ButtonWidget::new("Page0");
+    let btn0_id = btn0.id();
+    let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
+
+    let pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+    let mut h = WidgetTestHarness::new(pc);
+
+    // Click button on page 0 — should produce Clicked action.
+    let actions = h.click(btn0_id);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn0_id)),
+        "button on active page should be clickable, got: {actions:?}"
+    );
+}
+
+#[test]
+fn harness_button_on_switched_page_is_clickable_after_rebuild() {
+    use crate::testing::WidgetTestHarness;
+
+    let btn0 = crate::widgets::button::ButtonWidget::new("Page0");
+    let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
+    let btn1_id = btn1.id();
+
+    let mut pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+
+    // Switch to page 1.
+    let action = WidgetAction::Selected {
+        id: crate::widget_id::WidgetId::next(),
+        index: 1,
+    };
+    pc.accept_action(&action);
+
+    // Create harness AFTER page switch — layout is fresh.
+    let mut h = WidgetTestHarness::new(pc);
+
+    // Click button on page 1 — should produce Clicked action.
+    let actions = h.click(btn1_id);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn1_id)),
+        "button on newly active page should be clickable after rebuild, got: {actions:?}"
+    );
+}
+
+#[test]
+fn harness_page_switch_requires_layout_rebuild_for_new_page_widgets() {
+    use crate::testing::WidgetTestHarness;
+
+    let btn0 = crate::widgets::button::ButtonWidget::new("Page0");
+    let btn1 = crate::widgets::button::ButtonWidget::new("Page1");
+    let btn1_id = btn1.id();
+
+    let pc = PageContainerWidget::new(vec![Box::new(btn0), Box::new(btn1)]);
+    let mut h = WidgetTestHarness::new(pc);
+
+    // Switch page via accept_action (simulating what production does).
+    let action = WidgetAction::Selected {
+        id: crate::widget_id::WidgetId::next(),
+        index: 1,
+    };
+    h.widget_mut().accept_action(&action);
+
+    // WITHOUT rebuild: new page's button is not in the layout tree.
+    let bounds = h.try_widget_bounds(btn1_id);
+    assert!(
+        bounds.is_none(),
+        "before layout rebuild, new page's widget should not be in layout (this is the bug)"
+    );
+
+    // WITH rebuild: new page's button appears.
+    h.rebuild_layout();
+    let bounds = h.try_widget_bounds(btn1_id);
+    assert!(
+        bounds.is_some(),
+        "after layout rebuild, new page's widget should be in layout"
+    );
+
+    // Now click should work.
+    let actions = h.click(btn1_id);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn1_id)),
+        "button on page 1 should be clickable after rebuild, got: {actions:?}"
+    );
+}
+
 // -- Sense & focusability --
 
 #[test]
