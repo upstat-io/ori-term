@@ -133,7 +133,7 @@ frame time, idle CPU, damage tracking benefit
 ---
 
 ### Section 07: WindowRoot Extraction
-**File:** `section-07-window-root.md` | **Status:** Not Started
+**File:** `section-07-window-root.md` | **Status:** Complete
 
 ```
 WindowRoot, per-window, composition unit

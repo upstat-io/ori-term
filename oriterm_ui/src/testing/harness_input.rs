@@ -68,7 +68,7 @@ impl WidgetTestHarness {
     ///
     /// Returns the actions emitted during the click.
     pub fn click(&mut self, widget_id: WidgetId) -> Vec<WidgetAction> {
-        self.pending_actions.clear();
+        self.root.clear_actions();
         self.mouse_move_to(widget_id);
         self.mouse_down(MouseButton::Left);
         self.mouse_up(MouseButton::Left);
@@ -77,7 +77,7 @@ impl WidgetTestHarness {
 
     /// Double-click: two clicks within the multi-click timeout.
     pub fn double_click(&mut self, widget_id: WidgetId) -> Vec<WidgetAction> {
-        self.pending_actions.clear();
+        self.root.clear_actions();
         self.mouse_move_to(widget_id);
         self.mouse_down(MouseButton::Left);
         self.mouse_up(MouseButton::Left);
@@ -90,7 +90,7 @@ impl WidgetTestHarness {
 
     /// Simulates a drag from `start` to `end` with `steps` intermediate moves.
     pub fn drag(&mut self, start: Point, end: Point, steps: usize) -> Vec<WidgetAction> {
-        self.pending_actions.clear();
+        self.root.clear_actions();
         self.mouse_move(start);
         self.mouse_down(MouseButton::Left);
 
@@ -112,7 +112,7 @@ impl WidgetTestHarness {
 
     /// Simulates a key press + release.
     pub fn key_press(&mut self, key: Key, modifiers: Modifiers) -> Vec<WidgetAction> {
-        self.pending_actions.clear();
+        self.root.clear_actions();
         self.process_event(InputEvent::KeyDown { key, modifiers });
         self.process_event(InputEvent::KeyUp { key, modifiers });
         self.take_actions()
@@ -120,7 +120,7 @@ impl WidgetTestHarness {
 
     /// Simulates typing a string (one key event per character).
     pub fn type_text(&mut self, text: &str) -> Vec<WidgetAction> {
-        self.pending_actions.clear();
+        self.root.clear_actions();
         for ch in text.chars() {
             let key = Key::Character(ch);
             self.process_event(InputEvent::KeyDown {
@@ -141,8 +141,8 @@ impl WidgetTestHarness {
     /// `FocusController` handles the Tab key (e.g., no focused widget),
     /// the harness cycles focus forward directly via the `FocusManager`.
     pub fn tab(&mut self) -> Vec<WidgetAction> {
-        let focus_before = self.focus.focused();
-        self.pending_actions.clear();
+        let focus_before = self.root.focus().focused();
+        self.root.clear_actions();
         self.process_event(InputEvent::KeyDown {
             key: Key::Tab,
             modifiers: Modifiers::NONE,
@@ -154,12 +154,13 @@ impl WidgetTestHarness {
 
         // If the pipeline didn't change focus (no FocusController handled it),
         // cycle focus manually.
-        if self.focus.focused() == focus_before {
-            self.focus.focus_next();
-            if let Some(new_id) = self.focus.focused() {
-                self.interaction.request_focus(new_id, &mut self.focus);
+        if self.root.focus().focused() == focus_before {
+            self.root.focus_mut().focus_next();
+            if let Some(new_id) = self.root.focus().focused() {
+                let (interaction, focus) = self.root.interaction_and_focus_mut();
+                interaction.request_focus(new_id, focus);
             }
-            self.deliver_lifecycle_events();
+            self.root.prepare(self.clock, &self.theme);
         }
         self.take_actions()
     }
@@ -169,8 +170,8 @@ impl WidgetTestHarness {
     /// Sends a Shift+Tab key event through the pipeline. If no widget
     /// handles it, the harness cycles focus backward via the `FocusManager`.
     pub fn shift_tab(&mut self) -> Vec<WidgetAction> {
-        let focus_before = self.focus.focused();
-        self.pending_actions.clear();
+        let focus_before = self.root.focus().focused();
+        self.root.clear_actions();
         self.process_event(InputEvent::KeyDown {
             key: Key::Tab,
             modifiers: Modifiers::SHIFT_ONLY,
@@ -180,12 +181,13 @@ impl WidgetTestHarness {
             modifiers: Modifiers::SHIFT_ONLY,
         });
 
-        if self.focus.focused() == focus_before {
-            self.focus.focus_prev();
-            if let Some(new_id) = self.focus.focused() {
-                self.interaction.request_focus(new_id, &mut self.focus);
+        if self.root.focus().focused() == focus_before {
+            self.root.focus_mut().focus_prev();
+            if let Some(new_id) = self.root.focus().focused() {
+                let (interaction, focus) = self.root.interaction_and_focus_mut();
+                interaction.request_focus(new_id, focus);
             }
-            self.deliver_lifecycle_events();
+            self.root.prepare(self.clock, &self.theme);
         }
         self.take_actions()
     }
@@ -194,7 +196,7 @@ impl WidgetTestHarness {
 
     /// Simulates a scroll wheel event at the current mouse position.
     pub fn scroll(&mut self, delta: ScrollDelta) -> Vec<WidgetAction> {
-        self.pending_actions.clear();
+        self.root.clear_actions();
         let event = InputEvent::Scroll {
             pos: self.mouse_pos,
             delta,

@@ -5,9 +5,13 @@
 //! `WindowContext`/`DialogWindowContext` (production) both need.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use crate::action::{Keystroke, build_context_stack, collect_key_contexts};
+use crate::animation::AnimFrameEvent;
 use crate::controllers::ControllerRequests;
+use crate::draw::Scene;
+use crate::geometry::Rect;
 use crate::input::InputEvent;
 use crate::input::dispatch::tree::{TreeDispatchResult, deliver_event_to_tree};
 use crate::input::layout_hit_test_path;
@@ -22,7 +26,7 @@ use crate::pipeline::{
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 use crate::widgets::TextMeasurer;
-use crate::widgets::contexts::LayoutCtx;
+use crate::widgets::contexts::{DrawCtx, LayoutCtx};
 
 use super::WindowRoot;
 
@@ -75,7 +79,7 @@ impl WindowRoot {
         event: &InputEvent,
         measurer: &dyn TextMeasurer,
         theme: &UiTheme,
-        now: std::time::Instant,
+        now: Instant,
     ) {
         // Step 1: update hot path for mouse events.
         if let Some(pos) = event.pos() {
@@ -134,7 +138,7 @@ impl WindowRoot {
     ///
     /// Delivers pending lifecycle events and advances animations for all
     /// widgets that requested animation frames.
-    pub fn prepare(&mut self, now: std::time::Instant) {
+    pub fn prepare(&mut self, now: Instant, theme: &UiTheme) {
         let events = self.interaction.drain_events();
         if !events.is_empty() {
             prepare_widget_tree(
@@ -146,8 +150,67 @@ impl WindowRoot {
                 now,
             );
         }
-        self.run_prepaint(now, &UiTheme::dark());
+        self.run_prepaint(now, theme);
         self.flush_frame_requests();
+    }
+
+    /// Ticks one animation frame.
+    ///
+    /// Promotes deferred repaints, takes animation frame requests from the
+    /// scheduler, delivers animation events to widgets, runs prepaint, and
+    /// flushes frame request flags.
+    ///
+    /// Returns `true` if any animation widgets were ticked.
+    pub fn tick_animation(&mut self, delta: Duration, now: Instant, theme: &UiTheme) -> bool {
+        self.scheduler.promote_deferred(now);
+        let anim_widgets = self.scheduler.take_anim_frames();
+        if anim_widgets.is_empty() {
+            return false;
+        }
+        let anim_event = AnimFrameEvent {
+            delta_nanos: delta.as_nanos() as u64,
+            now,
+        };
+        prepare_widget_tree(
+            &mut *self.widget,
+            &mut self.interaction,
+            &[],
+            Some(&anim_event),
+            Some(&self.frame_requests),
+            now,
+        );
+        self.run_prepaint(now, theme);
+        self.flush_frame_requests();
+        true
+    }
+
+    /// Returns whether the scheduler has pending animation work.
+    pub fn has_pending_animation_work(&self, now: Instant) -> bool {
+        self.scheduler.has_pending_work(now)
+    }
+
+    /// Paints the widget tree and returns the resulting scene.
+    ///
+    /// Runs prepaint to resolve visual state, then paints. Handles the borrow
+    /// splitting needed to pass `&InteractionManager` and `&FrameRequestFlags`
+    /// to `DrawCtx` while painting through `&mut Widget`.
+    pub fn paint(&mut self, measurer: &dyn TextMeasurer, theme: &UiTheme, now: Instant) -> Scene {
+        self.run_prepaint(now, theme);
+        let mut scene = Scene::new();
+        let bounds = self.layout.rect;
+        let mut ctx = DrawCtx {
+            measurer,
+            scene: &mut scene,
+            bounds,
+            now,
+            theme,
+            icons: None,
+            interaction: Some(&self.interaction),
+            widget_id: Some(self.widget.id()),
+            frame_requests: Some(&self.frame_requests),
+        };
+        self.widget.paint(&mut ctx);
+        scene
     }
 
     /// Registers all widgets and rebuilds focus order.
@@ -170,11 +233,7 @@ impl WindowRoot {
     // -- Internal helpers --
 
     /// Dispatches an event through the widget tree (keymap + controller pipeline).
-    fn dispatch_to_tree(
-        &mut self,
-        event: &InputEvent,
-        now: std::time::Instant,
-    ) -> TreeDispatchResult {
+    fn dispatch_to_tree(&mut self, event: &InputEvent, now: Instant) -> TreeDispatchResult {
         let focus_path = self.interaction.focus_ancestor_path();
         match *event {
             InputEvent::KeyDown { key, modifiers } => {
@@ -241,7 +300,7 @@ impl WindowRoot {
     /// Drains pending lifecycle events and delivers them to the widget tree.
     fn deliver_lifecycle_events(
         &mut self,
-        now: std::time::Instant,
+        now: Instant,
         _measurer: &dyn TextMeasurer,
         theme: &UiTheme,
     ) {
@@ -262,8 +321,8 @@ impl WindowRoot {
     }
 
     /// Runs the prepaint phase: collects layout bounds and resolves visual state.
-    fn run_prepaint(&mut self, now: std::time::Instant, theme: &UiTheme) {
-        let mut bounds_map: HashMap<WidgetId, crate::geometry::Rect> = HashMap::new();
+    fn run_prepaint(&mut self, now: Instant, theme: &UiTheme) {
+        let mut bounds_map: HashMap<WidgetId, Rect> = HashMap::new();
         collect_layout_bounds(&self.layout, &mut bounds_map);
         prepaint_widget_tree(
             &mut *self.widget,
@@ -279,11 +338,7 @@ impl WindowRoot {
     ///
     /// Handles borrow splitting: overlays, interaction, and frame requests all
     /// live on `WindowRoot`, so the caller cannot destructure them manually.
-    pub fn prepare_overlay_widgets(
-        &mut self,
-        lifecycle_events: &[LifecycleEvent],
-        now: std::time::Instant,
-    ) {
+    pub fn prepare_overlay_widgets(&mut self, lifecycle_events: &[LifecycleEvent], now: Instant) {
         let interaction = &mut self.interaction;
         let flags = &self.frame_requests;
         self.overlays.for_each_widget_mut(|widget| {
@@ -304,9 +359,9 @@ impl WindowRoot {
     /// live on `WindowRoot`, so the caller cannot destructure them manually.
     pub fn prepaint_overlay_widgets(
         &mut self,
-        bounds_map: &HashMap<WidgetId, crate::geometry::Rect>,
+        bounds_map: &HashMap<WidgetId, Rect>,
         theme: &UiTheme,
-        now: std::time::Instant,
+        now: Instant,
     ) {
         let interaction = &self.interaction;
         let flags = &self.frame_requests;

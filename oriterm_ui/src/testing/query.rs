@@ -29,13 +29,13 @@ impl WidgetTestHarness {
     /// all the specified flags.
     pub fn widgets_with_sense(&self, sense: Sense) -> Vec<WidgetId> {
         let mut out = Vec::new();
-        collect_by_sense(&self.layout, sense, &mut out);
+        collect_by_sense(self.root.layout(), sense, &mut out);
         out
     }
 
     /// Returns the widget at the given point (hit testing).
     pub fn widget_at(&self, pos: Point) -> Option<WidgetId> {
-        layout_hit_test(&self.layout, pos)
+        layout_hit_test(self.root.layout(), pos)
     }
 }
 

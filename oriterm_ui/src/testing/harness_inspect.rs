@@ -6,11 +6,9 @@
 use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::interaction::InteractionState;
-use crate::layout::LayoutNode;
 use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
-use crate::widgets::contexts::DrawCtx;
 
 use super::harness::WidgetTestHarness;
 
@@ -19,32 +17,32 @@ use super::harness::WidgetTestHarness;
 impl WidgetTestHarness {
     /// Returns the interaction state for a widget.
     pub fn interaction_state(&self, widget_id: WidgetId) -> &InteractionState {
-        self.interaction.get_state(widget_id)
+        self.root.interaction().get_state(widget_id)
     }
 
     /// Whether the pointer is over this widget.
     pub fn is_hot(&self, widget_id: WidgetId) -> bool {
-        self.interaction.get_state(widget_id).is_hot()
+        self.root.interaction().get_state(widget_id).is_hot()
     }
 
     /// Whether this widget has captured the mouse.
     pub fn is_active(&self, widget_id: WidgetId) -> bool {
-        self.interaction.get_state(widget_id).is_active()
+        self.root.interaction().get_state(widget_id).is_active()
     }
 
     /// Whether this widget has keyboard focus.
     pub fn is_focused(&self, widget_id: WidgetId) -> bool {
-        self.interaction.get_state(widget_id).is_focused()
+        self.root.interaction().get_state(widget_id).is_focused()
     }
 
     /// The currently focused widget, if any.
     pub fn focused_widget(&self) -> Option<WidgetId> {
-        self.interaction.focused_widget()
+        self.root.interaction().focused_widget()
     }
 
     /// The currently active (capturing) widget, if any.
     pub fn active_widget(&self) -> Option<WidgetId> {
-        self.interaction.active_widget()
+        self.root.interaction().active_widget()
     }
 
     // -- Layout queries --
@@ -67,13 +65,13 @@ impl WidgetTestHarness {
     /// Returns a list of all widget IDs in the layout tree.
     pub fn all_widget_ids(&self) -> Vec<WidgetId> {
         let mut ids = Vec::new();
-        collect_ids_from_layout(&self.layout, &mut ids);
+        collect_ids_from_layout(self.root.layout(), &mut ids);
         ids
     }
 
     /// Returns a list of all focusable widget IDs in tab order.
     pub fn focusable_widgets(&self) -> Vec<WidgetId> {
-        self.focus.focus_order().to_vec()
+        self.root.focus().focus_order().to_vec()
     }
 
     // -- Paint capture --
@@ -84,22 +82,7 @@ impl WidgetTestHarness {
     /// Uses `MockMeasurer` and test theme. No GPU required — returns
     /// the raw `Scene` that would be sent to the GPU renderer.
     pub fn render(&mut self) -> Scene {
-        self.run_prepaint();
-        let mut scene = Scene::new();
-        let bounds = self.layout.rect;
-        let mut ctx = DrawCtx {
-            measurer: &self.measurer,
-            scene: &mut scene,
-            bounds,
-            now: self.clock,
-            theme: &self.theme,
-            icons: None,
-            interaction: Some(&self.interaction),
-            widget_id: Some(self.widget.id()),
-            frame_requests: Some(&self.frame_requests),
-        };
-        self.widget.paint(&mut ctx);
-        scene
+        self.root.paint(&self.measurer, &self.theme, self.clock)
     }
 
     // -- WidgetRef --
@@ -112,15 +95,15 @@ impl WidgetTestHarness {
         // For now, only the root widget is directly accessible.
         // All other widgets can be inspected via is_hot/is_active/is_focused/widget_bounds.
         assert_eq!(
-            self.widget.id(),
+            self.root.widget().id(),
             widget_id,
             "get_widget currently only supports the root widget; \
              use is_hot/is_active/is_focused/widget_bounds for child widgets"
         );
-        let interaction = self.interaction.get_state(widget_id);
+        let interaction = self.root.interaction().get_state(widget_id);
         let bounds = self.find_widget_bounds(widget_id).unwrap_or_default();
         WidgetRef {
-            widget: &*self.widget,
+            widget: self.root.widget(),
             interaction,
             bounds,
         }
@@ -167,7 +150,7 @@ impl WidgetRef<'_> {
 }
 
 /// Recursively collects all widget IDs from the layout tree.
-fn collect_ids_from_layout(node: &LayoutNode, out: &mut Vec<WidgetId>) {
+fn collect_ids_from_layout(node: &crate::layout::LayoutNode, out: &mut Vec<WidgetId>) {
     if let Some(id) = node.widget_id {
         out.push(id);
     }
