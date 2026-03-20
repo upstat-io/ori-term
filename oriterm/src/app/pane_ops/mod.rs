@@ -63,7 +63,7 @@ impl App {
         }
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         self.sync_tab_bar_from_mux();
     }
@@ -120,7 +120,7 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         self.resize_all_panes();
     }
@@ -199,7 +199,7 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         self.resize_all_panes();
     }
@@ -295,7 +295,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -312,7 +312,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -329,7 +329,7 @@ impl App {
         if applied {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.pane_cache.invalidate_all();
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }
@@ -347,7 +347,7 @@ impl App {
         if applied {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.pane_cache.invalidate_all();
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }

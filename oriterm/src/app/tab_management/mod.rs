@@ -77,7 +77,7 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -147,7 +147,7 @@ impl App {
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -222,7 +222,7 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         self.resize_all_panes();
         self.sync_tab_bar_from_mux();
@@ -252,7 +252,7 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         self.resize_all_panes();
         self.sync_tab_bar_from_mux();
@@ -297,15 +297,16 @@ impl App {
             return;
         };
         let tab_count = ctx.tab_bar.tab_count();
+        let (tree, animator) = ctx.root.layer_tree_and_animator_mut();
         let mut cx = SlideContext {
-            tree: &mut ctx.layer_tree,
-            animator: &mut ctx.layer_animator,
+            tree,
+            animator,
             now,
         };
         ctx.tab_slide
             .start_close_slide(closed_idx, tab_width, tab_count, &mut cx);
         ctx.tab_slide
-            .sync_to_widget(tab_count, &ctx.layer_tree, &mut ctx.tab_bar);
+            .sync_to_widget(tab_count, ctx.root.layer_tree(), &mut ctx.tab_bar);
     }
 
     /// Starts a reorder-slide animation and syncs offsets to the widget.
@@ -317,15 +318,16 @@ impl App {
             return;
         };
         let tab_count = ctx.tab_bar.tab_count();
+        let (tree, animator) = ctx.root.layer_tree_and_animator_mut();
         let mut cx = SlideContext {
-            tree: &mut ctx.layer_tree,
-            animator: &mut ctx.layer_animator,
+            tree,
+            animator,
             now,
         };
         ctx.tab_slide
             .start_reorder_slide(from, to, tab_width, &mut cx);
         ctx.tab_slide
-            .sync_to_widget(tab_count, &ctx.layer_tree, &mut ctx.tab_bar);
+            .sync_to_widget(tab_count, ctx.root.layer_tree(), &mut ctx.tab_bar);
     }
 
     /// The active tab ID for the active window.

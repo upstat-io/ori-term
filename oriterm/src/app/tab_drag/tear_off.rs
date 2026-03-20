@@ -38,7 +38,7 @@ impl App {
             };
             // Clear drag visual on source.
             ctx.tab_bar.set_drag_visual(None);
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
             let wid = ctx.window.window_id();
             (drag.tab_id, drag.mouse_offset_in_tab, drag.origin_y, wid)
         };

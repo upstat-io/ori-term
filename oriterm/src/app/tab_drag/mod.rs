@@ -306,7 +306,7 @@ impl App {
         // Update the drag visual (exactly once per cursor move).
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.tab_bar.set_drag_visual(Some((visual_index, visual_x)));
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -325,7 +325,7 @@ impl App {
         // Clear drag visual.
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.tab_bar.set_drag_visual(None);
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
 
         match drag.phase {
@@ -371,7 +371,7 @@ impl App {
         // Clear drag visual.
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.tab_bar.set_drag_visual(None);
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
 
         // If the tab was moved, restore it to the original position.
@@ -406,7 +406,7 @@ impl App {
         self.sync_tab_bar_from_mux();
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 }

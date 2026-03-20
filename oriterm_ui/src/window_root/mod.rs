@@ -11,12 +11,14 @@
 //!
 //! Submodules:
 //! - `pipeline`: Layout computation, event dispatch, prepare/rebuild phases.
+//! - `overlay_ops`: Overlay convenience methods with borrow splitting.
+//! - `borrow_split`: Multi-field borrow-splitting accessor methods.
 
+mod borrow_split;
+mod overlay_ops;
 mod pipeline;
 
 use std::collections::HashMap;
-
-use std::time::Instant;
 
 use crate::action::{Keymap, WidgetAction};
 use crate::animation::{FrameRequestFlags, RenderScheduler};
@@ -28,7 +30,7 @@ use crate::input::Key;
 use crate::interaction::InteractionManager;
 use crate::invalidation::InvalidationTracker;
 use crate::layout::LayoutNode;
-use crate::overlay::{OverlayId, OverlayManager, Placement};
+use crate::overlay::OverlayManager;
 use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
 
@@ -174,35 +176,6 @@ impl WindowRoot {
         &mut self.focus
     }
 
-    /// Returns mutable references to both the interaction and focus managers.
-    ///
-    /// Borrow splitting: callers that need `&mut InteractionManager` and
-    /// `&mut FocusManager` simultaneously (e.g. `apply_dispatch_requests`,
-    /// `request_focus`) cannot call `interaction_mut()` and `focus_mut()`
-    /// in the same expression because each takes `&mut self`.
-    pub fn interaction_and_focus_mut(&mut self) -> (&mut InteractionManager, &mut FocusManager) {
-        (&mut self.interaction, &mut self.focus)
-    }
-
-    /// Returns `&mut InteractionManager` and `&FrameRequestFlags` simultaneously.
-    ///
-    /// Borrow splitting: `prepare_widget_tree` needs `&mut InteractionManager`
-    /// while also receiving `Option<&FrameRequestFlags>`. Since both live inside
-    /// `WindowRoot`, separate accessor calls would conflict.
-    pub fn interaction_mut_and_frame_requests(
-        &mut self,
-    ) -> (&mut InteractionManager, &FrameRequestFlags) {
-        (&mut self.interaction, &self.frame_requests)
-    }
-
-    /// Returns `&InteractionManager` and `&FrameRequestFlags` simultaneously.
-    ///
-    /// Borrow splitting for `prepaint_widget_tree`, which reads interaction
-    /// state and frame request flags in the same call.
-    pub fn interaction_and_frame_requests(&self) -> (&InteractionManager, &FrameRequestFlags) {
-        (&self.interaction, &self.frame_requests)
-    }
-
     /// Returns a reference to the overlay manager.
     pub fn overlays(&self) -> &OverlayManager {
         &self.overlays
@@ -346,129 +319,6 @@ impl WindowRoot {
     /// Returns whether there are any pending actions.
     pub fn has_pending_actions(&self) -> bool {
         !self.pending_actions.is_empty()
-    }
-
-    // -- Overlay operations --
-
-    /// Pushes a popup overlay at the given anchor with the specified placement.
-    ///
-    /// Convenience method that handles the borrow splitting needed to call
-    /// `OverlayManager::push_overlay` with `LayerTree` and `LayerAnimator`.
-    pub fn push_overlay(
-        &mut self,
-        widget: Box<dyn Widget>,
-        anchor: Rect,
-        placement: Placement,
-        now: Instant,
-    ) -> OverlayId {
-        self.overlays.push_overlay(
-            widget,
-            anchor,
-            placement,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
-            now,
-        )
-    }
-
-    /// Returns whether any overlays are active.
-    pub fn has_overlays(&self) -> bool {
-        !self.overlays.is_empty()
-    }
-
-    /// Replaces the topmost popup overlay with a new widget.
-    ///
-    /// Handles borrow splitting for `OverlayManager`, `LayerTree`, `LayerAnimator`.
-    pub fn replace_popup(
-        &mut self,
-        widget: Box<dyn Widget>,
-        anchor: Rect,
-        placement: Placement,
-        now: Instant,
-    ) -> OverlayId {
-        self.overlays.replace_popup(
-            widget,
-            anchor,
-            placement,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
-            now,
-        )
-    }
-
-    /// Begins dismissing the topmost overlay with a fade-out animation.
-    pub fn dismiss_topmost(&mut self, now: Instant) -> Option<OverlayId> {
-        self.overlays
-            .begin_dismiss_topmost(&mut self.layer_tree, &mut self.layer_animator, now)
-    }
-
-    /// Removes all popup overlays immediately.
-    pub fn clear_popups(&mut self) -> usize {
-        self.overlays
-            .clear_popups(&mut self.layer_tree, &mut self.layer_animator)
-    }
-
-    /// Routes a mouse event through the overlay manager.
-    ///
-    /// Returns `PassThrough` if no overlay consumed the event.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "forwarding overlay manager params with borrow splitting"
-    )]
-    pub fn process_overlay_mouse_event(
-        &mut self,
-        event: &crate::input::MouseEvent,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        theme: &crate::theme::UiTheme,
-        focused_widget: Option<WidgetId>,
-        now: Instant,
-    ) -> crate::overlay::OverlayEventResult {
-        self.overlays.process_mouse_event(
-            event,
-            measurer,
-            theme,
-            focused_widget,
-            &mut self.layer_tree,
-            &mut self.layer_animator,
-            now,
-        )
-    }
-
-    /// Returns the number of drawable overlays.
-    pub fn overlay_draw_count(&self) -> usize {
-        self.overlays.draw_count()
-    }
-
-    /// Computes layout for all overlay widgets.
-    pub fn layout_overlays(
-        &mut self,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        theme: &crate::theme::UiTheme,
-    ) {
-        self.overlays.layout_overlays(measurer, theme);
-    }
-
-    /// Draws overlay at the given draw index, returning its opacity.
-    ///
-    /// Handles borrow splitting between `overlays` and `layer_tree`.
-    pub fn draw_overlay_at(&self, draw_idx: usize, ctx: &mut crate::widgets::DrawCtx<'_>) -> f32 {
-        self.overlays
-            .draw_overlay_at(draw_idx, ctx, &self.layer_tree)
-    }
-
-    /// Ticks layer animations and cleans up dismissed overlays.
-    ///
-    /// Returns `true` if any animations are still in progress (the caller
-    /// should schedule a repaint). Handles borrow splitting for
-    /// `layer_animator`, `layer_tree`, and `overlays`.
-    pub fn tick_overlay_animations(&mut self, now: Instant) -> bool {
-        if !self.layer_animator.is_any_animating() {
-            return false;
-        }
-        let animating = self.layer_animator.tick(&mut self.layer_tree, now);
-        self.overlays
-            .cleanup_dismissed(&mut self.layer_tree, &self.layer_animator);
-        animating
     }
 }
 

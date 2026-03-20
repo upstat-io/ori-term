@@ -313,7 +313,7 @@ impl App {
                     tab.floating_mut().move_pane_mut(pane_id, sx, sy);
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
             DragInfo::Resize {
@@ -340,7 +340,7 @@ impl App {
                     }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
         }

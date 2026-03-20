@@ -151,7 +151,7 @@ impl App {
             if let Some(idx) = self.tab_index_for_pane(pane_id) {
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.ring_bell(idx, Instant::now());
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
         }
@@ -213,7 +213,7 @@ impl App {
         }
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.remove(id);
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
 
         // Remove pane from local session (tree/floating/tab/window).

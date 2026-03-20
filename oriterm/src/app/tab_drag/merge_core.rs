@@ -89,7 +89,7 @@ impl App {
         if let Some(ctx) = self.windows.get_mut(&target_wid) {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 

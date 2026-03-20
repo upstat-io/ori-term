@@ -117,7 +117,7 @@ impl App {
             }
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.hovered_url = result.url;
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }
@@ -135,7 +135,7 @@ impl App {
             }
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.hovered_url = None;
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }

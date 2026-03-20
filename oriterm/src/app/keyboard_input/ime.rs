@@ -77,13 +77,13 @@ impl App {
         match self.ime.handle_event(ime) {
             ImeEffect::Redraw => {
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
             ImeEffect::UpdateCursorArea => {
                 self.update_ime_cursor_area();
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
             ImeEffect::Commit(text) => {
@@ -143,7 +143,7 @@ impl App {
             self.write_pane_input(pane_id, text.as_bytes());
             self.cursor_blink.reset();
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }

@@ -161,16 +161,10 @@ impl App {
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = Some(state);
-            ctx.overlays.replace_popup(
-                Box::new(widget),
-                anchor,
-                Placement::Below,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            );
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root
+                .replace_popup(Box::new(widget), anchor, Placement::Below, now);
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
     }
 
@@ -197,16 +191,10 @@ impl App {
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = Some(state);
-            ctx.overlays.replace_popup(
-                Box::new(widget),
-                anchor,
-                Placement::Below,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            );
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root
+                .replace_popup(Box::new(widget), anchor, Placement::Below, now);
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
     }
 
@@ -241,7 +229,7 @@ impl App {
                 .requests
                 .contains(oriterm_ui::controllers::ControllerRequests::PAINT)
         {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
             ctx.ui_stale = true;
         }
         // Map Clicked(btn_id) → WindowMinimize/Maximize/Close.

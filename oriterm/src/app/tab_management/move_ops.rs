@@ -42,7 +42,7 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -140,7 +140,7 @@ impl App {
             self.refresh_platform_rects(wid);
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -200,7 +200,7 @@ impl App {
         }
         self.refresh_platform_rects(new_winit_id);
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -234,7 +234,7 @@ impl App {
         self.start_tab_reorder_slide(from, to, tab_width);
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 }

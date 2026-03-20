@@ -17,13 +17,11 @@ impl App {
     pub(in crate::app) fn clear_window_popups(&mut self, window_id: winit::window::WindowId) {
         let mut removed = 0;
         if let Some(ctx) = self.windows.get_mut(&window_id) {
-            removed = ctx
-                .overlays
-                .clear_popups(&mut ctx.layer_tree, &mut ctx.layer_animator);
+            removed = ctx.root.clear_popups();
             if removed > 0 {
                 ctx.context_menu = None;
-                ctx.dirty = true;
-                ctx.urgent_redraw = true;
+                ctx.root.mark_dirty();
+                ctx.root.set_urgent_redraw(true);
             }
         }
         if removed > 0 {
@@ -39,14 +37,14 @@ impl App {
 
                 if response.handled {
                     if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.urgent_redraw = true;
+                        ctx.root.set_urgent_redraw(true);
                     }
                 }
 
                 let Some(action) = response.action else {
                     if response.handled {
                         if let Some(ctx) = self.focused_ctx_mut() {
-                            ctx.dirty = true;
+                            ctx.root.mark_dirty();
                         }
                     }
                     return;
@@ -73,8 +71,8 @@ impl App {
                     }
                     WidgetAction::MoveOverlay { delta_x, delta_y } => {
                         if let Some(ctx) = self.focused_ctx_mut() {
-                            ctx.overlays.offset_topmost(delta_x, delta_y);
-                            ctx.dirty = true;
+                            ctx.root.overlays_mut().offset_topmost(delta_x, delta_y);
+                            ctx.root.mark_dirty();
                         }
                     }
                     WidgetAction::OpenDropdown {
@@ -109,8 +107,8 @@ impl App {
                     | WidgetAction::WindowClose => {
                         if response.handled {
                             if let Some(ctx) = self.focused_ctx_mut() {
-                                ctx.dirty = true;
-                                ctx.urgent_redraw = true;
+                                ctx.root.mark_dirty();
+                                ctx.root.set_urgent_redraw(true);
                             }
                         }
                     }
@@ -123,8 +121,8 @@ impl App {
                     // The settings panel beneath remains functional.
                     self.pending_dropdown_id = None;
                     if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.dirty = true;
-                        ctx.urgent_redraw = true;
+                        ctx.root.mark_dirty();
+                        ctx.root.set_urgent_redraw(true);
                     }
                 } else {
                     // Top-level overlay dismissed (Escape, click-outside).
@@ -132,8 +130,8 @@ impl App {
                     self.settings_pending = None;
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.context_menu = None;
-                        ctx.dirty = true;
-                        ctx.urgent_redraw = true;
+                        ctx.root.mark_dirty();
+                        ctx.root.set_urgent_redraw(true);
                     }
                     self.settings_ids = None;
                 }
@@ -167,11 +165,11 @@ impl App {
         // Always propagate — widgets update visuals (page switch, selection).
         let widget_handled = self
             .focused_ctx_mut()
-            .is_some_and(|ctx| ctx.overlays.accept_action_topmost(action));
+            .is_some_and(|ctx| ctx.root.overlays_mut().accept_action_topmost(action));
 
         if config_changed || widget_handled {
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
             return true;
         }
@@ -232,7 +230,7 @@ impl App {
         // Invalidate render caches and mark dirty.
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.invalidate_all();
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -240,10 +238,9 @@ impl App {
     fn dismiss_topmost_overlay(&mut self) {
         let now = Instant::now();
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays
-                .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root.dismiss_topmost(now);
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
         if self.pending_dropdown_id.is_some() {
             // Only the dropdown popup was dismissed.
@@ -310,7 +307,7 @@ impl App {
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -318,10 +315,9 @@ impl App {
     fn dismiss_context_menu(&mut self) {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = None;
-            ctx.overlays
-                .clear_popups(&mut ctx.layer_tree, &mut ctx.layer_animator);
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root.clear_popups();
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
     }
 
@@ -358,16 +354,10 @@ impl App {
         self.pending_dropdown_id = Some(dropdown_id);
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays.replace_popup(
-                Box::new(widget),
-                anchor,
-                Placement::BelowFlush,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            );
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root
+                .replace_popup(Box::new(widget), anchor, Placement::BelowFlush, now);
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
     }
 
@@ -384,10 +374,9 @@ impl App {
         // Dismiss the popup overlay (topmost).
         let now = Instant::now();
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays
-                .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root.dismiss_topmost(now);
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
 
         // Route the selection through the settings action handler.
@@ -395,8 +384,8 @@ impl App {
         if self.try_dispatch_settings_action(&action) {
             // Propagate back to the dropdown widget so it updates its display.
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.overlays.accept_action_topmost(&action);
-                ctx.dirty = true;
+                ctx.root.overlays_mut().accept_action_topmost(&action);
+                ctx.root.mark_dirty();
             }
             return;
         }

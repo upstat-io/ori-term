@@ -191,9 +191,11 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             let logical_h = size.height as f32 / scale;
-            ctx.overlays.set_viewport(oriterm_ui::geometry::Rect::new(
-                0.0, 0.0, logical_w, logical_h,
-            ));
+            ctx.root
+                .overlays_mut()
+                .set_viewport(oriterm_ui::geometry::Rect::new(
+                    0.0, 0.0, logical_w, logical_h,
+                ));
         }
 
         // Recompute grid dimensions, resize terminal + PTY + increments.
@@ -204,9 +206,9 @@ impl App {
         if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.url_cache.invalidate();
             ctx.hovered_url = None; // Segments contain stale absolute rows.
-            ctx.invalidation.invalidate_all();
-            ctx.damage_tracker.reset();
-            ctx.dirty = true;
+            ctx.root.invalidation_mut().invalidate_all();
+            ctx.root.damage_mut().reset();
+            ctx.root.mark_dirty();
         }
     }
 

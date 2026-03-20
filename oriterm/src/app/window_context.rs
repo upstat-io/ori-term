@@ -10,14 +10,7 @@ use oriterm_mux::id::PaneId;
 
 use crate::session::DividerLayout;
 
-use oriterm_ui::animation::FrameRequestFlags;
-use oriterm_ui::compositor::layer_animator::LayerAnimator;
-use oriterm_ui::compositor::layer_tree::LayerTree;
-use oriterm_ui::draw::{DamageTracker, Scene};
-use oriterm_ui::geometry::Rect;
-use oriterm_ui::interaction::InteractionManager;
-use oriterm_ui::invalidation::InvalidationTracker;
-use oriterm_ui::overlay::OverlayManager;
+use oriterm_ui::draw::Scene;
 use oriterm_ui::surface::{DamageSet, RenderStrategy};
 use oriterm_ui::widgets::tab_bar::{TabBarWidget, TabSlideState};
 
@@ -58,24 +51,17 @@ pub(crate) struct WindowContext {
     // Layout caches.
     pub(super) cached_dividers: Option<Vec<DividerLayout>>,
 
-    // Compositor state.
-    pub(super) layer_tree: LayerTree,
-    pub(super) layer_animator: LayerAnimator,
+    // Tab slide animation.
     pub(super) tab_slide: TabSlideState,
 
-    // Framework-managed widget interaction state (hot/active/focus trifecta).
-    pub(super) interaction: InteractionManager,
-    /// Shared frame request flags — widgets set these during paint,
-    /// the framework reads them after `build_scene()` to schedule
-    /// animation frames and repaints.
-    pub(super) frame_requests: FrameRequestFlags,
+    /// Pure UI framework state (interaction, focus, overlays, compositor, animation).
+    pub(super) root: oriterm_ui::window_root::WindowRoot,
 
-    // Interaction state.
+    // Terminal-specific interaction state.
     pub(super) hovering_divider: Option<DividerLayout>,
     pub(super) divider_drag: Option<DividerDragState>,
     pub(super) floating_drag: Option<FloatingDragState>,
     pub(super) tab_drag: Option<TabDragState>,
-    pub(super) overlays: OverlayManager,
     pub(super) context_menu: Option<ContextMenuState>,
     pub(super) hovered_url: Option<DetectedUrl>,
     pub(super) url_cache: UrlDetectCache,
@@ -86,11 +72,6 @@ pub(crate) struct WindowContext {
 
     // Reusable buffers.
     pub(super) search_bar_buf: String,
-
-    // Invalidation tracking.
-    pub(super) invalidation: InvalidationTracker,
-    // Per-widget damage tracker (scene diffing for future partial repaints).
-    pub(super) damage_tracker: DamageTracker,
 
     // Surface strategy and damage tracking.
     #[expect(
@@ -103,13 +84,6 @@ pub(crate) struct WindowContext {
         reason = "vocabulary for retained-ui plan; consumed by future render paths"
     )]
     pub(super) damage: DamageSet,
-
-    // Redraw coalescing.
-    pub(super) dirty: bool,
-    /// Whether this window should bypass the normal frame budget once.
-    ///
-    /// Used for latency-sensitive UI feedback like popup open/dismiss.
-    pub(super) urgent_redraw: bool,
     /// Chrome/overlay content has changed since the last full content render.
     ///
     /// When `true`, the GPU content cache texture is stale and
@@ -139,29 +113,23 @@ impl WindowContext {
             frame: None,
             chrome_scene: Scene::new(),
             last_rendered_pane: None,
-            layer_tree: LayerTree::new(Rect::default()),
-            layer_animator: LayerAnimator::new(),
             tab_slide: TabSlideState::new(),
             cached_dividers: None,
-            interaction: InteractionManager::new(),
-            frame_requests: FrameRequestFlags::new(),
+            root: oriterm_ui::window_root::WindowRoot::new(
+                oriterm_ui::widgets::label::LabelWidget::new(""),
+            ),
             hovering_divider: None,
             divider_drag: None,
             floating_drag: None,
             tab_drag: None,
-            overlays: OverlayManager::new(Rect::default()),
             context_menu: None,
             hovered_url: None,
             url_cache: UrlDetectCache::default(),
             last_drag_area_press: None,
             text_cache: TextShapeCache::new(),
             search_bar_buf: String::new(),
-            invalidation: InvalidationTracker::new(),
-            damage_tracker: DamageTracker::new(),
             render_strategy: RenderStrategy::TerminalCached,
             damage: DamageSet::default(),
-            dirty: true,
-            urgent_redraw: false,
             ui_stale: true,
         }
     }
