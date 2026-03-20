@@ -18,7 +18,7 @@ sections:
     status: complete
   - id: "07.3"
     title: "WindowContext & DialogWindowContext Decomposition"
-    status: in-progress
+    status: complete
   - id: "07.4"
     title: "Test Harness Unification"
     status: not-started
@@ -279,7 +279,7 @@ This mirrors the existing pattern where `pipeline.rs` is a separate module for o
 
 Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus platform/GPU-specific state. The framework state they currently own individually moves into their `WindowRoot`.
 
-- [ ] Add `WindowRoot` field to `WindowContext`, remove individual framework fields:
+- [x] Add `WindowRoot` field to `WindowContext`, remove individual framework fields:
   ```rust
   // BEFORE (WindowContext) — fields that move into WindowRoot:
   interaction: InteractionManager,
@@ -324,7 +324,7 @@ Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus pl
   root: WindowRoot,  // owns all of the above
   ```
 
-- [ ] Update all call sites that access framework state through `WindowContext` to go through `root`:
+- [x] Update all call sites that access framework state through `WindowContext` to go through `root`:
   - `self.interaction` → `self.root.interaction()`
   - `self.focus` → `self.root.focus()`
   - `self.overlays` → `self.root.overlays()`
@@ -336,13 +336,13 @@ Slim down `WindowContext` and `DialogWindowContext` to wrap `WindowRoot` plus pl
   > `oriterm/src/app/`. Use find-and-replace carefully. The compiler will catch
   > every missed site (field access on a type that no longer has that field).
 
-- [ ] Update `WindowContext` construction sites (in `window_management.rs`, `init/mod.rs`) to create a `WindowRoot` and pass it in.
+- [x] Update `WindowContext` construction sites (in `window_management.rs`, `init/mod.rs`) to create a `WindowRoot` and pass it in.
 
 - [x] Update `DialogWindowContext` construction site (in `dialog_management.rs`) similarly.
 
-- [ ] Verify all pipeline calls (`prepare_widget_tree`, `deliver_event_to_tree`, etc.) now go through `WindowRoot` methods rather than being called directly with individual framework fields.
+- [x] Verify all pipeline calls (`prepare_widget_tree`, `deliver_event_to_tree`, etc.) now go through `WindowRoot` methods rather than being called directly with individual framework fields.
 
-- [ ] Ensure `WindowContext` retains only platform/GPU/terminal-specific fields:
+- [x] Ensure `WindowContext` retains only platform/GPU/terminal-specific fields:
   - `window: TermWindow` — platform window
   - `renderer: Option<WindowRenderer>` — GPU renderer
   - `tab_bar: TabBarWidget`, `terminal_grid: TerminalGridWidget` — terminal widgets

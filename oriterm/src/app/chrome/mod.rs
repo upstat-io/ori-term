@@ -216,7 +216,7 @@ impl App {
             ctx.window.set_maximized(maximized);
             #[cfg(not(target_os = "macos"))]
             ctx.tab_bar.set_maximized(maximized);
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -287,7 +287,7 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             if ctx.tab_bar.hover_hit() != hit {
                 ctx.tab_bar.set_hover_hit(hit, Instant::now());
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
                 ctx.ui_stale = true;
             }
         }
@@ -324,7 +324,7 @@ impl App {
         let now = Instant::now();
         let animating = ctx.tab_bar.update_control_hover_state(pos, now);
         if animating || is_control_hit {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
             ctx.ui_stale = true;
         }
     }
@@ -351,12 +351,12 @@ impl App {
         {
             let now = Instant::now();
             if ctx.tab_bar.clear_control_hover_state(now) {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
                 ctx.ui_stale = true;
             }
         }
         if had_hover {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
             ctx.ui_stale = true;
         }
     }

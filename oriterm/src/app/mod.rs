@@ -279,7 +279,7 @@ impl App {
     /// output in the unfocused window must still trigger a render.
     fn mark_all_windows_dirty(&mut self) {
         for ctx in self.windows.values_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -291,7 +291,7 @@ impl App {
         if let Some(session_wid) = self.session.window_for_pane(pane_id) {
             for ctx in self.windows.values_mut() {
                 if ctx.window.session_window_id() == session_wid {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                     return;
                 }
             }
@@ -332,9 +332,9 @@ impl App {
 
         ctx.pane_cache.invalidate_all();
         ctx.text_cache.clear();
-        ctx.invalidation.invalidate_all();
-        ctx.damage_tracker.reset();
-        ctx.dirty = true;
+        ctx.root.invalidation_mut().invalidate_all();
+        ctx.root.damage_mut().reset();
+        ctx.root.mark_dirty();
 
         // Mark all grid lines dirty so the frame extraction re-reads every
         // cell with the new cell metrics. Without this, the terminal content
@@ -372,9 +372,9 @@ impl App {
             ctx.tab_bar.apply_theme(&self.ui_theme);
             ctx.pane_cache.invalidate_all();
             ctx.text_cache.clear();
-            ctx.invalidation.invalidate_all();
-            ctx.damage_tracker.reset();
-            ctx.dirty = true;
+            ctx.root.invalidation_mut().invalidate_all();
+            ctx.root.damage_mut().reset();
+            ctx.root.mark_dirty();
         }
     }
 
@@ -480,7 +480,7 @@ impl App {
         if self.tab_width_lock().is_some() {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.tab_bar.set_tab_width_lock(None);
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }

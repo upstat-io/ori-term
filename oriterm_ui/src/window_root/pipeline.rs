@@ -12,6 +12,7 @@ use crate::input::InputEvent;
 use crate::input::dispatch::tree::{TreeDispatchResult, deliver_event_to_tree};
 use crate::input::layout_hit_test_path;
 use crate::interaction::build_parent_map;
+use crate::interaction::lifecycle::LifecycleEvent;
 use crate::layout::compute_layout;
 use crate::overlay::OverlayEventResult;
 use crate::pipeline::{
@@ -272,6 +273,53 @@ impl WindowRoot {
             now,
             Some(&self.frame_requests),
         );
+    }
+
+    /// Runs `prepare_widget_tree` on every overlay widget.
+    ///
+    /// Handles borrow splitting: overlays, interaction, and frame requests all
+    /// live on `WindowRoot`, so the caller cannot destructure them manually.
+    pub fn prepare_overlay_widgets(
+        &mut self,
+        lifecycle_events: &[LifecycleEvent],
+        now: std::time::Instant,
+    ) {
+        let interaction = &mut self.interaction;
+        let flags = &self.frame_requests;
+        self.overlays.for_each_widget_mut(|widget| {
+            prepare_widget_tree(
+                widget,
+                interaction,
+                lifecycle_events,
+                None,
+                Some(flags),
+                now,
+            );
+        });
+    }
+
+    /// Runs `prepaint_widget_tree` on every overlay widget.
+    ///
+    /// Handles borrow splitting: overlays, interaction, and frame requests all
+    /// live on `WindowRoot`, so the caller cannot destructure them manually.
+    pub fn prepaint_overlay_widgets(
+        &mut self,
+        bounds_map: &HashMap<WidgetId, crate::geometry::Rect>,
+        theme: &UiTheme,
+        now: std::time::Instant,
+    ) {
+        let interaction = &self.interaction;
+        let flags = &self.frame_requests;
+        self.overlays.for_each_widget_mut(|widget| {
+            prepaint_widget_tree(
+                widget,
+                bounds_map,
+                Some(interaction),
+                theme,
+                now,
+                Some(flags),
+            );
+        });
     }
 
     /// Forwards accumulated frame request flags to the scheduler.

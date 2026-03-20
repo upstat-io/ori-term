@@ -65,7 +65,7 @@ impl App {
         // visual-only and must not intercept keyboard input.
         let has_overlays = self
             .focused_ctx()
-            .is_some_and(|ctx| !ctx.overlays.is_active_empty());
+            .is_some_and(|ctx| !ctx.root.overlays().is_active_empty());
         if has_overlays && event.state == ElementState::Pressed {
             if let Some(key) = winit_key_to_ui_key(&event.logical_key) {
                 let ui_event = oriterm_ui::input::KeyEvent {
@@ -89,13 +89,11 @@ impl App {
                         &ctx.text_cache,
                         scale,
                     );
-                    ctx.overlays.process_key_event(
+                    ctx.root.process_overlay_key_event(
                         ui_event,
                         &measurer,
                         &self.ui_theme,
                         None,
-                        &mut ctx.layer_tree,
-                        &mut ctx.layer_animator,
                         now,
                     )
                 };
@@ -206,7 +204,7 @@ impl App {
                 mark_mode::MarkAction::Ignored => {}
             }
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
         true
@@ -267,7 +265,7 @@ impl App {
                 // prompt with a visible cursor. That frame can consume the
                 // render budget and push the echoed glyph to the next tick.
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
         }
@@ -304,7 +302,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         true
     }

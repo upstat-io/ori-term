@@ -62,9 +62,9 @@ impl App {
         // Invalidate pane render cache and mark dirty for redraw.
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.invalidate_all();
-            ctx.invalidation.invalidate_all();
-            ctx.damage_tracker.reset();
-            ctx.dirty = true;
+            ctx.root.invalidation_mut().invalidate_all();
+            ctx.root.damage_mut().reset();
+            ctx.root.mark_dirty();
             ctx.ui_stale = true;
         }
 

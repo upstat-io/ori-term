@@ -156,7 +156,7 @@ impl ApplicationHandler<TermEvent> for App {
                 self.cursor_blink.reset();
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.set_active(focused);
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
 
@@ -300,7 +300,7 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::DroppedFile(path) => {
                 self.paste_dropped_files(&[path]);
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
 
@@ -367,7 +367,7 @@ impl ApplicationHandler<TermEvent> for App {
         // Drive cursor blink timer only when blinking is active.
         if self.blinking_active && self.cursor_blink.update() {
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
 
@@ -378,24 +378,22 @@ impl ApplicationHandler<TermEvent> for App {
         {
             let now = std::time::Instant::now();
             for ctx in self.windows.values_mut() {
-                if !ctx.layer_animator.is_any_animating() {
+                if !ctx.root.layer_animator().is_any_animating() {
                     continue;
                 }
-                let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
-                ctx.overlays
-                    .cleanup_dismissed(&mut ctx.layer_tree, &ctx.layer_animator);
+                let animating = ctx.root.tick_overlay_animations(now);
 
                 // Clean up finished tab slide layers and sync offsets to widget.
                 if ctx.tab_slide.has_active() {
-                    ctx.tab_slide
-                        .cleanup(&mut ctx.layer_tree, &ctx.layer_animator);
+                    let (tree, animator) = ctx.root.layer_tree_mut_and_animator();
+                    ctx.tab_slide.cleanup(tree, animator);
                     let count = ctx.tab_bar.tab_count();
                     ctx.tab_slide
-                        .sync_to_widget(count, &ctx.layer_tree, &mut ctx.tab_bar);
+                        .sync_to_widget(count, ctx.root.layer_tree(), &mut ctx.tab_bar);
                 }
 
                 if animating {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
             }
@@ -410,13 +408,13 @@ impl ApplicationHandler<TermEvent> for App {
         self.drain_pending_destroy();
 
         // Check if any window (terminal or dialog) is dirty and render it.
-        let any_dirty = self.windows.values().any(|ctx| ctx.dirty)
+        let any_dirty = self.windows.values().any(|ctx| ctx.root.is_dirty())
             || self.dialogs.values().any(|ctx| ctx.root.is_dirty());
         let now = std::time::Instant::now();
         let urgent_redraw = self
             .windows
             .values()
-            .any(|ctx| ctx.dirty && ctx.urgent_redraw)
+            .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw())
             || self
                 .dialogs
                 .values()
@@ -432,12 +430,12 @@ impl ApplicationHandler<TermEvent> for App {
         self.perf.maybe_log();
 
         // Decide ControlFlow via pure function (testable without winit).
-        let still_dirty = self.windows.values().any(|c| c.dirty)
+        let still_dirty = self.windows.values().any(|c| c.root.is_dirty())
             || self.dialogs.values().any(|c| c.root.is_dirty());
         let has_animations = self
             .windows
             .values()
-            .any(|c| c.layer_animator.is_any_animating())
+            .any(|c| c.root.layer_animator().is_any_animating())
             || self
                 .dialogs
                 .values()

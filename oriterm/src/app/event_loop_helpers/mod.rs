@@ -68,7 +68,7 @@ impl App {
         self.scratch_dirty_windows.extend(
             self.windows
                 .iter()
-                .filter(|(_, ctx)| ctx.dirty)
+                .filter(|(_, ctx)| ctx.root.is_dirty())
                 .map(|(&id, _)| id),
         );
         if self.scratch_dirty_windows.is_empty() {
@@ -81,8 +81,8 @@ impl App {
         for i in 0..self.scratch_dirty_windows.len() {
             let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.windows.get_mut(&wid) {
-                ctx.dirty = false;
-                ctx.invalidation.clear();
+                ctx.root.clear_dirty();
+                ctx.root.invalidation_mut().clear();
             }
             let mux_wid = self
                 .windows
@@ -170,7 +170,7 @@ impl App {
                     oriterm_ui::widgets::tab_bar::constants::MACOS_TRAFFIC_LIGHT_WIDTH
                 };
                 ctx.tab_bar.set_left_inset(inset);
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
         if events.did_exit() {
@@ -185,7 +185,7 @@ impl App {
                 );
             }
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }

@@ -25,7 +25,7 @@ impl App {
         // Check guard: bail if no window or modal already open.
         let has_modal = self
             .focused_ctx()
-            .is_some_and(|ctx| ctx.overlays.has_modal());
+            .is_some_and(|ctx| ctx.root.overlays().has_modal());
         if has_modal || self.focused_ctx().is_none() {
             return;
         }
@@ -43,17 +43,11 @@ impl App {
         let Some(ctx) = self.focused_ctx_mut() else {
             return;
         };
-        let viewport = ctx.overlays.viewport();
+        let viewport = ctx.root.overlays().viewport();
         let now = Instant::now();
-        ctx.overlays.push_modal(
-            Box::new(panel),
-            viewport,
-            Placement::Center,
-            &mut ctx.layer_tree,
-            &mut ctx.layer_animator,
-            now,
-        );
-        ctx.dirty = true;
+        ctx.root
+            .push_modal(Box::new(panel), viewport, Placement::Center, now);
+        ctx.root.mark_dirty();
         ctx.ui_stale = true;
     }
 }

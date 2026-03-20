@@ -178,7 +178,7 @@ impl App {
             let max_x = (layout.tabs_end() - layout.base_tab_width()).max(0.0);
             let visual_x = (logical_x - mouse_offset).clamp(0.0, max_x);
             ctx.tab_bar.set_drag_visual(Some((tab_index, visual_x)));
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
 
         // Synthesize mouse-down (OS modal loop consumed the original).

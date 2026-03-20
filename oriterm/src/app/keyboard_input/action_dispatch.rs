@@ -21,14 +21,14 @@ impl App {
             Action::Copy => {
                 self.copy_selection();
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
             Action::Paste | Action::SmartPaste => {
                 self.paste_from_clipboard();
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
@@ -40,7 +40,7 @@ impl App {
                 if has_sel {
                     self.copy_selection();
                     if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.dirty = true;
+                        ctx.root.mark_dirty();
                     }
                     true
                 } else {
@@ -56,7 +56,7 @@ impl App {
                     }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
@@ -67,7 +67,7 @@ impl App {
                     }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
@@ -87,7 +87,7 @@ impl App {
                     self.enter_mark_mode(pane_id);
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
@@ -100,7 +100,7 @@ impl App {
                     self.cursor_blink.reset();
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
@@ -165,7 +165,7 @@ impl App {
                     }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
@@ -176,7 +176,7 @@ impl App {
                     }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
@@ -191,7 +191,7 @@ impl App {
                     }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
@@ -206,14 +206,14 @@ impl App {
                     }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }
             Action::SelectAll => {
                 self.select_all_in_pane();
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
                 true
             }

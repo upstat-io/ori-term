@@ -151,7 +151,7 @@ impl App {
 
                     let Some(snapshot) = mux.pane_snapshot(pane_id) else {
                         log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
-                        ctx.dirty = true;
+                        ctx.root.mark_dirty();
                         continue;
                     };
                     if swapped {
@@ -343,9 +343,9 @@ impl App {
             // Phase gating: skip prepare + prepaint on cursor-blink frames.
             {
                 let now = std::time::Instant::now();
-                let lifecycle_events = ctx.interaction.drain_events();
+                let lifecycle_events = ctx.root.interaction_mut().drain_events();
                 let widget_dirty = {
-                    let mut d = ctx.invalidation.max_dirty_kind();
+                    let mut d = ctx.root.invalidation().max_dirty_kind();
                     if !lifecycle_events.is_empty() {
                         d = d.merge(oriterm_ui::invalidation::DirtyKind::Prepaint);
                     }
@@ -354,60 +354,41 @@ impl App {
                     }
                     d
                 };
-                ctx.frame_requests.reset();
+                ctx.root.frame_requests_mut().reset();
 
                 if widget_dirty >= oriterm_ui::invalidation::DirtyKind::Prepaint {
+                    let (interaction, flags) = ctx.root.interaction_mut_and_frame_requests();
                     super::super::widget_pipeline::prepare_widget_tree(
                         &mut ctx.tab_bar,
-                        &mut ctx.interaction,
+                        interaction,
                         &lifecycle_events,
                         None,
-                        Some(&ctx.frame_requests),
+                        Some(flags),
                         now,
                     );
                     // Prepare overlay widget trees.
-                    let interaction = &mut ctx.interaction;
-                    let flags = &ctx.frame_requests;
-                    ctx.overlays.for_each_widget_mut(|widget| {
-                        super::super::widget_pipeline::prepare_widget_tree(
-                            widget,
-                            interaction,
-                            &lifecycle_events,
-                            None,
-                            Some(flags),
-                            now,
-                        );
-                    });
+                    ctx.root.prepare_overlay_widgets(&lifecycle_events, now);
 
                     // Prepaint: resolve visual state into widget fields.
                     let prepaint_bounds = std::collections::HashMap::new();
+                    let (interaction, flags) = ctx.root.interaction_and_frame_requests();
                     super::super::widget_pipeline::prepaint_widget_tree(
                         &mut ctx.tab_bar,
                         &prepaint_bounds,
-                        Some(&ctx.interaction),
+                        Some(interaction),
                         &self.ui_theme,
                         now,
-                        Some(&ctx.frame_requests),
+                        Some(flags),
                     );
-                    let interaction = &ctx.interaction;
-                    let theme = &self.ui_theme;
-                    let flags = &ctx.frame_requests;
-                    ctx.overlays.for_each_widget_mut(|widget| {
-                        super::super::widget_pipeline::prepaint_widget_tree(
-                            widget,
-                            &prepaint_bounds,
-                            Some(interaction),
-                            theme,
-                            now,
-                            Some(flags),
-                        );
-                    });
+                    ctx.root
+                        .prepaint_overlay_widgets(&prepaint_bounds, &self.ui_theme, now);
                 }
             }
 
             // Chrome, tab bar, overlays, search bar (shared with single-pane path).
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
+            let (interaction, flags, damage) = ctx.root.interaction_frame_requests_and_damage_mut();
             let tab_bar_animating = Self::draw_tab_bar(
                 Some(&ctx.tab_bar),
                 renderer,
@@ -417,30 +398,33 @@ impl App {
                 gpu,
                 &self.ui_theme,
                 &ctx.text_cache,
-                &ctx.interaction,
-                &ctx.frame_requests,
-                &mut ctx.damage_tracker,
+                interaction,
+                flags,
+                damage,
             );
             if tab_bar_animating {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
 
             let logical_size = (logical_w as f32, h as f32 / scale);
+            let (overlays, layer_tree, interaction, flags) = ctx
+                .root
+                .overlays_layer_tree_interaction_and_frame_requests();
             let overlays_animating = Self::draw_overlays(
-                &mut ctx.overlays,
+                overlays,
                 renderer,
                 &mut ctx.chrome_scene,
                 logical_size,
                 scale,
                 gpu,
-                &ctx.layer_tree,
+                layer_tree,
                 &self.ui_theme,
                 &ctx.text_cache,
-                &ctx.interaction,
-                &ctx.frame_requests,
+                interaction,
+                flags,
             );
             if overlays_animating {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
 
             // Search bar from focused pane.
