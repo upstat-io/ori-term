@@ -124,10 +124,8 @@ fn convert_scene_text(
     ctx: &mut TextContext<'_>,
     scale: f32,
     opacity: f32,
-    _clip: [f32; 4],
+    clip: [f32; 4],
 ) {
-    // Text glyphs currently use CLIP_UNCLIPPED — per-glyph clip support
-    // is deferred until the shader supports per-glyph clip rects.
     convert_text(
         text.position,
         &text.shaped,
@@ -136,6 +134,7 @@ fn convert_scene_text(
         ctx,
         scale,
         opacity,
+        clip,
     );
 }
 
@@ -145,10 +144,8 @@ fn convert_scene_icon(
     ctx: &mut TextContext<'_>,
     scale: f32,
     opacity: f32,
-    _clip: [f32; 4],
+    clip: [f32; 4],
 ) {
-    // Icons currently use CLIP_UNCLIPPED — per-icon clip support
-    // is deferred until the shader supports per-glyph clip rects.
     convert_icon(
         icon.rect,
         icon.atlas_page,
@@ -157,6 +154,7 @@ fn convert_scene_icon(
         ctx,
         scale,
         opacity,
+        clip,
     );
 }
 

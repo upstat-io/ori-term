@@ -329,11 +329,16 @@ impl App {
         let (interaction, focus) = ctx.root.interaction_and_focus_mut();
         apply_dispatch_requests(result.requests, result.source, interaction, focus);
         if result.handled {
-            // Scroll offset changed — invalidate cached layout and scene
-            // cache so the next render repaints scrolled content.
-            ctx.cached_layout = None;
-            ctx.root.invalidation_mut().invalidate_all();
-            ctx.root.damage_mut().reset();
+            // Scroll offset changed — request repaint. The SettingsPanel
+            // reads scroll offset fresh during paint (push_clip+push_offset).
+            //
+            // Do NOT invalidate cached_layout here: the layout structure and
+            // sizes haven't changed (only the scroll widget's internal
+            // offset moved). The stale content_offset in the cached layout
+            // is acceptable for hit testing during scroll — the scroll
+            // widget handles all wheel events in its area regardless of
+            // exact content_offset. A click after scrolling stops will
+            // trigger a cursor-move that refreshes the layout.
             ctx.request_urgent_redraw();
         }
     }

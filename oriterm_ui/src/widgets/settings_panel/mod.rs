@@ -98,10 +98,12 @@ impl SettingsPanel {
         let panel_id = WidgetId::next();
 
         // Body: the content widget fills remaining height so the footer
-        // stays pinned at the bottom (sticky footer pattern).
+        // stays pinned at the bottom (sticky footer pattern). Clip so
+        // scroll content cannot overflow into the separator/footer area.
         let body = ContainerWidget::row()
             .with_width(SizeSpec::Fill)
             .with_height(SizeSpec::Fill)
+            .with_clip(true)
             .with_child(content);
 
         // Footer: separator + Reset to Defaults (left) | Cancel + Save (right).
@@ -386,7 +388,14 @@ impl Widget for SettingsPanel {
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
-        self.container.accept_action(action)
+        let handled = self.container.accept_action(action);
+        if handled {
+            // Structural changes (page switch, widget add/remove) invalidate
+            // the cached layout so the next paint recomputes it with the new
+            // active page's widgets.
+            self.invalidate_cache();
+        }
+        handled
     }
 
     fn focusable_children(&self) -> Vec<WidgetId> {

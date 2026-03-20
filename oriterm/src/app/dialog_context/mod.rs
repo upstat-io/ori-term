@@ -208,9 +208,15 @@ impl DialogWindowContext {
     }
 
     /// Schedule an immediate redraw for latency-sensitive UI feedback.
+    ///
+    /// Also calls `window.request_redraw()` so that winit generates a
+    /// `RedrawRequested` event, which ensures the dialog is rendered
+    /// promptly instead of waiting for `about_to_wait` — important for
+    /// responsive scrolling and hover feedback.
     pub(super) fn request_urgent_redraw(&mut self) {
         self.root.mark_dirty();
         self.root.set_urgent_redraw(true);
+        self.window.request_redraw();
     }
 
     /// Whether this dialog has a non-zero surface area for rendering.

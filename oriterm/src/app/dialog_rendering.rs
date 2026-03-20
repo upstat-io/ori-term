@@ -8,10 +8,9 @@ use std::time::Instant;
 
 use winit::window::WindowId;
 
-use oriterm_ui::draw::build_scene;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::invalidation::DirtyKind;
-use oriterm_ui::widgets::DrawCtx;
+use oriterm_ui::widgets::{DrawCtx, Widget};
 
 use super::App;
 use super::widget_pipeline::{prepaint_widget_tree, prepare_widget_tree};
@@ -166,7 +165,9 @@ impl App {
             );
         }
 
-        // Draw the chrome title bar via build_scene.
+        // Draw the chrome title bar, then the dialog content below it.
+        // Paint directly (not via build_scene, which clears the scene).
+        // The scene was already cleared at the top of this function.
         let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
         {
             let mut draw_ctx = DrawCtx {
@@ -180,10 +181,9 @@ impl App {
                 widget_id: None,
                 frame_requests: None,
             };
-            build_scene(&ctx.chrome, &mut draw_ctx);
+            ctx.chrome.paint(&mut draw_ctx);
         }
 
-        // Draw the dialog content below the chrome.
         let content_bounds = Rect::new(0.0, chrome_h, logical_w, logical_h - chrome_h);
         {
             let mut draw_ctx = DrawCtx {
@@ -197,7 +197,7 @@ impl App {
                 widget_id: None,
                 frame_requests: None,
             };
-            build_scene(ctx.content.content_widget(), &mut draw_ctx);
+            ctx.content.content_widget().paint(&mut draw_ctx);
         }
 
         // Compute per-widget damage for future partial repaint support.
