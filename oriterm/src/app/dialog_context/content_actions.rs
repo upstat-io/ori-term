@@ -2,8 +2,7 @@
 //!
 //! Handles widget actions emitted by dialog content (settings panel,
 //! confirmation dialog): Save, Cancel, OK, dropdown open, selection,
-//! toggle. Also manages dropdown popup overlays within dialog windows
-//! and keyboard routing to confirmation dialog widgets.
+//! toggle, and keyboard routing to confirmation dialog widgets.
 
 use std::time::Instant;
 
@@ -11,7 +10,6 @@ use oriterm_ui::controllers::ControllerRequests;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::interaction::build_parent_map;
 use oriterm_ui::layout::compute_layout;
-use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
 use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
 use winit::window::WindowId;
@@ -134,9 +132,19 @@ impl App {
         **ids = new_ids;
         **panel = SettingsPanel::embedded(content);
 
-        // Re-register widgets and rebuild focus order for the new tree.
+        // Re-register widgets for the new tree.
         crate::app::widget_pipeline::register_widget_tree(&mut **panel, ctx.root.interaction_mut());
         let _ = ctx.root.interaction_mut().drain_events();
+
+        // Rebuild key contexts so keymap scope gating covers the new widgets.
+        ctx.root.key_contexts_mut().clear();
+        oriterm_ui::action::collect_key_contexts(&mut ctx.chrome, ctx.root.key_contexts_mut());
+        oriterm_ui::action::collect_key_contexts(&mut **panel, ctx.root.key_contexts_mut());
+
+        // Rebuild focus order for the new widget tree.
+        let mut focusable = Vec::new();
+        collect_focusable_ids(&mut **panel, &mut focusable);
+        ctx.root.focus_mut().set_focus_order(focusable);
 
         // Invalidate all caches.
         ctx.cached_layout = None;
@@ -157,7 +165,11 @@ impl App {
     /// is unchanged — widgets may need to update visuals (e.g. sidebar page
     /// switching, dropdown selection display). After config changes, compares
     /// pending vs original to track dirty state.
-    fn dispatch_dialog_settings_action(&mut self, window_id: WindowId, action: &WidgetAction) {
+    pub(super) fn dispatch_dialog_settings_action(
+        &mut self,
+        window_id: WindowId,
+        action: &WidgetAction,
+    ) {
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
@@ -195,6 +207,26 @@ impl App {
         if let WidgetAction::Selected { id, index } = action {
             if widget_handled && *id == ids.sidebar_id && *index < 8 {
                 *active_page = *index;
+
+                // Page switch: register the new page's widgets and rebuild
+                // focus/keymap state so keyboard navigation targets the
+                // correct page.
+                crate::app::widget_pipeline::register_widget_tree(
+                    &mut **panel,
+                    ctx.root.interaction_mut(),
+                );
+                let _ = ctx.root.interaction_mut().drain_events();
+
+                ctx.root.key_contexts_mut().clear();
+                oriterm_ui::action::collect_key_contexts(
+                    &mut ctx.chrome,
+                    ctx.root.key_contexts_mut(),
+                );
+                oriterm_ui::action::collect_key_contexts(&mut **panel, ctx.root.key_contexts_mut());
+
+                let mut focusable = Vec::new();
+                collect_focusable_ids(&mut **panel, &mut focusable);
+                ctx.root.focus_mut().set_focus_order(focusable);
             }
         }
 
@@ -208,100 +240,6 @@ impl App {
             panel.invalidate_cache();
             ctx.request_urgent_redraw();
         }
-    }
-
-    /// Open a dropdown popup within a dialog window's overlay manager.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "forwarding OpenDropdown fields + window ID"
-    )]
-    fn open_dialog_dropdown(
-        &mut self,
-        window_id: WindowId,
-        dropdown_id: oriterm_ui::widget_id::WidgetId,
-        options: Vec<String>,
-        selected: usize,
-        anchor: Rect,
-    ) {
-        use oriterm_ui::overlay::Placement;
-        use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
-
-        let entries: Vec<MenuEntry> = options
-            .into_iter()
-            .map(|label| MenuEntry::Item { label })
-            .collect();
-
-        let mut style = MenuStyle::from_theme(&self.ui_theme);
-        style.min_width = anchor.width();
-        style.extra_width = 24.0;
-        style.corner_radius = 4.0;
-        style.shadow_color = self.ui_theme.shadow.with_alpha(0.15);
-        style.max_height = Some(300.0);
-        style.selected_bg = self.ui_theme.accent.with_alpha(0.12);
-
-        let mut widget = MenuWidget::new(entries).with_style(style);
-        if selected < widget.entries().len() {
-            widget = widget.with_selected_index(selected);
-            widget.ensure_visible(selected);
-        }
-
-        let now = Instant::now();
-
-        // Store the dropdown ID so we can route the selection back.
-        self.pending_dropdown_id = Some(dropdown_id);
-
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            return;
-        };
-        ctx.root
-            .replace_popup(Box::new(widget), anchor, Placement::BelowFlush, now);
-        ctx.request_urgent_redraw();
-    }
-
-    /// Process an overlay event result from a dialog window.
-    pub(in crate::app) fn handle_dialog_overlay_result(
-        &mut self,
-        window_id: WindowId,
-        result: OverlayEventResult,
-    ) {
-        match result {
-            OverlayEventResult::Delivered { response, .. } => {
-                if let Some(WidgetAction::Selected { index, .. }) = response.action {
-                    // Route selection through settings action handler.
-                    if let Some(dropdown_id) = self.pending_dropdown_id.take() {
-                        // Dismiss the popup overlay.
-                        self.dismiss_dialog_overlay(window_id);
-
-                        let action = WidgetAction::Selected {
-                            id: dropdown_id,
-                            index,
-                        };
-                        self.dispatch_dialog_settings_action(window_id, &action);
-                    }
-                }
-            }
-            OverlayEventResult::Dismissed(_) => {
-                self.pending_dropdown_id = None;
-            }
-            OverlayEventResult::Blocked | OverlayEventResult::PassThrough => {}
-        }
-    }
-
-    /// Check if a dialog window has an active overlay (dropdown popup).
-    pub(in crate::app) fn dialog_has_overlay(&self, window_id: WindowId) -> bool {
-        self.dialogs
-            .get(&window_id)
-            .is_some_and(|ctx| ctx.root.has_overlays())
-    }
-
-    /// Dismiss the topmost overlay in a dialog window.
-    pub(in crate::app) fn dismiss_dialog_overlay(&mut self, window_id: WindowId) {
-        let now = Instant::now();
-        if let Some(ctx) = self.dialogs.get_mut(&window_id) {
-            ctx.root.dismiss_topmost(now);
-            ctx.request_urgent_redraw();
-        }
-        self.pending_dropdown_id = None;
     }
 
     /// Execute the confirmation action and close the dialog.

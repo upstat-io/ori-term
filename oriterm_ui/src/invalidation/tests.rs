@@ -1,9 +1,16 @@
 //! Tests for `DirtyKind` and `InvalidationTracker`.
 
+use std::collections::HashMap;
+
 use crate::controllers::ControllerRequests;
 use crate::widget_id::WidgetId;
 
 use super::{DirtyKind, InvalidationTracker};
+
+/// Empty parent map for tests that don't need ancestor tracking.
+fn no_parents() -> HashMap<WidgetId, WidgetId> {
+    HashMap::new()
+}
 
 // DirtyKind ordering tests.
 
@@ -182,7 +189,7 @@ fn new_tracker_is_clean() {
 fn mark_layout_sets_layout_dirty() {
     let mut tracker = InvalidationTracker::new();
     let id = WidgetId::next();
-    tracker.mark(id, DirtyKind::Layout);
+    tracker.mark(id, DirtyKind::Layout, &no_parents());
 
     assert!(tracker.is_layout_dirty(id));
     assert!(tracker.is_prepaint_dirty(id));
@@ -195,7 +202,7 @@ fn mark_layout_sets_layout_dirty() {
 fn mark_prepaint_sets_prepaint_dirty() {
     let mut tracker = InvalidationTracker::new();
     let id = WidgetId::next();
-    tracker.mark(id, DirtyKind::Prepaint);
+    tracker.mark(id, DirtyKind::Prepaint, &no_parents());
 
     assert!(!tracker.is_layout_dirty(id));
     assert!(tracker.is_prepaint_dirty(id));
@@ -207,7 +214,7 @@ fn mark_prepaint_sets_prepaint_dirty() {
 fn mark_paint_sets_paint_dirty() {
     let mut tracker = InvalidationTracker::new();
     let id = WidgetId::next();
-    tracker.mark(id, DirtyKind::Paint);
+    tracker.mark(id, DirtyKind::Paint, &no_parents());
 
     assert!(!tracker.is_layout_dirty(id));
     assert!(!tracker.is_prepaint_dirty(id));
@@ -219,7 +226,7 @@ fn mark_paint_sets_paint_dirty() {
 fn mark_clean_is_noop() {
     let mut tracker = InvalidationTracker::new();
     let id = WidgetId::next();
-    tracker.mark(id, DirtyKind::Clean);
+    tracker.mark(id, DirtyKind::Clean, &no_parents());
 
     assert!(!tracker.is_layout_dirty(id));
     assert!(!tracker.is_any_dirty());
@@ -229,8 +236,8 @@ fn mark_clean_is_noop() {
 fn mark_promotes_severity() {
     let mut tracker = InvalidationTracker::new();
     let id = WidgetId::next();
-    tracker.mark(id, DirtyKind::Paint);
-    tracker.mark(id, DirtyKind::Prepaint);
+    tracker.mark(id, DirtyKind::Paint, &no_parents());
+    tracker.mark(id, DirtyKind::Prepaint, &no_parents());
 
     assert!(tracker.is_prepaint_dirty(id));
     assert!(!tracker.is_layout_dirty(id));
@@ -242,7 +249,7 @@ fn unmarked_widget_is_clean() {
     let mut tracker = InvalidationTracker::new();
     let marked = WidgetId::next();
     let unmarked = WidgetId::next();
-    tracker.mark(marked, DirtyKind::Layout);
+    tracker.mark(marked, DirtyKind::Layout, &no_parents());
 
     assert!(!tracker.is_layout_dirty(unmarked));
 }
@@ -252,8 +259,8 @@ fn clear_resets_all_state() {
     let mut tracker = InvalidationTracker::new();
     let a = WidgetId::next();
     let b = WidgetId::next();
-    tracker.mark(a, DirtyKind::Layout);
-    tracker.mark(b, DirtyKind::Prepaint);
+    tracker.mark(a, DirtyKind::Layout, &no_parents());
+    tracker.mark(b, DirtyKind::Prepaint, &no_parents());
     tracker.invalidate_all();
 
     tracker.clear();
@@ -288,9 +295,9 @@ fn max_dirty_kind_across_multiple_widgets() {
     let b = WidgetId::next();
     let c = WidgetId::next();
 
-    tracker.mark(a, DirtyKind::Paint);
-    tracker.mark(b, DirtyKind::Prepaint);
-    tracker.mark(c, DirtyKind::Paint);
+    tracker.mark(a, DirtyKind::Paint, &no_parents());
+    tracker.mark(b, DirtyKind::Prepaint, &no_parents());
+    tracker.mark(c, DirtyKind::Paint, &no_parents());
 
     assert_eq!(tracker.max_dirty_kind(), DirtyKind::Prepaint);
 }
@@ -302,9 +309,95 @@ fn multiple_widgets_tracked_independently() {
     let b = WidgetId::next();
     let c = WidgetId::next();
 
-    tracker.mark(a, DirtyKind::Layout);
+    tracker.mark(a, DirtyKind::Layout, &no_parents());
 
     assert!(tracker.is_layout_dirty(a));
     assert!(!tracker.is_layout_dirty(b));
     assert!(!tracker.is_layout_dirty(c));
+}
+
+// Ancestor tracking tests.
+
+#[test]
+fn mark_with_parents_propagates_ancestors() {
+    let mut tracker = InvalidationTracker::new();
+    let root = WidgetId::next();
+    let mid = WidgetId::next();
+    let leaf = WidgetId::next();
+
+    // Build parent map: leaf -> mid -> root.
+    let mut parents = HashMap::new();
+    parents.insert(leaf, mid);
+    parents.insert(mid, root);
+
+    tracker.mark(leaf, DirtyKind::Prepaint, &parents);
+
+    // Leaf is directly dirty.
+    assert!(tracker.is_prepaint_dirty(leaf));
+    // Ancestors report dirty descendants.
+    assert!(tracker.has_dirty_descendant(mid));
+    assert!(tracker.has_dirty_descendant(root));
+    // Unrelated widget is clean.
+    let unrelated = WidgetId::next();
+    assert!(!tracker.has_dirty_descendant(unrelated));
+}
+
+#[test]
+fn has_dirty_descendant_returns_true_for_dirty_widget_itself() {
+    let mut tracker = InvalidationTracker::new();
+    let id = WidgetId::next();
+    tracker.mark(id, DirtyKind::Paint, &no_parents());
+
+    // The widget itself is dirty, so has_dirty_descendant includes it.
+    assert!(tracker.has_dirty_descendant(id));
+}
+
+#[test]
+fn has_dirty_descendant_false_when_clean() {
+    let tracker = InvalidationTracker::new();
+    let id = WidgetId::next();
+    assert!(!tracker.has_dirty_descendant(id));
+}
+
+#[test]
+fn clear_resets_dirty_ancestors() {
+    let mut tracker = InvalidationTracker::new();
+    let root = WidgetId::next();
+    let leaf = WidgetId::next();
+
+    let mut parents = HashMap::new();
+    parents.insert(leaf, root);
+
+    tracker.mark(leaf, DirtyKind::Prepaint, &parents);
+    assert!(tracker.has_dirty_descendant(root));
+
+    tracker.clear();
+
+    assert!(!tracker.has_dirty_descendant(root));
+    assert!(!tracker.has_dirty_descendant(leaf));
+}
+
+#[test]
+fn ancestor_propagation_stops_at_already_marked_ancestor() {
+    let mut tracker = InvalidationTracker::new();
+    let root = WidgetId::next();
+    let mid = WidgetId::next();
+    let leaf_a = WidgetId::next();
+    let leaf_b = WidgetId::next();
+
+    // Tree: leaf_a -> mid -> root, leaf_b -> mid -> root.
+    let mut parents = HashMap::new();
+    parents.insert(leaf_a, mid);
+    parents.insert(leaf_b, mid);
+    parents.insert(mid, root);
+
+    // First mark propagates all the way up.
+    tracker.mark(leaf_a, DirtyKind::Prepaint, &parents);
+    // Second mark stops early at mid (already in dirty_ancestors).
+    tracker.mark(leaf_b, DirtyKind::Paint, &parents);
+
+    assert!(tracker.has_dirty_descendant(root));
+    assert!(tracker.has_dirty_descendant(mid));
+    assert!(tracker.is_prepaint_dirty(leaf_a));
+    assert!(tracker.is_paint_dirty(leaf_b));
 }

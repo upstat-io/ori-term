@@ -32,7 +32,7 @@ sections:
     status: in-progress
   - id: "11.6"
     title: "Completion Checklist & Sync Point Verification"
-    status: complete
+    status: in-progress
 ---
 
 # Section 11: Verification
@@ -284,19 +284,19 @@ These require a running GUI binary and OS-level measurement tools.
   `accept_action_reacts_to_sibling_scheme_card`, `accept_action_ignores_external_selected`,
   `accept_action_no_change_when_group_empty`.
 
-- [ ] `[TPR-11-003][high]` `oriterm/src/app/dialog_context/content_actions.rs:109` — `Reset to Defaults`
+- [x] `[TPR-11-003][high]` `oriterm/src/app/dialog_context/content_actions.rs:109` — `Reset to Defaults`
   replaces the settings panel without rebuilding the dialog's `WindowRoot` bookkeeping.
-  Evidence: `reset_dialog_settings()` swaps in a new `SettingsPanel` and only calls
-  `register_widget_tree()` on the new panel. Unlike `setup_dialog_focus()`, it does not clear or
-  rebuild `key_contexts`, recompute the parent map, refresh focus order, or transfer focus to a
-  live widget. `InteractionManager::register_widget()` is insert-only, so the old widget ids remain
-  registered after every reset.
-  Impact: After one reset, keyboard/keymap dispatch can still target dead widget ids, so focused
-  controls can stop responding to scoped bindings like button activation or slider/dropdown keys.
-  Repeated resets also accumulate stale interaction state for the rest of the dialog lifetime.
-  Required plan update: Rebuild the dialog's focus, key-context, and interaction registration state
-  after replacing the settings tree, or route reset through a widget replacement path that
-  deregisters the old ids before registering the new tree.
+  **Resolved 2026-03-21**: Accepted. Added key_contexts rebuild (`clear()` + `collect_key_contexts()`
+  for both chrome and panel) and focus order rebuild (`collect_focusable_ids()` + `set_focus_order()`)
+  to `reset_dialog_settings()`, matching the pattern in `setup_dialog_focus()`. Old widget IDs remain
+  in `InteractionManager` (insert-only) but are harmless — they aren't in the layout tree or focus
+  order, so dispatch never targets them. Also extracted overlay methods to `overlay_actions.rs` to
+  keep `content_actions.rs` under 500 lines (448 lines after fix).
+
+- [ ] `[TPR-11-004][high]` `oriterm/src/app/dialog_context/content_actions.rs:145` — dialog tree rebuilds clear focus only in `FocusManager`, leaving `InteractionManager::focused_widget` pointing at dead or hidden widgets.
+  Evidence: `reset_dialog_settings()` and the page-switch path in `dispatch_dialog_settings_action()` rebuild focus order with `set_focus_order(...)`, but never clear or resync `ctx.root.interaction_mut()`. `FocusManager::set_focus_order()` drops stale focus when the widget disappears, while keyboard routing still uses `InteractionManager::focus_ancestor_path()` in `dispatch_dialog_content_key()`.
+  Impact: After resetting the panel or switching to a different settings page, keyboard dispatch can keep targeting a widget ID that is no longer in the current tree. Scoped keybindings and controller delivery can be sent to a dead focus target, leaving the dialog keyboard navigation inconsistent exactly in the flow this fix was meant to repair.
+  Required plan update: Clear or resynchronize `InteractionManager` focus whenever a rebuild removes the focused widget, and add a regression test covering page switch/reset followed by keyboard navigation.
 
 ---
 

@@ -269,16 +269,6 @@ pub fn deliver_event_to_tree(
         }
     };
 
-    // Log hit path for mouse move events (diagnostic — remove after debugging).
-    if matches!(event, InputEvent::MouseMove { .. }) && !hit_result.path.is_empty() {
-        let ids: Vec<_> = hit_result.path.iter().map(|e| e.widget_id.raw()).collect();
-        log::info!(
-            "hit_path: {:?} active={:?}",
-            ids,
-            active_widget.map(WidgetId::raw)
-        );
-    }
-
     // Plan propagation.
     let mut delivery_actions = Vec::new();
     plan_propagation(

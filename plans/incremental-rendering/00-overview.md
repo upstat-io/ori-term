@@ -160,6 +160,7 @@ integration finale:
 | `PageContainerWidget::for_each_child_mut()` visits ALL pages | `page_container/mod.rs:115-119` | `prepare_widget_tree()` and `prepaint_widget_tree()` walk hidden pages' entire widget trees every frame — single biggest source of wasted work in the dialog path | Section 02.2b/02.2c |
 | `ScrollWidget` layout cache stale on page switch | `scroll/mod.rs:117,190-216` | **Confirmed bug:** Cache keyed on viewport `Rect`, not child identity. `reset_scroll()` (called on page switch) does NOT clear `cached_child_layout`. Page switch with same viewport bounds returns stale layout from previous page | Section 02.2 |
 | Damage tracked after full rebuild | `DamageTracker` integration | Good primitive, but not yet reducing most CPU work | Section 03 (explored) |
+| Windows modal loop clears invalidation before render | `event_loop_helpers/mod.rs:85` | `modal_loop_render()` calls `invalidation.clear()` before `handle_redraw()`, wiping dirty state before selective walks can use it. Normal path in `render_dispatch.rs` correctly clears after render. Harmless today (dirty_map always empty) but will break Section 03 | Section 03.1 |
 
 ## Scope Boundary
 
@@ -174,7 +175,7 @@ This overview intentionally stays narrow:
 | ID | Title | File | Status |
 |----|-------|------|--------|
 | 01 | Current-Path Correctness | `section-01-current-path-correctness.md` | Complete |
-| 02 | Dialog Quick Wins | `section-02-dialog-quick-wins.md` | Not Started |
+| 02 | Dialog Quick Wins | `section-02-dialog-quick-wins.md` | Complete |
 | 03 | Dialog Selective Walks | `section-03-dialog-selective-walks.md` | Not Started |
 | 04 | Main-Window Rollout | `section-04-main-window-rollout.md` | Not Started |
 | 05 | Verification & Measurement | `section-05-verification.md` | Not Started |
