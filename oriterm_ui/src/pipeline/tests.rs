@@ -245,6 +245,62 @@ fn register_widget_only_emits_widget_added_once() {
     assert!(events.is_empty());
 }
 
+// -- collect_layout_bounds tests --
+
+#[test]
+fn collect_layout_bounds_populates_map_for_nested_tree() {
+    use std::collections::HashMap;
+
+    use super::collect_layout_bounds;
+
+    let root_id = WidgetId::next();
+    let child_id = WidgetId::next();
+
+    let child_rect = Rect::new(10.0, 20.0, 80.0, 30.0);
+    let child_node = LayoutNode {
+        widget_id: Some(child_id),
+        ..LayoutNode::new(child_rect, child_rect)
+    };
+    let root_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+    let mut root_node = LayoutNode {
+        widget_id: Some(root_id),
+        ..LayoutNode::new(root_rect, root_rect)
+    };
+    root_node.children.push(child_node);
+
+    let mut bounds = HashMap::new();
+    collect_layout_bounds(&root_node, &mut bounds);
+
+    assert_eq!(bounds.len(), 2);
+    assert_eq!(bounds[&root_id], root_rect);
+    assert_eq!(bounds[&child_id], child_rect);
+}
+
+#[test]
+fn collect_layout_bounds_skips_nodes_without_widget_id() {
+    use std::collections::HashMap;
+
+    use super::collect_layout_bounds;
+
+    let child_id = WidgetId::next();
+
+    let child_rect = Rect::new(5.0, 5.0, 50.0, 50.0);
+    let child_node = LayoutNode {
+        widget_id: Some(child_id),
+        ..LayoutNode::new(child_rect, child_rect)
+    };
+    // Root has no widget_id (anonymous layout container).
+    let root_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+    let mut root_node = LayoutNode::new(root_rect, root_rect);
+    root_node.children.push(child_node);
+
+    let mut bounds = HashMap::new();
+    collect_layout_bounds(&root_node, &mut bounds);
+
+    assert_eq!(bounds.len(), 1);
+    assert_eq!(bounds[&child_id], child_rect);
+}
+
 // -- prepaint_widget_tree tests --
 
 /// Tracks whether prepaint was called via a flag.
@@ -481,4 +537,58 @@ fn hover_triggers_prepaint_and_paint_not_layout() {
 
     // Paint must have been called (render produces a scene).
     assert!(paint_count.get() > 0, "render should trigger paint");
+}
+
+/// Verifies that `WidgetTestHarness` (which uses `WindowRoot::run_prepaint`)
+/// provides non-zero bounds to widgets during prepaint.
+#[test]
+fn harness_prepaint_provides_nonzero_bounds() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use crate::testing::WidgetTestHarness;
+
+    /// Widget that captures bounds from PrepaintCtx via shared state.
+    struct BoundsCaptureWidget {
+        id: WidgetId,
+        captured: Rc<Cell<Option<Rect>>>,
+    }
+
+    impl Widget for BoundsCaptureWidget {
+        fn id(&self) -> WidgetId {
+            self.id
+        }
+
+        fn sense(&self) -> Sense {
+            Sense::hover()
+        }
+
+        fn layout(&self, _ctx: &LayoutCtx<'_>) -> crate::layout::LayoutBox {
+            crate::layout::LayoutBox::leaf(200.0, 100.0).with_widget_id(self.id)
+        }
+
+        fn prepaint(&mut self, ctx: &mut crate::widgets::PrepaintCtx<'_>) {
+            self.captured.set(Some(ctx.bounds));
+        }
+
+        fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
+    }
+
+    let id = WidgetId::next();
+    let captured = Rc::new(Cell::new(None));
+    let widget = BoundsCaptureWidget {
+        id,
+        captured: captured.clone(),
+    };
+    let mut h = WidgetTestHarness::new(widget);
+
+    // Trigger a hover to force prepaint.
+    h.mouse_move_to(id);
+    let _scene = h.render();
+
+    let bounds = captured.get().expect("prepaint should have been called");
+    assert!(
+        bounds.width() > 0.0 && bounds.height() > 0.0,
+        "prepaint bounds should be non-zero, got {bounds:?}"
+    );
 }

@@ -113,6 +113,12 @@ impl Widget for PageContainerWidget {
     }
 
     fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        if let Some(page) = self.pages.get_mut(self.active_page) {
+            visitor(page.as_mut());
+        }
+    }
+
+    fn for_each_child_mut_all(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
         for page in &mut self.pages {
             visitor(page.as_mut());
         }

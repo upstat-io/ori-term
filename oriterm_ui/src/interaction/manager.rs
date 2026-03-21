@@ -116,7 +116,12 @@ impl InteractionManager {
     /// not the new path get `HotChanged(false)`.
     ///
     /// Pass an empty slice when the pointer leaves the widget area.
-    pub fn update_hot_path(&mut self, new_path: &[WidgetId]) {
+    ///
+    /// Returns `true` if the hot path changed (any `HotChanged` events
+    /// were generated), `false` if the path is identical to the previous one.
+    pub fn update_hot_path(&mut self, new_path: &[WidgetId]) -> bool {
+        let events_before = self.pending_events.len();
+
         // Find widgets that left the hot path.
         for &old_id in &self.hot_path {
             if !new_path.contains(&old_id) {
@@ -152,6 +157,8 @@ impl InteractionManager {
 
         self.hot_path.clear();
         self.hot_path.extend_from_slice(new_path);
+
+        self.pending_events.len() > events_before
     }
 
     /// Sets a widget as active (mouse capture).

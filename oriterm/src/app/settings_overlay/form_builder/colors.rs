@@ -89,14 +89,10 @@ fn build_schemes_section(
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
     let names = scheme::builtin_names();
-    let mut grid = ContainerWidget::grid(
-        GridColumns::AutoFill {
-            min_width: CARD_MIN_WIDTH,
-        },
-        CARD_GAP,
-    )
-    .with_width(SizeSpec::Fill);
 
+    // Build all cards first to collect IDs, then set the group so each
+    // card only reacts to Selected actions from sibling cards (TPR-11-002).
+    let mut cards: Vec<SchemeCardWidget> = Vec::new();
     for (i, name) in names.iter().enumerate() {
         let data = match scheme::find_builtin(name) {
             Some(s) => scheme_to_card_data(&s, s.name == config.colors.scheme),
@@ -104,6 +100,21 @@ fn build_schemes_section(
         };
         let card = SchemeCardWidget::new(data, i, theme);
         ids.scheme_card_ids.push(card.id());
+        cards.push(card);
+    }
+    let group_ids = ids.scheme_card_ids.clone();
+    for card in &mut cards {
+        card.set_scheme_group(group_ids.clone());
+    }
+
+    let mut grid = ContainerWidget::grid(
+        GridColumns::AutoFill {
+            min_width: CARD_MIN_WIDTH,
+        },
+        CARD_GAP,
+    )
+    .with_width(SizeSpec::Fill);
+    for card in cards {
         grid = grid.with_child(Box::new(card));
     }
 

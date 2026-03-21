@@ -283,7 +283,7 @@ emit_detail_block() {
             sub_mismatch=" !! frontmatter=complete but ${sub_co} unchecked"
         elif [[ "$sub_status" == "not-started" && "$sub_cx" -gt 0 ]]; then
             sub_mismatch=" !! frontmatter=not-started but ${sub_cx} checked"
-        elif [[ "$sub_total" -eq 0 ]]; then
+        elif [[ "$sub_total" -eq 0 && ! "$sub_id" =~ \.R$ ]]; then
             sub_mismatch=" (no checkboxes found under ## header)"
         fi
 

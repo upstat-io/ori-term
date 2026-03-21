@@ -6,6 +6,18 @@ description: Review a plan for problems -- technical accuracy, completeness, hyg
 
 Read a plan, cross-reference it against the codebase and hygiene rules, then fix problems directly via 4 sequential review agents. Report findings as a verdict.
 
+## Third Party Review Semantics
+
+Plan sections may include this frontmatter block:
+
+```yaml
+third_party_review:
+  status: none|findings|resolved
+  updated: YYYY-MM-DD|null
+```
+
+This tracks whether the section's `## {NN}.R Third Party Review Findings` block has unresolved findings.
+
 ## Usage
 
 ```
@@ -77,6 +89,7 @@ INSTRUCTIONS:
 4. For every inaccuracy found, EDIT the plan files directly to fix them
 5. If a section references nonexistent code paths or wrong file locations, correct them
 6. Add a brief comment near each fix: <!-- reviewed: accuracy fix -->
+7. When reviewing Third Party Review findings, you MUST NOT dismiss findings because they are "unrelated", "out of scope", or "pre-existing". Accept any finding that identifies a real issue in the codebase. Reject only findings that are factually incorrect.
 
 You may add missing sections, expand scope, or restructure if the plan is genuinely incomplete.
 After editing, list what you changed and why.
@@ -98,6 +111,7 @@ INSTRUCTIONS:
 4. For every gap found, EDIT the plan files directly to add the missing content
 5. Add missing checklist items, missing steps, missing test requirements
 6. Add a brief comment near each addition: <!-- reviewed: completeness fix -->
+7. When reviewing Third Party Review findings, you MUST NOT dismiss findings because they are "unrelated", "out of scope", or "pre-existing". Accept any finding that identifies a real issue. Reject only findings that are factually incorrect.
 
 You may add new sections, restructure, or expand scope if the plan has genuine gaps.
 After editing, list what you changed and why.
@@ -140,6 +154,7 @@ INSTRUCTIONS:
    - **STYLE**: Missing docs on pub items, bare TODOs, decorative banners, inline test modules
 9. EDIT the plan files to weave "fix along the way" checklist items into the appropriate sections
 10. Do NOT fabricate findings. Every finding must reference a real file:line with a real issue.
+11. Preserve Third Party Review history. If accepted findings imply missing checklist work, weave those tasks into the relevant subsections instead of deleting the findings.
 
 ## Output
 
@@ -166,6 +181,7 @@ INSTRUCTIONS:
 5. Fix inconsistent terminology
 6. Update the overview if sections have changed during prior reviews
 7. Remove all <!-- reviewed: ... --> comments left by previous reviewers (clean up)
+8. Verify every section frontmatter includes `reviewed` plus `third_party_review.status` / `third_party_review.updated`. Add missing `third_party_review` blocks with `status: none` and `updated: null`.
 
 After editing, list what you changed and why.
 ```
@@ -232,3 +248,4 @@ After the review completes (any verdict except NEEDS MANUAL ATTENTION), update `
 5. **Check module dependency order** -- Implementation steps must respect: `oriterm_core` (library) before `oriterm` (binary). Within modules, upstream before downstream.
 6. **Clean up after yourself** -- Agent 4 removes all `<!-- reviewed: ... -->` markers.
 7. **Flag what can't be auto-fixed** -- Architectural decisions and scope questions go in "Remaining Concerns" for human review.
+8. **Do not dismiss TPR findings as unrelated** -- A finding may only be rejected if the described issue does not actually exist.

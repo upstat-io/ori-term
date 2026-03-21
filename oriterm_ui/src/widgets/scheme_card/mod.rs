@@ -87,6 +87,10 @@ pub struct SchemeCardWidget {
     data: SchemeCardData,
     /// Index emitted in `Selected` action.
     scheme_index: usize,
+    /// IDs of all sibling scheme cards in the same selection group.
+    /// Used to filter `accept_action` — only react to `Selected` from
+    /// cards in this group, not from sidebar nav or cursor picker.
+    scheme_group: Vec<WidgetId>,
 
     // Interaction.
     controllers: Vec<Box<dyn EventController>>,
@@ -110,7 +114,17 @@ impl SchemeCardWidget {
             )]),
             data,
             scheme_index,
+            scheme_group: Vec::new(),
         }
+    }
+
+    /// Sets the sibling scheme card IDs for selection group filtering.
+    ///
+    /// Must be called after all cards in the group are created so their
+    /// IDs are known. Without this, `accept_action` won't react to
+    /// `Selected` from sibling cards.
+    pub fn set_scheme_group(&mut self, group: Vec<WidgetId>) {
+        self.scheme_group = group;
     }
 
     /// Returns the scheme data.
@@ -228,12 +242,15 @@ impl Widget for SchemeCardWidget {
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
-        // When any scheme card emits Selected, update this card's visual state.
-        if let WidgetAction::Selected { index, .. } = action {
-            let should_be_selected = *index == self.scheme_index;
-            if self.data.selected != should_be_selected {
-                self.data.selected = should_be_selected;
-                return true;
+        // Only react to Selected from sibling scheme cards in the same group,
+        // not from sidebar nav, cursor picker, or dropdown selections (TPR-11-002).
+        if let WidgetAction::Selected { id, index } = action {
+            if self.scheme_group.contains(id) {
+                let should_be_selected = *index == self.scheme_index;
+                if self.data.selected != should_be_selected {
+                    self.data.selected = should_be_selected;
+                    return true;
+                }
             }
         }
         false

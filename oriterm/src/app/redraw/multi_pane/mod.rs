@@ -372,7 +372,17 @@ impl App {
                     ctx.root.prepare_overlay_widgets(&lifecycle_events, now);
 
                     // Prepaint: resolve visual state into widget fields.
-                    let prepaint_bounds = std::collections::HashMap::new();
+                    // Compute layout bounds so PrepaintCtx::bounds reflects
+                    // real screen positions.
+                    let s = ctx.window.scale_factor().factor() as f32;
+                    let prepaint_bounds = super::draw_helpers::collect_tab_bar_prepaint_bounds(
+                        &ctx.tab_bar,
+                        renderer,
+                        &ctx.text_cache,
+                        &self.ui_theme,
+                        s,
+                        w as f32 / s,
+                    );
                     let (interaction, flags) = ctx.root.interaction_and_frame_requests();
                     super::super::widget_pipeline::prepaint_widget_tree(
                         &mut ctx.tab_bar,

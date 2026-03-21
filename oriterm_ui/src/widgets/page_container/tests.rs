@@ -198,14 +198,39 @@ fn paint_empty_does_nothing() {
     assert!(scene.is_empty());
 }
 
-// -- for_each_child_mut --
+// -- for_each_child_mut / for_each_child_mut_all --
 
 #[test]
-fn for_each_child_visits_all_pages() {
+fn for_each_child_visits_active_page_only() {
     let mut pc = PageContainerWidget::new(vec![label("A"), label("B"), label("C")]);
     let mut count = 0;
     pc.for_each_child_mut(&mut |_| count += 1);
-    assert_eq!(count, 3, "all pages visited, not just active");
+    assert_eq!(count, 1, "only active page visited");
+}
+
+#[test]
+fn for_each_child_mut_all_visits_all_pages() {
+    let mut pc = PageContainerWidget::new(vec![label("A"), label("B"), label("C")]);
+    let mut count = 0;
+    pc.for_each_child_mut_all(&mut |_| count += 1);
+    assert_eq!(count, 3, "all pages visited");
+}
+
+#[test]
+fn for_each_child_follows_active_page_after_switch() {
+    let mut pc = PageContainerWidget::new(vec![label("A"), label("B"), label("C")]);
+    let mut ids_before = Vec::new();
+    pc.for_each_child_mut(&mut |child| ids_before.push(child.id()));
+    assert_eq!(ids_before.len(), 1);
+
+    pc.set_active_page(2);
+    let mut ids_after = Vec::new();
+    pc.for_each_child_mut(&mut |child| ids_after.push(child.id()));
+    assert_eq!(ids_after.len(), 1);
+    assert_ne!(
+        ids_before[0], ids_after[0],
+        "different page yields different widget"
+    );
 }
 
 // -- Scroll reset on page switch --

@@ -78,6 +78,23 @@ This outputs:
 - One line per section: `[done]` or `[open]` with progress stats
 - Detail block for the **first incomplete section**: subsection statuses (with blocked counts), first 5 **unblocked** items, blocker summary, and blocker chain
 
+### Step 1.5: Fix Stale Frontmatter
+
+When plan metadata and checklist reality diverge, fix the frontmatter before proceeding.
+
+**Auto-fix rules (no user prompt needed):**
+
+1. `status: complete` + unchecked items exist -> set `status: in-progress` (or `not-started` if 0 checked)
+2. `status: not-started` + checked items exist -> set `status: in-progress` (or `complete` if 0 unchecked)
+3. `status: in-progress` + all items checked -> set `status: complete`
+4. `status: in-progress` + 0 items checked -> set `status: not-started`
+5. Subsection status stale -> apply the same rules per subsection, then recalculate section status
+6. `third_party_review.status: findings` + no unchecked TPR items -> set `third_party_review.status: resolved`
+7. Unchecked TPR items exist + `third_party_review.status: none|resolved` -> set `third_party_review.status: findings`
+8. Section `status: complete` + `third_party_review.status: findings` -> set section `status: in-progress`
+
+After fixing, note what changed before moving on.
+
 ### Step 2: Determine Focus Section
 
 **If argument provided**, find the matching section file and skip to Step 3.
@@ -157,6 +174,28 @@ After the scanner identifies the focus section, check its frontmatter for `revie
 4. **If user chooses to proceed**: Continue, but note the risk in the summary output
 
 **If `reviewed: false` is NOT present** (field absent or `reviewed: true`), proceed normally.
+
+### Step 2.9: Third Party Review Triage Gate
+
+After identifying the focus section, check its frontmatter for `third_party_review.status: findings`. This means unresolved findings exist in the section's `## {NN}.R Third Party Review Findings` block.
+
+**If `third_party_review.status` is `findings`:**
+
+1. **STOP** — do not begin new implementation work
+2. Read every unchecked item in the `## {NN}.R Third Party Review Findings` block
+3. Triage findings in priority order (`high` -> `medium` -> `low`)
+4. For each finding:
+   - Validate it against the current codebase and the plan
+   - **Do NOT dismiss a finding because it is "unrelated", "out of scope", or "pre-existing".** The only valid rejection reason is that the described issue does not actually exist.
+   - If accepted, add or update concrete implementation tasks in the relevant subsection(s)
+   - Mark the TPR item resolved with a dated note explaining whether it was accepted or rejected
+5. After all findings are triaged:
+   - Set `third_party_review.status: resolved` if history remains
+   - Set `third_party_review.updated` to today's date
+   - If the block is back to `- None.`, set `third_party_review.status: none`
+6. Only continue to normal implementation after all open TPR items are triaged
+
+**If `third_party_review.status` is `none` or `resolved`**, proceed normally.
 
 ### Step 3: Load Section Details
 

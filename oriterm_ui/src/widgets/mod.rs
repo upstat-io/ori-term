@@ -183,6 +183,18 @@ pub trait Widget {
     /// default (no children).
     fn for_each_child_mut(&mut self, _visitor: &mut dyn FnMut(&mut dyn Widget)) {}
 
+    /// Visits ALL children including hidden/inactive ones.
+    ///
+    /// Override when `for_each_child_mut` skips children for performance
+    /// (e.g., `PageContainerWidget` visits only the active page). Pipeline
+    /// functions that must see every child (registration, key context
+    /// collection) call this instead of `for_each_child_mut`.
+    ///
+    /// Default: delegates to `for_each_child_mut()`.
+    fn for_each_child_mut_all(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        self.for_each_child_mut(visitor);
+    }
+
     /// Handles input events not consumed by controllers.
     ///
     /// Called by the dispatch pipeline after controller dispatch when no

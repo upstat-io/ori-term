@@ -90,6 +90,7 @@ The scanner detects frontmatter/body mismatches (`!! MISMATCH` annotations) at b
 4. **`frontmatter=in-progress` but 0 items checked** -- Set frontmatter to `not-started`
 5. **Subsection status stale** -- Apply the same rules per subsection, then recalculate section status
 6. **Section status stale after subsection fix** -- If all subsections are `complete`, set section to `complete`
+7. **TPR consistency** -- If `third_party_review.status: findings` but no unchecked TPR items exist, set it to `resolved`. If unchecked TPR items exist but `third_party_review.status` is `none` or `resolved`, set it to `findings`. If section `status` is `complete` while `third_party_review.status: findings`, set section `status` to `in-progress`.
 
 **When to ask instead of auto-fix:**
 
@@ -112,6 +113,28 @@ After the scanner identifies the focus section, **check its frontmatter for `rev
 4. **If user chooses to proceed**: Continue, but note the risk in the summary output
 
 **If `reviewed: false` is NOT present** (field absent or `reviewed: true`), proceed normally.
+
+### Step 1.9: Third Party Review Triage Gate
+
+After identifying the focus section, check its frontmatter for `third_party_review.status: findings`. This means unresolved findings exist in the section's `## {NN}.R Third Party Review Findings` block.
+
+**If `third_party_review.status` is `findings`:**
+
+1. **STOP** -- do not begin new implementation work
+2. Read every unchecked item in the `## {NN}.R Third Party Review Findings` block
+3. Triage findings in priority order (`high` -> `medium` -> `low`)
+4. For each finding:
+   - Validate it against the current codebase and the plan
+   - **Do NOT dismiss a finding because it is "unrelated", "out of scope", or "pre-existing".** The only valid rejection reason is that the described issue does not actually exist.
+   - If accepted, add or update concrete implementation tasks in the relevant subsection(s)
+   - Mark the TPR item resolved with a dated note explaining whether it was accepted or rejected
+5. After all findings are triaged:
+   - Set `third_party_review.status: resolved` if history remains
+   - Set `third_party_review.updated` to today's date
+   - If the block is back to `- None.`, set `third_party_review.status: none`
+6. Only continue to normal implementation after all open TPR items are triaged
+
+**If `third_party_review.status` is `none` or `resolved`,** proceed normally.
 
 ### Step 2: Determine Focus Section
 

@@ -379,7 +379,7 @@ impl App {
 
         DialogContent::Settings {
             panel: Box::new(SettingsPanel::embedded(content)),
-            ids,
+            ids: Box::new(ids),
             pending_config: Box::new(self.config.clone()),
             original_config: Box::new(self.config.clone()),
             active_page: 0,

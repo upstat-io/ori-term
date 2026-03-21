@@ -308,8 +308,12 @@ pub fn prepaint_widget_tree(
 /// Registers all widgets in a tree with `InteractionManager`.
 ///
 /// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
-/// calling `register_widget` on each node. Idempotent — safe to call
-/// multiple times.
+/// calling `register_widget` on each node. Uses `for_each_child_mut`
+/// (not `_all`) because registration queues `WidgetAdded` lifecycle
+/// events that must be delivered by `prepare_widget_tree` — which also
+/// uses `for_each_child_mut`. Registering hidden-page widgets would
+/// queue events that can never be delivered, causing ordering violations.
+/// Idempotent — safe to call multiple times.
 pub fn register_widget_tree(widget: &mut dyn Widget, interaction: &mut InteractionManager) {
     interaction.register_widget(widget.id());
     widget.for_each_child_mut(&mut |child| {

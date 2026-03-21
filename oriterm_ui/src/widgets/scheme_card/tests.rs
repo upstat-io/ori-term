@@ -168,3 +168,52 @@ fn set_selected() {
     card.set_selected(true);
     assert!(card.data().selected);
 }
+
+// -- accept_action group filtering (TPR-11-002) --
+
+#[test]
+fn accept_action_reacts_to_sibling_scheme_card() {
+    let theme = super::super::tests::TEST_THEME;
+    let mut card_a = SchemeCardWidget::new(test_data(true), 0, &theme);
+    let card_b = SchemeCardWidget::new(test_data(false), 1, &theme);
+    let group = vec![card_a.id(), card_b.id()];
+    card_a.set_scheme_group(group);
+
+    // card_b selects index 1 — card_a (index 0) should deselect.
+    let action = WidgetAction::Selected {
+        id: card_b.id(),
+        index: 1,
+    };
+    assert!(card_a.accept_action(&action));
+    assert!(!card_a.data().selected);
+}
+
+#[test]
+fn accept_action_ignores_external_selected() {
+    let theme = super::super::tests::TEST_THEME;
+    let mut card = SchemeCardWidget::new(test_data(true), 3, &theme);
+    let sibling = SchemeCardWidget::new(test_data(false), 4, &theme);
+    card.set_scheme_group(vec![card.id(), sibling.id()]);
+
+    // Selected from sidebar nav (different widget, not in group) should be ignored.
+    let external_id = crate::widget_id::WidgetId::next();
+    let action = WidgetAction::Selected {
+        id: external_id,
+        index: 3,
+    };
+    assert!(!card.accept_action(&action));
+    // Card should remain selected — sidebar nav didn't affect it.
+    assert!(card.data().selected);
+}
+
+#[test]
+fn accept_action_no_change_when_group_empty() {
+    let mut card = make_card(true);
+    // No group set — should ignore all Selected actions.
+    let action = WidgetAction::Selected {
+        id: crate::widget_id::WidgetId::next(),
+        index: 3,
+    };
+    assert!(!card.accept_action(&action));
+    assert!(card.data().selected);
+}

@@ -5,28 +5,34 @@ status: in-progress
 goal: "Comprehensive verification that the framework and settings panel work correctly with no regressions"
 depends_on: ["10"]
 reviewed: true
+third_party_review:
+  status: findings
+  updated: 2026-03-21
 sections:
   - id: "11.1"
     title: "Test Matrix"
     status: complete
   - id: "11.2"
     title: "Visual Verification"
-    status: not-started
+    status: deferred-manual
   - id: "11.3a"
     title: "Performance Validation (Automatable)"
     status: complete
   - id: "11.3b"
     title: "Performance Validation (Manual)"
-    status: not-started
+    status: deferred-manual
   - id: "11.4"
     title: "Cross-Platform"
     status: complete
   - id: "11.5"
     title: "Documentation"
     status: complete
+  - id: "11.R"
+    title: "Third Party Review Findings"
+    status: in-progress
   - id: "11.6"
     title: "Completion Checklist & Sync Point Verification"
-    status: in-progress
+    status: complete
 ---
 
 # Section 11: Verification
@@ -259,6 +265,38 @@ These require a running GUI binary and OS-level measurement tools.
 - [x] `///` docs on new config types: `TabBarPosition`, `GpuBackend`, `RenderingConfig`
 - [x] `///` docs on `ControllerCtx.bounds`
 - [x] All `from_theme()` methods on updated style types have doc comments
+
+---
+
+## 11.R Third Party Review Findings
+
+- [x] `[TPR-11-001][medium]` `oriterm/src/app/dialog_context/content_actions.rs:193` —
+  `active_page` is updated for every handled `Selected` action, not just sidebar page changes.
+  **Resolved 2026-03-20**: Accepted. Added `sidebar_id` to `SettingsIds`, gated `active_page`
+  update on `id == ids.sidebar_id`. Regression test `sidebar_id_captured` added.
+
+- [x] `[TPR-11-002][medium]` `oriterm_ui/src/widgets/scheme_card/mod.rs:230` —
+  `SchemeCardWidget::accept_action()` reacts to any `Selected { index, .. }`, regardless of
+  which widget emitted it.
+  **Resolved 2026-03-20**: Accepted. Added `scheme_group: Vec<WidgetId>` to `SchemeCardWidget`.
+  `accept_action` now checks `self.scheme_group.contains(id)` before toggling selection.
+  Group set during `build_schemes_section`. Three regression tests added:
+  `accept_action_reacts_to_sibling_scheme_card`, `accept_action_ignores_external_selected`,
+  `accept_action_no_change_when_group_empty`.
+
+- [ ] `[TPR-11-003][high]` `oriterm/src/app/dialog_context/content_actions.rs:109` — `Reset to Defaults`
+  replaces the settings panel without rebuilding the dialog's `WindowRoot` bookkeeping.
+  Evidence: `reset_dialog_settings()` swaps in a new `SettingsPanel` and only calls
+  `register_widget_tree()` on the new panel. Unlike `setup_dialog_focus()`, it does not clear or
+  rebuild `key_contexts`, recompute the parent map, refresh focus order, or transfer focus to a
+  live widget. `InteractionManager::register_widget()` is insert-only, so the old widget ids remain
+  registered after every reset.
+  Impact: After one reset, keyboard/keymap dispatch can still target dead widget ids, so focused
+  controls can stop responding to scoped bindings like button activation or slider/dropdown keys.
+  Repeated resets also accumulate stale interaction state for the rest of the dialog lifetime.
+  Required plan update: Rebuild the dialog's focus, key-context, and interaction registration state
+  after replacing the settings tree, or route reset through a widget replacement path that
+  deregisters the old ids before registering the new tree.
 
 ---
 

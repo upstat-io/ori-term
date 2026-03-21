@@ -20,8 +20,8 @@ fn settings_ids_all_distinct() {
     let theme = UiTheme::default();
     let (_content, ids) = build_settings_dialog(&config, &theme, 0);
     let all = collect_ids(&ids);
-    // 22 fixed control IDs + N scheme card IDs.
-    let expected = 22 + ids.scheme_card_ids.len();
+    // 23 fixed control IDs (22 controls + sidebar) + N scheme card IDs.
+    let expected = 23 + ids.scheme_card_ids.len();
     assert_eq!(all.len(), expected, "all widget IDs must be distinct");
 }
 
@@ -58,8 +58,29 @@ fn scheme_card_ids_captured() {
     );
 }
 
+/// Regression test for TPR-11-001: sidebar_id must be captured so
+/// `dispatch_dialog_settings_action` can gate `active_page` updates.
+#[test]
+fn sidebar_id_captured() {
+    let config = Config::default();
+    let theme = UiTheme::default();
+    let (_content, ids) = build_settings_dialog(&config, &theme, 0);
+    assert_ne!(
+        ids.sidebar_id,
+        oriterm_ui::widget_id::WidgetId::placeholder(),
+        "sidebar_id must be non-placeholder"
+    );
+    // Must be distinct from any scheme card ID.
+    assert!(
+        !ids.scheme_card_ids.contains(&ids.sidebar_id),
+        "sidebar_id must not collide with scheme card IDs"
+    );
+}
+
 fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {
     let mut set = HashSet::new();
+    // Navigation.
+    set.insert(ids.sidebar_id.raw());
     // Appearance.
     set.insert(ids.theme_dropdown.raw());
     set.insert(ids.opacity_slider.raw());

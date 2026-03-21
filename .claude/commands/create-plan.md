@@ -2,6 +2,25 @@
 
 Create a new plan directory with index and section files using the standard template.
 
+## Incremental Design — Non-Negotiable
+
+**Every section must touch the real system.** No section should build types, traits, abstractions, or infrastructure in isolation. Every section starts from the production code path, modifies it, and produces an observable, verifiable change in the running application.
+
+**The anti-pattern (banned):** Design an entire type hierarchy / trait system / abstraction layer across sections 01-05, then wire it into the actual render loop / event loop / terminal in section 06 and hope it all works. This produces thousands of lines of dead code behind `#[allow(dead_code)]`, zero observable behavior, and inevitable reverts.
+
+**The correct pattern:** Each section:
+1. **Starts from the production code path** that needs to change (the render loop, the event handler, the grid operation — the real thing)
+2. **Builds only what's needed** to make that specific change work
+3. **Wires it in immediately** — new code has a production caller in the same section
+4. **Produces observable behavior** — you can see it working, measure it, test it
+5. **Ends with build + clippy + test verification** — `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` all pass, plus new tests proving the change works
+
+**Concretely:**
+- If a section introduces a new type, that type must have a production caller by section end — no `#[allow(dead_code)]`
+- If a section introduces a new trait, something must implement and use it by section end
+- If a section is "infrastructure" with no observable terminal behavior change, it's wrong — restructure it to start from the behavior change and pull in only the infrastructure needed
+- A section that can't be independently verified against the running application is too abstract — split it so each piece touches reality
+
 ## Usage
 
 ```
@@ -83,12 +102,27 @@ Create overview with:
 ### Step 7: Generate Section Files
 
 For each section, create `section-{NN}-{name}.md` with:
-- YAML frontmatter (section ID, title, status: not-started, goal)
+- YAML frontmatter (section ID, title, status: not-started, goal, `reviewed`, `third_party_review: { status: none, updated: null }`)
 - **`reviewed: true` for Section 01 ONLY** — it's the starting point and was vetted during plan creation
 - **`reviewed: false` for ALL other sections** — they need re-review before implementation because earlier sections will cause deviations that have downstream impacts
 - Section header with status emoji
 - Placeholder subsections with `- [ ]` checkboxes
-- Completion checklist at the end
+- **`## {NN}.R Third Party Review Findings` block** before the final build gate, initialized with:
+  ```markdown
+  ## {NN}.R Third Party Review Findings
+  - None.
+  ```
+- **Mandatory Build/Verify/Test gate** as the final subsection of EVERY section (not just verification sections):
+  ```markdown
+  ## {NN}.N Build & Verify
+  - [ ] `./build-all.sh` passes
+  - [ ] `./clippy-all.sh` passes
+  - [ ] `./test-all.sh` passes
+  - [ ] New tests exist proving this section's changes work
+  - [ ] No `#[allow(dead_code)]` on new items — everything has a production caller
+  ```
+
+**Incremental design enforcement:** Each section must identify which production code path it modifies and what observable behavior changes. If a section can't name a specific production code path it touches, it needs restructuring — merge it with the section that actually uses its output.
 
 **Why the reviewed gate matters:** As you implement sections sequentially, reality diverges from the original plan — you discover new constraints, make architectural decisions, and deviate from assumptions. Later sections were written against the *original* assumptions, not the *actual* state after prior sections landed. `reviewed: false` forces a review checkpoint before each section to catch stale assumptions, incorrect file paths, wrong dependencies, and outdated design decisions. Without this gate, you'd implement plans that are already wrong.
 
@@ -127,29 +161,39 @@ INSTRUCTIONS:
 4. For every inaccuracy found, EDIT the plan files directly to fix them
 5. If a section references nonexistent code paths or wrong file locations, correct them
 6. Add a brief comment near each fix: <!-- reviewed: accuracy fix -->
+7. When reviewing Third Party Review findings, you MUST NOT dismiss findings because they are "unrelated", "out of scope", or "pre-existing". Accept any finding that identifies a real issue. Reject only findings that are factually incorrect (the described issue does not actually exist).
 
 You may add missing sections, expand scope, or restructure if the plan is genuinely incomplete.
 After editing, list what you changed and why.
 ```
 
-#### Agent 2: Completeness & Gap Review
+#### Agent 2: Completeness & Incremental Design Review
 
 ```
 You are reviewing a plan for ori_term (a GPU-accelerated terminal emulator in Rust) at {plan_dir}/.
 
 INSTRUCTIONS:
 1. Read ALL files in {plan_dir}/ (index.md, 00-overview.md, and all section-*.md files)
-2. Review each section for completeness:
+2. **CRITICAL — Incremental design check.** For EVERY section, verify:
+   - Does it start from a production code path (render loop, event handler, grid operation)?
+   - Does every new type/trait/abstraction have a production caller by section end?
+   - Does it produce an observable, verifiable behavior change?
+   - Does it end with build/clippy/test verification?
+   - RED FLAG: A section that builds types, traits, or infrastructure without wiring them into the running terminal is WRONG. Restructure it to start from the behavior change and pull in only the infrastructure needed.
+   - RED FLAG: A plan that builds an entire abstraction layer across sections 01-05 then "integrates" in section 06 is WRONG. Each section must touch the real system.
+3. Review each section for completeness:
    - Are there missing steps that would block implementation?
    - Are edge cases and error handling accounted for?
    - Are dependencies between sections correctly identified?
    - Are test strategies adequate for each section?
-3. Check for missing sync points — if the plan adds enum variants, new types, or registration entries, does it list ALL locations that must be updated together?
-4. For every gap found, EDIT the plan files directly to add the missing content
-5. Add missing checklist items, missing steps, missing test requirements
-6. Add a brief comment near each addition: <!-- reviewed: completeness fix -->
+4. Check for missing sync points — if the plan adds enum variants, new types, or registration entries, does it list ALL locations that must be updated together?
+5. For every gap found, EDIT the plan files directly to add the missing content
+6. Add missing checklist items, missing steps, missing test requirements
+7. Add a brief comment near each addition: <!-- reviewed: completeness fix -->
+8. When reviewing Third Party Review findings, you MUST NOT dismiss findings because they are "unrelated", "out of scope", or "pre-existing". Accept any finding that identifies a real issue. Reject only findings that are factually incorrect.
 
 You may add new sections, restructure, or expand scope if the plan has genuine gaps.
+If sections need to be restructured to satisfy incremental design, do it — move integration work earlier, merge "infrastructure" sections with the sections that use them.
 After editing, list what you changed and why.
 ```
 
@@ -167,10 +211,18 @@ INSTRUCTIONS:
    - Does it follow the test file conventions (sibling tests.rs)?
    - Are implementation steps ordered correctly (upstream before downstream)?
    - Are there steps that are impractical or underestimate complexity?
-4. For every hygiene violation or feasibility concern, EDIT the plan files directly to fix them
-5. Reorder steps if they violate module dependency ordering
-6. Add warnings for steps that are particularly complex or risky
-7. Add a brief comment near each change: <!-- reviewed: hygiene fix -->
+4. **Verify every section has a Build/Verify/Test gate at the end:**
+   - `./build-all.sh` passes
+   - `./clippy-all.sh` passes
+   - `./test-all.sh` passes
+   - New tests exist proving the section's changes work
+   If a section is missing this gate, ADD it. No exceptions.
+5. **Verify no section introduces dead code.** If a section creates types, modules, or abstractions that won't have a production caller until a later section, that's a hygiene violation. The section must be restructured to include the wiring.
+6. For every hygiene violation or feasibility concern, EDIT the plan files directly to fix them
+7. Reorder steps if they violate module dependency ordering
+8. Add warnings for steps that are particularly complex or risky
+9. Add a brief comment near each change: <!-- reviewed: hygiene fix -->
+10. If the plan already contains Third Party Review findings, preserve them. Do not delete findings; instead, weave accepted findings into the implementation checklist and leave rejected findings marked resolved with rationale.
 
 You may expand scope, add sections, or restructure if needed to satisfy hygiene and feasibility requirements.
 After editing, list what you changed and why.
@@ -195,6 +247,7 @@ INSTRUCTIONS:
 5. Fix inconsistent terminology
 6. Update the overview if sections have changed during prior reviews
 7. Remove all <!-- reviewed: ... --> comments left by previous reviewers (clean up)
+8. Verify every section frontmatter includes `reviewed: true/false` and `third_party_review.status` / `third_party_review.updated`. Add missing `third_party_review` blocks with `status: none` and `updated: null`.
 
 After editing, list what you changed and why.
 ```

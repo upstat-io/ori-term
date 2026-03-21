@@ -131,7 +131,7 @@ impl App {
             &ui_theme,
             *active_page,
         );
-        *ids = new_ids;
+        **ids = new_ids;
         **panel = SettingsPanel::embedded(content);
 
         // Re-register widgets and rebuild focus order for the new tree.
@@ -190,8 +190,10 @@ impl App {
         let widget_handled = panel.accept_action(action);
 
         // Track page switches for reset preservation.
-        if let WidgetAction::Selected { index, .. } = action {
-            if widget_handled && *index < 8 {
+        // Only sidebar nav selections represent actual page switches — not
+        // scheme card, cursor picker, or dropdown selections (TPR-11-001).
+        if let WidgetAction::Selected { id, index } = action {
+            if widget_handled && *id == ids.sidebar_id && *index < 8 {
                 *active_page = *index;
             }
         }

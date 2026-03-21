@@ -247,14 +247,10 @@ impl App {
         // The InteractionManager uses this to generate HotChanged lifecycle
         // events, which are delivered during prepare_widget_tree.
         let mut hot_path = Vec::new();
-        if logical_pos.y < chrome_h {
-            // Chrome: check which control button is under the cursor.
-            if let Some(btn_id) = ctx.chrome.widget_at_point(logical_pos) {
-                hot_path.push(ctx.chrome.id());
-                hot_path.push(btn_id);
-            }
-        } else {
-            // Content area: hit test the layout tree (cached).
+        let in_content = logical_pos.y >= chrome_h;
+        if in_content {
+            // Content area: compute layout once and cache for reuse by
+            // dispatch_dialog_content_move (avoids double layout per move).
             let w = ctx.surface_config.width as f32 / scale;
             let h = ctx.surface_config.height as f32 / scale;
             let content_bounds: Rect = Rect::new(0.0, chrome_h, w, h - chrome_h);
@@ -279,15 +275,24 @@ impl App {
             for entry in &hit.path {
                 hot_path.push(entry.widget_id);
             }
+            // Store for reuse by dispatch_dialog_content_move.
+            ctx.cached_layout = Some((local_viewport, layout_node));
+        } else {
+            // Chrome: check which control button is under the cursor.
+            if let Some(btn_id) = ctx.chrome.widget_at_point(logical_pos) {
+                hot_path.push(ctx.chrome.id());
+                hot_path.push(btn_id);
+            }
         }
 
         // Update the InteractionManager's hot path. HotChanged lifecycle events
         // are stored internally and delivered during the next prepare_widget_tree.
-        ctx.root.interaction_mut().update_hot_path(&hot_path);
+        let hot_changed = ctx.root.interaction_mut().update_hot_path(&hot_path);
 
-        // Dispatch MouseMove to content widgets for per-item hover tracking.
-        if logical_pos.y >= chrome_h {
-            log::info!(
+        // Dispatch MouseMove to content widgets for per-item hover tracking
+        // (reuses the cached layout from the hit test above).
+        if in_content {
+            log::trace!(
                 "dialog cursor dispatch: pos=({:.0},{:.0})",
                 logical_pos.x,
                 logical_pos.y
@@ -295,22 +300,23 @@ impl App {
             self.dispatch_dialog_content_move(window_id, logical_pos);
         }
 
-        // Always request a redraw after a cursor move so the next
-        // prepare_widget_tree delivers any pending HotChanged events and
-        // updates the VisualStateAnimator accordingly.
-        if let Some(ctx) = self.dialogs.get_mut(&window_id) {
-            ctx.request_urgent_redraw();
+        // Only request a redraw if the hot path changed (to deliver
+        // HotChanged events and update VisualStateAnimator). Event dispatch
+        // already requests its own redraw when handled.
+        if hot_changed {
+            if let Some(ctx) = self.dialogs.get_mut(&window_id) {
+                ctx.request_urgent_redraw();
+            }
         }
     }
 
     /// Dispatch a `MouseMove` input event to the dialog content widget tree.
     ///
-    /// Allows widgets like `SidebarNavWidget` to track per-item hover state
-    /// using `on_input(MouseMove)`.
+    /// Reuses the layout cached by `handle_dialog_cursor_move` to avoid a
+    /// redundant full layout computation per cursor move event.
     fn dispatch_dialog_content_move(&mut self, window_id: WindowId, logical_pos: Point) {
-        let ui_theme = self.ui_theme;
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            log::info!("dispatch_dialog_content_move: no dialog context");
+            log::trace!("dispatch_dialog_content_move: no dialog context");
             return;
         };
         let scale = ctx.scale_factor.factor() as f32;
@@ -318,12 +324,26 @@ impl App {
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
         let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-        let Some(layout_node) =
-            mouse::compute_content_layout(ctx, scale, &ui_theme, local_viewport)
-        else {
-            return;
+
+        // Take the layout cached by handle_dialog_cursor_move's hit test
+        // pass. Falls back to a fresh computation if cache was invalidated.
+        let layout_node = if let Some((_, node)) = ctx.cached_layout.take() {
+            node
+        } else {
+            let ui_theme = self.ui_theme;
+            let ctx = self.dialogs.get_mut(&window_id).unwrap();
+            let local_viewport =
+                Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+            let Some(node) = mouse::compute_content_layout(ctx, scale, &ui_theme, local_viewport)
+            else {
+                return;
+            };
+            node
         };
+
+        // Re-borrow ctx after the cache-miss branch that may reborrow self.
+        let ctx = self.dialogs.get_mut(&window_id).unwrap();
+
         #[cfg(debug_assertions)]
         let layout_ids = {
             let mut ids = std::collections::HashSet::new();

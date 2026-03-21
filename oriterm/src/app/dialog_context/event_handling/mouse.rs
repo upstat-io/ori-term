@@ -20,9 +20,9 @@ use super::DialogClickResult;
 
 /// Computes the content layout tree fresh from the current widget state.
 ///
-/// Always recomputes rather than caching, because scroll offset changes
-/// invalidate the layout's `content_offset` fields — and cursor-move
-/// events can race with scroll events to re-cache stale layouts.
+/// Used by click and scroll handlers where no cached layout is available.
+/// Cursor-move events avoid this by caching the layout computed during
+/// hit testing (see `handle_dialog_cursor_move`).
 pub(super) fn compute_content_layout(
     ctx: &DialogWindowContext,
     scale: f32,

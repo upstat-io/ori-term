@@ -31,6 +31,8 @@ pub(in crate::app) const BELL_DURATION_VALUES: [u16; 7] = [0, 50, 100, 150, 200,
 /// Widget IDs for all settings controls, used to match actions in both
 /// overlay dispatch and dialog window event handling.
 pub(crate) struct SettingsIds {
+    // Navigation.
+    pub sidebar_id: WidgetId,
     // Appearance page.
     pub theme_dropdown: WidgetId,
     pub opacity_slider: WidgetId,
@@ -88,6 +90,7 @@ pub(in crate::app) fn build_settings_dialog(
     let mut sidebar = build_sidebar(theme);
     sidebar.set_active_page(active_page);
     let sidebar_id = sidebar.id();
+    ids.sidebar_id = sidebar_id;
 
     let mut pages = PageContainerWidget::new(vec![
         page_appearance,
@@ -115,6 +118,7 @@ impl SettingsIds {
     /// Creates a `SettingsIds` with all fields set to `WidgetId::placeholder()`.
     fn placeholder() -> Self {
         Self {
+            sidebar_id: WidgetId::placeholder(),
             theme_dropdown: WidgetId::placeholder(),
             opacity_slider: WidgetId::placeholder(),
             blur_toggle: WidgetId::placeholder(),

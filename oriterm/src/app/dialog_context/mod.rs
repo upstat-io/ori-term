@@ -96,7 +96,8 @@ pub(crate) enum DialogContent {
         /// The settings form panel widget.
         panel: Box<SettingsPanel>,
         /// Widget IDs for matching actions to config fields.
-        ids: SettingsIds,
+        /// Boxed to keep the Settings variant small (`SettingsIds` contains a `Vec`).
+        ids: Box<SettingsIds>,
         /// Working copy of the config being edited. Applied on Save.
         pending_config: Box<Config>,
         /// Original config snapshot for dirty detection (pending != original).
