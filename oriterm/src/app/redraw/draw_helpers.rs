@@ -2,14 +2,19 @@
 //!
 //! Extracted from `mod.rs` to keep the module under the 500-line limit.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use oriterm_ui::animation::FrameRequestFlags;
 use oriterm_ui::draw::{DamageTracker, Scene, build_scene};
+use oriterm_ui::geometry::Rect;
 use oriterm_ui::interaction::InteractionManager;
+use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayManager;
+use oriterm_ui::pipeline::collect_layout_bounds;
 use oriterm_ui::theme::UiTheme;
-use oriterm_ui::widgets::DrawCtx;
+use oriterm_ui::widget_id::WidgetId;
+use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use crate::app::App;
 use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
@@ -48,7 +53,7 @@ impl App {
         }
 
         let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-        let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_width, tab_bar_h);
+        let bounds = Rect::new(0.0, 0.0, logical_width, tab_bar_h);
 
         let measurer = CachedTextMeasurer::new(
             UiFontMeasurer::new(renderer.active_ui_collection(), scale),
@@ -139,7 +144,7 @@ impl App {
             return false;
         }
 
-        let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_size.0, logical_size.1);
+        let bounds = Rect::new(0.0, 0.0, logical_size.0, logical_size.1);
         let mut animating = false;
 
         // Layout + draw phase: measurer borrows renderer immutably, then
@@ -190,4 +195,39 @@ impl App {
 
         animating || frame_requests.anim_frame_requested()
     }
+}
+
+/// Computes prepaint layout bounds for a tab bar widget.
+///
+/// Runs the layout solver on the tab bar at its known position (y=0, full
+/// logical width) and collects per-widget bounds into a `HashMap`. The
+/// resulting map is passed to `prepaint_widget_tree` so that
+/// `PrepaintCtx::bounds` reflects real screen positions.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "prepaint bounds: tab bar, renderer, cache, theme, scale, width"
+)]
+pub(in crate::app::redraw) fn collect_tab_bar_prepaint_bounds(
+    tab_bar: &oriterm_ui::widgets::tab_bar::TabBarWidget,
+    renderer: &crate::gpu::WindowRenderer,
+    text_cache: &TextShapeCache,
+    theme: &UiTheme,
+    scale: f32,
+    logical_width: f32,
+) -> HashMap<WidgetId, Rect> {
+    let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+    let tab_bar_rect = Rect::new(0.0, 0.0, logical_width, tab_bar_h);
+    let measurer = CachedTextMeasurer::new(
+        UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+        text_cache,
+        scale,
+    );
+    let layout_ctx = LayoutCtx {
+        measurer: &measurer,
+        theme,
+    };
+    let mut bounds = HashMap::new();
+    let tab_layout = compute_layout(&Widget::layout(tab_bar, &layout_ctx), tab_bar_rect);
+    collect_layout_bounds(&tab_layout, &mut bounds);
+    bounds
 }

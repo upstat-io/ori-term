@@ -435,6 +435,7 @@ impl Widget for ScrollWidget {
     fn reset_scroll(&mut self) {
         self.scroll_offset = 0.0;
         self.scroll_offset_x = 0.0;
+        *self.cached_child_layout.borrow_mut() = None;
     }
 }
 

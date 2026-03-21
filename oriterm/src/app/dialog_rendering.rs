@@ -10,7 +10,9 @@ use winit::window::WindowId;
 
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::invalidation::DirtyKind;
-use oriterm_ui::widgets::{DrawCtx, Widget};
+use oriterm_ui::layout::compute_layout;
+use oriterm_ui::pipeline::collect_layout_bounds;
+use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::App;
 use super::widget_pipeline::{prepaint_widget_tree, prepare_widget_tree};
@@ -87,6 +89,10 @@ impl App {
         clippy::too_many_arguments,
         reason = "extracted helper: ctx, theme, scale, dimensions, gpu"
     )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "linear pipeline: phase-gate → prepare → prepaint → paint chrome → paint content"
+    )]
     fn compose_dialog_widgets(
         ctx: &mut super::dialog_context::DialogWindowContext,
         ui_theme: &oriterm_ui::theme::UiTheme,
@@ -104,7 +110,6 @@ impl App {
             scale,
         );
         let icons = renderer.resolved_icons();
-
         // Phase gating: compute dirty level from lifecycle events,
         // animation state, and invalidation tracker.
         let now = Instant::now();
@@ -120,9 +125,7 @@ impl App {
             d
         };
         *ctx.root.frame_requests_mut() = oriterm_ui::animation::FrameRequestFlags::new();
-
         log::debug!("dialog phase gating: widget_dirty={widget_dirty:?}");
-
         if widget_dirty >= DirtyKind::Prepaint {
             let (interaction, frame_requests) = ctx.root.interaction_mut_and_frame_requests();
             prepare_widget_tree(
@@ -142,9 +145,18 @@ impl App {
                 Some(frame_requests),
                 now,
             );
-
             // Prepaint: resolve visual state into widget fields.
-            let prepaint_bounds = std::collections::HashMap::new();
+            // Compute layout bounds so PrepaintCtx::bounds reflects real
+            // screen positions (not Rect::default()).
+            let prepaint_bounds = collect_dialog_prepaint_bounds(
+                &ctx.chrome,
+                ctx.content.content_widget(),
+                &measurer,
+                ui_theme,
+                chrome_h,
+                logical_w,
+                logical_h,
+            );
             let (interaction, frame_requests) = ctx.root.interaction_and_frame_requests();
             prepaint_widget_tree(
                 &mut ctx.chrome,
@@ -202,7 +214,6 @@ impl App {
 
         // Compute per-widget damage for future partial repaint support.
         ctx.root.damage_mut().compute_damage(&ctx.scene);
-
         // Convert scene to GPU instances.
         renderer.append_ui_scene_with_text(&ctx.scene, scale, 1.0, gpu);
     }
@@ -256,4 +267,36 @@ impl App {
             renderer.append_overlay_scene_with_text(&ctx.scene, scale, opacity, gpu);
         }
     }
+}
+
+/// Collects prepaint layout bounds for dialog chrome and content widgets.
+///
+/// Runs the layout solver on chrome and content at their known positions
+/// and collects per-widget bounds into a `HashMap` so that
+/// `PrepaintCtx::bounds` reflects real screen positions.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "prepaint bounds: chrome, content, measurer, theme, chrome_h, dimensions"
+)]
+fn collect_dialog_prepaint_bounds(
+    chrome: &dyn Widget,
+    content: &dyn Widget,
+    measurer: &dyn oriterm_ui::widgets::TextMeasurer,
+    ui_theme: &oriterm_ui::theme::UiTheme,
+    chrome_h: f32,
+    logical_w: f32,
+    logical_h: f32,
+) -> std::collections::HashMap<oriterm_ui::widget_id::WidgetId, Rect> {
+    let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
+    let content_bounds = Rect::new(0.0, chrome_h, logical_w, logical_h - chrome_h);
+    let layout_ctx = LayoutCtx {
+        measurer,
+        theme: ui_theme,
+    };
+    let mut bounds = std::collections::HashMap::new();
+    let chrome_layout = compute_layout(&chrome.layout(&layout_ctx), chrome_bounds);
+    collect_layout_bounds(&chrome_layout, &mut bounds);
+    let content_layout = compute_layout(&content.layout(&layout_ctx), content_bounds);
+    collect_layout_bounds(&content_layout, &mut bounds);
+    bounds
 }

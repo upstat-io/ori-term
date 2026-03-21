@@ -1,178 +1,180 @@
 ---
 plan: "incremental-rendering"
-title: "Incremental Rendering Pipeline: Exhaustive Implementation Plan"
-status: not-started
+title: "Incremental Rendering Pipeline: Production-First Overview"
+status: in-progress
 references:
   - "plans/ui-framework-overhaul/"
   - "plans/roadmap/section-23-performance.md"
 ---
 
-# Incremental Rendering Pipeline: Exhaustive Implementation Plan
+# Incremental Rendering Pipeline: Production-First Overview
 
 ## Mission
 
-Eliminate full-scene rebuilds from the UI rendering pipeline. Every frame currently clears the entire Scene, walks the full widget tree (prepare + prepaint + paint), converts all primitives to GPU instances, and submits — regardless of what actually changed. This plan transforms the pipeline from immediate-mode full-repaint to retained-mode incremental-update, so that a scroll event repaints only the scrolled region, a hover highlights only the hovered widget, and an idle dialog produces zero GPU work.
+Reduce wasted UI work in the current production render paths without repeating the
+"design the whole retained pipeline first, wire it in later" failure mode. Every section
+in this plan must change the real app immediately: fix a correctness bug, remove a
+redundant tree walk, skip work for a concrete interaction, or measurably reduce scroll
+cost in the running dialog.
 
-## Architecture
+This plan does **not** start by building a new abstraction layer. It starts in
+`oriterm/src/app/dialog_rendering.rs`, `oriterm/src/app/redraw/mod.rs`, and
+`oriterm/src/app/redraw/multi_pane/mod.rs`, changes those production paths directly, and
+only pulls in additional machinery when a step cannot be completed cleanly without it.
+
+## Current System
 
 ```
-Current (immediate, full-repaint):
+Event
+  -> Interaction / invalidation flags update
+  -> about_to_wait
+  -> App::render_dialog() or App::handle_redraw()
+     -> choose coarse phase gate from DirtyKind
+     -> prepare_widget_tree(whole tree for that render path)
+     -> prepaint_widget_tree(whole tree for that render path)
+     -> scene.clear()
+     -> paint visible content into a fresh Scene
+     -> convert full Scene to GPU instances
+     -> submit full UI frame
 
-  Event → mark_dirty → about_to_wait → App::render_dialog()
-    → App::compose_dialog_widgets():
-      → scene.clear()
-      → prepare_widget_tree(ALL)      ← O(n) tree walk
-      → prepaint_widget_tree(ALL)     ← O(n) tree walk
-      → chrome.paint() + content.paint()  ← O(n) tree walk, ALL primitives
-      → damage.compute_damage()       ← per-widget hash comparison
-      → append_ui_scene_with_text()   ← O(p) GPU conversion
-    → renderer.render_to_surface()    ← full GPU submit
-
-Target (incremental, partial-repaint):
-
-  Event → invalidate(widget_id, region)
-    → about_to_wait
-    → prepare_widget_tree(DIRTY only)    ← O(dirty) walk
-    → prepaint_widget_tree(DIRTY only)   ← O(dirty) walk
-    → paint(DIRTY widgets only)          ← O(dirty) paint
-    → patch_scene(changed primitives)    ← O(delta) GPU update
-    → render_to_surface(damage_rects)    ← partial GPU submit
-
-  Scroll-specific fast path:
-    → update scroll_offset
-    → blit existing texture at new offset
-    → paint newly-revealed strip only
-    → composite scroll texture + chrome + footer
+Existing foundations already present:
+  - WindowRoot / InteractionManager / InvalidationTracker
+  - type-separated Scene
+  - DamageTracker
+  - some viewport culling in widget paint code
 ```
+
+The problem is not that the framework lacks retained-mode primitives. The problem is that the
+app-layer render paths still collapse back to full-tree, full-scene work too often. That
+makes the system expensive for hover, page switching, and scroll even when only a small region
+actually changed.
 
 ## Design Principles
 
-**1. Skip what hasn't changed.** The current pipeline already gates entire phases (prepare/prepaint are skipped when `widget_dirty < DirtyKind::Prepaint`), but WITHIN each phase it walks ALL ~37 widgets unconditionally. A single hover state change walks 37+ widgets, measures all their text, resolves all their visual states, and paints all their primitives. The fix is to track per-widget dirty state and skip clean subtrees at every phase: prepare, prepaint, and paint.
+**1. Every step must touch a production code path.**
+No section is allowed to introduce types, fragment caches, scroll compositors, or patch APIs in
+isolation. If a section cannot name the exact function it changes and the observable behavior it
+improves, it is too abstract and must be rewritten.
 
-**2. Verify and harden viewport culling.** ContainerWidget, FormLayout, and FormSection already call `current_clip_in_content_space()` and skip children whose `child_node.rect` does not intersect `visible_bounds`. ScrollWidget pushes clip + offset before painting its child. The existing culling likely already works correctly for most cases. Section 01 verifies this with concrete tests and fixes any edge cases (e.g., nested scroll containers, fallback when no clip is active).
+**2. Fix correctness and cheap wins before architecture.**
+The current renderers still pass empty prepaint-bounds maps in three production paths. That is a
+real behavior bug today. Existing viewport culling and layout caching also need validation before
+we assume a retained-scene rewrite is necessary.
 
-**3. Retain what was painted.** The Scene is cleared and rebuilt from scratch every frame. This prevents any form of caching. The fix is to retain the Scene across frames and patch only the regions that changed, using per-widget dirty tracking to identify what needs repainting.
+**3. Escalate only when measurement justifies it.**
+Selective tree walks and cache coordination are the first line of attack. Retained-scene patching
+and GPU-side scroll are optional later stages, not mandatory upfront commitments. If the simpler
+steps make dialog scrolling and hover cheap enough, stop there.
 
-## Section Dependency Graph
+## Proposed Sections
+
+These are the intended sections, ordered by production impact, not by architectural neatness.
+
+| ID | Section | Production code path | Observable change |
+|----|------|----------------------|-------------------|
+| 01 | Current-path correctness | `render_dialog()`, `handle_redraw()`, `handle_redraw_multi_pane()` | Widgets receive correct prepaint bounds; no hidden geometry bugs during hover/focus |
+| 02 | Dialog quick wins | `render_dialog()` + dialog event/layout helpers | Off-screen dialog content stops repainting; redundant dialog layout work is removed |
+| 03 | Dialog selective walks | dialog prepare/prepaint/paint path | Hover and page-local changes stop walking the entire dialog tree |
+| 04 | Main-window rollout | `handle_redraw()` + multi-pane redraw | Tab bar / chrome / pane UI get the same selective behavior |
+| 05 | Verification & Measurement | all render paths (measurement only) | Measure cumulative impact of 01-04; data-driven go/no-go on retained scene / GPU scroll |
+
+## Dependency Graph
 
 ```
-01: Viewport Culling Verification ────────────────┐
-                                                   │
-02: Selective Tree Walks ─────────────────────────┤
-                                                   │
-03: Layout Cache Unification ─────────────────────┤
-                                                   ├──→ 06: Dialog Integration ──→ 07: Verification
-04: Retained Scene & Dirty Regions ───────────────┤
-                                                   │
-05: GPU-Side Scroll ──────────────────────────────┘
+01 Current-path correctness
+  -> 02 Dialog quick wins
+     -> 03 Dialog selective walks
+        -> 04 Main-window rollout
+           -> 05 Verification & Measurement
 ```
 
-- **Sections 01-03** are independent and address CPU-side bottlenecks. Each provides measurable improvement alone.
-- **Section 04** builds on 02 (needs per-widget dirty tracking to know which scene fragments to patch).
-- **Section 05** builds on 01 (viewport culling) and 04 (retained scene) for the GPU scroll texture approach.
-- **Section 06** integrates all previous sections into the dialog rendering pipeline.
-- **Section 07** verifies everything.
-
-**Cross-section interactions:**
-- **Section 02 + Section 04**: Selective tree walks produce a "dirty widget set" that Section 04's scene patching consumes. The dirty set format must be designed together.
-- **Section 03 + Section 01**: Layout cache unification ensures viewport culling uses fresh, correct layout bounds without recomputing the entire tree.
-- **Section 04 vs Section 05 for scroll**: Fragment caching (Section 04) does NOT help with scroll performance, because Scene primitives contain absolute positions baked in at paint time. Scrolling changes every visible widget's position, invalidating all fragments. Section 04's retained scene helps hover/focus/animation (position-stable visual changes). Section 05's GPU texture approach is required for scroll performance.
+- `01` must land first because later optimization work is not trustworthy while prepaint is using
+  incorrect bounds.
+- `02` and `03` intentionally start in the dialog path only. The dialog is the smallest,
+  easiest-to-measure production surface.
+- `04` is a rollout step, not a new design step.
+- `05` is a measurement and decision checkpoint. The verification test matrix (05.2) should always run. The advanced rendering decision (05.3) is data-driven — if Sections 02-04 already meet all performance targets, the decision is simply "no further work needed."
 
 ## Implementation Sequence
 
+```text
+Phase 1 - Fix What Is Wrong Today
+  +-- Populate real prepaint bounds in dialog + single-pane + multi-pane renderers
+  +-- Add focused tests that prove prepaint sees actual widget bounds
+  Gate: hover/focus-dependent widgets read correct bounds in the running app
+
+Phase 2 - Take The Cheap Wins In The Dialog Path
+  +-- Verify and harden existing viewport culling in the dialog content tree
+  +-- Remove redundant dialog layout recomputation where the current path can safely reuse work
+  +-- Add metrics/logging/tests around dialog scroll and hover cost
+  Gate: off-screen dialog content no longer emits primitives; dialog interactions show fewer tree walks
+
+Phase 3 - Make Dialog Work Proportional To What Changed
+  +-- Teach dialog prepare/prepaint to skip clean subtrees
+  +-- If needed, teach dialog paint to stop rebuilding clearly clean subtrees
+  +-- Keep all changes inside the live dialog rendering path
+  Gate: a single-row hover or page-local control change does not traverse the entire dialog tree
+
+Phase 4 - Roll The Same Strategy Into Main Windows
+  +-- Apply the proven dialog strategy to `handle_redraw()`
+  +-- Apply it again to multi-pane redraw
+  +-- Keep behavior identical; this is a rollout, not a redesign
+  Gate: terminal-adjacent UI chrome benefits from the same selective work rules
+
+Phase 5 - Only Then Decide If Advanced Work Is Still Worth It
+  +-- Re-profile scroll and hover after Phases 1-4
+  +-- If still needed, prototype retained-scene patching for position-stable updates
+  +-- If scroll is still the dominant cost, prototype a GPU-side scroll fast path
+  Gate: measured improvement beats the simpler path enough to justify permanent complexity
 ```
-Phase 0 - Bug Fix (immediate, before optimization work)
-  +-- 03.3b: Fix empty prepaint_bounds in 3 files (dialog_rendering.rs, redraw/mod.rs, redraw/multi_pane/mod.rs)
-  Gate: All widgets receive correct bounds during prepaint (not Rect::default())
 
-Phase 1 - Quick Wins (independent, each provides immediate improvement)
-  +-- 01: Verify and harden existing viewport culling (ContainerWidget, FormLayout, FormSection)
-  +-- 03.1-03.2: Layout cache coordination (stop redundant recomputation)
-  Gate: Test proves off-screen scheme cards produce zero Scene primitives during scroll
+## Why This Order
 
-Phase 2 - Dirty Tracking Infrastructure
-  +-- 02.1-02.2: Per-widget dirty set in InvalidationTracker
-  +-- 02.2b: Module split (pipeline/mod.rs -> prepare.rs + prepaint.rs)
-  +-- 02.3-02.4: Selective prepare/prepaint that skip clean subtrees
-  Gate: Hover on a single setting row triggers O(1) prepaint, not O(n)
+- The first section fixes an existing production bug instead of designing for a hypothetical future.
+- The second and third sections operate on the smallest real surface that already hurts: the settings
+  dialog.
+- The fourth section reuses a proven production change instead of inventing a second system.
+- The fifth section is a deliberate checkpoint against overengineering. If simpler changes solve the
+  problem, advanced rendering work should not exist.
 
-Phase 3 - Scene Retention
-  +-- 04.1-04.2: Per-widget scene fragment storage
-  +-- 04.3-04.4: Scene patching (repaint dirty fragments, keep clean ones)
-  Gate: Scroll doesn't rebuild entire Scene — only changed widgets repaint
+## Success Criteria
 
-Phase 4 - GPU-Side Scroll  [ADVANCED]
-  +-- 05.1-05.3: Offscreen texture for scroll content
-  +-- 05.4: Texture blit on scroll, strip-paint for new content
-  Gate: Scroll produces <2ms frame time (texture blit + strip paint)
+This plan is successful if the real app gets cheaper step by step without needing a massive
+integration finale:
 
-Phase 5 - Integration & Verification
-  +-- 06: Wire incremental pipeline into dialog rendering
-  +-- 07: Benchmarks, regression tests, visual verification
-  Gate: All tests pass, frame time <8ms, zero visual regressions
-```
+- After the first section, prepaint correctness bugs are gone.
+- After the second section, dialog scrolling and hover avoid obviously wasted work.
+- After the third section, small dialog interactions cost roughly the size of the changed subtree,
+  not the whole dialog.
+- After the fourth section, the same strategy covers the main UI renderers.
+- After all of that, retained-scene patching or GPU scroll should exist only if profiles still say
+  they are necessary.
 
-**Why this order:**
-- Phase 0 fixes a correctness bug (empty prepaint bounds) that affects current behavior.
-- Phase 1 provides immediate relief with no architectural changes.
-- Phase 2 builds the dirty tracking infrastructure that Phases 3-4 depend on.
-- Phase 3 is the core architectural change — retained scene with partial updates.
-- Phase 4 is advanced GPU optimization that makes scroll near-free.
-- Phase 5 validates everything.
+## Known Problems To Start From
 
-## Metrics (Current State)
+| Problem | Current location | Why it matters | Fixed in |
+|--------|------------------|----------------|----------|
+| Empty prepaint-bounds maps | `dialog_rendering.rs`, `redraw/mod.rs`, `redraw/multi_pane/mod.rs` | Current behavior bug; invalidates later optimization work | Section 01 |
+| Full-tree prepare/prepaint on every interaction | `App::compose_dialog_widgets()` | Expensive hover/page-switch/scroll behavior (paint already has viewport culling in `FormLayout`/`FormSection`/`Container`, but prepare/prepaint walk the entire tree) | Sections 02-03 |
+| Coarse dirty gating only | app-layer render paths + `InvalidationTracker` usage | `max_dirty_kind()` gates entire phases, but per-widget `mark()` is never called from production — `dirty_map` is always empty; only `full_invalidation` is used | Section 03 |
+| `PageContainerWidget::for_each_child_mut()` visits ALL pages | `page_container/mod.rs:115-119` | `prepare_widget_tree()` and `prepaint_widget_tree()` walk hidden pages' entire widget trees every frame — single biggest source of wasted work in the dialog path | Section 02.2b/02.2c |
+| `ScrollWidget` layout cache stale on page switch | `scroll/mod.rs:117,190-216` | **Confirmed bug:** Cache keyed on viewport `Rect`, not child identity. `reset_scroll()` (called on page switch) does NOT clear `cached_child_layout`. Page switch with same viewport bounds returns stale layout from previous page | Section 02.2 |
+| Damage tracked after full rebuild | `DamageTracker` integration | Good primitive, but not yet reducing most CPU work | Section 03 (explored) |
 
-**Per-scroll-frame breakdown (estimated from code analysis):**
+## Scope Boundary
 
-| Phase | Work | Cost |
-|-------|------|------|
-| Layout (cache miss) | Full tree layout computation | ~2-5ms |
-| Prepare | Walk all ~37 widgets, deliver lifecycle | ~0.5ms |
-| Prepaint | Walk all ~37 widgets, resolve visual state | ~0.5ms |
-| Paint | Walk all widgets, build primitives (culling exists but all visible widgets repaint) | ~3-8ms |
-| Scene convert | Convert ~200-500 primitives to GPU instances | ~1-2ms |
-| GPU submit + present | Render pass + present | ~1-3ms |
-| **Total** | | **~8-19ms** |
+This overview intentionally stays narrow:
 
-**Target:** <4ms per scroll frame (viewport cull + selective walk + retained scene).
-
-## Estimated Effort
-
-| Section | Est. Lines | Complexity | Depends On | File Split Required? |
-|---------|-----------|------------|------------|---------------------|
-| 01 Viewport Culling Verification | ~50 | Low | — | No |
-| 02 Selective Tree Walks | ~350 | Medium-High | — | Yes: `pipeline/mod.rs` -> `prepare.rs` + `prepaint.rs` |
-| 03 Layout Cache Unification | ~250 | Medium | — | No (but touches 5+ files) |
-| 04 Retained Scene | ~600 | High | 02 | Yes: new `scene/fragment.rs` + `draw/fragment_cache.rs` |
-| 05 GPU-Side Scroll | ~700 | Very High | 01, 04 | Yes: new `gpu/scroll_composite/` module |
-| 06 Dialog Integration | ~250 | Medium | 01-05 | Yes: `dialog_rendering.rs` -> `dialog_rendering/` dir |
-| 07 Verification | ~200 | Low | 06 | No |
-| **Total new** | **~2400** | | | |
-
-## Known Bugs (Pre-existing)
-
-| Bug | Root Cause | Fix Location | Status |
-|-----|-----------|-------------|--------|
-| Scroll stutter in settings dialog | Full scene rebuild per frame | Sections 01-04 | Not Started |
-| `build_scene()` clears chrome before content paint | Double `scene.clear()` call | Fixed in current session | Fixed |
-| Text/icons not GPU-clipped | `CLIP_UNCLIPPED` hardcoded | Fixed in current session | Fixed |
-| Footer content overflow | Missing body clip | Fixed in current session | Fixed |
-| Empty prepaint_bounds in compose_dialog_widgets | `HashMap::new()` instead of populated bounds map | Section 03.3b | Not Started |
-| Empty prepaint_bounds in redraw/mod.rs | Same bug as above, also in main window tab bar rendering | Section 03.3b | Not Started |
-| Empty prepaint_bounds in redraw/multi_pane/mod.rs | Same bug as above, also in multi-pane tab bar rendering | Section 03.3b | Not Started |
-| MouseMove handler drops controller actions | `dispatch_dialog_content_move` dispatched events but dropped `result.actions` (DragUpdate/ValueChanged) and didn't call `apply_dispatch_requests` | Fixed in current session | Fixed |
-| Slider/toggle hit areas too small | No `interact_radius` on toggle (40x22) or slider layouts | Fixed in current session | Fixed |
-| Stale layout cache after page switch | `cached_layout` not invalidated after `accept_action(Selected)` | Fixed in current session | Fixed |
-| ContainerWidget::accept_action short-circuits | `Iterator::any()` stopped at first handler, preventing PageContainer from seeing Selected | Fixed in current session | Fixed |
+- It is a production-first rendering plan, not a new framework plan.
+- It does not assume retained-scene patching is required.
+- It does not commit to GPU-side scroll unless earlier sections fail to reach the target.
 
 ## Quick Reference
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | Viewport Culling Verification | `section-01-viewport-culling.md` | Not Started |
-| 02 | Selective Tree Walks | `section-02-selective-tree-walks.md` | Not Started |
-| 03 | Layout Cache Unification | `section-03-layout-cache-unification.md` | Not Started |
-| 04 | Retained Scene & Dirty Regions | `section-04-retained-scene.md` | Not Started |
-| 05 | GPU-Side Scroll | `section-05-gpu-scroll.md` | Not Started |
-| 06 | Dialog Rendering Integration | `section-06-dialog-integration.md` | Not Started |
-| 07 | Verification & Benchmarks | `section-07-verification.md` | Not Started |
+| 01 | Current-Path Correctness | `section-01-current-path-correctness.md` | Complete |
+| 02 | Dialog Quick Wins | `section-02-dialog-quick-wins.md` | Not Started |
+| 03 | Dialog Selective Walks | `section-03-dialog-selective-walks.md` | Not Started |
+| 04 | Main-Window Rollout | `section-04-main-window-rollout.md` | Not Started |
+| 05 | Verification & Measurement | `section-05-verification.md` | Not Started |

@@ -26,9 +26,9 @@ pub fn build_context_stack<S: BuildHasher>(
 
 /// Collects `key_context()` from a widget and its descendants into a map.
 ///
-/// Walks the widget tree via `for_each_child_mut`. Only inserts entries for
-/// widgets that return `Some` from `key_context()`. Called during
-/// `register_widget_tree()` or as a parallel pass.
+/// Walks the widget tree via `for_each_child_mut_all` to ensure hidden
+/// children (e.g., inactive pages) have their key contexts mapped. Only
+/// inserts entries for widgets that return `Some` from `key_context()`.
 pub fn collect_key_contexts<S: BuildHasher>(
     widget: &mut dyn crate::widgets::Widget,
     out: &mut HashMap<WidgetId, &'static str, S>,
@@ -36,7 +36,7 @@ pub fn collect_key_contexts<S: BuildHasher>(
     if let Some(ctx) = widget.key_context() {
         out.insert(widget.id(), ctx);
     }
-    widget.for_each_child_mut(&mut |child| {
+    widget.for_each_child_mut_all(&mut |child| {
         collect_key_contexts(child, out);
     });
 }

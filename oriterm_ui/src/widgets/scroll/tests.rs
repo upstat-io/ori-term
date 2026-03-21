@@ -600,3 +600,24 @@ fn reset_scroll_clears_offset() {
     scroll.reset_scroll();
     assert!((scroll.scroll_offset()).abs() < f32::EPSILON);
 }
+
+#[test]
+fn reset_scroll_invalidates_cached_child_layout() {
+    let mut scroll = make_scroll(tall_content());
+
+    // Populate the layout cache by computing child natural size.
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::widgets::tests::TEST_THEME;
+    let viewport = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let _ = scroll.child_natural_size(&measurer, &theme, viewport);
+    assert!(
+        scroll.cached_child_layout.borrow().is_some(),
+        "cache should be populated after child_natural_size"
+    );
+
+    scroll.reset_scroll();
+    assert!(
+        scroll.cached_child_layout.borrow().is_none(),
+        "reset_scroll must invalidate cached_child_layout"
+    );
+}
