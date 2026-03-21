@@ -62,6 +62,7 @@ Apply the selective walk pattern from Section 03 to the single-pane `handle_redr
 - [ ] Apply selective `prepaint_widget_tree()` — same approach
 - [ ] Verify tab bar hover still works: hover over a tab → only that tab's subtree is visited
 - [ ] Verify tab bar animation still works: close button fade-in triggers prepaint for the animating widget only
+- [ ] **Verify `tick_animation()` works correctly with selective walks.** `WindowRoot::tick_animation()` (`pipeline.rs:164`) calls `prepare_widget_tree()` with an `AnimFrameEvent`. After Section 03's signature change, this call must pass the `InvalidationTracker` reference so that animation-only frames also benefit from selective walks. Verify that animating widgets are correctly marked dirty by the `prepare_widget_frame` animator check (line 243) so they are not skipped by the selective walk
 - [ ] No changes to the grid rendering path (that's GPU-side, not UI framework)
 
 ---
@@ -79,7 +80,8 @@ Same as 04.1 but for the multi-pane path.
 - [ ] Apply selective `prepaint_widget_tree()` for the tab bar in multi-pane mode
 - [ ] Verify the multi-pane path's tab bar behavior is identical to single-pane after changes
 - [ ] Verify pane divider rendering is unaffected (dividers are drawn separately, not through the widget tree)
-- [ ] Verify `register_widget_tree()` still registers all widgets correctly — Section 02 changed `register_widget_tree()` to use `for_each_child_mut_all()` (which visits all pages), so registration should still work. Confirm this is the case in multi-pane mode specifically, where registration timing may differ from dialog mode
+- [ ] Verify `register_widget_tree()` still registers all widgets correctly — Section 02 kept `register_widget_tree()` on `for_each_child_mut()` (active page only) due to lifecycle event ordering constraints. Page-switch registration is handled by the page-switch handler (TPR-02-001 fix). Confirm this pattern works correctly in multi-pane mode specifically, where registration timing may differ from dialog mode
+- [ ] **File size check before changes:** `multi_pane/mod.rs` is 490 lines. If passing `InvalidationTracker` references adds any lines, extract helpers FIRST. Measure after each change
 
 ---
 
@@ -109,6 +111,7 @@ Both main-window paths call `ctx.root.prepaint_overlay_widgets(&prepaint_bounds,
 - [ ] Verify all existing tab bar tests pass with the selective walk changes
 - [ ] Add a test (or extend an existing one) that verifies tab bar hover visits only the hovered tab's subtree
 - [ ] Add a test that verifies overlay prepaint receives non-zero bounds
+- [ ] Add a test that verifies `tick_animation()` still delivers animation frame events to animating widgets after selective walk changes — a widget that called `flags.request_anim_frame()` on the previous frame should receive an `AnimFrameEvent` on the next tick
 - [ ] Run the full test suite and confirm 0 regressions
 
 ---
@@ -129,5 +132,6 @@ Both main-window paths call `ctx.root.prepaint_overlay_widgets(&prepaint_bounds,
 - [ ] Tab bar hover in both single-pane and multi-pane paths uses selective tree walks
 - [ ] Overlay prepaint receives populated bounds maps in both paths
 - [ ] No behavioral regressions in tab switching, tab close, tab drag, or overlay popups
+- [ ] `tick_animation()` correctly delivers animation frames and benefits from selective walks
 
-**Exit Criteria:** All three main-window render paths (single-pane, multi-pane, overlays) use the same correct patterns as the dialog path. `cargo test -p oriterm` and `cargo test -p oriterm_ui` pass with 0 failures. Tab bar and overlay interactions work identically to before, with reduced tree-walk counts logged in debug output.
+**Exit Criteria:** All three main-window render paths (single-pane, multi-pane, overlays) use the same correct patterns as the dialog path. `tick_animation()` works correctly with selective walks. `cargo test -p oriterm` and `cargo test -p oriterm_ui` pass with 0 failures. Tab bar and overlay interactions work identically to before, with reduced tree-walk counts logged in debug output.

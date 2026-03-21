@@ -59,17 +59,21 @@ WindowRoot::compute_layout, WindowRoot::rebuild, WidgetTestHarness
 **File:** `section-03-dialog-selective-walks.md` | **Status:** Not Started
 
 ```
+03.0 tree_walk.rs extraction, pipeline/mod.rs split, file size 500-line limit
 selective tree walk, prepare_widget_tree, prepaint_widget_tree
 subtree skip, dirty subtree, clean subtree
 InvalidationTracker, max_dirty_kind, per-widget dirty, mark() unused in production
 hover, focus, page-local, proportional work
 for_each_child_mut, depth-first, tree traversal
-InteractionManager, lifecycle pipeline, dirty marking
-set_hot, clear_hot, set_active, clear_active, focus change
+InteractionManager, lifecycle pipeline, dirty marking, SmallVec return types
+update_hot_path, set_active, clear_active, focus change, set_disabled, deregister_widget
 VisualStateAnimator, is_animating, animation-driven dirty
-parent map, subtree dirty query, ancestor tracking
-signature change sync points, all callers must update
-pipeline/tree_walk.rs, mandatory extraction, file size 500-line limit
+parent map, subtree dirty query, ancestor tracking, dirty_ancestors, has_dirty_descendant
+full_invalidation, needs_full_rebuild, fallback to full walk
+InvalidationTracker::clear(), dirty state leak, clear timing, dirty_ancestors clear
+modal_loop_render, clear() before render bug, event_loop_helpers
+apply_dispatch_requests, changed widget IDs, return type changes
+signature change sync points, all callers must update, run_prepaint
 ```
 
 ---
@@ -83,6 +87,7 @@ handle_redraw, handle_redraw_multi_pane, draw_tab_bar
 prepare_overlay_widgets, prepaint_overlay_widgets
 rollout, same strategy, proven pattern
 WindowContext, chrome_scene, tab bar animation
+tick_animation, AnimFrameEvent, animation frame delivery
 overlay layout timing, layout_overlays, anchor bounds
 register_widget_tree, widget registration, page switch
 ```
@@ -100,6 +105,7 @@ test matrix, behavioral equivalence, visual regression
 dialog scroll, hover cost, tree walk count
 Scene::len(), primitive count, widget visit count
 page switch cost, idle CPU, ControlFlow::Wait
+dirty state leak, InvalidationTracker::clear(), between-frame state
 go/no-go, decision criteria, follow-up plan
 log::debug!, measurement logging, feature flag
 ```

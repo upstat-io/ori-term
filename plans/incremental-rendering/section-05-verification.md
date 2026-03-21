@@ -50,11 +50,12 @@ sections:
 - [ ] **Tab bar hover cost:** Same measurement for a tab bar hover in the main window.
 - [ ] **Page switch cost:** Measure widget visit count and primitive count when switching pages in the settings dialog. After Section 02's `PageContainerWidget` fix, prepare/prepaint should visit only the active page's widgets, not all pages. Record: visits before fix (if baseline captured in Section 02), visits after fix
 - [ ] **Idle frame cost:** Verify zero CPU cost when idle (no dirty widgets, no animations). The event loop should remain in `ControlFlow::Wait`.
+- [ ] **Dirty state leak check:** Verify that `InvalidationTracker::dirty_map` is empty between frames when no interaction is occurring. If dirty state leaks across frames (never cleared), the selective walk optimization degrades to full walks. Check that `clear()` is called at the correct point in each render path
 - [ ] Document all measurements in this section file as baseline numbers.
 
 ### Measurement Method
 
-Use `log::debug!` counters (already added in Sections 02-03) plus `Scene::len()`:
+Use `log::debug!` counters (added in Sections 02-04 as each section is implemented) plus `Scene::len()`:
 
 ```
 [dialog scroll] primitives: {N} (top), {N} (50%), {N} (bottom)
@@ -111,6 +112,7 @@ Based on measurements from 05.1, decide whether advanced rendering work is justi
 | Tab bar hover visits | < 5 per hover event | No further work needed | Investigate tab bar tree structure |
 | Page switch prepare visits | Active page only (not all pages) | PageContainer fix working | `for_each_child_mut` still visiting hidden pages |
 | Idle CPU | Zero (cursor blink only) | Confirmed | Investigate spurious invalidation |
+| Dirty state between frames | Empty dirty_map when idle | No state leaks | Investigate missing `clear()` calls |
 
 - [ ] If all targets are met: mark this plan as complete. Advanced rendering (retained scene, GPU scroll) is not needed.
 - [ ] If dialog scroll is still expensive despite culling: document the remaining bottleneck and create a follow-up plan for retained-scene patching.

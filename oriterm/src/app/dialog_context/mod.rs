@@ -8,6 +8,7 @@ mod content_actions;
 mod event_handling;
 pub(in crate::app) mod key_conversion;
 mod keymap_dispatch;
+mod overlay_actions;
 
 use std::sync::Arc;
 

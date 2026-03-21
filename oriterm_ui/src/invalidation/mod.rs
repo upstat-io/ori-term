@@ -9,7 +9,7 @@
 //! [`InvalidationTracker`] records which widgets are dirty and at what level,
 //! replacing the coarse-grained `dirty: bool` flags on window contexts.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::controllers::ControllerRequests;
 use crate::widget_id::WidgetId;
@@ -79,6 +79,13 @@ impl From<ControllerRequests> for DirtyKind {
 pub struct InvalidationTracker {
     /// Per-widget dirty level (highest severity wins).
     dirty_map: HashMap<WidgetId, DirtyKind>,
+    /// Ancestor IDs of dirty widgets, for O(1) subtree-dirty queries.
+    ///
+    /// When `mark()` is called with a parent map, all ancestors of the
+    /// marked widget are inserted here. `has_dirty_descendant(id)` checks
+    /// this set to decide whether a subtree can be skipped during
+    /// selective tree walks.
+    dirty_ancestors: HashSet<WidgetId>,
     /// Whether the entire scene needs rebuild (e.g. theme change, resize).
     full_invalidation: bool,
 }
@@ -88,6 +95,7 @@ impl InvalidationTracker {
     pub fn new() -> Self {
         Self {
             dirty_map: HashMap::new(),
+            dirty_ancestors: HashSet::new(),
             full_invalidation: false,
         }
     }
@@ -96,7 +104,16 @@ impl InvalidationTracker {
     ///
     /// Merges with existing dirty level: marking `Paint` then `Prepaint`
     /// on the same widget promotes to `Prepaint`. `Clean` is a no-op.
-    pub fn mark(&mut self, id: WidgetId, kind: DirtyKind) {
+    ///
+    /// `parent_map` maps child → parent widget IDs. When provided, all
+    /// ancestors of `id` are inserted into `dirty_ancestors` for O(1)
+    /// subtree-dirty queries via [`has_dirty_descendant`].
+    pub fn mark(
+        &mut self,
+        id: WidgetId,
+        kind: DirtyKind,
+        parent_map: &HashMap<WidgetId, WidgetId>,
+    ) {
         if kind == DirtyKind::Clean {
             return;
         }
@@ -104,6 +121,23 @@ impl InvalidationTracker {
             .entry(id)
             .and_modify(|existing| *existing = existing.merge(kind))
             .or_insert(kind);
+
+        // Propagate dirty-ancestor flags upward for subtree queries.
+        let mut cursor = id;
+        while let Some(&parent) = parent_map.get(&cursor) {
+            if !self.dirty_ancestors.insert(parent) {
+                break; // already marked — ancestors above are too
+            }
+            cursor = parent;
+        }
+    }
+
+    /// Returns `true` if any descendant of `id` is dirty.
+    ///
+    /// O(1) lookup in the `dirty_ancestors` set. Also returns `true` if
+    /// `id` itself is dirty (it may be both an ancestor and a dirty widget).
+    pub fn has_dirty_descendant(&self, id: WidgetId) -> bool {
+        self.dirty_ancestors.contains(&id) || self.dirty_map.contains_key(&id)
     }
 
     /// Returns `true` if the widget needs relayout.
@@ -161,6 +195,7 @@ impl InvalidationTracker {
     /// Clears all dirty state after a render pass completes.
     pub fn clear(&mut self) {
         self.dirty_map.clear();
+        self.dirty_ancestors.clear();
         self.full_invalidation = false;
     }
 
