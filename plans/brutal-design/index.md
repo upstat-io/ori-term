@@ -2,7 +2,7 @@
 reroute: true
 name: "Brutal Design"
 full_name: "Brutal Design System — Settings Panel Visual Overhaul"
-status: queued
+status: active
 order: 3
 ---
 

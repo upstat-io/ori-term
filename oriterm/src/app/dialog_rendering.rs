@@ -127,24 +127,28 @@ impl App {
         *ctx.root.frame_requests_mut() = oriterm_ui::animation::FrameRequestFlags::new();
         log::debug!("dialog phase gating: widget_dirty={widget_dirty:?}");
         if widget_dirty >= DirtyKind::Prepaint {
-            let (interaction, frame_requests) = ctx.root.interaction_mut_and_frame_requests();
-            prepare_widget_tree(
-                &mut ctx.chrome,
-                interaction,
-                &lifecycle_events,
-                None,
-                Some(frame_requests),
-                now,
-            );
-            let (interaction, frame_requests) = ctx.root.interaction_mut_and_frame_requests();
-            prepare_widget_tree(
-                ctx.content.content_widget_mut(),
-                interaction,
-                &lifecycle_events,
-                None,
-                Some(frame_requests),
-                now,
-            );
+            {
+                let (interaction, invalidation, flags) =
+                    ctx.root.interaction_invalidation_and_frame_requests_mut();
+                prepare_widget_tree(
+                    &mut ctx.chrome,
+                    interaction,
+                    Some(&mut *invalidation),
+                    &lifecycle_events,
+                    None,
+                    Some(flags),
+                    now,
+                );
+                prepare_widget_tree(
+                    ctx.content.content_widget_mut(),
+                    interaction,
+                    Some(invalidation),
+                    &lifecycle_events,
+                    None,
+                    Some(flags),
+                    now,
+                );
+            }
             // Prepaint: resolve visual state into widget fields.
             // Compute layout bounds so PrepaintCtx::bounds reflects real
             // screen positions (not Rect::default()).
@@ -157,29 +161,36 @@ impl App {
                 logical_w,
                 logical_h,
             );
-            let (interaction, frame_requests) = ctx.root.interaction_and_frame_requests();
+            let (interaction, flags) = ctx.root.interaction_and_frame_requests();
+            let invalidation = ctx.root.invalidation();
             prepaint_widget_tree(
                 &mut ctx.chrome,
                 &prepaint_bounds,
                 Some(interaction),
                 ui_theme,
                 now,
-                Some(frame_requests),
+                Some(flags),
+                Some(invalidation),
             );
-            let (interaction, frame_requests) = ctx.root.interaction_and_frame_requests();
             prepaint_widget_tree(
                 ctx.content.content_widget_mut(),
                 &prepaint_bounds,
                 Some(interaction),
                 ui_theme,
                 now,
-                Some(frame_requests),
+                Some(flags),
+                Some(invalidation),
             );
         }
 
         // Draw the chrome title bar, then the dialog content below it.
         // Paint directly (not via build_scene, which clears the scene).
         // The scene was already cleared at the top of this function.
+        //
+        // A separate FrameRequestFlags collects paint-phase anim_frame
+        // requests (e.g. toggle slide animation) and is merged back into
+        // the root flags afterward.
+        let paint_flags = oriterm_ui::animation::FrameRequestFlags::new();
         let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
         {
             let mut draw_ctx = DrawCtx {
@@ -191,7 +202,7 @@ impl App {
                 icons: Some(icons),
                 interaction: None,
                 widget_id: None,
-                frame_requests: None,
+                frame_requests: Some(&paint_flags),
             };
             ctx.chrome.paint(&mut draw_ctx);
         }
@@ -207,9 +218,18 @@ impl App {
                 icons: Some(icons),
                 interaction: None,
                 widget_id: None,
-                frame_requests: None,
+                frame_requests: Some(&paint_flags),
             };
             ctx.content.content_widget().paint(&mut draw_ctx);
+        }
+
+        // Merge paint-phase anim_frame requests into the root flags so
+        // render_dialog() sees them and schedules the next frame.
+        if paint_flags.anim_frame_requested() {
+            ctx.root.frame_requests().request_anim_frame();
+        }
+        if paint_flags.paint_requested() {
+            ctx.root.frame_requests().request_paint();
         }
 
         // Compute per-widget damage for future partial repaint support.
@@ -244,6 +264,7 @@ impl App {
             ctx.root.overlays_mut().layout_overlays(&measurer, ui_theme);
         }
 
+        let overlay_flags = oriterm_ui::animation::FrameRequestFlags::new();
         for i in 0..overlay_count {
             ctx.scene.clear();
             let measurer = CachedTextMeasurer::new(
@@ -261,10 +282,13 @@ impl App {
                 icons: Some(icons),
                 interaction: None,
                 widget_id: None,
-                frame_requests: None,
+                frame_requests: Some(&overlay_flags),
             };
             let opacity = ctx.root.draw_overlay_at(i, &mut overlay_draw_ctx);
             renderer.append_overlay_scene_with_text(&ctx.scene, scale, opacity, gpu);
+        }
+        if overlay_flags.anim_frame_requested() {
+            ctx.root.frame_requests().request_anim_frame();
         }
     }
 }

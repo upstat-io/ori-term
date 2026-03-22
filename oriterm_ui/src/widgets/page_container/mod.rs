@@ -107,7 +107,7 @@ impl Widget for PageContainerWidget {
             icons: ctx.icons,
             interaction: None,
             widget_id: None,
-            frame_requests: None,
+            frame_requests: ctx.frame_requests,
         };
         page.paint(&mut child_ctx);
     }

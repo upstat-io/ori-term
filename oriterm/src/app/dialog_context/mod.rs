@@ -6,6 +6,7 @@
 
 mod content_actions;
 mod event_handling;
+mod focus_setup;
 pub(in crate::app) mod key_conversion;
 mod keymap_dispatch;
 mod overlay_actions;
@@ -227,4 +228,108 @@ impl DialogWindowContext {
     pub(super) fn has_surface_area(&self) -> bool {
         self.surface_config.width > 0 && self.surface_config.height > 0
     }
+}
+
+/// Computes the parent map from a content widget's current layout (TPR-04-002).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "borrow-split fields from DialogWindowContext"
+)]
+pub(super) fn content_parent_map(
+    panel: &dyn Widget,
+    chrome_h: f32,
+    renderer: &WindowRenderer,
+    scale: f32,
+    text_cache: &TextShapeCache,
+    surface_config: &wgpu::SurfaceConfiguration,
+    ui_theme: &oriterm_ui::theme::UiTheme,
+) -> std::collections::HashMap<oriterm_ui::widget_id::WidgetId, oriterm_ui::widget_id::WidgetId> {
+    use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+    use oriterm_ui::interaction::build_parent_map;
+    use oriterm_ui::layout::compute_layout;
+    use oriterm_ui::widgets::LayoutCtx;
+
+    let m = CachedTextMeasurer::new(
+        UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+        text_cache,
+        scale,
+    );
+    let lctx = LayoutCtx {
+        measurer: &m,
+        theme: ui_theme,
+    };
+    let (w, h) = (
+        surface_config.width as f32 / scale,
+        surface_config.height as f32 / scale,
+    );
+    build_parent_map(&compute_layout(
+        &panel.layout(&lctx),
+        Rect::new(0.0, 0.0, w, h - chrome_h),
+    ))
+}
+
+/// Recomputes the hot path from the stored cursor position after a rebuild.
+///
+/// Unlike `WindowRoot::clear_hot_path()` which unconditionally drops all
+/// hover, this hit-tests the current widget tree against `last_cursor_pos`
+/// to preserve hover on widgets that survive the rebuild (TPR-04-007).
+///
+/// Takes decomposed fields because call sites destructure `ctx.content`
+/// (for panel/config access), preventing `&mut DialogWindowContext`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "borrow-split fields from DialogWindowContext"
+)]
+pub(super) fn recompute_dialog_hot_path(
+    root: &mut oriterm_ui::window_root::WindowRoot,
+    chrome: &WindowChromeWidget,
+    content_widget: &dyn Widget,
+    cursor_pos: oriterm_ui::geometry::Point,
+    renderer: Option<&WindowRenderer>,
+    scale: f32,
+    text_cache: &TextShapeCache,
+    surface_config: &wgpu::SurfaceConfiguration,
+    ui_theme: &oriterm_ui::theme::UiTheme,
+) {
+    use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+    use oriterm_ui::input::layout_hit_test_path;
+    use oriterm_ui::layout::compute_layout;
+    use oriterm_ui::widgets::LayoutCtx;
+
+    let chrome_h = chrome.caption_height();
+    let mut hot_path = Vec::new();
+
+    if cursor_pos.y >= chrome_h {
+        let Some(renderer) = renderer else {
+            root.clear_hot_path();
+            return;
+        };
+        let m = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            text_cache,
+            scale,
+        );
+        let w = surface_config.width as f32 / scale;
+        let h = surface_config.height as f32 / scale;
+        let vp = Rect::new(0.0, 0.0, w, h - chrome_h);
+        let lctx = LayoutCtx {
+            measurer: &m,
+            theme: ui_theme,
+        };
+        let node = compute_layout(&content_widget.layout(&lctx), vp);
+        let local = oriterm_ui::geometry::Point::new(cursor_pos.x, cursor_pos.y - chrome_h);
+        let hit = layout_hit_test_path(&node, local);
+        for entry in &hit.path {
+            hot_path.push(entry.widget_id);
+        }
+    } else if let Some(btn_id) = chrome.widget_at_point(cursor_pos) {
+        hot_path.push(chrome.id());
+        hot_path.push(btn_id);
+    } else {
+        // Cursor is in the chrome area but not on any interactive control.
+        // hot_path stays empty — all widgets become un-hot.
+    }
+
+    let changed = root.interaction_mut().update_hot_path(&hot_path);
+    root.mark_widgets_prepaint_dirty(&changed);
 }

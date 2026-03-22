@@ -279,10 +279,12 @@ impl App {
             );
 
             if widget_dirty >= DirtyKind::Prepaint {
-                let (interaction, flags) = ctx.root.interaction_mut_and_frame_requests();
+                let (interaction, invalidation, flags) =
+                    ctx.root.interaction_invalidation_and_frame_requests_mut();
                 super::widget_pipeline::prepare_widget_tree(
                     &mut ctx.tab_bar,
                     interaction,
+                    Some(invalidation),
                     &lifecycle_events,
                     None,
                     Some(flags),
@@ -303,6 +305,7 @@ impl App {
                     w as f32 / scale,
                 );
                 let (interaction, flags) = ctx.root.interaction_and_frame_requests();
+                let invalidation = ctx.root.invalidation();
                 super::widget_pipeline::prepaint_widget_tree(
                     &mut ctx.tab_bar,
                     &prepaint_bounds,
@@ -310,6 +313,7 @@ impl App {
                     &self.ui_theme,
                     now,
                     Some(flags),
+                    Some(invalidation),
                 );
                 ctx.root
                     .prepaint_overlay_widgets(&prepaint_bounds, &self.ui_theme, now);

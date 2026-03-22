@@ -15,7 +15,7 @@ use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
 use oriterm_ui::input::{InputEvent, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::OverlayEventResult;
 use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
-use winit::event::WindowEvent;
+use winit::event::{ElementState, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
@@ -150,18 +150,27 @@ impl App {
 
     /// Handle keyboard input within a dialog window.
     ///
-    /// Escape closes the dialog (or dismisses a dropdown popup).
-    /// All other keys are dispatched through the controller pipeline to
-    /// content widgets. Global keybindings are checked as a fallback.
+    /// Priority order:
+    /// 0. Active overlay (dropdown popup) — consumes ALL pressed keys.
+    /// 1. Escape — closes the dialog.
+    /// 2. Controller pipeline (Tab, Enter/Space, widget keyboard input).
+    /// 3. Global keybindings (fallback).
     fn handle_dialog_keyboard(&mut self, window_id: WindowId, event: &winit::event::KeyEvent) {
-        // Only handle Escape inline — all other keys go through the pipeline.
-        if event.state == winit::event::ElementState::Pressed
-            && event.logical_key == Key::Named(NamedKey::Escape)
-        {
-            if self.dialog_has_overlay(window_id) {
-                self.dismiss_dialog_overlay(window_id);
-                return;
+        // Modal overlay: intercept keyboard events before anything else.
+        // Only check active overlays — dismissing (fading-out) overlays are
+        // visual-only and must not intercept keyboard input.
+        if self.dialog_has_active_overlay(window_id) && event.state == ElementState::Pressed {
+            if let Some(result) = self.try_dialog_overlay_key(window_id, event) {
+                self.handle_dialog_overlay_result(window_id, result);
             }
+            // Consume ALL pressed keys while overlay is active — prevents
+            // leak-through to content widgets or global keybindings.
+            return;
+        }
+
+        // Escape closes the dialog (no overlay active at this point).
+        if event.state == ElementState::Pressed && event.logical_key == Key::Named(NamedKey::Escape)
+        {
             self.close_dialog(window_id);
             return;
         }
@@ -175,7 +184,7 @@ impl App {
         }
 
         // Global keybindings: actions that work from any window.
-        if event.state == winit::event::ElementState::Pressed {
+        if event.state == ElementState::Pressed {
             let mods = self.modifiers.into();
             if let Some(binding_key) = keybindings::key_to_binding_key(&event.logical_key) {
                 if let Some(action) = keybindings::find_binding(&self.bindings, &binding_key, mods)
@@ -187,6 +196,50 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Try routing a key event through a dialog's overlay manager.
+    ///
+    /// Returns `Some(result)` if the overlay consumed the event.
+    fn try_dialog_overlay_key(
+        &mut self,
+        window_id: WindowId,
+        event: &winit::event::KeyEvent,
+    ) -> Option<OverlayEventResult> {
+        use super::key_conversion::{winit_key_to_ui_key, winit_mods_to_ui};
+
+        let key = winit_key_to_ui_key(&event.logical_key)?;
+        let ui_theme = self.ui_theme;
+        let ctx = self.dialogs.get_mut(&window_id)?;
+        let scale = ctx.scale_factor.factor() as f32;
+        let renderer = ctx.renderer.as_ref()?;
+        let measurer = CachedTextMeasurer::new(
+            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+            &ctx.text_cache,
+            scale,
+        );
+        let ui_event = oriterm_ui::input::KeyEvent {
+            key,
+            modifiers: winit_mods_to_ui(self.modifiers),
+        };
+        let now = Instant::now();
+        let result = ctx
+            .root
+            .process_overlay_key_event(ui_event, &measurer, &ui_theme, None, now);
+        match &result {
+            OverlayEventResult::Delivered { .. } | OverlayEventResult::Dismissed(_) => {
+                ctx.request_urgent_redraw();
+                Some(result)
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if a dialog window has an active (non-dismissing) overlay.
+    fn dialog_has_active_overlay(&self, window_id: WindowId) -> bool {
+        self.dialogs
+            .get(&window_id)
+            .is_some_and(|ctx| !ctx.root.overlays().is_active_empty())
     }
 
     /// Handle cursor movement within a dialog window.
@@ -287,7 +340,9 @@ impl App {
 
         // Update the InteractionManager's hot path. HotChanged lifecycle events
         // are stored internally and delivered during the next prepare_widget_tree.
-        let hot_changed = ctx.root.interaction_mut().update_hot_path(&hot_path);
+        let hot_ids = ctx.root.interaction_mut().update_hot_path(&hot_path);
+        let hot_changed = !hot_ids.is_empty();
+        ctx.root.mark_widgets_prepaint_dirty(&hot_ids);
 
         // Dispatch MouseMove to content widgets for per-item hover tracking
         // (reuses the cached layout from the hit test above).
@@ -371,16 +426,20 @@ impl App {
             #[cfg(not(debug_assertions))]
             None,
         );
-        // Apply interaction state changes (active capture for scrub drag).
-        let (interaction, focus) = ctx.root.interaction_and_focus_mut();
-        crate::app::widget_pipeline::apply_dispatch_requests(
-            result.requests,
-            result.source,
-            interaction,
-            focus,
-        );
+        // Apply interaction state changes (active capture for scrub drag) and mark dirty.
+        let changed = {
+            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+            crate::app::widget_pipeline::apply_dispatch_requests(
+                result.requests,
+                result.source,
+                interaction,
+                focus,
+            )
+        };
+        ctx.root.mark_widgets_prepaint_dirty(&changed);
 
-        let needs_redraw = result.handled
+        let needs_redraw = !changed.is_empty()
+            || result.handled
             || result
                 .requests
                 .contains(oriterm_ui::controllers::ControllerRequests::PAINT);

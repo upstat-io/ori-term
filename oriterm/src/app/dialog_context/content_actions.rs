@@ -129,22 +129,55 @@ impl App {
             &ui_theme,
             *active_page,
         );
+        // Deregister old panel to avoid leaking InteractionManager state (TPR-11-009).
+        crate::app::widget_pipeline::deregister_widget_tree(
+            &mut **panel,
+            ctx.root.interaction_mut(),
+        );
         **ids = new_ids;
         **panel = SettingsPanel::embedded(content);
-
-        // Re-register widgets for the new tree.
+        // Register new tree; WidgetAdded events delivered next frame (TPR-04-003).
         crate::app::widget_pipeline::register_widget_tree(&mut **panel, ctx.root.interaction_mut());
-        let _ = ctx.root.interaction_mut().drain_events();
 
         // Rebuild key contexts so keymap scope gating covers the new widgets.
         ctx.root.key_contexts_mut().clear();
         oriterm_ui::action::collect_key_contexts(&mut ctx.chrome, ctx.root.key_contexts_mut());
         oriterm_ui::action::collect_key_contexts(&mut **panel, ctx.root.key_contexts_mut());
 
-        // Rebuild focus order for the new widget tree.
+        // Rebuild focus order and sync InteractionManager if the previously
+        // focused widget disappeared from the rebuilt tree.
         let mut focusable = Vec::new();
         collect_focusable_ids(&mut **panel, &mut focusable);
-        ctx.root.focus_mut().set_focus_order(focusable);
+        ctx.root.sync_focus_order(focusable);
+
+        // Rebuild parent map for dirty-ancestor tracking (TPR-04-002).
+        if let Some(r) = ctx.renderer.as_ref() {
+            let s = ctx.scale_factor.factor() as f32;
+            ctx.root
+                .interaction_mut()
+                .set_parent_map(super::content_parent_map(
+                    &**panel,
+                    ctx.chrome.caption_height(),
+                    r,
+                    s,
+                    &ctx.text_cache,
+                    &ctx.surface_config,
+                    &ui_theme,
+                ));
+        }
+
+        // Recompute hot path to preserve hover on surviving widgets (TPR-04-007).
+        super::recompute_dialog_hot_path(
+            &mut ctx.root,
+            &ctx.chrome,
+            &**panel,
+            ctx.last_cursor_pos,
+            ctx.renderer.as_ref(),
+            ctx.scale_factor.factor() as f32,
+            &ctx.text_cache,
+            &ctx.surface_config,
+            &ui_theme,
+        );
 
         // Invalidate all caches.
         ctx.cached_layout = None;
@@ -156,6 +189,7 @@ impl App {
             "Settings"
         };
         ctx.window.set_title(title);
+        ctx.chrome.set_title(title.to_string());
         ctx.request_urgent_redraw();
     }
 
@@ -170,6 +204,7 @@ impl App {
         window_id: WindowId,
         action: &WidgetAction,
     ) {
+        let ui_theme = self.ui_theme;
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
@@ -188,7 +223,7 @@ impl App {
             settings_overlay::action_handler::handle_settings_action(action, ids, pending_config);
         if config_changed {
             log::info!("settings dialog: pending config updated (deferred until Save)");
-            // Update dirty indicator — shows in taskbar/alt-tab title.
+            // Update dirty indicator — shows in chrome title bar and taskbar.
             let dirty = **pending_config != **original_config;
             let title = if dirty {
                 "Settings \u{2022}"
@@ -196,6 +231,7 @@ impl App {
                 "Settings"
             };
             ctx.window.set_title(title);
+            ctx.chrome.set_title(title.to_string());
         }
 
         // Always propagate — widgets update visuals (page switch, selection).
@@ -210,12 +246,19 @@ impl App {
 
                 // Page switch: register the new page's widgets and rebuild
                 // focus/keymap state so keyboard navigation targets the
-                // correct page.
+                // correct page. WidgetAdded events stay pending for
+                // delivery on the next render frame (TPR-04-003).
                 crate::app::widget_pipeline::register_widget_tree(
                     &mut **panel,
                     ctx.root.interaction_mut(),
                 );
-                let _ = ctx.root.interaction_mut().drain_events();
+                // GC stale registrations from the old page (TPR-11-009).
+                let root_id = ctx.root.widget().id();
+                let mut valid = vec![root_id];
+                crate::app::widget_pipeline::collect_all_widget_ids(&mut ctx.chrome, &mut valid);
+                crate::app::widget_pipeline::collect_all_widget_ids(&mut **panel, &mut valid);
+                let stale = ctx.root.interaction_mut().gc_stale_widgets(&valid);
+                ctx.root.mark_widgets_prepaint_dirty(&stale);
 
                 ctx.root.key_contexts_mut().clear();
                 oriterm_ui::action::collect_key_contexts(
@@ -226,7 +269,35 @@ impl App {
 
                 let mut focusable = Vec::new();
                 collect_focusable_ids(&mut **panel, &mut focusable);
-                ctx.root.focus_mut().set_focus_order(focusable);
+                ctx.root.sync_focus_order(focusable);
+
+                // Rebuild parent map for dirty-ancestor tracking (TPR-04-002).
+                if let Some(r) = ctx.renderer.as_ref() {
+                    let s = ctx.scale_factor.factor() as f32;
+                    let pm = super::content_parent_map(
+                        &**panel,
+                        ctx.chrome.caption_height(),
+                        r,
+                        s,
+                        &ctx.text_cache,
+                        &ctx.surface_config,
+                        &ui_theme,
+                    );
+                    ctx.root.interaction_mut().set_parent_map(pm);
+                }
+
+                // Recompute hot path to preserve hover on surviving widgets (TPR-04-007).
+                super::recompute_dialog_hot_path(
+                    &mut ctx.root,
+                    &ctx.chrome,
+                    &**panel,
+                    ctx.last_cursor_pos,
+                    ctx.renderer.as_ref(),
+                    ctx.scale_factor.factor() as f32,
+                    &ctx.text_cache,
+                    &ctx.surface_config,
+                    &ui_theme,
+                );
             }
         }
 
@@ -316,7 +387,7 @@ impl App {
 
         let mut focusable = Vec::new();
         collect_focusable_ids(ctx.content.content_widget_mut(), &mut focusable);
-        ctx.root.focus_mut().set_focus_order(focusable);
+        ctx.root.sync_focus_order(focusable);
 
         #[cfg(debug_assertions)]
         let layout_ids = {
@@ -343,11 +414,19 @@ impl App {
             &layout_ids,
         );
 
-        // Apply interaction state changes (focus cycling, active).
-        let (interaction, focus) = ctx.root.interaction_and_focus_mut();
-        apply_dispatch_requests(result.requests, result.source, interaction, focus);
+        // Apply interaction state changes (focus cycling, active) and mark dirty.
+        let changed = {
+            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+            apply_dispatch_requests(result.requests, result.source, interaction, focus)
+        };
+        ctx.root.mark_widgets_prepaint_dirty(&changed);
 
-        if result.requests.contains(ControllerRequests::PAINT) {
+        // Request redraw when any interaction state changed (focus cycling
+        // via Tab, active state via Enter/Space) or controllers requested
+        // repaint. Lifecycle events (FocusChanged, ActiveChanged) are
+        // delivered on the next render frame via compose_dialog_widgets()
+        // → prepare_widget_tree() (TPR-11-008).
+        if !changed.is_empty() || result.requests.contains(ControllerRequests::PAINT) {
             ctx.request_urgent_redraw();
         }
 
@@ -374,76 +453,8 @@ impl App {
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
-        ctx.root.interaction_mut().update_hot_path(&[]);
+        let changed = ctx.root.interaction_mut().update_hot_path(&[]);
+        ctx.root.mark_widgets_prepaint_dirty(&changed);
         ctx.request_urgent_redraw();
-    }
-
-    /// Initialize focus infrastructure for a dialog's content widgets.
-    ///
-    /// Registers all content widgets with `InteractionManager`, builds the
-    /// parent map from the layout tree, sets focus order, and focuses the
-    /// default button (if a confirmation dialog).
-    pub(in crate::app) fn setup_dialog_focus(&mut self, window_id: WindowId) {
-        let ui_theme = self.ui_theme;
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            return;
-        };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let scale = ctx.scale_factor.factor() as f32;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-
-        // Register all widgets (chrome + content) with InteractionManager.
-        crate::app::widget_pipeline::register_widget_tree(
-            &mut ctx.chrome,
-            ctx.root.interaction_mut(),
-        );
-        crate::app::widget_pipeline::register_widget_tree(
-            ctx.content.content_widget_mut(),
-            ctx.root.interaction_mut(),
-        );
-        // Drain registration lifecycle events (WidgetAdded).
-        let _ = ctx.root.interaction_mut().drain_events();
-
-        // Collect key contexts for keymap scope gating.
-        ctx.root.key_contexts_mut().clear();
-        oriterm_ui::action::collect_key_contexts(&mut ctx.chrome, ctx.root.key_contexts_mut());
-        oriterm_ui::action::collect_key_contexts(
-            ctx.content.content_widget_mut(),
-            ctx.root.key_contexts_mut(),
-        );
-
-        // Compute layout and build parent map.
-        let chrome_h = ctx.chrome.caption_height();
-        let w = ctx.surface_config.width as f32 / scale;
-        let h = ctx.surface_config.height as f32 / scale;
-        let layout_ctx = LayoutCtx {
-            measurer: &measurer,
-            theme: &ui_theme,
-        };
-        let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-        let local_viewport = Rect::new(0.0, 0.0, w, h - chrome_h);
-        let layout_node = compute_layout(&layout_box, local_viewport);
-        let parent_map = build_parent_map(&layout_node);
-        ctx.root.interaction_mut().set_parent_map(parent_map);
-
-        // Collect focusable widgets and set tab order.
-        let mut focusable = Vec::new();
-        collect_focusable_ids(ctx.content.content_widget_mut(), &mut focusable);
-
-        // Set initial focus on the first focusable widget (typically OK button).
-        let initial_focus = focusable.first().copied();
-        ctx.root.focus_mut().set_focus_order(focusable);
-        if let Some(id) = initial_focus {
-            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
-            interaction.request_focus(id, focus);
-            // Drain focus lifecycle events.
-            let _ = interaction.drain_events();
-        }
     }
 }

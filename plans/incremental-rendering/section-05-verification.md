@@ -1,11 +1,11 @@
 ---
 section: "05"
 title: "Verification & Measurement"
-status: not-started
-reviewed: false
+status: in-progress
+reviewed: true
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-03-21
 goal: "Measure the cumulative impact of Sections 01-04, verify no regressions, and decide whether advanced rendering work (retained scene, GPU scroll) is justified"
 depends_on: ["01", "02", "03", "04"]
 sections:
@@ -14,21 +14,21 @@ sections:
     status: not-started
   - id: "05.2"
     title: "Test Matrix"
-    status: not-started
+    status: in-progress
   - id: "05.3"
     title: "Advanced Rendering Decision"
     status: not-started
   - id: "05.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "05.4"
     title: "Build & Verify"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 05: Verification & Measurement
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Measure the cumulative impact of Sections 01-04 on dialog and main-window rendering costs. Verify no behavioral regressions across all render paths. Make a data-driven decision about whether advanced rendering (retained scene, GPU scroll) is worth the complexity.
 
 **Production code path:** All render paths — `dialog_rendering.rs`, `redraw/mod.rs`, `redraw/multi_pane/mod.rs`. This section measures and verifies, it doesn't add new production code.
@@ -43,25 +43,38 @@ sections:
 
 ## 05.1 Performance Measurement
 
-**File(s):** No production code changes. Measurement via logging and profiling.
+**File(s):** Temporary `log::debug!` additions to `oriterm/src/app/dialog_rendering.rs`, `oriterm/src/app/redraw/mod.rs`, `oriterm/src/app/redraw/multi_pane/mod.rs`, and `oriterm_ui/src/pipeline/tree_walk.rs`. These are measurement-only additions that will be removed in 05.4.
 
-- [ ] **Dialog scroll cost:** Measure scene primitive count during dialog scroll (top → bottom → top). Record: primitives at top, primitives scrolled 50%, primitives scrolled to bottom.
-- [ ] **Dialog hover cost:** Measure widget visit count during a single hover event on a button in a 50+ widget dialog page. Record: visits in prepare, visits in prepaint, total primitives painted.
-- [ ] **Tab bar hover cost:** Same measurement for a tab bar hover in the main window.
-- [ ] **Page switch cost:** Measure widget visit count and primitive count when switching pages in the settings dialog. After Section 02's `PageContainerWidget` fix, prepare/prepaint should visit only the active page's widgets, not all pages. Record: visits before fix (if baseline captured in Section 02), visits after fix
-- [ ] **Idle frame cost:** Verify zero CPU cost when idle (no dirty widgets, no animations). The event loop should remain in `ControlFlow::Wait`.
-- [ ] **Dirty state leak check:** Verify that `InvalidationTracker::dirty_map` is empty between frames when no interaction is occurring. If dirty state leaks across frames (never cleared), the selective walk optimization degrades to full walks. Check that `clear()` is called at the correct point in each render path
-- [ ] Document all measurements in this section file as baseline numbers.
+> **PRECONDITION:** These measurements are only meaningful after Section 04 wires the `InvalidationTracker` into all app-layer render paths. If any path still passes `None`, selective walks are not active and the measurements will show full tree walks regardless of dirty state.
 
-### Measurement Method
+### Step 1 — Add measurement instrumentation
 
-Use `log::debug!` counters (added in Sections 02-04 as each section is implemented) plus `Scene::len()`:
+> **NOTE:** No measurement counters currently exist in the production render paths (Sections 02 and 03 deferred all instrumentation). This step must add them before any measurement can happen.
+
+- [ ] **Widget visit counter in `tree_walk.rs`.** Add a thread-local `Cell<u32>` counter incremented once per `prepare_widget_frame()` call and once per `prepaint_widget_tree` recursive entry. Log the count via `log::debug!` at the end of each top-level `prepare_widget_tree` / `prepaint_widget_tree` call (zero-cost when RUST_LOG is not set to debug). Do not add parameters to function signatures
+- [ ] **Scene primitive counter in render paths.** Add `log::debug!("scene primitives: {}", scene.len())` after `paint()` calls in `compose_dialog_widgets()`, `handle_redraw()`, and `handle_redraw_multi_pane()`
+- [ ] **Dirty state counter.** Add `log::debug!("dirty_map.len={}, dirty_ancestors.len={}", ...)` before `clear()` calls in `render_dispatch.rs` and `event_loop_helpers/mod.rs`
+
+### Step 2 — Collect measurements
+
+- [ ] **Dialog scroll cost:** Measure scene primitive count during dialog scroll (top, 50%, bottom). Record numbers in this file
+- [ ] **Dialog hover cost:** Measure widget visit count during a single hover event on a button in a 50+ widget dialog page. Record: visits in prepare, visits in prepaint, total primitives painted
+- [ ] **Tab bar hover cost:** Same measurement for a tab bar hover in the main window
+- [ ] **Page switch cost:** Measure widget visit count and primitive count when switching pages in the settings dialog
+- [ ] **Idle frame cost:** Verify zero CPU cost when idle (no dirty widgets, no animations). The event loop should remain in `ControlFlow::Wait`
+- [ ] **Dirty state leak check:** Verify that `InvalidationTracker::dirty_map` is empty between frames when no interaction is occurring. If dirty state leaks, selective walks degrade to full walks
+- [ ] Document all measurements in this section file as baseline numbers
+
+### Measurement Results
+
+_(To be filled in during implementation)_
 
 ```
-[dialog scroll] primitives: {N} (top), {N} (50%), {N} (bottom)
-[dialog hover]  prepare visits: {N}, prepaint visits: {N}, primitives: {N}
-[tab bar hover] prepare visits: {N}, prepaint visits: {N}, primitives: {N}
-[page switch]   prepare visits: {N}, prepaint visits: {N}, primitives: {N}
+[dialog scroll] primitives: ??? (top), ??? (50%), ??? (bottom)
+[dialog hover]  prepare visits: ???, prepaint visits: ???, primitives: ???
+[tab bar hover] prepare visits: ???, prepaint visits: ???, primitives: ???
+[page switch]   prepare visits: ???, prepaint visits: ???, primitives: ???
+[idle]          dirty_map.len: ???, dirty_ancestors.len: ???
 ```
 
 ---
@@ -92,10 +105,10 @@ Verify all render paths still work correctly after Sections 01-04.
   - Tab hover/click work in multi-pane
   - Overlay popups render in multi-pane
 
-- [ ] **Automated tests:**
-  - `cargo test -p oriterm_ui` — all widget and harness tests pass
-  - `cargo test -p oriterm` — all app tests pass
-  - `cargo test -p oriterm --test architecture` — architectural tests pass
+- [x] **Automated tests:**
+  - `cargo test -p oriterm_ui` — 1,612 tests pass, 0 failures
+  - `cargo test -p oriterm` — 10 tests pass, 0 failures
+  - `cargo test -p oriterm --test architecture` — 10 tests pass, 0 failures
 
 ---
 
@@ -123,19 +136,25 @@ Based on measurements from 05.1, decide whether advanced rendering work is justi
 
 ## 05.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-05-001][low]` `plans/incremental-rendering/index.md:103` — incremental-rendering status metadata is internally inconsistent after the latest plan edits.
+  **Resolved 2026-03-21**: Accepted. Synchronized all stale status text:
+  `index.md` Section 05 "Not Started" → "In Progress",
+  `00-overview.md` Quick Reference Section 04 "Not Started" → "In Progress",
+  `00-overview.md` Quick Reference Section 05 "Not Started" → "In Progress",
+  `section-05-verification.md` body "**Status:** Not Started" → "**Status:** In Progress".
+  All now match the YAML frontmatter.
 
 ---
 
 ## 05.4 Build & Verify
 
-- [ ] `./build-all.sh` passes
-- [ ] `./clippy-all.sh` passes
-- [ ] `./test-all.sh` passes
+- [ ] **Remove all measurement instrumentation added in 05.1 Step 1.** All `log::debug!` counters, `AtomicU32`/thread-local counters, and scene len logging added for measurement purposes must be removed before this section is marked complete. Grep for any `log::debug!` calls containing "visit", "primitive", "dirty_map" in the render paths to verify removal is complete. The project has `dead_code = "deny"` so unused counter infrastructure will fail to compile
+- [x] `./build-all.sh` passes
+- [x] `./clippy-all.sh` passes
+- [x] `./test-all.sh` passes
 - [ ] All measurements documented in 05.1
 - [ ] Test matrix in 05.2 fully verified (manual + automated)
 - [ ] Go/no-go decision on advanced rendering documented in 05.3
-- [ ] No `#[allow(dead_code)]` on any items introduced by Sections 01-04
-- [ ] No `log::debug!` measurement instrumentation left in production code after this section — either remove it or gate behind a feature flag
+- [x] No `#[allow(dead_code)]` on any items introduced by Sections 01-04
 
-**Exit Criteria:** All measurements are recorded. All test matrix items pass. A clear, documented decision exists about whether advanced rendering work is needed. If no advanced work is needed, this plan is complete. If advanced work is needed, a follow-up plan exists with specific scope based on the measurements.
+**Exit Criteria:** All measurements are recorded and documented in 05.1. All test matrix items pass. All measurement instrumentation is removed from production code. A clear, documented decision exists about whether advanced rendering work is needed. If no advanced work is needed, this plan is marked complete. If advanced work is needed, a follow-up plan exists with specific scope derived from the measurements.

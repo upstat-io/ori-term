@@ -257,6 +257,7 @@ fn prepare_widget_frame_delivers_lifecycle() {
     prepare_widget_frame(
         &mut widget,
         &mut interaction,
+        None,
         &added,
         None,
         None,
@@ -273,6 +274,7 @@ fn prepare_widget_frame_delivers_lifecycle() {
     prepare_widget_frame(
         &mut widget,
         &mut interaction,
+        None,
         &events,
         None,
         None,
@@ -302,6 +304,7 @@ fn prepare_widget_frame_skips_other_widget_events() {
     prepare_widget_frame(
         &mut widget,
         &mut interaction,
+        None,
         &added,
         None,
         None,
@@ -318,6 +321,7 @@ fn prepare_widget_frame_skips_other_widget_events() {
     prepare_widget_frame(
         &mut widget,
         &mut interaction,
+        None,
         &events,
         None,
         None,
@@ -412,6 +416,7 @@ fn prepare_widget_tree_delivers_to_children() {
     prepare_widget_tree(
         &mut parent,
         &mut interaction,
+        None,
         &added_events,
         None,
         None,
@@ -435,6 +440,7 @@ fn prepare_widget_tree_delivers_to_children() {
     prepare_widget_tree(
         &mut parent,
         &mut interaction,
+        None,
         &events,
         None,
         None,
@@ -543,6 +549,7 @@ fn prepare_widget_tree_processes_visual_states() {
     prepare_widget_tree(
         &mut parent,
         &mut interaction,
+        None,
         &added_events,
         None,
         None,
@@ -553,7 +560,7 @@ fn prepare_widget_tree_processes_visual_states() {
     interaction.update_hot_path(&[child_id]);
     let _ = interaction.drain_events();
 
-    prepare_widget_tree(&mut parent, &mut interaction, &[], None, None, now);
+    prepare_widget_tree(&mut parent, &mut interaction, None, &[], None, None, now);
 
     // The child's animator was updated (it called update+tick).
     // We can't easily inspect internal state, but the fact that it

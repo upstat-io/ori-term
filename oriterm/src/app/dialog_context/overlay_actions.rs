@@ -91,13 +91,6 @@ impl App {
         }
     }
 
-    /// Check if a dialog window has an active overlay (dropdown popup).
-    pub(in crate::app) fn dialog_has_overlay(&self, window_id: WindowId) -> bool {
-        self.dialogs
-            .get(&window_id)
-            .is_some_and(|ctx| ctx.root.has_overlays())
-    }
-
     /// Dismiss the topmost overlay in a dialog window.
     pub(in crate::app) fn dismiss_dialog_overlay(&mut self, window_id: WindowId) {
         let now = Instant::now();

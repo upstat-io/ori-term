@@ -78,11 +78,14 @@ impl WidgetTestHarness {
 
     /// Paints the widget tree and returns a copy of the scene primitives.
     ///
-    /// Runs prepaint first to resolve visual state, then paints.
-    /// Uses `MockMeasurer` and test theme. No GPU required — returns
+    /// Runs prepaint first to resolve visual state, then paints, then clears
+    /// the invalidation tracker. This matches the production render cadence:
+    /// prepare → prepaint → paint → clear. No GPU required — returns
     /// the raw `Scene` that would be sent to the GPU renderer.
     pub fn render(&mut self) -> Scene {
-        self.root.paint(&self.measurer, &self.theme, self.clock)
+        let scene = self.root.paint(&self.measurer, &self.theme, self.clock);
+        self.root.invalidation_mut().clear();
+        scene
     }
 
     // -- WidgetRef --

@@ -222,7 +222,7 @@ impl Widget for FormSection {
                         icons: ctx.icons,
                         interaction: None,
                         widget_id: None,
-                        frame_requests: None,
+                        frame_requests: ctx.frame_requests,
                     };
                     row.paint(&mut child_ctx);
                 }

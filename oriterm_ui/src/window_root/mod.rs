@@ -28,7 +28,7 @@ use crate::focus::FocusManager;
 use crate::geometry::Rect;
 use crate::input::Key;
 use crate::interaction::InteractionManager;
-use crate::invalidation::InvalidationTracker;
+use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::layout::LayoutNode;
 use crate::overlay::OverlayManager;
 use crate::widget_id::WidgetId;
@@ -131,6 +131,15 @@ impl WindowRoot {
     pub fn replace_widget(&mut self, widget: Box<dyn Widget>) {
         self.widget = widget;
         self.rebuild();
+    }
+
+    /// Swaps the root widget without running rebuild.
+    ///
+    /// Test-only: allows verifying that `compute_layout()` handles GC
+    /// independently of `rebuild()`.
+    #[cfg(test)]
+    pub(crate) fn set_widget_raw(&mut self, widget: Box<dyn Widget>) {
+        self.widget = widget;
     }
 
     // -- Layout accessors --
@@ -270,6 +279,41 @@ impl WindowRoot {
     /// Returns a mutable reference to the invalidation tracker.
     pub fn invalidation_mut(&mut self) -> &mut InvalidationTracker {
         &mut self.invalidation
+    }
+
+    /// Marks the given widgets as `Prepaint`-dirty in the invalidation tracker.
+    ///
+    /// Uses the interaction manager's parent map for dirty-ancestor propagation.
+    /// This is the bridge between `InteractionManager` (which returns changed IDs)
+    /// and `InvalidationTracker` (which tracks per-widget dirty state).
+    pub fn mark_widgets_prepaint_dirty(&mut self, ids: &[WidgetId]) {
+        let parent_map = self.interaction.parent_map_ref();
+        for &id in ids {
+            self.invalidation.mark(id, DirtyKind::Prepaint, parent_map);
+        }
+    }
+
+    /// Clear the hot widget path and mark affected widgets dirty.
+    ///
+    /// Call after rebuilding a widget tree to prevent stale hover state
+    /// from the old tree. The next cursor move recomputes the hot path.
+    pub fn clear_hot_path(&mut self) {
+        let changed = self.interaction.update_hot_path(&[]);
+        self.mark_widgets_prepaint_dirty(&changed);
+    }
+
+    /// Recompute the hot path from a cursor position against the current layout.
+    ///
+    /// Unlike `clear_hot_path()` which unconditionally drops all hover,
+    /// this preserves hover on widgets that survive a tree rebuild and are
+    /// still under the cursor. Uses `layout_hit_test_path` against
+    /// `self.layout` to determine which widgets the cursor is over.
+    pub fn refresh_hot_path(&mut self, pos: crate::geometry::Point) {
+        use crate::input::layout_hit_test_path;
+        let hit_result = layout_hit_test_path(&self.layout, pos);
+        let ids = hit_result.widget_ids();
+        let changed = self.interaction.update_hot_path(&ids);
+        self.mark_widgets_prepaint_dirty(&changed);
     }
 
     /// Returns a reference to the damage tracker.

@@ -18,6 +18,7 @@ use crate::controllers::{
 };
 use crate::geometry::Rect;
 use crate::interaction::{InteractionManager, LifecycleEvent};
+use crate::invalidation::{DirtyKind, InvalidationTracker};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
@@ -28,23 +29,40 @@ use crate::widgets::contexts::{AnimCtx, LifecycleCtx, PrepaintCtx};
 /// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
 /// executing lifecycle delivery, animation ticks, and visual state updates
 /// at every node. Must be called BEFORE the immutable paint phase.
+///
+/// When `tracker` is `Some`, animating widgets are marked `Prepaint`-dirty
+/// for the next frame. The tracker is also used by selective walks (Step 5)
+/// to skip clean subtrees.
 #[expect(
     clippy::too_many_arguments,
-    reason = "pre-paint pipeline: widget, interaction, lifecycle events, anim event, frame flags, timestamp"
+    reason = "pre-paint pipeline: widget, interaction, tracker, lifecycle events, anim event, frame flags, timestamp"
 )]
 pub fn prepare_widget_tree(
     widget: &mut dyn Widget,
     interaction: &mut InteractionManager,
+    mut tracker: Option<&mut InvalidationTracker>,
     lifecycle_events: &[LifecycleEvent],
     anim_event: Option<&AnimFrameEvent>,
     frame_requests: Option<&FrameRequestFlags>,
     now: Instant,
 ) {
+    // Pre-mark lifecycle event targets so selective walks visit them.
+    // Idempotent: re-marking on recursive calls is a no-op (early-stop).
+    if let Some(ref mut trk) = tracker {
+        if !trk.needs_full_rebuild() && !lifecycle_events.is_empty() {
+            let parent_map = interaction.parent_map_ref();
+            for event in lifecycle_events {
+                trk.mark(event.widget_id(), DirtyKind::Prepaint, parent_map);
+            }
+        }
+    }
+
     #[cfg(debug_assertions)]
     let id = widget.id();
     prepare_widget_frame(
         widget,
         interaction,
+        tracker.as_deref_mut(),
         lifecycle_events,
         anim_event,
         frame_requests,
@@ -63,9 +81,23 @@ pub fn prepare_widget_tree(
                 id, child_id
             );
         }
+
+        // Selective walk: skip children whose subtrees are all clean.
+        // When tracker is Some and full_invalidation is false, check if
+        // this child or any descendant is dirty. If not, skip entirely.
+        let skip = if let Some(ref trk) = tracker {
+            !trk.needs_full_rebuild() && !trk.has_dirty_descendant(child.id())
+        } else {
+            false
+        };
+        if skip {
+            return;
+        }
+
         prepare_widget_tree(
             child,
             interaction,
+            tracker.as_deref_mut(),
             lifecycle_events,
             anim_event,
             frame_requests,
@@ -83,14 +115,16 @@ pub fn prepare_widget_tree(
 ///
 /// 1. Deliver pending lifecycle events to controllers and `widget.lifecycle()`.
 /// 2. Deliver animation frame event if the widget requested one.
-/// 3. Update visual state animator from interaction state.
+/// 3. Update visual state animator from interaction state. If the animator
+///    is still animating, mark the widget `Prepaint`-dirty for the next frame.
 #[expect(
     clippy::too_many_arguments,
-    reason = "pre-paint pipeline: widget, interaction, lifecycle events, anim event, frame flags, timestamp"
+    reason = "pre-paint pipeline: widget, interaction, tracker, lifecycle events, anim event, frame flags, timestamp"
 )]
 pub fn prepare_widget_frame(
     widget: &mut dyn Widget,
     interaction: &mut InteractionManager,
+    mut tracker: Option<&mut InvalidationTracker>,
     lifecycle_events: &[LifecycleEvent],
     anim_event: Option<&AnimFrameEvent>,
     frame_requests: Option<&FrameRequestFlags>,
@@ -162,6 +196,11 @@ pub fn prepare_widget_frame(
             if let Some(flags) = frame_requests {
                 flags.request_anim_frame();
             }
+            // Mark widget dirty for the next frame so selective walks visit it.
+            if let Some(ref mut trk) = tracker {
+                let parent_map = interaction.parent_map_ref();
+                trk.mark(id, DirtyKind::Prepaint, parent_map);
+            }
         }
     }
 }
@@ -187,6 +226,7 @@ pub fn prepaint_widget_tree(
     theme: &UiTheme,
     now: Instant,
     frame_requests: Option<&FrameRequestFlags>,
+    tracker: Option<&InvalidationTracker>,
 ) {
     let id = widget.id();
     let bounds = bounds_map.get(&id).copied().unwrap_or_default();
@@ -201,7 +241,50 @@ pub fn prepaint_widget_tree(
     widget.prepaint(&mut ctx);
 
     widget.for_each_child_mut(&mut |child| {
-        prepaint_widget_tree(child, bounds_map, interaction, theme, now, frame_requests);
+        // Selective walk: skip children whose subtrees have no prepaint-dirty widgets.
+        let skip = if let Some(trk) = tracker {
+            !trk.needs_full_rebuild() && !trk.has_dirty_descendant(child.id())
+        } else {
+            false
+        };
+        if skip {
+            return;
+        }
+
+        prepaint_widget_tree(
+            child,
+            bounds_map,
+            interaction,
+            theme,
+            now,
+            frame_requests,
+            tracker,
+        );
+    });
+}
+
+/// Deregisters all widgets in a subtree from `InteractionManager`.
+///
+/// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
+/// calling `deregister_widget(id)` on each node (bottom-up so children
+/// are cleaned before parents). Use before replacing a widget subtree
+/// to clean up stale interaction state.
+pub fn deregister_widget_tree(widget: &mut dyn Widget, interaction: &mut InteractionManager) {
+    widget.for_each_child_mut(&mut |child| {
+        deregister_widget_tree(child, interaction);
+    });
+    interaction.deregister_widget(widget.id());
+}
+
+/// Collects all widget IDs in a subtree.
+///
+/// Walks the widget tree depth-first via `Widget::for_each_child_mut`,
+/// appending each widget's ID to `out`. Used for interaction state GC
+/// after tree replacements where the old tree is no longer accessible.
+pub fn collect_all_widget_ids(widget: &mut dyn Widget, out: &mut Vec<WidgetId>) {
+    out.push(widget.id());
+    widget.for_each_child_mut(&mut |child| {
+        collect_all_widget_ids(child, out);
     });
 }
 

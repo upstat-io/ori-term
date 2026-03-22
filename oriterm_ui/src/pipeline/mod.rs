@@ -135,37 +135,42 @@ pub fn collect_layout_bounds(node: &LayoutNode, out: &mut HashMap<WidgetId, Rect
 ///
 /// `PAINT` and `ANIM_FRAME` are handled by the caller (mark dirty,
 /// schedule animation frame).
+///
+/// Returns all widget IDs whose interaction state changed, so the caller
+/// can mark them dirty in the `InvalidationTracker`.
 pub fn apply_dispatch_requests(
     requests: ControllerRequests,
     source: Option<WidgetId>,
     interaction: &mut InteractionManager,
     focus_manager: &mut FocusManager,
-) {
+) -> Vec<WidgetId> {
+    let mut changed = Vec::new();
     if requests.contains(ControllerRequests::SET_ACTIVE) {
         if let Some(id) = source {
-            interaction.set_active(id);
+            changed.extend(interaction.set_active(id));
         }
     }
     if requests.contains(ControllerRequests::CLEAR_ACTIVE) {
-        interaction.clear_active();
+        changed.extend(interaction.clear_active());
     }
     if requests.contains(ControllerRequests::REQUEST_FOCUS) {
         if let Some(id) = source {
-            interaction.request_focus(id, focus_manager);
+            changed.extend(interaction.request_focus(id, focus_manager));
         }
     }
     if requests.contains(ControllerRequests::FOCUS_NEXT) {
         focus_manager.focus_next();
         if let Some(new_id) = focus_manager.focused() {
-            interaction.request_focus(new_id, focus_manager);
+            changed.extend(interaction.request_focus(new_id, focus_manager));
         }
     }
     if requests.contains(ControllerRequests::FOCUS_PREV) {
         focus_manager.focus_prev();
         if let Some(new_id) = focus_manager.focused() {
-            interaction.request_focus(new_id, focus_manager);
+            changed.extend(interaction.request_focus(new_id, focus_manager));
         }
     }
+    changed
 }
 
 /// Walks a `LayoutNode` tree and collects all `Some(widget_id)` values.

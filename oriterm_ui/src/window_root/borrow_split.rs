@@ -12,6 +12,7 @@ use crate::compositor::{LayerAnimator, LayerTree};
 use crate::draw::DamageTracker;
 use crate::focus::FocusManager;
 use crate::interaction::InteractionManager;
+use crate::invalidation::InvalidationTracker;
 use crate::overlay::OverlayManager;
 
 use super::WindowRoot;
@@ -24,13 +25,22 @@ impl WindowRoot {
         (&mut self.interaction, &mut self.focus)
     }
 
-    /// Returns `(&mut InteractionManager, &FrameRequestFlags)`.
+    /// Returns `(&mut InteractionManager, &mut InvalidationTracker, &FrameRequestFlags)`.
     ///
-    /// For `prepare_widget_tree`.
-    pub fn interaction_mut_and_frame_requests(
+    /// For `prepare_widget_tree` callers that also need the tracker for
+    /// selective tree walks.
+    pub fn interaction_invalidation_and_frame_requests_mut(
         &mut self,
-    ) -> (&mut InteractionManager, &FrameRequestFlags) {
-        (&mut self.interaction, &self.frame_requests)
+    ) -> (
+        &mut InteractionManager,
+        &mut InvalidationTracker,
+        &FrameRequestFlags,
+    ) {
+        (
+            &mut self.interaction,
+            &mut self.invalidation,
+            &self.frame_requests,
+        )
     }
 
     /// Returns `(&InteractionManager, &FrameRequestFlags)`.

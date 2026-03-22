@@ -56,13 +56,13 @@ WindowRoot::compute_layout, WindowRoot::rebuild, WidgetTestHarness
 ---
 
 ### Section 03: Dialog Selective Walks
-**File:** `section-03-dialog-selective-walks.md` | **Status:** Not Started
+**File:** `section-03-dialog-selective-walks.md` | **Status:** Complete
 
 ```
 03.0 tree_walk.rs extraction, pipeline/mod.rs split, file size 500-line limit
 selective tree walk, prepare_widget_tree, prepaint_widget_tree
 subtree skip, dirty subtree, clean subtree
-InvalidationTracker, max_dirty_kind, per-widget dirty, mark() unused in production
+InvalidationTracker, max_dirty_kind, per-widget dirty, mark() wired into production
 hover, focus, page-local, proportional work
 for_each_child_mut, depth-first, tree traversal
 InteractionManager, lifecycle pipeline, dirty marking, SmallVec return types
@@ -78,24 +78,30 @@ signature change sync points, all callers must update, run_prepaint
 
 ---
 
-### Section 04: Main-Window Rollout
-**File:** `section-04-main-window-rollout.md` | **Status:** Not Started
+### Section 04: App-Layer Wiring + Main-Window Rollout
+**File:** `section-04-main-window-rollout.md` | **Status:** In Progress
 
 ```
+04.0 borrow-split, interaction_invalidation_and_frame_requests_mut, dialog wiring
+compose_dialog_widgets, dialog_rendering.rs, None tracker, Some tracker
+8 None sites, 4 prepare + 4 prepaint, exact line numbers
 tab_bar, chrome, overlay, multi-pane, single-pane
 handle_redraw, handle_redraw_multi_pane, draw_tab_bar
 prepare_overlay_widgets, prepaint_overlay_widgets
-rollout, same strategy, proven pattern
+block scope, mutable borrow ends, reborrow pattern
+interaction_and_frame_requests, invalidation(), composable shared refs
+interaction_mut_and_frame_requests removal, dead_code deny
 WindowContext, chrome_scene, tab bar animation
 tick_animation, AnimFrameEvent, animation frame delivery
-overlay layout timing, layout_overlays, anchor bounds
-register_widget_tree, widget registration, page switch
+overlay layout timing, layout_overlays, dialog overlay prepare/prepaint gap
+borrow_split.rs, WindowRoot field destructure
+multi_pane/mod.rs 492 lines, file size 500-line limit, tab_bar_pipeline.rs extraction
 ```
 
 ---
 
 ### Section 05: Verification & Measurement
-**File:** `section-05-verification.md` | **Status:** Not Started
+**File:** `section-05-verification.md` | **Status:** In Progress
 
 ```
 profile, measurement, frame time, CPU cost
@@ -107,7 +113,8 @@ Scene::len(), primitive count, widget visit count
 page switch cost, idle CPU, ControlFlow::Wait
 dirty state leak, InvalidationTracker::clear(), between-frame state
 go/no-go, decision criteria, follow-up plan
-log::debug!, measurement logging, feature flag
+log::debug!, measurement logging, instrumentation cleanup
+thread-local counter, prepare_widget_frame visit count
 ```
 
 ---
@@ -129,5 +136,5 @@ Use profiling after modifying hot paths.
 | 01 | Current-Path Correctness | `section-01-current-path-correctness.md` |
 | 02 | Dialog Quick Wins | `section-02-dialog-quick-wins.md` |
 | 03 | Dialog Selective Walks | `section-03-dialog-selective-walks.md` |
-| 04 | Main-Window Rollout | `section-04-main-window-rollout.md` |
+| 04 | App-Layer Wiring + Main-Window Rollout | `section-04-main-window-rollout.md` |
 | 05 | Verification & Measurement | `section-05-verification.md` |

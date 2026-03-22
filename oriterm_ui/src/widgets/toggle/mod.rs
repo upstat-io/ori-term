@@ -1,16 +1,17 @@
 //! Toggle switch widget — a pill-shaped on/off switch.
 //!
-//! Emits `WidgetAction::Toggled` when clicked (via [`ClickController`]) or
-//! activated via Space. Uses [`AnimProperty`] for smooth thumb sliding
-//! (150ms, `EaseInOut`) and [`VisualStateAnimator`] for hover color transitions.
+//! Emits `WidgetAction::Toggled` when clicked or dragged (via
+//! [`ScrubController`]) or activated via Space. Uses [`AnimProperty`]
+//! for smooth thumb sliding (150ms, `EaseInOut`) and
+//! [`VisualStateAnimator`] for hover color transitions.
 
 use std::time::{Duration, Instant};
 
 use crate::animation::{AnimBehavior, AnimProperty};
 use crate::color::Color;
-use crate::controllers::{ClickController, EventController, HoverController};
+use crate::controllers::{EventController, HoverController, ScrubController};
 use crate::draw::RectStyle;
-use crate::geometry::Rect;
+use crate::geometry::{Point, Rect};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::visual_state::common_states;
@@ -78,6 +79,9 @@ impl Default for ToggleStyle {
 /// The thumb slides smoothly between on (1.0) and off (0.0) positions
 /// using an [`AnimProperty`] with `EaseInOut` easing over 150ms. Track
 /// hover transitions use [`VisualStateAnimator`] with `common_states()`.
+///
+/// Supports both click (tap to toggle) and drag (scrub the thumb)
+/// interactions via [`ScrubController`].
 pub struct ToggleWidget {
     id: WidgetId,
     on: bool,
@@ -88,6 +92,8 @@ pub struct ToggleWidget {
     controllers: Vec<Box<dyn EventController>>,
     /// Animator for off-state hover bg transition.
     animator: VisualStateAnimator,
+    /// Press position at drag start, for click-vs-drag discrimination.
+    drag_origin: Option<Point>,
 }
 
 impl Default for ToggleWidget {
@@ -110,7 +116,7 @@ impl ToggleWidget {
             ),
             controllers: vec![
                 Box::new(HoverController::new()),
-                Box::new(ClickController::new()),
+                Box::new(ScrubController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
                 style.off_bg,
@@ -119,6 +125,7 @@ impl ToggleWidget {
                 style.disabled_bg,
             )]),
             style,
+            drag_origin: None,
         }
     }
 
@@ -197,6 +204,18 @@ impl ToggleWidget {
             self.style.thumb_color
         }
     }
+
+    /// Converts a pixel X position to a progress value (0.0–1.0).
+    fn progress_from_x(&self, x: f32, bounds: Rect) -> f32 {
+        let s = &self.style;
+        let thumb_diameter = s.height - s.thumb_padding * 2.0;
+        let travel = s.width - s.thumb_padding * 2.0 - thumb_diameter;
+        let left = bounds.x() + s.thumb_padding + thumb_diameter / 2.0;
+        if travel <= 0.0 {
+            return 0.0;
+        }
+        ((x - left) / travel).clamp(0.0, 1.0)
+    }
 }
 
 impl std::fmt::Debug for ToggleWidget {
@@ -209,6 +228,7 @@ impl std::fmt::Debug for ToggleWidget {
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
+            .field("drag_origin", &self.drag_origin)
             .finish()
     }
 }
@@ -223,7 +243,7 @@ impl Widget for ToggleWidget {
     }
 
     fn sense(&self) -> Sense {
-        Sense::click()
+        Sense::click_and_drag()
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -295,9 +315,55 @@ impl Widget for ToggleWidget {
         }
     }
 
-    fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
+    fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
         match action {
-            WidgetAction::Clicked(_) => Some(self.toggle()),
+            WidgetAction::DragStart { pos, .. } => {
+                self.drag_origin = Some(pos);
+                None
+            }
+            WidgetAction::DragUpdate { total_delta, .. } => {
+                if let Some(origin) = self.drag_origin {
+                    let x = origin.x + total_delta.x;
+                    let progress = self.progress_from_x(x, bounds);
+                    self.toggle_progress.set_immediate(progress);
+                }
+                None
+            }
+            WidgetAction::DragEnd { pos, .. } => {
+                if let Some(origin) = self.drag_origin.take() {
+                    // Half the thumb travel distance: anything below is a
+                    // click/tap, anything above is a positional drag commit.
+                    let s = &self.style;
+                    let thumb_d = s.height - s.thumb_padding * 2.0;
+                    let travel = s.width - s.thumb_padding * 2.0 - thumb_d;
+                    let total_move = (pos.x - origin.x).abs();
+
+                    if total_move < travel / 2.0 {
+                        // Click or insignificant drag — toggle.
+                        Some(self.toggle())
+                    } else {
+                        // Intentional drag — commit based on final position.
+                        let progress = self.progress_from_x(pos.x, bounds);
+                        let new_on = progress > 0.5;
+                        let target = if new_on { 1.0 } else { 0.0 };
+                        self.toggle_progress.set(target, Instant::now());
+                        if new_on == self.on {
+                            // Dragged but ended in same state — snap back.
+                            None
+                        } else {
+                            self.on = new_on;
+                            Some(WidgetAction::Toggled {
+                                id: self.id,
+                                value: self.on,
+                            })
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+            // Keyboard activation (Space) returns Toggled directly.
+            WidgetAction::Toggled { .. } => Some(action),
             other => Some(other),
         }
     }
@@ -312,7 +378,7 @@ impl Widget for ToggleWidget {
         _bounds: Rect,
     ) -> Option<WidgetAction> {
         if action.name() == "widget::Activate" {
-            Some(WidgetAction::Clicked(self.id))
+            Some(self.toggle())
         } else {
             None
         }
