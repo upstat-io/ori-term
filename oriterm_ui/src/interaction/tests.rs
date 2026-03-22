@@ -393,6 +393,44 @@ fn focus_within_clears_on_focus_transfer() {
     assert!(mgr.get_state(root).has_focus_within());
 }
 
+// --- InteractionManager: focus order rebuild sync (TPR-11-004) ---
+
+#[test]
+fn focus_order_rebuild_desync_produces_stale_focus_path() {
+    // Reproduces the bug: FocusManager clears focus via set_focus_order()
+    // when the focused widget leaves the order, but InteractionManager
+    // still holds the stale focused_widget. focus_ancestor_path() then
+    // returns a path from a dead widget.
+    let mut mgr = InteractionManager::new();
+    let mut fm = FocusManager::new();
+    let old_widget = WidgetId::next();
+    let new_widget = WidgetId::next();
+    mgr.register_widget(old_widget);
+    mgr.register_widget(new_widget);
+    mgr.drain_events();
+
+    // Focus old_widget through the proper channel.
+    fm.set_focus_order(vec![old_widget]);
+    mgr.request_focus(old_widget, &mut fm);
+    mgr.drain_events();
+    assert_eq!(mgr.focused_widget(), Some(old_widget));
+    assert_eq!(fm.focused(), Some(old_widget));
+
+    // Simulate a page switch: new focus order excludes old_widget.
+    fm.set_focus_order(vec![new_widget]);
+    // FocusManager cleared focus because old_widget is gone.
+    assert_eq!(fm.focused(), None);
+    // BUG: InteractionManager still points at the dead widget.
+    assert_eq!(mgr.focused_widget(), Some(old_widget));
+    // focus_ancestor_path returns a stale path.
+    assert_eq!(mgr.focus_ancestor_path(), vec![old_widget]);
+
+    // FIX: caller syncs InteractionManager after set_focus_order clears.
+    mgr.clear_focus(&mut fm);
+    assert_eq!(mgr.focused_widget(), None);
+    assert!(mgr.focus_ancestor_path().is_empty());
+}
+
 // --- InteractionManager: disabled ---
 
 #[test]
@@ -613,4 +651,75 @@ fn hit_test_path_frontmost_child_wins() {
 
     let result = layout_hit_test_path(&root, Point::new(50.0, 50.0));
     assert_eq!(result.widget_ids(), vec![root_id, front_id]);
+}
+
+// --- gc_stale_widgets ---
+
+/// `gc_stale_widgets` removes entries not in the valid set.
+#[test]
+fn gc_stale_widgets_removes_absent_ids() {
+    let mut mgr = InteractionManager::new();
+    let a = WidgetId::next();
+    let b = WidgetId::next();
+    let c = WidgetId::next();
+    mgr.register_widget(a);
+    mgr.register_widget(b);
+    mgr.register_widget(c);
+    mgr.drain_events(); // Clear WidgetAdded.
+
+    // Keep only a and c — b is stale.
+    let changed = mgr.gc_stale_widgets(&[a, c]);
+    assert!(
+        changed.contains(&b),
+        "stale widget b should be in changed list"
+    );
+    assert!(
+        !mgr.is_registered(b),
+        "stale widget b should be deregistered"
+    );
+    assert!(mgr.is_registered(a), "valid widget a should remain");
+    assert!(mgr.is_registered(c), "valid widget c should remain");
+
+    // Verify WidgetRemoved event was generated.
+    let events = mgr.drain_events();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, LifecycleEvent::WidgetRemoved { widget_id } if *widget_id == b)),
+        "WidgetRemoved event expected for stale widget"
+    );
+}
+
+/// `gc_stale_widgets` is a no-op when all widgets are valid.
+#[test]
+fn gc_stale_widgets_noop_when_all_valid() {
+    let mut mgr = InteractionManager::new();
+    let a = WidgetId::next();
+    let b = WidgetId::next();
+    mgr.register_widget(a);
+    mgr.register_widget(b);
+    mgr.drain_events();
+
+    let changed = mgr.gc_stale_widgets(&[a, b]);
+    assert!(changed.is_empty());
+    assert!(mgr.is_registered(a));
+    assert!(mgr.is_registered(b));
+}
+
+/// `gc_stale_widgets` clears focus when the focused widget is stale.
+#[test]
+fn gc_stale_widgets_clears_stale_focus() {
+    let mut mgr = InteractionManager::new();
+    let mut focus = FocusManager::new();
+    let a = WidgetId::next();
+    let b = WidgetId::next();
+    mgr.register_widget(a);
+    mgr.register_widget(b);
+    focus.set_focus_order(vec![a, b]);
+    mgr.request_focus(b, &mut focus);
+    mgr.drain_events();
+
+    // GC removes b (the focused widget).
+    mgr.gc_stale_widgets(&[a]);
+    assert_eq!(mgr.focused_widget(), None, "focus should be cleared");
 }

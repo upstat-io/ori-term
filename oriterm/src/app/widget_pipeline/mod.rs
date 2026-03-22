@@ -5,8 +5,8 @@
 //! share the same code.
 
 pub(crate) use oriterm_ui::pipeline::{
-    DispatchResult, apply_dispatch_requests, collect_focusable_ids, prepaint_widget_tree,
-    prepare_widget_tree, register_widget_tree,
+    DispatchResult, apply_dispatch_requests, collect_all_widget_ids, collect_focusable_ids,
+    deregister_widget_tree, prepaint_widget_tree, prepare_widget_tree, register_widget_tree,
 };
 #[cfg(test)]
 pub(crate) use oriterm_ui::pipeline::{dispatch_step, prepare_widget_frame};
@@ -15,12 +15,14 @@ pub(crate) use oriterm_ui::pipeline::{dispatch_step, prepare_widget_frame};
 ///
 /// Convenience wrapper that unpacks `result.requests` and `result.source`
 /// into `apply_dispatch_requests`.
+///
+/// Returns all widget IDs whose interaction state changed.
 pub(crate) fn apply_requests(
     result: &DispatchResult,
     interaction: &mut oriterm_ui::interaction::InteractionManager,
     focus_manager: &mut oriterm_ui::focus::FocusManager,
-) {
-    apply_dispatch_requests(result.requests, result.source, interaction, focus_manager);
+) -> Vec<oriterm_ui::widget_id::WidgetId> {
+    apply_dispatch_requests(result.requests, result.source, interaction, focus_manager)
 }
 
 #[cfg(test)]

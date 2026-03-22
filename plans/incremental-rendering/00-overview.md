@@ -57,9 +57,8 @@ isolation. If a section cannot name the exact function it changes and the observ
 improves, it is too abstract and must be rewritten.
 
 **2. Fix correctness and cheap wins before architecture.**
-The current renderers still pass empty prepaint-bounds maps in three production paths. That is a
-real behavior bug today. Existing viewport culling and layout caching also need validation before
-we assume a retained-scene rewrite is necessary.
+Correctness bugs (empty prepaint-bounds maps) were fixed first (Section 01). Existing viewport
+culling and layout caching were validated before assuming a retained-scene rewrite is necessary.
 
 **3. Escalate only when measurement justifies it.**
 Selective tree walks and cache coordination are the first line of attack. Retained-scene patching
@@ -74,8 +73,8 @@ These are the intended sections, ordered by production impact, not by architectu
 |----|------|----------------------|-------------------|
 | 01 | Current-path correctness | `render_dialog()`, `handle_redraw()`, `handle_redraw_multi_pane()` | Widgets receive correct prepaint bounds; no hidden geometry bugs during hover/focus |
 | 02 | Dialog quick wins | `render_dialog()` + dialog event/layout helpers | Off-screen dialog content stops repainting; redundant dialog layout work is removed |
-| 03 | Dialog selective walks | dialog prepare/prepaint/paint path | Hover and page-local changes stop walking the entire dialog tree |
-| 04 | Main-window rollout | `handle_redraw()` + multi-pane redraw | Tab bar / chrome / pane UI get the same selective behavior |
+| 03 | Dialog selective walks | `tree_walk.rs` + `WindowRoot` pipeline methods | Selective walk infrastructure built and tested; WindowRoot callers use it; app-layer callers pass `None` (wired in 04) |
+| 04 | App-layer wiring + main-window rollout | `dialog_rendering.rs`, `handle_redraw()`, `handle_redraw_multi_pane()` | All app-layer render paths pass real tracker references; dialog + tab bar + overlays use selective walks |
 | 05 | Verification & Measurement | all render paths (measurement only) | Measure cumulative impact of 01-04; data-driven go/no-go on retained scene / GPU scroll |
 
 ## Dependency Graph
@@ -92,7 +91,7 @@ These are the intended sections, ordered by production impact, not by architectu
   incorrect bounds.
 - `02` and `03` intentionally start in the dialog path only. The dialog is the smallest,
   easiest-to-measure production surface.
-- `04` is a rollout step, not a new design step.
+- `04` wires the proven library infrastructure into all app-layer render paths (dialog, single-pane, multi-pane). Requires a new borrow-split method on `WindowRoot`.
 - `05` is a measurement and decision checkpoint. The verification test matrix (05.2) should always run. The advanced rendering decision (05.3) is data-driven — if Sections 02-04 already meet all performance targets, the decision is simply "no further work needed."
 
 ## Implementation Sequence
@@ -115,11 +114,13 @@ Phase 3 - Make Dialog Work Proportional To What Changed
   +-- Keep all changes inside the live dialog rendering path
   Gate: a single-row hover or page-local control change does not traverse the entire dialog tree
 
-Phase 4 - Roll The Same Strategy Into Main Windows
-  +-- Apply the proven dialog strategy to `handle_redraw()`
-  +-- Apply it again to multi-pane redraw
-  +-- Keep behavior identical; this is a rollout, not a redesign
-  Gate: terminal-adjacent UI chrome benefits from the same selective work rules
+Phase 4 - Wire Selective Walks Into All App-Layer Render Paths
+  +-- Add borrow-split method for (InteractionManager, InvalidationTracker, FrameRequestFlags)
+  +-- Wire tracker into dialog path (compose_dialog_widgets) — closes Section 03's app-layer gap
+  +-- Wire tracker into single-pane path (handle_redraw)
+  +-- Wire tracker into multi-pane path (handle_redraw_multi_pane)
+  +-- Verify overlay methods already pass Some (they do — no changes needed)
+  Gate: no app-layer render path passes None for the tracker parameter
 
 Phase 5 - Only Then Decide If Advanced Work Is Still Worth It
   +-- Re-profile scroll and hover after Phases 1-4
@@ -133,7 +134,7 @@ Phase 5 - Only Then Decide If Advanced Work Is Still Worth It
 - The first section fixes an existing production bug instead of designing for a hypothetical future.
 - The second and third sections operate on the smallest real surface that already hurts: the settings
   dialog.
-- The fourth section reuses a proven production change instead of inventing a second system.
+- The fourth section wires the proven library infrastructure into all production render paths (dialog + main windows) and verifies overlay methods are already correct.
 - The fifth section is a deliberate checkpoint against overengineering. If simpler changes solve the
   problem, advanced rendering work should not exist.
 
@@ -144,23 +145,30 @@ integration finale:
 
 - After the first section, prepaint correctness bugs are gone.
 - After the second section, dialog scrolling and hover avoid obviously wasted work.
-- After the third section, small dialog interactions cost roughly the size of the changed subtree,
-  not the whole dialog.
-- After the fourth section, the same strategy covers the main UI renderers.
+- After the third section, selective walk infrastructure is built, tested, and active in WindowRoot pipeline methods.
+- After the fourth section, all app-layer render paths (dialog, single-pane, multi-pane) pass real tracker references. Small interactions cost roughly the size of the changed subtree.
 - After all of that, retained-scene patching or GPU scroll should exist only if profiles still say
   they are necessary.
 
-## Known Problems To Start From
+## Known Problems
 
-| Problem | Current location | Why it matters | Fixed in |
-|--------|------------------|----------------|----------|
-| Empty prepaint-bounds maps | `dialog_rendering.rs`, `redraw/mod.rs`, `redraw/multi_pane/mod.rs` | Current behavior bug; invalidates later optimization work | Section 01 |
-| Full-tree prepare/prepaint on every interaction | `App::compose_dialog_widgets()` | Expensive hover/page-switch/scroll behavior (paint already has viewport culling in `FormLayout`/`FormSection`/`Container`, but prepare/prepaint walk the entire tree) | Sections 02-03 |
-| Coarse dirty gating only | app-layer render paths + `InvalidationTracker` usage | `max_dirty_kind()` gates entire phases, but per-widget `mark()` is never called from production — `dirty_map` is always empty; only `full_invalidation` is used | Section 03 |
-| `PageContainerWidget::for_each_child_mut()` visits ALL pages | `page_container/mod.rs:115-119` | `prepare_widget_tree()` and `prepaint_widget_tree()` walk hidden pages' entire widget trees every frame — single biggest source of wasted work in the dialog path | Section 02.2b/02.2c |
-| `ScrollWidget` layout cache stale on page switch | `scroll/mod.rs:117,190-216` | **Confirmed bug:** Cache keyed on viewport `Rect`, not child identity. `reset_scroll()` (called on page switch) does NOT clear `cached_child_layout`. Page switch with same viewport bounds returns stale layout from previous page | Section 02.2 |
-| Damage tracked after full rebuild | `DamageTracker` integration | Good primitive, but not yet reducing most CPU work | Section 03 (explored) |
-| Windows modal loop clears invalidation before render | `event_loop_helpers/mod.rs:85` | `modal_loop_render()` calls `invalidation.clear()` before `handle_redraw()`, wiping dirty state before selective walks can use it. Normal path in `render_dispatch.rs` correctly clears after render. Harmless today (dirty_map always empty) but will break Section 03 | Section 03.1 |
+**Open (blocking next sections):**
+
+| Problem | Location | Why it matters | Addressed in |
+|---------|----------|----------------|--------------|
+| Per-widget dirty tracking built but not wired at app layer | `dialog_rendering.rs`, `redraw/mod.rs`, `redraw/multi_pane/mod.rs` | `mark()` is wired into the interaction pipeline (Section 03). `WindowRoot::prepare()`/`run_prepaint()` pass `Some(tracker)`. But all app-layer render paths still pass `None`, bypassing selective walks | Section 04.0 |
+| Damage tracked after full rebuild | `DamageTracker` integration | Good primitive, but not yet reducing most CPU work | Section 03 (explored, not feasible without retained scene) |
+| Dialog overlays skip prepare/prepaint | `dialog_rendering.rs:226-273` | `render_dialog_overlays()` only calls `layout_overlays()` + `draw_overlay_at()` -- overlay widgets may not receive lifecycle events or animator ticks. Pre-existing gap unrelated to selective walks | Out of scope (separate bug) |
+
+**Resolved (by earlier sections):**
+
+| Problem | Fixed in |
+|---------|----------|
+| Empty prepaint-bounds maps in all 3 render paths | Section 01 |
+| Full-tree prepare/prepaint on every interaction | Sections 02-03 (library-level) |
+| `PageContainerWidget::for_each_child_mut()` visited ALL pages | Section 02.2b/02.2c |
+| `ScrollWidget` layout cache stale on page switch | Section 02.2 |
+| Windows modal loop cleared invalidation before render | Section 03.1 |
 
 ## Scope Boundary
 
@@ -176,6 +184,6 @@ This overview intentionally stays narrow:
 |----|-------|------|--------|
 | 01 | Current-Path Correctness | `section-01-current-path-correctness.md` | Complete |
 | 02 | Dialog Quick Wins | `section-02-dialog-quick-wins.md` | Complete |
-| 03 | Dialog Selective Walks | `section-03-dialog-selective-walks.md` | Not Started |
-| 04 | Main-Window Rollout | `section-04-main-window-rollout.md` | Not Started |
-| 05 | Verification & Measurement | `section-05-verification.md` | Not Started |
+| 03 | Dialog Selective Walks | `section-03-dialog-selective-walks.md` | Complete |
+| 04 | App-Layer Wiring + Main-Window Rollout | `section-04-main-window-rollout.md` | In Progress |
+| 05 | Verification & Measurement | `section-05-verification.md` | In Progress |

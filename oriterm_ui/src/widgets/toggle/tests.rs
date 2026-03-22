@@ -26,9 +26,9 @@ fn with_on_builder() {
 }
 
 #[test]
-fn sense_returns_click() {
+fn sense_returns_click_and_drag() {
     let t = ToggleWidget::new();
-    assert_eq!(t.sense(), Sense::click());
+    assert_eq!(t.sense(), Sense::click_and_drag());
 }
 
 #[test]
@@ -322,7 +322,212 @@ fn paint_thumb_at_off_position() {
     );
 }
 
-// -- Harness integration test --
+// -- on_action unit tests --
+
+#[test]
+fn on_action_click_toggles() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    let mut t = ToggleWidget::new();
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+    let center = Point::new(20.0, 11.0);
+
+    // Simulate DragStart + DragEnd at same position (click).
+    let r = t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: center,
+        },
+        bounds,
+    );
+    assert!(r.is_none(), "DragStart should not emit action");
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: center,
+        },
+        bounds,
+    );
+    assert!(
+        matches!(r, Some(WidgetAction::Toggled { value: true, .. })),
+        "click should toggle ON, got: {r:?}"
+    );
+    assert!(t.is_on());
+}
+
+#[test]
+fn on_action_drag_right_turns_on() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    let mut t = ToggleWidget::new();
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+
+    // Start at left edge, drag to right.
+    let start = Point::new(5.0, 11.0);
+    let end = Point::new(35.0, 11.0);
+    let delta = Point::new(end.x - start.x, 0.0);
+
+    t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: start,
+        },
+        bounds,
+    );
+    t.on_action(
+        WidgetAction::DragUpdate {
+            id: t.id(),
+            delta,
+            total_delta: delta,
+        },
+        bounds,
+    );
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: end,
+        },
+        bounds,
+    );
+    assert!(
+        matches!(r, Some(WidgetAction::Toggled { value: true, .. })),
+        "drag right should toggle ON, got: {r:?}"
+    );
+    assert!(t.is_on());
+}
+
+#[test]
+fn on_action_drag_left_turns_off() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    let mut t = ToggleWidget::new().with_on(true);
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+
+    // Start at right edge, drag to left.
+    let start = Point::new(35.0, 11.0);
+    let end = Point::new(5.0, 11.0);
+    let delta = Point::new(end.x - start.x, 0.0);
+
+    t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: start,
+        },
+        bounds,
+    );
+    t.on_action(
+        WidgetAction::DragUpdate {
+            id: t.id(),
+            delta,
+            total_delta: delta,
+        },
+        bounds,
+    );
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: end,
+        },
+        bounds,
+    );
+    assert!(
+        matches!(r, Some(WidgetAction::Toggled { value: false, .. })),
+        "drag left should toggle OFF, got: {r:?}"
+    );
+    assert!(!t.is_on());
+}
+
+#[test]
+fn on_action_small_drag_treated_as_click() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    let mut t = ToggleWidget::new();
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+
+    // Small drag (< half travel) in the OFF zone — should toggle like a click.
+    let start = Point::new(15.0, 11.0);
+    let end = Point::new(10.0, 11.0);
+    let delta = Point::new(end.x - start.x, 0.0);
+
+    t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: start,
+        },
+        bounds,
+    );
+    t.on_action(
+        WidgetAction::DragUpdate {
+            id: t.id(),
+            delta,
+            total_delta: delta,
+        },
+        bounds,
+    );
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: end,
+        },
+        bounds,
+    );
+    assert!(
+        matches!(r, Some(WidgetAction::Toggled { value: true, .. })),
+        "small drag should toggle like a click, got: {r:?}"
+    );
+    assert!(t.is_on());
+}
+
+#[test]
+fn on_action_long_drag_snap_back_when_same_state() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    // Toggle is ON, drag from right past midpoint then release in ON zone.
+    // Travel = 18px, so movement must be >= 9px to be a positional drag.
+    let mut t = ToggleWidget::new().with_on(true);
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+
+    // Start at left edge (unusual), drag 10px right — ends in ON zone.
+    let start = Point::new(5.0, 11.0);
+    let end = Point::new(35.0, 11.0);
+    let delta = Point::new(end.x - start.x, 0.0);
+
+    t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: start,
+        },
+        bounds,
+    );
+    t.on_action(
+        WidgetAction::DragUpdate {
+            id: t.id(),
+            delta,
+            total_delta: delta,
+        },
+        bounds,
+    );
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: end,
+        },
+        bounds,
+    );
+    // Already ON, drag ends in ON zone → snap back, no action.
+    assert!(
+        r.is_none(),
+        "long drag ending in same state should snap back, got: {r:?}"
+    );
+    assert!(t.is_on());
+}
+
+// -- Harness integration tests --
 
 #[test]
 fn harness_toggle_click_flips_value() {
@@ -354,5 +559,27 @@ fn harness_toggle_click_flips_value() {
             .iter()
             .any(|a| matches!(a, WidgetAction::Toggled { id, value: false } if *id == toggle_id)),
         "second click should produce Toggled(false), got: {actions:?}"
+    );
+}
+
+#[test]
+fn harness_toggle_drag_right_turns_on() {
+    use crate::action::WidgetAction;
+    use crate::geometry::Point;
+    use crate::testing::WidgetTestHarness;
+
+    let toggle = ToggleWidget::new();
+    let toggle_id = toggle.id();
+    let mut h = WidgetTestHarness::new(toggle);
+
+    // Drag from left to right across the toggle.
+    let start = Point::new(5.0, 11.0);
+    let end = Point::new(35.0, 11.0);
+    let actions = h.drag(start, end, 5);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Toggled { id, value: true } if *id == toggle_id)),
+        "drag right should produce Toggled(true), got: {actions:?}"
     );
 }

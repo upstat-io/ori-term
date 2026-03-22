@@ -20,8 +20,8 @@ use crate::interaction::lifecycle::LifecycleEvent;
 use crate::layout::compute_layout;
 use crate::overlay::OverlayEventResult;
 use crate::pipeline::{
-    apply_dispatch_requests, collect_focusable_ids, collect_layout_bounds, dispatch_keymap_action,
-    prepaint_widget_tree, prepare_widget_tree, register_widget_tree,
+    apply_dispatch_requests, collect_all_widget_ids, collect_focusable_ids, collect_layout_bounds,
+    dispatch_keymap_action, prepaint_widget_tree, prepare_widget_tree, register_widget_tree,
 };
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -35,7 +35,8 @@ impl WindowRoot {
     ///
     /// Calls the widget's `layout()` method with the current viewport
     /// constraints, then rebuilds the parent map, re-registers widgets,
-    /// collects key contexts, and rebuilds focus order.
+    /// GCs stale registrations, collects key contexts, and rebuilds focus
+    /// order. Safe to call after structural changes (widget add/remove).
     pub fn compute_layout(&mut self, measurer: &dyn TextMeasurer, theme: &UiTheme) {
         let ctx = LayoutCtx { measurer, theme };
         let layout_box = self.widget.layout(&ctx);
@@ -48,14 +49,23 @@ impl WindowRoot {
         // Register all widget IDs with InteractionManager (idempotent).
         register_widget_tree(&mut *self.widget, &mut self.interaction);
 
+        // GC stale interaction registrations from previous tree structure
+        // (e.g., after widget replacement or child changes). Matches the
+        // GC in `rebuild()` so callers don't need to know which method
+        // handles structural cleanup (TPR-04-006).
+        let mut valid = Vec::new();
+        collect_all_widget_ids(&mut *self.widget, &mut valid);
+        let stale = self.interaction.gc_stale_widgets(&valid);
+        self.mark_widgets_prepaint_dirty(&stale);
+
         // Collect key contexts for keymap scope gating.
         self.key_contexts.clear();
         collect_key_contexts(&mut *self.widget, &mut self.key_contexts);
 
-        // Rebuild focus order from tree traversal.
+        // Rebuild focus order and sync InteractionManager if focus dropped.
         let mut focusable = Vec::new();
         collect_focusable_ids(&mut *self.widget, &mut focusable);
-        self.focus.set_focus_order(focusable);
+        self.sync_focus_order(focusable);
 
         self.dirty = true;
     }
@@ -63,12 +73,13 @@ impl WindowRoot {
     /// Dispatches an event through overlays first, then the widget tree.
     ///
     /// Overlay events take priority — if an overlay handles the event,
-    /// the main widget tree does not see it.
+    /// the main widget tree does not see it and the base tree's hot path
+    /// is cleared so background widgets don't show hover state underneath.
     ///
     /// Steps:
-    /// 1. For mouse events: hit test and update hot path.
-    /// 2. Deliver lifecycle events from hot path update.
-    /// 3. For mouse events: route through overlay manager first.
+    /// 1. For mouse events: route through overlay manager first.
+    /// 2. For mouse events: update hot path (cleared if overlay consumed).
+    /// 3. Deliver lifecycle events from hot path update.
     /// 4. If overlay did not consume: dispatch to widget tree.
     /// 5. Apply controller requests.
     /// 6. Deliver lifecycle events from request application.
@@ -81,18 +92,10 @@ impl WindowRoot {
         theme: &UiTheme,
         now: Instant,
     ) {
-        // Step 1: update hot path for mouse events.
-        if let Some(pos) = event.pos() {
-            let hit_result = layout_hit_test_path(&self.layout, pos);
-            let ids = hit_result.widget_ids();
-            self.interaction.update_hot_path(&ids);
-        }
-
-        // Step 2: deliver lifecycle events from hot path update.
-        self.deliver_lifecycle_events(now, measurer, theme);
-
-        // Step 3: overlay routing for mouse events.
-        // If an overlay consumes the event, skip widget tree dispatch.
+        // Step 1: overlay-first routing for mouse events.
+        // Overlays take priority — if an overlay handles the event, the base
+        // widget tree's hot path is cleared (not updated) so background widgets
+        // don't animate hover state underneath the overlay.
         let overlay_consumed = if let Some(mouse_event) = (*event).to_mouse_event() {
             let focused = self.focus.focused();
             let result = self.overlays.process_mouse_event(
@@ -109,6 +112,24 @@ impl WindowRoot {
             false
         };
 
+        // Step 2: update hot path for mouse events.
+        // When overlay consumed: clear the hot path so background widgets
+        // lose hover state (they shouldn't be hot while an overlay is active).
+        // When overlay did not consume: normal hit-test against widget tree.
+        if let Some(pos) = event.pos() {
+            let changed = if overlay_consumed {
+                self.interaction.update_hot_path(&[])
+            } else {
+                let hit_result = layout_hit_test_path(&self.layout, pos);
+                let ids = hit_result.widget_ids();
+                self.interaction.update_hot_path(&ids)
+            };
+            self.mark_widgets_prepaint_dirty(&changed);
+        }
+
+        // Step 3: deliver lifecycle events from hot path update.
+        self.deliver_lifecycle_events(now, measurer, theme);
+
         // Step 4: dispatch event to widget tree (if overlay didn't consume it).
         let result = if overlay_consumed {
             TreeDispatchResult::new()
@@ -116,13 +137,14 @@ impl WindowRoot {
             self.dispatch_to_tree(event, now)
         };
 
-        // Step 5: apply controller requests.
-        apply_dispatch_requests(
+        // Step 5: apply controller requests and mark changed widgets dirty.
+        let dispatch_changed = apply_dispatch_requests(
             result.requests,
             result.source,
             &mut self.interaction,
             &mut self.focus,
         );
+        self.mark_widgets_prepaint_dirty(&dispatch_changed);
 
         // Step 6: deliver lifecycle events from request application.
         self.deliver_lifecycle_events(now, measurer, theme);
@@ -144,13 +166,14 @@ impl WindowRoot {
             prepare_widget_tree(
                 &mut *self.widget,
                 &mut self.interaction,
+                Some(&mut self.invalidation),
                 &events,
                 None,
                 Some(&self.frame_requests),
                 now,
             );
         }
-        self.run_prepaint(now, theme);
+        self.run_prepaint(now, theme, true);
         self.flush_frame_requests();
     }
 
@@ -159,6 +182,13 @@ impl WindowRoot {
     /// Promotes deferred repaints, takes animation frame requests from the
     /// scheduler, delivers animation events to widgets, runs prepaint, and
     /// flushes frame request flags.
+    ///
+    /// Bypasses selective walking (passes `None` for the invalidation tracker)
+    /// because `flush_frame_requests` only schedules the root widget ID — we
+    /// don't know which specific descendants are animating. Full walks during
+    /// animation ticks are acceptable since animations are transient (~100-300ms).
+    /// Once all animations complete this method returns `false` and the caller
+    /// resumes selective walks for interaction-only frames.
     ///
     /// Returns `true` if any animation widgets were ticked.
     pub fn tick_animation(&mut self, delta: Duration, now: Instant, theme: &UiTheme) -> bool {
@@ -171,15 +201,23 @@ impl WindowRoot {
             delta_nanos: delta.as_nanos() as u64,
             now,
         };
+        // Pass None for tracker: animation ticks must do full tree walks
+        // because production clears invalidation after each rendered frame,
+        // and we only track the root widget ID in the scheduler — descendant
+        // animating widgets would be skipped by selective walks.
         prepare_widget_tree(
             &mut *self.widget,
             &mut self.interaction,
+            None,
             &[],
             Some(&anim_event),
             Some(&self.frame_requests),
             now,
         );
-        self.run_prepaint(now, theme);
+        // Full prepaint walk (selective: false) because the prepare step above
+        // passed None for the tracker, so it couldn't mark animating widgets
+        // dirty. A selective walk here would skip nested animating children.
+        self.run_prepaint(now, theme, false);
         self.flush_frame_requests();
         true
     }
@@ -195,7 +233,7 @@ impl WindowRoot {
     /// splitting needed to pass `&InteractionManager` and `&FrameRequestFlags`
     /// to `DrawCtx` while painting through `&mut Widget`.
     pub fn paint(&mut self, measurer: &dyn TextMeasurer, theme: &UiTheme, now: Instant) -> Scene {
-        self.run_prepaint(now, theme);
+        self.run_prepaint(now, theme, true);
         let mut scene = Scene::new();
         let bounds = self.layout.rect;
         let mut ctx = DrawCtx {
@@ -220,17 +258,45 @@ impl WindowRoot {
     pub fn rebuild(&mut self) {
         register_widget_tree(&mut *self.widget, &mut self.interaction);
 
+        // GC stale interaction registrations from previous tree structure
+        // (e.g., after replace_widget or internal child changes). Widgets
+        // no longer reachable via for_each_child_mut are deregistered so
+        // InteractionManager state doesn't grow monotonically (TPR-11-009).
+        let mut valid = Vec::new();
+        collect_all_widget_ids(&mut *self.widget, &mut valid);
+        let stale = self.interaction.gc_stale_widgets(&valid);
+        self.mark_widgets_prepaint_dirty(&stale);
+
         self.key_contexts.clear();
         collect_key_contexts(&mut *self.widget, &mut self.key_contexts);
 
         let mut focusable = Vec::new();
         collect_focusable_ids(&mut *self.widget, &mut focusable);
-        self.focus.set_focus_order(focusable);
+        self.sync_focus_order(focusable);
 
         self.dirty = true;
     }
 
     // -- Internal helpers --
+
+    /// Updates focus order and syncs `InteractionManager` if focus is dropped.
+    ///
+    /// When the focused widget leaves the new order, `FocusManager` clears
+    /// focus internally. This method detects that and calls
+    /// `InteractionManager::clear_focus()` so both managers stay in sync.
+    ///
+    /// Used by `rebuild()`, `compute_layout()`, and dialog content handlers
+    /// (`reset_dialog_settings`, page switch, keyboard dispatch) to maintain
+    /// focus consistency after widget tree changes.
+    pub fn sync_focus_order(&mut self, focusable: Vec<WidgetId>) {
+        let had_focus = self.focus.focused().is_some();
+        self.focus.set_focus_order(focusable);
+
+        if had_focus && self.focus.focused().is_none() {
+            let changed = self.interaction.clear_focus(&mut self.focus);
+            self.mark_widgets_prepaint_dirty(&changed);
+        }
+    }
 
     /// Dispatches an event through the widget tree (keymap + controller pipeline).
     fn dispatch_to_tree(&mut self, event: &InputEvent, now: Instant) -> TreeDispatchResult {
@@ -311,19 +377,30 @@ impl WindowRoot {
         prepare_widget_tree(
             &mut *self.widget,
             &mut self.interaction,
+            Some(&mut self.invalidation),
             &events,
             None,
             Some(&self.frame_requests),
             now,
         );
-        self.run_prepaint(now, theme);
+        self.run_prepaint(now, theme, true);
         self.flush_frame_requests();
     }
 
     /// Runs the prepaint phase: collects layout bounds and resolves visual state.
-    fn run_prepaint(&mut self, now: Instant, theme: &UiTheme) {
+    ///
+    /// When `selective` is true, uses the invalidation tracker to skip clean
+    /// subtrees. When false, does a full walk (needed during `tick_animation`
+    /// because the prepare phase passes `None` for the tracker and cannot mark
+    /// animating widgets dirty for selective walks).
+    fn run_prepaint(&mut self, now: Instant, theme: &UiTheme, selective: bool) {
         let mut bounds_map: HashMap<WidgetId, Rect> = HashMap::new();
         collect_layout_bounds(&self.layout, &mut bounds_map);
+        let tracker = if selective {
+            Some(&self.invalidation)
+        } else {
+            None
+        };
         prepaint_widget_tree(
             &mut *self.widget,
             &bounds_map,
@@ -331,6 +408,7 @@ impl WindowRoot {
             theme,
             now,
             Some(&self.frame_requests),
+            tracker,
         );
     }
 
@@ -338,6 +416,12 @@ impl WindowRoot {
     ///
     /// Handles borrow splitting: overlays, interaction, and frame requests all
     /// live on `WindowRoot`, so the caller cannot destructure them manually.
+    ///
+    /// Passes `None` for the invalidation tracker: overlay widgets don't
+    /// participate in dirty tracking (interactions route through
+    /// `OverlayManager`, not `InteractionManager` hot path), so selective
+    /// walks would incorrectly skip all overlay descendants. Full walks are
+    /// acceptable since overlay trees are small (dropdown menus, modals).
     pub fn prepare_overlay_widgets(&mut self, lifecycle_events: &[LifecycleEvent], now: Instant) {
         let interaction = &mut self.interaction;
         let flags = &self.frame_requests;
@@ -345,6 +429,7 @@ impl WindowRoot {
             prepare_widget_tree(
                 widget,
                 interaction,
+                None,
                 lifecycle_events,
                 None,
                 Some(flags),
@@ -357,6 +442,11 @@ impl WindowRoot {
     ///
     /// Handles borrow splitting: overlays, interaction, and frame requests all
     /// live on `WindowRoot`, so the caller cannot destructure them manually.
+    ///
+    /// Passes `None` for the invalidation tracker: overlay widgets don't
+    /// participate in dirty tracking, so selective walks would skip all
+    /// overlay descendants. Full walks are acceptable since overlay trees
+    /// are small.
     pub fn prepaint_overlay_widgets(
         &mut self,
         bounds_map: &HashMap<WidgetId, Rect>,
@@ -373,6 +463,7 @@ impl WindowRoot {
                 theme,
                 now,
                 Some(flags),
+                None,
             );
         });
     }

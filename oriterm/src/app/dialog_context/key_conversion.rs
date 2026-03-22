@@ -44,8 +44,36 @@ pub(in crate::app) fn winit_key_to_input_event(
     })
 }
 
+/// Converts a winit logical key to a UI [`UiKey`].
+///
+/// Returns `None` for keys that the overlay system doesn't handle
+/// (e.g., function keys, media keys).
+pub(super) fn winit_key_to_ui_key(key: &Key) -> Option<UiKey> {
+    match key {
+        Key::Named(named) => match named {
+            NamedKey::Tab => Some(UiKey::Tab),
+            NamedKey::Enter => Some(UiKey::Enter),
+            NamedKey::Space => Some(UiKey::Space),
+            NamedKey::Escape => Some(UiKey::Escape),
+            NamedKey::Backspace => Some(UiKey::Backspace),
+            NamedKey::Delete => Some(UiKey::Delete),
+            NamedKey::Home => Some(UiKey::Home),
+            NamedKey::End => Some(UiKey::End),
+            NamedKey::ArrowUp => Some(UiKey::ArrowUp),
+            NamedKey::ArrowDown => Some(UiKey::ArrowDown),
+            NamedKey::ArrowLeft => Some(UiKey::ArrowLeft),
+            NamedKey::ArrowRight => Some(UiKey::ArrowRight),
+            NamedKey::PageUp => Some(UiKey::PageUp),
+            NamedKey::PageDown => Some(UiKey::PageDown),
+            _ => None,
+        },
+        Key::Character(ch) => ch.chars().next().map(UiKey::Character),
+        _ => None,
+    }
+}
+
 /// Converts winit modifier state to UI modifier flags.
-fn winit_mods_to_ui(m: winit::keyboard::ModifiersState) -> UiModifiers {
+pub(super) fn winit_mods_to_ui(m: winit::keyboard::ModifiersState) -> UiModifiers {
     let mut mods = UiModifiers::NONE;
     if m.shift_key() {
         mods = mods.union(UiModifiers::SHIFT_ONLY);

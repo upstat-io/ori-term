@@ -30,6 +30,9 @@ impl WidgetTestHarness {
     /// Advances the simulated clock by `duration`.
     ///
     /// Ticks animation frames for all widgets that requested them.
+    /// Dirty state accumulates until `render()` is called, matching production
+    /// cadence where invalidation is cleared after the render pass, not after
+    /// animation ticks.
     /// Multiple calls accumulate: `advance_time(100ms) + advance_time(100ms)` = 200ms total.
     pub fn advance_time(&mut self, duration: Duration) {
         self.clock += duration;
@@ -38,8 +41,10 @@ impl WidgetTestHarness {
 
     /// Advances time in 16ms steps until no widgets request animation frames.
     ///
-    /// Panics after 300 steps (4.8 seconds simulated) to prevent infinite loops
-    /// from buggy animations.
+    /// Dirty state accumulates across steps until `render()` is called,
+    /// matching production cadence where invalidation is cleared after the
+    /// render pass. Panics after 300 steps (4.8 seconds simulated) to
+    /// prevent infinite loops from buggy animations.
     pub fn run_until_stable(&mut self) {
         let step = Duration::from_millis(16);
         for i in 0..300 {

@@ -152,11 +152,16 @@ impl App {
             let input_event = InputEvent::from_mouse_event(&mouse_event);
             let result = ctx.chrome.dispatch_input(&input_event, now);
 
-            // Apply interaction state changes (active/focus).
-            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
-            apply_dispatch_requests(result.requests, result.source, interaction, focus);
+            // Apply interaction state changes (active/focus) and mark dirty.
+            let changed = {
+                let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+                apply_dispatch_requests(result.requests, result.source, interaction, focus)
+            };
+            ctx.root.mark_widgets_prepaint_dirty(&changed);
 
-            if result.requests.contains(ControllerRequests::PAINT) {
+            // Redraw when interaction state changed (focus/active) or
+            // controllers requested repaint (TPR-11-010).
+            if !changed.is_empty() || result.requests.contains(ControllerRequests::PAINT) {
                 ctx.request_urgent_redraw();
             }
 
@@ -228,11 +233,16 @@ impl App {
             None,
         );
 
-        // Apply interaction state changes.
-        let (interaction, focus) = ctx.root.interaction_and_focus_mut();
-        apply_dispatch_requests(result.requests, result.source, interaction, focus);
+        // Apply interaction state changes and mark dirty.
+        let changed = {
+            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+            apply_dispatch_requests(result.requests, result.source, interaction, focus)
+        };
+        ctx.root.mark_widgets_prepaint_dirty(&changed);
 
-        if result.requests.contains(ControllerRequests::PAINT) {
+        // Redraw when interaction state changed (focus/active) or
+        // controllers requested repaint (TPR-11-010).
+        if !changed.is_empty() || result.requests.contains(ControllerRequests::PAINT) {
             ctx.request_urgent_redraw();
         }
 
@@ -325,8 +335,11 @@ impl App {
             #[cfg(not(debug_assertions))]
             None,
         );
-        let (interaction, focus) = ctx.root.interaction_and_focus_mut();
-        apply_dispatch_requests(result.requests, result.source, interaction, focus);
+        let changed = {
+            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
+            apply_dispatch_requests(result.requests, result.source, interaction, focus)
+        };
+        ctx.root.mark_widgets_prepaint_dirty(&changed);
         if result.handled {
             ctx.request_urgent_redraw();
         }

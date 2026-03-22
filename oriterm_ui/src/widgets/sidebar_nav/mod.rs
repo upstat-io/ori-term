@@ -169,10 +169,6 @@ impl SidebarNavWidget {
         let bg = if is_active {
             self.style.active_bg
         } else if self.hovered_item == Some(flat_idx) {
-            log::info!(
-                "sidebar paint: item {flat_idx} hovered, bg={:?}",
-                self.style.hover_bg
-            );
             self.style.hover_bg
         } else {
             Color::TRANSPARENT
@@ -347,39 +343,14 @@ impl Widget for SidebarNavWidget {
             // Track which item is hovered for instant per-item highlight.
             InputEvent::MouseMove { pos, .. } => {
                 let local_y = pos.y - bounds.y() - SIDEBAR_PADDING_Y;
-                let prev = self.hovered_item;
                 self.hovered_item = self.hit_test_item(local_y);
-                if self.hovered_item != prev {
-                    log::info!(
-                        "sidebar hover: pos=({:.0},{:.0}) bounds=({:.0},{:.0},{:.0},{:.0}) local_y={:.0} item={:?}",
-                        pos.x,
-                        pos.y,
-                        bounds.x(),
-                        bounds.y(),
-                        bounds.width(),
-                        bounds.height(),
-                        local_y,
-                        self.hovered_item,
-                    );
-                }
                 super::OnInputResult::handled()
             }
             // Route click events to nav items by position.
             InputEvent::MouseDown { pos, .. } => {
                 let local_y = pos.y - bounds.y() - SIDEBAR_PADDING_Y;
-                log::info!(
-                    "sidebar click: pos=({:.0},{:.0}) bounds=({:.0},{:.0},{:.0},{:.0}) local_y={:.0}",
-                    pos.x,
-                    pos.y,
-                    bounds.x(),
-                    bounds.y(),
-                    bounds.width(),
-                    bounds.height(),
-                    local_y,
-                );
                 if let Some(flat_idx) = self.hit_test_item(local_y) {
                     if let Some(page_idx) = self.page_for_flat_index(flat_idx) {
-                        log::info!("sidebar click: flat_idx={flat_idx} page_idx={page_idx}");
                         return super::OnInputResult::handled().with_action(
                             WidgetAction::Selected {
                                 id: self.id,
@@ -388,7 +359,6 @@ impl Widget for SidebarNavWidget {
                         );
                     }
                 }
-                log::info!("sidebar click: no item hit");
                 super::OnInputResult::ignored()
             }
             // Arrow keys switch the active nav item.
