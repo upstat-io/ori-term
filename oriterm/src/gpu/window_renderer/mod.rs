@@ -352,7 +352,8 @@ impl WindowRenderer {
     /// - `Plus`: `(PLUS_ARM * 2).round()` = 10
     /// - `ChevronDown`: `(CHEVRON_HALF * 2).round()` = 10
     /// - `Minimize`/`Maximize`/`Restore`/`WindowClose`: `SYMBOL_SIZE.round()` = 10
-    const ICON_SIZES: [(IconId, u32); 7] = [
+    const ICON_SIZES: [(IconId, u32); 15] = [
+        // Window chrome (10px logical).
         (IconId::Close, 10),
         (IconId::Plus, 10),
         (IconId::ChevronDown, 10),
@@ -360,6 +361,15 @@ impl WindowRenderer {
         (IconId::Maximize, 10),
         (IconId::Restore, 10),
         (IconId::WindowClose, 10),
+        // Settings sidebar nav (16px logical).
+        (IconId::Sun, 16),
+        (IconId::Palette, 16),
+        (IconId::Type, 16),
+        (IconId::Terminal, 16),
+        (IconId::Keyboard, 16),
+        (IconId::Window, 16),
+        (IconId::Bell, 16),
+        (IconId::Activity, 16),
     ];
 
     // ── Frame preparation ──

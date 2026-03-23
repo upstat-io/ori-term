@@ -42,8 +42,14 @@ impl TextMeasurer for UiFontMeasurer<'_> {
     fn measure(&self, text: &str, style: &TextStyle, _max_width: f32) -> TextMetrics {
         // Shaping produces physical-pixel metrics; convert to logical for layout.
         let phys = ui_text::measure_text_styled(text, style, self.collection);
+        let mut width = phys.width / self.scale;
+        // Letter spacing: add logical-pixel spacing per glyph to the width.
+        if style.letter_spacing > 0.0 {
+            let glyph_count = text.chars().count() as f32;
+            width += style.letter_spacing * glyph_count;
+        }
         TextMetrics {
-            width: phys.width / self.scale,
+            width,
             height: phys.height / self.scale,
             line_count: phys.line_count,
         }
@@ -52,6 +58,14 @@ impl TextMeasurer for UiFontMeasurer<'_> {
     fn shape(&self, text: &str, style: &TextStyle, max_width: f32) -> ShapedText {
         // Widget passes logical max_width; convert to physical for truncation.
         let mut shaped = ui_text::shape_text(text, style, max_width * self.scale, self.collection);
+        // Apply letter spacing: convert logical pixels to physical for glyph advances.
+        if style.letter_spacing > 0.0 && !shaped.glyphs.is_empty() {
+            let phys_spacing = style.letter_spacing * self.scale;
+            for g in &mut shaped.glyphs {
+                g.x_advance += phys_spacing;
+            }
+            shaped.width += phys_spacing * shaped.glyphs.len() as f32;
+        }
         // Convert layout metrics to logical pixels for widget centering/positioning.
         // Glyph advances and baseline remain in physical pixels for rendering.
         shaped.width /= self.scale;

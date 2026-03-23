@@ -7,7 +7,7 @@ use crate::color::Color;
 use crate::geometry::Point;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
-use crate::text::{TextOverflow, TextStyle};
+use crate::text::{FontWeight, TextOverflow, TextStyle};
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -21,8 +21,12 @@ pub struct LabelStyle {
     pub color: Color,
     /// Font size in points.
     pub font_size: f32,
+    /// Font weight.
+    pub weight: FontWeight,
     /// Overflow behavior.
     pub overflow: TextOverflow,
+    /// Extra spacing between characters in pixels.
+    pub letter_spacing: f32,
 }
 
 impl LabelStyle {
@@ -31,7 +35,9 @@ impl LabelStyle {
         Self {
             color: theme.fg_primary,
             font_size: theme.font_size,
+            weight: FontWeight::Regular,
             overflow: TextOverflow::Clip,
+            letter_spacing: 0.0,
         }
     }
 }
@@ -82,7 +88,10 @@ impl LabelWidget {
 
     /// Builds the `TextStyle` for measurement and shaping.
     fn text_style(&self) -> TextStyle {
-        TextStyle::new(self.style.font_size, self.style.color).with_overflow(self.style.overflow)
+        TextStyle::new(self.style.font_size, self.style.color)
+            .with_weight(self.style.weight)
+            .with_overflow(self.style.overflow)
+            .with_letter_spacing(self.style.letter_spacing)
     }
 }
 

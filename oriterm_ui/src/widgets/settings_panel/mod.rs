@@ -136,6 +136,7 @@ impl SettingsPanel {
             // Header: left margin + title + fill spacer + close button + right margin.
             let title = LabelWidget::new("Settings").with_style(LabelStyle {
                 font_size: TITLE_FONT_SIZE,
+                weight: crate::text::FontWeight::Bold,
                 ..LabelStyle::default()
             });
 
@@ -364,7 +365,7 @@ impl Widget for SettingsPanel {
             // Overlay mode: panel background with rounded corners and shadow.
             ctx.scene.push_layer_bg(bg);
             let bg_style = RectStyle::filled(bg)
-                .with_border(1.0, ctx.theme.border)
+                .with_border(2.0, ctx.theme.border_strong)
                 .with_radius(CORNER_RADIUS)
                 .with_shadow(Shadow {
                     offset_x: 0.0,

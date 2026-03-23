@@ -348,8 +348,8 @@ impl App {
         )
         .glyph_format();
 
-        let ui_fc = self.ui_font_set.as_ref().and_then(|fs| {
-            crate::font::FontCollection::new(fs.clone(), 11.0, physical_dpi, format, 400, hinting)
+        let ui_fc = self.font_set.as_ref().and_then(|fs| {
+            crate::font::FontCollection::new(fs.clone(), 10.0, physical_dpi, format, 400, hinting)
                 .ok()
         })?;
 

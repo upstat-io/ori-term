@@ -6,7 +6,7 @@ use oriterm_core::{Cell, CellExtra, CellFlags};
 
 use super::{build_col_glyph_map, prepare_line, shape_prepared_runs};
 use crate::font::collection::FontCollection;
-use crate::font::{FaceIdx, FontSet, GlyphFormat, HintingMode, subpx_bin};
+use crate::font::{FaceIdx, FontSet, GlyphFormat, GlyphStyle, HintingMode, subpx_bin};
 
 // ── Helpers ──
 
@@ -724,7 +724,14 @@ fn ui_shape_hello_produces_five_glyphs() {
     let fc = test_collection();
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    super::shape_text_string("Hello", &faces, &fc, &mut output, &mut None);
+    super::shape_text_string(
+        "Hello",
+        GlyphStyle::Regular,
+        &faces,
+        &fc,
+        &mut output,
+        &mut None,
+    );
 
     assert_eq!(output.len(), 5, "5 glyphs for 'Hello'");
     for g in &output {
@@ -737,7 +744,14 @@ fn ui_shape_sequential_advances() {
     let fc = test_collection();
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    super::shape_text_string("Hello", &faces, &fc, &mut output, &mut None);
+    super::shape_text_string(
+        "Hello",
+        GlyphStyle::Regular,
+        &faces,
+        &fc,
+        &mut output,
+        &mut None,
+    );
 
     // Monospace font: all advances should be equal.
     let first = output[0].x_advance;
@@ -755,7 +769,14 @@ fn ui_shape_space_has_positive_advance() {
     let fc = test_collection();
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    super::shape_text_string("A B", &faces, &fc, &mut output, &mut None);
+    super::shape_text_string(
+        "A B",
+        GlyphStyle::Regular,
+        &faces,
+        &fc,
+        &mut output,
+        &mut None,
+    );
 
     assert_eq!(output.len(), 3, "'A B' → 3 glyphs");
     // Space is shaped by rustybuzz (proportional advance), so it gets a
@@ -771,7 +792,7 @@ fn ui_shape_empty_string() {
     let fc = test_collection();
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    super::shape_text_string("", &faces, &fc, &mut output, &mut None);
+    super::shape_text_string("", GlyphStyle::Regular, &faces, &fc, &mut output, &mut None);
 
     assert!(output.is_empty(), "empty string produces no glyphs");
 }
@@ -1029,7 +1050,14 @@ fn ui_text_mixed_subpixel_phases() {
 
     // Shape a long-enough string to produce varied cumulative fractional offsets.
     let text = "The quick brown fox jumps over the lazy dog";
-    super::shape_text_string(text, &faces, &fc, &mut output, &mut None);
+    super::shape_text_string(
+        text,
+        GlyphStyle::Regular,
+        &faces,
+        &fc,
+        &mut output,
+        &mut None,
+    );
 
     assert!(
         !output.is_empty(),

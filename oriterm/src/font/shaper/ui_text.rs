@@ -18,13 +18,19 @@ use crate::font::{FaceIdx, GlyphStyle};
 /// and emits [[`ShapedGlyph`]]s with pixel-based `x_advance` positioning.
 /// Spaces produce advance-only glyphs (`glyph_id=0`) at cell width.
 ///
+/// `glyph_style` selects the font weight (Regular, Bold, etc.).
 /// Pass `buffer_slot` to persist the rustybuzz buffer across frames.
 #[expect(
     clippy::string_slice,
     reason = "byte indices from char_indices() are always valid char boundaries"
 )]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "glyph_style added for font weight selection; grouping into a struct would obscure the API"
+)]
 pub fn shape_text_string(
     text: &str,
+    glyph_style: GlyphStyle,
     faces: &[Option<rustybuzz::Face<'_>>],
     collection: &FontCollection,
     output: &mut Vec<ShapedGlyph>,
@@ -47,11 +53,9 @@ pub fn shape_text_string(
         let face_idx = if ch == ' ' {
             run_face
         } else if is_likely_emoji(ch) {
-            collection
-                .resolve_prefer_emoji(ch, GlyphStyle::Regular)
-                .face_idx
+            collection.resolve_prefer_emoji(ch, glyph_style).face_idx
         } else {
-            collection.resolve(ch, GlyphStyle::Regular).face_idx
+            collection.resolve(ch, glyph_style).face_idx
         };
 
         if let Some(start) = run_start {
@@ -99,27 +103,35 @@ pub fn shape_text(
         FontWeight::Regular => GlyphStyle::Regular,
         FontWeight::Bold => GlyphStyle::Bold,
     };
-    let _ = glyph_style; // Weight selection deferred until multi-weight UI fonts.
 
     match style.overflow {
         TextOverflow::Ellipsis => {
             let truncated = truncate_with_ellipsis(text, max_width, collection);
-            shape_to_shaped_text(&truncated, collection)
+            shape_to_shaped_text(&truncated, glyph_style, collection)
         }
         TextOverflow::Clip | TextOverflow::Wrap => {
-            // Clip: shape full text, let renderer clip at bounding box.
-            // Wrap: full shaping for now (word-wrap deferred).
-            shape_to_shaped_text(text, collection)
+            shape_to_shaped_text(text, glyph_style, collection)
         }
     }
 }
 
 /// Shape text into a [`ShapedText`] block with computed metrics.
-fn shape_to_shaped_text(text: &str, collection: &FontCollection) -> ShapedText {
+fn shape_to_shaped_text(
+    text: &str,
+    glyph_style: GlyphStyle,
+    collection: &FontCollection,
+) -> ShapedText {
     let faces = collection.create_shaping_faces();
     let mut glyphs = Vec::new();
     let mut buffer_slot = None;
-    shape_text_string(text, &faces, collection, &mut glyphs, &mut buffer_slot);
+    shape_text_string(
+        text,
+        glyph_style,
+        &faces,
+        collection,
+        &mut glyphs,
+        &mut buffer_slot,
+    );
 
     let width: f32 = glyphs.iter().map(|g| g.x_advance).sum();
     let metrics = collection.cell_metrics();
@@ -134,10 +146,14 @@ fn shape_to_shaped_text(text: &str, collection: &FontCollection) -> ShapedText {
 /// titles, labels, button text) the cost is negligible.
 pub fn measure_text_styled(
     text: &str,
-    _style: &TextStyle,
+    style: &TextStyle,
     collection: &FontCollection,
 ) -> TextMetrics {
-    let shaped = shape_to_shaped_text(text, collection);
+    let glyph_style = match style.weight {
+        FontWeight::Regular => GlyphStyle::Regular,
+        FontWeight::Bold => GlyphStyle::Bold,
+    };
+    let shaped = shape_to_shaped_text(text, glyph_style, collection);
     TextMetrics {
         width: shaped.width,
         height: shaped.height,

@@ -58,6 +58,8 @@ pub struct TextStyle {
     pub align: TextAlign,
     /// Overflow handling when text exceeds available width.
     pub overflow: TextOverflow,
+    /// Extra spacing between characters in pixels. `0.0` = normal.
+    pub letter_spacing: f32,
 }
 
 impl Default for TextStyle {
@@ -69,6 +71,7 @@ impl Default for TextStyle {
             color: Color::WHITE,
             align: TextAlign::Left,
             overflow: TextOverflow::Clip,
+            letter_spacing: 0.0,
         }
     }
 }
@@ -78,9 +81,13 @@ impl TextStyle {
     /// all other fields.
     pub fn new(size: f32, color: Color) -> Self {
         Self {
+            font_family: None,
             size,
+            weight: FontWeight::Regular,
             color,
-            ..Self::default()
+            align: TextAlign::Left,
+            overflow: TextOverflow::Clip,
+            letter_spacing: 0.0,
         }
     }
 
@@ -102,6 +109,13 @@ impl TextStyle {
     #[must_use]
     pub fn with_overflow(mut self, overflow: TextOverflow) -> Self {
         self.overflow = overflow;
+        self
+    }
+
+    /// Set letter spacing in pixels.
+    #[must_use]
+    pub fn with_letter_spacing(mut self, spacing: f32) -> Self {
+        self.letter_spacing = spacing;
         self
     }
 }
