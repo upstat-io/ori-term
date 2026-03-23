@@ -104,7 +104,8 @@ impl App {
                     | WidgetAction::ScrollBy { .. }
                     | WidgetAction::WindowMinimize
                     | WidgetAction::WindowMaximize
-                    | WidgetAction::WindowClose => {
+                    | WidgetAction::WindowClose
+                    | WidgetAction::SettingsUnsaved(_) => {
                         if response.handled {
                             if let Some(ctx) = self.focused_ctx_mut() {
                                 ctx.root.mark_dirty();
@@ -338,8 +339,7 @@ impl App {
         let mut style = MenuStyle::from_theme(&self.ui_theme);
         style.min_width = anchor.width();
         style.extra_width = 24.0;
-        style.corner_radius = 4.0;
-        style.shadow_color = self.ui_theme.shadow.with_alpha(0.15);
+        style.shadow_color = self.ui_theme.shadow;
         style.max_height = Some(300.0);
         style.selected_bg = self.ui_theme.accent.with_alpha(0.12);
 

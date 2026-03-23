@@ -87,7 +87,9 @@ pub(in crate::app) fn build_settings_dialog(
     let page_bell = bell::build_page(config, &mut ids, theme);
     let page_rendering = rendering::build_page(config, &mut ids, theme);
 
-    let mut sidebar = build_sidebar(theme);
+    let mut sidebar = build_sidebar(theme)
+        .with_version(format!("v{}", env!("CARGO_PKG_VERSION")))
+        .with_config_path("~/.config/oriterm/config.toml");
     sidebar.set_active_page(active_page);
     let sidebar_id = sidebar.id();
     ids.sidebar_id = sidebar_id;

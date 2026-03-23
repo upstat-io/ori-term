@@ -378,7 +378,7 @@ impl App {
         let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0);
 
         DialogContent::Settings {
-            panel: Box::new(SettingsPanel::embedded(content)),
+            panel: Box::new(SettingsPanel::embedded(content, &self.ui_theme)),
             ids: Box::new(ids),
             pending_config: Box::new(self.config.clone()),
             original_config: Box::new(self.config.clone()),

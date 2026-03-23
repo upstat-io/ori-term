@@ -63,7 +63,7 @@ impl CheckboxStyle {
             checked_bg: theme.accent,
             border_color: theme.border,
             border_width: 1.0,
-            corner_radius: 3.0,
+            corner_radius: theme.corner_radius,
             check_color: Color::WHITE,
             label_color: theme.fg_primary,
             font_size: theme.font_size,

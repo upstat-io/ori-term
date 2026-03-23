@@ -4,7 +4,6 @@
 //! active-style background, tab label, and close icon. Extracted from
 //! `draw.rs` to keep that file under the 500-line limit.
 
-use crate::color::Color;
 use crate::draw::{RectStyle, Shadow};
 use crate::geometry::Rect;
 use crate::icons::IconId;
@@ -39,7 +38,7 @@ impl TabBarWidget {
             offset_y: 2.0,
             blur_radius: 8.0,
             spread: 0.0,
-            color: Color::BLACK.with_alpha(0.25),
+            color: ctx.theme.shadow,
         };
         let style = RectStyle::filled(self.colors.active_bg)
             .with_per_corner_radius(ACTIVE_TAB_RADIUS, ACTIVE_TAB_RADIUS, 0.0, 0.0)

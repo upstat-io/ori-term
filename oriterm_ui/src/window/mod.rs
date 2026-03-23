@@ -87,6 +87,7 @@ pub fn create_window(
 ) -> Result<Arc<Window>, WindowError> {
     let attrs = build_window_attributes(config);
     let window = event_loop.create_window(attrs)?;
+    apply_post_creation_style(&window);
     Ok(Arc::new(window))
 }
 
@@ -192,3 +193,39 @@ fn apply_platform_attributes(attrs: WindowAttributes, _config: &WindowConfig) ->
 fn apply_platform_attributes(attrs: WindowAttributes, _config: &WindowConfig) -> WindowAttributes {
     attrs
 }
+
+/// Applies post-creation window style (sharp corners on Windows 11).
+#[cfg(target_os = "windows")]
+#[allow(
+    unsafe_code,
+    reason = "Win32 FFI: DwmSetWindowAttribute for sharp corners"
+)]
+fn apply_post_creation_style(window: &Window) {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = win32.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+
+    // DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_DONOTROUND = 1.
+    let preference: i32 = windows_sys::Win32::Graphics::Dwm::DWMWCP_DONOTROUND;
+    let attr = windows_sys::Win32::Graphics::Dwm::DWMWA_WINDOW_CORNER_PREFERENCE;
+    // SAFETY: `hwnd` is a valid window handle from winit. The attribute and
+    // value are well-typed DWM constants. This is standard Win32 FFI.
+    unsafe {
+        windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+            hwnd,
+            attr as u32,
+            std::ptr::addr_of!(preference).cast(),
+            size_of::<i32>() as u32,
+        );
+    }
+}
+
+/// Post-creation style is a no-op on non-Windows platforms.
+#[cfg(not(target_os = "windows"))]
+fn apply_post_creation_style(_window: &Window) {}

@@ -37,8 +37,10 @@ pub struct SliderStyle {
     pub fill_color: Color,
     /// Track corner radius.
     pub track_radius: f32,
-    /// Thumb diameter.
-    pub thumb_size: f32,
+    /// Thumb width.
+    pub thumb_width: f32,
+    /// Thumb height.
+    pub thumb_height: f32,
     /// Thumb color.
     pub thumb_color: Color,
     /// Thumb color when hovered.
@@ -53,6 +55,8 @@ pub struct SliderStyle {
     pub disabled_fill: Color,
     /// Focus ring color.
     pub focus_ring_color: Color,
+    /// Font size for the value label.
+    pub value_font_size: f32,
 }
 
 impl SliderStyle {
@@ -61,17 +65,19 @@ impl SliderStyle {
         Self {
             width: 200.0,
             track_height: 4.0,
-            track_bg: theme.bg_primary,
-            fill_color: theme.accent,
-            track_radius: 2.0,
-            thumb_size: 16.0,
-            thumb_color: Color::WHITE,
-            thumb_hover_color: theme.bg_hover,
-            thumb_border_color: theme.border,
-            thumb_border_width: 1.0,
+            track_bg: theme.border,
+            fill_color: theme.border,
+            track_radius: theme.corner_radius,
+            thumb_width: 12.0,
+            thumb_height: 14.0,
+            thumb_color: theme.accent,
+            thumb_hover_color: theme.accent_hover,
+            thumb_border_color: theme.bg_primary,
+            thumb_border_width: 2.0,
             disabled_bg: theme.bg_secondary,
             disabled_fill: theme.fg_disabled,
             focus_ring_color: theme.accent,
+            value_font_size: 12.0,
         }
     }
 }
@@ -212,9 +218,9 @@ impl SliderWidget {
 
     /// Converts a pixel X position within bounds to a value.
     pub(super) fn value_from_x(&self, x: f32, bounds: Rect) -> f32 {
-        let half_thumb = self.style.thumb_size / 2.0;
+        let half_thumb = self.style.thumb_width / 2.0;
         let track_left = bounds.x() + half_thumb;
-        let track_width = bounds.width() - self.style.thumb_size;
+        let track_width = bounds.width() - self.style.thumb_width;
         if track_width <= 0.0 {
             return self.min;
         }
@@ -235,7 +241,7 @@ impl SliderWidget {
     /// Returns the track area (excluding value label space) within the given bounds.
     pub(super) fn track_bounds(&self, bounds: Rect) -> Rect {
         let label_space = VALUE_LABEL_WIDTH + VALUE_GAP;
-        let w = (bounds.width() - label_space).max(self.style.thumb_size);
+        let w = (bounds.width() - label_space).max(self.style.thumb_width);
         Rect::new(bounds.x(), bounds.y(), w, bounds.height())
     }
 

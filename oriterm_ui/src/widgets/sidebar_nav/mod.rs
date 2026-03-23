@@ -17,7 +17,7 @@ use crate::widget_id::WidgetId;
 use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Fixed width of the sidebar (logical pixels).
-const SIDEBAR_WIDTH: f32 = 200.0;
+pub(crate) const SIDEBAR_WIDTH: f32 = 200.0;
 
 /// Vertical padding inside the sidebar.
 const SIDEBAR_PADDING_Y: f32 = 16.0;
@@ -30,6 +30,9 @@ const ITEM_HEIGHT: f32 = 32.0;
 
 /// Height of a section title row.
 const SECTION_TITLE_HEIGHT: f32 = 28.0;
+
+/// Width of the active indicator left border.
+const INDICATOR_WIDTH: f32 = 3.0;
 
 /// A navigation section title (e.g. "General", "Advanced").
 #[derive(Debug, Clone)]
@@ -60,12 +63,16 @@ type HoveredItem = Option<usize>;
 /// Sidebar navigation widget.
 ///
 /// Renders section titles, nav items with hover/active states, icons,
-/// and a version label. Click on a nav item emits `Selected { id, index }`.
+/// a search field placeholder, modified-page dots, version label, and
+/// config path. Click on a nav item emits `Selected { id, index }`.
 pub struct SidebarNavWidget {
     id: WidgetId,
     sections: Vec<NavSection>,
     active_page: usize,
     version: String,
+    config_path: String,
+    /// Bitset of page indices that have unsaved modifications.
+    modified_pages: u64,
     hovered_item: HoveredItem,
     style: SidebarNavStyle,
 }
@@ -85,6 +92,8 @@ pub struct SidebarNavStyle {
     pub active_bg: Color,
     /// Hover item background.
     pub hover_bg: Color,
+    /// Hover item text color.
+    pub hover_fg: Color,
     /// Version label text color.
     pub version_fg: Color,
     /// Border color on right edge.
@@ -97,10 +106,11 @@ impl SidebarNavStyle {
         Self {
             bg: theme.bg_secondary,
             section_title_fg: theme.fg_faint,
-            item_fg: theme.fg_primary,
+            item_fg: theme.fg_secondary,
             active_fg: theme.accent,
             active_bg: theme.accent_bg_strong,
             hover_bg: theme.bg_hover,
+            hover_fg: theme.fg_primary,
             version_fg: theme.fg_faint,
             border: theme.border,
         }
@@ -117,6 +127,8 @@ impl SidebarNavWidget {
             active_page: 0,
             hovered_item: None,
             version: String::new(),
+            config_path: String::new(),
+            modified_pages: 0,
             style,
         }
     }
@@ -136,6 +148,27 @@ impl SidebarNavWidget {
     pub fn with_version(mut self, version: impl Into<String>) -> Self {
         self.version = version.into();
         self
+    }
+
+    /// Sets the config file path shown at the sidebar bottom.
+    #[must_use]
+    pub fn with_config_path(mut self, path: impl Into<String>) -> Self {
+        self.config_path = path.into();
+        self
+    }
+
+    /// Marks a page index as having unsaved modifications (shows warning dot).
+    pub fn set_page_modified(&mut self, page_index: usize, modified: bool) {
+        if modified {
+            self.modified_pages |= 1 << page_index;
+        } else {
+            self.modified_pages &= !(1 << page_index);
+        }
+    }
+
+    /// Returns whether a page has unsaved modifications.
+    fn is_page_modified(&self, page_index: usize) -> bool {
+        self.modified_pages & (1 << page_index) != 0
     }
 
     /// Returns the total number of nav items across all sections.
@@ -165,7 +198,16 @@ impl SidebarNavWidget {
         let y = item_rect.y();
         let item_w = item_rect.width();
 
-        // Background.
+        // Active indicator (3px left border).
+        if is_active {
+            let indicator = Rect::new(x, y, INDICATOR_WIDTH, ITEM_HEIGHT);
+            ctx.scene
+                .push_quad(indicator, RectStyle::filled(self.style.active_fg));
+        }
+
+        // Background (inset past indicator for all items).
+        let bg_x = x + INDICATOR_WIDTH;
+        let bg_w = item_w - INDICATOR_WIDTH;
         let bg = if is_active {
             self.style.active_bg
         } else if self.hovered_item == Some(flat_idx) {
@@ -174,10 +216,11 @@ impl SidebarNavWidget {
             Color::TRANSPARENT
         };
         if bg.a > 0.001 {
-            ctx.scene.push_quad(item_rect, RectStyle::filled(bg));
+            let bg_rect = Rect::new(bg_x, y, bg_w, ITEM_HEIGHT);
+            ctx.scene.push_quad(bg_rect, RectStyle::filled(bg));
         }
 
-        // Icon.
+        // Icon (offset by indicator width).
         let text_x = if let Some(icon_id) = item.icon {
             let icon_size = 16_u32;
             let icon_y = y + (ITEM_HEIGHT - icon_size as f32) / 2.0;
@@ -185,25 +228,34 @@ impl SidebarNavWidget {
                 if let Some(resolved) = icons.get(icon_id, icon_size) {
                     let c = if is_active {
                         self.style.active_fg
+                    } else if self.hovered_item == Some(flat_idx) {
+                        self.style.hover_fg.with_alpha(0.7)
                     } else {
-                        self.style.item_fg.with_alpha(0.6)
+                        self.style.item_fg.with_alpha(0.7)
                     };
                     ctx.scene.push_icon(
-                        Rect::new(x + 8.0, icon_y, icon_size as f32, icon_size as f32),
+                        Rect::new(
+                            x + INDICATOR_WIDTH + 8.0,
+                            icon_y,
+                            icon_size as f32,
+                            icon_size as f32,
+                        ),
                         resolved.atlas_page,
                         resolved.uv,
                         c,
                     );
                 }
             }
-            x + 32.0
+            x + INDICATOR_WIDTH + 32.0
         } else {
-            x + 8.0
+            x + INDICATOR_WIDTH + 8.0
         };
 
         // Label.
         let fg = if is_active {
             self.style.active_fg
+        } else if self.hovered_item == Some(flat_idx) {
+            self.style.hover_fg
         } else {
             self.style.item_fg
         };
@@ -214,26 +266,74 @@ impl SidebarNavWidget {
         let label_y = y + (ITEM_HEIGHT - 13.0) / 2.0;
         let shaped = ctx.measurer.shape(&item.label, &style, item_w);
         ctx.scene.push_text(Point::new(text_x, label_y), shaped, fg);
+
+        // Modified dot (6px square, warning color, right-aligned).
+        if self.is_page_modified(item.page_index) {
+            let dot_size = 6.0;
+            let dot_x = item_rect.right() - 16.0;
+            let dot_y = y + (ITEM_HEIGHT - dot_size) / 2.0;
+            let dot_rect = Rect::new(dot_x, dot_y, dot_size, dot_size);
+            ctx.scene
+                .push_quad(dot_rect, RectStyle::filled(ctx.theme.warning));
+        }
     }
 
-    /// Paints the version label at the bottom of the sidebar.
-    fn paint_version_label(&self, ctx: &mut DrawCtx<'_>, x: f32, item_w: f32) {
-        if self.version.is_empty() {
-            return;
+    /// Paints the sidebar footer: version label + config path.
+    fn paint_footer(&self, ctx: &mut DrawCtx<'_>, x: f32, item_w: f32) {
+        let mut y = ctx.bounds.bottom() - 8.0;
+
+        // Config path (bottom-most, faint + smaller).
+        if !self.config_path.is_empty() {
+            let style = TextStyle {
+                size: 10.0,
+                ..TextStyle::default()
+            };
+            let shaped = ctx.measurer.shape(&self.config_path, &style, item_w);
+            y -= shaped.height;
+            let fg = self.style.version_fg.with_alpha(0.7);
+            ctx.scene.push_text(Point::new(x + 6.0, y), shaped, fg);
+            y -= 4.0;
         }
+
+        // Version label.
+        if !self.version.is_empty() {
+            let style = TextStyle {
+                size: 11.0,
+                ..TextStyle::default()
+            };
+            let shaped = ctx.measurer.shape(&self.version, &style, item_w);
+            y -= shaped.height;
+            ctx.scene
+                .push_text(Point::new(x + 6.0, y), shaped, self.style.version_fg);
+        }
+    }
+
+    /// Paints the search field placeholder at the top of the sidebar.
+    fn paint_search_field(&self, ctx: &mut DrawCtx<'_>, x: f32, y: f32, w: f32) {
+        let _ = &self; // Search will filter items when wired.
+        let field_h = 28.0;
+        let field_rect = Rect::new(x, y, w, field_h);
+        let bg_style = RectStyle::filled(ctx.theme.bg_primary).with_border(2.0, ctx.theme.border);
+        ctx.scene.push_quad(field_rect, bg_style);
+
+        // Placeholder text.
         let style = TextStyle {
-            size: 10.0,
+            size: 12.0,
             ..TextStyle::default()
         };
-        let y = ctx.bounds.y() + ctx.bounds.height() - 24.0;
-        let shaped = ctx.measurer.shape(&self.version, &style, item_w);
+        let shaped = ctx.measurer.shape("Search settings...", &style, w - 32.0);
+        let text_y = y + (field_h - shaped.height) / 2.0;
         ctx.scene
-            .push_text(Point::new(x + 6.0, y), shaped, self.style.version_fg);
+            .push_text(Point::new(x + 26.0, text_y), shaped, ctx.theme.fg_faint);
     }
+
+    /// Height of the search field area (field + margin).
+    const SEARCH_AREA_HEIGHT: f32 = 40.0;
 
     /// Hit-tests a local Y coordinate to a flat item index.
     fn hit_test_item(&self, local_y: f32) -> Option<usize> {
-        let mut y = 0.0;
+        // Skip search field area.
+        let mut y = Self::SEARCH_AREA_HEIGHT;
         let mut flat_idx = 0;
         for section in &self.sections {
             y += SECTION_TITLE_HEIGHT;
@@ -287,27 +387,31 @@ impl Widget for SidebarNavWidget {
         ctx.scene
             .push_quad(bounds, RectStyle::filled(self.style.bg));
         let border_rect = Rect::new(
-            bounds.x() + bounds.width() - 1.0,
+            bounds.x() + bounds.width() - 2.0,
             bounds.y(),
-            1.0,
+            2.0,
             bounds.height(),
         );
         ctx.scene
             .push_quad(border_rect, RectStyle::filled(self.style.border));
 
-        let mut y = bounds.y() + SIDEBAR_PADDING_Y;
         let x = bounds.x() + SIDEBAR_PADDING_X;
         let item_w = bounds.width() - SIDEBAR_PADDING_X * 2.0;
-        let mut flat_idx = 0;
+        let mut y = bounds.y() + SIDEBAR_PADDING_Y;
 
+        // Search field at top.
+        self.paint_search_field(ctx, x, y, item_w);
+        y += 28.0 + 12.0; // field height + margin
+
+        let mut flat_idx = 0;
         for section in &self.sections {
             // Section title.
             let title_style = TextStyle {
                 size: 10.0,
-                weight: FontWeight::Bold,
+                weight: FontWeight::Regular,
                 ..TextStyle::default()
             };
-            let title_text = section.title.to_uppercase();
+            let title_text = format!("// {}", section.title.to_uppercase());
             let shaped = ctx.measurer.shape(&title_text, &title_style, item_w);
             ctx.scene
                 .push_text(Point::new(x + 6.0, y), shaped, self.style.section_title_fg);
@@ -321,7 +425,7 @@ impl Widget for SidebarNavWidget {
             }
         }
 
-        self.paint_version_label(ctx, x, item_w);
+        self.paint_footer(ctx, x, item_w);
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {

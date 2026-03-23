@@ -26,6 +26,8 @@ use super::{DrawCtx, LayoutCtx, PrepaintCtx, Widget};
 pub struct ButtonStyle {
     /// Text color.
     pub fg: Color,
+    /// Text color on hover (defaults to same as `fg`).
+    pub hover_fg: Color,
     /// Background color (normal state).
     pub bg: Color,
     /// Background when hovered.
@@ -34,6 +36,8 @@ pub struct ButtonStyle {
     pub pressed_bg: Color,
     /// Border color.
     pub border_color: Color,
+    /// Border color on hover (defaults to same as `border_color`).
+    pub hover_border_color: Color,
     /// Border width.
     pub border_width: f32,
     /// Corner radius.
@@ -55,10 +59,12 @@ impl ButtonStyle {
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
             fg: theme.fg_primary,
+            hover_fg: theme.fg_primary,
             bg: theme.bg_primary,
             hover_bg: theme.bg_hover,
             pressed_bg: theme.bg_active,
             border_color: theme.border,
+            hover_border_color: theme.border,
             border_width: 1.0,
             corner_radius: theme.corner_radius,
             padding: Insets::vh(6.0, 12.0),
@@ -92,6 +98,8 @@ pub struct ButtonWidget {
     resolved_bg: Color,
     /// Pre-resolved focus state from prepaint (interaction query).
     resolved_focused: bool,
+    /// Pre-resolved hover state from prepaint.
+    resolved_hovered: bool,
 }
 
 impl ButtonWidget {
@@ -117,6 +125,7 @@ impl ButtonWidget {
             style,
             resolved_bg: bg,
             resolved_focused: false,
+            resolved_hovered: false,
         }
     }
 
@@ -169,6 +178,8 @@ impl ButtonWidget {
     fn current_fg(&self) -> Color {
         if self.disabled {
             self.style.disabled_fg
+        } else if self.resolved_hovered {
+            self.style.hover_fg
         } else {
             self.style.fg
         }
@@ -191,6 +202,7 @@ impl std::fmt::Debug for ButtonWidget {
             .field("animator", &self.animator)
             .field("resolved_bg", &self.resolved_bg)
             .field("resolved_focused", &self.resolved_focused)
+            .field("resolved_hovered", &self.resolved_hovered)
             .finish()
     }
 }
@@ -235,6 +247,7 @@ impl Widget for ButtonWidget {
     fn prepaint(&mut self, ctx: &mut PrepaintCtx<'_>) {
         self.resolved_bg = self.animator.get_bg_color(ctx.now);
         self.resolved_focused = ctx.is_interaction_focused();
+        self.resolved_hovered = ctx.is_hot();
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
@@ -251,8 +264,13 @@ impl Widget for ButtonWidget {
         let bg = self.resolved_bg;
         ctx.scene.push_layer_bg(bg);
 
+        let border_color = if self.resolved_hovered {
+            self.style.hover_border_color
+        } else {
+            self.style.border_color
+        };
         let bg_style = RectStyle::filled(bg)
-            .with_border(self.style.border_width, self.style.border_color)
+            .with_border(self.style.border_width, border_color)
             .with_radius(self.style.corner_radius);
         ctx.scene.push_quad(ctx.bounds, bg_style);
 

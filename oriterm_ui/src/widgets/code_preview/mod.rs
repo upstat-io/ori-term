@@ -14,7 +14,7 @@ use crate::widget_id::WidgetId;
 use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Corner radius for the preview card.
-const CORNER_RADIUS: f32 = 8.0;
+const CORNER_RADIUS: f32 = 0.0;
 
 /// Padding inside the preview card.
 const PADDING: f32 = 12.0;

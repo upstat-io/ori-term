@@ -30,13 +30,13 @@ const NAME_FONT_SIZE: f32 = 13.0;
 const DESC_FONT_SIZE: f32 = 11.5;
 
 /// Corner radius for hover background.
-const CORNER_RADIUS: f32 = 4.0;
+const CORNER_RADIUS: f32 = 0.0;
 
 /// Padding inside the row.
-const ROW_PADDING: Insets = Insets::vh(6.0, 8.0);
+const ROW_PADDING: Insets = Insets::vh(10.0, 14.0);
 
 /// Gap between label area and control.
-const LABEL_CONTROL_GAP: f32 = 12.0;
+const LABEL_CONTROL_GAP: f32 = 24.0;
 
 /// Gap between name and description lines.
 const NAME_DESC_GAP: f32 = 2.0;

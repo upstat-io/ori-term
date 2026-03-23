@@ -19,7 +19,7 @@ use crate::widget_id::WidgetId;
 use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 /// Card corner radius.
-const CORNER_RADIUS: f32 = 8.0;
+const CORNER_RADIUS: f32 = 0.0;
 
 /// Vertical padding inside the card.
 const CARD_PADDING: f32 = 8.0;
@@ -43,7 +43,7 @@ const SWATCH_HEIGHT: f32 = 12.0;
 const SWATCH_GAP: f32 = 3.0;
 
 /// Swatch corner radius.
-const SWATCH_RADIUS: f32 = 2.0;
+const SWATCH_RADIUS: f32 = 0.0;
 
 /// Total card height.
 const CARD_HEIGHT: f32 =
@@ -164,7 +164,7 @@ impl SchemeCardWidget {
     /// Paints the mini terminal preview.
     fn paint_preview(&self, ctx: &mut DrawCtx<'_>, area: Rect) {
         // Preview background.
-        let bg_style = RectStyle::filled(self.data.bg).with_radius(4.0);
+        let bg_style = RectStyle::filled(self.data.bg).with_radius(0.0);
         ctx.scene.push_quad(area, bg_style);
 
         let x = area.x() + 6.0;

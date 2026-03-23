@@ -65,6 +65,20 @@ impl App {
                 self.close_dialog(window_id);
             }
             WindowEvent::Resized(size) => {
+                // On Windows, detect DPI changes that the subclass proc
+                // consumed before winit could fire ScaleFactorChanged.
+                #[cfg(target_os = "windows")]
+                if let Some(ctx) = self.dialogs.get(&window_id) {
+                    if let Some(new_scale) =
+                        oriterm_ui::platform_windows::get_current_dpi(ctx.window.as_ref())
+                    {
+                        let cur = ctx.scale_factor.factor();
+                        if (new_scale - cur).abs() > 0.001 {
+                            self.handle_dialog_dpi_change(window_id, new_scale);
+                        }
+                    }
+                }
+
                 if let Some(gpu) = self.gpu.as_ref() {
                     if let Some(ctx) = self.dialogs.get_mut(&window_id) {
                         ctx.resize_surface(size.width, size.height, gpu);
@@ -77,26 +91,7 @@ impl App {
                 self.render_dialog(window_id);
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                if let Some(ctx) = self.dialogs.get_mut(&window_id) {
-                    let new_factor = oriterm_ui::scale::ScaleFactor::new(scale_factor);
-                    if ctx.scale_factor != new_factor {
-                        ctx.scale_factor = new_factor;
-                        // Recompute chrome layout width — the physical surface
-                        // size may stay the same, but the logical width changes
-                        // when DPI changes (e.g. moving to a different monitor).
-                        let scale = new_factor.factor() as f32;
-                        let logical_w = ctx.surface_config.width as f32 / scale;
-                        ctx.chrome.set_window_width(logical_w);
-                        // Invalidate content layout cache — text metrics change
-                        // with DPI even when logical bounds stay the same.
-                        ctx.content.invalidate_cache();
-                        ctx.text_cache.clear();
-                        ctx.root.invalidation_mut().invalidate_all();
-                        ctx.root.damage_mut().reset();
-                        // TODO: re-rasterize UI fonts at new DPI.
-                        ctx.request_urgent_redraw();
-                    }
-                }
+                self.handle_dialog_dpi_change(window_id, scale_factor);
                 // Update platform hit test rects for the new DPI.
                 self.refresh_dialog_platform_rects(window_id);
             }
@@ -281,6 +276,11 @@ impl App {
                 Instant::now(),
             );
             if matches!(result, OverlayEventResult::Delivered { .. }) {
+                // Clear the base-tree hot path so background widgets lose
+                // hover state while an overlay is active. Mirrors the pattern
+                // in WindowRoot::dispatch_event() (pipeline.rs:120-121).
+                let hot_ids = ctx.root.interaction_mut().update_hot_path(&[]);
+                ctx.root.mark_widgets_prepaint_dirty(&hot_ids);
                 ctx.request_urgent_redraw();
                 return;
             }
@@ -454,5 +454,41 @@ impl App {
         if let Some(action) = action {
             self.handle_dialog_content_action(window_id, action);
         }
+    }
+
+    /// Update dialog fonts and state for a new DPI scale factor.
+    fn handle_dialog_dpi_change(&mut self, window_id: WindowId, new_scale: f64) {
+        let Some(gpu) = self.gpu.as_ref() else { return };
+        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+            return;
+        };
+        let new_factor = oriterm_ui::scale::ScaleFactor::new(new_scale);
+        if ctx.scale_factor == new_factor {
+            return;
+        }
+        ctx.scale_factor = new_factor;
+        let scale = new_factor.factor() as f32;
+        let physical_dpi = super::super::DEFAULT_DPI * scale;
+        if let Some(renderer) = ctx.renderer.as_mut() {
+            renderer.set_font_size(11.0, physical_dpi, gpu);
+            let hinting =
+                super::super::config_reload::resolve_hinting(&self.config.font, new_scale);
+            let opacity = f64::from(self.config.window.effective_opacity());
+            let format = super::super::config_reload::resolve_subpixel_mode(
+                &self.config.font,
+                new_scale,
+                opacity,
+            )
+            .glyph_format();
+            renderer.set_hinting_and_format(hinting, format, gpu);
+        }
+        let logical_w = ctx.surface_config.width as f32 / scale;
+        ctx.chrome.set_window_width(logical_w);
+        ctx.content.invalidate_cache();
+        ctx.text_cache.clear();
+        ctx.root.invalidation_mut().invalidate_all();
+        ctx.root.damage_mut().reset();
+        ctx.cached_layout = None;
+        ctx.request_urgent_redraw();
     }
 }

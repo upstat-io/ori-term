@@ -76,7 +76,8 @@ impl App {
             | WidgetAction::MoveOverlay { .. }
             | WidgetAction::WindowMinimize
             | WidgetAction::WindowMaximize
-            | WidgetAction::WindowClose => {}
+            | WidgetAction::WindowClose
+            | WidgetAction::SettingsUnsaved(_) => {}
         }
     }
 
@@ -135,7 +136,7 @@ impl App {
             ctx.root.interaction_mut(),
         );
         **ids = new_ids;
-        **panel = SettingsPanel::embedded(content);
+        **panel = SettingsPanel::embedded(content, &ui_theme);
         // Register new tree; WidgetAdded events delivered next frame (TPR-04-003).
         crate::app::widget_pipeline::register_widget_tree(&mut **panel, ctx.root.interaction_mut());
 
@@ -223,7 +224,7 @@ impl App {
             settings_overlay::action_handler::handle_settings_action(action, ids, pending_config);
         if config_changed {
             log::info!("settings dialog: pending config updated (deferred until Save)");
-            // Update dirty indicator — shows in chrome title bar and taskbar.
+            // Update dirty indicator — shows in chrome title bar, taskbar, and footer.
             let dirty = **pending_config != **original_config;
             let title = if dirty {
                 "Settings \u{2022}"
@@ -232,6 +233,7 @@ impl App {
             };
             ctx.window.set_title(title);
             ctx.chrome.set_title(title.to_string());
+            panel.accept_action(&WidgetAction::SettingsUnsaved(dirty));
         }
 
         // Always propagate — widgets update visuals (page switch, selection).

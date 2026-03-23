@@ -18,7 +18,7 @@ use crate::widget_id::WidgetId;
 use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Badge corner radius.
-const BADGE_RADIUS: f32 = 4.0;
+const BADGE_RADIUS: f32 = 0.0;
 
 /// Badge horizontal padding.
 const BADGE_PAD_H: f32 = 6.0;
@@ -48,7 +48,7 @@ const ACTION_FONT_SIZE: f32 = 13.0;
 const PLUS_FONT_SIZE: f32 = 10.0;
 
 /// Row corner radius for hover background.
-const ROW_RADIUS: f32 = 4.0;
+const ROW_RADIUS: f32 = 0.0;
 
 /// A styled key badge with keycap appearance.
 ///

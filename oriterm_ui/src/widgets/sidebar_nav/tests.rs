@@ -105,8 +105,9 @@ fn sense_returns_click() {
 fn hit_test_first_item() {
     let theme = crate::theme::UiTheme::dark();
     let w = SidebarNavWidget::new(test_sections(), &theme);
-    // First section title takes SECTION_TITLE_HEIGHT, then first item starts.
-    let y = SECTION_TITLE_HEIGHT + 1.0;
+    // Search area + first section title, then first item starts.
+    let search = SidebarNavWidget::SEARCH_AREA_HEIGHT;
+    let y = search + SECTION_TITLE_HEIGHT + 1.0;
     assert_eq!(w.hit_test_item(y), Some(0));
 }
 
@@ -114,8 +115,9 @@ fn hit_test_first_item() {
 fn hit_test_second_section_item() {
     let theme = crate::theme::UiTheme::dark();
     let w = SidebarNavWidget::new(test_sections(), &theme);
-    // After first section (title + 2 items) + second section title.
-    let y = SECTION_TITLE_HEIGHT + ITEM_HEIGHT * 2.0 + SECTION_TITLE_HEIGHT + 1.0;
+    // Search area + first section (title + 2 items) + second section title.
+    let search = SidebarNavWidget::SEARCH_AREA_HEIGHT;
+    let y = search + SECTION_TITLE_HEIGHT + ITEM_HEIGHT * 2.0 + SECTION_TITLE_HEIGHT + 1.0;
     assert_eq!(w.hit_test_item(y), Some(2));
 }
 
@@ -123,7 +125,7 @@ fn hit_test_second_section_item() {
 fn hit_test_before_items_returns_none() {
     let theme = crate::theme::UiTheme::dark();
     let w = SidebarNavWidget::new(test_sections(), &theme);
-    // Inside section title area.
+    // Inside search field area.
     assert_eq!(w.hit_test_item(5.0), None);
 }
 
@@ -300,8 +302,9 @@ fn harness_single_click_emits_selected() {
     let mut h = WidgetTestHarness::new(sidebar);
 
     // Compute click target: second item (Colors, page_index=1).
-    // Y = SECTION_TITLE_HEIGHT (General) + ITEM_HEIGHT (Appearance) + half ITEM_HEIGHT.
-    let target_y = SECTION_TITLE_HEIGHT + ITEM_HEIGHT + ITEM_HEIGHT / 2.0;
+    // Y = search area + SECTION_TITLE_HEIGHT (General) + ITEM_HEIGHT (Appearance) + half ITEM_HEIGHT.
+    let search = SidebarNavWidget::SEARCH_AREA_HEIGHT;
+    let target_y = search + SECTION_TITLE_HEIGHT + ITEM_HEIGHT + ITEM_HEIGHT / 2.0;
     let target_x = SIDEBAR_WIDTH / 2.0;
     let target = Point::new(target_x, target_y);
 
@@ -340,7 +343,8 @@ fn harness_single_click_on_first_item_emits_selected() {
     let mut h = WidgetTestHarness::new(sidebar);
 
     // Click first item (Appearance, page_index=0).
-    let target_y = SECTION_TITLE_HEIGHT + ITEM_HEIGHT / 2.0;
+    let search = SidebarNavWidget::SEARCH_AREA_HEIGHT;
+    let target_y = search + SECTION_TITLE_HEIGHT + ITEM_HEIGHT / 2.0;
     let target_x = SIDEBAR_WIDTH / 2.0;
     let target = Point::new(target_x, target_y);
 

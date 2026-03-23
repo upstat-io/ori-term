@@ -31,7 +31,7 @@ const CARD_HEIGHT: f32 = 72.0;
 const CARD_GAP: f32 = 10.0;
 
 /// Card corner radius.
-const CARD_RADIUS: f32 = 8.0;
+const CARD_RADIUS: f32 = 0.0;
 
 /// Demo character to display in the cursor preview.
 const DEMO_CHAR: &str = "A";

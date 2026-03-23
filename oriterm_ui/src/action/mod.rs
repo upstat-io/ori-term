@@ -82,6 +82,8 @@ pub enum WidgetAction {
     CancelSettings,
     /// The settings panel Reset to Defaults button was clicked.
     ResetDefaults,
+    /// Notify the settings panel that unsaved changes exist.
+    SettingsUnsaved(bool),
     /// Minimize the window.
     WindowMinimize,
     /// Maximize or restore the window.

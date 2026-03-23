@@ -21,7 +21,8 @@ use crate::theme::UiTheme;
 use super::button::{ButtonStyle, ButtonWidget};
 use super::container::ContainerWidget;
 use super::label::{LabelStyle, LabelWidget};
-use super::separator::SeparatorWidget;
+use super::separator::{SeparatorStyle, SeparatorWidget};
+use super::sidebar_nav::SIDEBAR_WIDTH;
 use super::spacer::SpacerWidget;
 use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
 
@@ -43,7 +44,7 @@ const HEADER_PADDING: Insets = Insets::vh(0.0, 16.0);
 const FOOTER_HEIGHT: f32 = 52.0;
 
 /// Corner radius for the panel.
-const CORNER_RADIUS: f32 = 8.0;
+const CORNER_RADIUS: f32 = 0.0;
 
 /// A modal settings panel with header bar, scrollable form body, and footer.
 ///
@@ -66,6 +67,8 @@ pub struct SettingsPanel {
     /// Whether the panel draws its own chrome (header, shadow, border).
     /// `false` when embedded in a dialog window.
     show_chrome: bool,
+    /// Whether unsaved changes exist (controls UNSAVED CHANGES indicator).
+    unsaved: bool,
 }
 
 impl SettingsPanel {
@@ -76,8 +79,8 @@ impl SettingsPanel {
     /// bar (title + close button), panel chrome (shadow, border, rounded
     /// corners), and drag support. Use this when the panel is shown as an
     /// overlay inside a terminal window.
-    pub fn new(content: Box<dyn Widget>) -> Self {
-        Self::build(content, true)
+    pub fn new(content: Box<dyn Widget>, theme: &UiTheme) -> Self {
+        Self::build(content, true, theme)
     }
 
     /// Creates a settings panel without header or chrome.
@@ -85,12 +88,12 @@ impl SettingsPanel {
     /// Omits the title bar, close button, shadow, border, and rounded
     /// corners — all of which are provided by the dialog window's own
     /// chrome. Use this when the panel is embedded in a dialog OS window.
-    pub fn embedded(content: Box<dyn Widget>) -> Self {
-        Self::build(content, false)
+    pub fn embedded(content: Box<dyn Widget>, theme: &UiTheme) -> Self {
+        Self::build(content, false, theme)
     }
 
     /// Internal builder shared by `new()` and `embedded()`.
-    fn build(content: Box<dyn Widget>, show_chrome: bool) -> Self {
+    fn build(content: Box<dyn Widget>, show_chrome: bool, theme: &UiTheme) -> Self {
         let close_id = WidgetId::next();
         let save_id = WidgetId::next();
         let cancel_id = WidgetId::next();
@@ -106,41 +109,7 @@ impl SettingsPanel {
             .with_clip(true)
             .with_child(content);
 
-        // Footer: separator + Reset to Defaults (left) | Cancel + Save (right).
-        let footer_sep = SeparatorWidget::horizontal();
-
-        let ghost_style = ButtonStyle {
-            padding: Insets::vh(6.0, 16.0),
-            border_width: 1.0,
-            ..ButtonStyle::default()
-        };
-
-        let reset_btn = ButtonWidget::new("Reset to Defaults").with_style(ghost_style);
-        let reset_btn = IdOverrideButton::new(reset_btn, reset_id);
-
-        let cancel_btn = ButtonWidget::new("Cancel").with_style(ghost_style);
-        let cancel_btn = IdOverrideButton::new(cancel_btn, cancel_id);
-
-        let save_btn = ButtonWidget::new("Save").with_style(ButtonStyle {
-            padding: Insets::vh(6.0, 20.0),
-            border_width: 0.0,
-            bg: Color::rgb(0.25, 0.52, 0.96),
-            fg: Color::WHITE,
-            ..ButtonStyle::default()
-        });
-        let save_btn = IdOverrideButton::new(save_btn, save_id);
-
-        let footer = ContainerWidget::row()
-            .with_align(Align::Center)
-            .with_width(SizeSpec::Fill)
-            .with_height(SizeSpec::Fixed(FOOTER_HEIGHT))
-            .with_child(Box::new(SpacerWidget::fixed(HEADER_PADDING.left, 0.0)))
-            .with_child(Box::new(reset_btn))
-            .with_child(Box::new(SpacerWidget::fill()))
-            .with_child(Box::new(cancel_btn))
-            .with_child(Box::new(SpacerWidget::fixed(8.0, 0.0)))
-            .with_child(Box::new(save_btn))
-            .with_child(Box::new(SpacerWidget::fixed(HEADER_PADDING.right, 0.0)));
+        let (footer_sep, footer) = Self::build_footer(reset_id, cancel_id, save_id, theme);
 
         // Build the column layout. Overlay mode gets a header; embedded skips it.
         let width = if show_chrome {
@@ -210,7 +179,90 @@ impl SettingsPanel {
             container,
             cached_layout: RefCell::new(None),
             show_chrome,
+            unsaved: false,
         }
+    }
+
+    /// Builds the footer separator and button row.
+    fn build_footer(
+        reset_id: WidgetId,
+        cancel_id: WidgetId,
+        save_id: WidgetId,
+        theme: &UiTheme,
+    ) -> (ContainerWidget, ContainerWidget) {
+        // Separator spans only the content area (right of sidebar).
+        let sep = SeparatorWidget::horizontal().with_style(SeparatorStyle {
+            thickness: 2.0,
+            ..SeparatorStyle::from_theme(theme)
+        });
+        let footer_sep = ContainerWidget::row()
+            .with_width(SizeSpec::Fill)
+            .with_padding(Insets::tlbr(0.0, SIDEBAR_WIDTH, 0.0, 0.0))
+            .with_child(Box::new(sep));
+
+        // Danger-ghost: neutral at rest, red on hover (mockup btn-danger-ghost).
+        let reset_btn = ButtonWidget::new("RESET TO DEFAULTS").with_style(ButtonStyle {
+            fg: theme.fg_secondary,
+            hover_fg: theme.danger,
+            bg: Color::TRANSPARENT,
+            hover_bg: theme.danger_bg,
+            pressed_bg: theme.bg_active,
+            border_color: theme.border,
+            hover_border_color: theme.danger,
+            border_width: 2.0,
+            font_size: 12.0,
+            padding: Insets::vh(6.0, 16.0),
+            ..ButtonStyle::from_theme(theme)
+        });
+        let reset_btn = IdOverrideButton::new(reset_btn, reset_id);
+
+        // Ghost style: transparent bg with border (mockup btn-ghost).
+        let cancel_btn = ButtonWidget::new("CANCEL").with_style(ButtonStyle {
+            fg: theme.fg_secondary,
+            hover_fg: theme.fg_primary,
+            bg: Color::TRANSPARENT,
+            hover_bg: theme.bg_hover,
+            pressed_bg: theme.bg_active,
+            border_color: theme.border,
+            hover_border_color: theme.border_strong,
+            border_width: 2.0,
+            font_size: 12.0,
+            padding: Insets::vh(6.0, 16.0),
+            ..ButtonStyle::from_theme(theme)
+        });
+        let cancel_btn = IdOverrideButton::new(cancel_btn, cancel_id);
+
+        // Primary accent: dark text on accent bg (mockup btn-primary).
+        let save_btn = ButtonWidget::new("SAVE").with_style(ButtonStyle {
+            fg: theme.bg_secondary,
+            hover_fg: theme.bg_secondary,
+            bg: theme.accent,
+            hover_bg: theme.accent_hover,
+            pressed_bg: theme.accent,
+            border_color: theme.accent,
+            hover_border_color: theme.accent_hover,
+            border_width: 2.0,
+            font_size: 12.0,
+            padding: Insets::vh(6.0, 20.0),
+            ..ButtonStyle::from_theme(theme)
+        });
+        let save_btn = IdOverrideButton::new(save_btn, save_id);
+
+        // Footer spans only the content area (right of sidebar).
+        // Left padding = sidebar width + 28px content padding; right = 28px.
+        let footer_pad = Insets::tlbr(0.0, SIDEBAR_WIDTH + 28.0, 0.0, 28.0);
+        let footer = ContainerWidget::row()
+            .with_align(Align::Center)
+            .with_width(SizeSpec::Fill)
+            .with_height(SizeSpec::Fixed(FOOTER_HEIGHT))
+            .with_padding(footer_pad)
+            .with_child(Box::new(reset_btn))
+            .with_child(Box::new(SpacerWidget::fill()))
+            .with_child(Box::new(cancel_btn))
+            .with_child(Box::new(SpacerWidget::fixed(8.0, 0.0)))
+            .with_child(Box::new(save_btn));
+
+        (footer_sep, footer)
     }
 
     /// Returns the close button's `WidgetId`.
@@ -360,6 +412,22 @@ impl Widget for SettingsPanel {
                 frame_requests: ctx.frame_requests,
             };
             self.container.paint(&mut child_ctx);
+
+            // UNSAVED CHANGES indicator — drawn over the footer left area.
+            if self.unsaved {
+                if let Some(footer_node) = children.last() {
+                    let style = crate::text::TextStyle::new(11.0, ctx.theme.warning);
+                    let shaped = ctx.measurer.shape("UNSAVED CHANGES", &style, 200.0);
+                    let x = footer_node.rect.x() + SIDEBAR_WIDTH + 28.0;
+                    let y =
+                        footer_node.rect.y() + (footer_node.rect.height() - shaped.height) / 2.0;
+                    ctx.scene.push_text(
+                        crate::geometry::Point::new(x, y),
+                        shaped,
+                        ctx.theme.warning,
+                    );
+                }
+            }
         }
 
         if self.show_chrome {
@@ -388,6 +456,13 @@ impl Widget for SettingsPanel {
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
+        // Handle unsaved state notification.
+        if let WidgetAction::SettingsUnsaved(dirty) = action {
+            self.unsaved = *dirty;
+            self.invalidate_cache();
+            return true;
+        }
+
         let handled = self.container.accept_action(action);
         if handled {
             // Structural changes (page switch, widget add/remove) invalidate

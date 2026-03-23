@@ -37,7 +37,7 @@ impl App {
         let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0);
         self.settings_ids = Some(ids);
 
-        let panel = SettingsPanel::new(content);
+        let panel = SettingsPanel::new(content, &self.ui_theme);
 
         // Now take the mutable borrow for overlay push.
         let Some(ctx) = self.focused_ctx_mut() else {
