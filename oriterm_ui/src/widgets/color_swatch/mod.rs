@@ -279,7 +279,7 @@ impl Widget for SpecialColorSwatch {
         // Hover background.
         let bg = self.animator.get_bg_color(ctx.now);
         if bg.a > 0.001 {
-            let rect_style = RectStyle::filled(bg).with_radius(4.0);
+            let rect_style = RectStyle::filled(bg).with_radius(0.0);
             ctx.scene.push_quad(bounds, rect_style);
         }
 

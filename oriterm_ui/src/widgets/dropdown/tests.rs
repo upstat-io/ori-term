@@ -71,11 +71,10 @@ fn layout_accommodates_widest_item() {
         intrinsic_width, ..
     } = &layout.content
     {
-        // "Gamma" = 5 chars * 8 = 40 (widest) + padding 20 + indicator 20 = 80.
-        assert_eq!(
-            *intrinsic_width,
-            40.0 + s.padding.width() + s.indicator_width
-        );
+        // "Gamma" = 5 chars * 8 = 40 (widest) + padding + indicator, clamped to min_width.
+        let content_w = 40.0 + s.padding.width() + s.indicator_width;
+        let expected = content_w.max(s.min_width);
+        assert_eq!(*intrinsic_width, expected);
     } else {
         panic!("expected leaf layout");
     }

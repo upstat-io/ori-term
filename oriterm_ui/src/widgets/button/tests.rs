@@ -118,10 +118,12 @@ fn with_style_applies_custom_style() {
 
     let style = ButtonStyle {
         fg: Color::BLACK,
+        hover_fg: Color::BLACK,
         bg: Color::WHITE,
         hover_bg: Color::rgb(0.9, 0.9, 0.9),
         pressed_bg: Color::rgb(0.7, 0.7, 0.7),
         border_color: Color::BLACK,
+        hover_border_color: Color::BLACK,
         border_width: 2.0,
         corner_radius: 12.0,
         padding: Insets::all(20.0),

@@ -12,12 +12,11 @@ use oriterm_ui::widgets::color_swatch::{ColorSwatchGrid, SpecialColorSwatch};
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::label::{LabelStyle, LabelWidget};
 use oriterm_ui::widgets::scheme_card::{SchemeCardData, SchemeCardWidget};
-use oriterm_ui::widgets::scroll::ScrollWidget;
 
 use crate::config::Config;
 use crate::scheme::{self, ColorScheme};
 
-use super::appearance::{PAGE_PADDING, ROW_GAP, SECTION_GAP, section_title};
+use super::appearance::{ROW_GAP, build_settings_page, section_title};
 
 /// Gap between scheme cards in the grid.
 const CARD_GAP: f32 = 10.0;
@@ -41,41 +40,14 @@ pub(super) fn build_page(
     ids: &mut super::SettingsIds,
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
-    let header = build_header(theme);
-    let schemes_section = build_schemes_section(config, ids, theme);
-    let palette_section = build_palette_section(config, theme);
-
-    let page = ContainerWidget::column()
-        .with_width(SizeSpec::Fill)
-        .with_padding(PAGE_PADDING)
-        .with_gap(SECTION_GAP)
-        .with_child(header)
-        .with_child(schemes_section)
-        .with_child(palette_section);
-
-    let mut scroll = ScrollWidget::vertical(Box::new(page));
-    scroll.set_height(SizeSpec::Fill);
-    Box::new(scroll)
-}
-
-/// Page header: title + description.
-fn build_header(theme: &UiTheme) -> Box<dyn Widget> {
-    let title = LabelWidget::new("Colors").with_style(LabelStyle {
-        font_size: super::appearance::TITLE_FONT_SIZE,
-        color: theme.fg_primary,
-        ..LabelStyle::from_theme(theme)
-    });
-    let desc = LabelWidget::new("Color schemes and palette customization").with_style(LabelStyle {
-        font_size: super::appearance::DESC_FONT_SIZE,
-        color: theme.fg_secondary,
-        ..LabelStyle::from_theme(theme)
-    });
-    Box::new(
-        ContainerWidget::column()
-            .with_gap(4.0)
-            .with_width(SizeSpec::Fill)
-            .with_child(Box::new(title))
-            .with_child(Box::new(desc)),
+    build_settings_page(
+        "COLORS",
+        "Color schemes and palette customization",
+        vec![
+            build_schemes_section(config, ids, theme),
+            build_palette_section(config, theme),
+        ],
+        theme,
     )
 }
 

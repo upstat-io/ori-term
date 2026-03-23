@@ -64,6 +64,32 @@ impl App {
     pub(super) fn modal_loop_render(&mut self) {
         self.pump_mux_events();
 
+        // Detect DPI/size changes that occurred inside the modal loop.
+        //
+        // WM_DPICHANGED triggers SetWindowPos (which generates WM_SIZE),
+        // but winit does not dispatch WindowEvent::Resized during modal
+        // loops — so handle_resize never runs. Query each window's actual
+        // inner_size and compare against the stored size to detect changes.
+        // This also picks up DPI changes because SetWindowPos resizes the
+        // window to maintain logical size at the new DPI.
+        {
+            self.scratch_dirty_windows.clear();
+            self.scratch_dirty_windows
+                .extend(self.windows.keys().copied());
+            for i in 0..self.scratch_dirty_windows.len() {
+                let wid = self.scratch_dirty_windows[i];
+                let needs_resize = self.windows.get(&wid).is_some_and(|ctx| {
+                    let inner = ctx.window.window().inner_size();
+                    let (sw, sh) = ctx.window.size_px();
+                    inner.width != sw || inner.height != sh
+                });
+                if needs_resize {
+                    let inner = self.windows[&wid].window.window().inner_size();
+                    self.handle_resize(wid, inner);
+                }
+            }
+        }
+
         self.scratch_dirty_windows.clear();
         self.scratch_dirty_windows.extend(
             self.windows

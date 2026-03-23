@@ -8,7 +8,8 @@ use crate::widgets::{LayoutCtx, Widget};
 use super::SettingsPanel;
 
 fn make_panel() -> SettingsPanel {
-    SettingsPanel::new(Box::new(FormLayout::new()))
+    let theme = crate::theme::UiTheme::dark();
+    SettingsPanel::new(Box::new(FormLayout::new()), &theme)
 }
 
 #[test]

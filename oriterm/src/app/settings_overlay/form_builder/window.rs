@@ -5,18 +5,14 @@ use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
-use oriterm_ui::widgets::label::{LabelStyle, LabelWidget};
 use oriterm_ui::widgets::number_input::NumberInputWidget;
-use oriterm_ui::widgets::scroll::ScrollWidget;
 use oriterm_ui::widgets::setting_row::SettingRowWidget;
 use oriterm_ui::widgets::toggle::ToggleWidget;
 
 use crate::config::{Config, TabBarPosition};
 
 use super::SettingsIds;
-use super::appearance::{
-    DESC_FONT_SIZE, PAGE_PADDING, ROW_GAP, SECTION_GAP, TITLE_FONT_SIZE, section_title,
-};
+use super::appearance::{ROW_GAP, build_settings_page, section_title};
 
 /// Builds the Window page content widget.
 pub(super) fn build_page(
@@ -24,44 +20,15 @@ pub(super) fn build_page(
     ids: &mut SettingsIds,
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
-    let header = build_header(theme);
-    let chrome = build_chrome_section(config, ids, theme);
-    let padding = build_padding_section(config, ids, theme);
-    let startup = build_startup_section(config, ids, theme);
-
-    let page = ContainerWidget::column()
-        .with_width(SizeSpec::Fill)
-        .with_padding(PAGE_PADDING)
-        .with_gap(SECTION_GAP)
-        .with_child(header)
-        .with_child(chrome)
-        .with_child(padding)
-        .with_child(startup);
-
-    let mut scroll = ScrollWidget::vertical(Box::new(page));
-    scroll.set_height(SizeSpec::Fill);
-    Box::new(scroll)
-}
-
-/// Page header.
-fn build_header(theme: &UiTheme) -> Box<dyn Widget> {
-    let title = LabelWidget::new("Window").with_style(LabelStyle {
-        font_size: TITLE_FONT_SIZE,
-        color: theme.fg_primary,
-        ..LabelStyle::from_theme(theme)
-    });
-    let desc =
-        LabelWidget::new("Window chrome, padding, and startup behavior").with_style(LabelStyle {
-            font_size: DESC_FONT_SIZE,
-            color: theme.fg_secondary,
-            ..LabelStyle::from_theme(theme)
-        });
-    Box::new(
-        ContainerWidget::column()
-            .with_gap(4.0)
-            .with_width(SizeSpec::Fill)
-            .with_child(Box::new(title))
-            .with_child(Box::new(desc)),
+    build_settings_page(
+        "WINDOW",
+        "Window chrome, padding, and startup behavior",
+        vec![
+            build_chrome_section(config, ids, theme),
+            build_padding_section(config, ids, theme),
+            build_startup_section(config, ids, theme),
+        ],
+        theme,
     )
 }
 

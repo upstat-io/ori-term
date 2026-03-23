@@ -29,7 +29,7 @@ impl Widget for SliderWidget {
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
-        let height = self.style.thumb_size.max(self.style.track_height);
+        let height = self.style.thumb_height.max(self.style.track_height);
         // Expand hit area vertically so users can grab the thin slider track
         // without pixel-perfect precision. The 6px radius extends the
         // clickable zone without affecting visual bounds.
@@ -94,25 +94,23 @@ impl Widget for SliderWidget {
             ctx.scene.push_quad(fill_rect, fill_style);
         }
 
-        // Thumb.
-        let half_thumb = s.thumb_size / 2.0;
-        let travel = tb.width() - s.thumb_size;
+        // Thumb — rectangular, no corner radius.
+        let travel = tb.width() - s.thumb_width;
         let thumb_x = tb.x() + travel * norm;
-        let thumb_y = tb.y() + (tb.height() - s.thumb_size) / 2.0;
-        let thumb_rect = Rect::new(thumb_x, thumb_y, s.thumb_size, s.thumb_size);
+        let thumb_y = tb.y() + (tb.height() - s.thumb_height) / 2.0;
+        let thumb_rect = Rect::new(thumb_x, thumb_y, s.thumb_width, s.thumb_height);
         let thumb_bg = if self.disabled {
             s.disabled_bg
         } else {
             self.animator.get_bg_color(ctx.now)
         };
-        let thumb_style = RectStyle::filled(thumb_bg)
-            .with_border(s.thumb_border_width, s.thumb_border_color)
-            .with_radius(half_thumb);
+        let thumb_style =
+            RectStyle::filled(thumb_bg).with_border(s.thumb_border_width, s.thumb_border_color);
         ctx.scene.push_quad(thumb_rect, thumb_style);
 
         // Value label to the right of the track.
         let value_text = self.format_value();
-        let text_style = TextStyle::new(ctx.theme.font_size, ctx.theme.fg_secondary);
+        let text_style = TextStyle::new(s.value_font_size, ctx.theme.fg_secondary);
         let shaped = ctx
             .measurer
             .shape(&value_text, &text_style, VALUE_LABEL_WIDTH);

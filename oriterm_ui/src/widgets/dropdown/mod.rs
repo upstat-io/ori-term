@@ -11,7 +11,6 @@ use crate::color::Color;
 use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point, Rect};
-use crate::icons::IconId;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::TextStyle;
@@ -34,8 +33,12 @@ pub struct DropdownStyle {
     pub hover_bg: Color,
     /// Pressed background.
     pub pressed_bg: Color,
-    /// Border color.
+    /// Border color (normal state).
     pub border_color: Color,
+    /// Border color on hover.
+    pub hover_border_color: Color,
+    /// Border color when focused.
+    pub focus_border_color: Color,
     /// Border width.
     pub border_width: f32,
     /// Corner radius.
@@ -44,6 +47,8 @@ pub struct DropdownStyle {
     pub padding: Insets,
     /// Font size in points.
     pub font_size: f32,
+    /// Minimum width of the dropdown.
+    pub min_width: f32,
     /// Width reserved for the dropdown indicator arrow.
     pub indicator_width: f32,
     /// Indicator color.
@@ -61,16 +66,19 @@ impl DropdownStyle {
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
             fg: theme.fg_primary,
-            bg: theme.bg_primary,
-            hover_bg: theme.bg_hover,
-            pressed_bg: theme.bg_active,
+            bg: theme.bg_input,
+            hover_bg: theme.bg_input,
+            pressed_bg: theme.bg_input,
             border_color: theme.border,
-            border_width: 1.0,
+            hover_border_color: theme.fg_faint,
+            focus_border_color: theme.accent,
+            border_width: 2.0,
             corner_radius: theme.corner_radius,
-            padding: Insets::vh(6.0, 10.0),
-            font_size: theme.font_size,
+            padding: Insets::tlbr(6.0, 10.0, 6.0, 30.0),
+            font_size: 12.0,
+            min_width: 140.0,
             indicator_width: 20.0,
-            indicator_color: theme.fg_primary,
+            indicator_color: theme.fg_faint,
             disabled_fg: theme.fg_disabled,
             disabled_bg: theme.bg_secondary,
             focus_ring_color: theme.accent,
@@ -227,15 +235,16 @@ impl Widget for DropdownWidget {
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        // Natural width accommodates the widest item + padding + indicator.
-        // Fill width lets the dropdown stretch in form rows.
+        // Natural width accommodates the widest item + padding + indicator,
+        // but never less than min_width.
         let style = self.text_style();
         let max_text_w = self
             .items
             .iter()
             .map(|item| ctx.measurer.measure(item, &style, f32::INFINITY).width)
             .fold(0.0_f32, f32::max);
-        let w = max_text_w + self.style.padding.width() + self.style.indicator_width;
+        let content_w = max_text_w + self.style.padding.width() + self.style.indicator_width;
+        let w = content_w.max(self.style.min_width);
         let metrics = ctx.measurer.measure(&self.items[0], &style, f32::INFINITY);
         let h = metrics.height + self.style.padding.height();
         LayoutBox::leaf(w, h).with_widget_id(self.id)
@@ -259,26 +268,26 @@ impl Widget for DropdownWidget {
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let focused = ctx.is_interaction_focused();
+        let hovered = ctx.is_hot();
         let bounds = ctx.bounds;
         let s = &self.style;
 
-        // Focus ring (outside the layer).
-        if focused {
-            let ring = bounds.inset(Insets::all(-2.0));
-            let ring_style = RectStyle::filled(Color::TRANSPARENT)
-                .with_border(2.0, s.focus_ring_color)
-                .with_radius(s.corner_radius + 2.0);
-            ctx.scene.push_quad(ring, ring_style);
-        }
+        // Border color depends on interaction state.
+        let border_color = if focused {
+            s.focus_border_color
+        } else if hovered {
+            s.hover_border_color
+        } else {
+            s.border_color
+        };
 
-        // Background from visual state animator (transitions between Normal,
-        // Hovered, Pressed, Disabled states automatically).
+        // Background from visual state animator.
         let bg = self.animator.get_bg_color(ctx.now);
         ctx.scene.push_layer_bg(bg);
 
-        // Background rect.
+        // Background rect with state-dependent border.
         let bg_style = RectStyle::filled(bg)
-            .with_border(s.border_width, s.border_color)
+            .with_border(s.border_width, border_color)
             .with_radius(s.corner_radius);
         ctx.scene.push_quad(bounds, bg_style);
 
@@ -291,41 +300,23 @@ impl Widget for DropdownWidget {
         ctx.scene
             .push_text(Point::new(inner.x(), y), shaped, self.current_fg());
 
-        // Dropdown indicator (downward-pointing chevron).
-        let ind_x = bounds.right() - s.indicator_width;
-        let ind_center_x = ind_x + s.indicator_width / 2.0;
+        // Dropdown indicator — filled downward triangle, positioned right 10px.
         let ind_center_y = bounds.y() + bounds.height() / 2.0;
-        let arrow_half = 4.0;
         let ind_color = if self.disabled {
             s.disabled_fg
         } else {
             s.indicator_color
         };
 
-        let icon_size = (arrow_half * 2.0_f32).round() as u32;
-        if let Some(resolved) = ctx
-            .icons
-            .and_then(|ic| ic.get(IconId::ChevronDown, icon_size))
-        {
-            let icon_rect = Rect::new(
-                ind_center_x - arrow_half,
-                ind_center_y - arrow_half / 2.0,
-                arrow_half * 2.0,
-                arrow_half,
-            );
-            ctx.scene
-                .push_icon(icon_rect, resolved.atlas_page, resolved.uv, ind_color);
-        } else {
-            // Text fallback when icon atlas is not available.
-            let chevron_style = TextStyle::new(s.font_size, ind_color);
-            let shaped = ctx
-                .measurer
-                .shape("\u{25BE}", &chevron_style, s.indicator_width);
-            let chevron_y = ind_center_y - shaped.height / 2.0;
-            let chevron_x = ind_center_x - shaped.width / 2.0;
-            ctx.scene
-                .push_text(Point::new(chevron_x, chevron_y), shaped, ind_color);
-        }
+        // Use Unicode filled triangle character (▾) as indicator.
+        let tri_style = TextStyle::new(s.font_size, ind_color);
+        let shaped = ctx
+            .measurer
+            .shape("\u{25BE}", &tri_style, s.indicator_width);
+        let tri_x = bounds.right() - 10.0 - shaped.width / 2.0;
+        let tri_y = ind_center_y - shaped.height / 2.0;
+        ctx.scene
+            .push_text(Point::new(tri_x, tri_y), shaped, ind_color);
 
         ctx.scene.pop_layer_bg();
 

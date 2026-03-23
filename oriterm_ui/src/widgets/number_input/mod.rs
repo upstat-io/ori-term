@@ -28,7 +28,7 @@ const INPUT_HEIGHT: f32 = 32.0;
 const FONT_SIZE: f32 = 13.0;
 
 /// Corner radius.
-const CORNER_RADIUS: f32 = 4.0;
+const CORNER_RADIUS: f32 = 0.0;
 
 /// Border width.
 const BORDER_WIDTH: f32 = 1.0;

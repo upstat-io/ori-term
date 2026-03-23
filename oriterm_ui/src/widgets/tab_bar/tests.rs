@@ -1715,3 +1715,57 @@ fn tabs_end_with_multipliers() {
         "tabs_end should account for multipliers"
     );
 }
+
+// -- Regression: TPR-11-012 — draw_window_controls propagates frame_requests --
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn draw_window_controls_propagates_frame_requests() {
+    use std::time::Instant;
+
+    use crate::animation::FrameRequestFlags;
+    use crate::draw::Scene;
+    use crate::geometry::Rect;
+    use crate::testing::{MockMeasurer, TEST_THEME};
+    use crate::widgets::{DrawCtx, Widget};
+
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+
+    // Hover a control button to start its VisualStateAnimator transition.
+    let rects = w.interactive_rects();
+    let ctrl_rect = rects[rects.len() - 1]; // close button
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    let now = Instant::now();
+    let animating = w.update_control_hover_state(center, now);
+    assert!(
+        animating,
+        "precondition: control button should be animating"
+    );
+
+    // Paint with frame_requests wired — the animating control must propagate.
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 1200.0, TAB_BAR_HEIGHT);
+    let flags = FrameRequestFlags::new();
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now,
+        theme: &TEST_THEME,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: Some(&flags),
+    };
+    w.paint(&mut ctx);
+
+    assert!(
+        flags.anim_frame_requested(),
+        "paint() should propagate anim frame request from animating control button"
+    );
+}

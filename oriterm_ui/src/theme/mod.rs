@@ -10,7 +10,7 @@ use crate::color::Color;
 /// Centralized color and sizing tokens for the UI framework.
 ///
 /// All widget `*Style::from_theme()` constructors read from these fields.
-/// `dark()` matches the legacy `DEFAULT_*` constants — zero visual regression.
+/// `dark()` uses the brutal mockup palette (`mockups/settings-brutal.html`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UiTheme {
     /// Primary background (widget surfaces).
@@ -31,7 +31,9 @@ pub struct UiTheme {
     pub accent: Color,
     /// Border color.
     pub border: Color,
-    /// Shadow color (typically semi-transparent black).
+    /// Strong border (panel edges, footer separators).
+    pub border_strong: Color,
+    /// Shadow color (transparent for flat/brutal design).
     pub shadow: Color,
     /// Close button hover background (platform standard red).
     pub close_hover_bg: Color,
@@ -45,16 +47,28 @@ pub struct UiTheme {
     pub bg_card_hover: Color,
     /// Very muted text (descriptions, version labels, section rules).
     pub fg_faint: Color,
+    /// Bright text (page titles, emphasized headings).
+    pub fg_bright: Color,
     /// Accent tint for active/selected backgrounds (low opacity).
     pub accent_bg: Color,
     /// Stronger accent tint (selected card, active nav item).
     pub accent_bg_strong: Color,
     /// Accent hover color (lighter accent for hover states).
     pub accent_hover: Color,
+    /// Subtle border (separators, dividers — lighter than `border`).
+    pub border_subtle: Color,
     /// Danger color (for destructive actions).
     pub danger: Color,
+    /// Danger hover color (lighter danger for hover states).
+    pub danger_hover: Color,
+    /// Subtle danger background tint (destructive action hover bg).
+    pub danger_bg: Color,
     /// Success color.
     pub success: Color,
+    /// Warning color (caution indicators, alerts).
+    pub warning: Color,
+    /// Subtle warning background tint (callout backgrounds).
+    pub warning_bg: Color,
     /// Default corner radius in logical pixels.
     pub corner_radius: f32,
     /// Default spacing/gap in logical pixels.
@@ -68,31 +82,38 @@ pub struct UiTheme {
 }
 
 impl UiTheme {
-    /// Dark theme matching the legacy `DEFAULT_*` constants.
+    /// Dark theme matching the brutal design mockup CSS variables.
     pub const fn dark() -> Self {
         Self {
-            bg_primary: Color::from_rgb_u8(0x2D, 0x2D, 0x2D),
-            bg_secondary: Color::from_rgb_u8(0x25, 0x25, 0x25),
-            bg_hover: Color::from_rgb_u8(0x3D, 0x3D, 0x3D),
-            bg_active: Color::from_rgb_u8(0x1D, 0x1D, 0x1D),
-            fg_primary: Color::from_rgb_u8(0xE0, 0xE0, 0xE0),
-            fg_secondary: Color::from_rgb_u8(0xA0, 0xA0, 0xA0),
+            bg_primary: Color::hex(0x16_16_1C),   // --bg-surface
+            bg_secondary: Color::hex(0x0E_0E_12), // --bg-base (sidebar)
+            bg_hover: Color::hex(0x24_24_2E),     // --bg-hover
+            bg_active: Color::hex(0x2A_2A_36),    // --bg-active
+            fg_primary: Color::hex(0xD4_D4_DC),   // --text
+            fg_secondary: Color::hex(0x94_94_A8), // --text-muted
             fg_disabled: Color::from_rgb_u8(0x80, 0x80, 0x80),
-            accent: Color::from_rgb_u8(0x4A, 0x9E, 0xFF),
-            border: Color::from_rgb_u8(0x55, 0x55, 0x55),
-            shadow: Color::rgba(0.0, 0.0, 0.0, 0.5),
+            accent: Color::hex(0x6D_9B_E0),        // --accent
+            border: Color::hex(0x2A_2A_36),        // --border
+            border_strong: Color::hex(0x3A_3A_48), // --border-strong
+            shadow: Color::TRANSPARENT,            // --shadow: none
             close_hover_bg: Color::hex(0xC4_2B_1C),
             close_pressed_bg: Color::hex(0xA1_20_12),
-            bg_input: Color::hex(0x12_12_1A),
-            bg_card: Color::hex(0x1C_1C_24),
-            bg_card_hover: Color::hex(0x24_24_2E),
-            fg_faint: Color::hex(0x4E_4E_5E),
-            accent_bg: Color::rgba(0.42, 0.55, 1.0, 0.08),
-            accent_bg_strong: Color::rgba(0.42, 0.55, 1.0, 0.14),
-            accent_hover: Color::hex(0x8A_A4_FF),
-            danger: Color::hex(0xFF_6B_6B),
-            success: Color::hex(0x6B_FF_B8),
-            corner_radius: 4.0,
+            bg_input: Color::hex(0x12_12_1A),      // --bg-input
+            bg_card: Color::hex(0x1C_1C_24),       // --bg-raised
+            bg_card_hover: Color::hex(0x24_24_2E), // --bg-hover (cards)
+            fg_faint: Color::hex(0x8C_8C_A0),      // --text-faint
+            fg_bright: Color::hex(0xEE_EE_EF),     // --text-bright
+            accent_bg: Color::rgba(0.427, 0.608, 0.878, 0.08), // --accent-bg
+            accent_bg_strong: Color::rgba(0.427, 0.608, 0.878, 0.14), // --accent-bg-strong
+            accent_hover: Color::hex(0x85_AD_E8),  // --accent-hover
+            border_subtle: Color::hex(0x1E_1E_28), // --border-subtle
+            danger: Color::hex(0xC8_78_78),        // --danger
+            danger_hover: Color::hex(0xD8_90_90),  // --danger-hover
+            danger_bg: Color::rgba(0.784, 0.471, 0.471, 0.08), // --danger-bg
+            success: Color::hex(0x6B_FF_B8),       // --success
+            warning: Color::hex(0xE0_C4_54),       // --warning
+            warning_bg: Color::rgba(0.878, 0.769, 0.329, 0.08), // --warning-bg
+            corner_radius: 0.0,                    // --radius: 0px (brutal)
             spacing: 8.0,
             font_size: 13.0,
             font_size_small: 11.0,
@@ -112,6 +133,7 @@ impl UiTheme {
             fg_disabled: Color::from_rgb_u8(0xA0, 0xA0, 0xA0),
             accent: Color::from_rgb_u8(0x00, 0x78, 0xD4),
             border: Color::from_rgb_u8(0xCC, 0xCC, 0xCC),
+            border_strong: Color::from_rgb_u8(0xAA, 0xAA, 0xAA),
             shadow: Color::rgba(0.0, 0.0, 0.0, 0.15),
             close_hover_bg: Color::hex(0xC4_2B_1C),
             close_pressed_bg: Color::hex(0xA1_20_12),
@@ -119,11 +141,17 @@ impl UiTheme {
             bg_card: Color::from_rgb_u8(0xFF, 0xFF, 0xFF),
             bg_card_hover: Color::from_rgb_u8(0xF0, 0xF0, 0xF5),
             fg_faint: Color::from_rgb_u8(0x99, 0x99, 0xAA),
+            fg_bright: Color::from_rgb_u8(0x0A, 0x0A, 0x0A),
             accent_bg: Color::rgba(0.0, 0.47, 0.83, 0.08),
             accent_bg_strong: Color::rgba(0.0, 0.47, 0.83, 0.14),
             accent_hover: Color::from_rgb_u8(0x00, 0x5A, 0x9E),
+            border_subtle: Color::from_rgb_u8(0xE0, 0xE0, 0xE0),
             danger: Color::from_rgb_u8(0xD3, 0x2F, 0x2F),
+            danger_hover: Color::from_rgb_u8(0xE0, 0x45, 0x45),
+            danger_bg: Color::rgba(0.827, 0.184, 0.184, 0.08),
             success: Color::from_rgb_u8(0x2E, 0x7D, 0x32),
+            warning: Color::from_rgb_u8(0xED, 0x6C, 0x02),
+            warning_bg: Color::rgba(0.929, 0.424, 0.008, 0.08),
             corner_radius: 4.0,
             spacing: 8.0,
             font_size: 13.0,

@@ -46,7 +46,7 @@ fn layout_dimensions() {
     } = &layout.content
     {
         assert_eq!(*intrinsic_width, style.width);
-        assert_eq!(*intrinsic_height, style.thumb_size);
+        assert_eq!(*intrinsic_height, style.thumb_height);
     } else {
         panic!("expected leaf layout");
     }

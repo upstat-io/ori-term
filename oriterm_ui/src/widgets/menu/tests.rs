@@ -158,3 +158,22 @@ fn menu_is_focusable() {
     let menu = MenuWidget::new(sample_entries());
     assert!(menu.is_focusable());
 }
+
+// Theme-derived style tests
+
+#[test]
+fn from_theme_light_preserves_corner_radius() {
+    // Regression: popup builders must not hardcode 0.0 radius — light theme uses 4.0.
+    let light = crate::theme::UiTheme::light();
+    let style = MenuStyle::from_theme(&light);
+    assert_eq!(style.corner_radius, 4.0);
+    assert_eq!(style.hover_radius, 4.0);
+}
+
+#[test]
+fn from_theme_dark_uses_zero_radius() {
+    let dark = crate::theme::UiTheme::dark();
+    let style = MenuStyle::from_theme(&dark);
+    assert_eq!(style.corner_radius, 0.0);
+    assert_eq!(style.hover_radius, 0.0);
+}

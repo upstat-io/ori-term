@@ -28,9 +28,9 @@ const TOGGLE_DURATION: Duration = Duration::from_millis(150);
 /// Visual style for a [`ToggleWidget`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToggleStyle {
-    /// Width of the pill track.
+    /// Width of the track.
     pub width: f32,
-    /// Height of the pill track.
+    /// Height of the track.
     pub height: f32,
     /// Off-state track background.
     pub off_bg: Color,
@@ -38,10 +38,18 @@ pub struct ToggleStyle {
     pub off_hover_bg: Color,
     /// On-state track background.
     pub on_bg: Color,
-    /// Thumb color.
-    pub thumb_color: Color,
+    /// Off-state thumb color.
+    pub off_thumb_color: Color,
+    /// On-state thumb color.
+    pub on_thumb_color: Color,
     /// Padding between track edge and thumb.
     pub thumb_padding: f32,
+    /// Track border width.
+    pub border_width: f32,
+    /// Off-state track border color.
+    pub off_border_color: Color,
+    /// On-state track border color.
+    pub on_border_color: Color,
     /// Disabled track background.
     pub disabled_bg: Color,
     /// Disabled thumb color.
@@ -54,13 +62,17 @@ impl ToggleStyle {
     /// Derives a toggle style from the given theme.
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
-            width: 40.0,
-            height: 22.0,
-            off_bg: theme.bg_primary,
+            width: 38.0,
+            height: 20.0,
+            off_bg: theme.bg_active,
             off_hover_bg: theme.bg_hover,
-            on_bg: theme.accent,
-            thumb_color: Color::WHITE,
-            thumb_padding: 2.0,
+            on_bg: theme.accent_bg_strong,
+            off_thumb_color: theme.fg_faint,
+            on_thumb_color: theme.accent,
+            thumb_padding: 3.0,
+            border_width: 2.0,
+            off_border_color: theme.border,
+            on_border_color: theme.accent,
             disabled_bg: theme.bg_secondary,
             disabled_thumb: theme.fg_disabled,
             focus_ring_color: theme.accent,
@@ -196,12 +208,14 @@ impl ToggleWidget {
         }
     }
 
-    /// Returns the thumb color based on state.
+    /// Returns the thumb color based on on/off and disabled state.
     fn thumb_color(&self) -> Color {
         if self.disabled {
             self.style.disabled_thumb
+        } else if self.on {
+            self.style.on_thumb_color
         } else {
-            self.style.thumb_color
+            self.style.off_thumb_color
         }
     }
 
@@ -274,18 +288,16 @@ impl Widget for ToggleWidget {
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let focused = ctx.is_interaction_focused();
         let s = &self.style;
-        let radius = s.height / 2.0;
 
-        // Focus ring.
+        // Focus ring — rectangular, no radius.
         if focused {
             let ring = ctx.bounds.inset(crate::geometry::Insets::all(-2.0));
-            let ring_style = RectStyle::filled(Color::TRANSPARENT)
-                .with_border(2.0, s.focus_ring_color)
-                .with_radius(radius + 2.0);
+            let ring_style =
+                RectStyle::filled(Color::TRANSPARENT).with_border(2.0, s.focus_ring_color);
             ctx.scene.push_quad(ring, ring_style);
         }
 
-        // Track bg: on_bg when on, animator-driven hover transition when off.
+        // Track bg + border: on/off state dependent.
         let track_bg = if self.disabled {
             s.disabled_bg
         } else if self.on {
@@ -293,18 +305,22 @@ impl Widget for ToggleWidget {
         } else {
             self.animator.get_bg_color(ctx.now)
         };
-        let track_style = RectStyle::filled(track_bg).with_radius(radius);
+        let border_color = if self.on {
+            s.on_border_color
+        } else {
+            s.off_border_color
+        };
+        let track_style = RectStyle::filled(track_bg).with_border(s.border_width, border_color);
         ctx.scene.push_quad(ctx.bounds, track_style);
 
-        // Thumb — a circle within the track, position driven by animation.
+        // Thumb — square, position driven by animation.
         let progress = self.toggle_progress.get(ctx.now);
-        let thumb_diameter = s.height - s.thumb_padding * 2.0;
-        let thumb_radius = thumb_diameter / 2.0;
-        let travel = s.width - s.thumb_padding * 2.0 - thumb_diameter;
+        let thumb_size = s.height - s.thumb_padding * 2.0;
+        let travel = s.width - s.thumb_padding * 2.0 - thumb_size;
         let thumb_x = ctx.bounds.x() + s.thumb_padding + travel * progress;
         let thumb_y = ctx.bounds.y() + s.thumb_padding;
-        let thumb_rect = Rect::new(thumb_x, thumb_y, thumb_diameter, thumb_diameter);
-        let thumb_style = RectStyle::filled(self.thumb_color()).with_radius(thumb_radius);
+        let thumb_rect = Rect::new(thumb_x, thumb_y, thumb_size, thumb_size);
+        let thumb_style = RectStyle::filled(self.thumb_color());
         ctx.scene.push_quad(thumb_rect, thumb_style);
 
         // Signal continued redraws while animating.
