@@ -4,423 +4,517 @@ title: "Visual Fidelity: Content Area + Typography"
 status: not-started
 reviewed: true
 third_party_review:
-  status: none
-  updated: null
-goal: "Page header, section titles, setting rows, and content spacing in the right-hand content area match the mockup's typography and layout exactly"
-depends_on: ["01", "02", "03", "04"]
+  status: resolved
+  updated: 2026-03-23
+goal: "The settings content area matches the mockup's typography and rhythm across all pages: page headers, section headers, optional section descriptions, setting-row labels, inline status tags, and the shared body spacing/padding all render from real shared primitives instead of ad hoc per-page constants"
+depends_on: ["01", "02", "03", "04", "06"]
 sections:
   - id: "11.1"
-    title: "Page Header"
+    title: "Shared Content Typography Boundary"
     status: not-started
   - id: "11.2"
-    title: "Section Title with Divider"
+    title: "Page Headers"
     status: not-started
   - id: "11.3"
-    title: "Setting Row Layout"
+    title: "Section Headers + Descriptions"
     status: not-started
   - id: "11.4"
-    title: "Content Body Padding"
+    title: "Setting Rows + Status Tags"
     status: not-started
   - id: "11.5"
-    title: "Section Spacing"
+    title: "Body Spacing + Section Rhythm"
+    status: not-started
+  - id: "11.6"
+    title: "Tests"
     status: not-started
   - id: "11.R"
     title: "Third Party Review Findings"
-    status: not-started
-  - id: "11.6"
+    status: complete
+  - id: "11.7"
     title: "Build & Verify"
     status: not-started
 ---
 
-# Section 11: Visual Fidelity — Content Area + Typography
+# Section 11: Visual Fidelity - Content Area + Typography
 
-**Status:** Not Started
-**Goal:** The right-hand content area of the settings dialog — page headers, section titles with divider lines, setting rows with labels and controls, and all spacing/padding — matches the mockup CSS pixel-for-pixel at 100% DPI.
+## Problem
 
-**Production code paths:**
-- Form builder: `oriterm/src/app/settings_overlay/form_builder/appearance.rs` — `build_page_header()`, `section_title()`, page constants
-- Setting row: `oriterm_ui/src/widgets/setting_row/mod.rs` — `SettingRowWidget`, `MIN_HEIGHT`, `ROW_PADDING`, `NAME_FONT_SIZE`, etc.
-- Container layout: `oriterm_ui/src/widgets/container/mod.rs` — `ContainerWidget` padding and gap
-- Text rendering: depends on Sections 01 (multi-size fonts), 02 (font weight), 03 (text transform + letter spacing), 04 (line height)
+The draft treated Section 11 as mostly a verification pass, but the current implementation still has
+real gaps in the shared content typography system.
 
-**Observable change:** Text in the content area renders at correct sizes with proper weight differentiation (bold titles vs regular body), uppercase transforms are applied, letter spacing is visible, and vertical rhythm matches the mockup.
+What the tree actually shows today:
 
----
+- `build_settings_page(...)`, `build_page_header(...)`, and `section_title(...)` live in
+  `appearance.rs`, even though they are the shared content-layout path for all settings pages.
+- The page header values are close to the mockup, but the current helper still relies on callers to
+  pass already-uppercased titles instead of owning the transform itself.
+- Section-header spacing is wrong in multiple places:
+  - the mockup uses `margin-bottom: 12px`
+  - `appearance.rs` uses `TITLE_ROW_GAP = 8.0` for one section
+  - most other sections use `ROW_GAP = 2.0` directly below the title
+- The current section-title implementation renders `"// TITLE"` as one label with letter spacing
+  applied to the entire string. The mockup explicitly resets the `//` prefix to normal spacing and
+  applies the wider tracking only to the title text.
+- The current `FontWeight` enum still exposes only `Regular` and `Bold`, so the mockup's `500`
+  medium-weight section headers and inline tags are not expressible yet.
+- The mockup includes `.section-desc` blocks on several pages (`Font`, `Bell`, `Rendering`), but
+  the current shared builder path has no section-description primitive at all.
+- `SettingRowWidget` gets the basic label typography mostly right, but it cannot express inline
+  status tags such as `Restart` or `Advanced`, even though those are part of the mockup's content
+  typography system.
+- Shared content spacing is still off:
+  - content body bottom padding is currently `0`, not `28`
+  - inter-section spacing is `24`, not `28`
+  - intra-section row spacing is implemented as a global `2px` gap, even though the mockup rows
+    are stacked directly and rely on their own internal height/padding
 
-## 11.1 Page Header
+Section 11 therefore needs to be a shared content-typography rewrite, not a checklist that says
+"already matches" while the actual primitives are still missing.
 
-**File(s):** `oriterm/src/app/settings_overlay/form_builder/appearance.rs` (`build_page_header()`)
+## Corrected Scope
 
-### Mockup CSS
+Section 11 should keep the full mockup goal and implement the shared content typography surface
+properly:
 
-```css
-.content-header h1 {
-    font-size: 18px;
-    font-weight: 700;                     /* Bold */
-    text-transform: uppercase;
-    letter-spacing: 0.05em;               /* 18px * 0.05 = 0.9px */
-    color: var(--text-bright);            /* #eeeeef */
-    margin: 0;
-}
-.content-header .subtitle {
-    font-size: 12px;
-    color: var(--text-muted);             /* #9494a8 */
-    margin-top: 4px;
-}
-.content-header {
-    padding: 24px 28px 20px;
-}
-```
+1. move shared content/header helpers out of `appearance.rs`
+2. make page and section headings semantic shared primitives instead of ad hoc labels
+3. add optional section descriptions and inline setting tags
+4. fix the shared content-body spacing constants so every page inherits the right rhythm
 
-### Current code (`build_page_header()`)
-
-```rust
-const TITLE_FONT_SIZE: f32 = 18.0;              // matches 18px
-const TITLE_LETTER_SPACING: f32 = 0.9;          // 18 * 0.05 = 0.9px — matches
-const DESC_FONT_SIZE: f32 = 12.0;               // matches 12px
-
-let title = LabelWidget::new(title_text).with_style(LabelStyle {
-    font_size: TITLE_FONT_SIZE,                  // 18.0
-    weight: FontWeight::Bold,                    // 700 — matches
-    letter_spacing: TITLE_LETTER_SPACING,        // 0.9
-    color: theme.fg_bright,                      // #eeeeef — matches
-    ..LabelStyle::from_theme(theme)
-});
-let desc = LabelWidget::new(desc_text).with_style(LabelStyle {
-    font_size: DESC_FONT_SIZE,                   // 12.0
-    color: theme.fg_secondary,                   // #9494a8 — matches
-    ..LabelStyle::from_theme(theme)
-});
-
-// Container padding
-Insets::tlbr(24.0, 28.0, 20.0, 28.0)            // matches 24px 28px 20px
-// Gap between title and subtitle
-.with_gap(4.0)                                   // matches margin-top: 4px
-```
-
-### Comparison
-
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Title font size | 18px | 18.0 | Yes |
-| Title font weight | 700 (Bold) | `FontWeight::Bold` | Yes (once Section 02 lands) |
-| Title text-transform | uppercase | Passed in as `"APPEARANCE"` | Yes (manually uppercased) |
-| Title letter-spacing | 0.05em = 0.9px | 0.9 | Yes (once Section 03 lands) |
-| Title color | `--text-bright` (#eeeeef) | `theme.fg_bright` (#eeeeef) | Yes |
-| Subtitle font size | 12px | 12.0 | Yes |
-| Subtitle color | `--text-muted` (#9494a8) | `theme.fg_secondary` (#9494a8) | Yes |
-| Padding top | 24px | 24.0 | Yes |
-| Padding left/right | 28px | 28.0 | Yes |
-| Padding bottom | 20px | 20.0 | Yes |
-| Title-subtitle gap | 4px | 4.0 | Yes |
-
-### Dependencies
-
-- **Section 01 (Multi-Size Fonts)**: The 18px title must actually render larger than the 13px body text. Until Section 01 lands, all text renders at the grid cell font size regardless of `TextStyle.size`. Once landed, verify that the title is visually larger.
-- **Section 02 (Font Weight)**: `FontWeight::Bold` (700) must produce visibly heavier glyphs. Until landed, bold text looks the same as regular.
-- **Section 03 (Letter Spacing)**: The 0.9px letter spacing must produce visible character spreading. Until landed, `letter_spacing` is stored but not applied.
-- **Section 03 (Text Transform)**: Consider replacing the manual `"APPEARANCE"` string with a `TextTransform::Uppercase` flag on `LabelStyle`. This makes the transform systematic rather than relying on callers to pass uppercase strings. However, the current approach is correct and works — this is a refinement, not a bug.
-
-### Checklist
-
-- [ ] All values match mockup (verified in code: all match).
-- [ ] Title renders at 18px after Section 01 lands.
-- [ ] Title renders bold after Section 02 lands.
-- [ ] Letter spacing visible after Section 03 lands.
-- [ ] No code changes needed — values already correct. Verification-only.
+This section should not invent page-specific typography one file at a time. The mockup is highly
+consistent across the settings pages, so the solution should be shared.
 
 ---
 
-## 11.2 Section Title with Divider
+## 11.1 Shared Content Typography Boundary
 
-**File(s):** `oriterm/src/app/settings_overlay/form_builder/appearance.rs` (`section_title()`)
+### Goal
 
-### Mockup CSS
+Put the shared content-area typography/layout logic in a shared module instead of leaving it under
+the Appearance page builder.
 
-```css
-.section-title {
-    font-size: 11px;
-    font-weight: 500;                     /* Medium weight */
-    text-transform: uppercase;
-    letter-spacing: 0.15em;               /* 11px * 0.15 = 1.65px */
-    color: var(--text-faint);             /* #8c8ca0 */
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
-}
-.section-title::before {
-    content: '//';                        /* prefix */
-}
-.section-title::after {
-    content: '';
-    flex: 1;
-    height: 2px;
-    background: var(--border);            /* #2a2a36 — divider line */
-}
+### Files
+
+- `oriterm/src/app/settings_overlay/form_builder/appearance.rs`
+- `oriterm/src/app/settings_overlay/form_builder/*.rs`
+- new shared module under `oriterm/src/app/settings_overlay/form_builder/`
+
+### Current Boundary Problem
+
+`appearance.rs` currently owns these shared primitives:
+
+- `build_settings_page(...)`
+- `build_page_header(...)`
+- `section_title(...)`
+- `PAGE_PADDING`
+- `SECTION_GAP`
+- `ROW_GAP`
+
+Those are used by `window.rs`, `font.rs`, `terminal.rs`, `keybindings.rs`, `bell.rs`, `colors.rs`,
+and `rendering.rs`. That is no longer a clean ownership boundary.
+
+### Required Restructure
+
+Move the shared content-layout and typography helpers into a dedicated module such as:
+
+```text
+oriterm/src/app/settings_overlay/form_builder/
+    shared/mod.rs
+    shared/tests.rs
 ```
 
-### Current code (`section_title()`)
+The module must follow the sibling `tests.rs` pattern: `#[cfg(test)] mod tests;` at the bottom of `mod.rs`.
 
-```rust
-const SECTION_FONT_SIZE: f32 = 11.0;            // matches 11px
-pub(super) const SECTION_LETTER_SPACING: f32 = 1.6;  // 11 * 0.15 = 1.65px ≈ 1.6
+Recommended ownership:
 
-let label = LabelWidget::new(format!("// {}", text.to_uppercase())).with_style(LabelStyle {
-    font_size: SECTION_FONT_SIZE,                // 11.0
-    letter_spacing: SECTION_LETTER_SPACING,      // 1.6
-    color: theme.fg_faint,                       // #8c8ca0 — matches
-    ..LabelStyle::from_theme(theme)
-});
-let rule = SeparatorWidget::horizontal().with_style(SeparatorStyle {
-    thickness: 2.0,                              // matches 2px
-    color: theme.border,                         // #2a2a36 — matches
-    ..SeparatorStyle::from_theme(theme)
-});
-ContainerWidget::row()
-    .with_width(SizeSpec::Fill)
-    .with_align(Align::Center)                   // center-aligned vertically — matches
-    .with_gap(10.0)                              // matches gap: 10px
-    .with_child(Box::new(label))
-    .with_child(Box::new(rule))
-```
+- page-header helper
+- section-header helper
+- optional section-description helper
+- shared content-body spacing constants
+- small content-typography data structs if needed
 
-### Comparison
-
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Font size | 11px | 11.0 | Yes |
-| Font weight | 500 (Medium) | Not set (defaults to Regular/400) | No |
-| Uppercase | `text-transform: uppercase` | `.to_uppercase()` | Yes |
-| Letter spacing | 0.15em = 1.65px | 1.6 | Close enough |
-| Color | `--text-faint` (#8c8ca0) | `theme.fg_faint` | Yes |
-| `//` prefix | `::before { content: '//' }` | `format!("// {}", ...)` | Yes |
-| Gap | 10px | 10.0 | Yes |
-| Divider height | 2px | 2.0 | Yes |
-| Divider color | `--border` (#2a2a36) | `theme.border` | Yes |
-| Divider extends to full width | `flex: 1` | `SizeSpec::Fill` on separator | Yes (if separator widget supports Fill) |
-| Margin-bottom | 8px | `TITLE_ROW_GAP = 8.0` | Yes |
-
-### Issues to fix
-
-1. **Font weight**: Mockup uses `font-weight: 500` (Medium). Current code does not set `weight` in the `LabelStyle`, so it defaults to `FontWeight::Regular` (400). Once Section 02 (Font Weight) lands, add `weight: FontWeight::MEDIUM` to the `LabelStyle`:
-
-   ```rust
-   let label = LabelWidget::new(...).with_style(LabelStyle {
-       font_size: SECTION_FONT_SIZE,
-       weight: FontWeight::MEDIUM,              // <-- add this
-       letter_spacing: SECTION_LETTER_SPACING,
-       color: theme.fg_faint,
-       ..LabelStyle::from_theme(theme)
-   });
-   ```
-
-   Note: `FontWeight::MEDIUM` (500) may not exist yet. Section 02 defines the numeric weight system. If only `Regular` (400) and `Bold` (700) are available initially, 500 will map to the nearest available face — likely Regular. The visual difference between 400 and 500 is subtle but mockup-specified.
-
-2. **Letter spacing precision**: `SECTION_LETTER_SPACING` is 1.6 but exact value is 1.65 (11 * 0.15). This 0.05px difference is sub-pixel and visually imperceptible. No change needed.
-
-3. **Separator Fill behavior**: Verify that `SeparatorWidget` with the default layout actually fills the remaining width when placed in a row. If the separator's `layout()` returns a fixed width, the divider line will not extend to the right edge. It must return `SizeSpec::Fill` for its primary axis. Check `oriterm_ui/src/widgets/separator/mod.rs`.
+Then update all page builders to import those helpers from the shared module rather than from
+`appearance.rs`.
 
 ### Checklist
 
-- [ ] Font weight changed to Medium (500) once Section 02 provides it.
-- [ ] Separator extends to full remaining width (verify layout behavior).
-- [ ] All other values match (font size, letter spacing, color, gap, divider thickness).
-- [ ] Visual verification after Sections 01-03 land.
+- [ ] Move shared content typography/layout helpers out of `appearance.rs`
+- [ ] Keep shared spacing and typography constants in one module
+- [ ] Update every page builder to import the shared helper module
+- [ ] Stop using the Appearance page as the accidental owner of all content typography
 
 ---
 
-## 11.3 Setting Row Layout
+## 11.2 Page Headers
 
-**File(s):** `oriterm_ui/src/widgets/setting_row/mod.rs`
+### Goal
 
-### Mockup CSS
+Keep the page header visually aligned to the mockup while making it a robust shared primitive across
+all settings pages.
 
-```css
-.setting-row {
-    display: flex;
-    align-items: center;
-    padding: 10px 14px;
-    min-height: 44px;
-    gap: 24px;
-}
-.setting-row:hover {
-    background: var(--bg-raised);          /* #1c1c24 */
-}
-.setting-label .name {
-    font-size: 13px;
-    color: var(--text);                    /* #d4d4dc */
-}
-.setting-label .desc {
-    font-size: 11.5px;
-    color: var(--text-muted);              /* #9494a8 */
-    margin-top: 2px;
-}
-.setting-control {
-    flex-shrink: 0;
-    margin-left: 24px;                     /* explicit gap from label area */
-}
-```
+### Files
 
-### Current code
+- shared form-builder module from Section 11.1
+- `oriterm/src/app/settings_overlay/form_builder/*.rs`
+- `oriterm_ui/src/widgets/label/mod.rs`
 
-```rust
-const MIN_HEIGHT: f32 = 44.0;                   // matches 44px
-const NAME_FONT_SIZE: f32 = 13.0;               // matches 13px
-const DESC_FONT_SIZE: f32 = 11.5;               // matches 11.5px
-const CORNER_RADIUS: f32 = 0.0;                 // brutal — matches (no radius)
-const ROW_PADDING: Insets = Insets::vh(10.0, 14.0);  // matches 10px 14px
-const LABEL_CONTROL_GAP: f32 = 24.0;            // matches 24px
-const NAME_DESC_GAP: f32 = 2.0;                 // matches margin-top: 2px
-```
+### Mockup Facts
 
-### Comparison
+The mockup page header is:
 
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Padding | 10px 14px | `Insets::vh(10.0, 14.0)` | Yes |
-| Min height | 44px | `MIN_HEIGHT = 44.0` | Yes |
-| Label-control gap | 24px | `LABEL_CONTROL_GAP = 24.0` | Yes |
-| Name font size | 13px | 13.0 | Yes |
-| Name color | `--text` (#d4d4dc) | `theme.fg_primary` (#d4d4dc) | Yes |
-| Desc font size | 11.5px | 11.5 | Yes |
-| Desc color | `--text-muted` (#9494a8) | `theme.fg_secondary` (#9494a8) | Yes |
-| Name-desc gap | 2px | `NAME_DESC_GAP = 2.0` | Yes |
-| Hover bg | `--bg-raised` (#1c1c24) | `theme.bg_card` (#1c1c24) | Yes |
-| Corner radius | 0 (brutal) | 0.0 | Yes |
+- title `18px`
+- weight `700`
+- uppercase
+- letter spacing `0.05em` (`0.9px` at `18px`)
+- bright text color
+- `4px` title-to-subtitle gap
+- `20px` gap after the subtitle before the first section
+- header side padding `28px`
+- top padding `24px`
 
-### Issues to verify
+### Current State
 
-1. **Control flex-shrink**: Mockup sets `flex-shrink: 0` on the control so it never gets compressed. The current layout uses `LayoutBox::flex(Direction::Row, ...)` with the label as `SizeSpec::Fill` and the control as `Hug`. Verify the control never gets squished when the label text is long. If the container's layout engine respects `Hug` as non-shrinkable, this is fine.
+The current helper is close on raw values:
 
-2. **Hover bg color verification**: `theme.bg_card = Color::hex(0x1C_1C_24)` is documented as `--bg-raised`. The mockup uses `--bg-raised` for hover: `#1c1c24`. These match. The animator uses `common_states(Color::TRANSPARENT, theme.bg_card, ...)` — normal=transparent, hover=bg_card. Correct.
+- title size `18`
+- subtitle size `12`
+- title weight `Bold`
+- title letter spacing `0.9`
+- side padding `28`
+- top padding `24`
 
-3. **Multi-size font rendering**: The name (13px) and description (11.5px) must render at different sizes. Until Section 01 lands, they may render at the same size. No code change needed — just verification after Section 01.
+But two details still need cleanup:
+
+1. the helper is shared but lives in the wrong module
+2. callers currently pass strings like `"APPEARANCE"` and `"WINDOW"` already uppercased, so the
+   transform is not actually owned by the shared typography primitive
+
+### Required Work
+
+Make the page-header helper semantic:
+
+- accept normal page titles like `"Appearance"`
+- apply uppercase transform inside the helper
+- keep the exact mockup typography values at the helper boundary
+
+The current composition of `gap = 4` plus bottom spacing of `20` is already close enough to the
+mockup's `margin-bottom` behavior. Section 11 does not need to mimic CSS margins literally; it just
+needs the same visual result from the shared helper.
 
 ### Checklist
 
-- [ ] All spacing/padding values match (verified in code: all match).
-- [ ] Name and description render at different sizes (verify after Section 01).
-- [ ] Hover background is `--bg-raised` (#1c1c24) — matches `theme.bg_card`.
-- [ ] Control does not shrink when label is long.
-- [ ] No code changes needed — verification-only.
+- [ ] Keep page title at `18px`, weight `700`, uppercase, `0.9px` tracking
+- [ ] Keep subtitle at `12px` and muted color
+- [ ] Apply uppercase transform inside the helper, not in each caller
+- [ ] Preserve `24 / 28 / 20` effective page-header spacing across all pages
 
 ---
 
-## 11.4 Content Body Padding
+## 11.3 Section Headers + Descriptions
 
-**File(s):** `oriterm/src/app/settings_overlay/form_builder/appearance.rs`
+### Goal
 
-### Mockup CSS
+Make section headers and optional section descriptions match the mockup exactly and come from a real
+shared primitive.
 
-```css
-.content-body {
-    padding: 0 28px 28px;
-    overflow-y: auto;
-}
-```
+### Files
 
-### Current code
+- shared form-builder module from Section 11.1
+- `oriterm_ui/src/widgets/label/mod.rs`
+- `oriterm_ui/src/widgets/separator/mod.rs`
+- `oriterm_ui/src/text/mod.rs`
+- `mockups/settings-brutal.html`
 
-```rust
-pub(super) const PAGE_PADDING: Insets = Insets::vh(0.0, 28.0);
+### Current Gaps
 
-// In build_settings_page():
-let mut body = ContainerWidget::column()
-    .with_padding(Insets::tlbr(
-        0.0,                    // top: 0 — matches
-        PAGE_PADDING.left,      // left: 28px — matches
-        PAGE_PADDING.top,       // bottom: 0.0 — MISMATCH
-        PAGE_PADDING.right,     // right: 28px — matches
-    ))
-```
+The mockup section heading system is richer than the current helper:
 
-### Issue
+- title text is `11px`, weight `500`, uppercase, `0.15em` tracking
+- the `//` prefix has normal tracking
+- the title row has `12px` bottom spacing
+- some sections also include a `.section-desc` block:
+  - font size `12px`
+  - muted color
+  - line height `1.5`
+  - effective `4px` gap below the title row
+  - `12px` gap below the description before the first row
 
-The mockup has `padding: 0 28px 28px` which means:
-- top: 0px
-- left/right: 28px
-- bottom: 28px
+The current helper does not match this:
 
-The current code (appearance.rs line 86-91) uses `PAGE_PADDING.top` as the bottom padding argument:
-```rust
-.with_padding(Insets::tlbr(
-    0.0,               // top: correct
-    PAGE_PADDING.left,  // left: 28.0, correct
-    PAGE_PADDING.top,   // bottom: 0.0, WRONG — should be 28.0
-    PAGE_PADDING.right, // right: 28.0, correct
-))
-```
+- it uses one combined `LabelWidget` for `"// TITLE"`
+- it applies `1.6px` tracking to the slashes and the title together
+- it leaves weight at the default regular weight
+- it has no section-description support at all
+- its bottom spacing is inconsistent across consumers (`8px` in one place, `2px` in others)
 
-`PAGE_PADDING = Insets::vh(0.0, 28.0)` gives `top=0, bottom=0, left=28, right=28`. The code uses `.top` (0.0) where it should use `.bottom` — but `.bottom` is also 0.0 since `vh()` sets both to the same value.
+### Required Header Rewrite
 
-**Fix**: Change the body padding to:
-```rust
-Insets::tlbr(0.0, PAGE_PADDING.left, 28.0, PAGE_PADDING.right)
-```
+Replace the current `section_title(...)` helper with a richer shared primitive, for example:
 
-Or change `PAGE_PADDING` to `Insets::tlbr(0.0, 28.0, 28.0, 28.0)` to encode the asymmetric padding directly.
+- `build_section_header(title, theme)`
+- `build_section_header_with_description(title, desc, theme)`
+
+The important part is the structure:
+
+- prefix text `"//"` rendered separately
+- title text rendered separately
+- separator line fills the remaining width
+
+That split is necessary so only the title text receives uppercase tracking while the prefix keeps
+normal spacing, matching the mockup's `::before` behavior.
+
+### Section Description Support
+
+Add a real optional description primitive for sections that need it.
+
+The mockup already uses this pattern on several pages:
+
+- `Font` fallback section
+- `Bell` throttle section
+- `Rendering` performance section
+
+Section 11 should provide the shared typography/layout primitive now, even if some of those content
+sections are introduced or expanded by other plan sections later.
+
+Because the current `TextStyle` surface does not yet carry line-height, the section-description
+helper should explicitly consume the line-height support defined in Section 04 rather than faking it
+with arbitrary spacer constants.
 
 ### Checklist
 
-- [ ] Bottom padding changed from 0px to 28px.
-- [ ] Verify scroll content does not get clipped by the new bottom padding.
-- [ ] Build passes.
+- [ ] Replace the single combined `"// TITLE"` label with separate prefix and title runs
+- [ ] Apply medium (`500`) weight to section titles once Section 02 lands
+- [ ] Keep title tracking on the title text only, not on the prefix
+- [ ] Add a shared optional section-description primitive
+- [ ] Match the mockup's `12px` title-bottom spacing and description spacing
 
 ---
 
-## 11.5 Section Spacing
+## 11.4 Setting Rows + Status Tags
 
-**File(s):** `oriterm/src/app/settings_overlay/form_builder/appearance.rs`
+### Goal
 
-### Mockup CSS
+Keep the strong parts of `SettingRowWidget`, but extend it so it can express the full mockup label
+system.
 
-```css
-.settings-section {
-    margin-bottom: 28px;
-}
-.settings-section:last-child {
-    margin-bottom: 0;
-}
-```
+### Files
 
-### Current code
+- `oriterm_ui/src/widgets/setting_row/mod.rs`
+- `oriterm_ui/src/widgets/setting_row/tests.rs`
+- `oriterm/src/app/settings_overlay/form_builder/*.rs`
+- `oriterm_ui/src/text/mod.rs`
+
+### What Already Matches
+
+`SettingRowWidget` already matches several core row metrics:
+
+- row min height `44`
+- row padding `10px 14px`
+- label/control gap `24px`
+- name size `13px`
+- description size `11.5px`
+- name/description gap `2px`
+- hover background `theme.bg_card`
+
+Those values should stay.
+
+### Real Missing Features
+
+The draft stopped at those constants, but the mockup includes richer label content:
+
+- inline status tags on the name line
+  - examples: `Restart`, `Advanced`
+- tag styling:
+  - font size `9px`
+  - weight `700`
+  - uppercase
+  - letter spacing `0.06em`
+  - padding `2px 5px`
+  - `1px` border using the current text color
+  - variant colors for accent, warning, and danger
+
+The current `SettingRowWidget` only stores:
+
+- `name: String`
+- `description: String`
+- `control: Box<dyn Widget>`
+
+That is not enough to represent the mockup.
+
+### Required Row Contract Upgrade
+
+Extend `SettingRowWidget` to accept a richer label model, for example:
+
+- plain name + description + zero or more tags, or
+- a dedicated `SettingLabel` struct with:
+  - name
+  - description
+  - tags
+
+Recommended tag model:
 
 ```rust
-pub(super) const SECTION_GAP: f32 = 24.0;
+enum SettingTagKind {
+    New,
+    Restart,
+    Experimental,
+}
 ```
 
-### Comparison
+with a tag payload that supports label text and style variant.
 
-The mockup uses `margin-bottom: 28px` between sections. Current code uses `SECTION_GAP = 24.0`.
+Do not solve this with a single rich-text string. The more feasible approach is to render the name
+line as a small row of widgets or text/rect primitives:
 
-### Issue
+- name text
+- zero or more tag chips after it
 
-4px discrepancy: mockup has 28px, current has 24px.
+That keeps measurement and hover behavior tractable inside the existing widget model.
 
-**Fix**: Change `SECTION_GAP` from 24.0 to 28.0:
-```rust
-pub(super) const SECTION_GAP: f32 = 28.0;
-```
+### Disabled Rows
 
-### Note on `:last-child` behavior
-
-The mockup's `:last-child { margin-bottom: 0 }` means the last section has no bottom margin. `ContainerWidget::column().with_gap(28.0)` applies the gap between children, not after the last one. So the container's gap behavior already matches this — no trailing gap after the last section.
+The mockup also defines `.setting-row.disabled { opacity: 0.4; pointer-events: none; }`.
+Behavioral ownership for that belongs with Section 06, but Section 11 should make sure the richer
+setting-row label/tag model remains compatible with disabled-state opacity and hit suppression.
 
 ### Checklist
 
-- [ ] `SECTION_GAP` changed from 24.0 to 28.0.
-- [ ] Verify no visual regression in section spacing.
+- [ ] Preserve the existing correct row metrics and typography constants
+- [ ] Extend `SettingRowWidget` with a real tag/badge model
+- [ ] Render name-line tags with mockup typography and color variants
+- [ ] Keep the row compatible with Section 06 disabled-state behavior
+- [ ] Avoid rich-text string hacks for mixed label/tag content
+
+---
+
+## 11.5 Body Spacing + Section Rhythm
+
+### Goal
+
+Fix the shared content-area spacing so every settings page inherits the mockup rhythm automatically.
+
+### Files
+
+- shared form-builder module from Section 11.1
+- `oriterm/src/app/settings_overlay/form_builder/*.rs`
+- `mockups/settings-brutal.html`
+
+### Current Mismatches
+
+The mockup content-body structure is:
+
+- body padding `0 28px 28px`
+- section margin-bottom `28px`
+- no trailing margin after the last section
+- section title bottom spacing `12px`
+- row stack uses the rows' own height/padding, not a global extra `2px` inter-row gap
+
+The current shared constants do not match:
+
+- body bottom padding is effectively `0`
+- `SECTION_GAP = 24.0`
+- `ROW_GAP = 2.0`
+- title-to-first-row spacing is inconsistent (`8px` in one place, `2px` elsewhere)
+
+### Required Spacing Rewrite
+
+Update the shared body rhythm to reflect the mockup directly:
+
+- content-body padding:
+  - top `0`
+  - left/right `28`
+  - bottom `28`
+- inter-section gap `28`
+- no generic row gap inside a section
+- title/description-to-row spacing handled by the section-header primitive from Section 11.3
+
+This is important because the current `ROW_GAP = 2.0` leaks mockup-inaccurate spacing into every
+page builder that imports the shared constants from `appearance.rs`.
+
+`ContainerWidget::column().with_gap(...)` already gives the correct "no trailing gap after the last
+section" behavior, so Section 11 only needs to set the right shared values and remove the wrong
+ones.
+
+### Checklist
+
+- [ ] Fix content-body bottom padding from `0` to `28`
+- [ ] Change inter-section spacing from `24` to `28`
+- [ ] Remove the generic `2px` intra-section row gap
+- [ ] Let section-header primitives own title/description spacing instead of per-page constants
+
+---
+
+## 11.6 Tests
+
+### Goal
+
+Add targeted regression coverage for shared content typography instead of relying on a visual audit.
+
+### Files
+
+- new shared form-builder tests if the shared module is added
+- `oriterm_ui/src/widgets/setting_row/tests.rs`
+- `oriterm/src/app/settings_overlay/form_builder/tests.rs`
+
+### Required Coverage
+
+Add tests for the shared content typography path:
+
+- `fn page_header_title_subtitle_spacing()` — title/subtitle gap matches mockup `4px`
+- `fn page_header_applies_uppercase_transform()` — title receives uppercase transform internally
+- `fn page_header_letter_spacing_correct()` — title tracking is `0.9px`
+- `fn section_header_prefix_separate_from_title()` — prefix `"//"` and title are separate text runs
+- `fn section_header_title_only_receives_tracking()` — letter spacing applies only to the title, not the prefix
+- `fn section_header_separator_fills_width()` — separator line fills remaining width
+- `fn section_description_composition()` — optional section-description composes below title with `4px` gap
+- `fn section_description_uses_line_height()` — section-description text style sets `line_height: Some(1.5)` via Section 04's capability
+- `fn body_spacing_bottom_padding_28()` — content-body bottom padding is `28`
+- `fn body_spacing_section_gap_28()` — inter-section gap is `28`
+- `fn body_spacing_no_intra_row_gap()` — no generic `2px` gap between rows within a section
+
+Expand `SettingRowWidget` tests for:
+
+- `fn setting_row_stores_tags()` — tag model storage
+- `fn setting_row_layout_with_tags()` — layout with one or more tags adds to name-line width
+- `fn setting_row_paint_includes_tag_chips()` — paint output includes tag chips with correct colors
+- `fn setting_row_multiple_tags()` — row with two tags renders both
+- `fn setting_row_disabled_with_tags()` — disabled-state opacity compatibility with tags if Section 06 lands first
+
+The current `setting_row` tests only verify that three text runs are produced for a simple row.
+That is not enough once tags and richer label structure exist.
+
+### Checklist
+
+- [ ] Add shared content-typography tests for headers, sections, and spacing
+- [ ] Expand `setting_row` tests to cover tags and richer label layout
+- [ ] Keep existing basic construction/layout tests
+- [ ] Add coverage strong enough to catch spacing regressions, not just widget existence
 
 ---
 
 ## 11.R Third Party Review Findings
 
-Reserved for findings from `/review-plan` or external review. Not actionable until populated.
+### Resolved Findings
+
+- `TPR-11-001` The draft treated Section 11 as mostly verification, but the current shared content
+  path still has real mismatches: wrong body bottom padding, wrong inter-section spacing, and wrong
+  section-title spacing.
+- `TPR-11-002` Shared content typography currently lives in `appearance.rs` even though it is used
+  by all settings-page builders. Section 11 should move that shared logic to a dedicated module.
+- `TPR-11-003` The current section-title helper cannot match the mockup exactly because it applies
+  title letter spacing to the `//` prefix as well. The prefix and title need separate text runs.
+- `TPR-11-004` The draft missed that section titles require medium (`500`) weight, which the
+  current `FontWeight` surface cannot yet express.
+- `TPR-11-005` The draft ignored `.section-desc`, but the mockup uses section descriptions on
+  multiple pages. Section 11 needs a shared primitive for that text style and spacing.
+- `TPR-11-006` The draft stopped at the existing `SettingRowWidget` constants and missed the
+  mockup's inline status tags (`Restart`, `Advanced`, etc.), which require a richer row-label model.
+- `TPR-11-007` The current `ROW_GAP = 2.0` is not a harmless approximation; it creates a shared
+  rhythm mismatch on every page builder that uses it directly under section titles and between rows.
 
 ---
 
-## 11.6 Build & Verify
+## 11.7 Build & Verify
 
 ### Gate
 
@@ -430,9 +524,24 @@ Reserved for findings from `/review-plan` or external review. Not actionable unt
 ./test-all.sh
 ```
 
-### Checklist
+### Focused Verification
 
-- [ ] `./build-all.sh` passes
-- [ ] `./clippy-all.sh` passes
-- [ ] `./test-all.sh` passes
-- [ ] Visual verification: content area typography matches mockup
+- run the targeted `setting_row` tests
+- run the settings form-builder tests
+- verify typography and spacing in the live settings overlay across more than one page, not just
+  `Appearance`
+
+Suggested commands:
+
+```bash
+cargo test -p oriterm_ui setting_row::tests
+cargo test -p oriterm settings_overlay::form_builder::tests
+```
+
+Manual verification checklist:
+
+- [ ] Page headers match the mockup across all settings pages
+- [ ] Section headers show correct weight, spacing, prefix behavior, and divider fill
+- [ ] Optional section descriptions render with correct spacing and muted typography
+- [ ] Setting rows keep correct base metrics and render status tags correctly
+- [ ] Content body padding and inter-section spacing match the mockup

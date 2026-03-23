@@ -4,347 +4,502 @@ title: "Scrollbar Styling"
 status: not-started
 reviewed: true
 third_party_review:
-  status: none
-  updated: null
-goal: "Scrollbar rendering matches the mockup — 6px thin overlay, transparent track, theme border color thumb with hover brightening to text-faint"
+  status: resolved
+  updated: 2026-03-23
+goal: "A shared overlay scrollbar styling system supports theme-derived rest/hover/drag colors, transparent or styled tracks, constant 6px visuals with separate hit slop, and axis-aware rendering used by ScrollWidget and other scrollable widgets"
 inspired_by:
-  - "CSS ::-webkit-scrollbar, ::-webkit-scrollbar-track, ::-webkit-scrollbar-thumb"
+  - "CSS ::-webkit-scrollbar"
+  - "CSS ::-webkit-scrollbar-track"
+  - "CSS ::-webkit-scrollbar-thumb"
 depends_on: []
 sections:
   - id: "07.1"
-    title: "ScrollbarStyle Enhancement"
+    title: "Shared Scrollbar Style Contract"
     status: not-started
   - id: "07.2"
-    title: "Hover State for Scrollbar Thumb"
+    title: "Shared Geometry and Axis-Aware Rendering"
     status: not-started
   - id: "07.3"
-    title: "Track Transparency"
+    title: "Widget State and Input Integration"
     status: not-started
   - id: "07.4"
+    title: "Consumer Migration"
+    status: not-started
+  - id: "07.5"
     title: "Tests"
     status: not-started
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: not-started
-  - id: "07.5"
+    status: complete
+  - id: "07.6"
     title: "Build & Verify"
     status: not-started
 ---
 
 # Section 07: Scrollbar Styling
 
-**Goal:** Verify and refine the `ScrollWidget`'s scrollbar rendering to match the mockup's CSS scrollbar styling. The mockup specifies:
+## Problem
 
-```css
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); }    /* #3a3a3a */
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); } /* #888 */
-```
+The draft identified the visible mismatch in scrollbar colors, but it treated Section 07 as a
+small `ScrollWidget` polish pass. The tree already shows this needs to be a broader framework
+cleanup.
 
-**References:**
-- `oriterm_ui/src/widgets/scroll/mod.rs` — `ScrollWidget`, `ScrollbarStyle`, `ScrollbarState`
-- `oriterm_ui/src/widgets/scroll/scrollbar.rs` — `draw_scrollbar()`, `scrollbar_thumb_rect()`, `scrollbar_track_rect()`
-- `oriterm_ui/src/widgets/scroll/rendering.rs` — `draw_impl()` (main scroll render path)
-- `oriterm_ui/src/theme/mod.rs` — `UiTheme` (border color, text_faint color)
-- `mockups/settings-brutal.html` — scrollbar CSS at lines ~110-115
+What the code actually has today:
+
+- [oriterm_ui/src/widgets/scroll/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/mod.rs)
+  exposes `ScrollDirection::{Vertical, Horizontal, Both}` and stores both `scroll_offset` and
+  `scroll_offset_x`.
+- [oriterm_ui/src/widgets/scroll/scrollbar.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/scrollbar.rs)
+  still implements only a vertical scrollbar. `should_show_scrollbar()` compares
+  `content_height/view_height`, `scrollbar_track_rect()` is right-edge vertical only, and
+  `draw_scrollbar()` renders one vertical thumb.
+- [oriterm_ui/src/widgets/scroll/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/mod.rs)
+  tracks only `track_hovered`, not `thumb_hovered`, and widens the rendered track to `width * 1.5`
+  on hover/drag.
+- [oriterm/src/app/settings_overlay/form_builder/appearance.rs](/home/eric/projects/ori_term/oriterm/src/app/settings_overlay/form_builder/appearance.rs)
+  constructs the settings page body with `ScrollWidget::vertical(...)` and never injects a
+  theme-derived scrollbar style.
+- [oriterm_ui/src/widgets/menu/widget_impl.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/menu/widget_impl.rs)
+  has a second ad hoc scrollbar implementation: hardcoded `5px` width, hardcoded
+  `Color::WHITE.with_alpha(0.25)`, and no shared style contract with `ScrollWidget`.
+- [oriterm_ui/src/theme/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/theme/mod.rs) already
+  exposes the correct mockup tokens: `theme.border = #2a2a36` and `theme.fg_faint = #8c8ca0`.
+
+The real missing capabilities are:
+
+1. there is no shared scrollbar style type that can express rest/hover/drag colors cleanly
+2. the current `ScrollWidget` scrollbar path does not honor the widget's own horizontal/both-axis API
+3. scrollbar styling is duplicated between `ScrollWidget` and `MenuWidget`
+4. the current hover behavior changes rendered thickness, which conflicts with the mockup's fixed
+   `6px` visual width
+
+## Corrected Scope
+
+Section 07 should build a reusable scrollbar styling/rendering subsystem in `oriterm_ui`, then
+apply it to existing scrollable widgets.
+
+That means:
+
+- add a proper `ScrollbarStyle` contract with explicit colors for thumb and track states
+- separate rendered thickness from pointer hit slop
+- add shared geometry/render helpers for vertical and horizontal overlay scrollbars
+- make `ScrollWidget`'s existing `Horizontal` and `Both` directions real at the scrollbar layer
+- migrate `MenuWidget` off its one-off scrollbar drawing
+- wire the settings page body to the mockup-matched theme style
+
+This is bigger than the original draft, but it is the feasible boundary that actually fulfills the
+feature goal instead of leaving two scrollbar systems and a vertical-only implementation behind.
 
 ---
 
-## 07.1 ScrollbarStyle Enhancement
+## 07.1 Shared Scrollbar Style Contract
 
-### Current ScrollbarStyle Fields
+### Goal
 
-The existing `ScrollbarStyle` struct (at `oriterm_ui/src/widgets/scroll/mod.rs:38-49`):
+Represent scrollbar visuals explicitly enough that widgets can match CSS-like rest, hover, and drag
+states without alpha hacks.
 
-```rust
-pub struct ScrollbarStyle {
-    pub width: f32,           // Default: 6.0
-    pub thumb_color: Color,   // Default: Color::WHITE.with_alpha(0.25)
-    pub track_color: Color,   // Default: Color::TRANSPARENT
-    pub thumb_radius: f32,    // Default: 3.0
-    pub min_thumb_height: f32, // Default: 20.0
-}
-```
+### Files
 
-### Comparison with Mockup
+- new shared module:
+  [oriterm_ui/src/widgets/scrollbar/](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scrollbar)
+- [oriterm_ui/src/widgets/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/mod.rs)
+- [oriterm_ui/src/theme/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/theme/mod.rs)
 
-| Property | Mockup CSS | Current Default | Match? |
-|----------|-----------|-----------------|--------|
-| Width | `6px` | `6.0` | Yes |
-| Track background | `transparent` | `Color::TRANSPARENT` | Yes |
-| Thumb color (normal) | `var(--border)` = `#3a3a3a` | `Color::WHITE.with_alpha(0.25)` | No |
-| Thumb color (hover) | `var(--text-faint)` = `#888` | Computed from `thumb_color` with boosted alpha | Partial |
-| Thumb radius | Not specified (implied by 6px width) | `3.0` (half of width, fully rounded) | Yes |
-| Min thumb height | Not specified | `20.0` | Reasonable |
+This should be a dedicated directory module so it can own focused tests without violating the
+repository's sibling-`tests.rs` rule.
 
-### Required Changes
-
-**Thumb color mismatch.** The default `thumb_color` is `WHITE.with_alpha(0.25)`, which renders as semi-transparent white. The mockup uses `#3a3a3a` (an opaque dark gray, the theme's `--border` color). These look similar on a dark background but differ on lighter surfaces.
-
-The fix is not to change the hardcoded default but to have the scroll widget read the thumb color from `UiTheme` at render time. The `ScrollbarStyle` defaults are fine as fallbacks, but widgets constructing scroll containers for the settings panel should use theme-derived colors.
-
-**Option A: Theme-aware defaults.** Add a `ScrollbarStyle::from_theme(theme: &UiTheme)` constructor:
-
-```rust
-impl ScrollbarStyle {
-    /// Creates scrollbar style from the active theme.
-    pub fn from_theme(theme: &UiTheme) -> Self {
-        Self {
-            width: 6.0,
-            thumb_color: theme.border,      // #3a3a3a
-            track_color: Color::TRANSPARENT,
-            thumb_radius: 3.0,
-            min_thumb_height: 20.0,
-        }
-    }
-}
-```
-
-**Option B: Hover color field.** Add an explicit `thumb_hover_color` field rather than computing it from alpha manipulation:
+### Proposed Style Type
 
 ```rust
 pub struct ScrollbarStyle {
-    pub width: f32,
-    pub thumb_color: Color,
-    pub thumb_hover_color: Color,    // NEW
-    pub thumb_drag_color: Color,     // NEW
-    pub track_color: Color,
+    pub thickness: f32,
+    pub hit_slop: f32,
+    pub edge_inset: f32,
     pub thumb_radius: f32,
-    pub min_thumb_height: f32,
+    pub min_thumb_length: f32,
+    pub thumb_color: Color,
+    pub thumb_hover_color: Color,
+    pub thumb_drag_color: Color,
+    pub track_color: Color,
+    pub track_hover_color: Color,
+    pub track_drag_color: Color,
 }
 ```
 
-**Recommendation: Both.** Add the hover/drag color fields and provide `from_theme()`:
+Why this shape is better than the draft:
+
+- explicit hover/drag colors avoid overloading alpha math
+- `thickness` controls the visible size
+- `hit_slop` controls pointer affordance independently, so the visual width can stay `6px`
+- track colors are explicit per state, allowing permanently transparent tracks or styled tracks
+
+### Theme Constructor
+
+Add the standard theme constructor:
 
 ```rust
 impl ScrollbarStyle {
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
-            width: 6.0,
-            thumb_color: theme.border,           // normal: #3a3a3a
-            thumb_hover_color: theme.text_faint,  // hover: #888
-            thumb_drag_color: theme.text_faint,   // drag: same as hover
-            track_color: Color::TRANSPARENT,
+            thickness: 6.0,
+            hit_slop: 4.0,
+            edge_inset: 2.0,
             thumb_radius: 3.0,
-            min_thumb_height: 20.0,
+            min_thumb_length: 20.0,
+            thumb_color: theme.border,
+            thumb_hover_color: theme.fg_faint,
+            thumb_drag_color: theme.fg_faint,
+            track_color: Color::TRANSPARENT,
+            track_hover_color: Color::TRANSPARENT,
+            track_drag_color: Color::TRANSPARENT,
         }
     }
 }
 ```
 
-The existing alpha-based hover/drag colors in `draw_scrollbar()` become the fallback for the old `Default` implementation, but the `from_theme()` path uses explicit colors.
+That matches the mockup tokens:
 
-### Migration
+- rest thumb: `theme.border` = `#2a2a36`
+- hover thumb: `theme.fg_faint` = `#8c8ca0`
+- track: transparent
 
-Update scroll container construction in the settings panel to use `ScrollbarStyle::from_theme()` instead of `ScrollbarStyle::default()`. The terminal grid's scroll (if any) can keep the default or switch to theme-aware.
+`Default` can delegate to `from_theme(&UiTheme::default())`, matching the repository's existing
+pattern for widget styles.
+
+### Axis Enum
+
+The shared module should also own:
+
+```rust
+pub enum ScrollbarAxis {
+    Vertical,
+    Horizontal,
+}
+```
+
+That keeps axis-specific math out of individual widgets.
+
+### Checklist
+
+- [ ] Add a shared `widgets/scrollbar/mod.rs` with `#[cfg(test)] mod tests;` and `widgets/scrollbar/tests.rs`
+- [ ] Add `ScrollbarStyle` with explicit rest/hover/drag colors
+- [ ] Add `ScrollbarAxis`
+- [ ] Add `ScrollbarStyle::from_theme()`
+- [ ] Make `Default` use the theme-backed style instead of white-alpha fallback
 
 ---
 
-## 07.2 Hover State for Scrollbar Thumb
+## 07.2 Shared Geometry and Axis-Aware Rendering
 
-### Current Hover Tracking
+### Goal
 
-The `ScrollbarState` struct tracks:
-- `dragging: bool` — whether the thumb is being dragged
-- `drag_start_y: f32` — Y position at drag start
-- `drag_start_offset: f32` — scroll offset at drag start
-- `track_hovered: bool` — whether the cursor is over the scrollbar track area
+Replace the current vertical-only helper with shared overlay scrollbar geometry and drawing that
+works for vertical, horizontal, and both-axis scroll containers.
 
-The existing `draw_scrollbar()` logic at `scrollbar.rs:81-88`:
+### Files
+
+- new shared module:
+  [oriterm_ui/src/widgets/scrollbar/](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scrollbar)
+- [oriterm_ui/src/widgets/scroll/rendering.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/rendering.rs)
+- [oriterm_ui/src/widgets/scroll/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/mod.rs)
+- [oriterm_ui/src/widgets/menu/widget_impl.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/menu/widget_impl.rs)
+
+[scroll/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/mod.rs) is already
+443 lines. Section 07 should not grow it further; shared scrollbar geometry and paint helpers
+should move into the new module.
+
+### Shared Helper Surface
+
+Add pure helpers such as:
 
 ```rust
-let thumb_color = if self.scrollbar.dragging {
-    s.thumb_color.with_alpha(0.6)
-} else if self.scrollbar.track_hovered {
-    s.thumb_color.with_alpha(0.4)
-} else {
-    s.thumb_color
-};
+pub struct ScrollbarMetrics {
+    pub axis: ScrollbarAxis,
+    pub content_extent: f32,
+    pub view_extent: f32,
+    pub scroll_offset: f32,
+}
+
+pub struct ScrollbarRects {
+    pub track_rect: Rect,
+    pub track_hit_rect: Rect,
+    pub thumb_rect: Rect,
+    pub thumb_hit_rect: Rect,
+}
+
+pub fn should_show(metrics: &ScrollbarMetrics) -> bool { ... }
+pub fn compute_rects(
+    viewport: Rect,
+    metrics: &ScrollbarMetrics,
+    style: &ScrollbarStyle,
+    reserve_far_edge: f32,
+) -> ScrollbarRects { ... }
+pub fn draw_overlay(
+    ctx: &mut DrawCtx<'_>,
+    rects: &ScrollbarRects,
+    style: &ScrollbarStyle,
+    state: &ScrollbarVisualState,
+) { ... }
 ```
 
-### Issue: Track vs. Thumb Hover
+### Fixed Visual Thickness, Separate Hit Target
 
-The mockup CSS distinguishes between hovering over the scrollbar thumb specifically (`::-webkit-scrollbar-thumb:hover`) and the track. The current code tracks `track_hovered` (whether the cursor is anywhere in the scrollbar track area), not `thumb_hovered` (whether the cursor is specifically over the thumb).
+The current `width * 1.5` hover expansion should be removed from rendered geometry.
 
-For the mockup's behavior, track hover is actually fine. The scrollbar is only 6px wide — if you are hovering anywhere in the scrollbar area, you are visually "hovering the scrollbar." The CSS `::-webkit-scrollbar-thumb:hover` fires when the cursor is over the thumb, but since the thumb fills most of the track height for typical content ratios, the distinction is minimal.
+Replace it with:
 
-### Recommendation: Add Thumb Hover Detection
+- constant visible `thickness`
+- larger invisible `track_hit_rect` / `thumb_hit_rect` computed from `hit_slop`
 
-For visual accuracy, add `thumb_hovered: bool` to `ScrollbarState` and detect it separately:
+That preserves the mockup's `6px` visuals while keeping drag acquisition usable.
+
+### Both-Axis Corner Reservation
+
+When both vertical and horizontal bars are visible, reserve the far-edge square where they meet so
+the two overlay bars do not overlap awkwardly.
+
+This is the same problem native scroll views solve with a scrollbar corner. Even if the corner
+itself remains visually transparent, the geometry helper should shorten each track by the other
+axis's thickness plus inset.
+
+### MenuWidget Migration
+
+[MenuWidget](/home/eric/projects/ori_term/oriterm_ui/src/widgets/menu/mod.rs) should stop drawing
+its own private scrollbar geometry and instead call the shared helper with menu-specific metrics and
+style.
+
+That is an important correction to the draft: Section 07 is not done when `ScrollWidget` matches
+the mockup but `MenuWidget` still hardcodes a second scrollbar implementation.
+
+### Checklist
+
+- [ ] Add shared geometry helpers for vertical and horizontal bars
+- [ ] Remove rendered-width growth on hover
+- [ ] Use `hit_slop` for pointer affordance instead
+- [ ] Reserve corner space in both-axis mode
+- [ ] Migrate `MenuWidget` to the shared helper
+
+---
+
+## 07.3 Widget State and Input Integration
+
+### Goal
+
+Thread the shared style and geometry through widget state/input handling cleanly enough that hover
+and drag visuals are correct for each axis.
+
+### Files
+
+- [oriterm_ui/src/widgets/scroll/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/mod.rs)
+- [oriterm_ui/src/widgets/scroll/rendering.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/rendering.rs)
+- [oriterm_ui/src/widgets/menu/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/menu/mod.rs)
+- [oriterm_ui/src/widgets/menu/widget_impl.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/menu/widget_impl.rs)
+
+### ScrollWidget State
+
+The current `ScrollbarState` is vertical-only and only tracks `track_hovered`.
+
+Replace it with an axis-ready interaction state, for example:
 
 ```rust
 struct ScrollbarState {
     dragging: bool,
-    drag_start_y: f32,
-    drag_start_offset: f32,
     track_hovered: bool,
-    thumb_hovered: bool,  // NEW: cursor is specifically over the thumb
+    thumb_hovered: bool,
+    drag_start_pointer: f32,
+    drag_start_offset: f32,
 }
 ```
 
-In `handle_scrollbar_move()`:
+For `ScrollWidget`, store one state per visible axis:
 
 ```rust
-// After track hover detection:
-let thumb = self.scrollbar_thumb_rect(viewport, content_h, view_h);
-let was_thumb_hovered = self.scrollbar.thumb_hovered;
-self.scrollbar.thumb_hovered = thumb.contains(pos);
+vertical_bar: ScrollbarState,
+horizontal_bar: ScrollbarState,
 ```
 
-Update `draw_scrollbar()` to use the new fields with explicit colors:
+That makes the existing `ScrollDirection::Horizontal` and `ScrollDirection::Both` contract real.
 
-```rust
-let thumb_color = if self.scrollbar.dragging {
-    s.thumb_drag_color
-} else if self.scrollbar.thumb_hovered {
-    s.thumb_hover_color
-} else {
-    s.thumb_color
-};
-```
+### Input Routing
 
-### Track Width on Hover
+Scrollbar input should route through shared hit geometry:
 
-The current code widens the scrollbar track from `width` to `width * 1.5` when hovered or dragging (in `scrollbar_track_rect()`). This is a nice interaction detail that the CSS mockup does not have. Whether to keep or remove it is a design decision.
+- mouse move updates `track_hovered` and `thumb_hovered` separately
+- mouse down on thumb starts drag for that axis
+- mouse down on track jumps or pages for that axis
+- mouse up clears the dragging state
 
-**Recommendation:** Keep it. The wider track on hover improves drag target acquisition and provides visual feedback. It does not conflict with the mockup's styling.
+For `ScrollWidget`, wheel routing should also stop pretending only vertical scroll exists:
+
+- vertical mode uses `delta.y`
+- horizontal mode uses `delta.x` when present and may map Shift+wheel to horizontal fallback
+- both-axis mode applies both components where supported
+
+Section 07 does not need to redesign the whole keyboard scroll model, but it should not leave the
+existing horizontal/both scrollbar path visually dead.
+
+### MenuWidget State
+
+`MenuWidget` does not need the full dual-axis state machine, but it should reuse the same
+`ScrollbarState` shape and shared draw logic for its vertical-only case.
+
+### Lifecycle Reset
+
+Lost hot state should reset both track/thumb hover flags for all owned bars, not just one
+`track_hovered` boolean.
+
+### Checklist
+
+- [ ] Replace `track_hovered`-only state with explicit thumb/track hover state
+- [ ] Store per-axis scrollbar state in `ScrollWidget`
+- [ ] Route drag and hover through shared hit geometry
+- [ ] Make horizontal and both-axis scrollbar rendering/input real
+- [ ] Reset all hover flags on hot loss
 
 ---
 
-## 07.3 Track Transparency
+## 07.4 Consumer Migration
 
-### Current Behavior
+### Goal
 
-The current `draw_scrollbar()` at `scrollbar.rs:72-77`:
+Apply the shared scrollbar contract to real consumers instead of leaving it as unused framework
+infrastructure.
 
-```rust
-// Draw track background when hovered/dragging.
-if self.scrollbar.track_hovered || self.scrollbar.dragging {
-    let track = self.scrollbar_track_rect(ctx.bounds);
-    let track_style =
-        RectStyle::filled(s.track_color.with_alpha(0.15)).with_radius(s.thumb_radius);
-    ctx.scene.push_quad(track, track_style);
-}
-```
+### Settings Page Body
 
-The track is transparent by default (`track_color: Color::TRANSPARENT`) and only renders when hovered, using `track_color.with_alpha(0.15)`. Since `TRANSPARENT` already has `alpha = 0.0`, the track is invisible even when "drawn."
-
-### Mockup Requirement
-
-The mockup specifies `background: transparent` for the track. The current behavior matches this: no visible track background, only the thumb is visible.
-
-### Verification
-
-The behavior is already correct. No changes needed for track transparency.
-
-When `from_theme()` is used, `track_color` remains `Color::TRANSPARENT`. The hover behavior can optionally show a subtle track by using `theme.surface.with_alpha(0.15)` in the `from_theme()` constructor, but this is a refinement, not a requirement.
-
-If we want a subtle track on hover (which improves scroll affordance):
+[appearance.rs](/home/eric/projects/ori_term/oriterm/src/app/settings_overlay/form_builder/appearance.rs)
+already has access to `theme`, so the settings content-body scroll should explicitly use the
+mockup-matched style:
 
 ```rust
-// In from_theme():
-track_color: theme.border.with_alpha(0.1),
+let mut scroll = ScrollWidget::vertical(Box::new(body))
+    .with_scrollbar_style(ScrollbarStyle::from_theme(theme));
 ```
 
-This renders a barely-visible track background only when hovering the scrollbar area, which is a common pattern in modern UIs.
+That is the primary mockup consumer for this section.
+
+### Menu Style Integration
+
+[MenuStyle](/home/eric/projects/ori_term/oriterm_ui/src/widgets/menu/mod.rs) should gain a
+nested scrollbar style:
+
+```rust
+pub scrollbar: ScrollbarStyle,
+```
+
+`MenuStyle::from_theme()` can still choose a menu-specific override if desired, but it should do so
+through the shared type instead of hardcoded constants in `widget_impl.rs`.
+
+### ScrollWidget Constructors
+
+`ScrollWidget::vertical()` and `ScrollWidget::new()` can continue using `ScrollbarStyle::default()`
+for ergonomic fallback, but the plan should treat explicit style injection as the preferred path in
+theme-aware builders.
+
+### Checklist
+
+- [ ] Settings page body uses `ScrollbarStyle::from_theme(theme)`
+- [ ] `MenuStyle` owns a shared `ScrollbarStyle`
+- [ ] Menu scrollbar constants move into style defaults/overrides
+- [ ] Shared scrollbar contract is used by real production consumers
 
 ---
 
-## 07.4 Tests
+## 07.5 Tests
 
-### Unit Tests
+### Shared Scrollbar Module
 
-**File:** `oriterm_ui/src/widgets/scroll/tests.rs`
+Add focused tests in `oriterm_ui/src/widgets/scrollbar/tests.rs`:
 
-#### Scrollbar Style from Theme
+- `fn style_from_theme_uses_correct_tokens()` — `ScrollbarStyle::from_theme()` uses `theme.border` and `theme.fg_faint`
+- `fn vertical_track_thumb_rect_computation()` — vertical track/thumb rect computation for typical content/view ratio
+- `fn horizontal_track_thumb_rect_computation()` — horizontal track/thumb rect computation
+- `fn both_axis_corner_reservation()` — both-axis corner reservation shortens tracks
+- `fn hit_rects_expand_beyond_visible()` — hit rects are wider than visible rects by `hit_slop`
+- `fn should_show_false_when_content_fits()` — `should_show()` returns false when `content_extent <= view_extent`
+- `fn should_show_true_when_content_overflows()` — `should_show()` returns true when `content_extent > view_extent`
+- `fn thumb_respects_min_length()` — thumb rect is at least `min_thumb_length` even for huge content
+- `fn thumb_at_max_scroll_offset()` — thumb position at maximum scroll offset stays within track bounds
+- `fn zero_view_extent_no_panic()` — zero viewport does not panic or produce NaN rects
 
-```rust
-#[test]
-fn scrollbar_style_from_theme_uses_border_color() {
-    let theme = UiTheme::default();
-    let style = ScrollbarStyle::from_theme(&theme);
+### ScrollWidget Tests
 
-    assert_eq!(style.width, 6.0);
-    assert_eq!(style.thumb_color, theme.border);
-    assert_eq!(style.thumb_hover_color, theme.text_faint);
-    assert_eq!(style.track_color, Color::TRANSPARENT);
-}
-```
+[oriterm_ui/src/widgets/scroll/tests.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/tests.rs)
+should add or update coverage for:
 
-#### Scrollbar Width
+- default themed thumb color at rest
+- thumb hover color vs track-only hover behavior
+- horizontal overflow renders a horizontal scrollbar
+- both-axis overflow renders both bars without overlap
+- lifecycle reset clears thumb and track hover state
 
-```rust
-#[test]
-fn scrollbar_default_width_is_6px() {
-    let style = ScrollbarStyle::default();
-    assert!((style.width - 6.0).abs() < f32::EPSILON);
-}
-```
+The current file already covers a lot of scroll behavior, but it does not verify any horizontal or
+dual-axis scrollbar rendering. Section 07 should add that coverage explicitly.
 
-#### Thumb Hover Detection
+### Menu Tests
 
-```rust
-#[test]
-fn thumb_hover_detected_separately_from_track() {
-    // Create a scroll widget with enough content to show a scrollbar.
-    // Move the cursor to the thumb area — verify thumb_hovered is true.
-    // Move the cursor to the track (below thumb) — verify thumb_hovered
-    // is false but track_hovered is true.
-}
-```
+Add menu coverage for:
 
-#### Track Not Rendered When Not Hovered
+- shared scrollbar style is used for long menus
+- menu scrollbar respects the nested `MenuStyle.scrollbar`
+- menu no longer hardcodes white-alpha thumb rendering
 
-```rust
-#[test]
-fn track_not_rendered_when_not_hovered() {
-    // Create a scroll widget, render it without hover.
-    // Verify no quad is emitted for the track area.
-    // Only the thumb quad should be present.
-}
-```
+### Harness / Scene Assertions
 
-### Harness Tests
+Prefer scene-level assertions over raw pixel offsets where possible:
 
-**File:** `oriterm_ui/src/widgets/scroll/tests.rs`
+- inspect emitted scrollbar quads for fill colors and thickness
+- verify scrollbar quads stay unclipped overlay primitives
+- verify transparent-track defaults do not emit visible track quads
 
-Using `WidgetTestHarness` for end-to-end scrollbar interaction:
+### Checklist
 
-```rust
-#[test]
-fn scrollbar_thumb_changes_color_on_hover() {
-    let content = Box::new(/* tall content widget */);
-    let scroll = ScrollWidget::vertical(content);
-    let mut h = WidgetTestHarness::new(scroll);
-
-    // Render without hover.
-    let scene1 = h.render();
-    let thumb_quad_1 = find_scrollbar_thumb_quad(&scene1);
-
-    // Move cursor to scrollbar area.
-    let scrollbar_x = h.bounds().right() - 5.0;
-    let scrollbar_y = h.bounds().y() + 10.0;
-    h.mouse_move(Point::new(scrollbar_x, scrollbar_y));
-
-    // Render with hover.
-    let scene2 = h.render();
-    let thumb_quad_2 = find_scrollbar_thumb_quad(&scene2);
-
-    // Thumb color should differ (hover color is brighter).
-    assert_ne!(thumb_quad_1.style.fill, thumb_quad_2.style.fill);
-}
-```
+- [ ] Shared scrollbar module tests cover style and geometry
+- [ ] Scroll tests cover vertical, horizontal, and both-axis scrollbar rendering
+- [ ] Scroll tests cover explicit hover-state color transitions
+- [ ] Menu tests cover shared scrollbar-style migration
+- [ ] Scene assertions verify constant visible thickness with separate hit slop
 
 ---
 
 ## 07.R Third Party Review Findings
 
-Reserved for findings from `/review-plan` or external review. Not actionable until populated.
+### Resolved Findings
+
+1. `TPR-07-001`:
+   The draft treated Section 07 as a `ScrollWidget`-only cleanup, but
+   [MenuWidget](/home/eric/projects/ori_term/oriterm_ui/src/widgets/menu/widget_impl.rs) has a
+   second, duplicated scrollbar implementation with different width and hardcoded colors.
+
+2. `TPR-07-002`:
+   [ScrollWidget](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/mod.rs) already
+   advertises `Horizontal` and `Both` modes, but the actual scrollbar renderer in
+   [scrollbar.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/scroll/scrollbar.rs) is
+   vertical-only. A full plan must complete that contract instead of styling only the vertical case.
+
+3. `TPR-07-003`:
+   The draft's mockup color comment was stale. The active theme and mockup variable both define
+   `--border` as `#2a2a36`, not `#3a3a3a`.
+
+4. `TPR-07-004`:
+   The current hover behavior widens the rendered scrollbar track to `width * 1.5`, which conflicts
+   with the mockup's fixed `6px` visual width. Hit-target expansion should be separated from visual
+   thickness.
+
+5. `TPR-07-005`:
+   The settings page builder still constructs its `ScrollWidget` with default style and no
+   theme-derived scrollbar configuration, so the mockup's exact tokens are not actually wired at
+   the primary consumer.
+
+6. `TPR-07-006`:
+   Track transparency is already effectively correct for the default transparent style. The real
+   missing work is explicit per-state track styling and shared consumer adoption, not just
+   reasserting that transparent stays transparent.
 
 ---
 
-## 07.5 Build & Verify
+## 07.6 Build & Verify
 
 ### Gate
 
@@ -354,12 +509,20 @@ Reserved for findings from `/review-plan` or external review. Not actionable unt
 ./test-all.sh
 ```
 
+### Verification Steps
+
+1. `cargo test -p oriterm_ui widgets::scrollbar` and the relevant scroll/menu tests pass.
+2. `cargo test -p oriterm_ui widgets::scroll` passes with horizontal and both-axis assertions.
+3. Visual: settings content-body scrollbar is `6px` wide, thumb rest color matches `theme.border`,
+   and hover color matches `theme.fg_faint`.
+4. Visual: hover does not make the rendered scrollbar thicker.
+5. Visual: long menus use the shared scrollbar style path instead of a hardcoded white-alpha thumb.
+
 ### Checklist
 
 - [ ] `./build-all.sh` passes
 - [ ] `./clippy-all.sh` passes
 - [ ] `./test-all.sh` passes
-- [ ] Existing scroll tests still pass (no regressions)
-- [ ] Visual verification: scrollbar thumb is `#3a3a3a` at rest, brightens to `#888` on hover
-- [ ] Track remains transparent (no visible background when not hovering)
-- [ ] Scrollbar width is 6px as expected
+- [ ] settings page scrollbar matches mockup colors and thickness
+- [ ] horizontal and both-axis scrollbar rendering is covered
+- [ ] menu scrollbar no longer uses a duplicated hardcoded renderer

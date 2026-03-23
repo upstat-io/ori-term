@@ -4,478 +4,551 @@ title: "Visual Fidelity: Sidebar + Navigation"
 status: not-started
 reviewed: true
 third_party_review:
-  status: none
-  updated: null
-goal: "Sidebar nav widget is pixel-accurate against the mockup — background color, width, search field, section titles, nav items (active/hover/normal), icons, modified dots, footer, and right border all match CSS values"
-depends_on: ["01", "02", "03", "05", "08"]
+  status: resolved
+  updated: 2026-03-23
+goal: "The settings sidebar matches the mockup's structure and interaction model: a full-height 200px rail with a real search input, precise section/header/nav/footer spacing, correct active and hover treatment, working modified dots, and interactive footer metadata"
+depends_on: ["01", "02", "03", "08"]
 sections:
   - id: "10.1"
-    title: "Sidebar Background + Full Height"
+    title: "Sidebar Structure + Module Split"
     status: not-started
   - id: "10.2"
-    title: "Search Field Styling"
+    title: "Search Field Fidelity + Behavior"
     status: not-started
   - id: "10.3"
-    title: "Section Title Styling"
+    title: "Section Headers + Nav Rhythm"
     status: not-started
   - id: "10.4"
-    title: "Nav Item Styling"
+    title: "Active States + Modified Dots"
     status: not-started
   - id: "10.5"
-    title: "Sidebar Footer"
+    title: "Footer Metadata + Actions"
     status: not-started
   - id: "10.6"
-    title: "File Size Split"
+    title: "Tests"
     status: not-started
   - id: "10.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "10.7"
     title: "Build & Verify"
     status: not-started
 ---
 
-# Section 10: Visual Fidelity — Sidebar + Navigation
+# Section 10: Visual Fidelity - Sidebar + Navigation
 
-**Status:** Not Started
-**Goal:** Every visual element in the sidebar nav matches the mockup CSS at 100% DPI. Side-by-side comparison should show no differences in colors, spacing, typography, or interaction states.
+## Problem
 
-**Production code paths:**
-- `oriterm_ui/src/widgets/sidebar_nav/mod.rs` — `SidebarNavWidget` struct, `SidebarNavStyle`, `paint()`, `paint_nav_item()`, `paint_search_field()`, `paint_footer()`
-- `oriterm_ui/src/theme/mod.rs` — `UiTheme::dark()` token values
-- `oriterm_ui/src/widgets/sidebar_nav/tests.rs` — harness tests
+The draft treated Section 10 as a mostly visual cleanup, but the current tree shows the sidebar is
+missing several real behaviors and API surfaces required by the mockup.
 
-**Observable change:** Sidebar matches mockup — correct background color, search field with proper border/bg/padding, section titles with correct size/weight/spacing, nav items with proper padding/indicator/icon opacity, footer with version/config path styling.
+What the code actually has today:
 
----
+- `oriterm_ui/src/widgets/sidebar_nav/mod.rs` is a single `509`-line custom widget that already
+  exceeds the repository's file-size rule before this section adds more state or interactions.
+- The widget paints a placeholder search box directly in `paint_search_field()` instead of using a
+  real input control. There is no search icon, no focus-border treatment, and no text editing.
+- The current widget API only exposes `with_version(...)` and `with_config_path(...)`. The mockup
+  footer also includes an `Update Available` link plus hover/click treatment for the config-path
+  row.
+- The current active-row background is painted only to the right of the `3px` indicator strip,
+  while the CSS model applies background to the full row box and overlays the left border.
+- Section title and row spacing are still bundled into coarse constants such as
+  `SECTION_TITLE_HEIGHT = 28.0`, even though the mockup uses separate search spacing, title bottom
+  margins, and inter-section top margins.
+- The widget can paint modified dots, but no current app call site drives `set_page_modified(...)`,
+  so the mockup's unsaved-state indicator is not actually wired.
+- `mockups/settings-brutal.html` uses a real `<input type="text">` for the sidebar search field,
+  not a decorative placeholder. The repo already has a reusable `TextInputWidget`, so keeping the
+  sidebar on a fake paint-only path would be a regression in architecture, not a simplification.
 
-## 10.1 Sidebar Background + Full Height
+Section 10 should keep the full fidelity goal, but move the implementation to boundaries that can
+actually support it.
 
-**File(s):** `oriterm_ui/src/widgets/sidebar_nav/mod.rs`
+## Corrected Scope
 
-### Mockup CSS
+Section 10 should deliver the sidebar as a real interactive surface, not a static paint pass:
 
-```css
-.sidebar {
-    width: 200px;
-    background: var(--bg-base);        /* #0e0e12 */
-    border-right: 2px solid var(--border); /* #2a2a36 */
-    display: flex;
-    flex-direction: column;
-    /* full height of parent — no explicit height, flexbox stretch */
-}
-```
+1. split `sidebar_nav` into maintainable submodules before adding more logic
+2. replace the painted search placeholder with a real search input using shared text-input
+   behavior and mockup-specific styling
+3. encode sidebar geometry explicitly instead of hiding spacing in a few approximate constants
+4. wire modified dots to real per-page dirty state
+5. extend the footer contract so `Update Available` and the config-path row can render and act
+   like real interactive targets
 
-### Current code
-
-- `SIDEBAR_WIDTH: f32 = 200.0` -- matches mockup (200px).
-- `SidebarNavStyle::bg` = `theme.bg_secondary` = `Color::hex(0x0E_0E_12)` -- matches mockup `--bg-base`.
-- Right border: painted as 2px filled rect at `bounds.width() - 2.0` with `self.style.border` color -- matches mockup `border-right: 2px solid var(--border)`.
-- Height: `layout()` returns `SizeSpec::Fill` -- should produce full-height sidebar.
-
-### Verification needed
-
-- Confirm the sidebar actually renders to the full height of the settings panel. The parent `ContainerWidget::row()` in `settings_overlay` must give the sidebar full height. If the sidebar stops short of the footer, the container's cross-axis alignment is wrong (should be `Stretch`, not `Start`).
-- If the sidebar does not fill to the bottom, the fix is in the parent layout, not in `SidebarNavWidget`.
-
-### Checklist
-
-- [ ] Sidebar background is `#0e0e12` (verified visually or in code: `theme.bg_secondary`).
-- [ ] Right border is 2px, color `#2a2a36` (verified: `theme.border`).
-- [ ] Sidebar width is 200px (verified: `SIDEBAR_WIDTH = 200.0`).
-- [ ] Sidebar fills full height of settings panel (verify at runtime).
+The implementation does not need to throw away `SidebarNavWidget`. The more feasible path is to
+keep one top-level widget for existing settings/page-container routing, then give it better internal
+structure and state.
 
 ---
 
-## 10.2 Search Field Styling
+## 10.1 Sidebar Structure + Module Split
 
-**File(s):** `oriterm_ui/src/widgets/sidebar_nav/mod.rs` (`paint_search_field()`)
+### Goal
 
-### Mockup CSS
+Move the sidebar onto a maintainable widget boundary that can support search, footer actions, and
+precise layout without growing the current monolith further.
 
-```css
-.search-field {
-    height: 28px;
-    border: 2px solid var(--border);       /* #2a2a36 */
-    background: var(--bg-surface);         /* #16161c */
-    padding: 6px 8px 6px 26px;            /* left padding for search icon */
-    font-size: 12px;
-    color: var(--text-faint);             /* #8c8ca0 — placeholder text */
-    margin: 0 10px;                       /* horizontal margin inside sidebar */
-}
-```
+### Files
 
-### Current code (`paint_search_field()`)
+- `oriterm_ui/src/widgets/sidebar_nav/mod.rs`
+- `oriterm_ui/src/widgets/sidebar_nav/tests.rs`
+- `oriterm/src/app/settings_overlay/form_builder/mod.rs`
 
-```rust
-let field_h = 28.0;                          // matches 28px
-let field_rect = Rect::new(x, y, w, field_h);
-let bg_style = RectStyle::filled(ctx.theme.bg_primary)   // bg_primary = #16161c = --bg-surface
-    .with_border(2.0, ctx.theme.border);                  // 2px, #2a2a36 = --border
-// Placeholder text:
-let style = TextStyle { size: 12.0, .. };                 // 12px
-ctx.measurer.shape("Search settings...", &style, w - 32.0);
-let text_y = y + (field_h - shaped.height) / 2.0;
-ctx.scene.push_text(Point::new(x + 26.0, text_y), ...);  // left offset 26px
-// Color: ctx.theme.fg_faint = #8c8ca0 = --text-faint
-```
+### Required Structure
 
-### Comparison
+Split `sidebar_nav` before landing the fidelity work:
 
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Height | 28px | 28.0 | Yes |
-| Border | 2px `--border` | 2.0, `theme.border` | Yes |
-| Background | `--bg-surface` (#16161c) | `theme.bg_primary` (#16161c) | Yes |
-| Left padding | 26px | text at `x + 26.0` | Yes |
-| Font size | 12px | 12.0 | Yes |
-| Placeholder color | `--text-faint` (#8c8ca0) | `theme.fg_faint` | Yes |
-| Margin | 0 10px | field at `x` (sidebar_padding_x=10) | Yes |
-
-### Issues to verify
-
-1. **Search icon**: The mockup has a magnifying glass icon at the left side of the search field (the 26px left padding accommodates it). The current code does not paint a search icon. This requires Section 08 (Icon Path Verification) to land first. Once icons are available, add a 14px search icon at `(x + 6.0, y + (28 - 14) / 2.0)`.
-
-2. **Right padding**: Mockup padding is `6px 8px 6px 26px`. The text wraps at `w - 32.0` (approximately `26 + 6 = 32` left+right padding equivalent). Verify this matches — the right text boundary should be at `w - 8px` from the left edge, meaning max text width is `w - 26 - 8 = w - 34`, not `w - 32`. Minor discrepancy.
-
-### Checklist
-
-- [ ] Search field height 28px confirmed.
-- [ ] Border 2px `--border` confirmed.
-- [ ] Background `--bg-surface` confirmed.
-- [ ] Placeholder text 12px, `--text-faint` confirmed.
-- [ ] Left text offset 26px confirmed.
-- [ ] Search icon placeholder identified (blocked on Section 08).
-- [ ] Right text boundary corrected if needed (`w - 34` vs `w - 32`).
-
----
-
-## 10.3 Section Title Styling
-
-**File(s):** `oriterm_ui/src/widgets/sidebar_nav/mod.rs` (section title paint in `paint()`)
-
-### Mockup CSS
-
-```css
-.sidebar-section-title {
-    font-size: 10px;
-    font-weight: 400;              /* Regular weight */
-    text-transform: uppercase;
-    letter-spacing: 0.15em;        /* 10px * 0.15 = 1.5px */
-    color: var(--text-faint);      /* #8c8ca0 */
-    padding: 0 16px;
-    margin-top: 16px;              /* except first section: margin-top 8px */
-}
-.sidebar-section-title::before {
-    content: '// ';                /* monospace comment prefix */
-}
-```
-
-### Current code
-
-```rust
-let title_style = TextStyle {
-    size: 10.0,                           // matches 10px
-    weight: FontWeight::Regular,          // matches 400
-    letter_spacing: 1.5,                  // 10 * 0.15 = 1.5px — matches
-    ..TextStyle::default()
-};
-let title_text = format!("// {}", section.title.to_uppercase());  // matches
-ctx.scene.push_text(
-    Point::new(x + 6.0, y),              // x + 6.0
-    shaped,
-    self.style.section_title_fg           // theme.fg_faint = #8c8ca0 — matches
-);
-y += SECTION_TITLE_HEIGHT;               // 28.0
-```
-
-### Comparison
-
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Font size | 10px | 10.0 | Yes |
-| Font weight | 400 (Regular) | `FontWeight::Regular` | Yes |
-| Uppercase | `text-transform: uppercase` | `.to_uppercase()` | Yes |
-| Letter spacing | 0.15em = 1.5px | 1.5 | Yes |
-| Color | `--text-faint` (#8c8ca0) | `theme.fg_faint` | Yes |
-| `//` prefix | `::before { content: '// ' }` | `format!("// {}", ...)` | Yes |
-| Left padding | 16px | `x + 6.0` (x already offset by SIDEBAR_PADDING_X=10) = 16px total | Yes |
-
-### Issues to verify
-
-1. **Text transform dependency**: If Section 03 (Text Transform + Letter Spacing) introduces a `TextTransform::Uppercase` mechanism, the manual `.to_uppercase()` call should be replaced with the framework's text transform. But until then, the manual call is correct.
-
-2. **Section spacing**: Mockup has `margin-top: 16px` for non-first sections, `8px` for the first. Current code uses fixed `SECTION_TITLE_HEIGHT = 28.0` which includes the title line + spacing below. The vertical spacing between the search field and first section title, and between sections, should be verified at runtime.
-
-3. **Letter spacing dependency**: The current `letter_spacing: 1.5` is set but may not be rendered yet — this depends on Section 03 landing. Until the font pipeline supports letter spacing, the text will render without extra spacing. Verify after Section 03 is complete.
-
-### Checklist
-
-- [ ] Font size, weight, color, prefix all match mockup.
-- [ ] Left padding totals 16px from sidebar edge.
-- [ ] Vertical spacing between sections matches mockup.
-- [ ] Letter spacing renders correctly (after Section 03).
-
----
-
-## 10.4 Nav Item Styling
-
-**File(s):** `oriterm_ui/src/widgets/sidebar_nav/mod.rs` (`paint_nav_item()`)
-
-### Mockup CSS
-
-```css
-.nav-item {
-    padding: 7px 16px;
-    height: 32px;                          /* fixed row height */
-    font-size: 13px;
-    color: var(--text-muted);              /* #9494a8 */
-    border-left: 3px solid transparent;    /* reserve space for active indicator */
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.nav-item:hover {
-    background: var(--bg-hover);           /* #24242e */
-    color: var(--text);                    /* #d4d4dc */
-}
-
-.nav-item.active {
-    background: var(--accent-bg-strong);   /* rgba(109,155,224,0.14) */
-    color: var(--accent);                  /* #6d9be0 */
-    border-left-color: var(--accent);      /* #6d9be0 — 3px left border visible */
-}
-
-.nav-item .icon {
-    width: 16px;
-    height: 16px;
-    opacity: 0.7;
-}
-
-.nav-item.active .icon {
-    opacity: 1.0;
-}
-
-.nav-item .modified-dot {
-    width: 6px;
-    height: 6px;
-    background: var(--warning);            /* #e0c454 */
-    margin-left: auto;                     /* push to right edge */
-}
-```
-
-### Current code (`paint_nav_item()`)
-
-```rust
-// Row height
-const ITEM_HEIGHT: f32 = 32.0;                     // matches 32px
-
-// Active indicator (3px left border)
-const INDICATOR_WIDTH: f32 = 3.0;                   // matches 3px
-let indicator = Rect::new(x, y, INDICATOR_WIDTH, ITEM_HEIGHT);
-ctx.scene.push_quad(indicator, RectStyle::filled(self.style.active_fg));
-// active_fg = theme.accent = #6d9be0                // matches
-
-// Background
-let bg = if is_active {
-    self.style.active_bg       // theme.accent_bg_strong = rgba(0.427,0.608,0.878,0.14)
-} else if hovered {
-    self.style.hover_bg        // theme.bg_hover = #24242e
-} else {
-    Color::TRANSPARENT
-};
-// All match mockup.
-
-// Icon
-let icon_size = 16_u32;                              // matches 16px
-let c = if is_active {
-    self.style.active_fg       // full opacity — matches 1.0
-} else if hovered {
-    self.style.hover_fg.with_alpha(0.7)  // hover + 0.7
-} else {
-    self.style.item_fg.with_alpha(0.7)   // 0.7 opacity — matches
-};
-
-// Label
-let style = TextStyle { size: 13.0, .. };            // matches 13px
-let fg = if is_active {
-    self.style.active_fg       // theme.accent = #6d9be0
-} else if hovered {
-    self.style.hover_fg        // theme.fg_primary = #d4d4dc
-} else {
-    self.style.item_fg         // theme.fg_secondary = #9494a8
-};
-
-// Modified dot
-let dot_size = 6.0;                                  // matches 6px
-ctx.theme.warning                                    // #e0c454 — matches
-```
-
-### Detailed comparison
-
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Row height | 32px | `ITEM_HEIGHT = 32.0` | Yes |
-| Padding (vertical) | 7px | `(32 - 13) / 2 = 9.5` centering | Close (see note) |
-| Padding (horizontal) | 16px | `x + INDICATOR_WIDTH + 8.0` = 11px from item edge | No |
-| Font size | 13px | 13.0 | Yes |
-| Normal color | `--text-muted` (#9494a8) | `theme.fg_secondary` (#9494a8) | Yes |
-| Hover bg | `--bg-hover` (#24242e) | `theme.bg_hover` (#24242e) | Yes |
-| Hover text | `--text` (#d4d4dc) | `theme.fg_primary` (#d4d4dc) | Yes |
-| Active bg | `--accent-bg-strong` (0.14) | `theme.accent_bg_strong` (0.14) | Yes |
-| Active text | `--accent` (#6d9be0) | `theme.accent` (#6d9be0) | Yes |
-| Active border-left | 3px `--accent` | 3px filled rect, `theme.accent` | Yes |
-| Icon size | 16px | 16 | Yes |
-| Icon opacity (normal) | 0.7 | `with_alpha(0.7)` | Yes |
-| Icon opacity (active) | 1.0 | full color (no alpha mod) | Yes |
-| Icon-text gap | 10px | icon at +8px, text at +32px, icon is 16px => gap = 32 - 8 - 16 = 8px | No (8 vs 10) |
-| Modified dot | 6px, `--warning` | 6.0, `theme.warning` | Yes |
-
-### Issues to fix
-
-1. **Horizontal padding mismatch**: Mockup uses `padding: 7px 16px` meaning 16px from each edge. Current code uses `x + INDICATOR_WIDTH + 8.0 = x + 11`. The icon is at `x + 11`, but mockup puts it at `x + 3 (indicator) + 16 (padding) = x + 19`. With the 3px indicator being part of the item, the text/icon area starts at `x + 3 + 16 = x + 19`, not `x + 11`. The icon position needs to be `x + INDICATOR_WIDTH + 16.0` and the text `x + INDICATOR_WIDTH + 16.0 + 16.0 (icon) + 10.0 (gap) = x + 45.0`.
-
-   Current icon X: `x + INDICATOR_WIDTH + 8.0 = x + 11.0`
-   Mockup icon X: `x + INDICATOR_WIDTH + 13.0 = x + 16.0` (padding 16 - indicator 3 = 13 from indicator edge)
-
-   This needs careful recalculation. The mockup's `padding: 7px 16px` includes the 3px border-left (the padding is inside the border). So:
-   - Icon X: `x + 3 (indicator) + 16 (padding) = x + 19` -- but 16px padding seems too large for a 200px sidebar. Let's verify: sidebar width 200 - padding_x*2=20 = 180px item width. With 3px indicator + 16px left padding + 16px icon + 10px gap = 45px consumed by prefix, leaving 135px for text + 16px right padding = 119px for text. That's plausible.
-
-   Current: text at `x + 32` (indicator 3 + 8 icon offset + 16 icon + 5 gap). This is tighter than mockup.
-
-   **Action**: Adjust icon offset from `+8.0` to `+13.0` and text offset from `+32.0` to `+42.0` (13 + 16 icon + 10 gap + 3 indicator = 42 from x, or 16 + 16 + 10 = 42 from indicator).
-
-2. **Icon-text gap**: Mockup has `gap: 10px`. Current code implicitly has 8px (32 - 8 - 16). Should be 10px.
-
-3. **Hover icon opacity**: Current code applies `0.7` opacity to hover icons. But the mockup shows no explicit change to icon opacity on hover — only the text color changes. The icon should remain at `0.7` on hover, not change. Current code uses `hover_fg.with_alpha(0.7)` which would be `#d4d4dc` at 0.7 alpha — different from the normal state's `#9494a8` at 0.7 alpha. The hover icon color should use the hover text color at 0.7, or stay the same as normal. Check mockup carefully.
-
-   Looking at the mockup CSS: `.nav-item .icon { opacity: 0.7; }` with no hover override except `.nav-item.active .icon { opacity: 1.0; }`. So on hover, icon stays at 0.7 opacity but picks up the parent's text color change. Current behavior (`hover_fg.with_alpha(0.7)`) is approximately correct — the icon tracks the text color but stays dimmed.
-
-### Checklist
-
-- [ ] Horizontal padding adjusted to 16px (from sidebar edge, inside indicator).
-- [ ] Icon-text gap adjusted to 10px.
-- [ ] Icon positions recalculated with correct padding.
-- [ ] Hover icon color verified (should be hover text color at 0.7 alpha).
-- [ ] All color values verified against mockup CSS variables.
-- [ ] Modified dot right margin matches mockup (`margin-left: auto` pushes to right edge at `item_rect.right() - 16.0`).
-
----
-
-## 10.5 Sidebar Footer
-
-**File(s):** `oriterm_ui/src/widgets/sidebar_nav/mod.rs` (`paint_footer()`)
-
-### Mockup CSS
-
-```css
-.sidebar-footer {
-    padding: 12px 28px;
-    border-top: 2px solid var(--border);   /* #2a2a36 */
-    margin-top: auto;                      /* push to bottom */
-}
-.sidebar-footer .version {
-    font-size: 11px;
-    color: var(--text-faint);              /* #8c8ca0 */
-}
-.sidebar-footer .config-path {
-    font-size: 10px;
-    color: var(--text-faint);
-    opacity: 0.7;                          /* dimmer than version */
-    margin-top: 4px;
-}
-```
-
-### Current code (`paint_footer()`)
-
-```rust
-fn paint_footer(&self, ctx: &mut DrawCtx<'_>, x: f32, item_w: f32) {
-    let mut y = ctx.bounds.bottom() - 8.0;    // 8px from bottom
-
-    // Config path
-    let style = TextStyle { size: 10.0, .. };  // 10px — matches
-    let fg = self.style.version_fg.with_alpha(0.7);  // faint + 0.7 — matches
-    ctx.scene.push_text(Point::new(x + 6.0, y), ...);
-    y -= 4.0;                                  // 4px gap — matches
-
-    // Version label
-    let style = TextStyle { size: 11.0, .. };  // 11px — matches
-    ctx.scene.push_text(..., self.style.version_fg);   // faint — matches
-}
-```
-
-### Comparison
-
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Padding | 12px 28px | 8px bottom, `x + 6.0` left (= 16px from edge) | No |
-| Border-top | 2px `--border` | Not drawn | No |
-| Version font | 11px, `--text-faint` | 11.0, `version_fg` (fg_faint) | Yes |
-| Config path font | 10px, `--text-faint` at 0.7 | 10.0, `version_fg.with_alpha(0.7)` | Yes |
-| Gap between items | 4px | 4.0 | Yes |
-| Push to bottom | `margin-top: auto` | positioned from `bounds.bottom()` | Yes |
-
-### Issues to fix
-
-1. **Missing border-top**: Mockup has `border-top: 2px solid var(--border)`. Current `paint_footer()` does not draw this. Add a 2px horizontal line at the top of the footer area. This requires knowing the footer's top Y coordinate. Calculate: `footer_top = bounds.bottom() - footer_height`. Footer height = 12 (top pad) + 11 (version) + 4 (gap) + 10 (config path) + 12 (bottom pad) ~ 49px. Draw a `Rect::new(x, footer_top, item_w, 2.0)` filled with `self.style.border`.
-
-   Alternatively, this is a per-side border (Section 05 dependency). If Section 05 provides `Border::top(2.0, color)`, use that. Otherwise, draw manually as a filled rect (same approach the right border uses).
-
-2. **Padding mismatch**: Mockup has 12px vertical padding and 28px horizontal padding. Current code has 8px bottom margin and text at `x + 6.0`. The horizontal padding should be 28px from the sidebar edge (not 16px). Adjust text X to `bounds.x() + 28.0` instead of `x + 6.0` (where `x = bounds.x() + SIDEBAR_PADDING_X = bounds.x() + 10`, so `x + 6 = bounds.x() + 16`). Change to `bounds.x() + 28.0` or `x + 18.0`.
-
-3. **Bottom padding**: Mockup has 12px. Current has 8px. Change `bounds.bottom() - 8.0` to `bounds.bottom() - 12.0`.
-
-### Checklist
-
-- [ ] Border-top 2px `--border` drawn at footer top.
-- [ ] Horizontal padding adjusted to 28px from sidebar edge.
-- [ ] Bottom padding adjusted to 12px.
-- [ ] Version and config path text positions recalculated.
-- [ ] Footer area height accounts for border + padding + text.
-
----
-
-## 10.6 File Size Split
-
-**File(s):** `oriterm_ui/src/widgets/sidebar_nav/mod.rs`
-
-The sidebar nav module is currently 509 lines (over the 500-line limit). After the changes in 10.1-10.5, it will likely grow further.
-
-### Split plan
-
-Extract paint methods into a `paint` submodule:
-
-```
+```text
 oriterm_ui/src/widgets/sidebar_nav/
-    mod.rs          ← struct, style, Widget impl (layout, on_input, lifecycle, accept_action)
-    paint.rs        ← paint(), paint_nav_item(), paint_search_field(), paint_footer()
-    tests.rs        ← existing tests
+    mod.rs
+    geometry.rs
+    input.rs
+    paint.rs
+    tests.rs
 ```
 
-### Implementation
+Recommended ownership:
 
-1. Create `oriterm_ui/src/widgets/sidebar_nav/paint.rs`.
-2. Move `paint_nav_item()`, `paint_search_field()`, `paint_footer()`, and the `paint()` method body into paint helpers.
-3. In `mod.rs`, add `mod paint;` and make the `Widget::paint()` impl delegate to a function in `paint.rs`.
-4. The paint functions need access to `SidebarNavWidget` fields (`sections`, `active_page`, `hovered_item`, `style`, `version`, `config_path`, `modified_pages`) and `DrawCtx`. Pass `&self` or make the functions methods via an `impl SidebarNavWidget` block in `paint.rs`.
-5. Make necessary fields `pub(super)` so the paint submodule can access them.
+- `mod.rs`
+  - public types (`NavSection`, `NavItem`, `SidebarNavWidget`, style structs)
+  - builder/accessor API
+  - shared widget state
+- `geometry.rs`
+  - exact sidebar rect math
+  - section/title/item/footer/search metrics
+  - hit-test enums for nav items and footer targets
+- `input.rs`
+  - pointer/focus/key routing
+  - search-input delegation
+  - footer target activation
+- `paint.rs`
+  - background, search field, titles, items, footer, separators
+
+### Widget Contract Changes
+
+Keep one `SidebarNavWidget`, but expand its internal model so the section can fulfill the mockup:
+
+- add an internal real search control rather than a painted placeholder
+- add optional footer update metadata
+- add hover/hit-test state for:
+  - nav rows
+  - update link
+  - config-path row
+- add a bulk dirty-state API (`set_modified_pages(bitset)` or equivalent) so app code can update
+  the whole sidebar coherently instead of toggling one bit at a time through ad hoc calls
+
+The top-level widget ID should remain stable for page-selection routing. If footer targets need
+their own actions, expose dedicated internal IDs or explicit action variants rather than overloading
+the nav-row `Selected { index }` path.
 
 ### Checklist
 
-- [ ] `paint.rs` created with paint methods.
-- [ ] `mod.rs` under 500 lines after split.
-- [ ] No public API changes (all paint functions are private).
-- [ ] `cargo test -p oriterm_ui` passes.
-- [ ] `./clippy-all.sh` passes.
+- [ ] Split `sidebar_nav` into submodules before adding new fidelity logic
+- [ ] Keep one top-level `SidebarNavWidget` for page-selection integration
+- [ ] Add explicit internal state for search and footer interactions
+- [ ] Add a coherent modified-pages update API
+- [ ] Bring `mod.rs` back under the repository file-size limit
+
+---
+
+## 10.2 Search Field Fidelity + Behavior
+
+### Goal
+
+Replace the fake painted search placeholder with a real input that matches the mockup visually and
+behaves like an actual control.
+
+### Files
+
+- `oriterm_ui/src/widgets/sidebar_nav/mod.rs`
+- `oriterm_ui/src/widgets/sidebar_nav/input.rs`
+- `oriterm_ui/src/widgets/sidebar_nav/paint.rs`
+- `oriterm_ui/src/widgets/text_input/mod.rs`
+- `oriterm_ui/src/widgets/text_input/widget_impl.rs`
+- `oriterm_ui/src/icons/mod.rs`
+- `oriterm/src/gpu/icon_rasterizer/mod.rs`
+
+### Current Boundary Problem
+
+The repo already has `TextInputWidget`, including focus handling, caret rendering, selection, and
+`WidgetAction::TextChanged`. The current sidebar bypasses that shared path and paints a dead box
+instead.
+
+That is no longer the right boundary. Section 10 should reuse shared text-input behavior and apply
+mockup-specific styling on top.
+
+### Implementation Plan
+
+Add a real search field to `SidebarNavWidget` using the existing text-input behavior path.
+
+Recommended approach:
+
+- embed a `TextInputWidget` inside `SidebarNavWidget`, or extract a shared helper from
+  `TextInputWidget` if direct embedding proves awkward
+- route search-rect input/focus/paint through that shared input state instead of duplicating text
+  editing logic inside the sidebar widget
+- add a sidebar-specific search style:
+  - height `28px`
+  - background `theme.bg_primary` (`#16161c`)
+  - border width `2px`
+  - unfocused border `theme.border`
+  - focused border `theme.accent`
+  - placeholder color `theme.fg_faint`
+  - font size `12px`
+  - padding equivalent to mockup `6px 8px 6px 26px`
+
+The default `TextInputStyle::from_theme()` is not enough on its own because:
+
+- `bg_input` is currently `#12121a`, not the mockup's `#16161c`
+- default border width is `1px`, not `2px`
+- default placeholder color is `fg_disabled`, not `fg_faint`
+
+### Search Icon
+
+The mockup includes a leading search icon inside the field. Section 08 covered the eight sidebar
+page icons, but not this glyph.
+
+Section 10 should therefore add the search icon through the shared icon pipeline:
+
+- add a dedicated sidebar-search glyph to `IconId` and the icon registry, or
+- add a text-input leading-icon capability and feed it from the same shared icon/rasterizer path
+
+Do not keep a magic empty left padding with no icon rendered.
+
+### Search Behavior
+
+The field should be real, not cosmetic:
+
+- keyboard-editable
+- focusable
+- accent focus border on focus
+- query-driven local filtering of sidebar content
+
+The minimum useful behavior is local filtering over section titles and item labels, preserving
+original order. That is feasible because the settings sidebar has only a small fixed set of pages.
+
+To keep page state coherent:
+
+- filtering must not silently switch pages
+- if the active page does not match the query, keep its row visible and marked active until the
+  user selects a matching row or clears the query
+
+This section does not need to invent a global full-text index of all settings descriptions, but it
+must stop treating the search field as decorative paint.
+
+### Checklist
+
+- [ ] Replace `paint_search_field()` placeholder logic with a real input path
+- [ ] Apply exact mockup search styling instead of default `TextInputStyle`
+- [ ] Add and render the leading search icon through the shared icon system
+- [ ] Support focus, caret, selection, and text editing
+- [ ] Filter sidebar sections/items by query without forcing an automatic page switch
+
+---
+
+## 10.3 Section Headers + Nav Rhythm
+
+### Goal
+
+Match the mockup's spacing and typography by making sidebar geometry explicit instead of relying on
+approximate bundled constants.
+
+### Files
+
+- `oriterm_ui/src/widgets/sidebar_nav/geometry.rs`
+- `oriterm_ui/src/widgets/sidebar_nav/paint.rs`
+- `mockups/settings-brutal.html`
+
+### Layout Facts From The Mockup
+
+The mockup uses separate spacing rules:
+
+- sidebar width `200px`
+- sidebar padding `16px 0`
+- search container padding `0 10px`
+- search-to-title gap `12px`
+- title padding `0 16px`
+- title bottom margin `8px`
+- non-first title top margin `20px`
+- nav row horizontal padding `16px`
+- nav row vertical margin `1px`
+- icon/text gap `10px`
+
+The current widget collapses several of these into broad constants like `SECTION_TITLE_HEIGHT` and
+hardcoded icon/text offsets. That is why the draft's "verify later" approach is too weak.
+
+### Required Geometry Rewrite
+
+Replace the current rough layout math with explicit geometry helpers for:
+
+- search field rect
+- first title baseline/rect
+- non-first title top margin
+- nav row outer rect
+- content inset inside the active-indicator border area
+- footer block rect
+
+Do not treat `ITEM_HEIGHT = 32.0` as authoritative CSS truth. The mockup CSS defines nav-row
+padding and margin, not a hard row height. Section 10 should derive or codify the outer row rect
+that matches the rendered mockup, then keep that geometry in one place.
+
+### Typography Requirements
+
+Section titles must keep:
+
+- font size `10`
+- regular weight
+- uppercase transform
+- letter spacing `1.5`
+- `// ` prefix
+- `theme.fg_faint`
+
+If Section 03 lands a shared text-transform/letter-spacing path, use it. Until then, keep the
+sidebar on whatever code path actually renders the spacing correctly.
+
+### Checklist
+
+- [ ] Replace bundled section-spacing constants with explicit geometry helpers
+- [ ] Match search, title, section, and row spacing to the mockup's real CSS structure
+- [ ] Keep title typography at `10px`, regular, uppercase, `1.5` letter spacing
+- [ ] Centralize all sidebar geometry in one module instead of scattering offsets in paint code
+
+---
+
+## 10.4 Active States + Modified Dots
+
+### Goal
+
+Make active, hover, and dirty indicators match the mockup both visually and behaviorally.
+
+### Files
+
+- `oriterm_ui/src/widgets/sidebar_nav/paint.rs`
+- `oriterm_ui/src/widgets/sidebar_nav/input.rs`
+- `oriterm/src/app/settings_overlay/action_handler/mod.rs`
+- `oriterm/src/app/dialog_context/content_actions.rs`
+
+### Active + Hover Painting
+
+The current widget already has the right colors, but one geometry detail is wrong:
+
+- active/hover backgrounds are painted only to the right of the `3px` indicator strip
+
+The mockup CSS applies background to the full nav row and overlays the left border via
+`border-left-color`. Section 10 should mirror that model:
+
+- paint active/hover background across the full row rect
+- paint the `3px` active indicator on top
+- keep icon opacity at `0.7` for normal and hover
+- lift icon opacity to `1.0` only for the active row
+
+### Nav Item Insets
+
+The current icon/text offsets are still too tight relative to the mockup's `16px` horizontal
+padding and `10px` icon/text gap. The geometry rewrite in Section 10.3 should drive exact content
+insets here rather than a second round of local constants.
+
+### Modified Dots
+
+The widget can already paint a `6px` warning dot, but there are no current call sites for
+`set_page_modified(...)`. Section 10 must wire the data flow, not just preserve the paint code.
+
+Required integration:
+
+- compute per-page dirty state from the settings overlay's pending-vs-original config state
+- update the sidebar whenever page-dirty state changes
+- preserve the existing warning color and right-edge placement from the mockup
+
+The dirty-state mapping should live with the settings overlay/dialog state, not inside the generic
+sidebar widget. The sidebar should consume a page-dirty bitset; it should not become responsible
+for understanding config diffs.
+
+### Checklist
+
+- [ ] Paint active and hover backgrounds across the full row box
+- [ ] Keep the `3px` active indicator as an overlay, not as a clipped background substitute
+- [ ] Correct icon/text insets to match mockup spacing
+- [ ] Wire modified-dot state from real settings dirty data
+- [ ] Keep dirty-dot paint at `6px` and `theme.warning`
+
+---
+
+## 10.5 Footer Metadata + Actions
+
+### Goal
+
+Make the footer match the mockup's content, spacing, and interaction model instead of rendering two
+static text strings at the bottom edge.
+
+### Files
+
+- `oriterm_ui/src/widgets/sidebar_nav/mod.rs`
+- `oriterm_ui/src/widgets/sidebar_nav/geometry.rs`
+- `oriterm_ui/src/widgets/sidebar_nav/input.rs`
+- `oriterm_ui/src/widgets/sidebar_nav/paint.rs`
+- `oriterm/src/app/settings_overlay/form_builder/mod.rs`
+- `oriterm/src/app/dialog_context/content_actions.rs`
+
+### Current Gap
+
+The mockup footer contains:
+
+- version text
+- `Update Available` link with accent hover color and underline on hover
+- config-path row with dim default opacity, ellipsis behavior, and accent hover treatment
+
+The current widget can only show:
+
+- version text
+- config path text
+
+There is no way to express an update link, no hover state for footer rows, and no action-routing
+contract for footer clicks.
+
+### Footer Contract Rewrite
+
+Extend `SidebarNavWidget` so the footer can be configured intentionally:
+
+- keep `with_version(...)`
+- keep `with_config_path(...)`
+- add optional update metadata, for example:
+  - label text
+  - available version / tooltip text
+  - whether the link is currently shown
+
+The exact API shape can vary, but it must be able to represent the mockup footer directly instead
+of encoding it in comments.
+
+### Interaction Model
+
+Add separate hover/hit targets for:
+
+- update link
+- config path row
+
+For emitted actions, use one of these two clean paths:
+
+1. give the footer targets their own widget IDs and emit `Clicked(id)` for them
+2. add an explicit sidebar/footer action variant if the shared widget-action enum would otherwise
+   become ambiguous
+
+Do not overload nav-item `Selected { index }` for footer actions.
+
+### Visual Requirements
+
+Implement the mockup footer layout explicitly:
+
+- footer padding equivalent to mockup `8px 16px`
+- `4px` gap between version row and config path row
+- right-sidebar border remains `2px`
+- version text `11px`, faint color
+- update link `10px`, accent by default, `accent_hover` on hover
+- config path `10px`, faint color at reduced opacity by default
+- config path truncates with ellipsis inside the available width
+- config path hover restores full opacity and uses accent coloring
+
+The config-path row does not need a custom font override if the UI font remains monospace by
+default; if that assumption changes, this section should add an explicit family instead of allowing
+fidelity drift.
+
+### App Integration
+
+Update the settings sidebar builder in `form_builder/mod.rs` to populate the richer footer model.
+
+That includes:
+
+- continuing to set the package version
+- providing the config path through the real config-path helper instead of a hardcoded string when
+  appropriate
+- providing update-link metadata only when the app actually has update information to show
+
+### Checklist
+
+- [ ] Add a real footer data contract for update metadata and config-path behavior
+- [ ] Add distinct hover/hit regions for update and config-path targets
+- [ ] Emit non-ambiguous actions for footer interactions
+- [ ] Match footer spacing, colors, and hover treatment to the mockup
+- [ ] Truncate config-path text with ellipsis inside the footer width
+
+---
+
+## 10.6 Tests
+
+### Goal
+
+Turn sidebar fidelity into repeatable regression coverage instead of relying on manual inspection.
+
+### Files
+
+- `oriterm_ui/src/widgets/sidebar_nav/tests.rs`
+- any new sidebar-nav submodule tests needed after the split
+- `oriterm/src/app/settings_overlay/form_builder/tests.rs`
+- `oriterm/src/app/settings_overlay/action_handler/tests.rs`
+
+### Required Coverage
+
+Keep the current interaction tests, but add the coverage the existing suite is missing.
+
+Add scene-level sidebar paint assertions for:
+
+- `fn paint_sidebar_full_height_background()` — full-height sidebar background and `2px` right border
+- `fn paint_search_field_shape_and_colors()` — search field primitive shape and colors
+- `fn paint_search_icon_present()` — search icon presence
+- `fn paint_active_row_full_background_with_indicator()` — full-row active background plus `3px` indicator
+- `fn paint_footer_version_and_config_path()` — footer version/update/config-path primitives
+- `fn paint_modified_dot_on_dirty_page()` — modified-dot painting when page is dirty
+- `fn paint_no_modified_dot_on_clean_page()` — no modified dot when page is clean
+
+Add input/state tests for:
+
+- `fn search_field_receives_focus()` — search-field focus
+- `fn search_field_text_editing()` — search-field text editing
+- `fn search_filters_nav_items()` — local filtering hides non-matching items
+- `fn search_preserves_active_page()` — active-page preservation while filtering
+- `fn search_empty_query_shows_all()` — clearing query restores all items
+- `fn footer_update_link_hover()` — footer update link hover hit testing
+- `fn footer_config_path_hover()` — footer config-path hover hit testing
+- `fn footer_click_emits_action()` — footer click action routing
+
+Add integration tests for:
+
+- `fn sidebar_builder_populates_footer_metadata()` — footer builder metadata from the settings sidebar builder
+- `fn modified_dots_update_on_dirty_state_change()` — modified-dot updates when settings dirty state changes
+
+Use the existing `Scene`-based widget test pattern already present elsewhere in `oriterm_ui`; do not
+leave this section with only hit-test and keyboard-navigation coverage.
+
+### Checklist
+
+- [ ] Add scene-based paint assertions for sidebar fidelity
+- [ ] Add search interaction and filtering tests
+- [ ] Add footer hover/click routing tests
+- [ ] Add modified-dot integration coverage
+- [ ] Preserve existing nav selection and keyboard behavior tests
 
 ---
 
 ## 10.R Third Party Review Findings
 
-Reserved for findings from `/review-plan` or external review. Not actionable until populated.
+### Resolved Findings
+
+- `TPR-10-001` The draft overstated what already matched. The current sidebar still lacks a real
+  search control, a search icon, footer update-link content, and footer interaction states.
+- `TPR-10-002` `oriterm_ui/src/widgets/sidebar_nav/mod.rs` is already over the repository file-size
+  limit at `509` lines, so the section must split the module before adding more fidelity logic.
+- `TPR-10-003` The draft treated the search box as a paint-only concern even though the repo already
+  has a reusable `TextInputWidget`. Section 10 should use the shared text-input behavior path.
+- `TPR-10-004` The current active-row background geometry does not match the mockup CSS model
+  because it is clipped to the right of the indicator strip instead of painting across the full row.
+- `TPR-10-005` The footer API cannot currently represent the mockup's `Update Available` link or
+  emit distinct footer actions. Section 10 must extend the widget contract instead of "verifying"
+  behavior that does not exist.
+- `TPR-10-006` Modified-dot painting exists, but no current app code drives page dirty state into
+  the sidebar. The fidelity plan must include the missing data flow.
+- `TPR-10-007` The existing sidebar tests are mostly behavioral and do not verify rendered scene
+  fidelity, so visual regressions would currently pass unnoticed.
 
 ---
 
@@ -489,10 +562,24 @@ Reserved for findings from `/review-plan` or external review. Not actionable unt
 ./test-all.sh
 ```
 
-### Checklist
+### Focused Verification
 
-- [ ] `./build-all.sh` passes
-- [ ] `./clippy-all.sh` passes
-- [ ] `./test-all.sh` passes
-- [ ] sidebar_nav/mod.rs under 500 lines after split
-- [ ] Visual verification: sidebar matches mockup CSS values
+- run the targeted sidebar widget tests in `oriterm_ui`
+- run the settings overlay/form-builder tests that cover footer metadata and dirty-state integration
+- verify the search field, nav rows, and footer match the mockup in the live settings overlay
+
+Suggested commands:
+
+```bash
+cargo test -p oriterm_ui sidebar_nav::tests
+cargo test -p oriterm settings_overlay::form_builder::tests
+cargo test -p oriterm settings_overlay::action_handler::tests
+```
+
+Manual verification checklist:
+
+- [ ] Sidebar rail is full-height, `200px` wide, with `#0e0e12` background and `2px` right border
+- [ ] Search field matches the mockup visually and behaves like a real input
+- [ ] Section headers and nav-row spacing match the mockup
+- [ ] Active, hover, and modified states match the mockup
+- [ ] Footer shows version, optional update link, and config-path behavior correctly

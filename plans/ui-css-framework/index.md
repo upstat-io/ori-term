@@ -159,7 +159,7 @@ font sizes, 18px title, 13px body, 11.5px desc, 11px header
 footer, sticky footer, border-top, UNSAVED CHANGES
 btn-primary, btn-ghost, btn-danger-ghost
 RESET TO DEFAULTS, CANCEL, SAVE
-button padding, font-weight 500, uppercase, letter-spacing
+button padding, font-weight 500/700, uppercase, letter-spacing
 ```
 
 ---

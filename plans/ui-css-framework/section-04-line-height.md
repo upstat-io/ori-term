@@ -375,13 +375,13 @@ That avoids a file-organization refactor just to add coverage.
 
 Add focused tests for:
 
-1. `measure()` returns `style.size * multiplier` when line-height is set.
-2. `shape()` returns the same logical height as `measure()`.
-3. width is unchanged by line-height overrides.
-4. baseline moves downward for larger line-height and upward for tighter line-height.
-5. the behavior is correct at a scale factor other than `1.0`, so the physical/logical baseline
-   conversion is covered.
-6. invalid overrides (`0.0`, negative, `NaN`, infinities) fall back to natural metrics.
+1. `fn measure_returns_styled_height_when_line_height_set()` — `measure()` returns `style.size * multiplier` when line-height is set.
+2. `fn shape_returns_same_logical_height_as_measure()` — `shape()` returns the same logical height as `measure()`.
+3. `fn width_unchanged_by_line_height()` — width is unchanged by line-height overrides.
+4. `fn baseline_shifts_with_line_height()` — baseline moves downward for larger line-height and upward for tighter line-height.
+5. `fn line_height_correct_at_non_unit_scale()` — the behavior is correct at a scale factor other than `1.0`, so the physical/logical baseline conversion is covered.
+6. `fn invalid_line_height_falls_back_to_natural()` — invalid overrides (`0.0`, negative, `NaN`, infinities) fall back to natural metrics.
+7. `fn line_height_one_matches_natural_metrics()` — `line_height: Some(1.0)` produces the same result as natural metrics when font metrics match `size * 1.0`.
 
 ### MockMeasurer Coverage
 
