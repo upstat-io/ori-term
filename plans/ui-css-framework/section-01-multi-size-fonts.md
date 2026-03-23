@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Multi-Size Font Rendering"
-status: not-started
+status: in-progress
 reviewed: true
 third_party_review:
   status: resolved
@@ -13,7 +13,7 @@ depends_on: []
 sections:
   - id: "01.1"
     title: "Exact-Size UI Font Registry"
-    status: not-started
+    status: complete
   - id: "01.2"
     title: "UiFontMeasurer Size-Aware Shaping"
     status: not-started
@@ -202,15 +202,15 @@ The current `UiOnly` constructor relies on "use `font_collection` as the UI font
 
 ### Checklist
 
-- [ ] Create `oriterm/src/font/ui_font_sizes/mod.rs` with exact-size, lazily populated storage
-- [ ] Create `oriterm/src/font/ui_font_sizes/tests.rs` with `#[cfg(test)] mod tests;` in `mod.rs`
-- [ ] Re-export the module from `oriterm/src/font/mod.rs`
-- [ ] Update startup in `app/init/mod.rs` to construct `UiFontSizes` instead of one 10pt collection
-- [ ] Update `create_window_renderer()` and `create_dialog_renderer()` to construct the same registry
-- [ ] Replace `ui_font_collection` with `ui_font_sizes` on `WindowRenderer`
-- [ ] Split [window_renderer/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/window_renderer/mod.rs) before adding more code there
-- [ ] Update `set_font_size()`, `set_hinting_and_format()`, and related font-config code to keep the registry in sync
-- [ ] Remove the hardcoded `ui_fc.set_size(11.0, dpi)` in `font_config.rs` and replace it with registry-wide DPI update
+- [x] Create `oriterm/src/font/ui_font_sizes/mod.rs` with exact-size, lazily populated storage
+- [x] Create `oriterm/src/font/ui_font_sizes/tests.rs` with `#[cfg(test)] mod tests;` in `mod.rs`
+- [x] Re-export the module from `oriterm/src/font/mod.rs`
+- [x] Update startup in `app/init/mod.rs` to construct `UiFontSizes` instead of one 10pt collection
+- [x] Update `create_window_renderer()` and `create_dialog_renderer()` to construct the same registry
+- [x] Replace `ui_font_collection` with `ui_font_sizes` on `WindowRenderer`
+- [x] Split [window_renderer/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/window_renderer/mod.rs) before adding more code there
+- [x] Update `set_font_size()`, `set_hinting_and_format()`, and related font-config code to keep the registry in sync
+- [x] Remove the hardcoded `ui_fc.set_size(11.0, dpi)` in `font_config.rs` and replace it with registry-wide DPI update
 
 ---
 

@@ -348,12 +348,19 @@ impl App {
         )
         .glyph_format();
 
-        let ui_fc = self.font_set.as_ref().and_then(|fs| {
-            crate::font::FontCollection::new(fs.clone(), 10.0, physical_dpi, format, 400, hinting)
-                .ok()
+        let ui_sizes = self.font_set.as_ref().and_then(|fs| {
+            crate::font::UiFontSizes::new(
+                fs.clone(),
+                physical_dpi,
+                format,
+                hinting,
+                400,
+                crate::font::ui_font_sizes::PRELOAD_SIZES,
+            )
+            .ok()
         })?;
 
-        Some(WindowRenderer::new_ui_only(gpu, pipelines, ui_fc))
+        Some(WindowRenderer::new_ui_only(gpu, pipelines, ui_sizes))
     }
 
     /// Build dialog content for a confirmation dialog.

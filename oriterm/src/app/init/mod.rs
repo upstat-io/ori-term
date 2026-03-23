@@ -106,22 +106,22 @@ impl App {
         // 7b. FontSet cached from thread (Arc-cloned before FontCollection
         // consumed it — zero disk reads).
 
-        // 7c. UI font: terminal monospace at 10pt (brutal design uses monospace
-        // throughout — mockup: `'IBM Plex Mono', 'Cascadia Code', monospace`).
-        // 10pt ≈ 13px at 96dpi, matching the mockup's `font-size: 13px` body text.
+        // 7c. UI font registry: exact-size collections for all UI text sizes.
+        // The brutal design uses monospace throughout (mockup:
+        // `'IBM Plex Mono', 'Cascadia Code', monospace`).
         drop(font_cache);
-        let ui_fc = FontCollection::new(
+        let ui_sizes = crate::font::UiFontSizes::new(
             cached_font_set.clone(),
-            10.0,
             physical_dpi,
             subpixel_format,
-            400,
             hinting,
+            400,
+            crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
         .ok();
 
         // 7d. Create per-window renderer.
-        let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_fc);
+        let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_sizes);
         let t_renderer = t_renderer_start.elapsed();
 
         // 8. Create tab bar widget and apply platform effects.

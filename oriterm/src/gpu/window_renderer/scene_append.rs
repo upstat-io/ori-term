@@ -107,15 +107,24 @@ impl WindowRenderer {
 
     /// Cache UI text glyphs referenced by the Scene's text runs and icons.
     fn cache_scene_glyphs(&mut self, scene: &Scene, scale: f32, gpu: &GpuState) {
-        let ui_fc = self
-            .ui_font_collection
-            .as_mut()
-            .unwrap_or(&mut self.font_collection);
-        let size_q6 = size_key(ui_fc.size_px());
-        let hinted = ui_fc.hinting_mode().hint_flag();
+        // Read size and hinting from the UI font registry (or terminal fallback).
+        let size_q6 = self.ui_size_q6();
+        let hinted = self.ui_hinted();
 
         self.ui_raster_keys.clear();
         scene_raster_keys(scene, size_q6, hinted, scale, &mut self.ui_raster_keys);
+
+        // Get a mutable reference to the UI font for rasterization.
+        let has_sizes = self.ui_font_sizes.is_some();
+        let ui_fc = if has_sizes {
+            self.ui_font_sizes
+                .as_mut()
+                .unwrap()
+                .default_collection_mut()
+                .expect("default UI font collection must exist")
+        } else {
+            &mut self.font_collection
+        };
         ensure_glyphs_cached(
             self.ui_raster_keys.iter().copied(),
             &mut self.atlas,
@@ -130,19 +139,19 @@ impl WindowRenderer {
 
     /// UI font size in 26.6 fixed-point.
     fn ui_size_q6(&self) -> u32 {
-        let ui_fc = self
-            .ui_font_collection
-            .as_ref()
-            .unwrap_or(&self.font_collection);
-        size_key(ui_fc.size_px())
+        if let Some(sizes) = &self.ui_font_sizes {
+            if let Some(fc) = sizes.default_collection() {
+                return size_key(fc.size_px());
+            }
+        }
+        size_key(self.font_collection.size_px())
     }
 
     /// Whether UI font hinting is enabled.
     fn ui_hinted(&self) -> bool {
-        let ui_fc = self
-            .ui_font_collection
-            .as_ref()
-            .unwrap_or(&self.font_collection);
-        ui_fc.hinting_mode().hint_flag()
+        if let Some(sizes) = &self.ui_font_sizes {
+            return sizes.hinting_mode().hint_flag();
+        }
+        self.font_collection.hinting_mode().hint_flag()
     }
 }

@@ -85,7 +85,7 @@ When plan metadata and checklist reality diverge, fix the frontmatter before pro
 **Auto-fix rules (no user prompt needed):**
 
 1. `status: complete` + unchecked items exist -> set `status: in-progress` (or `not-started` if 0 checked)
-2. `status: not-started` + checked items exist -> set `status: in-progress` (or `complete` if 0 unchecked)
+2. `status: not-started` + checked **non-TPR** items exist -> set `status: in-progress` (or `complete` if 0 unchecked). TPR checkboxes (items in `## X.R Third Party Review Findings`) do NOT count for promoting `not-started` — resolved review findings are not implementation progress.
 3. `status: in-progress` + all items checked -> set `status: complete`
 4. `status: in-progress` + 0 items checked -> set `status: not-started`
 5. Subsection status stale -> apply the same rules per subsection, then recalculate section status

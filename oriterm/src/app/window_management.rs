@@ -214,17 +214,24 @@ impl App {
             self.user_fb_count,
         );
 
-        // UI font: terminal monospace at 10pt (brutal design uses monospace throughout).
-        let ui_fc = self.font_set.as_ref().and_then(|fs| {
-            crate::font::FontCollection::new(fs.clone(), 10.0, physical_dpi, format, 400, hinting)
-                .ok()
+        // UI font registry: exact-size collections for all UI text sizes.
+        let ui_sizes = self.font_set.as_ref().and_then(|fs| {
+            crate::font::UiFontSizes::new(
+                fs.clone(),
+                physical_dpi,
+                format,
+                hinting,
+                400,
+                crate::font::ui_font_sizes::PRELOAD_SIZES,
+            )
+            .ok()
         });
 
         Some(crate::gpu::WindowRenderer::new(
             gpu,
             pipelines,
             font_collection,
-            ui_fc,
+            ui_sizes,
         ))
     }
 

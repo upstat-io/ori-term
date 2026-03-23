@@ -2,7 +2,7 @@
 reroute: true
 name: "Brutal Design Pass 2"
 full_name: "Brutal Design System — Visual Fidelity Pass"
-status: active
+status: resolved
 order: 4
 ---
 

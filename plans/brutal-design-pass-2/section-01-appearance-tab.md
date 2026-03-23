@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Appearance Tab Visual Fidelity"
-status: in-progress
+status: complete
 reviewed: true
 third_party_review:
   status: resolved
@@ -41,12 +41,12 @@ sections:
     status: complete
   - id: "01.10"
     title: "Build & Verify"
-    status: in-progress
+    status: complete
 ---
 
 # Section 01: Appearance Tab Visual Fidelity
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** The Appearance tab of the settings dialog visually matches `mockups/settings-brutal.html` at 100% DPI — widget shapes, colors, layout, typography, and interaction states all match.
 
 **Production code paths:**
@@ -430,6 +430,6 @@ The mockup window has sharp corners — no OS-level rounded corners.
 - [x] `./test-all.sh` passes
 - [x] New tests exist proving widget style changes work (slider, toggle, dropdown shapes)
 - [x] No `#[allow(dead_code)]` on new items — everything has a production caller
-- [ ] Side-by-side screenshot of Appearance tab matches mockup at 100% DPI
+- [x] Side-by-side screenshot of Appearance tab matches mockup at 100% DPI
 
 **Exit Criteria:** Opening the settings dialog Appearance tab produces a visual result that is indistinguishable from `mockups/settings-brutal.html` at normal viewing distance. All widget shapes (slider, toggle, dropdown), button styling (ALL CAPS, correct colors), layout (sticky header, footer inside content area), and sidebar features (search, icons, version) match the mockup.
