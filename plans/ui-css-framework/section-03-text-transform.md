@@ -215,9 +215,12 @@ Instead:
 
 ### Cache Key Update
 
-`CachedTextMeasurer` must include `text_transform` in `TextCacheKey`. Keep the key based on the
-original caller text plus the style field rather than eagerly allocating transformed text just to
-build cache keys.
+`CachedTextMeasurer` must include `text_transform` in `TextCacheKey`. The key already carries
+`letter_spacing_hundredths`, `size_hundredths`, `weight`, `overflow`, `scale_hundredths`,
+`max_width_hundredths`, `font_family`, and `text` — so only `text_transform` is new.
+
+Keep the key based on the original caller text plus the style field rather than eagerly allocating
+transformed text just to build cache keys.
 
 ```rust
 struct TextCacheKey {
@@ -226,10 +229,10 @@ struct TextCacheKey {
     size_hundredths: u32,
     weight: FontWeight,
     overflow: TextOverflow,
-    text_transform: TextTransform,
+    text_transform: TextTransform, // ← new field
     max_width_hundredths: u32,
     scale_hundredths: u32,
-    letter_spacing_hundredths: u32,
+    letter_spacing_hundredths: u32, // already present in current codebase
 }
 ```
 
@@ -363,7 +366,9 @@ Add tests for:
 fn text_transform_default_is_none() { ... }
 
 #[test]
-fn text_transform_none_borrows() { ... }
+fn text_transform_none_borrows() {
+    // Verify TextTransform::None returns Cow::Borrowed (zero allocation)
+}
 
 #[test]
 fn text_transform_uppercase_matches_explicit_text() { ... }
@@ -372,7 +377,23 @@ fn text_transform_uppercase_matches_explicit_text() { ... }
 fn text_transform_lowercase_matches_explicit_text() { ... }
 
 #[test]
+fn text_transform_uppercase_multibyte_expansion() {
+    // "straße" -> "STRASSE" (German sharp s expands from 1 to 2 chars)
+    // Verifies that transform handles string length changes correctly
+}
+
+#[test]
+fn text_transform_empty_string() {
+    // Empty string stays empty for all transform variants
+}
+
+#[test]
 fn cache_key_changes_when_text_transform_changes() { ... }
+
+#[test]
+fn cache_key_same_when_text_transform_same() {
+    // Two cache keys with identical text and TextTransform::Uppercase are equal
+}
 ```
 
 ### Integration Tests

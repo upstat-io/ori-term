@@ -4,499 +4,536 @@ title: "Visual Fidelity: Widget Controls"
 status: not-started
 reviewed: true
 third_party_review:
-  status: none
-  updated: null
-goal: "Slider, toggle, and dropdown widget controls match the mockup's exact dimensions, colors, border widths, and spacing"
-depends_on: ["01", "02"]
+  status: resolved
+  updated: 2026-03-23
+goal: "The shared settings controls match the mockup across all current control families: slider, toggle, dropdown trigger and popup, number input stepper, text input, cursor picker, and scheme cards. Control sizing variants, typography, geometry, and state behavior come from shared primitives instead of page-specific hacks."
+depends_on: ["01", "02", "03", "04", "11"]
 sections:
   - id: "13.1"
-    title: "Slider"
+    title: "Shared Control Contract + Size Variants"
     status: not-started
   - id: "13.2"
-    title: "Toggle"
+    title: "Slider + Toggle Fidelity"
     status: not-started
   - id: "13.3"
-    title: "Dropdown"
+    title: "Dropdown Trigger + Popup"
     status: not-started
   - id: "13.4"
-    title: "Row Spacing Consistency"
+    title: "Number + Text Inputs"
+    status: not-started
+  - id: "13.5"
+    title: "Selection Controls"
+    status: not-started
+  - id: "13.6"
+    title: "Tests"
     status: not-started
   - id: "13.R"
     title: "Third Party Review Findings"
-    status: not-started
-  - id: "13.5"
+    status: complete
+  - id: "13.7"
     title: "Build & Verify"
     status: not-started
 ---
 
-# Section 13: Visual Fidelity — Widget Controls
+# Section 13: Visual Fidelity - Widget Controls
 
-**Status:** Not Started
-**Goal:** Every interactive control in the settings panel — sliders, toggles, dropdowns — matches the mockup's CSS dimensions, colors, and interaction states. Row spacing between settings produces a consistent visual rhythm.
+## Problem
 
-**Production code paths:**
-- Slider: `oriterm_ui/src/widgets/slider/mod.rs` (`SliderStyle`, `SliderWidget`)
-- Slider paint: `oriterm_ui/src/widgets/slider/widget_impl.rs`
-- Toggle: `oriterm_ui/src/widgets/toggle/mod.rs` (`ToggleStyle`, `ToggleWidget`)
-- Dropdown: `oriterm_ui/src/widgets/dropdown/mod.rs` (`DropdownStyle`, `DropdownWidget`)
-- Row gap: `oriterm/src/app/settings_overlay/form_builder/appearance.rs` (`ROW_GAP`)
+The draft scoped Section 13 to slider, toggle, dropdown, plus a generic "row spacing consistency"
+check. That is no longer accurate to the live tree or to the mockup.
 
-**Observable change:** Controls are visually identical to the mockup — slider track is 120px wide and 4px tall with gray color and blue thumb, toggle is 38x20 with square corners, dropdown has 140px min-width with correct padding, and setting rows have consistent vertical rhythm.
+What the code actually has today:
 
----
+- The settings UI already uses more control families than the draft listed:
+  - `SliderWidget`
+  - `ToggleWidget`
+  - `DropdownWidget`
+  - `NumberInputWidget`
+  - `TextInputWidget`
+  - `CursorPickerWidget`
+  - `SchemeCardWidget`
+- `row spacing consistency` is not a control-local concern. The shared page rhythm belongs to
+  Section 11's content typography/layout work, not a control-specific constant in Section 13.
+- Several of the currently used controls are materially different from the mockup:
+  - `SliderWidget` uses the wrong value-label gap/width and does not support the mockup's `%`
+    formatting or monospace value display.
+  - `ToggleWidget` computes a `14px` thumb from `height - 2 * thumb_padding`, but the mockup thumb
+    is `12px` with `18px` travel.
+  - `DropdownWidget` uses a Unicode `▾` instead of the mockup's `10x6` chevron glyph and has no
+    size-variant API for the mockup's `140px`, `160px`, and `180px` width cases.
+  - `NumberInputWidget` is not a real editable number input. It is a custom painted display with
+    arrow-key/mouse increment behavior, while the mockup uses a real `input[type="number"]`
+    embedded in a `num-stepper` wrapper.
+  - `TextInputWidget` defaults to the wrong border width, font size, hover treatment, and width
+    behavior for the settings mockup's general text fields.
+  - `CursorPickerWidget` and `SchemeCardWidget` are much closer to functional placeholders than to
+    the mockup's actual card-based controls.
+- The settings builders already show a need for size variants:
+  - dropdowns in the mockup appear at multiple widths
+  - number steppers appear in default and compact paired forms
+  - text inputs appear at `200px`
+  - the slider value label is a compact monospace readout
 
-## 13.1 Slider
+Section 13 therefore needs to become the shared control-surface section, not a three-widget spot
+check.
 
-**File(s):** `oriterm_ui/src/widgets/slider/mod.rs` (`SliderStyle::from_theme()`)
+## Corrected Scope
 
-### Mockup CSS
+Section 13 should keep the full control-fidelity goal and implement it at the shared-widget
+boundary:
 
-```css
-input[type="range"] {
-    width: 120px;                          /* fixed track width */
-    height: 4px;                           /* thin track */
-    background: var(--border);             /* #2a2a36 — gray, not blue */
-    border: none;
-    outline: none;
-    appearance: none;
-}
+1. add shared size/style variants for settings controls
+2. fix slider/toggle geometry and value presentation
+3. cover both dropdown trigger and popup list behavior
+4. replace the current faux number input with a real stepper/input control model
+5. bring selection-style controls such as cursor picker and scheme cards up to mockup fidelity
 
-input[type="range"]::-webkit-slider-thumb {
-    width: 12px;
-    height: 14px;                          /* rectangular, taller than wide */
-    background: var(--accent);             /* #6d9be0 — blue thumb */
-    border: 2px solid var(--bg-surface);   /* #16161c — dark border */
-    cursor: pointer;
-    appearance: none;
-}
-
-/* Value label to the right */
-.slider-value {
-    font-size: 12px;
-    color: var(--text-muted);              /* #9494a8 */
-    width: 48px;
-    text-align: right;
-}
-```
-
-### Current code (`SliderStyle::from_theme()`)
-
-```rust
-Self {
-    width: 120.0,                          // matches 120px
-    track_height: 4.0,                     // matches 4px
-    track_bg: theme.border,                // #2a2a36 — matches --border
-    fill_color: theme.border,              // #2a2a36 — matches (gray fill, not accent)
-    track_radius: theme.corner_radius,     // 0.0 — matches (brutal, no radius)
-    thumb_width: 12.0,                     // matches 12px
-    thumb_height: 14.0,                    // matches 14px
-    thumb_color: theme.accent,             // #6d9be0 — matches --accent
-    thumb_hover_color: theme.accent_hover, // #85ade8 — matches --accent-hover
-    thumb_border_color: theme.bg_primary,  // #16161c — matches --bg-surface
-    thumb_border_width: 2.0,               // matches 2px
-    disabled_bg: theme.bg_secondary,
-    disabled_fill: theme.fg_disabled,
-    focus_ring_color: theme.accent,
-    value_font_size: 12.0,                 // matches 12px
-}
-```
-
-### Detailed comparison
-
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Track width | 120px | 120.0 | Yes |
-| Track height | 4px | 4.0 | Yes |
-| Track bg | `--border` (#2a2a36) | `theme.border` (#2a2a36) | Yes |
-| Track fill color | `--border` (same as track) | `theme.border` | Yes |
-| Track radius | 0 (brutal) | `theme.corner_radius` (0.0) | Yes |
-| Thumb width | 12px | 12.0 | Yes |
-| Thumb height | 14px | 14.0 | Yes |
-| Thumb bg | `--accent` (#6d9be0) | `theme.accent` | Yes |
-| Thumb border | 2px `--bg-surface` | 2.0, `theme.bg_primary` (#16161c) | Yes |
-| Value font size | 12px | 12.0 | Yes |
-| Value color | `--text-muted` (#9494a8) | Drawn with `theme.fg_secondary` | Verify |
-| Value width | 48px | `VALUE_LABEL_WIDTH = 48.0` | Yes |
-| Value alignment | right | Positioned at right edge | Verify |
-
-### Issues to verify
-
-1. **Value label color**: The constant `VALUE_LABEL_WIDTH = 48.0` matches the mockup's `width: 48px`. The value label is drawn in the `widget_impl.rs` file. Check that it uses `theme.fg_secondary` (#9494a8) matching `--text-muted`.
-
-2. **Value label alignment**: Mockup uses `text-align: right`. The paint code should right-align the value text within the 48px label area. Verify in `widget_impl.rs`.
-
-3. **Track width behavior**: The slider's `width: 120.0` is the total widget width (track + thumb overhang). The actual track rendering area should be `120.0 - thumb_width` to prevent the thumb from extending beyond the widget bounds. Verify the track bounds calculation in `track_bounds()`:
-   ```rust
-   fn track_bounds(&self, bounds: Rect) -> Rect {
-       let label_space = VALUE_LABEL_WIDTH + VALUE_GAP;
-       let w = (bounds.width() - label_space).max(self.style.thumb_width);
-       Rect::new(bounds.x(), bounds.y(), w, bounds.height())
-   }
-   ```
-   The layout returns width `120.0 + VALUE_GAP + VALUE_LABEL_WIDTH = 120 + 12 + 48 = 180px` total. The track area is `180 - 60 = 120px`. This is correct.
-
-4. **Fill portion**: The mockup shows the track as uniform gray (`--border`), with no colored fill to the left of the thumb. Current code sets `fill_color: theme.border` (same as track_bg), which means the fill is invisible. This is correct — the fill blends with the track.
-
-### Checklist
-
-- [ ] All `SliderStyle` fields match mockup (verified: all match).
-- [ ] Value label rendered in `--text-muted` color (verify in `widget_impl.rs`).
-- [ ] Value label right-aligned within 48px area (verify in `widget_impl.rs`).
-- [ ] No code changes needed — verification-only (unless issues found in `widget_impl.rs`).
+This section should not leave control families half-covered just because the draft originally named
+only three of them.
 
 ---
 
-## 13.2 Toggle
+## 13.1 Shared Control Contract + Size Variants
 
-**File(s):** `oriterm_ui/src/widgets/toggle/mod.rs` (`ToggleStyle::from_theme()`)
+### Goal
 
-### Mockup CSS
+Create a coherent shared control-style contract for the settings UI so width/typography/state
+variants come from widget APIs instead of ad hoc page-builder hacks.
 
-```css
-.toggle {
-    width: 38px;
-    height: 20px;
-    border: 2px solid var(--border);       /* #2a2a36 */
-    background: var(--bg-active);          /* #2a2a36 */
-    position: relative;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-.toggle .thumb {
-    width: 12px;                           /* = height - 2*padding - 2*border */
-    height: 12px;                          /* where padding=3, border=2: 20-6-4=10? */
-    background: var(--text-faint);         /* #8c8ca0 */
-    position: absolute;
-    top: 3px;                              /* thumb_padding */
-    left: 3px;                             /* thumb_padding */
-    transition: transform 0.15s ease;
-}
-.toggle.checked {
-    border-color: var(--accent);           /* #6d9be0 */
-    background: var(--accent-bg-strong);   /* rgba(109,155,224,0.14) */
-}
-.toggle.checked .thumb {
-    background: var(--accent);             /* #6d9be0 */
-    transform: translateX(18px);           /* width - 2*padding - thumb_size = 38-6-12 = 20? */
-}
-```
+### Files
 
-### Thumb size math
+- `oriterm_ui/src/widgets/slider/mod.rs`
+- `oriterm_ui/src/widgets/toggle/mod.rs`
+- `oriterm_ui/src/widgets/dropdown/mod.rs`
+- `oriterm_ui/src/widgets/number_input/mod.rs`
+- `oriterm_ui/src/widgets/text_input/mod.rs`
+- `oriterm_ui/src/widgets/cursor_picker/mod.rs`
+- `oriterm_ui/src/widgets/scheme_card/mod.rs`
+- `oriterm/src/app/settings_overlay/form_builder/*.rs`
 
-Track dimensions: 38 x 20, border: 2px, thumb_padding: 3px.
+### Current Boundary Problem
 
-Inner area (after border): `38 - 4 = 34` wide, `20 - 4 = 16` tall.
-Thumb area (after padding): `34 - 6 = 28` travel width, `16 - 6 = 10` height.
+Most control widgets currently hardcode one default geometry:
 
-Wait, that gives thumb height = 10, but the mockup says 12px. Let's recalculate:
+- `DropdownStyle.min_width = 140`
+- `NumberInputWidget` fixed width `80`
+- `TextInputStyle.min_width = 120`
+- `CursorPickerWidget` fixed card gap/size
+- `SchemeCardWidget` fixed width `200`
 
-If `thumb = height - 2 * thumb_padding - 2 * border`:
-`20 - 2*3 - 2*2 = 20 - 6 - 4 = 10px`. But mockup says 12x12.
+But the mockup uses multiple size variants and context-specific sizing:
 
-Alternative: thumb_padding might be measured from the border edge, not the outer edge.
-`thumb = height - 2 * border - 2 * thumb_padding = 20 - 4 - 2*2 = 12`. With padding=2.
-Or: `thumb = height - 2 * thumb_padding = 20 - 2*4 = 12`. With padding=4.
+- dropdowns at `140`, `160`, and `180`
+- number steppers with inner input widths `56` and `44`
+- text inputs at `200`
+- scheme cards in an auto-fill grid with `minmax(240px, 1fr)`
 
-Let's check the current code:
-```rust
-width: 38.0,
-height: 20.0,
-thumb_padding: 3.0,
-border_width: 2.0,
-```
+### Required Shared Variant Surface
 
-And in `paint()`:
-```rust
-let thumb_size = s.height - s.thumb_padding * 2.0;  // 20 - 6 = 14
-```
+Section 13 should add shared, widget-level sizing/style APIs rather than per-page magic constants.
 
-So current thumb_size = 14. But the mockup says 12x12.
+Examples:
 
-The `paint()` code calculates `thumb_size = height - 2 * thumb_padding`. With `thumb_padding = 3.0`, this gives `20 - 6 = 14`. The thumb is 14x14, but the mockup says 12x12.
+- `DropdownWidget`
+  - `with_min_width(...)` or a `DropdownSize` variant
+- `NumberInputWidget`
+  - stepper width variants for default vs compact pair usage
+- `TextInputWidget`
+  - fixed-width settings-field variants
+- `SchemeCardWidget`
+  - card width derived from the actual grid contract rather than a stale fixed width
 
-### Current code (`ToggleStyle::from_theme()`)
+The exact API shape can vary, but the important property is ownership: page builders should choose
+from explicit supported control variants rather than cloning style structs field-by-field.
 
-```rust
-Self {
-    width: 38.0,                           // matches 38px
-    height: 20.0,                          // matches 20px
-    off_bg: theme.bg_active,               // #2a2a36 — matches --bg-active
-    off_hover_bg: theme.bg_hover,          // #24242e — matches --bg-hover
-    on_bg: theme.accent_bg_strong,         // rgba(0.14) — matches --accent-bg-strong
-    off_thumb_color: theme.fg_faint,       // #8c8ca0 — matches --text-faint
-    on_thumb_color: theme.accent,          // #6d9be0 — matches --accent
-    thumb_padding: 3.0,                    // matches top: 3px
-    border_width: 2.0,                     // matches 2px
-    off_border_color: theme.border,        // #2a2a36 — matches --border
-    on_border_color: theme.accent,         // #6d9be0 — matches --accent
-    disabled_bg: theme.bg_secondary,
-    disabled_thumb: theme.fg_disabled,
-    focus_ring_color: theme.accent,
-}
-```
+### Relationship To Section 11
 
-### Detailed comparison
-
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Track width | 38px | 38.0 | Yes |
-| Track height | 20px | 20.0 | Yes |
-| Off bg | `--bg-active` (#2a2a36) | `theme.bg_active` | Yes |
-| Off border | 2px `--border` | 2.0, `theme.border` | Yes |
-| On bg | `--accent-bg-strong` (0.14) | `theme.accent_bg_strong` | Yes |
-| On border | 2px `--accent` | 2.0, `theme.accent` | Yes |
-| Off thumb color | `--text-faint` (#8c8ca0) | `theme.fg_faint` | Yes |
-| On thumb color | `--accent` (#6d9be0) | `theme.accent` | Yes |
-| Thumb padding | 3px | 3.0 | Yes |
-| Thumb size | 12x12 | 14x14 (computed) | **NO** |
-| Translate X (checked) | 18px | computed from travel | Verify |
-
-### Issues to fix
-
-1. **Thumb size mismatch**: Current code computes `thumb_size = height - 2 * thumb_padding = 20 - 6 = 14`. But the mockup specifies 12x12 thumbs. The thumb_padding should account for the border:
-
-   Correct calculation: `thumb_size = height - 2 * border_width - 2 * thumb_padding = 20 - 4 - 6 = 10`. That's even smaller.
-
-   Alternatively, the mockup's `top: 3px; left: 3px` positions the thumb 3px from the border edge (inside the border). So the thumb occupies `height - 2 * (border + padding) = 20 - 2*(2+3) = 20 - 10 = 10`. That gives 10, not 12.
-
-   But the mockup explicitly says `width: 12px; height: 12px`. This means the thumb_padding is not 3px — it's computed differently. With thumb=12 and height=20: `padding = (20 - 12) / 2 = 4`. But `top: 3px` says the padding from the outer edge is 3px. With 2px border, the inner padding is `3 - 2 = 1px`. Then `thumb = 20 - 2*2 (border) - 2*1 (inner pad) = 14`. Still wrong.
-
-   The CSS `top: 3px` is from the border-box edge. The thumb has `position: absolute; top: 3px; left: 3px`. This means 3px from the outer edge of the toggle (including border). So the thumb's top is at 3px, its bottom is at 3+12 = 15px, and the track bottom is at 20px. That leaves 5px below (2px border + 3px padding). This is asymmetric... unless the border is NOT included in the box model calculation (CSS `box-sizing: content-box` vs `border-box`).
-
-   With `box-sizing: border-box` (the mockup uses `*, *::before, *::after { box-sizing: border-box }`), the toggle's total size including borders is 38x20. Inner area: 34x16. `top: 3px` from the outer edge means 3 - 2 (border) = 1px from inner edge. Thumb size 12. Bottom: 16 - 1 - 12 = 3px (matches top). So inner padding is 1px each side, border is 2px each side.
-
-   **In our paint code**: `thumb_size = height - thumb_padding * 2.0 = 20 - 6 = 14`. We need it to be 12.
-
-   The thumb_padding in our code represents the distance from the outer edge to the thumb edge. With `thumb_padding = 3.0` and `border_width = 2.0`, the thumb is positioned starting at `bounds.y() + 3.0`, which is 3px from the outer edge (1px from the inner/border edge). The thumb height should be `height - 2 * thumb_padding = 20 - 6 = 14` if thumb_padding means "from outer edge." But the mockup says 12.
-
-   **Root cause**: The current `thumb_size` formula does not subtract the border width. The thumb lives inside the border, so:
-   ```
-   thumb_size = height - 2 * border_width - 2 * inner_padding
-   ```
-   where `inner_padding = thumb_padding - border_width = 3 - 2 = 1`.
-
-   So: `thumb_size = 20 - 4 - 2 = 14`. Still 14!
-
-   Hmm. Let me re-examine. If `top: 3px` with `border-box` means 3px from the content edge (inside the border), then: `thumb_size = height - 2*border - 2*top = 20 - 4 - 6 = 10`. No.
-
-   Actually, in CSS with `position: absolute` inside a `position: relative` container with `border-box`, `top: 3px` means 3px from the padding edge (inside border). So the thumb starts at 3px from the inner edge. Thumb = 12px. Bottom space = 16 - 3 - 12 = 1px. That's asymmetric.
-
-   But `left: 3px` and `translateX(18px)` when checked: starting at 3, moves 18, so thumb-left = 21. Thumb-right = 21 + 12 = 33. Inner width = 34. Right space = 34 - 33 = 1px. So the spacing is: 3px left, 1px right when off; 21px left, 1px right when on. That does look asymmetric.
-
-   **Pragmatic approach**: The mockup says 12x12. Change the paint code to use `thumb_size = height - 2 * (thumb_padding + border_width)`:
-   ```rust
-   let thumb_size = s.height - 2.0 * (s.thumb_padding + s.border_width);
-   // 20 - 2*(3+2) = 20 - 10 = 10
-   ```
-   That gives 10, not 12.
-
-   **Alternative**: Change `thumb_padding` to 4.0. Then `thumb_size = 20 - 8 = 12`. The thumb is at `bounds.y() + 4.0`, which is 4px from outer edge = 2px from inner edge. That gives 12x12 thumbs with 2px inner padding. And the thumb Y position: `bounds.y() + s.thumb_padding = bounds.y() + 4.0`.
-
-   **Action**: Change `thumb_padding` from 3.0 to 4.0 in `ToggleStyle::from_theme()`. This produces:
-   - `thumb_size = 20 - 8 = 12` -- matches mockup.
-   - Thumb position: 4px from outer edge = 2px from inner edge.
-   - Travel: `38 - 8 - 12 = 18px` -- matches mockup's `translateX(18px)`.
-
-   **NOTE:** The test helper `test_toggle_style()` in `toggle/tests.rs` already uses `thumb_padding: 4.0`, so test assertions already expect the correct value. Only the production `from_theme()` needs updating.
-
-2. **TranslateX verification**: With `thumb_padding = 4.0`:
-   - Travel = `width - 2 * thumb_padding - thumb_size = 38 - 8 - 12 = 18`.
-   - Mockup: `translateX(18px)`. Matches.
+Section 11 owns row rhythm and shared content spacing. Section 13 should only own control geometry
+and control-specific spacing inside each widget, not global row gaps between settings rows.
 
 ### Checklist
 
-- [ ] `thumb_padding` changed from 3.0 to 4.0 in `ToggleStyle::from_theme()`.
-- [ ] Thumb size renders as 12x12 (verify: `height - 2 * thumb_padding = 20 - 8 = 12`).
-- [ ] Travel distance is 18px (verify: `width - 2 * thumb_padding - thumb_size = 38 - 8 - 12 = 18`).
-- [ ] All toggle colors match mockup (verified: all match).
-- [ ] Drag discrimination threshold updated if it depends on travel.
-- [ ] `cargo test -p oriterm_ui` toggle tests pass.
+- [ ] Add shared size/style variants for settings controls
+- [ ] Remove control sizing assumptions from page-builder ad hoc constants where possible
+- [ ] Keep row-spacing ownership in Section 11, not Section 13
+- [ ] Make shared variants cover the actual settings consumers already present in the tree
 
 ---
 
-## 13.3 Dropdown
+## 13.2 Slider + Toggle Fidelity
 
-**File(s):** `oriterm_ui/src/widgets/dropdown/mod.rs` (`DropdownStyle::from_theme()`)
+### Goal
 
-### Mockup CSS
+Match the mockup slider and toggle controls exactly, including geometry and value presentation.
 
-```css
-.dropdown-select {
-    min-width: 140px;
-    padding: 6px 30px 6px 10px;            /* top right bottom left */
-    border: 2px solid var(--border);       /* #2a2a36 */
-    background: var(--bg-input);           /* #12121a */
-    color: var(--text);                    /* #d4d4dc */
-    font-size: 12px;
-    cursor: pointer;
-    appearance: none;
-    transition: border-color 0.15s;
-}
-.dropdown-select:hover {
-    border-color: var(--text-faint);       /* #8c8ca0 */
-}
-.dropdown-select:focus {
-    border-color: var(--accent);           /* #6d9be0 */
-    outline: none;
-}
-/* Dropdown arrow indicator — CSS background SVG chevron */
-.dropdown-select {
-    background-image: url("data:image/svg+xml,...chevron...");
-    background-repeat: no-repeat;
-    background-position: right 10px center;
-    background-size: 10px;
-}
-```
+### Files
 
-### Current code (`DropdownStyle::from_theme()`)
+- `oriterm_ui/src/widgets/slider/mod.rs`
+- `oriterm_ui/src/widgets/slider/widget_impl.rs`
+- `oriterm_ui/src/widgets/toggle/mod.rs`
+- `mockups/settings-brutal.html`
 
-```rust
-Self {
-    fg: theme.fg_primary,                  // #d4d4dc — matches --text
-    bg: theme.bg_input,                    // #12121a — matches --bg-input
-    hover_bg: theme.bg_input,              // #12121a — bg doesn't change on hover (correct)
-    pressed_bg: theme.bg_input,            // #12121a — bg doesn't change on press (correct)
-    border_color: theme.border,            // #2a2a36 — matches --border
-    hover_border_color: theme.fg_faint,    // #8c8ca0 — matches --text-faint
-    focus_border_color: theme.accent,      // #6d9be0 — matches --accent
-    border_width: 2.0,                     // matches 2px
-    corner_radius: theme.corner_radius,    // 0.0 — matches (brutal)
-    padding: Insets::tlbr(6.0, 10.0, 6.0, 30.0),  // MISMATCH — see below
-    font_size: 12.0,                       // matches 12px
-    min_width: 140.0,                      // matches 140px
-    indicator_width: 20.0,                 // space for arrow
-    indicator_color: theme.fg_faint,       // #8c8ca0 — matches
-    disabled_fg: theme.fg_disabled,
-    disabled_bg: theme.bg_secondary,
-    focus_ring_color: theme.accent,
-}
-```
+### Slider Gaps
 
-### Detailed comparison
+The draft overstated how close the slider already is. The current track/thumb are close, but the
+value presentation is still wrong for the mockup:
 
-| Property | Mockup | Current | Match? |
-|----------|--------|---------|--------|
-| Min width | 140px | 140.0 | Yes |
-| Padding | 6px 30px 6px 10px (T R B L) | `Insets::tlbr(6.0, 10.0, 6.0, 30.0)` | **Reversed** |
-| Border | 2px `--border` | 2.0, `theme.border` | Yes |
-| Bg | `--bg-input` (#12121a) | `theme.bg_input` | Yes |
-| Text color | `--text` (#d4d4dc) | `theme.fg_primary` | Yes |
-| Font size | 12px | 12.0 | Yes |
-| Hover border | `--text-faint` | `theme.fg_faint` | Yes |
-| Focus border | `--accent` | `theme.accent` | Yes |
-| Corner radius | 0 (brutal) | 0.0 | Yes |
-| Indicator | SVG chevron | Unicode `\u{25BE}` (filled triangle) | Approximate |
+- mockup slider group:
+  - track/value gap `10px`
+  - value label `min-width: 32px`
+  - value label monospace
+  - opacity sliders display `100%`, not plain `100`
+- current slider:
+  - `VALUE_GAP = 12`
+  - `VALUE_LABEL_WIDTH = 48`
+  - value text uses the default UI font/color path
+  - generic formatting emits raw numeric text without suffix support
 
-### Issues to fix
+### Slider Rewrite
 
-1. **Padding order**: Verified correct. `Insets::tlbr(top, left, bottom, right)` with `(6.0, 10.0, 6.0, 30.0)` gives `top=6, left=10, bottom=6, right=30`. CSS `padding: 6px 30px 6px 10px` means `top=6, right=30, bottom=6, left=10`. Same values, different ordering convention. **No change needed.**
+Keep the slider as a shared widget, but add a configurable value-display model, for example:
 
-2. **Indicator rendering**: The mockup uses an SVG chevron as a background image. Current code uses Unicode `\u{25BE}` (filled down-pointing triangle character). This is visually similar but not identical to an SVG chevron. Consider:
-   - If the icon system (Section 08) provides a chevron icon, use it instead.
-   - Otherwise, the Unicode triangle is an acceptable approximation.
+- `None`
+- raw numeric
+- percentage
+- numeric with suffix
 
-3. **Indicator position**: Mockup: `background-position: right 10px center`. The chevron is 10px from the right edge, vertically centered. Current code: `bounds.right() - 10.0 - shaped.width / 2.0`. This centers the triangle glyph at 10px from right. Should be fine.
+Avoid closures. A small enum-based display strategy is the feasible path for this codebase.
+
+The slider should also allow the value label typography to match the mockup:
+
+- `12px`
+- muted color
+- monospace family
+- right-aligned within a compact label area
+
+### Toggle Gaps
+
+The draft already noticed the thumb mismatch but got stuck in CSS arithmetic. The real actionable
+finding is simple:
+
+- current code computes `thumb_size = height - 2 * thumb_padding = 14`
+- mockup thumb is explicitly `12x12`
+- current travel math happens to produce `18px`, but only because it uses the wrong thumb size
+
+Section 13 should stop deriving the thumb from a simplistic formula and instead encode the actual
+mockup geometry directly:
+
+- outer size `38x20`
+- thumb size `12`
+- off position `left = 3`
+- on translation `18`
+
+If that requires representing thumb size independently from track height and padding, do that.
 
 ### Checklist
 
-- [ ] Padding order verified: `tlbr(6.0, 10.0, 6.0, 30.0)` matches mockup `6px 30px 6px 10px` (CSS TRBL -> our TLBR).
-- [ ] All colors match mockup.
-- [ ] Indicator position 10px from right edge, vertically centered.
-- [ ] Min-width 140px confirmed.
-- [ ] Consider replacing Unicode triangle with SVG chevron icon (after Section 08).
-- [ ] No code changes needed — verification-only (unless padding order issue confirmed).
+- [ ] Add slider value-display support for `%` and other compact formats
+- [ ] Change slider value label geometry to match the mockup (`10px` gap, `32px` min width)
+- [ ] Render slider value labels in monospace
+- [ ] Fix toggle thumb geometry to actual `12px` size with `18px` travel
+- [ ] Keep slider/toggle colors and borders aligned with current theme tokens
 
 ---
 
-## 13.4 Row Spacing Consistency
+## 13.3 Dropdown Trigger + Popup
 
-**File(s):** `oriterm/src/app/settings_overlay/form_builder/appearance.rs` (`ROW_GAP`)
+### Goal
 
-### Mockup CSS
+Make dropdown controls match the mockup in both closed and open states.
 
-```css
-.settings-section .setting-row + .setting-row {
-    /* No gap — rows are flush */
-    /* The only spacing comes from each row's internal padding */
-}
-```
+### Files
 
-### Current code
+- `oriterm_ui/src/widgets/dropdown/mod.rs`
+- `oriterm_ui/src/widgets/menu/mod.rs`
+- `oriterm_ui/src/widgets/menu/widget_impl.rs`
+- `oriterm/src/app/dialog_context/overlay_actions.rs`
+- `oriterm/src/app/keyboard_input/overlay_dispatch.rs`
 
-```rust
-pub(super) const ROW_GAP: f32 = 2.0;
-```
+### Trigger Gaps
 
-### Comparison
+The closed trigger is close but still incomplete:
 
-The mockup has setting rows flush against each other with no gap between them. The only vertical spacing is each row's own 10px top/bottom padding (from `ROW_PADDING`). The current code has `ROW_GAP = 2.0`, adding 2px between rows.
+- correct:
+  - `2px` border
+  - `12px` font size
+  - `6px 30px 6px 10px` padding
+  - `140px` default minimum width
+- missing or inaccurate:
+  - no explicit width-variant support for `160px` / `180px`
+  - indicator is a Unicode `▾`, not the mockup chevron glyph/path
+  - text typography is still tied to the default shared control text surface
 
-### Issue
+### Popup Boundary
 
-The 2px gap creates a visible seam between rows where the background shows through. When hovering row N, the row above and below show a 2px gap between the hover highlights. The mockup has no such gap — rows are flush, and hover backgrounds tile seamlessly.
+In this codebase, opening a dropdown goes through `WidgetAction::OpenDropdown` and the popup is a
+`MenuWidget`. If Section 13 only restyles `DropdownWidget`, the open-state control still will not
+match the mockup interaction.
 
-### Fix
+Section 13 should therefore cover:
 
-Change `ROW_GAP` from 2.0 to 0.0:
-```rust
-pub(super) const ROW_GAP: f32 = 0.0;
-```
+- `DropdownWidget` trigger fidelity
+- the popup list surface used for dropdown choices
 
-However, note that `ROW_GAP` is also used as the gap in the section container (between section title and first row). The section title uses `TITLE_ROW_GAP = 8.0` for its own gap. Verify that changing `ROW_GAP` to 0.0 does not affect the gap between the section title and first row.
+The mockup does not show an open dropdown screenshot, so do not invent a new visual language. The
+popup should stay consistent with the brutal settings theme and with the trigger dimensions.
 
-Looking at `build_window_section()`:
-```rust
-ContainerWidget::column()
-    .with_gap(ROW_GAP)                    // This is between ALL children: title + rows
-    .with_child(title)
-    .with_child(Box::new(opacity_row))
-    .with_child(Box::new(blur_row))
-```
+### Required Work
 
-Wait — this uses `ROW_GAP` for the gap between the title and the first row too! But the title-to-row gap should be `TITLE_ROW_GAP = 8.0`, not `ROW_GAP = 2.0`. This looks like a bug: the title uses a separate container in `build_theme_section()` with `TITLE_ROW_GAP`, but `build_window_section()` puts the title and rows in the same container with `ROW_GAP`.
-
-**Fix**: Restructure sections so the title and row container are separate:
-```rust
-let title = section_title("Window", theme);
-let rows = ContainerWidget::column()
-    .with_width(SizeSpec::Fill)
-    .with_gap(0.0)                         // rows are flush
-    .with_child(Box::new(opacity_row))
-    .with_child(Box::new(blur_row));
-
-ContainerWidget::column()
-    .with_width(SizeSpec::Fill)
-    .with_gap(TITLE_ROW_GAP)               // 8px between title and rows
-    .with_child(title)
-    .with_child(Box::new(rows))
-```
-
-Or keep the flat structure but use `ROW_GAP = 0.0` and add a spacer after the title:
-```rust
-.with_child(title)
-.with_child(Box::new(SpacerWidget::fixed(0.0, TITLE_ROW_GAP)))
-.with_child(Box::new(opacity_row))
-.with_child(Box::new(blur_row))
-```
+- add dropdown trigger width variants
+- replace the Unicode indicator with proper control geometry
+  - chevron path, dedicated primitive, or shared tiny icon
+- ensure the popup menu style harmonizes with the same border/background/hover language
 
 ### Checklist
 
-- [ ] `ROW_GAP` changed from 2.0 to 0.0.
-- [ ] Section builders restructured so title-to-row gap is `TITLE_ROW_GAP` (8px) and row-to-row gap is 0px.
-- [ ] `build_theme_section()` already uses separate container — verify.
-- [ ] `build_window_section()` restructured to separate title from row container.
-- [ ] `build_decorations_section()` (from Section 09) follows same pattern.
-- [ ] Hover backgrounds tile seamlessly with no visible gap.
+- [ ] Add dropdown trigger width variants for current settings consumers
+- [ ] Replace the Unicode triangle indicator with actual geometry
+- [ ] Cover both trigger and popup menu surfaces in this section
+- [ ] Keep popup styling aligned with the brutal theme instead of leaving it as a generic menu
+
+---
+
+## 13.4 Number + Text Inputs
+
+### Goal
+
+Bring numeric and text entry controls up to the mockup's actual structure and behavior.
+
+### Files
+
+- `oriterm_ui/src/widgets/number_input/mod.rs`
+- `oriterm_ui/src/widgets/text_input/mod.rs`
+- `oriterm_ui/src/widgets/text_input/widget_impl.rs`
+- `oriterm/src/app/settings_overlay/form_builder/font.rs`
+- `oriterm/src/app/settings_overlay/form_builder/window.rs`
+- `oriterm/src/app/settings_overlay/form_builder/terminal.rs`
+- `mockups/settings-brutal.html`
+
+### Number Input Gaps
+
+`NumberInputWidget` is the biggest functional mismatch in the current section.
+
+Mockup:
+
+- real `input[type="number"]`
+- wrapped in `.num-stepper`
+- single `2px` outer border
+- hover and focus change the wrapper border color
+- inner text field width variants (`56`, `44`)
+- right-side stepper column with:
+  - `22px` width
+  - `2px` left divider
+  - `1px` horizontal divider
+  - hover/active button states
+
+Current widget:
+
+- fixed width `80`
+- fixed height `32`
+- `1px` border
+- font size `13`
+- no text editing
+- no hover border state
+- no variant widths
+- custom arrows painted as text, not a composed stepper model
+
+Section 13 should not try to paper over this with paint tweaks. It needs a real stepper/input
+widget model, likely by composing a numeric text-entry field with a stepper button column.
+
+### Text Input Gaps
+
+`TextInputWidget` already provides the right behavior family, but the default settings styling is
+wrong for the mockup's general text fields:
+
+- border is `1px`, not `2px`
+- font size defaults to `13`, not `12`
+- no hover border color path
+- width behavior is generic `min_width = 120`, not a settings-field width contract
+
+Section 13 should add a settings-text-input style variant rather than leaving each consumer to patch
+fields individually.
+
+### Consumer Mapping
+
+Current settings consumers already need both widgets:
+
+- `font.rs`
+  - size and line-height numeric controls
+- `window.rs`
+  - padding/rows/columns numeric controls
+- `terminal.rs`
+  - scrollback numeric control
+  - shell text input
+
+This is shared control work, not a one-page fix.
+
+### Checklist
+
+- [ ] Replace the faux numeric display widget with a real stepper/input model
+- [ ] Add number-input width variants for default and paired layouts
+- [ ] Add settings-text-input styling for `2px` border, `12px` text, and hover/focus borders
+- [ ] Keep numeric/text entry behavior shared across all current settings consumers
+
+---
+
+## 13.5 Selection Controls
+
+### Goal
+
+Bring the card-style controls used in settings pages up to mockup fidelity: cursor picker and scheme
+cards.
+
+### Files
+
+- `oriterm_ui/src/widgets/cursor_picker/mod.rs`
+- `oriterm_ui/src/widgets/scheme_card/mod.rs`
+- `oriterm/src/app/settings_overlay/form_builder/colors.rs`
+- `oriterm/src/app/settings_overlay/form_builder/terminal.rs`
+- `mockups/settings-brutal.html`
+
+### Cursor Picker Gaps
+
+Mockup cursor picker:
+
+- cards use `bg-raised` and `2px` border at rest
+- hover uses `bg-hover` and `border-strong`
+- active uses `accent-bg` and `accent` border
+- card gap `24px`
+- padding `12px 20px`
+- demo font size `16`
+- label font size `11`
+
+Current `CursorPickerWidget`:
+
+- card gap `10`
+- fixed `80x72` card box with transparent normal background
+- inactive border `1px`
+- no proper hover background/border treatment
+- demo font size `18`
+- label font size `10`
+
+Section 13 should treat this as a real fidelity rewrite, not a cosmetic tune-up.
+
+### Scheme Card Gaps
+
+The current scheme card is also substantially off:
+
+- normal mockup card has persistent `bg-raised` and `2px` border
+- current normal card is transparent with no border unless hovered
+- mockup grid min width is `240`, current card width is `200` and grid min width is `210`
+- mockup title row uses medium-weight name text
+- mockup selected badge is a real chip with padding, border, uppercase, and tracking
+- current selected badge is just plain `"Active"` text
+
+Section 13 should upgrade both the widget and its consumer grid contract in `colors.rs`.
+
+### Checklist
+
+- [ ] Match cursor picker card spacing, typography, and active/hover states to the mockup
+- [ ] Match scheme card base background/border behavior to the mockup
+- [ ] Upgrade scheme card badge from plain text to a real chip
+- [ ] Update scheme card grid sizing to the mockup's `240px` minimum width
+
+---
+
+## 13.6 Tests
+
+### Goal
+
+Add paint- and layout-level regression coverage for the shared control surface instead of leaving
+this section at construction-only tests.
+
+### Files
+
+- `oriterm_ui/src/widgets/slider/tests.rs`
+- `oriterm_ui/src/widgets/toggle/tests.rs`
+- `oriterm_ui/src/widgets/dropdown/tests.rs`
+- `oriterm_ui/src/widgets/number_input/tests.rs`
+- `oriterm_ui/src/widgets/text_input/tests.rs`
+- `oriterm_ui/src/widgets/cursor_picker/tests.rs`
+- `oriterm_ui/src/widgets/scheme_card/tests.rs`
+
+### Required Coverage
+
+Add or expand tests for:
+
+- slider (`oriterm_ui/src/widgets/slider/tests.rs`)
+  - `fn slider_value_label_width_and_gap()` — value-label gap is `10px`, min-width is `32px`
+  - `fn slider_monospace_value_formatting()` — value label uses monospace family
+  - `fn slider_percent_display_mode()` — percent mode shows `100%` not `100`
+  - `fn slider_value_at_min_shows_correct_format()` — slider at minimum value formats correctly (e.g., `0%`)
+  - `fn slider_value_at_max_shows_correct_format()` — slider at maximum value formats correctly (e.g., `100%`)
+  - `fn slider_suffix_display_mode()` — suffix mode appends configured suffix text
+- toggle (`oriterm_ui/src/widgets/toggle/tests.rs`)
+  - `fn toggle_thumb_size_is_12px()` — thumb size matches mockup `12x12`
+  - `fn toggle_travel_is_18px()` — on-to-off translation is `18px`
+  - `fn toggle_off_position()` — off position has thumb at `left = 3`
+  - `fn toggle_on_position()` — on position has thumb at `left = 3 + 18 = 21`
+  - `fn toggle_outer_size_38x20()` — outer track size matches `38x20`
+- dropdown (`oriterm_ui/src/widgets/dropdown/tests.rs`)
+  - `fn dropdown_indicator_is_geometry_not_unicode()` — indicator is rendered geometry, not Unicode `▾`
+  - `fn dropdown_width_variant_140()` — default min-width is `140px`
+  - `fn dropdown_width_variant_160()` — variant supports `160px` min-width
+  - `fn dropdown_width_variant_180()` — variant supports `180px` min-width
+  - `fn dropdown_popup_uses_theme_style()` — popup menu respects brutal theme styling
+- number input (`oriterm_ui/src/widgets/number_input/tests.rs`)
+  - `fn number_input_text_is_editable()` — editable text behavior for the refactored input
+  - `fn number_input_stepper_divider_geometry()` — wrapper/divider geometry matches mockup (`22px` stepper width, `2px` left divider)
+  - `fn number_input_compact_width_variant()` — compact width variant (`44px`) differs from default (`56px`)
+  - `fn number_input_stepper_buttons_hover()` — stepper up/down buttons have hover/active states
+- text input (`oriterm_ui/src/widgets/text_input/tests.rs`)
+  - `fn text_input_settings_style_border_width()` — settings-style variant has `2px` border
+  - `fn text_input_settings_style_hover_border()` — hover changes border color
+  - `fn text_input_settings_style_focus_border()` — focus changes border color to accent
+  - `fn text_input_fixed_width_variant()` — fixed-width `200px` variant
+- cursor picker (`oriterm_ui/src/widgets/cursor_picker/tests.rs`)
+  - `fn cursor_picker_card_normal_background()` — normal state has `bg-raised` background and `2px` border
+  - `fn cursor_picker_card_hover_state()` — hover uses `bg-hover` and `border-strong`
+  - `fn cursor_picker_card_active_state()` — active uses `accent-bg` and `accent` border
+  - `fn cursor_picker_card_gap()` — gap between cards is `24px`
+- scheme card (`oriterm_ui/src/widgets/scheme_card/tests.rs`)
+  - `fn scheme_card_normal_persistent_background()` — normal card has persistent `bg-raised` and `2px` border
+  - `fn scheme_card_selected_badge_is_chip()` — selected badge renders as a styled chip with padding, border, uppercase
+  - `fn scheme_card_grid_min_width_240()` — grid uses `240px` minimum card width
+
+The current tests are too shallow for a fidelity section. They mostly verify widget existence,
+fixed layout dimensions, or simple action emission.
+
+### Checklist
+
+- [ ] Add geometry-level tests for slider/toggle/dropdown
+- [ ] Add real structure/state tests for number and text inputs
+- [ ] Add card-state tests for cursor picker and scheme card widgets
+- [ ] Add coverage strong enough to catch paint regressions, not just constructor regressions
 
 ---
 
 ## 13.R Third Party Review Findings
 
-Reserved for findings from `/review-plan` or external review. Not actionable until populated.
+### Resolved Findings
+
+- `TPR-13-001` The draft scoped Section 13 too narrowly. The live settings UI also depends on
+  `NumberInputWidget`, `TextInputWidget`, `CursorPickerWidget`, and `SchemeCardWidget`, so the plan
+  must cover the real shared control surface.
+- `TPR-13-002` `row spacing consistency` is not a control-local implementation boundary. Shared row
+  rhythm belongs to Section 11's content typography/layout work.
+- `TPR-13-003` The draft overstated slider fidelity. The current slider still has the wrong
+  value-label width/gap, lacks monospace value text, and cannot express the mockup's `%` suffix.
+- `TPR-13-004` The current toggle thumb geometry does not match the mockup. The widget computes a
+  `14px` thumb from its current formula, while the mockup specifies a `12px` thumb with `18px`
+  translation.
+- `TPR-13-005` `NumberInputWidget` is not a real numeric text input and does not match the mockup's
+  `num-stepper` wrapper, border, hover/focus, or width variants.
+- `TPR-13-006` `DropdownWidget` still uses a Unicode triangle indicator and has no explicit width
+  variants for the actual settings consumers shown in the mockup.
+- `TPR-13-007` `CursorPickerWidget` and `SchemeCardWidget` are significantly less faithful than the
+  draft assumed: base backgrounds, borders, spacing, typography, and badges all differ from the
+  mockup.
 
 ---
 
-## 13.5 Build & Verify
+## 13.7 Build & Verify
 
 ### Gate
 
@@ -506,11 +543,27 @@ Reserved for findings from `/review-plan` or external review. Not actionable unt
 ./test-all.sh
 ```
 
-### Checklist
+### Focused Verification
 
-- [ ] `./build-all.sh` passes
-- [ ] `./clippy-all.sh` passes
-- [ ] `./test-all.sh` passes
-- [ ] Toggle thumb renders at 12x12 (not 14x14)
-- [ ] Row-to-row gap is 0px (hover backgrounds tile seamlessly)
-- [ ] Visual verification: all widget controls match mockup
+- run the targeted widget tests for all touched control families
+- verify control variants in the live settings dialog across multiple pages, not only Appearance
+
+Suggested commands:
+
+```bash
+cargo test -p oriterm_ui slider::tests
+cargo test -p oriterm_ui toggle::tests
+cargo test -p oriterm_ui dropdown::tests
+cargo test -p oriterm_ui number_input::tests
+cargo test -p oriterm_ui text_input::tests
+cargo test -p oriterm_ui cursor_picker::tests
+cargo test -p oriterm_ui scheme_card::tests
+```
+
+Manual verification checklist:
+
+- [ ] Sliders match track/thumb/value presentation from the mockup
+- [ ] Toggles match `38x20` / `12px` thumb geometry and state colors
+- [ ] Dropdown triggers and popup lists match the brutal settings theme
+- [ ] Number and text inputs match mockup sizing, borders, and interaction states
+- [ ] Cursor picker and scheme cards match the mockup's card-based control styling

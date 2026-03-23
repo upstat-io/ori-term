@@ -4,477 +4,574 @@ title: "Opacity + Display Control"
 status: not-started
 reviewed: true
 third_party_review:
-  status: none
-  updated: null
-goal: "Widgets can be faded (opacity modulation) and hidden (display:none equivalent) — disabled controls render at 40% opacity, inactive icons at 70%, and page switching hides non-active pages with zero layout cost"
+  status: resolved
+  updated: 2026-03-23
+goal: "Reusable framework primitives provide subtree opacity, layout-preserving hidden state, display:none-style removal, and pointer hit-test suppression without bespoke per-widget hacks; GPU scene conversion multiplies subtree opacity with compositor opacity"
 inspired_by:
-  - "CSS opacity property"
+  - "CSS opacity"
+  - "CSS visibility: hidden"
   - "CSS display: none"
   - "CSS pointer-events: none"
 depends_on: []
 sections:
   - id: "06.1"
-    title: "Opacity Modulation"
+    title: "Scene Opacity Stack"
     status: not-started
   - id: "06.2"
-    title: "Display/Visibility Toggle"
+    title: "Visibility + Display Modifiers"
     status: not-started
   - id: "06.3"
-    title: "Pointer Events Control"
+    title: "Pointer Events Suppression"
     status: not-started
   - id: "06.4"
+    title: "Consumer Boundaries"
+    status: not-started
+  - id: "06.5"
     title: "Tests"
     status: not-started
   - id: "06.R"
     title: "Third Party Review Findings"
-    status: not-started
-  - id: "06.5"
+    status: complete
+  - id: "06.6"
     title: "Build & Verify"
     status: not-started
 ---
 
 # Section 06: Opacity + Display Control
 
-**Goal:** Add two CSS-equivalent controls to the UI framework: opacity modulation (fade widgets without removing them from the tree) and display toggling (remove from layout entirely). These are foundational building blocks used by multiple mockup patterns: disabled controls at 40% opacity, inactive sidebar icons at 70%, and settings page switching where non-active pages occupy zero space.
+## Problem
 
-**References:**
-- `oriterm_ui/src/draw/scene/stacks.rs` — Scene state stacks (clip, offset, layer bg)
-- `oriterm_ui/src/draw/scene/paint.rs` — `push_quad()`, `push_text()`, `push_line()`, `push_icon()` methods
-- `oriterm_ui/src/widgets/contexts.rs` — `DrawCtx` struct (bounds, scene, measurer, theme, etc.)
-- `oriterm_ui/src/layout/layout_box.rs` — `LayoutBox` struct (disabled field exists, no visible/hidden field)
-- `oriterm/src/gpu/scene_convert/mod.rs` — `convert_scene()` already accepts `opacity: f32` parameter
-- `oriterm_ui/src/widgets/mod.rs` — `Widget` trait definition
+The original draft correctly identified subtree opacity as missing, but it placed display control at
+the wrong layer and misdescribed some current behavior.
+
+What the tree actually has today:
+
+- [oriterm_ui/src/draw/scene/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/draw/scene/mod.rs)
+  has clip, offset, and layer-background stacks only. There is no opacity stack.
+- [oriterm_ui/src/draw/scene/content_mask.rs](/home/eric/projects/ori_term/oriterm_ui/src/draw/scene/content_mask.rs)
+  carries only a clip rect.
+- [oriterm/src/gpu/scene_convert/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/scene_convert/mod.rs)
+  already accepts a compositor-level `opacity: f32`, but only applies it while converting quads,
+  lines, text, and icons.
+- [oriterm_ui/src/widgets/page_container/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/page_container/mod.rs)
+  already gives the settings dialog active-page-only layout, paint, focus, and traversal. Section
+  06 should generalize that behavior, not pretend page switching has no implementation today.
+- [oriterm_ui/src/window_root/pipeline.rs](/home/eric/projects/ori_term/oriterm_ui/src/window_root/pipeline.rs)
+  rebuilds registration, focus order, and key contexts from `for_each_child_mut()`, so a generic
+  display feature must integrate with widget-tree traversal, not only layout solver output.
+- widget hit testing lives in
+  [oriterm_ui/src/input/hit_test.rs](/home/eric/projects/ori_term/oriterm_ui/src/input/hit_test.rs),
+  not [oriterm_ui/src/hit_test/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/hit_test/mod.rs)
+  which is window-chrome hit testing.
+
+The real missing capabilities are:
+
+1. widgets cannot fade an entire subtree without manually baking alpha into every color
+2. there is no reusable framework-level equivalent of `visibility: hidden` or `display: none`
+3. there is no subtree-level pointer hit-test suppression separate from semantic `disabled`
+
+## Corrected Scope
+
+Section 06 should add three reusable framework primitives:
+
+- a scene opacity stack, exposed ergonomically through `DrawCtx`
+- widget modifiers for `Visible`, `Hidden`, and `DisplayNone` subtree behavior
+- a layout-node `pointer_events` gate used only by pointer hit testing
+
+This keeps the implementation aligned with the current architecture:
+
+- opacity belongs at the scene/content-mask boundary
+- `display:none` semantics belong at the widget-tree traversal boundary, because registration,
+  focus order, key contexts, prepaint, and app integration all depend on active traversal
+- pointer-events suppression belongs in the input hit-test path, not in `disabled`
+
+This section should not try to remove existing consumer-specific code that already works. It should
+replace bespoke patterns only where the new primitives actually improve them.
 
 ---
 
-## 06.1 Opacity Modulation
+## 06.1 Scene Opacity Stack
 
-### Current State
+### Goal
 
-The GPU pipeline already supports opacity modulation. `convert_scene()` in `oriterm/src/gpu/scene_convert/mod.rs` accepts an `opacity: f32` parameter and multiplies all emitted primitive colors by it via `color_to_linear_with_opacity()`. This is the compositor-level opacity used for window-level fading.
+Let any widget paint a subtree at reduced opacity without manually rewriting all descendant colors.
 
-What is missing is widget-level opacity: the ability for a single widget subtree to render at reduced opacity. The Scene does not have an opacity stack.
+### Files
 
-### Approach: Scene Opacity Stack
+- [oriterm_ui/src/draw/scene/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/draw/scene/mod.rs)
+- [oriterm_ui/src/draw/scene/stacks.rs](/home/eric/projects/ori_term/oriterm_ui/src/draw/scene/stacks.rs)
+- [oriterm_ui/src/draw/scene/paint.rs](/home/eric/projects/ori_term/oriterm_ui/src/draw/scene/paint.rs)
+- [oriterm_ui/src/draw/scene/content_mask.rs](/home/eric/projects/ori_term/oriterm_ui/src/draw/scene/content_mask.rs)
+- [oriterm_ui/src/widgets/contexts.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/contexts.rs)
+- [oriterm/src/gpu/scene_convert/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/scene_convert/mod.rs)
 
-Add an opacity stack to `Scene`, analogous to the existing clip and offset stacks.
+### Scene Changes
 
-**File:** `oriterm_ui/src/draw/scene/stacks.rs`
-
-Add `opacity_stack: Vec<f32>` and `cumulative_opacity: f32` fields to `Scene`:
+Add an opacity stack and resolved cumulative value to `Scene`:
 
 ```rust
-// In Scene struct:
 opacity_stack: Vec<f32>,
-cumulative_opacity: f32,  // product of all stacked opacities
+cumulative_opacity: f32,
 ```
+
+API surface:
 
 ```rust
-impl Scene {
-    /// Push an opacity multiplier onto the stack.
-    ///
-    /// All primitives pushed while this opacity is active will have their
-    /// alpha multiplied by `opacity`. Opacities compose multiplicatively:
-    /// pushing 0.5 then 0.5 yields 0.25 effective opacity.
-    pub fn push_opacity(&mut self, opacity: f32) {
-        self.opacity_stack.push(self.cumulative_opacity);
-        self.cumulative_opacity *= opacity.clamp(0.0, 1.0);
-    }
-
-    /// Pop the most recent opacity from the stack.
-    pub fn pop_opacity(&mut self) {
-        if let Some(prev) = self.opacity_stack.pop() {
-            self.cumulative_opacity = prev;
-        }
-    }
-
-    /// Returns the current cumulative opacity.
-    pub fn current_opacity(&self) -> f32 {
-        self.cumulative_opacity
-    }
-
-    /// Whether the opacity stack is balanced (empty).
-    pub fn opacity_stack_is_empty(&self) -> bool {
-        self.opacity_stack.is_empty()
-    }
-}
+pub fn push_opacity(&mut self, opacity: f32) { ... }
+pub fn pop_opacity(&mut self) { ... }
+pub fn current_opacity(&self) -> f32 { ... }
+pub fn opacity_stack_is_empty(&self) -> bool { ... }
 ```
 
-Initialize `cumulative_opacity` to `1.0` in `Scene::new()` and `Scene::clear()`.
+Normalization rules at the scene boundary:
 
-Add `opacity_stack_is_empty()` to the `build_scene()` debug_assert.
+- finite values are clamped to `0.0..=1.0`
+- `NaN` and infinities normalize to `1.0` so bad inputs do not poison the scene state
+- stacked opacity composes multiplicatively
 
-### ContentMask Extension
+Initialize `cumulative_opacity` to `1.0` in `Scene::new()` and restore it in `Scene::clear()`.
+Extend the `build_scene()` debug assertion so unbalanced opacity pushes fail the same way unbalanced
+clip/offset/layer-background pushes already do.
 
-**File:** `oriterm_ui/src/draw/scene/content_mask.rs`
+### ContentMask Change
 
-Add an `opacity` field to `ContentMask`:
+Extend `ContentMask` to carry opacity as resolved paint-time state:
 
 ```rust
 pub struct ContentMask {
     pub clip: Rect,
-    /// Opacity multiplier (0.0-1.0). Applied during GPU conversion.
     pub opacity: f32,
 }
 ```
 
-Update `ContentMask::unclipped()` to set `opacity: 1.0`.
-
-Update `current_content_mask()` in `paint.rs` to include `self.cumulative_opacity`.
+`ContentMask::unclipped()` becomes `{ clip: infinite_rect, opacity: 1.0 }`, and
+`current_content_mask()` in `paint.rs` resolves both clip and opacity.
 
 ### GPU Conversion
 
-**File:** `oriterm/src/gpu/scene_convert/mod.rs`
-
-The `opacity` parameter in `convert_scene()` is the compositor opacity. Widget-level opacity from `ContentMask` is a second multiplier. Update `convert_quad()` (line ~98) and its siblings:
+`convert_scene()` already has compositor opacity. Subtree opacity is a second multiplier:
 
 ```rust
-fn convert_quad(quad: &Quad, writer: &mut InstanceWriter, scale: f32, opacity: f32, clip: [f32; 4]) {
-    let effective_opacity = opacity * quad.content_mask.opacity;
-    convert_rect_clipped(quad.bounds, &quad.style, writer, scale, effective_opacity, clip);
-}
+let effective_opacity = opacity * primitive.content_mask.opacity;
 ```
 
-Same pattern for all 4 primitive conversion functions:
-- `convert_quad()` (line ~98) — quads/rects
-- `convert_scene_line()` (line ~109) — border lines, separators
-- `convert_scene_text()` (line ~122) — text runs
-- `convert_scene_icon()` (line ~142) — icon primitives
+Apply that in:
 
-Note: `clip_from_mask()` (line ~85) currently only extracts the clip rect from `ContentMask`. It does NOT need to extract opacity — opacity is applied separately in each `convert_*` function by reading `content_mask.opacity` directly.
+- `convert_quad()`
+- `convert_scene_line()`
+- `convert_scene_text()`
+- `convert_scene_icon()`
 
-**Migration note:** Existing tests in `scene/tests.rs` assert on `ContentMask` equality against `ContentMask::unclipped()`. Adding the `opacity` field will break 6+ assertions. All must be updated to include the expected opacity value.
+[oriterm/src/gpu/scene_convert/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/scene_convert/mod.rs)
+currently ignores `ImagePrimitive` entirely. This section should still thread opacity through
+`ContentMask` now so the contract is ready, but the observable GPU behavior in this section remains
+quad/line/text/icon until image rendering is implemented.
 
-### Widget Usage
+### DrawCtx Helper
 
-Widgets apply opacity by pushing it before painting:
+Add scoped opacity helpers. There are two viable patterns given `DrawCtx`'s borrow structure:
 
-```rust
-// In a disabled control's paint():
-if self.is_disabled {
-    ctx.scene.push_opacity(0.4);
-}
-self.paint_contents(ctx);
-if self.is_disabled {
-    ctx.scene.pop_opacity();
-}
-```
+**Option A — Direct scene access (simplest, matches existing codebase patterns):**
 
-This naturally composes — a disabled control inside a 70%-opacity panel renders at `0.4 * 0.7 = 0.28`.
+Widgets call `ctx.scene.push_opacity(opacity)` / `ctx.scene.pop_opacity()` directly, the same
+way they already call `ctx.scene.push_clip()` and `ctx.scene.push_offset()`. No new `DrawCtx`
+method is strictly needed; the ergonomic surface is already established by the existing clip/offset
+stack API.
 
-### Convenience on DrawCtx
-
-Optionally, add a helper on `DrawCtx` to scope opacity:
+**Option B — Scope guard struct:**
 
 ```rust
-impl DrawCtx<'_> {
-    /// Paint a closure with modified opacity.
-    pub fn with_opacity(&mut self, opacity: f32, f: impl FnOnce(&mut DrawCtx<'_>)) {
-        self.scene.push_opacity(opacity);
-        f(self);
+pub struct OpacityGuard<'a> {
+    scene: &'a mut Scene,
+}
+
+impl Drop for OpacityGuard<'_> {
+    fn drop(&mut self) {
         self.scene.pop_opacity();
     }
 }
+
+impl DrawCtx<'_> {
+    pub fn push_opacity(&mut self, opacity: f32) -> OpacityGuard<'_> {
+        self.scene.push_opacity(opacity);
+        OpacityGuard { scene: self.scene }
+    }
+}
 ```
 
-### Use Cases from Mockup
+This avoids the borrow-checker issue with a closure-based API (the callback `f: impl FnOnce(&mut
+DrawCtx)` would need to reborrow `self` while `scene` is already mutably borrowed by the
+push/pop pair). The scope guard ensures balanced push/pop via RAII.
 
-| Element | Opacity | Notes |
-|---------|---------|-------|
-| Disabled slider/toggle/dropdown | 0.4 | CSS `opacity: 0.4` on `.setting-row.disabled` |
-| Inactive sidebar icon | 0.7 | Non-active nav items have subdued icons |
-| Placeholder text in search input | 0.5 | Placeholder text is semi-transparent |
+Either option is acceptable. The non-negotiable part is that `Scene` must expose `push_opacity()`
+and `pop_opacity()` and the `build_scene()` assertion must catch unbalanced stacks.
+
+### Checklist
+
+- [ ] Add opacity stack state to `Scene`
+- [ ] Normalize/clamp opacity at the scene boundary
+- [ ] Extend `ContentMask` with `opacity`
+- [ ] Multiply subtree opacity with compositor opacity in scene conversion
+- [ ] Expose opacity through either direct `Scene::push_opacity()`/`pop_opacity()` or a `DrawCtx` scope guard
+- [ ] Extend `build_scene()` stack-balance assertion to include `opacity_stack_is_empty()`
 
 ---
 
-## 06.2 Display/Visibility Toggle
+## 06.2 Visibility + Display Modifiers
 
-### Problem
+### Goal
 
-The settings dialog has 8 pages. Only one page is visible at a time. Currently, page switching likely requires either rebuilding the widget tree (expensive) or keeping all pages in the tree and skipping their paint (but they still consume layout space).
+Provide reusable subtree semantics for both `visibility: hidden` and `display: none`, instead of
+burying that behavior inside `PageContainerWidget`.
 
-CSS `display: none` removes an element from layout entirely. We need an equivalent.
+### Files
 
-### Approach: LayoutBox Visibility
+- [oriterm_ui/src/widgets/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/mod.rs)
+- new module:
+  [oriterm_ui/src/widgets/modifiers/](/home/eric/projects/ori_term/oriterm_ui/src/widgets/modifiers)
+- [oriterm_ui/src/layout/layout_box.rs](/home/eric/projects/ori_term/oriterm_ui/src/layout/layout_box.rs)
+- [oriterm_ui/src/window_root/pipeline.rs](/home/eric/projects/ori_term/oriterm_ui/src/window_root/pipeline.rs)
+  for behavioral verification, not for the primary implementation
 
-**File:** `oriterm_ui/src/layout/layout_box.rs`
+### New Visibility Enum
 
-Add a `visible` field to `LayoutBox`:
+Add a reusable wrapper-level visibility enum:
 
 ```rust
-pub struct LayoutBox {
-    // ... existing fields ...
-
-    /// When false, this box and its children produce zero-size layout output
-    /// and are skipped during painting and hit testing. Equivalent to CSS
-    /// `display: none`. Default: true.
-    pub visible: bool,
+pub enum VisibilityMode {
+    Visible,
+    Hidden,
+    DisplayNone,
 }
 ```
 
-Default value: `true` (all existing code unaffected).
+Semantics:
 
-Add a builder method:
+- `Visible`: normal layout, paint, hit test, focus, traversal
+- `Hidden`: participates in layout but does not paint, does not register descendants for
+  interaction, and does not contribute focusable descendants
+- `DisplayNone`: contributes zero layout size and is skipped for paint, interaction, focus, and
+  active traversal
+
+### Wrapper Widget
+
+Add a wrapper widget in `widgets/modifiers/visibility.rs`, for example:
 
 ```rust
-impl LayoutBox {
-    /// Sets visibility. When false, the box produces zero layout size.
-    #[must_use]
-    pub fn with_visible(mut self, visible: bool) -> Self {
-        self.visible = visible;
-        self
-    }
+pub struct VisibilityWidget {
+    id: WidgetId,
+    child: Box<dyn Widget>,
+    mode: VisibilityMode,
 }
 ```
 
-### Layout Solver Integration
+This wrapper is the correct abstraction boundary because it controls the widget-tree traversal that
+the current framework already uses for:
 
-**File:** `oriterm_ui/src/layout/solver.rs`
+- interaction registration / GC
+- focus order collection
+- key-context collection
+- prepare / prepaint walks
+- action propagation
 
-In the flex solver's child layout loop, when a child `LayoutBox` has `visible: false`, skip it entirely — do not include it in the flex main-axis total, do not allocate space for it, and produce a `LayoutNode` with `Rect::ZERO`:
+### Layout Behavior
 
-```rust
-if !lb.visible {
-    return LayoutNode {
-        rect: Rect::ZERO,
-        children: vec![],
-        widget_id: lb.widget_id,
-        // ... other fields defaulted
-    };
-}
-```
+`VisibilityWidget::layout()` should behave differently by mode:
 
-**Integration points in the solver** (all must be updated):
-1. Main-axis size accumulation — invisible children contribute 0 to the total.
-2. Cross-axis max calculation — invisible children are excluded.
-3. Gap calculation — gaps are not added between invisible children (a gap should only separate two visible siblings).
-4. `FillPortion` distribution — invisible children's fill portions are excluded from the total.
+- `Visible`: delegate child layout unchanged
+- `Hidden`: delegate child layout, then recursively scrub widget-routing metadata from the returned
+  `LayoutBox` tree so it occupies space but contributes no widget IDs or hit-testable descendants
+- `DisplayNone`: return a zero-size leaf box
 
-This is the most efficient approach: invisible widgets cost only a single `visible` check in the solver. No layout computation, no child recursion, no paint, no hit testing.
+The important correction versus the original draft is that a plain `LayoutBox.visible` flag is not
+enough. It would only affect layout unless every traversal path also learned to honor it, and some
+of those traversals happen before layout even exists.
 
-### Paint Skip
+### Layout Scrubbing Helper
 
-**File:** Widget `paint()` implementations or the tree-walk paint system.
-
-The paint system already respects layout bounds. A zero-size rect means nothing is visible within the clip. However, to be explicit and avoid wasted work, the tree-walk paint should skip nodes whose layout rect is zero-size:
+To make `Hidden` feasible, add a recursive helper on `LayoutBox`, e.g.:
 
 ```rust
-// In the tree-walk paint loop:
-if node.rect.width() <= 0.0 || node.rect.height() <= 0.0 {
-    continue; // Skip invisible (display:none) widgets.
-}
+pub fn for_layout_only(mut self) -> Self { ... }
 ```
 
-### Hit Test Skip
+This helper should recursively:
 
-**File:** `oriterm_ui/src/hit_test/mod.rs`
+- clear `widget_id`
+- set `sense` to `Sense::none()`
+- reset hit-test-specific metadata
+- preserve the actual sizing, padding, flex/grid structure, and clipping needed for layout
 
-The hit-test tree walk should similarly skip zero-size nodes. Since `Rect::ZERO.contains(point)` is always false, this happens naturally. But an explicit early-out avoids recursing into children:
+That allows the hidden subtree to keep its geometry without leaking stale widget IDs into the
+computed layout tree.
 
-```rust
-if node.rect.is_empty() {
-    return None; // No hit in zero-size node.
-}
-```
+### Traversal Behavior
 
-### Widget Usage
+`VisibilityWidget` should implement:
 
-In the settings page container, each page widget reports visibility based on the active page:
+- `for_each_child_mut()`:
+  visit child only in `Visible`
+- `for_each_child_mut_all()`:
+  always visit child so full-tree maintenance tools still have access when needed
+- `focusable_children()`:
+  empty for `Hidden` and `DisplayNone`
+- `accept_action()`:
+  no-op for `Hidden` and `DisplayNone`
+- `paint()`:
+  no-op for `Hidden` and `DisplayNone`
 
-```rust
-impl Widget for SettingsPageContainer {
-    fn layout(&self, ctx: &LayoutCtx) -> LayoutBox {
-        let page_boxes: Vec<LayoutBox> = self.pages.iter().enumerate()
-            .map(|(i, page)| {
-                page.layout(ctx).with_visible(i == self.active_page_index)
-            })
-            .collect();
-        LayoutBox::flex(Direction::Column, page_boxes)
-    }
-}
-```
+### Why This Improves Page Switching
 
-Only the active page computes layout and receives paint. All other pages are zero-cost.
+[PageContainerWidget](/home/eric/projects/ori_term/oriterm_ui/src/widgets/page_container/mod.rs)
+already behaves like `DisplayNone` for inactive pages. Section 06 should generalize that behavior
+so other containers can use it too.
 
-### Alternative Considered: `Widget::visible()` Trait Method
+This section does not need to delete `PageContainerWidget`. It should either:
 
-Instead of putting visibility on `LayoutBox`, we could add `fn visible(&self) -> bool` to the `Widget` trait. This would be checked before calling `layout()`, `paint()`, and `on_input()`. However, this is less flexible — it requires the widget itself to know whether it should be visible, rather than letting the parent decide. The `LayoutBox` approach lets parents control visibility of children (matching CSS where the parent can set `display: none` on any child).
+- keep it as the specialized page-switching container and treat it as the reference behavior, or
+- refactor it internally to reuse `VisibilityMode::DisplayNone` once the generic wrapper exists
+
+Both are acceptable as long as the generic primitive is added and existing page-switch behavior
+stays correct.
+
+### Checklist
+
+- [ ] Add `VisibilityMode`
+- [ ] Add a reusable visibility/display wrapper widget in `oriterm_ui/src/widgets/modifiers/visibility.rs`
+- [ ] Create `oriterm_ui/src/widgets/modifiers/mod.rs` with `#[cfg(test)] mod tests;` and `oriterm_ui/src/widgets/modifiers/tests.rs`
+- [ ] Add recursive `LayoutBox` scrubbing for layout-only hidden content
+- [ ] Ensure active traversal skips hidden/display-none descendants
+- [ ] Keep `for_each_child_mut_all()` available for full-tree maintenance
 
 ---
 
-## 06.3 Pointer Events Control
+## 06.3 Pointer Events Suppression
 
-### Current State
+### Goal
 
-`LayoutBox` already has a `disabled: bool` field. When true, it is treated as `Sense::none()` during hit testing (from the hit test code). This means no hover, no click, no interaction.
+Add subtree-level pointer hit-test suppression without conflating it with semantic disabled state.
 
-### Relationship to Opacity
+### Files
 
-In CSS, `pointer-events: none` and `opacity` are independent properties. A faded element can still be interactive (tooltip on hover), and a full-opacity element can be non-interactive.
+- [oriterm_ui/src/layout/layout_box.rs](/home/eric/projects/ori_term/oriterm_ui/src/layout/layout_box.rs)
+- [oriterm_ui/src/layout/layout_node.rs](/home/eric/projects/ori_term/oriterm_ui/src/layout/layout_node.rs)
+- [oriterm_ui/src/layout/solver.rs](/home/eric/projects/ori_term/oriterm_ui/src/layout/solver.rs)
+- [oriterm_ui/src/layout/grid_solver.rs](/home/eric/projects/ori_term/oriterm_ui/src/layout/grid_solver.rs)
+- [oriterm_ui/src/input/hit_test.rs](/home/eric/projects/ori_term/oriterm_ui/src/input/hit_test.rs)
+- new wrapper:
+  [oriterm_ui/src/widgets/modifiers/](/home/eric/projects/ori_term/oriterm_ui/src/widgets/modifiers)
 
-In our framework, the common case is that reduced opacity implies non-interactive: disabled controls are both faded and non-interactive. We should not couple these — keep `disabled` and `push_opacity()` as independent mechanisms.
+### Correction to the Draft
 
-### Convenience Pattern
+`disabled` is not the right implementation of CSS-like `pointer-events: none`.
 
-Widgets that need the "disabled" visual treatment should apply both:
+Current `disabled` is stronger:
+
+- it is stored in `LayoutBox` / `LayoutNode`
+- it suppresses hit testing
+- widgets often also use it for disabled visuals and focusability decisions
+
+`pointer-events: none` should only block pointer hit testing for a subtree. It should not
+implicitly change layout, paint, or keyboard policy.
+
+### New Field
+
+Add a subtree gate to `LayoutBox` and `LayoutNode`:
 
 ```rust
-impl Widget for SliderWidget {
-    fn layout(&self, ctx: &LayoutCtx) -> LayoutBox {
-        let lb = self.build_layout(ctx);
-        if self.is_disabled {
-            lb.with_disabled(true)
-        } else {
-            lb
-        }
-    }
+pub pointer_events: bool,
+```
 
-    fn paint(&self, ctx: &mut DrawCtx) {
-        if self.is_disabled {
-            ctx.scene.push_opacity(0.4);
-        }
-        self.draw_contents(ctx);
-        if self.is_disabled {
-            ctx.scene.pop_opacity();
-        }
-    }
+Default: `true`.
+
+Add `with_pointer_events(bool)` to `LayoutBox`, and propagate the field through both flex and grid
+solvers into `LayoutNode`.
+
+### Hit-Test Behavior
+
+In [input/hit_test.rs](/home/eric/projects/ori_term/oriterm_ui/src/input/hit_test.rs), early-out
+before child traversal when `pointer_events == false`:
+
+```rust
+if !node.pointer_events {
+    return None;
 }
 ```
 
-### No New Fields Needed
+This blocks hover, click, and drag hit testing for the entire subtree while leaving layout and
+paint intact.
 
-The `disabled` field on `LayoutBox` already serves as `pointer-events: none`. No new types or fields are required for pointer event control. This subsection is about documenting the pattern and ensuring disabled widgets consistently apply opacity.
+### Wrapper Surface
 
-### Widget Audit
+Add a small wrapper widget, or a field on the new modifiers wrapper, that delegates child layout
+and simply flips the root layout box to `pointer_events = false`.
 
-Review all interactive widgets to ensure they respect the disabled pattern:
+That gives parent-controlled pointer-event suppression without forcing every container widget to
+grow custom per-child logic.
 
-| Widget | Has `disabled` support | Applies opacity when disabled |
-|--------|----------------------|------------------------------|
-| ButtonWidget | Check | Should apply 0.4 opacity |
-| ToggleWidget | Check | Should apply 0.4 opacity |
-| SliderWidget | Check | Should apply 0.4 opacity |
-| DropdownWidget | Check | Should apply 0.4 opacity |
-| TextInputWidget | Check | Should apply 0.4 opacity |
-| CheckboxWidget | Check | Should apply 0.4 opacity |
-| NumberInputWidget | Check | Should apply 0.4 opacity |
+### Keyboard Policy
+
+Keep keyboard policy separate:
+
+- `pointer_events = false` only blocks pointer hit testing
+- widgets that must be fully disabled still use semantic disabled state and focusability controls
+
+That separation matches CSS better and avoids baking "disabled" assumptions into a purely pointer
+feature.
+
+### Checklist
+
+- [ ] Add `pointer_events: bool` to `LayoutBox` and `LayoutNode`
+- [ ] Add `with_pointer_events(bool)`
+- [ ] Propagate the field through flex and grid solvers
+- [ ] Early-out in widget hit testing when pointer events are disabled
+- [ ] Expose a reusable wrapper or modifier API for parent-controlled use
 
 ---
 
-## 06.4 Tests
+## 06.4 Consumer Boundaries
 
-### Opacity Stack Tests
+### Goal
 
-**File:** `oriterm_ui/src/draw/scene/tests.rs`
+Adopt the new primitives where they solve real framework gaps, without rewriting working consumers
+just for symmetry.
 
-```rust
-#[test]
-fn opacity_stack_composes_multiplicatively() {
-    let mut scene = Scene::new();
-    assert_eq!(scene.current_opacity(), 1.0);
+### Current Consumers to Respect
 
-    scene.push_opacity(0.5);
-    assert!((scene.current_opacity() - 0.5).abs() < f32::EPSILON);
+- [oriterm_ui/src/widgets/page_container/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/page_container/mod.rs)
+  already gives inactive pages zero layout and traversal cost
+- [oriterm_ui/src/widgets/sidebar_nav/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/sidebar_nav/mod.rs)
+  already uses explicit alpha for inactive icons
+- many disabled widgets already use dedicated disabled colors rather than subtree opacity alone
 
-    scene.push_opacity(0.5);
-    assert!((scene.current_opacity() - 0.25).abs() < f32::EPSILON);
+### Recommended Adoption
 
-    scene.pop_opacity();
-    assert!((scene.current_opacity() - 0.5).abs() < f32::EPSILON);
+1. Use `ctx.scene.push_opacity(0.4)` / `ctx.scene.pop_opacity()` (or the scope-guard equivalent
+   from Section 06.1) at the row or subtree boundary for mockup cases that are truly subtree
+   opacity, such as disabled settings rows.
+2. Keep existing per-color alpha where the visual is intentionally only partial, such as inactive
+   sidebar icons at `0.7`.
+3. Generalize page-switch behavior with `VisibilityMode::DisplayNone` semantics, but do not claim
+   that this section is the first implementation of page hiding.
 
-    scene.pop_opacity();
-    assert_eq!(scene.current_opacity(), 1.0);
-}
+### Important App-Level Caveat
 
-#[test]
-fn opacity_clamps_to_0_1() {
-    let mut scene = Scene::new();
-    scene.push_opacity(1.5);
-    assert_eq!(scene.current_opacity(), 1.0);
+The app-side settings dialog still does explicit registration GC, focus-order rebuilds, parent-map
+updates, and cached-layout invalidation around page switches in
+[content_actions.rs](/home/eric/projects/ori_term/oriterm/src/app/dialog_context/content_actions.rs).
 
-    scene.pop_opacity();
-    scene.push_opacity(-0.5);
-    assert_eq!(scene.current_opacity(), 0.0);
-}
+Section 06 should not quietly delete that logic unless dialog integration is also refactored. The
+framework primitive lives in `oriterm_ui`; app code still owns its current page-switch rebuild
+sequence.
 
-#[test]
-fn opacity_applied_to_quad_content_mask() {
-    let mut scene = Scene::new();
-    scene.push_opacity(0.4);
-    scene.push_quad(Rect::new(0.0, 0.0, 10.0, 10.0), RectStyle::filled(Color::RED));
-    scene.pop_opacity();
+### Checklist
 
-    let quad = &scene.quads()[0];
-    assert!((quad.content_mask.opacity - 0.4).abs() < f32::EPSILON);
-}
-```
+- [ ] Apply subtree opacity at the correct boundary for disabled-row visuals
+- [ ] Keep existing icon alpha behavior unless a consumer truly wants subtree fade
+- [ ] Treat `PageContainerWidget` as existing behavior to generalize, not as a fake blocker
+- [ ] Preserve app-level page-switch rebuild logic unless the app integration is explicitly updated
 
-### Visibility Tests
+---
 
-**File:** `oriterm_ui/src/layout/tests.rs`
+## 06.5 Tests
 
-```rust
-#[test]
-fn invisible_layout_box_produces_zero_size() {
-    let visible = LayoutBox::leaf(100.0, 50.0);
-    let invisible = LayoutBox::leaf(100.0, 50.0).with_visible(false);
+### Scene / Conversion
 
-    let container = LayoutBox::flex(Direction::Column, vec![visible, invisible]);
-    let node = compute_layout(&container, Rect::new(0.0, 0.0, 200.0, 200.0));
+In [oriterm_ui/src/draw/scene/tests.rs](/home/eric/projects/ori_term/oriterm_ui/src/draw/scene/tests.rs):
 
-    // Container should only be as tall as the visible child.
-    assert!((node.rect.height() - 50.0).abs() < f32::EPSILON);
-}
+- `fn opacity_stack_push_pop_balance()` — push and pop produce balanced state; unbalanced push triggers debug assertion
+- `fn opacity_stack_multiplicative_composition()` — pushing 0.5 then 0.5 produces cumulative 0.25
+- `fn opacity_stack_clamps_to_unit_range()` — values outside 0.0..=1.0 are clamped
+- `fn opacity_stack_normalizes_nan_and_infinity()` — NaN and infinity normalize to 1.0 (no poison)
+- `fn content_mask_captures_opacity_on_quad()` — quad primitive stores `ContentMask.opacity`
+- `fn content_mask_captures_opacity_on_text()` — text primitive stores `ContentMask.opacity`
+- `fn content_mask_opacity_default_is_one()` — `ContentMask::unclipped()` has `opacity: 1.0`
 
-#[test]
-fn invisible_child_not_hit_tested() {
-    let invisible = LayoutBox::leaf(100.0, 50.0)
-        .with_visible(false)
-        .with_widget_id(WidgetId::next());
+In [oriterm/src/gpu/scene_convert/tests.rs](/home/eric/projects/ori_term/oriterm/src/gpu/scene_convert/tests.rs):
 
-    let container = LayoutBox::flex(Direction::Column, vec![invisible]);
-    let node = compute_layout(&container, Rect::new(0.0, 0.0, 200.0, 200.0));
+- `fn subtree_opacity_multiplies_with_compositor_opacity_quad()` — quad with 0.5 subtree opacity and 0.8 compositor opacity produces 0.4 effective
+- `fn subtree_opacity_multiplies_with_compositor_opacity_text()` — text opacity composition
 
-    let hit = hit_test(&node, Point::new(50.0, 25.0));
-    assert!(hit.is_none()); // Invisible widget not hittable.
-}
-```
+### Visibility / Display Wrappers
 
-### GPU Conversion Tests
+Add focused tests in `oriterm_ui/src/widgets/modifiers/tests.rs`:
 
-**File:** `oriterm/src/gpu/scene_convert/tests.rs`
+- `fn visible_mode_delegates_layout_paint_traversal()` — `Visible` delegates layout, paint, and traversal
+- `fn hidden_mode_preserves_layout_size()` — `Hidden` preserves layout size
+- `fn hidden_mode_emits_no_scene_primitives()` — `Hidden` emits no scene primitives
+- `fn display_none_produces_zero_layout_size()` — `DisplayNone` produces zero layout size
+- `fn for_each_child_mut_skips_hidden()` — `for_each_child_mut()` skips hidden/display-none descendants
+- `fn for_each_child_mut_all_visits_hidden()` — `for_each_child_mut_all()` still visits hidden descendants
+- `fn focusable_children_empty_for_hidden()` — `focusable_children()` returns empty for `Hidden` and `DisplayNone`
+- `fn accept_action_noop_for_hidden()` — `accept_action()` is no-op for `Hidden` and `DisplayNone`
 
-**NOTE:** The byte-offset test below assumes a specific instance record layout (`bg_a` at bytes[60..64]). Verify the actual offset at implementation time against `instance_writer.rs`. Prefer a higher-level helper that extracts the bg color from the instance record if one exists.
+### Pointer Events
 
-```rust
-#[test]
-fn content_mask_opacity_multiplies_with_compositor_opacity() {
-    let mut scene = Scene::new();
-    scene.push_opacity(0.5);
-    scene.push_quad(Rect::new(0.0, 0.0, 10.0, 10.0), RectStyle::filled(Color::WHITE));
-    scene.pop_opacity();
+In [oriterm_ui/src/input/tests.rs](/home/eric/projects/ori_term/oriterm_ui/src/input/tests.rs):
 
-    let mut writer = InstanceWriter::new();
-    convert_scene(&scene, &mut writer, None, 1.0, 0.8); // compositor opacity 0.8
+- `fn pointer_events_false_blocks_hit_test()` — subtree with `pointer_events = false` is not hit-testable
+- `fn pointer_events_false_preserves_layout()` — layout geometry is unchanged when pointer events are disabled
+- `fn pointer_events_false_allows_paint()` — child subtree is still paintable when pointer events are disabled
+- `fn pointer_events_true_by_default()` — default `LayoutBox` has `pointer_events = true`
 
-    // Effective opacity = 0.8 * 0.5 = 0.4
-    // White fill alpha should be 0.4
-    // NOTE: Byte offset 60-64 is the bg_color alpha — verify against actual instance layout.
-    let bytes = writer.as_bytes();
-    let bg_a = f32::from_le_bytes(bytes[60..64].try_into().unwrap());
-    assert!((bg_a - 0.4).abs() < 0.01);
-}
-```
+### Pipeline / WindowRoot
+
+Add regression coverage in
+[oriterm_ui/src/window_root/tests.rs](/home/eric/projects/ori_term/oriterm_ui/src/window_root/tests.rs)
+or the new modifiers tests:
+
+- `fn visibility_toggle_gcs_stale_registrations()` — GCs stale interaction registrations after toggling to hidden
+- `fn visibility_toggle_drops_focus_targets()` — drops removed focus targets from focus order
+- `fn visibility_toggle_preserves_full_tree_access()` — keeps `for_each_child_mut_all()` access for full-tree maintenance
+
+### Checklist
+
+- [ ] Scene tests cover opacity stack and `ContentMask.opacity`
+- [ ] Scene-convert tests cover compositor-opacity multiplication
+- [ ] Modifiers tests cover `Visible`, `Hidden`, and `DisplayNone`
+- [ ] Input tests cover `pointer_events = false`
+- [ ] Pipeline or window-root tests cover stale-registration and focus-order cleanup
 
 ---
 
 ## 06.R Third Party Review Findings
 
-Reserved for findings from `/review-plan` or external review. Not actionable until populated.
+### Resolved Findings
+
+1. `TPR-06-001`:
+   The draft claimed page switching still needed a display-none feature for zero layout cost, but
+   [PageContainerWidget](/home/eric/projects/ori_term/oriterm_ui/src/widgets/page_container/mod.rs)
+   already provides active-page-only layout, paint, and traversal.
+
+2. `TPR-06-002`:
+   A `LayoutBox.visible` field by itself is insufficient because registration, focus collection,
+   key-context collection, prepare, and prepaint all walk the widget tree via `for_each_child_mut`
+   outside the layout solver.
+
+3. `TPR-06-003`:
+   Mapping `disabled` directly to CSS `pointer-events: none` is incorrect. `disabled` is a stronger
+   semantic state and is already used beyond pointer hit testing.
+
+4. `TPR-06-004`:
+   The draft cited the wrong hit-test module. Widget hit testing is implemented in
+   [input/hit_test.rs](/home/eric/projects/ori_term/oriterm_ui/src/input/hit_test.rs), while
+   [hit_test/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/hit_test/mod.rs) handles
+   frameless window chrome.
+
+5. `TPR-06-005`:
+   Existing widget code already uses manual alpha in some places
+   ([sidebar_nav/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/widgets/sidebar_nav/mod.rs),
+   tab-bar close-button fades, scrollbar thumb alpha). Section 06 must add reusable subtree opacity,
+   not misrepresent the tree as having no opacity usage at all.
+
+6. `TPR-06-006`:
+   [scene_convert/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/scene_convert/mod.rs)
+   still ignores `ImagePrimitive`, so Section 06 can only promise immediate GPU opacity effects for
+   quads, lines, text, and icons unless image rendering lands at the same time.
 
 ---
 
-## 06.5 Build & Verify
+## 06.6 Build & Verify
 
 ### Gate
 
@@ -486,18 +583,18 @@ Reserved for findings from `/review-plan` or external review. Not actionable unt
 
 ### Verification Steps
 
-1. `cargo build --target x86_64-pc-windows-gnu` — cross-compile succeeds
-2. `cargo clippy --target x86_64-pc-windows-gnu` — no new warnings
-3. `cargo test -p oriterm_ui` — opacity stack and visibility tests pass
-4. `cargo test -p oriterm` — scene convert opacity multiplication tests pass
-5. Visual: disabled slider renders at 40% opacity
-6. Visual: page switching hides non-active pages completely
+1. `cargo test -p oriterm_ui draw::scene` and the relevant modifiers/input/window-root tests pass.
+2. `cargo test -p oriterm gpu::scene_convert` passes with subtree-opacity assertions.
+3. Visual: disabled settings rows dim as a subtree at `0.4` opacity.
+4. Visual: inactive sidebar icons remain `0.7` alpha without unintended full-row fade.
+5. Visual: hidden-but-layout-preserving content reserves space but paints nothing.
+6. Visual: display-none content contributes zero size and does not respond to hover/click.
 
 ### Checklist
 
 - [ ] `./build-all.sh` passes
 - [ ] `./clippy-all.sh` passes
 - [ ] `./test-all.sh` passes
-- [ ] Scene opacity stack balanced after `build_scene()` (debug_assert)
-- [ ] No regression in existing widget rendering (all existing opacity values unchanged)
-- [ ] Existing scene tests updated for new `ContentMask.opacity` field
+- [ ] `build_scene()` asserts balanced opacity pushes
+- [ ] visibility toggles do not leak stale interaction state
+- [ ] pointer-events suppression affects hit testing only

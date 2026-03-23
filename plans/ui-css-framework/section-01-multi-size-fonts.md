@@ -150,7 +150,7 @@ impl UiFontSizes {
 
 ### Exact Size Construction
 
-`FontCollection::new()` takes points, but the UI style contract is logical pixels. The conversion for a requested logical size is:
+`FontCollection::new()` takes `size_pt` and `dpi`, then internally computes `size_px = (size_pt * dpi / 72.0).clamp(...)`. The UI style contract uses logical pixels. The conversion for a requested logical size is:
 
 ```rust
 let logical_px = style.size;
@@ -160,6 +160,8 @@ let size_pt = logical_px * 72.0 / 96.0;
 ```
 
 That keeps `collection.size_px()` aligned with `logical_px * scale` at runtime.
+
+**Important**: the `size_pt = logical_px * 72.0 / 96.0` formula is correct for all scale factors. Pass the actual window DPI (which already encodes scale: e.g. `192` at 2x) to `FontCollection::new()`. Then internally: `size_px = size_pt * dpi / 72.0 = (logical_px * 72/96) * dpi / 72 = logical_px * dpi / 96 = logical_px * scale`. The `size_pt` value stays constant regardless of scale — the DPI parameter handles physical scaling. Do NOT use `logical_px * 72.0 / dpi` as `size_pt`; that would cancel the scale factor and produce logical-sized (unscaled) glyphs.
 
 ### Preloaded Sizes
 
@@ -201,12 +203,14 @@ The current `UiOnly` constructor relies on "use `font_collection` as the UI font
 ### Checklist
 
 - [ ] Create `oriterm/src/font/ui_font_sizes/mod.rs` with exact-size, lazily populated storage
+- [ ] Create `oriterm/src/font/ui_font_sizes/tests.rs` with `#[cfg(test)] mod tests;` in `mod.rs`
 - [ ] Re-export the module from `oriterm/src/font/mod.rs`
 - [ ] Update startup in `app/init/mod.rs` to construct `UiFontSizes` instead of one 10pt collection
 - [ ] Update `create_window_renderer()` and `create_dialog_renderer()` to construct the same registry
 - [ ] Replace `ui_font_collection` with `ui_font_sizes` on `WindowRenderer`
 - [ ] Split [window_renderer/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/window_renderer/mod.rs) before adding more code there
 - [ ] Update `set_font_size()`, `set_hinting_and_format()`, and related font-config code to keep the registry in sync
+- [ ] Remove the hardcoded `ui_fc.set_size(11.0, dpi)` in `font_config.rs` and replace it with registry-wide DPI update
 
 ---
 
@@ -309,7 +313,7 @@ ShapedText::new(glyphs, width, metrics.height, metrics.baseline, size_q6)
 
 ### Scene Convert Changes
 
-`convert_text()` should read `shaped.size_q6` instead of `TextContext.size_q6`:
+`convert_text()` in `scene_convert/text.rs` should read `shaped.size_q6` instead of `TextContext.size_q6`. Currently at line 66 it reads `size_q6: ctx.size_q6`. After this change:
 
 ```rust
 let key = RasterKey {
@@ -327,9 +331,9 @@ That lets one scene contain 10px sidebar text and 18px title text in the same fr
 
 ### Atlas Cache Changes
 
-`scene_raster_keys()` should push `RasterKey` values using `text_run.shaped.size_q6`.
+`scene_raster_keys()` in `helpers.rs` (currently line 199) takes a single `size_q6` parameter and stamps every key with it. After this change, it should read `text_run.shaped.size_q6` per text run instead.
 
-`cache_scene_glyphs()` should then group or bucket those keys by `size_q6`, select the matching `FontCollection` from `UiFontSizes`, and call `ensure_glyphs_cached()` once per size bucket.
+`cache_scene_glyphs()` in `scene_append.rs` (currently line 109) currently calls `scene_raster_keys(scene, size_q6, hinted, scale, &mut self.ui_raster_keys)` with one size. After this change, it should group or bucket the resulting keys by `size_q6`, select the matching `FontCollection` from `UiFontSizes` via `select_by_q6_mut()`, and call `ensure_glyphs_cached()` once per size bucket.
 
 That is cleaner than teaching `ensure_glyphs_cached()` to switch collections per individual key.
 
@@ -394,16 +398,23 @@ Prove end-to-end correctness for mixed-size scenes, not just isolated shaping.
 Add or update tests in these areas:
 
 - `oriterm/src/font/ui_font_sizes/tests.rs`
-  - exact-size lookup returns the requested size bucket, not a nearest bucket
-  - lazy insertion creates a new collection for an unseen size
+  - `fn select_returns_exact_size_collection()` — exact-size lookup returns the requested size bucket, not a nearest bucket
+  - `fn select_returns_none_for_missing_size()` — unseen size with immutable `select()` returns `None`
+  - `fn select_mut_creates_collection_for_unseen_size()` — lazy insertion creates a new collection for an unseen size
+  - `fn select_by_q6_finds_preloaded_size()` — q6 key lookup matches a preloaded collection
+  - `fn select_by_q6_returns_none_for_unknown()` — q6 key lookup for never-created size returns `None`
+  - `fn set_dpi_rebuilds_all_collections()` — DPI change rebuilds every existing collection at the new physical size
+  - `fn preloaded_sizes_match_expected_set()` — the `new()` constructor with the standard preload list creates exactly the expected entries
 - `oriterm/src/font/shaper/tests.rs`
-  - 18px text measures wider/taller than 13px text
-  - shaped output stamps the expected `size_q6`
+  - `fn larger_size_measures_wider_and_taller()` — 18px text measures wider/taller than 13px text
+  - `fn shaped_output_stamps_expected_size_q6()` — shaped output stamps the expected `size_q6`
+  - `fn zero_length_text_returns_zero_width_with_valid_size_q6()` — empty string shaping produces zero width but valid `size_q6`
 - `oriterm/src/gpu/scene_convert/tests.rs`
-  - two text runs with different sizes produce different `RasterKey.size_q6` values
-  - a scene containing mixed sizes resolves atlas lookups correctly
+  - `fn mixed_size_text_runs_produce_different_raster_key_size_q6()` — two text runs with different sizes produce different `RasterKey.size_q6` values
+  - `fn scene_mixed_sizes_atlas_lookups_correct()` — a scene containing mixed sizes resolves atlas lookups correctly
 - `oriterm_ui/src/text/tests.rs`
-  - `ShapedText::new()` stores `size_q6`
+  - `fn shaped_text_new_stores_size_q6()` — `ShapedText::new()` stores `size_q6`
+  - `fn shaped_text_default_has_zero_size_q6()` — default or empty `ShapedText` has a sensible `size_q6` value
 - `oriterm_ui/src/testing/mock_measurer.rs`
   - update the helper to construct `ShapedText` with an explicit `size_q6`
 

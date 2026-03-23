@@ -82,12 +82,12 @@ Widget::paint(scene, layout_node)          ← Widget emits draw commands at sol
 08 Icon Verification ────┤     (independent — icon paths)
                          │
                          ↓
-09 Settings Content ─────┤     (needs 01-08 for complete widget styling)
+09 Settings Content ─────┤     (needs 01-03, 05-08)
                          │
-10 Sidebar Fidelity ─────┤
-11 Content Typography ───┤     (need 01-09 for correct rendering)
-12 Footer + Buttons ─────┤
-13 Widget Controls ──────┤
+10 Sidebar Fidelity ─────┤     (needs 01-03, 08)
+11 Content Typography ───┤     (needs 01-04, 06)
+12 Footer + Buttons ─────┤     (needs 01-03, 05, 08, 10)
+13 Widget Controls ──────┤     (needs 01-04, 11)
                          │
                          ↓
 14 Verification ─────────┘     (needs all above — visual regression)
@@ -111,20 +111,20 @@ Side-by-side comparison, visual regression tests, DPI scaling verification. Buil
 
 | File | Lines | Role |
 |------|-------|------|
-| `oriterm_ui/src/text/mod.rs` | ~200 | TextStyle, ShapedGlyph, ShapedText, TextMetrics |
-| `oriterm/src/font/shaper/ui_measurer.rs` | 76 | UiFontMeasurer (TextMeasurer impl) |
-| `oriterm/src/font/shaper/ui_text.rs` | ~308 | shape_text, measure_text_styled, shape_text_string |
+| `oriterm_ui/src/text/mod.rs` | ~199 | TextStyle, ShapedGlyph, ShapedText, TextMetrics |
+| `oriterm/src/font/shaper/ui_measurer.rs` | 75 | UiFontMeasurer (TextMeasurer impl) |
+| `oriterm/src/font/shaper/ui_text.rs` | ~305 | shape_text, measure_text_styled, shape_text_string |
 | `oriterm/src/font/collection/mod.rs` | ~484 | FontCollection (faces, metrics, rasterization) |
 | `oriterm/src/font/mod.rs` | ~478 | RasterKey, FaceIdx, CellMetrics, GlyphStyle |
-| `oriterm/src/gpu/scene_convert/text.rs` | ~190 | convert_text (RasterKey construction) |
-| `oriterm/src/gpu/scene_convert/mod.rs` | ~342 | TextContext, convert_scene, convert_rect_clipped |
-| `oriterm/src/gpu/window_renderer/scene_append.rs` | 148 | cache_scene_glyphs, ui_size_q6, ui_hinted |
+| `oriterm/src/gpu/scene_convert/text.rs` | ~189 | convert_text (RasterKey construction) |
+| `oriterm/src/gpu/scene_convert/mod.rs` | ~341 | TextContext, convert_scene, convert_rect_clipped |
+| `oriterm/src/gpu/window_renderer/scene_append.rs` | ~148 | cache_scene_glyphs, ui_size_q6, ui_hinted |
 | `oriterm/src/gpu/window_renderer/mod.rs` | ~554 | WindowRenderer -- OVER 500-line limit, file-size split required in Section 01 |
-| `oriterm_ui/src/layout/solver.rs` | 469 | Layout flex solver |
-| `oriterm_ui/src/layout/size_spec.rs` | 34 | SizeSpec enum (Fixed, Fill, FillPortion, Hug) |
-| `oriterm_ui/src/draw/border.rs` | 16 | Border struct (uniform only — width + color) |
+| `oriterm_ui/src/layout/solver.rs` | ~469 | Layout flex solver |
+| `oriterm_ui/src/layout/size_spec.rs` | 33 | SizeSpec enum (Fixed, Fill, FillPortion, Hug) |
+| `oriterm_ui/src/draw/border.rs` | 15 | Border struct (uniform only — width + color) |
 | `oriterm_ui/src/draw/scene/content_mask.rs` | 30 | ContentMask (clip rect only, no opacity yet) |
-| `oriterm_ui/src/layout/layout_box.rs` | ~112 | LayoutBox (no `visible` field yet) |
+| `oriterm_ui/src/layout/layout_box.rs` | ~372 | LayoutBox (has `disabled`, no `visible`/`pointer_events` yet) |
 
 ## Known Bugs
 
@@ -147,8 +147,8 @@ Side-by-side comparison, visual regression tests, DPI scaling verification. Buil
 | 07 | Scrollbar Styling | `section-07-scrollbar-styling.md` | — |
 | 08 | Icon Path Verification | `section-08-icon-verification.md` | — |
 | 09 | Settings Content Completeness | `section-09-settings-content.md` | 01-03, 05-08 |
-| 10 | Visual Fidelity: Sidebar + Nav | `section-10-sidebar-fidelity.md` | 01-03, 05, 08 |
-| 11 | Visual Fidelity: Content + Typography | `section-11-content-typography.md` | 01-04 |
-| 12 | Visual Fidelity: Footer + Buttons | `section-12-footer-buttons.md` | 02, 03, 05 |
-| 13 | Visual Fidelity: Widget Controls | `section-13-widget-controls.md` | 01, 02 |
+| 10 | Visual Fidelity: Sidebar + Nav | `section-10-sidebar-fidelity.md` | 01-03, 08 |
+| 11 | Visual Fidelity: Content + Typography | `section-11-content-typography.md` | 01-04, 06 |
+| 12 | Visual Fidelity: Footer + Buttons | `section-12-footer-buttons.md` | 01, 02, 03, 05, 08, 10 |
+| 13 | Visual Fidelity: Widget Controls | `section-13-widget-controls.md` | 01-04, 11 |
 | 14 | Verification + Visual Regression | `section-14-verification.md` | 01-13 |

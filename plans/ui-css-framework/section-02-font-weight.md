@@ -180,6 +180,8 @@ pub struct ShapedText {
 
 `ShapedText` is the correct ownership point because the whole run shares one requested weight, just as it shares one requested size.
 
+**Important**: `ShapedText` lives in `oriterm_ui/src/text/mod.rs`, which has no dependency on `oriterm`. Using `u16` (not the `FontWeight` newtype from Section 02.1) is acceptable here because `ShapedText` is a wire type consumed by the GPU renderer in `oriterm`, which needs to stamp the value into `RasterKey` (also `u16`). The `FontWeight` newtype is the public style API; the shaped output carries the resolved numeric value.
+
 ### RasterKey Change
 
 If requested weight affects rasterization, `RasterKey` must include it:
@@ -306,13 +308,21 @@ Do not claim mockup-correct button/dropdown/widget-control weights here unless t
 Add or update tests for:
 
 - `oriterm_ui/src/text/tests.rs`
-  - ordering, clamping, default weight
+  - `fn font_weight_default_is_normal()` — `FontWeight::default()` returns 400
+  - `fn font_weight_ordering_is_numeric()` — `LIGHT < NORMAL < MEDIUM < BOLD`
+  - `fn font_weight_clamp_below_100()` — `FontWeight::new(50)` clamps to 100
+  - `fn font_weight_clamp_above_900()` — `FontWeight::new(950)` clamps to 900
+  - `fn font_weight_boundary_values()` — `FontWeight::new(100)` stays 100, `FontWeight::new(900)` stays 900
+  - `fn font_weight_hash_eq_consistent()` — two `FontWeight(400)` hash and compare equal; `FontWeight(400)` != `FontWeight(500)`
+  - `fn font_weight_value_roundtrip()` — `FontWeight::new(w).value() == w` for all valid weights
 - `oriterm/src/font/shaper/tests.rs`
-  - requested weight is preserved on shaped UI text
+  - `fn shaped_text_preserves_requested_weight()` — requested weight is preserved on shaped UI text
+  - `fn different_weights_produce_different_shaped_weight()` — shaping with 400 vs 700 stores different `weight` on `ShapedText`
 - `oriterm/src/gpu/scene_convert/tests.rs`
-  - two otherwise-identical UI text runs with different weights produce different `RasterKey` values
+  - `fn different_weights_produce_different_raster_keys()` — two otherwise-identical UI text runs with different weights produce different `RasterKey` values
+  - `fn raster_key_weight_field_matches_shaped_weight()` — `RasterKey.weight` comes from `ShapedText.weight`, not a default
 - `oriterm/src/font/collection/tests.rs`
-  - weight-aware rasterization uses the requested weight when `wght` is available
+  - `fn weight_aware_rasterization_uses_wght_axis()` — weight-aware rasterization uses the requested weight when `wght` is available
 
 ### Checklist
 

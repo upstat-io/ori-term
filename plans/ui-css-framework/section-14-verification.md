@@ -4,342 +4,506 @@ title: "Verification + Visual Regression"
 status: not-started
 reviewed: true
 third_party_review:
-  status: none
-  updated: null
-goal: "All CSS framework features are implemented, tested, and verified against the mockup — the settings dialog is visually indistinguishable from settings-brutal.html at 100% DPI"
+  status: resolved
+  updated: 2026-03-23
+goal: "The CSS UI framework plan closes with reproducible evidence, not a hand-written checklist: every prior section owns direct automated regressions, the settings dialog has deterministic GPU golden coverage, build/platform/performance gates reflect the real repository scripts, and the remaining human sign-off is limited to live behavior the automated layers cannot prove."
 depends_on: ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13"]
 sections:
   - id: "14.1"
-    title: "Test Matrix"
+    title: "Verification Ownership + Artifacts"
     status: not-started
   - id: "14.2"
-    title: "Visual Comparison"
+    title: "Automated Test Matrix"
     status: not-started
   - id: "14.3"
-    title: "Cross-Platform Build"
+    title: "Deterministic Visual Regression"
     status: not-started
   - id: "14.4"
-    title: "Performance Validation"
+    title: "Manual Sign-Off"
     status: not-started
   - id: "14.5"
+    title: "Build + Platform Gates"
+    status: not-started
+  - id: "14.6"
+    title: "Performance + Invariants"
+    status: not-started
+  - id: "14.R"
+    title: "Third Party Review Findings"
+    status: complete
+  - id: "14.7"
     title: "Completion Checklist"
     status: not-started
 ---
 
 # Section 14: Verification + Visual Regression
 
-**Status:** Not Started
-**Goal:** Final verification pass. Every CSS framework feature from Sections 01-13 works correctly, passes tests, matches the mockup, and does not regress performance. This section does not implement new features — it verifies and documents.
+## Problem
 
-**Production code paths:** All files modified in Sections 01-13. No new production code in this section.
+The current draft is not accurate to the repository or to the revised Sections 01-13.
 
-**Observable change:** Clean builds, all tests green, visual match confirmed, performance validated. The plan is marked complete.
+What the tree shows today:
+
+- Verification here is not documentation-only work. To close this plan correctly, Section 14 must
+  add real test code, golden PNGs, and possibly small shared test helpers at the dialog-rendering
+  boundary.
+- The draft's per-section matrix has already drifted from the reviewed section set:
+  - Section 12 now requires a bold primary Save button, not one shared medium-weight button style.
+  - Section 13 no longer owns `row gap 0`; that responsibility moved back to Section 11.
+  - Section 09 now covers real settings-pipeline and tab-style behavior that the old matrix does
+    not mention.
+  - Sections 05-08 and 10-13 now rely on renderer, overlay, and shared-widget boundaries that need
+    more than one-line field assertions.
+- The repository already has deterministic GPU visual regression infrastructure in
+  `oriterm/src/gpu/visual_regression/`, plus a UI-only renderer path via
+  `WindowRenderer::new_ui_only`, `prepare_ui_frame(...)`, and
+  `append_ui_scene_with_text(...)`. The draft ignores all of that and falls back to a manual
+  screenshot checklist.
+- The build scripts are not what the draft says:
+  - `./build-all.sh` cross-builds Windows GNU debug + release
+  - `./clippy-all.sh` runs Windows GNU and host clippy with warnings denied
+  - `./test-all.sh` runs `cargo test --workspace --features oriterm/gpu-tests`
+- The performance section is too anecdotal. The tree already has automated invariants for idle
+  event-loop behavior and scene/damage allocation reuse, but the draft does not connect the
+  settings dialog closeout to them.
+
+Section 14 therefore needs to become a layered verification plan with real ownership and real
+artifacts, not a static checklist full of stale assumptions.
+
+## Corrected Scope
+
+Section 14 should keep the full final-verification goal and close it with four layers:
+
+1. section-owned automated regressions near the modules changed in Sections 01-13
+2. cross-section settings-dialog integration tests for builder, actions, layout, overlays, and
+   semantic state
+3. deterministic GPU golden tests for the rendered settings dialog itself
+4. focused manual sign-off for live interaction and native-platform behavior that automated tests
+   cannot prove
+
+This section should not pretend that one manual screenshot pass is enough, and it should not repeat
+stale per-feature assertions that no longer match the revised plan.
 
 ---
 
-## 14.1 Test Matrix
+## 14.1 Verification Ownership + Artifacts
 
-Every CSS framework feature implemented in Sections 01-13 must have test coverage. This matrix catalogs the expected tests and their locations.
+### Goal
 
-### Section 01 — Multi-Size Font Rendering
+Define the actual verification layers and the files that own them so Section 14 closes with durable
+artifacts instead of one-off human checks.
 
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Title renders larger than body | `oriterm_ui` harness test | `TextStyle.size = 18` produces wider shaped text than `size = 13` |
-| Glyph atlas accepts multiple sizes | `oriterm/src/font/` unit test | Atlas lookup with different `ppem` values returns distinct raster keys |
-| Small text (10px) readable | Visual check | Section titles at 10px are legible, not blurred or aliased |
+### Files
 
-### Section 02 — Font Weight
+- section-local `tests.rs` files under `oriterm_ui/src/widgets/`, `oriterm_ui/src/text/`,
+  `oriterm/src/gpu/scene_convert/`, `oriterm/src/font/`, and related modules changed by
+  Sections 01-13
+- `oriterm/src/app/settings_overlay/form_builder/tests.rs`
+- `oriterm/src/app/settings_overlay/action_handler/tests.rs`
+- `oriterm_ui/src/widgets/settings_panel/tests.rs`
+- `oriterm_ui/src/testing/render_assert.rs`
+- `oriterm/src/gpu/visual_regression/mod.rs`
+- new `oriterm/src/gpu/visual_regression/settings_dialog.rs`
+- `oriterm/tests/references/*.png`
+- `oriterm/src/app/dialog_rendering.rs` and/or a small shared test helper if the existing dialog
+  composition path needs to be reused directly
 
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Bold visibly heavier | `oriterm_ui` harness test | Shaped text with `FontWeight::Bold` has different glyph IDs or metrics than `Regular` |
-| Medium weight (500) resolves | `oriterm_ui` or font unit test | `FontWeight::MEDIUM` selects the correct face (or synthesizes bold for 500+ from 400) |
-| Weight fallback | Unit test | If font has no 500 face, nearest (400 or 700) is selected without panic |
+### Required Verification Layers
 
-### Section 03 — Text Transform + Letter Spacing
+1. **Section-local regressions**
+   - each section keeps direct ownership of its changed primitives
+   - examples: text shaping, scene conversion, widget paint geometry, icon path generation
 
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Uppercase applied | `oriterm_ui` harness test | `TextTransform::Uppercase` on "hello" produces "HELLO" in shaped output |
-| Letter spacing widens text | `oriterm_ui` harness test | Shaped text with `letter_spacing = 2.0` has greater total width than `letter_spacing = 0.0` |
-| Zero spacing is default | Unit test | `TextStyle::default().letter_spacing == 0.0` |
+2. **Settings-dialog integration**
+   - builder IDs, active-page wiring, footer dirty state, action-handler mapping, dropdown overlay
+     routing, and page rebuild behavior
 
-### Section 04 — Line Height
+3. **GPU dialog goldens**
+   - full rendered output through the UI scene conversion and renderer path
+   - committed reference PNGs plus deterministic update workflow
 
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Line height multiplier | `oriterm_ui` harness test | `line_height = 1.5` at `size = 12` produces shaped text height ~18px (12 * 1.5) |
-| Default line height | Unit test | `TextStyle::default().line_height` is `None` (use font metrics) |
+4. **Manual sign-off**
+   - live interactions, native-window behavior, and cross-platform visual confirmation
 
-### Section 05 — Per-Side Borders
+### Important Scope Correction
 
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Right-only border | `oriterm_ui` harness test | Widget with `border_right: 2px` draws exactly one 2px line on right edge |
-| Top-only border | Harness test | Footer separator draws only on top edge |
-| Left-only border | Harness test | Active nav item draws 3px border-left only |
+This section does add implementation work:
 
-### Section 06 — Opacity + Display
+- new tests
+- new golden images
+- likely a settings-dialog visual regression module
+- possibly a small reusable helper around dialog composition if the current private render path is
+  too awkward to invoke from tests
 
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Opacity modulates alpha | `oriterm_ui` harness test | Widget with `opacity: 0.5` draws with half-alpha colors |
-| Disabled controls dimmed | Harness test | `slider.with_disabled(true)` renders with disabled colors |
-
-### Section 07 — Scrollbar
-
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Scrollbar width 6px | Harness test or unit test | `ScrollbarStyle.width == 6.0` |
-| Thumb hover state | Harness test | Scrollbar thumb changes color on hover |
-
-### Section 08 — Icons
-
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| All 8 sidebar icons resolve | Unit test | `IconId::Sun` through `IconId::Activity` all return `Some(resolved)` from icon cache |
-| Icon size 16px | Unit test | Resolved icon rect is 16x16 |
-
-### Section 09 — Settings Content
-
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Decorations section exists | `oriterm_ui` or integration test | Page has 3 sections (Theme, Window, Decorations) |
-| New settings read from Config | Unit test | `build_page()` with Config containing `unfocused_opacity: 0.8` creates slider with value 80 |
-| New settings save to Config | Integration test | Save handler writes new field values back to Config |
-
-### Section 10 — Sidebar
-
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Nav item padding | Harness test | Item icon starts at correct X offset (16px from sidebar edge) |
-| Active state colors | Harness test | Active item has accent bg and accent text color |
-| Footer border-top | Harness test | Footer area has 2px border at top |
-
-### Section 11 — Content Typography
-
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Page header at 18px | Harness test | Title text shaped at size 18 |
-| Section divider extends | Harness test | Separator widget fills remaining width |
-| Bottom padding 28px | Harness test | Content body has 28px bottom padding |
-| Section gap 28px | Harness test | Container gap between sections is 28px |
-
-### Section 12 — Footer + Buttons
-
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Button font weight | Unit test | `ButtonStyle` has `font_weight: FontWeight::MEDIUM` for footer buttons |
-| Button letter spacing | Unit test | `ButtonStyle` has `letter_spacing: 0.48` for footer buttons |
-| Reset left, Save right | Harness test | Footer children order: reset, spacer, cancel, gap, save |
-| UNSAVED indicator no overlap | Harness test | Indicator X > reset button right edge |
-
-### Section 13 — Widget Controls
-
-| Test | Location | What it verifies |
-|------|----------|------------------|
-| Toggle thumb 12x12 | Unit test | `thumb_size = height - 2 * thumb_padding = 20 - 8 = 12` |
-| Toggle travel 18px | Unit test | `travel = width - 2 * thumb_padding - thumb_size = 38 - 8 - 12 = 18` |
-| Slider track 120px | Unit test | `SliderStyle::from_theme().width == 120.0` |
-| Row gap 0 | Unit test | `ROW_GAP == 0.0` |
+That is still verification work, but it is not "no code changes."
 
 ### Checklist
 
-- [ ] All unit tests listed above exist and pass.
-- [ ] All harness tests listed above exist and pass.
-- [ ] `cargo test -p oriterm_ui` green.
-- [ ] `cargo test -p oriterm` green.
-- [ ] `./test-all.sh` green.
+- [ ] Keep direct regressions near the modules changed by Sections 01-13
+- [ ] Add cross-section settings-dialog integration coverage
+- [ ] Add settings-dialog GPU goldens as committed artifacts
+- [ ] Allow narrowly-scoped test-support extraction where needed
+- [ ] Keep manual verification as the last layer, not the only layer
 
 ---
 
-## 14.2 Visual Comparison
+## 14.2 Automated Test Matrix
 
-Side-by-side screenshot comparison of the running settings dialog against `mockups/settings-brutal.html` at 100% DPI (no scaling).
+### Goal
 
-### Comparison points
+Replace the stale assertion table with a durable matrix that matches the revised section boundaries
+and the current repository test structure.
 
-**Sidebar area:**
+### Matrix Rules
 
-| Element | Expected | Check |
-|---------|----------|-------|
-| Background color | `#0e0e12` (--bg-base) | [ ] |
-| Right border | 2px `#2a2a36` | [ ] |
-| Width | 200px | [ ] |
-| Search field | 28px height, 2px border, `#16161c` bg | [ ] |
-| Search placeholder | 12px, `#8c8ca0`, left offset 26px | [ ] |
-| Section titles | 10px, Regular, uppercase, `// PREFIX`, `#8c8ca0` | [ ] |
-| Section title letter spacing | 0.15em visible | [ ] |
-| Nav item height | 32px | [ ] |
-| Nav item padding | 7px 16px | [ ] |
-| Nav normal text | 13px, `#9494a8` | [ ] |
-| Nav hover bg | `#24242e` | [ ] |
-| Nav hover text | `#d4d4dc` | [ ] |
-| Nav active bg | rgba(0.14) accent tint | [ ] |
-| Nav active text | `#6d9be0` | [ ] |
-| Nav active left border | 3px `#6d9be0` | [ ] |
-| Icons | 16px, 0.7 opacity (normal), 1.0 (active) | [ ] |
-| Modified dot | 6px, `#e0c454` | [ ] |
-| Footer border-top | 2px `#2a2a36` | [ ] |
-| Version text | 11px, `#8c8ca0` | [ ] |
-| Config path | 10px, `#8c8ca0` at 0.7 alpha | [ ] |
-| Footer padding | 12px 28px | [ ] |
+Each prior section must close with at least one direct automated regression in the module layer it
+changed, and rendering-sensitive work must also be proven at one deeper layer.
 
-**Content area:**
+### Required Coverage By Area
 
-| Element | Expected | Check |
-|---------|----------|-------|
-| Page title | 18px, Bold (700), uppercase, `#eeeeef`, 0.05em spacing | [ ] |
-| Page subtitle | 12px, `#9494a8` | [ ] |
-| Header padding | 24px 28px 20px | [ ] |
-| Section title | 11px, Medium (500), uppercase, `#8c8ca0`, `//` prefix | [ ] |
-| Section divider | 2px, `#2a2a36`, extends to right edge | [ ] |
-| Section gap | 28px | [ ] |
-| Setting name | 13px, `#d4d4dc` | [ ] |
-| Setting desc | 11.5px, `#9494a8` | [ ] |
-| Setting row padding | 10px 14px | [ ] |
-| Setting row min-height | 44px | [ ] |
-| Setting row hover bg | `#1c1c24` | [ ] |
-| Row-to-row gap | 0px (flush) | [ ] |
-| Content body padding | 0 28px 28px | [ ] |
+**Sections 01-04: text and shaping**
 
-**Controls:**
+- verify actual shape/measure behavior, not only field defaults
+- cover:
+  - multi-size glyph selection and raster-key propagation
+  - numeric weight resolution and fallback
+  - transform and letter-spacing behavior at shape/measure boundaries
+  - valid and invalid line-height handling through measurer and scene conversion
 
-| Element | Expected | Check |
-|---------|----------|-------|
-| Slider track | 120px wide, 4px tall, `#2a2a36` | [ ] |
-| Slider thumb | 12x14, `#6d9be0`, 2px border `#16161c` | [ ] |
-| Slider value | 12px, `#9494a8`, right-aligned, 48px | [ ] |
-| Toggle track | 38x20, 2px border `#2a2a36`, bg `#2a2a36` | [ ] |
-| Toggle thumb | 12x12, `#8c8ca0` (off), `#6d9be0` (on) | [ ] |
-| Toggle checked bg | rgba accent 0.14, border `#6d9be0` | [ ] |
-| Dropdown min-width | 140px | [ ] |
-| Dropdown padding | 6px 10px (left), 30px (right, arrow area) | [ ] |
-| Dropdown border | 2px `#2a2a36` | [ ] |
-| Dropdown bg | `#12121a` | [ ] |
-| Dropdown arrow | right 10px, centered, `#8c8ca0` | [ ] |
+**Sections 05-08: rendering primitives**
 
-**Footer:**
+- cover:
+  - per-side border data and scene conversion output
+  - opacity and visibility/display behavior across paint, hit testing, and overlay paths
+  - shared scrollbar geometry and menu/scroll consumers
+  - icon path fidelity and raster output at target sizes
 
-| Element | Expected | Check |
-|---------|----------|-------|
-| Height | 52px | [ ] |
-| Border-top | 2px `#2a2a36` (content area only) | [ ] |
-| Padding | 12px 28px | [ ] |
-| Reset button | left-aligned, danger-ghost style | [ ] |
-| Cancel button | right group, ghost style | [ ] |
-| Save button | rightmost, primary style | [ ] |
-| Button gap | 8px between Cancel and Save | [ ] |
-| Button font | 12px, Medium (500), uppercase, 0.04em spacing | [ ] |
-| UNSAVED indicator | 11px, `#e0c454`, warning icon, not overlapping Reset | [ ] |
+**Sections 09-13: settings-dialog feature and fidelity work**
+
+- cover:
+  - settings builder and ID capture
+  - action-handler mapping into `Config`
+  - shared content/sidebar/footer/control widget geometry and paint output
+  - dropdown popup/open state and overlay behavior
+  - dirty-state propagation and page-switch behavior
+
+**Cross-section integration**
+
+- add or strengthen tests that prove:
+  - the full dialog builds from real config data without placeholder IDs
+  - semantic actions update pending config correctly
+  - the active page survives rebuild flows that are supposed to preserve it
+  - footer Save/Reset/Cancel semantics stay synchronized with dirty state
+  - overlay dropdowns, menus, and settings controls compose correctly inside the dialog shell
+
+### Canonical Locations
+
+- widget geometry/paint/harness assertions:
+  - `oriterm_ui/src/widgets/*/tests.rs`
+- shared scene assertions:
+  - `oriterm_ui/src/testing/render_assert.rs`
+- settings builder/integration:
+  - `oriterm/src/app/settings_overlay/form_builder/tests.rs`
+  - `oriterm/src/app/settings_overlay/action_handler/tests.rs`
+  - `oriterm_ui/src/widgets/settings_panel/tests.rs`
+- renderer boundary:
+  - `oriterm/src/gpu/scene_convert/tests.rs`
+  - `oriterm/src/gpu/visual_regression/settings_dialog.rs`
+
+### Matrix Discipline
+
+Do not encode this section as a brittle list of exact numeric assertions that belong in the owning
+sections. Section 14 should verify that those regressions exist and are sufficient, not duplicate
+their implementation details in a second stale table.
+
+### Checklist
+
+- [ ] Every section from 01-13 has at least one direct automated regression in its owning module
+- [ ] Rendering-sensitive sections also prove behavior one layer deeper when needed
+- [ ] Settings-dialog integration tests cover builder, actions, overlays, and dirty-state flows
+- [ ] New tests follow the repository's sibling `tests.rs` pattern unless they are crate-level
+      integration or golden tests
 
 ---
 
-## 14.3 Cross-Platform Build
+## 14.3 Deterministic Visual Regression
 
-All three build gates must pass with zero warnings.
+### Goal
 
-### Commands
+Use the existing GPU golden-test infrastructure to verify the settings dialog output itself instead
+of relying on manual screenshots alone.
+
+### Files
+
+- `oriterm/src/gpu/visual_regression/mod.rs`
+- new `oriterm/src/gpu/visual_regression/settings_dialog.rs`
+- `oriterm/src/gpu/window_renderer/ui_only.rs`
+- `oriterm/src/gpu/window_renderer/scene_append.rs`
+- `oriterm/src/app/dialog_rendering.rs`
+- `oriterm/tests/references/settings_*.png`
+
+### Current Gap
+
+The repository already supports deterministic headless rendering with golden PNG comparison, but it
+currently covers terminal/grid content rather than the settings dialog.
+
+The missing piece is a settings-dialog fixture path that:
+
+1. builds the real dialog from `build_settings_dialog(...)`
+2. composes the real panel/dialog scene with a real UI measurer path, not `MockMeasurer`
+3. converts that scene through the UI-only renderer path
+4. compares the resulting pixels against committed references
+
+### Required Fixture Set
+
+At minimum, add multiple dialog fixtures so the goldens cover the actual feature surface instead of
+one cherry-picked page:
+
+- `settings_appearance_clean_96dpi`
+  - sidebar, page header, slider, toggle, dropdown trigger, footer clean state
+- `settings_overlay_dropdown_96dpi`
+  - open dropdown popup path so trigger styling and menu styling are both covered
+- `settings_colors_or_terminal_96dpi`
+  - scheme cards or cursor picker so selection-card controls are covered
+- `settings_window_or_font_dirty_96dpi`
+  - number/text inputs plus dirty footer state
+- one `192dpi` or equivalent HiDPI fixture
+  - to catch rounding and scaling regressions in the dialog path
+
+The exact page split can change, but the fixture set must cover sidebar, content typography, footer,
+popup overlays, and the expanded Section 13 control families.
+
+### Required Rendering Path
+
+Prefer using the existing dialog rendering path and UI-only renderer primitives rather than
+inventing a parallel mock renderer:
+
+- `WindowRenderer::new_ui_only(...)`
+- `prepare_ui_frame(...)`
+- `append_ui_scene_with_text(...)`
+- `append_overlay_scene_with_text(...)` when a popup is open
+- `compare_with_reference(...)`
+
+If needed, extract a narrow reusable helper from dialog rendering so tests can compose the real
+settings scene without creating a full OS window.
+
+### Golden Workflow
+
+- normal verification:
+  - `timeout 150 cargo test -p oriterm --features gpu-tests visual_regression`
+- updating references intentionally:
+  - `ORITERM_UPDATE_GOLDEN=1 timeout 150 cargo test -p oriterm --features gpu-tests visual_regression`
+- if a golden changes:
+  - review the PNG diff, not just the test result
+  - commit the updated reference PNGs
+  - do not leave `_actual.png` or `_diff.png` artifacts in the tree
+
+### Test Timeout Discipline
+
+All test commands in this section and its verification must respect the repository's mandatory 150-second timeout rule. GPU golden tests that hang indicate a rendering pipeline bug, not a slow test. If a golden test exceeds the timeout, diagnose and fix the blocking code path rather than extending the timeout.
+
+### Checklist
+
+- [ ] Add settings-dialog visual regression tests under `gpu/visual_regression/`
+- [ ] Render through the real UI-only renderer path, not a fake scene-only shortcut
+- [ ] Cover clean, dirty, popup-open, and card/control-heavy dialog states
+- [ ] Include at least one HiDPI dialog fixture
+- [ ] Commit reviewed reference PNGs and keep artifact cleanup disciplined
+
+---
+
+## 14.4 Manual Sign-Off
+
+### Goal
+
+Keep the human verification pass focused on behavior that automated tests still cannot prove well.
+
+### Required Manual Checks
+
+**Mockup fidelity**
+
+- compare against `mockups/settings-brutal.html`
+- inspect the live settings dialog at `100%` / `96 DPI`
+- confirm that the full dialog, not only isolated controls, matches the mockup's structure and
+  rhythm
+
+**Live interactions**
+
+- hover, press, focus, and disabled-state transitions
+- dropdown open/close behavior and overlay stacking
+- text-input caret, selection, and keyboard editing behavior
+- slider drag, number-stepper repeat behavior, and toggle animation
+- sidebar search focus/typing behavior if Section 10 uses the real text-input path
+
+**Dialog shell behavior**
+
+- centered placement, min-size behavior, and resize correctness for dialog windows
+- footer/button semantics under real dirty-state changes
+- overlay dismissal via click-outside and keyboard paths
+
+**Native platform sign-off**
+
+- native Windows run
+- native Linux run
+- native macOS run
+
+Cross-compiling Windows from WSL is not a substitute for native visual sign-off, and no amount of
+local Linux testing proves macOS dialog behavior.
+
+### Checklist
+
+- [ ] Manual comparison completed against the mockup at 96 DPI
+- [ ] Live interaction states verified on the real dialog
+- [ ] Native Windows, Linux, and macOS runs reviewed
+- [ ] Any platform-specific mismatches are fixed before plan closeout
+
+---
+
+## 14.5 Build + Platform Gates
+
+### Goal
+
+Use the repository's real command set and be explicit about what each gate actually proves.
+
+### Repository Gates
 
 ```bash
-./build-all.sh     # cargo build for all targets
-./clippy-all.sh    # clippy with deny(clippy::all) + nursery
-./test-all.sh      # cargo test for all crates
+./build-all.sh
+./clippy-all.sh
+./test-all.sh
 ```
 
-### Platform targets
+### What They Actually Cover
 
-- `x86_64-pc-windows-gnu` (cross-compile from WSL)
-- Host target (Linux WSL)
+- `./build-all.sh`
+  - `cargo build --workspace --target x86_64-pc-windows-gnu`
+  - `cargo build --workspace --target x86_64-pc-windows-gnu --release`
+- `./clippy-all.sh`
+  - Windows GNU target and host target
+  - warnings denied
+- `./test-all.sh`
+  - `cargo test --workspace --features oriterm/gpu-tests`
+  - this is the primary automated gate for the settings-dialog golden tests as well
 
-### Potential issues
+### Build-Gate Implications
 
-1. **New `FontWeight` variants**: If Section 02 adds `FontWeight::MEDIUM`, ensure all match arms in all crates handle it.
-2. **New `ButtonStyle` fields**: Adding `font_weight` and `letter_spacing` fields requires updating all existing `ButtonStyle` construction sites (there may be others beyond footer buttons).
-3. **New Config fields**: `unfocused_opacity`, `tab_bar_style` must have serde defaults so existing config files remain valid.
-4. **Icon resources**: If Section 08 adds new icon assets, ensure they are embedded (not external files) and available on all platforms.
+- A separate host `cargo build` is usually redundant for closeout because host compilation is
+  already exercised by clippy and tests.
+- macOS is not proven by the local scripts; that still requires native CI and/or native manual
+  verification before final sign-off.
+- If Section 14 adds new golden PNGs or test modules, those must be included in the normal
+  `./test-all.sh` path rather than hidden behind an ad hoc manual command.
 
 ### Checklist
 
-- [ ] `./build-all.sh` exits 0.
-- [ ] `./clippy-all.sh` exits 0.
-- [ ] `./test-all.sh` exits 0.
-- [ ] No new warnings introduced.
-- [ ] Cross-compile target builds cleanly.
+- [ ] `./build-all.sh` passes
+- [ ] `./clippy-all.sh` passes
+- [ ] `./test-all.sh` passes
+- [ ] Settings-dialog visual regression tests run as part of the normal test gate
+- [ ] macOS verification is covered separately because local scripts do not prove it
 
 ---
 
-## 14.4 Performance Validation
+## 14.6 Performance + Invariants
 
-Opening and interacting with the settings dialog must not introduce jank or regressions.
+### Goal
 
-### Metrics to verify
+Tie settings-dialog closeout to the existing automated invariants and add any missing
+settings-specific checks instead of relying only on a subjective "feels smooth" pass.
 
-1. **Dialog open**: Settings dialog appears within one frame (no visible pop-in or layout shift). First frame may have atlas misses for new font sizes (Section 01), but they should be rasterized and cached on first open, not per-frame.
+### Existing Automated Invariants
 
-2. **Glyph atlas**: Multiple font sizes (10, 11, 11.5, 12, 13, 18) should not cause atlas thrashing. The atlas should grow to accommodate all sizes and then stabilize. No atlas rebuild per frame.
+- `oriterm_ui/tests/scene_alloc_regression.rs`
+  - scene clear/repopulate and damage tracking stay allocation-stable after warmup
+- `oriterm/src/app/event_loop_helpers/tests.rs`
+  - idle control-flow behavior stays correct and does not spin
 
-3. **Hover interaction**: Moving the mouse over setting rows should produce smooth highlight transitions without dropped frames. The `VisualStateAnimator` should drive transitions at frame rate.
+These are already valuable, but Section 14 should explicitly keep them green while adding
+settings-specific coverage where the new UI surface needs it.
 
-4. **Scroll performance**: Scrolling the content area should not allocate (all `Vec` buffers reused). Damage tracking should limit GPU work to visible rows.
+### Required Settings-Specific Performance Checks
 
-5. **Idle CPU**: With the settings dialog open and no interaction, CPU should be near zero (only cursor blink timer wakeups). No animation frames scheduled when all transitions are complete.
+- add at least one targeted regression for repeated settings-dialog composition and/or UI-scene
+  conversion after warmup
+- prove that opening a dropdown overlay and re-rendering the dialog does not create unbounded
+  allocation churn or persistent animation scheduling
+- keep the dialog idle path compatible with the existing "wait when idle" event-loop contract
 
-### Test procedure
+### Manual Profiling Pass
 
-1. Build release: `cargo build --target x86_64-pc-windows-gnu --release`.
-2. Launch `oriterm.exe`.
-3. Open settings dialog.
-4. Observe: no flicker on first open.
-5. Hover over multiple setting rows: smooth transitions.
-6. Scroll content area: no jank.
-7. Stop interacting: CPU drops to idle baseline.
+Use the existing profiling/logging path for one focused runtime check:
+
+1. launch with profiling enabled
+2. open the settings dialog
+3. interact with scroll, hover, dropdown, slider, and text input
+4. stop interacting
+5. confirm the app returns to idle rather than continuing to redraw
+
+If the profiling path shows continuous redraws or obvious allocation churn after interaction stops,
+Section 14 is not complete.
 
 ### Checklist
 
-- [ ] Dialog opens without visible atlas miss flicker.
-- [ ] Hover transitions are smooth (no frame drops).
-- [ ] Scroll is smooth.
-- [ ] Idle CPU matches baseline (cursor blink only).
-- [ ] No new allocations in hot render path (verify with existing allocation regression tests).
+- [ ] Existing allocation and idle-loop invariants remain green
+- [ ] Add a settings-dialog-specific warm-path regression where current coverage is insufficient
+- [ ] Manual profiling confirms the dialog returns to idle after interaction
+- [ ] No new sustained redraw or allocation churn is introduced by the UI framework work
 
 ---
 
-## 14.5 Completion Checklist
+## 14.R Third Party Review Findings
 
-All 13 prior sections must be complete before this section can be marked complete.
+### TPR-14-001 - The draft's verification matrix is already stale against revised Sections 09-13
 
-| Section | Title | Status | Verified |
-|---------|-------|--------|----------|
-| 01 | Multi-Size Font Rendering | [ ] | [ ] |
-| 02 | Numeric Font Weight System | [ ] | [ ] |
-| 03 | Text Transform + Letter Spacing | [ ] | [ ] |
-| 04 | Line Height Control | [ ] | [ ] |
-| 05 | Per-Side Borders | [ ] | [ ] |
-| 06 | Opacity + Display Control | [ ] | [ ] |
-| 07 | Scrollbar Styling | [ ] | [ ] |
-| 08 | Icon Path Verification | [ ] | [ ] |
-| 09 | Settings Content Completeness | [ ] | [ ] |
-| 10 | Visual Fidelity: Sidebar + Nav | [ ] | [ ] |
-| 11 | Visual Fidelity: Content + Typography | [ ] | [ ] |
-| 12 | Visual Fidelity: Footer + Buttons | [ ] | [ ] |
-| 13 | Visual Fidelity: Widget Controls | [ ] | [ ] |
+**Status:** Resolved.
 
-### Final sign-off criteria
+The old section encoded outdated assumptions such as shared medium-weight footer buttons and
+Section 13 ownership of row-gap behavior. The rewrite replaces that brittle table with a layered
+matrix tied to the actual reviewed section boundaries.
 
-1. All 13 sections marked `status: complete` in their YAML frontmatter.
-2. `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` all pass.
-3. Visual comparison (14.2) shows no differences from mockup.
-4. Performance validation (14.4) shows no regressions.
-5. `index.md` updated with all sections marked complete.
-6. Plan status in `index.md` changed from `queued` to `complete`.
+### TPR-14-002 - The draft ignores the existing GPU visual regression infrastructure
 
-### Checklist
+**Status:** Resolved.
 
-- [ ] All 13 prior sections complete.
-- [ ] All build gates pass.
-- [ ] Visual match confirmed.
-- [ ] Performance validated.
-- [ ] `index.md` updated.
-- [ ] Plan marked complete.
+`oriterm/src/gpu/visual_regression/` and the UI-only renderer path already exist. The rewrite makes
+settings-dialog goldens a first-class closeout artifact instead of falling back to manual
+screenshots only.
+
+### TPR-14-003 - The build/platform section misstates the repository scripts
+
+**Status:** Resolved.
+
+The rewrite documents the real current behavior of `build-all.sh`, `clippy-all.sh`, and
+`test-all.sh`, and it makes clear that macOS still needs native verification.
+
+### TPR-14-004 - The performance section was too anecdotal and disconnected from existing invariants
+
+**Status:** Resolved.
+
+The rewrite connects Section 14 to the existing scene-allocation and idle event-loop tests, then
+adds settings-specific follow-up coverage where those invariants are not enough on their own.
+
+### TPR-14-005 - "No new production code in this section" was not an accurate planning boundary
+
+**Status:** Resolved.
+
+Section 14 will likely need new tests, golden references, and possibly a narrow reusable dialog
+composition helper. The rewrite treats that as real implementation work instead of pretending the
+section is documentation-only.
+
+---
+
+## 14.7 Completion Checklist
+
+Section 14 is complete only when all of the following are true:
+
+- [ ] Sections `01` through `13` are complete and their reviewed expectations are reflected in code
+- [ ] Section-local regressions exist and pass for each prior section
+- [ ] Settings-dialog integration tests pass
+- [ ] Settings-dialog GPU golden tests pass at standard DPI and HiDPI
+- [ ] Manual sign-off is complete on native Windows, Linux, and macOS
+- [ ] `./build-all.sh`, `./clippy-all.sh`, and `./test-all.sh` all pass
+- [ ] Existing invariant tests stay green and any new settings-specific performance checks pass
+- [ ] Golden-reference PNGs are reviewed, committed, and no `_actual` / `_diff` artifacts remain
+- [ ] `plans/ui-css-framework/index.md` is updated to reflect completion
+- [ ] `plans/ui-css-framework/00-overview.md` and the section statuses remain consistent with the
+      finished state
