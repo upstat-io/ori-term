@@ -115,7 +115,6 @@ impl App {
             gpu: None,
             pipelines: None,
             font_set: None,
-            ui_font_set: None,
             user_fb_count: 0,
             window_manager: WindowManager::new(),
             windows: HashMap::new(),

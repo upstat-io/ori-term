@@ -38,6 +38,8 @@ struct TextCacheKey {
     max_width_hundredths: u32,
     /// Display scale factor normalized to fixed-point.
     scale_hundredths: u32,
+    /// Letter spacing normalized to fixed-point.
+    letter_spacing_hundredths: u32,
 }
 
 impl TextCacheKey {
@@ -51,6 +53,7 @@ impl TextCacheKey {
             overflow: style.overflow,
             max_width_hundredths: float_to_hundredths(max_width),
             scale_hundredths: float_to_hundredths(scale),
+            letter_spacing_hundredths: float_to_hundredths(style.letter_spacing),
         }
     }
 
@@ -67,6 +70,7 @@ impl TextCacheKey {
             overflow: style.overflow,
             max_width_hundredths: u32::MAX,
             scale_hundredths: float_to_hundredths(scale),
+            letter_spacing_hundredths: float_to_hundredths(style.letter_spacing),
         }
     }
 }

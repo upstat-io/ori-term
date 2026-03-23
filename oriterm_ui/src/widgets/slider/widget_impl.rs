@@ -30,11 +30,12 @@ impl Widget for SliderWidget {
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         let height = self.style.thumb_height.max(self.style.track_height);
+        let total_w = self.style.width + VALUE_GAP + VALUE_LABEL_WIDTH;
         // Expand hit area vertically so users can grab the thin slider track
         // without pixel-perfect precision. The 6px radius extends the
         // clickable zone without affecting visual bounds.
-        LayoutBox::leaf(self.style.width, height)
-            .with_width(SizeSpec::Fill)
+        LayoutBox::leaf(total_w, height)
+            .with_width(SizeSpec::Fixed(total_w))
             .with_widget_id(self.id)
             .with_interact_radius(6.0)
     }

@@ -214,9 +214,9 @@ impl App {
             self.user_fb_count,
         );
 
-        // UI font from cached FontSet (no re-discovery per window).
-        let ui_fc = self.ui_font_set.as_ref().and_then(|fs| {
-            crate::font::FontCollection::new(fs.clone(), 11.0, physical_dpi, format, 400, hinting)
+        // UI font: terminal monospace at 10pt (brutal design uses monospace throughout).
+        let ui_fc = self.font_set.as_ref().and_then(|fs| {
+            crate::font::FontCollection::new(fs.clone(), 10.0, physical_dpi, format, 400, hinting)
                 .ok()
         });
 

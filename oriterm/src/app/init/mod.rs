@@ -67,7 +67,7 @@ impl App {
         let window = TermWindow::from_window(window_arc, &window_config, &gpu, session_wid)?;
 
         // 6. Join font thread (GPU init + surface setup ran concurrently).
-        let (mut font_collection, cached_font_set, mut font_cache, user_fb_count, t_fonts) =
+        let (mut font_collection, cached_font_set, font_cache, user_fb_count, t_fonts) =
             match font_handle.join() {
                 Ok(Ok(result)) => result,
                 Ok(Err(e)) => return Err(e.into()),
@@ -106,20 +106,19 @@ impl App {
         // 7b. FontSet cached from thread (Arc-cloned before FontCollection
         // consumed it — zero disk reads).
 
-        // 7c. UI font discovery + cache (reuses font_cache for shared fallbacks).
-        let ui_font_set = discover_ui_font_set(&mut font_cache);
+        // 7c. UI font: terminal monospace at 10pt (brutal design uses monospace
+        // throughout — mockup: `'IBM Plex Mono', 'Cascadia Code', monospace`).
+        // 10pt ≈ 13px at 96dpi, matching the mockup's `font-size: 13px` body text.
         drop(font_cache);
-        let ui_fc = ui_font_set.as_ref().and_then(|fs| {
-            FontCollection::new(
-                fs.clone(),
-                11.0,
-                physical_dpi,
-                subpixel_format,
-                400,
-                hinting,
-            )
-            .ok()
-        });
+        let ui_fc = FontCollection::new(
+            cached_font_set.clone(),
+            10.0,
+            physical_dpi,
+            subpixel_format,
+            400,
+            hinting,
+        )
+        .ok();
 
         // 7d. Create per-window renderer.
         let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_fc);
@@ -180,7 +179,6 @@ impl App {
         self.gpu = Some(gpu);
         self.pipelines = Some(pipelines);
         self.font_set = Some(cached_font_set);
-        self.ui_font_set = ui_font_set;
         self.user_fb_count = user_fb_count;
         self.windows.insert(winit_id, ctx);
         self.window_manager
@@ -349,16 +347,4 @@ impl App {
 
         Ok(())
     }
-}
-
-/// Discover the system UI font (proportional sans-serif) for tab bar and overlays.
-///
-/// Reuses `cache` for shared fallback fonts (e.g., `NotoColorEmoji` loaded
-/// once for both terminal and UI collections).
-///
-/// Returns `None` if no suitable font is found — the terminal font is used
-/// as a fallback in that case.
-fn discover_ui_font_set(cache: &mut FontByteCache) -> Option<FontSet> {
-    let discovery = crate::font::discovery::discover_ui_fonts();
-    FontSet::from_discovery(&discovery, cache).ok()
 }

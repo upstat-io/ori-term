@@ -6,6 +6,7 @@
 
 use oriterm_ui::geometry::Insets;
 use oriterm_ui::layout::{Align, SizeSpec};
+use oriterm_ui::text::FontWeight;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
@@ -22,10 +23,10 @@ use crate::config::Config;
 use super::SettingsIds;
 
 /// Page content padding (shared by all page builders).
-pub(super) const PAGE_PADDING: Insets = Insets::vh(16.0, 28.0);
+pub(super) const PAGE_PADDING: Insets = Insets::vh(0.0, 28.0);
 
 /// Gap between sections (shared by all page builders).
-pub(super) const SECTION_GAP: f32 = 28.0;
+pub(super) const SECTION_GAP: f32 = 24.0;
 
 /// Gap between section title and first row.
 const TITLE_ROW_GAP: f32 = 8.0;
@@ -41,6 +42,12 @@ pub(super) const DESC_FONT_SIZE: f32 = 12.0;
 
 /// Section header font size.
 const SECTION_FONT_SIZE: f32 = 11.0;
+
+/// Letter spacing for page titles (matches mockup `letter-spacing: 0.05em`).
+const TITLE_LETTER_SPACING: f32 = 0.9;
+
+/// Letter spacing for section headers (matches mockup `letter-spacing: 0.15em`).
+pub(super) const SECTION_LETTER_SPACING: f32 = 1.6;
 
 /// Builds the Appearance page content widget.
 ///
@@ -103,6 +110,8 @@ pub(super) fn build_settings_page(
 fn build_page_header(title_text: &str, desc_text: &str, theme: &UiTheme) -> Box<dyn Widget> {
     let title = LabelWidget::new(title_text).with_style(LabelStyle {
         font_size: TITLE_FONT_SIZE,
+        weight: FontWeight::Bold,
+        letter_spacing: TITLE_LETTER_SPACING,
         color: theme.fg_bright,
         ..LabelStyle::from_theme(theme)
     });
@@ -198,6 +207,7 @@ fn build_window_section(
 pub(super) fn section_title(text: &str, theme: &UiTheme) -> Box<dyn Widget> {
     let label = LabelWidget::new(format!("// {}", text.to_uppercase())).with_style(LabelStyle {
         font_size: SECTION_FONT_SIZE,
+        letter_spacing: SECTION_LETTER_SPACING,
         color: theme.fg_faint,
         ..LabelStyle::from_theme(theme)
     });

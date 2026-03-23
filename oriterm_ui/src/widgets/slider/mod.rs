@@ -63,7 +63,7 @@ impl SliderStyle {
     /// Derives a slider style from the given theme.
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
-            width: 200.0,
+            width: 120.0,
             track_height: 4.0,
             track_bg: theme.border,
             fill_color: theme.border,

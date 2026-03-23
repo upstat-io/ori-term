@@ -40,12 +40,13 @@ fn layout_dimensions() {
     let layout = s.layout(&ctx);
     let style = SliderStyle::default();
 
+    let expected_w = style.width + super::VALUE_GAP + super::VALUE_LABEL_WIDTH;
     if let BoxContent::Leaf {
         intrinsic_width,
         intrinsic_height,
     } = &layout.content
     {
-        assert_eq!(*intrinsic_width, style.width);
+        assert_eq!(*intrinsic_width, expected_w);
         assert_eq!(*intrinsic_height, style.thumb_height);
     } else {
         panic!("expected leaf layout");

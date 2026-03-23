@@ -405,10 +405,11 @@ impl Widget for SidebarNavWidget {
 
         let mut flat_idx = 0;
         for section in &self.sections {
-            // Section title.
+            // Section title — uppercase with wide letter spacing.
             let title_style = TextStyle {
                 size: 10.0,
                 weight: FontWeight::Regular,
+                letter_spacing: 1.5,
                 ..TextStyle::default()
             };
             let title_text = format!("// {}", section.title.to_uppercase());

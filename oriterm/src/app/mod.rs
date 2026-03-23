@@ -127,8 +127,6 @@ pub(crate) struct App {
     pipelines: Option<GpuPipelines>,
     /// Cached font set with user fallbacks pre-applied (cloned per new window).
     font_set: Option<FontSet>,
-    /// Cached UI font set (avoids re-discovery per window).
-    ui_font_set: Option<FontSet>,
     /// Number of user-configured fallbacks loaded (for `apply_font_config`).
     user_fb_count: usize,
 
