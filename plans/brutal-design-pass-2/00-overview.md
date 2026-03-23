@@ -1,7 +1,7 @@
 ---
 plan: "brutal-design-pass-2"
 title: "Brutal Design System — Visual Fidelity Pass"
-status: in-progress
+status: complete
 references:
   - "mockups/settings-brutal.html"
   - "plans/brutal-design/"

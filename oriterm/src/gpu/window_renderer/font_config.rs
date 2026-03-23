@@ -26,14 +26,19 @@ impl WindowRenderer {
     /// Delegates to [`FontCollection::set_size`] for metrics + glyph cache,
     /// then clears all GPU atlases, re-populates the appropriate atlas with
     /// ASCII glyphs, and rebuilds bind groups for the new texture state.
+    ///
+    /// The `dpi` parameter is the physical DPI (encodes scale). If it changed
+    /// (window moved to a different-DPI monitor), the UI font registry is
+    /// rebuilt at the new physical sizes.
     pub fn set_font_size(&mut self, size_pt: f32, dpi: f32, gpu: &GpuState) {
         if let Err(e) = self.font_collection.set_size(size_pt, dpi) {
             log::error!("font set_size failed: {e}");
         }
-        // Resize UI font at the same physical DPI so overlay text matches.
-        if let Some(ui_fc) = &mut self.ui_font_collection {
-            if let Err(e) = ui_fc.set_size(11.0, dpi) {
-                log::error!("UI font set_size failed: {e}");
+        // UI font sizes are keyed by logical pixels, not terminal size.
+        // Only rebuild if DPI changed (physical sizes differ).
+        if let Some(sizes) = &mut self.ui_font_sizes {
+            if let Err(e) = sizes.set_dpi(dpi) {
+                log::error!("UI font registry DPI update failed: {e}");
             }
         }
         self.clear_and_recache(gpu);
@@ -92,10 +97,10 @@ impl WindowRenderer {
     ) {
         let hinting_changed = self.font_collection.set_hinting(mode);
         let format_changed = self.font_collection.set_format(format);
-        // Keep UI font in sync with the terminal font's rendering settings.
-        if let Some(ui_fc) = &mut self.ui_font_collection {
-            ui_fc.set_hinting(mode);
-            ui_fc.set_format(format);
+        // Keep UI font registry in sync with the terminal font's rendering settings.
+        if let Some(sizes) = &mut self.ui_font_sizes {
+            sizes.set_hinting(mode);
+            sizes.set_format(format);
         }
         if hinting_changed || format_changed {
             self.clear_and_recache(gpu);

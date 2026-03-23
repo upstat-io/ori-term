@@ -2,7 +2,7 @@
 section: "02"
 title: "Numeric Font Weight System"
 status: not-started
-reviewed: true
+reviewed: false
 third_party_review:
   status: resolved
   updated: 2026-03-23

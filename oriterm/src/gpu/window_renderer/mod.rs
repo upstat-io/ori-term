@@ -6,6 +6,7 @@
 
 mod font_config;
 mod helpers;
+mod icons;
 mod multi_pane;
 mod render;
 mod scene_append;
@@ -20,7 +21,7 @@ use wgpu::{Buffer, Device};
 
 use oriterm_core::Rgb;
 
-use oriterm_ui::icons::{IconId, ResolvedIcon, ResolvedIcons};
+use oriterm_ui::icons::ResolvedIcons;
 
 use super::atlas::GlyphAtlas;
 use super::bind_groups::{AtlasBindGroup, UniformBuffer};
@@ -31,7 +32,7 @@ use super::pipelines::GpuPipelines;
 use super::prepare::{self, AtlasLookup};
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
-use crate::font::{CellMetrics, FontCollection, RasterKey};
+use crate::font::{CellMetrics, FontCollection, RasterKey, UiFontSizes};
 use crate::gpu::frame_input::ViewportSize;
 use helpers::{
     ShapingScratch, create_atlases, ensure_glyphs_cached, grid_raster_keys, shape_frame,
@@ -123,10 +124,10 @@ pub struct WindowRenderer {
     /// all three atlases share a single authoritative set.
     empty_keys: HashSet<RasterKey>,
     font_collection: FontCollection,
-    /// UI font collection (proportional sans-serif) for tab bar, labels, and overlays.
+    /// Per-size UI font registry (proportional sans-serif) for tab bar, labels, and overlays.
     ///
     /// `None` if no UI font was found — falls back to terminal font.
-    ui_font_collection: Option<FontCollection>,
+    ui_font_sizes: Option<UiFontSizes>,
 
     // Per-frame reusable scratch buffers.
     ui_raster_keys: Vec<RasterKey>,
@@ -178,7 +179,7 @@ impl WindowRenderer {
         gpu: &GpuState,
         pipelines: &GpuPipelines,
         mut font_collection: FontCollection,
-        ui_font_collection: Option<FontCollection>,
+        ui_font_sizes: Option<UiFontSizes>,
     ) -> Self {
         let t0 = std::time::Instant::now();
         let device = &gpu.device;
@@ -214,7 +215,7 @@ impl WindowRenderer {
             color_atlas_generation: 0,
             empty_keys: HashSet::new(),
             font_collection,
-            ui_font_collection,
+            ui_font_sizes,
             ui_raster_keys: Vec::new(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
@@ -255,9 +256,13 @@ impl WindowRenderer {
     }
 
     /// Active UI font collection (proportional sans-serif, or terminal font fallback).
+    ///
+    /// Returns the default-size collection from the UI font registry,
+    /// falling back to the terminal font if no UI fonts are available.
     pub fn active_ui_collection(&self) -> &FontCollection {
-        self.ui_font_collection
+        self.ui_font_sizes
             .as_ref()
+            .and_then(|s| s.default_collection())
             .unwrap_or(&self.font_collection)
     }
 
@@ -298,79 +303,6 @@ impl WindowRenderer {
             self.color_atlas_generation = self.color_atlas.generation();
         }
     }
-
-    // ── Icon resolution ──
-
-    /// Pre-resolve all icon atlas entries for the current frame.
-    ///
-    /// Icons are rasterized at **physical pixel size** (`logical × scale`)
-    /// so each texel maps 1:1 to a screen pixel. The `ResolvedIcons` map
-    /// is keyed by logical size (what widgets pass) so the scaling is
-    /// transparent to widget code.
-    ///
-    /// Call once per frame before constructing `DrawCtx`.
-    pub fn resolve_icons(&mut self, gpu: &GpuState, scale: f32) {
-        self.resolved_icons.clear();
-        for &(id, logical_size) in &Self::ICON_SIZES {
-            let physical_size = (logical_size as f32 * scale).round() as u32;
-            if physical_size == 0 {
-                continue;
-            }
-            if let Some(entry) = self.icon_cache.get_or_insert(
-                id,
-                physical_size,
-                scale,
-                &mut self.atlas,
-                &gpu.device,
-                &gpu.queue,
-            ) {
-                self.resolved_icons.insert(
-                    id,
-                    logical_size,
-                    ResolvedIcon {
-                        atlas_page: entry.page,
-                        uv: [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h],
-                    },
-                );
-            }
-        }
-    }
-
-    /// Pre-resolved icon atlas entries for the current frame.
-    ///
-    /// Valid after [`resolve_icons`](Self::resolve_icons) has been called.
-    pub fn resolved_icons(&self) -> &ResolvedIcons {
-        &self.resolved_icons
-    }
-
-    /// All `(IconId, logical_size)` pairs used by widgets.
-    ///
-    /// Sizes are in **logical pixels** — [`resolve_icons`](Self::resolve_icons)
-    /// multiplies by the display scale factor to get the physical rasterization
-    /// size. Derived from widget constants:
-    /// - `Close` (tab): `(CLOSE_BUTTON_WIDTH - 2 * CLOSE_ICON_INSET).round()` = 10
-    /// - `Plus`: `(PLUS_ARM * 2).round()` = 10
-    /// - `ChevronDown`: `(CHEVRON_HALF * 2).round()` = 10
-    /// - `Minimize`/`Maximize`/`Restore`/`WindowClose`: `SYMBOL_SIZE.round()` = 10
-    const ICON_SIZES: [(IconId, u32); 15] = [
-        // Window chrome (10px logical).
-        (IconId::Close, 10),
-        (IconId::Plus, 10),
-        (IconId::ChevronDown, 10),
-        (IconId::Minimize, 10),
-        (IconId::Maximize, 10),
-        (IconId::Restore, 10),
-        (IconId::WindowClose, 10),
-        // Settings sidebar nav (16px logical).
-        (IconId::Sun, 16),
-        (IconId::Palette, 16),
-        (IconId::Type, 16),
-        (IconId::Terminal, 16),
-        (IconId::Keyboard, 16),
-        (IconId::Window, 16),
-        (IconId::Bell, 16),
-        (IconId::Activity, 16),
-    ];
 
     // ── Frame preparation ──
 

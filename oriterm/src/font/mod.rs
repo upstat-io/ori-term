@@ -12,6 +12,7 @@
 pub(crate) mod collection;
 pub(crate) mod discovery;
 pub(crate) mod shaper;
+pub(crate) mod ui_font_sizes;
 
 use std::fmt;
 
@@ -24,6 +25,7 @@ pub(crate) use shaper::{
     CachedTextMeasurer, ShapingRun, TextShapeCache, UiFontMeasurer, build_col_glyph_map,
     prepare_line, shape_prepared_runs,
 };
+pub(crate) use ui_font_sizes::UiFontSizes;
 
 /// Cell dimensions in pixels, derived from the font metrics.
 #[derive(Debug, Clone, Copy, PartialEq)]
