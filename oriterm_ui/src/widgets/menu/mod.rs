@@ -12,6 +12,7 @@ use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use super::DrawCtx;
+use super::scrollbar::ScrollbarStyle;
 
 mod widget_impl;
 
@@ -88,6 +89,8 @@ pub struct MenuStyle {
     pub font_size: f32,
     /// Maximum visible height before scrolling. `None` shows all items.
     pub max_height: Option<f32>,
+    /// Scrollbar appearance for long menus.
+    pub scrollbar: ScrollbarStyle,
 }
 
 impl MenuStyle {
@@ -116,6 +119,7 @@ impl MenuStyle {
             shadow_color: theme.shadow,
             font_size: theme.font_size,
             max_height: None,
+            scrollbar: ScrollbarStyle::from_theme(theme),
         }
     }
 }
@@ -125,12 +129,6 @@ impl Default for MenuStyle {
         Self::from_theme(&UiTheme::dark())
     }
 }
-
-/// Scrollbar width inside the menu (logical pixels).
-const SCROLLBAR_WIDTH: f32 = 5.0;
-
-/// Scrollbar thumb minimum height.
-const SCROLLBAR_MIN_THUMB: f32 = 16.0;
 
 /// Pixels per scroll wheel line.
 const SCROLL_LINE_HEIGHT: f32 = 32.0;

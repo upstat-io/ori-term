@@ -126,11 +126,13 @@ fn build_palette_section(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
     let normal_label = LabelWidget::new("Normal").with_style(LabelStyle {
         font_size: 11.0,
         color: theme.fg_faint,
+        line_height: None,
         ..LabelStyle::from_theme(theme)
     });
     let bright_label = LabelWidget::new("Bright").with_style(LabelStyle {
         font_size: 11.0,
         color: theme.fg_faint,
+        line_height: None,
         ..LabelStyle::from_theme(theme)
     });
 

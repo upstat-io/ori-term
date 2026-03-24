@@ -4,19 +4,20 @@
 //! Each window gets its own renderer so DPI scaling, atlas caches, and
 //! shaping state are fully isolated — no cross-window contamination.
 
+mod error;
 mod font_config;
 mod helpers;
 mod icons;
 mod multi_pane;
 mod render;
+mod render_helpers;
 mod scene_append;
 mod ui_only;
 
+pub use error::SurfaceError;
 pub use ui_only::RendererMode;
 
 use std::collections::HashSet;
-use std::fmt;
-
 use wgpu::{Buffer, Device};
 
 use oriterm_core::Rgb;
@@ -41,35 +42,7 @@ use helpers::{
 /// Maximum entries in `empty_keys` before clearing to prevent unbounded growth.
 const EMPTY_KEYS_CAP: usize = 10_000;
 
-// ── Error type ──
-
-/// Error returned by [`WindowRenderer::render_to_surface`].
-#[derive(Debug)]
-pub enum SurfaceError {
-    /// Surface is lost or outdated — caller should reconfigure.
-    Lost,
-    /// GPU is out of memory.
-    OutOfMemory,
-    /// Surface acquisition timed out.
-    Timeout,
-    /// Unspecified surface error.
-    Other,
-}
-
-impl fmt::Display for SurfaceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Lost => f.write_str("surface lost or outdated"),
-            Self::OutOfMemory => f.write_str("GPU out of memory"),
-            Self::Timeout => f.write_str("surface timeout"),
-            Self::Other => f.write_str("surface error"),
-        }
-    }
-}
-
-impl std::error::Error for SurfaceError {}
-
-// ── Atlas lookup bridge ──
+// Atlas lookup bridge
 
 /// Bridges all atlases (mono, subpixel, color) into the [`AtlasLookup`] trait.
 ///
@@ -91,8 +64,6 @@ impl AtlasLookup for CombinedAtlasLookup<'_> {
             .or_else(|| self.color.lookup(key))
     }
 }
-
-// ── WindowRenderer ──
 
 /// Per-window GPU renderer: owns fonts, atlases, and instance buffers.
 ///
@@ -179,7 +150,7 @@ impl WindowRenderer {
         gpu: &GpuState,
         pipelines: &GpuPipelines,
         mut font_collection: FontCollection,
-        ui_font_sizes: Option<UiFontSizes>,
+        mut ui_font_sizes: Option<UiFontSizes>,
     ) -> Self {
         let t0 = std::time::Instant::now();
         let device = &gpu.device;
@@ -189,8 +160,16 @@ impl WindowRenderer {
         let uniform_buffer = UniformBuffer::new(device, &pipelines.uniform_layout);
 
         // Atlases: mono + subpixel (with ASCII pre-cached) + color (empty).
-        let (atlas, subpixel_atlas, color_atlas) =
+        let (mut atlas, mut subpixel_atlas, color_atlas) =
             create_atlases(device, queue, &mut font_collection);
+
+        // Pre-cache common UI font sizes so the first dialog/tab-bar frame
+        // doesn't hitch on glyph rasterization.
+        if let Some(ref mut sizes) = ui_font_sizes {
+            let t_ui = std::time::Instant::now();
+            helpers::prewarm_ui_font_sizes(sizes, &mut atlas, &mut subpixel_atlas, device, queue);
+            log::info!("UI font prewarm: {:?}", t_ui.elapsed());
+        }
 
         // Bind groups.
         let atlas_bind_group = AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view());
@@ -243,7 +222,7 @@ impl WindowRenderer {
         }
     }
 
-    // ── Accessors ──
+    // Accessors
 
     /// Cell dimensions derived from the current font metrics.
     pub fn cell_metrics(&self) -> CellMetrics {
@@ -266,13 +245,26 @@ impl WindowRenderer {
             .unwrap_or(&self.font_collection)
     }
 
+    /// Create a size-aware text measurer for UI widgets.
+    ///
+    /// The returned measurer selects the exact [`FontCollection`] for each
+    /// `TextStyle.size` from the UI font registry. Falls back to the default
+    /// UI collection (or terminal font) for sizes not in the registry.
+    pub fn ui_measurer(&self, scale: f32) -> crate::font::UiFontMeasurer<'_> {
+        crate::font::UiFontMeasurer::new(
+            self.ui_font_sizes.as_ref(),
+            self.active_ui_collection(),
+            scale,
+        )
+    }
+
     /// Glyph atlas for cache statistics.
     #[allow(dead_code, reason = "atlas access for diagnostics and Section 6")]
     pub fn atlas(&self) -> &GlyphAtlas {
         &self.atlas
     }
 
-    // ── Bind group staleness ──
+    // Bind group staleness
 
     /// Rebuild atlas bind groups whose texture generation has advanced.
     ///
@@ -304,7 +296,7 @@ impl WindowRenderer {
         }
     }
 
-    // ── Frame preparation ──
+    // Frame preparation
 
     /// Whether visual-only state (selection) changed since the last frame.
     ///

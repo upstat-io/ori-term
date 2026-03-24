@@ -24,7 +24,7 @@ pub struct SeparatorStyle {
     pub thickness: f32,
     /// Label text color (if label is set).
     pub label_color: Color,
-    /// Label font size in points.
+    /// Label font size in logical pixels.
     pub label_font_size: f32,
     /// Padding between the label and line segments.
     pub label_gap: f32,

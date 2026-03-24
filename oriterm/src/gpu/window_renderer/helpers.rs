@@ -153,7 +153,12 @@ pub(super) fn ensure_glyphs_cached(
         if empty_keys.contains(&key) {
             continue;
         }
-        if let Some(rasterized) = fonts.rasterize(key) {
+        let rasterized = if key.font_realm == FontRealm::Ui {
+            fonts.rasterize_with_weight(key, key.weight)
+        } else {
+            fonts.rasterize(key)
+        };
+        if let Some(rasterized) = rasterized {
             match rasterized.format {
                 GlyphFormat::Color => {
                     color_atlas.insert(key, rasterized, device, queue);
@@ -184,6 +189,7 @@ pub(super) fn grid_raster_keys(
     shaped.all_glyphs().iter().map(move |glyph| RasterKey {
         glyph_id: glyph.glyph_id,
         face_idx: crate::font::FaceIdx(glyph.face_index),
+        weight: 0,
         size_q6,
         synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
         hinted,
@@ -194,16 +200,17 @@ pub(super) fn grid_raster_keys(
 
 /// Collect [`RasterKey`]s from Scene text runs into `keys`.
 ///
-/// Iterates typed `text_runs()` directly. The caller owns the buffer
-/// and should `clear()` before calling.
+/// Each text run carries its own `size_q6` (stamped by the shaper from the
+/// exact-size `FontCollection`), enabling mixed-size text in one scene.
+/// The caller owns the buffer and should `clear()` before calling.
 pub(super) fn scene_raster_keys(
     scene: &oriterm_ui::draw::Scene,
-    size_q6: u32,
     hinted: bool,
     scale: f32,
     keys: &mut Vec<RasterKey>,
 ) {
     for text_run in scene.text_runs() {
+        let run_size_q6 = text_run.shaped.size_q6;
         let mut cursor_x = text_run.position.x * scale;
         for glyph in &text_run.shaped.glyphs {
             let advance = glyph.x_advance;
@@ -214,7 +221,8 @@ pub(super) fn scene_raster_keys(
             keys.push(RasterKey {
                 glyph_id: glyph.glyph_id,
                 face_idx: crate::font::FaceIdx(glyph.face_index),
-                size_q6,
+                weight: text_run.shaped.weight,
+                size_q6: run_size_q6,
                 synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
                 hinted,
                 subpx_x: crate::font::subpx_bin(cursor_x + glyph.x_offset),
@@ -343,12 +351,24 @@ pub(super) fn create_atlases(
     let (atlas, subpixel_atlas) = if format.is_subpixel() {
         let atlas = GlyphAtlas::new_lazy(device, GlyphFormat::Alpha);
         let mut sp_atlas = GlyphAtlas::new(device, format);
-        pre_cache_atlas(&mut sp_atlas, font_collection, device, queue);
+        pre_cache_atlas(
+            &mut sp_atlas,
+            font_collection,
+            FontRealm::Terminal,
+            device,
+            queue,
+        );
         (atlas, sp_atlas)
     } else {
         let mut atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
         let sp_atlas = GlyphAtlas::new_lazy(device, GlyphFormat::SubpixelRgb);
-        pre_cache_atlas(&mut atlas, font_collection, device, queue);
+        pre_cache_atlas(
+            &mut atlas,
+            font_collection,
+            FontRealm::Terminal,
+            device,
+            queue,
+        );
         (atlas, sp_atlas)
     };
     // Color atlas is lazy — no emoji at startup.
@@ -356,30 +376,86 @@ pub(super) fn create_atlases(
     (atlas, subpixel_atlas, color_atlas)
 }
 
+/// Pre-cache printable ASCII for all UI font sizes into the appropriate atlas.
+///
+/// Iterates every collection in the [`UiFontSizes`] registry and calls
+/// [`pre_cache_atlas`] for each. Routes into the subpixel atlas when the
+/// font format is subpixel, otherwise the mono atlas.
+pub(super) fn prewarm_ui_font_sizes(
+    sizes: &mut crate::font::UiFontSizes,
+    atlas: &mut GlyphAtlas,
+    subpixel_atlas: &mut GlyphAtlas,
+    device: &Device,
+    queue: &Queue,
+) {
+    let is_subpixel = sizes.format().is_subpixel();
+    let target = if is_subpixel { subpixel_atlas } else { atlas };
+    for fc in sizes.collections_mut() {
+        pre_cache_atlas(target, fc, FontRealm::Ui, device, queue);
+    }
+}
+
 /// Pre-cache printable ASCII glyphs (Regular + Bold) into the given atlas.
 ///
 /// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has
-/// a real Bold face. Used by both `WindowRenderer::new()` and `clear_and_recache()`.
+/// a real Bold face. `realm` sets the [`FontRealm`] on each raster key so
+/// cached entries match the lookup realm at render time.
+///
+/// For [`FontRealm::Ui`], keys carry the collection's configured weight (Regular)
+/// or 700 (Bold), and rasterization uses [`FontCollection::rasterize_with_weight`]
+/// so the prewarmed entries match the weight-aware keys produced by
+/// [`scene_raster_keys`] at render time.
 pub(super) fn pre_cache_atlas(
     atlas: &mut GlyphAtlas,
     fc: &mut FontCollection,
+    realm: FontRealm,
     device: &Device,
     queue: &Queue,
 ) {
     let size_q6 = size_key(fc.size_px());
     let hinted = fc.hinting_mode().hint_flag();
+    let is_ui = realm == FontRealm::Ui;
+    let regular_weight = if is_ui { fc.weight() } else { 0 };
+
     for ch in ' '..='~' {
         let resolved = fc.resolve(ch, GlyphStyle::Regular);
-        let key = RasterKey::from_resolved(resolved, size_q6, hinted, 0);
-        if let Some(glyph) = fc.rasterize(key) {
+        let mut key = RasterKey::from_resolved(resolved, size_q6, hinted, 0).with_realm(realm);
+        key.weight = regular_weight;
+        let glyph = if is_ui {
+            fc.rasterize_with_weight(key, regular_weight)
+        } else {
+            fc.rasterize(key)
+        };
+        if let Some(glyph) = glyph {
             atlas.insert(key, glyph, device, queue);
         }
     }
     if fc.has_bold() {
+        let bold_weight = if is_ui { 700 } else { 0 };
         for ch in ' '..='~' {
             let resolved = fc.resolve(ch, GlyphStyle::Bold);
-            let key = RasterKey::from_resolved(resolved, size_q6, hinted, 0);
-            if let Some(glyph) = fc.rasterize(key) {
+            let mut key = RasterKey::from_resolved(resolved, size_q6, hinted, 0).with_realm(realm);
+            key.weight = bold_weight;
+            let glyph = if is_ui {
+                fc.rasterize_with_weight(key, bold_weight)
+            } else {
+                fc.rasterize(key)
+            };
+            if let Some(glyph) = glyph {
+                atlas.insert(key, glyph, device, queue);
+            }
+        }
+    }
+    // Prewarm Regular-slot 700-weight keys for variable fonts that express
+    // weight via wght axis. resolve_ui_weight() always uses Regular slot when
+    // has_wght_axis() is true, regardless of whether a Bold face also exists,
+    // so these keys must be prewarmed for any wght-capable font.
+    if is_ui && fc.has_wght_axis() {
+        for ch in ' '..='~' {
+            let resolved = fc.resolve(ch, GlyphStyle::Regular);
+            let mut key = RasterKey::from_resolved(resolved, size_q6, hinted, 0).with_realm(realm);
+            key.weight = 700;
+            if let Some(glyph) = fc.rasterize_with_weight(key, 700) {
                 atlas.insert(key, glyph, device, queue);
             }
         }

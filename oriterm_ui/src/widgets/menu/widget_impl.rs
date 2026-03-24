@@ -4,7 +4,6 @@
 //! dispatch (mouse, keyboard, hover). Scroll support activates when
 //! `MenuStyle::max_height` is set and content exceeds the limit.
 
-use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::input::ScrollDelta;
@@ -13,7 +12,7 @@ use crate::sense::Sense;
 use crate::text::TextStyle;
 
 use super::super::{LayoutCtx, Widget, WidgetAction};
-use super::{MenuEntry, MenuWidget, SCROLL_LINE_HEIGHT, SCROLLBAR_MIN_THUMB, SCROLLBAR_WIDTH};
+use super::{MenuEntry, MenuWidget, SCROLL_LINE_HEIGHT};
 
 use super::DrawCtx;
 
@@ -299,33 +298,40 @@ impl MenuWidget {
             .push_text(Point::new(text_x, text_y), shaped, s.fg);
     }
 
-    /// Draws a thin overlay scrollbar on the right edge.
+    /// Draws a thin overlay scrollbar on the right edge using the shared helper.
     fn draw_scrollbar(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
+        use super::super::scrollbar::{
+            ScrollbarAxis, ScrollbarMetrics, ScrollbarVisualState, compute_rects, draw_overlay,
+            should_show,
+        };
+
         let total = self.total_height();
         let visible = self.visible_height();
-        if total <= visible {
+        let m = ScrollbarMetrics {
+            axis: ScrollbarAxis::Vertical,
+            content_extent: total,
+            view_extent: visible,
+            scroll_offset: self.scroll_offset,
+        };
+        if !should_show(&m) {
             return;
         }
 
-        let track_x = bounds.right() - SCROLLBAR_WIDTH - self.style.border_width - 1.0;
-        let track_y = bounds.y() + self.style.border_width;
-        let track_h = bounds.height() - self.style.border_width * 2.0;
+        // Inset the scrollbar viewport by the menu border.
+        let bw = self.style.border_width;
+        let inner = Rect::new(
+            bounds.x() + bw,
+            bounds.y() + bw,
+            bounds.width() - bw * 2.0,
+            bounds.height() - bw * 2.0,
+        );
 
-        let ratio = visible / total;
-        let thumb_h = (track_h * ratio).max(SCROLLBAR_MIN_THUMB).min(track_h);
-        let max_scroll = self.max_scroll();
-        let scroll_ratio = if max_scroll > 0.0 {
-            self.scroll_offset / max_scroll
-        } else {
-            0.0
-        };
-        let thumb_y = track_y + scroll_ratio * (track_h - thumb_h);
-
-        let thumb_rect = Rect::new(track_x, thumb_y, SCROLLBAR_WIDTH, thumb_h);
-        let thumb_color = Color::WHITE.with_alpha(0.25);
-        ctx.scene.push_quad(
-            thumb_rect,
-            RectStyle::filled(thumb_color).with_radius(SCROLLBAR_WIDTH / 2.0),
+        let rects = compute_rects(inner, &m, &self.style.scrollbar, 0.0);
+        draw_overlay(
+            ctx.scene,
+            &rects,
+            &self.style.scrollbar,
+            ScrollbarVisualState::Rest,
         );
     }
 }

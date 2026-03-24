@@ -75,6 +75,7 @@ impl GlyphEmitter<'_> {
             let key = RasterKey {
                 glyph_id: sg.glyph_id,
                 face_idx: FaceIdx(sg.face_index),
+                weight: 0,
                 size_q6: self.size_q6,
                 synthetic: SyntheticFlags::from_bits_truncate(sg.synthetic),
                 hinted: self.hinted,

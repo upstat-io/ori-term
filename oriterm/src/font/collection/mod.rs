@@ -9,6 +9,7 @@ pub(crate) mod colr_v1;
 mod face;
 mod loading;
 mod metadata;
+mod rasterize;
 mod resolve;
 mod shaping;
 
@@ -25,12 +26,12 @@ use codepoint_map::CodepointMap;
 pub(crate) use codepoint_map::parse_hex_range;
 pub(crate) use face::size_key;
 pub(crate) use face::{FaceData, font_ref};
-use face::{build_face, compute_metrics, rasterize_from_face};
+use face::{build_face, compute_metrics};
 pub(crate) use loading::{FontByteCache, FontSet};
 pub(crate) use metadata::parse_features;
 use metadata::{
     FallbackMeta, MAX_FONT_SIZE, MIN_FONT_SIZE, default_features, effective_size_for,
-    face_variations,
+    face_variations, resolve_ui_weight,
 };
 
 /// A rasterized glyph bitmap ready for atlas upload.
@@ -261,6 +262,38 @@ impl FontCollection {
         self.primary[GlyphStyle::Bold as usize].is_some()
     }
 
+    /// Whether the Regular primary face has a `wght` variation axis.
+    pub fn has_wght_axis(&self) -> bool {
+        self.primary[0]
+            .as_ref()
+            .is_some_and(|fd| face::has_axis(&fd.axes, *b"wght"))
+    }
+
+    /// Whether a specific face has a `wght` variation axis.
+    ///
+    /// Used by the UI shaping pipeline to decide whether a fallback face
+    /// needs synthetic bold (it does if the face lacks a `wght` axis and
+    /// the requested weight is >= 700).
+    pub fn face_has_wght_axis(&self, face_idx: FaceIdx) -> bool {
+        self.face_data(face_idx)
+            .is_some_and(|fd| face::has_axis(&fd.axes, *b"wght"))
+    }
+
+    /// Configured font weight (CSS 100–900, typically 400).
+    pub fn weight(&self) -> u16 {
+        self.weight
+    }
+
+    /// Resolve a UI text weight request against this collection's font capabilities.
+    ///
+    /// Returns face slot, `wght` axis value, and synthetic bold flag based on
+    /// the weight realization policy. UI-text only — terminal grid uses
+    /// face-slot-based bold selection.
+    #[allow(dead_code, reason = "consumed by UI weight pipeline in 02.3")]
+    pub fn resolve_ui_weight_info(&self, requested_weight: u16) -> metadata::UiWeightResolution {
+        resolve_ui_weight(requested_weight, self.has_wght_axis(), self.has_bold())
+    }
+
     /// Look up a glyph ID and advance width directly from the cmap table.
     ///
     /// Bypasses rustybuzz shaping, returning the raw cmap glyph ID and advance
@@ -420,63 +453,6 @@ impl FontCollection {
         self.format = format;
         self.glyph_cache.clear();
         true
-    }
-
-    // ── Rasterization ──
-
-    /// Rasterize a glyph and cache the result.
-    ///
-    /// Returns `None` for empty glyphs (e.g. space) or unsupported formats.
-    /// Subsequent calls with the same key return the cached bitmap.
-    pub fn rasterize(&mut self, key: RasterKey) -> Option<&RasterizedGlyph> {
-        // Built-in glyphs are rasterized by `builtin_glyphs::ensure_cached`,
-        // not through font faces. Guard against the sentinel index to prevent
-        // an out-of-bounds panic on `self.primary[65535]`.
-        if key.face_idx == FaceIdx::BUILTIN {
-            return None;
-        }
-
-        // NLL limitation: `if let Some(g) = get() { return Some(g); }` ties the
-        // immutable borrow to the return lifetime, blocking `insert` on the miss
-        // path (E0502). Two lookups are the idiomatic workaround until Polonius.
-        if self.glyph_cache.contains_key(&key) {
-            return self.glyph_cache.get(&key);
-        }
-
-        // Inline face lookup for disjoint borrows with scale_context.
-        let fd = if let Some(fb_i) = key.face_idx.fallback_index() {
-            self.fallbacks.get(fb_i)?
-        } else {
-            self.primary[key.face_idx.as_usize()].as_ref()?
-        };
-        let size = effective_size_for(key.face_idx, self.size_px, &self.fallback_meta);
-        let face_vars = face_variations(key.face_idx, key.synthetic, self.weight, &fd.axes);
-        let effective_synthetic = key.synthetic - face_vars.suppress_synthetic;
-        let subpx_x_offset = super::subpx_offset(key.subpx_x);
-
-        // Try COLR first — handles modern color emoji (Segoe UI Emoji,
-        // Noto Color Emoji v2) via skrifa. Falls through to swash for sbix
-        // and standard outlines.
-        if let Some(colr_glyph) = colr_v1::try_rasterize_colr_v1(fd, key.glyph_id, size) {
-            self.glyph_cache.insert(key, colr_glyph);
-            return self.glyph_cache.get(&key);
-        }
-
-        let glyph = rasterize_from_face(
-            fd,
-            key.glyph_id,
-            size,
-            &face_vars.settings,
-            effective_synthetic,
-            self.metrics.height,
-            self.format,
-            self.hinting.hint_flag(),
-            subpx_x_offset,
-            &mut self.scale_context,
-        )?;
-
-        self.glyph_cache.insert(key, glyph);
-        self.glyph_cache.get(&key)
     }
 }
 

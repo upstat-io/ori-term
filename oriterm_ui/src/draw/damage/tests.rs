@@ -355,3 +355,206 @@ fn negative_coordinate_widget_tracked_correctly() {
     tracker.compute_damage(&scene_with_quad(id, bounds, Color::WHITE));
     assert!(!tracker.has_damage());
 }
+
+// --- Per-side border damage detection ---
+
+/// Creates a scene with one styled quad for the given widget.
+fn scene_with_styled_quad(id: WidgetId, bounds: Rect, style: RectStyle) -> Scene {
+    let mut scene = Scene::new();
+    scene.set_widget_id(Some(id));
+    scene.push_quad(bounds, style);
+    scene
+}
+
+#[test]
+fn hash_rect_style_distinguishes_border_sides() {
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+
+    let style_a = RectStyle::filled(Color::WHITE).with_border(2.0, Color::BLACK);
+    tracker.compute_damage(&scene_with_styled_quad(id, bounds, style_a));
+
+    // Change only the left border — should detect damage.
+    let style_b = RectStyle::filled(Color::WHITE)
+        .with_border(2.0, Color::BLACK)
+        .with_border_left(3.0, Color::rgba(1.0, 0.0, 0.0, 1.0));
+    tracker.compute_damage(&scene_with_styled_quad(id, bounds, style_b));
+    assert!(
+        tracker.has_damage(),
+        "different border sides should produce damage"
+    );
+}
+
+#[test]
+fn hash_rect_style_same_border_produces_same_hash() {
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+
+    let style = RectStyle::filled(Color::WHITE).with_border(2.0, Color::BLACK);
+    tracker.compute_damage(&scene_with_styled_quad(id, bounds, style.clone()));
+    tracker.compute_damage(&scene_with_styled_quad(id, bounds, style));
+    assert!(
+        !tracker.has_damage(),
+        "identical borders should produce no damage"
+    );
+}
+
+#[test]
+fn hash_rect_style_uniform_vs_explicit_same_hash() {
+    use crate::draw::{Border, BorderSides};
+
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+
+    // Built via uniform shorthand.
+    let style_a = RectStyle::filled(Color::WHITE).with_border(2.0, Color::BLACK);
+    tracker.compute_damage(&scene_with_styled_quad(id, bounds, style_a));
+
+    // Built by manually constructing all four sides identically.
+    let side = Some(Border {
+        width: 2.0,
+        color: Color::BLACK,
+    });
+    let explicit = BorderSides {
+        top: side,
+        right: side,
+        bottom: side,
+        left: side,
+    };
+    let style_b = RectStyle::filled(Color::WHITE).with_border_sides(explicit);
+    tracker.compute_damage(&scene_with_styled_quad(id, bounds, style_b));
+    assert!(
+        !tracker.has_damage(),
+        "semantically identical borders (uniform vs explicit) should produce no damage"
+    );
+}
+
+// --- Zero-width border color changes must not cause damage ---
+
+#[test]
+fn color_change_on_zero_width_border_produces_no_damage() {
+    use crate::draw::{Border, BorderSides};
+
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+
+    // Frame 1: border with zero-width left side colored red.
+    let sides_a = BorderSides {
+        top: Some(Border {
+            width: 2.0,
+            color: Color::BLACK,
+        }),
+        right: None,
+        bottom: None,
+        left: Some(Border {
+            width: 0.0,
+            color: Color::rgba(1.0, 0.0, 0.0, 1.0),
+        }),
+    };
+    let style_a = RectStyle::filled(Color::WHITE).with_border_sides(sides_a);
+    tracker.compute_damage(&scene_with_styled_quad(id, bounds, style_a));
+
+    // Frame 2: same, but zero-width left side changed to blue.
+    let sides_b = BorderSides {
+        top: Some(Border {
+            width: 2.0,
+            color: Color::BLACK,
+        }),
+        right: None,
+        bottom: None,
+        left: Some(Border {
+            width: 0.0,
+            color: Color::rgba(0.0, 0.0, 1.0, 1.0),
+        }),
+    };
+    let style_b = RectStyle::filled(Color::WHITE).with_border_sides(sides_b);
+    tracker.compute_damage(&scene_with_styled_quad(id, bounds, style_b));
+
+    assert!(
+        !tracker.has_damage(),
+        "color change on zero-width border should not produce damage"
+    );
+}
+
+// --- Text size/weight damage detection ---
+
+/// Creates a scene with one text run for the given widget.
+fn scene_with_text(id: WidgetId, pos: crate::geometry::Point, size_q6: u32, weight: u16) -> Scene {
+    use crate::text::{ShapedGlyph, ShapedText};
+
+    let shaped = ShapedText::new(
+        vec![ShapedGlyph {
+            glyph_id: 42,
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 8.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        }],
+        8.0,
+        16.0,
+        12.0,
+        size_q6,
+        weight,
+    );
+
+    let mut scene = Scene::new();
+    scene.set_widget_id(Some(id));
+    scene.push_text(pos, shaped, Color::WHITE);
+    scene
+}
+
+#[test]
+fn text_weight_change_produces_damage() {
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+    let pos = crate::geometry::Point::new(10.0, 10.0);
+
+    // Frame 1: weight 400.
+    tracker.compute_damage(&scene_with_text(id, pos, 832, 400));
+
+    // Frame 2: weight 700, everything else identical.
+    tracker.compute_damage(&scene_with_text(id, pos, 832, 700));
+
+    assert!(
+        tracker.has_damage(),
+        "weight-only text change should produce damage"
+    );
+}
+
+#[test]
+fn text_size_change_produces_damage() {
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+    let pos = crate::geometry::Point::new(10.0, 10.0);
+
+    // Frame 1: size_q6 = 832 (13px).
+    tracker.compute_damage(&scene_with_text(id, pos, 832, 400));
+
+    // Frame 2: size_q6 = 1152 (18px), everything else identical.
+    tracker.compute_damage(&scene_with_text(id, pos, 1152, 400));
+
+    assert!(
+        tracker.has_damage(),
+        "size-only text change should produce damage"
+    );
+}
+
+#[test]
+fn identical_text_no_damage() {
+    let mut tracker = DamageTracker::new();
+    let id = WidgetId::next();
+    let pos = crate::geometry::Point::new(10.0, 10.0);
+
+    tracker.compute_damage(&scene_with_text(id, pos, 832, 400));
+    tracker.compute_damage(&scene_with_text(id, pos, 832, 400));
+
+    assert!(
+        !tracker.has_damage(),
+        "identical text should produce no damage"
+    );
+}

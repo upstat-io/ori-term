@@ -20,7 +20,7 @@ pub struct StatusBadgeStyle {
     pub bg: Color,
     /// Text color.
     pub fg: Color,
-    /// Font size in points.
+    /// Font size in logical pixels.
     pub font_size: f32,
     /// Corner radius for the background rect.
     pub corner_radius: f32,

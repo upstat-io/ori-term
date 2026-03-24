@@ -17,7 +17,7 @@ use winit::window::WindowId;
 use crate::app::settings_overlay;
 use crate::app::widget_pipeline::{apply_dispatch_requests, collect_focusable_ids};
 use crate::event::ConfirmationKind;
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+use crate::font::CachedTextMeasurer;
 
 use super::DialogContent;
 use crate::app::App;
@@ -364,11 +364,7 @@ impl App {
         let ctx = self.dialogs.get_mut(&window_id)?;
         let renderer = ctx.renderer.as_ref()?;
         let scale = ctx.scale_factor.factor() as f32;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
 
         // Compute layout for parent map (needed by focus_ancestor_path).
         let chrome_h = ctx.chrome.caption_height();

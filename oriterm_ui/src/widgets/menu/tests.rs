@@ -177,3 +177,34 @@ fn from_theme_dark_uses_zero_radius() {
     assert_eq!(style.corner_radius, 0.0);
     assert_eq!(style.hover_radius, 0.0);
 }
+
+#[test]
+fn menu_style_owns_scrollbar_style() {
+    use crate::theme::UiTheme;
+    use crate::widgets::scrollbar::ScrollbarStyle;
+
+    let theme = UiTheme::dark();
+    let style = MenuStyle::from_theme(&theme);
+    let expected = ScrollbarStyle::from_theme(&theme);
+
+    // MenuStyle.scrollbar should match a fresh theme-derived scrollbar style.
+    assert_eq!(style.scrollbar.thumb_color, expected.thumb_color);
+    assert_eq!(style.scrollbar.thickness, expected.thickness);
+    assert_eq!(
+        style.scrollbar.thumb_hover_color,
+        expected.thumb_hover_color
+    );
+}
+
+#[test]
+fn menu_scrollbar_no_hardcoded_white_alpha() {
+    use crate::color::Color;
+
+    let style = MenuStyle::default();
+    // The old hardcoded Color::WHITE.with_alpha(0.25) should be gone.
+    assert_ne!(
+        style.scrollbar.thumb_color,
+        Color::WHITE.with_alpha(0.25),
+        "menu scrollbar should use theme colors, not hardcoded white-alpha"
+    );
+}

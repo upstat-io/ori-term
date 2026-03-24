@@ -15,6 +15,7 @@ use crate::geometry::{Point, Rect};
 use crate::input::{HitEntry, InputEvent, WidgetHitTestResult, layout_hit_test_path};
 use crate::interaction::InteractionState;
 use crate::layout::LayoutNode;
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
 
@@ -137,6 +138,7 @@ pub fn dispatch_to_widget_tree(
             if let Some(action) = input_result.action {
                 result.actions.push(action);
             }
+            result.requests.insert(input_result.requests);
         }
 
         if result.handled {
@@ -208,14 +210,16 @@ pub fn deliver_event_to_tree(
     // Build the hit path.
     let hit_result = if event.is_keyboard() {
         WidgetHitTestResult { path: Vec::new() }
-    } else if active_widget.is_some() {
-        // During capture, hit test to get the active widget's actual bounds
-        // (needed for on_action anchor rects). plan_propagation routes to the
-        // active widget regardless of hit position.
-        if let (Some(node), Some(pos)) = (layout_node, event.pos()) {
+    } else if let Some(active_id) = active_widget {
+        // During capture, the active widget needs its true layout bounds
+        // even when the cursor is outside it. Try hit testing first; if
+        // the active widget isn't in the result, look it up from the
+        // layout tree directly so `plan_captured_mouse` gets correct
+        // bounds for the captured drag.
+        let mut result = if let (Some(node), Some(pos)) = (layout_node, event.pos()) {
             let local = Point::new(pos.x - bounds.x(), pos.y - bounds.y());
-            let mut result = layout_hit_test_path(node, local);
-            for entry in &mut result.path {
+            let mut r = layout_hit_test_path(node, local);
+            for entry in &mut r.path {
                 entry.bounds = Rect::new(
                     entry.bounds.x() + bounds.x(),
                     entry.bounds.y() + bounds.y(),
@@ -223,24 +227,34 @@ pub fn deliver_event_to_tree(
                     entry.bounds.height(),
                 );
             }
-            // If hit test is empty (cursor outside), fall back to root bounds.
-            if result.path.is_empty() {
-                result.path.push(HitEntry {
-                    widget_id: root_id,
-                    bounds,
-                    sense: root_sense,
-                });
-            }
-            result
+            r
         } else {
-            WidgetHitTestResult {
-                path: vec![HitEntry {
-                    widget_id: root_id,
-                    bounds,
-                    sense: root_sense,
-                }],
-            }
+            WidgetHitTestResult { path: Vec::new() }
+        };
+
+        // Ensure the active widget has an entry with its layout bounds.
+        let has_active = result.path.iter().any(|e| e.widget_id == active_id);
+        if !has_active {
+            // Look up from layout tree.
+            let active_rect = layout_node
+                .and_then(|node| {
+                    node.find_rect(active_id).map(|r| {
+                        Rect::new(
+                            r.x() + bounds.x(),
+                            r.y() + bounds.y(),
+                            r.width(),
+                            r.height(),
+                        )
+                    })
+                })
+                .unwrap_or(bounds);
+            result.path.push(HitEntry {
+                widget_id: active_id,
+                bounds: active_rect,
+                sense: Sense::all(),
+            });
         }
+        result
     } else if let Some(node) = layout_node {
         if let Some(pos) = event.pos() {
             let local = Point::new(pos.x - bounds.x(), pos.y - bounds.y());

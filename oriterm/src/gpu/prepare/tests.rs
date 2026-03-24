@@ -915,6 +915,7 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
         let key = RasterKey {
             glyph_id: gid,
             face_idx: FaceIdx::REGULAR,
+            weight: 0,
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
@@ -1041,6 +1042,7 @@ fn shaped_offset_applied_to_glyph_position() {
         RasterKey {
             glyph_id: 60,
             face_idx: FaceIdx::REGULAR,
+            weight: 0,
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
@@ -1180,6 +1182,7 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
     let key = RasterKey {
         glyph_id: 200,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -1240,6 +1243,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
         RasterKey {
             glyph_id: 10,
             face_idx: FaceIdx::REGULAR,
+            weight: 0,
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
@@ -1253,6 +1257,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
         RasterKey {
             glyph_id: 200,
             face_idx: FaceIdx::REGULAR,
+            weight: 0,
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
@@ -1269,6 +1274,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
         RasterKey {
             glyph_id: 11,
             face_idx: FaceIdx::REGULAR,
+            weight: 0,
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
@@ -1609,6 +1615,7 @@ fn subpixel_glyph_routes_to_subpixel_buffer() {
     let key = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -1665,6 +1672,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
         RasterKey {
             glyph_id: 10,
             face_idx: FaceIdx::REGULAR,
+            weight: 0,
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
@@ -1678,6 +1686,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
         RasterKey {
             glyph_id: 20,
             face_idx: FaceIdx::REGULAR,
+            weight: 0,
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
@@ -1694,6 +1703,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
         RasterKey {
             glyph_id: 30,
             face_idx: FaceIdx::REGULAR,
+            weight: 0,
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,

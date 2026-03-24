@@ -11,7 +11,7 @@ use super::content_mask::ContentMask;
 
 /// Empty shaped text for tests that need a `ShapedText` value.
 fn empty_shaped() -> ShapedText {
-    ShapedText::new(Vec::new(), 0.0, 0.0, 0.0)
+    ShapedText::new(Vec::new(), 0.0, 0.0, 0.0, 0, 400)
 }
 
 #[test]
@@ -412,11 +412,11 @@ fn primitive_structs_under_cache_line() {
     use super::primitives::{IconPrimitive, ImagePrimitive, LinePrimitive, Quad, TextRun};
 
     // Regression guards: prevent unintentional growth of scene primitives.
-    // Quad is large (includes RectStyle with gradient/shadow/border fields).
+    // Quad is large (includes RectStyle with gradient/shadow/border + per-side BorderSides).
     // These thresholds are current size + 32 bytes headroom.
     assert!(
-        size_of::<Quad>() <= 208,
-        "Quad is {} bytes, expected <= 208",
+        size_of::<Quad>() <= 280,
+        "Quad is {} bytes, expected <= 280",
         size_of::<Quad>()
     );
     assert!(
@@ -572,4 +572,104 @@ fn unclipped_content_mask_has_infinite_bounds() {
     assert!(mask.clip.height().is_infinite());
     assert!(mask.clip.x().is_infinite() && mask.clip.x() < 0.0);
     assert!(mask.clip.y().is_infinite() && mask.clip.y() < 0.0);
+}
+
+#[test]
+fn content_mask_opacity_default_is_one() {
+    let mask = ContentMask::unclipped();
+    assert!((mask.opacity - 1.0).abs() < f32::EPSILON);
+}
+
+// --- Opacity stack ---
+
+#[test]
+fn opacity_stack_push_pop_balance() {
+    let mut scene = Scene::new();
+    assert!(scene.opacity_stack_is_empty());
+    assert!((scene.current_opacity() - 1.0).abs() < f32::EPSILON);
+
+    scene.push_opacity(0.5);
+    assert!(!scene.opacity_stack_is_empty());
+
+    scene.pop_opacity();
+    assert!(scene.opacity_stack_is_empty());
+    assert!((scene.current_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn opacity_stack_multiplicative_composition() {
+    let mut scene = Scene::new();
+    scene.push_opacity(0.5);
+    assert!((scene.current_opacity() - 0.5).abs() < f32::EPSILON);
+
+    scene.push_opacity(0.5);
+    assert!((scene.current_opacity() - 0.25).abs() < f32::EPSILON);
+
+    scene.pop_opacity();
+    assert!((scene.current_opacity() - 0.5).abs() < f32::EPSILON);
+
+    scene.pop_opacity();
+    assert!((scene.current_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn opacity_stack_clamps_to_unit_range() {
+    let mut scene = Scene::new();
+
+    scene.push_opacity(2.0);
+    assert!((scene.current_opacity() - 1.0).abs() < f32::EPSILON);
+    scene.pop_opacity();
+
+    scene.push_opacity(-0.5);
+    assert!((scene.current_opacity()).abs() < f32::EPSILON);
+    scene.pop_opacity();
+}
+
+#[test]
+fn opacity_stack_normalizes_nan_and_infinity() {
+    let mut scene = Scene::new();
+
+    scene.push_opacity(f32::NAN);
+    assert!((scene.current_opacity() - 1.0).abs() < f32::EPSILON);
+    scene.pop_opacity();
+
+    scene.push_opacity(f32::INFINITY);
+    assert!((scene.current_opacity() - 1.0).abs() < f32::EPSILON);
+    scene.pop_opacity();
+
+    scene.push_opacity(f32::NEG_INFINITY);
+    assert!((scene.current_opacity() - 1.0).abs() < f32::EPSILON);
+    scene.pop_opacity();
+}
+
+#[test]
+fn content_mask_captures_opacity_on_quad() {
+    let mut scene = Scene::new();
+    let style = RectStyle::filled(Color::WHITE);
+
+    scene.push_opacity(0.6);
+    scene.push_quad(Rect::new(0.0, 0.0, 10.0, 10.0), style);
+    scene.pop_opacity();
+
+    assert!((scene.quads()[0].content_mask.opacity - 0.6).abs() < f32::EPSILON);
+}
+
+#[test]
+fn content_mask_captures_opacity_on_text() {
+    let mut scene = Scene::new();
+
+    scene.push_opacity(0.3);
+    scene.push_text(Point::new(0.0, 0.0), empty_shaped(), Color::WHITE);
+    scene.pop_opacity();
+
+    assert!((scene.text_runs()[0].content_mask.opacity - 0.3).abs() < f32::EPSILON);
+}
+
+#[test]
+fn clear_resets_opacity_stack() {
+    let mut scene = Scene::new();
+    scene.push_opacity(0.5);
+    scene.clear();
+    assert!(scene.opacity_stack_is_empty());
+    assert!((scene.current_opacity() - 1.0).abs() < f32::EPSILON);
 }

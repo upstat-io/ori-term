@@ -19,7 +19,7 @@ use winit::event::{ElementState, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+use crate::font::CachedTextMeasurer;
 use crate::keybindings;
 
 use oriterm_ui::surface::SurfaceLifecycle;
@@ -208,11 +208,7 @@ impl App {
         let ctx = self.dialogs.get_mut(&window_id)?;
         let scale = ctx.scale_factor.factor() as f32;
         let renderer = ctx.renderer.as_ref()?;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
         let ui_event = oriterm_ui::input::KeyEvent {
             key,
             modifiers: winit_mods_to_ui(self.modifiers),
@@ -254,11 +250,7 @@ impl App {
         let Some(renderer) = ctx.renderer.as_ref() else {
             return;
         };
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
         let chrome_h = ctx.chrome.caption_height();
 
         // Route to overlay manager first (dropdown popup hover).

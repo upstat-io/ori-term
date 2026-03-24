@@ -63,7 +63,8 @@ pub(super) fn convert_text(
         let key = RasterKey {
             glyph_id: glyph.glyph_id,
             face_idx: FaceIdx(glyph.face_index),
-            size_q6: ctx.size_q6,
+            weight: shaped.weight,
+            size_q6: shaped.size_q6,
             synthetic: SyntheticFlags::from_bits_truncate(glyph.synthetic),
             hinted: ctx.hinted,
             subpx_x: subpx,

@@ -128,15 +128,18 @@ impl FontSet {
     /// Prepend user-configured fallback fonts before system-discovered fallbacks.
     ///
     /// Each family name is resolved via platform font discovery. Unresolvable
-    /// families are logged and skipped. Returns the number of successfully
-    /// loaded user fallbacks (for indexing into `FallbackMeta`).
+    /// families are logged and skipped. Returns a mapping from loaded fallback
+    /// index to original config index, so callers can apply per-fallback
+    /// metadata to the correct loaded font even when some config entries fail.
+    /// The `.len()` of the returned vec is the loaded user fallback count.
     pub fn prepend_user_fallbacks(
         &mut self,
         families: &[&str],
         cache: &mut FontByteCache,
-    ) -> usize {
+    ) -> Vec<usize> {
         let mut user_fonts = Vec::new();
-        for family in families {
+        let mut config_index_map = Vec::new();
+        for (config_idx, family) in families.iter().enumerate() {
             match discovery::resolve_user_fallback(family) {
                 Some(fb) => match cache.load(&fb.path) {
                     Ok(data) => {
@@ -145,6 +148,7 @@ impl FontSet {
                             data,
                             index: fb.face_index,
                         });
+                        config_index_map.push(config_idx);
                     }
                     Err(e) => {
                         log::warn!("font: failed to load user fallback {family:?}: {e}");
@@ -155,11 +159,10 @@ impl FontSet {
                 }
             }
         }
-        let count = user_fonts.len();
         // Prepend user fallbacks: they take priority over system fallbacks.
         user_fonts.append(&mut self.fallbacks);
         self.fallbacks = user_fonts;
-        count
+        config_index_map
     }
 
     /// Build a `FontSet` from a discovery result, using `cache` for file reads.

@@ -535,13 +535,17 @@ fn scroll_content_exactly_fits_no_scrollbar() {
 }
 
 #[test]
-fn scroll_track_hovered_resets_on_leave() {
+fn scroll_hover_resets_on_leave_but_drag_persists() {
     let mut scroll = ScrollWidget::vertical(tall_content());
 
-    // Simulate scrollbar hover by setting track_hovered manually.
-    scroll.scrollbar.track_hovered = true;
+    // Simulate active drag + hover.
+    scroll.v_bar.track_hovered = true;
+    scroll.v_bar.thumb_hovered = true;
+    scroll.v_bar.dragging = true;
 
-    // HotChanged(false) lifecycle event should reset track_hovered.
+    // HotChanged(false) should clear hover but NOT drag — the drag
+    // owns the pointer via capture until MouseUp, matching native
+    // scrollbar behavior where you can drag outside the widget.
     let event = LifecycleEvent::HotChanged {
         widget_id: scroll.id(),
         is_hot: false,
@@ -552,9 +556,11 @@ fn scroll_track_hovered_resets_on_leave() {
         requests: ControllerRequests::NONE,
     };
     scroll.lifecycle(&event, &mut lctx);
+    assert!(!scroll.v_bar.track_hovered, "track_hovered should reset");
+    assert!(!scroll.v_bar.thumb_hovered, "thumb_hovered should reset");
     assert!(
-        !scroll.scrollbar.track_hovered,
-        "track_hovered should be false after HotChanged(false)"
+        scroll.v_bar.dragging,
+        "dragging must persist through hot loss"
     );
 }
 
@@ -563,13 +569,13 @@ fn scroll_with_scrollbar_style() {
     use super::ScrollbarStyle;
     use crate::color::Color;
 
-    let custom_style = ScrollbarStyle {
-        width: 10.0,
-        thumb_color: Color::WHITE,
-        track_color: Color::BLACK,
-        thumb_radius: 5.0,
-        min_thumb_height: 30.0,
-    };
+    let mut custom_style = ScrollbarStyle::default();
+    custom_style.thickness = 10.0;
+    custom_style.thumb_color = Color::WHITE;
+    custom_style.track_color = Color::BLACK;
+    custom_style.thumb_radius = 5.0;
+    custom_style.min_thumb_length = 30.0;
+
     let scroll = ScrollWidget::vertical(tall_content()).with_scrollbar_style(custom_style);
     let measurer = MockMeasurer::STANDARD;
     let mut scene = Scene::new();
@@ -620,4 +626,121 @@ fn reset_scroll_invalidates_cached_child_layout() {
         scroll.cached_child_layout.borrow().is_none(),
         "reset_scroll must invalidate cached_child_layout"
     );
+}
+
+// -- per-axis scrollbar state --
+
+#[test]
+fn scroll_per_axis_bar_state_defaults_to_rest() {
+    let scroll = ScrollWidget::vertical(tall_content());
+    assert!(!scroll.v_bar.dragging);
+    assert!(!scroll.v_bar.track_hovered);
+    assert!(!scroll.v_bar.thumb_hovered);
+    assert!(!scroll.h_bar.dragging);
+    assert!(!scroll.h_bar.track_hovered);
+    assert!(!scroll.h_bar.thumb_hovered);
+}
+
+#[test]
+fn scroll_horizontal_bar_hover_resets_on_leave() {
+    let mut scroll = ScrollWidget::new(tall_content(), super::ScrollDirection::Both);
+    scroll.h_bar.track_hovered = true;
+    scroll.h_bar.thumb_hovered = true;
+    scroll.h_bar.dragging = true;
+
+    let event = LifecycleEvent::HotChanged {
+        widget_id: scroll.id(),
+        is_hot: false,
+    };
+    let mut lctx = LifecycleCtx {
+        widget_id: scroll.id(),
+        interaction: &crate::interaction::InteractionState::default(),
+        requests: ControllerRequests::NONE,
+    };
+    scroll.lifecycle(&event, &mut lctx);
+    assert!(!scroll.h_bar.track_hovered);
+    assert!(!scroll.h_bar.thumb_hovered);
+    assert!(
+        scroll.h_bar.dragging,
+        "dragging must persist through hot loss"
+    );
+}
+
+#[test]
+fn scroll_visual_state_reflects_interaction() {
+    use crate::widgets::scrollbar::ScrollbarVisualState;
+
+    let mut scroll = ScrollWidget::vertical(tall_content());
+    assert_eq!(scroll.v_bar.visual_state(), ScrollbarVisualState::Rest);
+
+    scroll.v_bar.track_hovered = true;
+    assert_eq!(scroll.v_bar.visual_state(), ScrollbarVisualState::Hovered);
+
+    scroll.v_bar.dragging = true;
+    assert_eq!(scroll.v_bar.visual_state(), ScrollbarVisualState::Dragging);
+}
+
+#[test]
+fn scroll_default_style_is_theme_backed() {
+    use super::ScrollbarStyle;
+    use crate::theme::UiTheme;
+
+    let scroll = ScrollWidget::vertical(tall_content());
+    let expected = ScrollbarStyle::from_theme(&UiTheme::dark());
+    assert_eq!(scroll.scrollbar_style.thumb_color, expected.thumb_color);
+    assert_eq!(scroll.scrollbar_style.thickness, expected.thickness);
+}
+
+#[test]
+fn scroll_vertical_emits_scrollbar_quad() {
+    let scroll = make_scroll(tall_content());
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let b = bounds();
+    // Populate cache first so draw_scrollbars sees overflow.
+    let theme = super::super::tests::TEST_THEME;
+    scroll.child_natural_size(&measurer, &theme, b);
+
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds: b,
+        now: std::time::Instant::now(),
+        theme: &theme,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    scroll.paint(&mut ctx);
+
+    // Should have at least one quad for the thumb.
+    assert!(
+        scene.quads().iter().any(|q| q.bounds.width() <= 8.0),
+        "expected a thin scrollbar quad"
+    );
+}
+
+#[test]
+fn scroll_horizontal_mode_scroll_by_x() {
+    let mut scroll = ScrollWidget::new(tall_content(), super::ScrollDirection::Horizontal);
+    // Scroll_by_x should work.
+    let changed = scroll.scroll_by_x(50.0, 600.0, 200.0);
+    assert!(changed);
+    assert!((scroll.scroll_offset_x - 50.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn scroll_both_wheel_applies_both_axes() {
+    let mut scroll = ScrollWidget::new(tall_content(), super::ScrollDirection::Both);
+    populate_cache(&scroll, bounds());
+
+    let event = InputEvent::Scroll {
+        pos: Point::new(100.0, 50.0),
+        delta: ScrollDelta::Pixels { x: -30.0, y: -40.0 },
+        modifiers: Modifiers::NONE,
+    };
+    let result = scroll.on_input(&event, bounds());
+    // Wheel input in Both mode should be handled.
+    assert!(result.handled);
 }

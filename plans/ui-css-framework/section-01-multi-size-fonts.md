@@ -1,11 +1,11 @@
 ---
 section: "01"
 title: "Multi-Size Font Rendering"
-status: in-progress
+status: complete
 reviewed: true
 third_party_review:
   status: resolved
-  updated: 2026-03-23
+  updated: 2026-03-24
 goal: "TextStyle.size drives actual glyph rasterization size so 18px titles, 13px body text, and 10-11px sidebar/footer text render at distinct physical sizes"
 inspired_by:
   - "GPUI FontIdWithSize pattern (~/projects/reference_repos/gui_repos/zed/crates/gpui/src/text_system.rs)"
@@ -16,22 +16,22 @@ sections:
     status: complete
   - id: "01.2"
     title: "UiFontMeasurer Size-Aware Shaping"
-    status: not-started
+    status: complete
   - id: "01.3"
     title: "Scene Conversion Size Threading"
-    status: not-started
+    status: complete
   - id: "01.4"
     title: "Glyph Cache Pre-warming"
-    status: not-started
+    status: complete
   - id: "01.5"
     title: "Integration + Tests"
-    status: not-started
+    status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
     status: complete
   - id: "01.6"
     title: "Build & Verify"
-    status: not-started
+    status: complete
 ---
 
 # Section 01: Multi-Size Font Rendering
@@ -261,11 +261,11 @@ Update [oriterm_ui/src/text/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/
 
 ### Checklist
 
-- [ ] Change `UiFontMeasurer` to borrow `Option<&UiFontSizes>` plus a fallback `&FontCollection`
-- [ ] Select the correct collection in both `measure()` and `shape()`
-- [ ] Update all constructor call sites that currently pass `renderer.active_ui_collection()`
-- [ ] Fix `TextStyle.size` docs to say logical pixels
-- [ ] Verify `measure()` and `shape()` agree for the same size/style
+- [x] Change `UiFontMeasurer` to borrow `Option<&UiFontSizes>` plus a fallback `&FontCollection`
+- [x] Select the correct collection in both `measure()` and `shape()`
+- [x] Update all constructor call sites that currently pass `renderer.active_ui_collection()`
+- [x] Fix `TextStyle.size` docs to say logical pixels
+- [x] Verify `measure()` and `shape()` agree for the same size/style
 
 ---
 
@@ -343,12 +343,12 @@ Once size lives on `ShapedText`, `TextContext.size_q6` is no longer needed. Remo
 
 ### Checklist
 
-- [ ] Add `size_q6` to `ShapedText`, not `ShapedGlyph`
-- [ ] Update `ShapedText::new()` and all UI-only construction sites/tests
-- [ ] Stamp `size_q6` in `ui_text::shape_to_shaped_text()`
-- [ ] Remove `size_q6` from `scene_convert::TextContext`
-- [ ] Use `text_run.shaped.size_q6` in `scene_raster_keys()` and `convert_text()`
-- [ ] Group UI raster keys by `size_q6` in `cache_scene_glyphs()`
+- [x] Add `size_q6` to `ShapedText`, not `ShapedGlyph`
+- [x] Update `ShapedText::new()` and all UI-only construction sites/tests
+- [x] Stamp `size_q6` in `ui_text::shape_to_shaped_text()`
+- [x] Remove `size_q6` from `scene_convert::TextContext`
+- [x] Use `text_run.shaped.size_q6` in `scene_raster_keys()` and `convert_text()`
+- [x] Group UI raster keys by `size_q6` in `cache_scene_glyphs()`
 
 ---
 
@@ -380,10 +380,10 @@ Keep this bounded:
 
 ### Checklist
 
-- [ ] Extend renderer init to pre-cache common UI sizes after atlas creation
-- [ ] Apply the same prewarm logic in `new_ui_only()`
-- [ ] Keep uncommon sizes lazy to avoid unnecessary startup cost
-- [ ] Log the UI prewarm timing separately from terminal font pre-cache
+- [x] Extend renderer init to pre-cache common UI sizes after atlas creation
+- [x] Apply the same prewarm logic in `new_ui_only()`
+- [x] Keep uncommon sizes lazy to avoid unnecessary startup cost
+- [x] Log the UI prewarm timing separately from terminal font pre-cache
 
 ---
 
@@ -429,15 +429,48 @@ After implementation:
 
 ### Checklist
 
-- [ ] Unit tests for exact-size registry behavior
-- [ ] Unit tests for size-aware measurement/shaping
-- [ ] Scene conversion tests covering mixed-size text runs
-- [ ] Update UI text tests and mock measurer for the new `ShapedText` shape
-- [ ] Manual verification in the settings dialog
+- [x] Unit tests for exact-size registry behavior
+- [x] Unit tests for size-aware measurement/shaping
+- [x] Scene conversion tests covering mixed-size text runs
+- [x] Update UI text tests and mock measurer for the new `ShapedText` shape
+- [x] Manual verification in the settings dialog
 
 ---
 
 ## 01.R Third Party Review Findings
+
+- [x] `[TPR-01-020][high]` `oriterm/src/gpu/window_renderer/scene_append.rs:131` — unsupported UI text sizes now take the documented warning-and-fallback path in `UiFontSizes::select()`, but `cache_scene_glyphs()` still unconditionally expects every shaped `size_q6` to exist in the registry and panics otherwise.
+  Resolved 2026-03-24: accepted and fixed — replaced `.expect()` with a two-phase lookup: shared `select_by_q6()` check, then mutable borrow of either the registry entry or `self.font_collection` as fallback. This mirrors `UiFontMeasurer::collection_for_style()`'s graceful fallback. Logs a warning when the fallback path triggers so unregistered sizes are visible. Also removed `#[allow(dead_code)]` from `select_by_q6()` since it's now used in production.
+
+- [x] `[TPR-01-017][medium]` `oriterm/src/app/config_reload/mod.rs:345` — `apply_font_config()` assigns per-fallback metadata by config index instead of loaded fallback index, so a skipped user fallback shifts `size_offset` and feature overrides onto the wrong loaded font.
+  Resolved 2026-03-24: accepted and fixed — changed `prepend_user_fallbacks()` to return `Vec<usize>` mapping loaded index → config index. Replaced `user_fb_count: usize` with `fallback_map: &[usize]` throughout `apply_font_config`, `apply_font_config_to_ui_sizes`, `rebuild_ui_font_sizes`, and all callers. Per-fallback metadata loop now uses `fallback_map[loaded_idx]` to look up the correct config entry. Added regression test `apply_font_config_skipped_fallback_metadata_uses_correct_config_entry`.
+
+- [x] `[TPR-01-018][high]` `oriterm/src/app/config_reload/mod.rs:369` — codepoint-map face resolution still uses the raw config position rather than the loaded fallback position, so mappings can target the wrong fallback or a nonexistent face whenever any earlier user fallback failed to load.
+  Resolved 2026-03-24: accepted and fixed — codepoint-map resolution now finds the config index by family name, then looks up the loaded index via `fallback_map.iter().position(|&mi| mi == ci)`. Families not in the loaded map are logged and skipped. Added regression tests `apply_font_config_codepoint_map_skipped_fallback_resolves_correct_loaded_index` and `apply_font_config_codepoint_map_unloaded_family_skipped`.
+
+- [x] `[TPR-01-019][medium]` `oriterm/src/app/dialog_management.rs:343` — dialog UI renderers still derive subpixel-vs-alpha glyph format from the main-window opacity even though dialog windows are always created opaque.
+  Resolved 2026-03-24: accepted and fixed — `create_dialog_renderer()` now passes `1.0` to `resolve_subpixel_mode()` instead of `self.config.window.effective_opacity()`, matching the dialog surface's opaque contract. Comment documents the rationale.
+
+- [x] `[TPR-01-016][high]` `oriterm/src/font/ui_font_sizes/mod.rs:269` — DPI-triggered UI font-registry rebuilds still drop the user font config that Section 01 already fixed for startup and hot reload.
+  Resolved 2026-03-24: accepted and fixed — added `PostRebuildHook` (a `Box<dyn Fn(&mut FontCollection)>`) field to `UiFontSizes`. The hook captures font config and is invoked in `rebuild_all()`, `ensure_size()`, and `create_default_collection()`. All 4 creation sites (init, new-window, dialog, hot-reload) now call `apply_font_config_to_ui_sizes()` which both applies config and installs the hook. Three regression tests verify DPI rebuild, ensure_size, and create_default_collection all preserve features.
+
+- [x] `[TPR-01-015][high]` `oriterm/src/app/init/mod.rs:113` — startup, new-window, and UI-only dialog creation all build `UiFontSizes` without applying the user font config that the live terminal `FontCollection` receives.
+  Resolved 2026-03-24: accepted and fixed — all three creation paths (`init/mod.rs`, `window_management.rs`, `dialog_management.rs`) now call `apply_font_config()` on every collection in the `UiFontSizes` registry immediately after construction, matching the hot-reload path's behavior.
+
+- [x] `[TPR-01-013][medium]` [oriterm/src/font/ui_font_sizes/mod.rs](/home/eric/projects/ori_term/oriterm/src/font/ui_font_sizes/mod.rs#L151) - Section 01 still cannot create exact-size UI collections on first request, so non-preloaded widget sizes silently render from the fallback collection.
+  Resolved 2026-03-23: accepted. Chose option 2: narrowed the contract to preloaded sizes only. Audited all `font_size` / `TextStyle::new()` entry points across `oriterm_ui` — every production size (9.0, 9.5, 10.0, 11.0, 11.5, 12.0, 13.0, 16.0, 18.0) is in `PRELOAD_SIZES`. Updated doc comments on `PRELOAD_SIZES`, `UiFontSizes`, and `ensure_size()` to document that lazy creation does not happen at render time and that new sizes must be registered via `ensure_size()` in `&mut` contexts before creating the measurer.
+
+- [x] `[TPR-01-010][high]` [oriterm/src/font/ui_font_sizes/mod.rs](/home/eric/projects/ori_term/oriterm/src/font/ui_font_sizes/mod.rs#L145) - The exact-size registry still falls back to the default collection for live widget sizes that are not preloaded, so Section 01's "no nearest-size substitution remains" completion claim is false in the current tree.
+  Resolved 2026-03-23: accepted. Added 9.5 to `PRELOAD_SIZES` so color swatch index labels get an exact-size collection instead of falling back to the 13px default.
+
+- [x] `[TPR-01-011][medium]` [oriterm/src/gpu/window_renderer/helpers.rs](/home/eric/projects/ori_term/oriterm/src/gpu/window_renderer/helpers.rs#L372) - Section 01's UI font prewarm path seeds atlas entries under terminal-style keys, so the prewarmed glyphs cannot satisfy later UI text lookups.
+  Resolved 2026-03-23: accepted. Added `FontRealm` parameter to `pre_cache_atlas()`. Terminal callers pass `FontRealm::Terminal`, `prewarm_ui_font_sizes()` passes `FontRealm::Ui`. Keys now match between prewarm and live UI lookups.
+
+- [x] `[TPR-01-008][medium]` [oriterm/src/font/shaper/ui_measurer.rs](/home/eric/projects/ori_term/oriterm/src/font/shaper/ui_measurer.rs#L56) - The live UI measurer never exercises the registry's lazy-creation path, so Section 01 still falls back to the default 13px collection for any non-preloaded size instead of creating an exact-size collection.
+  Resolved 2026-03-23: accepted. Replaced `select_mut()` with `ensure_size()` for `&mut` contexts. Made `select()` log a warning on missing sizes. The `UiFontMeasurer` is `&self` (via `TextMeasurer` trait through `CachedTextMeasurer`) so interior mutability would require `RefCell` that can't return `&FontCollection` through a `Ref` guard. All current sizes are in `PRELOAD_SIZES`. The warning makes fallback explicit.
+
+- [x] `[TPR-01-009][low]` [oriterm/src/gpu/window_renderer/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/window_renderer/mod.rs#L1) - `WindowRenderer` still violates the repository's 500-line source-file limit after Section 01's claimed split.
+  Resolved 2026-03-23: accepted and fixed. Extracted `SurfaceError` into `window_renderer/error.rs` (re-exported). File is now 483 lines. Also cleaned decorative banners.
 
 - [x] `[TPR-01-001][high]` [plans/ui-css-framework/section-01-multi-size-fonts.md](/home/eric/projects/ori_term/plans/ui-css-framework/section-01-multi-size-fonts.md) - The original three-pool nearest-match design could not satisfy the section goal because it intentionally rendered several requested sizes from the wrong collection. Resolved: replaced with an exact-size registry plus lazy creation on 2026-03-23.
 
@@ -446,6 +479,16 @@ After implementation:
 - [x] `[TPR-01-003][medium]` [plans/ui-css-framework/section-01-multi-size-fonts.md](/home/eric/projects/ori_term/plans/ui-css-framework/section-01-multi-size-fonts.md) - The original prewarm subsection claimed atlas work happened on the font thread, but current atlas creation occurs in renderer/GPU init paths only. Resolved: updated the section to prewarm during renderer initialization on 2026-03-23.
 
 - [x] `[TPR-01-004][medium]` [oriterm_ui/src/text/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/text/mod.rs) - The plan inherited the codebase's misleading "size in points" wording even though widgets and the mockup use logical pixel sizes. Resolved: made the documentation correction an explicit task in Section 01 on 2026-03-23.
+
+- [x] `[TPR-01-005][high]` [oriterm/src/gpu/window_renderer/mod.rs](/home/eric/projects/ori_term/oriterm/src/gpu/window_renderer/mod.rs#L262) - The new `UiFontSizes` registry is still dead state in the live UI pipeline, so `TextStyle.size` remains ignored at runtime. Resolved 2026-03-23: accepted — this is exactly what subsections 01.2, 01.3, and 01.5 implement. No new tasks needed; the existing plan items wire the registry into the pipeline end-to-end.
+
+- [x] `[TPR-01-006][medium]` [plans/brutal-design-pass-2/section-01-appearance-tab.md](/home/eric/projects/ori_term/plans/brutal-design-pass-2/section-01-appearance-tab.md#L1) - The brutal-design pass was marked complete even though the typography dependency it relies on is still incomplete. Resolved 2026-03-23: accepted — added re-verification of settings dialog visual fidelity to 01.5 manual verification checklist. The brutal-design pass metadata stays as-is until 01.5 visual verification confirms or reopens specific claims.
+
+- [x] `[TPR-01-007][low]` [oriterm/src/font/ui_font_sizes/mod.rs](/home/eric/projects/ori_term/oriterm/src/font/ui_font_sizes/mod.rs#L98) - The new registry module introduces decorative banner comments that violate the repository hygiene rules. Resolved 2026-03-23: accepted and fixed — replaced `// ── X ──` decorative banners with plain `// X` section labels.
+
+- [x] `[TPR-01-012][low]` [oriterm_ui/src/theme/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/theme/mod.rs#L69) - Section 01 corrected `TextStyle.size` to logical pixels, but several public wrapper/theme APIs still document their font-size fields as points. Resolved 2026-03-23: accepted and fixed — updated doc comments on `UiTheme::{font_size,font_size_small,font_size_large}`, `LabelStyle.font_size`, `ButtonStyle.font_size`, `DropdownStyle.font_size`, `StatusBadgeStyle.font_size`, `SeparatorStyle.label_font_size`, and `TextInputStyle.font_size` from "points" to "logical pixels".
+
+- [x] `[TPR-01-014][high]` `oriterm/src/app/config_reload/mod.rs:140` — font config reload rebuilds only the terminal `FontCollection`, leaving the live `UiFontSizes` registry stale. Resolved 2026-03-23: accepted and fixed — `apply_font_changes()` now calls `rebuild_ui_font_sizes()` to construct a fresh `UiFontSizes` from the same `FontSet`/DPI/format/hinting/weight, applies user font config (features, fallback meta, codepoint mappings) to every collection, and calls `renderer.replace_ui_font_sizes()` before `replace_font_collection()`. Also enhanced `clear_and_recache()` to prewarm UI font atlases alongside terminal atlases on every atlas clear.
 
 ---
 

@@ -67,6 +67,10 @@ pub enum BoxContent {
 /// This is a pure data descriptor — no rendering, no trait objects.
 /// The layout solver reads the tree and produces [`super::LayoutNode`] output.
 #[derive(Debug, Clone, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "layout descriptor: each bool is a distinct layout/hit-test flag"
+)]
 pub struct LayoutBox {
     /// How width is determined.
     pub width: SizeSpec,
@@ -109,6 +113,12 @@ pub struct LayoutBox {
     /// instead of the container's available space. Used by scroll containers
     /// so content can grow beyond the viewport.
     pub overflow: bool,
+    /// Whether this subtree participates in pointer hit testing.
+    ///
+    /// When `false`, the entire subtree is invisible to pointer events
+    /// (hover, click, drag) but still participates in layout, paint, and
+    /// keyboard navigation. Analogous to CSS `pointer-events: none`.
+    pub pointer_events: bool,
 }
 
 impl LayoutBox {
@@ -135,6 +145,7 @@ impl LayoutBox {
             interact_radius: 0.0,
             content_offset: (0.0, 0.0),
             overflow: false,
+            pointer_events: true,
         }
     }
 
@@ -163,6 +174,7 @@ impl LayoutBox {
             interact_radius: 0.0,
             content_offset: (0.0, 0.0),
             overflow: false,
+            pointer_events: true,
         }
     }
 
@@ -192,6 +204,7 @@ impl LayoutBox {
             interact_radius: 0.0,
             content_offset: (0.0, 0.0),
             overflow: false,
+            pointer_events: true,
         }
     }
 
@@ -367,6 +380,42 @@ impl LayoutBox {
     #[must_use]
     pub fn with_overflow(mut self) -> Self {
         self.overflow = true;
+        self
+    }
+
+    /// Sets whether this subtree participates in pointer hit testing.
+    ///
+    /// When `false`, the subtree is invisible to hover, click, and drag
+    /// but still participates in layout, paint, and keyboard navigation.
+    #[must_use]
+    pub fn with_pointer_events(mut self, enabled: bool) -> Self {
+        self.pointer_events = enabled;
+        self
+    }
+
+    /// Returns a copy of this layout tree with all interaction metadata scrubbed.
+    ///
+    /// Recursively clears `widget_id` and sets `sense` to `Sense::none()` on
+    /// this node and all descendants. The resulting tree preserves sizing,
+    /// padding, flex/grid structure, and clipping — everything the layout solver
+    /// needs — but contributes no hit-testable widgets.
+    ///
+    /// Used by [`VisibilityWidget`](crate::widgets::modifiers::VisibilityWidget)
+    /// in `Hidden` mode: the child occupies space but is invisible to interaction.
+    #[must_use]
+    pub fn for_layout_only(mut self) -> Self {
+        self.widget_id = None;
+        self.sense = Sense::none();
+        match &mut self.content {
+            BoxContent::Leaf { .. } => {}
+            BoxContent::Flex { children, .. } | BoxContent::Grid { children, .. } => {
+                for child in children {
+                    // Take ownership, scrub, put back.
+                    let scrubbed = std::mem::replace(child, Self::leaf(0.0, 0.0)).for_layout_only();
+                    *child = scrubbed;
+                }
+            }
+        }
         self
     }
 }

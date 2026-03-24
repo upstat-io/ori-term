@@ -58,12 +58,23 @@ impl WindowRenderer {
         let uniform_buffer = UniformBuffer::new(device, &pipelines.uniform_layout);
 
         // Pre-cache atlases from the default-size collection in the registry.
-        let (atlas, subpixel_atlas, color_atlas) = {
+        let (mut atlas, mut subpixel_atlas, color_atlas) = {
             let default_fc = ui_font_sizes
                 .default_collection_mut()
                 .expect("UI font registry must have a default collection");
             super::helpers::create_atlases(device, queue, default_fc)
         };
+
+        // Pre-cache all preloaded UI font sizes (10px sidebar, 18px titles, etc.).
+        let t_ui = std::time::Instant::now();
+        super::helpers::prewarm_ui_font_sizes(
+            &mut ui_font_sizes,
+            &mut atlas,
+            &mut subpixel_atlas,
+            device,
+            queue,
+        );
+        log::info!("UI font prewarm (ui-only): {:?}", t_ui.elapsed());
 
         let atlas_bind_group = AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view());
         let subpixel_atlas_bind_group =

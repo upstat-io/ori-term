@@ -97,7 +97,7 @@ impl FormSection {
 
     /// Returns the header text style for the given theme.
     fn header_style(theme: &UiTheme) -> TextStyle {
-        TextStyle::new(theme.font_size, theme.fg_primary).with_weight(FontWeight::Bold)
+        TextStyle::new(theme.font_size, theme.fg_primary).with_weight(FontWeight::BOLD)
     }
 
     /// Returns the expand/collapse indicator.

@@ -6,7 +6,7 @@
 //! system are wired (later sections).
 #![allow(dead_code, reason = "scaffold — wired in tab hover preview section")]
 
-use oriterm_ui::draw::RectStyle;
+use oriterm_ui::draw::{BorderSides, RectStyle};
 use oriterm_ui::layout::LayoutBox;
 use oriterm_ui::sense::Sense;
 use oriterm_ui::widget_id::WidgetId;
@@ -81,7 +81,7 @@ impl Widget for TerminalPreviewWidget {
         // Placeholder: rounded rectangle frame with theme background.
         let style = RectStyle {
             fill: Some(ctx.theme.bg_secondary),
-            border: None,
+            border: BorderSides::default(),
             corner_radius: [CORNER_RADIUS; 4],
             shadow: None,
             gradient: None,

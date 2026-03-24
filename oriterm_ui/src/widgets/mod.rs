@@ -22,12 +22,14 @@ pub mod form_section;
 pub mod keybind;
 pub mod label;
 pub mod menu;
+pub mod modifiers;
 pub mod number_input;
 pub mod page_container;
 pub mod panel;
 pub mod rich_label;
 pub mod scheme_card;
 pub mod scroll;
+pub mod scrollbar;
 pub mod separator;
 pub mod setting_row;
 pub mod settings_panel;
@@ -42,7 +44,7 @@ pub mod toggle;
 pub mod window_chrome;
 
 use crate::animation::anim_frame::AnimFrameEvent;
-use crate::controllers::EventController;
+use crate::controllers::{ControllerRequests, EventController};
 use crate::hit_test_behavior::HitTestBehavior;
 use crate::interaction::LifecycleEvent;
 use crate::layout::LayoutBox;
@@ -67,6 +69,8 @@ pub struct OnInputResult {
     pub handled: bool,
     /// Semantic action emitted, if any.
     pub action: Option<WidgetAction>,
+    /// Framework requests (e.g. capture/release pointer).
+    pub requests: ControllerRequests,
 }
 
 impl OnInputResult {
@@ -75,6 +79,7 @@ impl OnInputResult {
         Self {
             handled: true,
             action: None,
+            requests: ControllerRequests::NONE,
         }
     }
 
@@ -83,6 +88,7 @@ impl OnInputResult {
         Self {
             handled: false,
             action: None,
+            requests: ControllerRequests::NONE,
         }
     }
 
@@ -90,6 +96,21 @@ impl OnInputResult {
     #[must_use]
     pub fn with_action(mut self, action: WidgetAction) -> Self {
         self.action = Some(action);
+        self
+    }
+
+    /// Requests pointer capture (the widget will receive `MouseMove`
+    /// and `MouseUp` even when the cursor is outside its bounds).
+    #[must_use]
+    pub fn with_capture(mut self) -> Self {
+        self.requests.insert(ControllerRequests::SET_ACTIVE);
+        self
+    }
+
+    /// Requests release of pointer capture.
+    #[must_use]
+    pub fn with_release(mut self) -> Self {
+        self.requests.insert(ControllerRequests::CLEAR_ACTIVE);
         self
     }
 }

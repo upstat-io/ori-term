@@ -1,6 +1,8 @@
 //! Tests for `CachedTextMeasurer` and `TextShapeCache`.
 
-use oriterm_ui::text::{FontWeight, ShapedText, TextMetrics, TextOverflow, TextStyle};
+use oriterm_ui::text::{
+    FontWeight, ShapedText, TextMetrics, TextOverflow, TextStyle, TextTransform,
+};
 use oriterm_ui::widgets::TextMeasurer;
 
 use super::{CachedTextMeasurer, TextCacheKey, TextShapeCache, float_to_hundredths};
@@ -18,7 +20,7 @@ impl TextMeasurer for DummyMeasurer {
     }
 
     fn shape(&self, text: &str, _style: &TextStyle, _max_width: f32) -> ShapedText {
-        ShapedText::new(vec![], text.len() as f32 * 8.0, 16.0, 12.0)
+        ShapedText::new(vec![], text.len() as f32 * 8.0, 16.0, 12.0, 0, 400)
     }
 }
 
@@ -56,7 +58,7 @@ fn different_size_different_key() {
 #[test]
 fn different_weight_different_key() {
     let s1 = TextStyle::new(12.0, oriterm_ui::color::Color::WHITE);
-    let s2 = TextStyle::new(12.0, oriterm_ui::color::Color::WHITE).with_weight(FontWeight::Bold);
+    let s2 = TextStyle::new(12.0, oriterm_ui::color::Color::WHITE).with_weight(FontWeight::BOLD);
     let k1 = TextCacheKey::new("hello", &s1, f32::INFINITY, 1.0);
     let k2 = TextCacheKey::new("hello", &s2, f32::INFINITY, 1.0);
     assert_ne!(k1, k2);
@@ -463,6 +465,30 @@ fn font_generation_change_clears_and_reprobes() {
 }
 
 #[test]
+fn different_text_transform_different_key() {
+    let s1 = TextStyle::new(12.0, oriterm_ui::color::Color::WHITE);
+    let s2 = TextStyle::new(12.0, oriterm_ui::color::Color::WHITE)
+        .with_text_transform(TextTransform::Uppercase);
+    let k1 = TextCacheKey::new("hello", &s1, f32::INFINITY, 1.0);
+    let k2 = TextCacheKey::new("hello", &s2, f32::INFINITY, 1.0);
+    assert_ne!(
+        k1, k2,
+        "different text_transform must produce different keys"
+    );
+}
+
+#[test]
+fn same_text_transform_same_key() {
+    let s1 = TextStyle::new(12.0, oriterm_ui::color::Color::WHITE)
+        .with_text_transform(TextTransform::Uppercase);
+    let s2 = TextStyle::new(12.0, oriterm_ui::color::Color::WHITE)
+        .with_text_transform(TextTransform::Uppercase);
+    let k1 = TextCacheKey::new("hello", &s1, f32::INFINITY, 1.0);
+    let k2 = TextCacheKey::new("hello", &s2, f32::INFINITY, 1.0);
+    assert_eq!(k1, k2);
+}
+
+#[test]
 fn dpi_change_produces_different_cache_keys() {
     let cache = TextShapeCache::new();
     let style = TextStyle::default();
@@ -485,4 +511,78 @@ fn dpi_change_produces_different_cache_keys() {
         "different scale should produce a cache miss",
     );
     assert_eq!(cache.stats().measure_hits, 0);
+}
+
+// Line height cache key tests
+
+#[test]
+fn cache_key_changes_when_line_height_differs() {
+    let s1 = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+    let s2 = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let k1 = TextCacheKey::new("hello", &s1, f32::INFINITY, 1.0);
+    let k2 = TextCacheKey::new("hello", &s2, f32::INFINITY, 1.0);
+    assert_ne!(k1, k2, "different line_height must produce different keys");
+}
+
+#[test]
+fn cache_key_same_when_line_height_same() {
+    let s1 = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+    let s2 = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+    let k1 = TextCacheKey::new("hello", &s1, f32::INFINITY, 1.0);
+    let k2 = TextCacheKey::new("hello", &s2, f32::INFINITY, 1.0);
+    assert_eq!(k1, k2);
+}
+
+#[test]
+fn cache_key_invalid_line_height_same_as_none() {
+    let base = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let k_none = TextCacheKey::new("hello", &base, f32::INFINITY, 1.0);
+
+    for invalid in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let mut s = base.clone();
+        s.line_height = Some(invalid);
+        let k = TextCacheKey::new("hello", &s, f32::INFINITY, 1.0);
+        assert_eq!(
+            k, k_none,
+            "invalid line_height {invalid} should produce same key as None"
+        );
+    }
+}
+
+#[test]
+fn cache_miss_when_line_height_changes() {
+    let cache = TextShapeCache::new();
+    let s1 = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let s2 = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+
+    let m = CachedTextMeasurer::new(DummyMeasurer, &cache, 1.0);
+    m.measure("text", &s1, f32::INFINITY);
+    cache.reset_stats();
+    m.measure("text", &s2, f32::INFINITY);
+    assert_eq!(
+        cache.stats().measure_misses,
+        1,
+        "different line_height must miss"
+    );
+}
+
+#[test]
+fn cache_hit_same_line_height_across_frames() {
+    let cache = TextShapeCache::new();
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+
+    // Frame 1: populate.
+    {
+        let m = CachedTextMeasurer::new(DummyMeasurer, &cache, 1.0);
+        m.measure("text", &style, f32::INFINITY);
+    }
+    cache.reset_stats();
+
+    // Frame 2: new measurer, same cache.
+    {
+        let m = CachedTextMeasurer::new(DummyMeasurer, &cache, 1.0);
+        m.measure("text", &style, f32::INFINITY);
+    }
+    assert_eq!(cache.stats().measure_hits, 1);
+    assert_eq!(cache.stats().measure_misses, 0);
 }

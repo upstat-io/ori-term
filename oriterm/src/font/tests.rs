@@ -316,3 +316,53 @@ fn subpx_round_trip() {
         );
     }
 }
+
+// ── RasterKey weight field ──
+
+use super::{FaceIdx, FontRealm, RasterKey, SyntheticFlags};
+
+#[test]
+fn raster_key_with_different_weight_not_equal() {
+    let k1 = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        weight: 400,
+        size_q6: 850,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Ui,
+    };
+    let k2 = RasterKey { weight: 700, ..k1 };
+    assert_ne!(k1, k2);
+}
+
+#[test]
+fn raster_key_terminal_weight_is_zero() {
+    let resolved = super::ResolvedGlyph {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
+    };
+    let key = RasterKey::from_resolved(resolved, 850, true, 0);
+    assert_eq!(key.weight, 0);
+    assert_eq!(key.font_realm, FontRealm::Terminal);
+}
+
+// ── FaceIdx::is_bold_primary ──
+
+#[test]
+fn face_idx_is_bold_primary() {
+    assert!(!FaceIdx(0).is_bold_primary(), "Regular is not bold");
+    assert!(FaceIdx(1).is_bold_primary(), "Bold is bold primary");
+    assert!(!FaceIdx(2).is_bold_primary(), "Italic is not bold");
+    assert!(FaceIdx(3).is_bold_primary(), "BoldItalic is bold primary");
+    assert!(
+        !FaceIdx(4).is_bold_primary(),
+        "fallback is not bold primary"
+    );
+    assert!(
+        !FaceIdx::BUILTIN.is_bold_primary(),
+        "builtin is not bold primary"
+    );
+}

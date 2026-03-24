@@ -18,6 +18,7 @@ pub(crate) mod render_target;
 pub(crate) mod scene_convert;
 pub(crate) mod state;
 pub(crate) mod transparency;
+pub(crate) mod ui_rect_writer;
 pub(crate) mod window_renderer;
 
 // Re-exports consumed by App and Window.

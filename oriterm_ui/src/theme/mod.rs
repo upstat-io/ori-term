@@ -73,11 +73,11 @@ pub struct UiTheme {
     pub corner_radius: f32,
     /// Default spacing/gap in logical pixels.
     pub spacing: f32,
-    /// Default font size in points.
+    /// Default font size in logical pixels.
     pub font_size: f32,
-    /// Small font size in points.
+    /// Small font size in logical pixels.
     pub font_size_small: f32,
-    /// Large font size in points.
+    /// Large font size in logical pixels.
     pub font_size_large: f32,
 }
 

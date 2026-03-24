@@ -14,7 +14,9 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use oriterm_ui::text::{FontWeight, ShapedText, TextMetrics, TextOverflow, TextStyle};
+use oriterm_ui::text::{
+    FontWeight, ShapedText, TextMetrics, TextOverflow, TextStyle, TextTransform,
+};
 use oriterm_ui::widgets::TextMeasurer;
 
 use super::ui_measurer::UiFontMeasurer;
@@ -40,6 +42,10 @@ struct TextCacheKey {
     scale_hundredths: u32,
     /// Letter spacing normalized to fixed-point.
     letter_spacing_hundredths: u32,
+    /// Case transformation — affects shaped output.
+    text_transform: TextTransform,
+    /// Line-height multiplier (normalized: invalid values map to `None`).
+    line_height_hundredths: Option<u32>,
 }
 
 impl TextCacheKey {
@@ -54,6 +60,8 @@ impl TextCacheKey {
             max_width_hundredths: float_to_hundredths(max_width),
             scale_hundredths: float_to_hundredths(scale),
             letter_spacing_hundredths: float_to_hundredths(style.letter_spacing),
+            text_transform: style.text_transform,
+            line_height_hundredths: style.normalized_line_height().map(float_to_hundredths),
         }
     }
 
@@ -71,6 +79,8 @@ impl TextCacheKey {
             max_width_hundredths: u32::MAX,
             scale_hundredths: float_to_hundredths(scale),
             letter_spacing_hundredths: float_to_hundredths(style.letter_spacing),
+            text_transform: style.text_transform,
+            line_height_hundredths: style.normalized_line_height().map(float_to_hundredths),
         }
     }
 }

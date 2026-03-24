@@ -244,16 +244,12 @@ pub(super) fn content_parent_map(
     surface_config: &wgpu::SurfaceConfiguration,
     ui_theme: &oriterm_ui::theme::UiTheme,
 ) -> std::collections::HashMap<oriterm_ui::widget_id::WidgetId, oriterm_ui::widget_id::WidgetId> {
-    use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+    use crate::font::CachedTextMeasurer;
     use oriterm_ui::interaction::build_parent_map;
     use oriterm_ui::layout::compute_layout;
     use oriterm_ui::widgets::LayoutCtx;
 
-    let m = CachedTextMeasurer::new(
-        UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-        text_cache,
-        scale,
-    );
+    let m = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
     let lctx = LayoutCtx {
         measurer: &m,
         theme: ui_theme,
@@ -291,7 +287,7 @@ pub(super) fn recompute_dialog_hot_path(
     surface_config: &wgpu::SurfaceConfiguration,
     ui_theme: &oriterm_ui::theme::UiTheme,
 ) {
-    use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+    use crate::font::CachedTextMeasurer;
     use oriterm_ui::input::layout_hit_test_path;
     use oriterm_ui::layout::compute_layout;
     use oriterm_ui::widgets::LayoutCtx;
@@ -304,11 +300,7 @@ pub(super) fn recompute_dialog_hot_path(
             root.clear_hot_path();
             return;
         };
-        let m = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            text_cache,
-            scale,
-        );
+        let m = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
         let w = surface_config.width as f32 / scale;
         let h = surface_config.height as f32 / scale;
         let vp = Rect::new(0.0, 0.0, w, h - chrome_h);

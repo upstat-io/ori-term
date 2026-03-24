@@ -13,7 +13,7 @@ use winit::window::WindowId;
 
 use crate::app::App;
 use crate::app::widget_pipeline::apply_dispatch_requests;
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+use crate::font::CachedTextMeasurer;
 
 use super::super::DialogWindowContext;
 use super::DialogClickResult;
@@ -30,11 +30,7 @@ pub(super) fn compute_content_layout(
     local_viewport: Rect,
 ) -> Option<std::rc::Rc<oriterm_ui::layout::LayoutNode>> {
     let renderer = ctx.renderer.as_ref()?;
-    let measurer = CachedTextMeasurer::new(
-        UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-        &ctx.text_cache,
-        scale,
-    );
+    let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
     let layout_ctx = LayoutCtx {
         measurer: &measurer,
         theme: ui_theme,
@@ -100,11 +96,7 @@ impl App {
         }
         let scale = ctx.scale_factor.factor() as f32;
         let renderer = ctx.renderer.as_ref()?;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
         let mouse_event = MouseEvent {
             kind,
             pos: ctx.last_cursor_pos,

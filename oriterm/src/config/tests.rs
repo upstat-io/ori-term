@@ -1580,7 +1580,7 @@ fn apply_font_config_sets_custom_features() {
         2
     );
 
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     // After: features replaced with dlig + -liga.
     let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
@@ -1609,7 +1609,7 @@ fn apply_font_config_empty_features_clears_defaults() {
     )
     .expect("collection must build");
 
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
     assert!(
@@ -1646,7 +1646,7 @@ fn apply_font_config_codepoint_map_invalid_range_skipped() {
     .expect("collection must build");
 
     // Should not panic — invalid range is logged and skipped.
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     // Collection should have no codepoint mappings.
     assert!(!collection.has_codepoint_mappings());
@@ -1676,7 +1676,7 @@ fn apply_font_config_codepoint_map_missing_family_skipped() {
     .expect("collection must build");
 
     // Should not panic — missing family is logged and skipped.
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     // No mappings added since the family wasn't found.
     assert!(!collection.has_codepoint_mappings());
@@ -1701,11 +1701,163 @@ fn apply_font_config_with_no_user_fallbacks() {
     .expect("collection must build");
 
     // Should not panic with zero user fallbacks.
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     // Default features should still be set (from config defaults: calt + liga).
     let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
     assert_eq!(features.len(), 2, "default config features are calt + liga");
+}
+
+/// Regression test for TPR-01-017: when the first configured fallback fails to
+/// load, per-fallback metadata must apply to the correct loaded font. With
+/// `fallback_map = [1]`, config entry 0 was skipped — metadata from config[1]
+/// should apply to loaded index 0, not config[0]'s metadata.
+#[test]
+fn apply_font_config_skipped_fallback_metadata_uses_correct_config_entry() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FaceIdx, FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    // Config entry 0: size_offset = -5.0 (this one "failed to load").
+    cfg.fallback.push(FallbackFontConfig {
+        family: "MissingFont".into(),
+        features: None,
+        size_offset: Some(-5.0),
+    });
+    // Config entry 1: size_offset = +3.0 (this one loaded as index 0).
+    cfg.fallback.push(FallbackFontConfig {
+        family: "LoadedFont".into(),
+        features: Some(vec!["dlig".into()]),
+        size_offset: Some(3.0),
+    });
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    let base_size = collection.effective_size(FaceIdx(4)); // First fallback.
+
+    // fallback_map: loaded[0] came from config[1] (entry 0 was skipped).
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[1]);
+
+    // Loaded index 0 should have config[1]'s +3.0 offset, not config[0]'s -5.0.
+    let adjusted = collection.effective_size(FaceIdx(4));
+    let expected = base_size + 3.0;
+    assert!(
+        (adjusted - expected).abs() < 0.01,
+        "loaded fallback 0 should have config[1]'s +3.0 offset (got {adjusted}, expected {expected})"
+    );
+
+    // Loaded index 0 should have config[1]'s dlig feature override.
+    let features = collection.features_for_face(FaceIdx(4));
+    assert_eq!(
+        features.len(),
+        1,
+        "loaded fallback 0 should have 1 feature from config[1], got {}",
+        features.len()
+    );
+}
+
+/// Regression test for TPR-01-018: codepoint-map resolution must use the
+/// loaded fallback index, not the config position. When config entry 0 failed
+/// to load, a family at config[1] is at loaded index 0.
+#[test]
+fn apply_font_config_codepoint_map_skipped_fallback_resolves_correct_loaded_index() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    // Config entry 0: missing font (skipped during loading).
+    cfg.fallback.push(FallbackFontConfig {
+        family: "MissingFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    // Config entry 1: loaded as index 0.
+    cfg.fallback.push(FallbackFontConfig {
+        family: "LoadedFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    // Codepoint map targets "LoadedFont" (config index 1, loaded index 0).
+    cfg.codepoint_map.push(CodepointMapConfig {
+        range: "E000-E0FF".into(),
+        family: "LoadedFont".into(),
+    });
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    // fallback_map: loaded[0] came from config[1].
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[1]);
+
+    // Should have a codepoint mapping (the family was found in fallback_map).
+    assert!(
+        collection.has_codepoint_mappings(),
+        "codepoint map should resolve LoadedFont via fallback_map[0]=config[1]"
+    );
+}
+
+/// Regression test for TPR-01-018: codepoint-map for a family that failed to
+/// load (not in fallback_map) must be skipped, not mapped to the wrong face.
+#[test]
+fn apply_font_config_codepoint_map_unloaded_family_skipped() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    // Config entry 0: "MissingFont" — failed to load.
+    cfg.fallback.push(FallbackFontConfig {
+        family: "MissingFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    // Config entry 1: "LoadedFont" — loaded as index 0.
+    cfg.fallback.push(FallbackFontConfig {
+        family: "LoadedFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    // Codepoint map targets "MissingFont" — should NOT be mapped.
+    cfg.codepoint_map.push(CodepointMapConfig {
+        range: "E000-E0FF".into(),
+        family: "MissingFont".into(),
+    });
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    // fallback_map: only config[1] loaded. Config[0] ("MissingFont") is absent.
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[1]);
+
+    // MissingFont is not in the loaded fallbacks — no mapping should be added.
+    assert!(
+        !collection.has_codepoint_mappings(),
+        "codepoint map for unloaded family should be skipped"
+    );
 }
 
 // ---------------------------------------------------------------------------

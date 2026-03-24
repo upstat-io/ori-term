@@ -4,16 +4,75 @@
 //! for non-grid UI text (labels, tab titles, overlays). These types are
 //! GPU-agnostic — shaping and rasterization live in the `oriterm` crate.
 
+use std::borrow::Cow;
+
 use crate::color::Color;
 
-/// Font weight for UI text.
+/// CSS-style text transformation applied before shaping.
+///
+/// Applied once in the shared text pipeline — widgets set this on
+/// [`TextStyle`] rather than mutating source strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum FontWeight {
-    /// Normal weight (CSS 400).
+pub enum TextTransform {
+    /// No transformation (default).
     #[default]
-    Regular,
-    /// Bold weight (CSS 700).
-    Bold,
+    None,
+    /// Convert all characters to uppercase (`text-transform: uppercase`).
+    Uppercase,
+    /// Convert all characters to lowercase (`text-transform: lowercase`).
+    Lowercase,
+}
+
+impl TextTransform {
+    /// Apply the transform to `text`, borrowing when no change is needed.
+    pub fn apply(self, text: &str) -> Cow<'_, str> {
+        match self {
+            Self::None => Cow::Borrowed(text),
+            Self::Uppercase => Cow::Owned(text.to_uppercase()),
+            Self::Lowercase => Cow::Owned(text.to_lowercase()),
+        }
+    }
+}
+
+/// Numeric font weight for UI text (CSS-style, 100–900).
+///
+/// Thin (100) through Black (900) in 100-step increments. Values outside
+/// 100–900 are clamped. Named constants match the CSS `font-weight` keywords.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FontWeight(u16);
+
+impl FontWeight {
+    pub const THIN: Self = Self(100);
+    pub const EXTRA_LIGHT: Self = Self(200);
+    pub const LIGHT: Self = Self(300);
+    pub const NORMAL: Self = Self(400);
+    pub const MEDIUM: Self = Self(500);
+    pub const SEMIBOLD: Self = Self(600);
+    pub const BOLD: Self = Self(700);
+    pub const EXTRA_BOLD: Self = Self(800);
+    pub const BLACK: Self = Self(900);
+
+    /// Create a font weight from a numeric value, clamped to 100–900.
+    pub const fn new(weight: u16) -> Self {
+        Self(if weight < 100 {
+            100
+        } else if weight > 900 {
+            900
+        } else {
+            weight
+        })
+    }
+
+    /// The numeric weight value (100–900).
+    pub const fn value(self) -> u16 {
+        self.0
+    }
+}
+
+impl Default for FontWeight {
+    fn default() -> Self {
+        Self::NORMAL
+    }
 }
 
 /// Horizontal text alignment within a bounding box.
@@ -48,7 +107,7 @@ pub enum TextOverflow {
 pub struct TextStyle {
     /// Font family name. `None` uses the default UI font.
     pub font_family: Option<String>,
-    /// Font size in points.
+    /// Font size in logical pixels (CSS-like: 13.0 = body, 18.0 = title).
     pub size: f32,
     /// Font weight.
     pub weight: FontWeight,
@@ -60,6 +119,14 @@ pub struct TextStyle {
     pub overflow: TextOverflow,
     /// Extra spacing between characters in pixels. `0.0` = normal.
     pub letter_spacing: f32,
+    /// Case transformation applied before shaping.
+    pub text_transform: TextTransform,
+    /// Line-height multiplier override (`size * multiplier` = line box height).
+    ///
+    /// `None` uses natural font metrics. `Some(1.5)` sets the line box height
+    /// to `size * 1.5`. Use [`normalized_line_height`](Self::normalized_line_height)
+    /// to filter invalid values.
+    pub line_height: Option<f32>,
 }
 
 impl Default for TextStyle {
@@ -67,11 +134,13 @@ impl Default for TextStyle {
         Self {
             font_family: None,
             size: 12.0,
-            weight: FontWeight::Regular,
+            weight: FontWeight::NORMAL,
             color: Color::WHITE,
             align: TextAlign::Left,
             overflow: TextOverflow::Clip,
             letter_spacing: 0.0,
+            text_transform: TextTransform::None,
+            line_height: None,
         }
     }
 }
@@ -83,11 +152,13 @@ impl TextStyle {
         Self {
             font_family: None,
             size,
-            weight: FontWeight::Regular,
+            weight: FontWeight::NORMAL,
             color,
             align: TextAlign::Left,
             overflow: TextOverflow::Clip,
             letter_spacing: 0.0,
+            text_transform: TextTransform::None,
+            line_height: None,
         }
     }
 
@@ -117,6 +188,28 @@ impl TextStyle {
     pub fn with_letter_spacing(mut self, spacing: f32) -> Self {
         self.letter_spacing = spacing;
         self
+    }
+
+    /// Set the text transform.
+    #[must_use]
+    pub fn with_text_transform(mut self, transform: TextTransform) -> Self {
+        self.text_transform = transform;
+        self
+    }
+
+    /// Set the line-height multiplier (e.g. `1.5` for 150% of font size).
+    #[must_use]
+    pub fn with_line_height(mut self, multiplier: f32) -> Self {
+        self.line_height = Some(multiplier);
+        self
+    }
+
+    /// Returns the line-height multiplier if valid (finite and positive), or `None`.
+    ///
+    /// Invalid overrides (`<= 0.0`, `NaN`, infinities) normalize to `None`,
+    /// falling back to natural font metrics.
+    pub fn normalized_line_height(&self) -> Option<f32> {
+        self.line_height.filter(|m| m.is_finite() && *m > 0.0)
     }
 }
 
@@ -157,16 +250,43 @@ pub struct ShapedText {
     pub height: f32,
     /// Baseline offset from the top of the text block in pixels.
     pub baseline: f32,
+    /// Font size in 26.6 fixed-point physical pixels.
+    ///
+    /// Stamped by the shaper from the `FontCollection` that produced this run.
+    /// Used by scene conversion to construct `RasterKey`s with the correct size,
+    /// enabling mixed-size text in one frame (e.g. 18px titles + 10px sidebar).
+    /// Test/mock code can pass `0`.
+    pub size_q6: u32,
+    /// Requested font weight (CSS numeric value, 100–900).
+    ///
+    /// Stamped by the shaper from the `TextStyle.weight` that produced this run.
+    /// Used by scene conversion to construct `RasterKey`s with the correct weight,
+    /// preventing atlas collisions between different weight requests.
+    /// Test/mock code can pass `400`.
+    pub weight: u16,
 }
 
 impl ShapedText {
     /// Create a shaped text block from pre-computed data.
-    pub fn new(glyphs: Vec<ShapedGlyph>, width: f32, height: f32, baseline: f32) -> Self {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "weight parameter added for CSS font-weight threading; grouping into a struct would obscure a simple data constructor"
+    )]
+    pub fn new(
+        glyphs: Vec<ShapedGlyph>,
+        width: f32,
+        height: f32,
+        baseline: f32,
+        size_q6: u32,
+        weight: u16,
+    ) -> Self {
         Self {
             glyphs,
             width,
             height,
             baseline,
+            size_q6,
+            weight,
         }
     }
 

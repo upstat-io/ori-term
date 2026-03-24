@@ -211,7 +211,7 @@ impl App {
         super::config_reload::apply_font_config(
             &mut font_collection,
             &self.config.font,
-            self.user_fb_count,
+            &self.user_fallback_map,
         );
 
         // UI font registry: exact-size collections for all UI text sizes.
@@ -225,6 +225,14 @@ impl App {
                 crate::font::ui_font_sizes::PRELOAD_SIZES,
             )
             .ok()
+            .map(|mut sizes| {
+                super::config_reload::apply_font_config_to_ui_sizes(
+                    &mut sizes,
+                    &self.config.font,
+                    &self.user_fallback_map,
+                );
+                sizes
+            })
         });
 
         Some(crate::gpu::WindowRenderer::new(

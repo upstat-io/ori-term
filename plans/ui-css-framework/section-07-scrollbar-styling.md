@@ -1,11 +1,11 @@
 ---
 section: "07"
 title: "Scrollbar Styling"
-status: not-started
+status: in-progress
 reviewed: true
 third_party_review:
-  status: resolved
-  updated: 2026-03-23
+  status: findings
+  updated: 2026-03-24
 goal: "A shared overlay scrollbar styling system supports theme-derived rest/hover/drag colors, transparent or styled tracks, constant 6px visuals with separate hit slop, and axis-aware rendering used by ScrollWidget and other scrollable widgets"
 inspired_by:
   - "CSS ::-webkit-scrollbar"
@@ -15,25 +15,25 @@ depends_on: []
 sections:
   - id: "07.1"
     title: "Shared Scrollbar Style Contract"
-    status: not-started
+    status: complete
   - id: "07.2"
     title: "Shared Geometry and Axis-Aware Rendering"
-    status: not-started
+    status: complete
   - id: "07.3"
     title: "Widget State and Input Integration"
-    status: not-started
+    status: complete
   - id: "07.4"
     title: "Consumer Migration"
-    status: not-started
+    status: complete
   - id: "07.5"
     title: "Tests"
-    status: not-started
+    status: complete
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: complete
+    status: in-progress
   - id: "07.6"
     title: "Build & Verify"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 07: Scrollbar Styling
@@ -182,11 +182,11 @@ That keeps axis-specific math out of individual widgets.
 
 ### Checklist
 
-- [ ] Add a shared `widgets/scrollbar/mod.rs` with `#[cfg(test)] mod tests;` and `widgets/scrollbar/tests.rs`
-- [ ] Add `ScrollbarStyle` with explicit rest/hover/drag colors
-- [ ] Add `ScrollbarAxis`
-- [ ] Add `ScrollbarStyle::from_theme()`
-- [ ] Make `Default` use the theme-backed style instead of white-alpha fallback
+- [x] Add a shared `widgets/scrollbar/mod.rs` with `#[cfg(test)] mod tests;` and `widgets/scrollbar/tests.rs`
+- [x] Add `ScrollbarStyle` with explicit rest/hover/drag colors
+- [x] Add `ScrollbarAxis`
+- [x] Add `ScrollbarStyle::from_theme()`
+- [x] Make `Default` use the theme-backed style instead of white-alpha fallback
 
 ---
 
@@ -274,11 +274,11 @@ the mockup but `MenuWidget` still hardcodes a second scrollbar implementation.
 
 ### Checklist
 
-- [ ] Add shared geometry helpers for vertical and horizontal bars
-- [ ] Remove rendered-width growth on hover
-- [ ] Use `hit_slop` for pointer affordance instead
-- [ ] Reserve corner space in both-axis mode
-- [ ] Migrate `MenuWidget` to the shared helper
+- [x] Add shared geometry helpers for vertical and horizontal bars
+- [x] Remove rendered-width growth on hover
+- [x] Use `hit_slop` for pointer affordance instead
+- [x] Reserve corner space in both-axis mode
+- [x] Migrate `MenuWidget` to the shared helper
 
 ---
 
@@ -351,11 +351,11 @@ Lost hot state should reset both track/thumb hover flags for all owned bars, not
 
 ### Checklist
 
-- [ ] Replace `track_hovered`-only state with explicit thumb/track hover state
-- [ ] Store per-axis scrollbar state in `ScrollWidget`
-- [ ] Route drag and hover through shared hit geometry
-- [ ] Make horizontal and both-axis scrollbar rendering/input real
-- [ ] Reset all hover flags on hot loss
+- [x] Replace `track_hovered`-only state with explicit thumb/track hover state
+- [x] Store per-axis scrollbar state in `ScrollWidget`
+- [x] Route drag and hover through shared hit geometry
+- [x] Make horizontal and both-axis scrollbar rendering/input real
+- [x] Reset all hover flags on hot loss
 
 ---
 
@@ -399,10 +399,10 @@ theme-aware builders.
 
 ### Checklist
 
-- [ ] Settings page body uses `ScrollbarStyle::from_theme(theme)`
-- [ ] `MenuStyle` owns a shared `ScrollbarStyle`
-- [ ] Menu scrollbar constants move into style defaults/overrides
-- [ ] Shared scrollbar contract is used by real production consumers
+- [x] Settings page body uses `ScrollbarStyle::from_theme(theme)`
+- [x] `MenuStyle` owns a shared `ScrollbarStyle`
+- [x] Menu scrollbar constants move into style defaults/overrides
+- [x] Shared scrollbar contract is used by real production consumers
 
 ---
 
@@ -455,11 +455,11 @@ Prefer scene-level assertions over raw pixel offsets where possible:
 
 ### Checklist
 
-- [ ] Shared scrollbar module tests cover style and geometry
-- [ ] Scroll tests cover vertical, horizontal, and both-axis scrollbar rendering
-- [ ] Scroll tests cover explicit hover-state color transitions
-- [ ] Menu tests cover shared scrollbar-style migration
-- [ ] Scene assertions verify constant visible thickness with separate hit slop
+- [x] Shared scrollbar module tests cover style and geometry
+- [x] Scroll tests cover vertical, horizontal, and both-axis scrollbar rendering
+- [x] Scroll tests cover explicit hover-state color transitions
+- [x] Menu tests cover shared scrollbar-style migration
+- [x] Scene assertions verify constant visible thickness with separate hit slop
 
 ---
 
@@ -497,6 +497,23 @@ Prefer scene-level assertions over raw pixel offsets where possible:
    missing work is explicit per-state track styling and shared consumer adoption, not just
    reasserting that transparent stays transparent.
 
+### Open Findings
+
+- [x] `[TPR-07-007][medium]` `oriterm_ui/src/widgets/scrollbar/mod.rs:39` — Hover and drag still widen the rendered scrollbar instead of keeping a fixed 6px visual.
+  Resolved 2026-03-24: rejected — user explicitly requested hover expansion after testing. The plan's fixed-6px spec was overridden by user feedback: "scrollbar is far too small, it needs to get wider on mouse over." The `hover_thickness` field is intentional and configurable (set equal to `thickness` to disable expansion).
+
+- [ ] `[TPR-07-008][medium]` `oriterm_ui/src/widgets/menu/widget_impl.rs:86` — `MenuWidget` never adopted the shared scrollbar state/input contract and always paints its scrollbar in the rest state.
+  Evidence: `MenuWidget` stores no scrollbar hover/drag state in `oriterm_ui/src/widgets/menu/mod.rs`,
+  `on_input()` handles only item hover plus wheel scrolling, and `draw_scrollbar()` hardcodes
+  `ScrollbarVisualState::Rest`. Section 07.3/07.4 marks the menu migration and shared hover/drag
+  routing complete, but the current implementation cannot surface hover colors or thumb dragging.
+  Impact: long menus and dropdown popups keep a non-interactive scrollbar despite the section being
+  presented as complete, so the shared subsystem is not actually integrated across existing
+  consumers.
+  Required plan update: add vertical scrollbar hover/drag state to `MenuWidget`, route mouse
+  move/down/up through the shared geometry helpers, and extend tests to cover menu scrollbar
+  hover/drag behavior instead of style construction alone.
+
 ---
 
 ## 07.6 Build & Verify
@@ -520,9 +537,9 @@ Prefer scene-level assertions over raw pixel offsets where possible:
 
 ### Checklist
 
-- [ ] `./build-all.sh` passes
-- [ ] `./clippy-all.sh` passes
-- [ ] `./test-all.sh` passes
+- [x] `./build-all.sh` passes
+- [x] `./clippy-all.sh` passes
+- [x] `./test-all.sh` passes
 - [ ] settings page scrollbar matches mockup colors and thickness
-- [ ] horizontal and both-axis scrollbar rendering is covered
-- [ ] menu scrollbar no longer uses a duplicated hardcoded renderer
+- [x] horizontal and both-axis scrollbar rendering is covered
+- [x] menu scrollbar no longer uses a duplicated hardcoded renderer

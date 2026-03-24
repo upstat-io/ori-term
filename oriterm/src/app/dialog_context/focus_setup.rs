@@ -10,7 +10,7 @@ use oriterm_ui::widgets::LayoutCtx;
 use winit::window::WindowId;
 
 use crate::app::widget_pipeline::collect_focusable_ids;
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+use crate::font::CachedTextMeasurer;
 
 use crate::app::App;
 
@@ -29,11 +29,7 @@ impl App {
             return;
         };
         let scale = ctx.scale_factor.factor() as f32;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
 
         // Register all widgets (chrome + content) with InteractionManager.
         // WidgetAdded events stay pending and are delivered on the first

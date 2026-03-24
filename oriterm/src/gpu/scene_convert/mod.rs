@@ -3,7 +3,7 @@
 //! Entry point: [`convert_scene`] — iterates typed Scene arrays directly.
 //!
 //! Each primitive becomes one or more instance buffer records:
-//! - Quad/line → [`push_ui_rect`](super::instance_writer::InstanceWriter::push_ui_rect)
+//! - Quad/line → [`UiRectWriter::push_ui_rect`](super::ui_rect_writer::UiRectWriter::push_ui_rect)
 //! - Text → [`push_glyph`](super::instance_writer::InstanceWriter::push_glyph) per shaped glyph
 //! - Icon → [`push_glyph`](super::instance_writer::InstanceWriter::push_glyph) (mono atlas)
 //!
@@ -23,6 +23,7 @@ use oriterm_ui::geometry::{Point, Rect};
 use super::instance_writer::{InstanceWriter, ScreenRect};
 use super::prepare::AtlasLookup;
 use super::srgb_f32_to_linear;
+use super::ui_rect_writer::UiRectWriter;
 
 /// Context for converting text primitives into glyph instances.
 ///
@@ -38,8 +39,6 @@ pub struct TextContext<'a> {
     pub subpixel_writer: &'a mut InstanceWriter,
     /// Output writer for color atlas glyphs (emoji, bitmap).
     pub color_writer: &'a mut InstanceWriter,
-    /// Font size in 26.6 fixed-point for [`RasterKey`] construction.
-    pub size_q6: u32,
     /// Whether hinting is enabled for [`RasterKey`] construction.
     pub hinted: bool,
 }
@@ -56,27 +55,31 @@ pub struct TextContext<'a> {
 /// for `text_ctx` to skip text/icon rendering.
 pub fn convert_scene(
     scene: &Scene,
-    ui_writer: &mut InstanceWriter,
+    ui_writer: &mut UiRectWriter,
     text_ctx: Option<&mut TextContext<'_>>,
     scale: f32,
     opacity: f32,
 ) {
     for quad in scene.quads() {
         let clip = clip_from_mask(&quad.content_mask, scale);
-        convert_quad(quad, ui_writer, scale, opacity, clip);
+        let eff = opacity * quad.content_mask.opacity;
+        convert_quad(quad, ui_writer, scale, eff, clip);
     }
     for line in scene.lines() {
         let clip = clip_from_mask(&line.content_mask, scale);
-        convert_scene_line(line, ui_writer, scale, opacity, clip);
+        let eff = opacity * line.content_mask.opacity;
+        convert_scene_line(line, ui_writer, scale, eff, clip);
     }
     if let Some(ctx) = text_ctx {
         for text in scene.text_runs() {
             let clip = clip_from_mask(&text.content_mask, scale);
-            convert_scene_text(text, ctx, scale, opacity, clip);
+            let eff = opacity * text.content_mask.opacity;
+            convert_scene_text(text, ctx, scale, eff, clip);
         }
         for icon in scene.icons() {
             let clip = clip_from_mask(&icon.content_mask, scale);
-            convert_scene_icon(icon, ctx, scale, opacity, clip);
+            let eff = opacity * icon.content_mask.opacity;
+            convert_scene_icon(icon, ctx, scale, eff, clip);
         }
     }
 }
@@ -95,20 +98,14 @@ fn clip_from_mask(cm: &ContentMask, scale: f32) -> [f32; 4] {
 ///
 /// Positions are in logical pixels (already offset-resolved by Scene).
 /// The `clip` array is in physical pixels (pre-scaled by `clip_from_mask`).
-fn convert_quad(
-    quad: &Quad,
-    writer: &mut InstanceWriter,
-    scale: f32,
-    opacity: f32,
-    clip: [f32; 4],
-) {
+fn convert_quad(quad: &Quad, writer: &mut UiRectWriter, scale: f32, opacity: f32, clip: [f32; 4]) {
     convert_rect_clipped(quad.bounds, &quad.style, writer, scale, opacity, clip);
 }
 
 /// Convert a Scene [`LinePrimitive`] to GPU rect instances with clip.
 fn convert_scene_line(
     line: &LinePrimitive,
-    writer: &mut InstanceWriter,
+    writer: &mut UiRectWriter,
     scale: f32,
     opacity: f32,
     clip: [f32; 4],
@@ -159,6 +156,8 @@ fn convert_scene_icon(
 }
 
 /// Convert a styled rect to one or two UI rect instances with a per-instance clip.
+///
+/// Populates the full 144-byte per-side border format.
 #[expect(
     clippy::too_many_arguments,
     reason = "rect conversion: bounds, style, output, scale, opacity, clip"
@@ -166,7 +165,7 @@ fn convert_scene_icon(
 fn convert_rect_clipped(
     rect: Rect,
     style: &RectStyle,
-    writer: &mut InstanceWriter,
+    writer: &mut UiRectWriter,
     scale: f32,
     opacity: f32,
     clip: [f32; 4],
@@ -188,28 +187,59 @@ fn convert_rect_clipped(
             w: rect.width() + expand * 2.0,
             h: rect.height() + expand * 2.0,
         };
+        // Shadow: per-corner expanded radii, no border.
+        let shadow_radii = [
+            (style.corner_radius[0] + expand) * scale,
+            (style.corner_radius[1] + expand) * scale,
+            (style.corner_radius[2] + expand) * scale,
+            (style.corner_radius[3] + expand) * scale,
+        ];
         writer.push_ui_rect(
             shadow_rect.scaled(scale),
             color_to_linear_with_opacity(shadow.color, opacity),
             [0.0; 4],
-            (uniform_radius(&style.corner_radius) + expand) * scale,
-            0.0,
+            shadow_radii,
+            [[0.0; 4]; 4],
             clip,
         );
     }
 
-    // Main rect instance.
+    // Main rect instance with full per-side border data.
     let screen = to_screen_rect(rect).scaled(scale);
-    let (border_color, border_width) = style.border.map_or(([0.0; 4], 0.0), |b| {
-        (color_to_linear_with_opacity(b.color, opacity), b.width)
-    });
+    let fill_linear = color_to_linear_with_opacity(fill, opacity);
+
+    // Border widths scaled to physical pixels.
+    let widths = style.border.widths();
+    let border_widths = [
+        widths[0] * scale,
+        widths[1] * scale,
+        widths[2] * scale,
+        widths[3] * scale,
+    ];
+
+    // Corner radii scaled to physical pixels.
+    let corner_radii = [
+        style.corner_radius[0] * scale,
+        style.corner_radius[1] * scale,
+        style.corner_radius[2] * scale,
+        style.corner_radius[3] * scale,
+    ];
+
+    // Per-side border colors converted to linear.
+    let colors = style.border.colors();
+    let border_colors = [
+        color_to_linear_with_opacity(colors[0], opacity),
+        color_to_linear_with_opacity(colors[1], opacity),
+        color_to_linear_with_opacity(colors[2], opacity),
+        color_to_linear_with_opacity(colors[3], opacity),
+    ];
 
     writer.push_ui_rect(
         screen,
-        color_to_linear_with_opacity(fill, opacity),
-        border_color,
-        uniform_radius(&style.corner_radius) * scale,
-        border_width * scale,
+        fill_linear,
+        border_widths,
+        corner_radii,
+        border_colors,
         clip,
     );
 }
@@ -229,7 +259,7 @@ fn convert_line_clipped(
     to: Point,
     width: f32,
     color: Color,
-    writer: &mut InstanceWriter,
+    writer: &mut UiRectWriter,
     scale: f32,
     opacity: f32,
     clip: [f32; 4],
@@ -243,6 +273,11 @@ fn convert_line_clipped(
 
     let fill = color_to_linear_with_opacity(color, opacity);
     let hw = width * 0.5;
+
+    // Lines have no border — zero widths and transparent colors.
+    let no_bw = [0.0; 4];
+    let no_cr = [0.0; 4];
+    let no_bc = [[0.0; 4]; 4];
 
     // Axis-aligned fast paths: single rect.
     if dx.abs() < f32::EPSILON {
@@ -259,7 +294,7 @@ fn convert_line_clipped(
             h: max_y - min_y,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, [0.0; 4], 0.0, 0.0, clip);
+        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
         return;
     }
     if dy.abs() < f32::EPSILON {
@@ -276,7 +311,7 @@ fn convert_line_clipped(
             h: width,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, [0.0; 4], 0.0, 0.0, clip);
+        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
         return;
     }
 
@@ -298,7 +333,7 @@ fn convert_line_clipped(
             h: width,
         }
         .scaled(scale);
-        writer.push_ui_rect(rect, fill, [0.0; 4], 0.0, 0.0, clip);
+        writer.push_ui_rect(rect, fill, no_bw, no_cr, no_bc, clip);
     }
 }
 
@@ -326,15 +361,6 @@ fn color_to_linear_with_opacity(c: Color, opacity: f32) -> [f32; 4] {
         srgb_f32_to_linear(c.b),
         c.a * opacity,
     ]
-}
-
-/// Pick a uniform radius from the per-corner array.
-///
-/// The SDF shader currently supports a single radius value. When per-corner
-/// radii differ, use the maximum (visually reasonable until a 4-corner SDF
-/// is implemented).
-fn uniform_radius(radii: &[f32; 4]) -> f32 {
-    radii[0].max(radii[1]).max(radii[2]).max(radii[3])
 }
 
 #[cfg(test)]

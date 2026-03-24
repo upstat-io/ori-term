@@ -13,17 +13,23 @@ use super::{FontError, GlyphFormat, HintingMode};
 /// Default logical pixel size for body text (CSS `font-size: 13px`).
 const DEFAULT_LOGICAL_SIZE: f32 = 13.0;
 
+/// Hook called on each [`FontCollection`] after construction or rebuild.
+type PostRebuildHook = Box<dyn Fn(&mut FontCollection)>;
+
 /// Standard preloaded logical pixel sizes used by the settings UI.
 ///
 /// Created eagerly at registry construction to avoid first-frame hitches.
-/// Any other size is created lazily on first request.
-pub(crate) const PRELOAD_SIZES: &[f32] = &[9.0, 10.0, 11.0, 11.5, 12.0, 13.0, 16.0, 18.0];
+/// All widget-used sizes must be listed here — the registry does not create
+/// collections lazily at render time (the measurer has `&self` access only).
+/// Use [`UiFontSizes::ensure_size`] in `&mut` contexts to register additional
+/// sizes before creating an immutable measurer.
+pub(crate) const PRELOAD_SIZES: &[f32] = &[9.0, 9.5, 10.0, 11.0, 11.5, 12.0, 13.0, 16.0, 18.0];
 
 /// Exact-size UI font collection registry.
 ///
 /// Stores one [`FontCollection`] per requested logical size, keyed by the
 /// physical `size_q6` (26.6 fixed-point of physical pixel size). Collections
-/// are created eagerly for common sizes and lazily for uncommon sizes.
+/// are created eagerly for all sizes in [`PRELOAD_SIZES`] at construction.
 pub(crate) struct UiFontSizes {
     font_set: FontSet,
     dpi: f32,
@@ -39,6 +45,12 @@ pub(crate) struct UiFontSizes {
     logical_sizes: Vec<f32>,
     /// The `size_q6` key for the default body text collection (13px logical).
     default_q6: u32,
+    /// Applied to each collection after rebuild (DPI change, `ensure_size`).
+    ///
+    /// Captures font config state (features, fallback metadata, codepoint
+    /// mappings) so that [`rebuild_all`] preserves user font configuration
+    /// across monitor DPI changes.
+    post_rebuild_hook: Option<PostRebuildHook>,
 }
 
 impl UiFontSizes {
@@ -92,10 +104,11 @@ impl UiFontSizes {
             collections,
             logical_sizes,
             default_q6,
+            post_rebuild_hook: None,
         })
     }
 
-    // ── Accessors ──
+    // Accessors
 
     /// The default body text collection (13px logical).
     pub(crate) fn default_collection(&self) -> Option<&FontCollection> {
@@ -105,6 +118,11 @@ impl UiFontSizes {
     /// Mutable access to the default body text collection.
     pub(crate) fn default_collection_mut(&mut self) -> Option<&mut FontCollection> {
         self.collections.get_mut(&self.default_q6)
+    }
+
+    /// Iterate over all collections in the registry.
+    pub(crate) fn collections_mut(&mut self) -> impl Iterator<Item = &mut FontCollection> {
+        self.collections.values_mut()
     }
 
     /// The `size_q6` key for the default body text collection.
@@ -127,40 +145,58 @@ impl UiFontSizes {
         self.format
     }
 
+    /// Set a hook applied to each collection after rebuild.
+    ///
+    /// Used to reapply font config (features, fallback metadata, codepoint
+    /// mappings) after DPI-triggered rebuilds or `ensure_size` additions.
+    pub(crate) fn set_post_rebuild_hook(&mut self, hook: PostRebuildHook) {
+        self.post_rebuild_hook = Some(hook);
+    }
+
     /// Number of collections in the registry.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.collections.len()
     }
 
-    // ── Size selection ──
+    // Size selection
 
     /// Select a collection by logical pixel size and scale factor.
     ///
     /// Returns `None` if no collection exists for this exact physical size.
-    /// Use [`select_mut`](Self::select_mut) to lazily create missing sizes.
-    #[allow(dead_code, reason = "used in 01.2 UiFontMeasurer size-aware shaping")]
+    /// All widget-used sizes must be in [`PRELOAD_SIZES`] — a missing size
+    /// is a configuration error (the caller falls back to the default
+    /// collection, but text renders at the wrong size).
     pub(crate) fn select(&self, logical_size: f32, scale: f32) -> Option<&FontCollection> {
         let physical_px = logical_size * scale;
         let q6 = size_key(physical_px);
-        self.collections.get(&q6)
+        let result = self.collections.get(&q6);
+        if result.is_none() {
+            log::warn!(
+                "UiFontSizes: no collection for {logical_size}px \
+                 (physical {physical_px:.1}px, q6={q6}). \
+                 Add this size to PRELOAD_SIZES to avoid fallback."
+            );
+        }
+        result
     }
 
-    /// Select or lazily create a collection for the given logical size.
+    /// Register a collection for a logical size not in [`PRELOAD_SIZES`].
     ///
-    /// If no collection exists at this physical size, creates one and
-    /// retains it for future use.
-    #[allow(dead_code, reason = "used in 01.2 UiFontMeasurer size-aware shaping")]
-    pub(crate) fn select_mut(
-        &mut self,
-        logical_size: f32,
-        scale: f32,
-    ) -> Result<&mut FontCollection, FontError> {
+    /// Call this from `&mut self` contexts (e.g. font config changes, DPI
+    /// updates, settings UI adding a new size option) before creating an
+    /// immutable `UiFontMeasurer`. The measurer has `&self` access only and
+    /// cannot create collections at render time.
+    #[allow(
+        dead_code,
+        reason = "public API for runtime size registration; exercised in tests"
+    )]
+    pub(crate) fn ensure_size(&mut self, logical_size: f32, scale: f32) -> Result<(), FontError> {
         let physical_px = logical_size * scale;
         let q6 = size_key(physical_px);
         if !self.collections.contains_key(&q6) {
             let size_pt = logical_to_pt(logical_size);
-            let fc = FontCollection::new(
+            let mut fc = FontCollection::new(
                 self.font_set.clone(),
                 size_pt,
                 self.dpi,
@@ -168,28 +204,26 @@ impl UiFontSizes {
                 self.weight,
                 self.hinting,
             )?;
+            if let Some(ref hook) = self.post_rebuild_hook {
+                hook(&mut fc);
+            }
             self.collections.insert(q6, fc);
             self.logical_sizes.push(logical_size);
         }
-        Ok(self
-            .collections
-            .get_mut(&q6)
-            .expect("just inserted or exists"))
+        Ok(())
     }
 
     /// Look up a collection by its physical `size_q6` key.
-    #[allow(dead_code, reason = "used in 01.3 scene conversion size threading")]
     pub(crate) fn select_by_q6(&self, size_q6: u32) -> Option<&FontCollection> {
         self.collections.get(&size_q6)
     }
 
     /// Mutable lookup by physical `size_q6` key.
-    #[allow(dead_code, reason = "used in 01.3 scene conversion size threading")]
     pub(crate) fn select_by_q6_mut(&mut self, size_q6: u32) -> Option<&mut FontCollection> {
         self.collections.get_mut(&size_q6)
     }
 
-    // ── Configuration changes ──
+    // Configuration changes
 
     /// Rebuild all collections at a new DPI (e.g. after scale factor change).
     ///
@@ -234,22 +268,29 @@ impl UiFontSizes {
     /// Create a standalone [`FontCollection`] at the default body text size.
     ///
     /// Used by [`WindowRenderer::new_ui_only`] which needs a `FontCollection`
-    /// in the terminal font slot for atlas seeding.
+    /// in the terminal font slot for atlas seeding. Applies the post-rebuild
+    /// hook so the returned collection has font config applied.
     pub(crate) fn create_default_collection(&self) -> Result<FontCollection, FontError> {
         let size_pt = logical_to_pt(DEFAULT_LOGICAL_SIZE);
-        FontCollection::new(
+        let mut fc = FontCollection::new(
             self.font_set.clone(),
             size_pt,
             self.dpi,
             self.format,
             self.weight,
             self.hinting,
-        )
+        )?;
+        if let Some(ref hook) = self.post_rebuild_hook {
+            hook(&mut fc);
+        }
+        Ok(fc)
     }
 
-    // ── Internals ──
+    // Internals
 
     /// Rebuild all collections from scratch after a DPI change.
+    ///
+    /// Reapplies the post-rebuild hook (font config) to each new collection.
     fn rebuild_all(&mut self) -> Result<(), FontError> {
         self.collections.clear();
         let logical_sizes = std::mem::take(&mut self.logical_sizes);
@@ -257,7 +298,7 @@ impl UiFontSizes {
 
         for &logical_px in &logical_sizes {
             let size_pt = logical_to_pt(logical_px);
-            let fc = FontCollection::new(
+            let mut fc = FontCollection::new(
                 self.font_set.clone(),
                 size_pt,
                 self.dpi,
@@ -265,6 +306,9 @@ impl UiFontSizes {
                 self.weight,
                 self.hinting,
             )?;
+            if let Some(ref hook) = self.post_rebuild_hook {
+                hook(&mut fc);
+            }
             let q6 = size_key(fc.size_px());
             if (logical_px - DEFAULT_LOGICAL_SIZE).abs() < 0.01 {
                 new_default_q6 = q6;

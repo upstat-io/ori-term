@@ -85,7 +85,7 @@ impl App {
                         return;
                     };
                     let measurer = crate::font::CachedTextMeasurer::new(
-                        crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                        renderer.ui_measurer(scale),
                         &ctx.text_cache,
                         scale,
                     );

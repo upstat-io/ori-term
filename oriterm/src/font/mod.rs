@@ -287,6 +287,13 @@ impl FaceIdx {
         Self(idx as u16 + Self::PRIMARY_COUNT)
     }
 
+    /// Whether this is the Bold (1) or `BoldItalic` (3) primary face slot.
+    ///
+    /// These faces are inherently bold — adding synthetic bold would double-embolden.
+    pub fn is_bold_primary(self) -> bool {
+        self.0 == 1 || self.0 == 3
+    }
+
     /// Whether this index refers to a fallback font (index >= `PRIMARY_COUNT`).
     pub fn is_fallback(self) -> bool {
         self.0 >= Self::PRIMARY_COUNT && self != Self::BUILTIN
@@ -338,6 +345,12 @@ pub struct RasterKey {
     pub glyph_id: u16,
     /// Which font face this glyph belongs to.
     pub face_idx: FaceIdx,
+    /// Requested font weight for UI text (CSS 100–900).
+    ///
+    /// Terminal grid text always uses `0` (weight is implicit in the face slot).
+    /// UI text carries the requested weight so different weight requests produce
+    /// distinct atlas entries.
+    pub weight: u16,
     /// Size in 26.6 fixed-point: `(size_px * 64.0).round() as u32`.
     pub size_q6: u32,
     /// Synthetic transformations applied at rasterization time.
@@ -359,6 +372,7 @@ impl RasterKey {
         Self {
             glyph_id: resolved.glyph_id,
             face_idx: resolved.face_idx,
+            weight: 0,
             size_q6,
             synthetic: resolved.synthetic,
             hinted,
@@ -369,7 +383,6 @@ impl RasterKey {
 
     /// Return a copy with the given font realm.
     #[must_use]
-    #[allow(dead_code, reason = "convenience builder for future callers")]
     pub fn with_realm(mut self, realm: FontRealm) -> Self {
         self.font_realm = realm;
         self

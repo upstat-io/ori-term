@@ -31,27 +31,32 @@ impl MockMeasurer {
 }
 
 impl TextMeasurer for MockMeasurer {
-    fn measure(&self, text: &str, _style: &TextStyle, max_width: f32) -> TextMetrics {
-        let full_width = self.char_width * text.len() as f32;
+    fn measure(&self, text: &str, style: &TextStyle, max_width: f32) -> TextMetrics {
+        let transformed = style.text_transform.apply(text);
+        let full_width = self.char_width * transformed.chars().count() as f32;
+        let effective_height = match style.normalized_line_height() {
+            Some(multiplier) => style.size * multiplier,
+            None => self.line_height,
+        };
         if max_width.is_finite() && full_width > max_width {
-            // Simple wrapping: number of lines = ceil(full_width / max_width).
             let line_count = (full_width / max_width).ceil() as u32;
             TextMetrics {
                 width: max_width,
-                height: self.line_height * line_count as f32,
+                height: effective_height * line_count as f32,
                 line_count,
             }
         } else {
             TextMetrics {
                 width: full_width,
-                height: self.line_height,
+                height: effective_height,
                 line_count: 1,
             }
         }
     }
 
-    fn shape(&self, text: &str, _style: &TextStyle, _max_width: f32) -> ShapedText {
-        let glyphs: Vec<ShapedGlyph> = text
+    fn shape(&self, text: &str, style: &TextStyle, _max_width: f32) -> ShapedText {
+        let transformed = style.text_transform.apply(text);
+        let glyphs: Vec<ShapedGlyph> = transformed
             .chars()
             .enumerate()
             .map(|(i, _)| ShapedGlyph {
@@ -63,8 +68,18 @@ impl TextMeasurer for MockMeasurer {
                 y_offset: 0.0,
             })
             .collect();
-        let width = self.char_width * text.len() as f32;
-        let baseline = self.line_height * 0.8;
-        ShapedText::new(glyphs, width, self.line_height, baseline)
+        let width = self.char_width * transformed.chars().count() as f32;
+        let (height, baseline) = match style.normalized_line_height() {
+            Some(multiplier) => {
+                let target = style.size * multiplier;
+                let half_leading = (target - self.line_height) / 2.0;
+                (target, self.line_height * 0.8 + half_leading)
+            }
+            None => (self.line_height, self.line_height * 0.8),
+        };
+        ShapedText::new(glyphs, width, height, baseline, 0, style.weight.value())
     }
 }
+
+#[cfg(test)]
+mod tests;

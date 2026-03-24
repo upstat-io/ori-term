@@ -37,7 +37,7 @@ impl DialogWidget {
     /// Build the title text style.
     pub(super) fn title_style(&self) -> TextStyle {
         TextStyle::new(self.style.title_font_size, self.style.title_fg)
-            .with_weight(crate::text::FontWeight::Bold)
+            .with_weight(crate::text::FontWeight::BOLD)
     }
 
     /// Build the message text style.

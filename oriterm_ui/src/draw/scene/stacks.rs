@@ -79,6 +79,51 @@ impl Scene {
     }
 }
 
+// --- Opacity ---
+
+impl Scene {
+    /// Pushes a subtree opacity multiplier.
+    ///
+    /// Values are clamped to `0.0..=1.0`. NaN and infinity normalize to
+    /// `1.0` so bad inputs do not poison the scene state. Stacked opacity
+    /// composes multiplicatively.
+    pub fn push_opacity(&mut self, opacity: f32) {
+        let clamped = normalize_opacity(opacity);
+        self.opacity_stack.push(clamped);
+        self.cumulative_opacity *= clamped;
+    }
+
+    /// Pops the most recent opacity multiplier.
+    pub fn pop_opacity(&mut self) {
+        debug_assert!(
+            !self.opacity_stack.is_empty(),
+            "pop_opacity without matching push_opacity"
+        );
+        if let Some(val) = self.opacity_stack.pop() {
+            // Recompute from scratch to avoid floating-point drift.
+            self.cumulative_opacity = self.opacity_stack.iter().product::<f32>().max(0.0);
+            if self.opacity_stack.is_empty() {
+                self.cumulative_opacity = 1.0;
+            }
+            let _ = val;
+        }
+    }
+
+    /// Returns the current cumulative opacity (product of all pushed values).
+    pub fn current_opacity(&self) -> f32 {
+        self.cumulative_opacity
+    }
+}
+
+/// Normalizes an opacity value: clamp to `0.0..=1.0`, NaN/infinity → `1.0`.
+fn normalize_opacity(v: f32) -> f32 {
+    if v.is_finite() {
+        v.clamp(0.0, 1.0)
+    } else {
+        1.0
+    }
+}
+
 // --- Queries ---
 
 impl Scene {
@@ -115,5 +160,10 @@ impl Scene {
     /// Returns `true` if the layer background stack is empty.
     pub fn layer_bg_stack_is_empty(&self) -> bool {
         self.layer_bg_stack.is_empty()
+    }
+
+    /// Returns `true` if the opacity stack is empty.
+    pub fn opacity_stack_is_empty(&self) -> bool {
+        self.opacity_stack.is_empty()
     }
 }
