@@ -115,7 +115,7 @@ impl App {
             gpu: None,
             pipelines: None,
             font_set: None,
-            user_fb_count: 0,
+            user_fallback_map: Vec::new(),
             window_manager: WindowManager::new(),
             windows: HashMap::new(),
             dialogs: HashMap::new(),

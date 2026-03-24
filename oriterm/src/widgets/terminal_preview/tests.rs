@@ -26,6 +26,8 @@ impl TextMeasurer for TestMeasurer {
             width: 0.0,
             height: 16.0,
             baseline: 12.0,
+            size_q6: 0,
+            weight: 400,
         }
     }
 }

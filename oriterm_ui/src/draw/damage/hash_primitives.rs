@@ -147,20 +147,19 @@ fn hash_uv(hash: &mut u64, uv: [f32; 4]) {
 
 fn hash_content_mask(hash: &mut u64, cm: ContentMask) {
     hash_rect(hash, cm.clip);
+    hash_f32(hash, cm.opacity);
 }
 
 fn hash_rect_style(hash: &mut u64, s: &RectStyle) {
     // Fill.
     hash_opt_color(hash, s.fill);
 
-    // Border.
-    match &s.border {
-        Some(b) => {
-            mix(hash, 1);
-            hash_f32(hash, b.width);
-            hash_color(hash, b.color);
-        }
-        None => mix(hash, 0),
+    // Border (hash all four sides via normalized accessors).
+    for w in s.border.widths() {
+        hash_f32(hash, w);
+    }
+    for c in s.border.colors() {
+        hash_color(hash, c);
     }
 
     // Corner radii.
@@ -200,6 +199,8 @@ fn hash_shaped_text(hash: &mut u64, shaped: &crate::text::ShapedText) {
     hash_f32(hash, shaped.width);
     hash_f32(hash, shaped.height);
     hash_f32(hash, shaped.baseline);
+    hash_u32(hash, shaped.size_q6);
+    mix(hash, shaped.weight as u64);
     mix(hash, shaped.glyphs.len() as u64);
     for g in &shaped.glyphs {
         mix(hash, g.glyph_id as u64);

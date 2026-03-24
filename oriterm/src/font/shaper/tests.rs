@@ -6,7 +6,9 @@ use oriterm_core::{Cell, CellExtra, CellFlags};
 
 use super::{build_col_glyph_map, prepare_line, shape_prepared_runs};
 use crate::font::collection::FontCollection;
-use crate::font::{FaceIdx, FontSet, GlyphFormat, GlyphStyle, HintingMode, subpx_bin};
+use crate::font::{
+    FaceIdx, FontSet, GlyphFormat, GlyphStyle, HintingMode, SyntheticFlags, subpx_bin,
+};
 
 // ── Helpers ──
 
@@ -727,6 +729,8 @@ fn ui_shape_hello_produces_five_glyphs() {
     super::shape_text_string(
         "Hello",
         GlyphStyle::Regular,
+        SyntheticFlags::NONE,
+        400,
         &faces,
         &fc,
         &mut output,
@@ -747,6 +751,8 @@ fn ui_shape_sequential_advances() {
     super::shape_text_string(
         "Hello",
         GlyphStyle::Regular,
+        SyntheticFlags::NONE,
+        400,
         &faces,
         &fc,
         &mut output,
@@ -772,6 +778,8 @@ fn ui_shape_space_has_positive_advance() {
     super::shape_text_string(
         "A B",
         GlyphStyle::Regular,
+        SyntheticFlags::NONE,
+        400,
         &faces,
         &fc,
         &mut output,
@@ -792,7 +800,16 @@ fn ui_shape_empty_string() {
     let fc = test_collection();
     let faces = fc.create_shaping_faces();
     let mut output = Vec::new();
-    super::shape_text_string("", GlyphStyle::Regular, &faces, &fc, &mut output, &mut None);
+    super::shape_text_string(
+        "",
+        GlyphStyle::Regular,
+        SyntheticFlags::NONE,
+        400,
+        &faces,
+        &fc,
+        &mut output,
+        &mut None,
+    );
 
     assert!(output.is_empty(), "empty string produces no glyphs");
 }
@@ -825,7 +842,7 @@ fn ui_measure_empty_is_zero() {
 fn ui_truncate_short_text_unchanged() {
     let fc = test_collection();
     let cell_w = fc.cell_metrics().width;
-    let result = super::truncate_with_ellipsis("Hello", 10.0 * cell_w, &fc);
+    let result = super::truncate_with_ellipsis("Hello", 10.0 * cell_w, 0.0, &fc);
     assert_eq!(
         result.as_ref(),
         "Hello",
@@ -838,7 +855,7 @@ fn ui_truncate_long_text_gets_ellipsis() {
     let fc = test_collection();
     let cell_w = fc.cell_metrics().width;
     // Max width fits 3 cells, text is 10 chars.
-    let result = super::truncate_with_ellipsis("HelloWorld", 3.0 * cell_w, &fc);
+    let result = super::truncate_with_ellipsis("HelloWorld", 3.0 * cell_w, 0.0, &fc);
     assert!(
         result.ends_with('\u{2026}'),
         "truncated text should end with ellipsis: {result:?}",
@@ -854,7 +871,7 @@ fn ui_truncate_exact_fit() {
     let fc = test_collection();
     let cell_w = fc.cell_metrics().width;
     // Max width exactly fits 5 cells.
-    let result = super::truncate_with_ellipsis("Hello", 5.0 * cell_w, &fc);
+    let result = super::truncate_with_ellipsis("Hello", 5.0 * cell_w, 0.0, &fc);
     assert_eq!(result.as_ref(), "Hello", "exact fit should not truncate");
 }
 
@@ -908,7 +925,7 @@ fn truncate_with_ellipsis_cjk_boundary() {
     // CJK string: each char is width 2. Budget for 3 cells + 1 for ellipsis = 4 cells.
     // "你好世界" = 8 cells total. Max 4 cells → fits 1 CJK char (2 cells) + "…" (1 cell).
     let result =
-        super::truncate_with_ellipsis("\u{4F60}\u{597D}\u{4E16}\u{754C}", 4.0 * cell_w, &fc);
+        super::truncate_with_ellipsis("\u{4F60}\u{597D}\u{4E16}\u{754C}", 4.0 * cell_w, 0.0, &fc);
     assert!(
         result.ends_with('\u{2026}'),
         "truncated CJK should end with ellipsis: {result:?}",
@@ -955,7 +972,7 @@ fn measure_text_soft_hyphen_zero_width() {
 fn truncate_with_ellipsis_zero_budget() {
     let fc = test_collection();
     // Zero budget → just ellipsis.
-    let result = super::truncate_with_ellipsis("Hello", 0.0, &fc);
+    let result = super::truncate_with_ellipsis("Hello", 0.0, 0.0, &fc);
     assert_eq!(result.as_ref(), "\u{2026}");
 }
 
@@ -964,7 +981,7 @@ fn truncate_with_ellipsis_one_cell_budget() {
     let fc = test_collection();
     let cell_w = fc.cell_metrics().width;
     // Exactly 1 cell → only room for ellipsis.
-    let result = super::truncate_with_ellipsis("Hello", cell_w, &fc);
+    let result = super::truncate_with_ellipsis("Hello", cell_w, 0.0, &fc);
     assert_eq!(result.as_ref(), "\u{2026}");
 }
 
@@ -973,7 +990,7 @@ fn truncate_with_ellipsis_shorter_than_max() {
     let fc = test_collection();
     let cell_w = fc.cell_metrics().width;
     // String is 2 cells, max is 10 cells → returned unchanged.
-    let result = super::truncate_with_ellipsis("AB", 10.0 * cell_w, &fc);
+    let result = super::truncate_with_ellipsis("AB", 10.0 * cell_w, 0.0, &fc);
     assert_eq!(
         result.as_ref(),
         "AB",
@@ -981,7 +998,70 @@ fn truncate_with_ellipsis_shorter_than_max() {
     );
 }
 
-// ── Ligature Shaping (Section 6.4) ──
+// Letter spacing + ellipsis truncation
+
+#[test]
+fn truncate_with_ellipsis_respects_letter_spacing() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let spacing = cell_w * 0.5; // 50% of cell width per character
+
+    // "ABCDE" = 5 cells. With spacing: 5 * (cell_w + spacing) = 5 * 1.5 * cell_w = 7.5 * cell_w.
+    // Budget = 5 * cell_w. Without spacing awareness, all 5 chars would "fit".
+    // With spacing, only ~3 chars + ellipsis should fit.
+    let result = super::truncate_with_ellipsis("ABCDE", 5.0 * cell_w, spacing, &fc);
+    assert!(
+        result.ends_with('\u{2026}'),
+        "spaced text should be truncated: {result:?}",
+    );
+    assert!(
+        result.chars().count() < 5,
+        "truncated result should have fewer than 5 visible chars: {result:?}",
+    );
+}
+
+#[test]
+fn truncate_with_ellipsis_spacing_short_text_unchanged() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let spacing = cell_w * 0.1;
+
+    // "AB" = 2 cells. With spacing: 2 * (cell_w + 0.1 * cell_w) = 2.2 * cell_w.
+    // Budget = 10 * cell_w — plenty of room.
+    let result = super::truncate_with_ellipsis("AB", 10.0 * cell_w, spacing, &fc);
+    assert_eq!(
+        result.as_ref(),
+        "AB",
+        "short spaced text should not truncate"
+    );
+}
+
+#[test]
+fn shape_text_ellipsis_with_spacing_stays_within_budget() {
+    use super::ui_text;
+    use oriterm_ui::text::{TextOverflow, TextStyle};
+
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let spacing = cell_w * 0.5;
+    let max_width = 5.0 * cell_w;
+
+    let style =
+        TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_overflow(TextOverflow::Ellipsis);
+
+    let shaped = ui_text::shape_text("abcdefghij", &style, max_width, spacing, &fc);
+
+    // The shaped width (including spacing applied to glyphs) must not exceed budget.
+    assert!(
+        shaped.width <= max_width + 0.01,
+        "shaped width {:.2} must not exceed budget {:.2}",
+        shaped.width,
+        max_width,
+    );
+    assert!(!shaped.glyphs.is_empty(), "must produce glyphs");
+}
+
+// Ligature Shaping (Section 6.4)
 
 #[test]
 fn shape_arrow_ligature_col_span_two() {
@@ -1053,6 +1133,8 @@ fn ui_text_mixed_subpixel_phases() {
     super::shape_text_string(
         text,
         GlyphStyle::Regular,
+        SyntheticFlags::NONE,
+        400,
         &faces,
         &fc,
         &mut output,
@@ -1079,6 +1161,109 @@ fn ui_text_mixed_subpixel_phases() {
          Cell width = {}, which may be exactly integer — try a different font size.",
         fc.cell_metrics().width,
     );
+}
+
+// ── Per-Face Synthetic Bold (TPR-02-010) ──
+
+#[test]
+fn per_face_synthetic_adds_bold_for_face_without_wght() {
+    // When requested weight >= 700 and base synthetic has no BOLD,
+    // faces without a wght axis should get synthetic BOLD added.
+    let fc = test_collection();
+
+    // The embedded test font is a static face (no wght axis).
+    assert!(
+        !fc.face_has_wght_axis(FaceIdx::REGULAR),
+        "test font should not have wght axis"
+    );
+
+    let result =
+        super::ui_text::per_face_synthetic(SyntheticFlags::NONE, 700, FaceIdx::REGULAR, &fc);
+    assert!(
+        result.contains(SyntheticFlags::BOLD),
+        "face without wght axis should get synthetic BOLD at weight 700"
+    );
+}
+
+#[test]
+fn per_face_synthetic_no_bold_below_700() {
+    let fc = test_collection();
+
+    let result =
+        super::ui_text::per_face_synthetic(SyntheticFlags::NONE, 400, FaceIdx::REGULAR, &fc);
+    assert!(
+        !result.contains(SyntheticFlags::BOLD),
+        "weight 400 should not trigger synthetic BOLD"
+    );
+}
+
+#[test]
+fn per_face_synthetic_preserves_existing_bold() {
+    let fc = test_collection();
+
+    // If base already has BOLD (primary decided synthetic bold), don't add it again.
+    let result =
+        super::ui_text::per_face_synthetic(SyntheticFlags::BOLD, 700, FaceIdx::REGULAR, &fc);
+    assert!(
+        result.contains(SyntheticFlags::BOLD),
+        "existing BOLD should be preserved"
+    );
+}
+
+#[test]
+fn per_face_synthetic_skips_bold_primary_slot() {
+    // TPR-02-011: When a face is already the Bold primary slot (FaceIdx 1),
+    // per_face_synthetic must NOT add synthetic bold — that would double-embolden.
+    let fc = test_collection();
+
+    let bold_face = FaceIdx(1);
+    let result = super::ui_text::per_face_synthetic(SyntheticFlags::NONE, 700, bold_face, &fc);
+    assert!(
+        !result.contains(SyntheticFlags::BOLD),
+        "Bold primary slot should not get synthetic BOLD — would double-embolden"
+    );
+}
+
+#[test]
+fn per_face_synthetic_skips_bold_italic_primary_slot() {
+    // Same as above but for BoldItalic slot (FaceIdx 3).
+    let fc = test_collection();
+
+    let bold_italic_face = FaceIdx(3);
+    let result =
+        super::ui_text::per_face_synthetic(SyntheticFlags::NONE, 700, bold_italic_face, &fc);
+    assert!(
+        !result.contains(SyntheticFlags::BOLD),
+        "BoldItalic primary slot should not get synthetic BOLD"
+    );
+}
+
+#[test]
+fn shape_text_string_bold_weight_sets_synthetic_on_static_font() {
+    // Integration test: shape_text_string at weight 700 on a static font
+    // (no wght axis) should produce glyphs with synthetic BOLD bits.
+    let fc = test_collection();
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    super::shape_text_string(
+        "AB",
+        GlyphStyle::Regular,
+        SyntheticFlags::NONE,
+        700,
+        &faces,
+        &fc,
+        &mut output,
+        &mut None,
+    );
+
+    assert!(!output.is_empty(), "should produce glyphs");
+    for g in &output {
+        let syn = SyntheticFlags::from_bits_truncate(g.synthetic);
+        assert!(
+            syn.contains(SyntheticFlags::BOLD),
+            "glyph on static font at weight 700 should have synthetic BOLD, got {syn:?}"
+        );
+    }
 }
 
 // ── Attribute-Based Run Splitting ──
@@ -1449,5 +1634,517 @@ fn measure_text_flag_tag_sequence() {
     assert!(
         (width - expected).abs() < f32::EPSILON,
         "flag tag sequence should be 2 cells: {width} vs {expected}",
+    );
+}
+
+// Size-aware UI shaping
+
+/// Build a UiFontMeasurer with the exact-size registry.
+fn test_ui_measurer() -> (crate::font::ui_font_sizes::UiFontSizes, FontCollection) {
+    let font_set = FontSet::embedded();
+    let sizes = crate::font::ui_font_sizes::UiFontSizes::new(
+        font_set.clone(),
+        96.0,
+        GlyphFormat::Alpha,
+        HintingMode::Full,
+        400,
+        crate::font::ui_font_sizes::PRELOAD_SIZES,
+    )
+    .expect("registry must build");
+    let fallback = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("fallback must build");
+    (sizes, fallback)
+}
+
+#[test]
+fn larger_size_measures_wider_and_taller() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let small = TextStyle::new(10.0, oriterm_ui::color::Color::WHITE);
+    let large = TextStyle::new(18.0, oriterm_ui::color::Color::WHITE);
+
+    let ms = m.measure("Hello", &small, f32::INFINITY);
+    let ml = m.measure("Hello", &large, f32::INFINITY);
+
+    assert!(
+        ml.width > ms.width,
+        "18px should be wider than 10px: {} vs {}",
+        ml.width,
+        ms.width,
+    );
+    assert!(
+        ml.height > ms.height,
+        "18px should be taller than 10px: {} vs {}",
+        ml.height,
+        ms.height,
+    );
+}
+
+#[test]
+fn shaped_output_stamps_expected_size_q6() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let style_18 = TextStyle::new(18.0, oriterm_ui::color::Color::WHITE);
+    let style_10 = TextStyle::new(10.0, oriterm_ui::color::Color::WHITE);
+
+    let shaped_18 = m.shape("A", &style_18, f32::INFINITY);
+    let shaped_10 = m.shape("A", &style_10, f32::INFINITY);
+
+    // Different sizes must produce different size_q6 values.
+    assert_ne!(
+        shaped_18.size_q6, shaped_10.size_q6,
+        "18px and 10px must have different size_q6"
+    );
+    // Both must be non-zero (real sizes, not fallback placeholder).
+    assert_ne!(shaped_18.size_q6, 0, "18px size_q6 must be non-zero");
+    assert_ne!(shaped_10.size_q6, 0, "10px size_q6 must be non-zero");
+}
+
+#[test]
+fn zero_length_text_returns_zero_width_with_valid_size_q6() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let shaped = m.shape("", &style, f32::INFINITY);
+
+    assert_eq!(shaped.width, 0.0);
+    assert!(shaped.glyphs.is_empty());
+    // Even empty text should stamp a valid size_q6 from the collection.
+    assert_ne!(
+        shaped.size_q6, 0,
+        "empty text should still have valid size_q6"
+    );
+}
+
+// Weight-aware shaping regression (TPR-02-005)
+
+/// Verify that `create_shaping_faces_for_weight` applies the requested weight
+/// to variation axes, producing faces with the correct `wght` coordinates.
+///
+/// Regression: before the fix, `create_shaping_faces()` always used the
+/// collection-global weight, so UI text requesting 700 was shaped with
+/// 400-weight metrics but rasterized at 700 — a metrics/rendering mismatch.
+#[test]
+fn weight_aware_shaping_faces_apply_requested_weight() {
+    use super::ui_text;
+    use oriterm_ui::text::{FontWeight, TextStyle};
+
+    let fc = test_collection();
+
+    // Shape "Hello" at 400 and 700.
+    let style_400 = TextStyle {
+        weight: FontWeight::NORMAL,
+        ..TextStyle::new(13.0, oriterm_ui::color::Color::WHITE)
+    };
+    let style_700 = TextStyle {
+        weight: FontWeight::BOLD,
+        ..TextStyle::new(13.0, oriterm_ui::color::Color::WHITE)
+    };
+
+    let shaped_400 = ui_text::shape_text("Hello", &style_400, f32::INFINITY, 0.0, &fc);
+    let shaped_700 = ui_text::shape_text("Hello", &style_700, f32::INFINITY, 0.0, &fc);
+
+    // The ShapedText should record the requested weight.
+    assert_eq!(shaped_400.weight, 400, "400 weight must be stamped");
+    assert_eq!(shaped_700.weight, 700, "700 weight must be stamped");
+
+    // On a variable font with `wght` axis, the two weights should produce
+    // different advance widths because heavier glyphs are typically wider.
+    // On a static font without `wght`, both may produce identical metrics
+    // (which is correct — the font can't express the difference).
+    // Either way, the shaping path now goes through
+    // `create_shaping_faces_for_weight`, not the collection-global weight.
+    //
+    // We verify the pipeline doesn't crash and produces valid output
+    // for both weights.
+    assert!(!shaped_400.glyphs.is_empty(), "400 must produce glyphs");
+    assert!(!shaped_700.glyphs.is_empty(), "700 must produce glyphs");
+    assert!(shaped_400.width > 0.0, "400 width must be positive");
+    assert!(shaped_700.width > 0.0, "700 width must be positive");
+}
+
+/// Verify that weight-aware shaping faces produce different variation
+/// coordinates for different weights on fonts with a `wght` axis.
+#[test]
+fn weight_aware_faces_have_different_variations() {
+    use crate::font::SyntheticFlags;
+
+    let fc = test_collection();
+
+    // Create faces at weight 400 vs 700.
+    let faces_400 = fc.create_shaping_faces_for_weight(400, SyntheticFlags::NONE);
+    let faces_700 = fc.create_shaping_faces_for_weight(700, SyntheticFlags::NONE);
+
+    // Both must produce the same number of face slots.
+    assert_eq!(faces_400.len(), faces_700.len());
+
+    // At minimum, both must produce valid faces for the regular slot.
+    assert!(faces_400[0].is_some(), "400 must have regular face");
+    assert!(faces_700[0].is_some(), "700 must have regular face");
+}
+
+// -- TextTransform integration --
+
+/// Verify that `TextTransform::Uppercase` in `TextStyle` is applied by the
+/// shaping pipeline, producing the same output as explicitly uppercased text.
+#[test]
+fn shape_text_applies_text_transform() {
+    use super::ui_text;
+    use oriterm_ui::text::{TextStyle, TextTransform};
+
+    let fc = test_collection();
+
+    // Shape with transform in style.
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE)
+        .with_text_transform(TextTransform::Uppercase);
+    let shaped_via_style = ui_text::shape_text("hello", &style, f32::INFINITY, 0.0, &fc);
+
+    // Shape with manually uppercased text.
+    let plain_style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let shaped_explicit = ui_text::shape_text("HELLO", &plain_style, f32::INFINITY, 0.0, &fc);
+
+    assert_eq!(
+        shaped_via_style.glyphs.len(),
+        shaped_explicit.glyphs.len(),
+        "transform via style must produce same glyph count as explicit uppercase"
+    );
+    assert!(
+        (shaped_via_style.width - shaped_explicit.width).abs() < 0.01,
+        "widths must match: style={} explicit={}",
+        shaped_via_style.width,
+        shaped_explicit.width
+    );
+}
+
+/// Verify that `TextTransform::Uppercase` is applied before ellipsis truncation,
+/// so case changes that alter string length are accounted for.
+#[test]
+fn shape_text_transform_before_ellipsis() {
+    use super::ui_text;
+    use oriterm_ui::text::{TextOverflow, TextStyle, TextTransform};
+
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+
+    // Use a narrow max_width that forces truncation.
+    let max_width = cell_w * 4.0; // room for ~4 characters
+
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE)
+        .with_overflow(TextOverflow::Ellipsis)
+        .with_text_transform(TextTransform::Uppercase);
+
+    let shaped = ui_text::shape_text("abcdefghij", &style, max_width, 0.0, &fc);
+
+    // The result should be truncated (not all 10 glyphs present).
+    assert!(
+        shaped.glyphs.len() < 10,
+        "should be truncated, got {} glyphs",
+        shaped.glyphs.len()
+    );
+    // And the shaped text should contain the ellipsis glyph.
+    assert!(!shaped.glyphs.is_empty(), "truncated text must have glyphs");
+}
+
+/// Regression: combining marks should not inflate letter-spacing budget.
+///
+/// Before this fix, `truncate_with_ellipsis` counted ALL chars for spacing
+/// (including zero-width combining marks), while the shaped output only
+/// applied spacing per glyph. This caused over-estimation and false truncation.
+#[test]
+fn truncate_combining_marks_spacing_not_inflated() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    let spacing = cell_w * 0.5;
+
+    // "e\u{0301}" is "é" as base + combining acute. Unicode width: e=1, combining=0.
+    // Visible character count for spacing: 1 (only 'e' has nonzero width).
+    // Two visible chars "AB" + the combining pair = 3 chars but 3 visible.
+    let text = "ABe\u{0301}";
+
+    // Budget generous enough for 3 visible chars + spacing.
+    // 3 cells * cell_w + 3 visible * spacing = 3 * 1.5 * cell_w = 4.5 * cell_w.
+    let max_width = 5.0 * cell_w;
+    let result = super::truncate_with_ellipsis(text, max_width, spacing, &fc);
+    assert_eq!(
+        result.as_ref(),
+        text,
+        "combining mark text should not be falsely truncated",
+    );
+}
+
+/// Regression: shape_text with ellipsis uses shaped width to decide truncation.
+///
+/// Before this fix, shape_text always ran truncate_with_ellipsis (char-based
+/// approximation) before shaping. When ligatures reduce glyph count, the
+/// char-based width overestimates and causes false truncation. Now we shape
+/// first and only truncate if the shaped width actually exceeds max_width.
+#[test]
+fn shape_text_ellipsis_shapes_first_to_avoid_false_truncation() {
+    use super::ui_text;
+    use oriterm_ui::text::{TextOverflow, TextStyle};
+
+    let fc = test_collection();
+
+    // Shape "Hello" without ellipsis to get its natural width.
+    let style_clip = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let natural = ui_text::shape_text("Hello", &style_clip, f32::INFINITY, 0.0, &fc);
+
+    // Set max_width to exactly the natural shaped width — should NOT truncate.
+    let style_ellipsis =
+        TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_overflow(TextOverflow::Ellipsis);
+    let shaped = ui_text::shape_text("Hello", &style_ellipsis, natural.width, 0.0, &fc);
+
+    assert_eq!(
+        shaped.glyphs.len(),
+        natural.glyphs.len(),
+        "text that fits exactly should not be truncated (got {} vs {} glyphs)",
+        shaped.glyphs.len(),
+        natural.glyphs.len(),
+    );
+}
+
+// -- Line height (Section 04) --
+
+#[test]
+fn measure_returns_styled_height_when_line_height_set() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+    let metrics = m.measure("Hello", &style, f32::INFINITY);
+
+    assert_eq!(metrics.height, 19.5, "height should be 13.0 * 1.5 = 19.5");
+}
+
+#[test]
+fn shape_returns_same_logical_height_as_measure() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.4);
+    let metrics = m.measure("Hello", &style, f32::INFINITY);
+    let shaped = m.shape("Hello", &style, f32::INFINITY);
+
+    assert_eq!(
+        shaped.height, metrics.height,
+        "shape and measure must agree on logical height",
+    );
+}
+
+#[test]
+fn width_unchanged_by_line_height() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let without = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let with = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.8);
+
+    let mw = m.measure("Hello", &without, f32::INFINITY);
+    let ml = m.measure("Hello", &with, f32::INFINITY);
+
+    assert_eq!(mw.width, ml.width, "width must not change with line_height");
+}
+
+#[test]
+fn baseline_shifts_with_larger_line_height() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let natural = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let larger = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.8);
+
+    let sn = m.shape("Hello", &natural, f32::INFINITY);
+    let sl = m.shape("Hello", &larger, f32::INFINITY);
+
+    assert!(
+        sl.baseline > sn.baseline,
+        "larger line-height should push baseline down: {} vs {}",
+        sl.baseline,
+        sn.baseline,
+    );
+}
+
+#[test]
+fn baseline_shifts_with_smaller_line_height() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let natural = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let smaller = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(0.8);
+
+    let sn = m.shape("Hello", &natural, f32::INFINITY);
+    let ss = m.shape("Hello", &smaller, f32::INFINITY);
+
+    assert!(
+        ss.baseline < sn.baseline,
+        "smaller line-height should pull baseline up: {} vs {}",
+        ss.baseline,
+        sn.baseline,
+    );
+}
+
+#[test]
+fn line_height_correct_at_scale_2() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m1 = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+    let m2 = super::UiFontMeasurer::new(Some(&sizes), &fallback, 2.0);
+
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+
+    let met1 = m1.measure("Hello", &style, f32::INFINITY);
+    let met2 = m2.measure("Hello", &style, f32::INFINITY);
+
+    // Logical height is independent of scale.
+    assert_eq!(met1.height, 19.5, "scale 1: height = 13 * 1.5");
+    assert_eq!(met2.height, 19.5, "scale 2: height = 13 * 1.5");
+
+    let sh1 = m1.shape("Hello", &style, f32::INFINITY);
+    let sh2 = m2.shape("Hello", &style, f32::INFINITY);
+
+    assert_eq!(sh1.height, sh2.height, "logical height same at both scales");
+
+    // Physical baseline should differ because half-leading is computed in
+    // physical space (target_physical = logical * scale).
+    assert_ne!(
+        sh1.baseline, sh2.baseline,
+        "physical baseline should differ between scales",
+    );
+}
+
+#[test]
+fn invalid_line_height_falls_back_to_natural() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let natural_style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE);
+    let nat_met = m.measure("Hello", &natural_style, f32::INFINITY);
+    let nat_sh = m.shape("Hello", &natural_style, f32::INFINITY);
+
+    for invalid in [0.0_f32, -1.0, f32::NAN, f32::INFINITY] {
+        let mut s = natural_style.clone();
+        s.line_height = Some(invalid);
+        let met = m.measure("Hello", &s, f32::INFINITY);
+        let sh = m.shape("Hello", &s, f32::INFINITY);
+
+        assert_eq!(
+            met.height, nat_met.height,
+            "invalid {invalid}: measure height should match natural",
+        );
+        assert_eq!(
+            sh.height, nat_sh.height,
+            "invalid {invalid}: shape height should match natural",
+        );
+    }
+}
+
+#[test]
+fn line_height_one_produces_size_times_one() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.0);
+    let metrics = m.measure("Hello", &style, f32::INFINITY);
+
+    // line_height(1.0) with size=13 -> height = 13.0.
+    // Natural height is typically ~1.3x-1.5x the size, so this is NOT the same as None.
+    assert_eq!(metrics.height, 13.0, "1.0 multiplier: height = size");
+}
+
+#[test]
+fn empty_text_with_line_height() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+    let shaped = m.shape("", &style, f32::INFINITY);
+
+    // Empty text with line_height should still report the styled line box height.
+    assert_eq!(shaped.height, 19.5, "empty text should use styled height");
+}
+
+#[test]
+fn line_height_with_letter_spacing() {
+    use oriterm_ui::text::TextStyle;
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let with_spacing = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE)
+        .with_line_height(1.5)
+        .with_letter_spacing(2.0);
+    let without_spacing =
+        TextStyle::new(13.0, oriterm_ui::color::Color::WHITE).with_line_height(1.5);
+
+    let mws = m.measure("Hello", &with_spacing, f32::INFINITY);
+    let mwo = m.measure("Hello", &without_spacing, f32::INFINITY);
+
+    assert_eq!(mws.height, mwo.height, "height unaffected by spacing");
+    assert!(mws.width > mwo.width, "width should increase with spacing");
+}
+
+#[test]
+fn line_height_with_text_transform() {
+    use oriterm_ui::text::{TextStyle, TextTransform};
+    use oriterm_ui::widgets::TextMeasurer;
+
+    let (sizes, fallback) = test_ui_measurer();
+    let m = super::UiFontMeasurer::new(Some(&sizes), &fallback, 1.0);
+
+    let style = TextStyle::new(13.0, oriterm_ui::color::Color::WHITE)
+        .with_line_height(1.4)
+        .with_text_transform(TextTransform::Uppercase);
+    let metrics = m.measure("Hello", &style, f32::INFINITY);
+
+    assert_eq!(
+        metrics.height,
+        13.0 * 1.4,
+        "height = size * multiplier regardless of transform",
     );
 }

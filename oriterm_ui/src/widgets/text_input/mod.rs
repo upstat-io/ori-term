@@ -38,7 +38,7 @@ pub struct TextInputStyle {
     pub corner_radius: f32,
     /// Inner padding.
     pub padding: Insets,
-    /// Font size in points.
+    /// Font size in logical pixels.
     pub font_size: f32,
     /// Placeholder text color.
     pub placeholder_color: Color,

@@ -79,11 +79,17 @@ impl Scene {
 // --- Internal helpers ---
 
 impl Scene {
-    /// Resolves the current clip stack into a `ContentMask`.
+    /// Resolves the current clip and opacity stacks into a `ContentMask`.
     pub(super) fn current_content_mask(&self) -> ContentMask {
-        self.clip_stack
+        let clip = self
+            .clip_stack
             .last()
-            .map_or_else(ContentMask::unclipped, |clip| ContentMask { clip: *clip })
+            .copied()
+            .unwrap_or_else(|| ContentMask::unclipped().clip);
+        ContentMask {
+            clip,
+            opacity: self.cumulative_opacity,
+        }
     }
 
     /// Applies the cumulative offset to a rectangle.

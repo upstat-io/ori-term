@@ -10,7 +10,7 @@ mod rect_style;
 pub mod scene;
 mod shadow;
 
-pub use border::Border;
+pub use border::{Border, BorderSides};
 pub use damage::DamageTracker;
 pub use gradient::{Gradient, GradientStop};
 pub use rect_style::RectStyle;

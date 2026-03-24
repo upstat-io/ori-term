@@ -67,7 +67,7 @@ impl App {
         let window = TermWindow::from_window(window_arc, &window_config, &gpu, session_wid)?;
 
         // 6. Join font thread (GPU init + surface setup ran concurrently).
-        let (mut font_collection, cached_font_set, font_cache, user_fb_count, t_fonts) =
+        let (mut font_collection, cached_font_set, font_cache, fallback_map, t_fonts) =
             match font_handle.join() {
                 Ok(Ok(result)) => result,
                 Ok(Err(e)) => return Err(e.into()),
@@ -97,7 +97,7 @@ impl App {
         font_collection.set_format(subpixel_format);
 
         // 6d. Apply font config: features, per-fallback metadata, codepoint map.
-        config_reload::apply_font_config(&mut font_collection, &self.config.font, user_fb_count);
+        config_reload::apply_font_config(&mut font_collection, &self.config.font, &fallback_map);
 
         // 7a. Create shared pipelines (once).
         let t_renderer_start = std::time::Instant::now();
@@ -118,7 +118,15 @@ impl App {
             400,
             crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
-        .ok();
+        .ok()
+        .map(|mut sizes| {
+            config_reload::apply_font_config_to_ui_sizes(
+                &mut sizes,
+                &self.config.font,
+                &fallback_map,
+            );
+            sizes
+        });
 
         // 7d. Create per-window renderer.
         let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_sizes);
@@ -179,7 +187,7 @@ impl App {
         self.gpu = Some(gpu);
         self.pipelines = Some(pipelines);
         self.font_set = Some(cached_font_set);
-        self.user_fb_count = user_fb_count;
+        self.user_fallback_map = fallback_map;
         self.windows.insert(winit_id, ctx);
         self.window_manager
             .register(ManagedWindow::new(winit_id, WindowKind::Main));
@@ -191,7 +199,7 @@ impl App {
 
     /// Spawn font discovery on a background thread.
     ///
-    /// Returns `(FontCollection, FontSet, FontByteCache, user_fb_count, elapsed)`.
+    /// Returns `(FontCollection, FontSet, FontByteCache, fallback_map, elapsed)`.
     /// The `FontSet` is an `Arc`-cloned copy preserved before `FontCollection`
     /// consumes the original — zero additional disk reads. The `FontByteCache`
     /// is returned so the caller can reuse it for UI font loading.
@@ -208,7 +216,7 @@ impl App {
                     FontCollection,
                     FontSet,
                     FontByteCache,
-                    usize,
+                    Vec<usize>,
                     std::time::Duration,
                 ),
                 crate::font::FontError,
@@ -235,7 +243,7 @@ impl App {
                     .iter()
                     .map(|f| f.family.as_str())
                     .collect();
-                let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
+                let fallback_map = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
 
                 // Clone before FontCollection consumes the FontSet (Arc clone, no disk I/O).
                 let cached_set = font_set.clone();
@@ -250,7 +258,7 @@ impl App {
                     font_weight,
                     HintingMode::Full,
                 )?;
-                Ok((fc, cached_set, cache, user_fb_count, t0.elapsed()))
+                Ok((fc, cached_set, cache, fallback_map, t0.elapsed()))
             })
             .map_err(|e| -> Box<dyn std::error::Error> {
                 format!("failed to spawn font discovery thread: {e}").into()

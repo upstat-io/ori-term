@@ -99,6 +99,7 @@ pub(super) fn solve_grid(
     node.disabled = layout_box.disabled;
     node.interact_radius = layout_box.interact_radius;
     node.content_offset = layout_box.content_offset;
+    node.pointer_events = layout_box.pointer_events;
     node
 }
 
@@ -173,5 +174,6 @@ fn solve_empty_grid(
     node.disabled = layout_box.disabled;
     node.interact_radius = layout_box.interact_radius;
     node.content_offset = layout_box.content_offset;
+    node.pointer_events = layout_box.pointer_events;
     node
 }

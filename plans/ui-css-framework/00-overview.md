@@ -1,7 +1,7 @@
 ---
 plan: "ui-css-framework"
 title: "CSS-Equivalent UI Framework Features"
-status: not-started
+status: in-progress
 references:
   - "mockups/settings-brutal.html"
   - "plans/brutal-design-pass-2/"

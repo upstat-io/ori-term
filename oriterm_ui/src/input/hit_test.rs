@@ -124,6 +124,11 @@ fn center_distance_sq(rect: &Rect, point: Point) -> f32 {
 ///
 /// Returns the deepest hittable `WidgetId` whose rect contains `point`.
 fn hit_test_node(node: &LayoutNode, point: Point, clip: Option<Rect>) -> Option<WidgetId> {
+    // Subtree pointer-events suppression (CSS `pointer-events: none`).
+    if !node.pointer_events {
+        return None;
+    }
+
     // Early out: point outside this node's hit area.
     if !point_in_hit_area(node, point) {
         return None;
@@ -239,6 +244,11 @@ fn hit_test_path_node(
     clip: Option<Rect>,
     path: &mut Vec<HitEntry>,
 ) -> bool {
+    // Subtree pointer-events suppression (CSS `pointer-events: none`).
+    if !node.pointer_events {
+        return false;
+    }
+
     // Early out: point outside this node's hit area.
     if !point_in_hit_area(node, point) {
         return false;

@@ -7,7 +7,7 @@ use crate::color::Color;
 use crate::geometry::Point;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
-use crate::text::{FontWeight, TextOverflow, TextStyle};
+use crate::text::{FontWeight, TextOverflow, TextStyle, TextTransform};
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
@@ -19,7 +19,7 @@ use super::{DrawCtx, LayoutCtx, Widget};
 pub struct LabelStyle {
     /// Text color.
     pub color: Color,
-    /// Font size in points.
+    /// Font size in logical pixels.
     pub font_size: f32,
     /// Font weight.
     pub weight: FontWeight,
@@ -27,6 +27,10 @@ pub struct LabelStyle {
     pub overflow: TextOverflow,
     /// Extra spacing between characters in pixels.
     pub letter_spacing: f32,
+    /// Case transformation applied before shaping.
+    pub text_transform: TextTransform,
+    /// Line-height multiplier override. `None` uses natural font metrics.
+    pub line_height: Option<f32>,
 }
 
 impl LabelStyle {
@@ -35,9 +39,11 @@ impl LabelStyle {
         Self {
             color: theme.fg_primary,
             font_size: theme.font_size,
-            weight: FontWeight::Regular,
+            weight: FontWeight::NORMAL,
             overflow: TextOverflow::Clip,
             letter_spacing: 0.0,
+            text_transform: TextTransform::None,
+            line_height: None,
         }
     }
 }
@@ -88,10 +94,13 @@ impl LabelWidget {
 
     /// Builds the `TextStyle` for measurement and shaping.
     fn text_style(&self) -> TextStyle {
-        TextStyle::new(self.style.font_size, self.style.color)
+        let mut ts = TextStyle::new(self.style.font_size, self.style.color)
             .with_weight(self.style.weight)
             .with_overflow(self.style.overflow)
             .with_letter_spacing(self.style.letter_spacing)
+            .with_text_transform(self.style.text_transform);
+        ts.line_height = self.style.line_height;
+        ts
     }
 }
 

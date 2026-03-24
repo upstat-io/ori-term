@@ -10,17 +10,11 @@ use super::ScrollWidget;
 
 impl ScrollWidget {
     /// Draws the scroll container: clips viewport, translates by scroll
-    /// offset, draws child, pops transforms, then draws scrollbar on top.
+    /// offset, draws child, pops transforms, then draws scrollbars on top.
     pub(super) fn draw_impl(&self, ctx: &mut DrawCtx<'_>) {
         let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
 
-        // Clip to the viewport — emitted before the translate so it stays
-        // in viewport space (the scroll container's visible area).
         ctx.scene.push_clip(ctx.bounds);
-
-        // Apply scroll offset as a translate transform. The child draws at
-        // its natural (unscrolled) position — bounds stay stable so the
-        // child's layout key (bounds) doesn't change on scroll.
         ctx.scene
             .push_offset(-self.scroll_offset_x, -self.scroll_offset);
 
@@ -41,7 +35,7 @@ impl ScrollWidget {
         ctx.scene.pop_offset();
         ctx.scene.pop_clip();
 
-        // Draw scrollbar on top of content (outside translate).
-        self.draw_scrollbar(ctx, content_h, ctx.bounds.height());
+        // Draw scrollbars on top of content (outside translate/clip).
+        self.draw_scrollbars(ctx, content_w, content_h);
     }
 }

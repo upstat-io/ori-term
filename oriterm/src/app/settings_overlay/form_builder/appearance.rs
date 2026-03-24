@@ -6,13 +6,14 @@
 
 use oriterm_ui::geometry::Insets;
 use oriterm_ui::layout::{Align, SizeSpec};
-use oriterm_ui::text::FontWeight;
+use oriterm_ui::text::{FontWeight, TextTransform};
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
 use oriterm_ui::widgets::label::{LabelStyle, LabelWidget};
 use oriterm_ui::widgets::scroll::ScrollWidget;
+use oriterm_ui::widgets::scrollbar::ScrollbarStyle;
 use oriterm_ui::widgets::separator::{SeparatorStyle, SeparatorWidget};
 use oriterm_ui::widgets::setting_row::SettingRowWidget;
 use oriterm_ui::widgets::slider::SliderWidget;
@@ -94,7 +95,8 @@ pub(super) fn build_settings_page(
         body = body.with_child(section);
     }
 
-    let mut scroll = ScrollWidget::vertical(Box::new(body));
+    let mut scroll = ScrollWidget::vertical(Box::new(body))
+        .with_scrollbar_style(ScrollbarStyle::from_theme(theme));
     scroll.set_height(SizeSpec::Fill);
 
     Box::new(
@@ -110,14 +112,16 @@ pub(super) fn build_settings_page(
 fn build_page_header(title_text: &str, desc_text: &str, theme: &UiTheme) -> Box<dyn Widget> {
     let title = LabelWidget::new(title_text).with_style(LabelStyle {
         font_size: TITLE_FONT_SIZE,
-        weight: FontWeight::Bold,
+        weight: FontWeight::BOLD,
         letter_spacing: TITLE_LETTER_SPACING,
         color: theme.fg_bright,
+        line_height: None,
         ..LabelStyle::from_theme(theme)
     });
     let desc = LabelWidget::new(desc_text).with_style(LabelStyle {
         font_size: DESC_FONT_SIZE,
         color: theme.fg_secondary,
+        line_height: None,
         ..LabelStyle::from_theme(theme)
     });
     Box::new(
@@ -205,10 +209,12 @@ fn build_window_section(
 /// The `"// "` prefix matches the brutal design mockup's `::before { content: '//'; }`
 /// pseudo-element. The horizontal rule extends to fill remaining width.
 pub(super) fn section_title(text: &str, theme: &UiTheme) -> Box<dyn Widget> {
-    let label = LabelWidget::new(format!("// {}", text.to_uppercase())).with_style(LabelStyle {
+    let label = LabelWidget::new(format!("// {text}")).with_style(LabelStyle {
         font_size: SECTION_FONT_SIZE,
         letter_spacing: SECTION_LETTER_SPACING,
         color: theme.fg_faint,
+        text_transform: TextTransform::Uppercase,
+        line_height: None,
         ..LabelStyle::from_theme(theme)
     });
     let rule = SeparatorWidget::horizontal().with_style(SeparatorStyle {

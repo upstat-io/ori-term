@@ -10,7 +10,7 @@ use crate::geometry::{Point, Rect};
 use crate::icons::IconId;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
-use crate::text::{FontWeight, TextStyle};
+use crate::text::{FontWeight, TextStyle, TextTransform};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
@@ -408,11 +408,12 @@ impl Widget for SidebarNavWidget {
             // Section title — uppercase with wide letter spacing.
             let title_style = TextStyle {
                 size: 10.0,
-                weight: FontWeight::Regular,
+                weight: FontWeight::NORMAL,
                 letter_spacing: 1.5,
+                text_transform: TextTransform::Uppercase,
                 ..TextStyle::default()
             };
-            let title_text = format!("// {}", section.title.to_uppercase());
+            let title_text = format!("// {}", section.title);
             let shaped = ctx.measurer.shape(&title_text, &title_style, item_w);
             ctx.scene
                 .push_text(Point::new(x + 6.0, y), shaped, self.style.section_title_fg);

@@ -16,7 +16,7 @@ use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::App;
 use super::widget_pipeline::{prepaint_widget_tree, prepare_widget_tree};
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
+use crate::font::CachedTextMeasurer;
 
 impl App {
     /// Render a dialog window's content to its GPU surface.
@@ -104,11 +104,7 @@ impl App {
         let renderer = ctx.renderer.as_mut().expect("caller checked renderer");
         let chrome_h = ctx.chrome.caption_height();
         ctx.scene.clear();
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
         let icons = renderer.resolved_icons();
         // Phase gating: compute dirty level from lifecycle events,
         // animation state, and invalidation tracker.
@@ -256,22 +252,16 @@ impl App {
 
         let renderer = ctx.renderer.as_mut().expect("caller verified renderer");
         {
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                &ctx.text_cache,
-                scale,
-            );
+            let measurer =
+                CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
             ctx.root.overlays_mut().layout_overlays(&measurer, ui_theme);
         }
 
         let overlay_flags = oriterm_ui::animation::FrameRequestFlags::new();
         for i in 0..overlay_count {
             ctx.scene.clear();
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                &ctx.text_cache,
-                scale,
-            );
+            let measurer =
+                CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
             let icons = renderer.resolved_icons();
             let mut overlay_draw_ctx = DrawCtx {
                 measurer: &measurer,

@@ -161,9 +161,9 @@ impl WindowRenderer {
                 h: rect.height,
             },
             [0.0, 0.0, 0.0, 0.0], // transparent fill
-            border_color,
-            2.0, // corner radius
-            1.0, // border width
+            [1.0; 4],             // uniform border width
+            [2.0; 4],             // uniform corner radius
+            [border_color; 4],    // same color all sides
             CLIP_UNCLIPPED,
         );
     }

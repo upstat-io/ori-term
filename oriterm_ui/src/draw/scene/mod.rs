@@ -37,6 +37,8 @@ pub struct Scene {
     offset_stack: Vec<(f32, f32)>,
     cumulative_offset: (f32, f32),
     layer_bg_stack: Vec<Color>,
+    opacity_stack: Vec<f32>,
+    cumulative_opacity: f32,
 
     // Current context (set by the caller before painting).
     current_widget_id: Option<WidgetId>,
@@ -55,6 +57,8 @@ impl Scene {
             offset_stack: Vec::new(),
             cumulative_offset: (0.0, 0.0),
             layer_bg_stack: Vec::new(),
+            opacity_stack: Vec::new(),
+            cumulative_opacity: 1.0,
             current_widget_id: None,
         }
     }
@@ -137,6 +141,8 @@ impl Scene {
         self.offset_stack.clear();
         self.cumulative_offset = (0.0, 0.0);
         self.layer_bg_stack.clear();
+        self.opacity_stack.clear();
+        self.cumulative_opacity = 1.0;
         self.current_widget_id = None;
     }
 }
@@ -157,7 +163,8 @@ pub fn build_scene(root: &dyn Widget, ctx: &mut DrawCtx<'_>) {
     debug_assert!(
         ctx.scene.clip_stack_is_empty()
             && ctx.scene.offset_stack_is_empty()
-            && ctx.scene.layer_bg_stack_is_empty(),
+            && ctx.scene.layer_bg_stack_is_empty()
+            && ctx.scene.opacity_stack_is_empty(),
         "Unbalanced stacks after build_scene"
     );
 }

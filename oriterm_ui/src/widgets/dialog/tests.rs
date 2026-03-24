@@ -35,6 +35,8 @@ impl crate::widgets::TextMeasurer for StubMeasurer {
             width: 100.0,
             height: 16.0,
             baseline: 12.0,
+            size_q6: 0,
+            weight: 400,
         }
     }
 }

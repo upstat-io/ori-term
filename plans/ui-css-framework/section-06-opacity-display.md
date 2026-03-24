@@ -1,11 +1,11 @@
 ---
 section: "06"
 title: "Opacity + Display Control"
-status: not-started
+status: complete
 reviewed: true
 third_party_review:
   status: resolved
-  updated: 2026-03-23
+  updated: 2026-03-24
 goal: "Reusable framework primitives provide subtree opacity, layout-preserving hidden state, display:none-style removal, and pointer hit-test suppression without bespoke per-widget hacks; GPU scene conversion multiplies subtree opacity with compositor opacity"
 inspired_by:
   - "CSS opacity"
@@ -16,25 +16,25 @@ depends_on: []
 sections:
   - id: "06.1"
     title: "Scene Opacity Stack"
-    status: not-started
+    status: complete
   - id: "06.2"
     title: "Visibility + Display Modifiers"
-    status: not-started
+    status: complete
   - id: "06.3"
     title: "Pointer Events Suppression"
-    status: not-started
+    status: complete
   - id: "06.4"
     title: "Consumer Boundaries"
-    status: not-started
+    status: complete
   - id: "06.5"
     title: "Tests"
-    status: not-started
+    status: complete
   - id: "06.R"
     title: "Third Party Review Findings"
     status: complete
   - id: "06.6"
     title: "Build & Verify"
-    status: not-started
+    status: complete
 ---
 
 # Section 06: Opacity + Display Control
@@ -208,12 +208,12 @@ and `pop_opacity()` and the `build_scene()` assertion must catch unbalanced stac
 
 ### Checklist
 
-- [ ] Add opacity stack state to `Scene`
-- [ ] Normalize/clamp opacity at the scene boundary
-- [ ] Extend `ContentMask` with `opacity`
-- [ ] Multiply subtree opacity with compositor opacity in scene conversion
-- [ ] Expose opacity through either direct `Scene::push_opacity()`/`pop_opacity()` or a `DrawCtx` scope guard
-- [ ] Extend `build_scene()` stack-balance assertion to include `opacity_stack_is_empty()`
+- [x] Add opacity stack state to `Scene`
+- [x] Normalize/clamp opacity at the scene boundary
+- [x] Extend `ContentMask` with `opacity`
+- [x] Multiply subtree opacity with compositor opacity in scene conversion
+- [x] Expose opacity through either direct `Scene::push_opacity()`/`pop_opacity()` or a `DrawCtx` scope guard
+- [x] Extend `build_scene()` stack-balance assertion to include `opacity_stack_is_empty()`
 
 ---
 
@@ -336,12 +336,12 @@ stays correct.
 
 ### Checklist
 
-- [ ] Add `VisibilityMode`
-- [ ] Add a reusable visibility/display wrapper widget in `oriterm_ui/src/widgets/modifiers/visibility.rs`
-- [ ] Create `oriterm_ui/src/widgets/modifiers/mod.rs` with `#[cfg(test)] mod tests;` and `oriterm_ui/src/widgets/modifiers/tests.rs`
-- [ ] Add recursive `LayoutBox` scrubbing for layout-only hidden content
-- [ ] Ensure active traversal skips hidden/display-none descendants
-- [ ] Keep `for_each_child_mut_all()` available for full-tree maintenance
+- [x] Add `VisibilityMode`
+- [x] Add a reusable visibility/display wrapper widget in `oriterm_ui/src/widgets/modifiers/visibility.rs`
+- [x] Create `oriterm_ui/src/widgets/modifiers/mod.rs` with `#[cfg(test)] mod tests;` and `oriterm_ui/src/widgets/modifiers/tests.rs`
+- [x] Add recursive `LayoutBox` scrubbing for layout-only hidden content
+- [x] Ensure active traversal skips hidden/display-none descendants
+- [x] Keep `for_each_child_mut_all()` available for full-tree maintenance
 
 ---
 
@@ -421,11 +421,11 @@ feature.
 
 ### Checklist
 
-- [ ] Add `pointer_events: bool` to `LayoutBox` and `LayoutNode`
-- [ ] Add `with_pointer_events(bool)`
-- [ ] Propagate the field through flex and grid solvers
-- [ ] Early-out in widget hit testing when pointer events are disabled
-- [ ] Expose a reusable wrapper or modifier API for parent-controlled use
+- [x] Add `pointer_events: bool` to `LayoutBox` and `LayoutNode`
+- [x] Add `with_pointer_events(bool)`
+- [x] Propagate the field through flex and grid solvers
+- [x] Early-out in widget hit testing when pointer events are disabled
+- [x] Expose a reusable wrapper or modifier API for parent-controlled use
 
 ---
 
@@ -466,10 +466,10 @@ sequence.
 
 ### Checklist
 
-- [ ] Apply subtree opacity at the correct boundary for disabled-row visuals
-- [ ] Keep existing icon alpha behavior unless a consumer truly wants subtree fade
-- [ ] Treat `PageContainerWidget` as existing behavior to generalize, not as a fake blocker
-- [ ] Preserve app-level page-switch rebuild logic unless the app integration is explicitly updated
+- [x] Apply subtree opacity at the correct boundary for disabled-row visuals
+- [x] Keep existing icon alpha behavior unless a consumer truly wants subtree fade
+- [x] Treat `PageContainerWidget` as existing behavior to generalize, not as a fake blocker
+- [x] Preserve app-level page-switch rebuild logic unless the app integration is explicitly updated
 
 ---
 
@@ -526,15 +526,20 @@ or the new modifiers tests:
 
 ### Checklist
 
-- [ ] Scene tests cover opacity stack and `ContentMask.opacity`
-- [ ] Scene-convert tests cover compositor-opacity multiplication
-- [ ] Modifiers tests cover `Visible`, `Hidden`, and `DisplayNone`
-- [ ] Input tests cover `pointer_events = false`
-- [ ] Pipeline or window-root tests cover stale-registration and focus-order cleanup
+- [x] Scene tests cover opacity stack and `ContentMask.opacity`
+- [x] Scene-convert tests cover compositor-opacity multiplication
+- [x] Modifiers tests cover `Visible`, `Hidden`, and `DisplayNone`
+- [x] Input tests cover `pointer_events = false`
+- [x] Pipeline or window-root tests cover stale-registration and focus-order cleanup
 
 ---
 
 ## 06.R Third Party Review Findings
+
+### Open Findings
+
+- [x] `TPR-06-007` [medium] — modifier wrappers are not layout-transparent.
+  **Resolved 2026-03-24**: Accepted. Both wrappers now copy the child's `width`/`height` `SizeSpec` onto the outer flex box, making Fill/FillPortion children layout-neutral. Added 5 tests proving layout transparency for Fill and FillPortion children in both `VisibilityWidget` and `PointerEventsWidget`.
 
 ### Resolved Findings
 
@@ -592,9 +597,9 @@ or the new modifiers tests:
 
 ### Checklist
 
-- [ ] `./build-all.sh` passes
-- [ ] `./clippy-all.sh` passes
-- [ ] `./test-all.sh` passes
-- [ ] `build_scene()` asserts balanced opacity pushes
-- [ ] visibility toggles do not leak stale interaction state
-- [ ] pointer-events suppression affects hit testing only
+- [x] `./build-all.sh` passes
+- [x] `./clippy-all.sh` passes
+- [x] `./test-all.sh` passes
+- [x] `build_scene()` asserts balanced opacity pushes
+- [x] visibility toggles do not leak stale interaction state
+- [x] pointer-events suppression affects hit testing only

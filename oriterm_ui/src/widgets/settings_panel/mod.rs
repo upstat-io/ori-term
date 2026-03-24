@@ -136,7 +136,8 @@ impl SettingsPanel {
             // Header: left margin + title + fill spacer + close button + right margin.
             let title = LabelWidget::new("Settings").with_style(LabelStyle {
                 font_size: TITLE_FONT_SIZE,
-                weight: crate::text::FontWeight::Bold,
+                weight: crate::text::FontWeight::BOLD,
+                line_height: None,
                 ..LabelStyle::default()
             });
 

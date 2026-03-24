@@ -2,55 +2,10 @@ use std::time::Duration;
 
 use crate::geometry::Point;
 use crate::input::{InputEvent, Modifiers, MouseButton};
-use crate::text::TextStyle;
 use crate::widgets::Widget;
 use crate::widgets::button::ButtonWidget;
-use crate::widgets::text_measurer::TextMeasurer;
 
-use super::{MockMeasurer, WidgetTestHarness};
-
-// -- MockMeasurer tests --
-
-#[test]
-fn mock_measurer_basic() {
-    let m = MockMeasurer::new();
-    let style = TextStyle::default();
-    let metrics = m.measure("hello", &style, f32::INFINITY);
-    assert_eq!(metrics.width, 40.0); // 5 chars * 8px
-    assert_eq!(metrics.height, 16.0);
-    assert_eq!(metrics.line_count, 1);
-}
-
-#[test]
-fn mock_measurer_wrapping() {
-    let m = MockMeasurer::new();
-    let style = TextStyle::default();
-    // "hello world" = 11 chars * 8px = 88px, max_width = 50px -> 2 lines.
-    let metrics = m.measure("hello world", &style, 50.0);
-    assert_eq!(metrics.width, 50.0);
-    assert_eq!(metrics.line_count, 2);
-    assert_eq!(metrics.height, 32.0);
-}
-
-#[test]
-fn mock_measurer_shape() {
-    let m = MockMeasurer::new();
-    let style = TextStyle::default();
-    let shaped = m.shape("abc", &style, f32::INFINITY);
-    assert_eq!(shaped.glyph_count(), 3);
-    assert_eq!(shaped.width, 24.0);
-    assert_eq!(shaped.height, 16.0);
-}
-
-#[test]
-fn mock_measurer_empty_text() {
-    let m = MockMeasurer::new();
-    let style = TextStyle::default();
-    let metrics = m.measure("", &style, f32::INFINITY);
-    assert_eq!(metrics.width, 0.0);
-    assert_eq!(metrics.height, 16.0);
-    assert_eq!(metrics.line_count, 1);
-}
+use super::WidgetTestHarness;
 
 // -- WidgetTestHarness tests --
 

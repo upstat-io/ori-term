@@ -27,6 +27,7 @@ fn make_node(x: f32, y: f32, w: f32, h: f32, id: Option<WidgetId>) -> LayoutNode
         disabled: false,
         interact_radius: 0.0,
         content_offset: (0.0, 0.0),
+        pointer_events: true,
     }
 }
 
@@ -932,6 +933,7 @@ fn hit_test_with_content_offset_translates_point() {
         interact_radius: 0.0,
         // Scrolled down 250px: content_offset = (0, -250).
         content_offset: (0.0, -250.0),
+        pointer_events: true,
     };
 
     // Click at y=50 in viewport → should hit button at y=300 in content
@@ -965,6 +967,7 @@ fn hit_test_with_content_offset_misses_outside_clip() {
         disabled: false,
         interact_radius: 0.0,
         content_offset: (0.0, -50.0),
+        pointer_events: true,
     };
 
     // Click at y=50 → adjusted to y=100 in content space.
@@ -996,6 +999,7 @@ fn hit_test_path_with_content_offset() {
         disabled: false,
         interact_radius: 0.0,
         content_offset: (0.0, -250.0),
+        pointer_events: true,
     };
 
     // Click at y=50 → should produce path [scroll, button].
@@ -1037,6 +1041,7 @@ fn scroll_with_children(
         disabled: false,
         interact_radius: 0.0,
         content_offset: (0.0, offset_y),
+        pointer_events: true,
     }
 }
 
@@ -1148,6 +1153,7 @@ fn scroll_horizontal_offset() {
         disabled: false,
         interact_radius: 0.0,
         content_offset: (-100.0, 0.0),
+        pointer_events: true,
     };
 
     // Click at viewport x=50 → content x=150 → hits button.
@@ -1196,6 +1202,7 @@ fn scroll_path_bounds_all_in_viewport_space() {
         disabled: false,
         interact_radius: 0.0,
         content_offset: (0.0, 0.0),
+        pointer_events: true,
     };
     let scroll = LayoutNode {
         rect: Rect::new(0.0, 0.0, 200.0, 200.0),
@@ -1208,6 +1215,7 @@ fn scroll_path_bounds_all_in_viewport_space() {
         disabled: false,
         interact_radius: 0.0,
         content_offset: (0.0, -350.0),
+        pointer_events: true,
     };
 
     // Click at viewport y=60 → content y=410 → button at 400..430 → hit.
@@ -1228,4 +1236,50 @@ fn scroll_path_bounds_all_in_viewport_space() {
         "button viewport y should be 50, got {}",
         path.path[2].bounds.y()
     );
+}
+
+// ── pointer_events tests ─────────────────────────────────────────────
+
+#[test]
+fn pointer_events_false_blocks_hit_test() {
+    let btn = WidgetId::next();
+    let mut node = make_node(0.0, 0.0, 100.0, 50.0, Some(btn));
+    node.pointer_events = false;
+
+    assert_eq!(layout_hit_test(&node, Point::new(50.0, 25.0)), None);
+    assert!(layout_hit_test_path(&node, Point::new(50.0, 25.0)).is_empty());
+}
+
+#[test]
+fn pointer_events_false_blocks_subtree() {
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+    let child = make_node(10.0, 10.0, 30.0, 30.0, Some(child_id));
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.children.push(child);
+    parent.pointer_events = false;
+
+    // Neither parent nor child should be hit.
+    assert_eq!(layout_hit_test(&parent, Point::new(20.0, 20.0)), None);
+}
+
+#[test]
+fn pointer_events_true_by_default() {
+    let node = make_node(0.0, 0.0, 100.0, 50.0, Some(WidgetId::next()));
+    assert!(node.pointer_events, "pointer_events should default to true");
+}
+
+#[test]
+fn pointer_events_false_preserves_layout_geometry() {
+    // Verify that pointer_events=false doesn't affect the node's rect or children.
+    let child_id = WidgetId::next();
+    let child = make_node(10.0, 10.0, 30.0, 30.0, Some(child_id));
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, None);
+    node.children.push(child);
+    node.pointer_events = false;
+
+    // Geometry is unchanged.
+    assert_eq!(node.rect.width(), 100.0);
+    assert_eq!(node.children[0].rect.width(), 30.0);
+    assert_eq!(node.children[0].widget_id, Some(child_id));
 }

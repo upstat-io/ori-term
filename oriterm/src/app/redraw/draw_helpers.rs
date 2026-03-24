@@ -17,7 +17,7 @@ use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use crate::app::App;
-use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
+use crate::font::{CachedTextMeasurer, TextShapeCache};
 use crate::gpu::state::GpuState;
 
 impl App {
@@ -55,11 +55,7 @@ impl App {
         let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
         let bounds = Rect::new(0.0, 0.0, logical_width, tab_bar_h);
 
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            text_cache,
-            scale,
-        );
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
         let icons = renderer.resolved_icons();
 
         let mut ctx = DrawCtx {
@@ -91,11 +87,7 @@ impl App {
         // the chrome tier (draw 7) would show through the dragged tab's bg.
         if tab_bar.has_drag_overlay() {
             scene.clear();
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                text_cache,
-                scale,
-            );
+            let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
             let icons = renderer.resolved_icons();
             let mut overlay_ctx = DrawCtx {
                 measurer: &measurer,
@@ -151,11 +143,7 @@ impl App {
         // drops before the mutable append_ui_scene_with_text call.
         // We collect (opacity) per overlay, then append after the borrow ends.
         {
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                text_cache,
-                scale,
-            );
+            let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
             overlays.layout_overlays(&measurer, theme);
         }
 
@@ -163,11 +151,7 @@ impl App {
             scene.clear();
             // Re-create measurer per iteration — cheap (no allocation), and
             // the immutable borrow drops before the mutable append below.
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                text_cache,
-                scale,
-            );
+            let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
             let icons = renderer.resolved_icons();
             let mut ctx = DrawCtx {
                 measurer: &measurer,
@@ -217,11 +201,7 @@ pub(in crate::app::redraw) fn collect_tab_bar_prepaint_bounds(
 ) -> HashMap<WidgetId, Rect> {
     let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
     let tab_bar_rect = Rect::new(0.0, 0.0, logical_width, tab_bar_h);
-    let measurer = CachedTextMeasurer::new(
-        UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-        text_cache,
-        scale,
-    );
+    let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
     let layout_ctx = LayoutCtx {
         measurer: &measurer,
         theme,

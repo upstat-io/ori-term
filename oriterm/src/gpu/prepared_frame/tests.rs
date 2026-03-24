@@ -2,7 +2,7 @@
 
 use oriterm_core::Rgb;
 
-use super::PreparedFrame;
+use super::{OverlayDrawRange, PreparedFrame};
 use crate::gpu::frame_input::ViewportSize;
 use crate::gpu::instance_writer::ScreenRect;
 
@@ -174,4 +174,60 @@ fn clear_and_reuse() {
         crate::gpu::instance_writer::CLIP_UNCLIPPED,
     );
     assert_eq!(frame.total_instances(), 2);
+}
+
+// --- extend_from with overlays ---
+
+/// Helper to push a dummy UI rect to an overlay buffer.
+fn push_dummy_overlay_rect(frame: &mut PreparedFrame) {
+    let r = ScreenRect {
+        x: 0.0,
+        y: 0.0,
+        w: 100.0,
+        h: 30.0,
+    };
+    frame.overlay_rects.push_ui_rect(
+        r,
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0; 4],
+        [0.0; 4],
+        [[0.0; 4]; 4],
+        [0.0, 0.0, 640.0, 480.0],
+    );
+}
+
+#[test]
+fn extend_from_shifts_overlay_draw_ranges_correctly() {
+    // Self frame has 2 overlay rects in one overlay.
+    let mut self_frame = PreparedFrame::new(VP, BLACK, 1.0);
+    push_dummy_overlay_rect(&mut self_frame);
+    push_dummy_overlay_rect(&mut self_frame);
+    self_frame.overlay_draw_ranges.push(OverlayDrawRange {
+        rects: (0, 2),
+        mono: (0, 0),
+        subpixel: (0, 0),
+        color: (0, 0),
+    });
+
+    // Other frame has 1 overlay rect in one overlay.
+    let mut other = PreparedFrame::new(VP, BLACK, 1.0);
+    push_dummy_overlay_rect(&mut other);
+    other.overlay_draw_ranges.push(OverlayDrawRange {
+        rects: (0, 1),
+        mono: (0, 0),
+        subpixel: (0, 0),
+        color: (0, 0),
+    });
+
+    self_frame.extend_from(&other);
+
+    // Self now has 3 overlay rects total.
+    assert_eq!(self_frame.overlay_rects.len(), 3);
+    // Two overlay draw ranges: the original and the shifted one.
+    assert_eq!(self_frame.overlay_draw_ranges.len(), 2);
+    // Original range is unchanged.
+    assert_eq!(self_frame.overlay_draw_ranges[0].rects, (0, 2));
+    // Shifted range: base was 2 (self had 2 rects before append),
+    // so other's (0,1) becomes (2,3).
+    assert_eq!(self_frame.overlay_draw_ranges[1].rects, (2, 3));
 }

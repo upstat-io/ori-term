@@ -1,11 +1,11 @@
 ---
 section: "03"
 title: "Text Transform + Letter Spacing"
-status: not-started
-reviewed: false
+status: complete
+reviewed: true
 third_party_review:
   status: resolved
-  updated: 2026-03-23
+  updated: 2026-03-24
 goal: "TextTransform survives through measurement, shaping, and caching; letter spacing stays a single logical-pixel style value and is applied consistently for metrics, overflow, and rendering"
 inspired_by:
   - "CSS text-transform (https://developer.mozilla.org/en-US/docs/Web/CSS/text-transform)"
@@ -14,22 +14,22 @@ depends_on: []
 sections:
   - id: "03.1"
     title: "TextTransform API"
-    status: not-started
+    status: complete
   - id: "03.2"
     title: "Pipeline + Cache Integration"
-    status: not-started
+    status: complete
   - id: "03.3"
     title: "Letter Spacing Semantics + Mockup Adoption"
-    status: not-started
+    status: complete
   - id: "03.4"
     title: "Tests"
-    status: not-started
+    status: complete
   - id: "03.R"
     title: "Third Party Review Findings"
     status: complete
   - id: "03.5"
     title: "Build & Verify"
-    status: not-started
+    status: complete
 ---
 
 # Section 03: Text Transform + Letter Spacing
@@ -156,11 +156,11 @@ text-specific styling knobs. Add `text_transform: TextTransform` there and forwa
 
 ### Checklist
 
-- [ ] Add `TextTransform::{None, Uppercase, Lowercase}` to `TextStyle`
-- [ ] Add `TextStyle::with_text_transform()`
-- [ ] Update `TextStyle::default()` and `TextStyle::new()`
-- [ ] Add `text_transform` to `LabelStyle`
-- [ ] Update `LabelStyle::from_theme()` and `Default`
+- [x] Add `TextTransform::{None, Uppercase, Lowercase}` to `TextStyle`
+- [x] Add `TextStyle::with_text_transform()`
+- [x] Update `TextStyle::default()` and `TextStyle::new()`
+- [x] Add `text_transform` to `LabelStyle`
+- [x] Update `LabelStyle::from_theme()` and `Default`
 
 ---
 
@@ -248,11 +248,11 @@ Keep the `"// "` prefix handling separate; that is pseudo-element content, not a
 
 ### Checklist
 
-- [ ] Apply `text_transform` inside the shared text pipeline, not per widget
-- [ ] Update `CachedTextMeasurer::TextCacheKey` to include `text_transform`
-- [ ] Update `MockMeasurer` to honor `TextStyle.text_transform`
-- [ ] Remove manual `.to_uppercase()` calls from settings section-title/sidebar-title code
-- [ ] Verify transformed style output matches explicitly transformed text
+- [x] Apply `text_transform` inside the shared text pipeline, not per widget
+- [x] Update `CachedTextMeasurer::TextCacheKey` to include `text_transform`
+- [x] Update `MockMeasurer` to honor `TextStyle.text_transform`
+- [x] Remove manual `.to_uppercase()` calls from settings section-title/sidebar-title code
+- [x] Verify transformed style output matches explicitly transformed text
 
 ---
 
@@ -342,11 +342,11 @@ Button/footer adoption is deferred unless Section 12 expands `ButtonStyle`.
 
 ### Checklist
 
-- [ ] Remove letter-spacing arithmetic from `UiFontMeasurer`
-- [ ] Apply spacing in one shared shaping/measurement path
-- [ ] Make ellipsis truncation respect spacing when spacing is non-zero
-- [ ] Keep `TextStyle.letter_spacing` as the only persisted spacing field
-- [ ] Keep current mockup-converted pixel constants for title/sidebar styles
+- [x] Remove letter-spacing arithmetic from `UiFontMeasurer`
+- [x] Apply spacing in one shared shaping/measurement path
+- [x] Make ellipsis truncation respect spacing when spacing is non-zero
+- [x] Keep `TextStyle.letter_spacing` as the only persisted spacing field
+- [x] Keep current mockup-converted pixel constants for title/sidebar styles
 
 ---
 
@@ -421,15 +421,24 @@ Add a forwarding test that `LabelStyle.text_transform` is propagated into the `T
 
 ### Checklist
 
-- [ ] `TextTransform` unit tests exist in `oriterm_ui`
-- [ ] Cache-key coverage exists for `text_transform`
-- [ ] `UiFontMeasurer` width consistency is tested with letter spacing
-- [ ] At least one transformed + ellipsized case is covered
-- [ ] `LabelStyle` forwarding is covered
+- [x] `TextTransform` unit tests exist in `oriterm_ui`
+- [x] Cache-key coverage exists for `text_transform`
+- [x] `UiFontMeasurer` width consistency is tested with letter spacing
+- [x] At least one transformed + ellipsized case is covered
+- [x] `LabelStyle` forwarding is covered
 
 ---
 
 ## 03.R Third Party Review Findings
+
+- [x] `[TPR-03-007][medium]` `oriterm/src/font/shaper/ui_text.rs:133` — ellipsis fitting still budgets letter spacing per Unicode scalar while the final shaped width adds spacing per glyph.
+  Resolved 2026-03-24: accepted and fixed. Two changes: (1) `shape_text()` now shapes the full text first and checks actual width (including per-glyph letter spacing) before deciding to truncate — this eliminates false truncation from ligatures/combining marks. (2) `truncate_with_ellipsis()` now counts only visible characters (nonzero unicode width) for the letter-spacing budget, matching the shaping output where zero-width marks don't produce glyphs. Added regression tests: `truncate_combining_marks_spacing_not_inflated` and `shape_text_ellipsis_shapes_first_to_avoid_false_truncation`.
+
+- [x] `[TPR-03-008][medium]` `oriterm_ui/src/testing/mock_measurer.rs:36` — `MockMeasurer` still measures transformed text by UTF-8 byte length instead of character/glyph count.
+  Resolved 2026-03-24: accepted and fixed. Changed both `measure()` and `shape()` in `MockMeasurer` to use `transformed.chars().count()` instead of `transformed.len()`. Added regression tests: `mock_measurer_non_ascii_width_matches_glyph_count` and `mock_measurer_transform_multibyte_consistent`.
+
+- [x] `[TPR-03-006][medium]` `oriterm/src/font/shaper/ui_text.rs:129` — the ellipsis path is still style-blind for letter spacing, so a spaced UI label can be truncated against the wrong width budget and then widened afterward.
+  Resolved 2026-03-24: accepted and fixed. Added `phys_letter_spacing` parameter to `shape_text()` and `truncate_with_ellipsis()`. Letter spacing is now applied inside `shape_text()` (to glyph advances) and accounted for in `truncate_with_ellipsis()` (per-character and ellipsis width budgets). Removed post-hoc spacing from `UiFontMeasurer::shape()` — all spacing logic is centralized in `shape_text`. Added 3 regression tests: `truncate_with_ellipsis_respects_letter_spacing`, `truncate_with_ellipsis_spacing_short_text_unchanged`, `shape_text_ellipsis_with_spacing_stays_within_budget`.
 
 - [x] `[TPR-03-001][high]` [plans/ui-css-framework/section-03-text-transform.md](/home/eric/projects/ori_term/plans/ui-css-framework/section-03-text-transform.md) - The original plan applied text transforms in each widget's `layout()` and `paint()` methods, which would have duplicated logic across every text-bearing widget and made cache behavior depend on caller discipline. Resolved: the section now requires transform handling in the shared text pipeline and cache model on 2026-03-23.
 

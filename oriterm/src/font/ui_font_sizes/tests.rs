@@ -1,6 +1,6 @@
 use super::*;
 use crate::font::collection::{FontSet, size_key};
-use crate::font::{GlyphFormat, HintingMode};
+use crate::font::{FaceIdx, GlyphFormat, HintingMode, parse_features};
 
 /// Helper: build a `UiFontSizes` from the embedded font with default settings.
 fn test_registry() -> UiFontSizes {
@@ -16,7 +16,7 @@ fn test_registry() -> UiFontSizes {
     .expect("registry must build")
 }
 
-// ── Construction ──
+// Construction
 
 #[test]
 fn preloaded_sizes_match_expected_count() {
@@ -38,7 +38,7 @@ fn default_q6_matches_13px_at_96dpi() {
     assert_eq!(reg.default_q6, expected);
 }
 
-// ── Exact-size lookup ──
+// Exact-size lookup
 
 #[test]
 fn select_returns_exact_size_collection() {
@@ -61,30 +61,31 @@ fn select_returns_none_for_missing_size() {
     assert!(reg.select(42.0, 1.0).is_none());
 }
 
-// ── Lazy creation ──
+// Lazy creation via ensure_size
 
 #[test]
-fn select_mut_creates_collection_for_unseen_size() {
+fn ensure_size_creates_collection_for_unseen_size() {
     let mut reg = test_registry();
     let initial = reg.len();
-    let fc = reg
-        .select_mut(42.0, 1.0)
+    reg.ensure_size(42.0, 1.0)
         .expect("lazy creation must succeed");
+    assert_eq!(reg.len(), initial + 1);
+
+    // Now select finds it.
+    let fc = reg.select(42.0, 1.0).expect("must find ensured size");
     let size_px = fc.size_px();
     assert!(
         (size_px - 42.0).abs() < 0.5,
         "expected ~42px, got {size_px}"
     );
-    assert_eq!(reg.len(), initial + 1);
 
-    // Second call returns the cached collection, no growth.
-    let _ = reg
-        .select_mut(42.0, 1.0)
+    // Second ensure_size is a no-op.
+    reg.ensure_size(42.0, 1.0)
         .expect("cached lookup must succeed");
     assert_eq!(reg.len(), initial + 1);
 }
 
-// ── Q6 lookup ──
+// Q6 lookup
 
 #[test]
 fn select_by_q6_finds_preloaded_size() {
@@ -101,7 +102,7 @@ fn select_by_q6_returns_none_for_unknown() {
     assert!(reg.select_by_q6(q6).is_none());
 }
 
-// ── DPI rebuild ──
+// DPI rebuild
 
 #[test]
 fn set_dpi_rebuilds_all_collections() {
@@ -138,7 +139,7 @@ fn set_dpi_noop_when_unchanged() {
     assert_eq!(reg.default_q6, q6_before);
 }
 
-// ── Hinting and format propagation ──
+// Hinting and format propagation
 
 #[test]
 fn set_hinting_propagates_to_all_collections() {
@@ -158,7 +159,7 @@ fn set_format_propagates_to_all_collections() {
     assert_eq!(fc.format(), GlyphFormat::SubpixelRgb);
 }
 
-// ── Standalone default creation ──
+// Standalone default creation
 
 #[test]
 fn create_default_collection_matches_registry_size() {
@@ -170,5 +171,76 @@ fn create_default_collection_matches_registry_size() {
         "standalone size {} must match registry size {}",
         standalone.size_px(),
         registry_fc.size_px(),
+    );
+}
+
+// Post-rebuild hook
+
+/// Helper: check if a feature list contains a "smcp" feature.
+fn has_smcp(features: &[rustybuzz::Feature]) -> bool {
+    let smcp = parse_features(&["smcp"]);
+    features.iter().any(|f| f.tag == smcp[0].tag)
+}
+
+#[test]
+fn set_dpi_reapplies_post_rebuild_hook() {
+    let mut reg = test_registry();
+
+    // Install a hook that sets a custom feature ("smcp" — small caps).
+    let features = parse_features(&["smcp"]);
+    reg.set_post_rebuild_hook(Box::new(move |fc| {
+        fc.set_features(features.clone());
+    }));
+
+    // Before DPI change: default collection still has original features.
+    let before = reg
+        .default_collection()
+        .unwrap()
+        .features_for_face(FaceIdx::REGULAR);
+    assert!(
+        !has_smcp(before),
+        "smcp should not be present before hook runs"
+    );
+
+    // DPI change triggers rebuild_all → hook reapplied.
+    reg.set_dpi(192.0).expect("DPI rebuild must succeed");
+
+    let after = reg
+        .default_collection()
+        .unwrap()
+        .features_for_face(FaceIdx::REGULAR);
+    assert!(has_smcp(after), "smcp must be present after DPI rebuild");
+}
+
+#[test]
+fn ensure_size_applies_post_rebuild_hook() {
+    let mut reg = test_registry();
+
+    let features = parse_features(&["smcp"]);
+    reg.set_post_rebuild_hook(Box::new(move |fc| {
+        fc.set_features(features.clone());
+    }));
+
+    reg.ensure_size(42.0, 1.0).expect("must succeed");
+    let fc = reg.select(42.0, 1.0).expect("42px must exist");
+    assert!(
+        has_smcp(fc.features_for_face(FaceIdx::REGULAR)),
+        "smcp must be present on newly ensured size"
+    );
+}
+
+#[test]
+fn create_default_collection_applies_post_rebuild_hook() {
+    let mut reg = test_registry();
+
+    let features = parse_features(&["smcp"]);
+    reg.set_post_rebuild_hook(Box::new(move |fc| {
+        fc.set_features(features.clone());
+    }));
+
+    let standalone = reg.create_default_collection().expect("must succeed");
+    assert!(
+        has_smcp(standalone.features_for_face(FaceIdx::REGULAR)),
+        "smcp must be present on standalone default collection"
     );
 }

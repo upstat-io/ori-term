@@ -340,13 +340,12 @@ impl App {
         let scale = ScaleFactor::new(window.scale_factor()).factor() as f32;
         let physical_dpi = super::DEFAULT_DPI * scale;
         let hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
-        let opacity = f64::from(self.config.window.effective_opacity());
-        let format = super::config_reload::resolve_subpixel_mode(
-            &self.config.font,
-            f64::from(scale),
-            opacity,
-        )
-        .glyph_format();
+        // Dialogs are always opaque (transparent: false, opacity: 1.0), so
+        // derive glyph format from the dialog surface's own opacity contract
+        // rather than the main window's configured opacity.
+        let format =
+            super::config_reload::resolve_subpixel_mode(&self.config.font, f64::from(scale), 1.0)
+                .glyph_format();
 
         let ui_sizes = self.font_set.as_ref().and_then(|fs| {
             crate::font::UiFontSizes::new(
@@ -358,6 +357,14 @@ impl App {
                 crate::font::ui_font_sizes::PRELOAD_SIZES,
             )
             .ok()
+            .map(|mut sizes| {
+                super::config_reload::apply_font_config_to_ui_sizes(
+                    &mut sizes,
+                    &self.config.font,
+                    &self.user_fallback_map,
+                );
+                sizes
+            })
         })?;
 
         Some(WindowRenderer::new_ui_only(gpu, pipelines, ui_sizes))

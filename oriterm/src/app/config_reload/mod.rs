@@ -13,8 +13,8 @@ pub(crate) use color_config::build_palette_from_config;
 use super::{App, DEFAULT_DPI};
 use crate::config::{Config, FontConfig};
 use crate::font::{
-    FaceIdx, FontByteCache, FontCollection, FontSet, HintingMode, SubpixelMode, parse_features,
-    parse_hex_range,
+    FaceIdx, FontByteCache, FontCollection, FontSet, HintingMode, SubpixelMode, UiFontSizes,
+    parse_features, parse_hex_range, ui_font_sizes,
 };
 use crate::keybindings;
 
@@ -118,11 +118,11 @@ impl App {
             .iter()
             .map(|f| f.family.as_str())
             .collect();
-        let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
+        let fallback_map = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
 
         // Update cached font set on App for future window creation.
         self.font_set = Some(font_set.clone());
-        self.user_fb_count = user_fb_count;
+        self.user_fallback_map.clone_from(&fallback_map);
 
         let Some(gpu) = &self.gpu else { return };
 
@@ -146,7 +146,7 @@ impl App {
                 hinting,
             ) {
                 Ok(mut fc) => {
-                    apply_font_config(&mut fc, &new.font, user_fb_count);
+                    apply_font_config(&mut fc, &new.font, &fallback_map);
                     fc
                 }
                 Err(e) => {
@@ -161,6 +161,20 @@ impl App {
                 new.font.size,
                 cell.width,
                 cell.height,
+            );
+
+            // UI registry always uses base weight 400 (Regular) — individual
+            // UI text elements drive their weight via TextStyle.weight through
+            // resolve_ui_weight(), not through the collection-level weight.
+            rebuild_ui_font_sizes(
+                renderer,
+                &font_set,
+                physical_dpi,
+                format,
+                hinting,
+                400,
+                &new.font,
+                &fallback_map,
             );
             renderer.replace_font_collection(fc, gpu);
             ctx.text_cache.clear();
@@ -318,13 +332,14 @@ impl App {
 /// Handles: user features, per-fallback metadata (`size_offset`, features),
 /// user variable font variations, and codepoint-to-font mappings.
 ///
-/// `user_fb_count` is the number of user-configured fallbacks that were
-/// successfully loaded and prepended (for matching config indices to
-/// fallback array indices).
+/// `fallback_map` maps loaded fallback index → original config index. This
+/// accounts for config entries that failed to load: loaded index 0 may
+/// correspond to config index 2 if entries 0 and 1 failed. Use this to
+/// apply per-fallback metadata and codepoint mappings to the correct face.
 pub(crate) fn apply_font_config(
     collection: &mut FontCollection,
     config: &FontConfig,
-    user_fb_count: usize,
+    fallback_map: &[usize],
 ) {
     // 1. Apply user-configured OpenType features (replace defaults).
     let feature_refs: Vec<&str> = config.features.iter().map(String::as_str).collect();
@@ -332,23 +347,24 @@ pub(crate) fn apply_font_config(
     collection.set_features(features);
 
     // 2. Apply per-fallback metadata (size_offset, features) to user fallbacks.
-    // User fallbacks occupy indices 0..user_fb_count in the fallback array.
-    // We apply config metadata to each loaded user fallback in order.
-    for (i, fb_config) in config.fallback.iter().enumerate() {
-        if i >= user_fb_count {
-            break;
+    // `fallback_map[loaded_idx]` gives the config index for each loaded fallback.
+    for (loaded_idx, &config_idx) in fallback_map.iter().enumerate() {
+        if let Some(fb_config) = config.fallback.get(config_idx) {
+            let fb_features = fb_config.features.as_ref().map(|f| {
+                let refs: Vec<&str> = f.iter().map(String::as_str).collect();
+                parse_features(&refs)
+            });
+            collection.set_fallback_meta(
+                loaded_idx,
+                fb_config.size_offset.unwrap_or(0.0),
+                fb_features,
+            );
         }
-        let fb_features = fb_config.features.as_ref().map(|f| {
-            let refs: Vec<&str> = f.iter().map(String::as_str).collect();
-            parse_features(&refs)
-        });
-        collection.set_fallback_meta(i, fb_config.size_offset.unwrap_or(0.0), fb_features);
     }
 
     // 3. Apply codepoint-to-font mappings.
-    // Codepoint map entries reference families by name. The mapped face index
-    // must point to an actual loaded fallback. We search the user fallback
-    // config entries for a matching family name and use that index.
+    // Codepoint map entries reference families by name. We find the config
+    // index for that family, then look up its loaded index via `fallback_map`.
     for entry in &config.codepoint_map {
         let Some((start, end)) = parse_hex_range(&entry.range) else {
             log::warn!(
@@ -357,25 +373,26 @@ pub(crate) fn apply_font_config(
             );
             continue;
         };
-        // Find the fallback index for this family name.
-        let face_idx = config
+        // Find the config index for this family name, then its loaded index.
+        let config_idx = config
             .fallback
             .iter()
-            .position(|fb| fb.family == entry.family)
-            .map(FaceIdx::from_fallback_index);
-        match face_idx {
-            Some(idx) => {
-                collection.add_codepoint_mapping(start, end, idx);
+            .position(|fb| fb.family == entry.family);
+        let loaded_idx = config_idx.and_then(|ci| fallback_map.iter().position(|&mi| mi == ci));
+        match loaded_idx {
+            Some(li) => {
+                let face_idx = FaceIdx::from_fallback_index(li);
+                collection.add_codepoint_mapping(start, end, face_idx);
                 log::info!(
                     "config: codepoint map {:?} → {:?} (face {})",
                     entry.range,
                     entry.family,
-                    idx.0,
+                    face_idx.0,
                 );
             }
             None => {
                 log::warn!(
-                    "config: codepoint_map family {:?} not found in [[font.fallback]], skipping",
+                    "config: codepoint_map family {:?} not found in loaded fallbacks, skipping",
                     entry.family,
                 );
             }
@@ -427,5 +444,60 @@ pub(crate) fn resolve_subpixel_mode(
             SubpixelMode::for_display(scale_factor, opacity)
         }
         None => SubpixelMode::for_display(scale_factor, opacity),
+    }
+}
+
+/// Apply font config to all collections in a [`UiFontSizes`] registry and
+/// install a post-rebuild hook so DPI changes reapply the same config.
+pub(crate) fn apply_font_config_to_ui_sizes(
+    sizes: &mut UiFontSizes,
+    config: &FontConfig,
+    fallback_map: &[usize],
+) {
+    for fc in sizes.collections_mut() {
+        apply_font_config(fc, config, fallback_map);
+    }
+    let config = config.clone();
+    let fallback_map = fallback_map.to_vec();
+    sizes.set_post_rebuild_hook(Box::new(move |fc| {
+        apply_font_config(fc, &config, &fallback_map);
+    }));
+}
+
+/// Rebuild the UI font sizes registry on a renderer from a fresh `FontSet`.
+///
+/// Creates a new [`UiFontSizes`] with the same DPI/format/hinting/weight
+/// and applies user font config (features, fallback metadata, codepoint
+/// mappings) to every collection. The caller must follow with
+/// [`replace_font_collection`] to clear and re-prewarm atlases.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "passes through font config params"
+)]
+fn rebuild_ui_font_sizes(
+    renderer: &mut crate::gpu::WindowRenderer,
+    font_set: &FontSet,
+    dpi: f32,
+    format: crate::font::GlyphFormat,
+    hinting: HintingMode,
+    weight: u16,
+    font_config: &FontConfig,
+    fallback_map: &[usize],
+) {
+    match UiFontSizes::new(
+        font_set.clone(),
+        dpi,
+        format,
+        hinting,
+        weight,
+        ui_font_sizes::PRELOAD_SIZES,
+    ) {
+        Ok(mut ui_sizes) => {
+            apply_font_config_to_ui_sizes(&mut ui_sizes, font_config, fallback_map);
+            renderer.replace_ui_font_sizes(ui_sizes);
+        }
+        Err(e) => {
+            log::warn!("config reload: UI font registry rebuild failed: {e}");
+        }
     }
 }

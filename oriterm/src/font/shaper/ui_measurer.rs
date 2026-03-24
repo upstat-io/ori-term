@@ -1,75 +1,108 @@
-//! Real text measurer for UI widgets backed by a [`FontCollection`].
+//! Size-aware text measurer for UI widgets.
 //!
-//! Lightweight adapter that wraps `&FontCollection` and delegates to the
-//! existing shaping functions in [`ui_text`](super::ui_text). This replaces
-//! the `NullMeasurer` stub so dialog titles, messages, and button labels
-//! render with actual text.
+//! Wraps the [`UiFontSizes`] registry and delegates to the shaping functions
+//! in [`ui_text`](super::ui_text). Each `TextStyle.size` selects the exact
+//! [`FontCollection`] for that logical pixel size, so 18px titles and 10px
+//! sidebar text rasterize at their true sizes.
 
 use oriterm_ui::text::{ShapedText, TextMetrics, TextStyle};
 use oriterm_ui::widgets::TextMeasurer;
 
 use crate::font::collection::FontCollection;
+use crate::font::ui_font_sizes::UiFontSizes;
 
 use super::ui_text;
 
-/// Text measurer backed by a real [`FontCollection`].
+/// Text measurer backed by a [`UiFontSizes`] registry.
 ///
-/// Created per-frame from the renderer's active UI font collection and passed
-/// to widget layout/draw/event contexts. The `scale` factor converts between
-/// the widget layout coordinate system (logical pixels) and the font's
-/// rasterization coordinate system (physical pixels).
+/// Created per-frame from the renderer's font state and passed to widget
+/// layout/draw/event contexts. The `scale` factor converts between the widget
+/// layout coordinate system (logical pixels) and the font's rasterization
+/// coordinate system (physical pixels).
+///
+/// For each `TextStyle`, [`collection_for_style`](Self::collection_for_style)
+/// selects the exact-size collection from the registry. If the registry is
+/// absent or lacks the requested size, it falls back to `fallback`.
 ///
 /// - [`measure()`](TextMeasurer::measure) returns metrics in logical pixels
 ///   (physical ÷ scale) so widget layout computes correct proportions.
 /// - [`shape()`](TextMeasurer::shape) returns [`ShapedText`] with physical-pixel
 ///   advances so glyph bitmaps render at native resolution without stretching.
 pub struct UiFontMeasurer<'a> {
-    collection: &'a FontCollection,
+    sizes: Option<&'a UiFontSizes>,
+    fallback: &'a FontCollection,
     scale: f32,
 }
 
 impl<'a> UiFontMeasurer<'a> {
-    /// Wrap a font collection for use as a text measurer.
+    /// Create a size-aware text measurer.
     ///
-    /// `scale` is the display scale factor (logical → physical pixel ratio).
-    /// Pass `1.0` when no scaling is needed.
-    pub fn new(collection: &'a FontCollection, scale: f32) -> Self {
-        Self { collection, scale }
+    /// `sizes` is the per-size UI font registry (`None` if no UI fonts loaded).
+    /// `fallback` is the default collection used when `sizes` is absent or
+    /// lacks the requested size. `scale` is the display scale factor
+    /// (logical → physical pixel ratio).
+    pub fn new(sizes: Option<&'a UiFontSizes>, fallback: &'a FontCollection, scale: f32) -> Self {
+        Self {
+            sizes,
+            fallback,
+            scale,
+        }
+    }
+
+    /// Select the collection matching a text style's size.
+    ///
+    /// Looks up the exact physical size in the registry. Falls back to
+    /// `self.fallback` if the registry is absent or the size isn't loaded.
+    fn collection_for_style(&self, style: &TextStyle) -> &FontCollection {
+        self.sizes
+            .and_then(|sizes| sizes.select(style.size, self.scale))
+            .unwrap_or(self.fallback)
     }
 }
 
 impl TextMeasurer for UiFontMeasurer<'_> {
     fn measure(&self, text: &str, style: &TextStyle, _max_width: f32) -> TextMetrics {
-        // Shaping produces physical-pixel metrics; convert to logical for layout.
-        let phys = ui_text::measure_text_styled(text, style, self.collection);
-        let mut width = phys.width / self.scale;
-        // Letter spacing: add logical-pixel spacing per glyph to the width.
-        if style.letter_spacing > 0.0 {
-            let glyph_count = text.chars().count() as f32;
-            width += style.letter_spacing * glyph_count;
-        }
+        let collection = self.collection_for_style(style);
+        let phys_spacing = style.letter_spacing.max(0.0) * self.scale;
+        let shaped = ui_text::shape_text(text, style, f32::INFINITY, phys_spacing, collection);
+        let height = match style.normalized_line_height() {
+            Some(multiplier) => style.size * multiplier,
+            None => shaped.height / self.scale,
+        };
         TextMetrics {
-            width,
-            height: phys.height / self.scale,
-            line_count: phys.line_count,
+            width: shaped.width / self.scale,
+            height,
+            line_count: 1,
         }
     }
 
     fn shape(&self, text: &str, style: &TextStyle, max_width: f32) -> ShapedText {
+        let collection = self.collection_for_style(style);
+        let phys_spacing = style.letter_spacing.max(0.0) * self.scale;
         // Widget passes logical max_width; convert to physical for truncation.
-        let mut shaped = ui_text::shape_text(text, style, max_width * self.scale, self.collection);
-        // Apply letter spacing: convert logical pixels to physical for glyph advances.
-        if style.letter_spacing > 0.0 && !shaped.glyphs.is_empty() {
-            let phys_spacing = style.letter_spacing * self.scale;
-            for g in &mut shaped.glyphs {
-                g.x_advance += phys_spacing;
-            }
-            shaped.width += phys_spacing * shaped.glyphs.len() as f32;
+        let mut shaped = ui_text::shape_text(
+            text,
+            style,
+            max_width * self.scale,
+            phys_spacing,
+            collection,
+        );
+
+        if let Some(multiplier) = style.normalized_line_height() {
+            let target_logical = style.size * multiplier;
+            let target_physical = target_logical * self.scale;
+            // shaped.height is still physical at this point (from ui_text::shape_text).
+            let half_leading = (target_physical - shaped.height) / 2.0;
+            // Shift baseline in physical space (scene_convert consumes it as physical).
+            shaped.baseline += half_leading;
+            shaped.height = target_logical;
+        } else {
+            shaped.height /= self.scale;
         }
-        // Convert layout metrics to logical pixels for widget centering/positioning.
+
+        // Convert width to logical pixels for widget positioning.
         // Glyph advances and baseline remain in physical pixels for rendering.
         shaped.width /= self.scale;
-        shaped.height /= self.scale;
         shaped
     }
 }

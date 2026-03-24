@@ -1,6 +1,7 @@
 //! Prepared frame output from the Prepare phase of the render pipeline.
 //!
-//! [`PreparedFrame`] holds thirteen [`InstanceWriter`] buffers plus metadata
+//! [`PreparedFrame`] holds eleven [`InstanceWriter`] buffers, two [`UiRectWriter`]
+//! buffers (for chrome and overlay rects), plus metadata
 //! the Render phase needs to upload and draw. The thirteen buffers map to
 //! thirteen draw calls in painter's order: backgrounds → mono glyphs →
 //! subpixel glyphs → color glyphs → cursors → UI rects → UI mono glyphs →
@@ -13,6 +14,7 @@ use oriterm_core::image::ImageId;
 use super::frame_input::{SelectionDamageSnapshot, ViewportSize};
 use super::instance_writer::InstanceWriter;
 use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
+use super::ui_rect_writer::UiRectWriter;
 use super::{maybe_shrink_vec, srgb_to_linear};
 
 /// Instance index ranges for a single overlay's content within the shared buffers.
@@ -83,16 +85,16 @@ pub struct PreparedFrame {
     pub(crate) color_glyphs: InstanceWriter,
     /// Cursor instances (block, bar, underline shapes).
     pub(crate) cursors: InstanceWriter,
-    /// UI rect instances (SDF rounded rectangles — chrome layer).
-    pub(crate) ui_rects: InstanceWriter,
+    /// UI rect instances (SDF rounded rectangles — chrome layer, 144-byte).
+    pub(crate) ui_rects: UiRectWriter,
     /// UI monochrome glyph instances (chrome text, drawn after UI rects).
     pub(crate) ui_glyphs: InstanceWriter,
     /// UI subpixel glyph instances (chrome text, drawn after UI rects).
     pub(crate) ui_subpixel_glyphs: InstanceWriter,
     /// UI color glyph instances (chrome text, drawn after UI rects).
     pub(crate) ui_color_glyphs: InstanceWriter,
-    /// Overlay rect instances (SDF rounded rectangles — overlay layer, above chrome text).
-    pub(crate) overlay_rects: InstanceWriter,
+    /// Overlay rect instances (SDF rounded rectangles — overlay layer, 144-byte).
+    pub(crate) overlay_rects: UiRectWriter,
     /// Overlay monochrome glyph instances (drawn after overlay rects).
     pub(crate) overlay_glyphs: InstanceWriter,
     /// Overlay subpixel glyph instances (drawn after overlay rects).
@@ -141,11 +143,11 @@ impl PreparedFrame {
             subpixel_glyphs: InstanceWriter::new(),
             color_glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::new(),
-            ui_rects: InstanceWriter::new(),
+            ui_rects: UiRectWriter::new(),
             ui_glyphs: InstanceWriter::new(),
             ui_subpixel_glyphs: InstanceWriter::new(),
             ui_color_glyphs: InstanceWriter::new(),
-            overlay_rects: InstanceWriter::new(),
+            overlay_rects: UiRectWriter::new(),
             overlay_glyphs: InstanceWriter::new(),
             overlay_subpixel_glyphs: InstanceWriter::new(),
             overlay_color_glyphs: InstanceWriter::new(),
@@ -180,11 +182,11 @@ impl PreparedFrame {
             subpixel_glyphs: InstanceWriter::new(),
             color_glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::with_capacity(4),
-            ui_rects: InstanceWriter::new(),
+            ui_rects: UiRectWriter::new(),
             ui_glyphs: InstanceWriter::new(),
             ui_subpixel_glyphs: InstanceWriter::new(),
             ui_color_glyphs: InstanceWriter::new(),
-            overlay_rects: InstanceWriter::new(),
+            overlay_rects: UiRectWriter::new(),
             overlay_glyphs: InstanceWriter::new(),
             overlay_subpixel_glyphs: InstanceWriter::new(),
             overlay_color_glyphs: InstanceWriter::new(),
@@ -334,19 +336,20 @@ impl PreparedFrame {
         self.ui_subpixel_glyphs
             .extend_from(&other.ui_subpixel_glyphs);
         self.ui_color_glyphs.extend_from(&other.ui_color_glyphs);
-        self.overlay_rects.extend_from(&other.overlay_rects);
-        self.overlay_glyphs.extend_from(&other.overlay_glyphs);
-        self.overlay_subpixel_glyphs
-            .extend_from(&other.overlay_subpixel_glyphs);
-        self.overlay_color_glyphs
-            .extend_from(&other.overlay_color_glyphs);
-        // Shift per-overlay draw ranges by current buffer lengths.
+        // Capture overlay base lengths BEFORE appending, so shifted ranges
+        // address the correct indices in the merged buffers.
         let bases = [
             self.overlay_rects.len() as u32,
             self.overlay_glyphs.len() as u32,
             self.overlay_subpixel_glyphs.len() as u32,
             self.overlay_color_glyphs.len() as u32,
         ];
+        self.overlay_rects.extend_from(&other.overlay_rects);
+        self.overlay_glyphs.extend_from(&other.overlay_glyphs);
+        self.overlay_subpixel_glyphs
+            .extend_from(&other.overlay_subpixel_glyphs);
+        self.overlay_color_glyphs
+            .extend_from(&other.overlay_color_glyphs);
         for range in &other.overlay_draw_ranges {
             let mut shifted = range.clone();
             shifted.rects = (range.rects.0 + bases[0], range.rects.1 + bases[0]);

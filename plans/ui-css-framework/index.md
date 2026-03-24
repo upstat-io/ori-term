@@ -20,7 +20,7 @@ order: 5
 ---
 
 ### Section 01: Multi-Size Font Rendering
-**File:** `section-01-multi-size-fonts.md` | **Status:** Not Started
+**File:** `section-01-multi-size-fonts.md` | **Status:** Complete
 
 ```
 font-size, multi-size, TextStyle.size, size_q6, RasterKey
@@ -33,19 +33,21 @@ collection/mod.rs, collection/face.rs, font/mod.rs
 ---
 
 ### Section 02: Numeric Font Weight System
-**File:** `section-02-font-weight.md` | **Status:** Not Started
+**File:** `section-02-font-weight.md` | **Status:** In Progress (1 blocked item)
 
 ```
 font-weight, FontWeight, 100-900, Regular, Medium, Bold
 GlyphStyle, face_idx, resolve, synthetic, SyntheticFlags
-text/mod.rs, font/mod.rs, collection/resolve.rs
+text/mod.rs, font/mod.rs, collection/resolve.rs, collection/metadata.rs
 CSS 400, 500, 600, 700, weight selection, nearest-match
+face_variations, wght axis, resolve_ui_weight, rasterize_with_weight
+create_shaping_faces_for_weight, ShapedText.weight, RasterKey.weight
 ```
 
 ---
 
 ### Section 03: Text Transform + Letter Spacing
-**File:** `section-03-text-transform.md` | **Status:** Not Started
+**File:** `section-03-text-transform.md` | **Status:** Complete
 
 ```
 text-transform, uppercase, lowercase, capitalize, TextTransform
@@ -57,7 +59,7 @@ sidebar_nav, button, appearance.rs
 ---
 
 ### Section 04: Line Height Control
-**File:** `section-04-line-height.md` | **Status:** Not Started
+**File:** `section-04-line-height.md` | **Status:** Complete
 
 ```
 line-height, line_height, ShapedText.height, baseline
@@ -69,19 +71,21 @@ layout height, text block sizing
 ---
 
 ### Section 05: Per-Side Borders
-**File:** `section-05-per-side-borders.md` | **Status:** Not Started
+**File:** `section-05-per-side-borders.md` | **Status:** Complete
 
 ```
 border-left, border-top, border-right, border-bottom
-Border, BorderSides, RectStyle, border_width
-border.rs, rect_style.rs, rect shader, push_quad
+Border, BorderSides, RectStyle, border_width, UiRectWriter
+border.rs, rect_style.rs, ui_rect.wgsl, ui_rect_writer
+push_ui_rect, corner_radii, corner ownership, SDF
 sidebar right border, footer top border, nav active left border
+144-byte, dedicated UI rect instance, per-side colors
 ```
 
 ---
 
 ### Section 06: Opacity + Display Control
-**File:** `section-06-opacity-display.md` | **Status:** Not Started
+**File:** `section-06-opacity-display.md` | **Status:** Complete
 
 ```
 opacity, display:none, visibility, hidden, disabled
@@ -93,7 +97,7 @@ page switching, disabled controls, inactive icons
 ---
 
 ### Section 07: Scrollbar Styling
-**File:** `section-07-scrollbar-styling.md` | **Status:** Not Started
+**File:** `section-07-scrollbar-styling.md` | **Status:** In Progress
 
 ```
 scrollbar, scrollbar-width, scrollbar-track, scrollbar-thumb

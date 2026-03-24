@@ -306,6 +306,7 @@ fn raster_key_equality() {
     let k1 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -315,6 +316,7 @@ fn raster_key_equality() {
     let k2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -324,6 +326,7 @@ fn raster_key_equality() {
     let k3 = RasterKey {
         glyph_id: 43,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -339,6 +342,7 @@ fn raster_key_hash_consistency() {
     let k1 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -348,6 +352,7 @@ fn raster_key_hash_consistency() {
     let k2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -811,6 +816,7 @@ fn rasterize_with_synthesis(
     let key = RasterKey {
         glyph_id: resolved.glyph_id,
         face_idx: resolved.face_idx,
+        weight: 0,
         size_q6: super::size_key(fc.size_px()),
         synthetic,
         hinted: true,
@@ -1149,6 +1155,7 @@ fn raster_key_hinting_distinguishes_cache() {
     let k_hinted = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -1158,6 +1165,7 @@ fn raster_key_hinting_distinguishes_cache() {
     let k_unhinted = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: false,
@@ -1405,6 +1413,7 @@ fn raster_key_subpx_x_distinguishes_cache() {
     let k_phase0 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -1414,6 +1423,7 @@ fn raster_key_subpx_x_distinguishes_cache() {
     let k_phase2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -1979,4 +1989,106 @@ fn font_byte_cache_dropped_after_loading() {
         1,
         "after cache drop, regular data Arc should have strong_count == 1"
     );
+}
+
+// ── UI Weight Resolution ──
+
+use super::metadata::resolve_ui_weight;
+
+#[test]
+fn resolve_ui_weight_variable_font_uses_regular_slot() {
+    let res = resolve_ui_weight(400, true, true);
+    assert_eq!(res.face_slot, 0);
+    assert_eq!(res.wght_value, Some(400.0));
+    assert!(!res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_variable_font_bold_uses_regular_slot() {
+    // Variable font: even at 700, use Regular slot — axis handles it.
+    let res = resolve_ui_weight(700, true, true);
+    assert_eq!(res.face_slot, 0);
+    assert_eq!(res.wght_value, Some(700.0));
+    assert!(!res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_static_bold_above_700() {
+    let res = resolve_ui_weight(700, false, true);
+    assert_eq!(res.face_slot, 1);
+    assert!(res.wght_value.is_none());
+    assert!(!res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_static_no_bold_uses_synthetic() {
+    let res = resolve_ui_weight(700, false, false);
+    assert_eq!(res.face_slot, 0);
+    assert!(res.wght_value.is_none());
+    assert!(res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_medium_on_static_uses_regular() {
+    // 500 on static font: Regular is closest (undershoots less than Bold overshoots).
+    let res = resolve_ui_weight(500, false, true);
+    assert_eq!(res.face_slot, 0);
+    assert!(res.wght_value.is_none());
+    assert!(!res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_light_weights() {
+    for w in [100, 200, 300] {
+        let res = resolve_ui_weight(w, false, true);
+        assert_eq!(res.face_slot, 0, "weight {w} should use Regular slot");
+        assert!(
+            !res.needs_synthetic_bold,
+            "weight {w} should not need synthetic bold"
+        );
+    }
+}
+
+// ── face_variations_for_ui_weight ──
+
+use super::metadata::face_variations_for_ui_weight;
+
+#[test]
+fn face_variations_for_ui_weight_sets_exact_wght() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let result = face_variations_for_ui_weight(SyntheticFlags::NONE, 500, &axes);
+    assert_eq!(result.settings.len(), 1);
+    assert_eq!(result.settings[0].0, "wght");
+    assert!((result.settings[0].1 - 500.0).abs() < 0.01);
+}
+
+#[test]
+fn face_variations_for_ui_weight_no_axis_returns_empty() {
+    let axes = vec![];
+    let result = face_variations_for_ui_weight(SyntheticFlags::NONE, 500, &axes);
+    assert!(result.settings.is_empty());
+}
+
+#[test]
+fn face_variations_for_ui_weight_applies_to_fallback_with_wght_axis() {
+    // Fallback faces with a wght axis should get the requested weight applied,
+    // ensuring consistent weight across primary and fallback glyphs (TPR-02-007).
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let result = face_variations_for_ui_weight(SyntheticFlags::NONE, 700, &axes);
+    assert_eq!(result.settings.len(), 1);
+    assert_eq!(result.settings[0].0, "wght");
+    assert!((result.settings[0].1 - 700.0).abs() < 0.01);
+}
+
+#[test]
+fn face_variations_for_ui_weight_italic_still_set() {
+    let axes = vec![
+        axis(b"wght", 100.0, 400.0, 900.0),
+        axis(b"slnt", -12.0, 0.0, 0.0),
+    ];
+    let result = face_variations_for_ui_weight(SyntheticFlags::ITALIC, 500, &axes);
+    assert_eq!(result.settings.len(), 2);
+    assert_eq!(result.settings[0].0, "wght");
+    assert_eq!(result.settings[1].0, "slnt");
+    assert!(result.suppress_synthetic.contains(SyntheticFlags::ITALIC));
 }

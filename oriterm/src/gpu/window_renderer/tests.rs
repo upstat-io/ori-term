@@ -5,8 +5,6 @@
 
 use super::*;
 
-// ── SurfaceError display ──
-
 #[test]
 fn surface_error_display() {
     assert_eq!(SurfaceError::Lost.to_string(), "surface lost or outdated");

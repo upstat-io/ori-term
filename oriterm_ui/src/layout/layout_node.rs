@@ -39,6 +39,11 @@ pub struct LayoutNode {
     /// Hit testing translates the test point by this offset before checking
     /// children. Matches the visual translate applied during rendering.
     pub content_offset: (f32, f32),
+    /// Whether this subtree participates in pointer hit testing.
+    ///
+    /// When `false`, the entire subtree is skipped during pointer event
+    /// dispatch. Layout and paint are unaffected.
+    pub pointer_events: bool,
 }
 
 impl LayoutNode {
@@ -55,6 +60,7 @@ impl LayoutNode {
             disabled: false,
             interact_radius: 0.0,
             content_offset: (0.0, 0.0),
+            pointer_events: true,
         }
     }
 
@@ -105,5 +111,29 @@ impl LayoutNode {
     pub fn with_interact_radius(mut self, radius: f32) -> Self {
         self.interact_radius = radius;
         self
+    }
+
+    /// Find a widget's rect in the layout tree by its ID.
+    ///
+    /// Returns the node's `rect` in local coordinates (relative to the
+    /// layout root). Returns `None` if the widget isn't in the tree.
+    pub fn find_rect(&self, target: WidgetId) -> Option<Rect> {
+        if self.widget_id == Some(target) {
+            return Some(self.rect);
+        }
+        for child in &self.children {
+            if let Some(r) = child.find_rect(target) {
+                // Child rects are relative to parent's content area; offset
+                // by the parent's content_rect origin to get root-relative.
+                let offset = Rect::new(
+                    r.x() + self.content_rect.x(),
+                    r.y() + self.content_rect.y(),
+                    r.width(),
+                    r.height(),
+                );
+                return Some(offset);
+            }
+        }
+        None
     }
 }

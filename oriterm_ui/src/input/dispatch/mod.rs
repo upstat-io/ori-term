@@ -129,8 +129,9 @@ fn plan_mouse_propagation(hit_path: &WidgetHitTestResult, out: &mut Vec<Delivery
 /// Routes mouse events during active capture.
 ///
 /// `MouseMove` and `MouseUp` go directly to the active widget (single
-/// Target-phase delivery). `Scroll` uses normal hit-test routing.
-/// `MouseDown` uses normal routing (shouldn't happen during capture).
+/// Target-phase delivery). The bounds come from the hit path entry that
+/// matches `active_id`, or the innermost entry as fallback.
+/// `Scroll` and `MouseDown` use normal hit-test routing.
 fn plan_captured_mouse(
     event: &super::event::InputEvent,
     active_id: WidgetId,
@@ -141,13 +142,14 @@ fn plan_captured_mouse(
 
     match event {
         InputEvent::MouseMove { .. } | InputEvent::MouseUp { .. } => {
-            // Direct delivery to active widget — capture bypass.
-            // Use bounds from the last (innermost) hit entry — this is the
-            // leaf widget closest to the active widget's actual position.
-            // The hit path is root-to-leaf, so last() gives the target bounds.
+            // Prefer the active widget's own entry in the hit path (it
+            // carries its true layout bounds). Fall back to the innermost
+            // entry when the cursor is outside the active widget.
             let bounds = hit_path
                 .path
-                .last()
+                .iter()
+                .find(|e| e.widget_id == active_id)
+                .or_else(|| hit_path.path.last())
                 .map_or_else(Rect::default, |e| e.bounds);
             out.push(DeliveryAction {
                 widget_id: active_id,
@@ -155,17 +157,10 @@ fn plan_captured_mouse(
                 bounds,
             });
         }
-        InputEvent::Scroll { .. } => {
-            // Scroll always uses normal hit-test routing even during capture.
+        InputEvent::Scroll { .. } | InputEvent::MouseDown { .. } => {
             plan_mouse_propagation(hit_path, out);
         }
-        InputEvent::MouseDown { .. } => {
-            // MouseDown during capture: use normal routing (edge case).
-            plan_mouse_propagation(hit_path, out);
-        }
-        InputEvent::KeyDown { .. } | InputEvent::KeyUp { .. } => {
-            // Keyboard events don't reach this path (handled above).
-        }
+        InputEvent::KeyDown { .. } | InputEvent::KeyUp { .. } => {}
     }
 }
 

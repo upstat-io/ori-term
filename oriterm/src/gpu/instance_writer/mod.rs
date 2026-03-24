@@ -60,8 +60,6 @@ const OFF_BG_B: usize = 56; //  f32  — background B [0..1]
 const OFF_BG_A: usize = 60; //  f32  — background A [0..1]
 const OFF_KIND: usize = 64; //  u32  — instance kind (rect/glyph/cursor)
 const OFF_ATLAS_PAGE: usize = 68; //  u32  — atlas texture array layer index
-const OFF_CORNER_RADIUS: usize = 72; //  f32  — corner radius (UI rect)
-const OFF_BORDER_WIDTH: usize = 76; //  f32  — border width (UI rect)
 const OFF_CLIP_X: usize = 80; //  f32  — clip rect origin X
 const OFF_CLIP_Y: usize = 84; //  f32  — clip rect origin Y
 const OFF_CLIP_W: usize = 88; //  f32  — clip rect width
@@ -91,8 +89,6 @@ pub enum InstanceKind {
     Glyph = 1,
     /// Cursor rectangle (may blend differently).
     Cursor = 2,
-    /// UI rectangle with SDF rounded corners and optional border.
-    UiRect = 3,
 }
 
 /// CPU-side accumulator for GPU instance records.
@@ -293,57 +289,6 @@ impl InstanceWriter {
             InstanceKind::Cursor,
             0,
         );
-    }
-
-    /// Push a styled UI rectangle with SDF rounded corners and optional border.
-    ///
-    /// Uses `bg_color` for fill, `fg_color` for border color, and the
-    /// previously reserved offsets 72–79 for `corner_radius` and `border_width`.
-    /// `clip` is `[x, y, w, h]` in physical pixels for per-fragment clipping.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "UI rect instance: screen rect, fill, border color, corner radius, border width, clip"
-    )]
-    pub fn push_ui_rect(
-        &mut self,
-        rect: ScreenRect,
-        fill: [f32; 4],
-        border_color: [f32; 4],
-        corner_radius: f32,
-        border_width: f32,
-        clip: [f32; 4],
-    ) {
-        let start = self.buf.len();
-        self.buf.resize(start + INSTANCE_SIZE, 0);
-        let rec = &mut self.buf[start..];
-
-        write_f32(rec, OFF_POS_X, rect.x);
-        write_f32(rec, OFF_POS_Y, rect.y);
-        write_f32(rec, OFF_SIZE_W, rect.w);
-        write_f32(rec, OFF_SIZE_H, rect.h);
-
-        // UV zeroed (no texture sampling).
-
-        // fg_color = border color.
-        write_f32(rec, OFF_FG_R, border_color[0]);
-        write_f32(rec, OFF_FG_G, border_color[1]);
-        write_f32(rec, OFF_FG_B, border_color[2]);
-        write_f32(rec, OFF_FG_A, border_color[3]);
-
-        // bg_color = fill color.
-        write_f32(rec, OFF_BG_R, fill[0]);
-        write_f32(rec, OFF_BG_G, fill[1]);
-        write_f32(rec, OFF_BG_B, fill[2]);
-        write_f32(rec, OFF_BG_A, fill[3]);
-
-        write_u32(rec, OFF_KIND, InstanceKind::UiRect as u32);
-        write_u32(rec, OFF_ATLAS_PAGE, 0);
-        write_f32(rec, OFF_CORNER_RADIUS, corner_radius);
-        write_f32(rec, OFF_BORDER_WIDTH, border_width);
-        write_f32(rec, OFF_CLIP_X, clip[0]);
-        write_f32(rec, OFF_CLIP_Y, clip[1]);
-        write_f32(rec, OFF_CLIP_W, clip[2]);
-        write_f32(rec, OFF_CLIP_H, clip[3]);
     }
 
     /// Push a raw pre-encoded instance record.

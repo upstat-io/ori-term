@@ -82,6 +82,7 @@ fn single_span_matches_label_dimensions() {
         crate::widgets::label::LabelStyle {
             color: style.color,
             font_size: style.size,
+            line_height: None,
             ..crate::widgets::label::LabelStyle::default()
         },
     );
