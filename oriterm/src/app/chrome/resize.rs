@@ -71,7 +71,8 @@ impl App {
         let cell = renderer.cell_metrics();
         let scale = ctx.window.scale_factor().factor() as f32;
         let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
-        let wl = compute_window_layout(viewport_w, viewport_h, &cell, scale, hidden);
+        let tb_h = ctx.tab_bar.metrics().height;
+        let wl = compute_window_layout(viewport_w, viewport_h, &cell, scale, hidden, tb_h);
 
         // Reborrow mutably now that immutable reads are done.
         let ctx = self.windows.get_mut(&winit_id).expect("checked above");
@@ -141,7 +142,7 @@ impl App {
                     {
                         0.0
                     } else {
-                        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+                        ctx.tab_bar.metrics().height
                     };
                     super::refresh_chrome(
                         ctx.window.window(),
@@ -233,7 +234,7 @@ impl App {
             if self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden {
                 0.0
             } else {
-                oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+                ctx.tab_bar.metrics().height
             };
         super::refresh_chrome(
             ctx.window.window(),

@@ -378,7 +378,7 @@ impl App {
             // Draw search bar overlay when search is active.
             if let Some(search) = frame.search.as_ref() {
                 // Position below all chrome (caption + tab bar).
-                let chrome_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                let chrome_h = ctx.tab_bar.metrics().height;
                 Self::draw_search_bar(
                     search,
                     renderer,

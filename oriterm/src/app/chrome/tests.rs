@@ -94,7 +94,7 @@ fn test_cell(width: f32, height: f32) -> CellMetrics {
 fn layout_grid_origin_includes_padding() {
     // 1920×1080 at 1x scale with 8×16 cells.
     let cell = test_cell(8.0, 16.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.0, false);
+    let wl = compute_window_layout(1920, 1080, &cell, 1.0, false, 46.0);
 
     // Tab bar is 46px at 1x. Grid origin includes padding offset.
     let pad = (GRID_PADDING * 1.0).round();
@@ -109,7 +109,7 @@ fn layout_padding_reduces_cols_rows() {
     // This matches the WM_SIZING snap formula so the column count is
     // stable during interactive resize.
     let cell = test_cell(8.0, 16.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.0, false);
+    let wl = compute_window_layout(1920, 1080, &cell, 1.0, false, 46.0);
 
     let pad = (GRID_PADDING * 1.0).round();
     let chrome_h = grid_origin_y(46.0, 1.0);
@@ -124,7 +124,7 @@ fn layout_cols_rows_match_manual_at_125_scale() {
     // 1920×1080 at 1.25x with 10×20 physical-pixel cells.
     let scale = 1.25;
     let cell = test_cell(10.0, 20.0);
-    let wl = compute_window_layout(1920, 1080, &cell, scale, false);
+    let wl = compute_window_layout(1920, 1080, &cell, scale, false, 46.0);
 
     // Cols/rows computed from visible grid area after padding.
     let pad = (GRID_PADDING * scale).round();
@@ -140,7 +140,7 @@ fn layout_cols_rows_match_manual_at_125_scale() {
 fn layout_integer_origin_at_fractional_dpi() {
     // 175% DPI — tab bar height produces fractional without rounding.
     let cell = test_cell(14.0, 28.0);
-    let wl = compute_window_layout(2560, 1440, &cell, 1.75, false);
+    let wl = compute_window_layout(2560, 1440, &cell, 1.75, false, 46.0);
 
     assert_eq!(
         wl.grid_rect.y().fract(),
@@ -153,7 +153,7 @@ fn layout_integer_origin_at_fractional_dpi() {
 fn layout_minimum_one_col_one_row() {
     // Tiny viewport — must produce at least 1×1.
     let cell = test_cell(100.0, 100.0);
-    let wl = compute_window_layout(50, 100, &cell, 1.0, false);
+    let wl = compute_window_layout(50, 100, &cell, 1.0, false, 46.0);
 
     assert_eq!(wl.cols, 1);
     assert_eq!(wl.rows, 1);
@@ -164,8 +164,8 @@ fn hidden_tab_bar_suppresses_layout() {
     // With tab_bar_hidden=true, the grid origin should start at padding
     // (no chrome height). The grid gets more rows than the default case.
     let cell = test_cell(8.0, 16.0);
-    let visible = compute_window_layout(1920, 1080, &cell, 1.0, false);
-    let hidden = compute_window_layout(1920, 1080, &cell, 1.0, true);
+    let visible = compute_window_layout(1920, 1080, &cell, 1.0, false, 46.0);
+    let hidden = compute_window_layout(1920, 1080, &cell, 1.0, true, 46.0);
 
     let pad = (GRID_PADDING * 1.0).round();
 
@@ -192,11 +192,36 @@ fn hidden_tab_bar_suppresses_layout() {
 fn hidden_tab_bar_grid_origin_at_fractional_dpi() {
     // Even with hidden tab bar, grid origin must be integer-aligned.
     let cell = test_cell(10.0, 20.0);
-    let wl = compute_window_layout(1920, 1080, &cell, 1.25, true);
+    let wl = compute_window_layout(1920, 1080, &cell, 1.25, true, 46.0);
 
     assert_eq!(
         wl.grid_rect.y().fract(),
         0.0,
         "hidden tab bar grid origin must be integer-pixel aligned"
+    );
+}
+
+#[test]
+fn compact_tab_bar_shifts_grid_origin() {
+    // Compact tab bar (34px) should produce a different grid origin
+    // from default (46px). This validates that `tab_bar_height` param
+    // actually drives layout instead of a hardcoded constant.
+    let cell = test_cell(8.0, 16.0);
+    let default = compute_window_layout(1920, 1080, &cell, 1.0, false, 46.0);
+    let compact = compute_window_layout(1920, 1080, &cell, 1.0, false, 34.0);
+
+    assert!(
+        compact.grid_rect.y() < default.grid_rect.y(),
+        "compact grid y ({}) should be less than default ({})",
+        compact.grid_rect.y(),
+        default.grid_rect.y(),
+    );
+
+    // Compact layout should have more rows (less space for chrome).
+    assert!(
+        compact.rows >= default.rows,
+        "compact rows ({}) should be >= default rows ({})",
+        compact.rows,
+        default.rows,
     );
 }

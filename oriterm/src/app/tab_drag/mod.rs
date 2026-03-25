@@ -16,8 +16,7 @@ mod tear_off;
 use crate::session::TabId;
 
 use oriterm_ui::widgets::tab_bar::constants::{
-    DRAG_START_THRESHOLD, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN, TEAR_OFF_THRESHOLD,
-    TEAR_OFF_THRESHOLD_UP,
+    DRAG_START_THRESHOLD, TAB_LEFT_MARGIN, TEAR_OFF_THRESHOLD, TEAR_OFF_THRESHOLD_UP,
 };
 
 use super::App;
@@ -138,12 +137,13 @@ impl App {
         let pos = self.mouse.cursor_pos();
 
         // Extract layout data and compute logical coordinates.
-        let (scale, tab_width, tab_id) = {
+        let (scale, tab_width, tab_id, tb_height) = {
             let Some(ctx) = self.focused_ctx() else {
                 return false;
             };
             let scale = ctx.window.scale_factor().factor() as f32;
             let tw = ctx.tab_bar.layout().base_tab_width();
+            let tb_h = ctx.tab_bar.metrics().height;
 
             // Resolve the session TabId from the index.
             let Some(win_id) = self.active_window else {
@@ -155,7 +155,7 @@ impl App {
             let Some(&tid) = win.tabs().get(tab_index) else {
                 return false;
             };
-            (scale, tw, tid)
+            (scale, tw, tid, tb_h)
         };
 
         let logical_x = pos.x as f32 / scale;
@@ -177,7 +177,7 @@ impl App {
             phase: DragPhase::Pending,
             mouse_offset_in_tab: offset,
             tab_bar_y: 0.0,
-            tab_bar_bottom: TAB_BAR_HEIGHT,
+            tab_bar_bottom: tb_height,
             suppress_next_release: false,
         };
 

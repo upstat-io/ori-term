@@ -14,7 +14,7 @@ use oriterm_ui::widgets::tab_bar::constants::TAB_LEFT_MARGIN;
 #[cfg(target_os = "windows")]
 use oriterm_ui::platform_windows::{self, OsDragConfig};
 #[cfg(target_os = "windows")]
-use oriterm_ui::widgets::tab_bar::constants::{CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT};
+use oriterm_ui::widgets::tab_bar::constants::CONTROLS_ZONE_WIDTH;
 
 #[cfg(target_os = "windows")]
 use super::TornOffPending;
@@ -464,7 +464,7 @@ impl App {
                 continue;
             };
             let scale = ctx.window.scale_factor().factor() as f32;
-            let tab_bar_h = (TAB_BAR_HEIGHT * scale).round() as i32;
+            let tab_bar_h = (ctx.tab_bar.metrics().height * scale).round() as i32;
             let controls_w = (CONTROLS_ZONE_WIDTH * scale).round() as i32;
             if let Some((l, t, r, _)) = platform_windows::visible_frame_bounds(ctx.window.window())
             {

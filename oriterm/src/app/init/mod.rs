@@ -141,7 +141,8 @@ impl App {
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
         let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
-        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden);
+        let tb_h = tab_bar_widget.metrics().height;
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h);
 
         // 10. Create grid widget with cell metrics and layout-computed size.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, wl.cols, wl.rows);
@@ -161,11 +162,7 @@ impl App {
             "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
              renderer={t_renderer:?} mux={t_mux:?} total={t_total:?}",
         );
-        let tab_bar_h = if hidden {
-            0.0
-        } else {
-            oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
-        };
+        let tab_bar_h = if hidden { 0.0 } else { tb_h };
         log::info!(
             "app: initialized — {w}x{h} px, {} cols × {} rows, \
              chrome={tab_bar_h}px, font={} {:.1}pt",
@@ -283,7 +280,7 @@ impl App {
         let (w, _) = window.size_px();
         let scale = window.scale_factor().factor() as f32;
         let logical_w = w as f32 / scale;
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        let metrics = metrics_from_style(self.config.window.tab_bar_style);
 
         // Install platform chrome (Aero Snap subclass on Windows, no-op elsewhere).
         // Empty rects — the tab bar widget is created next.
@@ -291,11 +288,9 @@ impl App {
             window.window(),
             crate::window_manager::platform::ChromeMode::Main,
             &[],
-            tab_bar_h,
+            metrics.height,
             scale,
         );
-
-        let metrics = metrics_from_style(self.config.window.tab_bar_style);
         let mut tab_bar_widget = oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme_and_metrics(
             logical_w,
             &self.ui_theme,
@@ -313,7 +308,7 @@ impl App {
         super::chrome::refresh_chrome(
             window.window(),
             &tab_bar_widget.interactive_rects(),
-            tab_bar_h,
+            metrics.height,
             scale,
             true,
         );

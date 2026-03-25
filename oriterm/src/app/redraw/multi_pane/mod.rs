@@ -464,7 +464,7 @@ impl App {
             // Search bar from focused pane.
             if let Some(frame) = ctx.frame.as_ref() {
                 if let Some(search) = frame.search.as_ref() {
-                    let chrome_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                    let chrome_h = ctx.tab_bar.metrics().height;
                     Self::draw_search_bar(
                         search,
                         renderer,
