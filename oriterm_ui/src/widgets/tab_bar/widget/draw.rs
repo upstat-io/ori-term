@@ -17,7 +17,7 @@ use crate::text::{TextOverflow, TextStyle};
 
 use super::super::constants::{
     CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, DROPDOWN_BUTTON_WIDTH, ICON_TEXT_GAP,
-    NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_PADDING, TAB_TOP_MARGIN,
+    NEW_TAB_BUTTON_WIDTH, TAB_PADDING,
 };
 use super::super::hit::TabBarHit;
 use super::{TabBarWidget, TabEntry, TabIcon};
@@ -405,8 +405,8 @@ impl TabBarWidget {
     pub fn draw_drag_overlay(&self, ctx: &mut DrawCtx<'_>) {
         let y0 = ctx.bounds.y();
         let strip = TabStrip {
-            y: y0 + TAB_TOP_MARGIN,
-            h: TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
+            y: y0 + self.metrics.top_margin,
+            h: self.metrics.height - self.metrics.top_margin,
             active: false,
             bell: 0.0,
             text_color: self.colors.text_fg,
@@ -427,7 +427,7 @@ impl Widget for TabBarWidget {
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
-        LayoutBox::leaf(self.window_width, TAB_BAR_HEIGHT).with_widget_id(self.id)
+        LayoutBox::leaf(self.window_width, self.metrics.height).with_widget_id(self.id)
     }
 
     fn sense(&self) -> Sense {
@@ -443,13 +443,13 @@ impl Widget for TabBarWidget {
         let w = ctx.bounds.width();
 
         // 1. Tab bar background.
-        let bar = Rect::new(0.0, y0, w, TAB_BAR_HEIGHT);
+        let bar = Rect::new(0.0, y0, w, self.metrics.height);
         ctx.scene
             .push_quad(bar, RectStyle::filled(self.colors.bar_bg));
 
         let mut strip = TabStrip {
-            y: y0 + TAB_TOP_MARGIN,
-            h: TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
+            y: y0 + self.metrics.top_margin,
+            h: self.metrics.height - self.metrics.top_margin,
             active: false,
             bell: 0.0,
             text_color: self.colors.inactive_text,

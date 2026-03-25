@@ -29,7 +29,7 @@ use crate::widget_id::WidgetId;
 #[cfg(not(target_os = "macos"))]
 use crate::widgets::Widget;
 
-use super::super::constants::{DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT};
+use super::super::constants::{DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH};
 use super::TabBarWidget;
 
 #[cfg(not(target_os = "macos"))]
@@ -198,15 +198,25 @@ impl TabBarWidget {
                 x,
                 0.0,
                 self.layout.tab_width_at(i),
-                TAB_BAR_HEIGHT,
+                self.metrics.height,
             ));
         }
         // New-tab button.
         let ntx = self.layout.new_tab_x();
-        rects.push(Rect::new(ntx, 0.0, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT));
+        rects.push(Rect::new(
+            ntx,
+            0.0,
+            NEW_TAB_BUTTON_WIDTH,
+            self.metrics.height,
+        ));
         // Dropdown button.
         let ddx = self.layout.dropdown_x();
-        rects.push(Rect::new(ddx, 0.0, DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT));
+        rects.push(Rect::new(
+            ddx,
+            0.0,
+            DROPDOWN_BUTTON_WIDTH,
+            self.metrics.height,
+        ));
         // Control buttons (not on macOS — OS provides native traffic lights).
         #[cfg(not(target_os = "macos"))]
         for i in 0..3 {

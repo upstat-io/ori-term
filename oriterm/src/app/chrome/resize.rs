@@ -70,7 +70,8 @@ impl App {
         };
         let cell = renderer.cell_metrics();
         let scale = ctx.window.scale_factor().factor() as f32;
-        let wl = compute_window_layout(viewport_w, viewport_h, &cell, scale);
+        let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+        let wl = compute_window_layout(viewport_w, viewport_h, &cell, scale, hidden);
 
         // Reborrow mutably now that immutable reads are done.
         let ctx = self.windows.get_mut(&winit_id).expect("checked above");
@@ -135,7 +136,13 @@ impl App {
                 // Update chrome metrics for the new physical DPI.
                 if let Some(ctx) = self.windows.get(&winit_id) {
                     let s = new_scale as f32;
-                    let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                    let tab_bar_h = if self.config.window.tab_bar_position
+                        == crate::config::TabBarPosition::Hidden
+                    {
+                        0.0
+                    } else {
+                        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+                    };
                     super::refresh_chrome(
                         ctx.window.window(),
                         &ctx.tab_bar.interactive_rects(),
@@ -222,7 +229,12 @@ impl App {
             return;
         };
         let scale = ctx.window.scale_factor().factor() as f32;
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        let tab_bar_h =
+            if self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden {
+                0.0
+            } else {
+                oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+            };
         super::refresh_chrome(
             ctx.window.window(),
             &ctx.tab_bar.interactive_rects(),

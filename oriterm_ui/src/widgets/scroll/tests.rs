@@ -744,3 +744,97 @@ fn scroll_both_wheel_applies_both_axes() {
     // Wheel input in Both mode should be handled.
     assert!(result.handled);
 }
+
+// -- Harness integration tests (full propagation pipeline) --
+
+#[test]
+fn harness_scrollbar_drag_captures_and_releases() {
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+
+    let scroll = ScrollWidget::vertical(tall_content());
+    let scroll_id = scroll.id();
+    let mut h = WidgetTestHarness::with_size(scroll, 200.0, 100.0);
+
+    // Render to populate scrollbar hit zones (updated during paint).
+    h.render();
+
+    // Scrollbar thumb position: right edge of viewport.
+    // Default style: thickness=6, edge_inset=2, hit_slop=4.
+    // Thumb x center ≈ 200 - 2 - 3 = 195.
+    // Thumb y near top (scroll_offset=0): ≈ 15.
+    let thumb_x = 195.0;
+    let thumb_y = 15.0;
+
+    // Move to scrollbar thumb, then press.
+    h.mouse_move(Point::new(thumb_x, thumb_y));
+    h.mouse_down(MouseButton::Left);
+    assert!(
+        h.is_active(scroll_id),
+        "ScrollWidget should capture on scrollbar thumb press"
+    );
+
+    // Drag down — controller emits DragUpdate, ScrollWidget updates offset.
+    h.mouse_move(Point::new(thumb_x, thumb_y + 40.0));
+
+    // Release — controller emits DragEnd, clears active.
+    h.mouse_up(MouseButton::Left);
+    assert!(
+        !h.is_active(scroll_id),
+        "capture should release after scrollbar drag"
+    );
+}
+
+#[test]
+fn harness_content_click_reaches_child() {
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+    use crate::widgets::WidgetAction;
+    use crate::widgets::button::ButtonWidget;
+
+    let button = ButtonWidget::new("Click Me");
+    let button_id = button.id();
+
+    // Build tall content with button at top so the viewport overflows
+    // (enabling the scrollbar) while the button remains visible.
+    let mut children: Vec<Box<dyn Widget>> = vec![Box::new(button)];
+    let labels: Vec<Box<dyn Widget>> = (0..20)
+        .map(|i| Box::new(LabelWidget::new(format!("Line {i}"))) as Box<dyn Widget>)
+        .collect();
+    children.extend(labels);
+    let container = ContainerWidget::column().with_children(children);
+
+    let scroll = ScrollWidget::vertical(Box::new(container));
+    let scroll_id = scroll.id();
+    let mut h = WidgetTestHarness::with_size(scroll, 200.0, 100.0);
+
+    // Render to populate scrollbar hit zones.
+    h.render();
+
+    // Click in the content area (left side, center of button row).
+    // Button is the first child at approximately y=0..16, center at y=8.
+    let content_pos = Point::new(50.0, 8.0);
+    h.mouse_move(content_pos);
+    h.mouse_down(MouseButton::Left);
+
+    // ScrollbarCaptureController should pass through (click outside scrollbar).
+    // The button should capture instead.
+    assert!(
+        !h.is_active(scroll_id),
+        "ScrollWidget should not capture content-area clicks"
+    );
+    assert!(
+        h.is_active(button_id),
+        "button should receive the click through the pipeline"
+    );
+
+    h.mouse_up(MouseButton::Left);
+
+    let actions = h.take_actions();
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == button_id)),
+        "expected Clicked action from button, got: {actions:?}",
+    );
+}

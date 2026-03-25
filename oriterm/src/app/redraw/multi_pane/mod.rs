@@ -96,7 +96,12 @@ impl App {
                 .map_or(oriterm_core::Rgb { r: 0, g: 0, b: 0 }, |f| {
                     f.palette.background
                 });
-            let opacity = f64::from(self.config.window.effective_opacity());
+            let win_focused = ctx.window.window().has_focus();
+            let opacity = f64::from(if win_focused {
+                self.config.window.effective_opacity()
+            } else {
+                self.config.window.effective_unfocused_opacity()
+            });
 
             renderer.begin_multi_pane_frame(viewport, bg, opacity);
 
@@ -206,8 +211,13 @@ impl App {
 
                     let frame = ctx.frame.as_mut().expect("frame just assigned");
 
-                    frame.palette.opacity = self.config.window.effective_opacity();
-                    frame.window_focused = ctx.window.window().has_focus();
+                    let pane_focused = ctx.window.window().has_focus();
+                    frame.palette.opacity = if pane_focused {
+                        self.config.window.effective_opacity()
+                    } else {
+                        self.config.window.effective_unfocused_opacity()
+                    };
+                    frame.window_focused = pane_focused;
 
                     if layout.is_focused && !self.ime.preedit.is_empty() {
                         let cols = frame.columns();
@@ -402,11 +412,19 @@ impl App {
             }
 
             // Chrome, tab bar, overlays, search bar (shared with single-pane path).
+            // Tab bar drawing skipped when hidden.
+            let tab_bar_hidden =
+                self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
             let (interaction, flags, damage) = ctx.root.interaction_frame_requests_and_damage_mut();
+            let tab_bar_ref = if tab_bar_hidden {
+                None
+            } else {
+                Some(&ctx.tab_bar)
+            };
             let tab_bar_animating = Self::draw_tab_bar(
-                Some(&ctx.tab_bar),
+                tab_bar_ref,
                 renderer,
                 &mut ctx.chrome_scene,
                 logical_w as f32,

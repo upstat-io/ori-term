@@ -65,6 +65,7 @@ pub(super) fn build_page(
         vec![
             build_theme_section(config, ids, theme),
             build_window_section(config, ids, theme),
+            build_decorations_section(config, ids, theme),
         ],
         theme,
     )
@@ -162,7 +163,7 @@ fn build_theme_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) 
     )
 }
 
-/// Window section: opacity slider + blur toggle.
+/// Window section: opacity slider + blur toggle + unfocused opacity.
 fn build_window_section(
     config: &Config,
     ids: &mut SettingsIds,
@@ -193,6 +194,20 @@ fn build_window_section(
         theme,
     );
 
+    // Unfocused opacity slider: 30-100%.
+    let unfocused_slider = SliderWidget::new()
+        .with_range(30.0, 100.0)
+        .with_step(1.0)
+        .with_value(config.window.unfocused_opacity * 100.0);
+    ids.unfocused_opacity_slider = unfocused_slider.id();
+
+    let unfocused_row = SettingRowWidget::new(
+        "Unfocused opacity",
+        "Dim the terminal when the window loses focus",
+        Box::new(unfocused_slider),
+        theme,
+    );
+
     let title = section_title("Window", theme);
     Box::new(
         ContainerWidget::column()
@@ -200,7 +215,74 @@ fn build_window_section(
             .with_gap(ROW_GAP)
             .with_child(title)
             .with_child(Box::new(opacity_row))
-            .with_child(Box::new(blur_row)),
+            .with_child(Box::new(blur_row))
+            .with_child(Box::new(unfocused_row)),
+    )
+}
+
+/// Decorations section: window decorations dropdown + tab bar style dropdown.
+fn build_decorations_section(
+    config: &Config,
+    ids: &mut SettingsIds,
+    theme: &UiTheme,
+) -> Box<dyn Widget> {
+    use crate::config::{Decorations, TabBarStyle};
+
+    // Window decorations dropdown.
+    let decoration_items = vec![
+        "None (frameless)".to_owned(),
+        "Full".to_owned(),
+        "Transparent".to_owned(),
+    ];
+    let decoration_selected = match config.window.decorations {
+        Decorations::None => 0,
+        Decorations::Full => 1,
+        Decorations::Transparent | Decorations::Buttonless => 2,
+    };
+    let dec_dropdown = DropdownWidget::new(decoration_items).with_selected(decoration_selected);
+    ids.decorations_dropdown = dec_dropdown.id();
+
+    let dec_row = SettingRowWidget::new(
+        "Window decorations",
+        "Title bar and window border style",
+        Box::new(dec_dropdown),
+        theme,
+    );
+
+    // Tab bar style dropdown: Default / Compact / Hidden.
+    // "Hidden" maps to TabBarPosition::Hidden rather than a separate style.
+    let style_items = vec![
+        "Default".to_owned(),
+        "Compact".to_owned(),
+        "Hidden".to_owned(),
+    ];
+    let style_selected = if config.window.tab_bar_position == crate::config::TabBarPosition::Hidden
+    {
+        2 // Hidden
+    } else {
+        match config.window.tab_bar_style {
+            TabBarStyle::Default => 0,
+            TabBarStyle::Compact => 1,
+        }
+    };
+    let style_dropdown = DropdownWidget::new(style_items).with_selected(style_selected);
+    ids.tab_bar_style_dropdown = style_dropdown.id();
+
+    let style_row = SettingRowWidget::new(
+        "Tab bar style",
+        "Appearance of the tab strip",
+        Box::new(style_dropdown),
+        theme,
+    );
+
+    let title = section_title("Decorations", theme);
+    Box::new(
+        ContainerWidget::column()
+            .with_width(SizeSpec::Fill)
+            .with_gap(ROW_GAP)
+            .with_child(title)
+            .with_child(Box::new(dec_row))
+            .with_child(Box::new(style_row)),
     )
 }
 

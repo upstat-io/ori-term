@@ -117,6 +117,8 @@ impl App {
                 position.1 as f32,
             )),
             resizable: kind.is_resizable(),
+            // Dialogs always use frameless CSD regardless of main-window decoration config.
+            decoration: oriterm_ui::window::DecorationMode::Frameless,
         };
 
         let window = match oriterm_ui::window::create_window(event_loop, &window_config) {

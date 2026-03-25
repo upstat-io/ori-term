@@ -97,7 +97,7 @@ page switching, disabled controls, inactive icons
 ---
 
 ### Section 07: Scrollbar Styling
-**File:** `section-07-scrollbar-styling.md` | **Status:** In Progress
+**File:** `section-07-scrollbar-styling.md` | **Status:** Complete
 
 ```
 scrollbar, scrollbar-width, scrollbar-track, scrollbar-thumb
@@ -121,7 +121,7 @@ icons/mod.rs, mockup SVG paths, data:image/svg+xml
 ---
 
 ### Section 09: Settings Content Completeness
-**File:** `section-09-settings-content.md` | **Status:** Not Started
+**File:** `section-09-settings-content.md` | **Status:** Complete
 
 ```
 Unfocused opacity, Window decorations, Tab bar style

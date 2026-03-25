@@ -35,7 +35,9 @@ impl App {
             let (w, h) = ctx.window.size_px();
             let cell = renderer.cell_metrics();
             let scale = ctx.window.scale_factor().factor() as f32;
-            let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
+            let hidden =
+                self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+            let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden);
             (wl.cols, wl.rows)
         };
 
@@ -125,6 +127,7 @@ impl App {
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
+            decoration: super::init::decoration_to_mode(self.config.window.decorations),
             ..WindowConfig::default()
         };
 
@@ -154,7 +157,8 @@ impl App {
         let (w, h) = window.size_px();
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
+        let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden);
 
         // Terminal grid widget.
         let cols = wl.cols;
