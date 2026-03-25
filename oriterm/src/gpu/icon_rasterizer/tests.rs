@@ -177,10 +177,9 @@ fn border_heavy_pixels(data: &[u8], size: u32, threshold: u8) -> (usize, usize, 
 /// anti-aliased stroke fringes. The test catches *clipping*: an entire edge
 /// being heavily painted, which means geometry extends beyond the icon box.
 /// Threshold: no edge may have more than 40% of its pixels above alpha 100.
-/// Set to 40% (up from 25%) because the mockup-faithful stroke width (1.333px)
-/// produces more edge activity on icons with geometry near the viewBox boundary
-/// (e.g., Palette path reaches x=23 in 24-wide viewBox — stroke outer edge
-/// touches the boundary by design).
+/// Set to 40% because icons like Palette have geometry near the viewBox
+/// boundary (path reaches x=23 in 24-wide viewBox), and round-cap stroke
+/// fringes produce moderate alpha near edges.
 #[test]
 fn sidebar_icons_not_clipped_at_16px() {
     let size = 16u32;
@@ -295,24 +294,27 @@ fn alpha_diff(a: &[u8], b: &[u8]) -> (f32, u8) {
 
 /// Rasterize a sidebar fixture SVG into an alpha bitmap at the given size.
 ///
-/// Uses the fixture's source stroke width scaled to the target size
-/// (`source_stroke × target / viewbox`) so the reference path rasterizes
-/// at the mockup-specified weight, not a hardcoded value.
+/// Uses the runtime icon's stroke width so the comparison tests path
+/// geometry equivalence, not stroke width. The runtime stroke is read
+/// from the icon's `IconStyle::Stroke(w)`.
 fn rasterize_fixture_svg(
     fixture: &oriterm_ui::icons::sidebar_fixtures::SidebarIconSource,
     size_px: u32,
     scale: f32,
 ) -> Vec<u8> {
     let cmds = svg_to_commands(fixture.svg, SVG_VIEWBOX);
-    let stroke = fixture.scaled_stroke(size_px as f32 / scale);
+    let stroke = match fixture.id.path().style {
+        IconStyle::Stroke(w) => w,
+        IconStyle::Fill => panic!("sidebar icon should use Stroke style"),
+    };
     rasterize_commands(&cmds, IconStyle::Stroke(stroke), size_px, scale)
 }
 
 /// MAD threshold — mean absolute alpha difference per pixel (0–255).
 ///
-/// Set to 2.5 to accommodate the thicker mockup-faithful stroke width
-/// (1.333px vs the original 1.0px). Thicker strokes amplify anti-aliasing
-/// differences from 6-decimal coordinate truncation in the codegen output.
+/// Anti-aliasing differences from 6-decimal coordinate truncation in
+/// the codegen output can shift stroke boundaries by ~0.0001 normalized
+/// units, producing per-pixel alpha variance.
 const FIDELITY_MAD_THRESHOLD: f32 = 2.5;
 
 /// Max per-pixel alpha difference. Generous because 6-decimal codegen
