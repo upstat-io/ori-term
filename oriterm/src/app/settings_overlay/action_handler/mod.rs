@@ -59,6 +59,8 @@ fn handle_appearance(action: &WidgetAction, ids: &SettingsIds, config: &mut Conf
             config.window.decorations = match index {
                 0 => Decorations::None,
                 1 => Decorations::Full,
+                #[cfg(target_os = "macos")]
+                3 => Decorations::Buttonless,
                 _ => Decorations::Transparent,
             };
             true

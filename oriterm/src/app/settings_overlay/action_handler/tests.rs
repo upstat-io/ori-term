@@ -141,6 +141,35 @@ fn tab_bar_style_default_restores_from_hidden() {
     );
 }
 
+#[test]
+#[cfg(target_os = "macos")]
+fn decorations_dropdown_buttonless_on_macos() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.decorations_dropdown,
+        index: 3, // Buttonless (macOS only)
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.window.decorations,
+        crate::config::Decorations::Buttonless
+    );
+}
+
+#[test]
+fn decorations_dropdown_transparent_roundtrip() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.decorations_dropdown,
+        index: 2, // Transparent
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.window.decorations,
+        crate::config::Decorations::Transparent
+    );
+}
+
 // Colors page tests.
 
 #[test]

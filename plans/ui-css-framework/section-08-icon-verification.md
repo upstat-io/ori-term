@@ -398,6 +398,9 @@ icon-source fidelity at the icon rasterization boundary, and targeted tests ther
 
 ### Open Findings
 
+- [x] `[TPR-08-010][low]` `oriterm_ui/src/icons/svg_import/mod.rs:1` — The new SVG importer lands as a 593-line source file, violating the repository's hard 500-line limit for non-`tests.rs` modules.
+  Resolved 2026-03-25: accepted and fixed. Extracted SVG path data parsing into `path_data.rs` submodule (316 lines). `mod.rs` now 284 lines — both well under 500.
+
 - [x] `[TPR-08-009][medium]` `oriterm/src/gpu/icon_rasterizer/tests.rs:291` — The Section 08 “source SVG” fidelity path is self-referential and also collapses the mockup’s `stroke-width=”2”` down to the same `1.0px` runtime stroke, so it neither verifies nor preserves the source artwork’s real stroke weight.
   Evidence: The checked-in fixtures record `stroke-width=”2”`, but `svg_to_commands()` only preserves geometry, `rasterize_fixture_svg()` re-rasterizes those commands with hardcoded `SIDEBAR_STROKE = 1.0`, and the runtime icons use the same `NAV_STROKE = 1.0`. At the target `16px` size, the mockup stroke scales to about `1.33px`, so the current tests can pass while both the importer and runtime remain systematically too thin.
   Resolved 2026-03-25: accepted. Concrete implementation tasks added as §08.7 “Source-Faithful Stroke Width.” The mockup SVGs use `stroke-width=”2”` in a 24×24 viewBox; at 16px target the correct stroke is `2.0 × 16/24 = 1.333px`. Both `NAV_STROKE` and `SIDEBAR_STROKE` must be derived from the source spec, and the fidelity test reference path must rasterize at the source stroke width to provide an independent comparison.

@@ -2,7 +2,7 @@
 section: "11"
 title: "Visual Fidelity: Content Area + Typography"
 status: not-started
-reviewed: true
+reviewed: false
 third_party_review:
   status: resolved
   updated: 2026-03-23

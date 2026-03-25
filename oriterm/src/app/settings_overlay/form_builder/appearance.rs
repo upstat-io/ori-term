@@ -229,15 +229,30 @@ fn build_decorations_section(
     use crate::config::{Decorations, TabBarStyle};
 
     // Window decorations dropdown.
+    // macOS exposes Buttonless (hides traffic lights) as a distinct mode;
+    // on other platforms it's identical to Transparent so we omit it.
+    #[cfg(target_os = "macos")]
+    let decoration_items = vec![
+        "None (frameless)".to_owned(),
+        "Full".to_owned(),
+        "Transparent".to_owned(),
+        "Buttonless".to_owned(),
+    ];
+    #[cfg(not(target_os = "macos"))]
     let decoration_items = vec![
         "None (frameless)".to_owned(),
         "Full".to_owned(),
         "Transparent".to_owned(),
     ];
+
     let decoration_selected = match config.window.decorations {
         Decorations::None => 0,
         Decorations::Full => 1,
-        Decorations::Transparent | Decorations::Buttonless => 2,
+        Decorations::Transparent => 2,
+        #[cfg(target_os = "macos")]
+        Decorations::Buttonless => 3,
+        #[cfg(not(target_os = "macos"))]
+        Decorations::Buttonless => 2, // maps to Transparent on non-macOS
     };
     let dec_dropdown = DropdownWidget::new(decoration_items).with_selected(decoration_selected);
     ids.decorations_dropdown = dec_dropdown.id();
