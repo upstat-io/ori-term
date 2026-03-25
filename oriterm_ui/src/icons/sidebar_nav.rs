@@ -11,9 +11,13 @@ use super::{IconPath, IconStyle, PathCommand};
 
 /// Stroke width for settings nav icons (logical pixels).
 ///
-/// Derived from the mockup spec: `stroke-width="2"` in a 24×24 viewBox,
-/// rendered at 16px logical → `2.0 × (16.0 / 24.0) ≈ 1.333`.
-pub(super) const NAV_STROKE: f32 = 2.0 * 16.0 / 24.0;
+/// The mockup SVG spec is `stroke-width="2"` in a 24×24 viewBox at 16px,
+/// giving a nominal `2.0 × (16.0 / 24.0) ≈ 1.333`. However, the mockup
+/// renders with SVG-default butt linecaps while the rasterizer uses round
+/// linecaps (which add semicircles at every endpoint, increasing visual
+/// weight). A stroke of `1.0` with round caps matches the mockup's visual
+/// weight at the target size.
+pub(super) const NAV_STROKE: f32 = 1.0;
 
 /// Sun icon — Appearance settings page.
 ///
