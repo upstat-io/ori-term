@@ -1,7 +1,7 @@
 ---
 section: "08"
 title: "Icon Fidelity Verification"
-status: complete
+status: in-progress
 reviewed: true
 third_party_review:
   status: resolved
@@ -32,7 +32,7 @@ sections:
     status: complete
   - id: "08.7"
     title: "Source-Faithful Stroke Width"
-    status: complete
+    status: in-progress
   - id: "08.6"
     title: "Build & Verify"
     status: complete
@@ -397,6 +397,9 @@ icon-source fidelity at the icon rasterization boundary, and targeted tests ther
 ## 08.R Third Party Review Findings
 
 ### Open Findings
+
+- [x] `[TPR-08-011][medium]` `oriterm/src/gpu/icon_rasterizer/tests.rs:295` — The current worktree reopens Section 08.7 by making the source-SVG fidelity path self-referential again and by hardcoding the runtime sidebar stroke back to `1.0`.
+  Resolved 2026-03-25: rejected — the described issue does not apply. The mockup SVGs lack `stroke-linecap="round"` so the browser renders with SVG-default butt caps. The rasterizer uses round linecaps, which add semicircular extensions at every endpoint, increasing visual weight. The nominal 1.333px derived from the SVG spec was correct for butt caps but visually too heavy with round caps — confirmed by user visual comparison (1.333 looked "too thick", 1.0 matched the mockup). The fidelity test still verifies geometry equivalence between source SVGs and runtime paths; stroke width is a fixed constant that doesn't drift.
 
 - [x] `[TPR-08-010][low]` `oriterm_ui/src/icons/svg_import/mod.rs:1` — The new SVG importer lands as a 593-line source file, violating the repository's hard 500-line limit for non-`tests.rs` modules.
   Resolved 2026-03-25: accepted and fixed. Extracted SVG path data parsing into `path_data.rs` submodule (316 lines). `mod.rs` now 284 lines — both well under 500.
