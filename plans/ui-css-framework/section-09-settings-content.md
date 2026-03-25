@@ -1,38 +1,38 @@
 ---
 section: "09"
 title: "Settings Content Completeness"
-status: not-started
+status: complete
 reviewed: true
 third_party_review:
   status: resolved
-  updated: 2026-03-23
+  updated: 2026-03-25
 goal: "The Appearance page matches the mockup's setting content, and the newly exposed controls for unfocused opacity, window decorations, and tab bar style drive real config-backed behavior across the shared settings form pipeline instead of dead UI"
 depends_on: ["01", "02", "03", "05", "06", "07", "08"]
 sections:
   - id: "09.1"
     title: "Appearance Page Content Surface"
-    status: not-started
+    status: complete
   - id: "09.2"
     title: "Shared Settings Pipeline Integration"
-    status: not-started
+    status: complete
   - id: "09.3"
     title: "Unfocused Window Opacity"
-    status: not-started
+    status: complete
   - id: "09.4"
     title: "Window Decorations Behavior"
-    status: not-started
+    status: complete
   - id: "09.5"
     title: "Tab Bar Style Behavior"
-    status: not-started
+    status: complete
   - id: "09.6"
     title: "Tests"
-    status: not-started
+    status: complete
   - id: "09.R"
     title: "Third Party Review Findings"
     status: complete
   - id: "09.7"
     title: "Build & Verify"
-    status: not-started
+    status: complete
 ---
 
 # Section 09: Settings Content Completeness
@@ -166,11 +166,11 @@ so the fixed-count expectation matches the new controls.
 
 ### Checklist
 
-- [ ] Appearance page builds three sections instead of two
-- [ ] `Unfocused opacity` row is added to the `Window` section
-- [ ] `Decorations` section is added below `Window`
-- [ ] `SettingsIds` captures the three new control IDs
-- [ ] Form-builder ID inventory tests are updated
+- [x] Appearance page builds three sections instead of two
+- [x] `Unfocused opacity` row is added to the `Window` section
+- [x] `Decorations` section is added below `Window`
+- [x] `SettingsIds` captures the three new control IDs
+- [x] Form-builder ID inventory tests are updated
 
 ---
 
@@ -223,10 +223,10 @@ controls automatically. Do not fork the builder for dialogs vs overlays.
 
 ### Checklist
 
-- [ ] `handle_settings_action()` maps all three new controls into pending config changes
-- [ ] Dirty state changes when any new control diverges from the original config
-- [ ] Reset-to-defaults rebuilds the new controls correctly
-- [ ] Save applies the new fields through the normal settings-apply flow
+- [x] `handle_settings_action()` maps all three new controls into pending config changes
+- [x] Dirty state changes when any new control diverges from the original config
+- [x] Reset-to-defaults rebuilds the new controls correctly
+- [x] Save applies the new fields through the normal settings-apply flow
 
 ---
 
@@ -300,11 +300,18 @@ code.
 
 ### Checklist
 
-- [ ] Add `window.unfocused_opacity` to config with default and clamp helper
-- [ ] Use focus-aware effective opacity in window creation and apply paths
-- [ ] Update focus event handling to reapply window transparency on focus changes
-- [ ] Update redraw paths so frame opacity matches the focused/unfocused value
-- [ ] Add config tests for defaults, clamping, and round-trip
+- [x] Add `window.unfocused_opacity` to config with default and clamp helper
+- [x] Use focus-aware effective opacity in window creation and apply paths
+- [x] Update focus event handling to reapply window transparency on focus changes
+- [x] Update redraw paths so frame opacity matches the focused/unfocused value
+- [x] Add config tests for defaults, clamping, and round-trip
+- [x] Add blur teardown path for opacity transitions <!-- TPR-09-010 -->
+  - `apply_transparency()` early-returns for `opacity >= 1.0`, skipping any blur disable
+  - Only `set_blur(true)` exists; zero `set_blur(false)` / `clear_vibrancy` / `clear_acrylic` calls
+  - [x] Remove or restructure the `opacity >= 1.0` early return so blur state is always managed
+  - [x] Add explicit blur disable: Linux `set_blur(false)`, Windows `clear_acrylic()`, macOS `clear_vibrancy()`
+  - [x] `window-vibrancy` v0.7 has full disable support — no limitation to document
+  - [x] Add regression test: `focus_changes_select_correct_opacity` + `blur_disabled_when_config_blur_false`
 
 ---
 
@@ -366,11 +373,19 @@ platform behavior is meaningful rather than leaving it config-only.
 
 ### Checklist
 
-- [ ] Main-window creation path uses `window.decorations`
-- [ ] Save/apply and config reload respond to decoration changes
-- [ ] Bool-only decoration plumbing is widened where necessary
-- [ ] Appearance dropdown reflects the supported decoration modes accurately
-- [ ] Decoration behavior stays separated between main windows and dialogs
+- [x] Main-window creation path uses `window.decorations`
+- [x] Save/apply and config reload respond to decoration changes <!-- TPR-09-009 -->
+  - `config_reload/mod.rs` `apply_window_changes()` only checks opacity/blur, ignores decorations entirely
+  - [x] Add decoration change detection to `apply_window_changes()`
+  - [x] Apply decoration changes to existing windows (`set_decorations(bool)` for decorated/frameless toggle; macOS titlebar modes logged as requiring restart)
+- [x] Bool-only decoration plumbing is widened where necessary <!-- TPR-09-009 -->
+  - `init/mod.rs` and `window_management.rs` collapse enum via `is_decorated()` to a bool
+  - macOS hardcodes `with_decorations(true)` in `window/mod.rs`
+  - [x] Carry `Decorations` enum through `oriterm_ui::window::WindowConfig` as `DecorationMode` enum instead of `decorated: bool`
+  - [x] Map `Transparent` and `Buttonless` into platform-specific window attributes (macOS: transparent titlebar / hide traffic lights via `with_titlebar_buttons_hidden`; other platforms: equivalent to Frameless)
+  - [x] Remove macOS `with_decorations(true)` hardcode; routed through `resolve_winit_decorations()` per-platform
+- [x] Appearance dropdown reflects the supported decoration modes accurately
+- [x] Decoration behavior stays separated between main windows and dialogs
 
 ---
 
@@ -449,11 +464,27 @@ tab-bar metrics/style module first so this stays within the repository's file-si
 
 ### Checklist
 
-- [ ] Add a real tab-bar style enum/config field
-- [ ] Map the Appearance-page `Hidden` option onto the existing position model coherently
-- [ ] Replace hardcoded single-style tab-bar metrics with style-driven metrics
-- [ ] Thread tab-bar style through app init, new-window creation, and settings apply
-- [ ] Keep the Window page `Tab bar position` control functional and consistent
+- [x] Add a real tab-bar style enum/config field
+- [x] Map the Appearance-page `Hidden` option onto the existing position model coherently
+- [x] Replace hardcoded single-style tab-bar metrics with style-driven metrics <!-- TPR-09-008 -->
+  - `TabBarMetrics` struct exists but `TabBarLayout::compute()` uses `TAB_MIN_WIDTH`, `TAB_MAX_WIDTH`, `TAB_PADDING` constants directly
+  - [x] Update `TabBarLayout::compute()` to accept `&TabBarMetrics` and use its fields instead of constants
+  - [x] Update all `recompute_layout()` call sites to pass the widget's metrics
+  - [x] Update `max_text_width()` to use `metrics.tab_padding` instead of `TAB_PADDING` constant
+- [x] Thread tab-bar style through app init, new-window creation, and settings apply <!-- TPR-09-008 -->
+  - `set_metrics()` exists but has zero callers; `with_theme()` hardcodes `TabBarMetrics::DEFAULT`
+  - [x] Build `TabBarMetrics` from `config.window.tab_bar_style` in `create_tab_bar_widget()`
+  - [x] Call `set_metrics()` + trigger relayout when config reload changes `tab_bar_style`
+  - [x] Call `set_metrics()` + trigger relayout on settings save/apply
+- [x] Keep the Window page `Tab bar position` control functional and consistent
+- [x] Thread `TabBarPosition::Hidden` through runtime to suppress tab bar <!-- TPR-09-007 -->
+  - Config mutation works (action_handler maps Hidden correctly) but zero runtime consumers exist
+  - [x] `compute_window_layout()` in `chrome/mod.rs`: skip tab bar height allocation when position is Hidden
+  - [x] `cursor_in_tab_bar()` in `chrome/mod.rs`: return false when position is Hidden
+  - [x] `update_tab_bar_hover()` in `chrome/mod.rs`: early return when position is Hidden
+  - [x] Redraw path (`redraw/mod.rs`): skip `draw_tab_bar()` when position is Hidden
+  - [x] Init path: thread position through so initial window respects Hidden
+  - [x] Config reload/settings apply: update tab bar visibility on position change
 
 ---
 
@@ -497,14 +528,52 @@ In the relevant app/tab-bar tests:
 
 ### Checklist
 
-- [ ] Builder tests cover new IDs and counts
-- [ ] Action-handler tests cover the new controls
-- [ ] Config serde/default tests cover the new fields
-- [ ] App/tab-bar tests cover runtime behavior, not just config mutation
+- [x] Builder tests cover new IDs and counts
+- [x] Action-handler tests cover the new controls
+- [x] Config serde/default tests cover the new fields
+- [x] App/tab-bar tests cover runtime behavior, not just config mutation <!-- TPR-09-007, TPR-09-008 -->
+  - Only config-mutation tests exist (`tab_bar_style_hidden_maps_to_position_hidden`, `tab_bar_style_default_preserves_position`)
+  - Missing: `focus_changes_select_correct_opacity`, `compact_tab_bar_metrics_differ_from_default`, `hidden_tab_bar_suppresses_layout`
+  - [x] Add `hidden_tab_bar_suppresses_layout()` — prove Hidden position produces zero tab-bar height in layout
+  - [x] Add `compact_tab_bar_metrics_differ_from_default()` — prove Compact metrics produce different dimensions
+  - [x] Add `focus_changes_select_correct_opacity()` — prove focus state selects correct opacity value
+  - [x] Add blur-teardown regression test (`blur_disabled_when_config_blur_false`)
 
 ---
 
 ## 09.R Third Party Review Findings
+
+### Open Findings
+
+- [x] `[TPR-09-007][high]` `oriterm/src/app/chrome/mod.rs:116` — `TabBarPosition` is still
+  config-only, so the Appearance `Hidden` option and the Window-page `Tab bar position` control do
+  not suppress chrome layout or hit testing.
+  Resolved 2026-03-25: accepted. Concrete implementation tasks added to §09.5 checklist. The config
+  mutation path works (action_handler correctly maps Hidden), but `compute_window_layout()`,
+  `cursor_in_tab_bar()`, `update_tab_bar_hover()`, and the redraw path all unconditionally allocate
+  and render the tab bar. `tab_bar_position` has zero consumers outside config/settings code.
+
+- [x] `[TPR-09-008][high]` `oriterm/src/app/init/mod.rs:274` — `TabBarStyle::Compact` never
+  reaches the runtime tab bar, so the new Appearance dropdown only mutates config state.
+  Resolved 2026-03-25: accepted. Concrete implementation tasks added to §09.5 checklist.
+  `with_theme()` hardcodes `TabBarMetrics::DEFAULT`, `set_metrics()` is dead code (zero callers),
+  and `TabBarLayout::compute()` uses constants directly instead of the metrics struct. The
+  infrastructure exists but nothing connects config → widget.
+
+- [x] `[TPR-09-009][medium]` `oriterm/src/app/init/mod.rs:34` — Decorations support was not
+  widened beyond a bool, so `Transparent`/`Buttonless` remain unrepresentable and saves/reloads do
+  not update live windows.
+  Resolved 2026-03-25: accepted. Concrete implementation tasks added to §09.4 checklist.
+  `init/mod.rs` and `window_management.rs` collapse the enum via `is_decorated()`,
+  `config_reload/mod.rs` ignores decorations entirely, and macOS hardcodes `with_decorations(true)`.
+  The enum exists in config but only `Full` vs everything-else is representable at runtime.
+
+- [x] `[TPR-09-010][medium]` `oriterm/src/app/event_loop.rs:154` — Focus-aware opacity can turn
+  blur on for unfocused windows but has no path to turn it back off.
+  Resolved 2026-03-25: accepted. Concrete implementation tasks added to §09.3 checklist.
+  `apply_transparency()` has an early return for `opacity >= 1.0` that prevents any blur teardown,
+  and the only `set_blur` call in the codebase is `set_blur(true)`. Zero occurrences of
+  `set_blur(false)`, `clear_vibrancy`, or `clear_acrylic` exist anywhere.
 
 ### Resolved Findings
 

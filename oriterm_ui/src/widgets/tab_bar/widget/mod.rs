@@ -89,6 +89,9 @@ pub struct TabBarWidget {
     tabs: Vec<TabEntry>,
     active_index: usize,
 
+    // Style-driven geometry.
+    metrics: super::constants::TabBarMetrics,
+
     // Computed layout.
     layout: TabBarLayout,
     colors: TabBarColors,
@@ -135,12 +138,26 @@ impl TabBarWidget {
 
     /// Creates a new tab bar widget with colors from the given theme.
     pub fn with_theme(window_width: f32, theme: &UiTheme) -> Self {
-        let layout = TabBarLayout::compute(0, window_width, None, 0.0);
+        Self::with_theme_and_metrics(
+            window_width,
+            theme,
+            super::constants::TabBarMetrics::DEFAULT,
+        )
+    }
+
+    /// Creates a new tab bar widget with colors and style-driven metrics.
+    pub fn with_theme_and_metrics(
+        window_width: f32,
+        theme: &UiTheme,
+        metrics: super::constants::TabBarMetrics,
+    ) -> Self {
+        let layout = TabBarLayout::compute(0, window_width, None, 0.0, &metrics);
 
         Self {
             id: WidgetId::next(),
             tabs: Vec::new(),
             active_index: 0,
+            metrics,
             layout,
             colors: TabBarColors::from_theme(theme),
             window_width,
@@ -158,6 +175,16 @@ impl TabBarWidget {
             pressed_control: None,
             left_inset: 0.0,
         }
+    }
+
+    /// Returns the current tab bar metrics.
+    pub fn metrics(&self) -> &super::constants::TabBarMetrics {
+        &self.metrics
+    }
+
+    /// Sets the tab bar metrics (style change).
+    pub fn set_metrics(&mut self, metrics: super::constants::TabBarMetrics) {
+        self.metrics = metrics;
     }
 
     // Theme
@@ -397,6 +424,7 @@ impl TabBarWidget {
             self.window_width,
             self.tab_width_lock,
             self.left_inset,
+            &self.metrics,
         );
     }
 
@@ -412,6 +440,7 @@ impl TabBarWidget {
             self.tab_width_lock,
             self.left_inset,
             Some(&multipliers),
+            &self.metrics,
         );
     }
 

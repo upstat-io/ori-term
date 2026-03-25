@@ -37,6 +37,9 @@ pub(crate) struct SettingsIds {
     pub theme_dropdown: WidgetId,
     pub opacity_slider: WidgetId,
     pub blur_toggle: WidgetId,
+    pub unfocused_opacity_slider: WidgetId,
+    pub decorations_dropdown: WidgetId,
+    pub tab_bar_style_dropdown: WidgetId,
     // Colors page — per-card IDs (each SchemeCard has its own ID).
     pub scheme_card_ids: Vec<WidgetId>,
     // Font page.
@@ -124,6 +127,9 @@ impl SettingsIds {
             theme_dropdown: WidgetId::placeholder(),
             opacity_slider: WidgetId::placeholder(),
             blur_toggle: WidgetId::placeholder(),
+            unfocused_opacity_slider: WidgetId::placeholder(),
+            decorations_dropdown: WidgetId::placeholder(),
+            tab_bar_style_dropdown: WidgetId::placeholder(),
             scheme_card_ids: Vec::new(),
             font_family_dropdown: WidgetId::placeholder(),
             font_size_input: WidgetId::placeholder(),

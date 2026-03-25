@@ -111,6 +111,9 @@ pub(super) struct WindowLayout {
 /// height (logical `TAB_BAR_HEIGHT` scaled to physical pixels, rounded to
 /// prevent subpixel seams). The terminal grid fills the remaining space.
 ///
+/// When `tab_bar_hidden` is true, the tab bar height is zero and the grid
+/// fills the full viewport.
+///
 /// All coordinates are in physical pixels — consistent with cell metrics,
 /// GPU renderer, and the winit viewport.
 pub(super) fn compute_window_layout(
@@ -118,13 +121,18 @@ pub(super) fn compute_window_layout(
     viewport_h: u32,
     cell: &crate::font::CellMetrics,
     scale: f32,
+    tab_bar_hidden: bool,
 ) -> WindowLayout {
     use oriterm_ui::layout::{Direction, LayoutBox, SizeSpec, compute_layout};
 
-    let tab_bar_h_px = grid_origin_y(
-        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT,
-        scale,
-    );
+    let tab_bar_h_px = if tab_bar_hidden {
+        0.0
+    } else {
+        grid_origin_y(
+            oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT,
+            scale,
+        )
+    };
 
     let root = LayoutBox::flex(
         Direction::Column,
@@ -223,7 +231,11 @@ impl App {
     /// Returns `true` if the cursor position is within the tab bar zone.
     ///
     /// The tab bar spans from y=0 to `TAB_BAR_HEIGHT` (logical pixels).
+    /// Returns `false` when the tab bar is hidden.
     pub(super) fn cursor_in_tab_bar(&self, position: winit::dpi::PhysicalPosition<f64>) -> bool {
+        if self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden {
+            return false;
+        }
         let Some(ctx) = self.focused_ctx() else {
             return false;
         };
@@ -238,7 +250,12 @@ impl App {
     /// targets via [`hit_test`](oriterm_ui::widgets::tab_bar::hit_test),
     /// updates the widget's hover hit (marking dirty on change), and manages
     /// the tab width lock (acquire on enter, release on leave).
+    ///
+    /// No-op when the tab bar is hidden.
     pub(super) fn update_tab_bar_hover(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
+        if self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden {
+            return;
+        }
         let in_tab_bar = self.cursor_in_tab_bar(position);
         let locked = self.tab_width_lock().is_some();
 
@@ -264,14 +281,15 @@ impl App {
                 (
                     ctx.window.scale_factor().factor() as f32,
                     ctx.tab_bar.layout().clone(),
+                    ctx.tab_bar.metrics().height,
                 )
             });
 
             match ctx_data {
-                Some((scale, layout)) => {
+                Some((scale, layout, bar_height)) => {
                     let x = position.x as f32 / scale;
                     let y = position.y as f32 / scale;
-                    oriterm_ui::widgets::tab_bar::hit_test(x, y, &layout)
+                    oriterm_ui::widgets::tab_bar::hit_test(x, y, &layout, bar_height)
                 }
                 _ => oriterm_ui::widgets::tab_bar::TabBarHit::None,
             }

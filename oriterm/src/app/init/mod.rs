@@ -36,6 +36,7 @@ impl App {
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
+            decoration: decoration_to_mode(self.config.window.decorations),
             ..WindowConfig::default()
         };
 
@@ -139,7 +140,8 @@ impl App {
         // 9. Compute grid dimensions via layout engine (Column { TabBar, Grid }).
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
+        let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden);
 
         // 10. Create grid widget with cell metrics and layout-computed size.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, wl.cols, wl.rows);
@@ -159,7 +161,11 @@ impl App {
             "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
              renderer={t_renderer:?} mux={t_mux:?} total={t_total:?}",
         );
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        let tab_bar_h = if hidden {
+            0.0
+        } else {
+            oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+        };
         log::info!(
             "app: initialized — {w}x{h} px, {} cols × {} rows, \
              chrome={tab_bar_h}px, font={} {:.1}pt",
@@ -289,8 +295,12 @@ impl App {
             scale,
         );
 
-        let mut tab_bar_widget =
-            oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &self.ui_theme);
+        let metrics = metrics_from_style(self.config.window.tab_bar_style);
+        let mut tab_bar_widget = oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme_and_metrics(
+            logical_w,
+            &self.ui_theme,
+            metrics,
+        );
 
         // Reserve space for macOS traffic light buttons on the left.
         #[cfg(target_os = "macos")]
@@ -310,7 +320,39 @@ impl App {
 
         tab_bar_widget
     }
+}
 
+/// Convert a [`Decorations`](crate::config::Decorations) config value into
+/// [`DecorationMode`](oriterm_ui::window::DecorationMode).
+pub(super) fn decoration_to_mode(
+    decorations: crate::config::Decorations,
+) -> oriterm_ui::window::DecorationMode {
+    match decorations {
+        crate::config::Decorations::None => oriterm_ui::window::DecorationMode::Frameless,
+        crate::config::Decorations::Full => oriterm_ui::window::DecorationMode::Native,
+        crate::config::Decorations::Transparent => {
+            oriterm_ui::window::DecorationMode::TransparentTitlebar
+        }
+        crate::config::Decorations::Buttonless => oriterm_ui::window::DecorationMode::Buttonless,
+    }
+}
+
+/// Convert a [`TabBarStyle`](crate::config::TabBarStyle) config value into
+/// [`TabBarMetrics`](oriterm_ui::widgets::tab_bar::constants::TabBarMetrics).
+pub(super) fn metrics_from_style(
+    style: crate::config::TabBarStyle,
+) -> oriterm_ui::widgets::tab_bar::constants::TabBarMetrics {
+    match style {
+        crate::config::TabBarStyle::Default => {
+            oriterm_ui::widgets::tab_bar::constants::TabBarMetrics::DEFAULT
+        }
+        crate::config::TabBarStyle::Compact => {
+            oriterm_ui::widgets::tab_bar::constants::TabBarMetrics::COMPACT
+        }
+    }
+}
+
+impl App {
     /// Create an initial tab with one pane in the given mux window.
     ///
     /// The mux backend and window must already exist. The pane is stored

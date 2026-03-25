@@ -170,6 +170,17 @@ pub(crate) enum TabBarPosition {
     Hidden,
 }
 
+/// Tab bar visual density.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TabBarStyle {
+    /// Standard tab bar height and padding.
+    #[default]
+    Default,
+    /// Reduced height and padding for a more compact appearance.
+    Compact,
+}
+
 /// Window size and opacity configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -180,6 +191,9 @@ pub(crate) struct WindowConfig {
     pub rows: usize,
     /// Window opacity 0.0-1.0 (default: 1.0).
     pub opacity: f32,
+    /// Opacity when the window loses focus, 0.3-1.0 (default: 1.0).
+    #[serde(default = "default_unfocused_opacity")]
+    pub unfocused_opacity: f32,
     /// Independent tab bar opacity (falls back to `opacity`).
     pub tab_bar_opacity: Option<f32>,
     /// Enable backdrop blur (default: true).
@@ -191,6 +205,9 @@ pub(crate) struct WindowConfig {
     /// Tab bar position (default: `Top`).
     #[serde(default)]
     pub tab_bar_position: TabBarPosition,
+    /// Tab bar visual density (default: `Default`).
+    #[serde(default)]
+    pub tab_bar_style: TabBarStyle,
     /// Grid padding in logical pixels (default: 0.0).
     #[serde(default)]
     pub grid_padding: f32,
@@ -199,17 +216,24 @@ pub(crate) struct WindowConfig {
     pub restore_session: bool,
 }
 
+/// Default value for `unfocused_opacity` serde default.
+fn default_unfocused_opacity() -> f32 {
+    1.0
+}
+
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
             columns: 120,
             rows: 30,
             opacity: 1.0,
+            unfocused_opacity: 1.0,
             tab_bar_opacity: None,
             blur: true,
             decorations: Decorations::default(),
             resize_increments: true,
             tab_bar_position: TabBarPosition::default(),
+            tab_bar_style: TabBarStyle::default(),
             grid_padding: 0.0,
             restore_session: false,
         }
@@ -220,6 +244,11 @@ impl WindowConfig {
     /// Returns opacity clamped to [0.0, 1.0], defaulting to 1.0 for NaN.
     pub fn effective_opacity(&self) -> f32 {
         clamp_or_default(self.opacity, 0.0, 1.0, 1.0)
+    }
+
+    /// Returns unfocused opacity clamped to [0.3, 1.0], defaulting to 1.0 for NaN.
+    pub fn effective_unfocused_opacity(&self) -> f32 {
+        clamp_or_default(self.unfocused_opacity, 0.3, 1.0, 1.0)
     }
 
     /// Returns tab bar opacity clamped to [0.0, 1.0].

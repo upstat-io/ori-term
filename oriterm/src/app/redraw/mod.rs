@@ -152,10 +152,15 @@ impl App {
 
             let frame = ctx.frame.as_mut().expect("frame just assigned");
 
-            // Set window opacity from config (extract phase doesn't have
-            // access to config — opacity is a window concern, not terminal state).
-            frame.palette.opacity = self.config.window.effective_opacity();
-            frame.window_focused = ctx.window.window().has_focus();
+            // Set window opacity from config, accounting for focus state.
+            // Unfocused windows use the dimmer unfocused_opacity value.
+            let focused = ctx.window.window().has_focus();
+            frame.palette.opacity = if focused {
+                self.config.window.effective_opacity()
+            } else {
+                self.config.window.effective_unfocused_opacity()
+            };
+            frame.window_focused = focused;
 
             // IME preedit: overlay composition text at the cursor position
             // (underlined) so it flows through the normal shaping pipeline.
@@ -321,10 +326,18 @@ impl App {
 
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.
+            // Skipped when the tab bar is hidden.
+            let tab_bar_hidden =
+                self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
             let logical_w = (w as f32 / scale).round() as u32;
             let (interaction, flags, damage) = ctx.root.interaction_frame_requests_and_damage_mut();
+            let tab_bar_ref = if tab_bar_hidden {
+                None
+            } else {
+                Some(&ctx.tab_bar)
+            };
             let tab_bar_animating = Self::draw_tab_bar(
-                Some(&ctx.tab_bar),
+                tab_bar_ref,
                 renderer,
                 &mut ctx.chrome_scene,
                 logical_w as f32,

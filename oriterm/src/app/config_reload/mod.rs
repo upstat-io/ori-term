@@ -246,25 +246,104 @@ impl App {
     /// Detect and apply window transparency/blur changes.
     ///
     /// Iterates ALL windows — each must receive the updated transparency
-    /// settings, not just the focused one.
-    pub(in crate::app) fn apply_window_changes(&self, new: &Config) {
+    /// settings based on its focus state, not just the focused one.
+    pub(in crate::app) fn apply_window_changes(&mut self, new: &Config) {
         let opacity_changed =
             (new.window.effective_opacity() - self.config.window.effective_opacity()).abs()
                 > f32::EPSILON;
+        let unfocused_opacity_changed = (new.window.effective_unfocused_opacity()
+            - self.config.window.effective_unfocused_opacity())
+        .abs()
+            > f32::EPSILON;
         let blur_changed = new.window.blur != self.config.window.blur;
 
-        if !opacity_changed && !blur_changed {
-            return;
+        if opacity_changed || unfocused_opacity_changed || blur_changed {
+            for ctx in self.windows.values() {
+                let focused = ctx.window.window().has_focus();
+                let opacity = if focused {
+                    new.window.effective_opacity()
+                } else {
+                    new.window.effective_unfocused_opacity()
+                };
+                let blur = new.window.blur && opacity < 1.0;
+                ctx.window.set_transparency(opacity, blur);
+            }
+
+            log::info!(
+                "config reload: opacity={:.2}, unfocused_opacity={:.2}, blur={}",
+                new.window.effective_opacity(),
+                new.window.effective_unfocused_opacity(),
+                new.window.blur
+            );
         }
 
-        let opacity = new.window.effective_opacity();
-        let blur = new.window.blur && opacity < 1.0;
-
-        for ctx in self.windows.values() {
-            ctx.window.set_transparency(opacity, blur);
+        // Decoration mode changed — apply to existing windows where possible.
+        // winit's `set_decorations(bool)` handles the decorated/frameless toggle.
+        // macOS-specific modes (TransparentTitlebar, Buttonless) require window
+        // recreation and are logged as requiring restart.
+        let decorations_changed = new.window.decorations != self.config.window.decorations;
+        if decorations_changed {
+            let mode = super::init::decoration_to_mode(new.window.decorations);
+            let winit_decorated = matches!(mode, oriterm_ui::window::DecorationMode::Native);
+            for ctx in self.windows.values() {
+                ctx.window.window().set_decorations(winit_decorated);
+            }
+            log::info!(
+                "config reload: decorations={:?} (winit decorated={})",
+                new.window.decorations,
+                winit_decorated,
+            );
+            // macOS titlebar transparency and button visibility are set at
+            // window creation time and cannot be changed at runtime via winit.
+            #[cfg(target_os = "macos")]
+            {
+                let old_mode = super::init::decoration_to_mode(self.config.window.decorations);
+                if mode != old_mode
+                    && (matches!(
+                        mode,
+                        oriterm_ui::window::DecorationMode::TransparentTitlebar
+                            | oriterm_ui::window::DecorationMode::Buttonless
+                    ) || matches!(
+                        old_mode,
+                        oriterm_ui::window::DecorationMode::TransparentTitlebar
+                            | oriterm_ui::window::DecorationMode::Buttonless
+                    ))
+                {
+                    log::warn!("config reload: macOS titlebar mode change requires app restart");
+                }
+            }
         }
 
-        log::info!("config reload: window opacity={opacity:.2}, blur={blur}",);
+        // Tab bar position or style changed — relayout all windows since
+        // chrome height changes when the tab bar is hidden/shown.
+        let position_changed = new.window.tab_bar_position != self.config.window.tab_bar_position;
+        let style_changed = new.window.tab_bar_style != self.config.window.tab_bar_style;
+        if position_changed || style_changed {
+            // Apply new metrics to all tab bar widgets before relayout.
+            if style_changed {
+                let metrics = super::init::metrics_from_style(new.window.tab_bar_style);
+                for ctx in self.windows.values_mut() {
+                    ctx.tab_bar.set_metrics(metrics);
+                }
+            }
+            let window_sizes: Vec<_> = self
+                .windows
+                .iter()
+                .map(|(&id, ctx)| {
+                    let (w, h) = ctx.window.size_px();
+                    (id, w, h)
+                })
+                .collect();
+            for (winit_id, w, h) in window_sizes {
+                self.sync_grid_layout(winit_id, w, h);
+                self.refresh_platform_rects(winit_id);
+            }
+            log::info!(
+                "config reload: tab_bar_position={:?}, tab_bar_style={:?}",
+                new.window.tab_bar_position,
+                new.window.tab_bar_style
+            );
+        }
     }
 
     /// Detect and apply behavior config changes.

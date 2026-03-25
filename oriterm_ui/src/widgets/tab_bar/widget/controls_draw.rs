@@ -13,7 +13,7 @@ use crate::geometry::Rect;
 use crate::widgets::{DrawCtx, Widget};
 
 #[cfg(not(target_os = "macos"))]
-use super::super::constants::{CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT};
+use super::super::constants::CONTROLS_ZONE_WIDTH;
 #[cfg(not(target_os = "macos"))]
 use super::TabBarWidget;
 
@@ -41,7 +41,7 @@ impl TabBarWidget {
                 controls_x + i as f32 * BUTTON_WIDTH,
                 y0,
                 BUTTON_WIDTH,
-                TAB_BAR_HEIGHT,
+                self.metrics.height,
             );
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
@@ -69,7 +69,7 @@ impl TabBarWidget {
             controls_x + index as f32 * BUTTON_WIDTH,
             0.0,
             BUTTON_WIDTH,
-            TAB_BAR_HEIGHT,
+            self.metrics.height,
         )
     }
 }

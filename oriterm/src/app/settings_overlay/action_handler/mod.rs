@@ -6,7 +6,10 @@
 
 use oriterm_ui::widgets::WidgetAction;
 
-use crate::config::{BellAnimation, Config, CursorStyle, GpuBackend, PasteWarning, TabBarPosition};
+use crate::config::{
+    BellAnimation, Config, CursorStyle, Decorations, GpuBackend, PasteWarning, TabBarPosition,
+    TabBarStyle,
+};
 
 use super::form_builder::{BELL_DURATION_VALUES, FONT_FAMILIES, SettingsIds};
 
@@ -30,7 +33,7 @@ pub(in crate::app) fn handle_settings_action(
         || handle_rendering(action, ids, config)
 }
 
-/// Appearance page: theme dropdown, opacity slider, blur toggle.
+/// Appearance page: theme, opacity, blur, unfocused opacity, decorations, tab bar style.
 fn handle_appearance(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {
     match action {
         WidgetAction::Selected { id, index } if *id == ids.theme_dropdown => {
@@ -46,6 +49,40 @@ fn handle_appearance(action: &WidgetAction, ids: &SettingsIds, config: &mut Conf
         }
         WidgetAction::Toggled { id, value } if *id == ids.blur_toggle => {
             config.window.blur = *value;
+            true
+        }
+        WidgetAction::ValueChanged { id, value } if *id == ids.unfocused_opacity_slider => {
+            config.window.unfocused_opacity = (*value / 100.0).clamp(0.3, 1.0);
+            true
+        }
+        WidgetAction::Selected { id, index } if *id == ids.decorations_dropdown => {
+            config.window.decorations = match index {
+                0 => Decorations::None,
+                1 => Decorations::Full,
+                _ => Decorations::Transparent,
+            };
+            true
+        }
+        WidgetAction::Selected { id, index } if *id == ids.tab_bar_style_dropdown => {
+            // 0=Default, 1=Compact, 2=Hidden.
+            // "Hidden" maps to TabBarPosition::Hidden to avoid duplicate hidden state.
+            match index {
+                0 => {
+                    config.window.tab_bar_style = TabBarStyle::Default;
+                    if config.window.tab_bar_position == TabBarPosition::Hidden {
+                        config.window.tab_bar_position = TabBarPosition::Top;
+                    }
+                }
+                1 => {
+                    config.window.tab_bar_style = TabBarStyle::Compact;
+                    if config.window.tab_bar_position == TabBarPosition::Hidden {
+                        config.window.tab_bar_position = TabBarPosition::Top;
+                    }
+                }
+                _ => {
+                    config.window.tab_bar_position = TabBarPosition::Hidden;
+                }
+            }
             true
         }
         _ => false,

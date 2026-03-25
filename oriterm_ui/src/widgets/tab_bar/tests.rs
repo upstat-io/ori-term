@@ -4,16 +4,18 @@ use super::colors::TabBarColors;
 use super::constants::{
     CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, CONTROLS_ZONE_WIDTH, DRAG_START_THRESHOLD,
     DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN, TAB_MAX_WIDTH,
-    TAB_MIN_WIDTH, TAB_PADDING, TEAR_OFF_THRESHOLD, TEAR_OFF_THRESHOLD_UP,
+    TAB_MIN_WIDTH, TAB_PADDING, TEAR_OFF_THRESHOLD, TEAR_OFF_THRESHOLD_UP, TabBarMetrics,
 };
 use super::layout::TabBarLayout;
 use crate::theme::UiTheme;
+
+const M: &TabBarMetrics = &TabBarMetrics::DEFAULT;
 
 // Layout computation
 
 #[test]
 fn single_tab_fills_available_space() {
-    let layout = TabBarLayout::compute(1, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(1, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_count, 1);
     // Single tab gets all available space, clamped to TAB_MAX_WIDTH.
     assert!(layout.tab_width <= TAB_MAX_WIDTH);
@@ -23,20 +25,20 @@ fn single_tab_fills_available_space() {
 #[test]
 fn single_tab_clamps_to_max() {
     // Very wide window — one tab should clamp to MAX.
-    let layout = TabBarLayout::compute(1, 2000.0, None, 0.0);
+    let layout = TabBarLayout::compute(1, 2000.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MAX_WIDTH).abs() < f32::EPSILON);
 }
 
 #[test]
 fn many_tabs_clamp_to_min() {
     // 50 tabs in 1200px — not enough room, clamp to min.
-    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
 
 #[test]
 fn zero_tabs_returns_min_width() {
-    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_count, 0);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
@@ -52,27 +54,27 @@ fn tabs_split_available_space_evenly() {
     let tab_count = 5;
     let expected = (available / tab_count as f32).clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
 
-    let layout = TabBarLayout::compute(tab_count, window_width, None, 0.0);
+    let layout = TabBarLayout::compute(tab_count, window_width, None, 0.0, M);
     assert!((layout.tab_width - expected).abs() < 0.01);
 }
 
 #[test]
 fn width_lock_overrides_computation() {
     let locked = 150.0;
-    let layout = TabBarLayout::compute(3, 1200.0, Some(locked), 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, Some(locked), 0.0, M);
     assert!((layout.tab_width - locked).abs() < f32::EPSILON);
 }
 
 #[test]
 fn narrow_window_clamps_to_min() {
     // Window so narrow that available space is negative.
-    let layout = TabBarLayout::compute(3, 100.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 100.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
 
 #[test]
 fn window_width_preserved() {
-    let layout = TabBarLayout::compute(2, 1500.0, None, 0.0);
+    let layout = TabBarLayout::compute(2, 1500.0, None, 0.0, M);
     assert!((layout.window_width - 1500.0).abs() < f32::EPSILON);
 }
 
@@ -80,7 +82,7 @@ fn window_width_preserved() {
 
 #[test]
 fn tab_x_positions_are_sequential() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     for i in 0..4 {
         let expected = TAB_LEFT_MARGIN + i as f32 * layout.tab_width;
         assert!((layout.tab_x(i) - expected).abs() < 0.01);
@@ -89,34 +91,34 @@ fn tab_x_positions_are_sequential() {
 
 #[test]
 fn tabs_end_after_last_tab() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let expected = TAB_LEFT_MARGIN + 3.0 * layout.tab_width;
     assert!((layout.tabs_end() - expected).abs() < 0.01);
 }
 
 #[test]
 fn new_tab_button_starts_at_tabs_end() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     assert!((layout.new_tab_x() - layout.tabs_end()).abs() < f32::EPSILON);
 }
 
 #[test]
 fn dropdown_follows_new_tab_button() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let expected = layout.new_tab_x() + NEW_TAB_BUTTON_WIDTH;
     assert!((layout.dropdown_x() - expected).abs() < f32::EPSILON);
 }
 
 #[test]
 fn controls_at_right_edge() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let expected = 1200.0 - CONTROLS_ZONE_WIDTH;
     assert!((layout.controls_x() - expected).abs() < f32::EPSILON);
 }
 
 #[test]
 fn max_text_width_accounts_for_padding() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let expected =
         layout.tab_width - 2.0 * TAB_PADDING - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD;
     assert!((layout.max_text_width() - expected).abs() < 0.01);
@@ -125,7 +127,7 @@ fn max_text_width_accounts_for_padding() {
 #[test]
 fn max_text_width_not_negative() {
     // Very narrow tabs — text width should floor at 0.
-    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0, M);
     assert!(layout.max_text_width() >= 0.0);
 }
 
@@ -204,7 +206,7 @@ fn drag_thresholds_ordered() {
 
 #[test]
 fn hit_test_returns_correct_tab_index() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     // Middle of first tab.
     let mid0 = layout.tab_x(0) + layout.tab_width / 2.0;
     assert_eq!(layout.tab_index_at(mid0), Some(0));
@@ -218,7 +220,7 @@ fn hit_test_returns_correct_tab_index() {
 
 #[test]
 fn hit_test_boundary_between_tabs() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     // Previous representable f32 before tab_x(1) — must belong to tab 0.
     let just_before = f32::from_bits(layout.tab_x(1).to_bits() - 1);
     assert_eq!(layout.tab_index_at(just_before), Some(0));
@@ -228,21 +230,21 @@ fn hit_test_boundary_between_tabs() {
 
 #[test]
 fn hit_test_before_tabs_returns_none() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_index_at(0.0), None);
     assert_eq!(layout.tab_index_at(TAB_LEFT_MARGIN - 1.0), None);
 }
 
 #[test]
 fn hit_test_past_tabs_returns_none() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_index_at(layout.tabs_end()), None);
     assert_eq!(layout.tab_index_at(layout.tabs_end() + 100.0), None);
 }
 
 #[test]
 fn hit_test_zero_tabs_returns_none() {
-    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_index_at(TAB_LEFT_MARGIN), None);
     assert_eq!(layout.tab_index_at(100.0), None);
 }
@@ -251,7 +253,7 @@ fn hit_test_zero_tabs_returns_none() {
 
 #[test]
 fn zero_width_window_does_not_panic() {
-    let layout = TabBarLayout::compute(3, 0.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 0.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
     assert_eq!(layout.tab_count, 3);
     // Helpers still return finite values.
@@ -263,7 +265,7 @@ fn zero_width_window_does_not_panic() {
 
 #[test]
 fn tab_x_past_end_equals_tabs_end() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     assert!((layout.tab_x(layout.tab_count) - layout.tabs_end()).abs() < f32::EPSILON);
 }
 
@@ -272,7 +274,7 @@ fn tab_x_past_end_equals_tabs_end() {
 #[test]
 fn width_lock_below_min_passes_through() {
     let tiny = 10.0;
-    let layout = TabBarLayout::compute(3, 1200.0, Some(tiny), 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, Some(tiny), 0.0, M);
     // Lock bypasses clamping — documents the contract.
     assert!((layout.tab_width - tiny).abs() < f32::EPSILON);
 }
@@ -280,7 +282,7 @@ fn width_lock_below_min_passes_through() {
 #[test]
 fn width_lock_above_max_passes_through() {
     let huge = 500.0;
-    let layout = TabBarLayout::compute(3, 1200.0, Some(huge), 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, Some(huge), 0.0, M);
     assert!((layout.tab_width - huge).abs() < f32::EPSILON);
 }
 
@@ -290,7 +292,7 @@ fn width_lock_above_max_passes_through() {
 fn buttons_do_not_overlap_controls() {
     // Verify ordering: tabs_end <= new_tab_x < dropdown_x < controls_x
     // for a reasonable window width.
-    let layout = TabBarLayout::compute(5, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(5, 1200.0, None, 0.0, M);
     assert!(layout.new_tab_x() <= layout.dropdown_x());
     assert!(layout.dropdown_x() + DROPDOWN_BUTTON_WIDTH <= layout.controls_x());
 }
@@ -300,7 +302,7 @@ fn tabs_end_within_controls_when_tabs_fit() {
     // Only check counts where tabs comfortably fit in a 1200px window.
     // At TAB_MIN_WIDTH=80, ~12 tabs fill the available space.
     for count in [1, 3, 5, 8] {
-        let layout = TabBarLayout::compute(count, 1200.0, None, 0.0);
+        let layout = TabBarLayout::compute(count, 1200.0, None, 0.0, M);
         let buttons_end = layout.dropdown_x() + DROPDOWN_BUTTON_WIDTH;
         assert!(
             buttons_end <= layout.controls_x() + 1.0,
@@ -315,7 +317,7 @@ fn tabs_end_within_controls_when_tabs_fit() {
 #[test]
 fn max_text_width_at_min_tab_width() {
     // Force tabs to minimum width with many tabs.
-    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
     // Text width must be non-negative even at minimum tab size.
     assert!(layout.max_text_width() >= 0.0);
@@ -720,18 +722,18 @@ fn dropdown_button_x_follows_drag() {
 
 /// Helper: standard 4-tab layout on a 1200px window.
 fn layout_4_tabs() -> TabBarLayout {
-    TabBarLayout::compute(4, 1200.0, None, 0.0)
+    TabBarLayout::compute(4, 1200.0, None, 0.0, M)
 }
 
 #[test]
 fn hit_below_tab_bar_returns_none() {
     let layout = layout_4_tabs();
     assert_eq!(
-        hit::hit_test(100.0, TAB_BAR_HEIGHT, &layout),
+        hit::hit_test_default(100.0, TAB_BAR_HEIGHT, &layout),
         TabBarHit::None
     );
     assert_eq!(
-        hit::hit_test(100.0, TAB_BAR_HEIGHT + 10.0, &layout),
+        hit::hit_test_default(100.0, TAB_BAR_HEIGHT + 10.0, &layout),
         TabBarHit::None
     );
 }
@@ -739,7 +741,7 @@ fn hit_below_tab_bar_returns_none() {
 #[test]
 fn hit_above_tab_bar_returns_none() {
     let layout = layout_4_tabs();
-    assert_eq!(hit::hit_test(100.0, -1.0, &layout), TabBarHit::None);
+    assert_eq!(hit::hit_test_default(100.0, -1.0, &layout), TabBarHit::None);
 }
 
 #[test]
@@ -748,10 +750,16 @@ fn hit_tab_body_returns_tab() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // Middle of tab 0.
     let mid_x = layout.tab_x(0) + layout.tab_width / 2.0;
-    assert_eq!(hit::hit_test(mid_x, mid_y, &layout), TabBarHit::Tab(0));
+    assert_eq!(
+        hit::hit_test_default(mid_x, mid_y, &layout),
+        TabBarHit::Tab(0)
+    );
     // Middle of tab 3.
     let mid_x = layout.tab_x(3) + layout.tab_width / 2.0;
-    assert_eq!(hit::hit_test(mid_x, mid_y, &layout), TabBarHit::Tab(3));
+    assert_eq!(
+        hit::hit_test_default(mid_x, mid_y, &layout),
+        TabBarHit::Tab(3)
+    );
 }
 
 #[test]
@@ -762,7 +770,7 @@ fn hit_close_button_returns_close_tab() {
     let tab_right = layout.tab_x(1) + layout.tab_width;
     let close_center = tab_right - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH / 2.0;
     assert_eq!(
-        hit::hit_test(close_center, mid_y, &layout),
+        hit::hit_test_default(close_center, mid_y, &layout),
         TabBarHit::CloseTab(1)
     );
 }
@@ -775,13 +783,13 @@ fn hit_close_button_left_boundary() {
     let close_left = tab_right - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD;
     // Exactly at close_left → CloseTab.
     assert_eq!(
-        hit::hit_test(close_left, mid_y, &layout),
+        hit::hit_test_default(close_left, mid_y, &layout),
         TabBarHit::CloseTab(2)
     );
     // Just before close_left → Tab body.
     let just_before = f32::from_bits(close_left.to_bits() - 1);
     assert_eq!(
-        hit::hit_test(just_before, mid_y, &layout),
+        hit::hit_test_default(just_before, mid_y, &layout),
         TabBarHit::Tab(2)
     );
 }
@@ -795,7 +803,7 @@ fn hit_close_button_right_boundary() {
     // Exactly at close_right → Tab body (half-open interval excludes right edge).
     // But close_right is within the tab, so it's either Tab(0) or Tab(1) depending
     // on whether it falls within the next tab's region.
-    let result = hit::hit_test(close_right, mid_y, &layout);
+    let result = hit::hit_test_default(close_right, mid_y, &layout);
     assert!(
         result == TabBarHit::Tab(0) || result == TabBarHit::Tab(1),
         "at close_right edge, expected Tab(0) or Tab(1), got {result:?}"
@@ -808,7 +816,7 @@ fn hit_new_tab_button() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     let new_tab_center = layout.new_tab_x() + NEW_TAB_BUTTON_WIDTH / 2.0;
     assert_eq!(
-        hit::hit_test(new_tab_center, mid_y, &layout),
+        hit::hit_test_default(new_tab_center, mid_y, &layout),
         TabBarHit::NewTab
     );
 }
@@ -819,7 +827,7 @@ fn hit_dropdown_button() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     let dropdown_center = layout.dropdown_x() + DROPDOWN_BUTTON_WIDTH / 2.0;
     assert_eq!(
-        hit::hit_test(dropdown_center, mid_y, &layout),
+        hit::hit_test_default(dropdown_center, mid_y, &layout),
         TabBarHit::Dropdown
     );
 }
@@ -830,7 +838,7 @@ fn hit_controls_zone_returns_window_control() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // Well into the controls zone.
     let x = layout.controls_x() + CONTROLS_ZONE_WIDTH / 2.0;
-    let result = hit::hit_test(x, mid_y, &layout);
+    let result = hit::hit_test_default(x, mid_y, &layout);
     assert!(
         result.is_window_control() || result == TabBarHit::DragArea,
         "expected a window control or DragArea in controls zone, got {result:?}"
@@ -841,10 +849,10 @@ fn hit_controls_zone_returns_window_control() {
 fn hit_controls_zone_has_priority_over_tabs() {
     // With many tabs, the tab strip might conceptually extend into the controls zone.
     // Controls must still win.
-    let layout = TabBarLayout::compute(50, 800.0, None, 0.0);
+    let layout = TabBarLayout::compute(50, 800.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     let x = layout.controls_x() + 10.0;
-    let result = hit::hit_test(x, mid_y, &layout);
+    let result = hit::hit_test_default(x, mid_y, &layout);
     assert_ne!(result, TabBarHit::Tab(0));
     assert_ne!(result, TabBarHit::None);
 }
@@ -856,7 +864,10 @@ fn hit_empty_area_returns_drag_area() {
     // Between dropdown end and controls start.
     let gap_x = layout.dropdown_x() + DROPDOWN_BUTTON_WIDTH + 10.0;
     if gap_x < layout.controls_x() {
-        assert_eq!(hit::hit_test(gap_x, mid_y, &layout), TabBarHit::DragArea);
+        assert_eq!(
+            hit::hit_test_default(gap_x, mid_y, &layout),
+            TabBarHit::DragArea
+        );
     }
 }
 
@@ -866,28 +877,34 @@ fn hit_left_margin_returns_drag_area() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // In the left margin before tabs start.
     assert_eq!(
-        hit::hit_test(TAB_LEFT_MARGIN / 2.0, mid_y, &layout),
+        hit::hit_test_default(TAB_LEFT_MARGIN / 2.0, mid_y, &layout),
         TabBarHit::DragArea
     );
 }
 
 #[test]
 fn hit_zero_tabs_all_buttons_and_drag() {
-    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // No tabs, so tab area returns NewTab/Dropdown/DragArea.
     let new_tab_x = layout.new_tab_x() + 1.0;
-    assert_eq!(hit::hit_test(new_tab_x, mid_y, &layout), TabBarHit::NewTab);
+    assert_eq!(
+        hit::hit_test_default(new_tab_x, mid_y, &layout),
+        TabBarHit::NewTab
+    );
     let drag_x = 5.0; // Before new-tab button.
-    assert_eq!(hit::hit_test(drag_x, mid_y, &layout), TabBarHit::DragArea);
+    assert_eq!(
+        hit::hit_test_default(drag_x, mid_y, &layout),
+        TabBarHit::DragArea
+    );
 }
 
 #[test]
 fn hit_narrow_window_does_not_panic() {
-    let layout = TabBarLayout::compute(3, 100.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 100.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // Controls zone might overlap everything — should still return valid hits.
-    let result = hit::hit_test(50.0, mid_y, &layout);
+    let result = hit::hit_test_default(50.0, mid_y, &layout);
     assert_ne!(
         result,
         TabBarHit::None,
@@ -899,7 +916,7 @@ fn hit_narrow_window_does_not_panic() {
 fn hit_at_origin_within_tab_bar() {
     let layout = layout_4_tabs();
     // (0, 0) is in the tab bar but in the left margin.
-    let result = hit::hit_test(0.0, 0.0, &layout);
+    let result = hit::hit_test_default(0.0, 0.0, &layout);
     assert_eq!(result, TabBarHit::DragArea);
 }
 
@@ -918,10 +935,16 @@ fn hit_top_and_bottom_y_edges() {
     let layout = layout_4_tabs();
     let mid_x = layout.tab_x(0) + layout.tab_width / 2.0;
     // y=0 is inside the tab bar.
-    assert_eq!(hit::hit_test(mid_x, 0.0, &layout), TabBarHit::Tab(0));
+    assert_eq!(
+        hit::hit_test_default(mid_x, 0.0, &layout),
+        TabBarHit::Tab(0)
+    );
     // y just below TAB_BAR_HEIGHT is outside.
     let just_below = f32::from_bits(TAB_BAR_HEIGHT.to_bits());
-    assert_eq!(hit::hit_test(mid_x, just_below, &layout), TabBarHit::None);
+    assert_eq!(
+        hit::hit_test_default(mid_x, just_below, &layout),
+        TabBarHit::None
+    );
 }
 
 #[test]
@@ -930,7 +953,7 @@ fn hit_each_tab_at_center() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     for i in 0..4 {
         let x = layout.tab_x(i) + layout.tab_width / 2.0;
-        assert_eq!(hit::hit_test(x, mid_y, &layout), TabBarHit::Tab(i));
+        assert_eq!(hit::hit_test_default(x, mid_y, &layout), TabBarHit::Tab(i));
     }
 }
 
@@ -942,7 +965,7 @@ fn hit_each_tab_close_button() {
         let tab_right = layout.tab_x(i) + layout.tab_width;
         let close_center = tab_right - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH / 2.0;
         assert_eq!(
-            hit::hit_test(close_center, mid_y, &layout),
+            hit::hit_test_default(close_center, mid_y, &layout),
             TabBarHit::CloseTab(i),
             "close button for tab {i}"
         );
@@ -1025,7 +1048,7 @@ fn update_tab_title_out_of_bounds_is_noop() {
 #[test]
 fn layout_with_nan_window_width_does_not_panic() {
     // Degenerate input — verify no panic, not specific behavior.
-    let layout = TabBarLayout::compute(3, f32::NAN, None, 0.0);
+    let layout = TabBarLayout::compute(3, f32::NAN, None, 0.0, M);
     assert_eq!(layout.tab_count, 3);
     let _ = layout.tab_x(0);
     let _ = layout.tabs_end();
@@ -1033,7 +1056,7 @@ fn layout_with_nan_window_width_does_not_panic() {
 
 #[test]
 fn layout_with_infinity_window_width_clamps_to_max() {
-    let layout = TabBarLayout::compute(3, f32::INFINITY, None, 0.0);
+    let layout = TabBarLayout::compute(3, f32::INFINITY, None, 0.0, M);
     assert_eq!(layout.tab_count, 3);
     // Infinite available space → clamp to TAB_MAX_WIDTH.
     assert!((layout.tab_width - TAB_MAX_WIDTH).abs() < f32::EPSILON);
@@ -1041,7 +1064,7 @@ fn layout_with_infinity_window_width_clamps_to_max() {
 
 #[test]
 fn layout_with_negative_window_width_clamps_to_min() {
-    let layout = TabBarLayout::compute(3, -500.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, -500.0, None, 0.0, M);
     assert_eq!(layout.tab_count, 3);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
@@ -1061,12 +1084,12 @@ fn very_long_tab_title_does_not_panic() {
 
 #[test]
 fn hit_close_button_on_single_tab() {
-    let layout = TabBarLayout::compute(1, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(1, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     let tab_right = layout.tab_x(0) + layout.tab_width;
     let close_center = tab_right - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH / 2.0;
     assert_eq!(
-        hit::hit_test(close_center, mid_y, &layout),
+        hit::hit_test_default(close_center, mid_y, &layout),
         TabBarHit::CloseTab(0)
     );
 }
@@ -1086,7 +1109,7 @@ fn hit_each_control_button_found_by_scan() {
 
     let mut x = controls_x;
     while x < layout.window_width {
-        match hit::hit_test(x, mid_y, &layout) {
+        match hit::hit_test_default(x, mid_y, &layout) {
             TabBarHit::Minimize => found_min = true,
             TabBarHit::Maximize => found_max = true,
             TabBarHit::CloseWindow => found_close = true,
@@ -1106,7 +1129,7 @@ fn hit_controls_y_edges() {
     let controls_center_x = layout.controls_x() + CONTROLS_ZONE_WIDTH / 2.0;
 
     // y=0 is within the tab bar.
-    let top = hit::hit_test(controls_center_x, 0.0, &layout);
+    let top = hit::hit_test_default(controls_center_x, 0.0, &layout);
     assert_ne!(
         top,
         TabBarHit::None,
@@ -1114,7 +1137,7 @@ fn hit_controls_y_edges() {
     );
 
     // y just inside bottom edge.
-    let bottom = hit::hit_test(controls_center_x, TAB_BAR_HEIGHT - 0.1, &layout);
+    let bottom = hit::hit_test_default(controls_center_x, TAB_BAR_HEIGHT - 0.1, &layout);
     assert_ne!(bottom, TabBarHit::None, "y near bottom should still hit");
 }
 
@@ -1122,13 +1145,13 @@ fn hit_controls_y_edges() {
 
 #[test]
 fn zero_tabs_non_button_area_is_drag_area() {
-    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
 
     let mut found_drag = false;
     let mut x = 0.0;
     while x < layout.controls_x() {
-        let result = hit::hit_test(x, mid_y, &layout);
+        let result = hit::hit_test_default(x, mid_y, &layout);
         match result {
             TabBarHit::DragArea => found_drag = true,
             TabBarHit::NewTab | TabBarHit::Dropdown => {}
@@ -1366,8 +1389,8 @@ fn set_active_false_does_not_panic() {
 #[test]
 fn layout_with_left_inset_shifts_tabs_start() {
     let inset = 76.0;
-    let layout_no_inset = TabBarLayout::compute(3, 1200.0, None, 0.0);
-    let layout_inset = TabBarLayout::compute(3, 1200.0, None, inset);
+    let layout_no_inset = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
+    let layout_inset = TabBarLayout::compute(3, 1200.0, None, inset, M);
 
     // Tabs start shifted right by the inset.
     let shift = layout_inset.tab_x(0) - layout_no_inset.tab_x(0);
@@ -1382,8 +1405,8 @@ fn layout_with_left_inset_shifts_tabs_start() {
 
 #[test]
 fn layout_with_left_inset_controls_stay_right() {
-    let layout_no_inset = TabBarLayout::compute(3, 1200.0, None, 0.0);
-    let layout_inset = TabBarLayout::compute(3, 1200.0, None, 76.0);
+    let layout_no_inset = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
+    let layout_inset = TabBarLayout::compute(3, 1200.0, None, 76.0, M);
 
     // Controls zone is anchored to the right edge — unaffected by left_inset.
     assert!(
@@ -1531,14 +1554,14 @@ fn clear_control_hover_state_after_hover() {
 #[test]
 fn hit_test_close_window_in_controls_zone() {
     // Verify that CloseWindow is reachable via hit_test in the controls zone.
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // Close button is the rightmost control.
     // Scan from the right edge leftward to find CloseWindow.
     let mut found = false;
     let mut x = layout.window_width - 1.0;
     while x > layout.controls_x() {
-        if hit::hit_test(x, mid_y, &layout) == TabBarHit::CloseWindow {
+        if hit::hit_test_default(x, mid_y, &layout) == TabBarHit::CloseWindow {
             found = true;
             break;
         }
@@ -1631,9 +1654,9 @@ fn set_tabs_resets_closing_state() {
 
 #[test]
 fn layout_with_uniform_multipliers_matches_default() {
-    let default = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let default = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let with_ones =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 1.0, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 1.0, 1.0]), M);
 
     for i in 0..3 {
         assert!(
@@ -1651,7 +1674,7 @@ fn layout_with_uniform_multipliers_matches_default() {
 #[test]
 fn layout_half_multiplier_halves_tab_width() {
     let layout =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]), M);
 
     // Tab 1 should be half width.
     let base = layout.tab_width;
@@ -1671,7 +1694,7 @@ fn layout_half_multiplier_halves_tab_width() {
 #[test]
 fn layout_zero_multiplier_collapses_tab() {
     let layout =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.0, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.0, 1.0]), M);
 
     assert!(
         layout.tab_width_at(1) < f32::EPSILON,
@@ -1687,7 +1710,7 @@ fn layout_zero_multiplier_collapses_tab() {
 #[test]
 fn tab_index_at_with_non_uniform_widths() {
     let layout =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]), M);
 
     // Mid-point of tab 0 should hit tab 0.
     let mid0 = layout.tab_x(0) + layout.tab_width_at(0) / 2.0;
@@ -1705,7 +1728,7 @@ fn tab_index_at_with_non_uniform_widths() {
 #[test]
 fn tabs_end_with_multipliers() {
     let layout =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]), M);
 
     // Total width = 1.0 + 0.5 + 1.0 = 2.5 tab widths.
     let base = layout.tab_width;
@@ -1767,5 +1790,42 @@ fn draw_window_controls_propagates_frame_requests() {
     assert!(
         flags.anim_frame_requested(),
         "paint() should propagate anim frame request from animating control button"
+    );
+}
+
+// -- Compact metrics differ from default --
+
+#[test]
+fn compact_tab_bar_metrics_differ_from_default() {
+    let compact = &TabBarMetrics::COMPACT;
+
+    // Compact tab bar must be shorter.
+    assert!(
+        compact.height < TabBarMetrics::DEFAULT.height,
+        "compact height {} should be less than default {}",
+        compact.height,
+        TabBarMetrics::DEFAULT.height,
+    );
+
+    // Compact tab bar must have smaller top margin.
+    assert!(
+        compact.top_margin < TabBarMetrics::DEFAULT.top_margin,
+        "compact top_margin {} should be less than default {}",
+        compact.top_margin,
+        TabBarMetrics::DEFAULT.top_margin,
+    );
+
+    // Compact tabs must have tighter width bounds.
+    assert!(compact.min_width < TabBarMetrics::DEFAULT.min_width);
+    assert!(compact.max_width < TabBarMetrics::DEFAULT.max_width);
+
+    // Layout must produce different tab widths for the same input.
+    let default_layout = TabBarLayout::compute(3, 1200.0, None, 0.0, &TabBarMetrics::DEFAULT);
+    let compact_layout = TabBarLayout::compute(3, 1200.0, None, 0.0, compact);
+    assert!(
+        (compact_layout.tab_width - default_layout.tab_width).abs() > f32::EPSILON,
+        "compact tab width {} should differ from default {}",
+        compact_layout.tab_width,
+        default_layout.tab_width,
     );
 }

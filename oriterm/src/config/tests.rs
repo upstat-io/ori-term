@@ -2152,6 +2152,97 @@ fn tab_bar_position_roundtrip() {
     assert_eq!(parsed.window.tab_bar_position, TabBarPosition::Bottom);
 }
 
+// Unfocused opacity
+
+#[test]
+fn unfocused_opacity_default_is_one() {
+    let cfg = Config::default();
+    assert!((cfg.window.unfocused_opacity - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn unfocused_opacity_clamps_low() {
+    assert!((WindowConfig::default().effective_unfocused_opacity() - 1.0).abs() < f32::EPSILON);
+    let mut w = WindowConfig::default();
+    w.unfocused_opacity = 0.1;
+    assert!((w.effective_unfocused_opacity() - 0.3).abs() < f32::EPSILON);
+}
+
+#[test]
+fn unfocused_opacity_clamps_high() {
+    let mut w = WindowConfig::default();
+    w.unfocused_opacity = 1.5;
+    assert!((w.effective_unfocused_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn unfocused_opacity_at_boundaries() {
+    let mut w = WindowConfig::default();
+    w.unfocused_opacity = 0.3;
+    assert!((w.effective_unfocused_opacity() - 0.3).abs() < f32::EPSILON);
+    w.unfocused_opacity = 1.0;
+    assert!((w.effective_unfocused_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn unfocused_opacity_serde_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.unfocused_opacity = 0.65;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!((parsed.window.unfocused_opacity - 0.65).abs() < f32::EPSILON);
+}
+
+// Tab bar style
+
+#[test]
+fn tab_bar_style_default() {
+    let cfg = Config::default();
+    assert_eq!(cfg.window.tab_bar_style, TabBarStyle::Default);
+}
+
+#[test]
+fn tab_bar_style_serde_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.tab_bar_style = TabBarStyle::Compact;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.window.tab_bar_style, TabBarStyle::Compact);
+}
+
+#[test]
+fn tab_bar_style_deserializes_all_variants() {
+    for (input, expected) in [
+        (r#"tab_bar_style = "default""#, TabBarStyle::Default),
+        (r#"tab_bar_style = "compact""#, TabBarStyle::Compact),
+    ] {
+        let toml_str = format!("[window]\n{input}");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(parsed.window.tab_bar_style, expected, "for input: {input}");
+    }
+}
+
+// Decorations serde roundtrip
+
+#[test]
+fn decorations_serde_roundtrip() {
+    for variant in [
+        Decorations::None,
+        Decorations::Full,
+        Decorations::Transparent,
+        Decorations::Buttonless,
+    ] {
+        let mut cfg = Config::default();
+        cfg.window.decorations = variant;
+        let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(
+            parsed.window.decorations, variant,
+            "for variant: {variant:?}"
+        );
+    }
+}
+
 // GPU backend
 
 #[test]
@@ -2273,4 +2364,55 @@ fn config_partial_eq_all_sections() {
     assert_eq!(a.pane, b.pane);
     assert_eq!(a.rendering, b.rendering);
     assert_eq!(a.colors, b.colors);
+}
+
+// Focus-aware opacity selection
+
+#[test]
+fn focus_changes_select_correct_opacity() {
+    let mut cfg = Config::default();
+    cfg.window.opacity = 0.9;
+    cfg.window.unfocused_opacity = 0.6;
+    cfg.window.blur = true;
+
+    // Focused window uses primary opacity.
+    let focused_opacity = cfg.window.effective_opacity();
+    assert!((focused_opacity - 0.9).abs() < f32::EPSILON);
+
+    // Unfocused window uses unfocused opacity.
+    let unfocused_opacity = cfg.window.effective_unfocused_opacity();
+    assert!((unfocused_opacity - 0.6).abs() < f32::EPSILON);
+
+    // Blur decision: want_blur = blur && opacity < 1.0.
+    // Focused at 0.9: blur should be on.
+    assert!(cfg.window.blur && focused_opacity < 1.0);
+    // Unfocused at 0.6: blur should be on.
+    assert!(cfg.window.blur && unfocused_opacity < 1.0);
+
+    // When focused opacity is 1.0, blur should be off even if blur=true.
+    cfg.window.opacity = 1.0;
+    let focused_opacity = cfg.window.effective_opacity();
+    assert!(
+        !(cfg.window.blur && focused_opacity < 1.0),
+        "blur must be off when focused opacity is 1.0"
+    );
+
+    // Unfocused opacity < 1.0: blur still on.
+    let unfocused_opacity = cfg.window.effective_unfocused_opacity();
+    assert!(cfg.window.blur && unfocused_opacity < 1.0);
+}
+
+#[test]
+fn blur_disabled_when_config_blur_false() {
+    let mut cfg = Config::default();
+    cfg.window.opacity = 0.8;
+    cfg.window.unfocused_opacity = 0.5;
+    cfg.window.blur = false;
+
+    // Even with sub-1.0 opacity, blur should be off when blur=false.
+    let opacity = cfg.window.effective_opacity();
+    assert!(
+        !(cfg.window.blur && opacity < 1.0),
+        "blur must be off when config blur=false"
+    );
 }

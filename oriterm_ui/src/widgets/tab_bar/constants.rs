@@ -85,3 +85,44 @@ pub const TEAR_OFF_THRESHOLD: f32 = 40.0;
 
 /// Reduced tear-off threshold for upward dragging (more natural gesture).
 pub const TEAR_OFF_THRESHOLD_UP: f32 = 15.0;
+
+// -- Style-driven metrics --
+
+/// Style-dependent tab bar geometry metrics.
+///
+/// Values that change between Default and Compact styles. Behavioral
+/// constants (drag thresholds, button widths, etc.) remain as module-level
+/// constants since they are style-independent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TabBarMetrics {
+    /// Full height of the tab bar.
+    pub height: f32,
+    /// Vertical margin above tabs.
+    pub top_margin: f32,
+    /// Internal horizontal padding within each tab.
+    pub tab_padding: f32,
+    /// Minimum tab width.
+    pub min_width: f32,
+    /// Maximum tab width.
+    pub max_width: f32,
+}
+
+impl TabBarMetrics {
+    /// Default style metrics (matches existing constants).
+    pub const DEFAULT: Self = Self {
+        height: TAB_BAR_HEIGHT,
+        top_margin: TAB_TOP_MARGIN,
+        tab_padding: TAB_PADDING,
+        min_width: TAB_MIN_WIDTH,
+        max_width: TAB_MAX_WIDTH,
+    };
+
+    /// Compact style metrics — shorter height, tighter padding.
+    pub const COMPACT: Self = Self {
+        height: 34.0,
+        top_margin: 4.0,
+        tab_padding: 6.0,
+        min_width: 64.0,
+        max_width: 220.0,
+    };
+}

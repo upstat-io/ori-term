@@ -20,8 +20,8 @@ fn settings_ids_all_distinct() {
     let theme = UiTheme::default();
     let (_content, ids) = build_settings_dialog(&config, &theme, 0);
     let all = collect_ids(&ids);
-    // 23 fixed control IDs (22 controls + sidebar) + N scheme card IDs.
-    let expected = 23 + ids.scheme_card_ids.len();
+    // 26 fixed control IDs (25 controls + sidebar) + N scheme card IDs.
+    let expected = 26 + ids.scheme_card_ids.len();
     assert_eq!(all.len(), expected, "all widget IDs must be distinct");
 }
 
@@ -85,6 +85,9 @@ fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {
     set.insert(ids.theme_dropdown.raw());
     set.insert(ids.opacity_slider.raw());
     set.insert(ids.blur_toggle.raw());
+    set.insert(ids.unfocused_opacity_slider.raw());
+    set.insert(ids.decorations_dropdown.raw());
+    set.insert(ids.tab_bar_style_dropdown.raw());
     // Colors — per-card IDs.
     for card_id in &ids.scheme_card_ids {
         set.insert(card_id.raw());

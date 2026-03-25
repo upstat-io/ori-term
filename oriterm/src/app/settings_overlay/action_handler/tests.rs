@@ -50,6 +50,97 @@ fn blur_toggled_updates_config() {
     assert!(!config.window.blur);
 }
 
+#[test]
+fn unfocused_opacity_value_changed_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::ValueChanged {
+        id: ids.unfocused_opacity_slider,
+        value: 70.0,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert!((config.window.unfocused_opacity - 0.7).abs() < f32::EPSILON);
+}
+
+#[test]
+fn decorations_dropdown_updates_config() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.decorations_dropdown,
+        index: 1, // Full
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.window.decorations, crate::config::Decorations::Full);
+}
+
+#[test]
+fn tab_bar_style_default_preserves_position() {
+    let (mut config, ids) = default_ids();
+    config.window.tab_bar_position = crate::config::TabBarPosition::Bottom;
+    let action = WidgetAction::Selected {
+        id: ids.tab_bar_style_dropdown,
+        index: 0, // Default
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.window.tab_bar_style,
+        crate::config::TabBarStyle::Default
+    );
+    assert_eq!(
+        config.window.tab_bar_position,
+        crate::config::TabBarPosition::Bottom,
+        "selecting Default style must not change a non-hidden position"
+    );
+}
+
+#[test]
+fn tab_bar_style_compact_preserves_position() {
+    let (mut config, ids) = default_ids();
+    config.window.tab_bar_position = crate::config::TabBarPosition::Bottom;
+    let action = WidgetAction::Selected {
+        id: ids.tab_bar_style_dropdown,
+        index: 1, // Compact
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.window.tab_bar_style,
+        crate::config::TabBarStyle::Compact
+    );
+    assert_eq!(
+        config.window.tab_bar_position,
+        crate::config::TabBarPosition::Bottom,
+    );
+}
+
+#[test]
+fn tab_bar_style_hidden_maps_to_position_hidden() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.tab_bar_style_dropdown,
+        index: 2, // Hidden
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.window.tab_bar_position,
+        crate::config::TabBarPosition::Hidden
+    );
+}
+
+#[test]
+fn tab_bar_style_default_restores_from_hidden() {
+    let (mut config, ids) = default_ids();
+    config.window.tab_bar_position = crate::config::TabBarPosition::Hidden;
+    let action = WidgetAction::Selected {
+        id: ids.tab_bar_style_dropdown,
+        index: 0, // Default
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(
+        config.window.tab_bar_position,
+        crate::config::TabBarPosition::Top,
+        "selecting Default from Hidden should restore to Top"
+    );
+}
+
 // Colors page tests.
 
 #[test]

@@ -1,7 +1,7 @@
 ---
 section: "07"
 title: "Scrollbar Styling"
-status: in-progress
+status: complete
 reviewed: true
 third_party_review:
   status: resolved
@@ -33,7 +33,7 @@ sections:
     status: complete
   - id: "07.7"
     title: "ScrollWidget Controller Migration"
-    status: in-progress
+    status: complete
   - id: "07.6"
     title: "Build & Verify"
     status: complete
@@ -578,8 +578,8 @@ helpers). The controller reads it during event handling.
 - [x] ScrollWidget adds `controllers()` and `controllers_mut()` returning the capture controller
 - [x] ScrollWidget's `on_action()` handles `DragStart`/`DragUpdate`/`DragEnd` for scrollbar state
 - [x] Remove scrollbar MouseDown/MouseMove/MouseUp handling from `on_input()` (keep Scroll + keys + hover)
-- [ ] Add harness tests verifying scrollbar drag works through the full propagation pipeline
-- [ ] Add harness test verifying child widgets still receive clicks in non-scrollbar areas
+- [x] Add harness tests verifying scrollbar drag works through the full propagation pipeline
+- [x] Add harness test verifying child widgets still receive clicks in non-scrollbar areas
 - [x] Existing scroll tests continue to pass (1813 tests pass)
 
 ---

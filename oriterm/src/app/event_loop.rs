@@ -151,6 +151,16 @@ impl ApplicationHandler<TermEvent> for App {
                     // the PTY focus-out escape should be suppressed.
                     self.pending_focus_out = Some(super::PendingFocusOut { window_id });
                 }
+                // Apply focus-dependent window transparency.
+                let opacity = if focused {
+                    self.config.window.effective_opacity()
+                } else {
+                    self.config.window.effective_unfocused_opacity()
+                };
+                if let Some(ctx) = self.windows.get(&window_id) {
+                    ctx.window
+                        .set_transparency(opacity, self.config.window.blur);
+                }
                 // Reset blink timer so cursor is visible immediately
                 // (on focus-in: fresh start; on focus-out: frozen visible).
                 self.cursor_blink.reset();
