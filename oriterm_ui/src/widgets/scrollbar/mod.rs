@@ -4,6 +4,9 @@
 //! thickness and hit slop), [`ScrollbarAxis`], and pure geometry/draw helpers
 //! that any scrollable widget can delegate to.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::draw::Scene;
@@ -108,6 +111,8 @@ pub struct ScrollbarMetrics {
 /// Computed scrollbar rects for rendering and hit testing.
 #[derive(Debug, Clone, Copy)]
 pub struct ScrollbarRects {
+    /// Which axis these rects represent.
+    pub axis: ScrollbarAxis,
     /// Visible track rect.
     pub track: Rect,
     /// Expanded track rect for pointer hit testing.
@@ -207,6 +212,7 @@ pub fn compute_rects(
     };
 
     ScrollbarRects {
+        axis: metrics.axis,
         track,
         track_hit,
         thumb,
@@ -238,7 +244,11 @@ pub fn draw_overlay(
     // Draw track if visible.
     if track_color.a > 0.0 {
         let track = if expanded {
-            expand_rect_inward(rects.track, style.hover_thickness - style.thickness)
+            expand_rect_inward(
+                rects.track,
+                style.hover_thickness - style.thickness,
+                rects.axis,
+            )
         } else {
             rects.track
         };
@@ -250,7 +260,11 @@ pub fn draw_overlay(
 
     // Draw thumb.
     let thumb = if expanded {
-        expand_rect_inward(rects.thumb, style.hover_thickness - style.thickness)
+        expand_rect_inward(
+            rects.thumb,
+            style.hover_thickness - style.thickness,
+            rects.axis,
+        )
     } else {
         rects.thumb
     };
@@ -265,14 +279,16 @@ pub fn draw_overlay(
 /// For a vertical scrollbar at the right edge, this extends the rect to the
 /// left. For a horizontal scrollbar at the bottom, this extends upward.
 /// The far-edge (right/bottom) stays fixed.
-fn expand_rect_inward(r: Rect, extra: f32) -> Rect {
-    // Determine orientation from aspect ratio: tall = vertical bar, wide = horizontal.
-    if r.height() > r.width() {
-        // Vertical bar: extend left.
-        Rect::new(r.x() - extra, r.y(), r.width() + extra, r.height())
-    } else {
-        // Horizontal bar: extend upward.
-        Rect::new(r.x(), r.y() - extra, r.width(), r.height() + extra)
+fn expand_rect_inward(r: Rect, extra: f32, axis: ScrollbarAxis) -> Rect {
+    match axis {
+        ScrollbarAxis::Vertical => {
+            // Vertical bar: extend left.
+            Rect::new(r.x() - extra, r.y(), r.width() + extra, r.height())
+        }
+        ScrollbarAxis::Horizontal => {
+            // Horizontal bar: extend upward.
+            Rect::new(r.x(), r.y() - extra, r.width(), r.height() + extra)
+        }
     }
 }
 
@@ -351,6 +367,31 @@ fn track_rects(
         }
     }
 }
+
+/// Hit-test zones for both axes, shared between a scrollable widget and
+/// its [`ScrollbarCaptureController`][crate::controllers::ScrollbarCaptureController].
+///
+/// Updated by the widget after computing scrollbar rects (typically in
+/// paint or input helpers). Read by the controller during Capture-phase
+/// event handling.
+#[derive(Debug, Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "axis+region prefix is clearer than bare 'thumb'/'track'"
+)]
+pub struct ScrollbarHitZones {
+    /// Vertical thumb hit rect (`None` if no vertical scrollbar).
+    pub v_thumb_hit: Option<Rect>,
+    /// Vertical track hit rect (`None` if no vertical scrollbar).
+    pub v_track_hit: Option<Rect>,
+    /// Horizontal thumb hit rect (`None` if no horizontal scrollbar).
+    pub h_thumb_hit: Option<Rect>,
+    /// Horizontal track hit rect (`None` if no horizontal scrollbar).
+    pub h_track_hit: Option<Rect>,
+}
+
+/// Shared reference to scrollbar hit zones for controller access.
+pub type SharedScrollbarHitZones = Rc<RefCell<ScrollbarHitZones>>;
 
 #[cfg(test)]
 mod tests;

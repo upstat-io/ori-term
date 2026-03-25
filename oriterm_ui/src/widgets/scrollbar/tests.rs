@@ -416,3 +416,107 @@ fn draw_overlay_emits_track_when_visible() {
 fn visual_state_default_is_rest() {
     assert_eq!(ScrollbarVisualState::default(), ScrollbarVisualState::Rest);
 }
+
+#[test]
+fn hover_expansion_uses_axis_not_aspect_ratio() {
+    use crate::draw::Scene;
+
+    // Create a style where hover expansion is active and min_thumb_length
+    // produces a square thumb (6×6) on a vertical scrollbar.
+    let mut s = default_style();
+    s.min_thumb_length = 6.0; // Same as thickness → square thumb.
+    s.hover_thickness = 10.0;
+
+    let vp = viewport();
+    let m = ScrollbarMetrics {
+        axis: ScrollbarAxis::Vertical,
+        content_extent: 100_000.0, // Huge content → tiny thumb clamped to min.
+        view_extent: 300.0,
+        scroll_offset: 0.0,
+    };
+    let r = compute_rects(vp, &m, &s, 0.0);
+
+    // Confirm the thumb is square.
+    assert_eq!(r.thumb.width(), s.thickness);
+    assert_eq!(r.thumb.height(), s.min_thumb_length);
+    assert_eq!(r.thumb.width(), r.thumb.height(), "thumb should be square");
+
+    let mut scene = Scene::default();
+    draw_overlay(&mut scene, &r, &s, ScrollbarVisualState::Hovered);
+
+    // The expanded thumb quad should grow leftward (wider), not upward.
+    let thumb_quad = &scene.quads()[scene.quads().len() - 1];
+    let extra = s.hover_thickness - s.thickness;
+    assert_eq!(
+        thumb_quad.bounds.width(),
+        s.thickness + extra,
+        "vertical square thumb should expand width, not height"
+    );
+    assert_eq!(
+        thumb_quad.bounds.height(),
+        s.min_thumb_length,
+        "vertical square thumb height should stay unchanged"
+    );
+}
+
+#[test]
+fn hover_expansion_horizontal_square_thumb() {
+    use crate::draw::Scene;
+
+    let mut s = default_style();
+    s.min_thumb_length = 6.0;
+    s.hover_thickness = 10.0;
+
+    let vp = viewport();
+    let m = ScrollbarMetrics {
+        axis: ScrollbarAxis::Horizontal,
+        content_extent: 100_000.0,
+        view_extent: 400.0,
+        scroll_offset: 0.0,
+    };
+    let r = compute_rects(vp, &m, &s, 0.0);
+
+    assert_eq!(r.thumb.height(), s.thickness);
+    assert_eq!(r.thumb.width(), s.min_thumb_length);
+
+    let mut scene = Scene::default();
+    draw_overlay(&mut scene, &r, &s, ScrollbarVisualState::Hovered);
+
+    let thumb_quad = &scene.quads()[scene.quads().len() - 1];
+    let extra = s.hover_thickness - s.thickness;
+    assert_eq!(
+        thumb_quad.bounds.height(),
+        s.thickness + extra,
+        "horizontal square thumb should expand height, not width"
+    );
+    assert_eq!(
+        thumb_quad.bounds.width(),
+        s.min_thumb_length,
+        "horizontal square thumb width should stay unchanged"
+    );
+}
+
+#[test]
+fn compute_rects_stores_axis() {
+    let s = default_style();
+    let vp = viewport();
+
+    let v = ScrollbarMetrics {
+        axis: ScrollbarAxis::Vertical,
+        content_extent: 600.0,
+        view_extent: 300.0,
+        scroll_offset: 0.0,
+    };
+    assert_eq!(compute_rects(vp, &v, &s, 0.0).axis, ScrollbarAxis::Vertical);
+
+    let h = ScrollbarMetrics {
+        axis: ScrollbarAxis::Horizontal,
+        content_extent: 800.0,
+        view_extent: 400.0,
+        scroll_offset: 0.0,
+    };
+    assert_eq!(
+        compute_rects(vp, &h, &s, 0.0).axis,
+        ScrollbarAxis::Horizontal
+    );
+}

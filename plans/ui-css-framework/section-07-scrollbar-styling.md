@@ -4,9 +4,9 @@ title: "Scrollbar Styling"
 status: in-progress
 reviewed: true
 third_party_review:
-  status: findings
-  updated: 2026-03-24
-goal: "A shared overlay scrollbar styling system supports theme-derived rest/hover/drag colors, transparent or styled tracks, constant 6px visuals with separate hit slop, and axis-aware rendering used by ScrollWidget and other scrollable widgets"
+  status: resolved
+  updated: 2026-03-25
+goal: "A shared overlay scrollbar styling system supports theme-derived rest/hover/drag colors, transparent or styled tracks, configurable rest/hover thickness with separate hit slop, and axis-aware rendering used by ScrollWidget and other scrollable widgets"
 inspired_by:
   - "CSS ::-webkit-scrollbar"
   - "CSS ::-webkit-scrollbar-track"
@@ -30,10 +30,13 @@ sections:
     status: complete
   - id: "07.R"
     title: "Third Party Review Findings"
+    status: complete
+  - id: "07.7"
+    title: "ScrollWidget Controller Migration"
     status: in-progress
   - id: "07.6"
     title: "Build & Verify"
-    status: in-progress
+    status: complete
 ---
 
 # Section 07: Scrollbar Styling
@@ -243,16 +246,18 @@ pub fn draw_overlay(
 ) { ... }
 ```
 
-### Fixed Visual Thickness, Separate Hit Target
+### Configurable Visual Thickness, Separate Hit Target
 
-The current `width * 1.5` hover expansion should be removed from rendered geometry.
+The old `width * 1.5` hover expansion was replaced with a configurable `hover_thickness` field
+(user-approved override of original fixed-6px spec — see TPR-07-007).
 
-Replace it with:
+The implementation provides:
 
-- constant visible `thickness`
+- `thickness` for the rest-state rendered width (`6px` default)
+- `hover_thickness` for the hovered/dragging rendered width (configurable, default wider than rest)
 - larger invisible `track_hit_rect` / `thumb_hit_rect` computed from `hit_slop`
 
-That preserves the mockup's `6px` visuals while keeping drag acquisition usable.
+Set `hover_thickness == thickness` to disable hover expansion entirely.
 
 ### Both-Axis Corner Reservation
 
@@ -499,20 +504,83 @@ Prefer scene-level assertions over raw pixel offsets where possible:
 
 ### Open Findings
 
+- [x] `[TPR-07-014][medium]` `oriterm_ui/src/widgets/scroll/mod.rs:313` — `ScrollWidget` still handles scrollbar hover/drag/capture through raw `on_input()` mouse branches instead of the controller pipeline required by `CLAUDE.md`.
+  Evidence: `ScrollWidget` processes `MouseDown`/`MouseMove`/`MouseUp` directly in `on_input()` and owns manual drag/hover state (`v_bar`/`h_bar`) even though the repo rule explicitly says scroll thumbs must go through event controllers, not raw event methods.
+  Impact: Section 07 is marked complete while the primary settings-page scrollbar remains a framework exception, so hover/active behavior is not unified with the rest of the UI system.
+  Resolved 2026-03-25: accepted. Concrete implementation tasks added as §07.7 "ScrollWidget Controller Migration." The scrollbar overlay is not in the hit-test tree (it exists only in paint), so a custom Capture-phase controller with shared geometry is needed. Standard ScrubController in Bubble/Target phase would not fire for scrollbar clicks because the child widget is always the hit-test target.
+
+- [x] `[TPR-07-015][low]` `oriterm_ui/src/widgets/menu/widget_impl.rs:142` — Wheel scrolling while the cursor is over the menu scrollbar repopulates `hovered` with the row behind the bar, so menu hover feedback can disagree with pointer location.
+  Resolved 2026-03-25: accepted and fixed. Added `if !self.scrollbar_state.track_hovered` guard in the `Scroll` branch of `on_input()`, matching the existing guard in the `MouseMove` path. Added `scroll_wheel_over_scrollbar_keeps_hover_clear` regression test.
+
+- [x] `[TPR-07-012][high]` `oriterm_ui/src/widgets/menu/widget_impl.rs:195` — `MenuWidget` item selection still depends on stale hover state, so a direct click can no-op or select the wrong entry.
+  Resolved 2026-03-24: accepted and fixed. `handle_drag_start()` now updates `self.hovered` from the press position when mode is `ItemPress`, so a click without prior `MouseMove` selects the correct item. Added `item_click_without_prior_mouse_move` unit test.
+
+- [x] `[TPR-07-013][low]` `plans/ui-css-framework/section-07-scrollbar-styling.md:9` — Section 07 still describes a fixed-width/no-hover-growth scrollbar even though the accepted behavior now expands on hover.
+  Resolved 2026-03-24: accepted and fixed. Updated section goal, verification steps, and §07.2 body text to reflect the configurable `hover_thickness` contract (user-approved override of original fixed-6px spec via TPR-07-007).
+
 - [x] `[TPR-07-007][medium]` `oriterm_ui/src/widgets/scrollbar/mod.rs:39` — Hover and drag still widen the rendered scrollbar instead of keeping a fixed 6px visual.
   Resolved 2026-03-24: rejected — user explicitly requested hover expansion after testing. The plan's fixed-6px spec was overridden by user feedback: "scrollbar is far too small, it needs to get wider on mouse over." The `hover_thickness` field is intentional and configurable (set equal to `thickness` to disable expansion).
 
-- [ ] `[TPR-07-008][medium]` `oriterm_ui/src/widgets/menu/widget_impl.rs:86` — `MenuWidget` never adopted the shared scrollbar state/input contract and always paints its scrollbar in the rest state.
-  Evidence: `MenuWidget` stores no scrollbar hover/drag state in `oriterm_ui/src/widgets/menu/mod.rs`,
-  `on_input()` handles only item hover plus wheel scrolling, and `draw_scrollbar()` hardcodes
-  `ScrollbarVisualState::Rest`. Section 07.3/07.4 marks the menu migration and shared hover/drag
-  routing complete, but the current implementation cannot surface hover colors or thumb dragging.
-  Impact: long menus and dropdown popups keep a non-interactive scrollbar despite the section being
-  presented as complete, so the shared subsystem is not actually integrated across existing
-  consumers.
-  Required plan update: add vertical scrollbar hover/drag state to `MenuWidget`, route mouse
-  move/down/up through the shared geometry helpers, and extend tests to cover menu scrollbar
-  hover/drag behavior instead of style construction alone.
+- [x] `[TPR-07-008][medium]` `oriterm_ui/src/widgets/menu/widget_impl.rs:86` — `MenuWidget` never adopted the shared scrollbar state/input contract and always paints its scrollbar in the rest state.
+  Resolved 2026-03-24: accepted and fixed. Added `MenuScrollbarState` to `MenuWidget` with drag/hover tracking, routed `MouseDown`/`MouseMove`/`MouseUp` through the shared `compute_rects`/`pointer_to_offset`/`drag_delta_to_offset` helpers, `draw_scrollbar()` now uses `scrollbar_state.visual_state()`, added `lifecycle()` for hover reset on hot loss, and added 8 scrollbar interaction tests covering hover, drag, track click, visual state transitions, hot loss, and non-scrollable menu handling.
+
+- [x] `[TPR-07-009][high]` `oriterm_ui/src/widgets/menu/mod.rs:207` — `MenuWidget`'s scrollbar mouse-down/up path is dead under the real event pipeline, so menu scrollbars still cannot be clicked or dragged in production.
+  Resolved 2026-03-24: accepted and fixed. Removed `ClickController` from `MenuWidget` entirely — menus don't need multi-click detection. All input (item press/release, scrollbar drag, track click) now handled directly in `on_input()`, which is the production path since no controllers block it. Added `press_pos` field for item click detection (press → capture → release → `Selected` action). Added 3 item-click unit tests (`item_click_emits_selected`, `click_on_separator_does_not_select`, `release_outside_menu_does_not_select`) and 3 WidgetTestHarness integration tests (`harness_item_click_produces_selected`, `harness_scrollbar_drag_captures_and_releases`, `harness_scrollbar_track_click_does_not_capture`) that exercise the full propagation pipeline.
+
+- [x] `[TPR-07-010][medium]` `oriterm_ui/src/widgets/menu/widget_impl.rs:54` — The menu scrollbar fix reintroduces a manual input path instead of using the repository’s required controller-driven interaction pipeline.
+  Resolved 2026-03-24: accepted and fixed. Added `HoverController` + `ScrubController` to `MenuWidget` (controllers field, initialized in `new()`). Press/drag input now flows through `ScrubController` → `on_action()` with zone discrimination via `DragMode` enum (`ScrollbarThumb`, `ScrollbarTrack`, `ItemPress`). Removed `press_pos` field. `on_input()` now only handles idle `MouseMove` (item/scrollbar hover) and `Scroll` (wheel). Controllers return actual controller slices instead of `&[]`. Added `menu_has_controllers` and `menu_sense_includes_drag` tests; updated all interaction tests to use `on_action()` for press/drag/release. Harness tests confirm full pipeline integration (capture/release via `ScrubController`).
+
+- [x] `[TPR-07-011][low]` `oriterm_ui/src/widgets/scrollbar/mod.rs:268` — Hover expansion infers scrollbar axis from the rect’s aspect ratio, so square thumbs/tracks expand in the wrong direction.
+  Resolved 2026-03-24: accepted and fixed. Added `axis: ScrollbarAxis` field to `ScrollbarRects` (set by `compute_rects()`). `expand_rect_inward()` now takes an explicit `ScrollbarAxis` parameter instead of inferring from aspect ratio. Added 3 regression tests: `hover_expansion_uses_axis_not_aspect_ratio` (vertical square thumb), `hover_expansion_horizontal_square_thumb`, and `compute_rects_stores_axis`.
+
+---
+
+## 07.7 ScrollWidget Controller Migration
+
+### Goal
+
+Migrate `ScrollWidget`'s scrollbar interaction from raw `on_input()` mouse handling to the
+controller + action pipeline required by `CLAUDE.md` for scroll thumbs.
+
+### Design Constraint
+
+The scrollbar overlay is not part of the layout/hit-test tree — it exists only in paint. When the
+user clicks on the scrollbar region, the hit-test path finds the child widget (which fills the full
+viewport), not the scrollbar. A standard Bubble/Target-phase ScrubController on ScrollWidget would
+never fire for scrollbar clicks because the child is always the deepest hit target.
+
+### Approach: Capture-Phase Custom Controller
+
+Create a `ScrollbarCaptureController` that runs in Capture phase (parent before child):
+
+1. The controller checks if the mousedown position is in the scrollbar hit rect
+2. If YES → emit `DragStart`, return `handled=true`, capture pointer (child never sees the event)
+3. If NO → return `handled=false` (event propagates to child normally)
+4. During drag → emit `DragUpdate`/`DragEnd` as usual
+
+Geometry sharing: the widget and controller share scrollbar hit rects via
+`Rc<RefCell<ScrollbarHitRects>>`. The widget updates this after computing rects (in the input/paint
+helpers). The controller reads it during event handling.
+
+### Files
+
+- new: `oriterm_ui/src/controllers/scrollbar_capture.rs`
+- modify: `oriterm_ui/src/controllers/mod.rs`
+- modify: `oriterm_ui/src/widgets/scroll/mod.rs`
+- modify: `oriterm_ui/src/widgets/scroll/input.rs`
+
+### Checklist
+
+- [x] Create `ScrollbarCaptureController` in `oriterm_ui/src/controllers/scrollbar_capture/`
+- [x] Controller uses Capture phase with shared `Rc<RefCell<ScrollbarHitZones>>`
+- [x] Controller emits `DragStart`/`DragUpdate`/`DragEnd` for scrollbar thumb and track clicks
+- [x] Controller returns `handled=false` for clicks outside scrollbar (child gets the event)
+- [x] ScrollWidget adds `controllers()` and `controllers_mut()` returning the capture controller
+- [x] ScrollWidget's `on_action()` handles `DragStart`/`DragUpdate`/`DragEnd` for scrollbar state
+- [x] Remove scrollbar MouseDown/MouseMove/MouseUp handling from `on_input()` (keep Scroll + keys + hover)
+- [ ] Add harness tests verifying scrollbar drag works through the full propagation pipeline
+- [ ] Add harness test verifying child widgets still receive clicks in non-scrollbar areas
+- [x] Existing scroll tests continue to pass (1813 tests pass)
 
 ---
 
@@ -530,9 +598,10 @@ Prefer scene-level assertions over raw pixel offsets where possible:
 
 1. `cargo test -p oriterm_ui widgets::scrollbar` and the relevant scroll/menu tests pass.
 2. `cargo test -p oriterm_ui widgets::scroll` passes with horizontal and both-axis assertions.
-3. Visual: settings content-body scrollbar is `6px` wide, thumb rest color matches `theme.border`,
-   and hover color matches `theme.fg_faint`.
-4. Visual: hover does not make the rendered scrollbar thicker.
+3. Visual: settings content-body scrollbar is `6px` at rest, expands to `hover_thickness` on hover,
+   thumb rest color matches `theme.border`, and hover color matches `theme.fg_faint`.
+4. Visual: hover expansion is configurable via `ScrollbarStyle::hover_thickness` (set equal to
+   `thickness` to disable expansion). User-approved override of original fixed-6px spec (TPR-07-007).
 5. Visual: long menus use the shared scrollbar style path instead of a hardcoded white-alpha thumb.
 
 ### Checklist
@@ -540,6 +609,6 @@ Prefer scene-level assertions over raw pixel offsets where possible:
 - [x] `./build-all.sh` passes
 - [x] `./clippy-all.sh` passes
 - [x] `./test-all.sh` passes
-- [ ] settings page scrollbar matches mockup colors and thickness
+- [x] settings page scrollbar matches mockup colors and thickness
 - [x] horizontal and both-axis scrollbar rendering is covered
 - [x] menu scrollbar no longer uses a duplicated hardcoded renderer

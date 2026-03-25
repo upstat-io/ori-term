@@ -3,7 +3,7 @@
 //! Pre-resolves all icon atlas entries so widget `DrawCtx` can look up
 //! icons by `(IconId, logical_size)` without touching the atlas directly.
 
-use oriterm_ui::icons::{IconId, ResolvedIcon};
+use oriterm_ui::icons::{IconId, ResolvedIcon, SIDEBAR_NAV_ICON_SIZE};
 
 use super::WindowRenderer;
 use crate::gpu::state::GpuState;
@@ -60,7 +60,7 @@ impl WindowRenderer {
     /// - `Plus`: `(PLUS_ARM * 2).round()` = 10
     /// - `ChevronDown`: `(CHEVRON_HALF * 2).round()` = 10
     /// - `Minimize`/`Maximize`/`Restore`/`WindowClose`: `SYMBOL_SIZE.round()` = 10
-    const ICON_SIZES: [(IconId, u32); 15] = [
+    pub(super) const ICON_SIZES: [(IconId, u32); 15] = [
         // Window chrome (10px logical).
         (IconId::Close, 10),
         (IconId::Plus, 10),
@@ -69,14 +69,14 @@ impl WindowRenderer {
         (IconId::Maximize, 10),
         (IconId::Restore, 10),
         (IconId::WindowClose, 10),
-        // Settings sidebar nav (16px logical).
-        (IconId::Sun, 16),
-        (IconId::Palette, 16),
-        (IconId::Type, 16),
-        (IconId::Terminal, 16),
-        (IconId::Keyboard, 16),
-        (IconId::Window, 16),
-        (IconId::Bell, 16),
-        (IconId::Activity, 16),
+        // Settings sidebar nav (SIDEBAR_NAV_ICON_SIZE logical).
+        (IconId::Sun, SIDEBAR_NAV_ICON_SIZE),
+        (IconId::Palette, SIDEBAR_NAV_ICON_SIZE),
+        (IconId::Type, SIDEBAR_NAV_ICON_SIZE),
+        (IconId::Terminal, SIDEBAR_NAV_ICON_SIZE),
+        (IconId::Keyboard, SIDEBAR_NAV_ICON_SIZE),
+        (IconId::Window, SIDEBAR_NAV_ICON_SIZE),
+        (IconId::Bell, SIDEBAR_NAV_ICON_SIZE),
+        (IconId::Activity, SIDEBAR_NAV_ICON_SIZE),
     ];
 }

@@ -1,11 +1,11 @@
 ---
 section: "08"
 title: "Icon Fidelity Verification"
-status: not-started
+status: in-progress
 reviewed: true
 third_party_review:
   status: resolved
-  updated: 2026-03-23
+  updated: 2026-03-25
 goal: "All 8 settings sidebar icons are sourced from the mockup SVGs, lowered into renderer-compatible IconPath data, and verified by raster-fidelity tests at target logical sizes without regressing the shared icon system used by sidebar, tab bar, and window chrome"
 inspired_by:
   - "SVG source-of-truth assets"
@@ -14,25 +14,28 @@ depends_on: []
 sections:
   - id: "08.1"
     title: "Mockup Source of Truth"
-    status: not-started
+    status: complete
   - id: "08.2"
     title: "Shared Icon Data and Generation"
-    status: not-started
+    status: complete
   - id: "08.3"
     title: "Renderer and Consumer Integration"
-    status: not-started
+    status: complete
   - id: "08.4"
     title: "Raster Fidelity Verification"
-    status: not-started
+    status: complete
   - id: "08.5"
     title: "Tests"
-    status: not-started
+    status: complete
   - id: "08.R"
     title: "Third Party Review Findings"
     status: complete
+  - id: "08.7"
+    title: "Source-Faithful Stroke Width"
+    status: in-progress
   - id: "08.6"
     title: "Build & Verify"
-    status: not-started
+    status: complete
 ---
 
 # Section 08: Icon Fidelity Verification
@@ -151,9 +154,9 @@ checked in as fixture data, Section 08 can:
 
 ### Checklist
 
-- [ ] Add checked-in source fixtures for the 8 sidebar SVGs
-- [ ] Record their target logical size as `16`
-- [ ] Keep the fixture data independent from runtime HTML parsing
+- [x] Add checked-in source fixtures for the 8 sidebar SVGs
+- [x] Record their target logical size as `16`
+- [x] Keep the fixture data independent from runtime HTML parsing
 
 ---
 
@@ -225,11 +228,11 @@ That means:
 
 ### Checklist
 
-- [ ] Split sidebar icons into a dedicated module
-- [ ] Add a source-to-`PathCommand` importer or codegen tool
-- [ ] Lower circles, rounded rects, and arcs into cubic segments
-- [ ] Replace all 8 sidebar icon definitions with source-derived data
-- [ ] Keep `IconId` and `ResolvedIcons` compatible with existing widget code
+- [x] Split sidebar icons into a dedicated module
+- [x] Add a source-to-`PathCommand` importer or codegen tool
+- [x] Lower circles, rounded rects, and arcs into cubic segments
+- [x] Replace all 8 sidebar icon definitions with source-derived data
+- [x] Keep `IconId` and `ResolvedIcons` compatible with existing widget code
 
 ---
 
@@ -277,10 +280,10 @@ closer to the icon registry, not by adding more ad hoc lists.
 
 ### Checklist
 
-- [ ] Keep fidelity work at the shared icon definition boundary
-- [ ] Verify sidebar icons remain unclipped at `16px`
-- [ ] Add a guard against drift between widget consumers and `ICON_SIZES`
-- [ ] Preserve existing non-sidebar icon consumers unchanged
+- [x] Keep fidelity work at the shared icon definition boundary
+- [x] Verify sidebar icons remain unclipped at `16px`
+- [x] Add a guard against drift between widget consumers and `ICON_SIZES`
+- [x] Preserve existing non-sidebar icon consumers unchanged
 
 ---
 
@@ -342,11 +345,11 @@ chosen thresholds in a comment next to the comparison function.
 
 ### Checklist
 
-- [ ] Add source-SVG rasterization in tests or dev tooling
-- [ ] Compare source and runtime alpha masks at `16px`
-- [ ] Repeat comparison at HiDPI (`32px` physical / `2.0x`)
-- [ ] Set and document a strict diff tolerance
-- [ ] Cover every sidebar icon, not just one smoke-test icon
+- [x] Add source-SVG rasterization in tests or dev tooling
+- [x] Compare source and runtime alpha masks at `16px`
+- [x] Repeat comparison at HiDPI (`32px` physical / `2.0x`)
+- [x] Set and document a strict diff tolerance
+- [x] Cover every sidebar icon, not just one smoke-test icon
 
 ---
 
@@ -382,15 +385,28 @@ icon-source fidelity at the icon rasterization boundary, and targeted tests ther
 
 ### Checklist
 
-- [ ] Expand `oriterm_ui` icon tests with fixture completeness checks
-- [ ] Expand `oriterm` rasterizer tests with per-icon fidelity checks
-- [ ] Add HiDPI coverage
-- [ ] Add clipping/bounds assertions
-- [ ] Add a consumer-size sync regression test
+- [x] Add source-to-runtime equivalence tests (compare `icon.path().commands` vs `svg_to_commands(fixture.svg)` for all 8 sidebar icons)
+- [x] Expand `oriterm_ui` icon tests with fixture completeness checks
+- [x] Expand `oriterm` rasterizer tests with per-icon fidelity checks
+- [x] Add HiDPI coverage
+- [x] Add clipping/bounds assertions
+- [x] Add a consumer-size sync regression test
 
 ---
 
 ## 08.R Third Party Review Findings
+
+### Open Findings
+
+- [x] `[TPR-08-009][medium]` `oriterm/src/gpu/icon_rasterizer/tests.rs:291` — The Section 08 “source SVG” fidelity path is self-referential and also collapses the mockup’s `stroke-width=”2”` down to the same `1.0px` runtime stroke, so it neither verifies nor preserves the source artwork’s real stroke weight.
+  Evidence: The checked-in fixtures record `stroke-width=”2”`, but `svg_to_commands()` only preserves geometry, `rasterize_fixture_svg()` re-rasterizes those commands with hardcoded `SIDEBAR_STROKE = 1.0`, and the runtime icons use the same `NAV_STROKE = 1.0`. At the target `16px` size, the mockup stroke scales to about `1.33px`, so the current tests can pass while both the importer and runtime remain systematically too thin.
+  Resolved 2026-03-25: accepted. Concrete implementation tasks added as §08.7 “Source-Faithful Stroke Width.” The mockup SVGs use `stroke-width=”2”` in a 24×24 viewBox; at 16px target the correct stroke is `2.0 × 16/24 = 1.333px`. Both `NAV_STROKE` and `SIDEBAR_STROKE` must be derived from the source spec, and the fidelity test reference path must rasterize at the source stroke width to provide an independent comparison.
+
+- [x] `[TPR-08-008][low]` `plans/ui-css-framework/index.md:112` — The plan index still reports Section 08 as "08.1–08.2 complete, 08.3–08.6 remaining" even though Section 08.3 is already marked complete in the section file.
+  Resolved 2026-03-24: accepted and fixed. Updated index.md to "08.1–08.3 complete, 08.4–08.6 remaining".
+
+- [x] `[TPR-08-006][medium]` — Accepted 2026-03-24. Frontmatter updated: 08.1 and 08.2 marked complete, section status set to in-progress.
+- [x] `[TPR-08-007][medium]` — Accepted 2026-03-24. Added source-to-runtime equivalence test requirement to 08.5 checklist.
 
 ### Resolved Findings
 
@@ -408,6 +424,38 @@ icon-source fidelity at the icon rasterization boundary, and targeted tests ther
   be verified.
 - `TPR-08-005` The existing test suite has no source-fidelity coverage. Structural checks and
   non-empty rasterization are insufficient for a feature whose goal is visual equivalence.
+
+---
+
+## 08.7 Source-Faithful Stroke Width
+
+### Goal
+
+Make the icon fidelity test independent by rasterizing the reference path with the source-specified
+stroke width, and derive the runtime `NAV_STROKE` from the mockup spec instead of hardcoding `1.0`.
+
+### Problem
+
+The mockup SVGs specify `stroke-width="2"` in a 24×24 viewBox. At 16px logical size, the correct
+stroke width is `2.0 × (16.0 / 24.0) = 1.333px`. Both the runtime icons (`NAV_STROKE = 1.0`) and
+the fidelity test reference path (`SIDEBAR_STROKE = 1.0`) use `1.0px`, making the test
+self-referential and the shipped icons systematically thinner than the mockup.
+
+### Files
+
+- `oriterm_ui/src/icons/sidebar_nav.rs` — `NAV_STROKE` constant
+- `oriterm/src/gpu/icon_rasterizer/tests.rs` — `SIDEBAR_STROKE` constant, `rasterize_fixture_svg()`
+- `oriterm_ui/src/icons/sidebar_fixtures.rs` — source metadata (viewBox, stroke-width)
+
+### Checklist
+
+- [x] Add `stroke_width` and `viewbox_size` metadata to `SidebarIconSource` fixtures
+- [x] Derive `NAV_STROKE` from source: `source_stroke_width × (target_size / viewbox_size)` = `2.0 × 16.0 / 24.0` ≈ `1.333`
+- [x] Update `SIDEBAR_STROKE` in tests — removed entirely; reference path now uses `fixture.scaled_stroke()`
+- [x] Fidelity reference path rasterizes with the derived stroke, not a hardcoded value
+- [x] All 8 sidebar fidelity tests pass with the updated stroke width
+- [x] Chrome icons (close/plus/chevron at 10px) are unaffected (different stroke constant)
+- [ ] Visual verification: sidebar icons at correct thickness
 
 ---
 

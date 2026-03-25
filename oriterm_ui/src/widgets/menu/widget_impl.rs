@@ -3,16 +3,25 @@
 //! Handles layout, drawing (with scroll clipping and scrollbar), and event
 //! dispatch (mouse, keyboard, hover). Scroll support activates when
 //! `MenuStyle::max_height` is set and content exceeds the limit.
+//!
+//! Press/drag input flows through `ScrubController` → `on_action()` with
+//! zone discrimination (scrollbar thumb, scrollbar track, or menu item).
+//! Idle hover and scroll wheel remain in `on_input()`.
 
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::ScrollDelta;
+use crate::input::{InputEvent, ScrollDelta};
+use crate::interaction::LifecycleEvent;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::TextStyle;
 
-use super::super::{LayoutCtx, Widget, WidgetAction};
-use super::{MenuEntry, MenuWidget, SCROLL_LINE_HEIGHT};
+use super::super::scrollbar::{
+    ScrollbarAxis, ScrollbarMetrics, compute_rects, drag_delta_to_offset, draw_overlay,
+    pointer_to_offset, should_show,
+};
+use super::super::{LayoutCtx, LifecycleCtx, OnInputResult, Widget, WidgetAction};
+use super::{DragMode, MenuEntry, MenuWidget, SCROLL_LINE_HEIGHT};
 
 use super::DrawCtx;
 
@@ -43,7 +52,7 @@ impl Widget for MenuWidget {
     }
 
     fn sense(&self) -> Sense {
-        Sense::click().union(Sense::focusable())
+        Sense::click_and_drag()
     }
 
     fn controllers(&self) -> &[Box<dyn crate::controllers::EventController>] {
@@ -52,6 +61,13 @@ impl Widget for MenuWidget {
 
     fn controllers_mut(&mut self) -> &mut [Box<dyn crate::controllers::EventController>] {
         &mut self.controllers
+    }
+
+    fn lifecycle(&mut self, event: &LifecycleEvent, _ctx: &mut LifecycleCtx<'_>) {
+        if let LifecycleEvent::HotChanged { is_hot: false, .. } = event {
+            self.scrollbar_state.track_hovered = false;
+            self.scrollbar_state.thumb_hovered = false;
+        }
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
@@ -83,50 +99,62 @@ impl Widget for MenuWidget {
         ctx.scene.pop_layer_bg();
     }
 
-    fn on_input(
-        &mut self,
-        event: &crate::input::InputEvent,
-        bounds: Rect,
-    ) -> crate::widgets::OnInputResult {
-        match event {
-            crate::input::InputEvent::MouseMove { pos, .. } => {
-                let rel_y = pos.y - bounds.y();
-                let new_hover = self.entry_at_y(rel_y);
-                if new_hover != self.hovered {
-                    self.hovered = new_hover;
-                }
-                crate::widgets::OnInputResult::handled()
+    fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::DragStart { pos, .. } => {
+                self.drag_origin = Some(pos);
+                self.handle_drag_start(pos, bounds);
+                None
             }
-            crate::input::InputEvent::Scroll { delta, pos, .. } => {
+            WidgetAction::DragUpdate { total_delta, .. } => {
+                self.handle_drag_update(total_delta, bounds);
+                None
+            }
+            WidgetAction::DragEnd { .. } => {
+                let result = self.handle_drag_end();
+                self.drag_origin = None;
+                self.drag_mode = None;
+                result
+            }
+            other => Some(other),
+        }
+    }
+
+    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> OnInputResult {
+        match event {
+            // Idle hover — ScrubController does not consume MouseMove when idle.
+            InputEvent::MouseMove { pos, .. } => {
+                if self.is_scrollable() {
+                    self.update_scrollbar_hover(*pos, bounds);
+                }
+                // Clear entry hover when cursor is on the scrollbar.
+                if self.scrollbar_state.track_hovered {
+                    self.hovered = None;
+                } else {
+                    let rel_y = pos.y - bounds.y();
+                    let new_hover = self.entry_at_y(rel_y);
+                    if new_hover != self.hovered {
+                        self.hovered = new_hover;
+                    }
+                }
+                OnInputResult::handled()
+            }
+            InputEvent::Scroll { delta, pos, .. } => {
                 let delta_y = match *delta {
                     ScrollDelta::Pixels { y, .. } => -y,
                     ScrollDelta::Lines { y, .. } => -y * SCROLL_LINE_HEIGHT,
                 };
                 if self.scroll_by(delta_y) {
-                    let rel_y = pos.y - bounds.y();
-                    self.hovered = self.entry_at_y(rel_y);
-                }
-                crate::widgets::OnInputResult::handled()
-            }
-            _ => crate::widgets::OnInputResult::ignored(),
-        }
-    }
-
-    fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
-        match action {
-            WidgetAction::Clicked(_) => {
-                // Transform generic click into item selection based on hover.
-                if let Some(idx) = self.hovered {
-                    if self.entries[idx].is_clickable() {
-                        return Some(WidgetAction::Selected {
-                            id: self.id,
-                            index: idx,
-                        });
+                    // Only update hover if the cursor is on a menu item, not the
+                    // scrollbar — same guard as the MouseMove path above.
+                    if !self.scrollbar_state.track_hovered {
+                        let rel_y = pos.y - bounds.y();
+                        self.hovered = self.entry_at_y(rel_y);
                     }
                 }
-                None
+                OnInputResult::handled()
             }
-            other => Some(other),
+            _ => OnInputResult::ignored(),
         }
     }
 
@@ -161,6 +189,81 @@ impl Widget for MenuWidget {
             }
             "widget::Dismiss" => Some(WidgetAction::DismissOverlay(self.id)),
             _ => None,
+        }
+    }
+}
+
+// Drag action handlers.
+impl MenuWidget {
+    /// Determines the press zone and starts the appropriate interaction.
+    fn handle_drag_start(&mut self, pos: Point, bounds: Rect) {
+        if self.is_scrollable() {
+            let (m, inner) = self.scrollbar_context(bounds);
+            if should_show(&m) {
+                let rects = compute_rects(inner, &m, &self.style.scrollbar, 0.0);
+                if rects.thumb_hit.contains(pos) {
+                    self.scrollbar_state.dragging = true;
+                    self.scrollbar_state.drag_start_offset = self.scroll_offset;
+                    self.drag_mode = Some(DragMode::ScrollbarThumb);
+                    return;
+                }
+                if rects.track_hit.contains(pos) {
+                    self.scroll_offset = pointer_to_offset(pos.y, &rects, &m);
+                    self.drag_mode = Some(DragMode::ScrollbarTrack);
+                    return;
+                }
+            }
+        }
+        // Update hover from the press position so a click without prior
+        // MouseMove (e.g. menu opens under a stationary cursor) selects
+        // the correct item instead of silently no-oping.
+        let rel_y = pos.y - bounds.y();
+        self.hovered = self.entry_at_y(rel_y);
+        self.drag_mode = Some(DragMode::ItemPress);
+    }
+
+    /// Updates state during an active drag.
+    fn handle_drag_update(&mut self, total_delta: Point, bounds: Rect) {
+        match self.drag_mode {
+            Some(DragMode::ScrollbarThumb) => {
+                let (m, inner) = self.scrollbar_context(bounds);
+                let rects = compute_rects(inner, &m, &self.style.scrollbar, 0.0);
+                let offset_delta = drag_delta_to_offset(total_delta.y, &rects, &m);
+                let max = self.max_scroll();
+                self.scroll_offset =
+                    (self.scrollbar_state.drag_start_offset + offset_delta).clamp(0.0, max);
+                self.hovered = None;
+            }
+            Some(DragMode::ItemPress) => {
+                // Update item hover based on current absolute position.
+                if let Some(origin) = self.drag_origin {
+                    let cur_y = origin.y + total_delta.y;
+                    self.hovered = self.entry_at_y(cur_y - bounds.y());
+                }
+            }
+            Some(DragMode::ScrollbarTrack) | None => {}
+        }
+    }
+
+    /// Finalizes the drag and optionally emits a Selected action.
+    fn handle_drag_end(&mut self) -> Option<WidgetAction> {
+        match self.drag_mode {
+            Some(DragMode::ScrollbarThumb) => {
+                self.scrollbar_state.dragging = false;
+                None
+            }
+            Some(DragMode::ItemPress) => {
+                if let Some(idx) = self.hovered {
+                    if self.entries[idx].is_clickable() {
+                        return Some(WidgetAction::Selected {
+                            id: self.id,
+                            index: idx,
+                        });
+                    }
+                }
+                None
+            }
+            Some(DragMode::ScrollbarTrack) | None => None,
         }
     }
 }
@@ -300,24 +403,24 @@ impl MenuWidget {
 
     /// Draws a thin overlay scrollbar on the right edge using the shared helper.
     fn draw_scrollbar(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
-        use super::super::scrollbar::{
-            ScrollbarAxis, ScrollbarMetrics, ScrollbarVisualState, compute_rects, draw_overlay,
-            should_show,
-        };
-
-        let total = self.total_height();
-        let visible = self.visible_height();
-        let m = ScrollbarMetrics {
-            axis: ScrollbarAxis::Vertical,
-            content_extent: total,
-            view_extent: visible,
-            scroll_offset: self.scroll_offset,
-        };
+        let (m, inner) = self.scrollbar_context(bounds);
         if !should_show(&m) {
             return;
         }
+        let rects = compute_rects(inner, &m, &self.style.scrollbar, 0.0);
+        draw_overlay(
+            ctx.scene,
+            &rects,
+            &self.style.scrollbar,
+            self.scrollbar_state.visual_state(),
+        );
+    }
+}
 
-        // Inset the scrollbar viewport by the menu border.
+// Scrollbar helpers.
+impl MenuWidget {
+    /// Scrollbar metrics and border-inset viewport for shared geometry helpers.
+    fn scrollbar_context(&self, bounds: Rect) -> (ScrollbarMetrics, Rect) {
         let bw = self.style.border_width;
         let inner = Rect::new(
             bounds.x() + bw,
@@ -325,13 +428,25 @@ impl MenuWidget {
             bounds.width() - bw * 2.0,
             bounds.height() - bw * 2.0,
         );
+        let m = ScrollbarMetrics {
+            axis: ScrollbarAxis::Vertical,
+            content_extent: self.total_height(),
+            view_extent: self.visible_height(),
+            scroll_offset: self.scroll_offset,
+        };
+        (m, inner)
+    }
 
+    /// Updates scrollbar hover state for idle mouse moves (no drag active).
+    fn update_scrollbar_hover(&mut self, pos: Point, bounds: Rect) {
+        let (m, inner) = self.scrollbar_context(bounds);
+        if !should_show(&m) {
+            self.scrollbar_state.track_hovered = false;
+            self.scrollbar_state.thumb_hovered = false;
+            return;
+        }
         let rects = compute_rects(inner, &m, &self.style.scrollbar, 0.0);
-        draw_overlay(
-            ctx.scene,
-            &rects,
-            &self.style.scrollbar,
-            ScrollbarVisualState::Rest,
-        );
+        self.scrollbar_state.track_hovered = rects.track_hit.contains(pos);
+        self.scrollbar_state.thumb_hovered = rects.thumb_hit.contains(pos);
     }
 }

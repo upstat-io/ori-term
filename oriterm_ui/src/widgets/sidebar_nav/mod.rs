@@ -7,7 +7,7 @@ use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::icons::IconId;
+use crate::icons::{IconId, SIDEBAR_NAV_ICON_SIZE};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::{FontWeight, TextStyle, TextTransform};
@@ -222,7 +222,7 @@ impl SidebarNavWidget {
 
         // Icon (offset by indicator width).
         let text_x = if let Some(icon_id) = item.icon {
-            let icon_size = 16_u32;
+            let icon_size = SIDEBAR_NAV_ICON_SIZE;
             let icon_y = y + (ITEM_HEIGHT - icon_size as f32) / 2.0;
             if let Some(icons) = ctx.icons {
                 if let Some(resolved) = icons.get(icon_id, icon_size) {

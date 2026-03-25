@@ -20,6 +20,20 @@ pub(crate) use cache::IconCache;
 /// 255 = opaque). The icon is rendered white-on-transparent and the alpha
 /// channel is extracted.
 pub(crate) fn rasterize_icon(icon: &IconPath, size_px: u32, scale: f32) -> Vec<u8> {
+    rasterize_commands(icon.commands, icon.style, size_px, scale)
+}
+
+/// Rasterize path commands into an alpha-only bitmap.
+///
+/// Same as [`rasterize_icon`] but accepts commands and style separately,
+/// allowing rasterization of dynamically-generated path data (e.g. from
+/// SVG import) without requiring a `&'static` lifetime.
+pub(crate) fn rasterize_commands(
+    commands: &[PathCommand],
+    style: IconStyle,
+    size_px: u32,
+    scale: f32,
+) -> Vec<u8> {
     if size_px == 0 {
         return Vec::new();
     }
@@ -30,7 +44,7 @@ pub(crate) fn rasterize_icon(icon: &IconPath, size_px: u32, scale: f32) -> Vec<u
         tiny_skia::Pixmap::new(w, h).expect("icon size_px must be > 0 and <= i32::MAX");
 
     let px = size_px as f32;
-    let path = build_path(icon.commands, px);
+    let path = build_path(commands, px);
 
     let paint = {
         let mut p = tiny_skia::Paint::default();
@@ -39,7 +53,7 @@ pub(crate) fn rasterize_icon(icon: &IconPath, size_px: u32, scale: f32) -> Vec<u
         p
     };
 
-    match icon.style {
+    match style {
         IconStyle::Stroke(logical_width) => {
             // Stroke width is in logical pixels → multiply by scale for physical.
             let stroke = tiny_skia::Stroke {
