@@ -122,7 +122,7 @@ pub fn create_window(
 /// decorations.
 ///
 /// Other platforms: `Native` = decorated, everything else = frameless CSD.
-fn resolve_winit_decorations(mode: DecorationMode) -> bool {
+pub fn resolve_winit_decorations(mode: DecorationMode) -> bool {
     #[cfg(target_os = "macos")]
     {
         // macOS needs winit decorations ON for all modes except Native

@@ -287,7 +287,7 @@ impl App {
         let decorations_changed = new.window.decorations != self.config.window.decorations;
         if decorations_changed {
             let mode = super::init::decoration_to_mode(new.window.decorations);
-            let winit_decorated = matches!(mode, oriterm_ui::window::DecorationMode::Native);
+            let winit_decorated = oriterm_ui::window::resolve_winit_decorations(mode);
             for ctx in self.windows.values() {
                 ctx.window.window().set_decorations(winit_decorated);
             }

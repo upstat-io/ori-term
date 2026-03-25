@@ -545,6 +545,12 @@ In the relevant app/tab-bar tests:
 
 ### Open Findings
 
+- [x] `[TPR-09-014][high]` `oriterm/src/app/config_reload/mod.rs:289` — Live decoration changes are still wrong on macOS because config reload collapses `DecorationMode` back to `Native` vs “everything else” before calling `set_decorations(bool)`.
+  Resolved 2026-03-25: accepted and fixed. Made `resolve_winit_decorations()` public, replaced inline `matches!(mode, DecorationMode::Native)` in config_reload with `oriterm_ui::window::resolve_winit_decorations(mode)`. macOS now always gets `true` from the same function the creation path uses.
+
+- [x] `[TPR-09-015][medium]` `oriterm/src/app/chrome/mod.rs:119` — `TabBarStyle::Compact` is still only partially wired because the app keeps using the fixed `TAB_BAR_HEIGHT` constant for layout, chrome metrics, overlays, and input anchoring instead of the widget's style metrics.
+  Resolved 2026-03-25: accepted and fixed. Threaded `ctx.tab_bar.metrics().height` through all app-level layout code: `compute_window_layout()` (new `tab_bar_height` param), `cursor_in_tab_bar()`, `sync_grid_layout()`, `refresh_platform_rects()`, DPI resize handler, `draw_tab_bar()`, `collect_tab_bar_prepaint_bounds()`, search bar positioning (single-pane + multi-pane), tab context menu anchors, dropdown menu anchors, tab drag state, tear-off/merge detection (Windows, Linux, macOS), and fullscreen traffic light centering. Two macOS `_raw` Obj-C notification callbacks remain hardcoded (no Rust state access from notification blocks). Added `compact_tab_bar_shifts_grid_origin` test proving compact metrics produce different layout.
+
 - [x] `[TPR-09-011][medium]` `oriterm/src/app/settings_overlay/form_builder/appearance.rs:232` — The new Appearance decorations dropdown still cannot represent `Decorations::Buttonless`, even though Section 09 kept that runtime mode alive.
   Resolved 2026-03-25: accepted and fixed. Added conditional `Buttonless` option on macOS (4th dropdown item). On non-macOS, Buttonless maps to Transparent index since behavior is identical. Action handler maps index 3 → Buttonless on macOS. Added `decorations_dropdown_buttonless_on_macos` and `decorations_dropdown_transparent_roundtrip` tests.
 

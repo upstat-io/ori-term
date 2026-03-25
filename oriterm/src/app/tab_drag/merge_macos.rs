@@ -12,7 +12,7 @@ use winit::window::WindowId;
 
 use crate::window_manager::WindowKind;
 use crate::window_manager::platform::macos;
-use oriterm_ui::widgets::tab_bar::constants::{TAB_BAR_HEIGHT, TAB_LEFT_MARGIN};
+use oriterm_ui::widgets::tab_bar::constants::TAB_LEFT_MARGIN;
 
 use crate::app::App;
 
@@ -49,9 +49,13 @@ impl App {
         }
 
         // cursor_screen_pos() returns macOS screen points (logical).
-        // Tab bar constants are also in logical points.
+        // Tab bar metrics are also in logical points.
+        let tb_h = self
+            .windows
+            .get(&winit_id)
+            .map_or(46.0, |ctx| ctx.tab_bar.metrics().height);
         let grab_x = TAB_LEFT_MARGIN + mouse_offset;
-        let grab_y = TAB_BAR_HEIGHT / 2.0;
+        let grab_y = tb_h / 2.0;
 
         let (cx, cy) = macos::cursor_screen_pos();
         let pos_x = cx as f64 - grab_x as f64;
@@ -80,7 +84,7 @@ impl App {
         // Chrome-style continuous merge: check if the torn-off window's
         // tab bar now overlaps a target window's tab bar region.
         if merge_enabled {
-            let probe_y = pos_y as i32 + (TAB_BAR_HEIGHT / 2.0) as i32;
+            let probe_y = pos_y as i32 + (tb_h / 2.0) as i32;
             let target = self.find_merge_target_macos(winit_id, (cx, probe_y));
             if target.is_some() {
                 self.execute_merge(target);
@@ -138,7 +142,6 @@ impl App {
         probe: (i32, i32),
     ) -> Option<(WindowId, f64)> {
         let (px, py) = probe;
-        let tab_h = TAB_BAR_HEIGHT as i32;
         for managed in self.window_manager.windows_of_kind(WindowKind::is_primary) {
             let wid = managed.winit_id;
             if wid == exclude {
@@ -148,6 +151,7 @@ impl App {
                 continue;
             };
             if let Some((l, t, r, _b)) = macos::window_frame_bounds(ctx.window.window()) {
+                let tab_h = ctx.tab_bar.metrics().height as i32;
                 let in_x = px >= l && px < r;
                 // Tab bar spans [t, t + tab_h]. Expand by magnetism.
                 let zone_top = t - MERGE_MAGNETISM;

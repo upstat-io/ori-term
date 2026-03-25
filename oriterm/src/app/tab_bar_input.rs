@@ -19,9 +19,7 @@ use oriterm_ui::overlay::Placement;
 use oriterm_ui::widgets::WidgetAction;
 use oriterm_ui::widgets::menu::{MenuStyle, MenuWidget};
 use oriterm_ui::widgets::tab_bar::TabBarHit;
-use oriterm_ui::widgets::tab_bar::constants::{
-    DROPDOWN_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_TOP_MARGIN,
-};
+use oriterm_ui::widgets::tab_bar::constants::DROPDOWN_BUTTON_WIDTH;
 
 use super::{App, context_menu};
 
@@ -147,13 +145,14 @@ impl App {
         let anchor = self
             .focused_ctx()
             .map(|ctx| {
+                let m = ctx.tab_bar.metrics();
                 let layout = ctx.tab_bar.layout();
                 let tx = layout.tab_x(tab_index);
                 Rect::new(
                     tx,
-                    TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
+                    m.height - m.top_margin,
                     layout.base_tab_width(),
-                    TAB_TOP_MARGIN,
+                    m.top_margin,
                 )
             })
             .unwrap_or_default();
@@ -178,12 +177,13 @@ impl App {
         let anchor = self
             .focused_ctx()
             .map(|ctx| {
+                let m = ctx.tab_bar.metrics();
                 let dx = ctx.tab_bar.layout().dropdown_x();
                 Rect::new(
                     dx,
-                    TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
+                    m.height - m.top_margin,
                     DROPDOWN_BUTTON_WIDTH,
-                    TAB_TOP_MARGIN,
+                    m.top_margin,
                 )
             })
             .unwrap_or_default();

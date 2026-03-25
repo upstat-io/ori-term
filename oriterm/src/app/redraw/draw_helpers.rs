@@ -52,8 +52,7 @@ impl App {
             return false;
         }
 
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-        let bounds = Rect::new(0.0, 0.0, logical_width, tab_bar_h);
+        let bounds = Rect::new(0.0, 0.0, logical_width, tab_bar.metrics().height);
 
         let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
         let icons = renderer.resolved_icons();
@@ -199,8 +198,7 @@ pub(in crate::app::redraw) fn collect_tab_bar_prepaint_bounds(
     scale: f32,
     logical_width: f32,
 ) -> HashMap<WidgetId, Rect> {
-    let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
-    let tab_bar_rect = Rect::new(0.0, 0.0, logical_width, tab_bar_h);
+    let tab_bar_rect = Rect::new(0.0, 0.0, logical_width, tab_bar.metrics().height);
     let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
     let layout_ctx = LayoutCtx {
         measurer: &measurer,

@@ -186,7 +186,7 @@ impl App {
             if events.will_exit() {
                 if let Some(ctx) = self.focused_ctx() {
                     let scale = ctx.window.scale_factor().factor() as f32;
-                    let caption_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT * scale;
+                    let caption_h = ctx.tab_bar.metrics().height * scale;
                     crate::window_manager::platform::macos::reapply_traffic_lights(
                         ctx.window.window(),
                         caption_h,
@@ -208,7 +208,7 @@ impl App {
             // a no-op since we already centered during the resize above.
             if let Some(ctx) = self.focused_ctx() {
                 let scale = ctx.window.scale_factor().factor() as f32;
-                let caption_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT * scale;
+                let caption_h = ctx.tab_bar.metrics().height * scale;
                 crate::window_manager::platform::macos::reapply_traffic_lights(
                     ctx.window.window(),
                     caption_h,

@@ -108,7 +108,7 @@ pub(super) struct WindowLayout {
 ///
 /// Builds a `Column { TabBar(fixed), Grid(fill) }` descriptor and runs the
 /// two-pass flexbox solver to determine positions. The tab bar gets a fixed
-/// height (logical `TAB_BAR_HEIGHT` scaled to physical pixels, rounded to
+/// height (logical `tab_bar_height` scaled to physical pixels, rounded to
 /// prevent subpixel seams). The terminal grid fills the remaining space.
 ///
 /// When `tab_bar_hidden` is true, the tab bar height is zero and the grid
@@ -116,22 +116,24 @@ pub(super) struct WindowLayout {
 ///
 /// All coordinates are in physical pixels — consistent with cell metrics,
 /// GPU renderer, and the winit viewport.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "window layout: viewport size, cell metrics, scale, tab bar visibility + height"
+)]
 pub(super) fn compute_window_layout(
     viewport_w: u32,
     viewport_h: u32,
     cell: &crate::font::CellMetrics,
     scale: f32,
     tab_bar_hidden: bool,
+    tab_bar_height: f32,
 ) -> WindowLayout {
     use oriterm_ui::layout::{Direction, LayoutBox, SizeSpec, compute_layout};
 
     let tab_bar_h_px = if tab_bar_hidden {
         0.0
     } else {
-        grid_origin_y(
-            oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT,
-            scale,
-        )
+        grid_origin_y(tab_bar_height, scale)
     };
 
     let root = LayoutBox::flex(
@@ -230,7 +232,7 @@ impl App {
 
     /// Returns `true` if the cursor position is within the tab bar zone.
     ///
-    /// The tab bar spans from y=0 to `TAB_BAR_HEIGHT` (logical pixels).
+    /// The tab bar spans from y=0 to the active tab bar height (logical pixels).
     /// Returns `false` when the tab bar is hidden.
     pub(super) fn cursor_in_tab_bar(&self, position: winit::dpi::PhysicalPosition<f64>) -> bool {
         if self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden {
@@ -241,7 +243,7 @@ impl App {
         };
         let scale = ctx.window.scale_factor().factor() as f32;
         let logical_y = position.y as f32 / scale;
-        logical_y < oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+        logical_y < ctx.tab_bar.metrics().height
     }
 
     /// Update tab bar hover state and width lock from cursor position.
