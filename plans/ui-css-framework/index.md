@@ -121,7 +121,7 @@ icons/mod.rs, mockup SVG paths, data:image/svg+xml
 ---
 
 ### Section 09: Settings Content Completeness
-**File:** `section-09-settings-content.md` | **Status:** Complete
+**File:** `section-09-settings-content.md` | **Status:** In Progress (2 items: macOS decoration reload, compact-height wiring)
 
 ```
 Unfocused opacity, Window decorations, Tab bar style
