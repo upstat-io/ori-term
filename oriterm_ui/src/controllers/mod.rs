@@ -10,6 +10,7 @@ mod drag;
 mod focus;
 mod hover;
 mod scroll;
+mod scrollbar_capture;
 mod scrub;
 mod text_edit;
 
@@ -18,6 +19,7 @@ pub use drag::DragController;
 pub use focus::FocusController;
 pub use hover::HoverController;
 pub use scroll::ScrollController;
+pub use scrollbar_capture::ScrollbarCaptureController;
 pub use scrub::ScrubController;
 pub use text_edit::TextEditController;
 

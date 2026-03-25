@@ -7,15 +7,16 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::geometry::Rect;
-use crate::input::{InputEvent, Modifiers, MouseButton, ScrollDelta};
+use crate::controllers::{EventController, ScrollbarCaptureController};
+use crate::geometry::{Point, Rect};
+use crate::input::{InputEvent, Modifiers, ScrollDelta};
 use crate::interaction::LifecycleEvent;
 use crate::layout::{LayoutBox, LayoutNode, SizeSpec, compute_layout};
 use crate::sense::Sense;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
-use super::scrollbar::ScrollbarVisualState;
+use super::scrollbar::{ScrollbarVisualState, SharedScrollbarHitZones};
 use super::{DrawCtx, LayoutCtx, LifecycleCtx, OnInputResult, Widget, WidgetAction};
 
 /// Re-export the shared scrollbar style.
@@ -72,10 +73,6 @@ impl AxisBarState {
             ScrollbarVisualState::Rest
         }
     }
-
-    fn is_interacting(&self) -> bool {
-        self.dragging
-    }
 }
 
 /// A scrollable container that clips its child to visible bounds.
@@ -109,6 +106,12 @@ pub struct ScrollWidget {
     height_override: Option<SizeSpec>,
     /// Cached child natural size, keyed by viewport bounds.
     cached_child_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
+    /// Shared scrollbar hit zones (updated during paint, read by controller).
+    hit_zones: SharedScrollbarHitZones,
+    /// Event controllers for scrollbar drag.
+    controllers: Vec<Box<dyn EventController>>,
+    /// Press position from `DragStart` (to determine thumb vs track click).
+    drag_press_pos: Option<Point>,
 }
 
 impl ScrollWidget {
@@ -119,6 +122,10 @@ impl ScrollWidget {
 
     /// Creates a scroll container with a specific direction.
     pub fn new(child: Box<dyn Widget>, direction: ScrollDirection) -> Self {
+        let hit_zones: SharedScrollbarHitZones = Rc::default();
+        let controllers: Vec<Box<dyn EventController>> = vec![Box::new(
+            ScrollbarCaptureController::new(Rc::clone(&hit_zones)),
+        )];
         Self {
             id: WidgetId::next(),
             child,
@@ -132,6 +139,9 @@ impl ScrollWidget {
             line_height: 20.0,
             height_override: None,
             cached_child_layout: RefCell::new(None),
+            hit_zones,
+            controllers,
+            drag_press_pos: None,
         }
     }
 
@@ -287,7 +297,15 @@ impl Widget for ScrollWidget {
     }
 
     fn sense(&self) -> Sense {
-        Sense::hover()
+        Sense::click_and_drag()
+    }
+
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
@@ -307,6 +325,33 @@ impl Widget for ScrollWidget {
             self.v_bar.thumb_hovered = false;
             self.h_bar.track_hovered = false;
             self.h_bar.thumb_hovered = false;
+        }
+    }
+
+    fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
+        let content_h = self.cached_content_height(bounds);
+        let content_w = self.cached_content_width(bounds);
+
+        match action {
+            WidgetAction::DragStart { pos, .. } => {
+                self.drag_press_pos = Some(pos);
+                self.handle_drag_start(pos, bounds, content_w, content_h);
+                None
+            }
+            WidgetAction::DragUpdate { total_delta, .. } => {
+                if self.drag_press_pos.is_some() {
+                    self.handle_drag_update(total_delta, bounds, content_w, content_h);
+                }
+                None
+            }
+            WidgetAction::DragEnd { .. } => {
+                // Clear drag state.
+                self.v_bar.dragging = false;
+                self.h_bar.dragging = false;
+                self.drag_press_pos = None;
+                None
+            }
+            _ => Some(action),
         }
     }
 
@@ -342,39 +387,14 @@ impl Widget for ScrollWidget {
                     OnInputResult::ignored()
                 }
             }
-            InputEvent::MouseDown {
-                pos,
-                button: MouseButton::Left,
-                ..
-            } => {
-                let was_dragging = self.v_bar.dragging || self.h_bar.dragging;
-                if self.handle_scrollbar_down(*pos, bounds, content_w, content_h) {
-                    let now_dragging = self.v_bar.dragging || self.h_bar.dragging;
-                    if now_dragging && !was_dragging {
-                        // Drag just started — capture pointer so MouseMove
-                        // and MouseUp arrive even outside the widget bounds.
-                        OnInputResult::handled().with_capture()
-                    } else {
-                        OnInputResult::handled()
-                    }
-                } else {
-                    OnInputResult::ignored()
-                }
-            }
+            // Hover detection for scrollbar track/thumb.
+            // Press/drag/release is handled by ScrollbarCaptureController → on_action().
             InputEvent::MouseMove { pos, .. } => {
-                if self.handle_scrollbar_move(*pos, bounds, content_w, content_h) {
+                if self.handle_scrollbar_hover(*pos, bounds, content_w, content_h) {
                     OnInputResult::handled()
                 } else {
                     OnInputResult::ignored()
                 }
-            }
-            InputEvent::MouseUp { .. }
-                if self.v_bar.is_interacting() || self.h_bar.is_interacting() =>
-            {
-                self.v_bar.dragging = false;
-                self.h_bar.dragging = false;
-                // Release pointer capture.
-                OnInputResult::handled().with_release()
             }
             _ => OnInputResult::ignored(),
         }

@@ -37,5 +37,8 @@ impl ScrollWidget {
 
         // Draw scrollbars on top of content (outside translate/clip).
         self.draw_scrollbars(ctx, content_w, content_h);
+
+        // Update shared hit zones for the scrollbar capture controller.
+        self.update_hit_zones(ctx.bounds, content_w, content_h);
     }
 }

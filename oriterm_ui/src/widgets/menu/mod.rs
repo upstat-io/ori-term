@@ -5,14 +5,14 @@
 //! Supports scrolling via `max_height` for long lists.
 
 use crate::color::Color;
-use crate::controllers::{ClickController, EventController};
+use crate::controllers::{EventController, HoverController, ScrubController};
 use crate::geometry::Point;
 use crate::text::TextStyle;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use super::DrawCtx;
-use super::scrollbar::ScrollbarStyle;
+use super::scrollbar::{ScrollbarStyle, ScrollbarVisualState};
 
 mod widget_impl;
 
@@ -130,8 +130,43 @@ impl Default for MenuStyle {
     }
 }
 
+/// Vertical scrollbar interaction state for scrollable menus.
+#[derive(Debug, Default)]
+pub(super) struct MenuScrollbarState {
+    dragging: bool,
+    /// Scroll offset at drag start.
+    drag_start_offset: f32,
+    /// Cursor over the track/thumb hit area.
+    track_hovered: bool,
+    /// Cursor specifically over the thumb hit area.
+    thumb_hovered: bool,
+}
+
+impl MenuScrollbarState {
+    fn visual_state(&self) -> ScrollbarVisualState {
+        if self.dragging {
+            ScrollbarVisualState::Dragging
+        } else if self.track_hovered || self.thumb_hovered {
+            ScrollbarVisualState::Hovered
+        } else {
+            ScrollbarVisualState::Rest
+        }
+    }
+}
+
 /// Pixels per scroll wheel line.
 const SCROLL_LINE_HEIGHT: f32 = 32.0;
+
+/// What was pressed during a scrub/drag interaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DragMode {
+    /// Scrollbar thumb — update scroll offset during drag.
+    ScrollbarThumb,
+    /// Scrollbar track — offset was jumped on press, no ongoing drag.
+    ScrollbarTrack,
+    /// Menu item — select the hovered item on release.
+    ItemPress,
+}
 
 /// A menu widget with optional scrolling.
 ///
@@ -149,7 +184,14 @@ pub struct MenuWidget {
     pub(super) style: MenuStyle,
     /// Scroll offset in pixels from top of content.
     pub(super) scroll_offset: f32,
-    controllers: Vec<Box<dyn EventController>>,
+    /// Scrollbar hover/drag interaction state.
+    pub(super) scrollbar_state: MenuScrollbarState,
+    /// Event controllers (`HoverController` + `ScrubController`).
+    pub(super) controllers: Vec<Box<dyn EventController>>,
+    /// Press origin for computing absolute position from `total_delta`.
+    pub(super) drag_origin: Option<Point>,
+    /// What was pressed during the current scrub interaction.
+    pub(super) drag_mode: Option<DragMode>,
 }
 
 impl std::fmt::Debug for MenuWidget {
@@ -161,7 +203,10 @@ impl std::fmt::Debug for MenuWidget {
             .field("selected_index", &self.selected_index)
             .field("style", &self.style)
             .field("scroll_offset", &self.scroll_offset)
-            .field("controller_count", &self.controllers.len())
+            .field("scrollbar_state", &self.scrollbar_state)
+            .field("drag_mode", &self.drag_mode)
+            .field("controllers", &self.controllers.len())
+            .field("drag_origin", &self.drag_origin)
             .finish()
     }
 }
@@ -175,8 +220,14 @@ impl MenuWidget {
             hovered: None,
             selected_index: None,
             style: MenuStyle::default(),
-            controllers: vec![Box::new(ClickController::new())],
             scroll_offset: 0.0,
+            scrollbar_state: MenuScrollbarState::default(),
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ScrubController::new()),
+            ],
+            drag_origin: None,
+            drag_mode: None,
         }
     }
 

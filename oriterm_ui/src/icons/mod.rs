@@ -4,9 +4,12 @@
 //! and rasterized at the target pixel size via `tiny_skia` in the GPU layer.
 //! Color is applied at draw time by the shader, not baked into the bitmap.
 //!
-//! The [`IconResolver`] trait bridges the library and binary crates: widgets
-//! call `resolve()` at draw time to get atlas coordinates, and the binary
-//! crate provides the concrete implementation backed by `IconCache`.
+//! Icon definitions are split by consumer:
+//! - [`chrome`] — tab bar and window title bar icons
+//! - [`sidebar_nav`] — settings sidebar icons (generated from mockup SVGs)
+
+mod chrome;
+mod sidebar_nav;
 
 /// A single path drawing command in normalized 0.0–1.0 coordinate space.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,27 +83,56 @@ pub enum IconId {
 }
 
 impl IconId {
+    /// All icon variants, in definition order.
+    ///
+    /// Used by tests to verify every variant is covered by the icon
+    /// pre-resolution list and rasterizer.
+    pub const ALL: &[Self] = &[
+        Self::Close,
+        Self::Plus,
+        Self::ChevronDown,
+        Self::Minimize,
+        Self::Maximize,
+        Self::Restore,
+        Self::WindowClose,
+        Self::Sun,
+        Self::Palette,
+        Self::Type,
+        Self::Terminal,
+        Self::Keyboard,
+        Self::Window,
+        Self::Bell,
+        Self::Activity,
+    ];
+
     /// Returns the icon path definition for this icon.
     pub fn path(self) -> &'static IconPath {
         match self {
-            Self::Close => &ICON_CLOSE,
-            Self::Plus => &ICON_PLUS,
-            Self::ChevronDown => &ICON_CHEVRON_DOWN,
-            Self::Minimize => &ICON_MINIMIZE,
-            Self::Maximize => &ICON_MAXIMIZE,
-            Self::Restore => &ICON_RESTORE,
-            Self::WindowClose => &ICON_WINDOW_CLOSE,
-            Self::Sun => &ICON_SUN,
-            Self::Palette => &ICON_PALETTE,
-            Self::Type => &ICON_TYPE,
-            Self::Terminal => &ICON_TERMINAL,
-            Self::Keyboard => &ICON_KEYBOARD,
-            Self::Window => &ICON_WINDOW,
-            Self::Bell => &ICON_BELL,
-            Self::Activity => &ICON_ACTIVITY,
+            // Chrome icons (tab bar + window controls).
+            Self::Close => &chrome::ICON_CLOSE,
+            Self::Plus => &chrome::ICON_PLUS,
+            Self::ChevronDown => &chrome::ICON_CHEVRON_DOWN,
+            Self::Minimize => &chrome::ICON_MINIMIZE,
+            Self::Maximize => &chrome::ICON_MAXIMIZE,
+            Self::Restore => &chrome::ICON_RESTORE,
+            Self::WindowClose => &chrome::ICON_WINDOW_CLOSE,
+            // Sidebar nav icons (generated from mockup SVGs).
+            Self::Sun => &sidebar_nav::ICON_SUN,
+            Self::Palette => &sidebar_nav::ICON_PALETTE,
+            Self::Type => &sidebar_nav::ICON_TYPE,
+            Self::Terminal => &sidebar_nav::ICON_TERMINAL,
+            Self::Keyboard => &sidebar_nav::ICON_KEYBOARD,
+            Self::Window => &sidebar_nav::ICON_WINDOW,
+            Self::Bell => &sidebar_nav::ICON_BELL,
+            Self::Activity => &sidebar_nav::ICON_ACTIVITY,
         }
     }
 }
+
+/// Logical pixel size for settings sidebar nav icons.
+///
+/// Used by both the sidebar widget and the icon pre-resolution list.
+pub const SIDEBAR_NAV_ICON_SIZE: u32 = 16;
 
 /// Atlas coordinates for a resolved icon bitmap.
 #[derive(Debug, Clone, Copy)]
@@ -154,313 +186,13 @@ impl ResolvedIcons {
     }
 }
 
-/// Stroke width for tab bar icons (logical pixels).
-const TAB_STROKE: f32 = 1.0;
+/// Source SVG fixtures for the 8 settings sidebar icons. Used for fidelity
+/// verification against the runtime [`IconPath`] definitions.
+pub mod sidebar_fixtures;
 
-/// Stroke width for window chrome icons (logical pixels).
-const CHROME_STROKE: f32 = 1.0;
-
-/// Tab close button: two diagonal lines forming ×.
-///
-/// Fills most of the bitmap (0.1–0.9) with a small margin for stroke caps.
-/// The widget's `CLOSE_ICON_INSET` handles positioning within the button.
-static ICON_CLOSE: IconPath = IconPath {
-    commands: &[
-        // Top-left to bottom-right diagonal.
-        PathCommand::MoveTo(0.1, 0.1),
-        PathCommand::LineTo(0.9, 0.9),
-        // Top-right to bottom-left diagonal.
-        PathCommand::MoveTo(0.9, 0.1),
-        PathCommand::LineTo(0.1, 0.9),
-    ],
-    style: IconStyle::Stroke(TAB_STROKE),
-};
-
-/// New tab button: horizontal + vertical lines forming +.
-///
-/// Fills most of the bitmap (0.1–0.9) with a small margin for stroke caps.
-/// The widget centers the icon rect in the button.
-static ICON_PLUS: IconPath = IconPath {
-    commands: &[
-        // Horizontal arm.
-        PathCommand::MoveTo(0.1, 0.5),
-        PathCommand::LineTo(0.9, 0.5),
-        // Vertical arm.
-        PathCommand::MoveTo(0.5, 0.1),
-        PathCommand::LineTo(0.5, 0.9),
-    ],
-    style: IconStyle::Stroke(TAB_STROKE),
-};
-
-/// Dropdown chevron: two lines forming a downward-pointing V (▾).
-///
-/// Fills the bitmap width (0.1–0.9) with proportional vertical extent.
-/// The widget centers the icon rect in the dropdown button.
-static ICON_CHEVRON_DOWN: IconPath = IconPath {
-    commands: &[
-        PathCommand::MoveTo(0.15, 0.35),
-        PathCommand::LineTo(0.5, 0.75),
-        PathCommand::LineTo(0.85, 0.35),
-    ],
-    style: IconStyle::Stroke(TAB_STROKE),
-};
-
-/// Window minimize: single horizontal dash centered vertically.
-///
-/// Derived from: `SYMBOL_SIZE = 10.0` on `CONTROL_BUTTON_WIDTH`.
-/// Half = 5/10 = 0.5 of symbol region → stroke from 0.0 to 1.0 at y=0.5.
-static ICON_MINIMIZE: IconPath = IconPath {
-    commands: &[PathCommand::MoveTo(0.0, 0.5), PathCommand::LineTo(1.0, 0.5)],
-    style: IconStyle::Stroke(CHROME_STROKE),
-};
-
-/// Window maximize: square outline.
-static ICON_MAXIMIZE: IconPath = IconPath {
-    commands: &[
-        PathCommand::MoveTo(0.0, 0.0),
-        PathCommand::LineTo(1.0, 0.0),
-        PathCommand::LineTo(1.0, 1.0),
-        PathCommand::LineTo(0.0, 1.0),
-        PathCommand::Close,
-    ],
-    style: IconStyle::Stroke(CHROME_STROKE),
-};
-
-/// Window restore: two overlapping square outlines.
-///
-/// Back window offset up-right by 2/10 = 0.2 of symbol size.
-/// Front window at origin, slightly smaller (8/10 = 0.8).
-static ICON_RESTORE: IconPath = IconPath {
-    commands: &[
-        // Back window (offset up-right).
-        PathCommand::MoveTo(0.2, 0.0),
-        PathCommand::LineTo(1.0, 0.0),
-        PathCommand::LineTo(1.0, 0.8),
-        PathCommand::LineTo(0.8, 0.8),
-        // Front window (offset down-left).
-        PathCommand::MoveTo(0.0, 0.2),
-        PathCommand::LineTo(0.8, 0.2),
-        PathCommand::LineTo(0.8, 1.0),
-        PathCommand::LineTo(0.0, 1.0),
-        PathCommand::Close,
-    ],
-    style: IconStyle::Stroke(CHROME_STROKE),
-};
-
-/// Window close button: × with full-extent diagonals (corner to corner).
-///
-/// Slightly different proportions than tab close — fills the entire
-/// symbol region for a bolder appearance on the title bar.
-static ICON_WINDOW_CLOSE: IconPath = IconPath {
-    commands: &[
-        PathCommand::MoveTo(0.0, 0.0),
-        PathCommand::LineTo(1.0, 1.0),
-        PathCommand::MoveTo(1.0, 0.0),
-        PathCommand::LineTo(0.0, 1.0),
-    ],
-    style: IconStyle::Stroke(CHROME_STROKE),
-};
-
-/// Stroke width for settings nav icons (logical pixels).
-const NAV_STROKE: f32 = 1.0;
-
-/// Sun icon: circle with 4 rays at cardinal + 4 at diagonal positions.
-///
-/// Circle at center (radius ~0.2 of unit), rays extend outward.
-/// Simplified from the mockup's 8-ray SVG sun.
-static ICON_SUN: IconPath = IconPath {
-    commands: &[
-        // Top ray.
-        PathCommand::MoveTo(0.5, 0.04),
-        PathCommand::LineTo(0.5, 0.21),
-        // Bottom ray.
-        PathCommand::MoveTo(0.5, 0.79),
-        PathCommand::LineTo(0.5, 0.96),
-        // Left ray.
-        PathCommand::MoveTo(0.04, 0.5),
-        PathCommand::LineTo(0.21, 0.5),
-        // Right ray.
-        PathCommand::MoveTo(0.79, 0.5),
-        PathCommand::LineTo(0.96, 0.5),
-        // Top-left diagonal.
-        PathCommand::MoveTo(0.17, 0.17),
-        PathCommand::LineTo(0.29, 0.29),
-        // Top-right diagonal.
-        PathCommand::MoveTo(0.83, 0.17),
-        PathCommand::LineTo(0.71, 0.29),
-        // Bottom-left diagonal.
-        PathCommand::MoveTo(0.17, 0.83),
-        PathCommand::LineTo(0.29, 0.71),
-        // Bottom-right diagonal.
-        PathCommand::MoveTo(0.83, 0.83),
-        PathCommand::LineTo(0.71, 0.71),
-        // Center circle (approximated as octagon for stroke rendering).
-        PathCommand::MoveTo(0.5, 0.29),
-        PathCommand::LineTo(0.65, 0.35),
-        PathCommand::LineTo(0.71, 0.5),
-        PathCommand::LineTo(0.65, 0.65),
-        PathCommand::LineTo(0.5, 0.71),
-        PathCommand::LineTo(0.35, 0.65),
-        PathCommand::LineTo(0.29, 0.5),
-        PathCommand::LineTo(0.35, 0.35),
-        PathCommand::Close,
-    ],
-    style: IconStyle::Stroke(NAV_STROKE),
-};
-
-/// Palette icon: circle with 4 color dots inside.
-///
-/// Outer circle with 4 dots at compass positions (simulating color spots).
-static ICON_PALETTE: IconPath = IconPath {
-    commands: &[
-        // Outer circle (approximated as octagon).
-        PathCommand::MoveTo(0.5, 0.08),
-        PathCommand::LineTo(0.79, 0.21),
-        PathCommand::LineTo(0.92, 0.5),
-        PathCommand::LineTo(0.79, 0.79),
-        PathCommand::LineTo(0.5, 0.92),
-        PathCommand::LineTo(0.21, 0.79),
-        PathCommand::LineTo(0.08, 0.5),
-        PathCommand::LineTo(0.21, 0.21),
-        PathCommand::Close,
-        // Dot top-left.
-        PathCommand::MoveTo(0.27, 0.46),
-        PathCommand::LineTo(0.33, 0.46),
-        // Dot top.
-        PathCommand::MoveTo(0.40, 0.31),
-        PathCommand::LineTo(0.46, 0.31),
-        // Dot top-right.
-        PathCommand::MoveTo(0.58, 0.31),
-        PathCommand::LineTo(0.64, 0.31),
-        // Dot right.
-        PathCommand::MoveTo(0.71, 0.46),
-        PathCommand::LineTo(0.77, 0.46),
-    ],
-    style: IconStyle::Stroke(NAV_STROKE),
-};
-
-/// Type/font icon: capital T with serifs.
-///
-/// Horizontal crossbar at top, vertical stem centered, serifs at bottom.
-static ICON_TYPE: IconPath = IconPath {
-    commands: &[
-        // Top crossbar.
-        PathCommand::MoveTo(0.17, 0.17),
-        PathCommand::LineTo(0.83, 0.17),
-        // Vertical stem.
-        PathCommand::MoveTo(0.5, 0.17),
-        PathCommand::LineTo(0.5, 0.83),
-        // Bottom serif.
-        PathCommand::MoveTo(0.33, 0.83),
-        PathCommand::LineTo(0.67, 0.83),
-    ],
-    style: IconStyle::Stroke(NAV_STROKE),
-};
-
-/// Terminal prompt icon: > cursor and input line.
-///
-/// Chevron on left, horizontal line on right (classic terminal prompt).
-static ICON_TERMINAL: IconPath = IconPath {
-    commands: &[
-        // Prompt chevron >.
-        PathCommand::MoveTo(0.17, 0.21),
-        PathCommand::LineTo(0.42, 0.46),
-        PathCommand::LineTo(0.17, 0.71),
-        // Input line.
-        PathCommand::MoveTo(0.50, 0.79),
-        PathCommand::LineTo(0.83, 0.79),
-    ],
-    style: IconStyle::Stroke(NAV_STROKE),
-};
-
-/// Keyboard icon: rounded rectangle with key indicators inside.
-///
-/// Outer frame with 3 rows of key marks.
-static ICON_KEYBOARD: IconPath = IconPath {
-    commands: &[
-        // Outer frame.
-        PathCommand::MoveTo(0.08, 0.17),
-        PathCommand::LineTo(0.92, 0.17),
-        PathCommand::LineTo(0.92, 0.83),
-        PathCommand::LineTo(0.08, 0.83),
-        PathCommand::Close,
-        // Top row keys (3 dots).
-        PathCommand::MoveTo(0.25, 0.33),
-        PathCommand::LineTo(0.29, 0.33),
-        PathCommand::MoveTo(0.50, 0.33),
-        PathCommand::LineTo(0.54, 0.33),
-        PathCommand::MoveTo(0.71, 0.33),
-        PathCommand::LineTo(0.75, 0.33),
-        // Middle row keys (2 dots).
-        PathCommand::MoveTo(0.33, 0.50),
-        PathCommand::LineTo(0.37, 0.50),
-        PathCommand::MoveTo(0.63, 0.50),
-        PathCommand::LineTo(0.67, 0.50),
-        // Space bar.
-        PathCommand::MoveTo(0.33, 0.67),
-        PathCommand::LineTo(0.67, 0.67),
-    ],
-    style: IconStyle::Stroke(NAV_STROKE),
-};
-
-/// Window frame icon: square with title bar line.
-///
-/// Outer rectangle with a horizontal divider near top (title bar).
-static ICON_WINDOW: IconPath = IconPath {
-    commands: &[
-        // Outer frame.
-        PathCommand::MoveTo(0.12, 0.12),
-        PathCommand::LineTo(0.88, 0.12),
-        PathCommand::LineTo(0.88, 0.88),
-        PathCommand::LineTo(0.12, 0.88),
-        PathCommand::Close,
-        // Title bar line.
-        PathCommand::MoveTo(0.12, 0.33),
-        PathCommand::LineTo(0.88, 0.33),
-    ],
-    style: IconStyle::Stroke(NAV_STROKE),
-};
-
-/// Bell icon: bell shape with clapper.
-///
-/// Bell body (trapezoidal top widening down) with a clapper dot at bottom.
-static ICON_BELL: IconPath = IconPath {
-    commands: &[
-        // Bell top.
-        PathCommand::MoveTo(0.50, 0.08),
-        PathCommand::LineTo(0.50, 0.17),
-        // Bell body (left side).
-        PathCommand::MoveTo(0.25, 0.71),
-        PathCommand::LineTo(0.25, 0.50),
-        PathCommand::CubicTo(0.25, 0.29, 0.38, 0.17, 0.50, 0.17),
-        // Bell body (right side).
-        PathCommand::CubicTo(0.62, 0.17, 0.75, 0.29, 0.75, 0.50),
-        PathCommand::LineTo(0.75, 0.71),
-        // Bell brim.
-        PathCommand::MoveTo(0.17, 0.71),
-        PathCommand::LineTo(0.83, 0.71),
-        // Clapper.
-        PathCommand::MoveTo(0.42, 0.83),
-        PathCommand::LineTo(0.58, 0.83),
-    ],
-    style: IconStyle::Stroke(NAV_STROKE),
-};
-
-/// Activity/pulse icon: EKG-style heartbeat line.
-///
-/// Horizontal baseline with a sharp peak in the middle.
-static ICON_ACTIVITY: IconPath = IconPath {
-    commands: &[
-        PathCommand::MoveTo(0.04, 0.50),
-        PathCommand::LineTo(0.25, 0.50),
-        PathCommand::LineTo(0.38, 0.12),
-        PathCommand::LineTo(0.50, 0.88),
-        PathCommand::LineTo(0.62, 0.25),
-        PathCommand::LineTo(0.75, 0.50),
-        PathCommand::LineTo(0.96, 0.50),
-    ],
-    style: IconStyle::Stroke(NAV_STROKE),
-};
+/// SVG-to-[`PathCommand`] importer. Converts SVG elements into normalized
+/// path commands for icon definitions and fidelity tests.
+pub mod svg_import;
 
 #[cfg(test)]
 mod tests;
