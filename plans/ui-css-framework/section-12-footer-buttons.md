@@ -2,7 +2,7 @@
 section: "12"
 title: "Visual Fidelity: Footer + Buttons"
 status: not-started
-reviewed: true
+reviewed: false
 third_party_review:
   status: resolved
   updated: 2026-03-23

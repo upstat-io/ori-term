@@ -545,6 +545,15 @@ In the relevant app/tab-bar tests:
 
 ### Open Findings
 
+- [x] `[TPR-09-011][medium]` `oriterm/src/app/settings_overlay/form_builder/appearance.rs:232` — The new Appearance decorations dropdown still cannot represent `Decorations::Buttonless`, even though Section 09 kept that runtime mode alive.
+  Resolved 2026-03-25: accepted and fixed. Added conditional `Buttonless` option on macOS (4th dropdown item). On non-macOS, Buttonless maps to Transparent index since behavior is identical. Action handler maps index 3 → Buttonless on macOS. Added `decorations_dropdown_buttonless_on_macos` and `decorations_dropdown_transparent_roundtrip` tests.
+
+- [x] `[TPR-09-012][low]` `oriterm_ui/src/widgets/tab_bar/widget/mod.rs:1` — Section 09 pushes `TabBarWidget` past the repository's 500-line source-file limit instead of splitting the style/runtime additions into submodules as the section itself required.
+  Resolved 2026-03-25: accepted and fixed. Extracted animation/interaction lifecycle methods into `animation.rs` submodule (224 lines). `mod.rs` now 320 lines — well under 500.
+
+- [x] `[TPR-09-013][low]` `oriterm/src/app/config_reload/mod.rs:1` — The Section 09 runtime wiring also pushes `config_reload/mod.rs` over the same hard 500-line limit.
+  Resolved 2026-03-25: accepted and fixed. Extracted font config helpers (apply_font_config, resolve_hinting, resolve_subpixel_mode, rebuild_ui_font_sizes) into `font_config.rs` submodule (183 lines). `mod.rs` now 409 lines — well under 500.
+
 - [x] `[TPR-09-007][high]` `oriterm/src/app/chrome/mod.rs:116` — `TabBarPosition` is still
   config-only, so the Appearance `Hidden` option and the Window-page `Tab bar position` control do
   not suppress chrome layout or hit testing.

@@ -33,7 +33,7 @@ collection/mod.rs, collection/face.rs, font/mod.rs
 ---
 
 ### Section 02: Numeric Font Weight System
-**File:** `section-02-font-weight.md` | **Status:** In Progress (1 item blocked by §10-13)
+**File:** `section-02-font-weight.md` | **Status:** In Progress (1 item blocked by §10–13)
 
 ```
 font-weight, FontWeight, 100-900, Regular, Medium, Bold
@@ -109,7 +109,7 @@ content-body, overflow-y:auto, transparent track
 ---
 
 ### Section 08: Icon Path Verification
-**File:** `section-08-icon-verification.md` | **Status:** In Progress
+**File:** `section-08-icon-verification.md` | **Status:** In Progress (1 item: visual verification)
 
 ```
 IconId, IconPath, SVG, viewBox, stroke, fill

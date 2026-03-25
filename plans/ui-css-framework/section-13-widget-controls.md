@@ -2,7 +2,7 @@
 section: "13"
 title: "Visual Fidelity: Widget Controls"
 status: not-started
-reviewed: true
+reviewed: false
 third_party_review:
   status: resolved
   updated: 2026-03-23
