@@ -1829,3 +1829,32 @@ fn compact_tab_bar_metrics_differ_from_default() {
         default_layout.tab_width,
     );
 }
+
+#[test]
+fn set_metrics_triggers_relayout() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![
+        TabEntry::new("A"),
+        TabEntry::new("B"),
+        TabEntry::new("C"),
+    ]);
+    let default_tab_w = w.layout().tab_width;
+
+    // Switch to compact metrics — must immediately recompute layout.
+    w.set_metrics(TabBarMetrics::COMPACT);
+    let compact_tab_w = w.layout().tab_width;
+
+    assert!(
+        (compact_tab_w - default_tab_w).abs() > f32::EPSILON,
+        "set_metrics() must trigger relayout: default tab_width={default_tab_w}, compact tab_width={compact_tab_w}",
+    );
+
+    // Switch back to default — layout must change again.
+    w.set_metrics(TabBarMetrics::DEFAULT);
+    let restored_tab_w = w.layout().tab_width;
+
+    assert!(
+        (restored_tab_w - default_tab_w).abs() < f32::EPSILON,
+        "restoring default metrics must restore original layout: expected={default_tab_w}, got={restored_tab_w}",
+    );
+}

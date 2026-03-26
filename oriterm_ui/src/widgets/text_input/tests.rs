@@ -131,7 +131,7 @@ fn delete_forward() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("abc");
-    ti.cursor = 1; // After 'a'.
+    ti.editing.set_cursor(1); // After 'a'.
 
     let r = input(&mut ti, &key_down(Key::Delete));
     assert_eq!(ti.text(), "ac");
@@ -156,7 +156,7 @@ fn arrow_keys_move_cursor() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("abc");
-    ti.cursor = 3;
+    // Cursor at end (3) after set_text.
 
     input(&mut ti, &key_down(Key::ArrowLeft));
     assert_eq!(ti.cursor(), 2);
@@ -173,7 +173,7 @@ fn home_end_keys() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.cursor = 2;
+    ti.editing.set_cursor(2);
 
     input(&mut ti, &key_down(Key::Home));
     assert_eq!(ti.cursor(), 0);
@@ -189,7 +189,7 @@ fn shift_arrow_selects() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.cursor = 2;
+    ti.editing.set_cursor(2);
 
     input(&mut ti, &shift_key_down(Key::ArrowRight));
     assert_eq!(ti.cursor(), 3);
@@ -205,7 +205,7 @@ fn ctrl_a_selects_all() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.cursor = 2;
+    ti.editing.set_cursor(2);
 
     input(&mut ti, &ctrl_key_down(Key::Character('a')));
     assert_eq!(ti.selection_anchor(), Some(0));
@@ -218,8 +218,7 @@ fn type_replaces_selection() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4; // Select "ell".
+    ti.editing.set_selection(1, 4); // Select "ell".
 
     input(&mut ti, &char_down('X'));
     assert_eq!(ti.text(), "hXo");
@@ -232,8 +231,7 @@ fn backspace_deletes_selection() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4;
+    ti.editing.set_selection(1, 4);
 
     input(&mut ti, &key_down(Key::Backspace));
     assert_eq!(ti.text(), "ho");
@@ -245,8 +243,7 @@ fn arrow_left_collapses_selection_to_start() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4;
+    ti.editing.set_selection(1, 4);
 
     // Left arrow without shift collapses selection to start.
     input(&mut ti, &key_down(Key::ArrowLeft));
@@ -259,8 +256,7 @@ fn arrow_right_collapses_selection_to_end() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4;
+    ti.editing.set_selection(1, 4);
 
     // Right arrow without shift collapses selection to end.
     input(&mut ti, &key_down(Key::ArrowRight));
@@ -287,7 +283,7 @@ fn shift_home_selects_to_start() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.cursor = 3;
+    ti.editing.set_cursor(3);
 
     input(&mut ti, &shift_key_down(Key::Home));
     assert_eq!(ti.cursor(), 0);
@@ -300,7 +296,7 @@ fn shift_end_selects_to_end() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.cursor = 1;
+    ti.editing.set_cursor(1);
 
     input(&mut ti, &shift_key_down(Key::End));
     assert_eq!(ti.cursor(), 5);
@@ -313,8 +309,7 @@ fn delete_with_selection_removes_selected() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4;
+    ti.editing.set_selection(1, 4);
 
     input(&mut ti, &key_down(Key::Delete));
     assert_eq!(ti.text(), "ho");
@@ -327,7 +322,7 @@ fn shift_left_then_right_cancels_selection() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.cursor = 3;
+    ti.editing.set_cursor(3);
 
     // Select one char left.
     input(&mut ti, &shift_key_down(Key::ArrowLeft));
@@ -438,7 +433,7 @@ fn left_arrow_at_start_stays() {
     let mut ti = TextInputWidget::new();
 
     ti.set_text("hello");
-    ti.cursor = 0;
+    ti.editing.set_cursor(0);
 
     input(&mut ti, &key_down(Key::ArrowLeft));
     assert_eq!(ti.cursor(), 0);
@@ -478,8 +473,8 @@ fn ctrl_a_on_empty_text() {
     let mut ti = TextInputWidget::new();
 
     let r = input(&mut ti, &ctrl_key_down(Key::Character('a')));
-    // Should still set selection (0,0) — anchor=0, cursor=0.
-    assert_eq!(ti.selection_anchor(), Some(0));
+    // select_all on empty text is a no-op.
+    assert!(ti.selection_anchor().is_none());
     assert_eq!(ti.cursor(), 0);
     assert!(r.handled);
 }

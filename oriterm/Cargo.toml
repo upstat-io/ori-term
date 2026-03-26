@@ -32,6 +32,7 @@ serde = { version = "1", features = ["derive"] }
 notify = "8"
 regex = "1"
 window-vibrancy = "0.7"
+open = "5"
 
 [features]
 default = []

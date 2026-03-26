@@ -80,6 +80,8 @@ pub enum IconId {
     Bell,
     /// Activity/pulse icon — Rendering settings page.
     Activity,
+    /// Search/magnifying glass icon — sidebar search field.
+    Search,
 }
 
 impl IconId {
@@ -103,6 +105,7 @@ impl IconId {
         Self::Window,
         Self::Bell,
         Self::Activity,
+        Self::Search,
     ];
 
     /// Returns the icon path definition for this icon.
@@ -125,6 +128,7 @@ impl IconId {
             Self::Window => &sidebar_nav::ICON_WINDOW,
             Self::Bell => &sidebar_nav::ICON_BELL,
             Self::Activity => &sidebar_nav::ICON_ACTIVITY,
+            Self::Search => &sidebar_nav::ICON_SEARCH,
         }
     }
 }

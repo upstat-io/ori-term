@@ -60,7 +60,7 @@ impl WindowRenderer {
     /// - `Plus`: `(PLUS_ARM * 2).round()` = 10
     /// - `ChevronDown`: `(CHEVRON_HALF * 2).round()` = 10
     /// - `Minimize`/`Maximize`/`Restore`/`WindowClose`: `SYMBOL_SIZE.round()` = 10
-    pub(super) const ICON_SIZES: [(IconId, u32); 15] = [
+    pub(super) const ICON_SIZES: [(IconId, u32); 16] = [
         // Window chrome (10px logical).
         (IconId::Close, 10),
         (IconId::Plus, 10),
@@ -78,5 +78,7 @@ impl WindowRenderer {
         (IconId::Window, SIDEBAR_NAV_ICON_SIZE),
         (IconId::Bell, SIDEBAR_NAV_ICON_SIZE),
         (IconId::Activity, SIDEBAR_NAV_ICON_SIZE),
+        // Sidebar search field (12px logical).
+        (IconId::Search, 12),
     ];
 }

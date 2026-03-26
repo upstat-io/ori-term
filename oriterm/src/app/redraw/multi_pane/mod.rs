@@ -5,6 +5,7 @@
 //! its layout-computed pixel offset, and instances accumulate into one shared
 //! `PreparedFrame` for a single GPU submission.
 
+mod helpers;
 mod pane_layouts;
 
 use crate::session::{DividerLayout, PaneLayout};
@@ -16,14 +17,6 @@ use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
     extract_frame_from_snapshot_into, snapshot_palette,
 };
-
-fn should_reextract_multi_pane_scratch(
-    content_refreshed: bool,
-    frame_missing: bool,
-    scratch_matches_pane: bool,
-) -> bool {
-    content_refreshed || frame_missing || !scratch_matches_pane
-}
 
 impl App {
     /// Execute the multi-pane rendering pipeline.
@@ -42,20 +35,7 @@ impl App {
         dividers: &[DividerLayout],
         mut url_segments: Vec<crate::url_detect::UrlSegment>,
     ) {
-        // Copy per-pane selections and mark cursors into scratch buffers
-        // (ctx.renderer is mutably borrowed during render, preventing &self).
-        self.scratch_pane_sels.clear();
-        for l in layouts {
-            if let Some(sel) = self.pane_selection(l.pane_id).copied() {
-                self.scratch_pane_sels.insert(l.pane_id, sel);
-            }
-        }
-        self.scratch_pane_mcs.clear();
-        for l in layouts {
-            if let Some(mc) = self.pane_mark_cursor(l.pane_id) {
-                self.scratch_pane_mcs.insert(l.pane_id, mc);
-            }
-        }
+        self.populate_multi_pane_scratch(layouts);
 
         let (render_result, blinking_now) = {
             let Some(gpu) = self.gpu.as_ref() else {
@@ -175,7 +155,7 @@ impl App {
                         frame.fg_dim = 1.0;
                         frame.prompt_marker_rows.clear();
                         scratch_frame_pane = Some(pane_id);
-                    } else if should_reextract_multi_pane_scratch(
+                    } else if helpers::should_reextract_scratch_frame(
                         content_refreshed,
                         ctx.frame.is_none(),
                         scratch_frame_pane == Some(pane_id),
@@ -464,7 +444,11 @@ impl App {
             // Search bar from focused pane.
             if let Some(frame) = ctx.frame.as_ref() {
                 if let Some(search) = frame.search.as_ref() {
-                    let chrome_h = ctx.tab_bar.metrics().height;
+                    let chrome_h = if tab_bar_hidden {
+                        0.0
+                    } else {
+                        ctx.tab_bar.metrics().height
+                    };
                     Self::draw_search_bar(
                         search,
                         renderer,

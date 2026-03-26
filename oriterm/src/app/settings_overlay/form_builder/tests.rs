@@ -11,14 +11,14 @@ use crate::config::Config;
 fn dialog_builds_without_panic() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, _ids) = build_settings_dialog(&config, &theme, 0);
+    let (_content, _ids) = build_settings_dialog(&config, &theme, 0, None);
 }
 
 #[test]
 fn settings_ids_all_distinct() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0);
+    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
     let all = collect_ids(&ids);
     // 26 fixed control IDs (25 controls + sidebar) + N scheme card IDs.
     let expected = 26 + ids.scheme_card_ids.len();
@@ -29,7 +29,7 @@ fn settings_ids_all_distinct() {
 fn content_widget_has_valid_id() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids) = build_settings_dialog(&config, &theme, 0);
+    let (content, _ids) = build_settings_dialog(&config, &theme, 0, None);
     assert_ne!(content.id().raw(), 0);
 }
 
@@ -37,7 +37,7 @@ fn content_widget_has_valid_id() {
 fn all_page_ids_are_set() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0);
+    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
     let all = collect_ids(&ids);
     // Every ID must be non-placeholder.
     assert!(
@@ -50,7 +50,7 @@ fn all_page_ids_are_set() {
 fn scheme_card_ids_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0);
+    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
     // Scheme cards are captured during colors page building.
     assert!(
         !ids.scheme_card_ids.is_empty(),
@@ -64,7 +64,7 @@ fn scheme_card_ids_captured() {
 fn sidebar_id_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0);
+    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
     assert_ne!(
         ids.sidebar_id,
         oriterm_ui::widget_id::WidgetId::placeholder(),
@@ -75,6 +75,26 @@ fn sidebar_id_captured() {
         !ids.scheme_card_ids.contains(&ids.sidebar_id),
         "sidebar_id must not collide with scheme card IDs"
     );
+}
+
+/// Regression test for TPR-10-016: update info wiring through the builder.
+#[test]
+fn dialog_builds_with_update_info() {
+    let config = Config::default();
+    let theme = UiTheme::default();
+    let info = Some((
+        "Update Available",
+        "v2.0.0 ready",
+        "https://example.com/update",
+    ));
+    let (content, ids) = build_settings_dialog(&config, &theme, 0, info);
+    // Sidebar must still be captured.
+    assert_ne!(
+        ids.sidebar_id,
+        oriterm_ui::widget_id::WidgetId::placeholder(),
+        "sidebar_id must be non-placeholder when update info is provided"
+    );
+    assert_ne!(content.id().raw(), 0);
 }
 
 fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {

@@ -17,7 +17,7 @@ use crate::text::{TextOverflow, TextStyle};
 
 use super::super::constants::{
     CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, DROPDOWN_BUTTON_WIDTH, ICON_TEXT_GAP,
-    NEW_TAB_BUTTON_WIDTH, TAB_PADDING,
+    NEW_TAB_BUTTON_WIDTH,
 };
 use super::super::hit::TabBarHit;
 use super::{TabBarWidget, TabEntry, TabIcon};
@@ -157,7 +157,7 @@ impl TabBarWidget {
         let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
             let icon_style = TextStyle::new(ctx.theme.font_size_small, color);
             let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
-            let icon_x = x + TAB_PADDING;
+            let icon_x = x + self.metrics.tab_padding;
             let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;
             let icon_w = icon_shaped.width;
             ctx.scene
@@ -176,7 +176,7 @@ impl TabBarWidget {
         let text_style =
             TextStyle::new(ctx.theme.font_size_small, color).with_overflow(TextOverflow::Ellipsis);
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
-        let text_x = x + TAB_PADDING + text_offset;
+        let text_x = x + self.metrics.tab_padding + text_offset;
         let text_y = strip.y + (strip.h - shaped.height) / 2.0;
         ctx.scene
             .push_text(Point::new(text_x, text_y), shaped, color);

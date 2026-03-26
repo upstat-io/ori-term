@@ -139,8 +139,6 @@ impl App {
             _config_monitor: monitor,
             ime: ImeState::new(),
             ui_theme,
-            settings_ids: None,
-            settings_pending: None,
             pending_dropdown_id: None,
             pending_focus_out: None,
 

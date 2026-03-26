@@ -86,7 +86,7 @@ Widget::paint(scene, layout_node)          ← Widget emits draw commands at sol
                          │
 10 Sidebar Fidelity ─────┤     (needs 01-03, 08)
 11 Content Typography ───┤     (needs 01-04, 06)
-12 Footer + Buttons ─────┤     (needs 01-03, 05, 08, 10)
+12 Footer + Buttons ─────┤     (needs 01-03, 05, 06, 08, 10)
 13 Widget Controls ──────┤     (needs 01-04, 11)
                          │
                          ↓
@@ -149,6 +149,6 @@ Side-by-side comparison, visual regression tests, DPI scaling verification. Buil
 | 09 | Settings Content Completeness | `section-09-settings-content.md` | 01-03, 05-08 |
 | 10 | Visual Fidelity: Sidebar + Nav | `section-10-sidebar-fidelity.md` | 01-03, 08 |
 | 11 | Visual Fidelity: Content + Typography | `section-11-content-typography.md` | 01-04, 06 |
-| 12 | Visual Fidelity: Footer + Buttons | `section-12-footer-buttons.md` | 01, 02, 03, 05, 08, 10 |
+| 12 | Visual Fidelity: Footer + Buttons | `section-12-footer-buttons.md` | 01, 02, 03, 05, 06, 08, 10 |
 | 13 | Visual Fidelity: Widget Controls | `section-13-widget-controls.md` | 01-04, 11 |
 | 14 | Verification + Visual Regression | `section-14-verification.md` | 01-13 |

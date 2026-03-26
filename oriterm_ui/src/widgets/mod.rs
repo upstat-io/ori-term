@@ -113,6 +113,13 @@ impl OnInputResult {
         self.requests.insert(ControllerRequests::CLEAR_ACTIVE);
         self
     }
+
+    /// Requests keyboard focus for this widget.
+    #[must_use]
+    pub fn with_focus_request(mut self) -> Self {
+        self.requests.insert(ControllerRequests::REQUEST_FOCUS);
+        self
+    }
 }
 
 /// The core widget trait.

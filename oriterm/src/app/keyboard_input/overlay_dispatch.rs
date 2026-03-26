@@ -10,7 +10,7 @@ use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
 
 use crate::config::Config;
 
-use super::super::{App, context_menu, settings_overlay};
+use super::super::{App, context_menu};
 
 impl App {
     /// Clear all transient popup overlays in a terminal window.
@@ -50,22 +50,7 @@ impl App {
                     return;
                 };
 
-                // Settings panel actions: try matching against known control IDs.
-                if self.try_dispatch_settings_action(&action) {
-                    return;
-                }
-
-                // Non-settings actions.
                 match action {
-                    WidgetAction::SaveSettings => {
-                        self.save_settings();
-                    }
-                    WidgetAction::CancelSettings => {
-                        self.cancel_settings();
-                    }
-                    WidgetAction::ResetDefaults => {
-                        self.reset_overlay_settings();
-                    }
                     WidgetAction::DismissOverlay(_) => {
                         self.dismiss_topmost_overlay();
                     }
@@ -90,22 +75,8 @@ impl App {
                         log::info!("overlay Selected: index={index}");
                         self.dispatch_context_action(index);
                     }
-                    // Controller-emitted actions not handled by overlays.
-                    // Still mark dirty if the event was handled (visual feedback).
-                    WidgetAction::Clicked(_)
-                    | WidgetAction::DoubleClicked(_)
-                    | WidgetAction::TripleClicked(_)
-                    | WidgetAction::Toggled { .. }
-                    | WidgetAction::ValueChanged { .. }
-                    | WidgetAction::TextChanged { .. }
-                    | WidgetAction::DragStart { .. }
-                    | WidgetAction::DragUpdate { .. }
-                    | WidgetAction::DragEnd { .. }
-                    | WidgetAction::ScrollBy { .. }
-                    | WidgetAction::WindowMinimize
-                    | WidgetAction::WindowMaximize
-                    | WidgetAction::WindowClose
-                    | WidgetAction::SettingsUnsaved(_) => {
+                    // All other actions: mark dirty if the event was handled (visual feedback).
+                    _ => {
                         if response.handled {
                             if let Some(ctx) = self.focused_ctx_mut() {
                                 ctx.root.mark_dirty();
@@ -127,79 +98,17 @@ impl App {
                     }
                 } else {
                     // Top-level overlay dismissed (Escape, click-outside).
-                    // Discard any pending settings changes.
-                    self.settings_pending = None;
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.context_menu = None;
                         ctx.root.mark_dirty();
                         ctx.root.set_urgent_redraw(true);
                     }
-                    self.settings_ids = None;
                 }
             }
             OverlayEventResult::Blocked => {
                 log::debug!("overlay Blocked");
             }
             OverlayEventResult::PassThrough => {}
-        }
-    }
-
-    /// Try dispatching a widget action as a settings control change.
-    ///
-    /// Mutates the pending config copy — does NOT touch `self.config`.
-    /// Changes only take effect when the user clicks Save. Always propagates
-    /// to the overlay panel so widgets can update visuals (page switching,
-    /// dropdown selection display).
-    fn try_dispatch_settings_action(&mut self, action: &WidgetAction) -> bool {
-        let Some(ids) = &self.settings_ids else {
-            return false;
-        };
-        let Some(pending) = self.settings_pending.as_mut() else {
-            return false;
-        };
-        let config_changed =
-            settings_overlay::action_handler::handle_settings_action(action, ids, pending);
-        if config_changed {
-            log::info!("settings: pending config updated (deferred until Save)");
-        }
-
-        // Always propagate — widgets update visuals (page switch, selection).
-        let widget_handled = self
-            .focused_ctx_mut()
-            .is_some_and(|ctx| ctx.root.overlays_mut().accept_action_topmost(action));
-
-        if config_changed || widget_handled {
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.mark_dirty();
-            }
-            return true;
-        }
-
-        false
-    }
-
-    /// Save settings: apply pending config, persist to disk, and dismiss.
-    fn save_settings(&mut self) {
-        if let Some(pending) = self.settings_pending.take() {
-            log::info!("settings: applying and saving to disk");
-            let old_config = std::mem::replace(&mut self.config, pending);
-            self.apply_settings_change(old_config);
-            self.config.save();
-        }
-        self.dismiss_topmost_overlay();
-    }
-
-    /// Cancel settings: discard pending changes and dismiss.
-    fn cancel_settings(&mut self) {
-        self.settings_pending = None;
-        self.dismiss_topmost_overlay();
-    }
-
-    /// Reset overlay settings to defaults.
-    fn reset_overlay_settings(&mut self) {
-        if let Some(pending) = &mut self.settings_pending {
-            log::info!("settings: resetting to defaults");
-            *pending = Config::default();
         }
     }
 
@@ -251,7 +160,6 @@ impl App {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.context_menu = None;
             }
-            self.settings_ids = None;
         }
     }
 
@@ -363,8 +271,8 @@ impl App {
 
     /// Handle selection from a dropdown popup.
     ///
-    /// Routes the selection as a `WidgetAction::Selected` with the
-    /// dropdown's widget ID so the settings action handler can match it.
+    /// Dismisses the popup overlay and propagates the selection to the
+    /// overlay beneath so widgets can update their display.
     fn dispatch_dropdown_selection(&mut self, index: usize) {
         let dropdown_id = self.pending_dropdown_id.take();
         let Some(id) = dropdown_id else {
@@ -379,17 +287,11 @@ impl App {
             ctx.root.set_urgent_redraw(true);
         }
 
-        // Route the selection through the settings action handler.
+        // Propagate the selection to the overlay beneath.
         let action = WidgetAction::Selected { id, index };
-        if self.try_dispatch_settings_action(&action) {
-            // Propagate back to the dropdown widget so it updates its display.
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.overlays_mut().accept_action_topmost(&action);
-                ctx.root.mark_dirty();
-            }
-            return;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.root.overlays_mut().accept_action_topmost(&action);
+            ctx.root.mark_dirty();
         }
-
-        log::info!("dropdown selection: id={id:?}, index={index}, no handler matched");
     }
 }

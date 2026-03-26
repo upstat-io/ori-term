@@ -1,38 +1,38 @@
 ---
 section: "11"
 title: "Visual Fidelity: Content Area + Typography"
-status: not-started
-reviewed: false
+status: complete
+reviewed: true
 third_party_review:
   status: resolved
-  updated: 2026-03-23
+  updated: 2026-03-25
 goal: "The settings content area matches the mockup's typography and rhythm across all pages: page headers, section headers, optional section descriptions, setting-row labels, inline status tags, and the shared body spacing/padding all render from real shared primitives instead of ad hoc per-page constants"
-depends_on: ["01", "02", "03", "04", "06"]
+depends_on: ["01", "02", "03", "04", "05", "06"]
 sections:
   - id: "11.1"
     title: "Shared Content Typography Boundary"
-    status: not-started
+    status: complete
   - id: "11.2"
     title: "Page Headers"
-    status: not-started
+    status: complete
   - id: "11.3"
     title: "Section Headers + Descriptions"
-    status: not-started
+    status: complete
   - id: "11.4"
     title: "Setting Rows + Status Tags"
-    status: not-started
+    status: complete
   - id: "11.5"
     title: "Body Spacing + Section Rhythm"
-    status: not-started
+    status: complete
   - id: "11.6"
     title: "Tests"
-    status: not-started
+    status: complete
   - id: "11.R"
     title: "Third Party Review Findings"
     status: complete
   - id: "11.7"
     title: "Build & Verify"
-    status: not-started
+    status: complete
 ---
 
 # Section 11: Visual Fidelity - Content Area + Typography
@@ -46,22 +46,22 @@ What the tree actually shows today:
 
 - `build_settings_page(...)`, `build_page_header(...)`, and `section_title(...)` live in
   `appearance.rs`, even though they are the shared content-layout path for all settings pages.
-- The page header values are close to the mockup, but the current helper still relies on callers to
-  pass already-uppercased titles instead of owning the transform itself.
+- The page header values are close to the mockup, but `build_page_header` relies on callers to pass
+  already-uppercased titles (all 8 callers pass e.g. `"APPEARANCE"`) instead of applying
+  `TextTransform::Uppercase` itself.
 - Section-header spacing is wrong in multiple places:
   - the mockup uses `margin-bottom: 12px`
   - `appearance.rs` uses `TITLE_ROW_GAP = 8.0` for one section
   - most other sections use `ROW_GAP = 2.0` directly below the title
 - The current section-title implementation renders `"// TITLE"` as one label with letter spacing
-  applied to the entire string. The mockup explicitly resets the `//` prefix to normal spacing and
-  applies the wider tracking only to the title text.
-- The current `FontWeight` enum still exposes only `Regular` and `Bold`, so the mockup's `500`
-  medium-weight section headers and inline tags are not expressible yet.
+  applied to the entire string. The mockup resets the `//` prefix to normal spacing and applies
+  the wider tracking only to the title text.
+- `FontWeight::MEDIUM` (500) is available from Section 02, but `section_title` still uses the
+  `LabelStyle::from_theme` default (`FontWeight::NORMAL` / 400).
 - The mockup includes `.section-desc` blocks on several pages (`Font`, `Bell`, `Rendering`), but
   the current shared builder path has no section-description primitive at all.
 - `SettingRowWidget` gets the basic label typography mostly right, but it cannot express inline
-  status tags such as `Restart` or `Advanced`, even though those are part of the mockup's content
-  typography system.
+  status tags such as `Restart` or `Advanced`.
 - Shared content spacing is still off:
   - content body bottom padding is currently `0`, not `28`
   - inter-section spacing is `24`, not `28`
@@ -73,13 +73,10 @@ Section 11 therefore needs to be a shared content-typography rewrite, not a chec
 
 ## Corrected Scope
 
-Section 11 should keep the full mockup goal and implement the shared content typography surface
-properly:
-
-1. move shared content/header helpers out of `appearance.rs`
-2. make page and section headings semantic shared primitives instead of ad hoc labels
-3. add optional section descriptions and inline setting tags
-4. fix the shared content-body spacing constants so every page inherits the right rhythm
+1. Move shared content/header helpers out of `appearance.rs`
+2. Make page and section headings semantic shared primitives instead of ad hoc labels
+3. Add optional section descriptions and inline setting tags
+4. Fix the shared content-body spacing constants so every page inherits the right rhythm
 
 This section should not invent page-specific typography one file at a time. The mockup is highly
 consistent across the settings pages, so the solution should be shared.
@@ -90,58 +87,50 @@ consistent across the settings pages, so the solution should be shared.
 
 ### Goal
 
-Put the shared content-area typography/layout logic in a shared module instead of leaving it under
-the Appearance page builder.
+Move the shared content-area typography/layout helpers from `appearance.rs` into a dedicated shared
+module so they have proper ownership.
 
 ### Files
 
 - `oriterm/src/app/settings_overlay/form_builder/appearance.rs`
-- `oriterm/src/app/settings_overlay/form_builder/*.rs`
-- new shared module under `oriterm/src/app/settings_overlay/form_builder/`
+- `oriterm/src/app/settings_overlay/form_builder/*.rs` (all 7 other page builders)
+- new: `oriterm/src/app/settings_overlay/form_builder/shared/mod.rs`
+- new: `oriterm/src/app/settings_overlay/form_builder/shared/tests.rs`
 
 ### Current Boundary Problem
 
 `appearance.rs` currently owns these shared primitives:
 
-- `build_settings_page(...)`
-- `build_page_header(...)`
-- `section_title(...)`
-- `PAGE_PADDING`
-- `SECTION_GAP`
-- `ROW_GAP`
+**Exported `pub(super)`:** `PAGE_PADDING`, `SECTION_GAP`, `ROW_GAP`, `TITLE_FONT_SIZE`,
+`DESC_FONT_SIZE`, `SECTION_LETTER_SPACING`, `build_settings_page(...)`, `section_title(...)`
 
-Those are used by `window.rs`, `font.rs`, `terminal.rs`, `keybindings.rs`, `bell.rs`, `colors.rs`,
-and `rendering.rs`. That is no longer a clean ownership boundary.
+**Private:** `TITLE_ROW_GAP`, `SECTION_FONT_SIZE`, `TITLE_LETTER_SPACING`, `build_page_header(...)`
+
+All 7 other page builders import from `super::appearance::` via
+`use super::appearance::{ROW_GAP, build_settings_page, section_title}`.
 
 ### Required Restructure
 
-Move the shared content-layout and typography helpers into a dedicated module such as:
+Create `form_builder/shared/mod.rs` and move all shared items there.
 
-```text
-oriterm/src/app/settings_overlay/form_builder/
-    shared/mod.rs
-    shared/tests.rs
-```
-
-The module must follow the sibling `tests.rs` pattern: `#[cfg(test)] mod tests;` at the bottom of `mod.rs`.
-
-Recommended ownership:
-
-- page-header helper
-- section-header helper
-- optional section-description helper
-- shared content-body spacing constants
-- small content-typography data structs if needed
-
-Then update all page builders to import those helpers from the shared module rather than from
-`appearance.rs`.
+**Visibility note:** `pub(super)` from `shared/mod.rs` makes items visible to `form_builder` and all
+its submodules (`appearance`, `window`, etc.). This is the correct scope — no need for the broader
+`pub(in crate::app)`.
 
 ### Checklist
 
-- [ ] Move shared content typography/layout helpers out of `appearance.rs`
-- [ ] Keep shared spacing and typography constants in one module
-- [ ] Update every page builder to import the shared helper module
-- [ ] Stop using the Appearance page as the accidental owner of all content typography
+- [x] Create `form_builder/shared/mod.rs` with `#[cfg(test)] mod tests;` at the bottom
+- [x] Create `form_builder/shared/tests.rs` (empty initially)
+- [x] Add `mod shared;` to `form_builder/mod.rs`
+- [x] Move functions from `appearance.rs` to `shared/mod.rs`: `build_settings_page`, `build_page_header`, `section_title`
+- [x] Move constants from `appearance.rs` to `shared/mod.rs`: `PAGE_PADDING`, `SECTION_GAP`, `ROW_GAP`, `TITLE_FONT_SIZE`, `DESC_FONT_SIZE`, `SECTION_LETTER_SPACING`, `TITLE_ROW_GAP`, `SECTION_FONT_SIZE`, `TITLE_LETTER_SPACING`
+- [x] Set visibility to `pub(super)` on all moved items in `shared/mod.rs`
+- [x] Move the `oriterm_ui` imports that these helpers need from `appearance.rs` to `shared/mod.rs`
+- [x] Update all 7 page builders to import from `super::shared::` instead of `super::appearance::`
+- [x] Update `appearance.rs` to import from `super::shared::` for its own section builders
+- [x] Verify `appearance.rs` no longer has any `pub(super)` items (only page-specific code remains)
+- [x] Add `//!` module doc comment at top of `shared/mod.rs`
+- [x] Verify all page builders compile after the import path change
 
 ---
 
@@ -149,64 +138,52 @@ Then update all page builders to import those helpers from the shared module rat
 
 ### Goal
 
-Keep the page header visually aligned to the mockup while making it a robust shared primitive across
-all settings pages.
+Make the page-header helper own the uppercase transform semantically, rather than relying on callers
+to pre-uppercase their titles.
 
 ### Files
 
-- shared form-builder module from Section 11.1
-- `oriterm/src/app/settings_overlay/form_builder/*.rs`
-- `oriterm_ui/src/widgets/label/mod.rs`
+- `form_builder/shared/mod.rs` (from 11.1)
+- all 8 page builder files
 
 ### Mockup Facts
 
-The mockup page header is:
-
-- title `18px`
-- weight `700`
-- uppercase
-- letter spacing `0.05em` (`0.9px` at `18px`)
-- bright text color
+- title `18px`, weight `700`, uppercase, letter spacing `0.9px` (`0.05em * 18px`)
+- subtitle `12px`, muted color
 - `4px` title-to-subtitle gap
-- `20px` gap after the subtitle before the first section
-- header side padding `28px`
-- top padding `24px`
+- `20px` gap after subtitle before first section
+- side padding `28px`, top padding `24px`
 
 ### Current State
 
-The current helper is close on raw values:
+The current `build_page_header` matches the mockup's raw values closely:
 
-- title size `18`
-- subtitle size `12`
-- title weight `Bold`
-- title letter spacing `0.9`
-- side padding `28`
-- top padding `24`
+- `TITLE_FONT_SIZE = 18.0`, `FontWeight::BOLD` (700), `TITLE_LETTER_SPACING = 0.9`
+- `DESC_FONT_SIZE = 12.0`, `theme.fg_secondary`
+- padding `Insets::tlbr(24.0, 28.0, 20.0, 28.0)`, gap `4.0`
 
-But two details still need cleanup:
+Two things are wrong:
 
-1. the helper is shared but lives in the wrong module
-2. callers currently pass strings like `"APPEARANCE"` and `"WINDOW"` already uppercased, so the
-   transform is not actually owned by the shared typography primitive
-
-### Required Work
-
-Make the page-header helper semantic:
-
-- accept normal page titles like `"Appearance"`
-- apply uppercase transform inside the helper
-- keep the exact mockup typography values at the helper boundary
-
-The current composition of `gap = 4` plus bottom spacing of `20` is already close enough to the
-mockup's `margin-bottom` behavior. Section 11 does not need to mimic CSS margins literally; it just
-needs the same visual result from the shared helper.
+1. `build_page_header` does not apply `TextTransform::Uppercase` — callers pass pre-uppercased
+   strings like `"APPEARANCE"`.
+2. The helper lives in the wrong module (fixed by 11.1).
 
 ### Checklist
 
-- [ ] Keep page title at `18px`, weight `700`, uppercase, `0.9px` tracking
-- [ ] Keep subtitle at `12px` and muted color
-- [ ] Apply uppercase transform inside the helper, not in each caller
-- [ ] Preserve `24 / 28 / 20` effective page-header spacing across all pages
+- [x] Apply `TextTransform::Uppercase` inside the helper's `LabelStyle`
+- [x] Update all 8 callers to pass mixed-case titles:
+  - `appearance.rs`: `"APPEARANCE"` -> `"Appearance"`
+  - `colors.rs`: `"COLORS"` -> `"Colors"`
+  - `font.rs`: `"FONT"` -> `"Font"`
+  - `terminal.rs`: `"TERMINAL"` -> `"Terminal"`
+  - `keybindings.rs`: `"KEYBINDINGS"` -> `"Keybindings"`
+  - `window.rs`: `"WINDOW"` -> `"Window"`
+  - `bell.rs`: `"BELL"` -> `"Bell"`
+  - `rendering.rs`: `"RENDERING"` -> `"Rendering"`
+- [x] Keep page title at `18px`, weight `700`, `0.9px` tracking, bright color
+- [x] Keep subtitle at `12px`, muted color
+- [x] Preserve `24 / 28 / 20` effective page-header spacing
+- [x] Verify `dialog_builds_without_panic` test still passes
 
 ---
 
@@ -214,79 +191,99 @@ needs the same visual result from the shared helper.
 
 ### Goal
 
-Make section headers and optional section descriptions match the mockup exactly and come from a real
-shared primitive.
+Replace `section_title(...)` with richer shared helpers that match the mockup exactly, including
+optional section descriptions.
 
 ### Files
 
-- shared form-builder module from Section 11.1
-- `oriterm_ui/src/widgets/label/mod.rs`
-- `oriterm_ui/src/widgets/separator/mod.rs`
-- `oriterm_ui/src/text/mod.rs`
-- `mockups/settings-brutal.html`
+- `form_builder/shared/mod.rs`
+- all 8 page builder files (19 call sites total)
 
 ### Current Gaps
 
-The mockup section heading system is richer than the current helper:
+The mockup section heading system:
 
-- title text is `11px`, weight `500`, uppercase, `0.15em` tracking
-- the `//` prefix has normal tracking
-- the title row has `12px` bottom spacing
-- some sections also include a `.section-desc` block:
-  - font size `12px`
-  - muted color
-  - line height `1.5`
-  - effective `4px` gap below the title row
-  - `12px` gap below the description before the first row
+- title text `11px`, weight `500`, uppercase, `0.15em` tracking (`1.65px`)
+- `//` prefix has `0` tracking
+- title row has `12px` bottom spacing
+- some sections include `.section-desc`: `12px`, muted, `line-height: 1.5`, effective `4px`
+  gap between title and description, `12px` gap after description before first row
 
-The current helper does not match this:
+The current `section_title(text, theme)` helper does not match this:
 
-- it uses one combined `LabelWidget` for `"// TITLE"`
-- it applies `1.6px` tracking to the slashes and the title together
-- it leaves weight at the default regular weight
-- it has no section-description support at all
-- its bottom spacing is inconsistent across consumers (`8px` in one place, `2px` in others)
+- One combined `LabelWidget` for `"// {text}"` — a single label with the `//` and title
+  concatenated, so the `//` receives the same letter spacing as the title
+- Letter spacing `SECTION_LETTER_SPACING = 1.6px` (mockup: `1.65px`)
+- Weight `FontWeight::NORMAL` (mockup: `FontWeight::MEDIUM`)
+- No section-description support
+- Bottom spacing inconsistent: `build_theme_section` uses `TITLE_ROW_GAP = 8.0`, all other
+  sections use `ROW_GAP = 2.0` — neither matches mockup's `12px`
 
-### Required Header Rewrite
+### Required Structure
 
-Replace the current `section_title(...)` helper with a richer shared primitive, for example:
+Replace the current single-label row:
+```
+ContainerWidget::row() [gap=10, align=Center, width=Fill]
+  +-- LabelWidget("// TITLE")     <- all same letter-spacing
+  +-- SeparatorWidget::horizontal()
+```
 
-- `build_section_header(title, theme)`
-- `build_section_header_with_description(title, desc, theme)`
-
-The important part is the structure:
-
-- prefix text `"//"` rendered separately
-- title text rendered separately
-- separator line fills the remaining width
-
-That split is necessary so only the title text receives uppercase tracking while the prefix keeps
-normal spacing, matching the mockup's `::before` behavior.
+With separate labels:
+```
+ContainerWidget::row() [gap=10, align=Center, width=Fill]
+  +-- LabelWidget("//")            <- letter_spacing=0.0, weight=500, color=fg_faint
+  +-- LabelWidget("TITLE")         <- letter_spacing=1.65, weight=500, uppercase, color=fg_faint
+  +-- SeparatorWidget::horizontal() <- thickness=2, color=theme.border (unchanged)
+```
 
 ### Section Description Support
 
-Add a real optional description primitive for sections that need it.
+Add `build_section_header_with_description(title, desc, theme)` for sections that need it.
 
-The mockup already uses this pattern on several pages:
+Without description:
+```
+ContainerWidget::column() [gap=0]
+  +-- title row (from above)
+  +-- SpacerWidget::fixed(0.0, 12.0)    <- title-to-rows gap
+```
 
-- `Font` fallback section
-- `Bell` throttle section
-- `Rendering` performance section
+With description:
+```
+ContainerWidget::column() [gap=0]
+  +-- title row
+  +-- SpacerWidget::fixed(0.0, 4.0)     <- title-to-desc gap
+  +-- LabelWidget(desc)                 <- 12px font, muted, line_height=1.5
+  +-- SpacerWidget::fixed(0.0, 12.0)    <- desc-to-rows gap
+```
 
-Section 11 should provide the shared typography/layout primitive now, even if some of those content
-sections are introduced or expanded by other plan sections later.
+Both helpers return `Box<dyn Widget>` (same as current `section_title`).
 
-Because the current `TextStyle` surface does not yet carry line-height, the section-description
-helper should explicitly consume the line-height support defined in Section 04 rather than faking it
-with arbitrary spacer constants.
+### Transition Strategy
+
+The rename from `section_title(...)` to `build_section_header(...)` affects 19 call sites across
+8 files. To avoid a broken intermediate state:
+
+1. Create `build_section_header` and `build_section_header_with_description` in `shared/mod.rs`.
+2. Keep `section_title` as a thin wrapper delegating to `build_section_header`.
+3. Update all 19 call sites in a single pass.
+4. Remove the old `section_title` function.
+
+Each section builder also needs to change from `.with_gap(ROW_GAP)` to `.with_gap(0.0)` — this
+must happen simultaneously with switching to the new helpers (which bake in the `12px` spacer).
+Otherwise the gap stacks incorrectly.
 
 ### Checklist
 
-- [ ] Replace the single combined `"// TITLE"` label with separate prefix and title runs
-- [ ] Apply medium (`500`) weight to section titles once Section 02 lands
-- [ ] Keep title tracking on the title text only, not on the prefix
-- [ ] Add a shared optional section-description primitive
-- [ ] Match the mockup's `12px` title-bottom spacing and description spacing
+- [x] Split `"// TITLE"` into separate prefix and title labels with distinct letter spacing
+- [x] Apply `FontWeight::MEDIUM` (500) to both prefix and title
+- [x] Apply `letter_spacing: 0.0` to prefix, `1.65` to title (update `SECTION_LETTER_SPACING` from `1.6`)
+- [x] Preserve `TextTransform::Uppercase` on the title label
+- [x] Preserve `SeparatorWidget::horizontal()` with `thickness: 2.0` and `theme.border`
+- [x] Add `build_section_header(title, theme)` returning column with title row + 12px spacer
+- [x] Add `build_section_header_with_description(title, desc, theme)` with 4px title-desc gap, description label (`12px`, muted, `line_height: Some(1.5)`), and 12px spacer
+- [x] Both helpers return `Box<dyn Widget>` and accept `&str` (not `&'static str` — `colors.rs` passes a dynamic `format!` string)
+- [x] Update all 19 call sites across 8 files to use `build_section_header`
+- [x] Remove old `section_title` function after migration
 
 ---
 
@@ -294,96 +291,71 @@ with arbitrary spacer constants.
 
 ### Goal
 
-Keep the strong parts of `SettingRowWidget`, but extend it so it can express the full mockup label
-system.
+Extend `SettingRowWidget` to support inline status tags on the name line.
 
 ### Files
 
 - `oriterm_ui/src/widgets/setting_row/mod.rs`
 - `oriterm_ui/src/widgets/setting_row/tests.rs`
-- `oriterm/src/app/settings_overlay/form_builder/*.rs`
-- `oriterm_ui/src/text/mod.rs`
 
 ### What Already Matches
 
-`SettingRowWidget` already matches several core row metrics:
+`SettingRowWidget` correctly implements: row min height `44`, padding `10px 14px`, label/control
+gap `24px`, name size `13px`, description size `11.5px`, name/description gap `2px`, hover
+background `theme.bg_card`. These values stay.
 
-- row min height `44`
-- row padding `10px 14px`
-- label/control gap `24px`
-- name size `13px`
-- description size `11.5px`
-- name/description gap `2px`
-- hover background `theme.bg_card`
+### Missing: Inline Status Tags
 
-Those values should stay.
+The mockup `.setting-label .name` row is `display: flex; gap: 6px` with inline tags after the
+name text. Tag styling (from `.tag`):
 
-### Real Missing Features
+- font size `9px`, weight `700`, uppercase, letter spacing `0.54px` (`0.06em * 9px`)
+- padding `2px 5px`, `1px` border using `currentColor`, `line-height: 1.3`
+- Variant colors:
+  - `New`: text `accent`, bg `accent_bg_strong`
+  - `Restart`: text `warning`, bg `warning_bg`
+  - `Advanced`: text `fg_secondary`, bg `bg_secondary`
+  - `Experimental`: text `danger`, bg `danger_bg`
 
-The draft stopped at those constants, but the mockup includes richer label content:
+### Implementation
 
-- inline status tags on the name line
-  - examples: `Restart`, `Advanced`
-- tag styling:
-  - font size `9px`
-  - weight `700`
-  - uppercase
-  - letter spacing `0.06em`
-  - padding `2px 5px`
-  - `1px` border using the current text color
-  - variant colors for accent, warning, and danger
-
-The current `SettingRowWidget` only stores:
-
-- `name: String`
-- `description: String`
-- `control: Box<dyn Widget>`
-
-That is not enough to represent the mockup.
-
-### Required Row Contract Upgrade
-
-Extend `SettingRowWidget` to accept a richer label model, for example:
-
-- plain name + description + zero or more tags, or
-- a dedicated `SettingLabel` struct with:
-  - name
-  - description
-  - tags
-
-Recommended tag model:
+Add `SettingTag` and `SettingTagKind` in `setting_row/mod.rs` (small types, tightly coupled):
 
 ```rust
-enum SettingTagKind {
-    New,
-    Restart,
-    Experimental,
-}
+enum SettingTagKind { New, Restart, Advanced, Experimental }
+
+struct SettingTag { kind: SettingTagKind, text: String }
 ```
 
-with a tag payload that supports label text and style variant.
+`SettingTagKind::colors(&self, theme) -> (Color, Color)` maps variant to `(text_color, bg_color)`.
 
-Do not solve this with a single rich-text string. The more feasible approach is to render the name
-line as a small row of widgets or text/rect primitives:
+Add `tags: Vec<SettingTag>` field to `SettingRowWidget`, with `.with_tag(tag)` builder method.
 
-- name text
-- zero or more tag chips after it
+Layout: when tags are present, the name leaf becomes a nested row with `gap: 6`. Each tag leaf
+measures as `text_width + 12px` wide (5px padding each side + 1px border each side) and
+`text_height + 6px` tall (2px padding each side + 1px border each side).
 
-That keeps measurement and hover behavior tractable inside the existing widget model.
+Paint: draw each tag chip via `scene.push_quad` with `RectStyle::filled(bg).with_border(1.0, text_color)`,
+then render uppercase text at `9px`/`700`/`0.54px`/`line_height: 1.3` on top.
 
-### Disabled Rows
+### Crate Boundary Note
 
-The mockup also defines `.setting-row.disabled { opacity: 0.4; pointer-events: none; }`.
-Behavioral ownership for that belongs with Section 06, but Section 11 should make sure the richer
-setting-row label/tag model remains compatible with disabled-state opacity and hit suppression.
+Section 11.4 modifies `oriterm_ui` (the UI framework crate). Sections 11.1-11.3 and 11.5 modify
+`oriterm` (the app crate). These are independent and can be implemented in any order. However,
+form builders wanting to USE `.with_tag(...)` can only do so after 11.4 lands.
 
 ### Checklist
 
-- [ ] Preserve the existing correct row metrics and typography constants
-- [ ] Extend `SettingRowWidget` with a real tag/badge model
-- [ ] Render name-line tags with mockup typography and color variants
-- [ ] Keep the row compatible with Section 06 disabled-state behavior
-- [ ] Avoid rich-text string hacks for mixed label/tag content
+- [x] Add `SettingTag` struct and `SettingTagKind` enum in `setting_row/mod.rs`, exported as `pub`
+- [x] Add `tags: Vec<SettingTag>` field, `.with_tag(tag)` builder, `tags(&self) -> &[SettingTag]` accessor
+- [x] Implement `SettingTagKind::colors(&self, theme) -> (Color, Color)` with the 4-variant mapping
+- [x] Update `build_layout_box` to nest a row for the name line when tags are present
+- [x] Update `paint` to draw tag chips (background quad + border + text)
+- [x] Tag typography: `9px`, weight `700`, uppercase, `0.54px` letter spacing, `line_height: 1.3`
+- [x] Border color = text color (CSS `currentColor`)
+- [x] Rows with zero tags render identically to current behavior
+- [x] Keep compatible with Section 06 disabled-state opacity
+- [x] Monitor file size: currently 259 lines, budget ~240 more before the 500-line limit. Extract `paint_tag_chip` helper if paint method grows beyond 50 lines.
 
 ---
 
@@ -395,52 +367,43 @@ Fix the shared content-area spacing so every settings page inherits the mockup r
 
 ### Files
 
-- shared form-builder module from Section 11.1
-- `oriterm/src/app/settings_overlay/form_builder/*.rs`
-- `mockups/settings-brutal.html`
+- `form_builder/shared/mod.rs` (from 11.1)
+- all 8 page builder files
 
 ### Current Mismatches
 
-The mockup content-body structure is:
+| Property | Mockup | Current | Fix |
+|----------|--------|---------|-----|
+| Body bottom padding | `28px` | `0` | `Insets::tlbr(0.0, 28.0, 28.0, 28.0)` |
+| Inter-section gap | `28px` | `SECTION_GAP = 24.0` | Change to `28.0` |
+| Intra-row gap | `0` (rows stack by own padding) | `ROW_GAP = 2.0` | Remove constant |
+| Title-to-row spacing | `12px` | `8.0` or `2.0` (inconsistent) | Owned by section-header helper |
 
-- body padding `0 28px 28px`
-- section margin-bottom `28px`
-- no trailing margin after the last section
-- section title bottom spacing `12px`
-- row stack uses the rows' own height/padding, not a global extra `2px` inter-row gap
+### Required Changes
 
-The current shared constants do not match:
+1. In `build_settings_page`: change body padding bottom from `0` to `28`, section gap from `24` to `28`.
+2. Each section builder changes from `.with_gap(ROW_GAP)` to `.with_gap(0.0)` — rows stack by
+   their own `min-height: 44px` and `padding: 10px 14px`.
+3. Remove `ROW_GAP` and `TITLE_ROW_GAP` entirely. The section-header helper from 11.3 owns the
+   `12px` title-to-rows spacing.
 
-- body bottom padding is effectively `0`
-- `SECTION_GAP = 24.0`
-- `ROW_GAP = 2.0`
-- title-to-first-row spacing is inconsistent (`8px` in one place, `2px` elsewhere)
+### Ordering Constraint
 
-### Required Spacing Rewrite
-
-Update the shared body rhythm to reflect the mockup directly:
-
-- content-body padding:
-  - top `0`
-  - left/right `28`
-  - bottom `28`
-- inter-section gap `28`
-- no generic row gap inside a section
-- title/description-to-row spacing handled by the section-header primitive from Section 11.3
-
-This is important because the current `ROW_GAP = 2.0` leaks mockup-inaccurate spacing into every
-page builder that imports the shared constants from `appearance.rs`.
-
-`ContainerWidget::column().with_gap(...)` already gives the correct "no trailing gap after the last
-section" behavior, so Section 11 only needs to set the right shared values and remove the wrong
-ones.
+11.5 depends on 11.3 having landed the section-header helper. Removing `ROW_GAP` and
+`TITLE_ROW_GAP` requires the helper to own the `12px` bottom spacing. Implement 11.3 first.
 
 ### Checklist
 
-- [ ] Fix content-body bottom padding from `0` to `28`
-- [ ] Change inter-section spacing from `24` to `28`
-- [ ] Remove the generic `2px` intra-section row gap
-- [ ] Let section-header primitives own title/description spacing instead of per-page constants
+- [x] Fix content-body bottom padding from `0` to `28` in `build_settings_page`
+- [x] Change `SECTION_GAP` from `24.0` to `28.0`
+- [x] Remove `ROW_GAP = 2.0` constant entirely
+- [x] Remove `TITLE_ROW_GAP = 8.0` constant
+- [x] Update all section builders across all 8 page files to use `gap: 0` for intra-section rows (17 `.with_gap(ROW_GAP)` sites)
+- [x] Verify `keybindings.rs` page: its `KeybindRow` widgets use `min_height: 36px` and `8px` vertical padding, not `44px`/`10px`. No inter-row gap is correct here too.
+- [x] Verify `colors.rs` palette section compiles correctly — it uses a private `PALETTE_GAP = 12.0` (unaffected), but the schemes section uses `ROW_GAP` and must be updated
+- [x] (TPR-11-008) Wire `build_section_header_with_description` into 3 pages: font.rs Fallback section ("Used when the primary font doesn't contain a glyph (emoji, CJK, symbols)."), bell.rs Throttle section ("Suppress repeated bells to avoid visual noise from programs that ring rapidly."), rendering.rs Performance section ("Tuning options for high-throughput scenarios. Defaults are correct for most users.")
+- [x] (TPR-11-008) Remove `#[expect(dead_code)]` from `build_section_header_with_description`
+- [x] (TPR-11-009) Fix `build_palette_section` in colors.rs — separate header from gapped content column so the header's built-in 12px spacer is the only title-to-content gap
 
 ---
 
@@ -448,51 +411,111 @@ ones.
 
 ### Goal
 
-Add targeted regression coverage for shared content typography instead of relying on a visual audit.
+Add targeted regression coverage for shared content typography and tag support.
+
+### Test Infrastructure Reality
+
+**What Scene/TextRun CAN observe:** `TextRun.color`, `TextRun.shaped.width`, `TextRun.shaped.height`,
+`TextRun.shaped.weight` (u16), `TextRun.shaped.glyphs.len()`, `TextRun.position`. Also `Quad.style`
+(fill, border) and `Quad.bounds`.
+
+**What Scene/TextRun CANNOT observe:** original text string, letter spacing, font size (logical px),
+`TextStyle`, `TextTransform` setting. `ShapedText` only stores `glyphs`, `width`, `height`,
+`baseline`, `size_q6`, `weight`. `MockMeasurer` always sets `size_q6 = 0`.
+
+Test strategies must work within these constraints. Use glyph count to verify text transforms
+(uppercase doesn't change count but proves shaping happened), weight field to verify font weight,
+layout positions to verify spacing, and quad styles to verify tag rendering.
 
 ### Files
 
-- new shared form-builder tests if the shared module is added
-- `oriterm_ui/src/widgets/setting_row/tests.rs`
-- `oriterm/src/app/settings_overlay/form_builder/tests.rs`
+- `form_builder/shared/tests.rs` (new, from 11.1)
+- `oriterm_ui/src/widgets/setting_row/tests.rs` (existing)
+- `form_builder/tests.rs` (existing — integration guard)
 
-### Required Coverage
+### `shared/tests.rs` — page header tests
 
-Add tests for the shared content typography path:
+- `fn page_header_applies_uppercase()` — build page header with `"test"`, paint to Scene.
+  `MockMeasurer` applies `text_transform` before shaping, so glyph count should equal character
+  count of `"TEST"` (4). Verify the title text run's glyph count matches expected length.
+- `fn page_header_weight_bold()` — paint to Scene, verify title text run's `shaped.weight == 700`.
+- `fn page_header_title_subtitle_spacing()` — compute layout, assert 4px gap between title and
+  subtitle `LayoutNode` rects.
+- `fn page_header_padding()` — compute layout in a `600x400` viewport, verify header content rect
+  starts at `x=28, y=24` (from `Insets::tlbr(24, 28, 20, 28)`).
+- `fn page_header_font_sizes()` — build header, compute layout. `MockMeasurer` uses `style.size`
+  for `line_height` calculation when `normalized_line_height` is `Some`. Verify title and subtitle
+  `LayoutNode` heights differ (18px title vs 12px subtitle produce different measured heights).
 
-- `fn page_header_title_subtitle_spacing()` — title/subtitle gap matches mockup `4px`
-- `fn page_header_applies_uppercase_transform()` — title receives uppercase transform internally
-- `fn page_header_letter_spacing_correct()` — title tracking is `0.9px`
-- `fn section_header_prefix_separate_from_title()` — prefix `"//"` and title are separate text runs
-- `fn section_header_title_only_receives_tracking()` — letter spacing applies only to the title, not the prefix
-- `fn section_header_separator_fills_width()` — separator line fills remaining width
-- `fn section_description_composition()` — optional section-description composes below title with `4px` gap
-- `fn section_description_uses_line_height()` — section-description text style sets `line_height: Some(1.5)` via Section 04's capability
-- `fn body_spacing_bottom_padding_28()` — content-body bottom padding is `28`
-- `fn body_spacing_section_gap_28()` — inter-section gap is `28`
-- `fn body_spacing_no_intra_row_gap()` — no generic `2px` gap between rows within a section
+### `shared/tests.rs` — section header tests
 
-Expand `SettingRowWidget` tests for:
+- `fn section_header_two_text_runs()` — paint section header to Scene, assert at least 2 text
+  runs exist (prefix `"//"` and title are separate labels).
+- `fn section_header_weight_medium()` — paint to Scene, verify text runs have `shaped.weight == 500`.
+- `fn section_header_separator_present()` — paint to Scene, verify `scene.quads()` contains at
+  least one quad (the separator line).
+- `fn section_header_bottom_spacing_12()` — build section column with header + dummy child,
+  compute layout, assert 12px gap between header bottom edge and child top edge.
+- `fn section_description_gap_4_then_12()` — build section with description, compute layout,
+  assert 4px gap between title row bottom and description top, 12px between description bottom
+  and first row top.
+- `fn section_description_weight()` — paint section-with-description, find the description text
+  run (third text run after prefix and title), verify `shaped.weight == 400` (normal weight).
 
-- `fn setting_row_stores_tags()` — tag model storage
-- `fn setting_row_layout_with_tags()` — layout with one or more tags adds to name-line width
-- `fn setting_row_paint_includes_tag_chips()` — paint output includes tag chips with correct colors
-- `fn setting_row_multiple_tags()` — row with two tags renders both
-- `fn setting_row_disabled_with_tags()` — disabled-state opacity compatibility with tags if Section 06 lands first
+### `shared/tests.rs` — body spacing tests
 
-The current `setting_row` tests only verify that three text runs are produced for a simple row.
-That is not enough once tags and richer label structure exist.
+- `fn body_spacing_bottom_padding_28()` — build a settings page, compute layout, verify body
+  container has 28px bottom padding (compare `LayoutNode.content_rect` vs `LayoutNode.rect`).
+- `fn body_spacing_section_gap_28()` — build settings page with 2 sections, compute layout,
+  assert 28px gap between section 1 bottom and section 2 top.
+- `fn body_spacing_no_intra_row_gap()` — build section with 2 setting rows, compute layout,
+  assert row 2 top edge equals row 1 bottom edge (gap = 0).
+- `fn settings_page_still_builds()` — call `build_settings_page` with title, desc, and empty
+  section list. Assert non-zero widget ID.
+
+### `setting_row/tests.rs` — tag support
+
+- `fn setting_row_stores_tags()` — create row with `.with_tag(...)`, assert `tags().len() == 1`
+  and correct kind.
+- `fn setting_row_zero_tags_identical_output()` — create row with no tags, paint to Scene,
+  assert exactly 3 text runs (name + desc + control label). Backward-compatibility guard.
+- `fn setting_row_layout_with_tags()` — create row with one tag, compute layout, verify name-line
+  node width exceeds same row without tags.
+- `fn setting_row_paint_tag_text_run()` — create row with `Restart` tag, paint to Scene, find
+  text run with `shaped.weight == 700` and glyph count matching `"RESTART"` length (7).
+- `fn setting_row_paint_tag_quad()` — create row with `Restart` tag, paint to Scene, find quad
+  whose `style` fill color matches `theme.warning_bg` and border color matches `theme.warning`.
+- `fn setting_row_multiple_tags()` — create row with `[New, Experimental]` tags, paint to Scene,
+  verify quads with both `accent_bg_strong` and `danger_bg` fill colors.
+- `fn setting_row_tag_kind_colors()` — for each `SettingTagKind` variant, verify `colors(theme)`
+  returns expected `(text_color, bg_color)` pair.
+- `fn setting_row_with_tags_min_height()` — create row with two tags, compute layout, assert
+  height >= 44px.
+
+### `form_builder/tests.rs` — integration guard
+
+No new tests. Verify existing tests still pass:
+- `dialog_builds_without_panic`
+- `settings_ids_all_distinct`
+- `dialog_builds_with_update_info`
 
 ### Checklist
 
-- [ ] Add shared content-typography tests for headers, sections, and spacing
-- [ ] Expand `setting_row` tests to cover tags and richer label layout
-- [ ] Keep existing basic construction/layout tests
-- [ ] Add coverage strong enough to catch spacing regressions, not just widget existence
+- [x] Add ~14 tests to `shared/tests.rs` covering page headers (5), section headers (4), descriptions (2), body spacing (3)
+- [x] Add 8 tests to `setting_row/tests.rs` covering tag storage, backward compat, layout, paint, color mapping, min height
+- [x] Verify the 8 existing `setting_row` tests still pass unchanged
+- [x] Verify the 6 existing `form_builder/tests.rs` tests still pass unchanged
+- [x] All tests assert specific numeric values or structural properties, not just "widget exists"
 
 ---
 
 ## 11.R Third Party Review Findings
+
+### Open Findings
+
+- [x] `[TPR-11-008][medium]` `oriterm/src/app/settings_overlay/form_builder/shared/mod.rs:128` — Section 11.3 is marked complete, but the new section-description path is still dead code and none of the live settings pages render the mockup's `.section-desc` content. **Accepted 2026-03-25**: Valid finding. Fix tasks added to 11.5 — wire `build_section_header_with_description` into font.rs (Fallback), bell.rs (Throttle), rendering.rs (Performance), and remove `#[expect(dead_code)]`.
+
+- [x] `[TPR-11-009][low]` `oriterm/src/app/settings_overlay/form_builder/colors.rs:140` — The Colors palette section now stacks `PALETTE_GAP` on top of the shared header helper's built-in 12px spacer, doubling the title-to-content gap. **Accepted 2026-03-25**: Valid finding. Fix task added to 11.5 — restructure `build_palette_section` to separate header from gapped content column.
 
 ### Resolved Findings
 
@@ -503,14 +526,14 @@ That is not enough once tags and richer label structure exist.
   by all settings-page builders. Section 11 should move that shared logic to a dedicated module.
 - `TPR-11-003` The current section-title helper cannot match the mockup exactly because it applies
   title letter spacing to the `//` prefix as well. The prefix and title need separate text runs.
-- `TPR-11-004` The draft missed that section titles require medium (`500`) weight, which the
-  current `FontWeight` surface cannot yet express.
+- `TPR-11-004` The draft missed that section titles require medium (`500`) weight. `FontWeight::MEDIUM`
+  is available from Section 02, but `section_title` still uses `FontWeight::NORMAL`.
 - `TPR-11-005` The draft ignored `.section-desc`, but the mockup uses section descriptions on
   multiple pages. Section 11 needs a shared primitive for that text style and spacing.
 - `TPR-11-006` The draft stopped at the existing `SettingRowWidget` constants and missed the
-  mockup's inline status tags (`Restart`, `Advanced`, etc.), which require a richer row-label model.
-- `TPR-11-007` The current `ROW_GAP = 2.0` is not a harmless approximation; it creates a shared
-  rhythm mismatch on every page builder that uses it directly under section titles and between rows.
+  mockup's inline status tags (`Restart`, `Advanced`, etc.).
+- `TPR-11-007` The current `ROW_GAP = 2.0` creates a shared rhythm mismatch on every page builder
+  that uses it directly under section titles and between rows.
 
 ---
 
@@ -519,29 +542,33 @@ That is not enough once tags and richer label structure exist.
 ### Gate
 
 ```bash
-./build-all.sh
-./clippy-all.sh
-./test-all.sh
+timeout 150 ./build-all.sh
+timeout 150 ./clippy-all.sh
+timeout 150 ./test-all.sh
 ```
 
 ### Focused Verification
 
-- run the targeted `setting_row` tests
-- run the settings form-builder tests
-- verify typography and spacing in the live settings overlay across more than one page, not just
-  `Appearance`
-
-Suggested commands:
-
 ```bash
-cargo test -p oriterm_ui setting_row::tests
-cargo test -p oriterm settings_overlay::form_builder::tests
+timeout 150 cargo test -p oriterm_ui setting_row::tests
+timeout 150 cargo test -p oriterm settings_overlay::form_builder::shared::tests
+timeout 150 cargo test -p oriterm settings_overlay::form_builder::tests
 ```
 
-Manual verification checklist:
+### File Size Verification
 
-- [ ] Page headers match the mockup across all settings pages
-- [ ] Section headers show correct weight, spacing, prefix behavior, and divider fill
-- [ ] Optional section descriptions render with correct spacing and muted typography
-- [ ] Setting rows keep correct base metrics and render status tags correctly
-- [ ] Content body padding and inter-section spacing match the mockup
+After all 11.x changes, verify these files stay under 500 lines:
+- `form_builder/shared/mod.rs` (new — expected ~150-200 lines)
+- `form_builder/appearance.rs` (currently 331 lines, should shrink to ~180 after move)
+- `setting_row/mod.rs` (currently 259 lines, expected ~350-400 after tags)
+
+### Manual Verification Checklist
+
+- [x] Page headers match the mockup across all settings pages
+- [x] Section headers show correct weight, spacing, prefix behavior, and divider fill
+- [x] Optional section descriptions render with correct spacing and muted typography
+- [x] Setting rows keep correct base metrics and render status tags correctly
+- [x] Content body padding and inter-section spacing match the mockup
+- [x] No dead `pub(super)` items remain in `appearance.rs` (clippy `dead_code = "deny"` catches this)
+- [x] No unused imports remain in any page builder file after import path changes
+- [x] `shared/mod.rs` has `//!` module doc and `#[cfg(test)] mod tests;` at bottom

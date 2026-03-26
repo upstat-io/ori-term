@@ -17,7 +17,9 @@ use oriterm_ui::widgets::toggle::ToggleWidget;
 use crate::config::Config;
 
 use super::SettingsIds;
-use super::appearance::{ROW_GAP, build_settings_page, section_title};
+use super::shared::{
+    build_section_header, build_section_header_with_description, build_settings_page,
+};
 
 /// Common monospace font families offered in the dropdown.
 ///
@@ -50,12 +52,13 @@ pub(super) fn build_page(
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
     build_settings_page(
-        "FONT",
+        "Font",
         "Typeface, size, and text rendering settings",
         vec![
             Box::new(CodePreviewWidget::new()) as Box<dyn Widget>,
             build_typeface_section(config, ids, theme),
             build_features_section(config, ids, theme),
+            build_fallback_section(theme),
         ],
         theme,
     )
@@ -112,12 +115,10 @@ fn build_typeface_section(
         theme,
     );
 
-    let title = section_title("Typeface", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Typeface", theme))
             .with_child(Box::new(family_row))
             .with_child(Box::new(size_row))
             .with_child(Box::new(weight_row)),
@@ -155,13 +156,20 @@ fn build_features_section(
         theme,
     );
 
-    let title = section_title("Features", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Features", theme))
             .with_child(Box::new(liga_row))
             .with_child(Box::new(line_row)),
+    )
+}
+
+/// Fallback section: header with description (settings TBD).
+fn build_fallback_section(theme: &UiTheme) -> Box<dyn Widget> {
+    build_section_header_with_description(
+        "Fallback",
+        "Used when the primary font doesn't contain a glyph (emoji, CJK, symbols).",
+        theme,
     )
 }

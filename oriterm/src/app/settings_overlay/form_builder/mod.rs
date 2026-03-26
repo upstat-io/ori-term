@@ -9,6 +9,7 @@ mod colors;
 mod font;
 mod keybindings;
 mod rendering;
+mod shared;
 mod terminal;
 mod window;
 
@@ -77,6 +78,7 @@ pub(in crate::app) fn build_settings_dialog(
     config: &Config,
     theme: &UiTheme,
     active_page: usize,
+    update_info: Option<(&str, &str, &str)>,
 ) -> (Box<dyn Widget>, SettingsIds) {
     // Initialize IDs with placeholders; page builders overwrite their fields.
     let mut ids = SettingsIds::placeholder();
@@ -90,9 +92,13 @@ pub(in crate::app) fn build_settings_dialog(
     let page_bell = bell::build_page(config, &mut ids, theme);
     let page_rendering = rendering::build_page(config, &mut ids, theme);
 
+    let config_path = crate::config::config_path();
     let mut sidebar = build_sidebar(theme)
         .with_version(format!("v{}", env!("CARGO_PKG_VERSION")))
-        .with_config_path("~/.config/oriterm/config.toml");
+        .with_config_path(config_path.display().to_string());
+    if let Some((label, tooltip, url)) = update_info {
+        sidebar = sidebar.with_update_available(label, tooltip, url);
+    }
     sidebar.set_active_page(active_page);
     let sidebar_id = sidebar.id();
     ids.sidebar_id = sidebar_id;

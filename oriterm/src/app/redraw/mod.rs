@@ -378,7 +378,13 @@ impl App {
             // Draw search bar overlay when search is active.
             if let Some(search) = frame.search.as_ref() {
                 // Position below all chrome (caption + tab bar).
-                let chrome_h = ctx.tab_bar.metrics().height;
+                // When the tab bar is hidden, chrome height is zero so
+                // the search badge sits at the top of the grid area.
+                let chrome_h = if tab_bar_hidden {
+                    0.0
+                } else {
+                    ctx.tab_bar.metrics().height
+                };
                 Self::draw_search_bar(
                     search,
                     renderer,

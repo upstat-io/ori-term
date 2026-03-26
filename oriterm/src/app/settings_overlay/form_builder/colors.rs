@@ -16,7 +16,7 @@ use oriterm_ui::widgets::scheme_card::{SchemeCardData, SchemeCardWidget};
 use crate::config::Config;
 use crate::scheme::{self, ColorScheme};
 
-use super::appearance::{ROW_GAP, build_settings_page, section_title};
+use super::shared::{build_section_header, build_settings_page};
 
 /// Gap between scheme cards in the grid.
 const CARD_GAP: f32 = 10.0;
@@ -41,7 +41,7 @@ pub(super) fn build_page(
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
     build_settings_page(
-        "COLORS",
+        "Colors",
         "Color schemes and palette customization",
         vec![
             build_schemes_section(config, ids, theme),
@@ -90,12 +90,10 @@ fn build_schemes_section(
         grid = grid.with_child(Box::new(card));
     }
 
-    let title = section_title("Schemes", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Schemes", theme))
             .with_child(Box::new(grid)),
     )
 }
@@ -108,7 +106,7 @@ fn build_palette_section(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
         "Palette — {}",
         active.as_ref().map_or("Unknown", |s| s.name.as_str())
     );
-    let title = section_title(&palette_title, theme);
+    let title = build_section_header(&palette_title, theme);
 
     let (specials, normal_ansi, bright_ansi) = match active {
         Some(ref s) => (
@@ -136,16 +134,22 @@ fn build_palette_section(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
         ..LabelStyle::from_theme(theme)
     });
 
+    // Separate header from gapped content so the header's built-in
+    // 12px spacer is the only title-to-content gap (TPR-11-009).
+    let content = ContainerWidget::column()
+        .with_width(SizeSpec::Fill)
+        .with_gap(PALETTE_GAP)
+        .with_child(specials)
+        .with_child(Box::new(normal_label))
+        .with_child(normal_ansi)
+        .with_child(Box::new(bright_label))
+        .with_child(bright_ansi);
+
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(PALETTE_GAP)
             .with_child(title)
-            .with_child(specials)
-            .with_child(Box::new(normal_label))
-            .with_child(normal_ansi)
-            .with_child(Box::new(bright_label))
-            .with_child(bright_ansi),
+            .with_child(Box::new(content)),
     )
 }
 

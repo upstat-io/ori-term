@@ -232,9 +232,10 @@ impl App {
         };
         ctx.root.mark_widgets_prepaint_dirty(&changed);
 
-        // Redraw when interaction state changed (focus/active) or
-        // controllers requested repaint (TPR-11-010).
-        if !changed.is_empty() || result.requests.contains(ControllerRequests::PAINT) {
+        // Redraw when event was handled (widget mutated local state),
+        // interaction state changed, or controllers requested repaint.
+        if super::super::needs_content_redraw(result.handled, !changed.is_empty(), result.requests)
+        {
             ctx.request_urgent_redraw();
         }
 

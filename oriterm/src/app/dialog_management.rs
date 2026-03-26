@@ -341,32 +341,29 @@ impl App {
     ) -> Option<WindowRenderer> {
         let scale = ScaleFactor::new(window.scale_factor()).factor() as f32;
         let physical_dpi = super::DEFAULT_DPI * scale;
-        let hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
-        // Dialogs are always opaque (transparent: false, opacity: 1.0), so
-        // derive glyph format from the dialog surface's own opacity contract
-        // rather than the main window's configured opacity.
-        let format =
+        // UI font uses fixed grayscale + no hinting; terminal hinting/format
+        // not needed here since dialog renderers are UI-only.
+        let _hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
+        let _format =
             super::config_reload::resolve_subpixel_mode(&self.config.font, f64::from(scale), 1.0)
                 .glyph_format();
 
-        let ui_sizes = self.font_set.as_ref().and_then(|fs| {
-            crate::font::UiFontSizes::new(
-                fs.clone(),
-                physical_dpi,
-                format,
-                hinting,
-                400,
-                crate::font::ui_font_sizes::PRELOAD_SIZES,
-            )
-            .ok()
-            .map(|mut sizes| {
-                super::config_reload::apply_font_config_to_ui_sizes(
-                    &mut sizes,
-                    &self.config.font,
-                    &self.user_fallback_map,
-                );
-                sizes
-            })
+        let ui_sizes = crate::font::UiFontSizes::new(
+            crate::font::FontSet::ui_embedded(),
+            physical_dpi,
+            crate::font::GlyphFormat::Alpha,
+            crate::font::HintingMode::None,
+            400,
+            crate::font::ui_font_sizes::PRELOAD_SIZES,
+        )
+        .ok()
+        .map(|mut sizes| {
+            super::config_reload::apply_font_config_to_ui_sizes(
+                &mut sizes,
+                &self.config.font,
+                &self.user_fallback_map,
+            );
+            sizes
         })?;
 
         Some(WindowRenderer::new_ui_only(gpu, pipelines, ui_sizes))
@@ -391,7 +388,8 @@ impl App {
 
     /// Build dialog content for the settings panel.
     fn build_settings_content(&self) -> DialogContent {
-        let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0);
+        let (content, ids) =
+            form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0, None);
 
         DialogContent::Settings {
             panel: Box::new(SettingsPanel::embedded(content, &self.ui_theme)),

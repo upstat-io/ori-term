@@ -17,7 +17,7 @@ use oriterm_ui::widgets::toggle::ToggleWidget;
 use crate::config::{Config, CursorStyle, PasteWarning};
 
 use super::SettingsIds;
-use super::appearance::{ROW_GAP, build_settings_page, section_title};
+use super::shared::{build_section_header, build_settings_page};
 
 /// Builds the Terminal page content widget.
 ///
@@ -28,7 +28,7 @@ pub(super) fn build_page(
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
     build_settings_page(
-        "TERMINAL",
+        "Terminal",
         "Cursor style, scrollback, and shell settings",
         vec![
             build_cursor_section(config, ids, theme),
@@ -70,12 +70,10 @@ fn build_cursor_section(
         theme,
     );
 
-    let title = section_title("Cursor", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Cursor", theme))
             .with_child(Box::new(picker_row))
             .with_child(Box::new(blink_row)),
     )
@@ -103,12 +101,10 @@ fn build_scrollback_section(
         theme,
     );
 
-    let title = section_title("Scrollback", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Scrollback", theme))
             .with_child(Box::new(row)),
     )
 }
@@ -143,12 +139,10 @@ fn build_shell_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) 
         theme,
     );
 
-    let title = section_title("Shell", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Shell", theme))
             .with_child(Box::new(shell_row))
             .with_child(Box::new(paste_row)),
     )

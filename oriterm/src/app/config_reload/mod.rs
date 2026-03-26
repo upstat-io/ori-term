@@ -301,17 +301,7 @@ impl App {
             #[cfg(target_os = "macos")]
             {
                 let old_mode = super::init::decoration_to_mode(self.config.window.decorations);
-                if mode != old_mode
-                    && (matches!(
-                        mode,
-                        oriterm_ui::window::DecorationMode::TransparentTitlebar
-                            | oriterm_ui::window::DecorationMode::Buttonless
-                    ) || matches!(
-                        old_mode,
-                        oriterm_ui::window::DecorationMode::TransparentTitlebar
-                            | oriterm_ui::window::DecorationMode::Buttonless
-                    ))
-                {
+                if old_mode.macos_requires_restart(mode) {
                     log::warn!("config reload: macOS titlebar mode change requires app restart");
                 }
             }
@@ -323,11 +313,21 @@ impl App {
         let style_changed = new.window.tab_bar_style != self.config.window.tab_bar_style;
         if position_changed || style_changed {
             // Apply new metrics to all tab bar widgets before relayout.
+            let metrics = super::init::metrics_from_style(new.window.tab_bar_style);
             if style_changed {
-                let metrics = super::init::metrics_from_style(new.window.tab_bar_style);
                 for ctx in self.windows.values_mut() {
                     ctx.tab_bar.set_metrics(metrics);
                 }
+            }
+            // Publish the effective chrome height to macOS — 0.0 when
+            // Hidden so fullscreen notification callbacks center traffic
+            // lights correctly. Must run on both position and style
+            // changes (not just style) so switching to Hidden publishes 0.
+            #[cfg(target_os = "macos")]
+            {
+                let hidden = new.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+                let effective_h = if hidden { 0.0 } else { metrics.height };
+                crate::window_manager::platform::macos::set_tab_bar_height(effective_h);
             }
             let window_sizes: Vec<_> = self
                 .windows

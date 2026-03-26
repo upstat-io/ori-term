@@ -133,7 +133,7 @@ DropdownWidget, SliderWidget, setting completeness
 ---
 
 ### Section 10: Visual Fidelity — Sidebar + Navigation
-**File:** `section-10-sidebar-fidelity.md` | **Status:** Not Started
+**File:** `section-10-sidebar-fidelity.md` | **Status:** Complete
 
 ```
 sidebar, SidebarNavWidget, nav-item, active state
@@ -145,7 +145,7 @@ sidebar height, full-height, padding, row height
 ---
 
 ### Section 11: Visual Fidelity — Content Area + Typography
-**File:** `section-11-content-typography.md` | **Status:** Not Started
+**File:** `section-11-content-typography.md` | **Status:** Complete
 
 ```
 content-header, page title, APPEARANCE, section-title
@@ -164,6 +164,10 @@ footer, sticky footer, border-top, UNSAVED CHANGES
 btn-primary, btn-ghost, btn-danger-ghost
 RESET TO DEFAULTS, CANCEL, SAVE
 button padding, font-weight 500/700, uppercase, letter-spacing
+SettingsFooterWidget, ButtonStyle.weight, ButtonStyle.letter_spacing
+ButtonStyle.text_transform, ButtonStyle.disabled_opacity
+IconId::AlertCircle, unsaved-indicator, 14px icon
+right-column footer, sidebar full-height
 ```
 
 ---

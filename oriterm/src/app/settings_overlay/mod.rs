@@ -1,53 +1,57 @@
-//! Settings overlay — modal settings panel pushed into the overlay manager.
-//!
-//! Replaces the separate settings window (`settings_ui`) with a modal overlay
-//! within the active terminal window.
+//! Settings overlay — action handler, form builder, and per-page dirty detection.
 
 pub(in crate::app) mod action_handler;
 pub(in crate::app) mod form_builder;
 
-use std::time::Instant;
-
-use oriterm_ui::overlay::Placement;
-use oriterm_ui::widgets::settings_panel::SettingsPanel;
-
 pub(in crate::app) use form_builder::SettingsIds;
 
-use super::App;
+use crate::config::Config;
 
-impl App {
-    /// Opens the settings panel as a centered modal overlay in the focused window.
-    ///
-    /// Bails if no focused window exists or if a modal is already open.
-    /// Retained for overlay-based settings fallback (e.g. if dialog creation fails).
-    #[allow(dead_code, reason = "retained for overlay fallback path")]
-    pub(in crate::app) fn open_settings_overlay(&mut self) {
-        // Check guard: bail if no window or modal already open.
-        let has_modal = self
-            .focused_ctx()
-            .is_some_and(|ctx| ctx.root.overlays().has_modal());
-        if has_modal || self.focused_ctx().is_none() {
-            return;
-        }
+/// Number of settings pages in the sidebar.
+pub(in crate::app) const PAGE_COUNT: usize = 8;
 
-        // Create a working copy of the config for pending edits.
-        self.settings_pending = Some(self.config.clone());
-
-        // Build sidebar + pages layout from current config.
-        let (content, ids) = form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0);
-        self.settings_ids = Some(ids);
-
-        let panel = SettingsPanel::new(content, &self.ui_theme);
-
-        // Now take the mutable borrow for overlay push.
-        let Some(ctx) = self.focused_ctx_mut() else {
-            return;
-        };
-        let viewport = ctx.root.overlays().viewport();
-        let now = Instant::now();
-        ctx.root
-            .push_modal(Box::new(panel), viewport, Placement::Center, now);
-        ctx.root.mark_dirty();
-        ctx.ui_stale = true;
-    }
+/// Compares pending vs original config per settings page.
+///
+/// Returns a fixed-size array of booleans — one per page — indicating
+/// whether that page has unsaved changes. Page indices match the sidebar
+/// nav item order (Appearance=0, Colors=1, Font=2, Terminal=3,
+/// Keybindings=4, Window=5, Bell=6, Rendering=7).
+///
+/// Float comparisons use `to_bits()` for exact equality — config values
+/// come from slider/input widgets and are never computed, so bit-exact
+/// comparison is correct (no rounding drift).
+pub(in crate::app) fn per_page_dirty(pending: &Config, original: &Config) -> [bool; PAGE_COUNT] {
+    [
+        // 0: Appearance — opacity, blur, unfocused opacity, decorations, tab bar style, scheme.
+        pending.window.opacity.to_bits() != original.window.opacity.to_bits()
+            || pending.window.blur != original.window.blur
+            || pending.window.unfocused_opacity.to_bits()
+                != original.window.unfocused_opacity.to_bits()
+            || pending.window.decorations != original.window.decorations
+            || pending.window.tab_bar_style != original.window.tab_bar_style
+            || pending.colors.scheme != original.colors.scheme,
+        // 1: Colors — scheme.
+        pending.colors.scheme != original.colors.scheme,
+        // 2: Font — all font config.
+        pending.font != original.font,
+        // 3: Terminal — terminal config + paste warning.
+        pending.terminal != original.terminal
+            || pending.behavior.warn_on_paste != original.behavior.warn_on_paste,
+        // 4: Keybindings — no settings yet, always clean.
+        false,
+        // 5: Window — tab bar position, grid padding, restore session, columns, rows.
+        pending.window.tab_bar_position != original.window.tab_bar_position
+            || pending.window.grid_padding.to_bits() != original.window.grid_padding.to_bits()
+            || pending.window.restore_session != original.window.restore_session
+            || pending.window.columns != original.window.columns
+            || pending.window.rows != original.window.rows,
+        // 6: Bell — all bell config.
+        pending.bell != original.bell,
+        // 7: Rendering — GPU backend, subpixel mode.
+        pending.rendering.gpu_backend != original.rendering.gpu_backend
+            || pending.font.subpixel_mode != original.font.subpixel_mode,
+    ]
 }
+
+#[cfg(test)]
+mod tests;
