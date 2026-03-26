@@ -207,16 +207,6 @@ pub(crate) struct App {
     // only this field and the theme-change handler need updating.
     ui_theme: UiTheme,
 
-    // Widget IDs for the currently-open settings overlay. Set when the
-    // overlay opens, cleared on dismiss. Used by overlay dispatch to
-    // match widget actions to config fields.
-    settings_ids: Option<settings_overlay::SettingsIds>,
-
-    // Working copy of the config being edited in the settings panel.
-    // Created when the panel opens, mutated by control changes, applied
-    // on Save, discarded on Cancel. `self.config` stays untouched until Save.
-    settings_pending: Option<Config>,
-
     // The dropdown widget ID whose popup is currently open. Set when
     // `OpenDropdown` creates a popup overlay, cleared on selection or
     // dismiss. Used to route `Selected` events to the correct dropdown.

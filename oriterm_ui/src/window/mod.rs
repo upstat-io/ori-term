@@ -31,6 +31,31 @@ pub enum DecorationMode {
     Buttonless,
 }
 
+impl DecorationMode {
+    /// Returns whether two modes share the same macOS creation-time titlebar
+    /// attributes (transparent, fullsize content view, hidden buttons).
+    ///
+    /// Transitions between modes in different groups require an app restart on
+    /// macOS because winit cannot change these attributes at runtime.
+    ///
+    /// Groups:
+    /// - `Native`: no titlebar transparency, no fullsize content view.
+    /// - `Frameless` / `TransparentTitlebar`: transparent + fullsize.
+    /// - `Buttonless`: transparent + fullsize + hidden buttons.
+    pub fn macos_requires_restart(self, other: Self) -> bool {
+        self.macos_titlebar_group() != other.macos_titlebar_group()
+    }
+
+    /// Classifies the mode by its macOS creation-time window attributes.
+    fn macos_titlebar_group(self) -> u8 {
+        match self {
+            Self::Native => 0,
+            Self::Frameless | Self::TransparentTitlebar => 1,
+            Self::Buttonless => 2,
+        }
+    }
+}
+
 /// Configuration for creating a new window.
 ///
 /// Scale factor is not included — it is a runtime property of the display,
@@ -285,3 +310,6 @@ fn apply_post_creation_style(window: &Window) {
 /// Post-creation style is a no-op on non-Windows platforms.
 #[cfg(not(target_os = "windows"))]
 fn apply_post_creation_style(_window: &Window) {}
+
+#[cfg(test)]
+mod tests;

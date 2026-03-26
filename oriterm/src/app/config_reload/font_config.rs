@@ -156,20 +156,20 @@ pub(crate) fn apply_font_config_to_ui_sizes(
 )]
 pub(super) fn rebuild_ui_font_sizes(
     renderer: &mut crate::gpu::WindowRenderer,
-    font_set: &FontSet,
+    _font_set: &FontSet,
     dpi: f32,
-    format: crate::font::GlyphFormat,
-    hinting: HintingMode,
-    weight: u16,
+    _format: crate::font::GlyphFormat,
+    _hinting: HintingMode,
+    _weight: u16,
     font_config: &FontConfig,
     fallback_map: &[usize],
 ) {
     match UiFontSizes::new(
-        font_set.clone(),
+        FontSet::ui_embedded(),
         dpi,
-        format,
-        hinting,
-        weight,
+        crate::font::GlyphFormat::Alpha,
+        HintingMode::None,
+        400,
         ui_font_sizes::PRELOAD_SIZES,
     ) {
         Ok(mut ui_sizes) => {

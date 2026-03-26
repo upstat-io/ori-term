@@ -108,14 +108,15 @@ impl App {
         // consumed it — zero disk reads).
 
         // 7c. UI font registry: exact-size collections for all UI text sizes.
-        // The brutal design uses monospace throughout (mockup:
-        // `'IBM Plex Mono', 'Cascadia Code', monospace`).
+        // Uses embedded IBM Plex Mono with forced grayscale + no hinting so
+        // the settings dialog renders identically on all platforms.
         drop(font_cache);
+        let ui_font_set = FontSet::ui_embedded();
         let ui_sizes = crate::font::UiFontSizes::new(
-            cached_font_set.clone(),
+            ui_font_set,
             physical_dpi,
-            subpixel_format,
-            hinting,
+            GlyphFormat::Alpha,
+            HintingMode::None,
             400,
             crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
@@ -282,13 +283,24 @@ impl App {
         let logical_w = w as f32 / scale;
         let metrics = metrics_from_style(self.config.window.tab_bar_style);
 
+        // When the tab bar is hidden, chrome should report zero caption height
+        // so macOS traffic lights and Windows Aero Snap use the correct geometry
+        // from the start, not just after the first relayout.
+        let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+        let chrome_h = if hidden { 0.0 } else { metrics.height };
+
+        // Publish the active tab bar height so macOS fullscreen notification
+        // callbacks can center traffic lights at the correct height.
+        #[cfg(target_os = "macos")]
+        crate::window_manager::platform::macos::set_tab_bar_height(chrome_h);
+
         // Install platform chrome (Aero Snap subclass on Windows, no-op elsewhere).
         // Empty rects — the tab bar widget is created next.
         super::chrome::install_chrome(
             window.window(),
             crate::window_manager::platform::ChromeMode::Main,
             &[],
-            metrics.height,
+            chrome_h,
             scale,
         );
         let mut tab_bar_widget = oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme_and_metrics(
@@ -308,7 +320,7 @@ impl App {
         super::chrome::refresh_chrome(
             window.window(),
             &tab_bar_widget.interactive_rects(),
-            metrics.height,
+            chrome_h,
             scale,
             true,
         );

@@ -359,6 +359,29 @@ macro_rules! muxbackend_contract_tests {
                 thread::sleep(Duration::from_millis(50));
             }
 
+            // Wait for the shell to fully settle — no new dirty notifications
+            // for 300ms. Late-arriving prompt redraws can reset display_offset
+            // after scroll_display, causing flaky failures in the daemon path.
+            ctx.b().refresh_pane_snapshot(pid);
+            ctx.b().clear_pane_snapshot_dirty(pid);
+            let mut quiet_since = Instant::now();
+            let quiesce_deadline = Instant::now() + Duration::from_secs(10);
+            while quiet_since.elapsed() < Duration::from_millis(300) {
+                ctx.b().poll_events();
+                let mut n = Vec::new();
+                ctx.b().drain_notifications(&mut n);
+                if ctx.b().is_pane_snapshot_dirty(pid) {
+                    ctx.b().refresh_pane_snapshot(pid);
+                    ctx.b().clear_pane_snapshot_dirty(pid);
+                    quiet_since = Instant::now();
+                }
+                assert!(
+                    Instant::now() < quiesce_deadline,
+                    "shell never quiesced after QUIESCE_FENCE"
+                );
+                thread::sleep(Duration::from_millis(20));
+            }
+
             // Scroll up.
             ctx.b().scroll_display(pid, 10);
             let snap = ctx.wait_for("display_offset == 10", |s| s.display_offset == 10);

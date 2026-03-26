@@ -22,6 +22,7 @@ pub use keymap_action::KeymapAction;
 
 use crate::geometry::{Point, Rect};
 use crate::widget_id::WidgetId;
+use crate::widgets::sidebar_nav::FooterTarget;
 
 /// A semantic action emitted by a widget for the application layer.
 ///
@@ -84,6 +85,10 @@ pub enum WidgetAction {
     ResetDefaults,
     /// Notify the settings panel that unsaved changes exist.
     SettingsUnsaved(bool),
+    /// Notify the sidebar that a specific page has dirty (unsaved) state.
+    PageDirty { page: usize, dirty: bool },
+    /// A sidebar footer target was clicked.
+    FooterAction(FooterTarget),
     /// Minimize the window.
     WindowMinimize,
     /// Maximize or restore the window.

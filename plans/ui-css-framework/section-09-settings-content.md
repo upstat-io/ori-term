@@ -378,6 +378,7 @@ platform behavior is meaningful rather than leaving it config-only.
   - `config_reload/mod.rs` `apply_window_changes()` only checks opacity/blur, ignores decorations entirely
   - [x] Add decoration change detection to `apply_window_changes()`
   - [x] Apply decoration changes to existing windows (`set_decorations(bool)` for decorated/frameless toggle; macOS titlebar modes logged as requiring restart)
+  - [x] Widen macOS restart-warning gate to cover ALL decoration mode transitions that change creation-time titlebar attributes (currently only warns for TransparentTitlebar/Buttonless, misses Frameless ↔ Native) <!-- TPR-09-022 -->
 - [x] Bool-only decoration plumbing is widened where necessary <!-- TPR-09-009 -->
   - `init/mod.rs` and `window_management.rs` collapse enum via `is_decorated()` to a bool
   - macOS hardcodes `with_decorations(true)` in `window/mod.rs`
@@ -477,6 +478,11 @@ tab-bar metrics/style module first so this stays within the repository's file-si
   - [x] Call `set_metrics()` + trigger relayout when config reload changes `tab_bar_style`
   - [x] Call `set_metrics()` + trigger relayout on settings save/apply
 - [x] Keep the Window page `Tab bar position` control functional and consistent
+- [x] Thread Hidden-state into chrome init path <!-- TPR-09-019 -->
+  - [x] In `create_tab_bar_widget()`: check `tab_bar_position == Hidden` and use `0.0` for chrome height when hidden
+  - [x] macOS: pass `0.0` to `set_tab_bar_height()` when hidden
+  - [x] Pass `0.0` to `install_chrome()` and `refresh_chrome()` when hidden
+  - [x] Add regression test: `hidden_tab_bar_chrome_init_uses_zero_height`
 - [x] Thread `TabBarPosition::Hidden` through runtime to suppress tab bar <!-- TPR-09-007 -->
   - Config mutation works (action_handler maps Hidden correctly) but zero runtime consumers exist
   - [x] `compute_window_layout()` in `chrome/mod.rs`: skip tab bar height allocation when position is Hidden
@@ -485,6 +491,22 @@ tab-bar metrics/style module first so this stays within the repository's file-si
   - [x] Redraw path (`redraw/mod.rs`): skip `draw_tab_bar()` when position is Hidden
   - [x] Init path: thread position through so initial window respects Hidden
   - [x] Config reload/settings apply: update tab bar visibility on position change
+- [x] Thread Hidden-aware effective chrome height through search overlay placement <!-- TPR-09-020 -->
+  - [x] `redraw/mod.rs`: compute `chrome_h` as `0.0` when `tab_bar_position == Hidden`, not `ctx.tab_bar.metrics().height`
+  - [x] `redraw/multi_pane/mod.rs`: same fix for the multi-pane search overlay path
+  - [x] No shared helper extracted — the `if tab_bar_hidden { 0.0 } else { metrics().height }` pattern is a one-liner and callers already have `tab_bar_hidden` in scope
+- [x] Thread Hidden-aware height through macOS fullscreen recovery paths <!-- TPR-09-020 -->
+  - [x] `event_loop_helpers/mod.rs` will_exit handler: use `0.0` for caption_h when position is Hidden
+  - [x] `event_loop_helpers/mod.rs` did_exit handler: same fix
+- [x] Config reload: publish effective height on position changes, not just style changes <!-- TPR-09-020 -->
+  - [x] Move `set_tab_bar_height()` call outside the `if style_changed` block
+  - [x] Compute effective height: `if position == Hidden { 0.0 } else { metrics.height }` (matching init path pattern)
+- [x] Add regression tests for Hidden tab bar in secondary paths <!-- TPR-09-020 -->
+  - [x] Test: search overlay positioned at y=0 when tab bar is Hidden
+  - [x] Test: config reload position-to-Hidden publishes zero height to macOS
+- [x] Split `redraw/multi_pane/mod.rs` back under the repository's 500-line limit <!-- TPR-09-021 -->
+  - Extracted `should_reextract_scratch_frame` and `populate_multi_pane_scratch` into `helpers.rs` submodule
+  - `mod.rs` reduced from 516 → 496 lines
 
 ---
 
@@ -545,6 +567,21 @@ In the relevant app/tab-bar tests:
 
 ### Open Findings
 
+- [x] `[TPR-09-022][high]` `oriterm/src/app/config_reload/mod.rs:283` — Live decoration changes are still incomplete on macOS for `Decorations::None`/`Decorations::Full`, even though Section 09 is marked complete.
+  Evidence: [config_reload/mod.rs](/home/eric/projects/ori_term/oriterm/src/app/config_reload/mod.rs#L283) only reapplies `set_decorations(winit_decorated)` and only warns when the mode change touches `TransparentTitlebar`/`Buttonless`. But [window/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/window/mod.rs#L125) returns `true` for every macOS `DecorationMode`, while [window/mod.rs](/home/eric/projects/ori_term/oriterm_ui/src/window/mod.rs#L223) shows the real `Native` vs `Frameless` distinction lives in creation-time titlebar attributes (`titlebar_transparent`, `fullsize_content_view`). [init/mod.rs](/home/eric/projects/ori_term/oriterm/src/app/init/mod.rs#L337) maps `Decorations::None` to `Frameless` and `Decorations::Full` to `Native`, so saving that change on macOS silently no-ops for existing windows.
+  Impact: Section 09.4 claims save/apply and config reload respond to decoration changes, but the common macOS transition between frameless and native chrome still neither applies live nor warns that restart is required.
+  Required plan update: Treat any macOS decoration-mode transition that changes creation-time titlebar attributes as restart-only, or implement a real window recreation path for those transitions.
+  Resolved 2026-03-25: accepted. The macOS warning gate at config_reload/mod.rs:301-317 only checks `TransparentTitlebar | Buttonless` endpoints, missing `Frameless ↔ Native` (which also differs in creation-time attributes). Concrete task added to §09.4 checklist: widen warning gate to catch all mode transitions where creation-time attributes differ.
+
+- [x] `[TPR-09-021][low]` `oriterm/src/app/redraw/multi_pane/mod.rs:1` — The Section 09 follow-up work pushes `redraw/multi_pane/mod.rs` to 516 lines, violating the repository's hard 500-line limit for non-`tests.rs` source files.
+  Resolved 2026-03-25: accepted and fixed. Extracted `should_reextract_scratch_frame` + `populate_multi_pane_scratch` into `helpers.rs` submodule, reducing `mod.rs` from 516 → 496 lines.
+
+- [x] `[TPR-09-020][high]` `oriterm/src/app/redraw/mod.rs:381` — `TabBarPosition::Hidden` is still incomplete outside the primary layout path because several secondary chrome consumers keep using `ctx.tab_bar.metrics().height` even when the bar is hidden.
+  Resolved 2026-03-25: accepted. Concrete implementation tasks added to §09.5 checklist: (1) search overlay paths in redraw/mod.rs and redraw/multi_pane/mod.rs must use 0.0 when Hidden, (2) macOS fullscreen will_exit/did_exit handlers must use 0.0 when Hidden, (3) config_reload must publish effective height on position changes (not just style changes).
+
+- [x] `[TPR-09-019][high]` `oriterm/src/app/init/mod.rs:283` — `TabBarPosition::Hidden` is still incomplete on the startup/new-window chrome path because `create_tab_bar_widget()` always publishes `metrics.height` to macOS and always calls `install_chrome()` / `refresh_chrome()` with that nonzero caption height before any hidden-state check runs.
+  Resolved 2026-03-25: accepted. Concrete implementation tasks added to §09.5 checklist. `create_tab_bar_widget()` unconditionally publishes `metrics.height` to macOS via `set_tab_bar_height()` and passes it to `install_chrome()`/`refresh_chrome()` before any Hidden check. `compute_window_layout()` correctly zeroes tab bar height downstream, so this is a cosmetic startup flash (macOS traffic lights briefly at wrong height), not a persistent layout bug.
+
 - [x] `[TPR-09-014][high]` `oriterm/src/app/config_reload/mod.rs:289` — Live decoration changes are still wrong on macOS because config reload collapses `DecorationMode` back to `Native` vs “everything else” before calling `set_decorations(bool)`.
   Resolved 2026-03-25: accepted and fixed. Made `resolve_winit_decorations()` public, replaced inline `matches!(mode, DecorationMode::Native)` in config_reload with `oriterm_ui::window::resolve_winit_decorations(mode)`. macOS now always gets `true` from the same function the creation path uses.
 
@@ -589,6 +626,15 @@ In the relevant app/tab-bar tests:
   `apply_transparency()` has an early return for `opacity >= 1.0` that prevents any blur teardown,
   and the only `set_blur` call in the codebase is `set_blur(true)`. Zero occurrences of
   `set_blur(false)`, `clear_vibrancy`, or `clear_acrylic` exist anywhere.
+
+- [x] `[TPR-09-016][high]` `oriterm_ui/src/widgets/tab_bar/widget/mod.rs:187` — `TabBarWidget::set_metrics()` updates the stored style metrics but never recomputes layout, so live `TabBarStyle` reloads keep the old tab widths and control geometry until some unrelated later relayout happens.
+  Resolved 2026-03-25: accepted and fixed. Added `self.recompute_layout()` call to `set_metrics()`, matching the pattern used by `set_window_width()` and `set_left_inset()`. Added `set_metrics_triggers_relayout` regression test proving style-only changes immediately update tab widths and round-trip back to original values.
+
+- [x] `[TPR-09-017][medium]` `oriterm_ui/src/widgets/tab_bar/widget/draw.rs:160` — Compact tab content still paints with the default `TAB_PADDING` constant, so the tighter `TabBarMetrics::COMPACT.tab_padding = 6.0` contract never reaches icon/title placement.
+  Resolved 2026-03-25: accepted and fixed. Replaced `TAB_PADDING` constant with `self.metrics.tab_padding` in `draw_tab_label()` for both icon and text X positions. Removed `TAB_PADDING` from the draw module's imports — the constant is no longer used in the paint path.
+
+- [x] `[TPR-09-018][medium]` `oriterm/src/window_manager/platform/macos/mod.rs:173` — The macOS fullscreen recovery path still hardcodes `TAB_BAR_HEIGHT`, so traffic-light centering snaps back to a 46px caption during fullscreen transitions when compact style is active.
+  Resolved 2026-03-25: accepted and fixed. Added `TAB_BAR_HEIGHT_BITS: AtomicU32` global in the macOS platform module, with `set_tab_bar_height()` public setter and `active_tab_bar_height()` reader. Both `center_and_disable_drag_raw()` and `reposition_buttons_raw()` now read from the atomic instead of the constant. `set_tab_bar_height()` is called from init and config_reload when metrics change.
 
 ### Resolved Findings
 

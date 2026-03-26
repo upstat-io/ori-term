@@ -11,7 +11,9 @@ use oriterm_ui::widgets::toggle::ToggleWidget;
 use crate::config::{Config, GpuBackend};
 
 use super::SettingsIds;
-use super::appearance::{ROW_GAP, build_settings_page, section_title};
+use super::shared::{
+    build_section_header, build_section_header_with_description, build_settings_page,
+};
 
 /// Builds the Rendering page content widget.
 pub(super) fn build_page(
@@ -20,11 +22,12 @@ pub(super) fn build_page(
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
     build_settings_page(
-        "RENDERING",
+        "Rendering",
         "GPU backend and text rendering options",
         vec![
             build_gpu_section(config, ids, theme),
             build_text_section(config, ids, theme),
+            build_performance_section(theme),
         ],
         theme,
     )
@@ -54,12 +57,10 @@ fn build_gpu_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) ->
         theme,
     );
 
-    let title = section_title("GPU", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("GPU", theme))
             .with_child(Box::new(row)),
     )
 }
@@ -82,12 +83,19 @@ fn build_text_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) -
         theme,
     );
 
-    let title = section_title("Text", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Text", theme))
             .with_child(Box::new(row)),
+    )
+}
+
+/// Performance section: header with description (settings TBD).
+fn build_performance_section(theme: &UiTheme) -> Box<dyn Widget> {
+    build_section_header_with_description(
+        "Performance",
+        "Tuning options for high-throughput scenarios. Defaults are correct for most users.",
+        theme,
     )
 }

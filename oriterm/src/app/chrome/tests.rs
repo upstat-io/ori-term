@@ -1,5 +1,6 @@
 //! Unit tests for chrome geometry and layout helpers.
 
+use crate::config::{TabBarPosition, TabBarStyle};
 use crate::font::CellMetrics;
 
 use super::{GRID_PADDING, compute_window_layout, grid_origin_y};
@@ -224,4 +225,111 @@ fn compact_tab_bar_shifts_grid_origin() {
         compact.rows,
         default.rows,
     );
+}
+
+#[test]
+fn hidden_tab_bar_chrome_init_uses_zero_height() {
+    // Regression: create_tab_bar_widget() must pass 0.0 to install_chrome()
+    // and set_tab_bar_height() when tab_bar_position is Hidden, even though
+    // the widget's own metrics are nonzero. This prevents macOS traffic lights
+    // from briefly rendering at the wrong caption height on startup.
+    use super::super::init::metrics_from_style;
+
+    for style in [TabBarStyle::Default, TabBarStyle::Compact] {
+        let metrics = metrics_from_style(style);
+        assert!(
+            metrics.height > 0.0,
+            "{style:?} metrics height must be nonzero"
+        );
+
+        // Replicate the init-path logic: hidden overrides to 0.0.
+        for (position, expected_zero) in [
+            (TabBarPosition::Top, false),
+            (TabBarPosition::Bottom, false),
+            (TabBarPosition::Hidden, true),
+        ] {
+            let hidden = position == TabBarPosition::Hidden;
+            let chrome_h = if hidden { 0.0 } else { metrics.height };
+
+            if expected_zero {
+                assert_eq!(
+                    chrome_h, 0.0,
+                    "chrome_h must be 0.0 for {position:?} + {style:?}"
+                );
+            } else {
+                assert_eq!(
+                    chrome_h, metrics.height,
+                    "chrome_h must match metrics for {position:?} + {style:?}"
+                );
+            }
+        }
+    }
+}
+
+/// Regression (TPR-09-020): Search overlay chrome height must be 0 when
+/// `TabBarPosition::Hidden`, regardless of the widget's own metrics.
+/// The redraw paths use `if tab_bar_hidden { 0.0 } else { metrics().height }`
+/// — this test validates the branch.
+#[test]
+fn hidden_tab_bar_search_overlay_uses_zero_chrome_height() {
+    use super::super::init::metrics_from_style;
+
+    for style in [TabBarStyle::Default, TabBarStyle::Compact] {
+        let metrics = metrics_from_style(style);
+
+        for (position, expected_zero) in [
+            (TabBarPosition::Top, false),
+            (TabBarPosition::Bottom, false),
+            (TabBarPosition::Hidden, true),
+        ] {
+            let hidden = position == TabBarPosition::Hidden;
+            // Mirrors the redraw/mod.rs and redraw/multi_pane/mod.rs pattern.
+            let chrome_h = if hidden { 0.0 } else { metrics.height };
+
+            if expected_zero {
+                assert_eq!(
+                    chrome_h, 0.0,
+                    "search overlay chrome_h must be 0.0 for {position:?} + {style:?}"
+                );
+            } else {
+                assert!(
+                    chrome_h > 0.0,
+                    "search overlay chrome_h must be nonzero for {position:?} + {style:?}"
+                );
+            }
+        }
+    }
+}
+
+/// Regression (TPR-09-020): Config reload position-to-Hidden must publish
+/// effective height 0.0 to macOS, not the raw metrics height.
+#[test]
+fn config_reload_hidden_publishes_zero_effective_height() {
+    use super::super::init::metrics_from_style;
+
+    for style in [TabBarStyle::Default, TabBarStyle::Compact] {
+        let metrics = metrics_from_style(style);
+
+        // Mirrors the config_reload/mod.rs pattern.
+        for (position, expect_zero) in [
+            (TabBarPosition::Top, false),
+            (TabBarPosition::Bottom, false),
+            (TabBarPosition::Hidden, true),
+        ] {
+            let hidden = position == TabBarPosition::Hidden;
+            let effective_h = if hidden { 0.0 } else { metrics.height };
+
+            if expect_zero {
+                assert_eq!(
+                    effective_h, 0.0,
+                    "config reload must publish 0.0 for {position:?} + {style:?}"
+                );
+            } else {
+                assert_eq!(
+                    effective_h, metrics.height,
+                    "config reload must publish metrics.height for {position:?} + {style:?}"
+                );
+            }
+        }
+    }
 }

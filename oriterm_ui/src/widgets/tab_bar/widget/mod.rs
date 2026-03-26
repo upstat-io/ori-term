@@ -183,9 +183,10 @@ impl TabBarWidget {
         &self.metrics
     }
 
-    /// Sets the tab bar metrics (style change).
+    /// Sets the tab bar metrics (style change) and recomputes layout.
     pub fn set_metrics(&mut self, metrics: super::constants::TabBarMetrics) {
         self.metrics = metrics;
+        self.recompute_layout();
     }
 
     // Theme

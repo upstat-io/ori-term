@@ -5,6 +5,7 @@
 //! have no terminal grid, tab bar, or pane cache — just UI widgets.
 
 mod content_actions;
+mod content_key_dispatch;
 mod event_handling;
 mod focus_setup;
 pub(in crate::app) mod key_conversion;
@@ -230,6 +231,26 @@ impl DialogWindowContext {
     }
 }
 
+/// Returns `true` when a dialog content event requires an immediate redraw.
+///
+/// This decision combines three signals from the event dispatch result:
+/// - `handled`: a widget consumed the event and mutated local state
+///   (e.g. sidebar search text changed)
+/// - `state_changed`: interaction state changed (focus cycling, active toggle)
+/// - `paint_requested`: a controller explicitly requested repaint
+///
+/// Extracted as a testable function because this condition was the root
+/// cause of TPR-10-014 (missing `handled` check caused silent stale frames).
+pub(super) fn needs_content_redraw(
+    handled: bool,
+    state_changed: bool,
+    requests: oriterm_ui::controllers::ControllerRequests,
+) -> bool {
+    handled
+        || state_changed
+        || requests.contains(oriterm_ui::controllers::ControllerRequests::PAINT)
+}
+
 /// Computes the parent map from a content widget's current layout (TPR-04-002).
 #[expect(
     clippy::too_many_arguments,
@@ -325,3 +346,6 @@ pub(super) fn recompute_dialog_hot_path(
     let changed = root.interaction_mut().update_hot_path(&hot_path);
     root.mark_widgets_prepaint_dirty(&changed);
 }
+
+#[cfg(test)]
+mod tests;

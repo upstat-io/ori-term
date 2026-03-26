@@ -98,6 +98,29 @@ impl FontSet {
         }
     }
 
+    /// Build a `FontSet` from embedded IBM Plex Mono (Regular + Bold).
+    ///
+    /// Fixed UI font for settings dialogs and chrome — independent of the
+    /// user's terminal font configuration. Matches the mockup's
+    /// `font-family: 'IBM Plex Mono'` exactly on all platforms.
+    pub fn ui_embedded() -> Self {
+        Self {
+            family_name: "IBM Plex Mono (embedded)".to_owned(),
+            regular: FontData {
+                data: Arc::new(discovery::UI_FONT_REGULAR.to_vec()),
+                index: 0,
+            },
+            bold: Some(FontData {
+                data: Arc::new(discovery::UI_FONT_BOLD.to_vec()),
+                index: 0,
+            }),
+            italic: None,
+            bold_italic: None,
+            has_variant: [true, true, false, false],
+            fallbacks: Vec::new(),
+        }
+    }
+
     /// Load font data from discovery results (convenience wrapper).
     ///
     /// If `family` is `None`, uses platform defaults (with embedded fallback).

@@ -4,20 +4,14 @@
 //! confirmation dialog): Save, Cancel, OK, dropdown open, selection,
 //! toggle, and keyboard routing to confirmation dialog widgets.
 
-use std::time::Instant;
-
-use oriterm_ui::controllers::ControllerRequests;
-use oriterm_ui::geometry::Rect;
-use oriterm_ui::interaction::build_parent_map;
-use oriterm_ui::layout::compute_layout;
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
-use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
+use oriterm_ui::widgets::sidebar_nav::FooterTarget;
+use oriterm_ui::widgets::{Widget, WidgetAction};
 use winit::window::WindowId;
 
 use crate::app::settings_overlay;
-use crate::app::widget_pipeline::{apply_dispatch_requests, collect_focusable_ids};
+use crate::app::widget_pipeline::collect_focusable_ids;
 use crate::event::ConfirmationKind;
-use crate::font::CachedTextMeasurer;
 
 use super::DialogContent;
 use crate::app::App;
@@ -62,6 +56,9 @@ impl App {
                 // OK button clicked in a confirmation dialog.
                 self.execute_confirmation(window_id);
             }
+            WidgetAction::FooterAction(ref target) => {
+                self.handle_footer_action(window_id, target);
+            }
             WidgetAction::DismissOverlay(_) => {
                 // Cancel button clicked in a confirmation dialog.
                 self.close_dialog(window_id);
@@ -77,7 +74,8 @@ impl App {
             | WidgetAction::WindowMinimize
             | WidgetAction::WindowMaximize
             | WidgetAction::WindowClose
-            | WidgetAction::SettingsUnsaved(_) => {}
+            | WidgetAction::SettingsUnsaved(_)
+            | WidgetAction::PageDirty { .. } => {}
         }
     }
 
@@ -129,6 +127,7 @@ impl App {
             pending_config,
             &ui_theme,
             *active_page,
+            None,
         );
         // Deregister old panel to avoid leaking InteractionManager state (TPR-11-009).
         crate::app::widget_pipeline::deregister_widget_tree(
@@ -191,6 +190,17 @@ impl App {
         };
         ctx.window.set_title(title);
         ctx.chrome.set_title(title.to_string());
+
+        // Update per-page dirty dots after reset.
+        panel.accept_action(&WidgetAction::SettingsUnsaved(dirty));
+        let page_dirty = settings_overlay::per_page_dirty(pending_config, original_config);
+        for (page, &is_dirty) in page_dirty.iter().enumerate() {
+            panel.accept_action(&WidgetAction::PageDirty {
+                page,
+                dirty: is_dirty,
+            });
+        }
+
         ctx.request_urgent_redraw();
     }
 
@@ -234,6 +244,15 @@ impl App {
             ctx.window.set_title(title);
             ctx.chrome.set_title(title.to_string());
             panel.accept_action(&WidgetAction::SettingsUnsaved(dirty));
+
+            // Per-page dirty state drives the sidebar modified dots.
+            let page_dirty = settings_overlay::per_page_dirty(pending_config, original_config);
+            for (page, &is_dirty) in page_dirty.iter().enumerate() {
+                panel.accept_action(&WidgetAction::PageDirty {
+                    page,
+                    dirty: is_dirty,
+                });
+            }
         }
 
         // Always propagate — widgets update visuals (page switch, selection).
@@ -348,111 +367,32 @@ impl App {
         self.close_dialog(window_id);
     }
 
-    /// Route a key event through the controller pipeline to dialog content.
-    ///
-    /// Converts the winit key event to an `InputEvent`, computes the layout
-    /// tree for parent map and focus path, then dispatches via
-    /// `deliver_event_to_tree`. Returns the first emitted `WidgetAction`.
-    pub(in crate::app) fn dispatch_dialog_content_key(
-        &mut self,
-        window_id: WindowId,
-        event: &winit::event::KeyEvent,
-    ) -> Option<WidgetAction> {
-        let input_event = super::key_conversion::winit_key_to_input_event(event, self.modifiers)?;
-
-        let ui_theme = self.ui_theme;
-        let ctx = self.dialogs.get_mut(&window_id)?;
-        let renderer = ctx.renderer.as_ref()?;
-        let scale = ctx.scale_factor.factor() as f32;
-        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
-
-        // Compute layout for parent map (needed by focus_ancestor_path).
-        let chrome_h = ctx.chrome.caption_height();
-        let w = ctx.surface_config.width as f32 / scale;
-        let h = ctx.surface_config.height as f32 / scale;
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let layout_ctx = LayoutCtx {
-            measurer: &measurer,
-            theme: &ui_theme,
-        };
-        let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-        let layout_node = compute_layout(&layout_box, local_viewport);
-
-        // Update parent map and focus order from the current layout.
-        let parent_map = build_parent_map(&layout_node);
-        ctx.root.interaction_mut().set_parent_map(parent_map);
-
-        let mut focusable = Vec::new();
-        collect_focusable_ids(ctx.content.content_widget_mut(), &mut focusable);
-        ctx.root.sync_focus_order(focusable);
-
-        #[cfg(debug_assertions)]
-        let layout_ids = {
-            let mut ids = std::collections::HashSet::new();
-            oriterm_ui::pipeline::collect_layout_widget_ids(&layout_node, &mut ids);
-            ids
-        };
-
-        // Build focus path for keyboard routing.
-        let focus_path = ctx.root.interaction().focus_ancestor_path();
-        let active = ctx.root.interaction().active_widget();
-        let now = Instant::now();
-
-        // Dispatch via keymap (for KeyDown) or fall through to controllers.
-        let result = super::keymap_dispatch::dispatch_dialog_key_event(
-            &input_event,
-            ctx,
-            &focus_path,
-            active,
-            content_bounds,
-            &layout_node,
-            now,
-            #[cfg(debug_assertions)]
-            &layout_ids,
-        );
-
-        // Apply interaction state changes (focus cycling, active) and mark dirty.
-        let changed = {
-            let (interaction, focus) = ctx.root.interaction_and_focus_mut();
-            apply_dispatch_requests(result.requests, result.source, interaction, focus)
-        };
-        ctx.root.mark_widgets_prepaint_dirty(&changed);
-
-        // Request redraw when any interaction state changed (focus cycling
-        // via Tab, active state via Enter/Space) or controllers requested
-        // repaint. Lifecycle events (FocusChanged, ActiveChanged) are
-        // delivered on the next render frame via compose_dialog_widgets()
-        // → prepare_widget_tree() (TPR-11-008).
-        if !changed.is_empty() || result.requests.contains(ControllerRequests::PAINT) {
-            ctx.request_urgent_redraw();
-        }
-
-        // Transform Clicked(id) through the content widget's on_action
-        // (e.g., SettingsPanel maps Clicked(save_id) → SaveSettings).
-        result.actions.into_iter().next().map(|a| {
-            if let WidgetAction::Clicked(id) = a {
-                ctx.content
-                    .content_widget_mut()
-                    .on_action(WidgetAction::Clicked(id), content_bounds)
-                    .unwrap_or(WidgetAction::Clicked(id))
-            } else {
-                a
-            }
-        })
-    }
-
-    /// Clear hover state for chrome and content.
-    ///
-    /// Clears the `InteractionManager`'s hot path (empty = no widget under cursor).
-    /// The next `prepare_widget_tree` will deliver `HotChanged(false)` lifecycle
-    /// events and the `VisualStateAnimator` transitions back to normal.
-    pub(in crate::app) fn clear_dialog_hover(&mut self, window_id: WindowId) {
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+    /// Handle a sidebar footer action (config path click, update link click).
+    fn handle_footer_action(&self, window_id: WindowId, target: &FooterTarget) {
+        let Some(ctx) = self.dialogs.get(&window_id) else {
             return;
         };
-        let changed = ctx.root.interaction_mut().update_hot_path(&[]);
-        ctx.root.mark_widgets_prepaint_dirty(&changed);
-        ctx.request_urgent_redraw();
+        match target {
+            FooterTarget::ConfigPath => {
+                let DialogContent::Settings { .. } = &ctx.content else {
+                    return;
+                };
+                let path = crate::config::config_path();
+                log::info!("footer: opening config file: {}", path.display());
+                if let Err(e) = open::that(&path) {
+                    log::warn!("footer: failed to open config file: {e}");
+                }
+            }
+            FooterTarget::UpdateLink(url) => {
+                if let Some(url) = url {
+                    log::info!("footer: opening update URL: {url}");
+                    if let Err(e) = open::that(url) {
+                        log::warn!("footer: failed to open update URL: {e}");
+                    }
+                } else {
+                    log::info!("footer: update link clicked (no URL configured)");
+                }
+            }
+        }
     }
 }

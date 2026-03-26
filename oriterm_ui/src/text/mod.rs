@@ -4,6 +4,8 @@
 //! for non-grid UI text (labels, tab titles, overlays). These types are
 //! GPU-agnostic — shaping and rasterization live in the `oriterm` crate.
 
+pub mod editing;
+
 use std::borrow::Cow;
 
 use crate::color::Color;

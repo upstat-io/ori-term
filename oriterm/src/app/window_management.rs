@@ -220,25 +220,23 @@ impl App {
             &self.user_fallback_map,
         );
 
-        // UI font registry: exact-size collections for all UI text sizes.
-        let ui_sizes = self.font_set.as_ref().and_then(|fs| {
-            crate::font::UiFontSizes::new(
-                fs.clone(),
-                physical_dpi,
-                format,
-                hinting,
-                400,
-                crate::font::ui_font_sizes::PRELOAD_SIZES,
-            )
-            .ok()
-            .map(|mut sizes| {
-                super::config_reload::apply_font_config_to_ui_sizes(
-                    &mut sizes,
-                    &self.config.font,
-                    &self.user_fallback_map,
-                );
-                sizes
-            })
+        // UI font registry: embedded IBM Plex Mono with forced grayscale + no hinting.
+        let ui_sizes = crate::font::UiFontSizes::new(
+            crate::font::FontSet::ui_embedded(),
+            physical_dpi,
+            crate::font::GlyphFormat::Alpha,
+            crate::font::HintingMode::None,
+            400,
+            crate::font::ui_font_sizes::PRELOAD_SIZES,
+        )
+        .ok()
+        .map(|mut sizes| {
+            super::config_reload::apply_font_config_to_ui_sizes(
+                &mut sizes,
+                &self.config.font,
+                &self.user_fallback_map,
+            );
+            sizes
         });
 
         Some(crate::gpu::WindowRenderer::new(

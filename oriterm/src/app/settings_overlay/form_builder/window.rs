@@ -12,7 +12,7 @@ use oriterm_ui::widgets::toggle::ToggleWidget;
 use crate::config::{Config, TabBarPosition};
 
 use super::SettingsIds;
-use super::appearance::{ROW_GAP, build_settings_page, section_title};
+use super::shared::{build_section_header, build_settings_page};
 
 /// Builds the Window page content widget.
 pub(super) fn build_page(
@@ -21,7 +21,7 @@ pub(super) fn build_page(
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
     build_settings_page(
-        "WINDOW",
+        "Window",
         "Window chrome, padding, and startup behavior",
         vec![
             build_chrome_section(config, ids, theme),
@@ -54,12 +54,10 @@ fn build_chrome_section(
         theme,
     );
 
-    let title = section_title("Chrome", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Chrome", theme))
             .with_child(Box::new(row)),
     )
 }
@@ -80,12 +78,10 @@ fn build_padding_section(
         theme,
     );
 
-    let title = section_title("Padding", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Padding", theme))
             .with_child(Box::new(row)),
     )
 }
@@ -126,12 +122,10 @@ fn build_startup_section(
         theme,
     );
 
-    let title = section_title("Startup", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Startup", theme))
             .with_child(Box::new(restore_row))
             .with_child(Box::new(cols_row))
             .with_child(Box::new(rows_row)),

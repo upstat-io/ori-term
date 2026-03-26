@@ -33,11 +33,12 @@ impl Widget for TextInputWidget {
     )]
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
         let style = self.text_style();
+        let text = self.editing.text();
         let metrics = ctx.measurer.measure(
-            if self.text.is_empty() {
+            if text.is_empty() {
                 &self.placeholder
             } else {
-                &self.text
+                text
             },
             &style,
             f32::INFINITY,
@@ -48,19 +49,16 @@ impl Widget for TextInputWidget {
         // Cache character X-offsets for click-to-cursor in on_input.
         let mut offsets = self.char_offsets.borrow_mut();
         offsets.clear();
-        for (i, _) in self.text.char_indices() {
+        for (i, _) in text.char_indices() {
             let x = ctx
                 .measurer
-                .measure(&self.text[..i], &style, f32::INFINITY)
+                .measure(&text[..i], &style, f32::INFINITY)
                 .width;
             offsets.push((i, x));
         }
         // End-of-text position.
-        let end_x = ctx
-            .measurer
-            .measure(&self.text, &style, f32::INFINITY)
-            .width;
-        offsets.push((self.text.len(), end_x));
+        let end_x = ctx.measurer.measure(text, &style, f32::INFINITY).width;
+        offsets.push((text.len(), end_x));
 
         LayoutBox::leaf(w, h).with_widget_id(self.id)
     }
@@ -89,6 +87,7 @@ impl Widget for TextInputWidget {
         let focused = ctx.is_interaction_focused();
         let bounds = ctx.bounds;
         let s = &self.style;
+        let text = self.editing.text();
 
         // Background + border.
         let bg = if self.disabled { s.disabled_bg } else { s.bg };
@@ -108,7 +107,7 @@ impl Widget for TextInputWidget {
 
         let style = self.text_style();
 
-        if self.text.is_empty() {
+        if text.is_empty() {
             // Placeholder.
             if !self.placeholder.is_empty() {
                 let shaped = ctx.measurer.shape(&self.placeholder, &style, inner.width());
@@ -118,15 +117,15 @@ impl Widget for TextInputWidget {
             }
         } else {
             // Selection highlight.
-            if let Some((sel_start, sel_end)) = self.selection_range() {
+            if let Some((sel_start, sel_end)) = self.editing.selection_range() {
                 if sel_start != sel_end {
                     let prefix_w = ctx
                         .measurer
-                        .measure(&self.text[..sel_start], &style, f32::INFINITY)
+                        .measure(&text[..sel_start], &style, f32::INFINITY)
                         .width;
                     let sel_w = ctx
                         .measurer
-                        .measure(&self.text[sel_start..sel_end], &style, f32::INFINITY)
+                        .measure(&text[sel_start..sel_end], &style, f32::INFINITY)
                         .width;
                     let sel_rect =
                         Rect::new(inner.x() + prefix_w, inner.y(), sel_w, inner.height());
@@ -136,7 +135,7 @@ impl Widget for TextInputWidget {
             }
 
             // Text.
-            let shaped = ctx.measurer.shape(&self.text, &style, f32::INFINITY);
+            let shaped = ctx.measurer.shape(text, &style, f32::INFINITY);
             let fg = if self.disabled { s.disabled_fg } else { s.fg };
             let y = inner.y() + (inner.height() - shaped.height) / 2.0;
             ctx.scene.push_text(Point::new(inner.x(), y), shaped, fg);
@@ -192,8 +191,7 @@ impl TextInputWidget {
             }
         }
 
-        self.cursor = best_pos;
-        self.selection_anchor = None;
+        self.editing.set_cursor(best_pos);
         OnInputResult::handled()
     }
 
@@ -207,15 +205,21 @@ impl TextInputWidget {
             Key::Backspace => self.handle_backspace(),
             Key::Delete => self.handle_delete(),
             Key::ArrowLeft => {
-                self.move_left(shift);
+                self.editing.move_left(shift);
                 OnInputResult::handled()
             }
             Key::ArrowRight => {
-                self.move_right(shift);
+                self.editing.move_right(shift);
                 OnInputResult::handled()
             }
-            Key::Home => self.handle_home_end(0, shift),
-            Key::End => self.handle_home_end(self.text.len(), shift),
+            Key::Home => {
+                self.editing.home(shift);
+                OnInputResult::handled()
+            }
+            Key::End => {
+                self.editing.end(shift);
+                OnInputResult::handled()
+            }
             _ => OnInputResult::ignored(),
         }
     }
@@ -224,30 +228,21 @@ impl TextInputWidget {
     fn handle_character(&mut self, ch: char, ctrl: bool) -> OnInputResult {
         if ctrl {
             if ch == 'a' {
-                self.selection_anchor = Some(0);
-                self.cursor = self.text.len();
+                self.editing.select_all();
                 return OnInputResult::handled();
             }
             return OnInputResult::ignored();
         }
-        self.delete_selection();
-        self.text.insert(self.cursor, ch);
-        self.cursor += ch.len_utf8();
+        self.editing.insert_char(ch);
         OnInputResult::handled().with_action(WidgetAction::TextChanged {
             id: self.id,
-            text: self.text.clone(),
+            text: self.editing.text().to_owned(),
         })
     }
 
     /// Handles Backspace: delete selection or previous character.
     fn handle_backspace(&mut self) -> OnInputResult {
-        if self.delete_selection() {
-            return self.text_changed_result();
-        }
-        if self.cursor > 0 {
-            let prev = self.prev_char_boundary(self.cursor);
-            self.text.drain(prev..self.cursor);
-            self.cursor = prev;
+        if self.editing.backspace() {
             return self.text_changed_result();
         }
         OnInputResult::handled()
@@ -255,25 +250,8 @@ impl TextInputWidget {
 
     /// Handles Delete: delete selection or next character.
     fn handle_delete(&mut self) -> OnInputResult {
-        if self.delete_selection() {
+        if self.editing.delete() {
             return self.text_changed_result();
-        }
-        if self.cursor < self.text.len() {
-            let next = self.next_char_boundary(self.cursor);
-            self.text.drain(self.cursor..next);
-            return self.text_changed_result();
-        }
-        OnInputResult::handled()
-    }
-
-    /// Handles Home/End with optional Shift selection.
-    fn handle_home_end(&mut self, target: usize, shift: bool) -> OnInputResult {
-        if shift && self.selection_anchor.is_none() {
-            self.selection_anchor = Some(self.cursor);
-        }
-        self.cursor = target;
-        if !shift {
-            self.selection_anchor = None;
         }
         OnInputResult::handled()
     }
@@ -282,7 +260,7 @@ impl TextInputWidget {
     fn text_changed_result(&self) -> OnInputResult {
         OnInputResult::handled().with_action(WidgetAction::TextChanged {
             id: self.id,
-            text: self.text.clone(),
+            text: self.editing.text().to_owned(),
         })
     }
 }

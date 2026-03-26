@@ -10,12 +10,12 @@ use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::keybind::KeybindRow;
 
-use super::appearance::{ROW_GAP, build_settings_page, section_title};
+use super::shared::{build_section_header, build_settings_page};
 
 /// Builds the Keybindings page content widget (display-only).
 pub(super) fn build_page(theme: &UiTheme) -> Box<dyn Widget> {
     build_settings_page(
-        "KEYBINDINGS",
+        "Keybindings",
         "Keyboard shortcuts for common actions",
         vec![
             build_tabs_section(theme),
@@ -28,7 +28,6 @@ pub(super) fn build_page(theme: &UiTheme) -> Box<dyn Widget> {
 
 /// Tabs & Panes section.
 fn build_tabs_section(theme: &UiTheme) -> Box<dyn Widget> {
-    let title = section_title("Tabs & Panes", theme);
     let rows: Vec<Box<dyn Widget>> = vec![
         keybind("New tab", &["Ctrl", "Shift", "T"], theme),
         keybind("Close tab", &["Ctrl", "Shift", "W"], theme),
@@ -40,8 +39,7 @@ fn build_tabs_section(theme: &UiTheme) -> Box<dyn Widget> {
 
     let mut col = ContainerWidget::column()
         .with_width(SizeSpec::Fill)
-        .with_gap(ROW_GAP)
-        .with_child(title);
+        .with_child(build_section_header("Tabs & Panes", theme));
     for row in rows {
         col = col.with_child(row);
     }
@@ -50,7 +48,6 @@ fn build_tabs_section(theme: &UiTheme) -> Box<dyn Widget> {
 
 /// Clipboard section.
 fn build_clipboard_section(theme: &UiTheme) -> Box<dyn Widget> {
-    let title = section_title("Clipboard", theme);
     let rows: Vec<Box<dyn Widget>> = vec![
         keybind("Copy", &["Ctrl", "Shift", "C"], theme),
         keybind("Paste", &["Ctrl", "Shift", "V"], theme),
@@ -58,8 +55,7 @@ fn build_clipboard_section(theme: &UiTheme) -> Box<dyn Widget> {
 
     let mut col = ContainerWidget::column()
         .with_width(SizeSpec::Fill)
-        .with_gap(ROW_GAP)
-        .with_child(title);
+        .with_child(build_section_header("Clipboard", theme));
     for row in rows {
         col = col.with_child(row);
     }
@@ -68,7 +64,6 @@ fn build_clipboard_section(theme: &UiTheme) -> Box<dyn Widget> {
 
 /// Navigation section.
 fn build_nav_section(theme: &UiTheme) -> Box<dyn Widget> {
-    let title = section_title("Navigation", theme);
     let rows: Vec<Box<dyn Widget>> = vec![
         keybind("Scroll up", &["Ctrl", "Shift", "Up"], theme),
         keybind("Scroll down", &["Ctrl", "Shift", "Down"], theme),
@@ -78,8 +73,7 @@ fn build_nav_section(theme: &UiTheme) -> Box<dyn Widget> {
 
     let mut col = ContainerWidget::column()
         .with_width(SizeSpec::Fill)
-        .with_gap(ROW_GAP)
-        .with_child(title);
+        .with_child(build_section_header("Navigation", theme));
     for row in rows {
         col = col.with_child(row);
     }

@@ -9,7 +9,9 @@ use oriterm_ui::widgets::setting_row::SettingRowWidget;
 
 use crate::config::{BellAnimation, Config};
 
-use super::appearance::{ROW_GAP, build_settings_page, section_title};
+use super::shared::{
+    build_section_header, build_section_header_with_description, build_settings_page,
+};
 use super::{BELL_DURATION_VALUES, SettingsIds};
 
 /// Builds the Bell page content widget.
@@ -19,9 +21,12 @@ pub(super) fn build_page(
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
     build_settings_page(
-        "BELL",
+        "Bell",
         "Visual bell animation settings",
-        vec![build_visual_section(config, ids, theme)],
+        vec![
+            build_visual_section(config, ids, theme),
+            build_throttle_section(theme),
+        ],
         theme,
     )
 }
@@ -76,13 +81,20 @@ fn build_visual_section(
         theme,
     );
 
-    let title = section_title("Visual Bell", theme);
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
-            .with_gap(ROW_GAP)
-            .with_child(title)
+            .with_child(build_section_header("Visual Bell", theme))
             .with_child(Box::new(anim_row))
             .with_child(Box::new(dur_row)),
+    )
+}
+
+/// Throttle section: header with description (settings TBD).
+fn build_throttle_section(theme: &UiTheme) -> Box<dyn Widget> {
+    build_section_header_with_description(
+        "Throttle",
+        "Suppress repeated bells to avoid visual noise from programs that ring rapidly.",
+        theme,
     )
 }

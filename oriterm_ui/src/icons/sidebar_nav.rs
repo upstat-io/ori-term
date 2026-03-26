@@ -241,3 +241,22 @@ pub static ICON_ACTIVITY: IconPath = IconPath {
     ],
     style: IconStyle::Stroke(NAV_STROKE),
 };
+
+/// Search/magnifying glass icon — sidebar search field.
+///
+/// Circle(cx=11, cy=11, r=8) + diagonal handle line in 24×24 viewBox.
+pub static ICON_SEARCH: IconPath = IconPath {
+    commands: &[
+        // Magnifying glass circle (cubic Bézier approximation).
+        PathCommand::MoveTo(0.458333, 0.125000),
+        PathCommand::CubicTo(0.642428, 0.125000, 0.791667, 0.274238, 0.791667, 0.458333),
+        PathCommand::CubicTo(0.791667, 0.642428, 0.642428, 0.791667, 0.458333, 0.791667),
+        PathCommand::CubicTo(0.274238, 0.791667, 0.125000, 0.642428, 0.125000, 0.458333),
+        PathCommand::CubicTo(0.125000, 0.274238, 0.274238, 0.125000, 0.458333, 0.125000),
+        PathCommand::Close,
+        // Handle (diagonal line from circle to bottom-right).
+        PathCommand::MoveTo(0.693750, 0.693750),
+        PathCommand::LineTo(0.875000, 0.875000),
+    ],
+    style: IconStyle::Stroke(NAV_STROKE),
+};
