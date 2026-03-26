@@ -146,7 +146,7 @@ impl NativeChromeOps for MacosNativeOps {
     fn install_chrome(
         &self,
         window: &Window,
-        _mode: ChromeMode,
+        mode: ChromeMode,
         _border_width: f32,
         caption_height: f32,
     ) {
@@ -155,6 +155,12 @@ impl NativeChromeOps for MacosNativeOps {
         // buttons vertically centered in our custom tab bar.
         center_traffic_lights(window, caption_height);
 
+        // Dialog windows show only the close traffic light — hide minimize
+        // and zoom so the chrome matches the close-only CSD intent.
+        if matches!(mode, ChromeMode::Dialog { .. }) {
+            hide_dialog_traffic_lights(window);
+        }
+
         // Disable the default titlebar drag behavior so our tab bar handles
         // drag events (tab reorder, tear-off). Empty areas use `drag_window()`
         // via the `DragArea` hit handler.
@@ -162,7 +168,10 @@ impl NativeChromeOps for MacosNativeOps {
 
         // Register fullscreen transition observers so the event loop can
         // update the tab bar inset before the macOS animation begins.
-        fullscreen::install_fullscreen_observers(window);
+        // Skip for dialogs — they don't participate in fullscreen.
+        if matches!(mode, ChromeMode::Main) {
+            fullscreen::install_fullscreen_observers(window);
+        }
     }
 
     fn set_interactive_rects(&self, _window: &Window, _rects: &[Rect], _scale: f32) {
@@ -309,6 +318,28 @@ unsafe fn reposition_buttons_raw(nswindow: *mut AnyObject) {
     }
 
     let _: () = msg_send![ca, commit];
+}
+
+/// Hide the minimize and zoom traffic light buttons on a dialog window.
+///
+/// Dialogs only need the close button. Setting `isHidden = YES` on the
+/// minimize (button 1) and zoom (button 2) standard window buttons removes
+/// them while keeping the close button (button 0) visible and functional.
+fn hide_dialog_traffic_lights(window: &Window) {
+    let Some(nswindow) = get_nswindow(window) else {
+        return;
+    };
+    // standardWindowButton: 1 = miniaturizeButton (minimize)
+    // standardWindowButton: 2 = zoomButton (zoom/fullscreen)
+    for button_type in [1i64, 2i64] {
+        let button: *mut AnyObject =
+            unsafe { msg_send![nswindow, standardWindowButton: button_type] };
+        if !button.is_null() {
+            unsafe {
+                let _: () = msg_send![button, setHidden: true];
+            }
+        }
+    }
 }
 
 /// Disable `isMovableByWindowBackground` on the `NSWindow`.
