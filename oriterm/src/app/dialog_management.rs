@@ -18,6 +18,13 @@ use oriterm_ui::widgets::settings_panel::SettingsPanel;
 use super::App;
 use super::dialog_context::{DialogContent, DialogWindowContext};
 use super::settings_overlay::form_builder;
+
+/// Left inset for the title to clear the macOS close traffic light button.
+///
+/// The close button is at approximately x=8..20. This inset provides
+/// breathing room so the title starts cleanly to the right.
+#[cfg(target_os = "macos")]
+const MACOS_TRAFFIC_LIGHT_INSET: f32 = 70.0;
 use crate::event::ConfirmationRequest;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
@@ -184,6 +191,13 @@ impl App {
             parts.parent_wid,
         ));
         self.dialogs.insert(winit_id, ctx);
+
+        // macOS: offset the dialog title past the native traffic light buttons.
+        #[cfg(target_os = "macos")]
+        if let Some(ctx) = self.dialogs.get_mut(&winit_id) {
+            ctx.chrome.set_title_left_inset(MACOS_TRAFFIC_LIGHT_INSET);
+        }
+
         self.setup_dialog_focus(winit_id);
         self.install_dialog_chrome(winit_id);
         self.render_dialog(winit_id);

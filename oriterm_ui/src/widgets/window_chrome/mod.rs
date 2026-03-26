@@ -57,6 +57,11 @@ pub struct WindowChromeWidget {
     caption_bg_inactive: Color,
     /// Caption foreground (title text) color.
     caption_fg: Color,
+    /// Left inset for the title area (reserves space for native controls).
+    ///
+    /// On macOS, this accounts for the traffic light buttons. On other
+    /// platforms, this is 0.
+    title_left_inset: f32,
 }
 
 impl WindowChromeWidget {
@@ -82,7 +87,8 @@ impl WindowChromeWidget {
         theme: &UiTheme,
         mode: ChromeMode,
     ) -> Self {
-        let chrome_layout = ChromeLayout::compute_with_mode(window_width, false, false, mode);
+        let chrome_layout =
+            ChromeLayout::compute_with_inset(window_width, false, false, mode, 0.0);
 
         let caption_bg = theme.bg_secondary;
 
@@ -100,6 +106,10 @@ impl WindowChromeWidget {
                 WindowControlButton::new(ControlKind::MaximizeRestore, colors),
                 WindowControlButton::new(ControlKind::Close, colors),
             ],
+            // macOS dialogs use the native traffic light for close — no custom controls.
+            #[cfg(target_os = "macos")]
+            ChromeMode::Dialog => Vec::new(),
+            #[cfg(not(target_os = "macos"))]
             ChromeMode::Dialog => vec![WindowControlButton::new(ControlKind::Close, colors)],
         };
 
@@ -117,6 +127,7 @@ impl WindowChromeWidget {
             caption_bg,
             caption_bg_inactive: darken(caption_bg, 0.3),
             caption_fg: theme.fg_secondary,
+            title_left_inset: 0.0,
         }
     }
 
@@ -174,6 +185,13 @@ impl WindowChromeWidget {
         self.recompute_layout();
     }
 
+    /// Sets a left inset for the title area to reserve space for native
+    /// window controls (e.g. macOS traffic lights).
+    pub fn set_title_left_inset(&mut self, inset: f32) {
+        self.title_left_inset = inset;
+        self.recompute_layout();
+    }
+
     /// Updates all theme-derived colors from a new [`UiTheme`].
     pub fn apply_theme(&mut self, theme: &UiTheme) {
         self.caption_bg = theme.bg_secondary;
@@ -193,11 +211,12 @@ impl WindowChromeWidget {
 
     /// Recomputes the chrome layout from current state.
     fn recompute_layout(&mut self) {
-        self.chrome_layout = ChromeLayout::compute_with_mode(
+        self.chrome_layout = ChromeLayout::compute_with_inset(
             self.window_width,
             self.is_maximized,
             self.is_fullscreen,
             self.mode,
+            self.title_left_inset,
         );
     }
 

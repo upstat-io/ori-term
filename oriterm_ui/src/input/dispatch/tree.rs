@@ -312,9 +312,16 @@ pub fn deliver_event_to_tree(
         dispatch_ids_param,
     );
 
+    // Only check cross-phase consistency when the full tree was visited.
+    // When a widget handles the event early, dispatch_to_widget_tree
+    // short-circuits (returns at the `if result.handled` guard), so
+    // remaining widgets are intentionally not visited — the dispatch_ids
+    // set is a subset of layout_ids by design, not a structural mismatch.
     #[cfg(debug_assertions)]
     if let Some(li) = layout_ids {
-        crate::pipeline::check_cross_phase_consistency(li, &dispatch_ids_set);
+        if !result.handled {
+            crate::pipeline::check_cross_phase_consistency(li, &dispatch_ids_set);
+        }
     }
 
     result
