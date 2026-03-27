@@ -273,13 +273,15 @@ impl Widget for SettingsFooterWidget {
     }
 
     fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        visitor(&mut self.margin_left);
         visitor(&mut self.unsaved_visibility);
-        // spacer_fill has no interactive children — skip.
+        visitor(&mut self.spacer_fill);
         visitor(&mut self.reset_button);
-        // spacer_1 has no interactive children — skip.
+        visitor(&mut self.spacer_1);
         visitor(&mut self.cancel_button);
-        // spacer_2 has no interactive children — skip.
+        visitor(&mut self.spacer_2);
         visitor(&mut self.save_button);
+        visitor(&mut self.margin_right);
     }
 
     fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
