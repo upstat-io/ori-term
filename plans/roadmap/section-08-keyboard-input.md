@@ -21,8 +21,7 @@ sections:
 ---
 
 # Section 08: Keyboard Input
-
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Encode all key events correctly for terminal applications using both legacy xterm/VT sequences and the Kitty keyboard protocol. Wire keyboard dispatch through keybindings to PTY output with IME support for CJK input.
 
 **Crate:** `oriterm` (binary)

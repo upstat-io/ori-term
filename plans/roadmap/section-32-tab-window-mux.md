@@ -24,8 +24,7 @@ sections:
 ---
 
 # Section 32: Tab & Window Management (Mux-Aware)
-
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Full tab and window management built on the mux layer. Multiple tabs per window, multiple windows with shared GPU device. Tab CRUD, window lifecycle with no-flash startup, DPI handling, ConPTY-safe cleanup. Cross-window tab movement preserving pane state.
 
 **Crate:** `oriterm` (App, TermWindow), `oriterm_mux` (MuxTab, MuxWindow)

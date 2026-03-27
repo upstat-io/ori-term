@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::layout::BoxContent;
 use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
@@ -634,4 +636,22 @@ fn toggle_outer_size_38x20() {
     let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
     assert_eq!(style.width, 38.0);
     assert_eq!(style.height, 20.0);
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let t = ToggleWidget::new();
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = t.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "toggle should declare Pointer cursor"
+    );
 }

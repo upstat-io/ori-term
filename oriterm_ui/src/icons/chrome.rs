@@ -112,6 +112,34 @@ pub static ICON_DROPDOWN_ARROW: IconPath = IconPath {
     style: IconStyle::Fill,
 };
 
+/// Filled upward triangle for number input stepper (up arrow).
+///
+/// Mirror of `ICON_STEPPER_DOWN`: point at top-center, base at bottom.
+/// Centered in a 10×10 square: bottom at y=0.8, top at y=0.2.
+pub static ICON_STEPPER_UP: IconPath = IconPath {
+    commands: &[
+        PathCommand::MoveTo(0.5, 0.2),
+        PathCommand::LineTo(0.0, 0.8),
+        PathCommand::LineTo(1.0, 0.8),
+        PathCommand::Close,
+    ],
+    style: IconStyle::Fill,
+};
+
+/// Filled downward triangle for number input stepper (down arrow).
+///
+/// Same geometry as `ICON_DROPDOWN_ARROW` — point at bottom-center, base at top.
+/// Centered in a 10×10 square: top at y=0.2, bottom at y=0.8.
+pub static ICON_STEPPER_DOWN: IconPath = IconPath {
+    commands: &[
+        PathCommand::MoveTo(0.0, 0.2),
+        PathCommand::LineTo(0.5, 0.8),
+        PathCommand::LineTo(1.0, 0.2),
+        PathCommand::Close,
+    ],
+    style: IconStyle::Fill,
+};
+
 /// Window close button: × with full-extent diagonals (corner to corner).
 ///
 /// Slightly different proportions than tab close — fills the entire

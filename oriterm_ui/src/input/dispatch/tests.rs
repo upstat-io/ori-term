@@ -1,5 +1,7 @@
 //! Tests for the two-phase event propagation pipeline.
 
+use winit::window::CursorIcon;
+
 use crate::geometry::{Point, Rect};
 use crate::input::event::{EventPhase, InputEvent, Key, Modifiers, MouseButton, ScrollDelta};
 use crate::input::hit_test::{HitEntry, WidgetHitTestResult};
@@ -22,6 +24,7 @@ fn hit_path(entries: &[(WidgetId, Rect)]) -> WidgetHitTestResult {
                 widget_id,
                 bounds,
                 sense: Sense::all(),
+                cursor_icon: CursorIcon::Default,
             })
             .collect(),
     }

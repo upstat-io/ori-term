@@ -33,7 +33,7 @@ collection/mod.rs, collection/face.rs, font/mod.rs
 ---
 
 ### Section 02: Numeric Font Weight System
-**File:** `section-02-font-weight.md` | **Status:** In Progress (1 item blocked by §10–13)
+**File:** `section-02-font-weight.md` | **Status:** Complete
 
 ```
 font-weight, FontWeight, 100-900, Regular, Medium, Bold
@@ -157,7 +157,7 @@ font sizes, 18px title, 13px body, 11.5px desc, 11px header
 ---
 
 ### Section 12: Visual Fidelity — Footer + Buttons
-**File:** `section-12-footer-buttons.md` | **Status:** In Progress (TPR findings)
+**File:** `section-12-footer-buttons.md` | **Status:** Complete (TPR resolved)
 
 ```
 footer, sticky footer, border-top, UNSAVED CHANGES
@@ -173,7 +173,7 @@ right-column footer, sidebar full-height
 ---
 
 ### Section 13: Visual Fidelity — Widget Controls
-**File:** `section-13-widget-controls.md` | **Status:** In Progress (13.1 complete)
+**File:** `section-13-widget-controls.md` | **Status:** Complete
 
 ```
 SliderWidget, ToggleWidget, DropdownWidget
@@ -186,7 +186,7 @@ setting row spacing, control alignment, right-hand rail
 ---
 
 ### Section 15: Mouse Cursor Icons
-**File:** `section-15-cursor-icons.md` | **Status:** Not Started
+**File:** `section-15-cursor-icons.md` | **Status:** In Progress (manual verification pending)
 
 ```
 cursor, pointer, not-allowed, crosshair, text cursor

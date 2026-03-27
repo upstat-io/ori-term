@@ -221,24 +221,36 @@ impl Widget for NumberInputWidget {
         ctx.scene
             .push_quad(h_divider, RectStyle::filled(ctx.theme.border));
 
-        // Arrow labels — ▲ (U+25B2) and ▼ (U+25BC) at 8px (mockup font-size).
-        let arrow_size = 8.0;
+        // Stepper arrows via icon pipeline (avoids missing Unicode glyphs).
+        let arrow_size: f32 = 8.0;
         let arrow_color = ctx.theme.fg_faint;
-        let arrow_style = TextStyle::new(arrow_size, arrow_color);
         let arrow_area_x = panel_x + BORDER_WIDTH;
         let arrow_area_w = BUTTON_PANEL_WIDTH - BORDER_WIDTH;
+        let icon_px = arrow_size.round() as u32;
 
-        let up_shaped = ctx.measurer.shape("\u{25B2}", &arrow_style, arrow_area_w);
-        let up_x = arrow_area_x + (arrow_area_w - up_shaped.width) / 2.0;
-        let up_y = bounds.y() + (half_h - up_shaped.height) / 2.0;
-        ctx.scene
-            .push_text(Point::new(up_x, up_y), up_shaped, arrow_color);
+        // Up arrow — centered in top half of button panel.
+        if let Some(up) = ctx
+            .icons
+            .and_then(|ic| ic.get(crate::icons::IconId::StepperUp, icon_px))
+        {
+            let up_x = arrow_area_x + (arrow_area_w - arrow_size) / 2.0;
+            let up_y = bounds.y() + (half_h - arrow_size) / 2.0;
+            let up_rect = Rect::new(up_x, up_y, arrow_size, arrow_size);
+            ctx.scene
+                .push_icon(up_rect, up.atlas_page, up.uv, arrow_color);
+        }
 
-        let dn_shaped = ctx.measurer.shape("\u{25BC}", &arrow_style, arrow_area_w);
-        let dn_x = arrow_area_x + (arrow_area_w - dn_shaped.width) / 2.0;
-        let dn_y = bounds.y() + half_h + (half_h - dn_shaped.height) / 2.0;
-        ctx.scene
-            .push_text(Point::new(dn_x, dn_y), dn_shaped, arrow_color);
+        // Down arrow — centered in bottom half of button panel.
+        if let Some(dn) = ctx
+            .icons
+            .and_then(|ic| ic.get(crate::icons::IconId::StepperDown, icon_px))
+        {
+            let dn_x = arrow_area_x + (arrow_area_w - arrow_size) / 2.0;
+            let dn_y = bounds.y() + half_h + (half_h - arrow_size) / 2.0;
+            let dn_rect = Rect::new(dn_x, dn_y, arrow_size, arrow_size);
+            ctx.scene
+                .push_icon(dn_rect, dn.atlas_page, dn.uv, arrow_color);
+        }
 
         if self.animator.is_animating() {
             ctx.request_anim_frame();

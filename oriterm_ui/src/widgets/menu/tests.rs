@@ -36,6 +36,17 @@ fn sample_entries() -> Vec<MenuEntry> {
 // Layout tests
 
 #[test]
+fn layout_cursor_icon_pointer() {
+    let menu = MenuWidget::new(sample_entries());
+    let layout = menu.layout(&layout_ctx());
+    assert_eq!(
+        layout.cursor_icon,
+        winit::window::CursorIcon::Pointer,
+        "menu items are clickable — cursor should be pointer"
+    );
+}
+
+#[test]
 fn layout_min_width_enforced() {
     // Short labels should still produce at least min_width.
     let menu = MenuWidget::new(vec![MenuEntry::Item { label: "X".into() }]);

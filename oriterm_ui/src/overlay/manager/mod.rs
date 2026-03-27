@@ -9,12 +9,15 @@ mod lifecycle;
 
 use std::time::Duration;
 
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
 use crate::geometry::LayerId;
 use crate::geometry::{Point, Rect, Size};
+use crate::input::layout_hit_test_path;
 use crate::layout::{LayoutNode, compute_layout};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
@@ -171,6 +174,33 @@ impl OverlayManager {
     /// Returns the number of active overlays.
     pub fn count(&self) -> usize {
         self.overlays.len()
+    }
+
+    /// Returns the cursor icon for the topmost overlay at the given point.
+    ///
+    /// Hit-tests back-to-front through active overlays. Returns `Some(icon)`
+    /// if the point lands inside an overlay (leaf cursor from the layout
+    /// tree, or `Default` if no layout is available). Returns `None` if the
+    /// point is outside all overlays.
+    pub fn cursor_icon_at(&self, point: Point) -> Option<CursorIcon> {
+        for overlay in self.overlays.iter().rev() {
+            if overlay.computed_rect.contains(point) {
+                if let Some(ref node) = overlay.layout_node {
+                    let local = Point::new(
+                        point.x - overlay.computed_rect.x(),
+                        point.y - overlay.computed_rect.y(),
+                    );
+                    let hit = layout_hit_test_path(node, local);
+                    return Some(
+                        hit.path
+                            .last()
+                            .map_or(CursorIcon::Default, |e| e.cursor_icon),
+                    );
+                }
+                return Some(CursorIcon::Default);
+            }
+        }
+        None
     }
 
     /// Returns `true` if the topmost overlay is modal.

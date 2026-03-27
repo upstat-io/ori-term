@@ -109,3 +109,39 @@ fn per_page_dirty_scheme_changes_two_pages() {
     );
     assert!(dirty[1], "colors page should be dirty for scheme change");
 }
+
+/// TPR-12-011 regression: after ResetDefaults, dirty detection must compare
+/// `Config::default()` (pending) against the persisted config (original).
+/// If original was non-default, the reset creates a genuine unsaved change.
+#[test]
+fn reset_to_defaults_dirty_when_original_differs() {
+    let mut original = Config::default();
+    original.window.opacity = 0.5;
+    original.font.size = 18.0;
+    original.terminal.scrollback = 5000;
+    // Simulate reset: pending becomes defaults, original stays at persisted.
+    let pending = Config::default();
+    let dirty = per_page_dirty(&pending, &original);
+    assert!(
+        dirty[0],
+        "appearance page dirty: opacity reverted to default"
+    );
+    assert!(dirty[2], "font page dirty: size reverted to default");
+    assert!(
+        dirty[3],
+        "terminal page dirty: scrollback reverted to default"
+    );
+}
+
+/// TPR-12-011 regression: when the persisted config is already defaults,
+/// reset-to-defaults should not produce false dirty state.
+#[test]
+fn reset_to_defaults_clean_when_original_is_default() {
+    let original = Config::default();
+    let pending = Config::default();
+    let dirty = per_page_dirty(&pending, &original);
+    assert!(
+        dirty.iter().all(|&d| !d),
+        "reset to defaults should be clean when original was already default"
+    );
+}

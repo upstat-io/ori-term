@@ -33,8 +33,7 @@ sections:
 ---
 
 # Section 03: Cross-Platform
-
-**Status:** Not Started
+**Status:** Complete
 **Goal:** ori_term runs natively on Windows, Linux, and macOS from day one. All three platforms are equal first-class targets — no platform is primary, no platform is an afterthought. Each uses its native PTY, font discovery, clipboard, and GPU backend.
 
 **Crate:** `oriterm` (binary, platform-specific modules), `oriterm_core` (platform-agnostic)

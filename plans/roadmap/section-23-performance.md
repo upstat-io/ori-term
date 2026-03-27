@@ -27,8 +27,7 @@ sections:
 ---
 
 # Section 23: Performance & Damage Tracking
-
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Terminal handles heavy workloads (large file cats, rapid output, complex TUIs) without lag, dropped frames, or excessive memory usage. Every optimization must be measurable — no speculative "optimization" without profiling.
 
 **Crate:** `oriterm_core` (grid damage tracking, ring buffer), `oriterm_mux` (PTY event loop, VTE processing), `oriterm` (rendering)

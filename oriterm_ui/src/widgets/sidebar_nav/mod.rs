@@ -9,6 +9,8 @@ mod paint;
 
 use std::cell::{Cell, RefCell};
 
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::geometry::Rect;
@@ -323,6 +325,7 @@ impl Widget for SidebarNavWidget {
             .with_width(crate::layout::SizeSpec::Fixed(SIDEBAR_WIDTH))
             .with_height(crate::layout::SizeSpec::Fill)
             .with_widget_id(self.id)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {

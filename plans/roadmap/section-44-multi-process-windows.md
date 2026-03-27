@@ -30,8 +30,7 @@ sections:
 ---
 
 # Section 44: Multi-Process Window Architecture
-
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Every oriterm window runs as an independent OS process. A mux daemon (`oriterm-mux`) owns all PTY sessions, terminal state, and tab assignments. When a user opens a new window, moves a tab to a new window, or tears off a tab, a new process spawns and connects to the daemon — the terminal session continues uninterrupted. This is the Chrome model: process isolation for windows, seamless tab migration, no session loss.
 
 **PRIORITY:** **BLOCKER** — This section must be completed before any further feature work. The current single-process multi-window model is fundamentally wrong and the source of unresolvable bugs (z-order fights, stale redraws, flash-and-vanish on tear-off). Every serious terminal emulator that supports multi-window does it with process separation (WezTerm) or daemon+client (tmux). We must get this right first.

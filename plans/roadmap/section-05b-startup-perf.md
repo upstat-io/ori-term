@@ -22,8 +22,7 @@ sections:
 ---
 
 # Section 05B: Startup Performance
-
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Zero perceptible startup delay. The window must appear instantly and the shell prompt must be ready before the user can react. The prototype achieved this; the rebuild must match or beat it without sacrificing clean architecture, separation of concerns, or testability.
 
 **Crate:** `oriterm` (binary)

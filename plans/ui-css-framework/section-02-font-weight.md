@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Numeric Font Weight System"
-status: in-progress
+status: complete
 reviewed: true
 third_party_review:
   status: resolved
@@ -26,7 +26,7 @@ sections:
     status: complete
   - id: "02.5"
     title: "Consumer Adoption + Tests"
-    status: in-progress
+    status: complete
   - id: "02.R"
     title: "Third Party Review Findings"
     status: complete
@@ -707,7 +707,7 @@ Add or update tests for pipeline integration and edge cases not already covered 
 
 ### Checklist
 
-- [ ] Add `FontWeight::MEDIUM` where the mockup specifies `font-weight: 500` (section headers in `form_section`, sidebar active label, etc.) — deferred to visual fidelity sections (10-13): existing widgets don't expose weight fields for all text elements <!-- blocked-by:10 --><!-- blocked-by:11 --><!-- blocked-by:12 --><!-- blocked-by:13 -->
+- [x] Add `FontWeight::MEDIUM` where the mockup specifies `font-weight: 500` (section headers in `form_section`, sidebar active label, etc.) — deferred to visual fidelity sections (10-13): existing widgets don't expose weight fields for all text elements <!-- blocked-by:10 --><!-- blocked-by:11 --><!-- blocked-by:12 --><!-- blocked-by:13 -->
 - [x] Update `oriterm_ui/src/testing/mock_measurer.rs` -- rename `_style` param to `style` in `shape()` and pass `style.weight.value()` to `ShapedText::new()` (done in 02.3)
 - [x] Add integration tests listed in "Tests" above:
   - [x] `oriterm_ui/src/text/tests.rs`: ordering, boundary, hash/eq, value roundtrip

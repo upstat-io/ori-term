@@ -72,8 +72,7 @@ sections:
 ---
 
 # Section 06: Font Pipeline + Best-in-Class Glyph Rendering
-
-**Status:** 📋 Planned
+**Status:** Complete
 **Goal:** Best font rendering of any terminal emulator — not just feature-complete but visually superior. Full rustybuzz shaping pipeline with ligatures, cap-height normalized fallback chains, pixel-perfect built-in glyphs, color emoji, proper font synthesis (embolden + skew, not crude hacks), hinting with auto-DPI detection, LCD subpixel rendering with per-channel blending, subpixel glyph positioning, and automated visual regression testing. This is the feature users switch terminals for.
 
 **Crate:** `oriterm` (binary)

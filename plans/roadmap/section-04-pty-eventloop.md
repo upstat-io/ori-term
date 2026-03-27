@@ -39,8 +39,7 @@ sections:
 ---
 
 # Section 04: PTY + Event Loop
-
-**Status:** 📋 Planned
+**Status:** Complete
 **Goal:** Spawn a real shell, wire PTY I/O through the reader thread, and process shell output through `Term<EventProxy>`. This is the first time terminal emulation runs against a live shell process.
 
 **Crate:** `oriterm` (binary)

@@ -1,5 +1,7 @@
 //! Computed layout output node.
 
+use winit::window::CursorIcon;
+
 use crate::geometry::Rect;
 use crate::hit_test_behavior::HitTestBehavior;
 use crate::sense::Sense;
@@ -44,6 +46,8 @@ pub struct LayoutNode {
     /// When `false`, the entire subtree is skipped during pointer event
     /// dispatch. Layout and paint are unaffected.
     pub pointer_events: bool,
+    /// OS cursor to show when this widget is hovered.
+    pub cursor_icon: CursorIcon,
 }
 
 impl LayoutNode {
@@ -61,6 +65,7 @@ impl LayoutNode {
             interact_radius: 0.0,
             content_offset: (0.0, 0.0),
             pointer_events: true,
+            cursor_icon: CursorIcon::Default,
         }
     }
 

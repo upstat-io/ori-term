@@ -14,7 +14,7 @@ mod overlay_actions;
 
 use std::sync::Arc;
 
-use winit::window::Window;
+use winit::window::{CursorIcon, Window};
 
 use oriterm_ui::draw::Scene;
 use oriterm_ui::geometry::Rect;
@@ -59,6 +59,8 @@ pub(crate) struct DialogWindowContext {
     pub(super) scale_factor: ScaleFactor,
     /// Last cursor position in logical pixels (for mouse click handlers).
     pub(super) last_cursor_pos: oriterm_ui::geometry::Point,
+    /// Last OS cursor icon applied to this dialog window.
+    pub(super) last_cursor_icon: CursorIcon,
     // Surface strategy, damage tracking, and lifecycle.
     #[expect(
         dead_code,
@@ -185,6 +187,7 @@ impl DialogWindowContext {
             scene: Scene::new(),
             scale_factor,
             last_cursor_pos: oriterm_ui::geometry::Point::new(0.0, 0.0),
+            last_cursor_icon: CursorIcon::Default,
             render_strategy: RenderStrategy::UiRetained,
             damage: DamageSet::default(),
             lifecycle: SurfaceLifecycle::CreatedHidden,

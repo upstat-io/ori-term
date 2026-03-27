@@ -27,8 +27,7 @@ sections:
 ---
 
 # Section 12: Resize & Reflow
-
-**Status:** In Progress
+**Status:** Complete
 **Goal:** When the window resizes, the terminal grid resizes to match and the PTY is notified of the new dimensions. Text reflows intelligently on column changes, preserving wrapped line continuity and cursor position.
 
 **Crate:** `oriterm_core` (Grid::resize, reflow), `oriterm` (window resize handler, PTY notification)

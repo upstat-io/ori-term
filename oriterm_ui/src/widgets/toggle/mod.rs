@@ -7,6 +7,8 @@
 
 use std::time::Duration;
 
+use winit::window::CursorIcon;
+
 use crate::animation::{AnimBehavior, AnimProperty};
 use crate::color::Color;
 use crate::controllers::{EventController, HoverController, ScrubController};
@@ -269,6 +271,8 @@ impl Widget for ToggleWidget {
         LayoutBox::leaf(self.style.width, self.style.height)
             .with_widget_id(self.id)
             .with_interact_radius(8.0)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {

@@ -5,6 +5,8 @@
 //! with `Sense::none()` or `disabled == true` are skipped. The standard
 //! approach used by Chromium's `WindowTargeter` and Druid's `WidgetPod`.
 
+use winit::window::CursorIcon;
+
 use crate::geometry::{Point, Rect};
 use crate::hit_test_behavior::HitTestBehavior;
 use crate::layout::LayoutNode;
@@ -31,6 +33,8 @@ pub struct HitEntry {
     pub bounds: Rect,
     /// The widget's declared sense.
     pub sense: Sense,
+    /// The widget's declared cursor icon.
+    pub cursor_icon: CursorIcon,
 }
 
 impl WidgetHitTestResult {
@@ -271,6 +275,7 @@ fn hit_test_path_node(
                 widget_id: id,
                 bounds: node.rect,
                 sense: node.sense,
+                cursor_icon: node.cursor_icon,
             });
             true
         }
@@ -384,6 +389,84 @@ fn hit_test_path_children(
         path.extend(best);
         return true;
     }
+    false
+}
+
+/// Checks whether any disabled widget with a non-default cursor icon
+/// contains `point`.
+///
+/// Normal hit testing skips disabled nodes (they have `Sense::none()`
+/// semantics). This scan walks the full layout tree to find disabled
+/// widgets that *would* show a cursor override (e.g. a disabled button
+/// declaring `CursorIcon::Pointer`). The caller converts a `true`
+/// result to `CursorIcon::NotAllowed`.
+///
+/// Respects `pointer_events`, `clip`, and `content_offset` to stay
+/// consistent with the normal hit-test traversal.
+pub fn layout_hit_test_disabled_at(root: &LayoutNode, point: Point) -> bool {
+    disabled_scan_node(root, point, None)
+}
+
+/// Recursive disabled-node scan.
+fn disabled_scan_node(node: &LayoutNode, point: Point, clip: Option<Rect>) -> bool {
+    if !node.pointer_events {
+        return false;
+    }
+
+    if !point_in_hit_area(node, point) {
+        return false;
+    }
+
+    if let Some(c) = clip {
+        if !c.contains(point) {
+            return false;
+        }
+    }
+
+    // Check this node: disabled + non-default cursor = match.
+    if node.disabled && node.cursor_icon != CursorIcon::Default && node.widget_id.is_some() {
+        return true;
+    }
+
+    // Compute child clip.
+    let child_clip = if node.clip {
+        Some(match clip {
+            Some(c) => intersect_rects(c, node.rect),
+            None => node.rect,
+        })
+    } else {
+        clip
+    };
+
+    // Translate point by content_offset for children.
+    let child_point = if node.content_offset == (0.0, 0.0) {
+        point
+    } else {
+        Point::new(
+            point.x - node.content_offset.0,
+            point.y - node.content_offset.1,
+        )
+    };
+
+    let child_clip = if node.content_offset == (0.0, 0.0) {
+        child_clip
+    } else {
+        child_clip.map(|r| {
+            Rect::new(
+                r.x() - node.content_offset.0,
+                r.y() - node.content_offset.1,
+                r.width(),
+                r.height(),
+            )
+        })
+    };
+
+    for child in &node.children {
+        if disabled_scan_node(child, child_point, child_clip) {
+            return true;
+        }
+    }
+
     false
 }
 

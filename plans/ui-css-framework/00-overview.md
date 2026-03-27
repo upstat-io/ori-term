@@ -89,6 +89,8 @@ Widget::paint(scene, layout_node)          ← Widget emits draw commands at sol
 12 Footer + Buttons ─────┤     (needs 01-03, 05, 06, 08, 10)
 13 Widget Controls ──────┤     (needs 01-04, 11)
                          │
+15 Cursor Icons ────────┤     (needs 12, 13)
+                         │
                          ↓
 14 Verification ─────────┘     (needs all above — visual regression)
 ```
@@ -101,8 +103,8 @@ Multi-size font rendering, numeric font weights, text transforms, line height. T
 **Phase 2 — Layout + Visual Features (Sections 05-08)**
 Per-side borders, opacity/display control, scrollbar styling, icon verification. These are independent of each other and of Phase 1 (except icons may need multi-size for labels). Can be parallelized.
 
-**Phase 3 — Visual Fidelity (Sections 09-13)**
-Settings content completeness, then pixel-level matching of sidebar, content area, footer, and widget controls. Each section targets one visual region and applies the framework features from Phases 1-2 to match the mockup exactly.
+**Phase 3 — Visual Fidelity (Sections 09-13, 15)**
+Settings content completeness, then pixel-level matching of sidebar, content area, footer, and widget controls. Each section targets one visual region and applies the framework features from Phases 1-2 to match the mockup exactly. Section 15 adds native cursor icon management to dialog widgets (pointer, not-allowed, text cursors).
 
 **Phase 4 — Verification (Section 14)**
 Side-by-side comparison, visual regression tests, DPI scaling verification. Build gate: all prior sections must pass `build-all.sh`, `clippy-all.sh`, `test-all.sh`.
@@ -151,4 +153,5 @@ Side-by-side comparison, visual regression tests, DPI scaling verification. Buil
 | 11 | Visual Fidelity: Content + Typography | `section-11-content-typography.md` | 01-04, 06 |
 | 12 | Visual Fidelity: Footer + Buttons | `section-12-footer-buttons.md` | 01, 02, 03, 05, 06, 08, 10 |
 | 13 | Visual Fidelity: Widget Controls | `section-13-widget-controls.md` | 01-04, 11 |
-| 14 | Verification + Visual Regression | `section-14-verification.md` | 01-13 |
+| 15 | Mouse Cursor Icons | `section-15-cursor-icons.md` | 12, 13 |
+| 14 | Verification + Visual Regression | `section-14-verification.md` | 01-13, 15 |

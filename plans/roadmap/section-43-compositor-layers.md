@@ -45,8 +45,7 @@ sections:
 ---
 
 # Section 43: Compositor Layer System + Animation Architecture
-
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Add a proper compositor layer system to `oriterm_ui` with GPU-backed composition in `oriterm`. Each layer renders to a texture; a composition pass blends layers with per-layer opacity and transforms. Layer properties are animated by a `LayerAnimator`. This is the missing piece between widget-level animation (CPU, `AnimatedValue<T>`) and compositor-level animation (GPU, layer opacity/transform/bounds).
 
 **Crate:** `oriterm_ui` (layer tree, animator, no GPU dependency), `oriterm` (GPU compositor, render-to-texture, composition pass)

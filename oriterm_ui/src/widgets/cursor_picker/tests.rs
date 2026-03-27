@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::draw::Scene;
 use crate::geometry::{Point, Rect};
@@ -154,6 +156,21 @@ fn cursor_picker_paint_normal_bg_is_raised() {
     let animator = p.visual_states().expect("has animator");
     // Normal state bg should be bg_card (the raised surface color).
     assert_eq!(animator.get_bg_color(), theme().bg_card);
+}
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let p = make_picker(0);
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+        theme: theme(),
+    };
+    let layout = p.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "cursor picker should declare Pointer cursor"
+    );
 }
 
 #[test]

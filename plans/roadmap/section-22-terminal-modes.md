@@ -33,8 +33,7 @@ sections:
 ---
 
 # Section 22: Terminal Modes
-
-**Status:** Mostly Complete (22.7 Image Protocol deferred to Section 39)
+**Status:** Complete
 **Goal:** Complete, correct DECSET/DECRST mode support with proper mode interactions, mouse reporting, cursor styles, hyperlinks, and image protocol. This section is the authoritative reference for every terminal mode ori_term must handle.
 
 **Crate:** `oriterm` (binary) and `oriterm_core` (mode flags, state)

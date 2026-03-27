@@ -4,6 +4,8 @@
 //! and window management. Platform-specific glue lives in `#[cfg]`-gated
 //! submodules.
 
+pub use winit::window::CursorIcon;
+
 pub mod action;
 pub mod animation;
 pub mod color;

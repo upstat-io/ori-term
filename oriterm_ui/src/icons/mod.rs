@@ -87,6 +87,10 @@ pub enum IconId {
     AlertCircle,
     /// Filled downward triangle for dropdown select triggers (10×6 in 10×10 box).
     DropdownArrow,
+    /// Filled upward triangle for number input stepper (up arrow).
+    StepperUp,
+    /// Filled downward triangle for number input stepper (down arrow).
+    StepperDown,
 }
 
 impl IconId {
@@ -113,6 +117,8 @@ impl IconId {
         Self::Search,
         Self::AlertCircle,
         Self::DropdownArrow,
+        Self::StepperUp,
+        Self::StepperDown,
     ];
 
     /// Returns the icon path definition for this icon.
@@ -140,6 +146,9 @@ impl IconId {
             Self::AlertCircle => &footer::ICON_ALERT_CIRCLE,
             // Dropdown trigger filled triangle.
             Self::DropdownArrow => &chrome::ICON_DROPDOWN_ARROW,
+            // Number input stepper arrows.
+            Self::StepperUp => &chrome::ICON_STEPPER_UP,
+            Self::StepperDown => &chrome::ICON_STEPPER_DOWN,
         }
     }
 }

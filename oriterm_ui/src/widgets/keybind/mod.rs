@@ -3,6 +3,8 @@
 //! [`KbdBadge`] renders a single key as a styled badge (keycap appearance).
 //! [`KeybindRow`] shows an action name on the left and key badges on the right.
 
+use winit::window::CursorIcon;
+
 use crate::color::Color;
 use crate::controllers::{EventController, HoverController};
 use crate::draw::RectStyle;
@@ -212,7 +214,9 @@ impl Widget for KeybindRow {
             .width;
         let badges_w = self.badges_width(ctx);
         let w = action_w + 24.0 + badges_w + ROW_PAD_H * 2.0;
-        LayoutBox::leaf(w, ROW_MIN_HEIGHT).with_widget_id(self.id)
+        LayoutBox::leaf(w, ROW_MIN_HEIGHT)
+            .with_widget_id(self.id)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {

@@ -17,65 +17,89 @@ Rebuild ori_term from scratch. The old prototype proved the feature set (GPU win
 
 ```
 ori_term/                           Workspace root
-├── Cargo.toml                      [workspace] members
-├── oriterm_core/                   Pure terminal library
+├── Cargo.toml                      [workspace] members: oriterm_core, oriterm_ui, oriterm_ipc, oriterm_mux, oriterm
+├── oriterm_core/                   Pure terminal library (standalone, no workspace deps)
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
-│       ├── cell.rs                 Cell, CellFlags, CellExtra
-│       ├── index.rs                Point, Line, Column newtypes
-│       ├── event.rs                Event enum, EventListener trait
-│       ├── sync.rs                 FairMutex
+│       ├── unicode.rs              Unicode width utilities
+│       ├── cell/                   Cell, CellFlags, CellExtra
+│       ├── index/                  Point, Line, Column newtypes
+│       ├── event/                  Event enum, EventListener trait
+│       ├── sync/                   FairMutex
 │       ├── grid/                   Grid, Row, Cursor, ring, scroll, editing
 │       ├── term/                   Term<T>, VTE Handler, TermMode, CharsetState
 │       ├── color/                  Palette, color resolution
 │       ├── selection/              Selection model, boundaries, text extraction
-│       └── search/                 SearchState, find_matches
-├── oriterm_mux/                    Multiplexing layer (layout, domains, IPC)
+│       ├── search/                 SearchState, find_matches
+│       ├── image/                  Image storage, Kitty/Sixel/iTerm2 protocol parsing, cache
+│       ├── paste/                  Paste filtering, bracketed paste
+│       └── theme/                  Color scheme definitions
+├── oriterm_ui/                     UI framework (depends on oriterm_core only)
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
-│       ├── id.rs                   PaneId, TabId, WindowId, SessionId, DomainId
-│       ├── layout/                 SplitTree, FloatingLayer, compute_layout
-│       │   ├── mod.rs
-│       │   ├── split_tree.rs       Immutable binary layout tree (Arc COW)
-│       │   ├── floating.rs         FloatingPane, FloatingLayer, z-order
-│       │   ├── compute.rs          LayoutDescriptor → PaneLayout + DividerLayout
-│       │   └── history.rs          Undo/redo stack for split tree mutations
-│       ├── nav.rs                  Spatial navigation (directional, cycling)
-│       ├── domain.rs               Domain trait, SpawnConfig, DomainState
-│       ├── registry.rs             PaneRegistry, SessionRegistry, MuxTab, MuxWindow
-│       ├── mux.rs                  InProcessMux (synchronous fast path)
-│       ├── protocol.rs             Wire protocol (15-byte header, bincode+zstd)
-│       ├── server.rs               MuxServer daemon, OutputCoalescer
-│       ├── client.rs               MuxClient, MuxBackend trait
-│       └── persistence/            Session save/load, scrollback archive
-├── oriterm/                        Binary (GUI, GPU, PTY, platform)
+│       ├── widgets/                Widget trait + all widget implementations
+│       ├── window_root/            WindowRoot (per-window composition unit)
+│       ├── interaction/            InteractionManager, resize geometry, cursor hiding
+│       ├── pipeline/               Pipeline orchestration (layout → prepaint → paint → dispatch)
+│       ├── compositor/             LayerTree, LayerAnimator, composition pass
+│       ├── testing/                WidgetTestHarness (headless testing)
+│       ├── action/                 Action types, keymap, dispatch
+│       ├── icons/                  Vector icon path definitions
+│       ├── animation/              Animation engine, easing, transitions
+│       ├── controllers/            HoverController, ClickController, DragController, etc.
+│       ├── draw/                   DrawList, DrawCommand, drawing primitives
+│       ├── focus/                  FocusManager, tab order, focus ring
+│       ├── geometry/               Point, Size, Rect, Insets
+│       ├── layout/                 LayoutNode, flex, constraints
+│       ├── overlay/                OverlayManager, modal, context menu
+│       ├── visual_state/           VisualStateAnimator, state transitions
+│       ├── text/                   ShapedText, TextStyle, TextMeasurer
+│       └── theme/                  UiTheme, color tokens
+├── oriterm_ipc/                    Platform IPC transport (standalone, no workspace deps)
+│   ├── Cargo.toml
+│   └── src/                        Unix domain sockets, Windows named pipes, mio integration
+├── oriterm_mux/                    Pane server — flat pane lifecycle + PTY I/O (depends on oriterm_core, oriterm_ipc)
+│   ├── Cargo.toml
+│   └── src/
+│       ├── lib.rs
+│       ├── in_process/             InProcessMux (pane CRUD, event pump)
+│       ├── registry/               PaneRegistry (flat pane storage)
+│       ├── pane/                   Pane (terminal state, PTY I/O)
+│       ├── backend/                MuxBackend trait (embedded + daemon)
+│       ├── server/                 Daemon server (IPC protocol)
+│       ├── protocol/               Wire protocol (PDU codec)
+│       ├── domain/                 Domain trait, LocalDomain, WslDomain
+│       ├── id/                     PaneId, DomainId, ClientId newtypes
+│       ├── mux_event/              MuxEvent, MuxNotification, MuxEventProxy
+│       ├── pty/                    PTY spawning, reader thread
+│       ├── discovery/              Daemon discovery, PID file
+│       └── shell_integration/      Shell detection, injection scripts
+├── oriterm/                        Application shell (consumes all other crates)
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs
 │       ├── app/                    App, event loop, input dispatch
-│       ├── window.rs               TermWindow (winit + wgpu surface)
-│       ├── pane.rs                 Pane (Arc<FairMutex<Term<MuxEventProxy>>>)
-│       ├── mux_event.rs            MuxEventProxy, MuxEvent, MuxNotification
-│       ├── domain/                 LocalDomain, WslDomain implementations
-│       ├── pty/                    PTY event loop, shell spawning
+│       ├── session/                GUI session model (tabs, windows, split trees, floating, nav)
 │       ├── gpu/                    GpuState, renderer, atlas, pipelines
 │       ├── font/                   FontCollection, shaping, discovery
-│       ├── chrome/                 Tab bar, drag, context menu
 │       ├── config/                 TOML config, file watcher
 │       ├── key_encoding/           Kitty + legacy encoding
-│       └── clipboard.rs
-├── oriterm_tui/                    TUI client binary (terminal-in-terminal)
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs                 CLI entry point (clap)
-│       ├── app.rs                  TuiApp, event loop, MuxClient
-│       ├── render.rs               Terminal-in-terminal rendering (crossterm)
-│       ├── input.rs                Input routing, prefix key handling
-│       ├── session.rs              Attach/detach/list/new-session
-│       ├── status_bar.rs           Bottom status bar
-│       └── theme.rs                Host terminal color adaptation
+│       ├── clipboard/              Platform clipboard (Windows, Unix)
+│       ├── cli/                    CLI argument parsing, subcommands
+│       ├── event.rs                TermEvent user event enum
+│       ├── keybindings/            Keybinding actions, dispatch
+│       ├── platform/               Platform-specific window glue
+│       ├── scheme/                 Color scheme loading
+│       ├── url_detect/             URL detection, hover underline
+│       ├── widgets/                App-level widget wrappers
+│       ├── window/                 Window context, per-window state
+│       └── window_manager/         Multi-window lifecycle management
+├── crates/
+│   └── vte/                        Vendored VTE parser fork (APC support added)
+├── oriterm_tui/                    TUI client binary (FUTURE — not yet a workspace member)
+│   └── (planned: terminal-in-terminal client, see Section 37)
 ├── _old/                           Old prototype (reference only)
 ├── assets/
 └── plans/
@@ -84,28 +108,40 @@ ori_term/                           Workspace root
 ## Dependency Graph
 
 ```
-oriterm (GUI binary) ──depends──> oriterm_mux (mux) ──depends──> oriterm_core (lib)
-     │                              │                              │
-     ├── winit                      ├── serde (optional)           ├── vte
-     ├── wgpu                       ├── bincode (server mode)      ├── bitflags
-     ├── swash                      ├── zstd (server mode)         ├── parking_lot
-     ├── rustybuzz                  ├── rustls (remote transport)  ├── unicode-width
-     ├── portable-pty               └── (no GUI, no PTY)           ├── base64
-     ├── serde, toml, notify                                       ├── log
-     ├── window-vibrancy                                           └── regex
-     ├── clipboard-win / arboard
-     ├── oriterm_mux
-     └── oriterm_core
+oriterm_ipc  (standalone — no oriterm_* deps)
+oriterm_core (standalone — no oriterm_* deps)
+oriterm_ui   → oriterm_core
+oriterm_mux  → oriterm_core, oriterm_ipc
+oriterm      → oriterm_core, oriterm_ui, oriterm_mux
 
-oriterm_tui (TUI binary) ──depends──> oriterm_mux ──depends──> oriterm_core
-     │                                     │
-     ├── crossterm                         (shared: protocol, client, domain types)
-     ├── clap
-     ├── oriterm_mux
-     └── oriterm_core
+oriterm (GUI binary)
+     ├── oriterm_core, oriterm_ui, oriterm_mux
+     ├── winit, wgpu, swash, rustybuzz
+     ├── portable-pty, serde, toml, notify
+     ├── window-vibrancy, tiny-skia
+     └── clipboard-win / arboard
+
+oriterm_ui (UI framework)
+     ├── oriterm_core (Color reuse, geometry)
+     ├── winit (WindowConfig, create_window only)
+     └── (no GPU, no PTY, no mux, no config)
+
+oriterm_mux (pane server)
+     ├── oriterm_core, oriterm_ipc
+     ├── portable-pty, serde, bincode
+     └── (no GUI, no fonts, no windows, no session model)
+
+oriterm_ipc (IPC transport)
+     ├── mio
+     └── (no oriterm_* deps)
+
+oriterm_tui (FUTURE — TUI binary, not yet a workspace member)
+     ├── oriterm_mux, oriterm_core
+     ├── crossterm, clap
+     └── (no GPU, no fonts, no windowing)
 ```
 
-Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, mux, or platform APIs. `oriterm_mux` has zero knowledge of GUI, fonts, or platform APIs — it is a pure multiplexing layer that depends only on `oriterm_core` for terminal types. `oriterm_tui` has zero knowledge of GPU, fonts, or windowing — it renders entirely via terminal escape sequences.
+Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, mux, or platform APIs. `oriterm_ui` depends only on `oriterm_core` for terminal types — no GPU, no PTY, no config. `oriterm_mux` is a flat pane server with zero knowledge of GUI, fonts, session model, or platform APIs. `oriterm` is the application shell that consumes all other crates and owns the session model (tabs, windows, split trees, floating panes, navigation). `oriterm_tui` will be a future headless client (Section 37).
 
 ## Threading Model
 
@@ -137,6 +173,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 01 | Cell + Grid | Cell, Row, Grid, Cursor, scrollback, editing, navigation |
 | 02 | Term + VTE | Terminal state machine, VTE Handler, modes, palette, SGR |
 | 03 | Cross-Platform | Platform abstractions for PTY, fonts, clipboard, GPU, window (day one) |
+| 44 | Multi-Process Window Architecture | Process-per-window, mux daemon, IPC protocol, tab migration |
 
 ### Tier 1 — Process Layer
 | Section | Title | What |
@@ -147,8 +184,11 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | Section | Title | What |
 |---------|-------|------|
 | 05 | Window + GPU | winit window, wgpu pipeline (Vulkan/DX12/Metal), staged render pipeline (Extract→Prepare→Render), atlas, offscreen targets |
+| 05B | Startup Performance | Zero-delay startup: parallel GPU init + font discovery, shader/glyph pre-caching |
+| 05C | Window Chrome | Title bar, minimize/maximize/close controls, Aero Snap, caption hit testing |
 | 06 | Font Pipeline | Multi-face loading, shaping, ligatures, fallback, built-in glyphs, emoji |
 | 07 | 2D UI Framework | Drawing primitives, layout engine, widgets, overlay system (oriterm_ui crate) |
+| 50 | Runtime Efficiency | Idle CPU elimination (`ControlFlow::Wait`), memory stability, allocation audit, profiling infrastructure |
 
 ### Tier 3 — Interaction
 | Section | Title | What |
@@ -174,14 +214,14 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 20 | Shell Integration | Shell detection, injection, OSC 7/133, prompt state, two-parser, semantic zones, command notifications |
 | 21 | Context Menu & Window Controls | GPU-rendered menus, config reload, settings UI, window controls, taskbar jump list |
 
-### Tier 4M — Multiplexing Foundation (NEW)
+### Tier 4M — Multiplexing Foundation
 | Section | Title | What |
 |---------|-------|------|
-| 29 | Mux Crate + Layout Engine | `oriterm_mux` crate, newtype IDs, immutable SplitTree, FloatingLayer, layout computation, spatial navigation |
+| 29 | Mux Crate + Layout Engine | `oriterm_mux` crate (flat pane server), newtype IDs; SplitTree, FloatingLayer, spatial navigation, layout computation (implemented in `oriterm/src/session/`) |
 | 30 | Pane Extraction + Domain System | Pane struct (from Tab), Domain trait, LocalDomain, WslDomain stub, registries, MuxEventProxy |
 | 31 | In-Process Mux + Multi-Pane Rendering | InProcessMux, App rewiring, `prepare_pane_into()` with origin offsets, dividers, focus border, PaneRenderCache |
 | 32 | Tab & Window Management (Mux-Aware) | Multi-tab via mux, multi-window shared GPU, tab CRUD, window lifecycle, cross-window tab movement, ConPTY-safe shutdown |
-| 33 | Split Navigation + Floating Panes | Spatial navigation keybinds, divider drag resize, zoom/unzoom, floating pane creation/drag/resize, float↔tile toggle, undo/redo |
+| 33 | Split Navigation + Floating Panes | Spatial navigation keybinds, divider drag resize, zoom/unzoom, floating pane creation/drag/resize, float-tile toggle, undo/redo |
 
 ### Tier 5 — Hardening
 | Section | Title | What |
@@ -191,7 +231,11 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 38 | Terminal Protocol Extensions | Capability reporting (DA, DECRQM, XTGETTCAP), color queries, extended SGR (underline styles/colors), window manipulation, DCS passthrough |
 | 39 | Image Protocols | Kitty Graphics Protocol, Sixel, iTerm2 inline images, GPU compositing |
 | 42 | Expose / Overview Mode | Mission Control-style live thumbnail grid of all panes, type-to-filter, keyboard/mouse navigation |
-| 50 | Runtime Efficiency | Idle CPU elimination (`ControlFlow::Wait`), memory stability, allocation audit, profiling infrastructure |
+| 43 | Compositor Layer System | GPU-backed layer tree, render-to-texture composition, property animation (opacity, transform, bounds) |
+| 45 | Security Hardening | Clipboard security (OSC 52), paste injection protection, escape sequence sandboxing, resource limits |
+| 47 | Semantic Prompt State | Cell/row-level OSC 133 content tracking, prompt-aware resize, prompt navigation |
+| 48 | Native OS Scrollbars | Overlay scrollbars, thumb drag, fade animation, platform-native look and feel |
+| 49 | Advanced Keybinding System | Key tables (modal bindings), chained keybinds, catch-all keys, key remapping |
 
 ### Tier 6 — Polish
 | Section | Title | What |
@@ -229,7 +273,9 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | **M8: Multiplexing** | 29-33 complete | Split panes, floating panes, multi-tab, multi-window — all through mux layer |
 | **M8b: Chrome** | 16-17, 19-21 complete | Tab bar, drag/drop, event routing, shell integration, menus |
 | **M9: Hardened** | 22-23, 38-39 complete | All terminal modes, protocol extensions, image protocols, performance optimized, damage tracking |
+| | _Tier 5 also includes: 42, 43, 45, 47-49_ | _Expose, compositor (done), security, semantic prompts, scrollbars, advanced keybindings — no milestone assignment yet_ |
 | **M10: Polished** | 24-25 complete | Cursor blink, 100+ themes, light/dark auto |
+| | _Tier 6 also includes: 46_ | _macOS app bundle + platform packaging — no milestone assignment yet_ |
 | **M11: Advanced** | 27-28 complete | Command palette, Lua scripting |
 | **M12: Server mode** | 34-35 complete | Daemon keeps sessions alive, session persistence, SSH/WSL domains |
 | **M13: Remote attach** | 36 complete | Connect GUI to remote daemon, SSH tunnel or TLS, bandwidth-aware rendering |

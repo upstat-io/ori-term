@@ -2,6 +2,8 @@
 //!
 //! Separated from `mod.rs` to keep files under 500 lines.
 
+use winit::window::CursorIcon;
+
 use crate::controllers::EventController;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
@@ -60,7 +62,10 @@ impl Widget for TextInputWidget {
         let end_x = ctx.measurer.measure(text, &style, f32::INFINITY).width;
         offsets.push((text.len(), end_x));
 
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        LayoutBox::leaf(w, h)
+            .with_widget_id(self.id)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Text)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {

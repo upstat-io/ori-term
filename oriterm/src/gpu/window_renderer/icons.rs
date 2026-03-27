@@ -60,7 +60,7 @@ impl WindowRenderer {
     /// - `Plus`: `(PLUS_ARM * 2).round()` = 10
     /// - `ChevronDown`: `(CHEVRON_HALF * 2).round()` = 10
     /// - `Minimize`/`Maximize`/`Restore`/`WindowClose`: `SYMBOL_SIZE.round()` = 10
-    pub(super) const ICON_SIZES: [(IconId, u32); 18] = [
+    pub(super) const ICON_SIZES: [(IconId, u32); 20] = [
         // Window chrome (10px logical).
         (IconId::Close, 10),
         (IconId::Plus, 10),
@@ -84,5 +84,8 @@ impl WindowRenderer {
         (IconId::AlertCircle, 14),
         // Dropdown trigger filled triangle (10px logical).
         (IconId::DropdownArrow, 10),
+        // Number input stepper arrows (8px logical, matching the 8px font-size).
+        (IconId::StepperUp, 8),
+        (IconId::StepperDown, 8),
     ];
 }

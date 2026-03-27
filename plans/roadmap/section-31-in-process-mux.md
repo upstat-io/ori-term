@@ -24,8 +24,7 @@ sections:
 ---
 
 # Section 31: In-Process Mux + Multi-Pane Rendering
-
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Create the `InProcessMux` that runs all mux logic in the same process (no daemon). Rewire `App` to route all pane/tab/window operations through the mux. Implement multi-pane rendering with per-pane viewport offsets, dividers, and focus borders.
 
 **Crate:** `oriterm_mux` (InProcessMux), `oriterm` (App rewiring, rendering)

@@ -27,8 +27,7 @@ sections:
 ---
 
 # Section 33: Split Navigation + Floating Panes
-
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Full split pane interaction: keyboard and mouse navigation, divider resize, zoom/unzoom, floating pane creation/drag/resize with scissored rendering, float↔tile toggle, and undo/redo for split operations.
 
 **Crate:** `oriterm` (input handling, rendering), `oriterm_mux` (tree mutations, undo stack)

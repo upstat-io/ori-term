@@ -36,6 +36,8 @@ pub(crate) mod snapshot_grid;
 mod tab_bar_input;
 mod tab_drag;
 mod tab_management;
+#[cfg(test)]
+pub(crate) mod test_support;
 #[allow(
     dead_code,
     reason = "incremental pipeline — delivery loop wired in OverlayManager migration"

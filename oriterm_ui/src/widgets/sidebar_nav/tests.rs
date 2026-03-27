@@ -1,5 +1,7 @@
 //! Tests for the sidebar navigation widget.
 
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::geometry::{Point, Rect};
 use crate::input::{InputEvent, Key, Modifiers, MouseButton};
@@ -933,4 +935,23 @@ fn filtered_nav_end_goes_to_last_visible() {
         }
         other => panic!("expected Selected(1), got {other:?}"),
     }
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let theme = crate::theme::UiTheme::dark();
+    let w = SidebarNavWidget::new(test_sections(), &theme);
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &theme,
+    };
+    let layout = w.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "sidebar nav should declare Pointer cursor"
+    );
 }

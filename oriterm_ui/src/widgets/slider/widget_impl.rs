@@ -2,6 +2,8 @@
 //!
 //! Separated from `mod.rs` to keep files under 500 lines.
 
+use winit::window::CursorIcon;
+
 use crate::color::Color;
 use crate::controllers::EventController;
 use crate::draw::RectStyle;
@@ -43,6 +45,8 @@ impl Widget for SliderWidget {
             .with_width(SizeSpec::Fixed(total_w))
             .with_widget_id(self.id)
             .with_interact_radius(6.0)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {

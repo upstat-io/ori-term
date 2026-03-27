@@ -4,6 +4,8 @@
 //! activated via Space. Uses [`VisualStateAnimator`] with `common_states()`
 //! for hover color transitions on the unchecked box.
 
+use winit::window::CursorIcon;
+
 use crate::color::Color;
 use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
@@ -222,7 +224,10 @@ impl Widget for CheckboxWidget {
         let metrics = ctx.measurer.measure(&self.label, &style, f32::INFINITY);
         let w = self.style.box_size + self.style.gap + metrics.width;
         let h = self.style.box_size.max(metrics.height);
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        LayoutBox::leaf(w, h)
+            .with_widget_id(self.id)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {
