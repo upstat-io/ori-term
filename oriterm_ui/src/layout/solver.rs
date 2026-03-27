@@ -121,6 +121,7 @@ fn solve_leaf(
     node.interact_radius = layout_box.interact_radius;
     node.content_offset = layout_box.content_offset;
     node.pointer_events = layout_box.pointer_events;
+    node.cursor_icon = layout_box.cursor_icon;
     node
 }
 
@@ -362,6 +363,7 @@ fn arrange_children(
     node.interact_radius = layout_box.interact_radius;
     node.content_offset = layout_box.content_offset;
     node.pointer_events = layout_box.pointer_events;
+    node.cursor_icon = layout_box.cursor_icon;
     node
 }
 
@@ -395,6 +397,7 @@ fn solve_empty(
     node.interact_radius = layout_box.interact_radius;
     node.content_offset = layout_box.content_offset;
     node.pointer_events = layout_box.pointer_events;
+    node.cursor_icon = layout_box.cursor_icon;
     node
 }
 

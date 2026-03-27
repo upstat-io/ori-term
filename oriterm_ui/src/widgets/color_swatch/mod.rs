@@ -3,6 +3,8 @@
 //! [`ColorSwatchGrid`] displays an 8-column grid of clickable color cells.
 //! [`SpecialColorSwatch`] displays a large swatch with label and hex value.
 
+use winit::window::CursorIcon;
+
 use crate::color::Color;
 use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
@@ -110,7 +112,9 @@ impl Widget for ColorSwatchGrid {
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         let (w, h) = self.grid_size();
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        LayoutBox::leaf(w, h)
+            .with_widget_id(self.id)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {

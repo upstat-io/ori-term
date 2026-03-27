@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::draw::Scene;
 use crate::geometry::Rect;
 use crate::layout::compute_layout;
@@ -132,4 +134,21 @@ fn row_has_hover_controller() {
 fn row_has_visual_state_animator() {
     let row = KeybindRow::new("X", vec!["A".into()], theme());
     assert!(row.visual_states().is_some());
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let row = KeybindRow::new("Copy", vec!["Ctrl".into(), "C".into()], theme());
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+        theme: theme(),
+    };
+    let layout = row.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "keybind row should declare Pointer cursor"
+    );
 }

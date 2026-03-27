@@ -54,8 +54,7 @@ sections:
 ---
 
 # Section 05: Window + GPU Rendering
-
-**Status:** Not Started
+**Status:** Complete
 **Goal:** The first visual milestone. Open a native frameless window, initialize wgpu (Vulkan/DX12 on Windows, Vulkan on Linux, Metal on macOS), and render the terminal grid through a **proper staged render pipeline** — not scattered GPU code. Every frame flows through: Extract → Prepare → Render. The CPU-side phases are pure functions, fully unit-testable without a GPU.
 
 **Crate:** `oriterm` (binary)

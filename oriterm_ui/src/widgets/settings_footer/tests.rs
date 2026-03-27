@@ -178,6 +178,35 @@ fn accept_unsaved_updates_indicator_visibility() {
     assert!(node.children[1].content_rect.width() < 0.01);
 }
 
+// -- Save button disabled opacity (TPR-12-012) --
+
+#[test]
+fn save_button_uses_opacity_fade_when_disabled() {
+    let footer = make_footer();
+    // Save button starts disabled (clean state). Paint and check that the
+    // Save button's background uses alpha modulation, not the legacy color swap.
+    let scene = paint_footer(&footer);
+    let quads = scene.quads();
+    // The Save button is the last painted button. Its bg quad should have
+    // alpha < 1.0 because disabled_opacity=0.4 modulates the accent color.
+    let save_bg = quads
+        .iter()
+        .filter(|q| {
+            if let Some(fill) = q.style.fill {
+                // Accent color with alpha modulation (0.4) will have a < 1.0.
+                fill.a < 0.99 && fill.a > 0.01
+            } else {
+                false
+            }
+        })
+        .last();
+    assert!(
+        save_bg.is_some(),
+        "disabled Save button should have an alpha-modulated bg quad (opacity fade), \
+         but no quads with 0.01 < alpha < 0.99 were found"
+    );
+}
+
 // -- Paint tests --
 
 fn paint_footer(footer: &SettingsFooterWidget) -> crate::draw::Scene {

@@ -198,8 +198,14 @@ impl SidebarNavWidget {
         } else {
             self.style.item_fg
         };
+        let weight = if is_active {
+            FontWeight::MEDIUM
+        } else {
+            FontWeight::NORMAL
+        };
         let style = TextStyle {
             size: 13.0,
+            weight,
             ..TextStyle::default()
         };
         let label_y = y + NAV_ITEM_PADDING_Y;

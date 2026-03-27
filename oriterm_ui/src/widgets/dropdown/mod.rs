@@ -7,6 +7,8 @@
 //! [`VisualStateAnimator`] with `common_states()` for smooth hover
 //! color transitions.
 
+use winit::window::CursorIcon;
+
 use crate::color::Color;
 use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
@@ -255,7 +257,10 @@ impl Widget for DropdownWidget {
         let w = content_w.max(self.style.min_width);
         let metrics = ctx.measurer.measure(&self.items[0], &style, f32::INFINITY);
         let h = metrics.height + self.style.padding.height();
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        LayoutBox::leaf(w, h)
+            .with_widget_id(self.id)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {

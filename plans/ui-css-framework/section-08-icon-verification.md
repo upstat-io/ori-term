@@ -1,7 +1,7 @@
 ---
 section: "08"
 title: "Icon Fidelity Verification"
-status: in-progress
+status: complete
 reviewed: true
 third_party_review:
   status: resolved
@@ -32,7 +32,7 @@ sections:
     status: complete
   - id: "08.7"
     title: "Source-Faithful Stroke Width"
-    status: in-progress
+    status: complete
   - id: "08.6"
     title: "Build & Verify"
     status: complete

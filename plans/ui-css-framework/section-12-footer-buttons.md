@@ -1,10 +1,10 @@
 ---
 section: "12"
 title: "Visual Fidelity: Footer + Buttons"
-status: in-progress
+status: complete
 reviewed: true
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-03-26
 goal: "The settings footer matches the mockup structurally and visually: it lives only in the right content column, the unsaved group and Reset/Cancel/Save button cluster are laid out correctly, the shared button primitive can express the required typography and disabled state, and footer dirty-state behavior stays synchronized with the real settings pipeline"
 depends_on: ["01", "02", "03", "05", "06", "08", "10"]
@@ -23,7 +23,7 @@ sections:
     status: complete
   - id: "12.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "12.5"
     title: "Build & Verify"
     status: complete
@@ -851,15 +851,23 @@ behavior belong in `settings_footer/tests.rs`.
 
 ### Open Findings
 
-- [ ] `[TPR-12-011][high]` `oriterm/src/app/dialog_context/content_actions.rs:123` — `ResetDefaults` now overwrites `original_config` with `Config::default()`, so the dialog immediately treats a reset as clean instead of as an unsaved change against the persisted config.
+- [x] `[TPR-12-011][high]` `oriterm/src/app/dialog_context/content_actions.rs:123` — `ResetDefaults` now overwrites `original_config` with `Config::default()`, so the dialog immediately treats a reset as clean instead of as an unsaved change against the persisted config.
   Evidence: `reset_dialog_settings()` assigns both `pending_config` and `original_config` to `Config::default()`, then recomputes `dirty` from `pending_config != original_config` and republishes that through `SettingsUnsaved` and `per_page_dirty`. That makes the rebuilt footer disable Save, clears the title bullet, and removes sidebar dirty dots even when the on-disk config was non-default before the reset.
   Impact: Users can click “Reset to Defaults” and see the UI claim there are no unsaved changes, even though nothing has been written yet. The footer state, window title, and per-page dirty indicators all regress to the wrong clean state until some other edit re-dirties the dialog.
   Required plan update: Keep `original_config` pinned to the persisted config across `ResetDefaults`, add a regression test that reset-to-defaults leaves Save enabled and the dialog dirty when the starting config differs from default, and only clear dirty state after an actual save/apply.
+  **Resolved 2026-03-26**: Accepted. Removed the `**original_config = Config::default()` line so `original_config` stays pinned to the persisted on-disk config. Added two regression tests in `settings_overlay/tests.rs`: `reset_to_defaults_dirty_when_original_differs` and `reset_to_defaults_clean_when_original_is_default`.
 
-- [ ] `[TPR-12-012][medium]` `oriterm_ui/src/widgets/settings_footer/mod.rs:135` — The extracted Save button never opts into the new `.btn-primary:disabled` opacity path, so the section still misses the mockup’s required disabled primary styling even though Section 12 is marked complete.
+- [x] `[TPR-12-012][medium]` `oriterm_ui/src/widgets/settings_footer/mod.rs:135` — The extracted Save button never opts into the new `.btn-primary:disabled` opacity path, so the section still misses the mockup’s required disabled primary styling even though Section 12 is marked complete.
   Evidence: `SettingsFooterWidget::new()` builds the Save button with `..ButtonStyle::from_theme(theme)` and does not set `disabled_opacity`. In `ButtonWidget`, the CSS-style fade only runs when `self.disabled && self.style.disabled_opacity < 1.0`; otherwise the widget falls back to the legacy `disabled_fg`/`disabled_bg` swap.
   Impact: Clean-state Save no longer uses the mockup’s `opacity: 0.4` treatment for the whole control. The button primitive gained the right API, but the only section-12 consumer that needed it does not actually use it, so the completed section still ships the wrong disabled appearance.
   Required plan update: Set `disabled_opacity: 0.4` on the footer Save button, then add a footer-level regression test that asserts the disabled Save render uses alpha modulation rather than the legacy color-swap path.
+  **Resolved 2026-03-26**: Accepted. Added `disabled_opacity: 0.4` to Save button’s `ButtonStyle`. Added regression test `save_button_uses_opacity_fade_when_disabled` in `settings_footer/tests.rs`.
+
+- [x] `[TPR-12-013][medium]` `oriterm_ui/src/widgets/button/mod.rs:249` — The clean-state Save button is visually disabled but still mouse-clickable because disabled buttons never mark their layout nodes as disabled.
+  Evidence: `ButtonWidget::sense()` still returns `Sense::click()` and `ButtonWidget::layout()` returns `LayoutBox::leaf(...).with_widget_id(self.id)` without `.with_disabled(self.disabled)`. `IdOverrideButton` preserves that clickable sense for the footer wrapper, hit testing only excludes `LayoutNode`s whose `disabled` flag is set, and `SettingsPanel::on_action()` still maps any `Clicked(save_id)` to `SaveSettings`.
+  Impact: In the clean state, the footer’s Save control can still fire `SaveSettings`, closing the dialog and writing config even though the section now presents the button as disabled.
+  Required plan update: Thread disabled state into button layout/hit testing (or suppress click dispatch for disabled buttons), then add a regression that a clean `SettingsFooterWidget` cannot emit `SaveSettings` through the panel.
+  **Resolved 2026-03-26**: Accepted. Added `.with_disabled(self.disabled)` to `ButtonWidget::layout()`. Also fixed the same bug in all 5 other widgets: ToggleWidget, DropdownWidget, SliderWidget, CheckboxWidget, TextInputWidget. Added 3 regression tests in `button/tests.rs`: `disabled_button_layout_sets_disabled_flag`, `enabled_button_layout_clears_disabled_flag`, `disabled_button_not_hittable_in_harness`.
 
 - [x] `[TPR-12-010][high]` `oriterm_ui/src/widgets/settings_footer/mod.rs:135` — `SettingsFooterWidget` never disables the Save button in the clean state, so the footer ships with a focusable/clickable Save action even before any settings change. The constructor comment still promises “Save disabled”, but `new()` builds the button without `.with_disabled(true)`, and `accept_action(SettingsUnsaved)` only toggles the indicator visibility and `dirty` flag without ever calling `set_disabled(!dirty)`.
   Evidence: Current code creates `save_button` from an enabled `ButtonWidget` and `focusable_children()` always includes its ID; the new composition test even comments that Save should be disabled while the footer unit tests still assert all three buttons are focusable.

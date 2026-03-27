@@ -4,6 +4,8 @@
 //! demos. Click to select. Emits `WidgetAction::Selected` with the cursor
 //! style index.
 
+use winit::window::CursorIcon;
+
 use crate::color::Color;
 use crate::controllers::{EventController, HoverController};
 use crate::draw::RectStyle;
@@ -163,7 +165,9 @@ impl Widget for CursorPickerWidget {
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
-        LayoutBox::leaf(TOTAL_WIDTH, CARD_HEIGHT).with_widget_id(self.id)
+        LayoutBox::leaf(TOTAL_WIDTH, CARD_HEIGHT)
+            .with_widget_id(self.id)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {

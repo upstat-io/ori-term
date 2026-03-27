@@ -27,8 +27,7 @@ sections:
 ---
 
 # Section 16: Tab Bar & Chrome
-
-**Status:** Not Started
+**Status:** In Progress (16.1-16.2 complete, 16.3+ in progress)
 **Goal:** Tab bar layout, rendering, and hit testing with DPI awareness. Deterministic layout computation, GPU-rendered tab bar with bell pulse animation and drag overlay, and priority-based hit testing for click/hover dispatch.
 
 **Crate:** `oriterm` (binary only — no core changes)

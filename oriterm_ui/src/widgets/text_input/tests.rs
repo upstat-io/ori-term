@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::geometry::Rect;
 use crate::input::{InputEvent, Key, Modifiers};
 use crate::layout::BoxContent;
@@ -580,4 +582,22 @@ fn text_input_settings_style_has_hover_border() {
 fn text_input_default_style_unchanged() {
     let s = TextInputStyle::from_theme(settings_theme());
     assert_eq!(s.border_width, 1.0, "default style keeps 1px border");
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_text() {
+    let ti = TextInputWidget::new();
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = ti.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Text,
+        "text input should declare Text cursor"
+    );
 }

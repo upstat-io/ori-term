@@ -7,7 +7,7 @@ use oriterm_ui::geometry::Rect;
 use oriterm_ui::interaction::build_parent_map;
 use oriterm_ui::layout::compute_layout;
 use oriterm_ui::widgets::{LayoutCtx, WidgetAction};
-use winit::window::WindowId;
+use winit::window::{CursorIcon, WindowId};
 
 use crate::app::App;
 use crate::app::widget_pipeline::{apply_dispatch_requests, collect_focusable_ids};
@@ -149,6 +149,10 @@ impl App {
         };
         let changed = ctx.root.interaction_mut().update_hot_path(&[]);
         ctx.root.mark_widgets_prepaint_dirty(&changed);
+        if ctx.last_cursor_icon != CursorIcon::Default {
+            ctx.window.set_cursor(CursorIcon::Default);
+            ctx.last_cursor_icon = CursorIcon::Default;
+        }
         ctx.request_urgent_redraw();
     }
 }

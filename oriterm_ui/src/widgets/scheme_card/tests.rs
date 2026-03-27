@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::draw::Scene;
@@ -279,6 +281,18 @@ fn scheme_card_normal_has_2px_border() {
         .as_ref()
         .expect("card should have top border");
     assert_eq!(top_border.width, 2.0, "card border should be 2px");
+}
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let card = make_card(false);
+    let ctx = make_ctx();
+    let layout = card.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "scheme card should declare Pointer cursor"
+    );
 }
 
 #[test]

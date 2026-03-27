@@ -15,7 +15,8 @@ pub use event::{
     ScrollDelta,
 };
 pub use hit_test::{
-    HitEntry, WidgetHitTestResult, layout_hit_test, layout_hit_test_clipped, layout_hit_test_path,
+    HitEntry, WidgetHitTestResult, layout_hit_test, layout_hit_test_clipped,
+    layout_hit_test_disabled_at, layout_hit_test_path,
 };
 
 #[cfg(test)]

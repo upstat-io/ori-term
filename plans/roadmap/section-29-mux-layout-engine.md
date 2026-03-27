@@ -27,8 +27,7 @@ sections:
 ---
 
 # Section 29: Mux Crate + Layout Engine
-
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Create the `oriterm_mux` crate — the multiplexing foundation. Defines all identity types, the immutable split tree, floating pane layer, layout computation, and spatial navigation. Pure data structures with no I/O, no GUI, no PTY — fully testable in isolation.
 
 **Crate:** `oriterm_mux` (new crate)

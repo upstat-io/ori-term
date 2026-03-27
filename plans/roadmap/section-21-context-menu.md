@@ -27,8 +27,7 @@ sections:
 ---
 
 # Section 21: Context Menu & Window Controls
-
-**Status:** In Progress (4 of 6 sub-sections complete)
+**Status:** In Progress (5 of 6 sub-sections complete; 21.6 Section Completion remaining)
 **Goal:** GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list.
 
 **Crates:** `oriterm` (binary), `oriterm_ui` (widget library)

@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::layout::BoxContent;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{LayoutCtx, Widget};
@@ -87,4 +89,22 @@ fn has_two_controllers() {
 fn has_visual_state_animator() {
     let cb = CheckboxWidget::new("X");
     assert!(cb.visual_states().is_some());
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let cb = CheckboxWidget::new("Accept");
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = cb.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "checkbox should declare Pointer cursor"
+    );
 }

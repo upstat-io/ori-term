@@ -7,6 +7,8 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::controllers::{
     ControllerCtxArgs, ControllerRequests, DispatchOutput, dispatch_to_controllers,
@@ -252,6 +254,7 @@ pub fn deliver_event_to_tree(
                 widget_id: active_id,
                 bounds: active_rect,
                 sense: Sense::all(),
+                cursor_icon: CursorIcon::Default,
             });
         }
         result
@@ -279,6 +282,7 @@ pub fn deliver_event_to_tree(
                 widget_id: root_id,
                 bounds,
                 sense: root_sense,
+                cursor_icon: CursorIcon::Default,
             }],
         }
     };

@@ -6,6 +6,7 @@
 //! dispatched via `content_actions.rs`. Mouse click/scroll routing lives
 //! in the `mouse` submodule.
 
+mod cursor;
 mod mouse;
 
 use std::time::Instant;
@@ -14,10 +15,10 @@ use oriterm_ui::geometry::{Point, Rect};
 use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
 use oriterm_ui::input::{InputEvent, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::OverlayEventResult;
-use oriterm_ui::widgets::{LayoutCtx, Widget, WidgetAction};
+use oriterm_ui::widgets::{Widget, WidgetAction};
 use winit::event::{ElementState, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::WindowId;
+use winit::window::{CursorIcon, WindowId};
 
 use crate::font::CachedTextMeasurer;
 use crate::keybindings;
@@ -246,36 +247,11 @@ impl App {
         let scale = ctx.scale_factor.factor() as f32;
         let logical_pos = Point::new(position.x as f32 / scale, position.y as f32 / scale);
         ctx.last_cursor_pos = logical_pos;
-
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
         let chrome_h = ctx.chrome.caption_height();
 
         // Route to overlay manager first (dropdown popup hover).
-        if !ctx.root.overlays().is_empty() {
-            let move_event = MouseEvent {
-                kind: MouseEventKind::Move,
-                pos: logical_pos,
-                modifiers: oriterm_ui::input::Modifiers::NONE,
-            };
-            let result = ctx.root.process_overlay_mouse_event(
-                &move_event,
-                &measurer,
-                &ui_theme,
-                None,
-                Instant::now(),
-            );
-            if matches!(result, OverlayEventResult::Delivered { .. }) {
-                // Clear the base-tree hot path so background widgets lose
-                // hover state while an overlay is active. Mirrors the pattern
-                // in WindowRoot::dispatch_event() (pipeline.rs:120-121).
-                let hot_ids = ctx.root.interaction_mut().update_hot_path(&[]);
-                ctx.root.mark_widgets_prepaint_dirty(&hot_ids);
-                ctx.request_urgent_redraw();
-                return;
-            }
+        if Self::route_overlay_hover(ctx, logical_pos, scale, &ui_theme) {
+            return;
         }
 
         log::trace!(
@@ -289,44 +265,20 @@ impl App {
         );
 
         // Build the hot path from cursor position.
-        // The InteractionManager uses this to generate HotChanged lifecycle
-        // events, which are delivered during prepare_widget_tree.
         let mut hot_path = Vec::new();
         let in_content = logical_pos.y >= chrome_h;
         if in_content {
-            // Content area: compute layout once and cache for reuse by
-            // dispatch_dialog_content_move (avoids double layout per move).
-            let w = ctx.surface_config.width as f32 / scale;
-            let h = ctx.surface_config.height as f32 / scale;
-            let content_bounds: Rect = Rect::new(0.0, chrome_h, w, h - chrome_h);
-            let local_viewport: Rect =
-                Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
-            let layout_node = {
-                let layout_ctx = LayoutCtx {
-                    measurer: &measurer,
-                    theme: &ui_theme,
-                };
-                let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-                std::rc::Rc::new(oriterm_ui::layout::compute_layout(
-                    &layout_box,
-                    local_viewport,
-                ))
-            };
-            let local = Point::new(
-                logical_pos.x - content_bounds.x(),
-                logical_pos.y - content_bounds.y(),
-            );
-            let hit = oriterm_ui::input::layout_hit_test_path(&layout_node, local);
-            for entry in &hit.path {
-                hot_path.push(entry.widget_id);
-            }
-            // Store for reuse by dispatch_dialog_content_move.
-            ctx.cached_layout = Some((local_viewport, layout_node));
+            Self::hit_test_content(ctx, logical_pos, chrome_h, scale, &ui_theme, &mut hot_path);
         } else {
             // Chrome: check which control button is under the cursor.
             if let Some(btn_id) = ctx.chrome.widget_at_point(logical_pos) {
                 hot_path.push(ctx.chrome.id());
                 hot_path.push(btn_id);
+            }
+            // Reset cursor when in chrome area.
+            if ctx.last_cursor_icon != CursorIcon::Default {
+                ctx.window.set_cursor(CursorIcon::Default);
+                ctx.last_cursor_icon = CursorIcon::Default;
             }
         }
 

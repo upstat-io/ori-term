@@ -10,6 +10,8 @@
 
 use std::time::Instant;
 
+use winit::window::CursorIcon;
+
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
 use crate::controllers::{ControllerRequests, DispatchOutput};
@@ -58,6 +60,7 @@ fn deliver_via_pipeline(
                 widget_id: root_id,
                 bounds: overlay_rect,
                 sense: root_sense,
+                cursor_icon: CursorIcon::Default,
             }],
         }
     } else if let Some(node) = layout_node {
@@ -84,6 +87,7 @@ fn deliver_via_pipeline(
                 widget_id: root_id,
                 bounds: overlay_rect,
                 sense: root_sense,
+                cursor_icon: CursorIcon::Default,
             }],
         }
     };

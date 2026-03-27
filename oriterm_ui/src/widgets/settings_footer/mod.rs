@@ -144,6 +144,7 @@ impl SettingsFooterWidget {
             letter_spacing: 0.48,
             text_transform: TextTransform::Uppercase,
             padding: Insets::vh(6.0, 16.0),
+            disabled_opacity: 0.4,
             ..ButtonStyle::from_theme(theme)
         });
         let mut save_button = IdOverrideButton::new(save_btn, save_id);

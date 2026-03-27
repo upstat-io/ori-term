@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::geometry::{Insets, Rect};
 use crate::layout::BoxContent;
 use crate::sense::Sense;
@@ -564,5 +566,90 @@ fn harness_keyboard_activation() {
             .iter()
             .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn_id)),
         "Space should produce Clicked action, got: {actions:?}"
+    );
+}
+
+// -- Disabled layout propagation (TPR-12-013) --
+
+#[test]
+fn disabled_button_layout_sets_disabled_flag() {
+    let btn = ButtonWidget::new("Save").with_disabled(true);
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = btn.layout(&ctx);
+    assert!(
+        layout.disabled,
+        "disabled button layout should have disabled=true"
+    );
+}
+
+#[test]
+fn enabled_button_layout_clears_disabled_flag() {
+    let btn = ButtonWidget::new("Save");
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = btn.layout(&ctx);
+    assert!(
+        !layout.disabled,
+        "enabled button layout should have disabled=false"
+    );
+}
+
+#[test]
+fn disabled_button_not_hittable_in_harness() {
+    use crate::action::WidgetAction;
+    use crate::testing::WidgetTestHarness;
+
+    let btn = ButtonWidget::new("Save").with_disabled(true);
+    let btn_id = btn.id();
+    let mut h = WidgetTestHarness::new(btn);
+
+    // Click on the disabled button should produce no Clicked action.
+    let actions = h.click(btn_id);
+    assert!(
+        !actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(_))),
+        "disabled button should not produce Clicked action, got: {actions:?}"
+    );
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let btn = ButtonWidget::new("OK");
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = btn.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "enabled button should declare Pointer cursor"
+    );
+}
+
+#[test]
+fn layout_disabled_preserves_natural_cursor() {
+    let btn = ButtonWidget::new("OK").with_disabled(true);
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = btn.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "disabled button should still declare Pointer (framework handles NotAllowed)"
     );
 }

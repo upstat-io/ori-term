@@ -1,5 +1,7 @@
 //! Tests for widget-level hit testing and input routing.
 
+use winit::window::CursorIcon;
+
 use crate::geometry::{Point, Rect};
 use crate::hit_test_behavior::HitTestBehavior;
 use crate::interaction::InteractionManager;
@@ -10,7 +12,9 @@ use crate::widget_id::WidgetId;
 
 use super::dispatch::{DeliveryAction, plan_propagation};
 use super::event::{EventPhase, InputEvent, Modifiers, MouseButton, ScrollDelta};
-use super::hit_test::{layout_hit_test, layout_hit_test_clipped, layout_hit_test_path};
+use super::hit_test::{
+    layout_hit_test, layout_hit_test_clipped, layout_hit_test_disabled_at, layout_hit_test_path,
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -28,6 +32,7 @@ fn make_node(x: f32, y: f32, w: f32, h: f32, id: Option<WidgetId>) -> LayoutNode
         interact_radius: 0.0,
         content_offset: (0.0, 0.0),
         pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     }
 }
 
@@ -934,6 +939,7 @@ fn hit_test_with_content_offset_translates_point() {
         // Scrolled down 250px: content_offset = (0, -250).
         content_offset: (0.0, -250.0),
         pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     };
 
     // Click at y=50 in viewport → should hit button at y=300 in content
@@ -968,6 +974,7 @@ fn hit_test_with_content_offset_misses_outside_clip() {
         interact_radius: 0.0,
         content_offset: (0.0, -50.0),
         pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     };
 
     // Click at y=50 → adjusted to y=100 in content space.
@@ -1000,6 +1007,7 @@ fn hit_test_path_with_content_offset() {
         interact_radius: 0.0,
         content_offset: (0.0, -250.0),
         pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     };
 
     // Click at y=50 → should produce path [scroll, button].
@@ -1042,6 +1050,7 @@ fn scroll_with_children(
         interact_radius: 0.0,
         content_offset: (0.0, offset_y),
         pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     }
 }
 
@@ -1154,6 +1163,7 @@ fn scroll_horizontal_offset() {
         interact_radius: 0.0,
         content_offset: (-100.0, 0.0),
         pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     };
 
     // Click at viewport x=50 → content x=150 → hits button.
@@ -1203,6 +1213,7 @@ fn scroll_path_bounds_all_in_viewport_space() {
         interact_radius: 0.0,
         content_offset: (0.0, 0.0),
         pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     };
     let scroll = LayoutNode {
         rect: Rect::new(0.0, 0.0, 200.0, 200.0),
@@ -1216,6 +1227,7 @@ fn scroll_path_bounds_all_in_viewport_space() {
         interact_radius: 0.0,
         content_offset: (0.0, -350.0),
         pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     };
 
     // Click at viewport y=60 → content y=410 → button at 400..430 → hit.
@@ -1282,4 +1294,149 @@ fn pointer_events_false_preserves_layout_geometry() {
     assert_eq!(node.rect.width(), 100.0);
     assert_eq!(node.children[0].rect.width(), 30.0);
     assert_eq!(node.children[0].widget_id, Some(child_id));
+}
+
+// ── Cursor icon tests ────────────────────────────────────────────────
+
+#[test]
+fn hit_entry_carries_cursor_icon() {
+    let id = WidgetId::next();
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+    node.cursor_icon = CursorIcon::Pointer;
+
+    let hit = layout_hit_test_path(&node, Point::new(50.0, 50.0));
+    assert_eq!(hit.path.last().unwrap().cursor_icon, CursorIcon::Pointer);
+}
+
+#[test]
+fn hit_entry_cursor_default_for_no_cursor_widget() {
+    let id = WidgetId::next();
+    let node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+
+    let hit = layout_hit_test_path(&node, Point::new(50.0, 50.0));
+    assert_eq!(hit.path.last().unwrap().cursor_icon, CursorIcon::Default);
+}
+
+#[test]
+fn hit_path_nested_cursor_leaf_wins() {
+    let child_id = WidgetId::next();
+    let mut child = make_node(10.0, 10.0, 30.0, 30.0, Some(child_id));
+    child.cursor_icon = CursorIcon::Pointer;
+
+    let parent_id = WidgetId::next();
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.children.push(child);
+
+    let hit = layout_hit_test_path(&parent, Point::new(20.0, 20.0));
+    assert_eq!(hit.path.last().unwrap().cursor_icon, CursorIcon::Pointer);
+    assert_eq!(hit.path.first().unwrap().cursor_icon, CursorIcon::Default);
+}
+
+#[test]
+fn disabled_scan_hits_disabled_pointer_node() {
+    let id = WidgetId::next();
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+    node.disabled = true;
+    node.cursor_icon = CursorIcon::Pointer;
+
+    assert!(layout_hit_test_disabled_at(&node, Point::new(50.0, 50.0)));
+}
+
+#[test]
+fn disabled_scan_misses_outside_point() {
+    let id = WidgetId::next();
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+    node.disabled = true;
+    node.cursor_icon = CursorIcon::Pointer;
+
+    assert!(!layout_hit_test_disabled_at(
+        &node,
+        Point::new(150.0, 150.0)
+    ));
+}
+
+#[test]
+fn disabled_scan_ignores_default_cursor() {
+    let id = WidgetId::next();
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+    node.disabled = true;
+    // cursor_icon is Default — non-interactive disabled container.
+
+    assert!(!layout_hit_test_disabled_at(&node, Point::new(50.0, 50.0)));
+}
+
+#[test]
+fn disabled_scan_skips_pointer_events_false() {
+    let id = WidgetId::next();
+    let mut child = make_node(10.0, 10.0, 30.0, 30.0, Some(id));
+    child.disabled = true;
+    child.cursor_icon = CursorIcon::Pointer;
+    child.pointer_events = false;
+
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, None);
+    parent.children.push(child);
+
+    assert!(!layout_hit_test_disabled_at(
+        &parent,
+        Point::new(20.0, 20.0)
+    ));
+}
+
+#[test]
+fn disabled_scan_respects_content_offset() {
+    // Child in content space at (10, 110)-(40, 140).
+    let id = WidgetId::next();
+    let mut child = make_node(10.0, 110.0, 30.0, 30.0, Some(id));
+    child.disabled = true;
+    child.cursor_icon = CursorIcon::Pointer;
+
+    // Scrolled 100px down: content_offset = (0, -100).
+    // Viewport point.y is translated: child_point.y = point.y - (-100) = point.y + 100.
+    // So viewport y=20 maps to content y=120, hitting the child.
+    let mut parent = make_node(0.0, 0.0, 200.0, 200.0, None);
+    parent.content_offset = (0.0, -100.0);
+    parent.children.push(child);
+
+    // Point (20, 20) → content (20, 120) → inside child (10,110)-(40,140).
+    assert!(layout_hit_test_disabled_at(&parent, Point::new(20.0, 20.0)));
+    // Point (20, 150) → content (20, 250) → outside child.
+    assert!(!layout_hit_test_disabled_at(
+        &parent,
+        Point::new(20.0, 150.0)
+    ));
+}
+
+#[test]
+fn disabled_scan_respects_interact_radius() {
+    let id = WidgetId::next();
+    let mut node = make_node(50.0, 50.0, 20.0, 20.0, Some(id));
+    node.disabled = true;
+    node.cursor_icon = CursorIcon::Pointer;
+    node.interact_radius = 8.0;
+
+    // Point (45, 55) is outside the 20x20 rect but within the 8px radius.
+    assert!(layout_hit_test_disabled_at(&node, Point::new(45.0, 55.0)));
+    // Point (40, 55) is outside even the expanded area.
+    assert!(!layout_hit_test_disabled_at(&node, Point::new(40.0, 55.0)));
+}
+
+#[test]
+fn disabled_scan_respects_clip() {
+    let id = WidgetId::next();
+    let mut child = make_node(10.0, 10.0, 30.0, 30.0, Some(id));
+    child.disabled = true;
+    child.cursor_icon = CursorIcon::Pointer;
+
+    let mut parent = make_node(0.0, 0.0, 20.0, 20.0, None);
+    parent.clip = true;
+    parent.children.push(child);
+
+    // Child at (10,10)-(40,40) but parent clips to (0,0)-(20,20).
+    // Point (15,15) is inside both parent clip and child rect.
+    assert!(layout_hit_test_disabled_at(&parent, Point::new(15.0, 15.0)));
+    // Point (25,25) is inside child but outside parent clip rect.
+    assert!(!layout_hit_test_disabled_at(
+        &parent,
+        Point::new(25.0, 25.0)
+    ));
 }

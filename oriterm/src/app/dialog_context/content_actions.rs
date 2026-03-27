@@ -120,7 +120,9 @@ impl App {
         };
         log::info!("settings dialog: resetting to defaults");
         **pending_config = Config::default();
-        **original_config = Config::default();
+        // Keep `original_config` pinned to the persisted on-disk config so dirty
+        // detection correctly treats reset-to-defaults as an unsaved change when
+        // the persisted config differs from defaults (TPR-12-011).
 
         // Rebuild the form widgets so they reflect the default config values.
         // Preserve the current page so the user stays where they were.

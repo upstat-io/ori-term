@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::draw::Scene;
 use crate::geometry::Rect;
@@ -144,12 +146,53 @@ fn paint_produces_rect_and_text() {
         3,
         "background + vertical divider + horizontal divider"
     );
-    // 1 value text + 2 arrow labels = 3 text runs.
+    // 1 value text (arrows are now icons, not text runs).
+    assert_eq!(scene.text_runs().len(), 1, "value text only");
+}
+
+/// TPR-13-010 regression: stepper arrows must not depend on Unicode glyph
+/// coverage. When icons are available, paint produces icon entries instead
+/// of text runs for the arrows.
+#[test]
+fn paint_stepper_arrows_use_icons_not_text() {
+    use crate::icons::{IconId, ResolvedIcon, ResolvedIcons};
+
+    let w = make_input(42.0, 0.0, 100.0, 1.0);
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let total_w = DEFAULT_INPUT_WIDTH + BUTTON_PANEL_WIDTH + 2.0 * BORDER_WIDTH;
+    let bounds = Rect::new(0.0, 0.0, total_w, INPUT_HEIGHT);
+
+    // Provide resolved icons so the paint path can find them.
+    let mut icons = ResolvedIcons::new();
+    let dummy = ResolvedIcon {
+        atlas_page: 0,
+        uv: [0.0, 0.0, 0.1, 0.1],
+    };
+    icons.insert(IconId::StepperUp, 8, dummy);
+    icons.insert(IconId::StepperDown, 8, dummy);
+
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now: std::time::Instant::now(),
+        theme: theme(),
+        icons: Some(&icons),
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    w.paint(&mut ctx);
+
+    // With icons resolved, we should get icon entries for the arrows.
     assert_eq!(
-        scene.text_runs().len(),
-        3,
-        "value text + up arrow + down arrow"
+        scene.icons().len(),
+        2,
+        "should have 2 icon entries (up + down stepper arrows)"
     );
+    // Still only 1 text run (the value label).
+    assert_eq!(scene.text_runs().len(), 1, "value text only, no arrow text");
 }
 
 // -- Sense & focusability --
@@ -270,4 +313,21 @@ fn number_input_arrow_keys_adjust_value() {
     let r = w.on_input(&down, Rect::new(0.0, 0.0, 82.0, 30.0));
     assert!(r.handled);
     assert_eq!(w.value(), 5.0);
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_default() {
+    let w = make_input(0.0, 0.0, 100.0, 1.0);
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+        theme: theme(),
+    };
+    let layout = w.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Default,
+        "number input should declare Default cursor"
+    );
 }

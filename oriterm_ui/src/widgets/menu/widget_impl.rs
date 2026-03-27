@@ -48,7 +48,9 @@ impl Widget for MenuWidget {
         let width = (left_margin + max_label_w + self.style.extra_width).max(self.style.min_width);
         let height = self.visible_height();
 
-        LayoutBox::leaf(width, height).with_widget_id(self.id)
+        LayoutBox::leaf(width, height)
+            .with_widget_id(self.id)
+            .with_cursor_icon(winit::window::CursorIcon::Pointer)
     }
 
     fn sense(&self) -> Sense {

@@ -27,14 +27,12 @@ sections:
 ---
 
 # Section 39: Image Protocols
-
-**Status:** Not Started
+**Status:** In Progress (39.1-39.4 complete, 39.5-39.6 in progress)
 **Goal:** Display images inline in the terminal via Kitty Graphics Protocol, Sixel, and iTerm2 image protocol. GPU-accelerated compositing with configurable z-ordering (above or below text), animation support, and memory-managed image cache with eviction. This is a must-have feature — every modern terminal except Alacritty supports at least one image protocol.
 
-**Crate:** `oriterm_core` (image storage, protocol parsing, image decode), `oriterm` (GPU rendering in `oriterm/src/gpu/`, texture management)
+**Crate:** `oriterm_core` (image storage, protocol parsing, image decode in `oriterm_core/src/image/`), `oriterm` (GPU rendering in `oriterm/src/gpu/`, texture management)
 **Dependencies:** Section 02 (VTE — DCS/OSC parsing), Section 05 (GPU pipeline), Section 06 (atlas/texture management patterns)
-**New dependency:** The `image` crate must be added as a runtime dependency of `oriterm_core` for PNG/JPEG/GIF/BMP/WebP decoding. Currently `image` is only a build/dev dependency of `oriterm` (not `oriterm_core`).
-**VTE prerequisite:** The local VTE crate (`crates/vte`) must be extended with APC support before Kitty graphics can work. Currently, APC sequences (`ESC _` ... `ST`) enter `SosPmApcString` state (`crates/vte/src/lib.rs:182`) which calls `self.anywhere()` and discards all content. The `Perform` trait needs `apc_start`, `apc_put`, and `apc_end` callbacks. See Ghostty's `src/terminal/apc.zig` for a clean APC handler design.
+**Resolved prerequisites:** The `image` crate is now an optional dependency of `oriterm_core` (behind `image-protocol` feature). VTE APC support (`apc_start`/`apc_put`/`apc_end`) has been added to `crates/vte`.
 
 **Reference:**
 - Kitty graphics protocol spec: https://sw.kovidgoyal.net/kitty/graphics-protocol/

@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::layout::BoxContent;
 use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
@@ -150,4 +152,22 @@ fn slider_hidden_display_mode() {
         .with_value(50.0)
         .with_display(ValueDisplay::Hidden);
     assert_eq!(s.format_value(), "");
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let s = SliderWidget::new();
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = s.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "slider should declare Pointer cursor"
+    );
 }

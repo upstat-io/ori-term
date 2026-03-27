@@ -4,6 +4,8 @@
 //! Widgets will construct `LayoutBox` trees; the solver produces `LayoutNode`
 //! trees as output.
 
+use winit::window::CursorIcon;
+
 use crate::geometry::Insets;
 use crate::hit_test_behavior::HitTestBehavior;
 use crate::sense::Sense;
@@ -119,6 +121,12 @@ pub struct LayoutBox {
     /// (hover, click, drag) but still participates in layout, paint, and
     /// keyboard navigation. Analogous to CSS `pointer-events: none`.
     pub pointer_events: bool,
+    /// The OS cursor to show when the pointer hovers over this widget.
+    ///
+    /// `Default` means no cursor override. Widgets set `Pointer` for
+    /// clickable controls, `Text` for text inputs. The dialog handler
+    /// reads this from the hit-test path and calls `window.set_cursor()`.
+    pub cursor_icon: CursorIcon,
 }
 
 impl LayoutBox {
@@ -146,6 +154,7 @@ impl LayoutBox {
             content_offset: (0.0, 0.0),
             overflow: false,
             pointer_events: true,
+            cursor_icon: CursorIcon::Default,
         }
     }
 
@@ -175,6 +184,7 @@ impl LayoutBox {
             content_offset: (0.0, 0.0),
             overflow: false,
             pointer_events: true,
+            cursor_icon: CursorIcon::Default,
         }
     }
 
@@ -205,6 +215,7 @@ impl LayoutBox {
             content_offset: (0.0, 0.0),
             overflow: false,
             pointer_events: true,
+            cursor_icon: CursorIcon::Default,
         }
     }
 
@@ -393,6 +404,13 @@ impl LayoutBox {
         self
     }
 
+    /// Sets the OS cursor icon to show when this widget is hovered.
+    #[must_use]
+    pub fn with_cursor_icon(mut self, icon: CursorIcon) -> Self {
+        self.cursor_icon = icon;
+        self
+    }
+
     /// Returns a copy of this layout tree with all interaction metadata scrubbed.
     ///
     /// Recursively clears `widget_id` and sets `sense` to `Sense::none()` on
@@ -406,6 +424,7 @@ impl LayoutBox {
     pub fn for_layout_only(mut self) -> Self {
         self.widget_id = None;
         self.sense = Sense::none();
+        self.cursor_icon = CursorIcon::Default;
         match &mut self.content {
             BoxContent::Leaf { .. } => {}
             BoxContent::Flex { children, .. } | BoxContent::Grid { children, .. } => {

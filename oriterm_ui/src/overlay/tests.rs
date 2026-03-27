@@ -528,6 +528,88 @@ fn overlay_rect_unknown_id() {
     assert!(mgr.overlay_rect(fake_id).is_none());
 }
 
+// Cursor icon tests
+
+#[test]
+fn cursor_icon_at_returns_none_outside_overlays() {
+    let mgr = OverlayManager::new(viewport());
+    assert!(mgr.cursor_icon_at(Point::new(50.0, 50.0)).is_none());
+}
+
+#[test]
+fn cursor_icon_at_returns_default_for_non_interactive_overlay() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let id = mgr.push_overlay(
+        label_widget("Hello"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    let rect = mgr.overlay_rect(id).expect("overlay should exist");
+    let center = Point::new(
+        rect.x() + rect.width() / 2.0,
+        rect.y() + rect.height() / 2.0,
+    );
+    let cursor = mgr.cursor_icon_at(center);
+    assert_eq!(cursor, Some(winit::window::CursorIcon::Default));
+}
+
+#[test]
+fn cursor_icon_at_returns_pointer_for_button_overlay() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let id = mgr.push_overlay(
+        button_widget("Click me"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    let rect = mgr.overlay_rect(id).expect("overlay should exist");
+    let center = Point::new(
+        rect.x() + rect.width() / 2.0,
+        rect.y() + rect.height() / 2.0,
+    );
+    let cursor = mgr.cursor_icon_at(center);
+    assert_eq!(cursor, Some(winit::window::CursorIcon::Pointer));
+}
+
+#[test]
+fn cursor_icon_at_outside_overlay_rect() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    mgr.push_overlay(
+        button_widget("OK"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    // Point far from any overlay.
+    let cursor = mgr.cursor_icon_at(Point::new(700.0, 500.0));
+    assert!(cursor.is_none());
+}
+
 // Mouse routing tests
 
 #[test]

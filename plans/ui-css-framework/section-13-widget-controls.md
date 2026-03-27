@@ -1,7 +1,7 @@
 ---
 section: "13"
 title: "Visual Fidelity: Widget Controls"
-status: in-progress
+status: complete
 reviewed: true
 third_party_review:
   status: resolved
@@ -32,7 +32,7 @@ sections:
     status: complete
   - id: "13.7"
     title: "Build & Verify"
-    status: in-progress
+    status: complete
 ---
 
 # Section 13: Visual Fidelity - Widget Controls
@@ -386,7 +386,7 @@ trigger.
 - [x] Replace Unicode `▾` indicator in `dropdown/mod.rs` paint with `push_icon()`
 - [x] Add fallback for `ctx.icons == None` (test harness) — omit indicator or use simple quads
 - [x] Update `MenuStyle::from_theme()` in `menu/mod.rs` to use `2px` border, `bg-input` bg, `12px` font to match trigger
-- [ ] Verify popup visual matches trigger style (same border width, same font size, theme-consistent bg)
+- [x] Verify popup visual matches trigger style (same border width, same font size, theme-consistent bg)
 
 Note: `with_min_width()` API and form_builder consumer wiring for dropdown width variants are
 owned by 13.1 and not repeated here.
@@ -805,6 +805,12 @@ Scheme card tests (`scheme_card/tests.rs`):
 
 ### Open Findings
 
+- [x] `[TPR-13-010][medium]` `oriterm_ui/src/widgets/number_input/mod.rs:224` — `NumberInputWidget` still paints its stepper affordances with Unicode triangle glyphs that are absent from the embedded IBM Plex Mono UI font.
+  Evidence: The widget shapes `"\u{25B2}"` and `"\u{25BC}"` directly for the up/down controls. `fc-query --format=’%{charset}’ oriterm/fonts/IBMPlexMono-Regular.ttf` reports coverage for `2500-259f` and `25ca`, but not `25b2` or `25bc`, so these glyphs are not in the embedded font that now drives the settings UI.
+  Impact: Section 13.4’s number stepper still renders without visible arrow affordances, repeating the same missing-glyph class of bug that already forced the dropdown indicator off Unicode text and onto the icon pipeline.
+  Required plan update: Replace the stepper triangles with icon-backed geometry (or another guaranteed-present asset path) and add a paint regression that proves the control does not depend on Unicode glyph coverage.
+  **Resolved 2026-03-26**: Accepted. Added `IconId::StepperUp` and `IconId::StepperDown` (filled triangles in `chrome.rs`), registered at 8px in `ICON_SIZES`. Replaced Unicode text shaping with `push_icon()` in `NumberInputWidget::paint()`. Regression test `paint_stepper_arrows_use_icons_not_text` verifies icons are used instead of text runs.
+
 - [x] `[TPR-13-008][high]` `oriterm_ui/src/widgets/dropdown/mod.rs:393` — Pressing `Escape` on a focused dropdown trigger closes the entire settings dialog instead of only dismissing dropdown UI.
   **Resolved 2026-03-26**: Accepted. Removed `DismissOverlay` emission from the dropdown trigger's `Dismiss` handler — the wildcard arm now returns `None`. When the popup is open, Escape is handled by MenuWidget. Added regression test `dismiss_does_not_emit_overlay_action`.
 
@@ -869,10 +875,10 @@ timeout 150 cargo test -p oriterm_ui scheme_card::tests
 
 ### Manual Verification Checklist
 
-- [ ] Sliders match track/thumb/value presentation from the mockup (10px gap, 32px label, `%` suffix)
-- [ ] Toggles match `38x20` outer / `12px` thumb / `18px` travel geometry and state colors
-- [ ] Dropdown triggers show filled triangle indicator (not Unicode `▾`) and width variants work
-- [ ] Number inputs match `30px` height, `2px` border, `12px` font, `56px`/`44px` inner widths
-- [ ] Text inputs in settings use `2px` border, `12px` font, `200px` width, hover border color
-- [ ] Cursor picker cards have `24px` gap, `bg_card` rest bg, `2px` border, per-card hover
-- [ ] Scheme cards have `bg_card` rest bg, `2px` border, `240px` min width, Medium-weight title, styled badge chip
+- [x] Sliders match track/thumb/value presentation from the mockup (10px gap, 32px label, `%` suffix)
+- [x] Toggles match `38x20` outer / `12px` thumb / `18px` travel geometry and state colors
+- [x] Dropdown triggers show filled triangle indicator (not Unicode `▾`) and width variants work
+- [x] Number inputs match `30px` height, `2px` border, `12px` font, `56px`/`44px` inner widths
+- [x] Text inputs in settings use `2px` border, `12px` font, `200px` width, hover border color
+- [x] Cursor picker cards have `24px` gap, `bg_card` rest bg, `2px` border, per-card hover
+- [x] Scheme cards have `bg_card` rest bg, `2px` border, `240px` min width, Medium-weight title, styled badge chip

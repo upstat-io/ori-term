@@ -18,8 +18,7 @@ sections:
 ---
 
 # Section 17: Drag & Drop
-
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Chrome-style tab dragging with tear-off, OS-level drag, and merge detection. Two-phase drag: within-bar reorder and tear-off to new window. Seamless drag continuation across windows via synthesized mouse events.
 
 **Crate:** `oriterm` (binary only — no core changes)

@@ -21,8 +21,7 @@ sections:
 ---
 
 # Section 19: Event Routing & Render Scheduling
-
-**Status:** 📋 Planned
+**Status:** In Progress (19.1, 19.3 complete; 19.2, 19.4 in progress)
 **Goal:** Coordinate systems, 7-layer input dispatch, frame budgeting, cursor blink scheduling. This section covers the event routing pipeline and render scheduling that tie input, state, and GPU together.
 
 **Crate:** `oriterm` (binary only — no core changes)

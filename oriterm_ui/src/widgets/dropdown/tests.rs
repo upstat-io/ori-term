@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::layout::BoxContent;
 use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
@@ -184,4 +186,67 @@ fn with_style_rebuilds_animator() {
     // The animator's initial bg should be the style's normal bg.
     let animator = dd.visual_states().unwrap();
     assert_eq!(animator.get_bg_color(), Color::WHITE);
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let dd = DropdownWidget::new(items());
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = dd.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "dropdown should declare Pointer cursor"
+    );
+}
+
+/// Repeated open/close cycles must not grow the scene primitive count.
+///
+/// Regression guard: dropdown trigger click → dismiss → repeat should not
+/// leak quads or text runs across cycles.
+#[test]
+fn dropdown_open_close_cycle_stable_scene_size() {
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+
+    let dd = DropdownWidget::new(items());
+    let dd_id = dd.id();
+    let mut h = WidgetTestHarness::with_size(dd, 300.0, 200.0);
+    let bounds = h.widget_bounds(dd_id);
+    let center = crate::geometry::Point::new(
+        bounds.x() + bounds.width() / 2.0,
+        bounds.y() + bounds.height() / 2.0,
+    );
+
+    // Warmup: first render establishes baseline.
+    h.render();
+
+    let mut counts: Vec<usize> = Vec::new();
+    for _ in 0..10 {
+        // Click to trigger OpenDropdown action (actual overlay push
+        // requires parent container wiring, but the click + dismiss
+        // exercises the widget's internal state).
+        h.mouse_move(center);
+        h.mouse_down(MouseButton::Left);
+        h.mouse_up(MouseButton::Left);
+        if h.has_overlays() {
+            h.dismiss_overlays();
+        }
+        let scene = h.render();
+        counts.push(scene.quads().len() + scene.text_runs().len());
+    }
+
+    // Verify no monotonic growth.
+    let first = counts[0];
+    let last = *counts.last().unwrap();
+    assert!(
+        last <= first + 5,
+        "scene primitive count grew from {first} to {last} over 10 cycles — possible leak"
+    );
 }

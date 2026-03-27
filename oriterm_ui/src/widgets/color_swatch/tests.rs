@@ -1,3 +1,5 @@
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::draw::Scene;
@@ -171,4 +173,36 @@ fn special_swatch_sense_is_hover() {
 fn special_swatch_hex_format() {
     let swatch = SpecialColorSwatch::new("Test", Color::hex(0xFF_80_00), theme());
     assert_eq!(swatch.hex_string(), "#FF8000");
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer_grid() {
+    let grid = ColorSwatchGrid::new(ansi_colors(), theme());
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+        theme: theme(),
+    };
+    let layout = grid.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "color swatch grid should declare Pointer cursor"
+    );
+}
+
+#[test]
+fn layout_cursor_icon_default_special() {
+    let swatch = SpecialColorSwatch::new("Foreground", Color::WHITE, theme());
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+        theme: theme(),
+    };
+    let layout = swatch.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Default,
+        "special color swatch should declare Default cursor"
+    );
 }

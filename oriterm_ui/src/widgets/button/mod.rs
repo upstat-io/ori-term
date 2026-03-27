@@ -5,6 +5,8 @@
 //! Uses [`VisualStateAnimator`] with `common_states()` for smooth state color
 //! transitions.
 
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::controllers::{ClickController, EventController, FocusController, HoverController};
@@ -255,7 +257,10 @@ impl Widget for ButtonWidget {
         let metrics = ctx.measurer.measure(&self.label, &style, f32::INFINITY);
         let w = metrics.width + self.style.padding.width();
         let h = metrics.height + self.style.padding.height();
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        LayoutBox::leaf(w, h)
+            .with_widget_id(self.id)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {
