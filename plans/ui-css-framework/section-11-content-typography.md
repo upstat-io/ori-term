@@ -5,7 +5,7 @@ status: complete
 reviewed: true
 third_party_review:
   status: resolved
-  updated: 2026-03-25
+  updated: 2026-03-26
 goal: "The settings content area matches the mockup's typography and rhythm across all pages: page headers, section headers, optional section descriptions, setting-row labels, inline status tags, and the shared body spacing/padding all render from real shared primitives instead of ad hoc per-page constants"
 depends_on: ["01", "02", "03", "04", "05", "06"]
 sections:
@@ -512,6 +512,16 @@ No new tests. Verify existing tests still pass:
 ## 11.R Third Party Review Findings
 
 ### Open Findings
+
+- [x] `[TPR-11-010][medium]` `oriterm/src/font/collection/loading.rs:101` — Section 11 marks the
+  `500`-weight section headers complete, but the embedded UI font path still cannot realize that
+  weight, so every `FontWeight::MEDIUM` header renders at the same visual weight as regular text.
+  Resolved 2026-03-26: accepted and fixed. Added `medium: Option<FontData>` to `FontSet` and
+  `medium: Option<FaceData>` to `FontCollection`. `FontSet::ui_embedded()` now wires
+  `UI_FONT_MEDIUM`. `create_shaping_faces_for_weight()` substitutes the Medium face into the
+  Regular slot for weights 500..700. `rasterize_with_weight()` likewise selects the Medium face.
+  Removed `#[expect(dead_code)]` from `UI_FONT_MEDIUM`. Added 3 regression tests:
+  `ui_embedded_has_medium_face`, `ui_embedded_collection_has_medium`, `terminal_embedded_has_no_medium`.
 
 - [x] `[TPR-11-008][medium]` `oriterm/src/app/settings_overlay/form_builder/shared/mod.rs:128` — Section 11.3 is marked complete, but the new section-description path is still dead code and none of the live settings pages render the mockup's `.section-desc` content. **Accepted 2026-03-25**: Valid finding. Fix tasks added to 11.5 — wire `build_section_header_with_description` into font.rs (Fallback), bell.rs (Throttle), rendering.rs (Performance), and remove `#[expect(dead_code)]`.
 

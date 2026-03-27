@@ -402,11 +402,11 @@ impl App {
 
     /// Build dialog content for the settings panel.
     fn build_settings_content(&self) -> DialogContent {
-        let (content, ids) =
+        let (content, ids, footer_ids) =
             form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0, None);
 
         DialogContent::Settings {
-            panel: Box::new(SettingsPanel::embedded(content, &self.ui_theme)),
+            panel: Box::new(SettingsPanel::embedded(content, footer_ids)),
             ids: Box::new(ids),
             pending_config: Box::new(self.config.clone()),
             original_config: Box::new(self.config.clone()),

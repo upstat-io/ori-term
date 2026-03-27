@@ -51,7 +51,7 @@ pub(super) struct FontData {
     pub(super) index: u32,
 }
 
-/// Four style variants plus an ordered fallback chain.
+/// Four style variants, optional medium weight, and ordered fallback chain.
 ///
 /// Constructed by [`FontSet::load`] from discovery results. Passed to
 /// [`FontCollection::new`] for validation and metrics computation.
@@ -69,6 +69,13 @@ pub struct FontSet {
     pub(super) italic: Option<FontData>,
     /// Bold-italic face data (if a real bold-italic variant was found).
     pub(super) bold_italic: Option<FontData>,
+    /// Medium (500) face data for UI text weight fidelity.
+    ///
+    /// Separate from the 4-slot primary array because Medium is not a CSS
+    /// font-face style slot — it's an intermediate weight used exclusively
+    /// by the UI text pipeline. Substituted into the Regular shaping/raster
+    /// position when `requested_weight` is in 500..700.
+    pub(super) medium: Option<FontData>,
     /// Which style slots have real font files.
     #[allow(dead_code, reason = "font fields consumed in later sections")]
     pub(super) has_variant: [bool; 4],
@@ -93,12 +100,13 @@ impl FontSet {
             bold: None,
             italic: None,
             bold_italic: None,
+            medium: None,
             has_variant: [true, false, false, false],
             fallbacks: Vec::new(),
         }
     }
 
-    /// Build a `FontSet` from embedded IBM Plex Mono (Regular + Bold).
+    /// Build a `FontSet` from embedded IBM Plex Mono (Regular + Medium + Bold).
     ///
     /// Fixed UI font for settings dialogs and chrome — independent of the
     /// user's terminal font configuration. Matches the mockup's
@@ -116,6 +124,10 @@ impl FontSet {
             }),
             italic: None,
             bold_italic: None,
+            medium: Some(FontData {
+                data: Arc::new(discovery::UI_FONT_MEDIUM.to_vec()),
+                index: 0,
+            }),
             has_variant: [true, true, false, false],
             fallbacks: Vec::new(),
         }
@@ -225,6 +237,7 @@ impl FontSet {
             bold,
             italic,
             bold_italic,
+            medium: None,
             has_variant: primary.has_variant,
             fallbacks,
         })

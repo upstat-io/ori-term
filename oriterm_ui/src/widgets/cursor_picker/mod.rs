@@ -21,32 +21,42 @@ use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 /// Number of cursor style options.
 const OPTION_COUNT: usize = 3;
 
-/// Width of each option card.
+/// Width of each option card (mockup `min-width: 80px`, box-sizing total).
 const CARD_WIDTH: f32 = 80.0;
 
-/// Height of each option card.
-const CARD_HEIGHT: f32 = 72.0;
-
-/// Gap between cards.
-const CARD_GAP: f32 = 10.0;
+/// Gap between cards (mockup `.cursor-preview { gap: 24px }`).
+pub(super) const CARD_GAP: f32 = 24.0;
 
 /// Card corner radius.
 const CARD_RADIUS: f32 = 0.0;
 
+/// Card vertical padding (mockup `padding: 12px 20px`).
+const CARD_PAD_V: f32 = 12.0;
+
+/// Card border width.
+const CARD_BORDER: f32 = 2.0;
+
 /// Demo character to display in the cursor preview.
 const DEMO_CHAR: &str = "A";
 
-/// Font size for the cursor demo character.
-const DEMO_FONT_SIZE: f32 = 18.0;
+/// Font size for the cursor demo character (mockup `font-size: 16px`).
+pub(super) const DEMO_FONT_SIZE: f32 = 16.0;
 
-/// Font size for the label below the demo.
-const LABEL_FONT_SIZE: f32 = 10.0;
+/// Font size for the label below the demo (mockup `font-size: 11px`).
+pub(super) const LABEL_FONT_SIZE: f32 = 11.0;
+
+/// Gap between demo and label (mockup `gap: 6px`).
+const DEMO_LABEL_GAP: f32 = 6.0;
 
 /// Cursor style options.
 const OPTIONS: [&str; OPTION_COUNT] = ["Block", "Bar", "Underline"];
 
 /// Total widget width.
 const TOTAL_WIDTH: f32 = OPTION_COUNT as f32 * CARD_WIDTH + (OPTION_COUNT as f32 - 1.0) * CARD_GAP;
+
+/// Card height: top pad + demo height (16px) + gap + label height (11px) + bottom pad.
+/// Using approximate line heights: demo ~20px, label ~14px.
+pub(super) const CARD_HEIGHT: f32 = CARD_PAD_V + 20.0 + DEMO_LABEL_GAP + 14.0 + CARD_PAD_V;
 
 /// Visual cursor style picker with 3 options.
 ///
@@ -55,6 +65,8 @@ const TOTAL_WIDTH: f32 = OPTION_COUNT as f32 * CARD_WIDTH + (OPTION_COUNT as f32
 pub struct CursorPickerWidget {
     id: WidgetId,
     selected: usize,
+    /// Per-card hover tracking (manual hit testing).
+    hovered_card: Option<usize>,
     controllers: Vec<Box<dyn EventController>>,
     animator: VisualStateAnimator,
 }
@@ -65,12 +77,13 @@ impl CursorPickerWidget {
         Self {
             id: WidgetId::next(),
             selected: selected.min(OPTION_COUNT - 1),
+            hovered_card: None,
             controllers: vec![Box::new(HoverController::new())],
             animator: VisualStateAnimator::new(vec![common_states(
-                Color::TRANSPARENT,
+                theme.bg_card,
                 theme.bg_hover,
                 theme.bg_active,
-                Color::TRANSPARENT,
+                theme.bg_card,
             )]),
         }
     }
@@ -106,7 +119,7 @@ impl CursorPickerWidget {
         accent: Color,
     ) {
         let cx = card_rect.x() + card_rect.width() / 2.0;
-        let cy = card_rect.y() + 16.0;
+        let cy = card_rect.y() + CARD_PAD_V;
 
         let text_style = TextStyle::new(DEMO_FONT_SIZE, ctx.theme.fg_primary);
         let shaped = ctx.measurer.shape(DEMO_CHAR, &text_style, CARD_WIDTH);
@@ -178,54 +191,71 @@ impl Widget for CursorPickerWidget {
             let x = x0 + i as f32 * (CARD_WIDTH + CARD_GAP);
             let card = Rect::new(x, y0, CARD_WIDTH, CARD_HEIGHT);
             let is_sel = i == self.selected;
+            let is_hov = self.hovered_card == Some(i);
 
-            // Card background + border.
-            let (border_color, border_w) = if is_sel {
-                (accent, 2.0)
+            // Card background + border (mockup: bg_card rest, bg_hover hover, accent_bg selected).
+            let (bg, border_color) = if is_sel {
+                (ctx.theme.accent_bg, accent)
+            } else if is_hov {
+                (ctx.theme.bg_hover, ctx.theme.border_strong)
             } else {
-                (ctx.theme.border, 1.0)
-            };
-            let bg = if is_sel {
-                ctx.theme.accent_bg
-            } else {
-                Color::TRANSPARENT
+                (ctx.theme.bg_card, ctx.theme.border)
             };
             let style = RectStyle::filled(bg)
                 .with_radius(CARD_RADIUS)
-                .with_border(border_w, border_color);
+                .with_border(CARD_BORDER, border_color);
             ctx.scene.push_quad(card, style);
 
-            // Cursor demo.
+            // Cursor demo (centered in card with padding).
             Self::paint_cursor_demo(ctx, card, i, accent);
 
-            // Label.
+            // Label (mockup `font-size: 11px`, color `--text-muted`).
             let lbl_style = TextStyle::new(LABEL_FONT_SIZE, ctx.theme.fg_secondary);
             let shaped = ctx.measurer.shape(label, &lbl_style, CARD_WIDTH);
             let lx = x + (CARD_WIDTH - shaped.width) / 2.0;
-            let ly = y0 + CARD_HEIGHT - 16.0;
+            let ly = card.y() + CARD_HEIGHT - CARD_PAD_V - shaped.height;
             ctx.scene
                 .push_text(Point::new(lx, ly), shaped, ctx.theme.fg_secondary);
         }
 
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }
 
     fn on_input(&mut self, event: &crate::input::InputEvent, bounds: Rect) -> super::OnInputResult {
-        if let crate::input::InputEvent::MouseDown { pos, .. } = event {
-            let local_x = pos.x - bounds.x();
-            if let Some(idx) = Self::hit_test_card(local_x) {
-                if idx != self.selected {
-                    self.selected = idx;
-                    return super::OnInputResult::handled().with_action(WidgetAction::Selected {
-                        id: self.id,
-                        index: idx,
-                    });
+        use crate::input::InputEvent;
+        match event {
+            InputEvent::MouseMove { pos, .. } => {
+                let local_x = pos.x - bounds.x();
+                let prev = self.hovered_card;
+                self.hovered_card = if bounds.contains(*pos) {
+                    Self::hit_test_card(local_x)
+                } else {
+                    None
+                };
+                if self.hovered_card != prev {
+                    return super::OnInputResult::handled();
                 }
+                super::OnInputResult::ignored()
             }
+            InputEvent::MouseDown { pos, .. } => {
+                let local_x = pos.x - bounds.x();
+                if let Some(idx) = Self::hit_test_card(local_x) {
+                    if idx != self.selected {
+                        self.selected = idx;
+                        return super::OnInputResult::handled().with_action(
+                            WidgetAction::Selected {
+                                id: self.id,
+                                index: idx,
+                            },
+                        );
+                    }
+                }
+                super::OnInputResult::ignored()
+            }
+            _ => super::OnInputResult::ignored(),
         }
-        super::OnInputResult::ignored()
     }
 }
 

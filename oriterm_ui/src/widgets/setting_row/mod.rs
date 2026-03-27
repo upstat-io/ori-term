@@ -285,7 +285,7 @@ impl Widget for SettingRowWidget {
         *self.cached_layout.borrow_mut() = None;
 
         // Hover background.
-        let bg = self.animator.get_bg_color(ctx.now);
+        let bg = self.animator.get_bg_color();
         if bg.a > 0.001 {
             let rect_style = RectStyle::filled(bg).with_radius(CORNER_RADIUS);
             ctx.scene.push_quad(ctx.bounds, rect_style);
@@ -340,7 +340,7 @@ impl Widget for SettingRowWidget {
         }
 
         // Keep animating while transitioning.
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

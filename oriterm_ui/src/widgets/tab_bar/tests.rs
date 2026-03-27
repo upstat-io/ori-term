@@ -393,6 +393,13 @@ use std::time::{Duration, Instant};
 
 use super::widget::{TabBarWidget, TabEntry};
 
+/// Tick N frames on a `TabBarWidget` to advance all `AnimProperty` fields.
+fn tick_n(w: &mut TabBarWidget, n: usize) {
+    for _ in 0..n {
+        w.tick_animations();
+    }
+}
+
 #[test]
 fn widget_new_has_no_tabs() {
     let w = TabBarWidget::new(1200.0);
@@ -457,7 +464,7 @@ fn widget_set_active_index() {
 #[test]
 fn widget_set_hover_hit() {
     let mut w = TabBarWidget::new(1200.0);
-    w.set_hover_hit(TabBarHit::NewTab, Instant::now());
+    w.set_hover_hit(TabBarHit::NewTab);
     // No panic — hover state stored.
 }
 
@@ -530,26 +537,30 @@ use crate::color::Color;
 
 #[test]
 fn anim_property_color_interpolates() {
-    let now = Instant::now();
+    // 100ms at 60fps = 6 frames.
     let mut ap = AnimProperty::with_behavior(Color::BLACK, AnimBehavior::linear(100));
-    ap.set(Color::WHITE, now);
+    ap.set(Color::WHITE);
 
-    // At t=0, should be black (start).
-    let c0 = ap.get(now);
+    // At frame 0, should be black (start).
+    let c0 = ap.get();
     assert!((c0.r - 0.0).abs() < 0.01);
     assert!((c0.g - 0.0).abs() < 0.01);
     assert!((c0.b - 0.0).abs() < 0.01);
 
-    // At t=50ms (50%), should be mid-gray.
-    let mid = now + Duration::from_millis(50);
-    let c50 = ap.get(mid);
+    // At 3 frames (50%), should be mid-gray.
+    for _ in 0..3 {
+        ap.tick();
+    }
+    let c50 = ap.get();
     assert!((c50.r - 0.5).abs() < 0.05, "r at 50%: {}", c50.r);
     assert!((c50.g - 0.5).abs() < 0.05, "g at 50%: {}", c50.g);
     assert!((c50.b - 0.5).abs() < 0.05, "b at 50%: {}", c50.b);
 
-    // At t=100ms+, should be white (target).
-    let end = now + Duration::from_millis(100);
-    let c100 = ap.get(end);
+    // At 6 frames (100%), should be white (target).
+    for _ in 0..3 {
+        ap.tick();
+    }
+    let c100 = ap.get();
     assert!((c100.r - 1.0).abs() < 0.01);
     assert!((c100.g - 1.0).abs() < 0.01);
     assert!((c100.b - 1.0).abs() < 0.01);
@@ -561,42 +572,39 @@ fn anim_property_color_interpolates() {
 fn hover_progress_starts_at_zero() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
-    assert!((w.test_hover_progress(0, now) - 0.0).abs() < f32::EPSILON);
-    assert!((w.test_hover_progress(1, now) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_hover_progress(0) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_hover_progress(1) - 0.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn hover_progress_reaches_one_after_duration() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
     // Hover tab 0.
-    w.set_hover_hit(TabBarHit::Tab(0), now);
+    w.set_hover_hit(TabBarHit::Tab(0));
 
-    // After 100ms+ (TAB_HOVER_DURATION), should be 1.0.
-    let after = now + Duration::from_millis(150);
+    // Tick 9 frames (150ms at 60fps) — past TAB_HOVER_DURATION.
+    tick_n(&mut w, 9);
     assert!(
-        (w.test_hover_progress(0, after) - 1.0).abs() < f32::EPSILON,
+        (w.test_hover_progress(0) - 1.0).abs() < f32::EPSILON,
         "hover progress should be 1.0, got {}",
-        w.test_hover_progress(0, after)
+        w.test_hover_progress(0)
     );
     // Tab 1 should still be 0.
-    assert!((w.test_hover_progress(1, after) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_hover_progress(1) - 0.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn hover_progress_mid_transition() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
 
-    w.set_hover_hit(TabBarHit::Tab(0), now);
+    w.set_hover_hit(TabBarHit::Tab(0));
 
-    // At ~50% of 100ms duration, should be mid-transition (not 0 and not 1).
-    let mid = now + Duration::from_millis(50);
-    let p = w.test_hover_progress(0, mid);
+    // Tick 3 frames (~50ms at 60fps, ~50% of 100ms duration).
+    tick_n(&mut w, 3);
+    let p = w.test_hover_progress(0);
     assert!(p > 0.1, "mid-transition should be > 0.1, got {p}");
     assert!(p < 0.99, "mid-transition should be < 0.99, got {p}");
 }
@@ -605,24 +613,23 @@ fn hover_progress_mid_transition() {
 fn hover_leave_starts_reverse_transition() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
 
     // Hover enter.
-    w.set_hover_hit(TabBarHit::Tab(0), now);
+    w.set_hover_hit(TabBarHit::Tab(0));
 
-    // Let animation complete.
-    let t1 = now + Duration::from_millis(150);
-    assert!((w.test_hover_progress(0, t1) - 1.0).abs() < f32::EPSILON);
+    // Let animation complete (9 frames = 150ms at 60fps).
+    tick_n(&mut w, 9);
+    assert!((w.test_hover_progress(0) - 1.0).abs() < f32::EPSILON);
 
     // Hover leave.
-    w.set_hover_hit(TabBarHit::None, t1);
+    w.set_hover_hit(TabBarHit::None);
 
-    // After leave animation completes, should be 0.
-    let t2 = t1 + Duration::from_millis(150);
+    // After leave animation completes (9 more frames), should be 0.
+    tick_n(&mut w, 9);
     assert!(
-        (w.test_hover_progress(0, t2) - 0.0).abs() < f32::EPSILON,
+        (w.test_hover_progress(0) - 0.0).abs() < f32::EPSILON,
         "after leave, hover progress should be 0.0, got {}",
-        w.test_hover_progress(0, t2)
+        w.test_hover_progress(0)
     );
 }
 
@@ -632,24 +639,22 @@ fn hover_leave_starts_reverse_transition() {
 fn close_btn_opacity_zero_by_default() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
-    assert!((w.test_close_btn_opacity(0, now) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_close_btn_opacity(0) - 0.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn close_btn_opacity_reaches_one_on_hover() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
 
-    w.set_hover_hit(TabBarHit::Tab(0), now);
+    w.set_hover_hit(TabBarHit::Tab(0));
 
-    // After 80ms+ (CLOSE_BTN_FADE_DURATION), should be 1.0.
-    let after = now + Duration::from_millis(100);
+    // Tick 6 frames (100ms at 60fps) — past CLOSE_BTN_FADE_DURATION.
+    tick_n(&mut w, 6);
     assert!(
-        (w.test_close_btn_opacity(0, after) - 1.0).abs() < f32::EPSILON,
+        (w.test_close_btn_opacity(0) - 1.0).abs() < f32::EPSILON,
         "close btn opacity should be 1.0, got {}",
-        w.test_close_btn_opacity(0, after)
+        w.test_close_btn_opacity(0)
     );
 }
 
@@ -657,22 +662,21 @@ fn close_btn_opacity_reaches_one_on_hover() {
 fn close_btn_opacity_fades_out_on_leave() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
 
-    // Hover enter, let animation complete.
-    w.set_hover_hit(TabBarHit::Tab(0), now);
-    let t1 = now + Duration::from_millis(100);
-    assert!((w.test_close_btn_opacity(0, t1) - 1.0).abs() < f32::EPSILON);
+    // Hover enter, let animation complete (6 frames).
+    w.set_hover_hit(TabBarHit::Tab(0));
+    tick_n(&mut w, 6);
+    assert!((w.test_close_btn_opacity(0) - 1.0).abs() < f32::EPSILON);
 
     // Hover leave.
-    w.set_hover_hit(TabBarHit::None, t1);
+    w.set_hover_hit(TabBarHit::None);
 
-    // After fade-out completes, should be 0.
-    let t2 = t1 + Duration::from_millis(100);
+    // After fade-out completes (6 more frames), should be 0.
+    tick_n(&mut w, 6);
     assert!(
-        (w.test_close_btn_opacity(0, t2) - 0.0).abs() < f32::EPSILON,
+        (w.test_close_btn_opacity(0) - 0.0).abs() < f32::EPSILON,
         "after leave, close btn opacity should be 0.0, got {}",
-        w.test_close_btn_opacity(0, t2)
+        w.test_close_btn_opacity(0)
     );
 }
 
@@ -1008,7 +1012,7 @@ fn interleaved_mutations_do_not_corrupt_layout() {
         TabEntry::new("C"),
     ]);
     w.set_window_width(800.0);
-    w.set_hover_hit(TabBarHit::Tab(1), Instant::now());
+    w.set_hover_hit(TabBarHit::Tab(1));
     w.set_active_index(0);
     w.set_window_width(1200.0);
     // Layout should reflect final state: 3 tabs, 1200px window.
@@ -1420,8 +1424,6 @@ fn layout_with_left_inset_controls_stay_right() {
 #[cfg(not(target_os = "macos"))]
 #[test]
 fn dispatch_control_input_handles_click() {
-    use std::time::Instant;
-
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
 
@@ -1506,8 +1508,6 @@ fn action_for_control_maps_close() {
 #[cfg(not(target_os = "macos"))]
 #[test]
 fn update_control_hover_state_returns_animating() {
-    use std::time::Instant;
-
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
 
@@ -1517,8 +1517,7 @@ fn update_control_hover_state_returns_animating() {
         ctrl_rect.x() + ctrl_rect.width() / 2.0,
         ctrl_rect.y() + ctrl_rect.height() / 2.0,
     );
-    let now = Instant::now();
-    let animating = w.update_control_hover_state(center, now);
+    let animating = w.update_control_hover_state(center);
     // The animator should be mid-transition (Normal → Hovered).
     assert!(
         animating,
@@ -1529,8 +1528,6 @@ fn update_control_hover_state_returns_animating() {
 #[cfg(not(target_os = "macos"))]
 #[test]
 fn clear_control_hover_state_after_hover() {
-    use std::time::{Duration, Instant};
-
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
 
@@ -1540,12 +1537,10 @@ fn clear_control_hover_state_after_hover() {
         ctrl_rect.x() + ctrl_rect.width() / 2.0,
         ctrl_rect.y() + ctrl_rect.height() / 2.0,
     );
-    let now = Instant::now();
-    w.update_control_hover_state(center, now);
+    w.update_control_hover_state(center);
 
     // Clear: should also animate (Hovered → Normal).
-    let later = now + Duration::from_millis(200);
-    let animating = w.clear_control_hover_state(later);
+    let animating = w.clear_control_hover_state();
     assert!(animating, "clearing hover should start a reverse animation");
 }
 
@@ -1576,78 +1571,72 @@ fn hit_test_close_window_in_controls_zone() {
 fn width_multiplier_defaults_to_one() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
     // No animation → multiplier is 1.0 (full width).
-    assert!(!w.has_width_animation(now));
+    assert!(!w.has_width_animation());
 }
 
 #[test]
 fn animate_tab_open_starts_at_zero() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_open(1, now);
+    w.animate_tab_open(1);
 
-    // Tab 1 width multiplier at t=0 should be 0.0.
-    assert!(w.has_width_animation(now));
-    // After animation (200ms+), should be 1.0.
-    let after = now + Duration::from_millis(250);
-    assert!(!w.has_width_animation(after));
+    // Tab 1 width multiplier at frame 0 should be animating.
+    assert!(w.has_width_animation());
+    // After 15 frames (250ms at 60fps), should be complete.
+    tick_n(&mut w, 15);
+    assert!(!w.has_width_animation());
 }
 
 #[test]
 fn animate_tab_close_starts_at_one() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_close(0, now);
+    w.animate_tab_close(0);
 
     assert!(w.is_closing(0));
     assert!(!w.is_closing(1));
-    assert!(w.has_width_animation(now));
+    assert!(w.has_width_animation());
 }
 
 #[test]
 fn closing_complete_returns_none_during_animation() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_close(0, now);
+    w.animate_tab_close(0);
 
-    // Mid-animation: no completion yet.
-    let mid = now + Duration::from_millis(50);
-    assert!(w.closing_complete(mid).is_none());
+    // Tick 3 frames (~50ms) — mid-animation, no completion yet.
+    tick_n(&mut w, 3);
+    assert!(w.closing_complete().is_none());
 }
 
 #[test]
 fn closing_complete_returns_index_after_animation() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_close(0, now);
+    w.animate_tab_close(0);
 
-    // After animation (150ms+), tab 0 should be complete.
-    let after = now + Duration::from_millis(200);
-    assert_eq!(w.closing_complete(after), Some(0));
+    // Tick 12 frames (~200ms at 60fps) — animation complete.
+    tick_n(&mut w, 12);
+    assert_eq!(w.closing_complete(), Some(0));
 }
 
 #[test]
 fn set_tabs_resets_closing_state() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_close(0, now);
+    w.animate_tab_close(0);
     assert!(w.is_closing(0));
 
     // set_tabs resets all parallel vecs.
     w.set_tabs(vec![TabEntry::new("B")]);
     assert!(!w.is_closing(0));
-    assert!(!w.has_width_animation(Instant::now()));
+    assert!(!w.has_width_animation());
 }
 
 // Layout with width multipliers
@@ -1762,8 +1751,7 @@ fn draw_window_controls_propagates_frame_requests() {
         ctrl_rect.x() + ctrl_rect.width() / 2.0,
         ctrl_rect.y() + ctrl_rect.height() / 2.0,
     );
-    let now = Instant::now();
-    let animating = w.update_control_hover_state(center, now);
+    let animating = w.update_control_hover_state(center);
     assert!(
         animating,
         "precondition: control button should be animating"
@@ -1774,6 +1762,7 @@ fn draw_window_controls_propagates_frame_requests() {
     let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 1200.0, TAB_BAR_HEIGHT);
     let flags = FrameRequestFlags::new();
+    let now = Instant::now();
     let mut ctx = DrawCtx {
         measurer: &measurer,
         scene: &mut scene,

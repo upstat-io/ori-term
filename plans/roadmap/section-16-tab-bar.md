@@ -3,6 +3,9 @@ section: 16
 title: Tab Bar & Chrome
 status: in-progress
 reviewed: false
+third_party_review:
+  status: findings
+  updated: 2026-03-26
 tier: 4
 goal: Tab bar layout, rendering, and hit testing with DPI awareness
 sections:
@@ -249,6 +252,13 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 - [x] `MuxNotification::PaneTitleChanged` debug format
 
 ---
+
+## 16.R Third Party Review Findings
+
+- [ ] `[TPR-16-001][medium]` `oriterm_ui/src/widgets/tab_bar/widget/animation.rs:119` — The frame-based animation refactor still mutates `width_multipliers` for tab open/close, but nothing applies those animated widths back into `TabBarLayout`, so the width animation path is effectively dead. `update_animated_layout()` is now the only place that calls `recompute_layout_animated()`, yet no caller invokes it; meanwhile `draw_tab()` still renders geometry from `self.layout.tab_width_at(index)` and `prepaint()` only ticks the animation counters.
+  Evidence: `animate_tab_open()` / `animate_tab_close()` update `width_multipliers`, `closing_complete()` polls those values, and `draw_tab()` uses them only for content opacity. The actual tab rectangle continues to come from the static layout cache because `update_animated_layout()` is unused.
+  Impact: Tab open/close transitions no longer visually expand or shrink tabs. Closing now waits on the timer and then removes the tab without the planned width-collapse animation, which regresses section 16’s rendering and close-stress expectations.
+  Required plan update: Recompute animated layout each frame before draw whenever `has_width_animation()` is true, and add a regression test that sampled tab widths change over the lifetime of an open/close animation rather than only the opacity values.
 
 ## 16.4 Section Completion
 

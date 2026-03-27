@@ -2092,3 +2092,34 @@ fn face_variations_for_ui_weight_italic_still_set() {
     assert_eq!(result.settings[1].0, "slnt");
     assert!(result.suppress_synthetic.contains(SyntheticFlags::ITALIC));
 }
+
+// ── Medium Face Wiring ──
+
+#[test]
+fn ui_embedded_has_medium_face() {
+    let fs = FontSet::ui_embedded();
+    assert!(
+        fs.medium.is_some(),
+        "UI embedded FontSet should include Medium face"
+    );
+}
+
+#[test]
+fn ui_embedded_collection_has_medium() {
+    let fs = FontSet::ui_embedded();
+    let fc = FontCollection::new(fs, 13.0, 96.0, GlyphFormat::Alpha, 400, HintingMode::None)
+        .expect("UI embedded collection should build");
+    assert!(
+        fc.medium.is_some(),
+        "UI embedded FontCollection should have Medium face"
+    );
+}
+
+#[test]
+fn terminal_embedded_has_no_medium() {
+    let fs = FontSet::embedded();
+    assert!(
+        fs.medium.is_none(),
+        "terminal embedded FontSet should not have a Medium face"
+    );
+}

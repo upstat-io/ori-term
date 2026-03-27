@@ -1,5 +1,3 @@
-use std::time::{Duration, Instant};
-
 use crate::layout::BoxContent;
 use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
@@ -86,11 +84,10 @@ fn set_on_programmatic() {
 #[test]
 fn set_on_is_immediate_no_animation() {
     let mut t = ToggleWidget::new();
-    let now = Instant::now();
     t.set_on(true);
 
-    assert!(!t.toggle_progress.is_animating(now));
-    assert_eq!(t.toggle_progress.get(now), 1.0);
+    assert!(!t.toggle_progress.is_animating());
+    assert_eq!(t.toggle_progress.get(), 1.0);
 }
 
 #[test]
@@ -98,8 +95,7 @@ fn toggle_starts_animation() {
     let mut t = ToggleWidget::new();
     t.toggle();
 
-    let now = Instant::now();
-    assert!(t.toggle_progress.is_animating(now));
+    assert!(t.toggle_progress.is_animating());
     assert_eq!(t.toggle_progress.target(), 1.0);
 }
 
@@ -108,17 +104,19 @@ fn animation_completes_to_target() {
     let mut t = ToggleWidget::new();
     t.toggle();
 
-    let later = Instant::now() + Duration::from_millis(200);
-    assert!(!t.toggle_progress.is_animating(later));
-    assert_eq!(t.toggle_progress.get(later), 1.0);
+    // 150ms at 60fps = 9 frames. Tick past completion.
+    for _ in 0..10 {
+        t.toggle_progress.tick();
+    }
+    assert!(!t.toggle_progress.is_animating());
+    assert_eq!(t.toggle_progress.get(), 1.0);
 }
 
 #[test]
 fn with_on_builder_is_immediate() {
     let t = ToggleWidget::new().with_on(true);
-    let now = Instant::now();
-    assert!(!t.toggle_progress.is_animating(now));
-    assert_eq!(t.toggle_progress.get(now), 1.0);
+    assert!(!t.toggle_progress.is_animating());
+    assert_eq!(t.toggle_progress.get(), 1.0);
 }
 
 // -- Style --
@@ -136,6 +134,7 @@ fn with_style_applies_custom_style() {
         off_thumb_color: Color::rgb(0.9, 0.9, 0.9),
         on_thumb_color: Color::rgb(0.0, 0.8, 0.0),
         thumb_padding: 4.0,
+        thumb_size: 22.0,
         border_width: 2.0,
         off_border_color: Color::rgb(0.3, 0.3, 0.3),
         on_border_color: Color::rgb(0.0, 0.8, 0.0),
@@ -169,16 +168,18 @@ fn with_style_applies_custom_style() {
 fn toggle_animation_interpolates_thumb_position() {
     let mut t = ToggleWidget::new();
     t.toggle();
-    let now = Instant::now();
 
-    let start_progress = t.toggle_progress.get(now);
+    let start_progress = t.toggle_progress.get();
     assert!(
         start_progress < 0.1,
         "at start of toggle animation, progress should be near 0, got {start_progress}"
     );
 
-    let after = now + Duration::from_millis(200);
-    let end_progress = t.toggle_progress.get(after);
+    // 150ms at 60fps = 9 frames. Tick past completion.
+    for _ in 0..10 {
+        t.toggle_progress.tick();
+    }
+    let end_progress = t.toggle_progress.get();
     assert_eq!(
         end_progress, 1.0,
         "after toggle animation completes, progress should be 1.0"
@@ -187,6 +188,8 @@ fn toggle_animation_interpolates_thumb_position() {
 
 #[test]
 fn paint_signals_animation_while_toggling() {
+    use std::time::Instant;
+
     use crate::animation::FrameRequestFlags;
     use crate::draw::Scene;
     use crate::geometry::Rect;
@@ -220,6 +223,8 @@ fn paint_signals_animation_while_toggling() {
 
 #[test]
 fn paint_no_animation_signal_when_idle() {
+    use std::time::Instant;
+
     use crate::animation::FrameRequestFlags;
     use crate::draw::Scene;
     use crate::geometry::Rect;
@@ -252,6 +257,8 @@ fn paint_no_animation_signal_when_idle() {
 
 #[test]
 fn paint_thumb_at_on_position() {
+    use std::time::Instant;
+
     use crate::draw::Scene;
     use crate::geometry::Rect;
 
@@ -279,8 +286,7 @@ fn paint_thumb_at_on_position() {
     assert!(rects.len() >= 2, "should have track + thumb rects");
 
     let thumb_rect = rects.last().unwrap();
-    let thumb_diameter = style.height - style.thumb_padding * 2.0;
-    let travel = style.width - style.thumb_padding * 2.0 - thumb_diameter;
+    let travel = style.width - style.thumb_padding * 2.0 - style.thumb_size;
     let expected_x = bounds.x() + style.thumb_padding + travel;
     assert!(
         (thumb_rect.x() - expected_x).abs() < 0.1,
@@ -291,6 +297,8 @@ fn paint_thumb_at_on_position() {
 
 #[test]
 fn paint_thumb_at_off_position() {
+    use std::time::Instant;
+
     use crate::draw::Scene;
     use crate::geometry::Rect;
 
@@ -586,4 +594,44 @@ fn harness_toggle_drag_right_turns_on() {
             .any(|a| matches!(a, WidgetAction::Toggled { id, value: true } if *id == toggle_id)),
         "drag right should produce Toggled(true), got: {actions:?}"
     );
+}
+
+// -- Geometry invariants (section 13.6) --
+
+#[test]
+fn toggle_thumb_size_is_12px() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    assert_eq!(style.thumb_size, 12.0);
+}
+
+#[test]
+fn toggle_travel_is_20px() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    // travel = width - 2*thumb_padding - thumb_size = 38 - 6 - 12 = 20.
+    let travel = style.width - 2.0 * style.thumb_padding - style.thumb_size;
+    assert_eq!(travel, 20.0);
+}
+
+#[test]
+fn toggle_off_thumb_position() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    // When off, thumb sits at x = thumb_padding.
+    let expected_x = style.thumb_padding;
+    assert_eq!(expected_x, 3.0);
+}
+
+#[test]
+fn toggle_on_thumb_position() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    let travel = style.width - 2.0 * style.thumb_padding - style.thumb_size;
+    // When on, thumb sits at x = thumb_padding + travel = 3 + 20 = 23.
+    let expected_x = style.thumb_padding + travel;
+    assert_eq!(expected_x, 23.0);
+}
+
+#[test]
+fn toggle_outer_size_38x20() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    assert_eq!(style.width, 38.0);
+    assert_eq!(style.height, 20.0);
 }

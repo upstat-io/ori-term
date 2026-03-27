@@ -30,6 +30,8 @@ pub struct TextInputStyle {
     pub bg: Color,
     /// Border color.
     pub border_color: Color,
+    /// Border color on hover.
+    pub hover_border_color: Color,
     /// Border color when focused.
     pub focus_border_color: Color,
     /// Border width.
@@ -63,6 +65,7 @@ impl TextInputStyle {
             fg: theme.fg_primary,
             bg: theme.bg_input,
             border_color: theme.border,
+            hover_border_color: theme.fg_faint,
             focus_border_color: theme.accent,
             border_width: 1.0,
             corner_radius: theme.corner_radius,
@@ -75,6 +78,20 @@ impl TextInputStyle {
             min_width: 120.0,
             disabled_fg: theme.fg_disabled,
             disabled_bg: theme.bg_secondary,
+        }
+    }
+
+    /// Settings-panel text input style: 2px border, 12px font, 200px min-width.
+    ///
+    /// Matches mockup `input[type="text"]` in settings: `border: 2px`,
+    /// `font-size: 12px`, `padding: 6px 10px`, `width: 200px`.
+    pub fn settings(theme: &UiTheme) -> Self {
+        Self {
+            border_width: 2.0,
+            font_size: 12.0,
+            padding: Insets::vh(6.0, 10.0),
+            min_width: 200.0,
+            ..Self::from_theme(theme)
         }
     }
 }

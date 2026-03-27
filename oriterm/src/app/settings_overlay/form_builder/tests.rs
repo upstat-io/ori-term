@@ -11,14 +11,14 @@ use crate::config::Config;
 fn dialog_builds_without_panic() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, _ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, _ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
 }
 
 #[test]
 fn settings_ids_all_distinct() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
     let all = collect_ids(&ids);
     // 26 fixed control IDs (25 controls + sidebar) + N scheme card IDs.
     let expected = 26 + ids.scheme_card_ids.len();
@@ -29,7 +29,7 @@ fn settings_ids_all_distinct() {
 fn content_widget_has_valid_id() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (content, _ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
     assert_ne!(content.id().raw(), 0);
 }
 
@@ -37,7 +37,7 @@ fn content_widget_has_valid_id() {
 fn all_page_ids_are_set() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
     let all = collect_ids(&ids);
     // Every ID must be non-placeholder.
     assert!(
@@ -50,7 +50,7 @@ fn all_page_ids_are_set() {
 fn scheme_card_ids_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
     // Scheme cards are captured during colors page building.
     assert!(
         !ids.scheme_card_ids.is_empty(),
@@ -64,7 +64,7 @@ fn scheme_card_ids_captured() {
 fn sidebar_id_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
     assert_ne!(
         ids.sidebar_id,
         oriterm_ui::widget_id::WidgetId::placeholder(),
@@ -87,7 +87,7 @@ fn dialog_builds_with_update_info() {
         "v2.0.0 ready",
         "https://example.com/update",
     ));
-    let (content, ids) = build_settings_dialog(&config, &theme, 0, info);
+    let (content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, info);
     // Sidebar must still be captured.
     assert_ne!(
         ids.sidebar_id,
@@ -95,6 +95,102 @@ fn dialog_builds_with_update_info() {
         "sidebar_id must be non-placeholder when update info is provided"
     );
     assert_ne!(content.id().raw(), 0);
+}
+
+// -- Composition tests --
+
+#[test]
+fn footer_buttons_reachable_through_widget_tree() {
+    use oriterm_ui::widgets::Widget;
+    use oriterm_ui::widgets::settings_panel::SettingsPanel;
+
+    let config = Config::default();
+    let theme = UiTheme::default();
+    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let panel = SettingsPanel::embedded(content, footer_ids);
+    let focusable = panel.focusable_children();
+
+    let (reset_id, cancel_id, _save_id) = footer_ids;
+    assert!(
+        focusable.contains(&reset_id),
+        "reset button should be reachable through focusable_children"
+    );
+    assert!(
+        focusable.contains(&cancel_id),
+        "cancel button should be reachable through focusable_children"
+    );
+    // Save is initially disabled, so not focusable — that's correct behavior.
+}
+
+#[test]
+fn accept_unsaved_reaches_footer() {
+    use oriterm_ui::action::WidgetAction;
+    use oriterm_ui::widgets::Widget;
+    use oriterm_ui::widgets::settings_panel::SettingsPanel;
+
+    let config = Config::default();
+    let theme = UiTheme::default();
+    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let mut panel = SettingsPanel::embedded(content, footer_ids);
+
+    let handled = panel.accept_action(&WidgetAction::SettingsUnsaved(true));
+    assert!(
+        handled,
+        "SettingsUnsaved should be handled by the footer through the panel"
+    );
+}
+
+#[test]
+fn footer_buttons_have_correct_height() {
+    use oriterm_ui::geometry::Rect;
+    use oriterm_ui::layout::compute_layout;
+    use oriterm_ui::widgets::Widget;
+    use oriterm_ui::widgets::settings_panel::SettingsPanel;
+
+    let config = Config::default();
+    let theme = UiTheme::default();
+    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let panel = SettingsPanel::embedded(content, footer_ids);
+
+    // Simulate dialog dimensions (860×620 at logical pixels).
+    let measurer = oriterm_ui::testing::MockMeasurer::STANDARD;
+    let ctx = oriterm_ui::widgets::LayoutCtx {
+        measurer: &measurer,
+        theme: &theme,
+    };
+    let lb = panel.layout(&ctx);
+    let viewport = Rect::new(0.0, 0.0, 860.0, 620.0);
+    let root = compute_layout(&lb, viewport);
+
+    // Walk the tree to find nodes with the footer button IDs.
+    let (reset_id, cancel_id, save_id) = footer_ids;
+    let ids = [reset_id, cancel_id, save_id];
+
+    fn find_by_id(
+        node: &oriterm_ui::layout::LayoutNode,
+        id: oriterm_ui::widget_id::WidgetId,
+    ) -> Option<Rect> {
+        if node.widget_id == Some(id) {
+            return Some(node.rect);
+        }
+        for child in &node.children {
+            if let Some(r) = find_by_id(child, id) {
+                return Some(r);
+            }
+        }
+        None
+    }
+
+    for &id in &ids {
+        let rect = find_by_id(&root, id);
+        assert!(rect.is_some(), "button {id:?} not found in layout tree");
+        let rect = rect.unwrap();
+        assert!(
+            rect.height() >= 20.0,
+            "button {id:?} height is {}, expected >= 20px (rect: {rect:?})",
+            rect.height()
+        );
+    }
 }
 
 fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {

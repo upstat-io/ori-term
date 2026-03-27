@@ -235,7 +235,7 @@ impl Widget for KeybindRow {
         let bounds = ctx.bounds;
 
         // Hover background.
-        let bg = self.animator.get_bg_color(ctx.now);
+        let bg = self.animator.get_bg_color();
         if bg.a > 0.001 {
             let style = RectStyle::filled(bg).with_radius(ROW_RADIUS);
             ctx.scene.push_quad(bounds, style);
@@ -305,7 +305,7 @@ impl Widget for KeybindRow {
             bx += bw;
         }
 
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

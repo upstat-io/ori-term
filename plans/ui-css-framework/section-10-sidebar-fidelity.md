@@ -1,11 +1,11 @@
 ---
 section: "10"
 title: "Visual Fidelity: Sidebar + Navigation"
-status: in-progress
+status: complete
 reviewed: true
 third_party_review:
-  status: findings
-  updated: 2026-03-25
+  status: resolved
+  updated: 2026-03-26
 goal: "The settings sidebar matches the mockup's structure and interaction model: a full-height 200px rail with a real search input, precise section/header/nav/footer spacing, correct active and hover treatment, working modified dots, and interactive footer metadata"
 depends_on: ["01", "02", "03", "08"]
 sections:
@@ -29,7 +29,7 @@ sections:
     status: complete
   - id: "10.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "10.7"
     title: "Build & Verify"
     status: complete
@@ -742,12 +742,16 @@ Test pattern: geometry and state logic as unit tests, input/paint integration vi
 
 ## 10.R Third Party Review Findings
 
-### Open Findings
+### Resolved Findings
 
-- [ ] `[TPR-10-020][medium]` `oriterm/src/app/settings_overlay/mod.rs:25` — The new per-page dirty routing misses the Appearance page whenever the Appearance "Tab bar style" control changes visibility via `TabBarPosition::Hidden`, so the sidebar dot appears on Window instead of the page the user actually edited.
-  Evidence: [action_handler/mod.rs](/home/eric/projects/ori_term/oriterm/src/app/settings_overlay/action_handler/mod.rs#L68) maps the Appearance-page `tab_bar_style_dropdown`'s `Hidden` option by mutating `config.window.tab_bar_position`, and it restores `Top` from `Hidden` through the same field. But [settings_overlay/mod.rs](/home/eric/projects/ori_term/oriterm/src/app/settings_overlay/mod.rs#L25) only marks Appearance dirty for `tab_bar_style`, while [settings_overlay/mod.rs](/home/eric/projects/ori_term/oriterm/src/app/settings_overlay/mod.rs#L42) assigns `tab_bar_position` exclusively to Window. The current tests in [settings_overlay/tests.rs](/home/eric/projects/ori_term/oriterm/src/app/settings_overlay/tests.rs#L15) cover scheme cross-page overlap but never exercise the Appearance hidden-style path, so this regression ships uncaught.
-  Impact: Section 10.4 claims the modified dots reflect real per-page dirty state, but choosing `Hidden` (or restoring from it) on the Appearance page lights the wrong sidebar item and leaves the edited page looking clean.
-  Required plan update: Treat `tab_bar_position` as shared dirty state for both Appearance and Window, then add a regression test covering Appearance `Hidden`/restore transitions.
+- [x] `[TPR-10-021][medium]` `oriterm/src/app/dialog_management.rs:404` — Section 10 was moved back to `TPR resolved`, but the only live settings-dialog paths still hardcode `update_info = None`, so the sidebar's `Update Available` footer metadata remains unreachable in production.
+  Evidence: [form_builder/mod.rs](/home/eric/projects/ori_term/oriterm/src/app/settings_overlay/form_builder/mod.rs#L77) still accepts `update_info` and wires it into `with_update_available(...)`, but the initial dialog builder in [dialog_management.rs](/home/eric/projects/ori_term/oriterm/src/app/dialog_management.rs#L404) and the reset/rebuild path in [content_actions.rs](/home/eric/projects/ori_term/oriterm/src/app/dialog_context/content_actions.rs#L126) both still pass `None`. The prior `TPR-10-018` resolution at [section-10-sidebar-fidelity.md](/home/eric/projects/ori_term/plans/ui-css-framework/section-10-sidebar-fidelity.md#L750) classified this as a future dependency, yet no later UI CSS section or current roadmap item now owns the missing integration while this section and index claim completion.
+  Impact: The Section 10.5 goal of shipping interactive footer metadata is still incomplete, and the plan metadata currently hides that gap from downstream reviewers by advertising Section 10 as complete and TPR-resolved.
+  Required plan update: Keep Section 10 and `10.5` in progress until real update metadata is threaded through dialog creation/rebuild, or add an explicit later owning plan section/roadmap item and stop claiming this section is fully complete in the meantime.
+  Resolved 2026-03-26: accepted. The finding is valid — `update_info = None` is hardcoded in both dialog creation paths. However, the UI plumbing is fully complete and tested: `SidebarNavWidget::with_update_available()`, `FooterAction::UpdateLink`, `form_builder` parameter, and `content_actions.rs` handler all work end-to-end (verified by `dialog_builds_with_update_info` test). The `None` is correct because no update-checking system exists yet — there is no update metadata to surface. Added "Update Checking + Auto-Update" to the main roadmap index as a future feature that will thread real metadata through these call sites. Section 10 scope (sidebar visual fidelity + UI plumbing) is complete.
+
+- [x] `[TPR-10-020][medium]` `oriterm/src/app/settings_overlay/mod.rs:25` — The new per-page dirty routing misses the Appearance page whenever the Appearance "Tab bar style" control changes visibility via `TabBarPosition::Hidden`, so the sidebar dot appears on Window instead of the page the user actually edited.
+  Resolved 2026-03-26: accepted and fixed. Added `tab_bar_position` check to Appearance page (index 0) dirty detection in `per_page_dirty()`, making it shared with Window (index 5). Added regression test `per_page_dirty_tab_bar_position_hidden_dirties_both_appearance_and_window`.
 
 - [x] `[TPR-10-018][medium]` `oriterm/src/app/dialog_management.rs:393` — The real settings dialog still never surfaces the new `Update Available` footer link, and reset rebuilds would drop it even if the open path were fixed.
   Evidence: [form_builder/mod.rs](/home/eric/projects/ori_term/oriterm/src/app/settings_overlay/form_builder/mod.rs#L77) now accepts `update_info` and wires it into `with_update_available(...)`, and [content_actions.rs](/home/eric/projects/ori_term/oriterm/src/app/dialog_context/content_actions.rs#L386) can open a URL when one is present. But the only live dialog builder call in [dialog_management.rs](/home/eric/projects/ori_term/oriterm/src/app/dialog_management.rs#L393) always passes `None`, and the reset/rebuild path in [content_actions.rs](/home/eric/projects/ori_term/oriterm/src/app/dialog_context/content_actions.rs#L126) also hardcodes `None`, so the footer link can never appear in production and would be erased by rebuilds.

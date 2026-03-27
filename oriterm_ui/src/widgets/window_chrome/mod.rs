@@ -87,8 +87,7 @@ impl WindowChromeWidget {
         theme: &UiTheme,
         mode: ChromeMode,
     ) -> Self {
-        let chrome_layout =
-            ChromeLayout::compute_with_inset(window_width, false, false, mode, 0.0);
+        let chrome_layout = ChromeLayout::compute_with_inset(window_width, false, false, mode, 0.0);
 
         let caption_bg = theme.bg_secondary;
 

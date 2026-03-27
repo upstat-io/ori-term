@@ -1,12 +1,15 @@
 //! Animation behavior declarations — how properties transition on change.
 //!
 //! [`AnimBehavior`] declares the animation curve for a property. [`AnimCurve`]
-//! unifies duration-based easing and velocity-based springs under one enum.
-
-use std::time::Duration;
+//! unifies frame-count easing and velocity-based springs under one enum.
+//! Durations are specified in milliseconds at the API layer and converted
+//! to frame counts at 60 fps internally.
 
 use super::Easing;
 use super::spring::Spring;
+
+/// Assumed frame rate for ms → frame conversion.
+const FRAMES_PER_SECOND: f32 = 60.0;
 
 /// Declares how a property transitions when its target value changes.
 ///
@@ -20,11 +23,13 @@ pub struct AnimBehavior {
 
 impl AnimBehavior {
     /// Ease-out animation with the given duration in milliseconds.
+    ///
+    /// Converted to frame count at 60 fps (e.g. 100ms = 6 frames).
     pub fn ease_out(ms: u64) -> Self {
         Self {
             curve: AnimCurve::Easing {
                 easing: Easing::EaseOut,
-                duration: Duration::from_millis(ms),
+                total_frames: ms_to_frames(ms),
             },
         }
     }
@@ -44,44 +49,66 @@ impl AnimBehavior {
     }
 
     /// Linear animation with the given duration in milliseconds.
+    ///
+    /// Converted to frame count at 60 fps.
     pub fn linear(ms: u64) -> Self {
         Self {
             curve: AnimCurve::Easing {
                 easing: Easing::Linear,
-                duration: Duration::from_millis(ms),
+                total_frames: ms_to_frames(ms),
             },
         }
     }
 
     /// Ease-in-out animation with the given duration in milliseconds.
+    ///
+    /// Converted to frame count at 60 fps.
     pub fn ease_in_out(ms: u64) -> Self {
         Self {
             curve: AnimCurve::Easing {
                 easing: Easing::EaseInOut,
-                duration: Duration::from_millis(ms),
+                total_frames: ms_to_frames(ms),
             },
+        }
+    }
+
+    /// Total frames for easing curves, 0 for springs (driven by physics).
+    pub fn total_frames(&self) -> u32 {
+        match self.curve {
+            AnimCurve::Easing { total_frames, .. } => total_frames,
+            // Springs run until physics settles — no fixed frame count.
+            // AnimProperty handles this via the `done` flag from `step()`.
+            AnimCurve::Spring(_) => u32::MAX,
         }
     }
 }
 
-/// Unifies duration-based easing and velocity-based springs.
+/// Unifies frame-count easing and velocity-based springs.
 ///
 /// The two approaches are fundamentally different:
-/// - **Easing** is stateless and time-fraction-based: `easing.apply(t) -> f32`.
-/// - **Spring** is stateful and velocity-based: needs per-frame `step()` calls.
+/// - **Easing** is frame-count-based: `progress = frame / total_frames`.
+/// - **Spring** is velocity-based: needs per-frame `step()` calls.
 ///
-/// `AnimCurve` wraps both so [`AnimBehavior`] can use either transparently.
+/// `AnimCurve` wraps both so `AnimBehavior` can use either transparently.
 #[derive(Debug, Clone, Copy)]
 pub enum AnimCurve {
-    /// Duration-based easing (stateless, fraction-based).
+    /// Frame-count easing (`progress = current_frame / total_frames`).
     Easing {
         /// The easing function to apply.
         easing: Easing,
-        /// Total animation duration.
-        duration: Duration,
+        /// Total frames for the animation. 0 = instant.
+        total_frames: u32,
     },
     /// Velocity-based spring (stateful, per-frame step).
     Spring(Spring),
+}
+
+/// Convert milliseconds to frame count at 60 fps (minimum 1 frame if ms > 0).
+fn ms_to_frames(ms: u64) -> u32 {
+    if ms == 0 {
+        return 0;
+    }
+    ((ms as f32 / 1000.0) * FRAMES_PER_SECOND).ceil() as u32
 }
 
 #[cfg(test)]

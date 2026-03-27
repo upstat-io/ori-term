@@ -20,6 +20,7 @@ use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::page_container::PageContainerWidget;
+use oriterm_ui::widgets::settings_footer::SettingsFooterWidget;
 use oriterm_ui::widgets::sidebar_nav::{NavItem, NavSection, SidebarNavWidget};
 
 use crate::config::Config;
@@ -79,7 +80,7 @@ pub(in crate::app) fn build_settings_dialog(
     theme: &UiTheme,
     active_page: usize,
     update_info: Option<(&str, &str, &str)>,
-) -> (Box<dyn Widget>, SettingsIds) {
+) -> (Box<dyn Widget>, SettingsIds, (WidgetId, WidgetId, WidgetId)) {
     // Initialize IDs with placeholders; page builders overwrite their fields.
     let mut ids = SettingsIds::placeholder();
 
@@ -116,13 +117,24 @@ pub(in crate::app) fn build_settings_dialog(
     .with_nav_source(sidebar_id);
     pages.set_active_page(active_page);
 
+    // Footer lives in the right column (below pages, above nothing).
+    let footer = SettingsFooterWidget::new(theme);
+    let footer_ids = footer.button_ids();
+
+    // Right column: pages fill remaining space, footer is pinned at bottom.
+    let right_column = ContainerWidget::column()
+        .with_width(SizeSpec::Fill)
+        .with_height(SizeSpec::Fill)
+        .with_child(Box::new(pages))
+        .with_child(Box::new(footer));
+
     let content = ContainerWidget::row()
         .with_width(SizeSpec::Fill)
         .with_height(SizeSpec::Fill)
         .with_child(Box::new(sidebar))
-        .with_child(Box::new(pages));
+        .with_child(Box::new(right_column));
 
-    (Box::new(content), ids)
+    (Box::new(content), ids, footer_ids)
 }
 
 impl SettingsIds {

@@ -21,8 +21,8 @@ use super::shared::{build_section_header, build_settings_page};
 /// Gap between scheme cards in the grid.
 const CARD_GAP: f32 = 10.0;
 
-/// Minimum card width for the auto-fill grid.
-const CARD_MIN_WIDTH: f32 = 210.0;
+/// Minimum card width for the auto-fill grid (mockup `minmax(240px, 1fr)`).
+const CARD_MIN_WIDTH: f32 = 240.0;
 
 /// Gap between special color swatches.
 const SWATCH_GAP: f32 = 8.0;

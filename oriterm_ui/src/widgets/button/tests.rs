@@ -128,9 +128,7 @@ fn with_style_applies_custom_style() {
         corner_radius: 12.0,
         padding: Insets::all(20.0),
         font_size: 18.0,
-        disabled_fg: Color::rgb(0.5, 0.5, 0.5),
-        disabled_bg: Color::rgb(0.3, 0.3, 0.3),
-        focus_ring_color: Color::rgb(0.0, 0.0, 1.0),
+        ..ButtonStyle::default()
     };
     let btn = ButtonWidget::new("Styled").with_style(style);
 
@@ -168,9 +166,8 @@ fn with_style_rebuilds_animator() {
     let btn = ButtonWidget::new("OK").with_style(style);
 
     // The animator's initial bg should be the style's normal bg.
-    let now = std::time::Instant::now();
     let animator = btn.visual_states().unwrap();
-    assert_eq!(animator.get_bg_color(now), Color::WHITE);
+    assert_eq!(animator.get_bg_color(), Color::WHITE);
 }
 
 // -- Paint --
@@ -341,8 +338,12 @@ fn harness_hover_renders_hover_bg_in_scene() {
     // Hover the button.
     h.mouse_move_to(btn_id);
 
-    // Advance time to let the hover animation complete (~300ms).
-    h.advance_time(Duration::from_millis(350));
+    // Advance time in frame-sized steps to let the hover animation complete.
+    // Default transition is 100ms = 6 frames at 60fps. Use 22 frames (~350ms)
+    // to ensure full completion.
+    for _ in 0..22 {
+        h.advance_time(Duration::from_millis(16));
+    }
 
     // Render the scene with fully-resolved hover state.
     let scene = h.render();
@@ -355,6 +356,172 @@ fn harness_hover_renders_hover_bg_in_scene() {
         has_hover_quad,
         "Scene should contain a quad with hover_bg ({hover_bg:?}), \
          fills: {fills:?}"
+    );
+}
+
+// -- Typography & disabled opacity --
+
+#[test]
+fn button_style_weight_threads_to_text() {
+    use crate::draw::Scene;
+    use crate::text::FontWeight;
+
+    let style = ButtonStyle {
+        weight: FontWeight::BOLD,
+        ..ButtonStyle::default()
+    };
+    let btn = ButtonWidget::new("OK").with_style(style);
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
+    let now = std::time::Instant::now();
+    let mut ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    btn.paint(&mut ctx);
+
+    let text_runs = scene.text_runs();
+    assert!(!text_runs.is_empty(), "should have at least one text run");
+    assert_eq!(
+        text_runs[0].shaped.weight, 700,
+        "text run weight should be 700 (Bold)"
+    );
+}
+
+#[test]
+fn button_style_letter_spacing_threads_to_text_style() {
+    let btn = ButtonWidget::new("Test").with_style(ButtonStyle {
+        letter_spacing: 2.5,
+        ..ButtonStyle::default()
+    });
+    let ts = btn.text_style();
+    assert!(
+        (ts.letter_spacing - 2.5).abs() < f32::EPSILON,
+        "letter_spacing should thread through text_style(): got {}",
+        ts.letter_spacing
+    );
+}
+
+#[test]
+fn button_style_text_transform_uppercase() {
+    use crate::text::TextTransform;
+
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    let transformed = ButtonWidget::new("save").with_style(ButtonStyle {
+        text_transform: TextTransform::Uppercase,
+        ..ButtonStyle::default()
+    });
+    let manual = ButtonWidget::new("SAVE");
+
+    let w1 = transformed.layout(&ctx);
+    let w2 = manual.layout(&ctx);
+
+    if let (
+        BoxContent::Leaf {
+            intrinsic_width: tw,
+            ..
+        },
+        BoxContent::Leaf {
+            intrinsic_width: mw,
+            ..
+        },
+    ) = (&w1.content, &w2.content)
+    {
+        assert_eq!(
+            tw, mw,
+            "uppercase transform should produce same width as manual uppercase"
+        );
+    } else {
+        panic!("expected leaf layouts");
+    }
+}
+
+#[test]
+fn button_disabled_opacity_modulates_bg() {
+    use crate::color::Color;
+    use crate::draw::Scene;
+
+    let style = ButtonStyle {
+        bg: Color::WHITE,
+        disabled_opacity: 0.4,
+        ..ButtonStyle::default()
+    };
+    let btn = ButtonWidget::new("Save")
+        .with_style(style)
+        .with_disabled(true);
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
+    let now = std::time::Instant::now();
+    let mut ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    btn.paint(&mut ctx);
+
+    // Find the background quad — it should have alpha <= 0.5 (0.4 * 1.0).
+    let fills: Vec<_> = scene.quads().iter().filter_map(|q| q.style.fill).collect();
+    let has_faded = fills.iter().any(|c| c.a <= 0.5);
+    assert!(
+        has_faded,
+        "disabled button with opacity 0.4 should have faded bg, fills: {fills:?}"
+    );
+}
+
+#[test]
+fn button_disabled_fg_swap_when_no_opacity() {
+    use crate::color::Color;
+    use crate::draw::Scene;
+
+    let style = ButtonStyle {
+        disabled_fg: Color::rgb(1.0, 0.0, 0.0),
+        disabled_opacity: 1.0,
+        ..ButtonStyle::default()
+    };
+    let btn = ButtonWidget::new("X").with_style(style).with_disabled(true);
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
+    let now = std::time::Instant::now();
+    let mut ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    btn.paint(&mut ctx);
+
+    let text_runs = scene.text_runs();
+    assert!(!text_runs.is_empty(), "should have text");
+    assert_eq!(
+        text_runs[0].color,
+        Color::rgb(1.0, 0.0, 0.0),
+        "disabled_fg should be RED (swap path, not opacity path)"
     );
 }
 

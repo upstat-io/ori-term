@@ -3,12 +3,18 @@
 //! [`AnimProperty<T>`] is the core building block: a value that optionally
 //! transitions smoothly when changed. Attach an [`AnimBehavior`] to make
 //! changes auto-animate; without one, changes are instant.
-
-use std::time::{Duration, Instant};
+//!
+//! Animations are frame-based: `tick()` advances progress by one frame step.
+//! No timestamps — the caller drives the animation by calling `tick()` once
+//! per frame during the prepare phase. `get()` returns the current
+//! interpolated value without needing a timestamp.
 
 use super::Lerp;
 use super::behavior::{AnimBehavior, AnimCurve};
 use super::transaction::current_transaction;
+
+/// Assumed frame duration for spring physics (1/60 second).
+const SPRING_DT: f32 = 1.0 / 60.0;
 
 /// In-flight transition state for an `AnimProperty`.
 ///
@@ -20,19 +26,13 @@ struct ActiveTransition<T: Lerp> {
     from: T,
     /// Value at the end of the transition (same as `AnimProperty::target`).
     to: T,
-    /// When the transition started.
-    start: Instant,
-    /// Timestamp of the last `tick()` call. Used to compute delta time
-    /// for spring physics. Equal to `start` before the first tick.
-    last_tick: Instant,
-    /// Current progress through the transition (0.0 = from, 1.0 = to).
-    /// For easing: computed lazily from elapsed time.
-    /// For springs: advanced by `tick()` each frame.
+    /// Current frame within the transition (0-based, advanced by `tick()`).
+    frame: u32,
+    /// Total frames for the transition (from `AnimBehavior`). 0 = instant.
+    total_frames: u32,
+    /// Current progress (0.0 = from, 1.0 = to). Updated by `tick()`.
     progress: f32,
     /// For spring-based transitions: velocity of the progress value.
-    /// Tracks rate of change of the normalized progress (0.0 to 1.0),
-    /// NOT velocity in the value's coordinate space.
-    /// Unused for easing-based transitions.
     velocity: f32,
     /// The curve driving this transition.
     curve: AnimCurve,
@@ -40,14 +40,14 @@ struct ActiveTransition<T: Lerp> {
 
 /// A value that optionally transitions smoothly when changed.
 ///
-/// Replaces `AnimatedValue<T>`. When `behavior` is `None`, changes are instant.
-/// When `behavior` is `Some`, `set()` starts a transition using the behavior's
-/// curve. Transactions can override the behavior for a block of state changes.
+/// When `behavior` is `None`, changes are instant. When `behavior` is
+/// `Some`, `set()` starts a transition using the behavior's curve.
+/// Transitions advance one step per `tick()` call (frame-based, no
+/// timestamps). Read the current value with `get()`.
 pub struct AnimProperty<T: Lerp> {
     /// The target (resting) value.
     target: T,
-    /// The current interpolated value (updated by `tick()` for springs,
-    /// computed lazily for easing-based transitions).
+    /// The current interpolated value (updated by `tick()` each frame).
     current: T,
     /// Optional animation behavior — `None` means instant changes.
     behavior: Option<AnimBehavior>,
@@ -88,12 +88,9 @@ impl<T: Lerp> AnimProperty<T> {
     /// Set the target value.
     ///
     /// If a behavior is set (and no `Transaction` overrides it to instant),
-    /// starts an animation from the current interpolated value. If no behavior
+    /// starts an animation from the current value. If no behavior
     /// (or `Transaction::instant()`), changes instantly.
-    ///
-    /// Requires `now` to compute the current interpolated value for smooth
-    /// interruption (starting the new animation from mid-flight).
-    pub fn set(&mut self, value: T, now: Instant) {
+    pub fn set(&mut self, value: T) {
         self.target = value;
 
         // Determine the effective behavior: transaction overrides property.
@@ -109,13 +106,21 @@ impl<T: Lerp> AnimProperty<T> {
             return;
         };
 
-        // Start transition from the current interpolated value.
-        let from = self.get(now);
+        // Start transition from the current value.
+        let from = self.current;
+        let total_frames = behavior.total_frames();
+        if total_frames == 0 {
+            // Zero-frame behavior = instant.
+            self.current = value;
+            self.transition = None;
+            return;
+        }
+
         self.transition = Some(ActiveTransition {
             from,
             to: value,
-            start: now,
-            last_tick: now,
+            frame: 0,
+            total_frames,
             progress: 0.0,
             velocity: 0.0,
             curve: behavior.curve,
@@ -131,77 +136,55 @@ impl<T: Lerp> AnimProperty<T> {
 
     /// Get the current interpolated value.
     ///
-    /// For easing-based transitions: computes the value from elapsed time.
-    /// For spring-based transitions: returns the last value computed by `tick()`.
-    pub fn get(&self, now: Instant) -> T {
-        let Some(t) = &self.transition else {
-            return self.current;
-        };
-
-        match t.curve {
-            AnimCurve::Easing { easing, duration } => {
-                let progress = easing_progress(t.start, now, duration, easing);
-                // Return target directly when complete to avoid floating-point
-                // rounding errors from `lerp(from, to, 1.0)`.
-                if progress >= 1.0 {
-                    t.to
-                } else {
-                    T::lerp(t.from, t.to, progress)
-                }
-            }
-            AnimCurve::Spring(_) => {
-                // Spring progress is advanced by tick(); return the cached current.
-                self.current
-            }
-        }
+    /// Returns the value last computed by `tick()`. For instant properties
+    /// (no behavior), returns the target directly.
+    pub fn get(&self) -> T {
+        self.current
     }
 
-    /// Advance spring-based transitions by one frame.
+    /// Advance the animation by one frame.
     ///
-    /// Must be called each frame for spring animations (during `anim_frame()`).
-    /// No-op for easing-based transitions (those are computed lazily in `get()`).
-    /// No-op if no transition is active.
-    pub fn tick(&mut self, now: Instant) {
+    /// Must be called once per frame during the prepare phase. Advances
+    /// both easing and spring transitions. No-op if no transition is active.
+    pub fn tick(&mut self) {
         let Some(t) = &mut self.transition else {
             return;
         };
 
-        let AnimCurve::Spring(spring) = t.curve else {
-            return;
-        };
+        match t.curve {
+            AnimCurve::Easing { easing, .. } => {
+                t.frame += 1;
+                if t.frame >= t.total_frames {
+                    // Animation complete.
+                    self.current = self.target;
+                    self.transition = None;
+                    return;
+                }
+                let frac = t.frame as f32 / t.total_frames as f32;
+                t.progress = easing.apply(frac);
+                self.current = T::lerp(t.from, t.to, t.progress);
+            }
+            AnimCurve::Spring(spring) => {
+                let (new_progress, new_velocity, done) =
+                    spring.step(t.progress, 1.0, t.velocity, SPRING_DT);
 
-        let dt = now.duration_since(t.last_tick).as_secs_f32();
-        t.last_tick = now;
+                t.progress = new_progress;
+                t.velocity = new_velocity;
 
-        if dt <= 0.0 {
-            return;
-        }
+                let clamped = t.progress.clamp(0.0, 1.0);
+                self.current = T::lerp(t.from, t.to, clamped);
 
-        let (new_progress, new_velocity, done) = spring.step(t.progress, 1.0, t.velocity, dt);
-
-        t.progress = new_progress;
-        t.velocity = new_velocity;
-
-        // Clamp progress for lerp to avoid extrapolation beyond the target.
-        let clamped = t.progress.clamp(0.0, 1.0);
-        self.current = T::lerp(t.from, t.to, clamped);
-
-        if done {
-            self.current = self.target;
-            self.transition = None;
+                if done {
+                    self.current = self.target;
+                    self.transition = None;
+                }
+            }
         }
     }
 
     /// Is an animation currently running?
-    pub fn is_animating(&self, now: Instant) -> bool {
-        let Some(t) = &self.transition else {
-            return false;
-        };
-
-        match t.curve {
-            AnimCurve::Easing { duration, .. } => now.duration_since(t.start) < duration,
-            AnimCurve::Spring(_) => true, // Active until tick() clears it.
-        }
+    pub fn is_animating(&self) -> bool {
+        self.transition.is_some()
     }
 
     /// Returns the final resting value.
@@ -230,19 +213,6 @@ impl<T: Lerp> Clone for AnimProperty<T> {
             transition: self.transition,
         }
     }
-}
-
-/// Compute easing progress from elapsed time.
-fn easing_progress(start: Instant, now: Instant, duration: Duration, easing: super::Easing) -> f32 {
-    if duration.is_zero() {
-        return 1.0;
-    }
-    let elapsed = now.duration_since(start);
-    if elapsed >= duration {
-        return 1.0;
-    }
-    let t = elapsed.as_secs_f32() / duration.as_secs_f32();
-    easing.apply(t)
 }
 
 #[cfg(test)]

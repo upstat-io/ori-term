@@ -68,6 +68,9 @@ pub(crate) struct RasterizedGlyph {
 pub(crate) struct FontCollection {
     // Faces
     primary: [Option<FaceData>; 4],
+    /// Medium (500) face for UI text weight fidelity. Substituted into the
+    /// Regular shaping/raster slot when `requested_weight` is in 500..700.
+    medium: Option<FaceData>,
     fallbacks: Vec<FaceData>,
     fallback_meta: Vec<FallbackMeta>,
     // Metrics
@@ -149,6 +152,10 @@ impl FontCollection {
             .bold_italic
             .as_ref()
             .and_then(|fd| build_face(Arc::clone(&fd.data), fd.index));
+        let medium = font_set
+            .medium
+            .as_ref()
+            .and_then(|fd| build_face(Arc::clone(&fd.data), fd.index));
 
         // Validate fallbacks and compute cap-height normalization.
         let mut fallbacks = Vec::new();
@@ -182,6 +189,7 @@ impl FontCollection {
 
         let collection = Self {
             primary: [Some(regular_face), bold, italic, bold_italic],
+            medium,
             fallbacks,
             fallback_meta,
             size_px,

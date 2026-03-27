@@ -81,6 +81,22 @@ fn per_page_dirty_bell_page() {
 }
 
 #[test]
+fn per_page_dirty_tab_bar_position_hidden_dirties_both_appearance_and_window() {
+    let original = Config::default();
+    let mut pending = original.clone();
+    pending.window.tab_bar_position = crate::config::TabBarPosition::Hidden;
+    let dirty = per_page_dirty(&pending, &original);
+    assert!(
+        dirty[0],
+        "appearance page should be dirty when tab_bar_position changes to Hidden"
+    );
+    assert!(
+        dirty[5],
+        "window page should be dirty when tab_bar_position changes"
+    );
+}
+
+#[test]
 fn per_page_dirty_scheme_changes_two_pages() {
     let original = Config::default();
     let mut pending = original.clone();

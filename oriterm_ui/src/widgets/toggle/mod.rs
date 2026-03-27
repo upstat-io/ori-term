@@ -5,7 +5,7 @@
 //! for smooth thumb sliding (150ms, `EaseInOut`) and
 //! [`VisualStateAnimator`] for hover color transitions.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::animation::{AnimBehavior, AnimProperty};
 use crate::color::Color;
@@ -44,6 +44,8 @@ pub struct ToggleStyle {
     pub on_thumb_color: Color,
     /// Padding between track edge and thumb.
     pub thumb_padding: f32,
+    /// Thumb width and height (square). Decoupled from track height.
+    pub thumb_size: f32,
     /// Track border width.
     pub border_width: f32,
     /// Off-state track border color.
@@ -70,6 +72,7 @@ impl ToggleStyle {
             off_thumb_color: theme.fg_faint,
             on_thumb_color: theme.accent,
             thumb_padding: 3.0,
+            thumb_size: 12.0,
             border_width: 2.0,
             off_border_color: theme.border,
             on_border_color: theme.accent,
@@ -201,7 +204,7 @@ impl ToggleWidget {
     fn toggle(&mut self) -> WidgetAction {
         self.on = !self.on;
         let target = if self.on { 1.0 } else { 0.0 };
-        self.toggle_progress.set(target, Instant::now());
+        self.toggle_progress.set(target);
         WidgetAction::Toggled {
             id: self.id,
             value: self.on,
@@ -222,9 +225,8 @@ impl ToggleWidget {
     /// Converts a pixel X position to a progress value (0.0–1.0).
     fn progress_from_x(&self, x: f32, bounds: Rect) -> f32 {
         let s = &self.style;
-        let thumb_diameter = s.height - s.thumb_padding * 2.0;
-        let travel = s.width - s.thumb_padding * 2.0 - thumb_diameter;
-        let left = bounds.x() + s.thumb_padding + thumb_diameter / 2.0;
+        let travel = s.width - s.thumb_padding * 2.0 - s.thumb_size;
+        let left = bounds.x() + s.thumb_padding + s.thumb_size / 2.0;
         if travel <= 0.0 {
             return 0.0;
         }
@@ -277,6 +279,10 @@ impl Widget for ToggleWidget {
         &mut self.controllers
     }
 
+    fn prepaint(&mut self, _ctx: &mut crate::widgets::PrepaintCtx<'_>) {
+        self.toggle_progress.tick();
+    }
+
     fn visual_states(&self) -> Option<&VisualStateAnimator> {
         Some(&self.animator)
     }
@@ -303,7 +309,7 @@ impl Widget for ToggleWidget {
         } else if self.on {
             s.on_bg
         } else {
-            self.animator.get_bg_color(ctx.now)
+            self.animator.get_bg_color()
         };
         let border_color = if self.on {
             s.on_border_color
@@ -314,18 +320,16 @@ impl Widget for ToggleWidget {
         ctx.scene.push_quad(ctx.bounds, track_style);
 
         // Thumb — square, position driven by animation.
-        let progress = self.toggle_progress.get(ctx.now);
-        let thumb_size = s.height - s.thumb_padding * 2.0;
-        let travel = s.width - s.thumb_padding * 2.0 - thumb_size;
+        let progress = self.toggle_progress.get();
+        let travel = s.width - s.thumb_padding * 2.0 - s.thumb_size;
         let thumb_x = ctx.bounds.x() + s.thumb_padding + travel * progress;
         let thumb_y = ctx.bounds.y() + s.thumb_padding;
-        let thumb_rect = Rect::new(thumb_x, thumb_y, thumb_size, thumb_size);
+        let thumb_rect = Rect::new(thumb_x, thumb_y, s.thumb_size, s.thumb_size);
         let thumb_style = RectStyle::filled(self.thumb_color());
         ctx.scene.push_quad(thumb_rect, thumb_style);
 
         // Signal continued redraws while animating.
-        let animating =
-            self.toggle_progress.is_animating(ctx.now) || self.animator.is_animating(ctx.now);
+        let animating = self.toggle_progress.is_animating() || self.animator.is_animating();
         if animating {
             ctx.request_anim_frame();
         }
@@ -350,8 +354,7 @@ impl Widget for ToggleWidget {
                     // Half the thumb travel distance: anything below is a
                     // click/tap, anything above is a positional drag commit.
                     let s = &self.style;
-                    let thumb_d = s.height - s.thumb_padding * 2.0;
-                    let travel = s.width - s.thumb_padding * 2.0 - thumb_d;
+                    let travel = s.width - s.thumb_padding * 2.0 - s.thumb_size;
                     let total_move = (pos.x - origin.x).abs();
 
                     if total_move < travel / 2.0 {
@@ -362,7 +365,7 @@ impl Widget for ToggleWidget {
                         let progress = self.progress_from_x(pos.x, bounds);
                         let new_on = progress > 0.5;
                         let target = if new_on { 1.0 } else { 0.0 };
-                        self.toggle_progress.set(target, Instant::now());
+                        self.toggle_progress.set(target);
                         if new_on == self.on {
                             // Dragged but ended in same state — snap back.
                             None

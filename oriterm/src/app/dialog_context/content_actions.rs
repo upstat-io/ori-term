@@ -120,10 +120,11 @@ impl App {
         };
         log::info!("settings dialog: resetting to defaults");
         **pending_config = Config::default();
+        **original_config = Config::default();
 
         // Rebuild the form widgets so they reflect the default config values.
         // Preserve the current page so the user stays where they were.
-        let (content, new_ids) = settings_overlay::form_builder::build_settings_dialog(
+        let (content, new_ids, footer_ids) = settings_overlay::form_builder::build_settings_dialog(
             pending_config,
             &ui_theme,
             *active_page,
@@ -135,7 +136,7 @@ impl App {
             ctx.root.interaction_mut(),
         );
         **ids = new_ids;
-        **panel = SettingsPanel::embedded(content, &ui_theme);
+        **panel = SettingsPanel::embedded(content, footer_ids);
         // Register new tree; WidgetAdded events delivered next frame (TPR-04-003).
         crate::app::widget_pipeline::register_widget_tree(&mut **panel, ctx.root.interaction_mut());
 

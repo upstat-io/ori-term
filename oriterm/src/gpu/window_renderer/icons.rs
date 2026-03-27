@@ -60,7 +60,7 @@ impl WindowRenderer {
     /// - `Plus`: `(PLUS_ARM * 2).round()` = 10
     /// - `ChevronDown`: `(CHEVRON_HALF * 2).round()` = 10
     /// - `Minimize`/`Maximize`/`Restore`/`WindowClose`: `SYMBOL_SIZE.round()` = 10
-    pub(super) const ICON_SIZES: [(IconId, u32); 16] = [
+    pub(super) const ICON_SIZES: [(IconId, u32); 18] = [
         // Window chrome (10px logical).
         (IconId::Close, 10),
         (IconId::Plus, 10),
@@ -80,5 +80,9 @@ impl WindowRenderer {
         (IconId::Activity, SIDEBAR_NAV_ICON_SIZE),
         // Sidebar search field (12px logical).
         (IconId::Search, 12),
+        // Settings footer unsaved indicator (14px logical).
+        (IconId::AlertCircle, 14),
+        // Dropdown trigger filled triangle (10px logical).
+        (IconId::DropdownArrow, 10),
     ];
 }

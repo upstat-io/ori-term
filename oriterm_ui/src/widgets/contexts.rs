@@ -323,7 +323,7 @@ pub struct AnimCtx<'a> {
 impl AnimCtx<'_> {
     /// Request another animation frame on the next vsync.
     ///
-    /// Call this when `animator.is_animating(now)` is true.
+    /// Call this when `animator.is_animating()` is true.
     pub fn request_anim_frame(&self) {
         if let Some(flags) = self.frame_requests {
             flags.request_anim_frame();

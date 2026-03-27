@@ -154,7 +154,7 @@ impl Widget for ColorSwatchGrid {
                 .push_text(Point::new(lx, ly), shaped, ctx.theme.fg_faint);
         }
 
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }
@@ -277,7 +277,7 @@ impl Widget for SpecialColorSwatch {
         let bounds = ctx.bounds;
 
         // Hover background.
-        let bg = self.animator.get_bg_color(ctx.now);
+        let bg = self.animator.get_bg_color();
         if bg.a > 0.001 {
             let rect_style = RectStyle::filled(bg).with_radius(0.0);
             ctx.scene.push_quad(bounds, rect_style);
@@ -309,7 +309,7 @@ impl Widget for SpecialColorSwatch {
         ctx.scene
             .push_text(Point::new(hx, hy), hex_shaped, ctx.theme.fg_faint);
 
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

@@ -9,8 +9,6 @@
 
 mod resize;
 
-use std::time::Instant;
-
 #[cfg(not(target_os = "macos"))]
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
@@ -306,7 +304,7 @@ impl App {
         // Apply hover hit, redraw on change.
         if let Some(ctx) = self.focused_ctx_mut() {
             if ctx.tab_bar.hover_hit() != hit {
-                ctx.tab_bar.set_hover_hit(hit, Instant::now());
+                ctx.tab_bar.set_hover_hit(hit);
                 ctx.root.mark_dirty();
                 ctx.ui_stale = true;
             }
@@ -341,8 +339,7 @@ impl App {
         let scale = ctx.window.scale_factor().factor() as f32;
         let pos =
             oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
-        let now = Instant::now();
-        let animating = ctx.tab_bar.update_control_hover_state(pos, now);
+        let animating = ctx.tab_bar.update_control_hover_state(pos);
         if animating || is_control_hit {
             ctx.root.mark_dirty();
             ctx.ui_stale = true;
@@ -361,16 +358,13 @@ impl App {
         };
         let had_hover = ctx.tab_bar.hover_hit() != oriterm_ui::widgets::tab_bar::TabBarHit::None;
         if had_hover {
-            ctx.tab_bar.set_hover_hit(
-                oriterm_ui::widgets::tab_bar::TabBarHit::None,
-                Instant::now(),
-            );
+            ctx.tab_bar
+                .set_hover_hit(oriterm_ui::widgets::tab_bar::TabBarHit::None);
         }
         // Clear control button hover animations (not on macOS — native traffic lights).
         #[cfg(not(target_os = "macos"))]
         {
-            let now = Instant::now();
-            if ctx.tab_bar.clear_control_hover_state(now) {
+            if ctx.tab_bar.clear_control_hover_state() {
                 ctx.root.mark_dirty();
                 ctx.ui_stale = true;
             }

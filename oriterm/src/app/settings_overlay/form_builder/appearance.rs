@@ -10,7 +10,7 @@ use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
 use oriterm_ui::widgets::setting_row::SettingRowWidget;
-use oriterm_ui::widgets::slider::SliderWidget;
+use oriterm_ui::widgets::slider::{SliderWidget, ValueDisplay};
 use oriterm_ui::widgets::toggle::ToggleWidget;
 
 use crate::config::Config;
@@ -75,7 +75,8 @@ fn build_window_section(
     let slider = SliderWidget::new()
         .with_range(30.0, 100.0)
         .with_step(1.0)
-        .with_value(config.window.opacity * 100.0);
+        .with_value(config.window.opacity * 100.0)
+        .with_display(ValueDisplay::Percent);
     ids.opacity_slider = slider.id();
 
     let opacity_row = SettingRowWidget::new(
@@ -100,7 +101,8 @@ fn build_window_section(
     let unfocused_slider = SliderWidget::new()
         .with_range(30.0, 100.0)
         .with_step(1.0)
-        .with_value(config.window.unfocused_opacity * 100.0);
+        .with_value(config.window.unfocused_opacity * 100.0)
+        .with_display(ValueDisplay::Percent);
     ids.unfocused_opacity_slider = unfocused_slider.id();
 
     let unfocused_row = SettingRowWidget::new(

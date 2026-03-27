@@ -1,27 +1,27 @@
-use std::time::{Duration, Instant};
-
 use super::AnimProperty;
 use crate::animation::behavior::AnimBehavior;
 use crate::animation::spring::Spring;
 
 #[test]
 fn set_behavior_enables_animation_on_previously_instant_property() {
-    let now = Instant::now();
     let mut prop = AnimProperty::new(0.0_f32);
 
     // No behavior — set is instant.
-    prop.set(1.0, now);
-    assert_eq!(prop.get(now), 1.0);
-    assert!(!prop.is_animating(now));
+    prop.set(1.0);
+    assert_eq!(prop.get(), 1.0);
+    assert!(!prop.is_animating());
 
     // Attach a behavior, then set a new target.
+    // 200ms at 60fps = 12 frames.
     prop.set_behavior(Some(AnimBehavior::linear(200)));
-    prop.set(0.0, now);
-    assert!(prop.is_animating(now), "Should animate after set_behavior");
+    prop.set(0.0);
+    assert!(prop.is_animating(), "Should animate after set_behavior");
 
-    // At 100ms, linear should give ~0.5.
-    let mid = now + Duration::from_millis(100);
-    let val = prop.get(mid);
+    // At 6 frames (midpoint of 12), linear should give ~0.5.
+    for _ in 0..6 {
+        prop.tick();
+    }
+    let val = prop.get();
     assert!(
         (val - 0.5).abs() < 0.05,
         "Expected ~0.5 at midpoint, got {val}"
@@ -31,22 +31,23 @@ fn set_behavior_enables_animation_on_previously_instant_property() {
 #[test]
 fn anim_property_new_has_no_behavior() {
     let prop = AnimProperty::new(0.5_f32);
-    let now = Instant::now();
-    assert_eq!(prop.get(now), 0.5);
-    assert!(!prop.is_animating(now));
+    assert_eq!(prop.get(), 0.5);
+    assert!(!prop.is_animating());
 }
 
 #[test]
 fn anim_property_with_behavior_animates_on_set() {
-    let now = Instant::now();
+    // 200ms at 60fps = 12 frames.
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::ease_out(200));
 
-    prop.set(1.0, now);
-    assert!(prop.is_animating(now));
+    prop.set(1.0);
+    assert!(prop.is_animating());
 
-    // At the midpoint, the value should be between 0 and 1 (eased).
-    let mid = now + Duration::from_millis(100);
-    let val = prop.get(mid);
+    // At the midpoint (6 frames), the value should be between 0 and 1 (eased).
+    for _ in 0..6 {
+        prop.tick();
+    }
+    let val = prop.get();
     assert!(
         val > 0.0 && val < 1.0,
         "Mid-animation value should be between 0 and 1, got {val}"
@@ -55,97 +56,110 @@ fn anim_property_with_behavior_animates_on_set() {
 
 #[test]
 fn anim_property_new_set_is_instant() {
-    let now = Instant::now();
     let mut prop = AnimProperty::new(0.0_f32);
 
-    prop.set(1.0, now);
-    assert_eq!(prop.get(now), 1.0, "No behavior means instant set");
-    assert!(!prop.is_animating(now));
+    prop.set(1.0);
+    assert_eq!(prop.get(), 1.0, "No behavior means instant set");
+    assert!(!prop.is_animating());
 }
 
 #[test]
 fn anim_property_set_immediate_bypasses_behavior() {
-    let now = Instant::now();
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::ease_out(200));
 
     prop.set_immediate(1.0);
-    assert_eq!(prop.get(now), 1.0, "set_immediate should bypass animation");
-    assert!(!prop.is_animating(now));
+    assert_eq!(prop.get(), 1.0, "set_immediate should bypass animation");
+    assert!(!prop.is_animating());
 }
 
 #[test]
 fn anim_property_get_returns_interpolated_value() {
-    let now = Instant::now();
+    // 100ms at 60fps = 6 frames.
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::linear(100));
 
-    prop.set(1.0, now);
+    prop.set(1.0);
 
-    // At 50ms, linear easing should give ~0.5.
-    let val = prop.get(now + Duration::from_millis(50));
+    // At 3 frames (50%), linear easing should give ~0.5.
+    for _ in 0..3 {
+        prop.tick();
+    }
+    let val = prop.get();
     assert!(
         (val - 0.5).abs() < 0.05,
         "Expected ~0.5 at 50% of linear animation, got {val}"
     );
 
-    // At 100ms, should be at target.
-    let val = prop.get(now + Duration::from_millis(100));
+    // At 6 frames (100%), should be at target.
+    for _ in 0..3 {
+        prop.tick();
+    }
+    let val = prop.get();
     assert_eq!(val, 1.0, "Should be at target after duration");
 }
 
 #[test]
 fn anim_property_is_animating_during_transition() {
-    let now = Instant::now();
+    // 200ms at 60fps = 12 frames.
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::ease_out(200));
 
-    prop.set(1.0, now);
-    assert!(prop.is_animating(now));
-    assert!(prop.is_animating(now + Duration::from_millis(100)));
+    prop.set(1.0);
+    assert!(prop.is_animating());
+    for _ in 0..6 {
+        prop.tick();
+    }
+    assert!(prop.is_animating());
 }
 
 #[test]
 fn anim_property_not_animating_after_completion() {
-    let now = Instant::now();
+    // 200ms at 60fps = 12 frames.
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::ease_out(200));
 
-    prop.set(1.0, now);
-    assert!(!prop.is_animating(now + Duration::from_millis(200)));
+    prop.set(1.0);
+    for _ in 0..12 {
+        prop.tick();
+    }
+    assert!(!prop.is_animating());
 }
 
 #[test]
 fn anim_property_smooth_interruption() {
-    let now = Instant::now();
+    // 200ms at 60fps = 12 frames.
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::linear(200));
 
-    prop.set(1.0, now);
+    prop.set(1.0);
 
-    // At 100ms (halfway through linear), interrupt with a new target.
-    let mid = now + Duration::from_millis(100);
-    let mid_val = prop.get(mid);
+    // At 6 frames (halfway through linear), interrupt with a new target.
+    for _ in 0..6 {
+        prop.tick();
+    }
+    let mid_val = prop.get();
     assert!(
         (mid_val - 0.5).abs() < 0.05,
         "Should be ~0.5 at interruption point, got {mid_val}"
     );
 
-    prop.set(0.0, mid);
+    prop.set(0.0);
 
     // The new animation should start from the interrupted position (~0.5).
-    let val = prop.get(mid);
+    let val = prop.get();
     assert!(
         (val - 0.5).abs() < 0.05,
         "Should start new animation from interrupted position, got {val}"
     );
 
-    // After the new animation completes, should be at 0.0.
-    let end = mid + Duration::from_millis(200);
-    assert_eq!(prop.get(end), 0.0, "Should reach new target");
+    // After the new animation completes (12 more frames), should be at 0.0.
+    for _ in 0..12 {
+        prop.tick();
+    }
+    assert_eq!(prop.get(), 0.0, "Should reach new target");
 }
 
 #[test]
 fn anim_property_target_returns_final_value() {
-    let now = Instant::now();
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::ease_out(200));
 
-    prop.set(1.0, now);
+    prop.set(1.0);
     assert_eq!(prop.target(), 1.0, "target() should return the set value");
 
     // Even during animation, target is the final value.
@@ -154,20 +168,17 @@ fn anim_property_target_returns_final_value() {
 
 #[test]
 fn anim_property_tick_advances_spring() {
-    let now = Instant::now();
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::spring());
 
-    prop.set(1.0, now);
-    assert!(prop.is_animating(now));
+    prop.set(1.0);
+    assert!(prop.is_animating());
 
-    // Tick repeatedly at 60fps and verify convergence.
-    let mut t = now;
+    // Tick repeatedly and verify convergence.
     for _ in 0..300 {
-        t += Duration::from_millis(16);
-        prop.tick(t);
+        prop.tick();
     }
 
-    let val = prop.get(t);
+    let val = prop.get();
     assert!(
         (val - 1.0).abs() < 0.01,
         "Spring should converge to target after ~5 seconds, got {val}"
@@ -176,24 +187,28 @@ fn anim_property_tick_advances_spring() {
 
 #[test]
 fn anim_property_tick_noop_for_easing() {
-    let now = Instant::now();
+    // 200ms at 60fps = 12 frames.
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::linear(200));
 
-    prop.set(1.0, now);
+    prop.set(1.0);
 
-    // tick() should be a no-op for easing — the value is computed lazily.
-    let before = prop.get(now + Duration::from_millis(50));
-    prop.tick(now + Duration::from_millis(50));
-    let after = prop.get(now + Duration::from_millis(50));
+    // Advance 3 frames.
+    for _ in 0..3 {
+        prop.tick();
+    }
+
+    // tick() for easing simply increments the frame counter; get() is deterministic.
+    let before = prop.get();
+    // No tick here — just read again.
+    let after = prop.get();
     assert_eq!(
         before, after,
-        "tick() should not affect easing-based properties"
+        "get() should return consistent value without additional tick()"
     );
 }
 
 #[test]
 fn anim_property_spring_with_custom_params() {
-    let now = Instant::now();
     let spring = Spring {
         response: 0.3,
         damping: 1.0, // Critically damped.
@@ -201,15 +216,13 @@ fn anim_property_spring_with_custom_params() {
     };
     let mut prop = AnimProperty::with_behavior(0.0_f32, AnimBehavior::spring_with(spring));
 
-    prop.set(1.0, now);
+    prop.set(1.0);
 
-    let mut t = now;
     for _ in 0..300 {
-        t += Duration::from_millis(16);
-        prop.tick(t);
+        prop.tick();
     }
 
-    let val = prop.get(t);
+    let val = prop.get();
     assert!(
         (val - 1.0).abs() < 0.01,
         "Critically damped spring should converge, got {val}"

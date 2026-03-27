@@ -9,6 +9,7 @@
 //! - [`sidebar_nav`] — settings sidebar icons (generated from mockup SVGs)
 
 mod chrome;
+mod footer;
 mod sidebar_nav;
 
 /// A single path drawing command in normalized 0.0–1.0 coordinate space.
@@ -82,6 +83,10 @@ pub enum IconId {
     Activity,
     /// Search/magnifying glass icon — sidebar search field.
     Search,
+    /// Alert circle icon — unsaved changes indicator in settings footer.
+    AlertCircle,
+    /// Filled downward triangle for dropdown select triggers (10×6 in 10×10 box).
+    DropdownArrow,
 }
 
 impl IconId {
@@ -106,6 +111,8 @@ impl IconId {
         Self::Bell,
         Self::Activity,
         Self::Search,
+        Self::AlertCircle,
+        Self::DropdownArrow,
     ];
 
     /// Returns the icon path definition for this icon.
@@ -129,6 +136,10 @@ impl IconId {
             Self::Bell => &sidebar_nav::ICON_BELL,
             Self::Activity => &sidebar_nav::ICON_ACTIVITY,
             Self::Search => &sidebar_nav::ICON_SEARCH,
+            // Footer icons.
+            Self::AlertCircle => &footer::ICON_ALERT_CIRCLE,
+            // Dropdown trigger filled triangle.
+            Self::DropdownArrow => &chrome::ICON_DROPDOWN_ARROW,
         }
     }
 }

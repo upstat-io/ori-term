@@ -4,6 +4,7 @@
 //! Arrow keys increment/decrement. Emits `WidgetAction::ValueChanged`
 //! when the value changes.
 
+use crate::color::Color;
 use crate::controllers::{EventController, FocusController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
@@ -18,23 +19,26 @@ use crate::widget_id::WidgetId;
 
 use super::{DrawCtx, LayoutCtx, OnInputResult, Widget, WidgetAction};
 
-/// Default widget width.
-const INPUT_WIDTH: f32 = 80.0;
+/// Default inner input width (mockup `.num-stepper input { width: 56px }`).
+pub(super) const DEFAULT_INPUT_WIDTH: f32 = 56.0;
 
-/// Widget height.
-const INPUT_HEIGHT: f32 = 32.0;
+/// Widget height (mockup `.num-stepper { height: 30px }`).
+pub(super) const INPUT_HEIGHT: f32 = 30.0;
 
-/// Text font size.
-const FONT_SIZE: f32 = 13.0;
+/// Text font size (mockup `.num-stepper input { font-size: 12px }`).
+const FONT_SIZE: f32 = 12.0;
 
 /// Corner radius.
 const CORNER_RADIUS: f32 = 0.0;
 
-/// Border width.
-const BORDER_WIDTH: f32 = 1.0;
+/// Outer border width (mockup `.num-stepper { border: 2px solid }`).
+pub(super) const BORDER_WIDTH: f32 = 2.0;
+
+/// Horizontal divider between stepper buttons (mockup `border-top: 1px`).
+pub(super) const BUTTON_DIVIDER_WIDTH: f32 = 1.0;
 
 /// Width of the right-side button panel (up/down arrows).
-const BUTTON_PANEL_WIDTH: f32 = 22.0;
+pub(super) const BUTTON_PANEL_WIDTH: f32 = 22.0;
 
 /// A compact numeric input with min/max/step constraints.
 ///
@@ -46,6 +50,12 @@ pub struct NumberInputWidget {
     min: f32,
     max: f32,
     step: f32,
+    /// Inner text field width (total = `input_width` + `BUTTON_PANEL_WIDTH` + 2 * `BORDER_WIDTH`).
+    input_width: f32,
+    /// Border color when hovered (mockup `border-color: var(--text-faint)`).
+    hover_border_color: Color,
+    /// Border color when focused (mockup `border-color: var(--accent)`).
+    focus_border_color: Color,
     controllers: Vec<Box<dyn EventController>>,
     animator: VisualStateAnimator,
 }
@@ -59,6 +69,9 @@ impl NumberInputWidget {
             min,
             max,
             step,
+            input_width: DEFAULT_INPUT_WIDTH,
+            hover_border_color: theme.fg_faint,
+            focus_border_color: theme.accent,
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(FocusController::new()),
@@ -70,6 +83,13 @@ impl NumberInputWidget {
                 theme.bg_secondary,
             )]),
         }
+    }
+
+    /// Overrides the inner input field width (default 56px, compact 44px).
+    #[must_use]
+    pub fn with_input_width(mut self, px: f32) -> Self {
+        self.input_width = px;
+        self
     }
 
     /// Returns the current value.
@@ -131,7 +151,8 @@ impl Widget for NumberInputWidget {
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
-        LayoutBox::leaf(INPUT_WIDTH, INPUT_HEIGHT).with_widget_id(self.id)
+        let total_w = self.input_width + BUTTON_PANEL_WIDTH + 2.0 * BORDER_WIDTH;
+        LayoutBox::leaf(total_w, INPUT_HEIGHT).with_widget_id(self.id)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {
@@ -153,14 +174,19 @@ impl Widget for NumberInputWidget {
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let bounds = ctx.bounds;
         let focused = ctx.is_interaction_focused();
+        let hovered = ctx.is_hot();
 
-        // Background.
-        let bg = self.animator.get_bg_color(ctx.now);
+        // Border color: focus > hover > default (matching dropdown's pattern).
         let border_color = if focused {
-            ctx.theme.accent
+            self.focus_border_color
+        } else if hovered {
+            self.hover_border_color
         } else {
             ctx.theme.border
         };
+
+        // Background.
+        let bg = self.animator.get_bg_color();
         let style = RectStyle::filled(bg)
             .with_radius(CORNER_RADIUS)
             .with_border(BORDER_WIDTH, border_color);
@@ -180,48 +206,41 @@ impl Widget for NumberInputWidget {
         let panel_x = bounds.x() + text_area_w;
         let half_h = bounds.height() / 2.0;
 
-        // Vertical divider line.
-        let divider = Rect::new(
-            panel_x,
-            bounds.y() + 4.0,
-            BORDER_WIDTH,
-            bounds.height() - 8.0,
-        );
+        // Vertical divider (mockup `border-left: 2px solid`).
+        let divider = Rect::new(panel_x, bounds.y(), BORDER_WIDTH, bounds.height());
         ctx.scene
             .push_quad(divider, RectStyle::filled(border_color));
 
-        // Horizontal divider between up/down buttons.
+        // Horizontal divider between stepper buttons (mockup `border-top: 1px`).
         let h_divider = Rect::new(
-            panel_x + 4.0,
-            bounds.y() + half_h - 0.5,
-            BUTTON_PANEL_WIDTH - 8.0,
-            BORDER_WIDTH,
+            panel_x + BORDER_WIDTH,
+            bounds.y() + half_h - BUTTON_DIVIDER_WIDTH / 2.0,
+            BUTTON_PANEL_WIDTH - BORDER_WIDTH,
+            BUTTON_DIVIDER_WIDTH,
         );
         ctx.scene
-            .push_quad(h_divider, RectStyle::filled(border_color));
+            .push_quad(h_divider, RectStyle::filled(ctx.theme.border));
 
-        // Arrow labels — ▲ (U+25B2) and ▼ (U+25BC).
-        let arrow_size = 9.0;
-        let arrow_color = ctx.theme.fg_secondary;
+        // Arrow labels — ▲ (U+25B2) and ▼ (U+25BC) at 8px (mockup font-size).
+        let arrow_size = 8.0;
+        let arrow_color = ctx.theme.fg_faint;
         let arrow_style = TextStyle::new(arrow_size, arrow_color);
+        let arrow_area_x = panel_x + BORDER_WIDTH;
+        let arrow_area_w = BUTTON_PANEL_WIDTH - BORDER_WIDTH;
 
-        let up_shaped = ctx
-            .measurer
-            .shape("\u{25B2}", &arrow_style, BUTTON_PANEL_WIDTH);
-        let up_x = panel_x + (BUTTON_PANEL_WIDTH - up_shaped.width) / 2.0;
+        let up_shaped = ctx.measurer.shape("\u{25B2}", &arrow_style, arrow_area_w);
+        let up_x = arrow_area_x + (arrow_area_w - up_shaped.width) / 2.0;
         let up_y = bounds.y() + (half_h - up_shaped.height) / 2.0;
         ctx.scene
             .push_text(Point::new(up_x, up_y), up_shaped, arrow_color);
 
-        let dn_shaped = ctx
-            .measurer
-            .shape("\u{25BC}", &arrow_style, BUTTON_PANEL_WIDTH);
-        let dn_x = panel_x + (BUTTON_PANEL_WIDTH - dn_shaped.width) / 2.0;
+        let dn_shaped = ctx.measurer.shape("\u{25BC}", &arrow_style, arrow_area_w);
+        let dn_x = arrow_area_x + (arrow_area_w - dn_shaped.width) / 2.0;
         let dn_y = bounds.y() + half_h + (half_h - dn_shaped.height) / 2.0;
         ctx.scene
             .push_text(Point::new(dn_x, dn_y), dn_shaped, arrow_color);
 
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

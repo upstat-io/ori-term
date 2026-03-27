@@ -6,8 +6,6 @@
 //! transitions, matching the [`ButtonWidget`](super::super::button::ButtonWidget)
 //! pattern.
 
-use std::time::Instant;
-
 use crate::animation::Lerp;
 use crate::color::Color;
 use crate::controllers::{ClickController, EventController, HoverController};
@@ -117,11 +115,11 @@ impl WindowControlButton {
     }
 
     /// Returns the foreground (symbol) color -- white on close hover.
-    fn current_fg(&self, now: Instant) -> Color {
+    fn current_fg(&self) -> Color {
         if self.kind == ControlKind::Close {
             // Use animator bg to derive hover progress: if bg matches
             // close_hover_bg or close_pressed_bg, use white fg.
-            let bg = self.animator.get_bg_color(now);
+            let bg = self.animator.get_bg_color();
             if bg == Color::TRANSPARENT {
                 self.fg
             } else {
@@ -239,8 +237,8 @@ impl Widget for WindowControlButton {
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
-        let bg = self.animator.get_bg_color(ctx.now);
-        let fg = self.current_fg(ctx.now);
+        let bg = self.animator.get_bg_color();
+        let fg = self.current_fg();
 
         // Button background (only visible on hover/press).
         if bg != Color::TRANSPARENT {
@@ -262,7 +260,7 @@ impl Widget for WindowControlButton {
         }
 
         // Request continued redraws during animation.
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

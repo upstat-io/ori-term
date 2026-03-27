@@ -132,6 +132,40 @@ fn accept_action_ignores_wrong_id() {
     assert_eq!(dd.selected(), 0);
 }
 
+// -- Keymap actions --
+
+#[test]
+fn confirm_emits_open_dropdown_not_selected() {
+    // Regression: TPR-13-009 — keyboard Confirm must open the popup, not
+    // silently cycle the selection.
+    use crate::action::keymap_action::Confirm;
+    use crate::geometry::Rect;
+    let mut dd = DropdownWidget::new(items());
+    let bounds = Rect::new(10.0, 20.0, 140.0, 30.0);
+
+    let result = dd.handle_keymap_action(&Confirm, bounds);
+    assert!(
+        matches!(result, Some(WidgetAction::OpenDropdown { .. })),
+        "Confirm should emit OpenDropdown, got: {result:?}"
+    );
+}
+
+#[test]
+fn dismiss_does_not_emit_overlay_action() {
+    // Regression: TPR-13-008 — Escape on a closed dropdown trigger must NOT
+    // emit DismissOverlay (which would close the entire settings dialog).
+    use crate::action::keymap_action::Dismiss;
+    use crate::geometry::Rect;
+    let mut dd = DropdownWidget::new(items());
+    let bounds = Rect::new(10.0, 20.0, 140.0, 30.0);
+
+    let result = dd.handle_keymap_action(&Dismiss, bounds);
+    assert!(
+        result.is_none(),
+        "Dismiss on closed trigger should be no-op, got: {result:?}"
+    );
+}
+
 // -- Style --
 
 #[test]
@@ -148,7 +182,6 @@ fn with_style_rebuilds_animator() {
     let dd = DropdownWidget::new(items()).with_style(style);
 
     // The animator's initial bg should be the style's normal bg.
-    let now = std::time::Instant::now();
     let animator = dd.visual_states().unwrap();
-    assert_eq!(animator.get_bg_color(now), Color::WHITE);
+    assert_eq!(animator.get_bg_color(), Color::WHITE);
 }

@@ -740,22 +740,90 @@ fn kitty_backspace() {
 
 #[test]
 fn kitty_f1() {
+    // F1 has an unambiguous legacy sequence (SS3 P), so DISAMBIGUATE_ESC_CODES
+    // alone falls back to legacy encoding.
     let r = enc(
         Key::Named(NamedKey::F1),
         Modifiers::empty(),
         kitty_disambiguate(),
+    );
+    assert_eq!(r, b"\x1bOP");
+}
+
+#[test]
+fn kitty_f1_report_all() {
+    // With REPORT_ALL_KEYS_AS_ESC, F1 gets the full CSI u treatment.
+    let r = enc(
+        Key::Named(NamedKey::F1),
+        Modifiers::empty(),
+        kitty_all_flags(),
     );
     assert_eq!(r, b"\x1b[57364u");
 }
 
 #[test]
 fn kitty_arrow_up() {
+    // ArrowUp has an unambiguous legacy sequence (CSI A), so
+    // DISAMBIGUATE_ESC_CODES alone falls back to legacy.
     let r = enc(
         Key::Named(NamedKey::ArrowUp),
         Modifiers::empty(),
         kitty_disambiguate(),
     );
+    assert_eq!(r, b"\x1b[A");
+}
+
+#[test]
+fn kitty_arrow_up_report_all() {
+    // With REPORT_ALL_KEYS_AS_ESC, ArrowUp uses CSI u.
+    let r = enc(
+        Key::Named(NamedKey::ArrowUp),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
     assert_eq!(r, b"\x1b[57352u");
+}
+
+#[test]
+fn kitty_end_disambiguate_uses_legacy() {
+    // End has an unambiguous legacy sequence (CSI F), so
+    // DISAMBIGUATE_ESC_CODES alone should NOT produce CSI 57357 u.
+    let r = enc(
+        Key::Named(NamedKey::End),
+        Modifiers::empty(),
+        kitty_disambiguate(),
+    );
+    assert_eq!(r, b"\x1b[F");
+}
+
+#[test]
+fn kitty_home_disambiguate_uses_legacy() {
+    let r = enc(
+        Key::Named(NamedKey::Home),
+        Modifiers::empty(),
+        kitty_disambiguate(),
+    );
+    assert_eq!(r, b"\x1b[H");
+}
+
+#[test]
+fn kitty_delete_disambiguate_uses_legacy() {
+    let r = enc(
+        Key::Named(NamedKey::Delete),
+        Modifiers::empty(),
+        kitty_disambiguate(),
+    );
+    assert_eq!(r, b"\x1b[3~");
+}
+
+#[test]
+fn kitty_page_up_disambiguate_uses_legacy() {
+    let r = enc(
+        Key::Named(NamedKey::PageUp),
+        Modifiers::empty(),
+        kitty_disambiguate(),
+    );
+    assert_eq!(r, b"\x1b[5~");
 }
 
 // --- Kitty: modifiers ---
@@ -919,8 +987,8 @@ fn legacy_release_still_empty() {
 // --- Dispatch priority: Kitty overrides legacy ---
 
 #[test]
-fn kitty_overrides_legacy_for_arrow_up() {
-    // Legacy would produce ESC[A; Kitty produces ESC[57352u.
+fn kitty_disambiguate_uses_legacy_for_unambiguous_arrow() {
+    // DISAMBIGUATE_ESC_CODES alone should use legacy for ArrowUp (unambiguous).
     let legacy = enc(Key::Named(NamedKey::ArrowUp), Modifiers::empty(), no_mode());
     let kitty = enc(
         Key::Named(NamedKey::ArrowUp),
@@ -928,6 +996,17 @@ fn kitty_overrides_legacy_for_arrow_up() {
         kitty_disambiguate(),
     );
     assert_eq!(legacy, b"\x1b[A");
+    assert_eq!(kitty, legacy);
+}
+
+#[test]
+fn kitty_report_all_overrides_legacy_for_arrow_up() {
+    // REPORT_ALL_KEYS_AS_ESC forces CSI u even for unambiguous keys.
+    let kitty = enc(
+        Key::Named(NamedKey::ArrowUp),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
     assert_eq!(kitty, b"\x1b[57352u");
 }
 
@@ -1087,10 +1166,23 @@ fn kitty_ctrl_space() {
 
 #[test]
 fn kitty_ctrl_shift_arrow_up() {
+    // ArrowUp with modifiers has an unambiguous legacy sequence (CSI 1;6 A),
+    // so DISAMBIGUATE_ESC_CODES alone uses legacy encoding.
     let r = enc(
         Key::Named(NamedKey::ArrowUp),
         Modifiers::CONTROL | Modifiers::SHIFT,
         kitty_disambiguate(),
+    );
+    assert_eq!(r, b"\x1b[1;6A");
+}
+
+#[test]
+fn kitty_ctrl_shift_arrow_up_report_all() {
+    // With REPORT_ALL_KEYS_AS_ESC, modified ArrowUp uses CSI u.
+    let r = enc(
+        Key::Named(NamedKey::ArrowUp),
+        Modifiers::CONTROL | Modifiers::SHIFT,
+        kitty_all_flags(),
     );
     // Ctrl=4, Shift=1, param = 1 + 4 + 1 = 6.
     assert_eq!(r, b"\x1b[57352;6u");

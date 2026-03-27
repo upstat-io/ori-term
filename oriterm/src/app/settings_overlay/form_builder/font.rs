@@ -82,7 +82,9 @@ fn build_typeface_section(
                 .position(|f| f.eq_ignore_ascii_case(fam))
         })
         .unwrap_or(0); // "Default (System)" if not found.
-    let family_dropdown = DropdownWidget::new(items).with_selected(family_idx);
+    let family_dropdown = DropdownWidget::new(items)
+        .with_selected(family_idx)
+        .with_min_width(180.0);
     ids.font_family_dropdown = family_dropdown.id();
 
     let family_row = SettingRowWidget::new(

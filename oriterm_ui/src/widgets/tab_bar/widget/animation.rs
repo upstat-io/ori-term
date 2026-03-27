@@ -6,6 +6,8 @@
 
 use std::time::Instant;
 
+use crate::animation::AnimProperty;
+
 use super::super::hit::TabBarHit;
 use super::super::layout::TabBarLayout;
 use super::TabBarWidget;
@@ -15,7 +17,7 @@ impl TabBarWidget {
     ///
     /// Starts animated transitions for hover background and close button
     /// visibility on the affected tabs.
-    pub fn set_hover_hit(&mut self, hit: TabBarHit, now: Instant) {
+    pub fn set_hover_hit(&mut self, hit: TabBarHit) {
         let old_tab = self.hover_hit.tab_index();
         let new_tab = hit.tab_index();
         self.hover_hit = hit;
@@ -24,10 +26,10 @@ impl TabBarWidget {
         if let Some(i) = old_tab {
             if Some(i) != new_tab {
                 if let Some(p) = self.hover_progress.get_mut(i) {
-                    p.set(0.0, now);
+                    p.set(0.0);
                 }
                 if let Some(o) = self.close_btn_opacity.get_mut(i) {
-                    o.set(0.0, now);
+                    o.set(0.0);
                 }
             }
         }
@@ -35,10 +37,10 @@ impl TabBarWidget {
         if let Some(i) = new_tab {
             if Some(i) != old_tab {
                 if let Some(p) = self.hover_progress.get_mut(i) {
-                    p.set(1.0, now);
+                    p.set(1.0);
                 }
                 if let Some(o) = self.close_btn_opacity.get_mut(i) {
-                    o.set(1.0, now);
+                    o.set(1.0);
                 }
             }
         }
@@ -58,10 +60,10 @@ impl TabBarWidget {
     ///
     /// Call after `set_tabs()` which initializes the entry at 1.0.
     /// This overrides to start from 0.0 and animate to 1.0 over 200ms.
-    pub fn animate_tab_open(&mut self, index: usize, now: Instant) {
+    pub fn animate_tab_open(&mut self, index: usize) {
         if let Some(m) = self.width_multipliers.get_mut(index) {
             m.set_immediate(0.0);
-            m.set(1.0, now);
+            m.set(1.0);
         }
     }
 
@@ -70,7 +72,7 @@ impl TabBarWidget {
     /// Marks the tab as closing (skipped for hover/click interaction).
     /// When the animation completes, call [`closing_complete`] to find
     /// which tab to remove.
-    pub fn animate_tab_close(&mut self, index: usize, now: Instant) {
+    pub fn animate_tab_close(&mut self, index: usize) {
         use super::TAB_CLOSE_DURATION;
         use crate::animation::{AnimBehavior, AnimProperty};
 
@@ -79,7 +81,7 @@ impl TabBarWidget {
                 1.0,
                 AnimBehavior::ease_out(TAB_CLOSE_DURATION.as_millis() as u64),
             );
-            m.set(0.0, now);
+            m.set(0.0);
         }
         if let Some(c) = self.closing_tabs.get_mut(index) {
             *c = true;
@@ -90,16 +92,12 @@ impl TabBarWidget {
     ///
     /// The app layer polls this during redraw and removes the finished
     /// tab via `set_tabs()`.
-    pub fn closing_complete(&self, now: Instant) -> Option<usize> {
+    pub fn closing_complete(&self) -> Option<usize> {
         self.closing_tabs
             .iter()
             .enumerate()
             .find(|&(i, &closing)| {
-                closing
-                    && self
-                        .width_multipliers
-                        .get(i)
-                        .is_none_or(|m| m.get(now) < 0.01)
+                closing && self.width_multipliers.get(i).is_none_or(|m| m.get() < 0.01)
             })
             .map(|(i, _)| i)
     }
@@ -110,17 +108,19 @@ impl TabBarWidget {
     }
 
     /// Whether any width animation is currently running.
-    pub fn has_width_animation(&self, now: Instant) -> bool {
-        self.width_multipliers.iter().any(|m| m.is_animating(now))
+    pub fn has_width_animation(&self) -> bool {
+        self.width_multipliers
+            .iter()
+            .any(AnimProperty::is_animating)
     }
 
     /// Updates layout with current animated width multipliers.
     ///
     /// Call once per frame before draw when width animations are active.
     /// No-op when no width animations are running.
-    pub fn update_animated_layout(&mut self, now: Instant) {
-        if self.has_width_animation(now) {
-            self.recompute_layout_animated(now);
+    pub fn update_animated_layout(&mut self) {
+        if self.has_width_animation() {
+            self.recompute_layout_animated();
         }
     }
 
@@ -185,8 +185,12 @@ impl TabBarWidget {
     ///
     /// Called during draw when width animations are running. Samples
     /// each `AnimProperty` at `now` and passes the snapshot to layout.
-    fn recompute_layout_animated(&mut self, now: Instant) {
-        let multipliers: Vec<f32> = self.width_multipliers.iter().map(|m| m.get(now)).collect();
+    fn recompute_layout_animated(&mut self) {
+        let multipliers: Vec<f32> = self
+            .width_multipliers
+            .iter()
+            .map(AnimProperty::get)
+            .collect();
         self.layout = TabBarLayout::compute_with_multipliers(
             self.tabs.len(),
             self.window_width,

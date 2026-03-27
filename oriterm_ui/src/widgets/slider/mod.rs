@@ -19,10 +19,10 @@ use crate::theme::UiTheme;
 use super::WidgetAction;
 
 /// Width reserved for the value label to the right of the track.
-const VALUE_LABEL_WIDTH: f32 = 48.0;
+const VALUE_LABEL_WIDTH: f32 = 32.0;
 
 /// Gap between track and value label.
-const VALUE_GAP: f32 = 12.0;
+const VALUE_GAP: f32 = 10.0;
 
 /// Visual style for a [`SliderWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -88,6 +88,19 @@ impl Default for SliderStyle {
     }
 }
 
+/// How the slider value is formatted in the label area.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValueDisplay {
+    /// No value label shown.
+    Hidden,
+    /// Raw numeric value (e.g., "14", "0.5").
+    Numeric,
+    /// Value followed by "%" (e.g., "100%").
+    Percent,
+    /// Value followed by a custom suffix (e.g., "14px").
+    Suffix(&'static str),
+}
+
 /// A horizontal slider with track and draggable thumb.
 ///
 /// Value ranges from `min` to `max` with optional `step` snapping.
@@ -100,6 +113,7 @@ pub struct SliderWidget {
     pub(super) max: f32,
     pub(super) step: f32,
     pub(super) disabled: bool,
+    pub(super) display: ValueDisplay,
     pub(super) style: SliderStyle,
     pub(super) controllers: Vec<Box<dyn EventController>>,
     /// Animator for thumb color transition.
@@ -125,6 +139,7 @@ impl SliderWidget {
             max: 1.0,
             step: 0.01,
             disabled: false,
+            display: ValueDisplay::Numeric,
             controllers: vec![
                 Box::new(HoverController::new()),
                 Box::new(ScrubController::new()),
@@ -195,6 +210,13 @@ impl SliderWidget {
         self
     }
 
+    /// Sets how the value label is formatted.
+    #[must_use]
+    pub fn with_display(mut self, display: ValueDisplay) -> Self {
+        self.display = display;
+        self
+    }
+
     /// Sets the style.
     #[must_use]
     pub fn with_style(mut self, style: SliderStyle) -> Self {
@@ -247,12 +269,18 @@ impl SliderWidget {
 
     /// Formats the current value for display based on step precision.
     pub(super) fn format_value(&self) -> String {
-        if self.step >= 1.0 {
+        let num = if self.step >= 1.0 {
             format!("{:.0}", self.value)
         } else if self.step >= 0.1 {
             format!("{:.1}", self.value)
         } else {
             format!("{:.2}", self.value)
+        };
+        match &self.display {
+            ValueDisplay::Hidden => String::new(),
+            ValueDisplay::Numeric => num,
+            ValueDisplay::Percent => format!("{num}%"),
+            ValueDisplay::Suffix(s) => format!("{num}{s}"),
         }
     }
 
@@ -279,6 +307,7 @@ impl std::fmt::Debug for SliderWidget {
             .field("max", &self.max)
             .field("step", &self.step)
             .field("disabled", &self.disabled)
+            .field("display", &self.display)
             .field("style", &self.style)
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)

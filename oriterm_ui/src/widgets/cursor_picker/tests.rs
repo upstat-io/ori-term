@@ -7,7 +7,10 @@ use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
-use super::{CARD_GAP, CARD_HEIGHT, CARD_WIDTH, CursorPickerWidget, TOTAL_WIDTH};
+use super::{
+    CARD_GAP, CARD_HEIGHT, CARD_WIDTH, CursorPickerWidget, DEMO_FONT_SIZE, LABEL_FONT_SIZE,
+    TOTAL_WIDTH,
+};
 
 fn theme() -> &'static crate::theme::UiTheme {
     &super::super::tests::TEST_THEME
@@ -124,4 +127,61 @@ fn set_selected_out_of_range_is_noop() {
     let mut p = make_picker(1);
     p.set_selected(99);
     assert_eq!(p.selected(), 1);
+}
+
+// -- Constant validation --
+
+#[test]
+fn cursor_picker_card_gap_is_24() {
+    assert_eq!(CARD_GAP, 24.0);
+}
+
+#[test]
+fn cursor_picker_demo_font_size_is_16() {
+    assert_eq!(DEMO_FONT_SIZE, 16.0);
+}
+
+#[test]
+fn cursor_picker_label_font_size_is_11() {
+    assert_eq!(LABEL_FONT_SIZE, 11.0);
+}
+
+// -- Animator base colors --
+
+#[test]
+fn cursor_picker_paint_normal_bg_is_raised() {
+    let p = make_picker(0);
+    let animator = p.visual_states().expect("has animator");
+    // Normal state bg should be bg_card (the raised surface color).
+    assert_eq!(animator.get_bg_color(), theme().bg_card);
+}
+
+#[test]
+fn cursor_picker_paint_active_bg_is_accent() {
+    let p = make_picker(0);
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, TOTAL_WIDTH, CARD_HEIGHT);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now: std::time::Instant::now(),
+        theme: theme(),
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    p.paint(&mut ctx);
+
+    // Selected card (index 0) gets accent_bg background. The first quad
+    // pushed is for card 0 — verify its fill color is accent_bg.
+    let quads = scene.quads();
+    assert!(!quads.is_empty(), "paint should emit quads");
+    assert_eq!(
+        quads[0].style.fill,
+        Some(theme().accent_bg),
+        "selected card bg should be accent_bg"
+    );
 }

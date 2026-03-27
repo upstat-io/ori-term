@@ -84,8 +84,15 @@ impl FontCollection {
             return self.glyph_cache.get(&key);
         }
 
+        // For medium-weight requests on the Regular slot, prefer the Medium
+        // face so rasterization matches the shaping substitution.
+        let use_medium = key.face_idx == FaceIdx::REGULAR
+            && (500..700).contains(&requested_weight)
+            && self.medium.is_some();
         let fd = if let Some(fb_i) = key.face_idx.fallback_index() {
             self.fallbacks.get(fb_i)?
+        } else if use_medium {
+            self.medium.as_ref()?
         } else {
             self.primary[key.face_idx.as_usize()].as_ref()?
         };

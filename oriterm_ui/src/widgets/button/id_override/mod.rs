@@ -1,8 +1,10 @@
 //! Button wrapper that overrides the widget ID.
 //!
-//! Used by the settings panel to intercept `Clicked` actions from buttons
-//! whose IDs are allocated externally (Save, Cancel, Close).
+//! Used by the settings footer and settings panel to intercept `Clicked`
+//! actions from buttons whose IDs are allocated externally (Save, Cancel,
+//! Reset, Close).
 
+use crate::action::KeymapAction;
 use crate::controllers::EventController;
 use crate::geometry::Rect;
 use crate::layout::LayoutBox;
@@ -10,24 +12,31 @@ use crate::sense::Sense;
 use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
-use super::super::button::ButtonWidget;
-use super::super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
-
-use crate::widgets::PrepaintCtx;
+use super::ButtonWidget;
+use crate::widgets::{DrawCtx, LayoutCtx, PrepaintCtx, Widget, WidgetAction};
 
 /// Wrapper around `ButtonWidget` that overrides its `WidgetId`.
 ///
 /// Needed because `ButtonWidget::new()` generates its own ID internally,
 /// but we need a known ID to intercept the `Clicked` action.
-pub(super) struct IdOverrideButton {
+pub(crate) struct IdOverrideButton {
     inner: ButtonWidget,
     id_override: WidgetId,
 }
 
 impl IdOverrideButton {
     /// Create a new button with an externally-assigned ID.
-    pub(super) fn new(inner: ButtonWidget, id_override: WidgetId) -> Self {
+    pub(crate) fn new(inner: ButtonWidget, id_override: WidgetId) -> Self {
         Self { inner, id_override }
+    }
+
+    /// Sets the disabled state on the inner button.
+    #[allow(
+        dead_code,
+        reason = "pub(crate) API tested in id_override::tests::set_disabled_delegates"
+    )]
+    pub(crate) fn set_disabled(&mut self, disabled: bool) {
+        self.inner.set_disabled(disabled);
     }
 }
 
@@ -89,6 +98,24 @@ impl Widget for IdOverrideButton {
     // double-update the animator with the inner button's (non-hot) ID,
     // overriding the correct update from this wrapper's ID.
 
+    fn key_context(&self) -> Option<&'static str> {
+        self.inner.key_context()
+    }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn KeymapAction,
+        bounds: Rect,
+    ) -> Option<WidgetAction> {
+        // Delegate to inner button, then rewrite the Clicked ID.
+        self.inner
+            .handle_keymap_action(action, bounds)
+            .map(|a| match a {
+                WidgetAction::Clicked(_) => WidgetAction::Clicked(self.id_override),
+                other => other,
+            })
+    }
+
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
         self.inner.accept_action(action)
     }
@@ -101,3 +128,6 @@ impl Widget for IdOverrideButton {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

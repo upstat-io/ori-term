@@ -542,3 +542,42 @@ fn disabled_ignores_click() {
     let r = ti.on_input(&click, bounds());
     assert!(!r.handled);
 }
+
+// -- Style constants --
+
+fn settings_theme() -> &'static crate::theme::UiTheme {
+    &super::super::tests::TEST_THEME
+}
+
+#[test]
+fn text_input_settings_style_border_width() {
+    let s = TextInputStyle::settings(settings_theme());
+    assert_eq!(s.border_width, 2.0);
+}
+
+#[test]
+fn text_input_settings_style_font_size() {
+    let s = TextInputStyle::settings(settings_theme());
+    assert_eq!(s.font_size, 12.0);
+}
+
+#[test]
+fn text_input_settings_style_min_width() {
+    let s = TextInputStyle::settings(settings_theme());
+    assert_eq!(s.min_width, 200.0);
+}
+
+#[test]
+fn text_input_settings_style_has_hover_border() {
+    let s = TextInputStyle::settings(settings_theme());
+    assert_ne!(
+        s.hover_border_color, s.border_color,
+        "hover border must differ from default border"
+    );
+}
+
+#[test]
+fn text_input_default_style_unchanged() {
+    let s = TextInputStyle::from_theme(settings_theme());
+    assert_eq!(s.border_width, 1.0, "default style keeps 1px border");
+}
