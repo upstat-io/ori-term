@@ -287,6 +287,25 @@ fn create_controls(colors: ControlButtonColors) -> [WindowControlButton; 3] {
     [min_btn, max_btn, close_btn]
 }
 
+impl TabBarWidget {
+    /// Tick all standalone `AnimProperty` fields by one frame.
+    ///
+    /// Called from `prepaint()` to advance hover, close-button opacity,
+    /// and width multiplier animations. The `VisualStateAnimator` (control
+    /// button hover) is ticked separately by `prepare_widget_frame`.
+    pub(super) fn tick_animations(&mut self) {
+        for p in &mut self.hover_progress {
+            p.tick();
+        }
+        for o in &mut self.close_btn_opacity {
+            o.tick();
+        }
+        for m in &mut self.width_multipliers {
+            m.tick();
+        }
+    }
+}
+
 // Test helpers
 
 #[cfg(test)]
@@ -307,14 +326,12 @@ impl TabBarWidget {
     }
 
     /// Test-only access to hover progress for a tab.
-    pub fn test_hover_progress(&self, index: usize, now: Instant) -> f32 {
-        self.hover_progress.get(index).map_or(0.0, |p| p.get(now))
+    pub fn test_hover_progress(&self, index: usize) -> f32 {
+        self.hover_progress.get(index).map_or(0.0, |p| p.get())
     }
 
     /// Test-only access to close button opacity for a tab.
-    pub fn test_close_btn_opacity(&self, index: usize, now: Instant) -> f32 {
-        self.close_btn_opacity
-            .get(index)
-            .map_or(0.0, |o| o.get(now))
+    pub fn test_close_btn_opacity(&self, index: usize) -> f32 {
+        self.close_btn_opacity.get(index).map_or(0.0, |o| o.get())
     }
 }

@@ -51,9 +51,17 @@ impl FontCollection {
         requested_weight: u16,
         synthetic: SyntheticFlags,
     ) -> Vec<Option<rustybuzz::Face<'_>>> {
+        let use_medium = (500..700).contains(&requested_weight) && self.medium.is_some();
         let mut faces = Vec::with_capacity(self.face_count());
-        for slot in &self.primary {
-            faces.push(slot.as_ref().and_then(|fd| {
+        for (i, slot) in self.primary.iter().enumerate() {
+            // For medium-weight requests, substitute the Medium face into the
+            // Regular (slot 0) position so `GlyphStyle::Regular` resolves to it.
+            let source = if i == 0 && use_medium {
+                self.medium.as_ref()
+            } else {
+                slot.as_ref()
+            };
+            faces.push(source.and_then(|fd| {
                 let mut face = rustybuzz::Face::from_slice(&fd.bytes, fd.face_index)?;
                 let vars = face_variations_for_ui_weight(synthetic, requested_weight, &fd.axes);
                 apply_variations(&mut face, &vars);

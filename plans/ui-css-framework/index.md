@@ -145,7 +145,7 @@ sidebar height, full-height, padding, row height
 ---
 
 ### Section 11: Visual Fidelity — Content Area + Typography
-**File:** `section-11-content-typography.md` | **Status:** Complete
+**File:** `section-11-content-typography.md` | **Status:** Complete (TPR resolved)
 
 ```
 content-header, page title, APPEARANCE, section-title
@@ -157,7 +157,7 @@ font sizes, 18px title, 13px body, 11.5px desc, 11px header
 ---
 
 ### Section 12: Visual Fidelity — Footer + Buttons
-**File:** `section-12-footer-buttons.md` | **Status:** Not Started
+**File:** `section-12-footer-buttons.md` | **Status:** In Progress (TPR findings)
 
 ```
 footer, sticky footer, border-top, UNSAVED CHANGES
@@ -173,7 +173,7 @@ right-column footer, sidebar full-height
 ---
 
 ### Section 13: Visual Fidelity — Widget Controls
-**File:** `section-13-widget-controls.md` | **Status:** Not Started
+**File:** `section-13-widget-controls.md` | **Status:** In Progress (13.1 complete)
 
 ```
 SliderWidget, ToggleWidget, DropdownWidget
@@ -181,6 +181,18 @@ slider track width 120px, thumb 12x14, accent color
 toggle 38x20, track border, thumb slide
 dropdown min-width 140px, padding, arrow indicator
 setting row spacing, control alignment, right-hand rail
+```
+
+---
+
+### Section 15: Mouse Cursor Icons
+**File:** `section-15-cursor-icons.md` | **Status:** Not Started
+
+```
+cursor, pointer, not-allowed, crosshair, text cursor
+CursorIcon, set_cursor, winit, native OS cursor
+button hover, toggle hover, slider hover, dropdown hover
+disabled cursor, input text cursor, keybind row
 ```
 
 ---
@@ -214,4 +226,5 @@ mockup match, settings-brutal.html
 | 11 | Visual Fidelity: Content + Typography | `section-11-content-typography.md` |
 | 12 | Visual Fidelity: Footer + Buttons | `section-12-footer-buttons.md` |
 | 13 | Visual Fidelity: Widget Controls | `section-13-widget-controls.md` |
+| 15 | Mouse Cursor Icons | `section-15-cursor-icons.md` |
 | 14 | Verification + Visual Regression | `section-14-verification.md` |

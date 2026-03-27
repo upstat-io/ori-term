@@ -112,7 +112,7 @@ impl TabBarWidget {
     /// Directly drives `VisualStateAnimator` on each control button: the
     /// hovered button gets `InteractionState::with_hot()`, others get default.
     /// Returns `true` if any animator is mid-transition (caller should redraw).
-    pub fn update_control_hover_state(&mut self, pos: Point, now: Instant) -> bool {
+    pub fn update_control_hover_state(&mut self, pos: Point) -> bool {
         let hovered_idx = (0..3).find(|&i| self.control_rect(i).contains(pos));
         let mut animating = false;
         for (i, ctrl) in self.controls.iter_mut().enumerate() {
@@ -122,9 +122,9 @@ impl TabBarWidget {
                 InteractionState::new()
             };
             if let Some(animator) = ctrl.visual_states_mut() {
-                animator.update(&state, now);
-                animator.tick(now);
-                if animator.is_animating(now) {
+                animator.update(&state);
+                animator.tick();
+                if animator.is_animating() {
                     animating = true;
                 }
             }
@@ -136,14 +136,14 @@ impl TabBarWidget {
     ///
     /// Called when the cursor leaves the window or moves out of the control area.
     /// Returns `true` if any animator is mid-transition.
-    pub fn clear_control_hover_state(&mut self, now: Instant) -> bool {
+    pub fn clear_control_hover_state(&mut self) -> bool {
         let normal = InteractionState::new();
         let mut animating = false;
         for ctrl in &mut self.controls {
             if let Some(animator) = ctrl.visual_states_mut() {
-                animator.update(&normal, now);
-                animator.tick(now);
-                if animator.is_animating(now) {
+                animator.update(&normal);
+                animator.tick();
+                if animator.is_animating() {
                     animating = true;
                 }
             }

@@ -22,13 +22,17 @@ pub(in crate::app) const PAGE_COUNT: usize = 8;
 /// comparison is correct (no rounding drift).
 pub(in crate::app) fn per_page_dirty(pending: &Config, original: &Config) -> [bool; PAGE_COUNT] {
     [
-        // 0: Appearance — opacity, blur, unfocused opacity, decorations, tab bar style, scheme.
+        // 0: Appearance — opacity, blur, unfocused opacity, decorations, tab bar style/position, scheme.
+        // `tab_bar_position` is shared with Window (index 5) because the Appearance
+        // "Tab bar style" dropdown can set `Hidden` → `tab_bar_position = Hidden`,
+        // and restoring from Hidden also mutates `tab_bar_position`.
         pending.window.opacity.to_bits() != original.window.opacity.to_bits()
             || pending.window.blur != original.window.blur
             || pending.window.unfocused_opacity.to_bits()
                 != original.window.unfocused_opacity.to_bits()
             || pending.window.decorations != original.window.decorations
             || pending.window.tab_bar_style != original.window.tab_bar_style
+            || pending.window.tab_bar_position != original.window.tab_bar_position
             || pending.colors.scheme != original.colors.scheme,
         // 1: Colors — scheme.
         pending.colors.scheme != original.colors.scheme,

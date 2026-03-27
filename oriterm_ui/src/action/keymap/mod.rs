@@ -92,126 +92,21 @@ impl Keymap {
     /// - Enter/Space -> Activate (scoped to `"Button"`)
     /// - Tab/Shift+Tab -> FocusNext/FocusPrev (global)
     /// - Arrow keys -> navigation (scoped per widget type)
-    /// - Enter -> Confirm (scoped to `"Dropdown"` and `"Menu"`)
-    /// - Space -> Confirm (scoped to `"Menu"` only)
+    /// - Enter/Space -> Confirm (scoped to `"Dropdown"` and `"Menu"`)
     /// - Escape -> Dismiss (scoped to `"Dropdown"`, `"Menu"`, `"Dialog"`)
     /// - Slider keys (scoped to `"Slider"`)
     // `vec![]` can't be used because `KeyBinding::new` takes `impl KeymapAction`
     // and each action is a different concrete type — monomorphization prevents
     // unifying them in a single `vec![]` expression.
-    #[expect(
-        clippy::vec_init_then_push,
-        reason = "heterogeneous KeymapAction types"
-    )]
     pub fn defaults() -> Self {
-        use Key::{
-            ArrowDown, ArrowLeft, ArrowRight, ArrowUp, End, Enter, Escape, Home, Space, Tab,
-        };
-        let m = Modifiers::NONE;
-        let s = Modifiers::SHIFT_ONLY;
-
-        let mut bindings = Vec::with_capacity(20);
-
-        // Button activation (scoped — NOT global, to avoid intercepting text input).
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Enter, m),
-            Activate,
-            Some("Button"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Space, m),
-            Activate,
-            Some("Button"),
-        ));
-        // Focus traversal (global — Tab is not consumed by text controllers).
-        bindings.push(KeyBinding::new(Keystroke::new(Tab, m), FocusNext, None));
-        bindings.push(KeyBinding::new(Keystroke::new(Tab, s), FocusPrev, None));
-        // Dropdown navigation.
-        bindings.push(KeyBinding::new(
-            Keystroke::new(ArrowDown, m),
-            NavigateDown,
-            Some("Dropdown"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(ArrowUp, m),
-            NavigateUp,
-            Some("Dropdown"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Enter, m),
-            Confirm,
-            Some("Dropdown"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Escape, m),
-            Dismiss,
-            Some("Dropdown"),
-        ));
-        // Menu navigation.
-        bindings.push(KeyBinding::new(
-            Keystroke::new(ArrowDown, m),
-            NavigateDown,
-            Some("Menu"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(ArrowUp, m),
-            NavigateUp,
-            Some("Menu"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Enter, m),
-            Confirm,
-            Some("Menu"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Space, m),
-            Confirm,
-            Some("Menu"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Escape, m),
-            Dismiss,
-            Some("Menu"),
-        ));
-        // Dialog dismiss.
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Escape, m),
-            Dismiss,
-            Some("Dialog"),
-        ));
-        // Slider controls.
-        bindings.push(KeyBinding::new(
-            Keystroke::new(ArrowRight, m),
-            IncrementValue,
-            Some("Slider"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(ArrowUp, m),
-            IncrementValue,
-            Some("Slider"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(ArrowLeft, m),
-            DecrementValue,
-            Some("Slider"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(ArrowDown, m),
-            DecrementValue,
-            Some("Slider"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(Home, m),
-            ValueToMin,
-            Some("Slider"),
-        ));
-        bindings.push(KeyBinding::new(
-            Keystroke::new(End, m),
-            ValueToMax,
-            Some("Slider"),
-        ));
-
-        Self { bindings }
+        let mut b = Vec::with_capacity(22);
+        Self::push_button_bindings(&mut b);
+        Self::push_focus_bindings(&mut b);
+        Self::push_list_bindings(&mut b, "Dropdown");
+        Self::push_list_bindings(&mut b, "Menu");
+        Self::push_dialog_bindings(&mut b);
+        Self::push_slider_bindings(&mut b);
+        Self { bindings: b }
     }
 
     /// Finds the best-matching action for a keystroke given a context stack.
@@ -268,6 +163,108 @@ impl Keymap {
         } else {
             self.bindings.push(binding);
         }
+    }
+
+    // Button activation (scoped — NOT global, to avoid intercepting text input).
+    fn push_button_bindings(b: &mut Vec<KeyBinding>) {
+        let m = Modifiers::NONE;
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Enter, m),
+            Activate,
+            Some("Button"),
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Space, m),
+            Activate,
+            Some("Button"),
+        ));
+    }
+
+    // Focus traversal (global — Tab is not consumed by text controllers).
+    fn push_focus_bindings(b: &mut Vec<KeyBinding>) {
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Tab, Modifiers::NONE),
+            FocusNext,
+            None,
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Tab, Modifiers::SHIFT_ONLY),
+            FocusPrev,
+            None,
+        ));
+    }
+
+    // List-style navigation (shared by Dropdown and Menu contexts).
+    fn push_list_bindings(b: &mut Vec<KeyBinding>, ctx: &'static str) {
+        let m = Modifiers::NONE;
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::ArrowDown, m),
+            NavigateDown,
+            Some(ctx),
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::ArrowUp, m),
+            NavigateUp,
+            Some(ctx),
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Enter, m),
+            Confirm,
+            Some(ctx),
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Space, m),
+            Confirm,
+            Some(ctx),
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Escape, m),
+            Dismiss,
+            Some(ctx),
+        ));
+    }
+
+    fn push_dialog_bindings(b: &mut Vec<KeyBinding>) {
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Escape, Modifiers::NONE),
+            Dismiss,
+            Some("Dialog"),
+        ));
+    }
+
+    fn push_slider_bindings(b: &mut Vec<KeyBinding>) {
+        let m = Modifiers::NONE;
+        let ctx = Some("Slider");
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::ArrowRight, m),
+            IncrementValue,
+            ctx,
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::ArrowUp, m),
+            IncrementValue,
+            ctx,
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::ArrowLeft, m),
+            DecrementValue,
+            ctx,
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::ArrowDown, m),
+            DecrementValue,
+            ctx,
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::Home, m),
+            ValueToMin,
+            ctx,
+        ));
+        b.push(KeyBinding::new(
+            Keystroke::new(Key::End, m),
+            ValueToMax,
+            ctx,
+        ));
     }
 }
 

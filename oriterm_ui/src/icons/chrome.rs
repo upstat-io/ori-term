@@ -98,6 +98,20 @@ pub static ICON_RESTORE: IconPath = IconPath {
     style: IconStyle::Stroke(CHROME_STROKE),
 };
 
+/// Filled downward triangle for dropdown select triggers.
+///
+/// Mockup SVG path: `M0 0l5 6 5-6z` in a 10×6 viewbox.
+/// Centered vertically in a 10×10 square: top at y=0.2, bottom at y=0.8.
+pub static ICON_DROPDOWN_ARROW: IconPath = IconPath {
+    commands: &[
+        PathCommand::MoveTo(0.0, 0.2),
+        PathCommand::LineTo(0.5, 0.8),
+        PathCommand::LineTo(1.0, 0.2),
+        PathCommand::Close,
+    ],
+    style: IconStyle::Fill,
+};
+
 /// Window close button: × with full-extent diagonals (corner to corner).
 ///
 /// Slightly different proportions than tab close — fills the entire

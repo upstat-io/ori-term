@@ -10,7 +10,7 @@ use crate::config::Config;
 fn default_ids() -> (Config, SettingsIds) {
     let config = Config::default();
     let theme = oriterm_ui::theme::UiTheme::default();
-    let (_content, ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
     (config, ids)
 }
 

@@ -10,7 +10,7 @@ use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
-use crate::text::TextStyle;
+use crate::text::{FontWeight, TextStyle, TextTransform};
 use crate::theme::UiTheme;
 use crate::visual_state::common_states;
 use crate::visual_state::transition::VisualStateAnimator;
@@ -21,11 +21,8 @@ use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 /// Card corner radius.
 const CORNER_RADIUS: f32 = 0.0;
 
-/// Vertical padding inside the card.
-const CARD_PADDING: f32 = 8.0;
-
-/// Horizontal padding inside the card.
-const CARD_PADDING_H: f32 = 10.0;
+/// Uniform padding inside the card (mockup `padding: 12px`).
+pub(super) const CARD_PADDING: f32 = 12.0;
 
 /// Height of the title bar area.
 const TITLE_HEIGHT: f32 = 24.0;
@@ -36,8 +33,8 @@ const PREVIEW_HEIGHT: f32 = 56.0;
 /// Height of the swatch bar area (swatch + padding).
 const SWATCH_BAR_HEIGHT: f32 = 20.0;
 
-/// Swatch rectangle height.
-const SWATCH_HEIGHT: f32 = 12.0;
+/// Swatch rectangle height (mockup `.swatch { height: 14px }`).
+pub(super) const SWATCH_HEIGHT: f32 = 14.0;
 
 /// Gap between swatch rectangles.
 const SWATCH_GAP: f32 = 3.0;
@@ -49,8 +46,8 @@ const SWATCH_RADIUS: f32 = 0.0;
 const CARD_HEIGHT: f32 =
     CARD_PADDING + TITLE_HEIGHT + PREVIEW_HEIGHT + SWATCH_BAR_HEIGHT + CARD_PADDING;
 
-/// Card width (natural size; parent grid determines actual).
-const CARD_WIDTH: f32 = 200.0;
+/// Card width (mockup `minmax(240px, 1fr)`; parent grid determines actual).
+const CARD_WIDTH: f32 = 240.0;
 
 /// Preview text font size.
 const PREVIEW_FONT_SIZE: f32 = 11.0;
@@ -107,10 +104,10 @@ impl SchemeCardWidget {
                 Box::new(ClickController::new()),
             ],
             animator: VisualStateAnimator::new(vec![common_states(
-                Color::TRANSPARENT,
+                theme.bg_card,
                 theme.bg_hover,
                 theme.bg_active,
-                Color::TRANSPARENT,
+                theme.bg_card,
             )]),
             data,
             scheme_index,
@@ -142,22 +139,40 @@ impl SchemeCardWidget {
         self.data.selected = selected;
     }
 
-    /// Paints the title bar: scheme name + optional "Active" badge.
+    /// Paints the title bar: scheme name (Medium weight) + optional "Active" badge chip.
     fn paint_title(&self, ctx: &mut DrawCtx<'_>, x: f32, y: f32, w: f32) {
-        let style = TextStyle::new(TITLE_FONT_SIZE, ctx.theme.fg_primary);
+        let style =
+            TextStyle::new(TITLE_FONT_SIZE, ctx.theme.fg_primary).with_weight(FontWeight::MEDIUM);
         let shaped = ctx.measurer.shape(&self.data.name, &style, w);
+        let title_h = shaped.height;
         ctx.scene
             .push_text(Point::new(x, y), shaped, ctx.theme.fg_primary);
 
-        // "Active" badge when selected.
+        // "Active" badge chip when selected (mockup: bg, 1px border, uppercase, tracking).
         if self.data.selected {
-            let badge_text = "Active";
-            let badge_style = TextStyle::new(BADGE_FONT_SIZE, ctx.theme.accent);
-            let badge_shaped = ctx.measurer.shape(badge_text, &badge_style, w);
-            let badge_x = x + w - badge_shaped.width - 4.0;
-            let badge_y = y + 2.0;
+            let badge_style = TextStyle::new(BADGE_FONT_SIZE, ctx.theme.accent)
+                .with_weight(FontWeight::BOLD)
+                .with_text_transform(TextTransform::Uppercase)
+                .with_letter_spacing(0.54); // 0.06em * 9px
+            let badge_shaped = ctx.measurer.shape("Active", &badge_style, w);
+            let pad_h: f32 = 6.0;
+            let pad_v: f32 = 2.0;
+            let chip_w = badge_shaped.width + pad_h * 2.0;
+            let chip_h = badge_shaped.height + pad_v * 2.0;
+            let chip_x = x + w - chip_w;
+            let chip_y = y + (title_h - chip_h) / 2.0;
+
+            // Chip background + border.
+            let chip_rect = Rect::new(chip_x, chip_y, chip_w, chip_h);
+            let chip_style =
+                RectStyle::filled(ctx.theme.accent_bg_strong).with_border(1.0, ctx.theme.accent);
+            ctx.scene.push_quad(chip_rect, chip_style);
+
+            // Chip text.
+            let text_x = chip_x + pad_h;
+            let text_y = chip_y + pad_v;
             ctx.scene
-                .push_text(Point::new(badge_x, badge_y), badge_shaped, ctx.theme.accent);
+                .push_text(Point::new(text_x, text_y), badge_shaped, ctx.theme.accent);
         }
     }
 
@@ -259,31 +274,22 @@ impl Widget for SchemeCardWidget {
     fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let bounds = ctx.bounds;
 
-        // Card background + border.
-        let (border_color, border_width) = if self.data.selected {
-            (ctx.theme.accent, 2.0)
+        // Card background + border (always 2px, mockup rest/hover/active states).
+        let hovered = ctx.is_hot();
+        let (card_bg, border_color) = if self.data.selected {
+            (ctx.theme.accent_bg, ctx.theme.accent)
+        } else if hovered {
+            (ctx.theme.bg_hover, ctx.theme.border_strong)
         } else {
-            let hover_bg = self.animator.get_bg_color(ctx.now);
-            if hover_bg.a > 0.01 {
-                (ctx.theme.border, 1.0)
-            } else {
-                (Color::TRANSPARENT, 0.0)
-            }
+            (ctx.theme.bg_card, ctx.theme.border)
         };
-
-        let card_bg = if self.data.selected {
-            ctx.theme.accent_bg
-        } else {
-            self.animator.get_bg_color(ctx.now)
-        };
-
         let card_style = RectStyle::filled(card_bg)
             .with_radius(CORNER_RADIUS)
-            .with_border(border_width, border_color);
+            .with_border(2.0, border_color);
         ctx.scene.push_quad(bounds, card_style);
 
-        let x = bounds.x() + CARD_PADDING_H;
-        let w = bounds.width() - CARD_PADDING_H * 2.0;
+        let x = bounds.x() + CARD_PADDING;
+        let w = bounds.width() - CARD_PADDING * 2.0;
         let mut y = bounds.y() + CARD_PADDING;
 
         // Title bar.
@@ -299,7 +305,7 @@ impl Widget for SchemeCardWidget {
         self.paint_swatch_bar(ctx, x, y, w);
 
         // Keep animating during hover transitions.
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

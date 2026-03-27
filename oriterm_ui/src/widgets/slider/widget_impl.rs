@@ -13,7 +13,7 @@ use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use super::super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
-use super::{SliderWidget, VALUE_GAP, VALUE_LABEL_WIDTH};
+use super::{SliderWidget, VALUE_GAP, VALUE_LABEL_WIDTH, ValueDisplay};
 
 impl Widget for SliderWidget {
     fn id(&self) -> WidgetId {
@@ -30,7 +30,12 @@ impl Widget for SliderWidget {
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         let height = self.style.thumb_height.max(self.style.track_height);
-        let total_w = self.style.width + VALUE_GAP + VALUE_LABEL_WIDTH;
+        let label_w = if self.display == ValueDisplay::Hidden {
+            0.0
+        } else {
+            VALUE_GAP + VALUE_LABEL_WIDTH
+        };
+        let total_w = self.style.width + label_w;
         // Expand hit area vertically so users can grab the thin slider track
         // without pixel-perfect precision. The 6px radius extends the
         // clickable zone without affecting visual bounds.
@@ -103,27 +108,29 @@ impl Widget for SliderWidget {
         let thumb_bg = if self.disabled {
             s.disabled_bg
         } else {
-            self.animator.get_bg_color(ctx.now)
+            self.animator.get_bg_color()
         };
         let thumb_style =
             RectStyle::filled(thumb_bg).with_border(s.thumb_border_width, s.thumb_border_color);
         ctx.scene.push_quad(thumb_rect, thumb_style);
 
         // Value label to the right of the track.
-        let value_text = self.format_value();
-        let text_style = TextStyle::new(s.value_font_size, ctx.theme.fg_secondary);
-        let shaped = ctx
-            .measurer
-            .shape(&value_text, &text_style, VALUE_LABEL_WIDTH);
-        let label_x = tb.right() + VALUE_GAP;
-        // Right-align within the label area.
-        let text_x = label_x + VALUE_LABEL_WIDTH - shaped.width;
-        let text_y = ctx.bounds.y() + (ctx.bounds.height() - shaped.height) / 2.0;
-        ctx.scene
-            .push_text(Point::new(text_x, text_y), shaped, ctx.theme.fg_secondary);
+        if self.display != ValueDisplay::Hidden {
+            let value_text = self.format_value();
+            let text_style = TextStyle::new(s.value_font_size, ctx.theme.fg_secondary);
+            let shaped = ctx
+                .measurer
+                .shape(&value_text, &text_style, VALUE_LABEL_WIDTH);
+            let label_x = tb.right() + VALUE_GAP;
+            // Right-align within the label area.
+            let text_x = label_x + VALUE_LABEL_WIDTH - shaped.width;
+            let text_y = ctx.bounds.y() + (ctx.bounds.height() - shaped.height) / 2.0;
+            ctx.scene
+                .push_text(Point::new(text_x, text_y), shaped, ctx.theme.fg_secondary);
+        }
 
         // Signal continued redraws while the animator is transitioning.
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

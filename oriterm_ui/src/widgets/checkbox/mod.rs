@@ -265,7 +265,7 @@ impl Widget for CheckboxWidget {
         } else if self.checked {
             s.checked_bg
         } else {
-            self.animator.get_bg_color(ctx.now)
+            self.animator.get_bg_color()
         };
         let box_style = RectStyle::filled(box_bg)
             .with_border(s.border_width, s.border_color)
@@ -305,7 +305,7 @@ impl Widget for CheckboxWidget {
         }
 
         // Signal continued redraws while the animator is transitioning.
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

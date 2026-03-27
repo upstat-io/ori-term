@@ -3,7 +3,7 @@ use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{LayoutCtx, Widget};
 
-use super::{SliderStyle, SliderWidget};
+use super::{SliderStyle, SliderWidget, ValueDisplay};
 
 #[test]
 fn default_state() {
@@ -86,4 +86,68 @@ fn has_two_controllers() {
 fn has_visual_state_animator() {
     let s = SliderWidget::new();
     assert!(s.visual_states().is_some());
+}
+
+// -- Constants --
+
+#[test]
+fn slider_value_gap_is_10px() {
+    assert_eq!(super::VALUE_GAP, 10.0);
+}
+
+#[test]
+fn slider_value_label_width_is_32px() {
+    assert_eq!(super::VALUE_LABEL_WIDTH, 32.0);
+}
+
+// -- Value display formatting --
+
+#[test]
+fn slider_percent_display_mode() {
+    let s = SliderWidget::new()
+        .with_range(0.0, 100.0)
+        .with_step(1.0)
+        .with_value(100.0)
+        .with_display(ValueDisplay::Percent);
+    assert_eq!(s.format_value(), "100%");
+}
+
+#[test]
+fn slider_value_at_min_shows_correct_format() {
+    let s = SliderWidget::new()
+        .with_range(30.0, 100.0)
+        .with_step(1.0)
+        .with_value(30.0)
+        .with_display(ValueDisplay::Percent);
+    assert_eq!(s.format_value(), "30%");
+}
+
+#[test]
+fn slider_suffix_display_mode() {
+    let s = SliderWidget::new()
+        .with_range(0.0, 100.0)
+        .with_step(1.0)
+        .with_value(14.0)
+        .with_display(ValueDisplay::Suffix("px"));
+    assert_eq!(s.format_value(), "14px");
+}
+
+#[test]
+fn slider_format_value_numeric() {
+    let s = SliderWidget::new()
+        .with_range(0.0, 100.0)
+        .with_step(1.0)
+        .with_value(42.0)
+        .with_display(ValueDisplay::Numeric);
+    assert_eq!(s.format_value(), "42");
+}
+
+#[test]
+fn slider_hidden_display_mode() {
+    let s = SliderWidget::new()
+        .with_range(0.0, 100.0)
+        .with_step(1.0)
+        .with_value(50.0)
+        .with_display(ValueDisplay::Hidden);
+    assert_eq!(s.format_value(), "");
 }

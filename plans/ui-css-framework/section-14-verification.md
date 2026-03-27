@@ -7,7 +7,8 @@ third_party_review:
   status: resolved
   updated: 2026-03-23
 goal: "The CSS UI framework plan closes with reproducible evidence, not a hand-written checklist: every prior section owns direct automated regressions, the settings dialog has deterministic GPU golden coverage, build/platform/performance gates reflect the real repository scripts, and the remaining human sign-off is limited to live behavior the automated layers cannot prove."
-depends_on: ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13"]
+<!-- reviewed: architecture fix — added section 15 to depends_on; section 14 must also verify cursor icon behavior -->
+depends_on: ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "15"]
 sections:
   - id: "14.1"
     title: "Verification Ownership + Artifacts"
@@ -39,7 +40,7 @@ sections:
 
 ## Problem
 
-The current draft is not accurate to the repository or to the revised Sections 01-13.
+The current draft is not accurate to the repository or to the revised Sections 01-15.
 
 What the tree shows today:
 
@@ -53,6 +54,10 @@ What the tree shows today:
     not mention.
   - Sections 05-08 and 10-13 now rely on renderer, overlay, and shared-widget boundaries that need
     more than one-line field assertions.
+  <!-- reviewed: architecture fix — Section 15 (cursor icons) is part of this plan and must be verified -->
+  - Section 15 adds cursor icon management to the dialog window. Verification must confirm that
+    hovering clickable widgets changes the OS cursor to `pointer`, disabled controls show
+    `not-allowed`, and the cursor resets to `default` when leaving interactive regions.
 - The repository already has deterministic GPU visual regression infrastructure in
   `oriterm/src/gpu/visual_regression/`, plus a UI-only renderer path via
   `WindowRenderer::new_ui_only`, `prepare_ui_frame(...)`, and
@@ -61,7 +66,8 @@ What the tree shows today:
 - The build scripts are not what the draft says:
   - `./build-all.sh` cross-builds Windows GNU debug + release
   - `./clippy-all.sh` runs Windows GNU and host clippy with warnings denied
-  - `./test-all.sh` runs `cargo test --workspace --features oriterm/gpu-tests`
+  - `./test-all.sh` runs `cargo test --workspace --features oriterm/gpu-tests` with
+    `RUSTFLAGS="-D warnings"` to match CI
 - The performance section is too anecdotal. The tree already has automated invariants for idle
   event-loop behavior and scene/damage allocation reuse, but the draft does not connect the
   settings dialog closeout to them.
@@ -73,12 +79,12 @@ artifacts, not a static checklist full of stale assumptions.
 
 Section 14 should keep the full final-verification goal and close it with four layers:
 
-1. section-owned automated regressions near the modules changed in Sections 01-13
+1. section-owned automated regressions near the modules changed in Sections 01-15
 2. cross-section settings-dialog integration tests for builder, actions, layout, overlays, and
    semantic state
 3. deterministic GPU golden tests for the rendered settings dialog itself
-4. focused manual sign-off for live interaction and native-platform behavior that automated tests
-   cannot prove
+4. focused manual sign-off for live interaction, cursor icons, and native-platform behavior that
+   automated tests cannot prove
 
 This section should not pretend that one manual screenshot pass is enough, and it should not repeat
 stale per-feature assertions that no longer match the revised plan.
@@ -96,14 +102,14 @@ artifacts instead of one-off human checks.
 
 - section-local `tests.rs` files under `oriterm_ui/src/widgets/`, `oriterm_ui/src/text/`,
   `oriterm/src/gpu/scene_convert/`, `oriterm/src/font/`, and related modules changed by
-  Sections 01-13
+  Sections 01-15
 - `oriterm/src/app/settings_overlay/form_builder/tests.rs`
 - `oriterm/src/app/settings_overlay/action_handler/tests.rs`
 - `oriterm_ui/src/widgets/settings_panel/tests.rs`
 - `oriterm_ui/src/testing/render_assert.rs`
 - `oriterm/src/gpu/visual_regression/mod.rs`
 - new `oriterm/src/gpu/visual_regression/settings_dialog.rs`
-- `oriterm/tests/references/*.png`
+- `oriterm/tests/references/settings_*.png`
 - `oriterm/src/app/dialog_rendering.rs` and/or a small shared test helper if the existing dialog
   composition path needs to be reused directly
 
@@ -138,7 +144,7 @@ That is still verification work, but it is not "no code changes."
 
 ### Checklist
 
-- [ ] Keep direct regressions near the modules changed by Sections 01-13
+- [ ] Keep direct regressions near the modules changed by Sections 01-15
 - [ ] Add cross-section settings-dialog integration coverage
 - [ ] Add settings-dialog GPU goldens as committed artifacts
 - [ ] Allow narrowly-scoped test-support extraction where needed
@@ -186,6 +192,15 @@ changed, and rendering-sensitive work must also be proven at one deeper layer.
   - dropdown popup/open state and overlay behavior
   - dirty-state propagation and page-switch behavior
 
+<!-- reviewed: architecture fix — added Section 15 coverage requirement -->
+**Section 15: cursor icons**
+
+- cover:
+  - cursor request plumbing returns the correct `CursorIcon` for hot widget type
+  - cursor reverts to `Default` when pointer leaves all interactive regions
+  - disabled widgets report `NotAllowed` cursor
+  - harness-level tests that verify cursor state after simulated hover sequences
+
 **Cross-section integration**
 
 - add or strengthen tests that prove:
@@ -217,9 +232,11 @@ their implementation details in a second stale table.
 
 ### Checklist
 
-- [ ] Every section from 01-13 has at least one direct automated regression in its owning module
+<!-- reviewed: architecture fix — expanded coverage range to include section 15 -->
+- [ ] Every section from 01-15 has at least one direct automated regression in its owning module
 - [ ] Rendering-sensitive sections also prove behavior one layer deeper when needed
 - [ ] Settings-dialog integration tests cover builder, actions, overlays, and dirty-state flows
+- [ ] Section 15 cursor icon behavior is covered by harness tests
 - [ ] New tests follow the repository's sibling `tests.rs` pattern unless they are crate-level
       integration or golden tests
 
@@ -246,12 +263,49 @@ of relying on manual screenshots alone.
 The repository already supports deterministic headless rendering with golden PNG comparison, but it
 currently covers terminal/grid content rather than the settings dialog.
 
+<!-- reviewed: architecture fix — documented the two distinct render paths and the bridging work needed -->
+The existing visual regression infrastructure in `oriterm/src/gpu/visual_regression/` uses the
+**terminal render path**: `FrameInput` -> `WindowRenderer::prepare()` -> `render_frame()`. This
+path expects `FrameInput` with cell content, cursor state, etc.
+
+The settings dialog uses a **different render path**: `WindowRenderer::new_ui_only()` ->
+`prepare_ui_frame()` -> `append_ui_scene_with_text()` -> `render_frame()`. This path expects a
+`Scene` from the widget paint pipeline, not a `FrameInput`.
+
+Both paths converge at `render_frame()` and `GpuState::create_render_target()` /
+`read_render_target()`, so pixel readback works the same way. But the fixture construction is
+fundamentally different: instead of building a `FrameInput` with cell data, the dialog golden tests
+must build a widget tree, run layout + paint into a `Scene`, and convert that scene to GPU instances
+via `append_ui_scene_with_text()`.
+
 The missing piece is a settings-dialog fixture path that:
 
-1. builds the real dialog from `build_settings_dialog(...)`
-2. composes the real panel/dialog scene with a real UI measurer path, not `MockMeasurer`
-3. converts that scene through the UI-only renderer path
-4. compares the resulting pixels against committed references
+1. creates a headless `GpuState` and `GpuPipelines` (same as existing infrastructure)
+2. creates a `WindowRenderer::new_ui_only(...)` with a real `UiFontSizes` registry
+3. builds the real dialog from `build_settings_dialog(...)` with a default `Config` and theme
+4. runs the widget layout + paint pipeline into a `Scene`
+5. calls `prepare_ui_frame(...)` + `append_ui_scene_with_text(...)` to convert to GPU instances
+6. calls `render_frame()` to a render target
+7. reads back pixels and compares against committed references
+
+### Visibility Constraint
+
+<!-- reviewed: architecture fix — build_settings_dialog is pub(in crate::app), not pub(crate) -->
+`build_settings_dialog(...)` in `oriterm/src/app/settings_overlay/form_builder/mod.rs` is
+`pub(in crate::app)`, meaning it is accessible only within the `app` module subtree. The golden
+test module `oriterm/src/gpu/visual_regression/settings_dialog.rs` is under `gpu/`, which is
+outside `app/`.
+
+Two approaches, in order of preference:
+
+1. **Add a test-only helper in `app/`** that wraps `build_settings_dialog()` and the widget
+   layout/paint pipeline, returning a `Scene`. Then the golden test in `gpu/visual_regression/`
+   calls that helper. The helper can be `#[cfg(test)] pub(crate)`.
+2. **Widen visibility** of `build_settings_dialog` to `pub(crate)` with a doc comment noting it
+   is used by golden tests. This is simpler but slightly weakens encapsulation.
+
+Either approach must also construct a real `UiFontMeasurer` (not `MockMeasurer`) from the
+`UiFontSizes` registry so that text shaping and measurement produce real physical-pixel output.
 
 ### Required Fixture Set
 
@@ -274,24 +328,77 @@ popup overlays, and the expanded Section 13 control families.
 
 ### Required Rendering Path
 
-Prefer using the existing dialog rendering path and UI-only renderer primitives rather than
-inventing a parallel mock renderer:
+Use the UI-only renderer path (not the terminal `FrameInput` path):
 
-- `WindowRenderer::new_ui_only(...)`
-- `prepare_ui_frame(...)`
-- `append_ui_scene_with_text(...)`
-- `append_overlay_scene_with_text(...)` when a popup is open
-- `compare_with_reference(...)`
+- `GpuState::new_headless()` + `GpuPipelines::new()`
+- `UiFontSizes::new(FontSet::embedded(), ...)` with 96 DPI and the standard preload sizes
+- `WindowRenderer::new_ui_only(gpu, pipelines, ui_font_sizes)`
+- `prepare_ui_frame(width, height, bg_color, 1.0)`
+- build the dialog widget tree, run layout + paint into a `Scene`
+- `append_ui_scene_with_text(&scene, scale, 1.0, gpu)`
+- `append_overlay_scene_with_text(&overlay_scene, scale, opacity, gpu)` when a popup is open
+- `gpu.create_render_target(w, h)` + `render_frame(gpu, pipelines, target.view())`
+- `gpu.read_render_target(&target)` -> `compare_with_reference(...)`
 
-If needed, extract a narrow reusable helper from dialog rendering so tests can compose the real
-settings scene without creating a full OS window.
+### Shared Test Helpers
+
+<!-- reviewed: architecture fix — explicit task list for the infrastructure bridge -->
+Add a `headless_dialog_env()` helper in the visual regression module (parallel to `headless_env()`
+for terminal tests) that returns `Option<(GpuState, GpuPipelines, WindowRenderer)>` with a
+UI-only renderer:
+
+```rust
+pub(super) fn headless_dialog_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    headless_dialog_env_with_dpi(96.0)
+}
+
+pub(super) fn headless_dialog_env_with_dpi(
+    dpi: f32,
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    let gpu = GpuState::new_headless().ok()?;
+    let pipelines = GpuPipelines::new(&gpu);
+    let ui_font_sizes = UiFontSizes::new(
+        FontSet::embedded(),
+        dpi,
+        GlyphFormat::Alpha,
+        HintingMode::Full,
+        400,
+        &crate::font::ui_font_sizes::PRELOAD_SIZES,
+    ).ok()?;
+    let renderer = WindowRenderer::new_ui_only(&gpu, &pipelines, ui_font_sizes);
+    Some((gpu, pipelines, renderer))
+}
+```
+
+And a `render_dialog_to_pixels()` helper that takes the composed scene and uses the UI-only
+render path to produce pixel output:
+
+```rust
+pub(super) fn render_dialog_to_pixels(
+    gpu: &GpuState,
+    pipelines: &GpuPipelines,
+    renderer: &mut WindowRenderer,
+    scene: &Scene,
+    width: u32,
+    height: u32,
+    scale: f32,
+) -> Vec<u8> {
+    let bg = Rgb { r: ..., g: ..., b: ... }; // theme.bg_primary
+    renderer.prepare_ui_frame(width, height, bg, 1.0);
+    renderer.append_ui_scene_with_text(scene, scale, 1.0, gpu);
+    let target = gpu.create_render_target(width, height);
+    renderer.render_frame(gpu, pipelines, target.view());
+    gpu.read_render_target(&target).expect("pixel readback should succeed")
+}
+```
 
 ### Golden Workflow
 
+<!-- reviewed: architecture fix — corrected cargo test command syntax -->
 - normal verification:
-  - `timeout 150 cargo test -p oriterm --features gpu-tests visual_regression`
+  - `timeout 150 cargo test -p oriterm --features gpu-tests -- visual_regression`
 - updating references intentionally:
-  - `ORITERM_UPDATE_GOLDEN=1 timeout 150 cargo test -p oriterm --features gpu-tests visual_regression`
+  - `ORITERM_UPDATE_GOLDEN=1 timeout 150 cargo test -p oriterm --features gpu-tests -- visual_regression`
 - if a golden changes:
   - review the PNG diff, not just the test result
   - commit the updated reference PNGs
@@ -303,10 +410,13 @@ All test commands in this section and its verification must respect the reposito
 
 ### Checklist
 
-- [ ] Add settings-dialog visual regression tests under `gpu/visual_regression/`
-- [ ] Render through the real UI-only renderer path, not a fake scene-only shortcut
+<!-- reviewed: architecture fix — expanded checklist with concrete infrastructure tasks -->
+- [ ] Add `headless_dialog_env()` and `render_dialog_to_pixels()` helpers in `visual_regression/`
+- [ ] Resolve `build_settings_dialog` visibility (test helper in `app/` or widen to `pub(crate)`)
+- [ ] Add `settings_dialog.rs` module under `gpu/visual_regression/` with `mod settings_dialog;`
+- [ ] Add settings-dialog visual regression tests that use the UI-only renderer path
 - [ ] Cover clean, dirty, popup-open, and card/control-heavy dialog states
-- [ ] Include at least one HiDPI dialog fixture
+- [ ] Include at least one HiDPI (192 DPI) dialog fixture
 - [ ] Commit reviewed reference PNGs and keep artifact cleanup disciplined
 
 ---
@@ -333,6 +443,10 @@ Keep the human verification pass focused on behavior that automated tests still 
 - text-input caret, selection, and keyboard editing behavior
 - slider drag, number-stepper repeat behavior, and toggle animation
 - sidebar search focus/typing behavior if Section 10 uses the real text-input path
+<!-- reviewed: architecture fix — added cursor icon verification from Section 15 -->
+- cursor icon changes on hover over buttons, toggles, sliders, dropdowns, nav items, scheme cards
+- cursor shows `not-allowed` on disabled Save button
+- cursor resets to default arrow when leaving interactive regions
 
 **Dialog shell behavior**
 
@@ -378,9 +492,11 @@ Use the repository's real command set and be explicit about what each gate actua
   - `cargo build --workspace --target x86_64-pc-windows-gnu`
   - `cargo build --workspace --target x86_64-pc-windows-gnu --release`
 - `./clippy-all.sh`
-  - Windows GNU target and host target
-  - warnings denied
+  - `cargo clippy --workspace --target x86_64-pc-windows-gnu -- -D warnings`
+  - `cargo clippy --workspace -- -D warnings`
+<!-- reviewed: architecture fix — documented RUSTFLAGS behavior from test-all.sh -->
 - `./test-all.sh`
+  - sets `RUSTFLAGS="-D warnings"` to match CI lint strictness
   - `cargo test --workspace --features oriterm/gpu-tests`
   - this is the primary automated gate for the settings-dialog golden tests as well
 
@@ -496,11 +612,14 @@ section is documentation-only.
 
 Section 14 is complete only when all of the following are true:
 
-- [ ] Sections `01` through `13` are complete and their reviewed expectations are reflected in code
-- [ ] Section-local regressions exist and pass for each prior section
+<!-- reviewed: architecture fix — expanded to include Section 15 and concrete infrastructure items -->
+- [ ] Sections `01` through `13` and `15` are complete and their reviewed expectations are reflected in code
+- [ ] Section-local regressions exist and pass for each prior section (01-15)
 - [ ] Settings-dialog integration tests pass
 - [ ] Settings-dialog GPU golden tests pass at standard DPI and HiDPI
+- [ ] Golden test infrastructure bridge is complete (`headless_dialog_env`, `render_dialog_to_pixels`, visibility resolution for `build_settings_dialog`)
 - [ ] Manual sign-off is complete on native Windows, Linux, and macOS
+- [ ] Cursor icon behavior verified on all three platforms (Section 15)
 - [ ] `./build-all.sh`, `./clippy-all.sh`, and `./test-all.sh` all pass
 - [ ] Existing invariant tests stay green and any new settings-specific performance checks pass
 - [ ] Golden-reference PNGs are reviewed, committed, and no `_actual` / `_diff` artifacts remain

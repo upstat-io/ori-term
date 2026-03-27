@@ -12,7 +12,7 @@ use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point, Rect};
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
-use crate::text::TextStyle;
+use crate::text::{FontWeight, TextStyle, TextTransform};
 use crate::visual_state::common_states;
 use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
@@ -46,10 +46,22 @@ pub struct ButtonStyle {
     pub padding: Insets,
     /// Font size in logical pixels.
     pub font_size: f32,
-    /// Disabled text color.
+    /// Font weight (CSS 100–900).
+    pub weight: FontWeight,
+    /// Inter-glyph letter spacing in logical pixels.
+    pub letter_spacing: f32,
+    /// Text transform (uppercase, lowercase, capitalize, none).
+    pub text_transform: TextTransform,
+    /// Disabled text color (used when `disabled_opacity == 1.0`).
     pub disabled_fg: Color,
-    /// Disabled background color.
+    /// Disabled background color (used when `disabled_opacity == 1.0`).
     pub disabled_bg: Color,
+    /// Opacity applied to the entire button when disabled.
+    ///
+    /// When `< 1.0`, modulates bg/border/fg alpha uniformly (CSS `opacity`
+    /// semantics). When `1.0` (default), uses `disabled_fg`/`disabled_bg`
+    /// color swap instead, for backward compatibility.
+    pub disabled_opacity: f32,
     /// Focus ring color.
     pub focus_ring_color: Color,
 }
@@ -69,8 +81,12 @@ impl ButtonStyle {
             corner_radius: theme.corner_radius,
             padding: Insets::vh(6.0, 12.0),
             font_size: theme.font_size,
+            weight: FontWeight::NORMAL,
+            letter_spacing: 0.0,
+            text_transform: TextTransform::None,
             disabled_fg: theme.fg_disabled,
             disabled_bg: theme.bg_secondary,
+            disabled_opacity: 1.0,
             focus_ring_color: theme.accent,
         }
     }
@@ -157,6 +173,7 @@ impl ButtonWidget {
     /// Sets the button style.
     #[must_use]
     pub fn with_style(mut self, style: ButtonStyle) -> Self {
+        self.resolved_bg = style.bg;
         self.animator = VisualStateAnimator::new(vec![common_states(
             style.bg,
             style.hover_bg,
@@ -177,7 +194,13 @@ impl ButtonWidget {
     /// Returns the current text color based on state.
     fn current_fg(&self) -> Color {
         if self.disabled {
-            self.style.disabled_fg
+            if self.style.disabled_opacity < 1.0 {
+                self.style
+                    .fg
+                    .with_alpha(self.style.fg.a * self.style.disabled_opacity)
+            } else {
+                self.style.disabled_fg
+            }
         } else if self.resolved_hovered {
             self.style.hover_fg
         } else {
@@ -187,7 +210,14 @@ impl ButtonWidget {
 
     /// Builds the `TextStyle` for measurement and shaping.
     fn text_style(&self) -> TextStyle {
-        TextStyle::new(self.style.font_size, self.current_fg())
+        TextStyle {
+            size: self.style.font_size,
+            color: self.current_fg(),
+            weight: self.style.weight,
+            letter_spacing: self.style.letter_spacing,
+            text_transform: self.style.text_transform,
+            ..TextStyle::default()
+        }
     }
 }
 
@@ -245,7 +275,7 @@ impl Widget for ButtonWidget {
     }
 
     fn prepaint(&mut self, ctx: &mut PrepaintCtx<'_>) {
-        self.resolved_bg = self.animator.get_bg_color(ctx.now);
+        self.resolved_bg = self.animator.get_bg_color();
         self.resolved_focused = ctx.is_interaction_focused();
         self.resolved_hovered = ctx.is_hot();
     }
@@ -261,13 +291,24 @@ impl Widget for ButtonWidget {
         }
 
         // Background from pre-resolved animator state.
-        let bg = self.resolved_bg;
+        let opacity_fade = self.disabled && self.style.disabled_opacity < 1.0;
+        let bg = if opacity_fade {
+            self.resolved_bg
+                .with_alpha(self.resolved_bg.a * self.style.disabled_opacity)
+        } else {
+            self.resolved_bg
+        };
         ctx.scene.push_layer_bg(bg);
 
         let border_color = if self.resolved_hovered {
             self.style.hover_border_color
         } else {
             self.style.border_color
+        };
+        let border_color = if opacity_fade {
+            border_color.with_alpha(border_color.a * self.style.disabled_opacity)
+        } else {
+            border_color
         };
         let bg_style = RectStyle::filled(bg)
             .with_border(self.style.border_width, border_color)
@@ -288,7 +329,7 @@ impl Widget for ButtonWidget {
         ctx.scene.pop_layer_bg();
 
         // Signal continued redraws while the animator is transitioning.
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }
@@ -309,6 +350,8 @@ impl Widget for ButtonWidget {
         }
     }
 }
+
+pub(crate) mod id_override;
 
 #[cfg(test)]
 mod tests;

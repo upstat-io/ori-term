@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use crate::animation::Lerp;
+use crate::animation::{AnimProperty, Lerp};
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
@@ -76,7 +76,7 @@ impl TabBarWidget {
         let tab = &self.tabs[index];
         let x = self.layout.tab_x(index) + self.anim_offset(index);
         let tab_rect = Rect::new(x, strip.y, self.layout.tab_width_at(index), strip.h);
-        let bg = self.tab_background_color(index, strip, ctx.now);
+        let bg = self.tab_background_color(index, strip);
 
         // Active tab gets rounded top corners.
         let style = if strip.active {
@@ -94,7 +94,7 @@ impl TabBarWidget {
         let width_t = self
             .width_multipliers
             .get(index)
-            .map_or(1.0, |m| m.get(ctx.now));
+            .map_or(1.0, AnimProperty::get);
         let content_opacity = (width_t * 2.0).min(1.0);
 
         // Clip tab content to its bounds — prevents overflow into adjacent tabs.
@@ -113,7 +113,7 @@ impl TabBarWidget {
                 let opacity = self
                     .close_btn_opacity
                     .get(index)
-                    .map_or(0.0, |o| o.get(ctx.now));
+                    .map_or(0.0, AnimProperty::get);
                 let opacity = opacity * content_opacity;
                 if opacity > 0.01 {
                     self.draw_close_button(ctx, index, x, strip, opacity);
@@ -128,13 +128,16 @@ impl TabBarWidget {
     /// Resolves the background color for a tab.
     ///
     /// Priority: active bg > bell pulse > animated hover blend over inactive bg.
-    fn tab_background_color(&self, index: usize, strip: &TabStrip, now: Instant) -> Color {
+    fn tab_background_color(&self, index: usize, strip: &TabStrip) -> Color {
         if strip.active {
             self.colors.active_bg
         } else if strip.bell > 0.0 {
             self.colors.bell_pulse(strip.bell)
         } else {
-            let hover_t = self.hover_progress.get(index).map_or(0.0, |p| p.get(now));
+            let hover_t = self
+                .hover_progress
+                .get(index)
+                .map_or(0.0, AnimProperty::get);
             Color::lerp(self.colors.inactive_bg, self.colors.tab_hover_bg, hover_t)
         }
     }
@@ -249,12 +252,12 @@ impl TabBarWidget {
         }
 
         // Request continued redraws if any animation is running.
-        let hover_animating = self.hover_progress.iter().any(|p| p.is_animating(ctx.now));
+        let hover_animating = self.hover_progress.iter().any(AnimProperty::is_animating);
         let close_animating = self
             .close_btn_opacity
             .iter()
-            .any(|o| o.is_animating(ctx.now));
-        let width_animating = self.has_width_animation(ctx.now);
+            .any(AnimProperty::is_animating);
+        let width_animating = self.has_width_animation();
         if hover_animating || close_animating || width_animating {
             ctx.request_anim_frame();
         }
@@ -432,6 +435,10 @@ impl Widget for TabBarWidget {
 
     fn sense(&self) -> Sense {
         Sense::click()
+    }
+
+    fn prepaint(&mut self, _ctx: &mut crate::widgets::PrepaintCtx<'_>) {
+        self.tick_animations();
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {

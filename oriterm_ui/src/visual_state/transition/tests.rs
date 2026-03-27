@@ -1,5 +1,3 @@
-use std::time::{Duration, Instant};
-
 use crate::animation::behavior::AnimBehavior;
 use crate::color::Color;
 use crate::interaction::InteractionState;
@@ -51,58 +49,63 @@ fn focused_state() -> InteractionState {
 // -- Tests --
 
 #[test]
-fn normal_to_hovered_interpolates_bg_color_over_100ms() {
-    let now = Instant::now();
+fn normal_to_hovered_interpolates_bg_color() {
     let mut animator = make_animator();
 
     // Transition to Hovered.
-    animator.update(&hovered_state(), now);
-    assert!(animator.is_animating(now));
+    // Default transition is 100ms = 6 frames.
+    animator.update(&hovered_state());
+    assert!(animator.is_animating());
 
-    // At 50ms, should be partway between normal and hover.
-    let mid = now + Duration::from_millis(50);
-    let bg = animator.get_bg_color(mid);
+    // At 3 frames (midpoint), should be partway between normal and hover.
+    for _ in 0..3 {
+        animator.tick();
+    }
+    let bg = animator.get_bg_color();
     assert_ne!(bg, NORMAL_BG, "Should not be at start color at midpoint");
     assert_ne!(bg, HOVER_BG, "Should not be at end color at midpoint");
 
-    // At 100ms, should be at hover.
-    let end = now + Duration::from_millis(100);
-    let bg = animator.get_bg_color(end);
+    // At 6 frames (complete), should be at hover.
+    for _ in 0..3 {
+        animator.tick();
+    }
+    let bg = animator.get_bg_color();
     assert_eq!(bg, HOVER_BG);
 }
 
 #[test]
 fn rapid_state_change_interrupts_and_restarts_from_current() {
-    let now = Instant::now();
     let mut animator = make_animator();
 
-    // Start Normal -> Hovered at t=0.
-    animator.update(&hovered_state(), now);
+    // Start Normal -> Hovered.
+    animator.update(&hovered_state());
 
-    // At t=25ms, switch to Pressed (mid-hover).
-    let t25 = now + Duration::from_millis(25);
-    let mid_color = animator.get_bg_color(t25);
+    // At 2 frames, switch to Pressed (mid-hover).
+    for _ in 0..2 {
+        animator.tick();
+    }
+    let mid_color = animator.get_bg_color();
     assert_ne!(mid_color, NORMAL_BG);
     assert_ne!(mid_color, HOVER_BG);
 
-    animator.update(&pressed_state(), t25);
+    animator.update(&pressed_state());
 
     // The new transition should start from the mid-hover color.
-    let just_after = t25;
-    let bg = animator.get_bg_color(just_after);
-    // At t=0 of the new transition, should be at the interrupted value.
+    let bg = animator.get_bg_color();
+    // At frame 0 of the new transition, should be at the interrupted value.
     assert_ne!(bg, NORMAL_BG);
     assert_ne!(bg, PRESSED_BG);
 
-    // After 100ms from interruption, should be at pressed color.
-    let end = t25 + Duration::from_millis(100);
-    let bg = animator.get_bg_color(end);
+    // After 6 frames from interruption, should be at pressed color.
+    for _ in 0..6 {
+        animator.tick();
+    }
+    let bg = animator.get_bg_color();
     assert_eq!(bg, PRESSED_BG);
 }
 
 #[test]
 fn disabled_transition_with_instant_override() {
-    let now = Instant::now();
     let mut animator = VisualStateAnimator::new(vec![common_states(
         NORMAL_BG,
         HOVER_BG,
@@ -115,35 +118,35 @@ fn disabled_transition_with_instant_override() {
         behavior: AnimBehavior::ease_out(0),
     });
 
-    // Transition to Disabled should be instant (0ms duration).
-    animator.update(&disabled_state(), now);
-    let bg = animator.get_bg_color(now);
+    // Transition to Disabled should be instant (0 frames).
+    animator.update(&disabled_state());
+    let bg = animator.get_bg_color();
     assert_eq!(bg, DISABLED_BG, "Disabled transition should be instant");
-    assert!(!animator.is_animating(now));
+    assert!(!animator.is_animating());
 }
 
 #[test]
 fn focus_states_resolves_correctly() {
-    let now = Instant::now();
     let mut animator =
         VisualStateAnimator::new(vec![focus_states(UNFOCUSED_BORDER, FOCUSED_BORDER)]);
 
     // Initially unfocused — border should be unfocused color.
-    let border = animator.get_border_color(now);
+    let border = animator.get_border_color();
     assert_eq!(border, UNFOCUSED_BORDER);
 
     // Transition to focused.
-    animator.update(&focused_state(), now);
+    animator.update(&focused_state());
 
-    // After 100ms (default transition), should be at focused border.
-    let end = now + Duration::from_millis(100);
-    let border = animator.get_border_color(end);
+    // After 6 frames (default 100ms transition), should be at focused border.
+    for _ in 0..6 {
+        animator.tick();
+    }
+    let border = animator.get_border_color();
     assert_eq!(border, FOCUSED_BORDER);
 }
 
 #[test]
 fn two_groups_compose_independently() {
-    let now = Instant::now();
     let mut animator = VisualStateAnimator::new(vec![
         common_states(NORMAL_BG, HOVER_BG, PRESSED_BG, DISABLED_BG),
         focus_states(UNFOCUSED_BORDER, FOCUSED_BORDER),
@@ -154,23 +157,24 @@ fn two_groups_compose_independently() {
     state.set_hot(true);
     state.set_focused(true);
 
-    animator.update(&state, now);
+    animator.update(&state);
 
-    // After 100ms both should have transitioned.
-    let end = now + Duration::from_millis(100);
-    assert_eq!(animator.get_bg_color(end), HOVER_BG);
-    assert_eq!(animator.get_border_color(end), FOCUSED_BORDER);
+    // After 6 frames both should have transitioned.
+    for _ in 0..6 {
+        animator.tick();
+    }
+    assert_eq!(animator.get_bg_color(), HOVER_BG);
+    assert_eq!(animator.get_border_color(), FOCUSED_BORDER);
 }
 
 #[test]
 fn newly_created_animator_returns_initial_values_without_update() {
-    let now = Instant::now();
     let animator = make_animator();
 
     // Should return Normal state values immediately.
-    let bg = animator.get_bg_color(now);
+    let bg = animator.get_bg_color();
     assert_eq!(bg, NORMAL_BG, "Initial bg should be Normal state color");
-    assert!(!animator.is_animating(now));
+    assert!(!animator.is_animating());
 }
 
 #[test]
@@ -191,10 +195,11 @@ fn find_transition_returns_exact_match() {
 
     let result = find_transition(&transitions, &default, "Normal", "Hovered");
     // Should match the exact (Normal, Hovered) entry, not the wildcard.
+    // 200ms at 60fps = 12 frames.
     assert!(matches!(
         result.curve,
-        crate::animation::behavior::AnimCurve::Easing { duration, .. }
-        if duration == Duration::from_millis(200)
+        crate::animation::behavior::AnimCurve::Easing { total_frames, .. }
+        if total_frames == 12
     ));
 }
 
@@ -207,38 +212,35 @@ fn find_transition_falls_back_to_wildcard_then_default() {
     }];
     let default = AnimBehavior::ease_out(100);
 
-    // Should match wildcard.
+    // Should match wildcard. 0ms = 0 frames.
     let result = find_transition(&transitions, &default, "Normal", "Disabled");
     assert!(matches!(
         result.curve,
-        crate::animation::behavior::AnimCurve::Easing { duration, .. }
-        if duration == Duration::from_millis(0)
+        crate::animation::behavior::AnimCurve::Easing { total_frames, .. }
+        if total_frames == 0
     ));
 
-    // No matching transition — should fall back to default.
+    // No matching transition — should fall back to default. 100ms = 6 frames.
     let result = find_transition(&transitions, &default, "Normal", "Hovered");
     assert!(matches!(
         result.curve,
-        crate::animation::behavior::AnimCurve::Easing { duration, .. }
-        if duration == Duration::from_millis(100)
+        crate::animation::behavior::AnimCurve::Easing { total_frames, .. }
+        if total_frames == 6
     ));
 }
 
 #[test]
 fn spring_based_transition_converges() {
-    let now = Instant::now();
     let mut animator = make_animator().with_default_transition(AnimBehavior::spring());
 
-    animator.update(&hovered_state(), now);
+    animator.update(&hovered_state());
 
-    // Tick at 60fps for 5 seconds.
-    let mut t = now;
+    // Tick 300 frames (about 5 seconds at 60fps).
     for _ in 0..300 {
-        t += Duration::from_millis(16);
-        animator.tick(t);
+        animator.tick();
     }
 
-    let bg = animator.get_bg_color(t);
+    let bg = animator.get_bg_color();
     // Check each channel is close to hover bg.
     assert!(
         (bg.r - HOVER_BG.r).abs() < 0.01
@@ -250,37 +252,39 @@ fn spring_based_transition_converges() {
 
 #[test]
 fn get_fg_color_returns_transparent_when_unset() {
-    let now = Instant::now();
     let animator = make_animator();
 
     // CommonStates only sets BgColor, not FgColor.
-    assert_eq!(animator.get_fg_color(now), Color::TRANSPARENT);
+    assert_eq!(animator.get_fg_color(), Color::TRANSPARENT);
 }
 
 #[test]
 fn no_state_change_does_not_start_animation() {
-    let now = Instant::now();
     let mut animator = make_animator();
 
     // Normal state is already active — update should be a no-op.
-    animator.update(&InteractionState::new(), now);
-    assert!(!animator.is_animating(now));
+    animator.update(&InteractionState::new());
+    assert!(!animator.is_animating());
 }
 
 #[test]
 fn with_default_transition_overrides_default() {
-    let now = Instant::now();
+    // 500ms at 60fps = 30 frames.
     let mut animator = make_animator().with_default_transition(AnimBehavior::linear(500));
 
-    animator.update(&hovered_state(), now);
+    animator.update(&hovered_state());
 
-    // At 250ms (midpoint of 500ms linear), should be partway.
-    let mid = now + Duration::from_millis(250);
-    let bg = animator.get_bg_color(mid);
+    // At 15 frames (midpoint of 30 linear), should be partway.
+    for _ in 0..15 {
+        animator.tick();
+    }
+    let bg = animator.get_bg_color();
     assert_ne!(bg, NORMAL_BG);
     assert_ne!(bg, HOVER_BG);
 
-    // At 500ms, should be at target.
-    let end = now + Duration::from_millis(500);
-    assert_eq!(animator.get_bg_color(end), HOVER_BG);
+    // At 30 frames, should be at target.
+    for _ in 0..15 {
+        animator.tick();
+    }
+    assert_eq!(animator.get_bg_color(), HOVER_BG);
 }

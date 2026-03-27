@@ -91,7 +91,14 @@ impl Widget for TextInputWidget {
 
         // Background + border.
         let bg = if self.disabled { s.disabled_bg } else { s.bg };
-        let border_color = self.animator.get_border_color(ctx.now);
+        let hovered = ctx.is_hot();
+        let border_color = if focused {
+            s.focus_border_color
+        } else if hovered {
+            s.hover_border_color
+        } else {
+            s.border_color
+        };
 
         // Layer captures the input bg for subpixel text compositing.
         ctx.scene.push_layer_bg(bg);
@@ -153,7 +160,7 @@ impl Widget for TextInputWidget {
         ctx.scene.pop_layer_bg();
 
         // Signal continued redraws while the animator is transitioning.
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }

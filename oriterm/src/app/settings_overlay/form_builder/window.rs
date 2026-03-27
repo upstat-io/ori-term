@@ -102,7 +102,8 @@ fn build_startup_section(
         theme,
     );
 
-    let cols = NumberInputWidget::new(config.window.columns as f32, 40.0, 400.0, 10.0, theme);
+    let cols = NumberInputWidget::new(config.window.columns as f32, 40.0, 400.0, 10.0, theme)
+        .with_input_width(44.0);
     ids.initial_columns_input = cols.id();
 
     let cols_row = SettingRowWidget::new(
@@ -112,7 +113,8 @@ fn build_startup_section(
         theme,
     );
 
-    let rows = NumberInputWidget::new(config.window.rows as f32, 10.0, 100.0, 5.0, theme);
+    let rows = NumberInputWidget::new(config.window.rows as f32, 10.0, 100.0, 5.0, theme)
+        .with_input_width(44.0);
     ids.initial_rows_input = rows.id();
 
     let rows_row = SettingRowWidget::new(

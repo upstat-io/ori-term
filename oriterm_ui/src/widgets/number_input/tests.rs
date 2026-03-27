@@ -6,7 +6,10 @@ use crate::layout::compute_layout;
 use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
-use super::{INPUT_HEIGHT, INPUT_WIDTH, NumberInputWidget};
+use super::{
+    BORDER_WIDTH, BUTTON_DIVIDER_WIDTH, BUTTON_PANEL_WIDTH, DEFAULT_INPUT_WIDTH, INPUT_HEIGHT,
+    NumberInputWidget,
+};
 
 fn theme() -> &'static crate::theme::UiTheme {
     &super::super::tests::TEST_THEME
@@ -108,7 +111,8 @@ fn layout_dimensions() {
     };
     let lb = w.layout(&ctx);
     let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
-    assert_eq!(node.rect.width(), INPUT_WIDTH);
+    let expected_w = DEFAULT_INPUT_WIDTH + BUTTON_PANEL_WIDTH + 2.0 * BORDER_WIDTH;
+    assert_eq!(node.rect.width(), expected_w);
     assert_eq!(node.rect.height(), INPUT_HEIGHT);
 }
 
@@ -119,7 +123,8 @@ fn paint_produces_rect_and_text() {
     let w = make_input(42.0, 0.0, 100.0, 1.0);
     let measurer = MockMeasurer::STANDARD;
     let mut scene = Scene::new();
-    let bounds = Rect::new(0.0, 0.0, INPUT_WIDTH, INPUT_HEIGHT);
+    let total_w = DEFAULT_INPUT_WIDTH + BUTTON_PANEL_WIDTH + 2.0 * BORDER_WIDTH;
+    let bounds = Rect::new(0.0, 0.0, total_w, INPUT_HEIGHT);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         scene: &mut scene,
@@ -181,4 +186,88 @@ fn format_decimal_step() {
 fn format_fine_step() {
     let w = make_input(1.25, 0.0, 5.0, 0.05);
     assert_eq!(w.format_value(), "1.25");
+}
+
+// -- Dimensional constants --
+
+#[test]
+fn number_input_default_width() {
+    let expected = DEFAULT_INPUT_WIDTH + BUTTON_PANEL_WIDTH + 2.0 * BORDER_WIDTH;
+    assert_eq!(expected, 82.0, "56 + 22 + 4 = 82");
+
+    // Verify layout agrees.
+    let w = make_input(0.0, 0.0, 100.0, 1.0);
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+        theme: theme(),
+    };
+    let lb = w.layout(&ctx);
+    let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
+    assert_eq!(node.rect.width(), 82.0);
+}
+
+#[test]
+fn number_input_compact_width() {
+    let w = make_input(0.0, 0.0, 100.0, 1.0).with_input_width(44.0);
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+        theme: theme(),
+    };
+    let lb = w.layout(&ctx);
+    let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
+    let expected = 44.0 + BUTTON_PANEL_WIDTH + 2.0 * BORDER_WIDTH;
+    assert_eq!(expected, 70.0, "44 + 22 + 4 = 70");
+    assert_eq!(node.rect.width(), 70.0);
+}
+
+#[test]
+fn number_input_height_is_30() {
+    assert_eq!(INPUT_HEIGHT, 30.0);
+
+    let w = make_input(0.0, 0.0, 100.0, 1.0);
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+        theme: theme(),
+    };
+    let lb = w.layout(&ctx);
+    let node = compute_layout(&lb, Rect::new(0.0, 0.0, 400.0, 300.0));
+    assert_eq!(node.rect.height(), 30.0);
+}
+
+#[test]
+fn number_input_border_width_is_2() {
+    assert_eq!(BORDER_WIDTH, 2.0);
+}
+
+#[test]
+fn number_input_stepper_panel_width() {
+    assert_eq!(BUTTON_PANEL_WIDTH, 22.0);
+}
+
+#[test]
+fn number_input_horizontal_divider_is_1px() {
+    assert_eq!(BUTTON_DIVIDER_WIDTH, 1.0);
+}
+
+#[test]
+fn number_input_arrow_keys_adjust_value() {
+    let mut w = make_input(5.0, 0.0, 10.0, 1.0);
+
+    // Arrow up increments.
+    let up = InputEvent::KeyDown {
+        key: Key::ArrowUp,
+        modifiers: Modifiers::NONE,
+    };
+    let r = w.on_input(&up, Rect::new(0.0, 0.0, 82.0, 30.0));
+    assert!(r.handled);
+    assert_eq!(w.value(), 6.0);
+
+    // Arrow down decrements.
+    let down = InputEvent::KeyDown {
+        key: Key::ArrowDown,
+        modifiers: Modifiers::NONE,
+    };
+    let r = w.on_input(&down, Rect::new(0.0, 0.0, 82.0, 30.0));
+    assert!(r.handled);
+    assert_eq!(w.value(), 5.0);
 }

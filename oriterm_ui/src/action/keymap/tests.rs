@@ -203,6 +203,13 @@ fn defaults_cover_all_expected_bindings() {
     );
     assert_eq!(
         keymap
+            .lookup(Keystroke::new(Key::Space, m), &["Dropdown"])
+            .unwrap()
+            .name(),
+        "widget::Confirm"
+    );
+    assert_eq!(
+        keymap
             .lookup(Keystroke::new(Key::Escape, m), &["Dropdown"])
             .unwrap()
             .name(),

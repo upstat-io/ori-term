@@ -22,13 +22,14 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 | ~~4~~ | ~~23.3 — Memory Optimization: Atlas Over-Allocation~~ | ~~Complete~~ |
 | ~~5~~ | ~~23.3 — Memory Optimization: Font Data Deduplication~~ | ~~Complete~~ |
 | ~~6~~ | ~~23.3 — Memory Optimization: Content Cache Texture~~ | ~~Complete — GPU-only texture (no RSS impact), 20x idle CPU savings justifies the cost~~ |
+| 7 | 24.8 — Window Backdrop Effects | Transparency reroute — expand backdrop enum, Mica support, platform material selection |
 
 ---
 
 ## Keyword Clusters by Section
 
 ### Section 01: Cell + Grid
-**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** Complete
+**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** In Progress (TPR findings)
 ```
 cell, Cell, CellFlags, CellExtra, rich cell, 24 bytes
 grid, Grid, Row, rows, columns, viewport
@@ -1028,6 +1029,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | Brahmic/complex script rendering | Section 06 (complete) | Devanagari, Bengali, Tibetan, Javanese, Tai Tham, Chakma |
 | Split drag & drop with grab handles | Section 33 (in-progress) | Reorder, move to tabs, or extract splits |
 | Selection word boundary chars | Section 9 (in-progress) | Config: `selection-word-chars` customizes double-click word selection |
+| Update checking + auto-update | New section needed | Thread real update metadata through `dialog_management.rs` and `content_actions.rs` rebuild path (UI plumbing complete in §10.5, passes `None` until update system exists) |
 
 ---
 

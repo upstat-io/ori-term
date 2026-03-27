@@ -11,6 +11,7 @@ use crate::color::Color;
 use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point, Rect};
+use crate::icons::IconId;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::TextStyle;
@@ -192,6 +193,13 @@ impl DropdownWidget {
         self
     }
 
+    /// Overrides the minimum width of the dropdown trigger.
+    #[must_use]
+    pub fn with_min_width(mut self, px: f32) -> Self {
+        self.style.min_width = px;
+        self
+    }
+
     /// Returns the current text color based on state.
     fn current_fg(&self) -> Color {
         if self.disabled {
@@ -282,7 +290,7 @@ impl Widget for DropdownWidget {
         };
 
         // Background from visual state animator.
-        let bg = self.animator.get_bg_color(ctx.now);
+        let bg = self.animator.get_bg_color();
         ctx.scene.push_layer_bg(bg);
 
         // Background rect with state-dependent border.
@@ -300,28 +308,29 @@ impl Widget for DropdownWidget {
         ctx.scene
             .push_text(Point::new(inner.x(), y), shaped, self.current_fg());
 
-        // Dropdown indicator — filled downward triangle, positioned right 10px.
-        let ind_center_y = bounds.y() + bounds.height() / 2.0;
+        // Dropdown indicator — filled downward triangle via icon atlas.
         let ind_color = if self.disabled {
             s.disabled_fg
         } else {
             s.indicator_color
         };
-
-        // Use Unicode filled triangle character (▾) as indicator.
-        let tri_style = TextStyle::new(s.font_size, ind_color);
-        let shaped = ctx
-            .measurer
-            .shape("\u{25BE}", &tri_style, s.indicator_width);
-        let tri_x = bounds.right() - 10.0 - shaped.width / 2.0;
-        let tri_y = ind_center_y - shaped.height / 2.0;
-        ctx.scene
-            .push_text(Point::new(tri_x, tri_y), shaped, ind_color);
+        let icon_size: u32 = 10;
+        if let Some(resolved) = ctx
+            .icons
+            .and_then(|ic| ic.get(IconId::DropdownArrow, icon_size))
+        {
+            let icon_f = icon_size as f32;
+            let ix = bounds.right() - s.padding.right + (s.padding.right - icon_f) / 2.0;
+            let iy = bounds.y() + (bounds.height() - icon_f) / 2.0;
+            let icon_rect = Rect::new(ix, iy, icon_f, icon_f);
+            ctx.scene
+                .push_icon(icon_rect, resolved.atlas_page, resolved.uv, ind_color);
+        }
 
         ctx.scene.pop_layer_bg();
 
         // Signal continued redraws while the animator is transitioning.
-        if self.animator.is_animating(ctx.now) {
+        if self.animator.is_animating() {
             ctx.request_anim_frame();
         }
     }
@@ -358,7 +367,7 @@ impl Widget for DropdownWidget {
     fn handle_keymap_action(
         &mut self,
         action: &dyn crate::action::KeymapAction,
-        _bounds: Rect,
+        bounds: Rect,
     ) -> Option<WidgetAction> {
         match action.name() {
             "widget::NavigateDown" => {
@@ -379,11 +388,16 @@ impl Widget for DropdownWidget {
                     index: self.selected,
                 })
             }
-            "widget::Confirm" => Some(WidgetAction::Selected {
+            "widget::Confirm" => Some(WidgetAction::OpenDropdown {
                 id: self.id,
-                index: self.selected,
+                options: self.items.clone(),
+                selected: self.selected,
+                anchor: bounds,
             }),
-            "widget::Dismiss" => Some(WidgetAction::DismissOverlay(self.id)),
+            // Dismiss (Escape) intentionally falls through to the wildcard.
+            // When the popup is open, Escape is handled by the MenuWidget, not
+            // the trigger. When closed, Escape on the trigger is a no-op — it
+            // must NOT emit DismissOverlay (which would close the entire dialog).
             _ => None,
         }
     }

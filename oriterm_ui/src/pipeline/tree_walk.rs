@@ -190,9 +190,9 @@ pub fn prepare_widget_frame(
 
     // Step 3: update visual state animator from interaction state.
     if let Some(animator) = widget.visual_states_mut() {
-        animator.update(state, now);
-        animator.tick(now);
-        if animator.is_animating(now) {
+        animator.update(state);
+        animator.tick();
+        if animator.is_animating() {
             if let Some(flags) = frame_requests {
                 flags.request_anim_frame();
             }

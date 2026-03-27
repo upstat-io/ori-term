@@ -11,7 +11,7 @@ use oriterm_ui::widgets::cursor_picker::CursorPickerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
 use oriterm_ui::widgets::number_input::NumberInputWidget;
 use oriterm_ui::widgets::setting_row::SettingRowWidget;
-use oriterm_ui::widgets::text_input::TextInputWidget;
+use oriterm_ui::widgets::text_input::{TextInputStyle, TextInputWidget};
 use oriterm_ui::widgets::toggle::ToggleWidget;
 
 use crate::config::{Config, CursorStyle, PasteWarning};
@@ -111,7 +111,9 @@ fn build_scrollback_section(
 
 /// Shell section: default shell + paste warning.
 fn build_shell_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) -> Box<dyn Widget> {
-    let mut shell_input = TextInputWidget::new().with_placeholder("System default");
+    let mut shell_input = TextInputWidget::new()
+        .with_placeholder("System default")
+        .with_style(TextInputStyle::settings(theme));
     if let Some(ref shell) = config.terminal.shell {
         shell_input.set_text(shell.clone());
     }

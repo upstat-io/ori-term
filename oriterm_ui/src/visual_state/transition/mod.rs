@@ -5,7 +5,6 @@
 //! [`StateTransition`] declares per-state-pair animation overrides.
 
 use std::collections::HashMap;
-use std::time::Instant;
 
 use crate::animation::behavior::AnimBehavior;
 use crate::animation::property::AnimProperty;
@@ -105,7 +104,7 @@ impl VisualStateAnimator {
     /// state. If the resolved state differs from the active state, finds the
     /// appropriate transition behavior and starts `AnimProperty` transitions
     /// for all properties in the new state.
-    pub fn update(&mut self, interaction: &InteractionState, now: Instant) {
+    pub fn update(&mut self, interaction: &InteractionState) {
         for group_idx in 0..self.groups.len() {
             let resolve = self.groups[group_idx].resolve_fn();
             let resolved_name = resolve(interaction);
@@ -153,7 +152,7 @@ impl VisualStateAnimator {
                         .entry(key)
                         .or_insert_with(|| AnimProperty::new(c));
                     anim.set_behavior(Some(behavior));
-                    anim.set(c, now);
+                    anim.set(c);
                 } else {
                     let v = prop.float_value().expect("not color implies float");
                     let anim = self
@@ -161,83 +160,86 @@ impl VisualStateAnimator {
                         .entry(key)
                         .or_insert_with(|| AnimProperty::new(v));
                     anim.set_behavior(Some(behavior));
-                    anim.set(v, now);
+                    anim.set(v);
                 }
             }
         }
     }
 
-    /// Advance spring-based transitions by one frame.
+    /// Advance all transitions by one frame.
     ///
-    /// Must be called each frame when `is_animating()` is true and any
-    /// property uses spring-based `AnimBehavior`. Safe to call unconditionally
-    /// — easing-based properties treat `tick()` as a no-op.
-    pub fn tick(&mut self, now: Instant) {
+    /// Must be called once per frame during the prepare phase. Advances
+    /// both easing and spring transitions.
+    pub fn tick(&mut self) {
         for anim in self.color_animations.values_mut() {
-            anim.tick(now);
+            anim.tick();
         }
         for anim in self.float_animations.values_mut() {
-            anim.tick(now);
+            anim.tick();
         }
     }
 
     /// Get the current interpolated background color.
     ///
     /// Returns `Color::TRANSPARENT` if no group sets `BgColor`.
-    pub fn get_bg_color(&self, now: Instant) -> Color {
-        self.get_color("BgColor", now).unwrap_or(Color::TRANSPARENT)
+    pub fn get_bg_color(&self) -> Color {
+        self.get_color("BgColor").unwrap_or(Color::TRANSPARENT)
     }
 
     /// Get the current interpolated foreground color.
     ///
     /// Returns `Color::TRANSPARENT` if no group sets `FgColor`.
-    pub fn get_fg_color(&self, now: Instant) -> Color {
-        self.get_color("FgColor", now).unwrap_or(Color::TRANSPARENT)
+    pub fn get_fg_color(&self) -> Color {
+        self.get_color("FgColor").unwrap_or(Color::TRANSPARENT)
     }
 
     /// Get the current interpolated border color.
     ///
     /// Returns `Color::TRANSPARENT` if no group sets `BorderColor`.
-    pub fn get_border_color(&self, now: Instant) -> Color {
-        self.get_color("BorderColor", now)
-            .unwrap_or(Color::TRANSPARENT)
+    pub fn get_border_color(&self) -> Color {
+        self.get_color("BorderColor").unwrap_or(Color::TRANSPARENT)
     }
 
     /// Get the current interpolated opacity.
     ///
     /// Returns `0.0` if no group sets `Opacity`.
-    pub fn get_opacity(&self, now: Instant) -> f32 {
-        self.get_float("Opacity", now).unwrap_or(0.0)
+    pub fn get_opacity(&self) -> f32 {
+        self.get_float("Opacity").unwrap_or(0.0)
     }
 
     /// Get the current interpolated border width.
     ///
     /// Returns `0.0` if no group sets `BorderWidth`.
-    pub fn get_border_width(&self, now: Instant) -> f32 {
-        self.get_float("BorderWidth", now).unwrap_or(0.0)
+    pub fn get_border_width(&self) -> f32 {
+        self.get_float("BorderWidth").unwrap_or(0.0)
     }
 
     /// Get the current interpolated corner radius.
     ///
     /// Returns `0.0` if no group sets `CornerRadius`.
-    pub fn get_corner_radius(&self, now: Instant) -> f32 {
-        self.get_float("CornerRadius", now).unwrap_or(0.0)
+    pub fn get_corner_radius(&self) -> f32 {
+        self.get_float("CornerRadius").unwrap_or(0.0)
     }
 
     /// Generic getter for any color property by discriminant key.
-    pub fn get_color(&self, key: &str, now: Instant) -> Option<Color> {
-        self.color_animations.get(key).map(|a| a.get(now))
+    pub fn get_color(&self, key: &str) -> Option<Color> {
+        self.color_animations.get(key).map(AnimProperty::get)
     }
 
     /// Generic getter for any scalar property by discriminant key.
-    pub fn get_float(&self, key: &str, now: Instant) -> Option<f32> {
-        self.float_animations.get(key).map(|a| a.get(now))
+    pub fn get_float(&self, key: &str) -> Option<f32> {
+        self.float_animations.get(key).map(AnimProperty::get)
     }
 
     /// Are any transitions still animating?
-    pub fn is_animating(&self, now: Instant) -> bool {
-        self.color_animations.values().any(|a| a.is_animating(now))
-            || self.float_animations.values().any(|a| a.is_animating(now))
+    pub fn is_animating(&self) -> bool {
+        self.color_animations
+            .values()
+            .any(AnimProperty::is_animating)
+            || self
+                .float_animations
+                .values()
+                .any(AnimProperty::is_animating)
     }
 }
 
