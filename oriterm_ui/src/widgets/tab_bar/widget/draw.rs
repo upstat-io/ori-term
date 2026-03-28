@@ -104,11 +104,7 @@ impl TabBarWidget {
 
         // Only draw content when somewhat visible.
         if content_opacity > 0.01 {
-            if self.editing_index == Some(index) {
-                self.draw_tab_editor(ctx, x, strip);
-            } else {
-                self.draw_tab_label(ctx, tab, x, strip);
-            }
+            self.draw_tab_label(ctx, tab, x, strip, self.editing_index == Some(index));
 
             // Close button: always visible on active, animated fade on inactive.
             if strip.active {
@@ -148,15 +144,20 @@ impl TabBarWidget {
 
     /// Draws the icon (if any) and title text for a tab at the given X position.
     ///
-    /// Shared between [`draw_tab`] (normal tabs) and [`draw_dragged_tab_overlay`]
-    /// (floating drag overlay) — the only differences are position and color.
-    /// Text color comes from `strip.text_color`.
+    /// When `editing` is true, uses the editing buffer text instead of the
+    /// tab title and draws cursor + selection highlight. Icon rendering is
+    /// always the same regardless of editing state.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "tab label draw: self + ctx + tab + x + strip + editing"
+    )]
     pub(super) fn draw_tab_label(
         &self,
         ctx: &mut DrawCtx<'_>,
         tab: &TabEntry,
         x: f32,
         strip: &TabStrip,
+        editing: bool,
     ) {
         let color = strip.text_color;
 
@@ -174,19 +175,53 @@ impl TabBarWidget {
             0.0
         };
 
-        let title = if tab.title.is_empty() {
+        // Title text: use editing buffer when actively editing.
+        let edit_text;
+        let title = if editing {
+            edit_text = self.editing.text().to_owned();
+            if edit_text.is_empty() {
+                "Terminal"
+            } else {
+                &edit_text
+            }
+        } else if tab.title.is_empty() {
             "Terminal"
         } else {
             &tab.title
         };
         let max_w = (self.layout.max_text_width() - text_offset).max(0.0);
-        let text_style =
-            TextStyle::new(ctx.theme.font_size_small, color).with_overflow(TextOverflow::Ellipsis);
-        let shaped = ctx.measurer.shape(title, &text_style, max_w);
+
+        // Measure for cursor/selection before consuming text_style with overflow.
+        let text_style = TextStyle::new(ctx.theme.font_size_small, color);
         let text_x = x + self.metrics.tab_padding + text_offset;
-        let text_y = strip.y + (strip.h - shaped.height) / 2.0;
+
+        // Measure full text for height (before consuming text_style).
+        let full_shaped = ctx.measurer.shape(title, &text_style, f32::INFINITY);
+        let text_y = strip.y + (strip.h - full_shaped.height) / 2.0;
+
+        // Draw editing overlay (selection + cursor) behind text.
+        if editing {
+            super::edit_draw::draw_editing_overlay(
+                ctx,
+                &super::edit_draw::EditOverlayParams {
+                    editing: &self.editing,
+                    text_style: &text_style,
+                    text_x,
+                    text_y,
+                    max_w,
+                    line_h: full_shaped.height,
+                },
+            );
+        }
+
+        // Draw clamped text.
+        let clamped = ctx.measurer.shape(
+            title,
+            &text_style.with_overflow(TextOverflow::Ellipsis),
+            max_w,
+        );
         ctx.scene
-            .push_text(Point::new(text_x, text_y), shaped, color);
+            .push_text(Point::new(text_x, text_y), clamped, color);
     }
 
     /// Draws the close (×) button for a tab with the given opacity.

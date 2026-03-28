@@ -46,7 +46,7 @@ impl TabBarWidget {
         ctx.scene.push_layer_bg(self.colors.active_bg);
         ctx.scene.push_quad(tab_rect, style);
 
-        self.draw_tab_label(ctx, tab, visual_x, strip);
+        self.draw_tab_label(ctx, tab, visual_x, strip, false);
 
         // Close button (always visible on dragged tab).
         self.draw_close_icon(ctx, index, visual_x, strip);
