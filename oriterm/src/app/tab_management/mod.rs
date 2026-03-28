@@ -444,15 +444,7 @@ fn build_tab_entries(
             } else {
                 title
             };
-            let entry =
-                oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon.clone());
-            log::info!(
-                "tab_entry: icon_name={:?} icon={:?} override={}",
-                snapshot.and_then(|s| s.icon_name.as_deref()),
-                icon,
-                has_override,
-            );
-            entry
+            oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon)
         })
         .collect();
     (entries, active_idx)
