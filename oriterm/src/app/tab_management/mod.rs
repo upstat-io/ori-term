@@ -414,6 +414,7 @@ fn build_tab_entries(
             let pane_id = tab.map(crate::session::Tab::active_pane);
             let snapshot = pane_id.and_then(|pid| mux.pane_snapshot(pid));
             // User-set title override takes priority over OSC-derived title.
+            // OSC icons still show dynamically alongside the overridden title.
             let has_override = tab.is_some_and(|t| t.title_override().is_some());
             let mut title = if has_override {
                 tab.and_then(|t| t.title_override().map(str::to_owned))
@@ -426,6 +427,7 @@ fn build_tab_entries(
                 .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
             // Strip leading emoji from title when it matches the icon
             // (OSC 0 sets both title and icon_name to the same string).
+            // Only strip from OSC-derived titles, not user overrides.
             if !has_override {
                 if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
                     let stripped = title
