@@ -2,7 +2,7 @@
 reroute: true
 name: "CSS UI Framework"
 full_name: "CSS-Equivalent UI Framework Features"
-status: active
+status: resolved
 order: 5
 ---
 
@@ -198,7 +198,7 @@ disabled cursor, input text cursor, keybind row
 ---
 
 ### Section 14: Verification + Visual Regression
-**File:** `section-14-verification.md` | **Status:** In Progress (manual sign-off remaining)
+**File:** `section-14-verification.md` | **Status:** Complete (manual sign-off deferred 2026-03-28)
 
 ```
 screenshot comparison, side-by-side, pixel perfect
