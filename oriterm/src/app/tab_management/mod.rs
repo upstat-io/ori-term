@@ -413,18 +413,27 @@ fn build_tab_entries(
             let tab = session.get_tab(tab_id);
             let pane_id = tab.map(crate::session::Tab::active_pane);
             let snapshot = pane_id.and_then(|pid| mux.pane_snapshot(pid));
-            let mut title = snapshot.map(|s| s.title.clone()).unwrap_or_default();
+            // User-set title override takes priority over OSC-derived title.
+            let has_override = tab.is_some_and(|t| t.title_override().is_some());
+            let mut title = if has_override {
+                tab.and_then(|t| t.title_override().map(str::to_owned))
+                    .unwrap_or_default()
+            } else {
+                snapshot.map(|s| s.title.clone()).unwrap_or_default()
+            };
             let icon = snapshot
                 .and_then(|s| s.icon_name.as_deref())
                 .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
             // Strip leading emoji from title when it matches the icon
             // (OSC 0 sets both title and icon_name to the same string).
-            if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
-                let stripped = title
-                    .strip_prefix(e.as_str())
-                    .map(|r| r.trim_start().to_owned());
-                if let Some(s) = stripped {
-                    title = s;
+            if !has_override {
+                if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
+                    let stripped = title
+                        .strip_prefix(e.as_str())
+                        .map(|r| r.trim_start().to_owned());
+                    if let Some(s) = stripped {
+                        title = s;
+                    }
                 }
             }
             let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());

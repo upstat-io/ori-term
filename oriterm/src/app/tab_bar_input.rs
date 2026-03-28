@@ -291,14 +291,23 @@ impl App {
 
     /// Commit an active tab title edit.
     ///
-    /// The new title is already applied to the `TabEntry` by
-    /// `TabBarWidget::commit_editing()`. We just need to mark dirty
-    /// so the tab bar repaints with the updated title.
+    /// Sets the title override on the session `Tab` so the user-set title
+    /// persists across OSC title changes. Also marks dirty for repaint.
     pub(super) fn commit_tab_edit(&mut self) {
         let committed = self
             .focused_ctx_mut()
             .and_then(|ctx| ctx.tab_bar.commit_editing());
-        if committed.is_some() {
+        if let Some((index, title)) = committed {
+            // Persist the user-set title on the session Tab.
+            if let Some(wid) = self.active_window {
+                if let Some(win) = self.session.get_window(wid) {
+                    if let Some(&tab_id) = win.tabs().get(index) {
+                        if let Some(tab) = self.session.get_tab_mut(tab_id) {
+                            tab.set_title_override(Some(title));
+                        }
+                    }
+                }
+            }
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.root.mark_dirty();
                 ctx.ui_stale = true;
