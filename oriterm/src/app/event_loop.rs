@@ -143,6 +143,8 @@ impl ApplicationHandler<TermEvent> for App {
                 } else {
                     // Freeze cursor visible when window loses focus.
                     self.blinking_active = false;
+                    // Commit any active tab title edit.
+                    self.commit_tab_edit();
                     // Restore mouse cursor so it isn't stuck hidden in other apps.
                     self.restore_mouse_cursor(window_id);
                     // Transient popups should never survive window deactivation.
@@ -292,6 +294,10 @@ impl ApplicationHandler<TermEvent> for App {
                 // Tab bar clicks: switch tab, close tab, window controls, drag.
                 if self.try_tab_bar_mouse(button, state, event_loop) {
                     return;
+                }
+                // Commit any active tab title edit when clicking the grid.
+                if state == winit::event::ElementState::Pressed {
+                    self.commit_tab_edit();
                 }
                 self.handle_mouse_input(button, state);
             }

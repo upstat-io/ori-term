@@ -13,12 +13,14 @@ mod control_state;
 mod controls_draw;
 mod drag_draw;
 mod draw;
+mod edit_draw;
 
 use std::time::{Duration, Instant};
 
 use crate::animation::{AnimBehavior, AnimProperty};
 #[cfg(not(target_os = "macos"))]
 use crate::color::Color;
+use crate::text::editing::TextEditingState;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 #[cfg(not(target_os = "macos"))]
@@ -129,6 +131,14 @@ pub struct TabBarWidget {
 
     /// Extra left margin for platform chrome (macOS traffic lights).
     left_inset: f32,
+
+    // Inline editing state.
+    /// Which tab is being edited (`None` = not editing).
+    editing_index: Option<usize>,
+    /// Text editing buffer (reused across edits).
+    editing: TextEditingState,
+    /// Original title before editing started (for Escape cancellation).
+    original_title: String,
 }
 
 impl TabBarWidget {
@@ -175,6 +185,9 @@ impl TabBarWidget {
             #[cfg(not(target_os = "macos"))]
             pressed_control: None,
             left_inset: 0.0,
+            editing_index: None,
+            editing: TextEditingState::new(),
+            original_title: String::new(),
         }
     }
 
@@ -261,6 +274,128 @@ impl TabBarWidget {
     pub fn set_left_inset(&mut self, inset: f32) {
         self.left_inset = inset;
         self.recompute_layout();
+    }
+
+    // Inline editing
+
+    /// Returns `true` if a tab title is currently being edited.
+    pub fn is_editing(&self) -> bool {
+        self.editing_index.is_some()
+    }
+
+    /// Returns the index of the tab being edited, if any.
+    pub fn editing_tab_index(&self) -> Option<usize> {
+        self.editing_index
+    }
+
+    /// Returns the current editing text (empty if not editing).
+    pub fn editing_text(&self) -> &str {
+        self.editing.text()
+    }
+
+    /// Returns a reference to the editing state for rendering.
+    pub fn editing_state(&self) -> &TextEditingState {
+        &self.editing
+    }
+
+    /// Starts inline editing of the tab at `index`.
+    ///
+    /// Copies the current title into the editing buffer and selects all
+    /// text (VS Code behavior: typing immediately replaces the title).
+    pub fn start_editing(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
+        }
+        self.editing_index = Some(index);
+        self.original_title.clone_from(&self.tabs[index].title);
+        self.editing.set_text(&self.tabs[index].title);
+        self.editing.select_all();
+    }
+
+    /// Commits the current edit and returns `(tab_index, new_title)`.
+    ///
+    /// Trims whitespace. If the result is empty, restores the original
+    /// title. Returns `None` if not currently editing.
+    pub fn commit_editing(&mut self) -> Option<(usize, String)> {
+        let index = self.editing_index.take()?;
+        let trimmed = self.editing.text().trim().to_string();
+        let title = if trimmed.is_empty() {
+            self.tabs[index].title.clone_from(&self.original_title);
+            self.original_title.clone()
+        } else {
+            self.tabs[index].title.clone_from(&trimmed);
+            trimmed
+        };
+        Some((index, title))
+    }
+
+    /// Cancels the current edit and restores the original title.
+    pub fn cancel_editing(&mut self) {
+        if let Some(index) = self.editing_index.take() {
+            self.tabs[index].title = self.original_title.clone();
+        }
+    }
+
+    /// Forwards a character insertion to the editing state.
+    ///
+    /// Returns `true` if editing is active and the character was inserted.
+    pub fn editing_insert_char(&mut self, ch: char) -> bool {
+        if self.editing_index.is_some() {
+            self.editing.insert_char(ch);
+            return true;
+        }
+        false
+    }
+
+    /// Forwards a backspace to the editing state.
+    pub fn editing_backspace(&mut self) -> bool {
+        if self.editing_index.is_some() {
+            return self.editing.backspace();
+        }
+        false
+    }
+
+    /// Forwards a delete to the editing state.
+    pub fn editing_delete(&mut self) -> bool {
+        if self.editing_index.is_some() {
+            return self.editing.delete();
+        }
+        false
+    }
+
+    /// Forwards cursor movement to the editing state.
+    pub fn editing_move_left(&mut self, shift: bool) {
+        if self.editing_index.is_some() {
+            self.editing.move_left(shift);
+        }
+    }
+
+    /// Forwards cursor movement to the editing state.
+    pub fn editing_move_right(&mut self, shift: bool) {
+        if self.editing_index.is_some() {
+            self.editing.move_right(shift);
+        }
+    }
+
+    /// Forwards home key to the editing state.
+    pub fn editing_home(&mut self, shift: bool) {
+        if self.editing_index.is_some() {
+            self.editing.home(shift);
+        }
+    }
+
+    /// Forwards end key to the editing state.
+    pub fn editing_end(&mut self, shift: bool) {
+        if self.editing_index.is_some() {
+            self.editing.end(shift);
+        }
+    }
+
+    /// Selects all text in the editing buffer.
+    pub fn editing_select_all(&mut self) {
+        if self.editing_index.is_some() {
+            self.editing.select_all();
+        }
     }
 }
 

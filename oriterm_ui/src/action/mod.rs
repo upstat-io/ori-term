@@ -95,4 +95,6 @@ pub enum WidgetAction {
     WindowMaximize,
     /// Close the window.
     WindowClose,
+    /// A tab title was changed via inline editing.
+    TabTitleChanged { index: usize, title: String },
 }
