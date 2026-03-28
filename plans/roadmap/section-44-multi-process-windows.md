@@ -1,7 +1,7 @@
 ---
 section: 44
 title: Multi-Process Window Architecture
-status: complete
+status: in-progress
 reviewed: true
 third_party_review:
   status: none
@@ -14,7 +14,7 @@ sections:
     status: complete
   - id: "44.2"
     title: IPC Protocol (Minimal Viable)
-    status: complete
+    status: in-progress
   - id: "44.3"
     title: Window-as-Client Model
     status: complete
@@ -23,7 +23,7 @@ sections:
     status: complete
   - id: "44.5"
     title: Auto-Start + Discovery
-    status: complete
+    status: in-progress
   - id: "44.6"
     title: Backward Compatibility + Fallback
     status: complete
