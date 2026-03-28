@@ -1,4 +1,4 @@
-//! Tests for emoji icon extraction.
+//! Tests for tab icon extraction.
 
 use super::*;
 use crate::widgets::tab_bar::widget::TabIcon;
@@ -46,11 +46,64 @@ fn standalone_emoji() {
 }
 
 #[test]
-fn digit_prefix_not_emoji() {
+fn digit_prefix_returns_none() {
     assert_eq!(extract_emoji_icon("42foo"), None);
 }
 
 #[test]
-fn symbol_prefix_not_emoji() {
-    assert_eq!(extract_emoji_icon("#channel"), None);
+fn alpha_prefix_returns_none() {
+    assert_eq!(extract_emoji_icon("claude"), None);
+}
+
+#[test]
+fn whitespace_prefix_returns_none() {
+    assert_eq!(extract_emoji_icon(" hello"), None);
+}
+
+#[test]
+fn braille_spinner_extracted() {
+    assert_eq!(
+        extract_emoji_icon("⠂ Claude Code"),
+        Some(TabIcon::Emoji("⠂".to_owned()))
+    );
+}
+
+#[test]
+fn braille_dot_extracted() {
+    assert_eq!(
+        extract_emoji_icon("⠐ working"),
+        Some(TabIcon::Emoji("⠐".to_owned()))
+    );
+}
+
+#[test]
+fn star_symbol_extracted() {
+    assert_eq!(
+        extract_emoji_icon("✳ Claude Code"),
+        Some(TabIcon::Emoji("✳".to_owned()))
+    );
+}
+
+#[test]
+fn hash_symbol_extracted() {
+    // Non-alphanumeric symbols are valid icons.
+    assert_eq!(
+        extract_emoji_icon("#channel"),
+        Some(TabIcon::Emoji("#".to_owned()))
+    );
+}
+
+#[test]
+fn path_prefix_returns_none() {
+    // Paths starting with letters return None.
+    assert_eq!(extract_emoji_icon("orc"), None);
+}
+
+#[test]
+fn dot_prefix_extracted() {
+    // Dots are not alphanumeric — extracted as icon.
+    assert_eq!(
+        extract_emoji_icon("..c/Users"),
+        Some(TabIcon::Emoji(".".to_owned()))
+    );
 }
