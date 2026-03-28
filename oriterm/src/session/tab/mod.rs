@@ -35,6 +35,10 @@ pub struct Tab {
     redo: VecDeque<SplitTree>,
     /// Zoomed pane (fills entire tab area, hiding other panes).
     zoomed_pane: Option<PaneId>,
+    /// User-set title override (from inline editing). When `Some`, this
+    /// title is used instead of the OSC-derived pane title. `None` means
+    /// the pane's OSC title is used as-is.
+    title_override: Option<String>,
 }
 
 impl Tab {
@@ -48,6 +52,7 @@ impl Tab {
             undo: VecDeque::new(),
             redo: VecDeque::new(),
             zoomed_pane: None,
+            title_override: None,
         }
     }
 
@@ -79,6 +84,19 @@ impl Tab {
     /// Set the active (focused) pane.
     pub fn set_active_pane(&mut self, pane_id: PaneId) {
         self.active_pane = pane_id;
+    }
+
+    /// User-set title override, if any.
+    ///
+    /// When `Some`, this title is displayed instead of the OSC-derived
+    /// pane title. Set via inline tab title editing.
+    pub fn title_override(&self) -> Option<&str> {
+        self.title_override.as_deref()
+    }
+
+    /// Set the user title override (from inline editing).
+    pub fn set_title_override(&mut self, title: Option<String>) {
+        self.title_override = title;
     }
 
     /// The pane currently zoomed to fill the entire tab area, if any.
