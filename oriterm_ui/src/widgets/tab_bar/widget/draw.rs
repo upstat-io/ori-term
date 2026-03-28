@@ -162,8 +162,9 @@ impl TabBarWidget {
         let color = strip.text_color;
 
         // Icon rendering: shape and draw emoji before the title.
+        // Uses the terminal font (with emoji fallback) so color emoji render.
         let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
-            let icon_style = TextStyle::new(ctx.theme.font_size_small, color);
+            let icon_style = TextStyle::new(ctx.theme.font_size_small, color).with_terminal_font();
             let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
             let icon_x = x + self.metrics.tab_padding;
             let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;

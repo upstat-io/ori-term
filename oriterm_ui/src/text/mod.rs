@@ -89,6 +89,20 @@ pub enum TextAlign {
     Right,
 }
 
+/// Which font source a text style should use for shaping.
+///
+/// `Ui` selects the embedded UI font (IBM Plex Mono). `Terminal` selects the
+/// user's configured terminal font collection, which includes emoji fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum FontSource {
+    /// Embedded UI font (IBM Plex Mono). Default for settings, menus, etc.
+    #[default]
+    Ui,
+    /// Terminal font with emoji fallback. Use for tab titles, status text,
+    /// and anything that may contain user/OSC-provided content.
+    Terminal,
+}
+
 /// How text that exceeds its container width is handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextOverflow {
@@ -129,6 +143,8 @@ pub struct TextStyle {
     /// to `size * 1.5`. Use [`normalized_line_height`](Self::normalized_line_height)
     /// to filter invalid values.
     pub line_height: Option<f32>,
+    /// Which font source to use for shaping. Default: `Ui` (embedded font).
+    pub font_source: FontSource,
 }
 
 impl Default for TextStyle {
@@ -143,6 +159,7 @@ impl Default for TextStyle {
             letter_spacing: 0.0,
             text_transform: TextTransform::None,
             line_height: None,
+            font_source: FontSource::Ui,
         }
     }
 }
@@ -161,7 +178,15 @@ impl TextStyle {
             letter_spacing: 0.0,
             text_transform: TextTransform::None,
             line_height: None,
+            font_source: FontSource::Ui,
         }
+    }
+
+    /// Use the terminal font (with emoji fallback) instead of the UI font.
+    #[must_use]
+    pub fn with_terminal_font(mut self) -> Self {
+        self.font_source = FontSource::Terminal;
+        self
     }
 
     /// Set the font weight.
