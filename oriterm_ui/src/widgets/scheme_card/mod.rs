@@ -232,6 +232,7 @@ impl Widget for SchemeCardWidget {
         LayoutBox::leaf(CARD_WIDTH, CARD_HEIGHT)
             .with_widget_id(self.id)
             .with_cursor_icon(CursorIcon::Pointer)
+            .with_width(crate::layout::SizeSpec::Fill)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {
@@ -279,13 +280,18 @@ impl Widget for SchemeCardWidget {
         let bounds = ctx.bounds;
 
         // Card background + border (always 2px, mockup rest/hover/active states).
-        let hovered = ctx.is_hot();
+        // Selected state overrides the animator; otherwise use the animator's
+        // bg color which smoothly transitions between rest/hover/active.
         let (card_bg, border_color) = if self.data.selected {
             (ctx.theme.accent_bg, ctx.theme.accent)
-        } else if hovered {
-            (ctx.theme.bg_hover, ctx.theme.border_strong)
         } else {
-            (ctx.theme.bg_card, ctx.theme.border)
+            let bg = self.animator.get_bg_color();
+            let border = if ctx.is_hot() {
+                ctx.theme.border_strong
+            } else {
+                ctx.theme.border
+            };
+            (bg, border)
         };
         let card_style = RectStyle::filled(card_bg)
             .with_radius(CORNER_RADIUS)

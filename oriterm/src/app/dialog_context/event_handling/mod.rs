@@ -1,10 +1,9 @@
 //! Dialog window event handling.
 //!
 //! Routes winit `WindowEvent` variants to dialog-specific handlers.
-//! Chrome events (close, drag) are handled inline. Content area events
-//! are routed to the settings panel widget tree. Widget actions are
-//! dispatched via `content_actions.rs`. Mouse click/scroll routing lives
-//! in the `mouse` submodule.
+//! Content area events are routed to the settings panel widget tree.
+//! Widget actions are dispatched via `content_actions.rs`. Mouse
+//! click/scroll routing lives in the `mouse` submodule.
 
 mod cursor;
 mod mouse;
@@ -15,10 +14,10 @@ use oriterm_ui::geometry::{Point, Rect};
 use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
 use oriterm_ui::input::{InputEvent, MouseEvent, MouseEventKind};
 use oriterm_ui::overlay::OverlayEventResult;
-use oriterm_ui::widgets::{Widget, WidgetAction};
+use oriterm_ui::widgets::WidgetAction;
 use winit::event::{ElementState, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{CursorIcon, WindowId};
+use winit::window::WindowId;
 
 use crate::font::CachedTextMeasurer;
 use crate::keybindings;
@@ -29,10 +28,6 @@ use crate::app::App;
 
 /// Result of processing a dialog mouse click.
 enum DialogClickResult {
-    /// Close the dialog window.
-    Close,
-    /// Initiate an OS window drag.
-    Drag,
     /// A widget action was emitted by the content area.
     Action(WidgetAction),
     /// No action needed.
@@ -64,6 +59,9 @@ impl App {
         match event {
             WindowEvent::CloseRequested => {
                 self.close_dialog(window_id);
+            }
+            WindowEvent::RedrawRequested => {
+                self.render_dialog(window_id);
             }
             WindowEvent::Resized(size) => {
                 // On Windows, detect DPI changes that the subclass proc
@@ -139,7 +137,6 @@ impl App {
             }
         }
         if let Some(ctx) = self.dialogs.get_mut(&window_id) {
-            ctx.chrome.set_active(focused);
             ctx.request_urgent_redraw();
         }
     }
@@ -247,7 +244,6 @@ impl App {
         let scale = ctx.scale_factor.factor() as f32;
         let logical_pos = Point::new(position.x as f32 / scale, position.y as f32 / scale);
         ctx.last_cursor_pos = logical_pos;
-        let chrome_h = ctx.chrome.caption_height();
 
         // Route to overlay manager first (dropdown popup hover).
         if Self::route_overlay_hover(ctx, logical_pos, scale, &ui_theme) {
@@ -255,32 +251,16 @@ impl App {
         }
 
         log::trace!(
-            "dialog cursor: phys=({:.0},{:.0}) log=({:.1},{:.1}) s={scale:.2} ch={chrome_h:.1} \
-             rects={:?}",
+            "dialog cursor: phys=({:.0},{:.0}) log=({:.1},{:.1}) s={scale:.2}",
             position.x,
             position.y,
             logical_pos.x,
             logical_pos.y,
-            ctx.chrome.interactive_rects(),
         );
 
-        // Build the hot path from cursor position.
+        // Build the hot path from cursor position (content fills full window).
         let mut hot_path = Vec::new();
-        let in_content = logical_pos.y >= chrome_h;
-        if in_content {
-            Self::hit_test_content(ctx, logical_pos, chrome_h, scale, &ui_theme, &mut hot_path);
-        } else {
-            // Chrome: check which control button is under the cursor.
-            if let Some(btn_id) = ctx.chrome.widget_at_point(logical_pos) {
-                hot_path.push(ctx.chrome.id());
-                hot_path.push(btn_id);
-            }
-            // Reset cursor when in chrome area.
-            if ctx.last_cursor_icon != CursorIcon::Default {
-                ctx.window.set_cursor(CursorIcon::Default);
-                ctx.last_cursor_icon = CursorIcon::Default;
-            }
-        }
+        Self::hit_test_content(ctx, logical_pos, scale, &ui_theme, &mut hot_path);
 
         // Update the InteractionManager's hot path. HotChanged lifecycle events
         // are stored internally and delivered during the next prepare_widget_tree.
@@ -290,14 +270,12 @@ impl App {
 
         // Dispatch MouseMove to content widgets for per-item hover tracking
         // (reuses the cached layout from the hit test above).
-        if in_content {
-            log::trace!(
-                "dialog cursor dispatch: pos=({:.0},{:.0})",
-                logical_pos.x,
-                logical_pos.y
-            );
-            self.dispatch_dialog_content_move(window_id, logical_pos);
-        }
+        log::trace!(
+            "dialog cursor dispatch: pos=({:.0},{:.0})",
+            logical_pos.x,
+            logical_pos.y
+        );
+        self.dispatch_dialog_content_move(window_id, logical_pos);
 
         // Only request a redraw if the hot path changed (to deliver
         // HotChanged events and update VisualStateAnimator). Event dispatch
@@ -319,10 +297,9 @@ impl App {
             return;
         };
         let scale = ctx.scale_factor.factor() as f32;
-        let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
+        let content_bounds = Rect::new(0.0, 0.0, w, h);
 
         // Take the layout cached by handle_dialog_cursor_move's hit test
         // pass. Falls back to a fresh computation if cache was invalidated.
@@ -426,8 +403,6 @@ impl App {
             .glyph_format();
             renderer.set_hinting_and_format(hinting, format, gpu);
         }
-        let logical_w = ctx.surface_config.width as f32 / scale;
-        ctx.chrome.set_window_width(logical_w);
         ctx.content.invalidate_cache();
         ctx.text_cache.clear();
         ctx.root.invalidation_mut().invalidate_all();

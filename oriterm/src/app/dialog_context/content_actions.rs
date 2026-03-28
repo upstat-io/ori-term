@@ -144,7 +144,6 @@ impl App {
 
         // Rebuild key contexts so keymap scope gating covers the new widgets.
         ctx.root.key_contexts_mut().clear();
-        oriterm_ui::action::collect_key_contexts(&mut ctx.chrome, ctx.root.key_contexts_mut());
         oriterm_ui::action::collect_key_contexts(&mut **panel, ctx.root.key_contexts_mut());
 
         // Rebuild focus order and sync InteractionManager if the previously
@@ -160,7 +159,6 @@ impl App {
                 .interaction_mut()
                 .set_parent_map(super::content_parent_map(
                     &**panel,
-                    ctx.chrome.caption_height(),
                     r,
                     s,
                     &ctx.text_cache,
@@ -172,7 +170,6 @@ impl App {
         // Recompute hot path to preserve hover on surviving widgets (TPR-04-007).
         super::recompute_dialog_hot_path(
             &mut ctx.root,
-            &ctx.chrome,
             &**panel,
             ctx.last_cursor_pos,
             ctx.renderer.as_ref(),
@@ -192,7 +189,6 @@ impl App {
             "Settings"
         };
         ctx.window.set_title(title);
-        ctx.chrome.set_title(title.to_string());
 
         // Update per-page dirty dots after reset.
         panel.accept_action(&WidgetAction::SettingsUnsaved(dirty));
@@ -245,7 +241,6 @@ impl App {
                 "Settings"
             };
             ctx.window.set_title(title);
-            ctx.chrome.set_title(title.to_string());
             panel.accept_action(&WidgetAction::SettingsUnsaved(dirty));
 
             // Per-page dirty state drives the sidebar modified dots.
@@ -279,16 +274,11 @@ impl App {
                 // GC stale registrations from the old page (TPR-11-009).
                 let root_id = ctx.root.widget().id();
                 let mut valid = vec![root_id];
-                crate::app::widget_pipeline::collect_all_widget_ids(&mut ctx.chrome, &mut valid);
                 crate::app::widget_pipeline::collect_all_widget_ids(&mut **panel, &mut valid);
                 let stale = ctx.root.interaction_mut().gc_stale_widgets(&valid);
                 ctx.root.mark_widgets_prepaint_dirty(&stale);
 
                 ctx.root.key_contexts_mut().clear();
-                oriterm_ui::action::collect_key_contexts(
-                    &mut ctx.chrome,
-                    ctx.root.key_contexts_mut(),
-                );
                 oriterm_ui::action::collect_key_contexts(&mut **panel, ctx.root.key_contexts_mut());
 
                 let mut focusable = Vec::new();
@@ -300,7 +290,6 @@ impl App {
                     let s = ctx.scale_factor.factor() as f32;
                     let pm = super::content_parent_map(
                         &**panel,
-                        ctx.chrome.caption_height(),
                         r,
                         s,
                         &ctx.text_cache,
@@ -313,7 +302,6 @@ impl App {
                 // Recompute hot path to preserve hover on surviving widgets (TPR-04-007).
                 super::recompute_dialog_hot_path(
                     &mut ctx.root,
-                    &ctx.chrome,
                     &**panel,
                     ctx.last_cursor_pos,
                     ctx.renderer.as_ref(),

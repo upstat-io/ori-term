@@ -119,16 +119,25 @@ impl Widget for TextInputWidget {
 
         let style = self.text_style();
 
-        if text.is_empty() {
-            // Placeholder.
-            if !self.placeholder.is_empty() {
+        // Measure text (or placeholder) to get line height for cursor/selection.
+        let line_h = if text.is_empty() {
+            if self.placeholder.is_empty() {
+                // No text at all — estimate from a space character.
+                ctx.measurer.measure(" ", &style, f32::INFINITY).height
+            } else {
                 let shaped = ctx.measurer.shape(&self.placeholder, &style, inner.width());
-                let y = inner.y() + (inner.height() - shaped.height) / 2.0;
+                let h = shaped.height;
+                let y = inner.y() + (inner.height() - h) / 2.0;
                 ctx.scene
                     .push_text(Point::new(inner.x(), y), shaped, s.placeholder_color);
+                h
             }
         } else {
-            // Selection highlight.
+            let shaped = ctx.measurer.shape(text, &style, f32::INFINITY);
+            let h = shaped.height;
+            let text_y = inner.y() + (inner.height() - h) / 2.0;
+
+            // Selection highlight (bounded to text line height).
             if let Some((sel_start, sel_end)) = self.editing.selection_range() {
                 if sel_start != sel_end {
                     let prefix_w = ctx
@@ -139,24 +148,23 @@ impl Widget for TextInputWidget {
                         .measurer
                         .measure(&text[sel_start..sel_end], &style, f32::INFINITY)
                         .width;
-                    let sel_rect =
-                        Rect::new(inner.x() + prefix_w, inner.y(), sel_w, inner.height());
+                    let sel_rect = Rect::new(inner.x() + prefix_w, text_y, sel_w, h);
                     ctx.scene
                         .push_quad(sel_rect, RectStyle::filled(s.selection_color));
                 }
             }
 
-            // Text.
-            let shaped = ctx.measurer.shape(text, &style, f32::INFINITY);
             let fg = if self.disabled { s.disabled_fg } else { s.fg };
-            let y = inner.y() + (inner.height() - shaped.height) / 2.0;
-            ctx.scene.push_text(Point::new(inner.x(), y), shaped, fg);
-        }
+            ctx.scene
+                .push_text(Point::new(inner.x(), text_y), shaped, fg);
+            h
+        };
 
-        // Cursor (only when focused).
+        // Cursor (only when focused), bounded to text line height.
         if focused && !self.disabled {
             let cursor_x = inner.x() + self.cursor_x(ctx.measurer);
-            let cursor_rect = Rect::new(cursor_x, inner.y(), s.cursor_width, inner.height());
+            let cursor_y = inner.y() + (inner.height() - line_h) / 2.0;
+            let cursor_rect = Rect::new(cursor_x, cursor_y, s.cursor_width, line_h);
             ctx.scene
                 .push_quad(cursor_rect, RectStyle::filled(s.cursor_color));
         }

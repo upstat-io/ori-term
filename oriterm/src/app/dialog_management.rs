@@ -19,12 +19,15 @@ use super::App;
 use super::dialog_context::{DialogContent, DialogWindowContext};
 use super::settings_overlay::form_builder;
 
-/// Left inset for the title to clear the macOS close traffic light button.
+/// Caption height for the drag region at the top of the dialog window.
 ///
-/// The close button is at approximately x=8..20. This inset provides
-/// breathing room so the title starts cleanly to the right.
-#[cfg(target_os = "macos")]
-const MACOS_TRAFFIC_LIGHT_INSET: f32 = 70.0;
+/// The dialog has no visible chrome, but the platform chrome installer
+/// needs a non-zero caption height so the top edge of the window can be
+/// Drag region at the very top edge of the dialog. Set to 0 so clicks in
+/// the sidebar search field (y ≈ 16..44) aren't intercepted by the OS as
+/// window drags. The dialog can still be moved via Alt+drag on Windows.
+const DIALOG_DRAG_CAPTION_HEIGHT: f32 = 0.0;
+
 use crate::event::ConfirmationRequest;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
@@ -182,7 +185,6 @@ impl App {
             kind,
             content,
             scale_factor,
-            &self.ui_theme,
         );
 
         self.window_manager.register(ManagedWindow::with_parent(
@@ -191,12 +193,6 @@ impl App {
             parts.parent_wid,
         ));
         self.dialogs.insert(winit_id, ctx);
-
-        // macOS: offset the dialog title past the native traffic light buttons.
-        #[cfg(target_os = "macos")]
-        if let Some(ctx) = self.dialogs.get_mut(&winit_id) {
-            ctx.chrome.set_title_left_inset(MACOS_TRAFFIC_LIGHT_INSET);
-        }
 
         self.setup_dialog_focus(winit_id);
         self.install_dialog_chrome(winit_id);
@@ -416,9 +412,10 @@ impl App {
 
     /// Install platform chrome on a dialog window.
     ///
-    /// Enables proper OS-level hit testing so the close button receives
-    /// cursor events and the caption area supports drag. Routes through
-    /// [`NativeChromeOps`] — no-op on non-Windows platforms.
+    /// The dialog has no visible chrome widget, but we still install
+    /// platform chrome so the DWM shadow is drawn and the top edge acts
+    /// as a drag-to-move caption region. No interactive rects (no close
+    /// button in chrome — Cancel button in the UI handles close).
     fn install_dialog_chrome(&self, winit_id: WindowId) {
         let Some(ctx) = self.dialogs.get(&winit_id) else {
             return;
@@ -427,13 +424,7 @@ impl App {
         let mode = crate::window_manager::platform::ChromeMode::Dialog {
             resizable: ctx.kind.is_resizable(),
         };
-        super::chrome::install_chrome(
-            &ctx.window,
-            mode,
-            ctx.chrome.interactive_rects(),
-            ctx.chrome.caption_height(),
-            scale,
-        );
+        super::chrome::install_chrome(&ctx.window, mode, &[], DIALOG_DRAG_CAPTION_HEIGHT, scale);
     }
 
     /// Update platform hit test rects and chrome metrics after a dialog resize.
@@ -446,8 +437,8 @@ impl App {
         let scale = ctx.scale_factor.factor() as f32;
         super::chrome::refresh_chrome(
             &ctx.window,
-            ctx.chrome.interactive_rects(),
-            ctx.chrome.caption_height(),
+            &[],
+            DIALOG_DRAG_CAPTION_HEIGHT,
             scale,
             ctx.kind.is_resizable(),
         );

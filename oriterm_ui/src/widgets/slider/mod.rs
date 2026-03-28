@@ -120,6 +120,10 @@ pub struct SliderWidget {
     pub(super) animator: VisualStateAnimator,
     /// Position at scrub start, for computing value from `total_delta`.
     pub(super) drag_origin: Option<Point>,
+    /// Bounds snapshot at drag start. During capture, the dispatch system
+    /// may pass stale or fallback bounds from a different widget if the
+    /// mouse leaves the slider. Caching at drag start avoids jumps.
+    pub(super) drag_bounds: Option<Rect>,
 }
 
 impl Default for SliderWidget {
@@ -152,6 +156,7 @@ impl SliderWidget {
             )]),
             style,
             drag_origin: None,
+            drag_bounds: None,
         }
     }
 
@@ -312,6 +317,7 @@ impl std::fmt::Debug for SliderWidget {
             .field("controller_count", &self.controllers.len())
             .field("animator", &self.animator)
             .field("drag_origin", &self.drag_origin)
+            .field("drag_bounds", &self.drag_bounds)
             .finish()
     }
 }

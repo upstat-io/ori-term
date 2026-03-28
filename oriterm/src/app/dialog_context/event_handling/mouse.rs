@@ -2,7 +2,6 @@
 
 use std::time::Instant;
 
-use oriterm_ui::controllers::ControllerRequests;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::input::dispatch::tree::deliver_event_to_tree;
 use oriterm_ui::input::{InputEvent, MouseButton, MouseEvent, MouseEventKind, ScrollDelta};
@@ -65,15 +64,9 @@ impl App {
             return;
         }
 
-        // Chrome and content area.
-        let result = self.route_dialog_click(window_id, kind, button, state);
+        // Content area.
+        let result = self.route_dialog_click(window_id, kind);
         match result {
-            DialogClickResult::Close => self.close_dialog(window_id),
-            DialogClickResult::Drag => {
-                if let Some(ctx) = self.dialogs.get(&window_id) {
-                    let _ = ctx.window.drag_window();
-                }
-            }
             DialogClickResult::Action(action) => {
                 self.handle_dialog_content_action(window_id, action);
             }
@@ -118,76 +111,27 @@ impl App {
         }
     }
 
-    /// Route a click to either chrome or content area.
+    /// Route a click to the dialog content area.
     fn route_dialog_click(
         &mut self,
         window_id: WindowId,
         kind: MouseEventKind,
-        button: winit::event::MouseButton,
-        state: winit::event::ElementState,
     ) -> DialogClickResult {
         let ui_theme = self.ui_theme;
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return DialogClickResult::None;
         };
         let logical_pos = ctx.last_cursor_pos;
-        let chrome_h = ctx.chrome.caption_height();
         let mouse_event = MouseEvent {
             kind,
             pos: logical_pos,
             modifiers: oriterm_ui::input::Modifiers::NONE,
         };
         let now = Instant::now();
-
-        if logical_pos.y < chrome_h {
-            // Chrome area: dispatch to control button controllers.
-            let input_event = InputEvent::from_mouse_event(&mouse_event);
-            let result = ctx.chrome.dispatch_input(&input_event, now);
-
-            // Apply interaction state changes (active/focus) and mark dirty.
-            let changed = {
-                let (interaction, focus) = ctx.root.interaction_and_focus_mut();
-                apply_dispatch_requests(result.requests, result.source, interaction, focus)
-            };
-            ctx.root.mark_widgets_prepaint_dirty(&changed);
-
-            // Redraw when interaction state changed (focus/active) or
-            // controllers requested repaint (TPR-11-010).
-            if !changed.is_empty() || result.requests.contains(ControllerRequests::PAINT) {
-                ctx.request_urgent_redraw();
-            }
-
-            // Map controller actions to dialog results.
-            for action in &result.actions {
-                if let WidgetAction::Clicked(id) = action {
-                    if let Some(window_action) = ctx.chrome.action_for_widget(*id) {
-                        if window_action == WidgetAction::WindowClose {
-                            return DialogClickResult::Close;
-                        }
-                        return DialogClickResult::Action(window_action);
-                    }
-                }
-            }
-
-            // No button clicked — check if we should initiate window drag.
-            if button == winit::event::MouseButton::Left
-                && state == winit::event::ElementState::Pressed
-                && !ctx
-                    .chrome
-                    .interactive_rects()
-                    .iter()
-                    .any(|r| r.contains(logical_pos))
-            {
-                DialogClickResult::Drag
-            } else {
-                DialogClickResult::None
-            }
-        } else {
-            Self::dispatch_dialog_content_click(ctx, &mouse_event, &ui_theme, now)
-        }
+        Self::dispatch_dialog_content_click(ctx, &mouse_event, &ui_theme, now)
     }
 
-    /// Dispatch a click within the dialog content area (below chrome).
+    /// Dispatch a click within the dialog content area.
     fn dispatch_dialog_content_click(
         ctx: &mut DialogWindowContext,
         mouse_event: &MouseEvent,
@@ -195,11 +139,10 @@ impl App {
         now: Instant,
     ) -> DialogClickResult {
         let scale = ctx.scale_factor.factor() as f32;
-        let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+        let content_bounds = Rect::new(0.0, 0.0, w, h);
+        let local_viewport = Rect::new(0.0, 0.0, w, h);
         let Some(layout_node) = compute_content_layout(ctx, scale, ui_theme, local_viewport) else {
             return DialogClickResult::None;
         };
@@ -297,11 +240,10 @@ impl App {
             pos: ctx.last_cursor_pos,
             modifiers: oriterm_ui::input::Modifiers::NONE,
         };
-        let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+        let content_bounds = Rect::new(0.0, 0.0, w, h);
+        let local_viewport = Rect::new(0.0, 0.0, w, h);
         let Some(layout_node) = compute_content_layout(ctx, scale, &ui_theme, local_viewport)
         else {
             return;

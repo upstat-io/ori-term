@@ -317,7 +317,7 @@ impl Widget for SidebarNavWidget {
     }
 
     fn sense(&self) -> Sense {
-        Sense::click()
+        Sense::click().union(Sense::focusable())
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {

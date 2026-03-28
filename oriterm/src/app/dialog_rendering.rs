@@ -1,7 +1,8 @@
 //! Dialog window rendering.
 //!
-//! Draws chrome (title bar) and content (settings form or confirmation
-//! dialog) to the dialog window's GPU surface. Overlay popups (dropdown
+//! Draws content (settings form or confirmation dialog) to the dialog
+//! window's GPU surface. The dialog is fully frameless — content fills
+//! the entire window with no chrome title bar. Overlay popups (dropdown
 //! lists) are drawn on top.
 
 use std::time::Instant;
@@ -79,19 +80,18 @@ impl App {
             ctx.root.mark_dirty();
             ctx.window.request_redraw();
         }
+        // Clear per-frame invalidation so stale dirty marks don't accumulate.
+        ctx.root.invalidation_mut().clear();
     }
 
-    /// Pre-paint mutation + scene composition for chrome and content.
+    /// Pre-paint mutation + scene composition for dialog content.
     ///
     /// Delivers lifecycle events, updates visual state animators, then
-    /// draws chrome and content widgets to the draw list.
+    /// draws content widgets to the draw list. The dialog is fully frameless
+    /// — content fills the entire window with no chrome title bar.
     #[expect(
         clippy::too_many_arguments,
         reason = "extracted helper: ctx, theme, scale, dimensions, gpu"
-    )]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "linear pipeline: phase-gate → prepare → prepaint → paint chrome → paint content"
     )]
     fn compose_dialog_widgets(
         ctx: &mut super::dialog_context::DialogWindowContext,
@@ -102,7 +102,6 @@ impl App {
         gpu: &crate::gpu::state::GpuState,
     ) {
         let renderer = ctx.renderer.as_mut().expect("caller checked renderer");
-        let chrome_h = ctx.chrome.caption_height();
         ctx.scene.clear();
         let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
         let icons = renderer.resolved_icons();
@@ -121,24 +120,20 @@ impl App {
             d
         };
         *ctx.root.frame_requests_mut() = oriterm_ui::animation::FrameRequestFlags::new();
-        log::debug!("dialog phase gating: widget_dirty={widget_dirty:?}");
         if widget_dirty >= DirtyKind::Prepaint {
             {
+                let use_tracker = !ctx.ui_stale;
                 let (interaction, invalidation, flags) =
                     ctx.root.interaction_invalidation_and_frame_requests_mut();
-                prepare_widget_tree(
-                    &mut ctx.chrome,
-                    interaction,
-                    Some(&mut *invalidation),
-                    &lifecycle_events,
-                    None,
-                    Some(flags),
-                    now,
-                );
+                let tracker_content = if use_tracker {
+                    Some(invalidation)
+                } else {
+                    None
+                };
                 prepare_widget_tree(
                     ctx.content.content_widget_mut(),
                     interaction,
-                    Some(invalidation),
+                    tracker_content,
                     &lifecycle_events,
                     None,
                     Some(flags),
@@ -149,25 +144,21 @@ impl App {
             // Compute layout bounds so PrepaintCtx::bounds reflects real
             // screen positions (not Rect::default()).
             let prepaint_bounds = collect_dialog_prepaint_bounds(
-                &ctx.chrome,
                 ctx.content.content_widget(),
                 &measurer,
                 ui_theme,
-                chrome_h,
                 logical_w,
                 logical_h,
             );
             let (interaction, flags) = ctx.root.interaction_and_frame_requests();
-            let invalidation = ctx.root.invalidation();
-            prepaint_widget_tree(
-                &mut ctx.chrome,
-                &prepaint_bounds,
-                Some(interaction),
-                ui_theme,
-                now,
-                Some(flags),
-                Some(invalidation),
-            );
+            // When animating (ui_stale), use full walk (None) so all widgets
+            // get prepaint/tick. The invalidation tracker was cleared after
+            // the previous frame — selective walks would skip everything.
+            let invalidation_tracker = if ctx.ui_stale {
+                None
+            } else {
+                Some(ctx.root.invalidation())
+            };
             prepaint_widget_tree(
                 ctx.content.content_widget_mut(),
                 &prepaint_bounds,
@@ -175,11 +166,11 @@ impl App {
                 ui_theme,
                 now,
                 Some(flags),
-                Some(invalidation),
+                invalidation_tracker,
             );
         }
 
-        // Draw the chrome title bar, then the dialog content below it.
+        // Draw the dialog content filling the full window.
         // Paint directly (not via build_scene, which clears the scene).
         // The scene was already cleared at the top of this function.
         //
@@ -187,23 +178,8 @@ impl App {
         // requests (e.g. toggle slide animation) and is merged back into
         // the root flags afterward.
         let paint_flags = oriterm_ui::animation::FrameRequestFlags::new();
-        let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
-        {
-            let mut draw_ctx = DrawCtx {
-                measurer: &measurer,
-                scene: &mut ctx.scene,
-                bounds: chrome_bounds,
-                now: Instant::now(),
-                theme: ui_theme,
-                icons: Some(icons),
-                interaction: None,
-                widget_id: None,
-                frame_requests: Some(&paint_flags),
-            };
-            ctx.chrome.paint(&mut draw_ctx);
-        }
-
-        let content_bounds = Rect::new(0.0, chrome_h, logical_w, logical_h - chrome_h);
+        let interaction = ctx.root.interaction();
+        let content_bounds = Rect::new(0.0, 0.0, logical_w, logical_h);
         {
             let mut draw_ctx = DrawCtx {
                 measurer: &measurer,
@@ -212,7 +188,7 @@ impl App {
                 now: Instant::now(),
                 theme: ui_theme,
                 icons: Some(icons),
-                interaction: None,
+                interaction: Some(interaction),
                 widget_id: None,
                 frame_requests: Some(&paint_flags),
             };
@@ -258,6 +234,7 @@ impl App {
         }
 
         let overlay_flags = oriterm_ui::animation::FrameRequestFlags::new();
+        let interaction = ctx.root.interaction();
         for i in 0..overlay_count {
             ctx.scene.clear();
             let measurer =
@@ -270,7 +247,7 @@ impl App {
                 now: Instant::now(),
                 theme: ui_theme,
                 icons: Some(icons),
-                interaction: None,
+                interaction: Some(interaction),
                 widget_id: None,
                 frame_requests: Some(&overlay_flags),
             };
@@ -283,33 +260,24 @@ impl App {
     }
 }
 
-/// Collects prepaint layout bounds for dialog chrome and content widgets.
+/// Collects prepaint layout bounds for dialog content widgets.
 ///
-/// Runs the layout solver on chrome and content at their known positions
-/// and collects per-widget bounds into a `HashMap` so that
+/// Runs the layout solver on content at the full window bounds and
+/// collects per-widget bounds into a `HashMap` so that
 /// `PrepaintCtx::bounds` reflects real screen positions.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "prepaint bounds: chrome, content, measurer, theme, chrome_h, dimensions"
-)]
 fn collect_dialog_prepaint_bounds(
-    chrome: &dyn Widget,
     content: &dyn Widget,
     measurer: &dyn oriterm_ui::widgets::TextMeasurer,
     ui_theme: &oriterm_ui::theme::UiTheme,
-    chrome_h: f32,
     logical_w: f32,
     logical_h: f32,
 ) -> std::collections::HashMap<oriterm_ui::widget_id::WidgetId, Rect> {
-    let chrome_bounds = Rect::new(0.0, 0.0, logical_w, chrome_h);
-    let content_bounds = Rect::new(0.0, chrome_h, logical_w, logical_h - chrome_h);
+    let content_bounds = Rect::new(0.0, 0.0, logical_w, logical_h);
     let layout_ctx = LayoutCtx {
         measurer,
         theme: ui_theme,
     };
     let mut bounds = std::collections::HashMap::new();
-    let chrome_layout = compute_layout(&chrome.layout(&layout_ctx), chrome_bounds);
-    collect_layout_bounds(&chrome_layout, &mut bounds);
     let content_layout = compute_layout(&content.layout(&layout_ctx), content_bounds);
     collect_layout_bounds(&content_layout, &mut bounds);
     bounds

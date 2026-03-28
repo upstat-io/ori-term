@@ -140,14 +140,20 @@ impl Widget for SliderWidget {
     }
 
     fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
-        let tb = self.track_bounds(bounds);
         match action {
             WidgetAction::DragStart { pos, .. } => {
+                // Cache bounds at drag start. During capture the dispatch
+                // system may pass fallback bounds from a different widget
+                // if the mouse leaves the slider.
                 self.drag_origin = Some(pos);
+                self.drag_bounds = Some(bounds);
+                let tb = self.track_bounds(bounds);
                 self.set_value_action(self.value_from_x(pos.x, tb))
             }
             WidgetAction::DragUpdate { total_delta, .. } => {
                 if let Some(origin) = self.drag_origin {
+                    let cached = self.drag_bounds.unwrap_or(bounds);
+                    let tb = self.track_bounds(cached);
                     let x = origin.x + total_delta.x;
                     self.set_value_action(self.value_from_x(x, tb))
                 } else {
@@ -156,6 +162,7 @@ impl Widget for SliderWidget {
             }
             WidgetAction::DragEnd { .. } => {
                 self.drag_origin = None;
+                self.drag_bounds = None;
                 None
             }
             other => Some(other),

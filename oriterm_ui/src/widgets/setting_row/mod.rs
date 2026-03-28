@@ -325,15 +325,16 @@ impl Widget for SettingRowWidget {
 
         // Draw control (second child of the row).
         if let Some(control_node) = layout.children.get(1) {
+            let child_id = self.control.id();
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
                 scene: ctx.scene,
-                bounds: control_node.content_rect,
+                bounds: control_node.rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                interaction: None,
-                widget_id: None,
+                interaction: ctx.interaction,
+                widget_id: Some(child_id),
                 frame_requests: ctx.frame_requests,
             };
             self.control.paint(&mut child_ctx);

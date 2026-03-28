@@ -105,8 +105,8 @@ impl Widget for PageContainerWidget {
             now: ctx.now,
             theme: ctx.theme,
             icons: ctx.icons,
-            interaction: None,
-            widget_id: None,
+            interaction: ctx.interaction,
+            widget_id: Some(page.id()),
             frame_requests: ctx.frame_requests,
         };
         page.paint(&mut child_ctx);

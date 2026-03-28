@@ -30,11 +30,10 @@ impl App {
         let ctx = self.dialogs.get_mut(&window_id)?;
         let scale = ctx.scale_factor.factor() as f32;
 
-        let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let local_viewport = Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+        let content_bounds = Rect::new(0.0, 0.0, w, h);
+        let local_viewport = Rect::new(0.0, 0.0, w, h);
 
         // Reuse cached layout if viewport matches (avoids full tree rebuild
         // on every keystroke — the parent map and focus order are already

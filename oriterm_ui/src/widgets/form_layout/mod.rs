@@ -169,12 +169,12 @@ impl Widget for FormLayout {
                 let mut child_ctx = DrawCtx {
                     measurer: ctx.measurer,
                     scene: ctx.scene,
-                    bounds: section_node.content_rect,
+                    bounds: section_node.rect,
                     now: ctx.now,
                     theme: ctx.theme,
                     icons: ctx.icons,
-                    interaction: None,
-                    widget_id: None,
+                    interaction: ctx.interaction,
+                    widget_id: Some(section.id()),
                     frame_requests: ctx.frame_requests,
                 };
                 section.paint(&mut child_ctx);

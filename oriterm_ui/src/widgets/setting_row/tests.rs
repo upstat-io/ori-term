@@ -326,3 +326,54 @@ fn setting_row_with_tags_min_height() {
         MIN_HEIGHT
     );
 }
+
+// -- Hover lifecycle (harness) --
+
+#[test]
+fn hover_clears_when_mouse_leaves() {
+    use crate::color::Color;
+    use crate::geometry::Point;
+    use crate::testing::WidgetTestHarness;
+
+    let row = make_row();
+    let row_id = row.id();
+    let mut h = WidgetTestHarness::new(row);
+
+    // Move mouse into the row center.
+    h.mouse_move_to(row_id);
+    assert!(h.is_hot(row_id), "row should be hot after mouse_move_to");
+
+    // Render with hover — should have a hover bg quad.
+    let scene_hover = h.render();
+    let has_hover_bg = scene_hover.quads().iter().any(|q| {
+        q.style
+            .fill
+            .is_some_and(|c| c.a > 0.01 && c != Color::TRANSPARENT)
+    });
+    assert!(has_hover_bg, "hover bg quad should be visible");
+
+    // Move mouse away from the row (off-screen).
+    h.mouse_move(Point::new(-100.0, -100.0));
+    assert!(
+        !h.is_hot(row_id),
+        "row should not be hot after mouse leaves"
+    );
+
+    // Advance several frames so the animation completes.
+    for _ in 0..20 {
+        h.advance_time(std::time::Duration::from_millis(16));
+        h.render();
+    }
+
+    // After animation completes, hover bg should be fully transparent.
+    let scene_normal = h.render();
+    let has_visible_bg = scene_normal.quads().iter().any(|q| {
+        q.style
+            .fill
+            .is_some_and(|c| c.a > 0.01 && c != Color::TRANSPARENT)
+    });
+    assert!(
+        !has_visible_bg,
+        "hover bg should be transparent after mouse leaves and animation completes"
+    );
+}

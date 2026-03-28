@@ -35,8 +35,7 @@ pub const FOOTER_HEIGHT: f32 = 52.0;
 /// Settings footer with unsaved indicator + Reset/Cancel/Save buttons.
 ///
 /// Laid out as a horizontal row with explicit margin spacers (no `LayoutBox`
-/// padding — parent passes `content_rect`, and padding on the `LayoutBox`
-/// would be applied twice during the footer's internal layout recomputation).
+/// padding — uses spacers for margins instead).
 ///
 /// `[28px | indicator | fill | reset | 8px | cancel | 8px | save | 28px]`
 ///
@@ -238,12 +237,7 @@ impl Widget for SettingsFooterWidget {
             self.save_button.layout(ctx),
             self.margin_right.layout(ctx),
         ];
-        // No LayoutBox padding. The parent (ContainerWidget) passes
-        // `content_rect` as our paint bounds, and `get_or_compute_layout`
-        // uses those bounds as the viewport. LayoutBox padding would be
-        // applied by the solver during the parent's layout AND again during
-        // our internal recomputation, causing double-subtraction.
-        //
+        // No LayoutBox padding — uses spacer children for horizontal margins.
         // Horizontal margins use explicit SpacerWidget children (28px each).
         // Vertical centering is handled by Align::Center — buttons (~28px)
         // centered in the 52px row yield ~12px top/bottom margins.
@@ -266,7 +260,7 @@ impl Widget for SettingsFooterWidget {
         for (idx, child) in children.iter().enumerate() {
             if let Some(child_node) = layout.children.get(idx) {
                 let child_id = child.id();
-                let bounds = child_node.content_rect;
+                let bounds = child_node.rect;
                 let mut child_ctx = ctx.for_child(child_id, bounds);
                 child.paint(&mut child_ctx);
             }

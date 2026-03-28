@@ -163,23 +163,19 @@ fn section_header_bottom_spacing_12() {
 // -- Description tests --
 
 #[test]
-fn section_description_gap_4_then_12() {
+fn section_description_gap_tight_then_12() {
     let header = build_section_header_with_description("Test", "A description", &TEST_THEME);
     let node = layout_widget(&*header);
 
-    // Column: title_row, spacer(4), desc_label, spacer(12).
+    // Column: title_row, desc_label, spacer(12).
+    // Description immediately follows title (no gap) — mockup uses
+    // `margin-top: -8px` to pull description tight against title.
     assert!(
-        node.children.len() >= 4,
-        "should have 4 children, got {}",
+        node.children.len() >= 3,
+        "should have 3 children, got {}",
         node.children.len()
     );
-    let spacer_4 = &node.children[1];
-    let spacer_12 = &node.children[3];
-    assert!(
-        (spacer_4.rect.height() - 4.0).abs() < 0.1,
-        "title-desc spacer should be 4px, got {}",
-        spacer_4.rect.height()
-    );
+    let spacer_12 = &node.children[2];
     assert!(
         (spacer_12.rect.height() - 12.0).abs() < 0.1,
         "desc-rows spacer should be 12px, got {}",

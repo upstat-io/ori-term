@@ -318,7 +318,7 @@ fn number_input_arrow_keys_adjust_value() {
 // -- Cursor icon --
 
 #[test]
-fn layout_cursor_icon_default() {
+fn layout_cursor_icon_pointer() {
     let w = make_input(0.0, 0.0, 100.0, 1.0);
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
@@ -327,7 +327,7 @@ fn layout_cursor_icon_default() {
     let layout = w.layout(&ctx);
     assert_eq!(
         layout.cursor_icon,
-        CursorIcon::Default,
-        "number input should declare Default cursor"
+        CursorIcon::Pointer,
+        "number input should declare Pointer cursor for stepper buttons"
     );
 }
