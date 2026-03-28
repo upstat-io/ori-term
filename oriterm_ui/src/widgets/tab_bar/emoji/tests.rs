@@ -1,4 +1,4 @@
-//! Tests for tab icon extraction.
+//! Tests for emoji icon extraction.
 
 use super::*;
 use crate::widgets::tab_bar::widget::TabIcon;
@@ -51,33 +51,13 @@ fn digit_prefix_returns_none() {
 }
 
 #[test]
-fn alpha_prefix_returns_none() {
-    assert_eq!(extract_emoji_icon("claude"), None);
+fn symbol_prefix_returns_none() {
+    assert_eq!(extract_emoji_icon("#channel"), None);
 }
 
 #[test]
-fn whitespace_prefix_returns_none() {
-    assert_eq!(extract_emoji_icon(" hello"), None);
-}
-
-#[test]
-fn braille_spinner_extracted() {
-    assert_eq!(
-        extract_emoji_icon("⠂ Claude Code"),
-        Some(TabIcon::Emoji("⠂".to_owned()))
-    );
-}
-
-#[test]
-fn braille_dot_extracted() {
-    assert_eq!(
-        extract_emoji_icon("⠐ working"),
-        Some(TabIcon::Emoji("⠐".to_owned()))
-    );
-}
-
-#[test]
-fn star_symbol_extracted() {
+fn eight_spoked_asterisk_is_emoji() {
+    // U+2733 has Emoji_Presentation — it's a valid emoji icon.
     assert_eq!(
         extract_emoji_icon("✳ Claude Code"),
         Some(TabIcon::Emoji("✳".to_owned()))
@@ -85,25 +65,19 @@ fn star_symbol_extracted() {
 }
 
 #[test]
-fn hash_symbol_extracted() {
-    // Non-alphanumeric symbols are valid icons.
-    assert_eq!(
-        extract_emoji_icon("#channel"),
-        Some(TabIcon::Emoji("#".to_owned()))
-    );
+fn braille_returns_none() {
+    assert_eq!(extract_emoji_icon("⠂ Claude Code"), None);
+    assert_eq!(extract_emoji_icon("⠐ working"), None);
+}
+
+#[test]
+fn ascii_punctuation_returns_none() {
+    assert_eq!(extract_emoji_icon("..c/Users"), None);
+    assert_eq!(extract_emoji_icon("/home/user"), None);
+    assert_eq!(extract_emoji_icon("-flag"), None);
 }
 
 #[test]
 fn path_prefix_returns_none() {
-    // Paths starting with letters return None.
     assert_eq!(extract_emoji_icon("orc"), None);
-}
-
-#[test]
-fn dot_prefix_extracted() {
-    // Dots are not alphanumeric — extracted as icon.
-    assert_eq!(
-        extract_emoji_icon("..c/Users"),
-        Some(TabIcon::Emoji(".".to_owned()))
-    );
 }
