@@ -75,7 +75,8 @@ impl App {
             | WidgetAction::WindowMaximize
             | WidgetAction::WindowClose
             | WidgetAction::SettingsUnsaved(_)
-            | WidgetAction::PageDirty { .. } => {}
+            | WidgetAction::PageDirty { .. }
+            | WidgetAction::TabTitleChanged { .. } => {}
         }
     }
 

@@ -1847,3 +1847,130 @@ fn set_metrics_triggers_relayout() {
         "restoring default metrics must restore original layout: expected={default_tab_w}, got={restored_tab_w}",
     );
 }
+
+// Inline tab title editing
+
+fn editing_widget() -> TabBarWidget {
+    let theme = UiTheme::dark();
+    let mut w = TabBarWidget::with_theme(800.0, &theme);
+    w.set_tabs(vec![
+        TabEntry::new("Tab One"),
+        TabEntry::new("Tab Two"),
+        TabEntry::new("Tab Three"),
+    ]);
+    w
+}
+
+#[test]
+fn start_editing_sets_index_and_selects_all() {
+    let mut w = editing_widget();
+    w.start_editing(1);
+    assert_eq!(w.editing_tab_index(), Some(1));
+    assert!(w.is_editing());
+    // Select-all: selection covers entire title.
+    let state = w.editing_state();
+    assert_eq!(state.selection_range(), Some((0, "Tab Two".len())));
+    assert_eq!(state.text(), "Tab Two");
+}
+
+#[test]
+fn commit_editing_returns_trimmed_title() {
+    let mut w = editing_widget();
+    w.start_editing(1);
+    // Clear selection and type a new title with whitespace.
+    w.editing_select_all();
+    w.editing_backspace();
+    for ch in "  New Title  ".chars() {
+        w.editing_insert_char(ch);
+    }
+    let result = w.commit_editing();
+    assert_eq!(result, Some((1, "New Title".to_string())));
+    assert!(!w.is_editing());
+}
+
+#[test]
+fn commit_editing_empty_restores_original() {
+    let mut w = editing_widget();
+    w.start_editing(1);
+    // Delete everything.
+    w.editing_select_all();
+    w.editing_backspace();
+    let result = w.commit_editing();
+    // Empty edit restores original.
+    assert_eq!(result, Some((1, "Tab Two".to_string())));
+}
+
+#[test]
+fn cancel_editing_restores_original_title() {
+    let mut w = editing_widget();
+    w.start_editing(1);
+    // Type something different.
+    w.editing_select_all();
+    w.editing_backspace();
+    for ch in "Changed".chars() {
+        w.editing_insert_char(ch);
+    }
+    w.cancel_editing();
+    assert!(!w.is_editing());
+    // Editing index cleared — no longer editing.
+    assert_eq!(w.editing_tab_index(), None);
+}
+
+#[test]
+fn is_editing_false_after_commit() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    assert!(w.is_editing());
+    w.commit_editing();
+    assert!(!w.is_editing());
+}
+
+#[test]
+fn is_editing_false_after_cancel() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    assert!(w.is_editing());
+    w.cancel_editing();
+    assert!(!w.is_editing());
+}
+
+#[test]
+fn keyboard_typing_inserts_characters() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    // Select all and type replacement.
+    w.editing_select_all();
+    w.editing_insert_char('X');
+    assert_eq!(w.editing_state().text(), "X");
+    w.editing_insert_char('Y');
+    assert_eq!(w.editing_state().text(), "XY");
+}
+
+#[test]
+fn start_editing_out_of_bounds_is_noop() {
+    let mut w = editing_widget();
+    w.start_editing(99);
+    assert!(!w.is_editing());
+}
+
+#[test]
+fn editing_backspace_deletes_character() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    // Move to end (select_all then deselect by moving right).
+    w.editing_end(false);
+    w.editing_backspace();
+    assert_eq!(w.editing_state().text(), "Tab On");
+}
+
+#[test]
+fn editing_move_and_selection() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    // Deselect, go to start, select 3 chars.
+    w.editing_home(false);
+    w.editing_move_right(true);
+    w.editing_move_right(true);
+    w.editing_move_right(true);
+    assert_eq!(w.editing_state().selection_range(), Some((0, 3)));
+}

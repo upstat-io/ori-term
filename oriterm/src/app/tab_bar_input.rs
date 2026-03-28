@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::{Key, NamedKey};
 
 #[cfg(not(target_os = "macos"))]
 use oriterm_ui::geometry::Point;
@@ -80,12 +81,22 @@ impl App {
             .focused_ctx()
             .map_or(TabBarHit::None, |ctx| ctx.tab_bar.hover_hit());
 
+        // If editing a tab and clicking elsewhere, commit the edit first.
+        let editing_idx = self
+            .focused_ctx()
+            .and_then(|ctx| ctx.tab_bar.editing_tab_index());
+        if let Some(eidx) = editing_idx {
+            let click_on_editing_tab = matches!(hit, TabBarHit::Tab(i) if i == eidx);
+            if !click_on_editing_tab {
+                self.commit_tab_edit();
+            }
+        }
+
         match hit {
             TabBarHit::None => false,
 
             TabBarHit::Tab(idx) => {
-                self.switch_to_tab_index(idx);
-                self.try_start_tab_drag(idx);
+                self.handle_tab_click(idx);
                 true
             }
 
@@ -240,6 +251,164 @@ impl App {
                 Some(a)
             }
         })
+    }
+
+    /// Handle a left-click on a tab body.
+    ///
+    /// Double-click starts inline title editing; single click switches tab
+    /// and initiates drag. If editing a different tab, commits that edit first.
+    fn handle_tab_click(&mut self, idx: usize) {
+        let now = Instant::now();
+
+        // Check for double-click on the same tab.
+        let is_double = self
+            .focused_ctx()
+            .and_then(|ctx| ctx.last_tab_press)
+            .is_some_and(|(prev_idx, t)| {
+                prev_idx == idx && now.duration_since(t) < DOUBLE_CLICK_THRESHOLD
+            });
+
+        // Update timestamp.
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.last_tab_press = Some((idx, now));
+        }
+
+        if is_double {
+            // Double-click: start inline editing. Reset timestamp to prevent
+            // a third click from re-triggering.
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.last_tab_press = None;
+                ctx.tab_bar.start_editing(idx);
+                ctx.root.mark_dirty();
+                ctx.ui_stale = true;
+            }
+        } else {
+            // Single click: switch tab and start drag.
+            self.switch_to_tab_index(idx);
+            self.try_start_tab_drag(idx);
+        }
+    }
+
+    /// Commit an active tab title edit.
+    ///
+    /// The new title is already applied to the `TabEntry` by
+    /// `TabBarWidget::commit_editing()`. We just need to mark dirty
+    /// so the tab bar repaints with the updated title.
+    pub(super) fn commit_tab_edit(&mut self) {
+        let committed = self
+            .focused_ctx_mut()
+            .and_then(|ctx| ctx.tab_bar.commit_editing());
+        if committed.is_some() {
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.root.mark_dirty();
+                ctx.ui_stale = true;
+            }
+        }
+    }
+
+    /// Cancel an active tab title edit.
+    pub(super) fn cancel_tab_edit(&mut self) {
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.tab_bar.cancel_editing();
+            ctx.root.mark_dirty();
+            ctx.ui_stale = true;
+        }
+    }
+
+    /// Handle keyboard input during tab title inline editing.
+    ///
+    /// Returns `true` if the event was consumed (editing is active and
+    /// the key was handled). Called before overlay/search/PTY dispatch.
+    pub(super) fn handle_tab_editing_key(&mut self, event: &winit::event::KeyEvent) -> bool {
+        let is_editing = self
+            .focused_ctx()
+            .is_some_and(|ctx| ctx.tab_bar.is_editing());
+        if !is_editing || event.state != ElementState::Pressed {
+            return false;
+        }
+
+        let shift = self.modifiers.shift_key();
+        let ctrl = self.modifiers.control_key();
+
+        match &event.logical_key {
+            Key::Named(NamedKey::Enter | NamedKey::Tab) => {
+                self.commit_tab_edit();
+                true
+            }
+            Key::Named(NamedKey::Escape) => {
+                self.cancel_tab_edit();
+                true
+            }
+            Key::Named(NamedKey::Backspace) => {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.tab_bar.editing_backspace();
+                    ctx.root.mark_dirty();
+                    ctx.ui_stale = true;
+                }
+                true
+            }
+            Key::Named(NamedKey::Delete) => {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.tab_bar.editing_delete();
+                    ctx.root.mark_dirty();
+                    ctx.ui_stale = true;
+                }
+                true
+            }
+            Key::Named(NamedKey::ArrowLeft) => {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.tab_bar.editing_move_left(shift);
+                    ctx.root.mark_dirty();
+                    ctx.ui_stale = true;
+                }
+                true
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.tab_bar.editing_move_right(shift);
+                    ctx.root.mark_dirty();
+                    ctx.ui_stale = true;
+                }
+                true
+            }
+            Key::Named(NamedKey::Home) => {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.tab_bar.editing_home(shift);
+                    ctx.root.mark_dirty();
+                    ctx.ui_stale = true;
+                }
+                true
+            }
+            Key::Named(NamedKey::End) => {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.tab_bar.editing_end(shift);
+                    ctx.root.mark_dirty();
+                    ctx.ui_stale = true;
+                }
+                true
+            }
+            Key::Character(ch) if ctrl && ch.as_str() == "a" => {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.tab_bar.editing_select_all();
+                    ctx.root.mark_dirty();
+                    ctx.ui_stale = true;
+                }
+                true
+            }
+            Key::Character(ch) => {
+                for c in ch.chars() {
+                    if !c.is_control() {
+                        if let Some(ctx) = self.focused_ctx_mut() {
+                            ctx.tab_bar.editing_insert_char(c);
+                            ctx.root.mark_dirty();
+                            ctx.ui_stale = true;
+                        }
+                    }
+                }
+                true
+            }
+            _ => true, // Consume all other keys during editing.
+        }
     }
 
     /// Handle a click in the tab bar drag area.

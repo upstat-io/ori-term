@@ -66,6 +66,8 @@ pub(crate) struct WindowContext {
     pub(super) hovered_url: Option<DetectedUrl>,
     pub(super) url_cache: UrlDetectCache,
     pub(super) last_drag_area_press: Option<Instant>,
+    /// Last tab body press: (tab index, timestamp) for double-click detection.
+    pub(super) last_tab_press: Option<(usize, Instant)>,
 
     // Text shaping cache (persists across frames for cached UI text measurer).
     pub(super) text_cache: TextShapeCache,
@@ -126,6 +128,7 @@ impl WindowContext {
             hovered_url: None,
             url_cache: UrlDetectCache::default(),
             last_drag_area_press: None,
+            last_tab_press: None,
             text_cache: TextShapeCache::new(),
             search_bar_buf: String::new(),
             render_strategy: RenderStrategy::TerminalCached,

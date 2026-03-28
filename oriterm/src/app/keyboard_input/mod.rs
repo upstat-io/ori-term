@@ -60,6 +60,11 @@ impl App {
             return;
         }
 
+        // Tab title inline editing: intercept keys before overlays/PTY.
+        if self.handle_tab_editing_key(event) {
+            return;
+        }
+
         // Modal overlay: intercept keyboard events before anything else.
         // Only check active overlays — dismissing (fading-out) overlays are
         // visual-only and must not intercept keyboard input.

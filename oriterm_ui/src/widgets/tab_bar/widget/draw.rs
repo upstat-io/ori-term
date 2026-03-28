@@ -104,7 +104,11 @@ impl TabBarWidget {
 
         // Only draw content when somewhat visible.
         if content_opacity > 0.01 {
-            self.draw_tab_label(ctx, tab, x, strip);
+            if self.editing_index == Some(index) {
+                self.draw_tab_editor(ctx, x, strip);
+            } else {
+                self.draw_tab_label(ctx, tab, x, strip);
+            }
 
             // Close button: always visible on active, animated fade on inactive.
             if strip.active {
