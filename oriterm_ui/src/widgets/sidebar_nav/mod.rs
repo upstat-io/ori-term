@@ -24,7 +24,10 @@ use crate::widget_id::WidgetId;
 use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Fixed width of the sidebar (logical pixels).
-pub(crate) const SIDEBAR_WIDTH: f32 = 200.0;
+///
+/// Public so the dialog window can exclude the sidebar from the caption
+/// drag area (the search field and nav items must remain clickable).
+pub const SIDEBAR_WIDTH: f32 = 200.0;
 
 /// A navigation section title (e.g. "General", "Advanced").
 #[derive(Debug, Clone)]

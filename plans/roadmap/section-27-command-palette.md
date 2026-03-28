@@ -3,6 +3,9 @@ section: 27
 title: Command Palette & Quick Terminal
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 7
 goal: Searchable command palette, global hotkey drop-down terminal, notifications, progress, inspector
 sections:
@@ -20,6 +23,9 @@ sections:
     status: not-started
   - id: "27.5"
     title: Terminal Inspector
+    status: not-started
+  - id: "27.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "27.6"
     title: Section Completion
@@ -275,6 +281,14 @@ Real-time debugging overlay for terminal developers. Only Ghostty has this -- it
 
 ---
 
+## 27.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 27.6 Section Completion
 
 - [ ] All 27.1-27.5 items complete
@@ -286,5 +300,7 @@ Real-time debugging overlay for terminal developers. Only Ghostty has this -- it
 - [ ] Progress bars show in tab labels for OSC 9;4
 - [ ] Terminal inspector shows input/output/state/timing
 - [ ] All features can be disabled via config
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Power users can discover actions via palette, summon a terminal instantly with a hotkey, and debug terminal sequences with the inspector.

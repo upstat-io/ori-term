@@ -33,4 +33,4 @@ Track and fix all discovered bugs across the ori_term codebase. This is a living
 |----|-------|------|------|
 | 01 | UI Widgets | `section-01-ui-widgets.md` | 13 |
 | 02 | Settings Dialog | `section-02-settings-dialog.md` | 8 |
-| 03 | UI Framework | `section-03-ui-framework.md` | 1 |
+| 03 | UI Framework | `section-03-ui-framework.md` | 2 |

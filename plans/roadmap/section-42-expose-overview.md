@@ -3,6 +3,9 @@ section: 42
 title: "Expose / Overview Mode"
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: "macOS Mission Control-style Expose mode: a live GPU-rendered thumbnail grid of ALL panes across ALL windows, tabs, and panes. Full-frame modal state with keyboard/mouse navigation, type-to-filter, and instant pane switching."
 sections:
@@ -20,6 +23,9 @@ sections:
     status: not-started
   - id: "42.5"
     title: "Filter & Search"
+    status: not-started
+  - id: "42.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "42.6"
     title: Section Completion
@@ -293,6 +299,14 @@ Type-to-filter for narrowing the thumbnail grid by pane title or CWD.
 
 ---
 
+## 42.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 42.6 Section Completion
 
 - [ ] All 42.1–42.5 items complete
@@ -312,5 +326,7 @@ Type-to-filter for narrowing the thumbnail grid by pane title or CWD.
 - Entry latency: < 100ms (burst-render all thumbnails)
 - Per-frame render: < 4ms (draw N textured quads + labels)
 - Filter keystroke to layout update: < 2ms
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Users press `Ctrl+Shift+Space`, see a live thumbnail grid of every pane in every window and tab, navigate with arrows/mouse/hints, type to filter by title or CWD, and press Enter to jump directly to any pane. The feature provides instant spatial awareness across the entire multiplexed session — something no other terminal emulator offers.

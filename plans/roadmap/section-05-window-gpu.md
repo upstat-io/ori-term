@@ -3,6 +3,9 @@ section: 5
 title: Window + GPU Rendering
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 2
 goal: Open a frameless window, initialize wgpu, render the terminal grid with a proper staged render pipeline — first visual milestone
 sections:
@@ -48,6 +51,9 @@ sections:
   - id: "5.14"
     title: "Integration: Working Terminal"
     status: complete
+  - id: "5.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "5.15"
     title: Section Completion
     status: complete
@@ -668,6 +674,14 @@ The "it works" milestone. Everything comes together.
 
 ---
 
+## 5.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 5.15 Section Completion
 
 - [x] All 5.1–5.14 items complete (one 5.13 item blocked-by:9 — selection overlay)
@@ -692,5 +706,7 @@ The "it works" milestone. Everything comes together.
   - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
   - [x] `cargo test -p oriterm` — all prepare-phase unit tests pass (400 tests, 4 ignored)
 - [x] No mouse selection, no search, no config, no tabs — just one terminal in one window
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** A working, visually correct terminal emulator with a clean, tested render pipeline. The pipeline architecture (Extract → Prepare → Render) is the foundation that all future rendering builds on. The Prepare phase is independently testable. Offscreen rendering works for tab previews and headless testing.

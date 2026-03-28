@@ -3,6 +3,9 @@ section: 38
 title: Terminal Protocol Extensions
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: Capability reporting, query/response sequences, extended SGR, window manipulation, DCS passthrough — the modern terminal protocol surface that applications rely on for progressive enhancement
 sections:
@@ -35,6 +38,9 @@ sections:
     status: not-started
   - id: "38.10"
     title: DCS Passthrough
+    status: not-started
+  - id: "38.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "38.11"
     title: Section Completion
@@ -473,6 +479,14 @@ Support DCS passthrough for applications running inside nested terminals or mult
 
 ---
 
+## 38.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 38.11 Section Completion
 
 - [ ] All 38.1-38.10 items complete
@@ -490,5 +504,7 @@ Support DCS passthrough for applications running inside nested terminals or mult
 - [ ] DCS passthrough works for tmux running inside ori_term
 - [ ] `cargo test` — all protocol extension tests pass
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** ori_term is a fully discoverable terminal. Applications can query capabilities via DA, DECRQM, XTGETTCAP, and color queries and receive correct answers. Extended SGR attributes (underline styles, underline color, overline) are stored and rendered. The terminal responds correctly to all standard query/report sequences. Modern CLI tools (fish, starship, helix, delta, bat, nushell) auto-detect ori_term's capabilities without relying on `$TERM` heuristics.

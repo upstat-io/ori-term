@@ -3,6 +3,9 @@ section: 5B
 title: Startup Performance
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 2
 blocks: [6]
 goal: Zero perceptible startup delay — window appears instantly, shell prompt is ready before the user can react
@@ -16,6 +19,9 @@ sections:
   - id: "5B.3"
     title: Deferred ASCII Pre-Cache
     status: complete
+  - id: "5B.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "5B.4"
     title: Startup Profiling and Validation
     status: complete
@@ -153,6 +159,14 @@ Add timing instrumentation to validate the optimizations and prevent regression.
 
 ---
 
+## 5B.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## Exit Criteria
 
 - [x] All 5B.1–5B.4 items complete
@@ -163,3 +177,4 @@ Add timing instrumentation to validate the optimizations and prevent regression.
 - [x] All existing tests pass (`./test-all.sh`)
 - [x] All clippy checks pass (`./clippy-all.sh`)
 - [x] Binary launches noticeably faster than before this section — from 5.2s → 617ms (8.4× improvement)
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

@@ -19,14 +19,14 @@ use super::App;
 use super::dialog_context::{DialogContent, DialogWindowContext};
 use super::settings_overlay::form_builder;
 
-/// Caption height for the drag region at the top of the dialog window.
+/// Caption height for the drag region at the top of the settings dialog.
 ///
-/// The dialog has no visible chrome, but the platform chrome installer
-/// needs a non-zero caption height so the top edge of the window can be
-/// Drag region at the very top edge of the dialog. Set to 0 so clicks in
-/// the sidebar search field (y ≈ 16..44) aren't intercepted by the OS as
-/// window drags. The dialog can still be moved via Alt+drag on Windows.
-const DIALOG_DRAG_CAPTION_HEIGHT: f32 = 0.0;
+/// The top `DIALOG_DRAG_CAPTION_HEIGHT` pixels of the dialog window are
+/// treated as the draggable caption area by the platform chrome (Windows
+/// `WM_NCHITTEST`). The sidebar region is excluded via an interactive rect
+/// so clicks on the search field and nav items are not intercepted as drags.
+/// The remaining area (content header) becomes the drag zone.
+pub(super) const DIALOG_DRAG_CAPTION_HEIGHT: f32 = 48.0;
 
 use crate::event::ConfirmationRequest;
 use crate::gpu::state::GpuState;
@@ -412,10 +412,9 @@ impl App {
 
     /// Install platform chrome on a dialog window.
     ///
-    /// The dialog has no visible chrome widget, but we still install
-    /// platform chrome so the DWM shadow is drawn and the top edge acts
-    /// as a drag-to-move caption region. No interactive rects (no close
-    /// button in chrome — Cancel button in the UI handles close).
+    /// Installs platform chrome so the DWM shadow is drawn and the top
+    /// content area acts as a drag-to-move caption region. The sidebar is
+    /// excluded via an interactive rect so search and nav clicks work.
     fn install_dialog_chrome(&self, winit_id: WindowId) {
         let Some(ctx) = self.dialogs.get(&winit_id) else {
             return;
@@ -424,7 +423,8 @@ impl App {
         let mode = crate::window_manager::platform::ChromeMode::Dialog {
             resizable: ctx.kind.is_resizable(),
         };
-        super::chrome::install_chrome(&ctx.window, mode, &[], DIALOG_DRAG_CAPTION_HEIGHT, scale);
+        let rects = dialog_interactive_rects();
+        super::chrome::install_chrome(&ctx.window, mode, &rects, DIALOG_DRAG_CAPTION_HEIGHT, scale);
     }
 
     /// Update platform hit test rects and chrome metrics after a dialog resize.
@@ -435,12 +435,31 @@ impl App {
             return;
         };
         let scale = ctx.scale_factor.factor() as f32;
+        let rects = dialog_interactive_rects();
         super::chrome::refresh_chrome(
             &ctx.window,
-            &[],
+            &rects,
             DIALOG_DRAG_CAPTION_HEIGHT,
             scale,
             ctx.kind.is_resizable(),
         );
     }
+}
+
+/// Sidebar exclusion rect for the dialog caption area.
+///
+/// The sidebar (search field, nav items) occupies the left 200px of the
+/// dialog. Within the caption height, this region must be marked as
+/// "interactive" (client area) so the OS doesn't intercept clicks as
+/// window drags. The content area to the right of the sidebar remains
+/// caption (draggable).
+fn dialog_interactive_rects() -> Vec<oriterm_ui::geometry::Rect> {
+    use oriterm_ui::widgets::sidebar_nav::SIDEBAR_WIDTH;
+
+    vec![oriterm_ui::geometry::Rect::new(
+        0.0,
+        0.0,
+        SIDEBAR_WIDTH,
+        DIALOG_DRAG_CAPTION_HEIGHT,
+    )]
 }

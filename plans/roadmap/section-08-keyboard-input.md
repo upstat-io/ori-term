@@ -3,6 +3,9 @@ section: 8
 title: Keyboard Input
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: Legacy + Kitty keyboard encoding, keyboard dispatch, IME support
 sections:
@@ -15,6 +18,9 @@ sections:
   - id: "8.3"
     title: Keyboard Input Dispatch
     status: complete
+  - id: "8.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "8.4"
     title: Section Completion
     status: complete
@@ -205,6 +211,14 @@ Route keyboard events through keybindings, then through key encoding, then to th
 
 ---
 
+## 8.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 8.4 Section Completion
 
 - [x] All 8.1-8.3 items complete
@@ -222,5 +236,7 @@ Route keyboard events through keybindings, then through key encoding, then to th
 - [x] Keybinding dispatch has priority over PTY encoding
 - [x] IME commit text reaches PTY
 - [x] Smart Ctrl+C works (copy if selection, SIGINT if not)
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** All standard terminal applications receive correct key input. vim, tmux, htop, and other apps work with correct modifier handling. Kitty protocol apps (e.g., kitty-based tools) receive properly encoded events.

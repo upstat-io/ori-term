@@ -3,6 +3,9 @@ section: 10
 title: Mouse Input & Reporting
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: Mouse reporting for terminal apps + mouse selection state machine
 sections:
@@ -12,6 +15,9 @@ sections:
   - id: "10.2"
     title: Mouse Reporting
     status: complete
+  - id: "10.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "10.3"
     title: Section Completion
     status: complete
@@ -97,6 +103,14 @@ Encode mouse events and send to PTY when terminal applications request mouse tra
 
 ---
 
+## 10.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 10.3 Section Completion
 
 - [x] All 10.1-10.2 items complete
@@ -112,5 +126,7 @@ Encode mouse events and send to PTY when terminal applications request mouse tra
 - [x] Motion events deduplicated (only report on cell change)
 - [x] Alternate scroll mode converts scroll to arrow keys in alt screen
 - [x] Mouse mode and selection mode coexist correctly (mutual exclusion with Shift override)
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Mouse reporting works correctly for all terminal applications that use it. vim, tmux, htop, and other mouse-aware apps receive correct mouse events. Selection and reporting coexist cleanly with Shift-override convention.

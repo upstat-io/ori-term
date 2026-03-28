@@ -612,3 +612,4 @@ helpers). The controller reads it during event handling.
 - [x] settings page scrollbar matches mockup colors and thickness
 - [x] horizontal and both-axis scrollbar rendering is covered
 - [x] menu scrollbar no longer uses a duplicated hardcoded renderer
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

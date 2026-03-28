@@ -2,6 +2,9 @@
 section: 26
 title: Split Panes
 status: superseded
+third_party_review:
+  status: none
+  updated: null
 tier: 7
 goal: Horizontal/vertical splits within a window, binary tree layout, pane navigation and resize
 superseded_by: [29, 31, 33]
@@ -19,6 +22,9 @@ sections:
   - id: "26.4"
     title: Split Resize
     status: superseded
+  - id: "26.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "26.5"
     title: Section Completion
     status: superseded
@@ -243,6 +249,14 @@ Drag to resize splits with mouse and keyboard.
 
 ---
 
+## 26.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 26.5 Section Completion
 
 - [ ] All 26.1-26.4 items complete
@@ -258,5 +272,7 @@ Drag to resize splits with mouse and keyboard.
 - [ ] No rendering artifacts at split boundaries
 - [ ] Tab tear-off works with multi-pane tabs
 - [ ] Performance: multiple panes don't cause frame drops
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** User can create, navigate, resize, and close split panes with no tmux needed for basic multi-pane workflows.

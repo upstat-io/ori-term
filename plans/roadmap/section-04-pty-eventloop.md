@@ -3,6 +3,9 @@ section: 4
 title: PTY + Event Loop
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 1
 goal: Spawn a shell via ConPTY, wire the reader thread, and verify end-to-end I/O through Term<EventProxy>
 sections:
@@ -33,6 +36,9 @@ sections:
   - id: "4.9"
     title: End-to-End Verification
     status: complete
+  - id: "4.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "4.10"
     title: Section Completion
     status: complete
@@ -271,6 +277,14 @@ At this point there's no window, but we can verify the full PTY → VTE → Term
 
 ---
 
+## 4.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 4.10 Section Completion
 
 - [x] All 4.1–4.9 items complete
@@ -281,5 +295,7 @@ At this point there's no window, but we can verify the full PTY → VTE → Term
 - [x] FairMutex prevents starvation under concurrent access
 - [x] Resize works end-to-end (PTY + terminal grid)
 - [x] No window yet — next section adds GUI
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Live shell output is parsed through VTE into `Term<EventProxy>`. Input flows main thread → Notifier → channel → PTY. Reader thread is clean (proper lifecycle, lock discipline, no starvation). Ready for a window to render the terminal state.

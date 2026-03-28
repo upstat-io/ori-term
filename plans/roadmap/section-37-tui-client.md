@@ -3,6 +3,9 @@ section: 37
 title: TUI Client
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 7A
 goal: Headless terminal-in-terminal client (`oriterm-tui`) that connects to a local or remote `oriterm-mux` daemon, rendering panes inside the host terminal — the tmux-replacement experience
 sections:
@@ -17,6 +20,9 @@ sections:
     status: not-started
   - id: "37.4"
     title: Attach / Detach / Session Management
+    status: not-started
+  - id: "37.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "37.5"
     title: Section Completion
@@ -321,6 +327,14 @@ Connect to a running daemon, show its session, and cleanly detach. Handle multip
 
 ---
 
+## 37.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 37.5 Section Completion
 
 - [ ] All 37.1–37.4 items complete
@@ -340,5 +354,7 @@ Connect to a running daemon, show its session, and cleanly detach. Handle multip
 - [ ] **Remote test**: `oriterm-tui attach --ssh dev-server` connects and renders
 - [ ] **Multi-client test**: two `oriterm-tui` clients showing same session
 - [ ] **Interop test**: attach with `oriterm-tui`, detach, open same session with GUI `oriterm connect`
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** A user can SSH into a remote server and run `oriterm-tui attach` to get a full multiplexed terminal experience — splits, tabs, floating panes — all rendered in their SSH terminal. Detach, walk to their desk, open `oriterm connect` and see the exact same session in the GPU-rendered GUI. This is the tmux replacement: same sessions, two interfaces (TUI and GUI), seamless switching.

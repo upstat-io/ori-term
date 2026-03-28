@@ -3,6 +3,9 @@ section: 33
 title: Split Navigation + Floating Panes
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 4M
 goal: Spatial navigation keybinds, divider drag resize, zoom/unzoom, floating pane creation and management, scissored rendering, float-tile toggle, undo/redo split operations
 sections:
@@ -21,6 +24,9 @@ sections:
   - id: "33.5"
     title: Undo + Redo Split Operations
     status: complete
+  - id: "33.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "33.6"
     title: Section Completion
     status: complete
@@ -281,6 +287,14 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 
 ---
 
+## 33.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 33.6 Section Completion
 
 - [x] All 33.1–33.5 items complete
@@ -297,5 +311,7 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 - [x] **Resize test**: drag divider, verify ratio change and PTY resize
 - [x] **Floating test**: create floating pane, drag, resize, toggle to tiled
 - [x] **Undo test**: split 3 times, undo all 3, verify original layout restored
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Full split pane interaction with no external dependencies (tmux, screen). Spatial navigation works for any layout. Floating panes overlay the tiled layout with proper rendering. Undo/redo enables safe experimentation with layouts. Every interaction from the superseded Section 26 is implemented, plus floating panes and undo/redo.

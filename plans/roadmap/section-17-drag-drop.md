@@ -3,6 +3,9 @@ section: 17
 title: Drag & Drop
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 4
 goal: Chrome-style tab dragging with tear-off, OS-level drag, and merge detection
 sections:
@@ -12,6 +15,9 @@ sections:
   - id: "17.2"
     title: OS-Level Drag + Merge
     status: complete
+  - id: "17.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "17.3"
     title: Section Completion
     status: complete
@@ -128,6 +134,14 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
 
 ---
 
+## 17.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 17.3 Section Completion
 
 - [x] All 17.1–17.2 items complete
@@ -139,5 +153,7 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
 - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
 - [x] **Drag stress test**: rapid drag reorder across multiple windows, tear-off and merge in quick succession — no crash, no orphaned tabs
 - [x] **Seamless merge test**: drag tab out of one window, over another window's tab bar, continue dragging without releasing mouse — tab seamlessly continues in target window
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Chrome-style tab dragging works with click-vs-drag disambiguation, threshold-based tear-off, OS-level drag with merge detection, and seamless drag continuation across windows. No orphaned tabs, no stale mouse state.

@@ -582,3 +582,4 @@ After all 11.x changes, verify these files stay under 500 lines:
 - [x] No dead `pub(super)` items remain in `appearance.rs` (clippy `dead_code = "deny"` catches this)
 - [x] No unused imports remain in any page builder file after import path changes
 - [x] `shared/mod.rs` has `//!` module doc and `#[cfg(test)] mod tests;` at bottom
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

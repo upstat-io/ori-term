@@ -2,6 +2,9 @@
 section: 18
 title: Multi-Window & Window Lifecycle
 status: superseded
+third_party_review:
+  status: none
+  updated: null
 tier: 4
 goal: Multiple windows with shared GPU, window creation/destruction, DPI, Aero Snap
 superseded_by: [32]
@@ -13,6 +16,9 @@ sections:
   - id: "18.2"
     title: Window Lifecycle
     status: superseded
+  - id: "18.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "18.3"
     title: Section Completion
     status: superseded
@@ -142,6 +148,14 @@ Window creation is expensive (GPU surface, compositor effects, DPI handling). De
 
 ---
 
+## 18.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 18.3 Section Completion
 
 - [ ] All 18.1–18.2 items complete
@@ -155,5 +169,7 @@ Window creation is expensive (GPU surface, compositor effects, DPI handling). De
 - [ ] **DPI test**: drag window between monitors with different DPI — fonts reload, grid reflows, no artifacts
 - [ ] **Multi-window test**: tear-off tab creates new window, close last tab in window closes it, close last window exits app cleanly
 - [ ] **Exit ordering test**: closing the last window calls `exit_app()` before dropping tabs — no ConPTY deadlock
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Multiple windows with shared GPU device work correctly. Windows create without flash, handle DPI changes, and destroy with correct ConPTY-safe ordering. Cross-window tab movement preserves tab identity and resizes grids as needed.

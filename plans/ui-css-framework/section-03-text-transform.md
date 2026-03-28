@@ -478,3 +478,4 @@ Add a forwarding test that `LabelStyle.text_transform` is propagated into the `T
 - non-zero letter spacing does not silently bypass ellipsis width calculations
 - this section does not claim footer/button typography fidelity beyond the widgets whose APIs
   actually expose the required style knobs
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

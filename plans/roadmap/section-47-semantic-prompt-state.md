@@ -3,6 +3,9 @@ section: 47
 title: Semantic Prompt State Management
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: Cell-level and row-level semantic content tracking (OSC 133), prompt-aware resize, prompt iteration — the deep grid-level infrastructure that makes prompt navigation, smart selection, and command output extraction robust and fast
 sections:
@@ -29,6 +32,9 @@ sections:
     status: not-started
   - id: "47.8"
     title: Upgrade Existing Consumers
+    status: not-started
+  - id: "47.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "47.9"
     title: Section Completion
@@ -274,6 +280,14 @@ Migrate all existing prompt consumers from `Vec<PromptMarker>` to the new cell/r
 
 ---
 
+## 47.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 47.9 Section Completion
 
 - [ ] All 47.1–47.8 items complete
@@ -288,5 +302,7 @@ Migrate all existing prompt consumers from `Vec<PromptMarker>` to the new cell/r
 - [ ] `cargo build --target x86_64-pc-windows-gnu` — clean build
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [ ] `cargo test` — all tests pass
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Semantic prompt state is tracked at the cell and row level in the grid, making all prompt operations (navigation, selection, resize) exact and efficient. The old marker-based approach is fully replaced. Shell integration users see more correct prompt behavior especially around resize. Non-shell-integration users see zero overhead.

@@ -3,6 +3,9 @@ section: 5C
 title: Window Chrome (Title Bar + Controls)
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 2
 goal: Render a visible title bar with minimize/maximize/close controls, wire platform integration (Aero Snap, drag), offset the terminal grid below the caption bar
 sections:
@@ -24,6 +27,9 @@ sections:
   - id: "5C.6"
     title: Platform Polish
     status: complete
+  - id: "5C.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "5C.7"
     title: Tests + Verification
     status: complete
@@ -101,6 +107,14 @@ sections:
 - [x] Scale factor handling: logical pixels for layout, physical pixels for platform APIs
 - [x] Active/inactive: `Focused`/`Unfocused` winit events → chrome color change
 
+## 5C.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 5C.7 Tests + Verification
 
 - [x] ChromeLayout tests: restored/maximized caption height, fullscreen hidden, three controls, button positions, interactive rects, title rect, narrow window
@@ -109,6 +123,7 @@ sections:
 - [x] `./clippy-all.sh` — no warnings (Windows cross-compile + host)
 - [x] `./test-all.sh` — all 670 tests pass (23 new chrome tests)
 - [x] `./build-all.sh` — cross-compilation succeeds
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 ---
 

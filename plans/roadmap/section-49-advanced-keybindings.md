@@ -3,6 +3,9 @@ section: 49
 title: Advanced Keybinding System
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: Key tables (modal bindings), chained keybinds, catch-all keys, and key remapping — the power-user keybinding features that enable tmux-like workflows
 sections:
@@ -17,6 +20,9 @@ sections:
     status: not-started
   - id: "49.4"
     title: Key Remapping
+    status: not-started
+  - id: "49.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "49.5"
     title: Section Completion
@@ -175,6 +181,14 @@ Remap key/modifier combinations at the terminal level before any binding lookup 
 
 ---
 
+## 49.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 49.5 Section Completion
 
 - [ ] All 49.1–49.4 items complete
@@ -188,5 +202,7 @@ Remap key/modifier combinations at the terminal level before any binding lookup 
 - [ ] `cargo build --target x86_64-pc-windows-gnu` — clean build
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [ ] `cargo test` — all tests pass
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Power users can configure tmux-like prefix-key workflows, chain multiple actions per binding, create modal input modes with catch-all handling, and remap keys at the terminal level. The keybinding system is now as flexible as WezTerm's or Zellij's.

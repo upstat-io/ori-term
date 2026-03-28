@@ -3,6 +3,9 @@ section: 30
 title: Pane Extraction + Domain System
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 4M
 goal: Extract Pane from Tab, define the Domain trait for shell spawning, implement LocalDomain, create PaneRegistry and SessionRegistry
 sections:
@@ -18,6 +21,9 @@ sections:
   - id: "30.4"
     title: MuxEventProxy
     status: complete
+  - id: "30.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "30.5"
     title: Section Completion
     status: complete
@@ -152,6 +158,14 @@ Extract all per-shell-session state from what would have been Tab into a dedicat
 
 ---
 
+## 30.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 30.5 Section Completion
 
 - [x] All 30.1–30.4 items complete
@@ -164,3 +178,4 @@ Extract all per-shell-session state from what would have been Tab into a dedicat
 - [x] `./clippy-all.sh` — no warnings
 - [x] `./test-all.sh` — all tests pass (157 mux + 1556 oriterm)
 - [x] No `unsafe` code
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

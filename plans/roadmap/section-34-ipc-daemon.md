@@ -3,6 +3,9 @@ section: 34
 title: IPC Protocol + Daemon Mode
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 7A
 goal: Wire protocol for mux server/client communication, MuxServer daemon, OutputCoalescer for push-based rendering, MuxClient for GUI, auto-start daemon
 sections:
@@ -17,6 +20,9 @@ sections:
     status: not-started
   - id: "34.4"
     title: MuxClient + Auto-Start
+    status: not-started
+  - id: "34.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "34.5"
     title: Section Completion
@@ -227,6 +233,14 @@ The GUI's connection to the mux daemon. `MuxClient` implements the same API as `
 
 ---
 
+## 34.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 34.5 Section Completion
 
 - [ ] All 34.1–34.4 items complete
@@ -242,5 +256,7 @@ The GUI's connection to the mux daemon. `MuxClient` implements the same API as `
 - [ ] **Throughput test**: `cat large_file.txt` renders smoothly, no dropped frames
 - [ ] **Reconnection test**: kill GUI, relaunch → sessions restored instantly
 - [ ] **Multi-client test**: two GUI windows connected to same daemon
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Full server/client architecture. The daemon keeps sessions alive across GUI restarts. Push-based rendering with 1ms coalesce beats WezTerm's 140ms poll. Transparent backend switching lets the App work identically in local and daemon modes. Auto-start and graceful fallback make the daemon invisible to users who don't need it.

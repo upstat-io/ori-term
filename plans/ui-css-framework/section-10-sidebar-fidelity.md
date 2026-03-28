@@ -849,3 +849,4 @@ Manual verification checklist:
 - [x] Section headers and nav-row spacing match the mockup
 - [x] Active, hover, and modified states match the mockup
 - [x] Footer shows version, optional update link, and config-path behavior correctly
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

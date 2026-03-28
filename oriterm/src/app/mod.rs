@@ -12,7 +12,7 @@ mod constructors;
 mod context_menu;
 mod cursor_hover;
 pub(crate) mod dialog_context;
-mod dialog_management;
+pub(crate) mod dialog_management;
 mod dialog_rendering;
 mod divider_drag;
 mod event_loop;

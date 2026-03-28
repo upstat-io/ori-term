@@ -3,6 +3,9 @@ section: 48
 title: Native OS Scrollbars
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: Platform-native overlay scrollbars for mouse-driven scrollback navigation, matching the host OS look and feel
 sections:
@@ -17,6 +20,9 @@ sections:
     status: not-started
   - id: "48.4"
     title: Configuration
+    status: not-started
+  - id: "48.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "48.5"
     title: Section Completion
@@ -149,6 +155,14 @@ User-configurable scrollbar behavior.
 
 ---
 
+## 48.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 48.5 Section Completion
 
 - [ ] All 48.1–48.4 items complete
@@ -163,5 +177,7 @@ User-configurable scrollbar behavior.
 - [ ] `cargo build --target x86_64-pc-windows-gnu` — clean build
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [ ] `cargo test` — all tests pass
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Users can visually see their position in scrollback and drag to navigate. The scrollbar matches modern OS conventions (thin overlay, fade on idle) and does not interfere with terminal content or mouse reporting.

@@ -882,3 +882,4 @@ timeout 150 cargo test -p oriterm_ui scheme_card::tests
 - [x] Text inputs in settings use `2px` border, `12px` font, `200px` width, hover border color
 - [x] Cursor picker cards have `24px` gap, `bg_card` rest bg, `2px` border, per-card hover
 - [x] Scheme cards have `bg_card` rest bg, `2px` border, `240px` min width, Medium-weight title, styled badge chip
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

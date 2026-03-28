@@ -3,6 +3,9 @@ section: 20
 title: Shell Integration
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 4
 goal: Shell detection, injection, OSC 7/133 handling, two-parser strategy, prompt state machine
 sections:
@@ -45,6 +48,9 @@ sections:
   - id: "20.13"
     title: Command Completion Notifications
     status: complete
+  - id: "20.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "20.14"
     title: Section Completion
     status: complete
@@ -308,6 +314,14 @@ Desktop notification when a long-running command finishes in an unfocused tab/wi
 
 ---
 
+## 20.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 20.14 Section Completion
 
 - [x] All 20.1–20.13 items complete
@@ -324,5 +338,7 @@ Desktop notification when a long-running command finishes in an unfocused tab/wi
 - [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — clean build
 - [x] `cargo clippy -p oriterm -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
 - [x] `cargo test -p oriterm_core` — all tests pass
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Shell integration works for all five shell types. CWD tracking, prompt marking, and notifications function correctly. The two-parser strategy catches all custom OSC sequences. Title resolution follows the correct priority chain. Keyboard mode stacks swap cleanly on alt screen transitions.

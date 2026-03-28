@@ -3,6 +3,9 @@ section: 46
 title: "macOS App Bundle & Platform Packaging"
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 6
 goal: "Produce a proper macOS .app bundle so oriterm launches as a native GUI application with dock icon, Cmd+Tab switching, and correct system integration — plus add the macOS build job to CI release pipelines"
 inspired_by:
@@ -25,6 +28,9 @@ sections:
     status: not-started
   - id: "46.5"
     title: "CI Build Jobs (Nightly + Release)"
+    status: not-started
+  - id: "46.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "46.6"
     title: "Section Completion"
@@ -480,6 +486,14 @@ Upgrade the existing nightly macOS job to produce a universal `.app` bundle + DM
 
 ---
 
+## 46.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 46.6 Section Completion
 
 - [ ] `assets/macos/OriTerm.app/Contents/Info.plist` exists with correct keys
@@ -505,5 +519,7 @@ Upgrade the existing nightly macOS job to produce a universal `.app` bundle + DM
 - **Sparkle (auto-update framework)**: Some macOS apps use Sparkle for in-app updates. Not needed for now.
 - **`CFBundleVersion` auto-increment**: Currently hardcoded to `"1"`. Mac App Store submissions require a monotonically increasing build number (e.g., git commit count or CI run number). Not needed for ad-hoc distribution.
 - **`codesign --deep` deprecation**: Apple has deprecated `--deep` for new code signing submissions. When moving to Developer ID signing, sign each Mach-O binary individually rather than using `--deep` on the bundle.
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** The nightly and release CI pipelines produce a macOS `.dmg` containing a universal `OriTerm.app` that launches as a proper macOS GUI application with dock icon, Cmd+Tab switching, and system dark mode integration. Running the DMG build locally via `scripts/build-macos-bundle.sh --universal --release && scripts/build-macos-dmg.sh` produces the same result.

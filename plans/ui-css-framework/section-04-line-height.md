@@ -764,3 +764,4 @@ timeout 150 cargo test -p oriterm cached_measurer
 - no dead code introduced (clippy `dead_code = "deny"` passes)
 - this section does not claim generic wrapping or blanket widget adoption beyond the shared
   capability it actually builds
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

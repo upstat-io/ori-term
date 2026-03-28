@@ -12,6 +12,9 @@ sections:
   - id: "02.1"
     title: "Active Bugs"
     status: in-progress
+  - id: "02.R"
+    title: "Third Party Review Findings"
+    status: not-started
 ---
 
 # Section 02: Settings Dialog Bugs
@@ -66,3 +69,19 @@ sections:
   - **Root cause**: TBD — user reports gap between nav items doesn't look right. Current values (1px margin, 7px padding, 13px content) match mockup CSS numerically but visual result may differ. Needs live comparison.
   - **Found**: 2026-03-27 — manual sign-off (Section 14.4)
   - **Fix**: Needs live visual comparison to identify specific spacing discrepancy
+
+- [x] **BUG-02.8**: Settings dialog window not draggable (regression)
+  - **File(s)**: `oriterm/src/app/dialog_management.rs`, `oriterm/src/app/dialog_context/event_handling/mouse.rs`
+  - **Root cause**: Commit 81a304b removed `WindowChromeWidget` from the dialog and set `DIALOG_DRAG_CAPTION_HEIGHT` to `0.0`. This eliminated the OS-level caption region that enabled window dragging. Without it, Windows `WM_NCHITTEST` always returned `HTCLIENT` (no drag area).
+  - **Found**: 2026-03-28 — manual sign-off (Section 14.4), user report
+  - **Fixed**: 2026-03-28 — Set `DIALOG_DRAG_CAPTION_HEIGHT` to 48px and excluded the sidebar (200px) as an interactive rect so the search field stays clickable. The content area header (right of sidebar, top 48px) is now the drag zone. Added `try_dialog_header_drag()` for Linux/macOS `drag_window()` support.
+
+---
+
+## 02.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---

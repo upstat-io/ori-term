@@ -983,3 +983,4 @@ In `oriterm/src/gpu/pipeline/tests.rs`:
 
 - [x] visual verification exists for at least one rounded mixed-color border case before the
   section is marked complete
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

@@ -3,6 +3,9 @@ section: 41
 title: Hints + Quick Select
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: "Regex-based labeled text selection for URLs, paths, git hashes, IPs, and custom patterns. Keyboard-driven quick copy without mouse."
 sections:
@@ -14,6 +17,9 @@ sections:
     status: not-started
   - id: "41.3"
     title: Hint Actions
+    status: not-started
+  - id: "41.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "41.4"
     title: Section Completion
@@ -172,6 +178,14 @@ Execute the configured action when a hint is selected.
 
 ---
 
+## 41.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 41.4 Section Completion
 
 - [ ] All 41.1–41.3 items complete
@@ -185,5 +199,7 @@ Execute the configured action when a hint is selected.
 - [ ] `Escape` cancels cleanly, label completion triggers action
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [ ] `cargo test` — all hint tests pass
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Users can press a hotkey, see labeled matches for URLs/hashes/paths, type 1-2 characters, and immediately copy or open the matched text. Dramatically faster than mouse selection for the most common terminal copy patterns.

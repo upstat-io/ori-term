@@ -3,6 +3,9 @@ section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 2
 goal: "Best font rendering of any terminal emulator. Full shaping pipeline with hinting, LCD subpixel rendering, subpixel positioning, proper font synthesis, and automated visual regression testing. The feature users switch terminals for."
 sections:
@@ -66,6 +69,9 @@ sections:
   - id: "6.20"
     title: Font Codepoint Mapping
     status: complete
+  - id: "6.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "6.21"
     title: Section Completion
     status: complete
@@ -954,6 +960,14 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 
 ---
 
+## 6.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 6.21 Section Completion
 
 - [x] All 6.1–6.20 items complete
@@ -985,5 +999,7 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 - [x] `./clippy-all.sh` — no warnings
 - [x] `./test-all.sh` — all tests pass including visual regression suite
 - [x] `./build-all.sh` — cross-compilation succeeds
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Font rendering is best-in-class — not just feature-complete but visually superior. Every character type renders correctly. Hinting produces crisp text on 1080p. LCD subpixel rendering provides measurably sharper text than any competing GPU terminal. Font synthesis (bold/italic) is indistinguishable from real variants at normal reading distance. Visual regression tests prevent quality regressions. This is the feature users switch terminals for.

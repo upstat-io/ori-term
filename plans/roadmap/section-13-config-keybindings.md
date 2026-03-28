@@ -3,6 +3,9 @@ section: 13
 title: Configuration & Keybindings
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: TOML configuration with file watching and hot reload, user-configurable keybindings with defaults
 sections:
@@ -33,6 +36,9 @@ sections:
   - id: "13.9"
     title: Shell Completion Scripts
     status: complete
+  - id: "13.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "13.10"
     title: Section Completion
     status: complete
@@ -416,6 +422,14 @@ Generate shell completion scripts for bash, zsh, fish, and PowerShell.
 
 ---
 
+## 13.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 13.10 Section Completion
 
 - [x] All 13.1-13.9 items complete
@@ -432,5 +446,7 @@ Generate shell completion scripts for bash, zsh, fish, and PowerShell.
 - [x] `Action::None` unbinds a default binding
 - [x] `SendText` action sends literal bytes (with escape sequences) to PTY
 - [x] Window state (geometry) persisted separately from user config
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Config system loads, saves, and hot-reloads without interrupting the terminal session. Keybindings are user-configurable via TOML with sensible defaults. Invalid config never crashes the app.

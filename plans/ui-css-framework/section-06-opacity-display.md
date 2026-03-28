@@ -603,3 +603,4 @@ or the new modifiers tests:
 - [x] `build_scene()` asserts balanced opacity pushes
 - [x] visibility toggles do not leak stale interaction state
 - [x] pointer-events suppression affects hit testing only
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

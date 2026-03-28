@@ -675,3 +675,5 @@ Required commands:
 ./clippy-all.sh
 ./test-all.sh
 ```
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

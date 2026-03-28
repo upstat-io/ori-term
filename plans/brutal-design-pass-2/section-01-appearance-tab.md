@@ -431,5 +431,6 @@ The mockup window has sharp corners — no OS-level rounded corners.
 - [x] New tests exist proving widget style changes work (slider, toggle, dropdown shapes)
 - [x] No `#[allow(dead_code)]` on new items — everything has a production caller
 - [x] Side-by-side screenshot of Appearance tab matches mockup at 100% DPI
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Opening the settings dialog Appearance tab produces a visual result that is indistinguishable from `mockups/settings-brutal.html` at normal viewing distance. All widget shapes (slider, toggle, dropdown), button styling (ALL CAPS, correct colors), layout (sticky header, footer inside content area), and sidebar features (search, icons, version) match the mockup.

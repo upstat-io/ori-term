@@ -3,6 +3,9 @@ section: 36
 title: Remote Attach + Network Transport
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 7A
 goal: Network transport for the wire protocol, authentication, MuxDomain for remote daemon connections, `oriterm connect` CLI, bandwidth-aware rendering over high-latency links
 sections:
@@ -20,6 +23,9 @@ sections:
     status: not-started
   - id: "36.5"
     title: Bandwidth-Aware Rendering
+    status: not-started
+  - id: "36.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "36.6"
     title: Section Completion
@@ -349,6 +355,14 @@ Adapt rendering behavior based on connection quality. High-latency or low-bandwi
 
 ---
 
+## 36.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 36.6 Section Completion
 
 - [ ] All 36.1–36.5 items complete
@@ -367,5 +381,7 @@ Adapt rendering behavior based on connection quality. High-latency or low-bandwi
 - [ ] **Mixed mode test**: local tab + remote tab in same window, both fully functional
 - [ ] **Auth test**: unauthorized client rejected, authorized client connects
 - [ ] **TOFU test**: first connection pins cert, changed cert → warning
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** A user can run `oriterm connect dev-server` from their laptop, get a full GUI window rendering their remote session with all tabs and splits intact. Disconnect WiFi, reconnect, and the session resumes exactly where it was. Remote panes are indistinguishable from local panes in day-to-day use. SSH tunnel mode works with zero server configuration beyond having `oriterm-mux` installed.

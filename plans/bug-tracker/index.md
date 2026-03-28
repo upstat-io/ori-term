@@ -43,7 +43,8 @@ search, icon, vertical, layout, mockup, frameless
 
 ```
 focus, unfocus, click-outside, interaction, manager, input, keyboard,
-framework, pipeline
+framework, pipeline, layout, solver, min-height, padding, content-box,
+border-box, box-model, flex, hug, size-spec
 ```
 
 ---
