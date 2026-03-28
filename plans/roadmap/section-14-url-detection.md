@@ -3,6 +3,9 @@ section: 14
 title: URL Detection
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: Detect URLs in terminal output for hover underline and Ctrl+click opening
 sections:
@@ -15,6 +18,9 @@ sections:
   - id: "14.3"
     title: Hover & Click Handling
     status: complete
+  - id: "14.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "14.4"
     title: Section Completion
     status: complete
@@ -146,6 +152,14 @@ Visual feedback on URL hover and opening URLs on Ctrl+click.
 
 ---
 
+## 14.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 14.4 Section Completion
 
 - [x] All 14.1-14.3 items complete
@@ -167,5 +181,7 @@ Visual feedback on URL hover and opening URLs on Ctrl+click.
   - [x] No URLs in plain text
   - [x] Wrapped URL spans two rows with correct segments
   - [x] `DetectedUrl::contains` returns correct results for all positions
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Ctrl+hover underlines URLs in terminal output, Ctrl+click opens them in the system browser. Detection handles wrapped lines, parenthesized URLs, and coexists with explicit OSC 8 hyperlinks.

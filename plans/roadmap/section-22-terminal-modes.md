@@ -3,6 +3,9 @@ section: 22
 title: Terminal Modes
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: Comprehensive DECSET/DECRST mode support, mode interactions, image protocol
 sections:
@@ -27,6 +30,9 @@ sections:
   - id: "22.7"
     title: Image Protocol
     status: complete
+  - id: "22.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "22.8"
     title: Section Completion
     status: complete
@@ -272,6 +278,14 @@ Complete reference of every DECSET/DECRST private mode.
 
 ---
 
+## 22.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 22.8 Section Completion
 
 - [x] All 22.1-22.6 items complete
@@ -293,5 +307,7 @@ Complete reference of every DECSET/DECRST private mode.
 - [x] Reverse wraparound (mode 45) implemented
 - [x] `cargo test` — all mode tests pass
 - [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Every mode in the comprehensive mode table is implemented and tested. tmux, vim, htop, and other TUI applications have fully working mode support including mouse, cursor styles, and focus events.

@@ -3,6 +3,9 @@ section: 7
 title: 2D UI Framework
 status: in-progress
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 2
 goal: A lightweight GPU-agnostic UI framework (oriterm_ui) — drawing primitives, layout engine, and widget kit for ori_term's rich cross-platform UI (GPU conversion via wgpu lives in oriterm)
 sections:
@@ -39,6 +42,9 @@ sections:
   - id: "07.11"
     title: Terminal Grid Widget
     status: in-progress
+  - id: "7.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "07.12"
     title: Section Completion
     status: in-progress
@@ -609,6 +615,14 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
 
 ---
 
+## 7.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 07.12 Section Completion
 
 - [ ] All 07.1-07.11 unchecked items complete (remaining: 07.8 overlay consumers, 07.11 preview widget + layout engine wiring)
@@ -629,5 +643,7 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
 - [x] `cargo clippy -p oriterm_ui` — no warnings
 - [x] **File size compliance:** Split `overlay/manager/mod.rs` (523→303 lines, lifecycle methods extracted to `lifecycle.rs`). Monitor files approaching the limit on next modification: `tab_bar/widget/mod.rs` (486), `dialog/mod.rs` (478), `tab_bar/widget/draw.rs` (478), `form_section/mod.rs` (454), `window_chrome/mod.rs` (444).
 - [x] **Test infrastructure:** 24 `tests.rs` sibling files across widgets, overlay, animation, layout, focus, input, draw, theme, color, geometry, scale, compositor, icons. All use `MockMeasurer` (8px/char, 16px line height). No GPU or platform runtime required.
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** A complete, lightweight, GPU-rendered UI framework that can build settings panels, context menus, command palette, and any future UI. The terminal grid is just another widget. All rendering is consistent, cross-platform, and fast.

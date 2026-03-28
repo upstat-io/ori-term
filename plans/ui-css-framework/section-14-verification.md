@@ -5,7 +5,7 @@ status: in-progress
 reviewed: true
 third_party_review:
   status: resolved
-  updated: 2026-03-26
+  updated: 2026-03-28
 goal: "The CSS UI framework plan closes with reproducible evidence, not a hand-written checklist: every prior section owns direct automated regressions, the settings dialog has deterministic GPU golden coverage, build/platform/performance gates reflect the real repository scripts, and the remaining human sign-off is limited to live behavior the automated layers cannot prove."
 depends_on: ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "15"]
 sections:
@@ -965,6 +965,12 @@ Section 14 will likely need new tests, golden references, and possibly a narrow 
 composition helper. The rewrite treats that as real implementation work instead of pretending the
 section is documentation-only.
 
+- [x] `[TPR-14-006][medium]` `oriterm_ui/src/layout/solver.rs:39` `oriterm_ui/src/widgets/setting_row/mod.rs:244` `plans/ui-css-framework/section-14-verification.md:204` — The current verification story still misses that `min_height` is enforced on the border box instead of the content box.
+  **Rejected (2026-03-28):** The mockup uses `box-sizing: border-box` globally (`settings-brutal.html:11`: `*, *::before, *::after { box-sizing: border-box; ... }`). The `.setting-row` CSS has `min-height: 44px` + `padding: 10px 14px` under border-box, meaning `min-height` applies to the full box including padding — exactly matching our solver's behavior. The finding's claimed 64px content-box behavior would require `box-sizing: content-box`, which the mockup explicitly does not use. No fix needed.
+
+- [x] `[TPR-14-007][low]` `plans/ui-css-framework/index.md:188` `plans/ui-css-framework/index.md:200` `plans/ui-css-framework/section-15-cursor-icons.md:1` `plans/ui-css-framework/section-14-verification.md:1` — The plan index is stale after the recent Section 14/15 updates.
+  **Accepted + fixed (2026-03-28):** Updated `index.md` — Section 15 status changed to "Complete", Section 14 status changed to "In Progress (TPR triage + manual sign-off remaining)".
+
 ---
 
 ## 14.7 Completion Checklist
@@ -1029,3 +1035,4 @@ Section 14 is complete only when all of the following are true:
 - [ ] `plans/ui-css-framework/00-overview.md` status changed to `complete`
 - [ ] All section files show `status: complete` in their frontmatter
 - [ ] All TPR statuses across all sections show `resolved` or `complete`
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

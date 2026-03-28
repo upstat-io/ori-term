@@ -186,7 +186,7 @@ setting row spacing, control alignment, right-hand rail
 ---
 
 ### Section 15: Mouse Cursor Icons
-**File:** `section-15-cursor-icons.md` | **Status:** In Progress (manual verification pending)
+**File:** `section-15-cursor-icons.md` | **Status:** Complete
 
 ```
 cursor, pointer, not-allowed, crosshair, text cursor
@@ -198,7 +198,7 @@ disabled cursor, input text cursor, keybind row
 ---
 
 ### Section 14: Verification + Visual Regression
-**File:** `section-14-verification.md` | **Status:** Not Started
+**File:** `section-14-verification.md` | **Status:** In Progress (manual sign-off remaining)
 
 ```
 screenshot comparison, side-by-side, pixel perfect

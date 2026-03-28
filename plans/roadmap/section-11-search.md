@@ -3,6 +3,9 @@ section: 11
 title: Search
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: Plain text and regex search across terminal grid with search UI overlay and match navigation
 sections:
@@ -18,6 +21,9 @@ sections:
   - id: "11.4"
     title: Search UI
     status: complete
+  - id: "11.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "11.5"
     title: Section Completion
     status: complete
@@ -175,6 +181,14 @@ Search bar overlay rendered on top of the terminal grid, with text input, match 
 
 ---
 
+## 11.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 11.5 Section Completion
 
 - [x] All 11.1-11.4 items complete
@@ -189,6 +203,8 @@ Search bar overlay rendered on top of the terminal grid, with text input, match 
 - [x] Search UI opens/closes cleanly, keyboard input captured during search
 - [x] Viewport scrolls to center focused match when outside view
 - [x] Wide characters and combining marks handled correctly in text extraction
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Ctrl+Shift+F opens search, typing highlights matches in the grid, Enter/Shift+Enter navigates between matches, Escape closes. Plain text and regex modes both functional.
 

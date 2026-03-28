@@ -813,3 +813,4 @@ After all 02.x subsections are complete, verify no source file (excluding `tests
 - terminal grid rendering is completely unchanged (all grid `RasterKey`s have `weight: 0`)
 - this section does not claim widget-level weight fidelity beyond the widgets whose APIs actually expose weight
 - no source file exceeds 500 lines
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

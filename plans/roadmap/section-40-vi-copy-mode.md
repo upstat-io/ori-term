@@ -3,6 +3,9 @@ section: 40
 title: Vi Mode + Copy Mode
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: "Keyboard-driven terminal navigation and text selection via vi-style motions, modeled after Alacritty's vi mode and WezTerm's copy mode."
 sections:
@@ -17,6 +20,9 @@ sections:
     status: not-started
   - id: "40.4"
     title: Vi Search Integration
+    status: not-started
+  - id: "40.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "40.5"
     title: Section Completion
@@ -220,6 +226,14 @@ Search from within vi mode using `/` and `?` motions.
 
 ---
 
+## 40.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 40.5 Section Completion
 
 - [ ] All 40.1–40.4 items complete
@@ -235,5 +249,7 @@ Search from within vi mode using `/` and `?` motions.
 - [ ] Auto-scroll follows vi cursor through scrollback
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [ ] `cargo test` — all vi mode tests pass
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Power users can navigate the entire scrollback, select arbitrary text, and yank to clipboard without touching the mouse. Vi mode feels natural to vim users — all standard motions work as expected.

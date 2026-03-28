@@ -3,6 +3,9 @@ section: 25
 title: Theme System
 status: in-progress
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 6
 goal: 100+ built-in themes, TOML theme files, discovery, live switching, light/dark auto-switch
 sections:
@@ -15,6 +18,9 @@ sections:
   - id: "25.3"
     title: "Light/Dark Auto-Switch"
     status: in-progress
+  - id: "25.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "25.4"
     title: Section Completion
     status: in-progress
@@ -140,6 +146,14 @@ Automatically switch theme based on system appearance.
 
 ---
 
+## 25.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 25.4 Section Completion
 
 - [ ] All 25.1-25.3 items complete *(blocked: 25.3 has settings dropdown items pending Section 7)*
@@ -150,5 +164,7 @@ Automatically switch theme based on system appearance.
 - [x] Theme hot-reload works (edit theme file, see change)
 - [x] User themes in theme directory discovered automatically
 - [x] Theme conversion scripts for iTerm2/Ghostty/base16 formats
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** User can type `colors.scheme = "nord"` in config and get the Nord color scheme. System dark/light mode change auto-switches themes.

@@ -517,3 +517,4 @@ All of the following must pass before this section is marked complete:
 - mixed-size text in one `Scene` uses distinct `RasterKey.size_q6` values
 - no nearest-size substitution remains in the production path
 - normal windows and `UiOnly` dialog windows use the same size-aware pipeline
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

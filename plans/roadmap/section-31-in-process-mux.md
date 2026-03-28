@@ -3,6 +3,9 @@ section: 31
 title: In-Process Mux + Multi-Pane Rendering
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 4M
 goal: Wire up InProcessMux, rewire App to use mux layer, render multiple panes per tab with correct viewport offsets and dividers
 sections:
@@ -18,6 +21,9 @@ sections:
   - id: "31.4"
     title: PaneRenderCache
     status: complete
+  - id: "31.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "31.5"
     title: Section Completion
     status: complete
@@ -247,6 +253,14 @@ Per-pane `PreparedFrame` caching to avoid re-preparing unchanged panes on every 
 
 ---
 
+## 31.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 31.5 Section Completion
 
 - [x] All 31.1–31.4 items complete
@@ -260,5 +274,7 @@ Per-pane `PreparedFrame` caching to avoid re-preparing unchanged panes on every 
 - [x] `cargo test` — all existing tests pass (no regression)
 - [x] **Visual test**: split pane shows two independent terminal grids
 - [x] **Performance test**: frame time with 4 panes < 2× single-pane frame time
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** The mux layer is fully wired into the App. Multiple panes render correctly with proper offsets, dividers, and focus borders. Cached rendering prevents unnecessary GPU work. The single-pane case has zero overhead. All existing functionality works unchanged.

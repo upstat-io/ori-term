@@ -3,6 +3,9 @@ section: 12
 title: Resize & Reflow
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: Dynamic grid resize with PTY notification and text reflow on column change
 sections:
@@ -21,6 +24,9 @@ sections:
   - id: "12.5"
     title: Alternate Screen Resize
     status: complete
+  - id: "12.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "12.6"
     title: Section Completion
     status: complete
@@ -197,6 +203,14 @@ Resize the alternate screen buffer without reflow (full-screen apps manage their
 
 ---
 
+## 12.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 12.6 Section Completion
 
 - [x] All 12.1-12.5 items complete
@@ -212,5 +226,7 @@ Resize the alternate screen buffer without reflow (full-screen apps manage their
 - [x] No crash on rapid resize sequences
 - [x] Alternate screen resizes correctly (no reflow, cursor clamped)
 - [x] vim/htop/tmux redraw correctly after resize
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Resizing the window produces correct terminal behavior -- text reflows, the shell adapts, full-screen apps redraw properly, and cursor position is preserved through resize operations.

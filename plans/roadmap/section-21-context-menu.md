@@ -3,6 +3,9 @@ section: 21
 title: Context Menu & Window Controls
 status: in-progress
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 4
 goal: GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list
 sections:
@@ -21,6 +24,9 @@ sections:
   - id: "21.5"
     title: Taskbar Jump List & Dock Menu
     status: complete
+  - id: "21.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "21.6"
     title: Section Completion
     status: not-started
@@ -446,6 +452,14 @@ Deferred to a future section. The `.desktop` file is an install-time packaging a
 
 ---
 
+## 21.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 21.6 Section Completion
 
 Verification that all sub-sections (21.1-21.5) are complete and integrated.
@@ -513,5 +527,7 @@ All sync points for 21.5 have been implemented:
 - [ ] **Jump List error resilience** (Windows): verify that Jump List COM failure does not prevent app startup — intentionally break COM (e.g., corrupt the AppUserModelID) and confirm the app still launches with a log warning
 - [ ] **`--new-tab` CLI test**: run `oriterm --new-tab` from terminal — verify it launches (new window with one tab for now; proper IPC dispatch deferred to Section 34)
 - [ ] **Cross-compile smoke test**: after adding `windows` crate, run `cargo build --target x86_64-pc-windows-gnu` to confirm the new dependency links correctly under MinGW
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** All three menu contexts (tab, grid, dropdown) work with GPU rendering, keyboard navigation, and full action dispatch. Config reload broadcasts to all panes/windows with font rebuild and grid reflow. Settings dialog opens with form controls for all major config sections, Save persists to disk and applies changes, Cancel discards. Window controls (minimize, maximize, close) render platform-specifically with Aero Snap support. Jump List provides "New Window" and "New Tab" entries in the Windows taskbar. `SetCurrentProcessExplicitAppUserModelID` is called early in `main()` (before event loop) for consistent taskbar grouping. `submit_jump_list` is called in `main()` with explicit `CoInitializeEx` before `run_app()`. `--new-tab` CLI flag is recognized (dispatches to default behavior until IPC lands in Section 34). All source files < 500 lines, all functions < 50 lines. Clean build on both host and cross-compile target, zero clippy warnings, all tests pass.

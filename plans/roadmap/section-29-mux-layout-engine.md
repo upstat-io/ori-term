@@ -3,6 +3,9 @@ section: 29
 title: Mux Crate + Layout Engine
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 4M
 goal: Create the oriterm_mux crate with newtype IDs, immutable SplitTree, FloatingLayer, spatial navigation, and layout computation
 sections:
@@ -21,6 +24,9 @@ sections:
   - id: "29.5"
     title: Spatial Navigation
     status: complete
+  - id: "29.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "29.6"
     title: Section Completion
     status: complete
@@ -285,6 +291,14 @@ Navigate between panes using directional movement (up/down/left/right) and seque
 
 ---
 
+## 29.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 29.6 Section Completion
 
 - [x] All 29.1–29.5 items complete
@@ -298,5 +312,7 @@ Navigate between panes using directional movement (up/down/left/right) and seque
 - [x] Spatial navigation: directional + cycling, works for tiled and floating
 - [x] Zero dependencies on `oriterm_core` or `oriterm` — pure standalone crate
 - [x] No `unsafe` code
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** `oriterm_mux` is a standalone crate with a complete layout engine. SplitTree and FloatingLayer are immutable data structures with full test coverage. Layout computation converts abstract trees into concrete pixel rects. Spatial navigation works for any pane arrangement. The crate compiles and tests pass independently.

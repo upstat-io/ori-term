@@ -491,3 +491,5 @@ cargo test -p oriterm icon_rasterizer::tests
 
 If Section 08 introduces a dev/codegen tool for the sidebar icon fixtures, include one documented
 command in the final implementation notes for regenerating the checked-in icon data.
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

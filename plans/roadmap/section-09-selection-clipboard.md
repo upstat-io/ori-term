@@ -3,6 +3,9 @@ section: 9
 title: Selection & Clipboard
 status: in-progress
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 3
 goal: Windows Terminal-style 3-point selection, all selection modes, clipboard with paste filtering
 sections:
@@ -27,6 +30,9 @@ sections:
   - id: "9.7"
     title: Selection Rendering
     status: complete
+  - id: "9.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "9.8"
     title: Section Completion
     status: in-progress
@@ -462,6 +468,14 @@ Visual highlighting of selected text during GPU rendering.
 
 ---
 
+## 9.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 9.8 Section Completion
 
 - [ ] All 9.1-9.7 items complete *(blocked: 9.5 has one item pending Section 38 — underline color in HTML copy)*
@@ -493,5 +507,7 @@ Visual highlighting of selected text during GPU rendering.
 - [x] Selection damage tracking: incremental redraw on selection create/extend/clear
 - [x] HTML copy with styled spans (colors, bold, italic, underline, strikethrough)
 - [x] Mark mode: Ctrl+Shift+M toggles, arrow keys move cursor, Shift+arrows extend selection
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Selection and clipboard works identically to Windows Terminal. Users coming from Windows Terminal should feel completely at home with the selection, copy, and paste behavior.

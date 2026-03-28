@@ -3,6 +3,9 @@ section: 24
 title: Visual Polish
 status: in-progress
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 6
 goal: Cursor blinking, hide-while-typing, minimum contrast, HiDPI, vector icons, background images, gradients, backdrop effects, scrollable menus
 sections:
@@ -32,6 +35,9 @@ sections:
     status: in-progress
   - id: "24.9"
     title: Scrollable Menus
+    status: not-started
+  - id: "24.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "24.10"
     title: Section Completion
@@ -564,6 +570,14 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 
 ---
 
+## 24.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 24.10 Section Completion
 
 - [ ] All 24.1--24.9 items complete
@@ -588,5 +602,7 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 - [ ] All features configurable and hot-reloadable
 - [ ] `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` pass
 - [ ] No new `#[allow(clippy)]` without `reason`
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Terminal feels visually polished at first launch -- cursor blinks, text is readable, HiDPI is crisp, icons are smooth, scrolling works, and all features are configurable and hot-reloadable.

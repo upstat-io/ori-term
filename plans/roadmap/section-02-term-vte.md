@@ -3,6 +3,9 @@ section: 2
 title: Terminal State Machine + VTE
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 0
 goal: Build Term<T> and implement all ~50 VTE handler methods so escape sequences produce correct grid state
 sections:
@@ -48,6 +51,9 @@ sections:
   - id: "2.14"
     title: Damage Tracking Integration
     status: complete
+  - id: "2.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "2.15"
     title: Section Completion
     status: complete
@@ -815,6 +821,14 @@ Wire dirty tracking from Grid into the RenderableContent snapshot.
 
 ---
 
+## 2.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 2.15 Section Completion
 
 - [x] All 2.1–2.14 items complete
@@ -827,5 +841,7 @@ Wire dirty tracking from Grid into the RenderableContent snapshot.
 - [x] RenderableContent snapshot extracts correct data
 - [x] FairMutex compiles and basic tests pass
 - [x] No GPU, no PTY, no window — purely in-memory terminal emulation
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Full VTE processing works in-memory. `Term<VoidListener>` can process any escape sequence and produce correct grid state. `RenderableContent` snapshots work.

@@ -3,6 +3,9 @@ section: 35
 title: Session Persistence + Remote Domains
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 7A
 goal: Session save/load with crash recovery, scrollback archiving, full SshDomain and WslDomain implementations, tmux control mode integration
 sections:
@@ -23,6 +26,9 @@ sections:
     status: not-started
   - id: "35.6"
     title: tmux Control Mode Integration
+    status: not-started
+  - id: "35.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "35.7"
     title: Section Completion
@@ -313,6 +319,14 @@ Act as a native frontend for tmux sessions via tmux's control mode (`-CC`). User
 
 ---
 
+## 35.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 35.7 Section Completion
 
 - [ ] All 35.1–35.6 items complete
@@ -329,5 +343,7 @@ Act as a native frontend for tmux sessions via tmux's control mode (`-CC`). User
 - [ ] **Scrollback test**: 100K lines of output → scrollback archived → searchable
 - [ ] **SSH test**: connect to remote, spawn pane, type commands (integration)
 - [ ] **WSL test**: spawn pane in Ubuntu, verify CWD mapping (integration)
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Terminal sessions survive daemon restarts and crashes. Scrollback is unlimited via disk archiving. SSH and WSL domains allow spawning shells on remote machines and WSL distributions. ori_term now has persistence that WezTerm lacks and native GUI that tmux lacks — the best of both worlds.

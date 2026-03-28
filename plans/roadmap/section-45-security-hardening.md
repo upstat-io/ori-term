@@ -3,6 +3,9 @@ section: 45
 title: Security Hardening
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: "Harden terminal escape sequence handling against clipboard exfiltration, paste injection, and other security-sensitive operations. Defense-in-depth: require focus for clipboard access, confirmation dialogs for dangerous operations, configurable allow/deny policies."
 sections:
@@ -17,6 +20,9 @@ sections:
     status: not-started
   - id: "45.4"
     title: Drag-Drop & Hyperlink Safety
+    status: not-started
+  - id: "45.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "45.5"
     title: Section Completion
@@ -322,6 +328,14 @@ Protect against command injection via file paths and dangerous URIs.
 
 ---
 
+## 45.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 45.5 Section Completion
 
 ### Completion checklist
@@ -345,5 +359,7 @@ Protect against command injection via file paths and dangerous URIs.
 - [ ] `./build-all.sh` — builds cleanly
 - [ ] `./test-all.sh` — all tests pass
 - [ ] `./clippy-all.sh` — no warnings
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** OSC 52 clipboard access is focus-gated and policy-controlled (Alacritty-style `Disabled`/`OnlyCopy`/`OnlyPaste`/`CopyPaste` enum). Paste operations have confirmation dialogs for dangerous content (detecting both `\r` and `\n`), bracket-end injection (`\x1b[201~`) always flagged, homograph URL detection for mixed-script domains, with bracketed paste mode not blindly suppressing warnings. Escape sequences cannot access arbitrary files or exhaust resources — sixel repeat counts are validated before allocation (CVE-2022-24130), image storage limited per-screen (320MB default). Title reporting (CSI 21 t) disabled by default (exploit chain risk). Window manipulation sequences (CSI t) denied by default. Window titles sanitized against C0 and C1 injection. VT state stacks (title, keyboard mode) depth-capped. Hyperlink regex capped to prevent DoS on long lines. Child process environment hygiene maintained (umask, env vars restored before spawn). Notifications focus-gated. Drag-drop paths normalized and shell-escaped. Hyperlink clicks require modifier key and restricted to allowlisted URI schemes (no bare click → CSRF). VT parser handles fragmented sequences without state corruption and contains zero `unsafe` code. All security features configurable with secure defaults.

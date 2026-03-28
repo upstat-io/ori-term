@@ -3,6 +3,9 @@ section: 39
 title: Image Protocols
 status: in-progress
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: "Inline image display via Kitty Graphics Protocol, Sixel, and iTerm2 image protocol. Full GPU-accelerated compositing with text overlay, animation support, memory-managed image cache."
 sections:
@@ -21,6 +24,9 @@ sections:
   - id: "39.5"
     title: Image Rendering + GPU Compositing
     status: in-progress
+  - id: "39.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "39.6"
     title: Section Completion
     status: in-progress
@@ -596,6 +602,14 @@ Render cached images as GPU textures composited into the terminal frame.
 
 ---
 
+## 39.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 39.6 Section Completion
 
 ### Sync points — all locations that must be updated together
@@ -670,5 +684,7 @@ Render cached images as GPU textures composited into the terminal frame.
 - [x] `./build-all.sh` — builds cleanly
 - [x] `./test-all.sh` — all image protocol tests pass
 - [x] `./clippy-all.sh` — no warnings
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** `kitty icat`, `imgcat`, `viu`, `timg`, and sixel-based tools display images inline in the terminal. Images composite correctly with text, scroll with content, and respect memory limits. Corrupt/oversized images are rejected gracefully. Image resources are cleaned up on tab close, screen clear, and terminal reset.

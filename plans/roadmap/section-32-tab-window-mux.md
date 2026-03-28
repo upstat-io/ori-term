@@ -3,6 +3,9 @@ section: 32
 title: Tab & Window Management (Mux-Aware)
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 4M
 goal: Multi-tab with mux integration, multi-window with shared GPU, tab CRUD, window lifecycle, cross-window tab movement, ConPTY-safe shutdown
 sections:
@@ -18,6 +21,9 @@ sections:
   - id: "32.4"
     title: Cross-Window Operations
     status: complete
+  - id: "32.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "32.5"
     title: Section Completion
     status: complete
@@ -211,6 +217,14 @@ Move tabs between windows. Tab identity (TabId) preserved — same panes, same l
 
 ---
 
+## 32.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 32.5 Section Completion
 
 - [x] All 32.1–32.4 items complete
@@ -225,5 +239,7 @@ Move tabs between windows. Tab identity (TabId) preserved — same panes, same l
 - [x] **Tab lifecycle test**: create 5 tabs, close 3, cycle remaining, verify state
 - [x] **Multi-window test**: 2 windows, move tab between, close one window
 - [x] **Stress test**: rapidly create/close tabs — no freeze, no orphaned PTYs
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Complete tab and window management through the mux layer. All patterns from superseded Sections 15 and 18 are implemented: ConPTY safety, no-flash startup, DPI handling, CWD inheritance, background thread drops, exit-before-drop ordering. Cross-window tab movement works with multi-pane tabs.

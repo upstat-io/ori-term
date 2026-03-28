@@ -12,6 +12,9 @@ sections:
   - id: "01.1"
     title: "Active Bugs"
     status: in-progress
+  - id: "01.R"
+    title: "Third Party Review Findings"
+    status: not-started
 ---
 
 # Section 01: UI Widgets Bugs
@@ -102,3 +105,13 @@ sections:
   - **Root cause**: Toggle only had ScrubController which required drag gesture. The DragEnd click fallback worked in tests but not in production because the drag-based path was unreliable for simple clicks.
   - **Found**: 2026-03-27 — manual sign-off (Section 14.4)
   - **Fixed**: 2026-03-27 — Added ClickController alongside ScrubController. The on_action handler now maps Clicked → toggle() directly, providing a reliable click-to-toggle path with animation.
+
+---
+
+## 01.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---

@@ -42,6 +42,9 @@ sections:
   - id: "1.11"
     title: Dirty Tracking
     status: complete
+  - id: "1.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "1.12"
     title: Section Completion
     status: in-progress
@@ -580,5 +583,7 @@ The following modules were built as part of later sections but live within `grid
 - `grid/stable_index.rs` — `StableRowIndex` (monotonic row identity surviving eviction). Built during rendering work.
 - `grid/snapshot.rs` — `GridSnapshot` test helper for human-readable grid diagrams. Built organically during testing.
 - `grid/editing/wide_char.rs` — Wide char boundary fixup helpers extracted from `editing/mod.rs` for 500-line limit.
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** `oriterm_core` compiles, all grid operations are tested, `cargo test -p oriterm_core` passes with zero failures.

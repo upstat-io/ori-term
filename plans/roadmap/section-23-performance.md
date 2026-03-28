@@ -3,6 +3,9 @@ section: 23
 title: Performance & Damage Tracking
 status: in-progress
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 5
 goal: Optimize rendering, parsing, and memory for heavy terminal workloads
 sections:
@@ -20,6 +23,9 @@ sections:
     status: in-progress
   - id: "23.5"
     title: Benchmarks
+    status: not-started
+  - id: "23.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "23.6"
     title: Section Completion
@@ -594,6 +600,14 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
 
 ---
 
+## 23.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 23.6 Section Completion
 
 **Infrastructure already in place:**
@@ -621,5 +635,7 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
 - [ ] `./test-all.sh` — all tests pass
 - [ ] `./clippy-all.sh` — no warnings
 - [ ] `cargo bench` — all benchmarks compile and run without error
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Terminal handles heavy workloads (large file output, rapid scrolling, complex TUIs) smoothly at 60fps with bounded memory usage. Performance is measured, baselined, and regression-tested.

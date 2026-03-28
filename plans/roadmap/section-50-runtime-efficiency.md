@@ -3,6 +3,9 @@ section: 50
 title: Runtime Efficiency — CPU & Memory Tuning
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 2
 goal: Achieve near-zero idle CPU (<0.05%) and stable memory with no growth during steady-state terminal operation.
 sections:
@@ -21,6 +24,9 @@ sections:
   - id: "50.5"
     title: Profiling Infrastructure
     status: complete
+  - id: "50.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "50.6"
     title: Regression Prevention
     status: complete
@@ -118,6 +124,14 @@ Hot-path allocation analysis. These paths must be zero-alloc after warmup:
 - [x] **Idle detection logging** — `PerfStats::check_idle()` called in `about_to_wait`. Logs "entering idle" when no activity for > 1s. `last_activity` updated on render and wakeup. Only active in `--profile` mode.
 - [x] **Memory watermark logging** — `oriterm/src/platform/memory.rs` with per-platform `rss_bytes()`: Linux reads `/proc/self/statm`, macOS/Windows return `None` (pending `libc`/`Win32_System_ProcessStatus` deps). RSS logged alongside PerfStats in `--profile` mode.
 
+## 50.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 50.6 Regression Prevention
 
 - [x] **Test: `ControlFlow::Wait` in idle** — extracted `compute_control_flow()` pure function into `event_loop_helpers/mod.rs` with `ControlFlowInput` struct and `ControlFlowDecision` enum (no winit types). 7 unit tests in `event_loop_helpers/tests.rs`: idle→Wait, dirty-before-budget→WaitUntil(remaining), still-dirty→WaitUntil, animations→WaitUntil(16ms), blinking→WaitUntil(next_toggle), dirty-priority-over-animations, animations-priority-over-blinking. `about_to_wait` refactored to call the pure function.
@@ -126,3 +140,4 @@ Hot-path allocation analysis. These paths must be zero-alloc after warmup:
 - [x] **CI benchmark: RSS stability** — `rss_stability_under_sustained_output` test: fills 1000-row scrollback, feeds 100,000 additional lines through VTE, asserts < 50 MB total allocations (proves no quadratic blowup, bounded scrollback recycling works).
 - [x] **CI benchmark: idle CPU** — covered by `compute_control_flow` pure function tests (7 tests in `event_loop_helpers/tests.rs`) and `PerfStats` ticks/s metric for manual verification. Headless CI cannot test actual event loop wakeups without a display server.
 - [x] **Document performance invariants** — added "Performance Invariants" section to CLAUDE.md: zero idle CPU beyond cursor blink, zero allocations in hot render path, stable RSS under sustained output, buffer shrink discipline. References regression test locations.
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

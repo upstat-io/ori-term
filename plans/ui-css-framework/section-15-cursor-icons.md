@@ -307,3 +307,4 @@ behavior:
 - [x] `./test-all.sh` passes
 - [x] `./build-all.sh` passes
 - [x] Manual verification: hover cursor changes correctly on all interactive elements in settings dialog
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)

@@ -3,6 +3,9 @@ section: 19
 title: Event Routing & Render Scheduling
 status: in-progress
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 4
 goal: Coordinate systems, 7-layer input dispatch, frame budgeting, cursor blink scheduling
 sections:
@@ -15,6 +18,9 @@ sections:
   - id: "19.3"
     title: Render Scheduling
     status: complete
+  - id: "19.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "19.4"
     title: Section Completion
     status: in-progress
@@ -208,6 +214,14 @@ Rendering is driven by `about_to_wait()`, not `RedrawRequested`. This avoids WM_
 
 ---
 
+## 19.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 19.4 Section Completion
 
 - [ ] All 19.1–19.3 items complete *(blocked: 19.2 has 2 items pending Section 21)*
@@ -216,5 +230,7 @@ Rendering is driven by `about_to_wait()`, not `RedrawRequested`. This avoids WM_
 - [x] Render scheduling: about_to_wait coalescing, 8ms frame budget, cursor blink scheduling
 - [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — clean build
 - [x] `cargo clippy -p oriterm -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Input events are routed through a strict priority chain with no ambiguity. Render scheduling coalesces dirty state and respects frame budget. Cursor blink is driven by ControlFlow timing, not polling. All coordinate system conversions are correct and DPI-aware.

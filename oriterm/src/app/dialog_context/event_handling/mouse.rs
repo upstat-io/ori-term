@@ -64,6 +64,17 @@ impl App {
             return;
         }
 
+        // Header drag: left mouse down in the caption area (above the header
+        // height) but outside the close button → initiate window drag.
+        // On Windows, WM_NCHITTEST already handles this at the OS level so
+        // the event never reaches here for the caption region. This path is
+        // needed for Linux (Wayland/X11) and macOS.
+        if matches!(kind, MouseEventKind::Down(MouseButton::Left)) {
+            if self.try_dialog_header_drag(window_id) {
+                return;
+            }
+        }
+
         // Content area.
         let result = self.route_dialog_click(window_id, kind);
         match result {
@@ -72,6 +83,35 @@ impl App {
             }
             DialogClickResult::None => {}
         }
+    }
+
+    /// Check if the cursor is in the dialog caption drag area and initiate drag.
+    ///
+    /// The caption area is the top `DIALOG_DRAG_CAPTION_HEIGHT` pixels of
+    /// the dialog, excluding the sidebar (which contains the search field
+    /// and nav items). Returns `true` if `drag_window()` was called.
+    ///
+    /// On Windows, `WM_NCHITTEST` handles this at the OS level so this
+    /// code path is primarily needed for Linux and macOS.
+    fn try_dialog_header_drag(&self, window_id: WindowId) -> bool {
+        use oriterm_ui::widgets::sidebar_nav::SIDEBAR_WIDTH;
+
+        let Some(ctx) = self.dialogs.get(&window_id) else {
+            return false;
+        };
+        let pos = ctx.last_cursor_pos;
+        // Must be within the caption strip at the top of the dialog.
+        if pos.y >= crate::app::dialog_management::DIALOG_DRAG_CAPTION_HEIGHT {
+            return false;
+        }
+        // Sidebar is excluded — search field and nav items must remain clickable.
+        if pos.x < SIDEBAR_WIDTH {
+            return false;
+        }
+        if let Err(e) = ctx.window.drag_window() {
+            log::warn!("dialog drag_window failed: {e}");
+        }
+        true
     }
 
     /// Try routing a mouse event through a dialog's overlay manager.

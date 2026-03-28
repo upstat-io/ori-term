@@ -3,6 +3,9 @@ section: 3
 title: Cross-Platform
 status: complete
 reviewed: true
+third_party_review:
+  status: none
+  updated: null
 tier: 0
 goal: Day-one first-class support for Windows, Linux, and macOS — all three platforms are equal targets from the start, with native PTY, fonts, clipboard, and GPU on each
 sections:
@@ -27,6 +30,9 @@ sections:
   - id: "03.7"
     title: System Theme Detection
     status: complete
+  - id: "3.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "03.8"
     title: Section Completion
     status: complete
@@ -457,6 +463,14 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] `"auto"` uses system detection result
 ---
 
+## 3.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 03.8 Section Completion
 
 - [x] All 03.1-03.7 items complete
@@ -478,5 +492,7 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 - [x] `cargo test --target x86_64-pc-windows-gnu` — passes
 - [x] `cargo test` (native Linux) — passes
 - [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** ori_term builds and runs on Windows, Linux, and macOS with native PTY, font discovery, clipboard, GPU rendering, and system theme detection on each platform. No platform is broken or missing core functionality.

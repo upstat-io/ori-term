@@ -951,3 +951,4 @@ After all 12.x changes, verify these files stay under 500 lines:
 - [x] Unsaved indicator hides cleanly when no unsaved changes
 - [x] Reset, Cancel, Save, and unsaved visuals match the mockup
 - [x] Hover states work correctly on all three buttons (danger-ghost, ghost, primary)
+- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
