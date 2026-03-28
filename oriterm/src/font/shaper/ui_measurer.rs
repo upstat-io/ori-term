@@ -5,7 +5,7 @@
 //! [`FontCollection`] for that logical pixel size, so 18px titles and 10px
 //! sidebar text rasterize at their true sizes.
 
-use oriterm_ui::text::{ShapedText, TextMetrics, TextStyle};
+use oriterm_ui::text::{FontSource, ShapedText, TextMetrics, TextStyle};
 use oriterm_ui::widgets::TextMeasurer;
 
 use crate::font::collection::FontCollection;
@@ -24,6 +24,10 @@ use super::ui_text;
 /// selects the exact-size collection from the registry. If the registry is
 /// absent or lacks the requested size, it falls back to `fallback`.
 ///
+/// When `TextStyle.font_source` is [`FontSource::Terminal`], the measurer uses
+/// `terminal_collection` instead — the user's configured terminal font with
+/// emoji fallback (Segoe UI Emoji / Noto Color Emoji).
+///
 /// - [`measure()`](TextMeasurer::measure) returns metrics in logical pixels
 ///   (physical ÷ scale) so widget layout computes correct proportions.
 /// - [`shape()`](TextMeasurer::shape) returns [`ShapedText`] with physical-pixel
@@ -31,6 +35,7 @@ use super::ui_text;
 pub struct UiFontMeasurer<'a> {
     sizes: Option<&'a UiFontSizes>,
     fallback: &'a FontCollection,
+    terminal_collection: Option<&'a FontCollection>,
     scale: f32,
 }
 
@@ -45,15 +50,29 @@ impl<'a> UiFontMeasurer<'a> {
         Self {
             sizes,
             fallback,
+            terminal_collection: None,
             scale,
         }
     }
 
-    /// Select the collection matching a text style's size.
+    /// Set the terminal font collection for `FontSource::Terminal` text.
+    #[must_use]
+    pub fn with_terminal_collection(mut self, collection: &'a FontCollection) -> Self {
+        self.terminal_collection = Some(collection);
+        self
+    }
+
+    /// Select the collection matching a text style.
     ///
-    /// Looks up the exact physical size in the registry. Falls back to
-    /// `self.fallback` if the registry is absent or the size isn't loaded.
+    /// `FontSource::Terminal` uses the terminal collection (if set), falling
+    /// back to the UI font. `FontSource::Ui` looks up the exact physical size
+    /// in the registry, falling back to `self.fallback`.
     fn collection_for_style(&self, style: &TextStyle) -> &FontCollection {
+        if style.font_source == FontSource::Terminal {
+            if let Some(tc) = self.terminal_collection {
+                return tc;
+            }
+        }
         self.sizes
             .and_then(|sizes| sizes.select(style.size, self.scale))
             .unwrap_or(self.fallback)

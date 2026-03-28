@@ -256,6 +256,7 @@ impl WindowRenderer {
             self.active_ui_collection(),
             scale,
         )
+        .with_terminal_collection(&self.font_collection)
     }
 
     /// Glyph atlas for cache statistics.
