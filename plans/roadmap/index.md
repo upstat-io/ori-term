@@ -391,6 +391,7 @@ tab bar hit testing, TabBarHit, CloseTab, NewTab, DropdownButton, DragArea
 close button inset, platform-specific controls, Windows rectangular, macOS circular
 tab hover preview, terminal preview, thumbnail, TerminalPreviewWidget, offscreen render
 tab icon, emoji, TabIcon, process icon, OSC 1, icon name, color emoji in tab
+tab title editing, rename tab, double-click rename, inline edit, TextEditingState
 ```
 
 ---

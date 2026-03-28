@@ -21,6 +21,9 @@ sections:
   - id: "16.5"
     title: Tab Icons & Emoji
     status: complete
+  - id: "16.6"
+    title: "Tab Title Inline Editing"
+    status: not-started
   - id: "16.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -252,6 +255,79 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 - [x] Emoji detection: plain text, empty, flags, ZWJ sequences
 - [x] Event pipeline: `IconName`/`ResetIconName` events + `PaneIconChanged` mux event
 - [x] `MuxNotification::PaneTitleChanged` debug format
+
+---
+
+## 16.6 Tab Title Inline Editing
+
+Double-click a tab label to rename it inline. The label text becomes an editable text field with cursor, selection, and standard keyboard editing. Enter commits, Escape cancels, click-outside commits.
+
+**File:** `oriterm_ui/src/widgets/tab_bar/widget/mod.rs` (editing state fields, start/commit/cancel methods), `oriterm_ui/src/widgets/tab_bar/widget/draw.rs` (render editor instead of label during editing), `oriterm/src/app/tab_bar_input.rs` (double-click detection on `TabBarHit::Tab`), `oriterm_ui/src/action/mod.rs` (new `TabTitleChanged` action variant)
+
+**Reference:** VS Code tab rename (double-click → inline edit → select all → type replaces), Windows Terminal (right-click → Rename Tab)
+
+**Design:** Reuse `TextEditingState` from `oriterm_ui/src/text/editing/mod.rs` directly on `TabBarWidget`. This avoids nested widget complexity — the tab bar is a monolithic widget that draws directly to the scene, not a container with child widgets. `TextEditingState` provides all editing logic (cursor movement, selection, insert, delete, home/end) and is already used by `TextInputWidget` and sidebar search.
+
+- [ ] **Editing state on `TabBarWidget`** (`widget/mod.rs`, ~337 lines → ~360 lines after):
+  - [ ] Add `editing_index: Option<usize>` field — which tab is being edited (`None` = not editing)
+  - [ ] Add `editing: TextEditingState` field — the editing buffer (reused, not allocated per edit)
+  - [ ] Add `original_title: String` field — for Escape cancellation (restore original)
+  - [ ] Add `pub fn start_editing(&mut self, index: usize)` — sets `editing_index`, copies `tabs[index].title` into `editing` via `set_text()`, calls `editing.select_all()` (VS Code behavior: select-all so typing replaces)
+  - [ ] Add `pub fn commit_editing(&mut self) -> Option<(usize, String)>` — returns `(tab_index, new_title)` if editing was active, clears `editing_index`. Returns `None` if not editing. Trims whitespace; if result is empty, restores original title
+  - [ ] Add `pub fn cancel_editing(&mut self)` — restores `original_title` to `tabs[editing_index].title`, clears `editing_index`
+  - [ ] Add `pub fn is_editing(&self) -> bool` — returns `editing_index.is_some()`
+  - [ ] Add `pub fn editing_tab_index(&self) -> Option<usize>` — returns `editing_index`
+- [ ] **Double-click detection** (`oriterm/src/app/tab_bar_input.rs`, ~272 lines → ~310 lines after):
+  - [ ] Add `last_tab_press: Option<(usize, Instant)>` field to `WindowContext` (track tab index + timestamp for double-click detection, parallel to existing `last_drag_area_press`)
+  - [ ] In `try_tab_bar_mouse` → `TabBarHit::Tab(idx)` branch: check if this is a double-click on the same tab (same index, within `DOUBLE_CLICK_THRESHOLD`)
+  - [ ] If double-click: call `ctx.tab_bar.start_editing(idx)`, mark dirty, return `true` (consume event, do NOT start drag)
+  - [ ] If single-click: existing behavior (switch tab + start drag). Also: if currently editing a different tab, commit the edit first
+  - [ ] Update `last_tab_press` timestamp on every `Tab(idx)` press
+- [ ] **Keyboard input during editing** (`oriterm/src/app/tab_bar_input.rs` or new `tab_bar_editing.rs`):
+  - [ ] Add `pub fn handle_tab_editing_key(&mut self, key_event: &KeyEvent) -> bool` on `App`
+  - [ ] Called from the main keyboard input path BEFORE PTY encoding — if tab bar is in editing mode, intercept keys
+  - [ ] Enter: commit edit → emit `WidgetAction::TabTitleChanged { index, title }` → update tab via mux
+  - [ ] Escape: cancel edit → restore original title
+  - [ ] Character input: `editing.insert_char(ch)` → mark dirty
+  - [ ] Backspace: `editing.backspace()` → mark dirty
+  - [ ] Delete: `editing.delete()` → mark dirty
+  - [ ] Left/Right (with Shift for selection): `editing.move_left/right(shift)`
+  - [ ] Home/End (with Shift): `editing.home/end(shift)`
+  - [ ] Ctrl+A: `editing.select_all()`
+  - [ ] Tab key: commit edit (same as Enter — move to next control)
+  - [ ] Return `true` for all consumed keys (prevents them from going to PTY)
+- [ ] **Click-outside commits** (`oriterm/src/app/tab_bar_input.rs`):
+  - [ ] When editing is active and a click lands outside the editing tab (different tab, close button, new tab, drag area, or below tab bar): commit the edit first, then process the click normally
+  - [ ] Add check at top of `try_tab_bar_mouse`: if editing and hit is not `Tab(editing_index)`, commit first
+  - [ ] Grid click handler (`mouse_input.rs`): if tab editing is active, commit first
+- [ ] **Rendering during editing** (`widget/draw.rs`, ~475 lines → ~500 lines after — at limit):
+  - [ ] In `draw_tab_label` (or equivalent): when `self.editing_index == Some(tab_index)`, draw the editor instead of the static label
+  - [ ] Editor rendering: shape `self.editing.text()` with same `TextStyle` as normal label
+  - [ ] Draw selection highlight: if `editing.selection_range()` is `Some((start, end))`, draw a filled rect behind the selected text range using the theme's selection color
+  - [ ] Draw cursor: thin vertical line (1px logical) at the cursor's X position, blinking (reuse cursor blink state or a separate timer)
+  - [ ] Background: draw a subtle edit-mode indicator (slightly different background or border on the editing tab)
+  - [ ] **FILE SIZE NOTE**: `draw.rs` is at 475 lines. Editor rendering adds ~25 lines. If it exceeds 500, extract `draw_tab_editor()` into a new `widget/edit_draw.rs` submodule
+- [ ] **New action variant** (`oriterm_ui/src/action/mod.rs`):
+  - [ ] Add `TabTitleChanged { index: usize, title: String }` to `WidgetAction`
+  - [ ] Handle in app-layer action dispatch: update the tab's title in the mux, update `TabEntry` in the tab bar
+- [ ] **Focus and editing lifecycle**:
+  - [ ] Window focus loss: commit any active tab edit (parallel to cursor blink reset on focus loss)
+  - [ ] Tab close while editing: cancel the edit if the closing tab is the one being edited
+  - [ ] Tab switch while editing: commit the edit for the previous tab
+  - [ ] Tab drag: do not start drag if double-click started editing — the double-click detection prevents this by consuming the event
+
+**Tests:** (in `oriterm_ui/src/widgets/tab_bar/tests.rs`)
+- [ ] `start_editing_sets_index_and_selects_all` — call `start_editing(1)`, verify `editing_index == Some(1)`, `editing.selection_range() == Some((0, title.len()))`
+- [ ] `commit_editing_returns_trimmed_title` — start editing, insert "  New Title  ", commit → returns `(1, "New Title")`
+- [ ] `commit_editing_empty_restores_original` — start editing, delete all, commit → title restored to original
+- [ ] `cancel_editing_restores_original_title` — start editing, type something, cancel → title matches original
+- [ ] `is_editing_false_after_commit` — start, commit → `is_editing() == false`
+- [ ] `is_editing_false_after_cancel` — start, cancel → `is_editing() == false`
+- [ ] `keyboard_enter_commits` — verify Enter key triggers commit path
+- [ ] `keyboard_escape_cancels` — verify Escape key triggers cancel path
+- [ ] `keyboard_typing_inserts_characters` — verify character input updates editing state
+- [ ] `double_click_same_tab_starts_editing` — verify double-click detection logic
+- [ ] `single_click_different_tab_while_editing_commits` — verify click-outside behavior
 
 ---
 
