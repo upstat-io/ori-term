@@ -192,6 +192,9 @@ pub fn shape_text(
         shaped.width += phys_letter_spacing * shaped.glyphs.len() as f32;
     }
 
+    // Stamp font source so the glyph cache routes to the correct collection.
+    shaped.font_source = style.font_source;
+
     shaped
 }
 

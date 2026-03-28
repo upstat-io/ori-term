@@ -115,21 +115,48 @@ impl WindowRenderer {
             return;
         }
 
-        // Sort keys by size_q6 for grouped processing per font size.
-        self.ui_raster_keys.sort_unstable_by_key(|k| k.size_q6);
+        // Partition: terminal-font glyphs always use self.font_collection;
+        // UI-font glyphs use the size registry (or terminal font as fallback).
+        let terminal_end = {
+            let mut lo = 0;
+            let mut hi = self.ui_raster_keys.len();
+            while lo < hi {
+                if self.ui_raster_keys[lo].font_realm == crate::font::FontRealm::Terminal {
+                    lo += 1;
+                } else {
+                    hi -= 1;
+                    self.ui_raster_keys.swap(lo, hi);
+                }
+            }
+            lo
+        };
 
-        // Process each size group with its matching FontCollection.
+        // Terminal-font glyphs: rasterize using the terminal collection directly.
+        if terminal_end > 0 {
+            ensure_glyphs_cached(
+                self.ui_raster_keys[..terminal_end].iter().copied(),
+                &mut self.atlas,
+                &mut self.subpixel_atlas,
+                &mut self.color_atlas,
+                &mut self.empty_keys,
+                &mut self.font_collection,
+                &gpu.device,
+                &gpu.queue,
+            );
+        }
+
+        // UI-font glyphs: group by size_q6 and resolve via UI font registry.
+        let ui_keys = &mut self.ui_raster_keys[terminal_end..];
+        ui_keys.sort_unstable_by_key(|k| k.size_q6);
+
         let mut start = 0;
-        while start < self.ui_raster_keys.len() {
-            let q6 = self.ui_raster_keys[start].size_q6;
-            let end = self.ui_raster_keys[start..]
+        while start < ui_keys.len() {
+            let q6 = ui_keys[start].size_q6;
+            let end = ui_keys[start..]
                 .iter()
                 .position(|k| k.size_q6 != q6)
-                .map_or(self.ui_raster_keys.len(), |p| start + p);
+                .map_or(ui_keys.len(), |p| start + p);
 
-            // Check the registry with a shared borrow first, then re-borrow
-            // mutably only the matching field. This avoids holding `&mut sizes`
-            // and `&mut self.font_collection` in the same borrow scope.
             let in_registry = self
                 .ui_font_sizes
                 .as_ref()
@@ -142,18 +169,10 @@ impl WindowRenderer {
                     .select_by_q6_mut(q6)
                     .unwrap()
             } else {
-                // Shaping fell back to the default collection (or no UI
-                // registry exists). Rasterize against the same fallback.
-                if self.ui_font_sizes.is_some() {
-                    log::warn!(
-                        "UI text size_q6={q6} not in font registry; \
-                         falling back to terminal font for rasterization"
-                    );
-                }
                 &mut self.font_collection
             };
             ensure_glyphs_cached(
-                self.ui_raster_keys[start..end].iter().copied(),
+                ui_keys[start..end].iter().copied(),
                 &mut self.atlas,
                 &mut self.subpixel_atlas,
                 &mut self.color_atlas,

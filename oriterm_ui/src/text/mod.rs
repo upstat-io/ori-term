@@ -291,6 +291,12 @@ pub struct ShapedText {
     /// preventing atlas collisions between different weight requests.
     /// Test/mock code can pass `400`.
     pub weight: u16,
+    /// Which font source produced this shaped text.
+    ///
+    /// `Ui` = embedded UI font, `Terminal` = terminal font with emoji fallback.
+    /// Used by the glyph cache to route rasterization to the correct font
+    /// collection, preventing `size_q6` collisions between UI and terminal fonts.
+    pub font_source: FontSource,
 }
 
 impl ShapedText {
@@ -314,6 +320,7 @@ impl ShapedText {
             baseline,
             size_q6,
             weight,
+            font_source: FontSource::Ui,
         }
     }
 
