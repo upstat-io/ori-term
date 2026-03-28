@@ -211,6 +211,10 @@ pub(super) fn scene_raster_keys(
 ) {
     for text_run in scene.text_runs() {
         let run_size_q6 = text_run.shaped.size_q6;
+        let realm = match text_run.shaped.font_source {
+            oriterm_ui::text::FontSource::Terminal => FontRealm::Terminal,
+            oriterm_ui::text::FontSource::Ui => FontRealm::Ui,
+        };
         let mut cursor_x = text_run.position.x * scale;
         for glyph in &text_run.shaped.glyphs {
             let advance = glyph.x_advance;
@@ -226,7 +230,7 @@ pub(super) fn scene_raster_keys(
                 synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
                 hinted,
                 subpx_x: crate::font::subpx_bin(cursor_x + glyph.x_offset),
-                font_realm: FontRealm::Ui,
+                font_realm: realm,
             });
             cursor_x += advance;
         }

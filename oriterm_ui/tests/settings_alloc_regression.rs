@@ -102,6 +102,7 @@ impl TextMeasurer for SimpleMeasurer {
             baseline: 12.8,
             size_q6: (style.size * 64.0) as u32,
             weight: 400,
+            font_source: oriterm_ui::text::FontSource::Ui,
         }
     }
 }
