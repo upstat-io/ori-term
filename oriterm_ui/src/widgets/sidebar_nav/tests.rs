@@ -98,10 +98,10 @@ fn layout_height_fills_parent() {
 }
 
 #[test]
-fn sense_returns_click() {
+fn sense_returns_click_and_focusable() {
     let theme = crate::theme::UiTheme::dark();
     let w = SidebarNavWidget::new(test_sections(), &theme);
-    assert_eq!(w.sense(), Sense::click());
+    assert_eq!(w.sense(), Sense::click().union(Sense::focusable()));
 }
 
 #[test]

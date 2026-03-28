@@ -34,7 +34,7 @@ fn sense_returns_click_and_drag() {
 #[test]
 fn has_two_controllers() {
     let t = ToggleWidget::new();
-    assert_eq!(t.controllers().len(), 2);
+    assert_eq!(t.controllers().len(), 2, "hover + scrub");
 }
 
 #[test]

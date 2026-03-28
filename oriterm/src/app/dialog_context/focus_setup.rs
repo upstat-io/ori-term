@@ -31,13 +31,9 @@ impl App {
         let scale = ctx.scale_factor.factor() as f32;
         let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
 
-        // Register all widgets (chrome + content) with InteractionManager.
+        // Register all content widgets with InteractionManager.
         // WidgetAdded events stay pending and are delivered on the first
         // compose_dialog_widgets() frame via prepare_widget_tree (TPR-04-003).
-        crate::app::widget_pipeline::register_widget_tree(
-            &mut ctx.chrome,
-            ctx.root.interaction_mut(),
-        );
         crate::app::widget_pipeline::register_widget_tree(
             ctx.content.content_widget_mut(),
             ctx.root.interaction_mut(),
@@ -45,14 +41,12 @@ impl App {
 
         // Collect key contexts for keymap scope gating.
         ctx.root.key_contexts_mut().clear();
-        oriterm_ui::action::collect_key_contexts(&mut ctx.chrome, ctx.root.key_contexts_mut());
         oriterm_ui::action::collect_key_contexts(
             ctx.content.content_widget_mut(),
             ctx.root.key_contexts_mut(),
         );
 
         // Compute layout and build parent map.
-        let chrome_h = ctx.chrome.caption_height();
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
         let layout_ctx = LayoutCtx {
@@ -60,7 +54,7 @@ impl App {
             theme: &ui_theme,
         };
         let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-        let local_viewport = Rect::new(0.0, 0.0, w, h - chrome_h);
+        let local_viewport = Rect::new(0.0, 0.0, w, h);
         let layout_node = compute_layout(&layout_box, local_viewport);
         let parent_map = build_parent_map(&layout_node);
         ctx.root.interaction_mut().set_parent_map(parent_map);

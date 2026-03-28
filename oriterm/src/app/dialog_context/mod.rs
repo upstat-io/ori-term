@@ -23,7 +23,6 @@ use oriterm_ui::surface::{DamageSet, RenderStrategy, SurfaceLifecycle};
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::dialog::DialogWidget;
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
-use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
 use crate::app::settings_overlay::SettingsIds;
 use crate::config::Config;
@@ -47,8 +46,6 @@ pub(crate) struct DialogWindowContext {
     pub(super) kind: DialogKind,
     /// The dialog content (widget tree + associated state).
     pub(super) content: DialogContent,
-    /// Dialog title bar with close button only (dialog chrome mode).
-    pub(super) chrome: WindowChromeWidget,
     /// Pure UI framework state (interaction, focus, overlays, compositor, keymap, animation).
     pub(super) root: oriterm_ui::window_root::WindowRoot,
     /// Text shaping cache (persists across frames for cached UI text measurer).
@@ -153,7 +150,7 @@ impl DialogWindowContext {
     /// Create a new dialog window context.
     #[expect(
         clippy::too_many_arguments,
-        reason = "constructor wiring: window + surface + renderer + content + scale + theme"
+        reason = "constructor wiring: window + surface + renderer + content + scale"
     )]
     pub(crate) fn new(
         window: Arc<Window>,
@@ -163,14 +160,12 @@ impl DialogWindowContext {
         kind: DialogKind,
         content: DialogContent,
         scale_factor: ScaleFactor,
-        theme: &oriterm_ui::theme::UiTheme,
     ) -> Self {
         let (w, h) = (surface_config.width, surface_config.height);
         let scale = scale_factor.factor() as f32;
         let logical_w = w as f32 / scale;
         let logical_h = h as f32 / scale;
         let viewport = Rect::new(0.0, 0.0, logical_w, logical_h);
-        let chrome = WindowChromeWidget::dialog(kind.title(), logical_w, theme);
         Self {
             window,
             surface,
@@ -178,7 +173,6 @@ impl DialogWindowContext {
             renderer,
             kind,
             content,
-            chrome,
             root: oriterm_ui::window_root::WindowRoot::with_viewport(
                 oriterm_ui::widgets::label::LabelWidget::new(""),
                 viewport,
@@ -204,8 +198,6 @@ impl DialogWindowContext {
         self.surface_config.height = h;
         gpu.configure_surface(&self.surface, &self.surface_config);
         let scale = self.scale_factor.factor() as f32;
-        let logical_w = w as f32 / scale;
-        self.chrome.set_window_width(logical_w);
         let logical_w = w as f32 / scale;
         let logical_h = h as f32 / scale;
         self.root
@@ -261,7 +253,6 @@ pub(super) fn needs_content_redraw(
 )]
 pub(super) fn content_parent_map(
     panel: &dyn Widget,
-    chrome_h: f32,
     renderer: &WindowRenderer,
     scale: f32,
     text_cache: &TextShapeCache,
@@ -284,7 +275,7 @@ pub(super) fn content_parent_map(
     );
     build_parent_map(&compute_layout(
         &panel.layout(&lctx),
-        Rect::new(0.0, 0.0, w, h - chrome_h),
+        Rect::new(0.0, 0.0, w, h),
     ))
 }
 
@@ -302,7 +293,6 @@ pub(super) fn content_parent_map(
 )]
 pub(super) fn recompute_dialog_hot_path(
     root: &mut oriterm_ui::window_root::WindowRoot,
-    chrome: &WindowChromeWidget,
     content_widget: &dyn Widget,
     cursor_pos: oriterm_ui::geometry::Point,
     renderer: Option<&WindowRenderer>,
@@ -316,34 +306,23 @@ pub(super) fn recompute_dialog_hot_path(
     use oriterm_ui::layout::compute_layout;
     use oriterm_ui::widgets::LayoutCtx;
 
-    let chrome_h = chrome.caption_height();
+    let Some(renderer) = renderer else {
+        root.clear_hot_path();
+        return;
+    };
+    let m = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
+    let w = surface_config.width as f32 / scale;
+    let h = surface_config.height as f32 / scale;
+    let vp = Rect::new(0.0, 0.0, w, h);
+    let lctx = LayoutCtx {
+        measurer: &m,
+        theme: ui_theme,
+    };
+    let node = compute_layout(&content_widget.layout(&lctx), vp);
+    let hit = layout_hit_test_path(&node, cursor_pos);
     let mut hot_path = Vec::new();
-
-    if cursor_pos.y >= chrome_h {
-        let Some(renderer) = renderer else {
-            root.clear_hot_path();
-            return;
-        };
-        let m = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
-        let w = surface_config.width as f32 / scale;
-        let h = surface_config.height as f32 / scale;
-        let vp = Rect::new(0.0, 0.0, w, h - chrome_h);
-        let lctx = LayoutCtx {
-            measurer: &m,
-            theme: ui_theme,
-        };
-        let node = compute_layout(&content_widget.layout(&lctx), vp);
-        let local = oriterm_ui::geometry::Point::new(cursor_pos.x, cursor_pos.y - chrome_h);
-        let hit = layout_hit_test_path(&node, local);
-        for entry in &hit.path {
-            hot_path.push(entry.widget_id);
-        }
-    } else if let Some(btn_id) = chrome.widget_at_point(cursor_pos) {
-        hot_path.push(chrome.id());
-        hot_path.push(btn_id);
-    } else {
-        // Cursor is in the chrome area but not on any interactive control.
-        // hot_path stays empty — all widgets become un-hot.
+    for entry in &hit.path {
+        hot_path.push(entry.widget_id);
     }
 
     let changed = root.interaction_mut().update_hot_path(&hot_path);

@@ -273,12 +273,12 @@ impl Widget for SettingsPanel {
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
                 scene: ctx.scene,
-                bounds: child_node.content_rect,
+                bounds: child_node.rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                interaction: None,
-                widget_id: None,
+                interaction: ctx.interaction,
+                widget_id: Some(self.container.id()),
                 frame_requests: ctx.frame_requests,
             };
             self.container.paint(&mut child_ctx);

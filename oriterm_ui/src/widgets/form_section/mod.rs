@@ -216,12 +216,12 @@ impl Widget for FormSection {
                     let mut child_ctx = DrawCtx {
                         measurer: ctx.measurer,
                         scene: ctx.scene,
-                        bounds: row_node.content_rect,
+                        bounds: row_node.rect,
                         now: ctx.now,
                         theme: ctx.theme,
                         icons: ctx.icons,
-                        interaction: None,
-                        widget_id: None,
+                        interaction: ctx.interaction,
+                        widget_id: Some(row.id()),
                         frame_requests: ctx.frame_requests,
                     };
                     row.paint(&mut child_ctx);

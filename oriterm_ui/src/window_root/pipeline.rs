@@ -146,6 +146,19 @@ impl WindowRoot {
         );
         self.mark_widgets_prepaint_dirty(&dispatch_changed);
 
+        // Step 5.5: clear focus on mouse-down in non-focusable area.
+        // If no controller requested focus on this click, and the event
+        // is a mouse down that wasn't consumed by an overlay, clear focus
+        // so clicking empty space unfocuses the current input.
+        if matches!(event, InputEvent::MouseDown { .. })
+            && !overlay_consumed
+            && !result.requests.contains(ControllerRequests::REQUEST_FOCUS)
+            && self.focus.focused().is_some()
+        {
+            let changed = self.interaction.clear_focus(&mut self.focus);
+            self.mark_widgets_prepaint_dirty(&changed);
+        }
+
         // Step 6: deliver lifecycle events from request application.
         self.deliver_lifecycle_events(now, measurer, theme);
 

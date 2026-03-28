@@ -11,6 +11,7 @@ use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::color_swatch::{ColorSwatchGrid, SpecialColorSwatch};
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::label::{LabelStyle, LabelWidget};
+use oriterm_ui::widgets::panel::{PanelStyle, PanelWidget};
 use oriterm_ui::widgets::scheme_card::{SchemeCardData, SchemeCardWidget};
 
 use crate::config::Config;
@@ -24,11 +25,14 @@ const CARD_GAP: f32 = 10.0;
 /// Minimum card width for the auto-fill grid (mockup `minmax(240px, 1fr)`).
 const CARD_MIN_WIDTH: f32 = 240.0;
 
-/// Gap between special color swatches.
-const SWATCH_GAP: f32 = 8.0;
+/// Gap between special color swatches (mockup: 6px).
+const SWATCH_GAP: f32 = 6.0;
 
 /// Gap between palette subsections (special colors, ANSI rows).
-const PALETTE_GAP: f32 = 12.0;
+const PALETTE_GAP: f32 = 10.0;
+
+/// Padding inside the palette card (mockup: 14px).
+const PALETTE_CARD_PADDING: f32 = 14.0;
 
 /// Builds the Colors page content widget.
 ///
@@ -134,9 +138,9 @@ fn build_palette_section(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
         ..LabelStyle::from_theme(theme)
     });
 
-    // Separate header from gapped content so the header's built-in
-    // 12px spacer is the only title-to-content gap (TPR-11-009).
-    let content = ContainerWidget::column()
+    // Wrap palette in a card (mockup `.color-editor`): bg_raised, 2px border,
+    // 14px padding. PanelWidget provides bg + border + padding over a child.
+    let inner = ContainerWidget::column()
         .with_width(SizeSpec::Fill)
         .with_gap(PALETTE_GAP)
         .with_child(specials)
@@ -145,11 +149,21 @@ fn build_palette_section(config: &Config, theme: &UiTheme) -> Box<dyn Widget> {
         .with_child(Box::new(bright_label))
         .with_child(bright_ansi);
 
+    let card_style = PanelStyle {
+        bg: theme.bg_card,
+        border_color: theme.border,
+        border_width: 2.0,
+        corner_radius: 0.0,
+        padding: oriterm_ui::geometry::Insets::all(PALETTE_CARD_PADDING),
+        shadow: None,
+    };
+    let card = PanelWidget::new(Box::new(inner)).with_style(card_style);
+
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
             .with_child(title)
-            .with_child(Box::new(content)),
+            .with_child(Box::new(card)),
     )
 }
 

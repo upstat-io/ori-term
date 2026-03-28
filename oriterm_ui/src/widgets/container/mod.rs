@@ -337,7 +337,7 @@ impl Widget for ContainerWidget {
                 }
 
                 let child_id = child.id();
-                let bounds = child_node.content_rect;
+                let bounds = child_node.rect;
                 let mut child_ctx = ctx.for_child(child_id, bounds);
                 child.paint(&mut child_ctx);
             }

@@ -355,8 +355,6 @@ impl Widget for ToggleWidget {
             }
             WidgetAction::DragEnd { pos, .. } => {
                 if let Some(origin) = self.drag_origin.take() {
-                    // Half the thumb travel distance: anything below is a
-                    // click/tap, anything above is a positional drag commit.
                     let s = &self.style;
                     let travel = s.width - s.thumb_padding * 2.0 - s.thumb_size;
                     let total_move = (pos.x - origin.x).abs();

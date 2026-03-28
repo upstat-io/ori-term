@@ -230,7 +230,8 @@ impl SidebarNavWidget {
     fn paint_footer(&self, ctx: &mut DrawCtx<'_>, bounds: &Rect) {
         let text_x = bounds.x() + FOOTER_PADDING_X;
         let avail_w = bounds.width() - FOOTER_PADDING_X * 2.0;
-        let mut y = bounds.bottom() - FOOTER_PADDING_Y;
+        // Sidebar bottom padding (16px) + footer internal padding (8px).
+        let mut y = bounds.bottom() - SIDEBAR_PADDING_Y - FOOTER_PADDING_Y;
         let mut rects = FooterRects::default();
 
         // Config path (bottom-most, faint + smaller, with ellipsis truncation).

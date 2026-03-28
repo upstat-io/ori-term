@@ -4,6 +4,8 @@
 //! Arrow keys increment/decrement. Emits `WidgetAction::ValueChanged`
 //! when the value changes.
 
+use winit::window::CursorIcon;
+
 use crate::color::Color;
 use crate::controllers::{EventController, FocusController, HoverController};
 use crate::draw::RectStyle;
@@ -58,6 +60,9 @@ pub struct NumberInputWidget {
     focus_border_color: Color,
     controllers: Vec<Box<dyn EventController>>,
     animator: VisualStateAnimator,
+    /// Keyboard editing buffer. Populated as the user types digits;
+    /// parsed into `value` on each keystroke.
+    input_buf: String,
 }
 
 impl NumberInputWidget {
@@ -82,6 +87,7 @@ impl NumberInputWidget {
                 theme.bg_active,
                 theme.bg_secondary,
             )]),
+            input_buf: String::new(),
         }
     }
 
@@ -130,6 +136,7 @@ impl NumberInputWidget {
             return None;
         }
         self.value = new_val;
+        self.input_buf = self.format_value();
         Some(WidgetAction::ValueChanged {
             id: self.id,
             value: self.value,
@@ -152,7 +159,9 @@ impl Widget for NumberInputWidget {
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         let total_w = self.input_width + BUTTON_PANEL_WIDTH + 2.0 * BORDER_WIDTH;
-        LayoutBox::leaf(total_w, INPUT_HEIGHT).with_widget_id(self.id)
+        LayoutBox::leaf(total_w, INPUT_HEIGHT)
+            .with_widget_id(self.id)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
     fn controllers(&self) -> &[Box<dyn EventController>] {
@@ -207,15 +216,23 @@ impl Widget for NumberInputWidget {
         let half_h = bounds.height() / 2.0;
 
         // Vertical divider (mockup `border-left: 2px solid`).
-        let divider = Rect::new(panel_x, bounds.y(), BORDER_WIDTH, bounds.height());
+        // Inset by the outer border width so it doesn't overlap the
+        // highlighted outer border at top/bottom edges.
+        let divider = Rect::new(
+            panel_x,
+            bounds.y() + BORDER_WIDTH,
+            BORDER_WIDTH,
+            bounds.height() - 2.0 * BORDER_WIDTH,
+        );
         ctx.scene
-            .push_quad(divider, RectStyle::filled(border_color));
+            .push_quad(divider, RectStyle::filled(ctx.theme.border));
 
         // Horizontal divider between stepper buttons (mockup `border-top: 1px`).
+        // Inset from both the vertical divider (left) and outer border (right).
         let h_divider = Rect::new(
             panel_x + BORDER_WIDTH,
             bounds.y() + half_h - BUTTON_DIVIDER_WIDTH / 2.0,
-            BUTTON_PANEL_WIDTH - BORDER_WIDTH,
+            BUTTON_PANEL_WIDTH - BORDER_WIDTH - BORDER_WIDTH,
             BUTTON_DIVIDER_WIDTH,
         );
         ctx.scene
@@ -276,6 +293,37 @@ impl Widget for NumberInputWidget {
                 }
                 OnInputResult::handled()
             }
+            // Typed digit or decimal point — append to editing buffer.
+            InputEvent::KeyDown {
+                key: Key::Character(ch),
+                ..
+            } if ch.is_ascii_digit() || *ch == '.' || *ch == '-' => {
+                self.input_buf.push(*ch);
+                if let Ok(v) = self.input_buf.parse::<f32>() {
+                    let clamped = v.clamp(self.min, self.max);
+                    if (clamped - self.value).abs() > f32::EPSILON {
+                        self.value = clamped;
+                        return OnInputResult::handled().with_action(WidgetAction::ValueChanged {
+                            id: self.id,
+                            value: self.value,
+                        });
+                    }
+                }
+                OnInputResult::handled()
+            }
+            // Backspace — remove last character from editing buffer.
+            InputEvent::KeyDown {
+                key: Key::Backspace,
+                ..
+            } => {
+                if !self.input_buf.is_empty() {
+                    self.input_buf.pop();
+                    if let Ok(v) = self.input_buf.parse::<f32>() {
+                        self.value = v.clamp(self.min, self.max);
+                    }
+                }
+                OnInputResult::handled()
+            }
             InputEvent::MouseDown { pos, .. } => {
                 // Check if click is in the button panel area.
                 let panel_x = bounds.x() + bounds.width() - BUTTON_PANEL_WIDTH;
@@ -287,6 +335,9 @@ impl Widget for NumberInputWidget {
                     }
                     return OnInputResult::handled();
                 }
+                // Clicking the text area starts editing — clear buffer to accept
+                // fresh typed input.
+                self.input_buf.clear();
                 OnInputResult::ignored()
             }
             _ => OnInputResult::ignored(),

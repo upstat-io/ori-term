@@ -123,8 +123,10 @@ pub(super) fn build_section_header(title: &str, theme: &UiTheme) -> Box<dyn Widg
 
 /// Builds a section header column with an optional description block.
 ///
-/// Layout: title row → 4px gap → description label → 12px spacer.
-/// The description uses `12px` body text, muted color, and `line_height: 1.5`.
+/// Layout: title row → description label → 12px spacer. The description
+/// follows immediately after the title row (mockup uses `margin-top: -8px`
+/// to pull the description tight against the title). The description uses
+/// `12px` body text, muted color, and `line_height: 1.5`.
 pub(super) fn build_section_header_with_description(
     title: &str,
     desc: &str,
@@ -140,7 +142,6 @@ pub(super) fn build_section_header_with_description(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
             .with_child(build_section_title_row(title, theme))
-            .with_child(Box::new(SpacerWidget::fixed(0.0, 4.0)))
             .with_child(Box::new(desc_label))
             .with_child(Box::new(SpacerWidget::fixed(0.0, 12.0))),
     )

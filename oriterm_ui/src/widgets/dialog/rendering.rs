@@ -117,12 +117,12 @@ impl DialogWidget {
             let mut btn_ctx = DrawCtx {
                 measurer: ctx.measurer,
                 scene: ctx.scene,
-                bounds: btn_node.content_rect,
+                bounds: btn_node.rect,
                 now: ctx.now,
                 theme: ctx.theme,
                 icons: ctx.icons,
-                interaction: None,
-                widget_id: None,
+                interaction: ctx.interaction,
+                widget_id: Some(button.id()),
                 frame_requests: ctx.frame_requests,
             };
             button.paint(&mut btn_ctx);

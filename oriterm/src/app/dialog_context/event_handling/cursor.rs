@@ -61,14 +61,9 @@ impl App {
     }
 
     /// Hit-tests dialog content, resolves cursor icon, and populates `hot_path`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "cursor move context: position, chrome height, scale, theme, output buffer"
-    )]
     pub(super) fn hit_test_content(
         ctx: &mut DialogWindowContext,
         logical_pos: Point,
-        chrome_h: f32,
         scale: f32,
         theme: &oriterm_ui::theme::UiTheme,
         hot_path: &mut Vec<oriterm_ui::widget_id::WidgetId>,
@@ -79,25 +74,16 @@ impl App {
         let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), &ctx.text_cache, scale);
         let w = ctx.surface_config.width as f32 / scale;
         let h = ctx.surface_config.height as f32 / scale;
-        let content_bounds: Rect = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let local_viewport: Rect =
-            Rect::new(0.0, 0.0, content_bounds.width(), content_bounds.height());
+        let viewport = Rect::new(0.0, 0.0, w, h);
         let layout_node = {
             let layout_ctx = LayoutCtx {
                 measurer: &measurer,
                 theme,
             };
             let layout_box = ctx.content.content_widget().layout(&layout_ctx);
-            std::rc::Rc::new(oriterm_ui::layout::compute_layout(
-                &layout_box,
-                local_viewport,
-            ))
+            std::rc::Rc::new(oriterm_ui::layout::compute_layout(&layout_box, viewport))
         };
-        let local = Point::new(
-            logical_pos.x - content_bounds.x(),
-            logical_pos.y - content_bounds.y(),
-        );
-        let hit = oriterm_ui::input::layout_hit_test_path(&layout_node, local);
+        let hit = oriterm_ui::input::layout_hit_test_path(&layout_node, logical_pos);
         for entry in &hit.path {
             hot_path.push(entry.widget_id);
         }
@@ -109,7 +95,7 @@ impl App {
             .map_or(CursorIcon::Default, |e| e.cursor_icon);
         let cursor = if leaf_cursor != CursorIcon::Default {
             leaf_cursor
-        } else if layout_hit_test_disabled_at(&layout_node, local) {
+        } else if layout_hit_test_disabled_at(&layout_node, logical_pos) {
             CursorIcon::NotAllowed
         } else {
             CursorIcon::Default
@@ -119,6 +105,6 @@ impl App {
             ctx.last_cursor_icon = cursor;
         }
 
-        ctx.cached_layout = Some((local_viewport, layout_node));
+        ctx.cached_layout = Some((viewport, layout_node));
     }
 }

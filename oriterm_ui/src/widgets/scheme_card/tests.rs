@@ -63,7 +63,8 @@ fn layout_dimensions() {
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
     let node = compute_layout(&lb, viewport);
 
-    assert_eq!(node.rect.width(), CARD_WIDTH);
+    // SizeSpec::Fill: card expands to fill available width.
+    assert_eq!(node.rect.width(), 400.0);
     assert_eq!(node.rect.height(), CARD_HEIGHT);
 }
 
