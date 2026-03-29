@@ -40,6 +40,7 @@ pub mod slider;
 pub mod spacer;
 pub mod stack;
 pub mod status_badge;
+pub mod status_bar;
 pub mod tab_bar;
 pub mod text_input;
 pub mod toggle;
