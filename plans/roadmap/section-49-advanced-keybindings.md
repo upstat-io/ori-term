@@ -3,6 +3,7 @@ section: 49
 title: Advanced Keybinding System
 status: not-started
 reviewed: false
+last_verified: "2026-03-29"
 tier: 5
 goal: Key tables (modal bindings), chained keybinds, catch-all keys, and key remapping — the power-user keybinding features that enable tmux-like workflows
 sections:
@@ -38,6 +39,8 @@ sections:
 - Zellij: modal input (Normal, Pane, Tab, Resize, Move, Search, Session, Scroll modes)
 
 **Why this matters:** Power users want tmux-like prefix-key workflows without running tmux. Key tables let you define "press Ctrl+B, then..." sequences. Chained bindings reduce keystrokes. Key remapping helps users with non-standard keyboard layouts or preferences (e.g., swapping Ctrl and Super).
+
+> **Verification Notes (2026-03-29):** Confirmed not started -- no KeyTable, chained keybind, catch-all, or key remap types exist. The current keybinding system (Section 13, complete) provides: `Action` enum with 45+ variants, `KeyBinding` struct (key + mods + action), `BindingKey` enum (Named/Character), `find_binding()` linear scan, `merge_bindings()` for TOML overrides, `parse_action()` string-to-Action mapping with `SendText:` prefix, `default_bindings()` with 45+ bindings and macOS-specific `#[cfg]` section, and `KeybindConfig` in TOML config. Gaps in the plan: (1) TOML config format mixes metadata (`timeout`) with bindings in the same `[key-table.prefix]` section -- awkward for serde deserialization, consider separating into `bindings` sub-table. (2) Action dispatch refactoring scope is underestimated -- `action_dispatch.rs` needs significant rework beyond just replacing `find_binding()`. (3) Modifier-only remapping (e.g., CapsLock -> Escape) requires OS-level keyboard hooks, not application-level -- winit delivers modifier keys as `ModifiersChanged` events, not `KeyboardInput`. (4) Remap chain evaluation strategy (single-pass, not recursive) not specified. (5) No mention of interaction with mark mode or vi mode (natural key table consumers). (6) No mention of dialog/overlay interaction (key tables should probably not be active in dialogs). (7) Visual indicator for active key table should reference the existing status bar widget.
 
 ---
 

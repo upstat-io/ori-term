@@ -379,7 +379,7 @@ auto-close, PtyExited, background thread drop
 ---
 
 ### Section 16: Tab Bar & Chrome
-**File:** `section-16-tab-bar.md` | **Tier:** 4 | **Status:** Not Started
+**File:** `section-16-tab-bar.md` | **Tier:** 4 | **Status:** In Progress
 
 ```
 tab bar, TabBarLayout, TabBarColors, TAB_BAR_HEIGHT, TAB_MIN_WIDTH, TAB_MAX_WIDTH
@@ -423,7 +423,7 @@ resize ALL tabs, process::exit, ConPTY-safe cleanup
 ---
 
 ### Section 19: Event Routing & Render Scheduling
-**File:** `section-19-event-routing.md` | **Tier:** 4 | **Status:** Not Started
+**File:** `section-19-event-routing.md` | **Tier:** 4 | **Status:** In Progress
 
 ```
 coordinate systems, pixel_to_cell, pixel_to_side, grid_top, grid_dims_for_size
@@ -1052,10 +1052,10 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 13 | Configuration & Keybindings | `section-13-config-keybindings.md` | 3 | Not Started |
 | 14 | URL Detection | `section-14-url-detection.md` | 3 | Not Started |
 | 15 | Tab Struct & Management | `section-15-tab-management.md` | 4 | Superseded → 30, 32 |
-| 16 | Tab Bar & Chrome | `section-16-tab-bar.md` | 4 | Not Started |
+| 16 | Tab Bar & Chrome | `section-16-tab-bar.md` | 4 | In Progress |
 | 17 | Drag & Drop | `section-17-drag-drop.md` | 4 | Not Started |
 | 18 | Multi-Window & Window Lifecycle | `section-18-multi-window.md` | 4 | Superseded → 32 |
-| 19 | Event Routing & Render Scheduling | `section-19-event-routing.md` | 4 | Not Started |
+| 19 | Event Routing & Render Scheduling | `section-19-event-routing.md` | 4 | In Progress |
 | 20 | Shell Integration | `section-20-shell-integration.md` | 4 | Not Started |
 | 21 | Context Menu & Window Controls | `section-21-context-menu.md` | 4 | In Progress |
 | 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Mostly Complete |
