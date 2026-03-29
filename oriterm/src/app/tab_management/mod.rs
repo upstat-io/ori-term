@@ -446,7 +446,8 @@ fn build_tab_entries(
             } else {
                 title
             };
-            let modified = pane_id.is_some_and(|pid| mux.has_unseen_output(pid));
+            let modified =
+                tab.is_some_and(|t| t.all_panes().iter().any(|&pid| mux.has_unseen_output(pid)));
             oriterm_ui::widgets::tab_bar::TabEntry::new(display)
                 .with_icon(icon)
                 .with_modified(modified)

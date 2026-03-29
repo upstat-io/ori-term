@@ -326,6 +326,10 @@ Write golden tests proving every visual change. These tests render the tab bar t
   Evidence: The only flag mutators are `Pane::{set_unseen_output,mark_output_seen}`; no daemon/server path calls them, and client `poll_events()` only marks panes dirty for rendering.
   Impact: The modified indicator remains permanently false in daemon mode even though the plan now claims full production wiring.
   Resolved: Accepted, blocked by Section 34 (IPC Protocol + Daemon Mode, 0% started). The daemon server cannot track per-client focus state without a `FocusPane` PDU, which is a Section 34 responsibility. The `MuxBackend::has_unseen_output()` trait default reads from the pushed snapshot, so daemon mode will work once the server sets the flag (Section 34 scope). Tracked as a blocked item there.
+- [x] `[TPR-01-006][medium]` [`oriterm/src/app/tab_management/mod.rs`](/home/eric/projects/ori_term/oriterm/src/app/tab_management/mod.rs#L415) — The production modified badge only inspects `Tab::active_pane()`, so unseen output in any other pane of a split/floating tab is ignored.
+  Evidence: `build_tab_entries()` resolves `pane_id` from `Tab::active_pane()` and calls `mux.has_unseen_output(pid)` for that single pane only, while [`Tab::all_panes()`](/home/eric/projects/ori_term/oriterm/src/session/tab/mod.rs#L177) already exposes the full tab membership.
+  Impact: Inactive multi-pane tabs fail to show the modified dot when background output arrives in a non-active pane, so the tab-strip signal is incomplete for split layouts.
+  Resolved: Fixed on 2026-03-29 — `build_tab_entries()` now checks `tab.all_panes().iter().any(|pid| mux.has_unseen_output(pid))` instead of only the active pane.
 
 ---
 
