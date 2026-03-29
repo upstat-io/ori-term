@@ -1,8 +1,7 @@
 //! Golden tests for tab bar emoji icon rendering.
 //!
-//! Uses a differential approach: renders a tab WITH an emoji icon and
-//! WITHOUT, then compares pixel data. If emoji renders, extra glyph
-//! pixels appear in the with-icon version.
+//! Verifies that emoji icons from OSC 0/1 render visibly in the tab bar
+//! through the terminal font's color emoji fallback chain.
 
 #![cfg(all(test, feature = "gpu-tests"))]
 
@@ -21,16 +20,29 @@ use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
 
-const WIDTH: u32 = 400;
+use super::compare_with_reference;
+
+const WIDTH: u32 = 600;
 const HEIGHT: u32 = 50;
 
-/// Headless environment with terminal font (has emoji fallback) + UI font.
+/// Path to Segoe UI Emoji on Windows (accessible from WSL via /mnt/c).
+const SEGOE_EMOJI_PATH: &str = "/mnt/c/Windows/Fonts/seguiemj.ttf";
+
+/// Build a FontSet with the best available emoji fallback.
+///
+/// Prefers Segoe UI Emoji (COLRv1, Windows-native quality) if accessible
+/// from WSL. Falls back to NotoEmoji-Regular (embedded, monochrome outlines).
+fn font_set_with_best_emoji() -> FontSet {
+    FontSet::embedded().with_system_emoji_fallback(SEGOE_EMOJI_PATH)
+}
+
+/// Headless environment with best available emoji font.
 fn headless_tab_bar_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
     let pipelines = GpuPipelines::new(&gpu);
     let font_collection = FontCollection::new(
-        FontSet::embedded(),
-        12.0,
+        font_set_with_best_emoji(),
+        14.0,
         96.0,
         GlyphFormat::Alpha,
         400,
@@ -96,23 +108,22 @@ fn render_tab_bar(
         .expect("pixel readback should succeed")
 }
 
-/// Verify the embedded font collection resolves emoji to a fallback face.
+/// Verify emoji resolves to a fallback face.
 #[test]
 fn embedded_font_resolves_emoji_glyph() {
     let fc = FontCollection::new(
-        FontSet::embedded(),
-        12.0,
+        font_set_with_best_emoji(),
+        14.0,
         96.0,
         GlyphFormat::Alpha,
         400,
         HintingMode::Full,
     )
-    .expect("embedded collection should build");
+    .expect("collection should build");
     let resolved = fc.resolve_prefer_emoji('😀', GlyphStyle::Regular);
     assert_ne!(
         resolved.glyph_id, 0,
-        "😀 (U+1F600) must resolve to a non-zero glyph_id via the embedded \
-         emoji fallback font (NotoEmoji-Regular.ttf)."
+        "😀 must resolve to a non-zero glyph_id via the emoji fallback font."
     );
     assert!(
         resolved.face_idx.is_fallback(),
@@ -121,11 +132,31 @@ fn embedded_font_resolves_emoji_glyph() {
     );
 }
 
-/// Verify emoji icon renders visible pixels in the tab bar.
-///
-/// Differential test: renders WITH emoji icon vs WITHOUT, counts pixels
-/// that differ by more than a threshold. Emoji rendering produces extra
-/// glyph pixels in the icon region.
+/// Golden test: render emoji tabs and compare against reference PNG.
+#[test]
+fn tab_bar_emoji_golden() {
+    let Some((gpu, pipelines, mut renderer)) = headless_tab_bar_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let pixels = render_tab_bar(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        vec![
+            TabEntry::new("Snake").with_icon(Some(TabIcon::Emoji("🐍".to_owned()))),
+            TabEntry::new("Fire").with_icon(Some(TabIcon::Emoji("🔥".to_owned()))),
+            TabEntry::new("Smile").with_icon(Some(TabIcon::Emoji("😀".to_owned()))),
+        ],
+    );
+
+    if let Err(msg) = compare_with_reference("tab_bar_emoji", &pixels, WIDTH, HEIGHT) {
+        panic!("{msg}");
+    }
+}
+
+/// Differential test: emoji icon must produce different pixels than no icon.
 #[test]
 fn emoji_icon_produces_visible_pixels() {
     let Some((gpu, pipelines, mut renderer)) = headless_tab_bar_env() else {
@@ -133,7 +164,6 @@ fn emoji_icon_produces_visible_pixels() {
         return;
     };
 
-    // Tab with ONLY emoji icon, empty title.
     let with_emoji = render_tab_bar(
         &gpu,
         &pipelines,
@@ -141,10 +171,8 @@ fn emoji_icon_produces_visible_pixels() {
         vec![TabEntry::new("").with_icon(Some(TabIcon::Emoji("😀".to_owned())))],
     );
 
-    // Tab with NO icon, empty title — baseline.
     let without_emoji = render_tab_bar(&gpu, &pipelines, &mut renderer, vec![TabEntry::new("")]);
 
-    // Count pixels that differ between the two renders.
     let diff_count = with_emoji
         .chunks(4)
         .zip(without_emoji.chunks(4))
@@ -156,8 +184,7 @@ fn emoji_icon_produces_visible_pixels() {
     assert!(
         diff_count > 20,
         "Emoji 😀 must produce visible glyph pixels in the tab bar. \
-         Only {diff_count} pixels differed between with-emoji and without-emoji. \
-         Expected at least 20. The emoji fallback font must be loaded and the \
-         glyph must rasterize through the terminal font collection."
+         Only {diff_count} pixels differed. The emoji fallback font must be \
+         loaded and the glyph must rasterize through the terminal font collection."
     );
 }
