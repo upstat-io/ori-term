@@ -130,6 +130,35 @@ pub(super) fn composite_commands(
                             tiny_skia::Transform::identity(),
                             current_mask.as_ref(),
                         );
+                    } else if let ResolvedBrush::SweepGradient {
+                        center,
+                        start_angle,
+                        end_angle,
+                        stops,
+                        extend,
+                    } = brush
+                    {
+                        // Sweep gradient on a glyph: create a glyph mask, then
+                        // fill through the combined mask.
+                        let glyph_mask =
+                            make_glyph_mask(&outlines, *glyph_id, &ctx, current_mask.as_ref());
+                        let t = if let Some(bt) = brush_transform.as_ref() {
+                            *ctx.transform() * *bt
+                        } else {
+                            *ctx.transform()
+                        };
+                        let cx = to_bx(center[0], center[1], ctx.scale(), ctx.clip(), &t);
+                        let cy = to_by(center[0], center[1], ctx.scale(), ctx.clip(), &t);
+                        brush::fill_sweep_direct(
+                            &mut pixmap,
+                            cx,
+                            cy,
+                            *start_angle,
+                            *end_angle,
+                            stops,
+                            *extend,
+                            glyph_mask.as_ref(),
+                        );
                     }
                 }
             }
@@ -354,6 +383,35 @@ fn fill_brush(
     brush_xf: Option<&ColrTransform>,
     mask: Option<&tiny_skia::Mask>,
 ) {
+    // Sweep gradients bypass the shader system — fill directly.
+    if let ResolvedBrush::SweepGradient {
+        center,
+        start_angle,
+        end_angle,
+        stops,
+        extend,
+    } = brush
+    {
+        let t = if let Some(bt) = brush_xf {
+            *ctx.transform() * *bt
+        } else {
+            *ctx.transform()
+        };
+        let cx = to_bx(center[0], center[1], ctx.scale(), ctx.clip(), &t);
+        let cy = to_by(center[0], center[1], ctx.scale(), ctx.clip(), &t);
+        brush::fill_sweep_direct(
+            pixmap,
+            cx,
+            cy,
+            *start_angle,
+            *end_angle,
+            stops,
+            *extend,
+            mask,
+        );
+        return;
+    }
+
     let Some(paint) = make_paint(brush, ctx, brush_xf) else {
         return;
     };

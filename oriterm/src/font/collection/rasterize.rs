@@ -4,7 +4,6 @@
 //! 500-line limit. Both `rasterize()` (terminal grid) and
 //! `rasterize_with_weight()` (UI text) live here.
 
-use super::colr_v1;
 use super::face::rasterize_from_face;
 use super::metadata::{effective_size_for, face_variations, face_variations_for_ui_weight};
 use super::{FontCollection, RasterizedGlyph};
@@ -41,14 +40,10 @@ impl FontCollection {
         let effective_synthetic = key.synthetic - face_vars.suppress_synthetic;
         let subpx_x_offset = super::super::subpx_offset(key.subpx_x);
 
-        // Try COLR first — handles modern color emoji (Segoe UI Emoji,
-        // Noto Color Emoji v2) via skrifa. Falls through to swash for sbix
-        // and standard outlines.
-        if let Some(colr_glyph) = colr_v1::try_rasterize_colr_v1(fd, key.glyph_id, size) {
-            self.glyph_cache.insert(key, colr_glyph);
-            return self.glyph_cache.get(&key);
-        }
-
+        // Let swash handle COLR rendering via Source::ColorOutline.
+        // Our custom COLRv1 compositor (colr_v1::try_rasterize_colr_v1) has
+        // color accuracy issues (sweep gradient, compositing). Swash's COLR
+        // renderer is more mature and produces correct colors.
         let glyph = rasterize_from_face(
             fd,
             key.glyph_id,
@@ -100,11 +95,6 @@ impl FontCollection {
         let face_vars = face_variations_for_ui_weight(key.synthetic, requested_weight, &fd.axes);
         let effective_synthetic = key.synthetic - face_vars.suppress_synthetic;
         let subpx_x_offset = super::super::subpx_offset(key.subpx_x);
-
-        if let Some(colr_glyph) = colr_v1::try_rasterize_colr_v1(fd, key.glyph_id, size) {
-            self.glyph_cache.insert(key, colr_glyph);
-            return self.glyph_cache.get(&key);
-        }
 
         let glyph = rasterize_from_face(
             fd,

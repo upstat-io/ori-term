@@ -66,23 +66,11 @@ pub(super) fn make_paint(
                 tiny_skia::Transform::identity(),
             )?
         }
-        ResolvedBrush::SweepGradient {
-            center,
-            start_angle,
-            end_angle,
-            stops,
-            extend,
-        } => {
-            // tiny-skia 0.11 has no SweepGradient. Sample the midpoint color
-            // of the gradient as an approximation.
-            log::trace!(
-                "sweep gradient ({start_angle}°..{end_angle}°) at ({},{}) \
-                 extend={extend:?}: approximated as solid",
-                center[0],
-                center[1],
-            );
-            let color = sweep_midpoint_color(stops);
-            tiny_skia::Shader::SolidColor(color)
+        ResolvedBrush::SweepGradient { .. } => {
+            // Sweep gradients are handled by fill_sweep_direct() in the
+            // compositor, not through the shader system. Return None here
+            // to signal the caller to use the direct path.
+            return None;
         }
     };
 
@@ -129,35 +117,128 @@ fn to_grad_stops(stops: &[ResolvedColorStop]) -> Option<Vec<tiny_skia::GradientS
     if v.len() >= 2 { Some(v) } else { None }
 }
 
-/// Sample the midpoint color of gradient stops for sweep gradient fallback.
-fn sweep_midpoint_color(stops: &[ResolvedColorStop]) -> tiny_skia::Color {
+/// Fill a pixmap with a sweep (conic) gradient directly, pixel by pixel.
+///
+/// Sweep gradients map angle from `center` to stop offsets. COLR defines
+/// `start_angle` and `end_angle` in degrees (counter-clockwise from
+/// 3-o'clock). Respects the optional mask.
+pub(super) fn fill_sweep_direct(
+    pixmap: &mut tiny_skia::Pixmap,
+    cx: f32,
+    cy: f32,
+    start_angle: f32,
+    end_angle: f32,
+    stops: &[ResolvedColorStop],
+    extend: Extend,
+    mask: Option<&tiny_skia::Mask>,
+) {
     if stops.is_empty() {
-        return tiny_skia::Color::TRANSPARENT;
+        return;
     }
-    if stops.len() == 1 {
-        return rgba_to_color(&stops[0].color);
+    let width = pixmap.width();
+    let height = pixmap.height();
+    let start_rad = start_angle.to_radians();
+    let end_rad = end_angle.to_radians();
+    let arc = end_rad - start_rad;
+
+    for y in 0..height {
+        for x in 0..width {
+            // Check mask.
+            if let Some(m) = mask {
+                let mi = (y * width + x) as usize;
+                if mi < m.data().len() && m.data()[mi] == 0 {
+                    continue;
+                }
+            }
+
+            let dx = x as f32 - cx;
+            let dy = cy - y as f32; // Y-up in font coordinate space.
+            let angle = dy.atan2(dx); // -PI..PI, 0 = right (3 o'clock).
+
+            let t = if arc.abs() < 1e-6 {
+                0.0
+            } else {
+                let raw = (angle - start_rad) / arc;
+                match extend {
+                    Extend::Pad => raw.clamp(0.0, 1.0),
+                    Extend::Repeat => raw.rem_euclid(1.0),
+                    Extend::Reflect => {
+                        let t2 = raw.rem_euclid(2.0);
+                        if t2 > 1.0 { 2.0 - t2 } else { t2 }
+                    }
+                    _ => raw.clamp(0.0, 1.0),
+                }
+            };
+
+            let color = sample_stops(stops, t);
+            // Premultiply and write.
+            let a = (color.a * 255.0) as u8;
+            let r = (color.r * color.a * 255.0) as u8;
+            let g = (color.g * color.a * 255.0) as u8;
+            let b = (color.b * color.a * 255.0) as u8;
+
+            // Apply mask alpha.
+            let (r, g, b, a) = if let Some(m) = mask {
+                let mi = (y * width + x) as usize;
+                let ma = if mi < m.data().len() {
+                    m.data()[mi]
+                } else {
+                    255
+                };
+                (
+                    ((r as u16 * ma as u16) / 255) as u8,
+                    ((g as u16 * ma as u16) / 255) as u8,
+                    ((b as u16 * ma as u16) / 255) as u8,
+                    ((a as u16 * ma as u16) / 255) as u8,
+                )
+            } else {
+                (r, g, b, a)
+            };
+
+            let idx = ((y * width + x) * 4) as usize;
+            let data = pixmap.data_mut();
+            // Composite over existing content (SrcOver).
+            let dst_r = data[idx];
+            let dst_g = data[idx + 1];
+            let dst_b = data[idx + 2];
+            let dst_a = data[idx + 3];
+            let inv_a = 255 - a;
+            data[idx] = r.saturating_add(((dst_r as u16 * inv_a as u16) / 255) as u8);
+            data[idx + 1] = g.saturating_add(((dst_g as u16 * inv_a as u16) / 255) as u8);
+            data[idx + 2] = b.saturating_add(((dst_b as u16 * inv_a as u16) / 255) as u8);
+            data[idx + 3] = a.saturating_add(((dst_a as u16 * inv_a as u16) / 255) as u8);
+        }
     }
-    // Find the pair of stops around t=0.5 and interpolate.
+}
+
+/// Sample a color from gradient stops at position `t` (0..1).
+fn sample_stops(stops: &[ResolvedColorStop], t: f32) -> Rgba {
+    if stops.len() == 1 || t <= stops[0].offset {
+        return stops[0].color;
+    }
+    let last = stops.len() - 1;
+    if t >= stops[last].offset {
+        return stops[last].color;
+    }
     for w in stops.windows(2) {
-        if 0.5 <= w[1].offset {
+        if t <= w[1].offset {
             let range = w[1].offset - w[0].offset;
-            let frac = if range > 0.0001 {
-                (0.5 - w[0].offset) / range
+            let frac = if range > 1e-6 {
+                (t - w[0].offset) / range
             } else {
                 0.0
             };
             let a = &w[0].color;
             let b = &w[1].color;
-            let mid = Rgba {
+            return Rgba {
                 r: a.r + (b.r - a.r) * frac,
                 g: a.g + (b.g - a.g) * frac,
                 b: a.b + (b.b - a.b) * frac,
                 a: a.a + (b.a - a.a) * frac,
             };
-            return rgba_to_color(&mid);
         }
     }
-    rgba_to_color(&stops.last().unwrap().color)
+    stops[last].color
 }
 
 /// Map COLR extend mode to tiny-skia spread mode.
