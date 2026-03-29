@@ -6,6 +6,8 @@
 //! PTY reader thread.
 
 mod chrome;
+#[cfg(test)]
+pub(crate) use chrome::compute_window_layout;
 mod clipboard_ops;
 pub(crate) mod config_reload;
 mod constructors;
