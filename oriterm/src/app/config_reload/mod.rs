@@ -59,6 +59,7 @@ impl App {
             self.ui_theme = new_theme;
             for ctx in self.windows.values_mut() {
                 ctx.tab_bar.apply_theme(&self.ui_theme);
+                ctx.status_bar.apply_theme(&self.ui_theme);
             }
         }
 

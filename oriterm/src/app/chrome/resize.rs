@@ -72,13 +72,34 @@ impl App {
         let scale = ctx.window.scale_factor().factor() as f32;
         let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
         let tb_h = ctx.tab_bar.metrics().height;
-        let wl = compute_window_layout(viewport_w, viewport_h, &cell, scale, hidden, tb_h);
+        let sb_h = if self.config.window.show_status_bar {
+            oriterm_ui::widgets::status_bar::STATUS_BAR_HEIGHT
+        } else {
+            0.0
+        };
+        let border_inset = if ctx.window.is_maximized() || ctx.window.is_fullscreen() {
+            0.0
+        } else {
+            2.0
+        };
+        let wl = compute_window_layout(
+            viewport_w,
+            viewport_h,
+            &cell,
+            scale,
+            hidden,
+            tb_h,
+            sb_h,
+            border_inset,
+        );
 
         // Reborrow mutably now that immutable reads are done.
         let ctx = self.windows.get_mut(&winit_id).expect("checked above");
         ctx.terminal_grid.set_cell_metrics(cell.width, cell.height);
         ctx.terminal_grid.set_grid_size(wl.cols, wl.rows);
         ctx.terminal_grid.set_bounds(wl.grid_rect);
+        ctx.tab_bar_phys_rect = wl.tab_bar_rect;
+        ctx.status_bar_phys_rect = wl.status_bar_rect;
         let (cols, rows) = (wl.cols, wl.rows);
 
         // Resize the active pane in this specific window (not the globally
@@ -186,6 +207,7 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             ctx.tab_bar.set_window_width(logical_w);
+            ctx.status_bar.set_window_width(logical_w);
 
             // macOS tab bar inset (traffic light space) is managed by
             // fullscreen transition notifications in macos.rs, not here.

@@ -369,13 +369,20 @@ impl App {
                     // Compute layout bounds so PrepaintCtx::bounds reflects
                     // real screen positions.
                     let s = ctx.window.scale_factor().factor() as f32;
+                    let tb_phys = ctx.tab_bar_phys_rect;
+                    let prepaint_tab_bounds = oriterm_ui::geometry::Rect::new(
+                        tb_phys.x() / s,
+                        tb_phys.y() / s,
+                        tb_phys.width() / s,
+                        tb_phys.height() / s,
+                    );
                     let prepaint_bounds = super::draw_helpers::collect_tab_bar_prepaint_bounds(
                         &ctx.tab_bar,
                         renderer,
                         &ctx.text_cache,
                         &self.ui_theme,
                         s,
-                        w as f32 / s,
+                        prepaint_tab_bounds,
                     );
                     let (interaction, flags) = ctx.root.interaction_and_frame_requests();
                     let invalidation = ctx.root.invalidation();
@@ -405,11 +412,18 @@ impl App {
             } else {
                 Some(&ctx.tab_bar)
             };
+            let tb_phys = ctx.tab_bar_phys_rect;
+            let tab_bar_bounds = oriterm_ui::geometry::Rect::new(
+                tb_phys.x() / scale,
+                tb_phys.y() / scale,
+                tb_phys.width() / scale,
+                tb_phys.height() / scale,
+            );
             let tab_bar_animating = Self::draw_tab_bar(
                 tab_bar_ref,
                 renderer,
                 &mut ctx.chrome_scene,
-                logical_w as f32,
+                tab_bar_bounds,
                 scale,
                 gpu,
                 &self.ui_theme,
@@ -463,6 +477,45 @@ impl App {
                         &ctx.text_cache,
                     );
                 }
+            }
+
+            // Update and draw status bar at the bottom of the window.
+            if self.config.window.show_status_bar
+                && self.config.window.tab_bar_position != crate::config::TabBarPosition::Bottom
+            {
+                let pane_count = layouts.len();
+                let (sb_cols, sb_rows) = ctx
+                    .frame
+                    .as_ref()
+                    .map_or((0, 0), |f| (f.content_cols, f.content_rows));
+                ctx.status_bar
+                    .set_data(oriterm_ui::widgets::status_bar::StatusBarData {
+                        shell_name: "zsh".into(),
+                        pane_count: format!(
+                            "{pane_count} pane{}",
+                            if pane_count == 1 { "" } else { "s" }
+                        ),
+                        grid_size: format!("{sb_cols}\u{00d7}{sb_rows}"),
+                        encoding: "UTF-8".into(),
+                        term_type: "xterm-256color".into(),
+                    });
+                let phys = ctx.status_bar_phys_rect;
+                let sb_bounds = oriterm_ui::geometry::Rect::new(
+                    phys.x() / scale,
+                    phys.y() / scale,
+                    phys.width() / scale,
+                    phys.height() / scale,
+                );
+                Self::draw_status_bar(
+                    &ctx.status_bar,
+                    renderer,
+                    &mut ctx.chrome_scene,
+                    sb_bounds,
+                    scale,
+                    gpu,
+                    &self.ui_theme,
+                    &ctx.text_cache,
+                );
             }
 
             // Full content render when any pane changed or chrome is stale.

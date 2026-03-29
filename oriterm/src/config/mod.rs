@@ -184,6 +184,10 @@ pub(crate) enum TabBarStyle {
 /// Window size and opacity configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "window config has independent boolean toggles: blur, resize_increments, show_status_bar, restore_session"
+)]
 pub(crate) struct WindowConfig {
     /// Initial terminal columns (default: 120).
     pub columns: usize,
@@ -211,6 +215,9 @@ pub(crate) struct WindowConfig {
     /// Grid padding in logical pixels (default: 0.0).
     #[serde(default)]
     pub grid_padding: f32,
+    /// Show the status bar at the bottom of the window (default: true).
+    #[serde(default = "default_true")]
+    pub show_status_bar: bool,
     /// Restore previous session on launch (default: false).
     #[serde(default)]
     pub restore_session: bool,
@@ -219,6 +226,11 @@ pub(crate) struct WindowConfig {
 /// Default value for `unfocused_opacity` serde default.
 fn default_unfocused_opacity() -> f32 {
     1.0
+}
+
+/// Default value for boolean fields that default to `true`.
+fn default_true() -> bool {
+    true
 }
 
 impl Default for WindowConfig {
@@ -235,6 +247,7 @@ impl Default for WindowConfig {
             tab_bar_position: TabBarPosition::default(),
             tab_bar_style: TabBarStyle::default(),
             grid_padding: 0.0,
+            show_status_bar: true,
             restore_session: false,
         }
     }
