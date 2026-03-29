@@ -6,9 +6,8 @@
 
 mod codepoint_map;
 #[allow(
-    dead_code,
     clippy::all,
-    reason = "COLRv1 compositor bypassed — swash handles COLR rendering"
+    reason = "COLRv1 compositor — sweep gradient and compose have known clippy issues"
 )]
 pub(crate) mod colr_v1;
 mod face;

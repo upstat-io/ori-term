@@ -54,6 +54,14 @@ impl ComposeCtx<'_> {
     clippy::too_many_arguments,
     reason = "module entry point — all parameters are required by the compositor"
 )]
+#[expect(
+    clippy::too_many_lines,
+    reason = "linear command dispatch — splitting would obscure the sequential flow"
+)]
+#[expect(
+    clippy::else_if_without_else,
+    reason = "sweep gradient fallback path is clearer as separate else-if"
+)]
 pub(super) fn composite_commands(
     commands: &[PaintCommand],
     bitmap: &mut [u8],

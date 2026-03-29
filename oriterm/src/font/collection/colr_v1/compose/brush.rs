@@ -122,6 +122,14 @@ fn to_grad_stops(stops: &[ResolvedColorStop]) -> Option<Vec<tiny_skia::GradientS
 /// Sweep gradients map angle from `center` to stop offsets. COLR defines
 /// `start_angle` and `end_angle` in degrees (counter-clockwise from
 /// 3-o'clock). Respects the optional mask.
+#[expect(
+    clippy::many_single_char_names,
+    reason = "RGBA components and loop vars"
+)]
+#[expect(
+    clippy::match_same_arms,
+    reason = "extend modes listed explicitly for clarity"
+)]
 pub(super) fn fill_sweep_direct(
     pixmap: &mut tiny_skia::Pixmap,
     cx: f32,
