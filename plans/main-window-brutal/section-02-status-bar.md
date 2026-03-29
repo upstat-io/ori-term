@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Status Bar Widget"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Create a StatusBarWidget in oriterm_ui following all widget conventions, rendering a 22px bar with shell name, pane count, grid size, encoding, and term type — matching mockup exactly, with golden tests."
 inspired_by:
@@ -10,8 +10,8 @@ inspired_by:
   - "oriterm_ui/src/widgets/label/mod.rs (simple display widget pattern)"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-03-29
 sections:
   - id: "02.1"
     title: "StatusBarWidget Struct & Data Model"
@@ -27,18 +27,18 @@ sections:
     status: complete
   - id: "02.5"
     title: "Golden Tests"
-    status: in-progress
+    status: complete
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "02.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 02: Status Bar Widget
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** A new `StatusBarWidget` exists in `oriterm_ui/src/widgets/status_bar/`, implements the `Widget` trait, renders a 22px bar matching the mockup's status bar section, has full WidgetTestHarness coverage, and golden tests proving the visual output.
 
 **Context:** The mockup shows a status bar at the bottom of the window with terminal metadata. No status bar widget currently exists in the codebase. This is a completely new widget that must follow all widget conventions established by the UI framework: `Widget` trait impl, `from_theme()` styling, `Sense::none()` (display-only), sibling `tests.rs` file, and WidgetTestHarness coverage.
@@ -295,8 +295,8 @@ Write golden tests rendering the status bar through the real GPU pipeline.
   This follows the same pattern as `tab_bar_icons.rs::render_tab_bar()` but uses the dialog pipeline (UI-only, no terminal font needed).
 - [x] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- status_bar` to generate references
 - [x] Visually inspect generated PNGs against mockup
-- [ ] Commit reference PNGs
-- [ ] `/tpr-review` checkpoint
+- [x] Commit reference PNGs
+- [x] `/tpr-review` checkpoint
 
 **Validation:** All `status_bar_*` golden tests pass. Reference PNGs visually match the mockup's status bar.
 
@@ -306,7 +306,10 @@ Write golden tests rendering the status bar through the real GPU pipeline.
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-02-001][low]` [`plans/main-window-brutal/index.md`](/home/eric/projects/ori_term/plans/main-window-brutal/index.md#L38), [`plans/main-window-brutal/00-overview.md`](/home/eric/projects/ori_term/plans/main-window-brutal/00-overview.md#L159), [`plans/main-window-brutal/00-overview.md`](/home/eric/projects/ori_term/plans/main-window-brutal/00-overview.md#L174), [`plans/main-window-brutal/section-02-status-bar.md`](/home/eric/projects/ori_term/plans/main-window-brutal/section-02-status-bar.md#L41) — Section 02 bookkeeping is still stale even though the widget and its verification now exist in the tree.
+  Evidence: The current repo contains [`StatusBarWidget`](/home/eric/projects/ori_term/oriterm_ui/src/widgets/status_bar/mod.rs#L81), its dedicated tests, and passing GPU goldens, but the plan index/body still say "Not Started" and the overview still lists "No status bar exists" as an unfixed bug.
+  Impact: Plan navigation and review state no longer match repository reality, which makes future plan resumption and completion gating unreliable.
+  Resolved: Fixed on 2026-03-29 — updated index.md, 00-overview.md (bug table + quick reference), and section body status to reflect "In Progress".
 
 ---
 
@@ -321,9 +324,9 @@ Write golden tests rendering the status bar through the real GPU pipeline.
 - [x] Top border: 2px, `theme.border` color
 - [x] Font size: 11px for all items
 - [x] 9+ WidgetTestHarness tests pass (11 tests)
-- [ ] 3 golden tests pass with committed reference PNGs
+- [x] 3 golden tests pass with committed reference PNGs
 - [x] `cargo test -p oriterm_ui` green
 - [x] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** `StatusBarWidget` renders identically to the `.status-bar` section of `mockups/main-window-brutal.html` at 96 DPI. Widget follows all `oriterm_ui` conventions. Golden tests pass.

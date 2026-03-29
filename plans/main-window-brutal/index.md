@@ -36,7 +36,7 @@ golden test, tab_bar_brutal, visual_regression
 ---
 
 ### Section 02: Status Bar Widget
-**File:** `section-02-status-bar.md` | **Status:** Not Started
+**File:** `section-02-status-bar.md` | **Status:** Complete
 
 ```
 status bar, StatusBarWidget, StatusBarData, StatusBarColors
