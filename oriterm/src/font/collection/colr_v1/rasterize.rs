@@ -96,11 +96,20 @@ pub(crate) fn try_rasterize_colr_v1(
         colr.clip_box
     );
 
-    // Determine output dimensions from clip box.
-    let clip = colr.clip_box.unwrap_or_else(|| {
-        // Fallback: estimate from font metrics.
-        estimate_clip_box(fd, glyph_id, size_px)
-    });
+    // Determine output dimensions from clip box, with 1px padding on all
+    // sides to prevent COLR paint layer overflow from being clipped.
+    let raw_clip = colr
+        .clip_box
+        .unwrap_or_else(|| estimate_clip_box(fd, glyph_id, size_px));
+    // Pad clip box by 10% of the glyph height on each side to ensure
+    // COLR paint layers that overflow the declared bounds render fully.
+    let pad = raw_clip.height() * 0.1;
+    let clip = ClipBox {
+        x_min: raw_clip.x_min - pad,
+        y_min: raw_clip.y_min - pad,
+        x_max: raw_clip.x_max + pad,
+        y_max: raw_clip.y_max + pad,
+    };
 
     let width = clip.width().ceil() as u32;
     let height = clip.height().ceil() as u32;

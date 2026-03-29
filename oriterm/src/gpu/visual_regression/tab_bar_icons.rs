@@ -188,3 +188,150 @@ fn emoji_icon_produces_visible_pixels() {
          loaded and the glyph must rasterize through the terminal font collection."
     );
 }
+
+/// Detect clipping on any edge of rendered color emoji.
+///
+/// Color emoji are pre-dithered — every outermost edge should fade to the
+/// background via anti-aliasing. A hard cut (many opaque/saturated pixels
+/// on the bounding edge) means the rendering pipeline clips the glyph.
+///
+/// Tests the FULL GPU pipeline (scene → clip rects → shaders → pixel output)
+/// not just the raw rasterized bitmap.
+#[test]
+fn emoji_not_clipped_in_rendered_output() {
+    let Some((gpu, pipelines, mut renderer)) = headless_tab_bar_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    // Render each emoji alone so we can isolate its bounding box.
+    for (label, emoji) in [("smiley", "😀"), ("snake", "🐍"), ("fire", "🔥")] {
+        let pixels = render_tab_bar(
+            &gpu,
+            &pipelines,
+            &mut renderer,
+            vec![TabEntry::new("").with_icon(Some(TabIcon::Emoji(emoji.to_owned())))],
+        );
+
+        // Find the emoji's bounding box by looking for saturated (colorful) pixels.
+        let bbox = find_color_bbox(&pixels, WIDTH as usize, HEIGHT as usize);
+        let Some((min_x, min_y, max_x, max_y)) = bbox else {
+            panic!("{label} ({emoji}): no color pixels found in rendered output");
+        };
+        let ew = max_x - min_x + 1;
+        let eh = max_y - min_y + 1;
+        assert!(
+            ew > 4 && eh > 4,
+            "{label}: emoji region too small: {ew}x{eh}"
+        );
+
+        // Check all 4 edges for hard clip lines.
+        let edges = [
+            (
+                "top",
+                scan_edge(&pixels, WIDTH as usize, min_x, max_x, min_y, true),
+            ),
+            (
+                "bottom",
+                scan_edge(&pixels, WIDTH as usize, min_x, max_x, max_y, true),
+            ),
+            (
+                "left",
+                scan_edge(&pixels, WIDTH as usize, min_y, max_y, min_x, false),
+            ),
+            (
+                "right",
+                scan_edge(&pixels, WIDTH as usize, min_y, max_y, max_x, false),
+            ),
+        ];
+
+        eprintln!("{label} ({emoji}) bbox: ({min_x},{min_y})-({max_x},{max_y}) = {ew}x{eh}");
+        for (edge_name, fraction) in &edges {
+            eprintln!("  {edge_name}: {:.0}%", fraction * 100.0);
+        }
+        for (edge_name, fraction) in &edges {
+            assert!(
+                *fraction < 0.9,
+                "{label} ({emoji}): {edge_name} edge is {:.0}% hard — clip detected. \
+                 The rendering pipeline is truncating the emoji on the {edge_name}.",
+                fraction * 100.0,
+            );
+        }
+    }
+}
+
+/// Find bounding box of color (saturated) pixels. Returns `(min_x, min_y, max_x, max_y)`.
+fn find_color_bbox(pixels: &[u8], w: usize, h: usize) -> Option<(usize, usize, usize, usize)> {
+    let mut min_x = w;
+    let mut max_x = 0;
+    let mut min_y = h;
+    let mut max_y = 0;
+    let mut found = false;
+    for y in 0..h {
+        for x in 0..w {
+            let idx = (y * w + x) * 4;
+            if idx + 3 >= pixels.len() {
+                continue;
+            }
+            let r = pixels[idx];
+            let g = pixels[idx + 1];
+            let b = pixels[idx + 2];
+            let max_ch = r.max(g).max(b);
+            let min_ch = r.min(g).min(b);
+            // Color saturation: difference between brightest and dimmest channel.
+            // Gray text (R≈G≈B) and dark background have saturation < 30.
+            if max_ch.saturating_sub(min_ch) > 30 && max_ch > 50 {
+                found = true;
+                min_x = min_x.min(x);
+                max_x = max_x.max(x);
+                min_y = min_y.min(y);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+    if found {
+        Some((min_x, min_y, max_x, max_y))
+    } else {
+        None
+    }
+}
+
+/// Measure what fraction of an edge has hard (non-anti-aliased) content.
+///
+/// A pixel counts as "hard" if its alpha is > 200 AND it has color saturation > 20.
+/// If `horizontal`, scans x in `start..=end` at row `fixed`.
+/// If not horizontal, scans y in `start..=end` at column `fixed`.
+fn scan_edge(
+    pixels: &[u8],
+    img_w: usize,
+    start: usize,
+    end: usize,
+    fixed: usize,
+    horizontal: bool,
+) -> f32 {
+    let mut hard = 0u32;
+    let mut total = 0u32;
+    for i in start..=end {
+        let (x, y) = if horizontal { (i, fixed) } else { (fixed, i) };
+        let idx = (y * img_w + x) * 4;
+        if idx + 3 >= pixels.len() {
+            continue;
+        }
+        total += 1;
+        let r = pixels[idx];
+        let g = pixels[idx + 1];
+        let b = pixels[idx + 2];
+        let a = pixels[idx + 3];
+        let max_ch = r.max(g).max(b);
+        let min_ch = r.min(g).min(b);
+        let sat = max_ch.saturating_sub(min_ch);
+        // Hard pixel: high alpha AND colorful (not just gray anti-alias fringe).
+        if a > 200 && sat > 20 {
+            hard += 1;
+        }
+    }
+    if total == 0 {
+        return 0.0;
+    }
+    hard as f32 / total as f32
+}

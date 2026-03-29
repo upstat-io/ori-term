@@ -8,11 +8,8 @@
 //! resolved at collection time so the compositing path receives ready-to-use
 //! RGBA values.
 
-// COLRv1 compositor disabled — swash handles COLR rendering with
-// correct colors. Kept in tree for future reference but not compiled.
-#[cfg(any())]
+// COLRv1 compositor used as fallback when swash clips color emoji.
 mod compose;
-#[cfg(any())]
 pub(crate) mod rasterize;
 
 use skrifa::GlyphId;

@@ -169,7 +169,7 @@ impl TabBarWidget {
         // font at renderer init, so emoji renders at the correct UI text size.
         // Emoji sized ~30% larger than text for visual prominence.
         let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
-            let icon_size = ctx.theme.font_size_small * 1.3;
+            let icon_size = ctx.theme.font_size_small * 1.5;
             let icon_style = TextStyle::new(icon_size, color);
             let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
             // Use the icon height as width — color emoji are square bitmaps

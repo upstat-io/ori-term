@@ -234,6 +234,21 @@ pub(super) fn rasterize_from_face(
         Content::SubpixelMask | Content::Mask => format,
     };
 
+    // Color emoji (COLR): always prefer our skrifa-based COLRv1 compositor
+    // which uses the COLR clip box (larger than swash's base-glyph outline
+    // bounds). Swash clips color emoji at the outline extent, cutting off
+    // paint layers that extend beyond. Fall back to swash's result only if
+    // our compositor doesn't produce output.
+    // Color emoji (COLR): prefer our skrifa-based COLRv1 compositor which
+    // uses the COLR clip box (larger than swash's base-glyph outline bounds).
+    // Falls back to swash if our compositor doesn't produce output.
+    if out_format == GlyphFormat::Color {
+        if let Some(colr) = super::colr_v1::rasterize::try_rasterize_colr_v1(fd, glyph_id, size_px)
+        {
+            return Some(colr);
+        }
+    }
+
     Some(RasterizedGlyph {
         width: image.placement.width,
         height: image.placement.height,
