@@ -23,6 +23,13 @@ fn default_config_roundtrip() {
     assert_eq!(parsed.terminal.cursor_blink_interval_ms, 530);
     assert_eq!(parsed.window.decorations, Decorations::None);
     assert!(parsed.window.resize_increments);
+    // New fields added in Section 10.
+    assert_eq!(parsed.window.tab_bar_position, TabBarPosition::Top);
+    assert!((parsed.window.grid_padding - 0.0).abs() < f32::EPSILON);
+    assert!(parsed.window.show_status_bar);
+    assert!(!parsed.window.restore_session);
+    assert!((parsed.font.line_height - 1.0).abs() < f32::EPSILON);
+    assert_eq!(parsed.rendering.gpu_backend, GpuBackend::Auto);
 }
 
 #[test]
@@ -1458,7 +1465,7 @@ fn resolve_subpixel_mode_config_override_rgb() {
 
     let mut cfg = FontConfig::default();
     cfg.subpixel_mode = Some("rgb".to_owned());
-    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0);
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0, 1.0);
     assert_eq!(result, SubpixelMode::Rgb);
 }
 
@@ -1468,7 +1475,7 @@ fn resolve_subpixel_mode_config_override_bgr() {
 
     let mut cfg = FontConfig::default();
     cfg.subpixel_mode = Some("bgr".to_owned());
-    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0);
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0);
     assert_eq!(result, SubpixelMode::Bgr);
 }
 
@@ -1478,7 +1485,7 @@ fn resolve_subpixel_mode_config_override_none() {
 
     let mut cfg = FontConfig::default();
     cfg.subpixel_mode = Some("none".to_owned());
-    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0);
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0);
     assert_eq!(result, SubpixelMode::None);
 }
 
@@ -1488,18 +1495,16 @@ fn resolve_subpixel_mode_auto_detection() {
 
     let cfg = FontConfig::default();
     assert_eq!(
-        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0),
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0),
         SubpixelMode::Rgb,
     );
     assert_eq!(
-        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0),
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0, 1.0),
         SubpixelMode::None,
     );
 }
 
-// ---------------------------------------------------------------------------
 // resolve_subpixel_mode unknown value fallback
-// ---------------------------------------------------------------------------
 
 #[test]
 fn resolve_subpixel_mode_unknown_value_falls_back() {
@@ -1507,20 +1512,47 @@ fn resolve_subpixel_mode_unknown_value_falls_back() {
 
     let mut cfg = FontConfig::default();
     cfg.subpixel_mode = Some("garbage".to_owned());
-    // Unknown value → auto-detection based on scale factor.
+    // Unknown value → auto-detection based on scale factor and opacity.
     assert_eq!(
-        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0),
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0),
         SubpixelMode::Rgb,
     );
     assert_eq!(
-        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0),
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0, 1.0),
         SubpixelMode::None,
     );
 }
 
-// ---------------------------------------------------------------------------
+#[test]
+fn resolve_subpixel_mode_transparent_disables_auto() {
+    use crate::font::SubpixelMode;
+
+    let cfg = FontConfig::default();
+    // At 1x DPI, opaque → Rgb. Transparent → None.
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 1.0),
+        SubpixelMode::Rgb,
+    );
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 0.8),
+        SubpixelMode::None,
+    );
+}
+
+#[test]
+fn resolve_subpixel_mode_explicit_override_ignores_opacity() {
+    use crate::font::SubpixelMode;
+
+    // Explicit "rgb" with transparent background → still Rgb (user override).
+    let mut cfg = FontConfig::default();
+    cfg.subpixel_mode = Some("rgb".to_owned());
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 0.5),
+        SubpixelMode::Rgb,
+    );
+}
+
 // apply_font_config integration tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn apply_font_config_sets_custom_features() {
@@ -1549,7 +1581,7 @@ fn apply_font_config_sets_custom_features() {
         2
     );
 
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     // After: features replaced with dlig + -liga.
     let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
@@ -1578,7 +1610,7 @@ fn apply_font_config_empty_features_clears_defaults() {
     )
     .expect("collection must build");
 
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
     assert!(
@@ -1615,7 +1647,7 @@ fn apply_font_config_codepoint_map_invalid_range_skipped() {
     .expect("collection must build");
 
     // Should not panic — invalid range is logged and skipped.
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     // Collection should have no codepoint mappings.
     assert!(!collection.has_codepoint_mappings());
@@ -1645,7 +1677,7 @@ fn apply_font_config_codepoint_map_missing_family_skipped() {
     .expect("collection must build");
 
     // Should not panic — missing family is logged and skipped.
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     // No mappings added since the family wasn't found.
     assert!(!collection.has_codepoint_mappings());
@@ -1670,11 +1702,163 @@ fn apply_font_config_with_no_user_fallbacks() {
     .expect("collection must build");
 
     // Should not panic with zero user fallbacks.
-    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[]);
 
     // Default features should still be set (from config defaults: calt + liga).
     let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
     assert_eq!(features.len(), 2, "default config features are calt + liga");
+}
+
+/// Regression test for TPR-01-017: when the first configured fallback fails to
+/// load, per-fallback metadata must apply to the correct loaded font. With
+/// `fallback_map = [1]`, config entry 0 was skipped — metadata from config[1]
+/// should apply to loaded index 0, not config[0]'s metadata.
+#[test]
+fn apply_font_config_skipped_fallback_metadata_uses_correct_config_entry() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FaceIdx, FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    // Config entry 0: size_offset = -5.0 (this one "failed to load").
+    cfg.fallback.push(FallbackFontConfig {
+        family: "MissingFont".into(),
+        features: None,
+        size_offset: Some(-5.0),
+    });
+    // Config entry 1: size_offset = +3.0 (this one loaded as index 0).
+    cfg.fallback.push(FallbackFontConfig {
+        family: "LoadedFont".into(),
+        features: Some(vec!["dlig".into()]),
+        size_offset: Some(3.0),
+    });
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    let base_size = collection.effective_size(FaceIdx(4)); // First fallback.
+
+    // fallback_map: loaded[0] came from config[1] (entry 0 was skipped).
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[1]);
+
+    // Loaded index 0 should have config[1]'s +3.0 offset, not config[0]'s -5.0.
+    let adjusted = collection.effective_size(FaceIdx(4));
+    let expected = base_size + 3.0;
+    assert!(
+        (adjusted - expected).abs() < 0.01,
+        "loaded fallback 0 should have config[1]'s +3.0 offset (got {adjusted}, expected {expected})"
+    );
+
+    // Loaded index 0 should have config[1]'s dlig feature override.
+    let features = collection.features_for_face(FaceIdx(4));
+    assert_eq!(
+        features.len(),
+        1,
+        "loaded fallback 0 should have 1 feature from config[1], got {}",
+        features.len()
+    );
+}
+
+/// Regression test for TPR-01-018: codepoint-map resolution must use the
+/// loaded fallback index, not the config position. When config entry 0 failed
+/// to load, a family at config[1] is at loaded index 0.
+#[test]
+fn apply_font_config_codepoint_map_skipped_fallback_resolves_correct_loaded_index() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    // Config entry 0: missing font (skipped during loading).
+    cfg.fallback.push(FallbackFontConfig {
+        family: "MissingFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    // Config entry 1: loaded as index 0.
+    cfg.fallback.push(FallbackFontConfig {
+        family: "LoadedFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    // Codepoint map targets "LoadedFont" (config index 1, loaded index 0).
+    cfg.codepoint_map.push(CodepointMapConfig {
+        range: "E000-E0FF".into(),
+        family: "LoadedFont".into(),
+    });
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    // fallback_map: loaded[0] came from config[1].
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[1]);
+
+    // Should have a codepoint mapping (the family was found in fallback_map).
+    assert!(
+        collection.has_codepoint_mappings(),
+        "codepoint map should resolve LoadedFont via fallback_map[0]=config[1]"
+    );
+}
+
+/// Regression test for TPR-01-018: codepoint-map for a family that failed to
+/// load (not in fallback_map) must be skipped, not mapped to the wrong face.
+#[test]
+fn apply_font_config_codepoint_map_unloaded_family_skipped() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    // Config entry 0: "MissingFont" — failed to load.
+    cfg.fallback.push(FallbackFontConfig {
+        family: "MissingFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    // Config entry 1: "LoadedFont" — loaded as index 0.
+    cfg.fallback.push(FallbackFontConfig {
+        family: "LoadedFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    // Codepoint map targets "MissingFont" — should NOT be mapped.
+    cfg.codepoint_map.push(CodepointMapConfig {
+        range: "E000-E0FF".into(),
+        family: "MissingFont".into(),
+    });
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    // fallback_map: only config[1] loaded. Config[0] ("MissingFont") is absent.
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, &[1]);
+
+    // MissingFont is not in the loaded fallbacks — no mapping should be added.
+    assert!(
+        !collection.has_codepoint_mappings(),
+        "codepoint map for unloaded family should be skipped"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1788,7 +1972,7 @@ fn parse_hex_color_rejects_too_short() {
 #[test]
 fn pane_config_defaults() {
     let cfg = PaneConfig::default();
-    assert!((cfg.divider_px - 1.0).abs() < f32::EPSILON);
+    assert!((cfg.divider_px - 2.0).abs() < f32::EPSILON);
     assert_eq!(cfg.min_cells, (10, 3));
     assert!(!cfg.dim_inactive);
     assert!((cfg.inactive_opacity - 0.7).abs() < f32::EPSILON);
@@ -1816,7 +2000,7 @@ fn pane_config_roundtrip() {
     let cfg = Config::default();
     let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
     let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
-    assert!((parsed.pane.divider_px - 1.0).abs() < f32::EPSILON);
+    assert!((parsed.pane.divider_px - 2.0).abs() < f32::EPSILON);
     assert_eq!(parsed.pane.min_cells, (10, 3));
     assert!(!parsed.pane.dim_inactive);
 }
@@ -1832,7 +2016,7 @@ inactive_opacity = 0.5
     assert!(cfg.pane.dim_inactive);
     assert!((cfg.pane.inactive_opacity - 0.5).abs() < f32::EPSILON);
     // Defaults for unspecified fields.
-    assert!((cfg.pane.divider_px - 1.0).abs() < f32::EPSILON);
+    assert!((cfg.pane.divider_px - 2.0).abs() < f32::EPSILON);
     assert_eq!(cfg.pane.min_cells, (10, 3));
 }
 
@@ -1842,17 +2026,17 @@ fn pane_config_color_defaults() {
     assert_eq!(
         cfg.effective_divider_color(),
         Rgb {
-            r: 80,
-            g: 80,
-            b: 80
+            r: 42,
+            g: 42,
+            b: 54
         }
     );
     assert_eq!(
         cfg.effective_focus_border_color(),
         Rgb {
-            r: 100,
-            g: 149,
-            b: 237
+            r: 109,
+            g: 155,
+            b: 224
         }
     );
 }
@@ -1877,9 +2061,9 @@ fn pane_config_invalid_color_falls_back() {
     assert_eq!(
         cfg.effective_divider_color(),
         Rgb {
-            r: 80,
-            g: 80,
-            b: 80
+            r: 42,
+            g: 42,
+            b: 54
         }
     );
 }
@@ -1934,4 +2118,323 @@ fn process_model_survives_full_roundtrip() {
     let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
     let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
     assert_eq!(parsed.process_model, ProcessModel::Embedded);
+}
+
+// Tab bar position
+
+#[test]
+fn tab_bar_position_default_is_top() {
+    let cfg = Config::default();
+    assert_eq!(cfg.window.tab_bar_position, TabBarPosition::Top);
+}
+
+#[test]
+fn tab_bar_position_deserializes_all_variants() {
+    for (input, expected) in [
+        (r#"tab_bar_position = "top""#, TabBarPosition::Top),
+        (r#"tab_bar_position = "bottom""#, TabBarPosition::Bottom),
+        (r#"tab_bar_position = "hidden""#, TabBarPosition::Hidden),
+    ] {
+        let toml_str = format!("[window]\n{input}");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(
+            parsed.window.tab_bar_position, expected,
+            "for input: {input}"
+        );
+    }
+}
+
+#[test]
+fn tab_bar_position_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.tab_bar_position = TabBarPosition::Bottom;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.window.tab_bar_position, TabBarPosition::Bottom);
+}
+
+// Unfocused opacity
+
+#[test]
+fn unfocused_opacity_default_is_one() {
+    let cfg = Config::default();
+    assert!((cfg.window.unfocused_opacity - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn unfocused_opacity_clamps_low() {
+    assert!((WindowConfig::default().effective_unfocused_opacity() - 1.0).abs() < f32::EPSILON);
+    let mut w = WindowConfig::default();
+    w.unfocused_opacity = 0.1;
+    assert!((w.effective_unfocused_opacity() - 0.3).abs() < f32::EPSILON);
+}
+
+#[test]
+fn unfocused_opacity_clamps_high() {
+    let mut w = WindowConfig::default();
+    w.unfocused_opacity = 1.5;
+    assert!((w.effective_unfocused_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn unfocused_opacity_at_boundaries() {
+    let mut w = WindowConfig::default();
+    w.unfocused_opacity = 0.3;
+    assert!((w.effective_unfocused_opacity() - 0.3).abs() < f32::EPSILON);
+    w.unfocused_opacity = 1.0;
+    assert!((w.effective_unfocused_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn unfocused_opacity_serde_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.unfocused_opacity = 0.65;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!((parsed.window.unfocused_opacity - 0.65).abs() < f32::EPSILON);
+}
+
+// Tab bar style
+
+#[test]
+fn tab_bar_style_default() {
+    let cfg = Config::default();
+    assert_eq!(cfg.window.tab_bar_style, TabBarStyle::Default);
+}
+
+#[test]
+fn tab_bar_style_serde_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.tab_bar_style = TabBarStyle::Compact;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.window.tab_bar_style, TabBarStyle::Compact);
+}
+
+#[test]
+fn tab_bar_style_deserializes_all_variants() {
+    for (input, expected) in [
+        (r#"tab_bar_style = "default""#, TabBarStyle::Default),
+        (r#"tab_bar_style = "compact""#, TabBarStyle::Compact),
+    ] {
+        let toml_str = format!("[window]\n{input}");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(parsed.window.tab_bar_style, expected, "for input: {input}");
+    }
+}
+
+// Decorations serde roundtrip
+
+#[test]
+fn decorations_serde_roundtrip() {
+    for variant in [
+        Decorations::None,
+        Decorations::Full,
+        Decorations::Transparent,
+        Decorations::Buttonless,
+    ] {
+        let mut cfg = Config::default();
+        cfg.window.decorations = variant;
+        let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(
+            parsed.window.decorations, variant,
+            "for variant: {variant:?}"
+        );
+    }
+}
+
+// GPU backend
+
+#[test]
+fn gpu_backend_default_is_auto() {
+    let cfg = Config::default();
+    assert_eq!(cfg.rendering.gpu_backend, GpuBackend::Auto);
+}
+
+#[test]
+fn gpu_backend_deserializes_all_variants() {
+    for (input, expected) in [
+        (r#"gpu_backend = "auto""#, GpuBackend::Auto),
+        (r#"gpu_backend = "vulkan""#, GpuBackend::Vulkan),
+        (r#"gpu_backend = "directx12""#, GpuBackend::DirectX12),
+        (r#"gpu_backend = "dx12""#, GpuBackend::DirectX12),
+        (r#"gpu_backend = "metal""#, GpuBackend::Metal),
+    ] {
+        let toml_str = format!("[rendering]\n{input}");
+        let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(parsed.rendering.gpu_backend, expected, "for input: {input}");
+    }
+}
+
+#[test]
+fn gpu_backend_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.rendering.gpu_backend = GpuBackend::Vulkan;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.rendering.gpu_backend, GpuBackend::Vulkan);
+}
+
+// Rendering config
+
+#[test]
+fn rendering_config_absent_uses_defaults() {
+    let toml_str = "";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.rendering.gpu_backend, GpuBackend::Auto);
+}
+
+// Font line height
+
+#[test]
+fn font_line_height_default_is_1() {
+    let cfg = Config::default();
+    assert!((cfg.font.line_height - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn font_line_height_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.font.line_height = 1.5;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!((parsed.font.line_height - 1.5).abs() < f32::EPSILON);
+}
+
+#[test]
+fn font_line_height_absent_uses_default() {
+    let toml_str = "[font]\nsize = 14.0";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!((parsed.font.line_height - 1.0).abs() < f32::EPSILON);
+}
+
+// Window new fields
+
+#[test]
+fn window_grid_padding_default_is_zero() {
+    let cfg = Config::default();
+    assert!((cfg.window.grid_padding - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn window_grid_padding_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.grid_padding = 8.0;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!((parsed.window.grid_padding - 8.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn window_restore_session_default_is_false() {
+    let cfg = Config::default();
+    assert!(!cfg.window.restore_session);
+}
+
+#[test]
+fn window_restore_session_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.window.restore_session = true;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!(parsed.window.restore_session);
+}
+
+// Config PartialEq
+
+#[test]
+fn config_partial_eq_detects_differences() {
+    let a = Config::default();
+    let mut b = Config::default();
+    assert_eq!(a, b);
+    b.window.opacity = 0.5;
+    assert_ne!(a, b);
+}
+
+#[test]
+fn config_partial_eq_all_sections() {
+    let a = Config::default();
+    let b = Config::default();
+    assert_eq!(a, b);
+    assert_eq!(a.font, b.font);
+    assert_eq!(a.terminal, b.terminal);
+    assert_eq!(a.window, b.window);
+    assert_eq!(a.behavior, b.behavior);
+    assert_eq!(a.bell, b.bell);
+    assert_eq!(a.pane, b.pane);
+    assert_eq!(a.rendering, b.rendering);
+    assert_eq!(a.colors, b.colors);
+}
+
+// Focus-aware opacity selection
+
+#[test]
+fn focus_changes_select_correct_opacity() {
+    let mut cfg = Config::default();
+    cfg.window.opacity = 0.9;
+    cfg.window.unfocused_opacity = 0.6;
+    cfg.window.blur = true;
+
+    // Focused window uses primary opacity.
+    let focused_opacity = cfg.window.effective_opacity();
+    assert!((focused_opacity - 0.9).abs() < f32::EPSILON);
+
+    // Unfocused window uses unfocused opacity.
+    let unfocused_opacity = cfg.window.effective_unfocused_opacity();
+    assert!((unfocused_opacity - 0.6).abs() < f32::EPSILON);
+
+    // Blur decision: want_blur = blur && opacity < 1.0.
+    // Focused at 0.9: blur should be on.
+    assert!(cfg.window.blur && focused_opacity < 1.0);
+    // Unfocused at 0.6: blur should be on.
+    assert!(cfg.window.blur && unfocused_opacity < 1.0);
+
+    // When focused opacity is 1.0, blur should be off even if blur=true.
+    cfg.window.opacity = 1.0;
+    let focused_opacity = cfg.window.effective_opacity();
+    assert!(
+        !(cfg.window.blur && focused_opacity < 1.0),
+        "blur must be off when focused opacity is 1.0"
+    );
+
+    // Unfocused opacity < 1.0: blur still on.
+    let unfocused_opacity = cfg.window.effective_unfocused_opacity();
+    assert!(cfg.window.blur && unfocused_opacity < 1.0);
+}
+
+#[test]
+fn blur_disabled_when_config_blur_false() {
+    let mut cfg = Config::default();
+    cfg.window.opacity = 0.8;
+    cfg.window.unfocused_opacity = 0.5;
+    cfg.window.blur = false;
+
+    // Even with sub-1.0 opacity, blur should be off when blur=false.
+    let opacity = cfg.window.effective_opacity();
+    assert!(
+        !(cfg.window.blur && opacity < 1.0),
+        "blur must be off when config blur=false"
+    );
+}
+
+// -- Status bar config tests --
+
+#[test]
+fn status_bar_default_true() {
+    assert!(WindowConfig::default().show_status_bar);
+}
+
+#[test]
+fn status_bar_toml_false() {
+    let toml_str = "[window]\nshow_status_bar = false";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!(!parsed.window.show_status_bar);
+}
+
+#[test]
+fn status_bar_toml_missing_defaults_true() {
+    let toml_str = "[window]";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!(parsed.window.show_status_bar);
 }

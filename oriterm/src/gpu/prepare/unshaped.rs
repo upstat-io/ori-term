@@ -10,7 +10,7 @@ use super::super::prepared_frame::PreparedFrame;
 use super::emit::{build_cursor, draw_prompt_markers, draw_url_hover_underline};
 use super::{AtlasLookup, decorations, resolve_cell_colors, resolve_cursor};
 use crate::font::GlyphStyle;
-use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 
 /// Convert cell flags to the corresponding glyph style.
 fn glyph_style(flags: CellFlags) -> GlyphStyle {
@@ -22,7 +22,7 @@ fn glyph_style(flags: CellFlags) -> GlyphStyle {
 ///
 /// Used by tests to verify prepare logic without shaping complexity. Production
 /// rendering uses [`prepare_frame_shaped`](super::prepare_frame_shaped) instead.
-pub fn prepare_frame(
+pub(crate) fn prepare_frame(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     origin: (f32, f32),
@@ -46,7 +46,7 @@ pub fn prepare_frame(
 ///
 /// Used by tests. Production rendering uses
 /// [`prepare_frame_shaped_into`](super::prepare_frame_shaped_into) instead.
-pub fn prepare_frame_into(
+pub(crate) fn prepare_frame_into(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     out: &mut PreparedFrame,
@@ -141,6 +141,8 @@ fn fill_frame(
         );
 
         // Foreground glyph (skip spaces).
+        // Note: unshaped path is test-only and routes all glyphs to the mono
+        // writer — no subpixel rendering support (no AtlasKind dispatch).
         if cell.ch != ' ' {
             let style = glyph_style(cell.flags);
             if let Some(entry) = atlas.lookup(cell.ch, style) {
@@ -153,7 +155,9 @@ fn fill_frame(
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                frame.glyphs.push_glyph(rect, uv, fg, fg_dim, entry.page);
+                frame
+                    .glyphs
+                    .push_glyph(rect, uv, fg, fg_dim, entry.page, CLIP_UNCLIPPED);
             }
         }
     }

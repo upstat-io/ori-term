@@ -4,23 +4,25 @@
 //! Each window gets its own renderer so DPI scaling, atlas caches, and
 //! shaping state are fully isolated — no cross-window contamination.
 
-mod draw_list;
+mod error;
 mod font_config;
 mod helpers;
+mod icons;
 mod multi_pane;
 mod render;
+mod render_helpers;
+mod scene_append;
 mod ui_only;
 
+pub use error::SurfaceError;
 pub use ui_only::RendererMode;
 
 use std::collections::HashSet;
-use std::fmt;
-
 use wgpu::{Buffer, Device};
 
 use oriterm_core::Rgb;
 
-use oriterm_ui::icons::{IconId, ResolvedIcon, ResolvedIcons};
+use oriterm_ui::icons::ResolvedIcons;
 
 use super::atlas::GlyphAtlas;
 use super::bind_groups::{AtlasBindGroup, UniformBuffer};
@@ -31,7 +33,7 @@ use super::pipelines::GpuPipelines;
 use super::prepare::{self, AtlasLookup};
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
-use crate::font::{CellMetrics, FontCollection, RasterKey};
+use crate::font::{CellMetrics, FontCollection, RasterKey, UiFontSizes};
 use crate::gpu::frame_input::ViewportSize;
 use helpers::{
     ShapingScratch, create_atlases, ensure_glyphs_cached, grid_raster_keys, shape_frame,
@@ -40,35 +42,7 @@ use helpers::{
 /// Maximum entries in `empty_keys` before clearing to prevent unbounded growth.
 const EMPTY_KEYS_CAP: usize = 10_000;
 
-// ── Error type ──
-
-/// Error returned by [`WindowRenderer::render_to_surface`].
-#[derive(Debug)]
-pub enum SurfaceError {
-    /// Surface is lost or outdated — caller should reconfigure.
-    Lost,
-    /// GPU is out of memory.
-    OutOfMemory,
-    /// Surface acquisition timed out.
-    Timeout,
-    /// Unspecified surface error.
-    Other,
-}
-
-impl fmt::Display for SurfaceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Lost => f.write_str("surface lost or outdated"),
-            Self::OutOfMemory => f.write_str("GPU out of memory"),
-            Self::Timeout => f.write_str("surface timeout"),
-            Self::Other => f.write_str("surface error"),
-        }
-    }
-}
-
-impl std::error::Error for SurfaceError {}
-
-// ── Atlas lookup bridge ──
+// Atlas lookup bridge
 
 /// Bridges all atlases (mono, subpixel, color) into the [`AtlasLookup`] trait.
 ///
@@ -90,8 +64,6 @@ impl AtlasLookup for CombinedAtlasLookup<'_> {
             .or_else(|| self.color.lookup(key))
     }
 }
-
-// ── WindowRenderer ──
 
 /// Per-window GPU renderer: owns fonts, atlases, and instance buffers.
 ///
@@ -123,17 +95,13 @@ pub struct WindowRenderer {
     /// all three atlases share a single authoritative set.
     empty_keys: HashSet<RasterKey>,
     font_collection: FontCollection,
-    /// UI font collection (proportional sans-serif) for tab bar, labels, and overlays.
+    /// Per-size UI font registry (proportional sans-serif) for tab bar, labels, and overlays.
     ///
     /// `None` if no UI font was found — falls back to terminal font.
-    ui_font_collection: Option<FontCollection>,
+    ui_font_sizes: Option<UiFontSizes>,
 
     // Per-frame reusable scratch buffers.
     ui_raster_keys: Vec<RasterKey>,
-    /// Reusable clip stack for `convert_draw_list` (avoids per-frame allocation).
-    clip_stack: Vec<oriterm_ui::geometry::Rect>,
-    /// Scratch clips for per-overlay draw range recording.
-    overlay_scratch_clips: super::draw_list_convert::TierClips,
     shaping: ShapingScratch,
     /// GPU-ready instances for the current frame.
     ///
@@ -182,7 +150,7 @@ impl WindowRenderer {
         gpu: &GpuState,
         pipelines: &GpuPipelines,
         mut font_collection: FontCollection,
-        ui_font_collection: Option<FontCollection>,
+        mut ui_font_sizes: Option<UiFontSizes>,
     ) -> Self {
         let t0 = std::time::Instant::now();
         let device = &gpu.device;
@@ -192,8 +160,25 @@ impl WindowRenderer {
         let uniform_buffer = UniformBuffer::new(device, &pipelines.uniform_layout);
 
         // Atlases: mono + subpixel (with ASCII pre-cached) + color (empty).
-        let (atlas, subpixel_atlas, color_atlas) =
+        let (mut atlas, mut subpixel_atlas, color_atlas) =
             create_atlases(device, queue, &mut font_collection);
+
+        // Inject terminal font's emoji fallback into UI font collections
+        // so emoji renders at the correct UI text size (not the terminal's).
+        if let Some(ref mut sizes) = ui_font_sizes {
+            let emoji_data = font_collection.fallback_font_data();
+            if !emoji_data.is_empty() {
+                sizes.inject_fallbacks(&emoji_data);
+            }
+        }
+
+        // Pre-cache common UI font sizes so the first dialog/tab-bar frame
+        // doesn't hitch on glyph rasterization.
+        if let Some(ref mut sizes) = ui_font_sizes {
+            let t_ui = std::time::Instant::now();
+            helpers::prewarm_ui_font_sizes(sizes, &mut atlas, &mut subpixel_atlas, device, queue);
+            log::info!("UI font prewarm: {:?}", t_ui.elapsed());
+        }
 
         // Bind groups.
         let atlas_bind_group = AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view());
@@ -218,10 +203,8 @@ impl WindowRenderer {
             color_atlas_generation: 0,
             empty_keys: HashSet::new(),
             font_collection,
-            ui_font_collection,
+            ui_font_sizes,
             ui_raster_keys: Vec::new(),
-            clip_stack: Vec::new(),
-            overlay_scratch_clips: super::draw_list_convert::TierClips::default(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             bg_buffer: None,
@@ -248,7 +231,7 @@ impl WindowRenderer {
         }
     }
 
-    // ── Accessors ──
+    // Accessors
 
     /// Cell dimensions derived from the current font metrics.
     pub fn cell_metrics(&self) -> CellMetrics {
@@ -261,10 +244,28 @@ impl WindowRenderer {
     }
 
     /// Active UI font collection (proportional sans-serif, or terminal font fallback).
+    ///
+    /// Returns the default-size collection from the UI font registry,
+    /// falling back to the terminal font if no UI fonts are available.
     pub fn active_ui_collection(&self) -> &FontCollection {
-        self.ui_font_collection
+        self.ui_font_sizes
             .as_ref()
+            .and_then(|s| s.default_collection())
             .unwrap_or(&self.font_collection)
+    }
+
+    /// Create a size-aware text measurer for UI widgets.
+    ///
+    /// The returned measurer selects the exact [`FontCollection`] for each
+    /// `TextStyle.size` from the UI font registry. Falls back to the default
+    /// UI collection (or terminal font) for sizes not in the registry.
+    pub fn ui_measurer(&self, scale: f32) -> crate::font::UiFontMeasurer<'_> {
+        crate::font::UiFontMeasurer::new(
+            self.ui_font_sizes.as_ref(),
+            self.active_ui_collection(),
+            scale,
+        )
+        .with_terminal_collection(&self.font_collection)
     }
 
     /// Glyph atlas for cache statistics.
@@ -273,7 +274,7 @@ impl WindowRenderer {
         &self.atlas
     }
 
-    // ── Bind group staleness ──
+    // Bind group staleness
 
     /// Rebuild atlas bind groups whose texture generation has advanced.
     ///
@@ -305,70 +306,18 @@ impl WindowRenderer {
         }
     }
 
-    // ── Icon resolution ──
+    // Frame preparation
 
-    /// Pre-resolve all icon atlas entries for the current frame.
+    /// Whether visual-only state (selection) changed since the last frame.
     ///
-    /// Icons are rasterized at **physical pixel size** (`logical × scale`)
-    /// so each texel maps 1:1 to a screen pixel. The `ResolvedIcons` map
-    /// is keyed by logical size (what widgets pass) so the scaling is
-    /// transparent to widget code.
-    ///
-    /// Call once per frame before constructing `DrawCtx`.
-    pub fn resolve_icons(&mut self, gpu: &GpuState, scale: f32) {
-        self.resolved_icons.clear();
-        for &(id, logical_size) in &Self::ICON_SIZES {
-            let physical_size = (logical_size as f32 * scale).round() as u32;
-            if physical_size == 0 {
-                continue;
-            }
-            if let Some(entry) = self.icon_cache.get_or_insert(
-                id,
-                physical_size,
-                scale,
-                &mut self.atlas,
-                &gpu.device,
-                &gpu.queue,
-            ) {
-                self.resolved_icons.insert(
-                    id,
-                    logical_size,
-                    ResolvedIcon {
-                        atlas_page: entry.page,
-                        uv: [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h],
-                    },
-                );
-            }
-        }
+    /// Visual changes need a full instance rebuild but NOT re-shaping.
+    fn has_visual_change(&self, input: &FrameInput) -> bool {
+        let new_sel = input
+            .selection
+            .as_ref()
+            .and_then(|s| s.damage_snapshot(input.rows()));
+        new_sel != self.prepared.prev_selection_snapshot
     }
-
-    /// Pre-resolved icon atlas entries for the current frame.
-    ///
-    /// Valid after [`resolve_icons`](Self::resolve_icons) has been called.
-    pub fn resolved_icons(&self) -> &ResolvedIcons {
-        &self.resolved_icons
-    }
-
-    /// All `(IconId, logical_size)` pairs used by widgets.
-    ///
-    /// Sizes are in **logical pixels** — [`resolve_icons`](Self::resolve_icons)
-    /// multiplies by the display scale factor to get the physical rasterization
-    /// size. Derived from widget constants:
-    /// - `Close` (tab): `(CLOSE_BUTTON_WIDTH - 2 * CLOSE_ICON_INSET).round()` = 10
-    /// - `Plus`: `(PLUS_ARM * 2).round()` = 10
-    /// - `ChevronDown`: `(CHEVRON_HALF * 2).round()` = 10
-    /// - `Minimize`/`Maximize`/`Restore`/`WindowClose`: `SYMBOL_SIZE.round()` = 10
-    const ICON_SIZES: [(IconId, u32); 7] = [
-        (IconId::Close, 10),
-        (IconId::Plus, 10),
-        (IconId::ChevronDown, 10),
-        (IconId::Minimize, 10),
-        (IconId::Maximize, 10),
-        (IconId::Restore, 10),
-        (IconId::WindowClose, 10),
-    ];
-
-    // ── Frame preparation ──
 
     /// Run the Prepare phase: shape text and build GPU instance buffers.
     ///
@@ -402,12 +351,15 @@ impl WindowRenderer {
         cursor_blink_visible: bool,
         content_changed: bool,
     ) {
-        // Cursor-blink-only fast path: when content hasn't changed and we
-        // have a valid prepared frame, skip shaping, glyph caching, and the
-        // full instance rebuild. Just update cursor/URL/prompt overlays.
+        // Cursor-blink-only fast path: when content hasn't changed and no
+        // visual state (selection, search, hover) differs from the last
+        // prepared frame, skip shaping, glyph caching, and the full instance
+        // rebuild. Just update cursor/URL/prompt overlays.
         let cols = input.columns();
         let cached_valid = self.shaping.frame.rows() > 0 && self.shaping.frame.cols() == cols;
-        if !content_changed && cached_valid && self.prepared.has_terminal_data() {
+        let visual_changed = self.has_visual_change(input);
+        if !content_changed && !visual_changed && cached_valid && self.prepared.has_terminal_data()
+        {
             self.atlas.begin_frame();
             self.subpixel_atlas.begin_frame();
             self.color_atlas.begin_frame();

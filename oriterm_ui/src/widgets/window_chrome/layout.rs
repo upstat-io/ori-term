@@ -81,6 +81,21 @@ impl ChromeLayout {
         is_fullscreen: bool,
         mode: ChromeMode,
     ) -> Self {
+        Self::compute_with_inset(window_width, is_maximized, is_fullscreen, mode, 0.0)
+    }
+
+    /// Compute chrome layout with a left inset for platform controls.
+    ///
+    /// `title_left_inset` reserves space on the left for native window
+    /// controls (e.g. macOS traffic lights). The title area starts after
+    /// this inset.
+    pub fn compute_with_inset(
+        window_width: f32,
+        is_maximized: bool,
+        is_fullscreen: bool,
+        mode: ChromeMode,
+        title_left_inset: f32,
+    ) -> Self {
         if is_fullscreen {
             return Self::hidden(mode);
         }
@@ -131,11 +146,11 @@ impl ChromeLayout {
             }
         };
 
-        // Title area: left edge to the first button, full caption height.
+        // Title area: left edge (after inset) to the first button.
         let title_x = if is_maximized {
-            0.0
+            title_left_inset
         } else {
-            RESIZE_BORDER_WIDTH
+            RESIZE_BORDER_WIDTH + title_left_inset
         };
         let title_width = (first_btn_x - title_x).max(0.0);
         let title_rect = Rect::new(title_x, btn_y, title_width, caption_h);

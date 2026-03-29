@@ -12,6 +12,50 @@ use winit::window::{Icon, Window, WindowAttributes};
 
 use crate::geometry::{Point, Size};
 
+/// Window decoration mode.
+///
+/// Controls whether the window uses OS-native decorations, custom frameless
+/// CSD, or platform-specific variants like macOS transparent titlebar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DecorationMode {
+    /// Frameless window with custom CSD (default).
+    #[default]
+    Frameless,
+    /// OS-native title bar and borders.
+    Native,
+    /// macOS: transparent titlebar with traffic lights visible.
+    /// Other platforms: equivalent to `Frameless`.
+    TransparentTitlebar,
+    /// macOS: hide traffic light buttons.
+    /// Other platforms: equivalent to `Frameless`.
+    Buttonless,
+}
+
+impl DecorationMode {
+    /// Returns whether two modes share the same macOS creation-time titlebar
+    /// attributes (transparent, fullsize content view, hidden buttons).
+    ///
+    /// Transitions between modes in different groups require an app restart on
+    /// macOS because winit cannot change these attributes at runtime.
+    ///
+    /// Groups:
+    /// - `Native`: no titlebar transparency, no fullsize content view.
+    /// - `Frameless` / `TransparentTitlebar`: transparent + fullsize.
+    /// - `Buttonless`: transparent + fullsize + hidden buttons.
+    pub fn macos_requires_restart(self, other: Self) -> bool {
+        self.macos_titlebar_group() != other.macos_titlebar_group()
+    }
+
+    /// Classifies the mode by its macOS creation-time window attributes.
+    fn macos_titlebar_group(self) -> u8 {
+        match self {
+            Self::Native => 0,
+            Self::Frameless | Self::TransparentTitlebar => 1,
+            Self::Buttonless => 2,
+        }
+    }
+}
+
 /// Configuration for creating a new window.
 ///
 /// Scale factor is not included — it is a runtime property of the display,
@@ -32,6 +76,8 @@ pub struct WindowConfig {
     pub position: Option<Point>,
     /// Whether the window is resizable. Defaults to `true`.
     pub resizable: bool,
+    /// Window decoration mode (frameless CSD, native, or platform variant).
+    pub decoration: DecorationMode,
 }
 
 impl Default for WindowConfig {
@@ -44,6 +90,7 @@ impl Default for WindowConfig {
             opacity: 1.0,
             position: None,
             resizable: true,
+            decoration: DecorationMode::default(),
         }
     }
 }
@@ -87,7 +134,33 @@ pub fn create_window(
 ) -> Result<Arc<Window>, WindowError> {
     let attrs = build_window_attributes(config);
     let window = event_loop.create_window(attrs)?;
+    apply_post_creation_style(&window);
     Ok(Arc::new(window))
+}
+
+/// Resolve [`DecorationMode`] into the winit `with_decorations` boolean.
+///
+/// macOS: `Frameless` and `TransparentTitlebar` both enable winit decorations
+/// (traffic lights visible; the frameless look comes from transparent titlebar +
+/// fullsize content view). `Buttonless` also enables decorations but hides the
+/// traffic lights in `apply_platform_attributes`. `Native` enables standard
+/// decorations.
+///
+/// Other platforms: `Native` = decorated, everything else = frameless CSD.
+pub fn resolve_winit_decorations(mode: DecorationMode) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // macOS needs winit decorations ON for all modes except Native
+        // (where it's also on). The frameless look is achieved via
+        // titlebar transparency + fullsize content view, not by
+        // disabling decorations. Disabling decorations on macOS removes
+        // the traffic lights AND breaks the titlebar area entirely.
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        matches!(mode, DecorationMode::Native)
+    }
 }
 
 /// Builds platform-aware [`WindowAttributes`] from a [`WindowConfig`].
@@ -95,14 +168,7 @@ pub fn create_window(
 /// All platforms share a frameless, initially-invisible window. Per-platform
 /// `#[cfg]` blocks add OS-specific attributes.
 fn build_window_attributes(config: &WindowConfig) -> WindowAttributes {
-    // macOS: keep decorations enabled so native traffic lights appear.
-    // The transparent titlebar + fullsize content view (set in
-    // apply_platform_attributes) give the frameless Chrome-style look.
-    // Other platforms: fully frameless — custom CSD handles everything.
-    #[cfg(target_os = "macos")]
-    let decorations = true;
-    #[cfg(not(target_os = "macos"))]
-    let decorations = false;
+    let decorations = resolve_winit_decorations(config.decoration);
 
     let mut attrs = WindowAttributes::default()
         .with_title(&config.title)
@@ -167,15 +233,31 @@ fn apply_platform_attributes(attrs: WindowAttributes, config: &WindowConfig) -> 
 }
 
 /// Applies platform-specific window attributes.
+///
+/// macOS decoration modes:
+/// - `Frameless` / `TransparentTitlebar`: transparent titlebar + fullsize content view
+///   (traffic lights visible, content extends behind titlebar).
+/// - `Buttonless`: same as above but hides traffic light buttons.
+/// - `Native`: standard macOS titlebar (no transparency, no fullsize content).
 #[cfg(target_os = "macos")]
-fn apply_platform_attributes(attrs: WindowAttributes, _config: &WindowConfig) -> WindowAttributes {
+fn apply_platform_attributes(attrs: WindowAttributes, config: &WindowConfig) -> WindowAttributes {
     use winit::platform::macos::{OptionAsAlt, WindowAttributesExtMacOS};
 
-    attrs
-        .with_titlebar_transparent(true)
-        .with_title_hidden(true)
-        .with_fullsize_content_view(true)
-        .with_option_as_alt(OptionAsAlt::Both)
+    let attrs = attrs.with_option_as_alt(OptionAsAlt::Both);
+
+    match config.decoration {
+        DecorationMode::Native => attrs,
+        DecorationMode::Buttonless => attrs
+            .with_titlebar_transparent(true)
+            .with_title_hidden(true)
+            .with_fullsize_content_view(true)
+            .with_titlebar_buttons_hidden(true),
+        // Frameless and TransparentTitlebar: traffic lights visible, content behind titlebar.
+        _ => attrs
+            .with_titlebar_transparent(true)
+            .with_title_hidden(true)
+            .with_fullsize_content_view(true),
+    }
 }
 
 /// Applies platform-specific window attributes.
@@ -192,3 +274,42 @@ fn apply_platform_attributes(attrs: WindowAttributes, _config: &WindowConfig) ->
 fn apply_platform_attributes(attrs: WindowAttributes, _config: &WindowConfig) -> WindowAttributes {
     attrs
 }
+
+/// Applies post-creation window style (sharp corners on Windows 11).
+#[cfg(target_os = "windows")]
+#[allow(
+    unsafe_code,
+    reason = "Win32 FFI: DwmSetWindowAttribute for sharp corners"
+)]
+fn apply_post_creation_style(window: &Window) {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = win32.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+
+    // DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_DONOTROUND = 1.
+    let preference: i32 = windows_sys::Win32::Graphics::Dwm::DWMWCP_DONOTROUND;
+    let attr = windows_sys::Win32::Graphics::Dwm::DWMWA_WINDOW_CORNER_PREFERENCE;
+    // SAFETY: `hwnd` is a valid window handle from winit. The attribute and
+    // value are well-typed DWM constants. This is standard Win32 FFI.
+    unsafe {
+        windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+            hwnd,
+            attr as u32,
+            std::ptr::addr_of!(preference).cast(),
+            size_of::<i32>() as u32,
+        );
+    }
+}
+
+/// Post-creation style is a no-op on non-Windows platforms.
+#[cfg(not(target_os = "windows"))]
+fn apply_post_creation_style(_window: &Window) {}
+
+#[cfg(test)]
+mod tests;

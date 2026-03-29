@@ -6,7 +6,6 @@
 
 use super::constants::{
     CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH,
-    TAB_BAR_HEIGHT,
 };
 use super::layout::TabBarLayout;
 
@@ -69,16 +68,16 @@ impl TabBarHit {
 /// 4. New-tab button → `NewTab`
 /// 5. Dropdown button → `Dropdown`
 /// 6. Remaining space → `DragArea`
-pub fn hit_test(x: f32, y: f32, layout: &TabBarLayout) -> TabBarHit {
+pub fn hit_test(x: f32, y: f32, layout: &TabBarLayout, bar_height: f32) -> TabBarHit {
     // Outside tab bar bounds.
-    if !(0.0..TAB_BAR_HEIGHT).contains(&y) {
+    if !(0.0..bar_height).contains(&y) {
         return TabBarHit::None;
     }
 
     // Window controls zone (rightmost).
     let controls_x = layout.controls_x();
     if x >= controls_x {
-        return hit_test_controls(x - controls_x, y);
+        return hit_test_controls(x - controls_x, y, bar_height);
     }
 
     // Tab strip: close button checked first (higher priority than tab body).
@@ -108,12 +107,20 @@ pub fn hit_test(x: f32, y: f32, layout: &TabBarLayout) -> TabBarHit {
     TabBarHit::DragArea
 }
 
+/// Convenience wrapper for [`hit_test`] using the default tab bar height.
+///
+/// Used by tests and callers that don't have access to per-widget metrics.
+#[cfg(test)]
+pub fn hit_test_default(x: f32, y: f32, layout: &TabBarLayout) -> TabBarHit {
+    hit_test(x, y, layout, super::constants::TAB_BAR_HEIGHT)
+}
+
 /// Hit-test within the window controls zone (Windows: rectangular buttons).
 ///
 /// `offset_x` is relative to the start of the controls zone. Buttons are
 /// laid out left-to-right: Minimize, Maximize, Close.
 #[cfg(target_os = "windows")]
-fn hit_test_controls(offset_x: f32, _y: f32) -> TabBarHit {
+fn hit_test_controls(offset_x: f32, _y: f32, _bar_height: f32) -> TabBarHit {
     use crate::widgets::window_chrome::constants::CONTROL_BUTTON_WIDTH;
 
     match (offset_x / CONTROL_BUTTON_WIDTH) as usize {
@@ -129,12 +136,12 @@ fn hit_test_controls(offset_x: f32, _y: f32) -> TabBarHit {
 /// Uses circular hit regions centered vertically in the tab bar.
 /// Misses between circles fall through to `DragArea`.
 #[cfg(not(target_os = "windows"))]
-fn hit_test_controls(offset_x: f32, y: f32) -> TabBarHit {
+fn hit_test_controls(offset_x: f32, y: f32, bar_height: f32) -> TabBarHit {
     use super::constants::{
         CONTROL_BUTTON_DIAMETER, CONTROL_BUTTON_MARGIN, CONTROL_BUTTON_SPACING,
     };
 
-    let cy = TAB_BAR_HEIGHT / 2.0;
+    let cy = bar_height / 2.0;
     let r = CONTROL_BUTTON_DIAMETER / 2.0;
     let r_sq = r * r;
     let step = CONTROL_BUTTON_DIAMETER + CONTROL_BUTTON_SPACING;

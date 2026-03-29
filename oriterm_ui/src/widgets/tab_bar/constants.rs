@@ -2,25 +2,28 @@
 //!
 //! All dimensions are in logical pixels. The caller multiplies by the window's
 //! scale factor to convert to physical pixels for rendering. Constants follow
-//! Chrome's tab bar proportions adapted for a terminal emulator.
+//! a brutal flat design: compact 36px bar, zero margins, accent-bar styling.
 
 /// Full height of the tab bar in logical pixels.
-pub const TAB_BAR_HEIGHT: f32 = 46.0;
+pub const TAB_BAR_HEIGHT: f32 = 36.0;
 
 /// Minimum tab width before tabs start overlapping.
 pub const TAB_MIN_WIDTH: f32 = 80.0;
 
 /// Maximum tab width (tabs grow to fill available space, clamped here).
-pub const TAB_MAX_WIDTH: f32 = 260.0;
+pub const TAB_MAX_WIDTH: f32 = 200.0;
 
 /// Horizontal margin before the first tab.
-pub const TAB_LEFT_MARGIN: f32 = 16.0;
+pub const TAB_LEFT_MARGIN: f32 = 0.0;
 
 /// Vertical margin between the top of the window and the top of tabs.
-pub const TAB_TOP_MARGIN: f32 = 8.0;
+pub const TAB_TOP_MARGIN: f32 = 0.0;
 
 /// Internal horizontal padding within each tab.
-pub const TAB_PADDING: f32 = 8.0;
+pub const TAB_PADDING: f32 = 14.0;
+
+/// Height of the bottom border line beneath the tab bar.
+pub const TAB_BAR_BORDER_BOTTOM: f32 = 2.0;
 
 /// Gap between icon and title text inside a tab.
 pub const ICON_TEXT_GAP: f32 = 4.0;
@@ -85,3 +88,44 @@ pub const TEAR_OFF_THRESHOLD: f32 = 40.0;
 
 /// Reduced tear-off threshold for upward dragging (more natural gesture).
 pub const TEAR_OFF_THRESHOLD_UP: f32 = 15.0;
+
+// -- Style-driven metrics --
+
+/// Style-dependent tab bar geometry metrics.
+///
+/// Values that change between Default and Compact styles. Behavioral
+/// constants (drag thresholds, button widths, etc.) remain as module-level
+/// constants since they are style-independent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TabBarMetrics {
+    /// Full height of the tab bar.
+    pub height: f32,
+    /// Vertical margin above tabs.
+    pub top_margin: f32,
+    /// Internal horizontal padding within each tab.
+    pub tab_padding: f32,
+    /// Minimum tab width.
+    pub min_width: f32,
+    /// Maximum tab width.
+    pub max_width: f32,
+}
+
+impl TabBarMetrics {
+    /// Default style metrics (matches existing constants).
+    pub const DEFAULT: Self = Self {
+        height: TAB_BAR_HEIGHT,
+        top_margin: TAB_TOP_MARGIN,
+        tab_padding: TAB_PADDING,
+        min_width: TAB_MIN_WIDTH,
+        max_width: TAB_MAX_WIDTH,
+    };
+
+    /// Compact style metrics — shorter height, tighter padding.
+    pub const COMPACT: Self = Self {
+        height: 28.0,
+        top_margin: 0.0,
+        tab_padding: 10.0,
+        min_width: 64.0,
+        max_width: 180.0,
+    };
+}

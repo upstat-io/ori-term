@@ -5,7 +5,10 @@ mod multi_pane;
 pub(in crate::app) mod preedit;
 mod search_bar;
 
+use std::time::Instant;
+
 use oriterm_core::{Column, CursorShape, TermMode};
+use oriterm_ui::invalidation::DirtyKind;
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
@@ -24,7 +27,7 @@ impl App {
         log::trace!("RedrawRequested");
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.urgent_redraw = false;
+            ctx.root.set_urgent_redraw(false);
         }
 
         // Compute URL hover segments before the render block (which borrows
@@ -113,7 +116,7 @@ impl App {
 
             let Some(snapshot) = mux.pane_snapshot(pane_id) else {
                 log::warn!("redraw: no snapshot for pane {pane_id:?}");
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
                 return;
             };
             if swapped {
@@ -149,10 +152,15 @@ impl App {
 
             let frame = ctx.frame.as_mut().expect("frame just assigned");
 
-            // Set window opacity from config (extract phase doesn't have
-            // access to config — opacity is a window concern, not terminal state).
-            frame.palette.opacity = self.config.window.effective_opacity();
-            frame.window_focused = ctx.window.window().has_focus();
+            // Set window opacity from config, accounting for focus state.
+            // Unfocused windows use the dimmer unfocused_opacity value.
+            let focused = ctx.window.window().has_focus();
+            frame.palette.opacity = if focused {
+                self.config.window.effective_opacity()
+            } else {
+                self.config.window.effective_unfocused_opacity()
+            };
+            frame.window_focused = focused;
 
             // IME preedit: overlay composition text at the cursor position
             // (underlined) so it flows through the normal shaping pipeline.
@@ -182,6 +190,18 @@ impl App {
             }
             // Selection lives on App, not Pane (copied before render block).
             frame.selection = pane_sel.map(|sel| FrameSelection::new(&sel, base));
+
+            // Detect selection changes: compare the current selection state
+            // with what was last rendered. When the selection changed (even
+            // without terminal output), the prepare phase must rebuild
+            // instance buffers and the render phase must re-render the
+            // content cache texture.
+            let num_rows = frame.rows();
+            let new_sel_snap = frame
+                .selection
+                .as_ref()
+                .and_then(|s| s.damage_snapshot(num_rows));
+            let selection_changed = new_sel_snap != renderer.prepared.prev_selection_snapshot;
 
             // Compute hovered cell for hyperlink underline rendering.
             let cell_metrics = renderer.cell_metrics();
@@ -241,48 +261,148 @@ impl App {
             // Resolve icon atlas entries at physical pixel sizes.
             renderer.resolve_icons(gpu, scale);
 
+            // Phase gating: compute widget dirty level from lifecycle
+            // events, animation state, and per-widget invalidation.
+            // On cursor-blink-only frames (no UI changes), skip the
+            // entire prepare + prepaint pipeline.
+            let now = Instant::now();
+            let lifecycle_events = ctx.root.interaction_mut().drain_events();
+            let widget_dirty = {
+                let mut d = ctx.root.invalidation().max_dirty_kind();
+                if !lifecycle_events.is_empty() {
+                    d = d.merge(DirtyKind::Prepaint);
+                }
+                if ctx.ui_stale {
+                    d = d.merge(DirtyKind::Prepaint);
+                }
+                d
+            };
+            ctx.root.frame_requests_mut().reset();
+
+            log::debug!(
+                "phase gating: widget_dirty={widget_dirty:?} (Layout=full, Prepaint=hover/lifecycle, Paint=blink, Clean=skip)"
+            );
+
+            if widget_dirty >= DirtyKind::Prepaint {
+                let (interaction, invalidation, flags) =
+                    ctx.root.interaction_invalidation_and_frame_requests_mut();
+                super::widget_pipeline::prepare_widget_tree(
+                    &mut ctx.tab_bar,
+                    interaction,
+                    Some(invalidation),
+                    &lifecycle_events,
+                    None,
+                    Some(flags),
+                    now,
+                );
+                // Prepare overlay widget trees.
+                ctx.root.prepare_overlay_widgets(&lifecycle_events, now);
+
+                // Prepaint: resolve visual state (interaction + animator)
+                // into widget fields. Compute layout bounds so
+                // PrepaintCtx::bounds reflects real screen positions.
+                let tb_phys = ctx.tab_bar_phys_rect;
+                let prepaint_tab_bounds = oriterm_ui::geometry::Rect::new(
+                    tb_phys.x() / scale,
+                    tb_phys.y() / scale,
+                    tb_phys.width() / scale,
+                    tb_phys.height() / scale,
+                );
+                let prepaint_bounds = draw_helpers::collect_tab_bar_prepaint_bounds(
+                    &ctx.tab_bar,
+                    renderer,
+                    &ctx.text_cache,
+                    &self.ui_theme,
+                    scale,
+                    prepaint_tab_bounds,
+                );
+                let (interaction, flags) = ctx.root.interaction_and_frame_requests();
+                let invalidation = ctx.root.invalidation();
+                super::widget_pipeline::prepaint_widget_tree(
+                    &mut ctx.tab_bar,
+                    &prepaint_bounds,
+                    Some(interaction),
+                    &self.ui_theme,
+                    now,
+                    Some(flags),
+                    Some(invalidation),
+                );
+                ctx.root
+                    .prepaint_overlay_widgets(&prepaint_bounds, &self.ui_theme, now);
+            }
+
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.
+            // Skipped when the tab bar is hidden.
+            let tab_bar_hidden =
+                self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
             let logical_w = (w as f32 / scale).round() as u32;
+            let (interaction, flags, damage) = ctx.root.interaction_frame_requests_and_damage_mut();
+            let tab_bar_ref = if tab_bar_hidden {
+                None
+            } else {
+                Some(&ctx.tab_bar)
+            };
+            let tb_phys = ctx.tab_bar_phys_rect;
+            let tab_bar_bounds = oriterm_ui::geometry::Rect::new(
+                tb_phys.x() / scale,
+                tb_phys.y() / scale,
+                tb_phys.width() / scale,
+                tb_phys.height() / scale,
+            );
             let tab_bar_animating = Self::draw_tab_bar(
-                Some(&ctx.tab_bar),
+                tab_bar_ref,
                 renderer,
-                &mut ctx.chrome_draw_list,
-                logical_w as f32,
+                &mut ctx.chrome_scene,
+                tab_bar_bounds,
                 scale,
                 gpu,
                 &self.ui_theme,
                 &ctx.text_cache,
+                interaction,
+                flags,
+                damage,
             );
             if tab_bar_animating {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
 
             // Draw overlays with per-overlay compositor opacity.
             let logical_size = (logical_w as f32, h as f32 / scale);
+            let (overlays, layer_tree, interaction, flags) = ctx
+                .root
+                .overlays_layer_tree_interaction_and_frame_requests();
             let overlays_animating = Self::draw_overlays(
-                &mut ctx.overlays,
+                overlays,
                 renderer,
-                &mut ctx.chrome_draw_list,
+                &mut ctx.chrome_scene,
                 logical_size,
                 scale,
                 gpu,
-                &ctx.layer_tree,
+                layer_tree,
                 &self.ui_theme,
                 &ctx.text_cache,
+                interaction,
+                flags,
             );
             if overlays_animating {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
 
             // Draw search bar overlay when search is active.
             if let Some(search) = frame.search.as_ref() {
                 // Position below all chrome (caption + tab bar).
-                let chrome_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                // When the tab bar is hidden, chrome height is zero so
+                // the search badge sits at the top of the grid area.
+                let chrome_h = if tab_bar_hidden {
+                    0.0
+                } else {
+                    ctx.tab_bar.metrics().height
+                };
                 Self::draw_search_bar(
                     search,
                     renderer,
-                    &mut ctx.chrome_draw_list,
+                    &mut ctx.chrome_scene,
                     &mut ctx.search_bar_buf,
                     logical_w as f32,
                     chrome_h,
@@ -292,14 +412,56 @@ impl App {
                 );
             }
 
-            // Full content render when terminal content changed OR chrome/
-            // overlay visuals are stale (hover, animation, theme change).
-            // Only cursor-blink-only frames may reuse the cached texture.
-            let needs_full_render = content_changed || ctx.ui_stale;
+            // Update and draw status bar at the bottom of the window.
+            if self.config.window.show_status_bar
+                && self.config.window.tab_bar_position != crate::config::TabBarPosition::Bottom
+            {
+                let pane_count = 1;
+                ctx.status_bar
+                    .set_data(oriterm_ui::widgets::status_bar::StatusBarData {
+                        shell_name: "shell".into(),
+                        pane_count: format!(
+                            "{pane_count} pane{}",
+                            if pane_count == 1 { "" } else { "s" }
+                        ),
+                        grid_size: format!("{}\u{00d7}{}", frame.content_cols, frame.content_rows,),
+                        encoding: "UTF-8".into(),
+                        term_type: "xterm-256color".into(),
+                    });
+                let phys = ctx.status_bar_phys_rect;
+                let sb_bounds = oriterm_ui::geometry::Rect::new(
+                    phys.x() / scale,
+                    phys.y() / scale,
+                    phys.width() / scale,
+                    phys.height() / scale,
+                );
+                Self::draw_status_bar(
+                    &ctx.status_bar,
+                    renderer,
+                    &mut ctx.chrome_scene,
+                    sb_bounds,
+                    scale,
+                    gpu,
+                    &self.ui_theme,
+                    &ctx.text_cache,
+                );
+            }
+
+            // Full content render when terminal content changed, selection
+            // changed, or chrome/overlay visuals are stale. Only cursor-
+            // blink-only frames may reuse the cached texture.
+            let needs_full_render = content_changed || selection_changed || ctx.ui_stale;
 
             // Overlay tiers render above the cached content every frame, so
             // only chrome animations keep the content cache stale.
             ctx.ui_stale = tab_bar_animating;
+
+            // Window border: 2px border-strong frame, skipped when maximized/fullscreen.
+            if !ctx.window.is_maximized() && !ctx.window.is_fullscreen() {
+                let border_color =
+                    crate::gpu::scene_convert::color_to_rgb(self.ui_theme.border_strong);
+                renderer.append_window_border(w, h, border_color, (2.0 * scale).round());
+            }
 
             // Apply deferred DXGI ResizeBuffers just before acquiring the
             // surface texture. This minimizes the gap between swap chain

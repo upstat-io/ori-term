@@ -77,7 +77,7 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -147,7 +147,7 @@ impl App {
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -212,17 +212,18 @@ impl App {
             return;
         }
 
-        // Clear bell badge on the newly active pane.
+        // Clear bell/unseen-output badges on the newly active pane.
         if let Some(id) = self.active_pane_id() {
             if let Some(mux) = self.mux.as_mut() {
                 mux.clear_bell(id);
+                mux.mark_output_seen(id);
             }
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         self.resize_all_panes();
         self.sync_tab_bar_from_mux();
@@ -246,13 +247,14 @@ impl App {
         if let Some(id) = self.active_pane_id() {
             if let Some(mux) = self.mux.as_mut() {
                 mux.clear_bell(id);
+                mux.mark_output_seen(id);
             }
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();
             ctx.cached_dividers = None;
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         self.resize_all_panes();
         self.sync_tab_bar_from_mux();
@@ -297,15 +299,16 @@ impl App {
             return;
         };
         let tab_count = ctx.tab_bar.tab_count();
+        let (tree, animator) = ctx.root.layer_tree_and_animator_mut();
         let mut cx = SlideContext {
-            tree: &mut ctx.layer_tree,
-            animator: &mut ctx.layer_animator,
+            tree,
+            animator,
             now,
         };
         ctx.tab_slide
             .start_close_slide(closed_idx, tab_width, tab_count, &mut cx);
         ctx.tab_slide
-            .sync_to_widget(tab_count, &ctx.layer_tree, &mut ctx.tab_bar);
+            .sync_to_widget(tab_count, ctx.root.layer_tree(), &mut ctx.tab_bar);
     }
 
     /// Starts a reorder-slide animation and syncs offsets to the widget.
@@ -317,15 +320,16 @@ impl App {
             return;
         };
         let tab_count = ctx.tab_bar.tab_count();
+        let (tree, animator) = ctx.root.layer_tree_and_animator_mut();
         let mut cx = SlideContext {
-            tree: &mut ctx.layer_tree,
-            animator: &mut ctx.layer_animator,
+            tree,
+            animator,
             now,
         };
         ctx.tab_slide
             .start_reorder_slide(from, to, tab_width, &mut cx);
         ctx.tab_slide
-            .sync_to_widget(tab_count, &ctx.layer_tree, &mut ctx.tab_bar);
+            .sync_to_widget(tab_count, ctx.root.layer_tree(), &mut ctx.tab_bar);
     }
 
     /// The active tab ID for the active window.
@@ -411,18 +415,29 @@ fn build_tab_entries(
             let tab = session.get_tab(tab_id);
             let pane_id = tab.map(crate::session::Tab::active_pane);
             let snapshot = pane_id.and_then(|pid| mux.pane_snapshot(pid));
-            let mut title = snapshot.map(|s| s.title.clone()).unwrap_or_default();
+            // User-set title override takes priority over OSC-derived title.
+            // OSC icons still show dynamically alongside the overridden title.
+            let has_override = tab.is_some_and(|t| t.title_override().is_some());
+            let mut title = if has_override {
+                tab.and_then(|t| t.title_override().map(str::to_owned))
+                    .unwrap_or_default()
+            } else {
+                snapshot.map(|s| s.title.clone()).unwrap_or_default()
+            };
             let icon = snapshot
                 .and_then(|s| s.icon_name.as_deref())
                 .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
             // Strip leading emoji from title when it matches the icon
             // (OSC 0 sets both title and icon_name to the same string).
-            if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
-                let stripped = title
-                    .strip_prefix(e.as_str())
-                    .map(|r| r.trim_start().to_owned());
-                if let Some(s) = stripped {
-                    title = s;
+            // Only strip from OSC-derived titles, not user overrides.
+            if !has_override {
+                if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
+                    let stripped = title
+                        .strip_prefix(e.as_str())
+                        .map(|r| r.trim_start().to_owned());
+                    if let Some(s) = stripped {
+                        title = s;
+                    }
                 }
             }
             let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());
@@ -431,7 +446,11 @@ fn build_tab_entries(
             } else {
                 title
             };
-            oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon)
+            let modified =
+                tab.is_some_and(|t| t.all_panes().iter().any(|&pid| mux.has_unseen_output(pid)));
+            oriterm_ui::widgets::tab_bar::TabEntry::new(display)
+                .with_icon(icon)
+                .with_modified(modified)
         })
         .collect();
     (entries, active_idx)

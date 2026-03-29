@@ -3,6 +3,7 @@ section: 5
 title: Window + GPU Rendering
 status: complete
 reviewed: true
+last_verified: "2026-03-29"
 tier: 2
 goal: Open a frameless window, initialize wgpu, render the terminal grid with a proper staged render pipeline — first visual milestone
 sections:
@@ -55,8 +56,8 @@ sections:
 
 # Section 05: Window + GPU Rendering
 
-**Status:** Not Started
-**Goal:** The first visual milestone. Open a native frameless window, initialize wgpu (Vulkan/DX12 on Windows, Vulkan on Linux, Metal on macOS), and render the terminal grid through a **proper staged render pipeline** — not scattered GPU code. Every frame flows through: Extract → Prepare → Render. The CPU-side phases are pure functions, fully unit-testable without a GPU.
+**Status:** Complete (verified 2026-03-29)
+**Goal:** The first visual milestone. Open a native frameless window, initialize wgpu (Vulkan/DX12 on Windows, Vulkan on Linux, Metal on macOS), and render the terminal grid through a **proper staged render pipeline** — not scattered GPU code. Every frame flows through: Extract -> Prepare -> Render. The CPU-side phases are pure functions, fully unit-testable without a GPU.
 
 **Crate:** `oriterm` (binary)
 **Dependencies:** `oriterm_core`, `winit`, `wgpu`, `swash`, `rustybuzz`, `window-vibrancy`, `dwrote` (Windows)
@@ -64,9 +65,11 @@ sections:
 
 **Anti-pattern from prototype:** The old codebase had `render_tab_bar()`, `render_grid()`, `render_overlay()`, `render_settings()` as independent functions that each built their own instance buffers, managed their own state, and submitted their own draw calls. No shared pipeline, no separation between CPU and GPU work, no testability. This section builds it right.
 
+> **Verification (2026-03-29):** All 15 sub-items PASS. 2084 tests passing, 0 ignored. Three-layer test strategy fully implemented. All four performance invariants enforced. Phase separation verified (zero `use wgpu` in extract/prepare). Implementation goes significantly beyond plan (incremental rendering, multi-atlas, subpixel rendering, image rendering, compositor, builtin glyphs, pane cache). One minor hygiene note: `gpu/atlas/mod.rs` at 579 lines exceeds 500-line limit by 79 lines.
+
 ---
 
-## 5.1 Render Pipeline Architecture
+## 5.1 Render Pipeline Architecture (verified 2026-03-29)
 
 The organizing principle for all rendering. Every frame flows through these phases in order. No phase reaches back into a previous phase. No phase touches the GPU until the Render phase.
 
@@ -137,9 +140,9 @@ The organizing principle for all rendering. Every frame flows through these phas
 
 ---
 
-## 5.2 winit Window Creation
+## 5.2 winit Window Creation (verified 2026-03-29)
 
-**File:** `oriterm/src/window/mod.rs`
+**File:** `oriterm/src/window/mod.rs` (318 lines, under 500-line limit)
 
 - [x] `TermWindow` struct (Chrome `WindowTreeHost` pattern — pure window wrapper, NO tabs/content)
   - [x] Fields:
@@ -176,9 +179,9 @@ The organizing principle for all rendering. Every frame flows through these phas
 
 ---
 
-## 5.3 wgpu GpuState + Offscreen Render Targets
+## 5.3 wgpu GpuState + Offscreen Render Targets (verified 2026-03-29)
 
-**File:** `oriterm/src/gpu/state.rs`
+**File:** `oriterm/src/gpu/state/mod.rs` (376 lines) + `gpu/state/helpers.rs` + `gpu/render_target/mod.rs` (229 lines). 19 unit tests.
 
 - [x] `GpuState` struct
   - [x] Fields:
@@ -211,9 +214,9 @@ The organizing principle for all rendering. Every frame flows through these phas
 
 ---
 
-## 5.4 WGSL Shaders + GPU Pipelines
+## 5.4 WGSL Shaders + GPU Pipelines (verified 2026-03-29)
 
-**File:** `oriterm/src/gpu/shaders/bg.wgsl`, `oriterm/src/gpu/shaders/fg.wgsl`, `oriterm/src/gpu/pipeline.rs`
+**File:** `oriterm/src/gpu/shaders/bg.wgsl`, `oriterm/src/gpu/shaders/fg.wgsl`, plus `subpixel_fg.wgsl`, `color_fg.wgsl`, `ui_rect.wgsl`, `image.wgsl`, `composite.wgsl` (beyond plan). `gpu/pipeline/mod.rs` + `gpu/pipelines.rs`.
 
 ### Shaders
 
@@ -268,9 +271,9 @@ Total:  80 bytes per instance
 
 ---
 
-## 5.5 Uniform Buffer + Bind Groups
+## 5.5 Uniform Buffer + Bind Groups (verified 2026-03-29)
 
-**File:** `oriterm/src/gpu/bind_groups/mod.rs`
+**File:** `oriterm/src/gpu/bind_groups/mod.rs` (190+ lines, 10 tests)
 
 - [x] Uniform buffer:
   - [x] Create `wgpu::Buffer` with `BufferUsages::UNIFORM | COPY_DST`
@@ -289,9 +292,9 @@ Total:  80 bytes per instance
 
 ---
 
-## 5.6 Font Discovery + Rasterization
+## 5.6 Font Discovery + Rasterization (verified 2026-03-29)
 
-**Files:** `oriterm/src/font/mod.rs`, `oriterm/src/font/collection/mod.rs`, `oriterm/src/font/collection/face.rs`, `oriterm/src/font/collection/tests.rs`
+**Files:** `oriterm/src/font/mod.rs`, `oriterm/src/font/collection/mod.rs`, `oriterm/src/font/collection/face.rs`, `oriterm/src/font/collection/tests.rs`. ~72 tests (32 + 40).
 
 **Deviations from original plan:**
 - Glyph-ID-based cache key (`RasterKey { glyph_id, face_idx, size_q6 }`) instead of char-based `GlyphKey`
@@ -323,11 +326,11 @@ Total:  80 bytes per instance
 
 ---
 
-## 5.7 Glyph Atlas
+## 5.7 Glyph Atlas (verified 2026-03-29)
 
-Texture atlas for glyph bitmaps. Shelf-packing on 1024×1024 texture pages.
+Texture atlas for glyph bitmaps. Shelf-packing on 1024x1024 texture pages.
 
-**File:** `oriterm/src/gpu/atlas/mod.rs`
+**File:** `oriterm/src/gpu/atlas/mod.rs` (579 lines -- HYGIENE NOTE: exceeds 500-line limit by 79 lines, should be split). 43 tests.
 
 **Deviations from original plan:**
 - Directory module (`atlas/mod.rs` + `atlas/tests.rs`) per test-organization rules.
@@ -351,11 +354,11 @@ Texture atlas for glyph bitmaps. Shelf-packing on 1024×1024 texture pages.
 
 ---
 
-## 5.8 Extract Phase (CPU)
+## 5.8 Extract Phase (CPU) (verified 2026-03-29)
 
 Lock terminal state, copy to owned snapshot, release lock immediately. No GPU types.
 
-**File:** `oriterm/src/gpu/extract/mod.rs`
+**File:** `oriterm/src/gpu/extract/from_snapshot/mod.rs` (211 lines). 21 extract tests + 24 frame_input tests = 45 total.
 
 **Deviations from original plan:**
 - Signature uses `ViewportSize` and `CellMetrics` newtypes instead of raw tuples.
@@ -385,11 +388,11 @@ Lock terminal state, copy to owned snapshot, release lock immediately. No GPU ty
 
 ---
 
-## 5.9 Prepare Phase (CPU)
+## 5.9 Prepare Phase (CPU) (verified 2026-03-29)
 
 Convert `FrameInput` into GPU-ready instance buffers. **Pure CPU, no wgpu types, fully unit-testable.**
 
-**File:** `oriterm/src/gpu/prepare/mod.rs`
+**File:** `oriterm/src/gpu/prepare/mod.rs` (485 lines) + `prepare/emit.rs` + `prepare/decorations.rs` + `prepare/shaped_frame.rs` + `prepare/dirty_skip/`. 135 tests.
 
 - [x] `InstanceWriter` struct — reusable CPU-side byte buffer
   - [x] Fields: `buf: Vec<u8>`, `count: usize`, `stride: usize` (80)
@@ -434,11 +437,11 @@ Convert `FrameInput` into GPU-ready instance buffers. **Pure CPU, no wgpu types,
 
 ---
 
-## 5.10 Render Phase (GPU)
+## 5.10 Render Phase (GPU) (verified 2026-03-29)
 
 Upload prepared buffers to GPU, execute draw calls, present. This phase is thin — all logic is in Prepare.
 
-**File:** `oriterm/src/gpu/renderer/mod.rs`
+**File:** `oriterm/src/gpu/window_renderer/mod.rs` + `gpu/window_renderer/render.rs` + `gpu/window_renderer/helpers.rs` + `gpu/window_renderer/multi_pane.rs` (evolved from plan's `gpu/renderer/mod.rs`)
 
 **Deviations from original plan:**
 - Directory module (`renderer/mod.rs` + `renderer/tests.rs`) per test-organization rules.
@@ -492,11 +495,11 @@ Upload prepared buffers to GPU, execute draw calls, present. This phase is thin 
 
 ---
 
-## 5.11 App Struct + Event Loop
+## 5.11 App Struct + Event Loop (verified 2026-03-29)
 
 The main application struct. Implements winit's `ApplicationHandler`. Orchestrates the pipeline phases.
 
-**File:** `oriterm/src/app/mod.rs`
+**File:** `oriterm/src/app/mod.rs` + `app/event_loop.rs` + `app/constructors.rs` + `app/init/`. 8 event loop tests + 10 cursor blink tests.
 
 - [x] `App` struct
   - [x] Fields:
@@ -535,7 +538,7 @@ The main application struct. Implements winit's `ApplicationHandler`. Orchestrat
 
 ---
 
-## 5.12 Basic Input + Cursor
+## 5.12 Basic Input + Cursor (verified 2026-03-29)
 
 Minimal keyboard handling + cursor rendering. Just enough to type and see output.
 
@@ -554,11 +557,11 @@ Minimal keyboard handling + cursor rendering. Just enough to type and see output
 
 ---
 
-## 5.13 Render Pipeline Testing
+## 5.13 Render Pipeline Testing (verified 2026-03-29)
 
 Testing strategy for the render pipeline. Three layers of tests, from fast/cheap to slow/thorough.
 
-**Files:** `oriterm/src/gpu/prepare/tests.rs` (Layer 1), `oriterm/src/gpu/pipeline_tests.rs` (Layer 2), `oriterm/src/gpu/visual_regression.rs` (Layer 3)
+**Files:** `oriterm/src/gpu/prepare/tests.rs` (Layer 1, 135 tests), `oriterm/src/gpu/pipeline_tests.rs` (Layer 2, 15 tests), `oriterm/src/gpu/visual_regression/mod.rs` (Layer 3, `gpu-tests` feature gated, 33 reference PNGs)
 
 **Deviations from original plan:**
 - Layer 1 tests live in `prepare/tests.rs` (existing from 5.9) rather than a new `gpu/tests/` directory — follows sibling-tests pattern.
@@ -640,7 +643,7 @@ Compare rendered output against reference images. Catches subtle rendering regre
 
 ---
 
-## 5.14 Integration: Working Terminal
+## 5.14 Integration: Working Terminal (verified 2026-03-29)
 
 The "it works" milestone. Everything comes together.
 
@@ -669,9 +672,9 @@ The "it works" milestone. Everything comes together.
 
 ---
 
-## 5.15 Section Completion
+## 5.15 Section Completion (verified 2026-03-29)
 
-- [x] All 5.1–5.14 items complete (one 5.13 item blocked-by:9 — selection overlay)
+- [x] All 5.1–5.14 items complete (one 5.13 item blocked-by:9 — selection overlay) (verified 2026-03-29)
 - [x] **Pipeline architecture:**
   - [x] Extract → Prepare → Render phases are cleanly separated
   - [x] No function crosses phase boundaries
@@ -691,7 +694,23 @@ The "it works" milestone. Everything comes together.
 - [x] **Build:**
   - [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu --release` succeeds
   - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
-  - [x] `cargo test -p oriterm` — all prepare-phase unit tests pass (400 tests, 4 ignored)
+  - [x] `cargo test -p oriterm` — all prepare-phase unit tests pass (400 tests, 4 ignored) (verified 2026-03-29: now 2084 tests, 0 ignored — expanded by subsequent sections)
 - [x] No mouse selection, no search, no config, no tabs — just one terminal in one window
 
-**Exit Criteria:** A working, visually correct terminal emulator with a clean, tested render pipeline. The pipeline architecture (Extract → Prepare → Render) is the foundation that all future rendering builds on. The Prepare phase is independently testable. Offscreen rendering works for tab previews and headless testing.
+**Exit Criteria:** A working, visually correct terminal emulator with a clean, tested render pipeline. The pipeline architecture (Extract -> Prepare -> Render) is the foundation that all future rendering builds on. The Prepare phase is independently testable. Offscreen rendering works for tab previews and headless testing.
+
+### Hygiene Notes (2026-03-29)
+
+- [ ] `gpu/atlas/mod.rs` at 579 lines exceeds the 500-line limit by 79 lines. Should be split by extracting `GlyphAtlas` impl methods into a submodule (e.g., `atlas/glyph_atlas.rs`). Non-blocking.
+
+### Positive Deviations (2026-03-29)
+
+Implementation goes significantly beyond the plan:
+- Incremental rendering (`dirty_skip` module): only regenerates dirty rows.
+- Multi-atlas support: separate mono, subpixel, and color atlases.
+- Subpixel rendering: full LCD subpixel pipeline with per-channel blending.
+- Image rendering: inline image support (Sixel/iTerm2 protocol).
+- Compositor: multi-layer composition with render target pooling.
+- Builtin glyphs: box drawing, Braille, powerline, block elements, decorations.
+- Pane cache: per-pane render caching for multi-pane layouts.
+- Draw list conversion: scene-graph to instance buffer conversion with clipping.

@@ -46,11 +46,38 @@ fn standalone_emoji() {
 }
 
 #[test]
-fn digit_prefix_not_emoji() {
+fn digit_prefix_returns_none() {
     assert_eq!(extract_emoji_icon("42foo"), None);
 }
 
 #[test]
-fn symbol_prefix_not_emoji() {
+fn symbol_prefix_returns_none() {
     assert_eq!(extract_emoji_icon("#channel"), None);
+}
+
+#[test]
+fn eight_spoked_asterisk_is_emoji() {
+    // U+2733 has Emoji_Presentation — it's a valid emoji icon.
+    assert_eq!(
+        extract_emoji_icon("✳ Claude Code"),
+        Some(TabIcon::Emoji("✳".to_owned()))
+    );
+}
+
+#[test]
+fn braille_returns_none() {
+    assert_eq!(extract_emoji_icon("⠂ Claude Code"), None);
+    assert_eq!(extract_emoji_icon("⠐ working"), None);
+}
+
+#[test]
+fn ascii_punctuation_returns_none() {
+    assert_eq!(extract_emoji_icon("..c/Users"), None);
+    assert_eq!(extract_emoji_icon("/home/user"), None);
+    assert_eq!(extract_emoji_icon("-flag"), None);
+}
+
+#[test]
+fn path_prefix_returns_none() {
+    assert_eq!(extract_emoji_icon("orc"), None);
 }

@@ -3,7 +3,11 @@ section: 35
 title: Session Persistence + Remote Domains
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 7A
+last_verified: "2026-03-29"
 goal: Session save/load with crash recovery, scrollback archiving, full SshDomain and WslDomain implementations, tmux control mode integration
 sections:
   - id: "35.1"
@@ -23,6 +27,9 @@ sections:
     status: not-started
   - id: "35.6"
     title: tmux Control Mode Integration
+    status: not-started
+  - id: "35.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "35.7"
     title: Section Completion
@@ -45,6 +52,15 @@ sections:
 - Ghostty: no persistence or remote domains (we go beyond)
 
 **Key differentiator:** WezTerm has no session persistence — close the GUI, lose your sessions. tmux has persistence but no native GUI. ori_term combines both: native GPU-rendered terminal with sessions that survive restarts, crashes, and reboots.
+
+> **Verification notes (2026-03-29):**
+> - Confirmed not-started. No session persistence types, scrollback archiving, SshDomain, or tmux control mode code exists.
+> - **WslDomain stub exists** at `oriterm_mux/src/domain/wsl.rs` (45 lines) -- `can_spawn() = false`, `DomainState::Detached` always. Stub correctly implements `Domain` trait but all methods are disabled.
+> - **Crate boundary issue in 35.1**: Plan places `SessionSnapshot` (containing `WindowSnapshot`/`TabSnapshot`) in `oriterm_mux`, but per CLAUDE.md architecture the mux is pane-only -- tabs/windows/sessions live in `oriterm/src/session/`. Either persistence belongs in `oriterm` (not `oriterm_mux`), or the session registry needs to export serializable types. Needs resolution before implementation.
+> - **File path error in 35.5**: Plan says `oriterm/src/domain/wsl.rs` but actual stub is at `oriterm_mux/src/domain/wsl.rs`. The mux owns domains per crate-boundaries.md.
+> - **Infrastructure from Section 44 available**: Domain trait, SpawnConfig, DomainState, PID file, daemon lifecycle, MuxBackend trait, InProcessMux.
+> - PID file handling and stale PID cleanup exist from Section 44 (useful for crash recovery in 35.2).
+> - tmux control mode (35.6) is ambitious enough to be its own section.
 
 ---
 
@@ -313,6 +329,14 @@ Act as a native frontend for tmux sessions via tmux's control mode (`-CC`). User
 
 ---
 
+## 35.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 35.7 Section Completion
 
 - [ ] All 35.1–35.6 items complete
@@ -329,5 +353,7 @@ Act as a native frontend for tmux sessions via tmux's control mode (`-CC`). User
 - [ ] **Scrollback test**: 100K lines of output → scrollback archived → searchable
 - [ ] **SSH test**: connect to remote, spawn pane, type commands (integration)
 - [ ] **WSL test**: spawn pane in Ubuntu, verify CWD mapping (integration)
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Terminal sessions survive daemon restarts and crashes. Scrollback is unlimited via disk archiving. SSH and WSL domains allow spawning shells on remote machines and WSL distributions. ori_term now has persistence that WezTerm lacks and native GUI that tmux lacks — the best of both worlds.

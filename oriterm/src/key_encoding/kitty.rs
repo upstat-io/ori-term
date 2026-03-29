@@ -88,6 +88,18 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
     let report_events = input.mode.contains(TermMode::REPORT_EVENT_TYPES);
     let report_text = input.mode.contains(TermMode::REPORT_ASSOCIATED_TEXT);
 
+    // DISAMBIGUATE_ESC_CODES (flags=1) only uses CSI u for keys that are
+    // ambiguous in legacy encoding. Named functional keys (arrows, Home,
+    // End, F-keys, etc.) have unambiguous legacy sequences and should use
+    // the legacy path. Only escalate to CSI u when REPORT_ALL_KEYS_AS_ESC
+    // or REPORT_EVENT_TYPES (for release/repeat) requires it.
+    if let Key::Named(named) = input.key {
+        let needs_csi_u = report_all || (report_events && input.event_type != KeyEventType::Press);
+        if !needs_csi_u && has_unambiguous_legacy(*named) {
+            return super::legacy::encode_legacy(input.key, input.mods, input.mode, input.text);
+        }
+    }
+
     // Determine the codepoint.
     let codepoint = match input.key {
         Key::Named(named) => match kitty_codepoint(*named) {
@@ -198,6 +210,42 @@ fn encode_associated_text(text: &str) -> Option<String> {
     } else {
         Some(encoded)
     }
+}
+
+/// Whether a named key has an unambiguous legacy encoding.
+///
+/// These keys have unique VT/xterm escape sequences that no other key
+/// shares, so they don't need CSI u disambiguation. Used to keep
+/// `DISAMBIGUATE_ESC_CODES` mode compatible with shells that don't
+/// bind the CSI u functional key codepoints.
+fn has_unambiguous_legacy(named: NamedKey) -> bool {
+    matches!(
+        named,
+        // Letter-terminated (CSI/SS3 + unique terminator).
+        NamedKey::ArrowUp
+            | NamedKey::ArrowDown
+            | NamedKey::ArrowLeft
+            | NamedKey::ArrowRight
+            | NamedKey::Home
+            | NamedKey::End
+            | NamedKey::F1
+            | NamedKey::F2
+            | NamedKey::F3
+            | NamedKey::F4
+            // Tilde-terminated (CSI num ~).
+            | NamedKey::Insert
+            | NamedKey::Delete
+            | NamedKey::PageUp
+            | NamedKey::PageDown
+            | NamedKey::F5
+            | NamedKey::F6
+            | NamedKey::F7
+            | NamedKey::F8
+            | NamedKey::F9
+            | NamedKey::F10
+            | NamedKey::F11
+            | NamedKey::F12
+    )
 }
 
 /// Build the final `ESC [ codepoint ; modifier [: event_type] [; text] u` sequence.

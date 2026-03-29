@@ -17,6 +17,7 @@ pub use fullscreen::take_fullscreen_events;
 use types::{NSPoint, NSRect};
 
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use objc2::ffi::NSInteger;
 use objc2::msg_send;
@@ -41,6 +42,35 @@ const NS_MODAL_PANEL_WINDOW_LEVEL: NSInteger = 8;
 
 /// `NSNormalWindowLevel` — standard window level.
 const NS_NORMAL_WINDOW_LEVEL: NSInteger = 0;
+
+/// Active tab bar height in logical points, stored as `f32` bits.
+///
+/// Updated by [`set_tab_bar_height`] when tab bar metrics change.
+/// Read by the raw notification callbacks ([`center_and_disable_drag_raw`],
+/// [`reposition_buttons_raw`]) that cannot access Rust widget state.
+/// Defaults to `TAB_BAR_HEIGHT` (the default style's height).
+static TAB_BAR_HEIGHT_BITS: AtomicU32 = AtomicU32::new(
+    // SAFETY: const-eval of f32::to_bits for the default tab bar height.
+    {
+        // 46.0f32.to_bits() — but to_bits is not const-stable, so use a
+        // known bit pattern. Verified by `tab_bar_height_atomic_default` test.
+        0x4238_0000u32
+    },
+);
+
+/// Update the active tab bar height used by macOS fullscreen notification
+/// callbacks.
+///
+/// Call this whenever the tab bar metrics change (style switch, config
+/// reload). The height is in logical points (same unit as `TabBarMetrics::height`).
+pub fn set_tab_bar_height(height: f32) {
+    TAB_BAR_HEIGHT_BITS.store(height.to_bits(), Ordering::Release);
+}
+
+/// Read the active tab bar height in logical points.
+fn active_tab_bar_height() -> f64 {
+    f32::from_bits(TAB_BAR_HEIGHT_BITS.load(Ordering::Acquire)) as f64
+}
 
 pub(super) struct MacosNativeOps;
 
@@ -116,7 +146,7 @@ impl NativeChromeOps for MacosNativeOps {
     fn install_chrome(
         &self,
         window: &Window,
-        _mode: ChromeMode,
+        mode: ChromeMode,
         _border_width: f32,
         caption_height: f32,
     ) {
@@ -125,6 +155,12 @@ impl NativeChromeOps for MacosNativeOps {
         // buttons vertically centered in our custom tab bar.
         center_traffic_lights(window, caption_height);
 
+        // Dialog windows show only the close traffic light — hide minimize
+        // and zoom so the chrome matches the close-only CSD intent.
+        if matches!(mode, ChromeMode::Dialog { .. }) {
+            hide_dialog_traffic_lights(window);
+        }
+
         // Disable the default titlebar drag behavior so our tab bar handles
         // drag events (tab reorder, tear-off). Empty areas use `drag_window()`
         // via the `DragArea` hit handler.
@@ -132,7 +168,10 @@ impl NativeChromeOps for MacosNativeOps {
 
         // Register fullscreen transition observers so the event loop can
         // update the tab bar inset before the macOS animation begins.
-        fullscreen::install_fullscreen_observers(window);
+        // Skip for dialogs — they don't participate in fullscreen.
+        if matches!(mode, ChromeMode::Main) {
+            fullscreen::install_fullscreen_observers(window);
+        }
     }
 
     fn set_interactive_rects(&self, _window: &Window, _rects: &[Rect], _scale: f32) {
@@ -164,14 +203,15 @@ pub fn reapply_traffic_lights(window: &Window, caption_height: f32) {
 /// Center traffic lights and disable titlebar drag using a raw `NSWindow` pointer.
 ///
 /// Called synchronously from the `didExitFullScreen` notification handler
-/// to position buttons correctly before any render frame occurs. Uses
-/// `TAB_BAR_HEIGHT` directly (already in logical points).
+/// to position buttons correctly before any render frame occurs. Reads
+/// the active tab bar height from [`active_tab_bar_height`] (set by
+/// [`set_tab_bar_height`]) so compact style is respected.
 ///
 /// # Safety
 ///
 /// `nswindow` must be a valid, non-null `NSWindow` pointer.
 unsafe fn center_and_disable_drag_raw(nswindow: *mut AnyObject) {
-    let logical_height = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT as f64;
+    let logical_height = active_tab_bar_height();
 
     // Get the close button to find the titlebar container view hierarchy.
     let close_button: *mut AnyObject = msg_send![nswindow, standardWindowButton: 0i64];
@@ -248,7 +288,7 @@ unsafe fn center_and_disable_drag_raw(nswindow: *mut AnyObject) {
 ///
 /// `nswindow` must be a valid, non-null `NSWindow` pointer.
 unsafe fn reposition_buttons_raw(nswindow: *mut AnyObject) {
-    let logical_height = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT as f64;
+    let logical_height = active_tab_bar_height();
 
     let ca = AnyClass::get("CATransaction").expect("CATransaction not found");
     let _: () = msg_send![ca, begin];
@@ -278,6 +318,28 @@ unsafe fn reposition_buttons_raw(nswindow: *mut AnyObject) {
     }
 
     let _: () = msg_send![ca, commit];
+}
+
+/// Hide the minimize and zoom traffic light buttons on a dialog window.
+///
+/// Dialogs only need the close button. Setting `isHidden = YES` on the
+/// minimize (button 1) and zoom (button 2) standard window buttons removes
+/// them while keeping the close button (button 0) visible and functional.
+fn hide_dialog_traffic_lights(window: &Window) {
+    let Some(nswindow) = get_nswindow(window) else {
+        return;
+    };
+    // standardWindowButton: 1 = miniaturizeButton (minimize)
+    // standardWindowButton: 2 = zoomButton (zoom/fullscreen)
+    for button_type in [1i64, 2i64] {
+        let button: *mut AnyObject =
+            unsafe { msg_send![nswindow, standardWindowButton: button_type] };
+        if !button.is_null() {
+            unsafe {
+                let _: () = msg_send![button, setHidden: true];
+            }
+        }
+    }
 }
 
 /// Disable `isMovableByWindowBackground` on the `NSWindow`.

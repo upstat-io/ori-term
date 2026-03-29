@@ -13,12 +13,13 @@ use std::rc::Rc;
 
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, Key, KeyEvent, MouseEvent, MouseEventKind};
+use crate::input::{InputEvent, Key};
 use crate::layout::{LayoutBox, LayoutNode};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::button::ButtonWidget;
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, OnInputResult, Widget, WidgetAction};
 
 pub use style::DialogStyle;
 
@@ -81,8 +82,6 @@ pub struct DialogWidget {
     /// Tab (`:focus-visible` behavior). This avoids a subtle focus-ring
     /// artifact on the default button when the dialog first opens.
     focus_visible: bool,
-    /// Index of the button currently hovered by the mouse (footer child index).
-    hovered_button: Option<usize>,
     /// Cached layout result, keyed by bounds.
     cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
 }
@@ -110,7 +109,6 @@ impl DialogWidget {
             style,
             focused_button: DialogButton::Ok,
             focus_visible: false,
-            hovered_button: None,
             cached_layout: RefCell::new(None),
         }
     }
@@ -213,118 +211,11 @@ impl DialogWidget {
         }
     }
 
-    /// Get a mutable reference to the button at the given layout index.
-    ///
-    /// In `OkCancel` mode: index 0 = cancel, index 1 = ok (layout order).
-    /// In `OkOnly` mode: index 0 = ok.
-    fn button_at_index(&mut self, index: usize) -> (&mut ButtonWidget, DialogButton) {
-        match self.buttons {
-            DialogButtons::OkCancel if index == 0 => {
-                (&mut self.cancel_button, DialogButton::Cancel)
-            }
-            DialogButtons::OkOnly | DialogButtons::OkCancel => {
-                (&mut self.ok_button, DialogButton::Ok)
-            }
-        }
-    }
-
     /// Get an immutable reference to the button at the given layout index.
     fn button_at_index_ref(&self, index: usize) -> (&ButtonWidget, DialogButton) {
         match self.buttons {
             DialogButtons::OkCancel if index == 0 => (&self.cancel_button, DialogButton::Cancel),
             DialogButtons::OkOnly | DialogButtons::OkCancel => (&self.ok_button, DialogButton::Ok),
-        }
-    }
-
-    /// Map a button click to the appropriate dialog-level response.
-    fn map_button_click(&self, id: WidgetId) -> WidgetResponse {
-        match self.button_for_id(id) {
-            Some(DialogButton::Ok) => {
-                WidgetResponse::layout().with_action(WidgetAction::Clicked(id))
-            }
-            Some(DialogButton::Cancel) => {
-                WidgetResponse::layout().with_action(WidgetAction::DismissOverlay(self.id))
-            }
-            None => WidgetResponse::handled(),
-        }
-    }
-
-    /// Update per-button hover state based on mouse position.
-    ///
-    /// Sends `HoverEvent::Leave` to the previously hovered button and
-    /// `HoverEvent::Enter` to the newly hovered button when the mouse
-    /// moves between buttons (or enters/leaves the button area).
-    fn update_button_hover(
-        &mut self,
-        event: &MouseEvent,
-        ctx: &EventCtx<'_>,
-        footer_node: &LayoutNode,
-    ) -> WidgetResponse {
-        // Find which button (if any) the mouse is over.
-        let new_hover = footer_node
-            .children
-            .iter()
-            .position(|btn_node| btn_node.rect.contains(event.pos));
-
-        if new_hover == self.hovered_button {
-            return WidgetResponse::handled();
-        }
-
-        let focused = self.focused_button;
-
-        // Leave the old button.
-        if let Some(old_idx) = self.hovered_button {
-            if let Some(btn_node) = footer_node.children.get(old_idx) {
-                let (button, btn_kind) = self.button_at_index(old_idx);
-                let btn_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: btn_node.content_rect,
-                    is_focused: focused == btn_kind,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
-                button.handle_hover(HoverEvent::Leave, &btn_ctx);
-            }
-        }
-
-        // Enter the new button.
-        if let Some(new_idx) = new_hover {
-            if let Some(btn_node) = footer_node.children.get(new_idx) {
-                let (button, btn_kind) = self.button_at_index(new_idx);
-                let btn_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: btn_node.content_rect,
-                    is_focused: focused == btn_kind,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
-                button.handle_hover(HoverEvent::Enter, &btn_ctx);
-            }
-        }
-
-        self.hovered_button = new_hover;
-        WidgetResponse::layout()
-    }
-
-    /// Clear all per-button hover state.
-    fn clear_button_hover(&mut self, ctx: &EventCtx<'_>) {
-        if let Some(old_idx) = self.hovered_button.take() {
-            let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-            let children = &layout.children;
-            if children.len() >= 2 {
-                if let Some(btn_node) = children[1].children.get(old_idx) {
-                    let focused = self.focused_button;
-                    let (button, btn_kind) = self.button_at_index(old_idx);
-                    let btn_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: btn_node.content_rect,
-                        is_focused: focused == btn_kind,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
-                    button.handle_hover(HoverEvent::Leave, &btn_ctx);
-                }
-            }
         }
     }
 }
@@ -342,14 +233,18 @@ impl Widget for DialogWidget {
         self.build_layout(ctx)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         *self.cached_layout.borrow_mut() = None;
 
         // Base layer: dialog bg in footer_bg color with rounded corners.
         // The footer inherits this as its background; the content zone is
         // overlaid with the lighter bg color. This avoids per-corner radius
         // issues (the GPU shader only supports uniform radius).
-        ctx.draw_list.push_layer(self.style.footer_bg);
+        ctx.scene.push_layer_bg(self.style.footer_bg);
 
         let mut base_style =
             RectStyle::filled(self.style.footer_bg).with_radius(self.style.corner_radius);
@@ -359,12 +254,12 @@ impl Widget for DialogWidget {
         if let Some(shadow) = self.style.shadow {
             base_style = base_style.with_shadow(shadow);
         }
-        ctx.draw_list.push_rect(ctx.bounds, base_style);
+        ctx.scene.push_quad(ctx.bounds, base_style);
 
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
         let children = &layout.children;
         if children.len() < 2 {
-            ctx.draw_list.pop_layer();
+            ctx.scene.pop_layer_bg();
             return;
         }
 
@@ -375,92 +270,62 @@ impl Widget for DialogWidget {
         let content_rect = children[0]
             .rect
             .inset(crate::geometry::Insets::tlbr(bw, bw, 0.0, bw));
-        ctx.draw_list.push_layer(self.style.bg);
+        ctx.scene.push_layer_bg(self.style.bg);
         // Radius inset by border width so the content overlay sits inside
         // the base rect's rounded corners. Bottom corners also get this
         // radius, but the gap reveals footer_bg which is seamless.
         let inner_radius = (self.style.corner_radius - bw).max(0.0);
-        ctx.draw_list.push_rect(
+        ctx.scene.push_quad(
             content_rect,
             RectStyle::filled(self.style.bg).with_radius(inner_radius),
         );
         self.draw_content(ctx, &children[0]);
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
 
         self.draw_footer(ctx, &children[1]);
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        let children = &layout.children;
-        if children.len() < 2 {
-            return WidgetResponse::ignored();
-        }
-
-        // Track per-button hover on mouse move.
-        if event.kind == MouseEventKind::Move {
-            return self.update_button_hover(event, ctx, &children[1]);
-        }
-
-        // Footer zone is children[1]; buttons are its children.
-        let focused = self.focused_button;
-        for (i, btn_node) in children[1].children.iter().enumerate() {
-            if !btn_node.rect.contains(event.pos) {
-                continue;
-            }
-            let (button, btn_kind) = self.button_at_index(i);
-            let btn_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: btn_node.content_rect,
-                is_focused: focused == btn_kind,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-            };
-            let response = button.handle_mouse(event, &btn_ctx);
-            if let Some(WidgetAction::Clicked(id)) = &response.action {
-                return self.map_button_click(*id);
-            }
-            return response;
-        }
-        WidgetResponse::handled()
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        visitor(&mut self.ok_button);
+        visitor(&mut self.cancel_button);
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        // On dialog-level Leave, clear any per-button hover state.
-        if event == HoverEvent::Leave {
-            self.clear_button_hover(ctx);
+    fn on_input(&mut self, event: &InputEvent, _bounds: Rect) -> OnInputResult {
+        if let InputEvent::KeyDown { key, .. } = event {
+            match key {
+                Key::Enter | Key::Space => {
+                    // Activate the focused button — handled via on_action.
+                    return OnInputResult::handled();
+                }
+                Key::Escape => return OnInputResult::handled(),
+                Key::Tab => {
+                    if self.buttons == DialogButtons::OkCancel {
+                        self.focus_visible = true;
+                        self.focused_button = match self.focused_button {
+                            DialogButton::Ok => DialogButton::Cancel,
+                            DialogButton::Cancel => DialogButton::Ok,
+                        };
+                        return OnInputResult::handled();
+                    }
+                }
+                _ => {}
+            }
         }
-        WidgetResponse::handled()
+        OnInputResult::ignored()
     }
 
-    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event.key {
-            Key::Enter | Key::Space => match self.focused_button {
-                DialogButton::Ok => {
-                    WidgetResponse::layout().with_action(WidgetAction::Clicked(self.ok_button.id()))
-                }
-                DialogButton::Cancel => {
-                    WidgetResponse::layout().with_action(WidgetAction::DismissOverlay(self.id))
-                }
-            },
-            Key::Escape => {
-                WidgetResponse::layout().with_action(WidgetAction::DismissOverlay(self.id))
-            }
-            Key::Tab => {
-                if self.buttons == DialogButtons::OkCancel {
-                    self.focus_visible = true;
-                    self.focused_button = match self.focused_button {
-                        DialogButton::Ok => DialogButton::Cancel,
-                        DialogButton::Cancel => DialogButton::Ok,
-                    };
-                    WidgetResponse::layout()
-                } else {
-                    WidgetResponse::handled()
+    fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::Clicked(id) => {
+                // Map button clicks to dialog-level actions.
+                match self.button_for_id(id) {
+                    Some(DialogButton::Cancel) => Some(WidgetAction::DismissOverlay(self.id)),
+                    Some(DialogButton::Ok) | None => Some(WidgetAction::Clicked(id)),
                 }
             }
-            _ => WidgetResponse::handled(),
+            other => Some(other),
         }
     }
 
@@ -471,6 +336,10 @@ impl Widget for DialogWidget {
                 vec![self.cancel_button.id(), self.ok_button.id()]
             }
         }
+    }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Dialog")
     }
 }
 

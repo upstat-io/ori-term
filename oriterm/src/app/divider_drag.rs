@@ -229,7 +229,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 

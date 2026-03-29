@@ -1,6 +1,7 @@
 //! Prepared frame output from the Prepare phase of the render pipeline.
 //!
-//! [`PreparedFrame`] holds thirteen [`InstanceWriter`] buffers plus metadata
+//! [`PreparedFrame`] holds eleven [`InstanceWriter`] buffers, two [`UiRectWriter`]
+//! buffers (for chrome and overlay rects), plus metadata
 //! the Render phase needs to upload and draw. The thirteen buffers map to
 //! thirteen draw calls in painter's order: backgrounds → mono glyphs →
 //! subpixel glyphs → color glyphs → cursors → UI rects → UI mono glyphs →
@@ -10,10 +11,10 @@
 use oriterm_core::Rgb;
 use oriterm_core::image::ImageId;
 
-use super::draw_list_convert::TierClips;
-use super::frame_input::ViewportSize;
+use super::frame_input::{SelectionDamageSnapshot, ViewportSize};
 use super::instance_writer::InstanceWriter;
 use super::prepare::dirty_skip::{RowInstanceRanges, SavedTerminalTier};
+use super::ui_rect_writer::UiRectWriter;
 use super::{maybe_shrink_vec, srgb_to_linear};
 
 /// Instance index ranges for a single overlay's content within the shared buffers.
@@ -32,8 +33,6 @@ pub struct OverlayDrawRange {
     pub subpixel: (u32, u32),
     /// `[start..end)` in `overlay_color_glyphs`.
     pub color: (u32, u32),
-    /// Clip segments for this overlay (absolute instance offsets).
-    pub clips: TierClips,
 }
 
 /// A single image quad ready for GPU rendering.
@@ -86,26 +85,22 @@ pub struct PreparedFrame {
     pub(crate) color_glyphs: InstanceWriter,
     /// Cursor instances (block, bar, underline shapes).
     pub(crate) cursors: InstanceWriter,
-    /// UI rect instances (SDF rounded rectangles — chrome layer).
-    pub(crate) ui_rects: InstanceWriter,
+    /// UI rect instances (SDF rounded rectangles — chrome layer, 144-byte).
+    pub(crate) ui_rects: UiRectWriter,
     /// UI monochrome glyph instances (chrome text, drawn after UI rects).
     pub(crate) ui_glyphs: InstanceWriter,
     /// UI subpixel glyph instances (chrome text, drawn after UI rects).
     pub(crate) ui_subpixel_glyphs: InstanceWriter,
     /// UI color glyph instances (chrome text, drawn after UI rects).
     pub(crate) ui_color_glyphs: InstanceWriter,
-    /// Overlay rect instances (SDF rounded rectangles — overlay layer, above chrome text).
-    pub(crate) overlay_rects: InstanceWriter,
+    /// Overlay rect instances (SDF rounded rectangles — overlay layer, 144-byte).
+    pub(crate) overlay_rects: UiRectWriter,
     /// Overlay monochrome glyph instances (drawn after overlay rects).
     pub(crate) overlay_glyphs: InstanceWriter,
     /// Overlay subpixel glyph instances (drawn after overlay rects).
     pub(crate) overlay_subpixel_glyphs: InstanceWriter,
     /// Overlay color glyph instances (drawn after overlay rects).
     pub(crate) overlay_color_glyphs: InstanceWriter,
-    /// Clip segments for the chrome tier (draws 6–9), one per writer.
-    pub(crate) ui_clips: TierClips,
-    /// Clip segments for the overlay tier (draws 10–13), one per writer.
-    pub(crate) overlay_clips: TierClips,
     /// Per-overlay draw ranges for correct z-ordering between stacked overlays.
     ///
     /// Each entry corresponds to one overlay (back-to-front order). The render
@@ -124,12 +119,13 @@ pub struct PreparedFrame {
     ///
     /// Swapped out at the start of each prepare pass; clean rows copy from here.
     pub(crate) saved_tier: SavedTerminalTier,
-    /// Selection line range from the previous frame for damage tracking.
+    /// Selection snapshot from the previous frame for damage tracking.
     ///
-    /// `(start_line, end_line)` inclusive viewport lines. Used by the
-    /// incremental path to detect which rows changed selection state.
-    /// Persists across `clear()` and `save_terminal_tier()`.
-    pub(crate) prev_selection_range: Option<(usize, usize)>,
+    /// Captures viewport-relative line range, column extents, side, and mode.
+    /// Used by the incremental path to detect which rows changed selection
+    /// state — including intra-line column changes during drag. Persists
+    /// across `clear()` and `save_terminal_tier()`.
+    pub(crate) prev_selection_snapshot: Option<SelectionDamageSnapshot>,
     /// Reusable scratch buffer for per-row dirty flags (incremental rendering).
     pub(crate) scratch_dirty: Vec<bool>,
     /// Viewport pixel dimensions for uniform buffer update.
@@ -147,22 +143,20 @@ impl PreparedFrame {
             subpixel_glyphs: InstanceWriter::new(),
             color_glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::new(),
-            ui_rects: InstanceWriter::new(),
+            ui_rects: UiRectWriter::new(),
             ui_glyphs: InstanceWriter::new(),
             ui_subpixel_glyphs: InstanceWriter::new(),
             ui_color_glyphs: InstanceWriter::new(),
-            overlay_rects: InstanceWriter::new(),
+            overlay_rects: UiRectWriter::new(),
             overlay_glyphs: InstanceWriter::new(),
             overlay_subpixel_glyphs: InstanceWriter::new(),
             overlay_color_glyphs: InstanceWriter::new(),
-            ui_clips: TierClips::default(),
-            overlay_clips: TierClips::default(),
             overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
-            prev_selection_range: None,
+            prev_selection_snapshot: None,
             scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
@@ -188,22 +182,20 @@ impl PreparedFrame {
             subpixel_glyphs: InstanceWriter::new(),
             color_glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::with_capacity(4),
-            ui_rects: InstanceWriter::new(),
+            ui_rects: UiRectWriter::new(),
             ui_glyphs: InstanceWriter::new(),
             ui_subpixel_glyphs: InstanceWriter::new(),
             ui_color_glyphs: InstanceWriter::new(),
-            overlay_rects: InstanceWriter::new(),
+            overlay_rects: UiRectWriter::new(),
             overlay_glyphs: InstanceWriter::new(),
             overlay_subpixel_glyphs: InstanceWriter::new(),
             overlay_color_glyphs: InstanceWriter::new(),
-            ui_clips: TierClips::default(),
-            overlay_clips: TierClips::default(),
             overlay_draw_ranges: Vec::new(),
             image_quads_below: Vec::new(),
             image_quads_above: Vec::new(),
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
-            prev_selection_range: None,
+            prev_selection_snapshot: None,
             scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
@@ -305,8 +297,6 @@ impl PreparedFrame {
         self.overlay_glyphs.clear();
         self.overlay_subpixel_glyphs.clear();
         self.overlay_color_glyphs.clear();
-        self.ui_clips.clear();
-        self.overlay_clips.clear();
         self.overlay_draw_ranges.clear();
         self.image_quads_below.clear();
         self.image_quads_above.clear();
@@ -328,8 +318,6 @@ impl PreparedFrame {
         self.overlay_glyphs.clear();
         self.overlay_subpixel_glyphs.clear();
         self.overlay_color_glyphs.clear();
-        self.ui_clips.clear();
-        self.overlay_clips.clear();
         self.overlay_draw_ranges.clear();
     }
 
@@ -348,44 +336,26 @@ impl PreparedFrame {
         self.ui_subpixel_glyphs
             .extend_from(&other.ui_subpixel_glyphs);
         self.ui_color_glyphs.extend_from(&other.ui_color_glyphs);
-        self.overlay_rects.extend_from(&other.overlay_rects);
-        self.overlay_glyphs.extend_from(&other.overlay_glyphs);
-        self.overlay_subpixel_glyphs
-            .extend_from(&other.overlay_subpixel_glyphs);
-        self.overlay_color_glyphs
-            .extend_from(&other.overlay_color_glyphs);
-        self.ui_clips.extend_from(
-            &other.ui_clips,
-            [
-                self.ui_rects.len() as u32,
-                self.ui_glyphs.len() as u32,
-                self.ui_subpixel_glyphs.len() as u32,
-                self.ui_color_glyphs.len() as u32,
-            ],
-        );
-        self.overlay_clips.extend_from(
-            &other.overlay_clips,
-            [
-                self.overlay_rects.len() as u32,
-                self.overlay_glyphs.len() as u32,
-                self.overlay_subpixel_glyphs.len() as u32,
-                self.overlay_color_glyphs.len() as u32,
-            ],
-        );
-        // Shift per-overlay draw ranges by current buffer lengths.
+        // Capture overlay base lengths BEFORE appending, so shifted ranges
+        // address the correct indices in the merged buffers.
         let bases = [
             self.overlay_rects.len() as u32,
             self.overlay_glyphs.len() as u32,
             self.overlay_subpixel_glyphs.len() as u32,
             self.overlay_color_glyphs.len() as u32,
         ];
+        self.overlay_rects.extend_from(&other.overlay_rects);
+        self.overlay_glyphs.extend_from(&other.overlay_glyphs);
+        self.overlay_subpixel_glyphs
+            .extend_from(&other.overlay_subpixel_glyphs);
+        self.overlay_color_glyphs
+            .extend_from(&other.overlay_color_glyphs);
         for range in &other.overlay_draw_ranges {
             let mut shifted = range.clone();
             shifted.rects = (range.rects.0 + bases[0], range.rects.1 + bases[0]);
             shifted.mono = (range.mono.0 + bases[1], range.mono.1 + bases[1]);
             shifted.subpixel = (range.subpixel.0 + bases[2], range.subpixel.1 + bases[2]);
             shifted.color = (range.color.0 + bases[3], range.color.1 + bases[3]);
-            shifted.clips.shift_offsets(bases);
             self.overlay_draw_ranges.push(shifted);
         }
         self.image_quads_below

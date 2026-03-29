@@ -1,55 +1,20 @@
-use std::time::{Duration, Instant};
+use winit::window::CursorIcon;
 
-use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::geometry::{Insets, Rect};
 use crate::layout::BoxContent;
+use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{LayoutCtx, Widget};
 
 use super::{ButtonStyle, ButtonWidget};
 
-static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
-
-fn event_ctx(bounds: Rect) -> EventCtx<'static> {
-    EventCtx {
-        measurer: &MEASURER,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    }
-}
-
-fn mouse_down(x: f32, y: f32) -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(x, y),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn mouse_up(x: f32, y: f32) -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(x, y),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn key_event(key: Key) -> KeyEvent {
-    KeyEvent {
-        key,
-        modifiers: Modifiers::NONE,
-    }
-}
+// -- Construction and state --
 
 #[test]
 fn default_state() {
     let btn = ButtonWidget::new("OK");
     assert_eq!(btn.label(), "OK");
     assert!(!btn.is_disabled());
-    assert!(!btn.is_hovered());
-    assert!(!btn.is_pressed());
     assert!(btn.is_focusable());
 }
 
@@ -58,6 +23,47 @@ fn disabled_not_focusable() {
     let btn = ButtonWidget::new("OK").with_disabled(true);
     assert!(!btn.is_focusable());
 }
+
+#[test]
+fn set_disabled_toggles() {
+    let mut btn = ButtonWidget::new("OK");
+    assert!(!btn.is_disabled());
+    btn.set_disabled(true);
+    assert!(btn.is_disabled());
+    assert!(!btn.is_focusable());
+    btn.set_disabled(false);
+    assert!(!btn.is_disabled());
+    assert!(btn.is_focusable());
+}
+
+#[test]
+fn set_label_updates() {
+    let mut btn = ButtonWidget::new("OK");
+    btn.label = "Cancel".into();
+    assert_eq!(btn.label(), "Cancel");
+}
+
+// -- Sense and controllers --
+
+#[test]
+fn sense_returns_click() {
+    let btn = ButtonWidget::new("OK");
+    assert_eq!(btn.sense(), Sense::click());
+}
+
+#[test]
+fn has_three_controllers() {
+    let btn = ButtonWidget::new("OK");
+    assert_eq!(btn.controllers().len(), 3);
+}
+
+#[test]
+fn has_visual_state_animator() {
+    let btn = ButtonWidget::new("OK");
+    assert!(btn.visual_states().is_some());
+}
+
+// -- Layout --
 
 #[test]
 fn layout_includes_padding() {
@@ -85,148 +91,6 @@ fn layout_includes_padding() {
 }
 
 #[test]
-fn click_emits_action() {
-    let mut btn = ButtonWidget::new("OK");
-    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
-    let ctx = event_ctx(bounds);
-
-    // Press.
-    let r = btn.handle_mouse(&mouse_down(10.0, 10.0), &ctx);
-    assert!(r.response.is_handled());
-    assert!(btn.is_pressed());
-
-    // Release inside bounds.
-    let r = btn.handle_mouse(&mouse_up(10.0, 10.0), &ctx);
-    assert_eq!(r.action, Some(WidgetAction::Clicked(btn.id())));
-    assert!(!btn.is_pressed());
-}
-
-#[test]
-fn release_outside_no_action() {
-    let mut btn = ButtonWidget::new("OK");
-    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
-    let ctx = event_ctx(bounds);
-
-    btn.handle_mouse(&mouse_down(10.0, 10.0), &ctx);
-    // Release outside bounds.
-    let r = btn.handle_mouse(&mouse_up(200.0, 200.0), &ctx);
-    assert_eq!(r.action, None);
-}
-
-#[test]
-fn hover_state_transitions() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(btn.is_hovered());
-
-    btn.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!btn.is_hovered());
-}
-
-#[test]
-fn disabled_ignores_events() {
-    let mut btn = ButtonWidget::new("OK").with_disabled(true);
-    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
-    let ctx = event_ctx(bounds);
-
-    let r = btn.handle_mouse(&mouse_down(10.0, 10.0), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = btn.handle_hover(HoverEvent::Enter, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = btn.handle_key(key_event(Key::Enter), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-}
-
-#[test]
-fn keyboard_activation_enter() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-    let r = btn.handle_key(key_event(Key::Enter), &ctx);
-    assert_eq!(r.action, Some(WidgetAction::Clicked(btn.id())));
-}
-
-#[test]
-fn keyboard_activation_space() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-    let r = btn.handle_key(key_event(Key::Space), &ctx);
-    assert_eq!(r.action, Some(WidgetAction::Clicked(btn.id())));
-}
-
-#[test]
-fn keyboard_other_ignored() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-    let r = btn.handle_key(key_event(Key::Escape), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-}
-
-#[test]
-fn leave_clears_pressed() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    btn.handle_mouse(&mouse_down(10.0, 10.0), &ctx);
-    assert!(btn.is_pressed());
-
-    btn.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!btn.is_pressed());
-}
-
-#[test]
-fn disable_while_pressed_clears_state() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    // Enter hover + press state.
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-    btn.handle_mouse(&mouse_down(10.0, 10.0), &ctx);
-    assert!(btn.is_pressed());
-    assert!(btn.is_hovered());
-
-    // Disable mid-press — both flags must clear.
-    btn.set_disabled(true);
-    assert!(!btn.is_pressed());
-    assert!(!btn.is_hovered());
-}
-
-#[test]
-fn right_click_ignored() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    let right_down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Right),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    };
-    let r = btn.handle_mouse(&right_down, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-    assert!(!btn.is_pressed());
-}
-
-#[test]
-fn release_without_press_no_action() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    // Mouse up without a prior mouse down.
-    let r = btn.handle_mouse(&mouse_up(10.0, 10.0), &ctx);
-    assert!(r.action.is_none());
-}
-
-#[test]
-fn set_label_updates() {
-    let mut btn = ButtonWidget::new("OK");
-    btn.label = "Cancel".into();
-    assert_eq!(btn.label(), "Cancel");
-}
-
-#[test]
 fn empty_label_layout() {
     let btn = ButtonWidget::new("");
     let m = MockMeasurer::new();
@@ -248,71 +112,28 @@ fn empty_label_layout() {
     }
 }
 
-// Hover animation tests
-
-#[test]
-fn hover_starts_animation() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-    let now = Instant::now();
-    assert!(btn.hover_progress.is_animating(now));
-    assert_eq!(btn.hover_progress.target(), 1.0);
-}
-
-#[test]
-fn hover_leave_animates_back() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-    // Wait for enter animation to complete.
-    let later = Instant::now() + Duration::from_millis(200);
-    assert_eq!(btn.hover_progress.get(later), 1.0);
-
-    btn.handle_hover(HoverEvent::Leave, &ctx);
-    assert_eq!(btn.hover_progress.target(), 0.0);
-}
-
-#[test]
-fn disable_clears_hover_animation() {
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-    btn.set_disabled(true);
-
-    let now = Instant::now();
-    // set_disabled uses set_immediate — no animation.
-    assert!(!btn.hover_progress.is_animating(now));
-    assert_eq!(btn.hover_progress.get(now), 0.0);
-}
-
-// with_style builder test
+// -- Style --
 
 #[test]
 fn with_style_applies_custom_style() {
     use crate::color::Color;
-    use crate::geometry::Insets;
 
     let style = ButtonStyle {
         fg: Color::BLACK,
+        hover_fg: Color::BLACK,
         bg: Color::WHITE,
         hover_bg: Color::rgb(0.9, 0.9, 0.9),
         pressed_bg: Color::rgb(0.7, 0.7, 0.7),
         border_color: Color::BLACK,
+        hover_border_color: Color::BLACK,
         border_width: 2.0,
         corner_radius: 12.0,
         padding: Insets::all(20.0),
         font_size: 18.0,
-        disabled_fg: Color::rgb(0.5, 0.5, 0.5),
-        disabled_bg: Color::rgb(0.3, 0.3, 0.3),
-        focus_ring_color: Color::rgb(0.0, 0.0, 1.0),
+        ..ButtonStyle::default()
     };
     let btn = ButtonWidget::new("Styled").with_style(style);
 
-    // Layout should reflect the custom padding.
     let m = MockMeasurer::new();
     let ctx = LayoutCtx {
         measurer: &m,
@@ -333,113 +154,502 @@ fn with_style_applies_custom_style() {
     }
 }
 
-// Animation interpolation output verification (Chromium blend tests)
-
 #[test]
-fn hover_animation_interpolates_bg_at_midpoint() {
-    use crate::animation::Lerp;
+fn with_style_rebuilds_animator() {
     use crate::color::Color;
 
-    let mut btn = ButtonWidget::new("OK");
-    let style = &ButtonStyle::default();
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
+    let style = ButtonStyle {
+        bg: Color::WHITE,
+        hover_bg: Color::rgb(0.9, 0.9, 0.9),
+        pressed_bg: Color::rgb(0.7, 0.7, 0.7),
+        disabled_bg: Color::rgb(0.3, 0.3, 0.3),
+        ..ButtonStyle::default()
+    };
+    let btn = ButtonWidget::new("OK").with_style(style);
 
-    // Trigger hover to start animation.
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-
-    // Shortly after start, bg should be very close to normal bg.
-    let now = Instant::now();
-    let bg_start = btn.current_bg(now);
-    let diff_r = (bg_start.r - style.bg.r).abs();
-    let diff_g = (bg_start.g - style.bg.g).abs();
-    let diff_b = (bg_start.b - style.bg.b).abs();
-    assert!(
-        diff_r < 0.01 && diff_g < 0.01 && diff_b < 0.01,
-        "near animation start, bg should be close to normal bg, got diff ({diff_r}, {diff_g}, {diff_b})"
-    );
-
-    // After the hover animation completes, bg should be hover_bg.
-    let after = now + Duration::from_millis(200);
-    let bg_end = btn.current_bg(after);
-    assert_eq!(
-        bg_end, style.hover_bg,
-        "after hover animation completes, bg should equal hover_bg"
-    );
-
-    // Verify the expected midpoint color is between bg and hover_bg.
-    let expected_mid = Color::lerp(style.bg, style.hover_bg, 0.5);
-    assert!(
-        (expected_mid.r - (style.bg.r + style.hover_bg.r) / 2.0).abs() < 1e-4,
-        "Color lerp midpoint should be average of endpoints"
-    );
+    // The animator's initial bg should be the style's normal bg.
+    let animator = btn.visual_states().unwrap();
+    assert_eq!(animator.get_bg_color(), Color::WHITE);
 }
 
-#[test]
-fn pressed_bg_overrides_hover_animation() {
-    let mut btn = ButtonWidget::new("OK");
-    let style = &ButtonStyle::default();
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    // Hover, then press.
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-    btn.handle_mouse(&mouse_down(10.0, 10.0), &ctx);
-
-    // While pressed, current_bg should return pressed_bg regardless of hover animation.
-    let now = Instant::now();
-    assert_eq!(
-        btn.current_bg(now),
-        style.pressed_bg,
-        "pressed state overrides hover animation"
-    );
-}
+// -- Paint --
 
 #[test]
-fn disabled_bg_overrides_everything() {
-    let mut btn = ButtonWidget::new("OK");
-    let style = &ButtonStyle::default();
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
+fn paint_produces_draw_commands() {
+    use crate::draw::Scene;
 
-    // Hover, then disable.
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-    btn.set_disabled(true);
-
-    let now = Instant::now();
-    assert_eq!(
-        btn.current_bg(now),
-        style.disabled_bg,
-        "disabled state overrides hover animation"
-    );
-}
-
-#[test]
-fn draw_signals_animations_running() {
-    use crate::draw::DrawList;
-
-    let mut btn = ButtonWidget::new("OK");
-    let ctx = event_ctx(Rect::new(0.0, 0.0, 100.0, 30.0));
-
-    // Trigger hover to start animation.
-    btn.handle_hover(HoverEvent::Enter, &ctx);
-
+    let btn = ButtonWidget::new("OK");
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
-    let anim_flag = std::cell::Cell::new(false);
-    let now = Instant::now();
+    let now = std::time::Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    btn.draw(&mut draw_ctx);
+    btn.paint(&mut draw_ctx);
 
+    // Should have produced draw commands: layer + rect + text + pop_layer.
+    assert!(!scene.is_empty());
+}
+
+// -- Prepaint resolved fields --
+
+#[test]
+fn prepaint_resolves_bg_from_animator() {
+    use std::time::Instant;
+
+    use crate::theme::UiTheme;
+    use crate::widgets::PrepaintCtx;
+
+    let style = ButtonStyle::default();
+    let mut btn = ButtonWidget::new("Bg Test");
+    let now = Instant::now();
+    let theme = UiTheme::dark();
+
+    let mut ctx = PrepaintCtx {
+        widget_id: btn.id(),
+        bounds: Rect::new(0.0, 0.0, 100.0, 30.0),
+        interaction: None,
+        theme: &theme,
+        now,
+        frame_requests: None,
+    };
+    btn.prepaint(&mut ctx);
+
+    // Before any state transitions: resolved_bg should be the normal bg.
+    assert_eq!(btn.resolved_bg(), style.bg);
+}
+
+#[test]
+fn prepaint_resolves_focused_false_without_interaction() {
+    use std::time::Instant;
+
+    use crate::theme::UiTheme;
+    use crate::widgets::PrepaintCtx;
+
+    let mut btn = ButtonWidget::new("Focus Test");
+    let now = Instant::now();
+    let theme = UiTheme::dark();
+
+    let mut ctx = PrepaintCtx {
+        widget_id: btn.id(),
+        bounds: Rect::new(0.0, 0.0, 100.0, 30.0),
+        interaction: None,
+        theme: &theme,
+        now,
+        frame_requests: None,
+    };
+    btn.prepaint(&mut ctx);
+
+    // Without InteractionManager, resolved_focused should be false.
+    assert!(!btn.resolved_focused());
+}
+
+#[test]
+fn prepaint_resolves_focused_from_interaction_manager() {
+    use std::time::Instant;
+
+    use crate::focus::FocusManager;
+    use crate::interaction::InteractionManager;
+    use crate::theme::UiTheme;
+    use crate::widgets::PrepaintCtx;
+
+    let mut btn = ButtonWidget::new("IM Focus Test");
+    let btn_id = btn.id();
+    let now = Instant::now();
+    let theme = UiTheme::dark();
+
+    let mut interaction = InteractionManager::new();
+    interaction.register_widget(btn_id);
+    let mut focus = FocusManager::new();
+    focus.set_focus_order(vec![btn_id]);
+    interaction.request_focus(btn_id, &mut focus);
+
+    let mut ctx = PrepaintCtx {
+        widget_id: btn_id,
+        bounds: Rect::new(0.0, 0.0, 100.0, 30.0),
+        interaction: Some(&interaction),
+        theme: &theme,
+        now,
+        frame_requests: None,
+    };
+    btn.prepaint(&mut ctx);
+
+    assert!(btn.resolved_focused());
+}
+
+// -- Harness integration tests --
+
+#[test]
+fn harness_full_click_cycle() {
+    use crate::action::WidgetAction;
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+
+    let btn = ButtonWidget::new("Click me");
+    let btn_id = btn.id();
+    let mut h = WidgetTestHarness::new(btn);
+
+    // Layout produces non-zero bounds.
+    let bounds = h.widget_bounds(btn_id);
+    assert!(bounds.width() > 0.0);
+    assert!(bounds.height() > 0.0);
+
+    // Hover.
+    h.mouse_move_to(btn_id);
+    assert!(h.is_hot(btn_id));
+
+    // Press.
+    h.mouse_down(MouseButton::Left);
+    assert!(h.is_active(btn_id));
+
+    // Release -> Clicked action.
+    h.mouse_up(MouseButton::Left);
+    assert!(!h.is_active(btn_id));
+    let actions = h.take_actions();
     assert!(
-        anim_flag.get(),
-        "draw() should signal animations_running while hover animates"
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn_id))
+    );
+
+    // Move away -> not hot.
+    h.mouse_move(crate::geometry::Point::new(9999.0, 9999.0));
+    assert!(!h.is_hot(btn_id));
+}
+
+#[test]
+fn harness_hover_renders_hover_bg_in_scene() {
+    use std::time::Duration;
+
+    use crate::testing::WidgetTestHarness;
+
+    let style = ButtonStyle::default();
+    let btn = ButtonWidget::new("Hover me");
+    let btn_id = btn.id();
+    let mut h = WidgetTestHarness::new(btn);
+
+    // Hover the button.
+    h.mouse_move_to(btn_id);
+
+    // Advance time in frame-sized steps to let the hover animation complete.
+    // Default transition is 100ms = 6 frames at 60fps. Use 22 frames (~350ms)
+    // to ensure full completion.
+    for _ in 0..22 {
+        h.advance_time(Duration::from_millis(16));
+    }
+
+    // Render the scene with fully-resolved hover state.
+    let scene = h.render();
+
+    // The scene should contain a quad with the hover background color.
+    let hover_bg = style.hover_bg;
+    let fills: Vec<_> = scene.quads().iter().filter_map(|q| q.style.fill).collect();
+    let has_hover_quad = fills.iter().any(|&c| color_approx_eq(c, hover_bg));
+    assert!(
+        has_hover_quad,
+        "Scene should contain a quad with hover_bg ({hover_bg:?}), \
+         fills: {fills:?}"
+    );
+}
+
+// -- Typography & disabled opacity --
+
+#[test]
+fn button_style_weight_threads_to_text() {
+    use crate::draw::Scene;
+    use crate::text::FontWeight;
+
+    let style = ButtonStyle {
+        weight: FontWeight::BOLD,
+        ..ButtonStyle::default()
+    };
+    let btn = ButtonWidget::new("OK").with_style(style);
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
+    let now = std::time::Instant::now();
+    let mut ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    btn.paint(&mut ctx);
+
+    let text_runs = scene.text_runs();
+    assert!(!text_runs.is_empty(), "should have at least one text run");
+    assert_eq!(
+        text_runs[0].shaped.weight, 700,
+        "text run weight should be 700 (Bold)"
+    );
+}
+
+#[test]
+fn button_style_letter_spacing_threads_to_text_style() {
+    let btn = ButtonWidget::new("Test").with_style(ButtonStyle {
+        letter_spacing: 2.5,
+        ..ButtonStyle::default()
+    });
+    let ts = btn.text_style();
+    assert!(
+        (ts.letter_spacing - 2.5).abs() < f32::EPSILON,
+        "letter_spacing should thread through text_style(): got {}",
+        ts.letter_spacing
+    );
+}
+
+#[test]
+fn button_style_text_transform_uppercase() {
+    use crate::text::TextTransform;
+
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+
+    let transformed = ButtonWidget::new("save").with_style(ButtonStyle {
+        text_transform: TextTransform::Uppercase,
+        ..ButtonStyle::default()
+    });
+    let manual = ButtonWidget::new("SAVE");
+
+    let w1 = transformed.layout(&ctx);
+    let w2 = manual.layout(&ctx);
+
+    if let (
+        BoxContent::Leaf {
+            intrinsic_width: tw,
+            ..
+        },
+        BoxContent::Leaf {
+            intrinsic_width: mw,
+            ..
+        },
+    ) = (&w1.content, &w2.content)
+    {
+        assert_eq!(
+            tw, mw,
+            "uppercase transform should produce same width as manual uppercase"
+        );
+    } else {
+        panic!("expected leaf layouts");
+    }
+}
+
+#[test]
+fn button_disabled_opacity_modulates_bg() {
+    use crate::color::Color;
+    use crate::draw::Scene;
+
+    let style = ButtonStyle {
+        bg: Color::WHITE,
+        disabled_opacity: 0.4,
+        ..ButtonStyle::default()
+    };
+    let btn = ButtonWidget::new("Save")
+        .with_style(style)
+        .with_disabled(true);
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
+    let now = std::time::Instant::now();
+    let mut ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    btn.paint(&mut ctx);
+
+    // Find the background quad — it should have alpha <= 0.5 (0.4 * 1.0).
+    let fills: Vec<_> = scene.quads().iter().filter_map(|q| q.style.fill).collect();
+    let has_faded = fills.iter().any(|c| c.a <= 0.5);
+    assert!(
+        has_faded,
+        "disabled button with opacity 0.4 should have faded bg, fills: {fills:?}"
+    );
+}
+
+#[test]
+fn button_disabled_fg_swap_when_no_opacity() {
+    use crate::color::Color;
+    use crate::draw::Scene;
+
+    let style = ButtonStyle {
+        disabled_fg: Color::rgb(1.0, 0.0, 0.0),
+        disabled_opacity: 1.0,
+        ..ButtonStyle::default()
+    };
+    let btn = ButtonWidget::new("X").with_style(style).with_disabled(true);
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 30.0);
+    let now = std::time::Instant::now();
+    let mut ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now,
+        theme: &super::super::tests::TEST_THEME,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    btn.paint(&mut ctx);
+
+    let text_runs = scene.text_runs();
+    assert!(!text_runs.is_empty(), "should have text");
+    assert_eq!(
+        text_runs[0].color,
+        Color::rgb(1.0, 0.0, 0.0),
+        "disabled_fg should be RED (swap path, not opacity path)"
+    );
+}
+
+/// Approximate color equality (within 0.02 per channel) to handle
+/// animation interpolation rounding.
+fn color_approx_eq(a: crate::color::Color, b: crate::color::Color) -> bool {
+    (a.r - b.r).abs() < 0.02
+        && (a.g - b.g).abs() < 0.02
+        && (a.b - b.b).abs() < 0.02
+        && (a.a - b.a).abs() < 0.02
+}
+
+#[test]
+fn harness_keyboard_activation() {
+    use crate::action::WidgetAction;
+    use crate::input::{Key, Modifiers};
+    use crate::testing::WidgetTestHarness;
+
+    let btn = ButtonWidget::new("KB");
+    let btn_id = btn.id();
+    let mut h = WidgetTestHarness::new(btn);
+
+    // Focus the button via click.
+    h.click(btn_id);
+    assert!(h.is_focused(btn_id));
+
+    // Enter key -> Clicked.
+    let actions = h.key_press(Key::Enter, Modifiers::NONE);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn_id)),
+        "Enter should produce Clicked action, got: {actions:?}"
+    );
+
+    // Space key -> Clicked.
+    let actions = h.key_press(Key::Space, Modifiers::NONE);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == btn_id)),
+        "Space should produce Clicked action, got: {actions:?}"
+    );
+}
+
+// -- Disabled layout propagation (TPR-12-013) --
+
+#[test]
+fn disabled_button_layout_sets_disabled_flag() {
+    let btn = ButtonWidget::new("Save").with_disabled(true);
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = btn.layout(&ctx);
+    assert!(
+        layout.disabled,
+        "disabled button layout should have disabled=true"
+    );
+}
+
+#[test]
+fn enabled_button_layout_clears_disabled_flag() {
+    let btn = ButtonWidget::new("Save");
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = btn.layout(&ctx);
+    assert!(
+        !layout.disabled,
+        "enabled button layout should have disabled=false"
+    );
+}
+
+#[test]
+fn disabled_button_not_hittable_in_harness() {
+    use crate::action::WidgetAction;
+    use crate::testing::WidgetTestHarness;
+
+    let btn = ButtonWidget::new("Save").with_disabled(true);
+    let btn_id = btn.id();
+    let mut h = WidgetTestHarness::new(btn);
+
+    // Click on the disabled button should produce no Clicked action.
+    let actions = h.click(btn_id);
+    assert!(
+        !actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(_))),
+        "disabled button should not produce Clicked action, got: {actions:?}"
+    );
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let btn = ButtonWidget::new("OK");
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = btn.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "enabled button should declare Pointer cursor"
+    );
+}
+
+#[test]
+fn layout_disabled_preserves_natural_cursor() {
+    let btn = ButtonWidget::new("OK").with_disabled(true);
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = btn.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "disabled button should still declare Pointer (framework handles NotAllowed)"
     );
 }

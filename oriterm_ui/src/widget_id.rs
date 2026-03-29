@@ -19,6 +19,14 @@ impl WidgetId {
         Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
     }
 
+    /// Returns a placeholder ID (0) that never matches a real widget.
+    ///
+    /// Used to pre-allocate structs whose IDs are filled in later
+    /// (e.g. `SettingsIds` before page builders run).
+    pub fn placeholder() -> Self {
+        Self(0)
+    }
+
     /// Returns the raw numeric value.
     pub fn raw(self) -> u64 {
         self.0

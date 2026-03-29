@@ -1,3 +1,5 @@
 /target
 /reference_repos
 *:Zone.Identifier
+.claude/worktrees/
+.verify-results/

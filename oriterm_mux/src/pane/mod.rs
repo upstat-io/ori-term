@@ -148,6 +148,11 @@ pub struct Pane {
     last_command_duration: Option<std::time::Duration>,
     /// Bell indicator (set on bell event, cleared on focus).
     has_bell: bool,
+    /// Unseen output indicator (set when output arrives while not focused).
+    ///
+    /// Cleared when the pane becomes the active/focused tab. Used by the
+    /// tab bar to show a "modified" dot on background tabs with new output.
+    has_unseen_output: bool,
     /// Active text selection, if any.
     selection: Option<Selection>,
     /// Mark mode cursor position (keyboard-driven selection).
@@ -185,6 +190,7 @@ impl Pane {
             has_explicit_title: false,
             last_command_duration: None,
             has_bell: false,
+            has_unseen_output: false,
             selection: None,
             mark_cursor: None,
             search: None,
@@ -320,6 +326,25 @@ impl Pane {
     /// Set the bell indicator.
     pub fn set_bell(&mut self) {
         self.has_bell = true;
+    }
+
+    /// Whether the pane has output the user hasn't seen yet.
+    ///
+    /// Set when output arrives while the pane is not focused. Cleared
+    /// when the pane becomes the active tab. Drives the tab bar's
+    /// "modified" indicator dot.
+    pub fn has_unseen_output(&self) -> bool {
+        self.has_unseen_output
+    }
+
+    /// Mark this pane as having unseen output.
+    pub fn set_unseen_output(&mut self) {
+        self.has_unseen_output = true;
+    }
+
+    /// Clear the unseen output flag (call when the pane gains focus).
+    pub fn mark_output_seen(&mut self) {
+        self.has_unseen_output = false;
     }
 
     // -- Mark cursor --

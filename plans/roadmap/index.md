@@ -379,7 +379,7 @@ auto-close, PtyExited, background thread drop
 ---
 
 ### Section 16: Tab Bar & Chrome
-**File:** `section-16-tab-bar.md` | **Tier:** 4 | **Status:** Not Started
+**File:** `section-16-tab-bar.md` | **Tier:** 4 | **Status:** In Progress
 
 ```
 tab bar, TabBarLayout, TabBarColors, TAB_BAR_HEIGHT, TAB_MIN_WIDTH, TAB_MAX_WIDTH
@@ -423,7 +423,7 @@ resize ALL tabs, process::exit, ConPTY-safe cleanup
 ---
 
 ### Section 19: Event Routing & Render Scheduling
-**File:** `section-19-event-routing.md` | **Tier:** 4 | **Status:** Not Started
+**File:** `section-19-event-routing.md` | **Tier:** 4 | **Status:** In Progress
 
 ```
 coordinate systems, pixel_to_cell, pixel_to_side, grid_top, grid_dims_for_size
@@ -1011,6 +1011,22 @@ regression, CI benchmark, memory watermark, performance invariant
 
 ---
 
+### Section 51: Rich Status Bar — Shell, CWD, Git Branch, Foreground Process
+**File:** `section-51-rich-status-bar.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+status bar, StatusBarWidget, StatusBarData, rich status bar
+shell name, shell detection, detect_shell, foreground process
+foreground_process_name, tcgetpgrp, /proc/pid/comm, CreateToolhelp32Snapshot
+cwd, current working directory, OSC 7, abbreviate_path, path abbreviation
+git branch, .git/HEAD, detect_git_branch, branch icon
+process_info.rs, PaneSnapshot.shell_name, PaneSnapshot.git_branch
+three-section layout, left center right, centered CWD
+WezTerm LocalProcessInfo, Ptyxis tab monitor, adaptive polling
+```
+
+---
+
 ### Ghostty 1.3.0 Parity — Items in Completed Sections
 
 These features from Ghostty 1.3.0 belong in sections already marked complete. They should be addressed when those sections are revisited or as standalone follow-up work.
@@ -1052,10 +1068,10 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 13 | Configuration & Keybindings | `section-13-config-keybindings.md` | 3 | Not Started |
 | 14 | URL Detection | `section-14-url-detection.md` | 3 | Not Started |
 | 15 | Tab Struct & Management | `section-15-tab-management.md` | 4 | Superseded → 30, 32 |
-| 16 | Tab Bar & Chrome | `section-16-tab-bar.md` | 4 | Not Started |
+| 16 | Tab Bar & Chrome | `section-16-tab-bar.md` | 4 | In Progress |
 | 17 | Drag & Drop | `section-17-drag-drop.md` | 4 | Not Started |
 | 18 | Multi-Window & Window Lifecycle | `section-18-multi-window.md` | 4 | Superseded → 32 |
-| 19 | Event Routing & Render Scheduling | `section-19-event-routing.md` | 4 | Not Started |
+| 19 | Event Routing & Render Scheduling | `section-19-event-routing.md` | 4 | In Progress |
 | 20 | Shell Integration | `section-20-shell-integration.md` | 4 | Not Started |
 | 21 | Context Menu & Window Controls | `section-21-context-menu.md` | 4 | In Progress |
 | 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Mostly Complete |
@@ -1087,6 +1103,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 48 | Native OS Scrollbars | `section-48-native-scrollbars.md` | 5 | Not Started |
 | 49 | Advanced Keybinding System | `section-49-advanced-keybindings.md` | 5 | Not Started |
 | 50 | Runtime Efficiency — CPU & Memory Tuning | `section-50-runtime-efficiency.md` | 2 | Not Started |
+| 51 | Rich Status Bar — Shell, CWD, Git, Process | `section-51-rich-status-bar.md` | 5 | Not Started |
 
 ## Tier Summary
 
@@ -1098,7 +1115,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23, 38-39, 42-43, 45, 47-49 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security, semantic prompts, scrollbars, advanced keybindings) |
+| 5 | 22-23, 38-39, 42-43, 45, 47-51 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security, semantic prompts, scrollbars, advanced keybindings, rich status bar) |
 | 6 | 24-25, 46 | Polish (visual refinements, themes, macOS app bundle) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |

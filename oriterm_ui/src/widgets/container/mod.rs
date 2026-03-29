@@ -12,39 +12,75 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::geometry::{Insets, Rect};
-use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent, layout_hit_test};
-use crate::layout::{Align, Direction, Justify, LayoutBox, LayoutNode, SizeSpec, compute_layout};
-use crate::theme::UiTheme;
+use crate::layout::{Align, Direction, GridColumns, Justify, LayoutBox, LayoutNode, SizeSpec};
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction};
 
-mod event_dispatch;
+mod layout_build;
 
-/// A widget that composes other widgets in a flex layout.
+/// Layout mode for a container — flex or grid.
+#[derive(Debug, Clone)]
+enum LayoutMode {
+    /// Flex layout along a direction with alignment and justification.
+    Flex {
+        direction: Direction,
+        align: Align,
+        justify: Justify,
+        gap: f32,
+    },
+    /// Grid layout with column specification and gaps.
+    Grid {
+        columns: GridColumns,
+        row_gap: f32,
+        column_gap: f32,
+    },
+}
+
+impl LayoutMode {
+    /// Builds a `LayoutBox` from child boxes using this layout mode.
+    fn build(&self, children: Vec<LayoutBox>) -> LayoutBox {
+        match self {
+            Self::Flex {
+                direction,
+                align,
+                justify,
+                gap,
+            } => LayoutBox::flex(*direction, children)
+                .with_gap(*gap)
+                .with_align(*align)
+                .with_justify(*justify),
+            Self::Grid {
+                columns,
+                row_gap,
+                column_gap,
+            } => LayoutBox::grid(*columns, children)
+                .with_row_gap(*row_gap)
+                .with_column_gap(*column_gap),
+        }
+    }
+}
+
+/// A widget that composes other widgets in a flex or grid layout.
 ///
 /// Arranges children along a main axis (horizontal for Row, vertical for
 /// Column) with configurable gap, alignment, justification, padding, and
-/// explicit sizing. Supports mouse capture so drag events stay on the
-/// pressed child.
+/// explicit sizing. Alternatively arranges children in a grid with
+/// configurable column count and gaps. Supports mouse capture so drag
+/// events stay on the pressed child.
 pub struct ContainerWidget {
     id: WidgetId,
     children: Vec<Box<dyn Widget>>,
 
     // Layout configuration.
-    direction: Direction,
-    align: Align,
-    justify: Justify,
-    gap: f32,
+    layout_mode: LayoutMode,
     padding: Insets,
     width: SizeSpec,
     height: SizeSpec,
 
     // Whether to clip children to the container's bounds.
     clip_children: bool,
-
-    // Per-container input state (hover/capture tracking among children).
-    input_state: ContainerInputState,
 
     /// Whether this container's layout needs recomputation.
     needs_layout: bool,
@@ -56,15 +92,6 @@ pub struct ContainerWidget {
     cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
 }
 
-/// Tracks mouse interaction state within a container's children.
-#[derive(Debug, Default)]
-struct ContainerInputState {
-    /// Child currently under the cursor (receives hover events).
-    hovered_child: Option<usize>,
-    /// Child that captured the mouse (receives all events until release).
-    captured_child: Option<usize>,
-}
-
 // Constructors and child management.
 impl ContainerWidget {
     /// Creates an empty container with the given layout direction.
@@ -72,15 +99,38 @@ impl ContainerWidget {
         Self {
             id: WidgetId::next(),
             children: Vec::new(),
-            direction,
-            align: Align::Start,
-            justify: Justify::Start,
-            gap: 0.0,
+            layout_mode: LayoutMode::Flex {
+                direction,
+                align: Align::Start,
+                justify: Justify::Start,
+                gap: 0.0,
+            },
             padding: Insets::ZERO,
             width: SizeSpec::Hug,
             height: SizeSpec::Hug,
             clip_children: false,
-            input_state: ContainerInputState::default(),
+
+            needs_layout: true,
+            needs_paint: true,
+            cached_layout: RefCell::new(None),
+        }
+    }
+
+    /// Creates a grid container with the given column spec and gap.
+    pub fn grid(columns: GridColumns, gap: f32) -> Self {
+        Self {
+            id: WidgetId::next(),
+            children: Vec::new(),
+            layout_mode: LayoutMode::Grid {
+                columns,
+                row_gap: gap,
+                column_gap: gap,
+            },
+            padding: Insets::ZERO,
+            width: SizeSpec::Hug,
+            height: SizeSpec::Hug,
+            clip_children: false,
+
             needs_layout: true,
             needs_paint: true,
             cached_layout: RefCell::new(None),
@@ -120,10 +170,7 @@ impl ContainerWidget {
     }
 
     /// Removes a child by index, returning ownership.
-    ///
-    /// Resets hover/capture state since child indices shift.
     pub fn remove_child(&mut self, index: usize) -> Box<dyn Widget> {
-        self.input_state = ContainerInputState::default();
         self.children.remove(index)
     }
 
@@ -155,20 +202,6 @@ impl ContainerWidget {
 
 // Dirty tracking.
 impl ContainerWidget {
-    /// Updates dirty flags based on a child's event response.
-    pub fn update_dirty(&mut self, response: &WidgetResponse) {
-        match response.response {
-            EventResponse::RequestLayout => {
-                self.needs_layout = true;
-                self.needs_paint = true;
-            }
-            EventResponse::RequestPaint => {
-                self.needs_paint = true;
-            }
-            _ => {}
-        }
-    }
-
     /// Whether this container needs layout recomputation.
     pub fn needs_layout(&self) -> bool {
         self.needs_layout
@@ -205,7 +238,9 @@ impl ContainerWidget {
     /// Sets the gap between children along the main axis.
     #[must_use]
     pub fn with_gap(mut self, gap: f32) -> Self {
-        self.gap = gap;
+        if let LayoutMode::Flex { gap: ref mut g, .. } = self.layout_mode {
+            *g = gap;
+        }
         self
     }
 
@@ -216,17 +251,27 @@ impl ContainerWidget {
         self
     }
 
-    /// Sets cross-axis alignment.
+    /// Sets cross-axis alignment (only meaningful for flex containers).
     #[must_use]
     pub fn with_align(mut self, align: Align) -> Self {
-        self.align = align;
+        if let LayoutMode::Flex {
+            align: ref mut a, ..
+        } = self.layout_mode
+        {
+            *a = align;
+        }
         self
     }
 
-    /// Sets main-axis justification.
+    /// Sets main-axis justification (only meaningful for flex containers).
     #[must_use]
     pub fn with_justify(mut self, justify: Justify) -> Self {
-        self.justify = justify;
+        if let LayoutMode::Flex {
+            justify: ref mut j, ..
+        } = self.layout_mode
+        {
+            *j = justify;
+        }
         self
     }
 
@@ -252,67 +297,7 @@ impl ContainerWidget {
     }
 }
 
-// Layout helpers.
-impl ContainerWidget {
-    /// Returns cached layout if bounds match and layout is clean, otherwise recomputes.
-    fn get_or_compute_layout(
-        &self,
-        measurer: &dyn TextMeasurer,
-        theme: &UiTheme,
-        bounds: Rect,
-    ) -> Rc<LayoutNode> {
-        if !self.needs_layout {
-            let cached = self.cached_layout.borrow();
-            if let Some((ref cb, ref node)) = *cached {
-                if *cb == bounds {
-                    return Rc::clone(node);
-                }
-            }
-        }
-        let ctx = LayoutCtx { measurer, theme };
-        let layout_box = self.build_layout_box(&ctx);
-        let node = Rc::new(compute_layout(&layout_box, bounds));
-        *self.cached_layout.borrow_mut() = Some((bounds, Rc::clone(&node)));
-        node
-    }
-
-    /// Builds the `LayoutBox` descriptor tree from children.
-    fn build_layout_box(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        let child_boxes: Vec<LayoutBox> = self.children.iter().map(|c| c.layout(ctx)).collect();
-        LayoutBox::flex(self.direction, child_boxes)
-            .with_gap(self.gap)
-            .with_align(self.align)
-            .with_justify(self.justify)
-            .with_padding(self.padding)
-            .with_width(self.width)
-            .with_height(self.height)
-            .with_widget_id(self.id)
-    }
-
-    /// Finds which direct child owns a `WidgetId` from hit testing.
-    fn find_child_index(&self, target: WidgetId) -> Option<usize> {
-        self.children.iter().position(|c| c.id() == target)
-    }
-
-    /// Finds the direct child widget under a point via hit testing.
-    fn hit_test_children(&self, layout: &LayoutNode, pos: crate::geometry::Point) -> Option<usize> {
-        let target_id = layout_hit_test(layout, pos)?;
-        if target_id == self.id {
-            return None;
-        }
-        // Check direct children first.
-        if let Some(idx) = self.find_child_index(target_id) {
-            return Some(idx);
-        }
-        // The target is nested inside a child — find which child contains it.
-        for (idx, child_node) in layout.children.iter().enumerate() {
-            if child_node.rect.contains(pos) {
-                return Some(idx);
-            }
-        }
-        None
-    }
-}
+// Layout helpers live in `layout_build.rs`.
 
 impl Widget for ContainerWidget {
     fn id(&self) -> WidgetId {
@@ -327,15 +312,22 @@ impl Widget for ContainerWidget {
         self.build_layout_box(ctx)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
+        // Use content-space clip rect so visibility culling works inside
+        // scroll transforms (where clip is in viewport space but child
+        // layout rects are in content space).
         let visible_bounds = ctx
-            .draw_list
-            .current_clip_rect()
+            .scene
+            .current_clip_in_content_space()
             .map_or(ctx.bounds, |clip| clip.intersection(ctx.bounds));
 
         if self.clip_children {
-            ctx.draw_list.push_clip(ctx.bounds);
+            ctx.scene.push_clip(ctx.bounds);
         }
 
         for (idx, child) in self.children.iter().enumerate() {
@@ -343,62 +335,37 @@ impl Widget for ContainerWidget {
                 if !child_node.rect.intersects(visible_bounds) {
                     continue;
                 }
-                let mut child_ctx = DrawCtx {
-                    measurer: ctx.measurer,
-                    draw_list: ctx.draw_list,
-                    bounds: child_node.content_rect,
-                    focused_widget: ctx.focused_widget,
-                    now: ctx.now,
-                    animations_running: ctx.animations_running,
-                    theme: ctx.theme,
-                    icons: ctx.icons,
-                };
-                child.draw(&mut child_ctx);
+
+                let child_id = child.id();
+                let bounds = child_node.rect;
+                let mut child_ctx = ctx.for_child(child_id, bounds);
+                child.paint(&mut child_ctx);
             }
         }
 
         if self.clip_children {
-            ctx.draw_list.pop_clip();
+            ctx.scene.pop_clip();
         }
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.dispatch_mouse(event, ctx)
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        match event {
-            HoverEvent::Enter => {
-                // Position unknown — defer to next mouse Move for targeting.
-                WidgetResponse::handled()
-            }
-            HoverEvent::Leave => {
-                if let Some(idx) = self.input_state.hovered_child.take() {
-                    let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-                    if let (Some(child), Some(child_node)) =
-                        (self.children.get_mut(idx), layout.children.get(idx))
-                    {
-                        let child_ctx = EventCtx {
-                            measurer: ctx.measurer,
-                            bounds: child_node.content_rect,
-                            is_focused: ctx.focused_widget == Some(child.id()),
-                            focused_widget: ctx.focused_widget,
-                            theme: ctx.theme,
-                        };
-                        child.handle_hover(HoverEvent::Leave, &child_ctx);
-                    }
-                }
-                WidgetResponse::handled()
-            }
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        for child in &mut self.children {
+            visitor(child.as_mut());
         }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.dispatch_key(event, ctx)
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
-        self.children.iter_mut().any(|c| c.accept_action(action))
+        // Propagate to ALL children — do not short-circuit. Actions like
+        // `Selected` must reach both SidebarNav (visual update) and
+        // PageContainer (page switch). `any()` would stop at the first
+        // child that handles it.
+        let mut handled = false;
+        for child in &mut self.children {
+            if child.accept_action(action) {
+                handled = true;
+            }
+        }
+        handled
     }
 
     fn focusable_children(&self) -> Vec<WidgetId> {

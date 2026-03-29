@@ -9,7 +9,7 @@ use oriterm_core::Rgb;
 
 use crate::gpu::builtin_glyphs;
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
-use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use crate::gpu::prepare;
 use crate::gpu::prepared_frame::PreparedFrame;
 use crate::gpu::state::GpuState;
@@ -110,8 +110,20 @@ impl WindowRenderer {
     ///
     /// Dividers are solid-color rectangles between split panes. Drawn into
     /// the background layer so they appear behind glyphs and cursors.
-    pub(crate) fn append_dividers(&mut self, dividers: &[DividerLayout], color: Rgb) {
+    /// The hovered divider (if any) uses `hover_color` instead of `color`.
+    pub(crate) fn append_dividers(
+        &mut self,
+        dividers: &[DividerLayout],
+        color: Rgb,
+        hover_color: Rgb,
+        hovered: Option<DividerLayout>,
+    ) {
         for div in dividers {
+            let c = if hovered == Some(*div) {
+                hover_color
+            } else {
+                color
+            };
             self.prepared.backgrounds.push_rect(
                 ScreenRect {
                     x: div.rect.x,
@@ -119,7 +131,7 @@ impl WindowRenderer {
                     w: div.rect.width,
                     h: div.rect.height,
                 },
-                color,
+                c,
                 1.0,
             );
         }
@@ -161,18 +173,21 @@ impl WindowRenderer {
                 h: rect.height,
             },
             [0.0, 0.0, 0.0, 0.0], // transparent fill
-            border_color,
-            2.0, // corner radius
-            1.0, // border width
+            [1.0; 4],             // uniform border width
+            [2.0; 4],             // uniform corner radius
+            [border_color; 4],    // same color all sides
+            CLIP_UNCLIPPED,
         );
     }
 
-    /// Append a 2px focus border around the active pane.
+    /// Append a focus border around the active pane.
     ///
     /// Draws four thin rectangles (top, bottom, left, right) into the cursor
     /// layer so the border renders on top of cell backgrounds and glyphs.
-    pub(crate) fn append_focus_border(&mut self, rect: &Rect, color: Rgb) {
-        let border = 2.0_f32;
+    /// `border_width` is in physical pixels (pass `(2.0 * scale).round()` for
+    /// 2 logical pixels at any DPI).
+    pub(crate) fn append_focus_border(&mut self, rect: &Rect, color: Rgb, border_width: f32) {
+        let border = border_width;
         let bx = rect.x;
         let by = rect.y;
         let bw = rect.width;
@@ -222,5 +237,50 @@ impl WindowRenderer {
             color,
             1.0,
         );
+    }
+
+    /// Append a window-edge border into the cursor layer.
+    ///
+    /// Draws four thin rectangles at the viewport edges, on top of all content.
+    /// Used for the brutal design's 2px `border-strong` frame. Should be
+    /// skipped when the window is maximized.
+    pub(crate) fn append_window_border(
+        &mut self,
+        viewport_w: u32,
+        viewport_h: u32,
+        color: Rgb,
+        border_width: f32,
+    ) {
+        let w = viewport_w as f32;
+        let h = viewport_h as f32;
+        let b = border_width;
+        for rect in [
+            ScreenRect {
+                x: 0.0,
+                y: 0.0,
+                w,
+                h: b,
+            },
+            ScreenRect {
+                x: 0.0,
+                y: h - b,
+                w,
+                h: b,
+            },
+            ScreenRect {
+                x: 0.0,
+                y: 0.0,
+                w: b,
+                h,
+            },
+            ScreenRect {
+                x: w - b,
+                y: 0.0,
+                w: b,
+                h,
+            },
+        ] {
+            self.prepared.cursors.push_cursor(rect, color, 1.0);
+        }
     }
 }

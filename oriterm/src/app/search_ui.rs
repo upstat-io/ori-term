@@ -17,7 +17,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -29,7 +29,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -70,7 +70,7 @@ impl App {
                 }
                 self.scroll_to_search_match();
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
             Key::Named(NamedKey::Backspace) => {
@@ -91,7 +91,7 @@ impl App {
                 }
                 self.scroll_to_search_match();
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
             Key::Character(c) => {
@@ -112,7 +112,7 @@ impl App {
                 }
                 self.scroll_to_search_match();
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
             _ => {}

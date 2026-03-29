@@ -10,9 +10,7 @@ use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_TOOLWINDOW,
-};
+use windows_sys::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW;
 
 use winit::window::Window;
 
@@ -52,18 +50,11 @@ impl NativeWindowOps for WindowsNativeOps {
         unsafe { SetWindowLongPtrW(child_hwnd, GWLP_HWNDPARENT, 0) };
     }
 
-    fn set_window_type(&self, window: &Window, kind: &WindowKind) {
-        if !kind.is_dialog() {
-            return;
-        }
-        let Some(hwnd) = extract_hwnd(window) else {
-            return;
-        };
-        // WS_EX_TOOLWINDOW: no taskbar button, smaller title bar frame.
-        unsafe {
-            let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_TOOLWINDOW as isize);
-        }
+    fn set_window_type(&self, _window: &Window, _kind: &WindowKind) {
+        // Frameless dialog windows (with_decorations(false)) don't need
+        // WS_EX_TOOLWINDOW — that style re-introduces a small title bar.
+        // The owner relationship (set_owner) already prevents a taskbar
+        // button, which was the original purpose of WS_EX_TOOLWINDOW.
     }
 
     fn set_modal(&self, _dialog: &Window, owner: &Window) {

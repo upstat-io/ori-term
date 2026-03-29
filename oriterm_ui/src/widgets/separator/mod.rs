@@ -5,15 +5,15 @@
 
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::Direction;
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::TextStyle;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Style for a [`SeparatorWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -24,7 +24,7 @@ pub struct SeparatorStyle {
     pub thickness: f32,
     /// Label text color (if label is set).
     pub label_color: Color,
-    /// Label font size in points.
+    /// Label font size in logical pixels.
     pub label_font_size: f32,
     /// Padding between the label and line segments.
     pub label_gap: f32,
@@ -107,8 +107,8 @@ impl Widget for SeparatorWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -135,24 +135,12 @@ impl Widget for SeparatorWidget {
         }
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let b = ctx.bounds;
         match self.direction {
             Direction::Row => self.draw_horizontal(ctx, b),
             Direction::Column => self.draw_vertical(ctx, b),
         }
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 }
 
@@ -170,7 +158,7 @@ impl SeparatorWidget {
             // Left line segment.
             let left_end = label_x - gap;
             if left_end > bounds.x() {
-                ctx.draw_list.push_line(
+                ctx.scene.push_line(
                     Point::new(bounds.x(), y),
                     Point::new(left_end, y),
                     self.style.thickness,
@@ -181,7 +169,7 @@ impl SeparatorWidget {
             // Right line segment.
             let right_start = label_x + shaped.width + gap;
             if right_start < bounds.right() {
-                ctx.draw_list.push_line(
+                ctx.scene.push_line(
                     Point::new(right_start, y),
                     Point::new(bounds.right(), y),
                     self.style.thickness,
@@ -191,11 +179,11 @@ impl SeparatorWidget {
 
             // Label text — vertically centered.
             let text_y = bounds.y() + (bounds.height() - shaped.height) / 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(label_x, text_y), shaped, self.style.label_color);
         } else {
             // Plain line across full width.
-            ctx.draw_list.push_line(
+            ctx.scene.push_line(
                 Point::new(bounds.x(), y),
                 Point::new(bounds.right(), y),
                 self.style.thickness,
@@ -207,7 +195,7 @@ impl SeparatorWidget {
     /// Draws a vertical separator.
     fn draw_vertical(&self, ctx: &mut DrawCtx<'_>, bounds: Rect) {
         let x = bounds.x() + bounds.width() / 2.0;
-        ctx.draw_list.push_line(
+        ctx.scene.push_line(
             Point::new(x, bounds.y()),
             Point::new(x, bounds.bottom()),
             self.style.thickness,

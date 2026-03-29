@@ -6,18 +6,22 @@
 //! rendering boundary.
 //!
 //! The widget implements [`Widget`] for draw integration. Event handling
-//! stubs are provided here; full hit-test dispatch is Section 16.3.
+//! dispatch is Section 16.3.
 
+mod animation;
 mod control_state;
 mod controls_draw;
 mod drag_draw;
 mod draw;
+mod draw_helpers;
+mod edit_draw;
 
 use std::time::{Duration, Instant};
 
-use crate::animation::{AnimatedValue, Easing};
+use crate::animation::{AnimBehavior, AnimProperty};
 #[cfg(not(target_os = "macos"))]
 use crate::color::Color;
+use crate::text::editing::TextEditingState;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 #[cfg(not(target_os = "macos"))]
@@ -57,6 +61,8 @@ pub struct TabEntry {
     pub icon: Option<TabIcon>,
     /// When the bell last fired (for pulse animation). `None` if no bell.
     pub bell_start: Option<Instant>,
+    /// Whether the tab content has been modified (shows accent dot).
+    pub modified: bool,
 }
 
 impl TabEntry {
@@ -66,6 +72,7 @@ impl TabEntry {
             title: title.into(),
             icon: None,
             bell_start: None,
+            modified: false,
         }
     }
 
@@ -75,20 +82,29 @@ impl TabEntry {
         self.icon = icon;
         self
     }
+
+    /// Sets the modified state (shows accent dot indicator).
+    #[must_use]
+    pub fn with_modified(mut self, modified: bool) -> Self {
+        self.modified = modified;
+        self
+    }
 }
 
 /// Tab bar rendering widget.
 ///
 /// Holds all visual state needed to draw the tab strip. The application
 /// layer updates state through setter methods; the widget's [`draw`]
-/// implementation emits [`DrawCommand`](crate::draw::DrawCommand)s into
-/// the draw list.
+/// implementation emits primitives into the [`Scene`](crate::draw::Scene).
 pub struct TabBarWidget {
     id: WidgetId,
 
     // Tab data.
     tabs: Vec<TabEntry>,
     active_index: usize,
+
+    // Style-driven geometry.
+    metrics: super::constants::TabBarMetrics,
 
     // Computed layout.
     layout: TabBarLayout,
@@ -106,13 +122,13 @@ pub struct TabBarWidget {
     anim_offsets: Vec<f32>,
 
     // Per-tab hover animation progress (0.0 = inactive, 1.0 = hovered).
-    hover_progress: Vec<AnimatedValue<f32>>,
+    hover_progress: Vec<AnimProperty<f32>>,
 
     // Per-tab close button fade (0.0 = hidden, 1.0 = visible).
-    close_btn_opacity: Vec<AnimatedValue<f32>>,
+    close_btn_opacity: Vec<AnimProperty<f32>>,
 
     // Per-tab width multiplier for open/close animation (0.0 = collapsed, 1.0 = full).
-    width_multipliers: Vec<AnimatedValue<f32>>,
+    width_multipliers: Vec<AnimProperty<f32>>,
 
     // Per-tab closing flag (true = tab is animating closed, skip interaction).
     closing_tabs: Vec<bool>,
@@ -120,12 +136,20 @@ pub struct TabBarWidget {
     // Window control buttons: [minimize, maximize/restore, close].
     #[cfg(not(target_os = "macos"))]
     controls: [WindowControlButton; 3],
-    /// Index of the currently hovered control button (`None` if not hovering).
+    /// Index of the currently pressed control button (for routing mouse-up).
     #[cfg(not(target_os = "macos"))]
-    hovered_control: Option<usize>,
+    pressed_control: Option<usize>,
 
     /// Extra left margin for platform chrome (macOS traffic lights).
     left_inset: f32,
+
+    // Inline editing state.
+    /// Which tab is being edited (`None` = not editing).
+    editing_index: Option<usize>,
+    /// Text editing buffer (reused across edits).
+    editing: TextEditingState,
+    /// Original title before editing started (for Escape cancellation).
+    original_title: String,
 }
 
 impl TabBarWidget {
@@ -136,12 +160,26 @@ impl TabBarWidget {
 
     /// Creates a new tab bar widget with colors from the given theme.
     pub fn with_theme(window_width: f32, theme: &UiTheme) -> Self {
-        let layout = TabBarLayout::compute(0, window_width, None, 0.0);
+        Self::with_theme_and_metrics(
+            window_width,
+            theme,
+            super::constants::TabBarMetrics::DEFAULT,
+        )
+    }
+
+    /// Creates a new tab bar widget with colors and style-driven metrics.
+    pub fn with_theme_and_metrics(
+        window_width: f32,
+        theme: &UiTheme,
+        metrics: super::constants::TabBarMetrics,
+    ) -> Self {
+        let layout = TabBarLayout::compute(0, window_width, None, 0.0, &metrics);
 
         Self {
             id: WidgetId::next(),
             tabs: Vec::new(),
             active_index: 0,
+            metrics,
             layout,
             colors: TabBarColors::from_theme(theme),
             window_width,
@@ -156,9 +194,23 @@ impl TabBarWidget {
             #[cfg(not(target_os = "macos"))]
             controls: create_controls(control_colors_from_theme(theme)),
             #[cfg(not(target_os = "macos"))]
-            hovered_control: None,
+            pressed_control: None,
             left_inset: 0.0,
+            editing_index: None,
+            editing: TextEditingState::new(),
+            original_title: String::new(),
         }
+    }
+
+    /// Returns the current tab bar metrics.
+    pub fn metrics(&self) -> &super::constants::TabBarMetrics {
+        &self.metrics
+    }
+
+    /// Sets the tab bar metrics (style change) and recomputes layout.
+    pub fn set_metrics(&mut self, metrics: super::constants::TabBarMetrics) {
+        self.metrics = metrics;
+        self.recompute_layout();
     }
 
     // Theme
@@ -186,15 +238,24 @@ impl TabBarWidget {
         self.tabs = tabs;
         self.hover_progress.clear();
         self.hover_progress.resize_with(n, || {
-            AnimatedValue::new(0.0, TAB_HOVER_DURATION, Easing::EaseOut)
+            AnimProperty::with_behavior(
+                0.0,
+                AnimBehavior::ease_out(TAB_HOVER_DURATION.as_millis() as u64),
+            )
         });
         self.close_btn_opacity.clear();
         self.close_btn_opacity.resize_with(n, || {
-            AnimatedValue::new(0.0, CLOSE_BTN_FADE_DURATION, Easing::EaseOut)
+            AnimProperty::with_behavior(
+                0.0,
+                AnimBehavior::ease_out(CLOSE_BTN_FADE_DURATION.as_millis() as u64),
+            )
         });
         self.width_multipliers.clear();
         self.width_multipliers.resize_with(n, || {
-            AnimatedValue::new(1.0, TAB_OPEN_DURATION, Easing::EaseOut)
+            AnimProperty::with_behavior(
+                1.0,
+                AnimBehavior::ease_out(TAB_OPEN_DURATION.as_millis() as u64),
+            )
         });
         self.closing_tabs.clear();
         self.closing_tabs.resize(n, false);
@@ -226,207 +287,135 @@ impl TabBarWidget {
         self.recompute_layout();
     }
 
-    /// Updates which element the cursor is hovering, driving hover animations.
-    ///
-    /// Starts animated transitions for hover background and close button
-    /// visibility on the affected tabs.
-    pub fn set_hover_hit(&mut self, hit: TabBarHit, now: Instant) {
-        let old_tab = self.hover_hit.tab_index();
-        let new_tab = hit.tab_index();
-        self.hover_hit = hit;
+    // Hover queries
 
-        // Animate hover leave on old tab.
-        if let Some(i) = old_tab {
-            if Some(i) != new_tab {
-                if let Some(p) = self.hover_progress.get_mut(i) {
-                    p.set(0.0, now);
-                }
-                if let Some(o) = self.close_btn_opacity.get_mut(i) {
-                    o.set(0.0, now);
-                }
-            }
+    /// Returns `true` if the given tab index is currently hovered.
+    ///
+    /// Matches `TabBarHit::Tab(index)` or `TabBarHit::CloseTab(index)`.
+    pub fn is_tab_hovered(&self, index: usize) -> bool {
+        matches!(self.hover_hit, TabBarHit::Tab(h) | TabBarHit::CloseTab(h) if h == index)
+    }
+
+    // Inline editing
+
+    /// Returns `true` if a tab title is currently being edited.
+    pub fn is_editing(&self) -> bool {
+        self.editing_index.is_some()
+    }
+
+    /// Returns the index of the tab being edited, if any.
+    pub fn editing_tab_index(&self) -> Option<usize> {
+        self.editing_index
+    }
+
+    /// Returns the current editing text (empty if not editing).
+    pub fn editing_text(&self) -> &str {
+        self.editing.text()
+    }
+
+    /// Returns a reference to the editing state for rendering.
+    pub fn editing_state(&self) -> &TextEditingState {
+        &self.editing
+    }
+
+    /// Starts inline editing of the tab at `index`.
+    ///
+    /// Copies the current title into the editing buffer and selects all
+    /// text (VS Code behavior: typing immediately replaces the title).
+    pub fn start_editing(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
         }
-        // Animate hover enter on new tab.
-        if let Some(i) = new_tab {
-            if Some(i) != old_tab {
-                if let Some(p) = self.hover_progress.get_mut(i) {
-                    p.set(1.0, now);
-                }
-                if let Some(o) = self.close_btn_opacity.get_mut(i) {
-                    o.set(1.0, now);
-                }
-            }
-        }
+        self.editing_index = Some(index);
+        self.original_title.clone_from(&self.tabs[index].title);
+        self.editing.set_text(&self.tabs[index].title);
+        self.editing.select_all();
     }
 
-    /// Sets the dragged tab visual state.
+    /// Commits the current edit and returns `(tab_index, new_title)`.
     ///
-    /// `Some((index, x))` means tab `index` is being dragged and its visual
-    /// position is at `x` logical pixels. `None` means no drag in progress.
-    pub fn set_drag_visual(&mut self, drag: Option<(usize, f32)>) {
-        self.drag_visual = drag;
+    /// Trims whitespace. If the result is empty, restores the original
+    /// title. Returns `None` if not currently editing.
+    pub fn commit_editing(&mut self) -> Option<(usize, String)> {
+        let index = self.editing_index.take()?;
+        let trimmed = self.editing.text().trim().to_string();
+        let title = if trimmed.is_empty() {
+            self.tabs[index].title.clone_from(&self.original_title);
+            self.original_title.clone()
+        } else {
+            self.tabs[index].title.clone_from(&trimmed);
+            trimmed
+        };
+        Some((index, title))
     }
 
-    // Tab lifecycle animations
-
-    /// Starts a tab open animation, expanding from zero to full width.
-    ///
-    /// Call after `set_tabs()` which initializes the entry at 1.0.
-    /// This overrides to start from 0.0 and animate to 1.0 over 200ms.
-    pub fn animate_tab_open(&mut self, index: usize, now: Instant) {
-        if let Some(m) = self.width_multipliers.get_mut(index) {
-            m.set_immediate(0.0);
-            m.set(1.0, now);
-        }
-    }
-
-    /// Starts a tab close animation, shrinking from full to zero width.
-    ///
-    /// Marks the tab as closing (skipped for hover/click interaction).
-    /// When the animation completes, call [`closing_complete`] to find
-    /// which tab to remove.
-    pub fn animate_tab_close(&mut self, index: usize, now: Instant) {
-        if let Some(m) = self.width_multipliers.get_mut(index) {
-            *m = AnimatedValue::new(1.0, TAB_CLOSE_DURATION, Easing::EaseOut);
-            m.set(0.0, now);
-        }
-        if let Some(c) = self.closing_tabs.get_mut(index) {
-            *c = true;
-        }
-    }
-
-    /// Returns the index of a tab whose close animation has finished.
-    ///
-    /// The app layer polls this during redraw and removes the finished
-    /// tab via `set_tabs()`.
-    pub fn closing_complete(&self, now: Instant) -> Option<usize> {
-        self.closing_tabs
-            .iter()
-            .enumerate()
-            .find(|&(i, &closing)| {
-                closing
-                    && self
-                        .width_multipliers
-                        .get(i)
-                        .is_none_or(|m| m.get(now) < 0.01)
-            })
-            .map(|(i, _)| i)
-    }
-
-    /// Whether the tab at `index` is in closing state.
-    pub fn is_closing(&self, index: usize) -> bool {
-        self.closing_tabs.get(index).copied().unwrap_or(false)
-    }
-
-    /// Whether any width animation is currently running.
-    pub fn has_width_animation(&self, now: Instant) -> bool {
-        self.width_multipliers.iter().any(|m| m.is_animating(now))
-    }
-
-    /// Updates layout with current animated width multipliers.
-    ///
-    /// Call once per frame before draw when width animations are active.
-    /// No-op when no width animations are running.
-    pub fn update_animated_layout(&mut self, now: Instant) {
-        if self.has_width_animation(now) {
-            self.recompute_layout_animated(now);
+    /// Cancels the current edit and restores the original title.
+    pub fn cancel_editing(&mut self) {
+        if let Some(index) = self.editing_index.take() {
+            self.tabs[index].title = self.original_title.clone();
         }
     }
 
-    // Accessors
-
-    /// Current computed layout.
-    pub fn layout(&self) -> &TabBarLayout {
-        &self.layout
-    }
-
-    /// Number of tabs.
-    pub fn tab_count(&self) -> usize {
-        self.tabs.len()
-    }
-
-    /// Current hover hit state.
-    pub fn hover_hit(&self) -> TabBarHit {
-        self.hover_hit
-    }
-
-    /// Current tab width lock value, if active.
-    pub fn tab_width_lock(&self) -> Option<f32> {
-        self.tab_width_lock
-    }
-
-    /// Update the title of the tab at `index`.
+    /// Forwards a character insertion to the editing state.
     ///
-    /// No-op if `index` is out of bounds.
-    pub fn update_tab_title(&mut self, index: usize, title: String) {
-        if let Some(entry) = self.tabs.get_mut(index) {
-            entry.title = title;
+    /// Returns `true` if editing is active and the character was inserted.
+    pub fn editing_insert_char(&mut self, ch: char) -> bool {
+        if self.editing_index.is_some() {
+            self.editing.insert_char(ch);
+            return true;
+        }
+        false
+    }
+
+    /// Forwards a backspace to the editing state.
+    pub fn editing_backspace(&mut self) -> bool {
+        if self.editing_index.is_some() {
+            return self.editing.backspace();
+        }
+        false
+    }
+
+    /// Forwards a delete to the editing state.
+    pub fn editing_delete(&mut self) -> bool {
+        if self.editing_index.is_some() {
+            return self.editing.delete();
+        }
+        false
+    }
+
+    /// Forwards cursor movement to the editing state.
+    pub fn editing_move_left(&mut self, shift: bool) {
+        if self.editing_index.is_some() {
+            self.editing.move_left(shift);
         }
     }
 
-    /// Start a bell animation on the tab at `index`.
-    ///
-    /// Records `now` as the bell start time. No-op if `index` is out of
-    /// bounds.
-    pub fn ring_bell(&mut self, index: usize, now: Instant) {
-        if let Some(entry) = self.tabs.get_mut(index) {
-            entry.bell_start = Some(now);
+    /// Forwards cursor movement to the editing state.
+    pub fn editing_move_right(&mut self, shift: bool) {
+        if self.editing_index.is_some() {
+            self.editing.move_right(shift);
         }
     }
 
-    // Private helpers
-
-    /// Recomputes layout from current state.
-    ///
-    /// When width multipliers are active (during open/close animations),
-    /// passes current multiplier values to the layout computation.
-    fn recompute_layout(&mut self) {
-        self.layout = TabBarLayout::compute(
-            self.tabs.len(),
-            self.window_width,
-            self.tab_width_lock,
-            self.left_inset,
-        );
+    /// Forwards home key to the editing state.
+    pub fn editing_home(&mut self, shift: bool) {
+        if self.editing_index.is_some() {
+            self.editing.home(shift);
+        }
     }
 
-    /// Recomputes layout with current animated width multipliers.
-    ///
-    /// Called during draw when width animations are running. Samples
-    /// each `AnimatedValue` at `now` and passes the snapshot to layout.
-    fn recompute_layout_animated(&mut self, now: Instant) {
-        let multipliers: Vec<f32> = self.width_multipliers.iter().map(|m| m.get(now)).collect();
-        self.layout = TabBarLayout::compute_with_multipliers(
-            self.tabs.len(),
-            self.window_width,
-            self.tab_width_lock,
-            self.left_inset,
-            Some(&multipliers),
-        );
+    /// Forwards end key to the editing state.
+    pub fn editing_end(&mut self, shift: bool) {
+        if self.editing_index.is_some() {
+            self.editing.end(shift);
+        }
     }
 
-    /// Returns the animation offset for a tab, or 0.0 if none.
-    fn anim_offset(&self, index: usize) -> f32 {
-        self.anim_offsets.get(index).copied().unwrap_or(0.0)
-    }
-
-    /// Whether a tab drag overlay should be drawn.
-    pub fn has_drag_overlay(&self) -> bool {
-        self.drag_visual.is_some_and(|(i, _)| i < self.tabs.len())
-    }
-
-    /// Whether the given tab index is the one being dragged.
-    fn is_dragged(&self, index: usize) -> bool {
-        self.drag_visual.is_some_and(|(i, _)| i == index)
-    }
-
-    /// Swaps the internal animation offset buffer with an external one.
-    ///
-    /// Used by [`TabSlideState`](super::slide::TabSlideState) to populate
-    /// per-tab offsets from compositor transforms without allocating. The
-    /// caller fills `buf` with compositor-driven offsets, swaps in, and
-    /// gets the old buffer back for reuse next frame.
-    pub(crate) fn swap_anim_offsets(&mut self, buf: &mut Vec<f32>) {
-        std::mem::swap(&mut self.anim_offsets, buf);
+    /// Selects all text in the editing buffer.
+    pub fn editing_select_all(&mut self) {
+        if self.editing_index.is_some() {
+            self.editing.select_all();
+        }
     }
 }
 
@@ -439,8 +428,8 @@ fn control_colors_from_theme(theme: &UiTheme) -> ControlButtonColors {
         fg: theme.fg_primary,
         bg: Color::TRANSPARENT,
         hover_bg: theme.bg_hover,
-        close_hover_bg: theme.close_hover_bg,
-        close_pressed_bg: theme.close_pressed_bg,
+        close_hover_bg: theme.danger,
+        close_pressed_bg: theme.danger_hover,
     }
 }
 
@@ -453,34 +442,51 @@ fn create_controls(colors: ControlButtonColors) -> [WindowControlButton; 3] {
     [min_btn, max_btn, close_btn]
 }
 
+impl TabBarWidget {
+    /// Tick all standalone `AnimProperty` fields by one frame.
+    ///
+    /// Called from `prepaint()` to advance hover, close-button opacity,
+    /// and width multiplier animations. The `VisualStateAnimator` (control
+    /// button hover) is ticked separately by `prepare_widget_frame`.
+    pub(super) fn tick_animations(&mut self) {
+        for p in &mut self.hover_progress {
+            p.tick();
+        }
+        for o in &mut self.close_btn_opacity {
+            o.tick();
+        }
+        for m in &mut self.width_multipliers {
+            m.tick();
+        }
+    }
+}
+
 // Test helpers
 
 #[cfg(test)]
 impl TabBarWidget {
     /// Test-only access to bell phase computation.
     pub fn bell_phase_for_test(tab: &TabEntry, now: Instant) -> f32 {
-        draw::bell_phase(tab, now)
+        draw_helpers::bell_phase(tab, now)
     }
 
     /// Test-only access to drag-adjusted new-tab button X.
     pub fn test_new_tab_button_x(&self) -> f32 {
-        draw::new_tab_button_x(self)
+        draw_helpers::new_tab_button_x(self)
     }
 
     /// Test-only access to drag-adjusted dropdown button X.
     pub fn test_dropdown_button_x(&self) -> f32 {
-        draw::dropdown_button_x(self)
+        draw_helpers::dropdown_button_x(self)
     }
 
     /// Test-only access to hover progress for a tab.
-    pub fn test_hover_progress(&self, index: usize, now: Instant) -> f32 {
-        self.hover_progress.get(index).map_or(0.0, |p| p.get(now))
+    pub fn test_hover_progress(&self, index: usize) -> f32 {
+        self.hover_progress.get(index).map_or(0.0, |p| p.get())
     }
 
     /// Test-only access to close button opacity for a tab.
-    pub fn test_close_btn_opacity(&self, index: usize, now: Instant) -> f32 {
-        self.close_btn_opacity
-            .get(index)
-            .map_or(0.0, |o| o.get(now))
+    pub fn test_close_btn_opacity(&self, index: usize) -> f32 {
+        self.close_btn_opacity.get(index).map_or(0.0, |o| o.get())
     }
 }

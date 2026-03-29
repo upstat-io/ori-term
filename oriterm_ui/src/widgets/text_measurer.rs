@@ -22,6 +22,6 @@ pub trait TextMeasurer {
     /// Shapes text into positioned glyphs for rendering.
     ///
     /// Returns a [`ShapedText`] block suitable for passing to
-    /// [`DrawList::push_text`](crate::draw::DrawList::push_text).
+    /// [`Scene::push_text`](crate::draw::Scene).
     fn shape(&self, text: &str, style: &TextStyle, max_width: f32) -> ShapedText;
 }

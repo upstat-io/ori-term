@@ -130,26 +130,32 @@ impl Grid {
         }
     }
 
-    /// Grow visible rows: consume scrollback slots and add blank rows.
+    /// Grow visible rows: restore scrollback content and add blank rows.
     ///
-    /// When the cursor is at the bottom, scrollback rows are consumed
-    /// (maintaining stable row indices) but their content is cleared before
-    /// insertion. This prevents stale scrollback content from appearing in
-    /// the visible area where shell incremental-rendering (e.g. Ink) might
-    /// skip overwriting it, causing ghosting.
+    /// When the cursor is at the bottom, rows that were pushed to scrollback
+    /// by a previous shrink are pulled back and inserted at the top of the
+    /// visible area. This preserves terminal output across shrink/grow cycles
+    /// (e.g. window minimize → restore). Rows are resized to the current
+    /// column width if they were pushed at a different width.
     fn grow_rows(&mut self, new_lines: usize) {
         let delta = new_lines - self.lines;
         if self.cursor.line() >= self.lines.saturating_sub(1) {
             let from_sb = delta.min(self.scrollback.len());
-            // Consume scrollback slots to maintain StableRowIndex stability,
-            // but don't show stale content — insert blank rows instead.
-            for _ in 0..from_sb {
-                self.scrollback.pop_newest();
-            }
-            self.resize_pushed = self.resize_pushed.saturating_sub(from_sb);
-            // Insert blank rows at top, shifting cursor down.
+            // Restore scrollback rows (newest = most recently pushed = bottom
+            // of the restored block). Pop newest-first, then reverse so the
+            // oldest restored row is at the top.
             let cols = self.cols;
-            self.rows.splice(0..0, (0..from_sb).map(|_| Row::new(cols)));
+            let mut restored: Vec<Row> = Vec::with_capacity(from_sb);
+            for _ in 0..from_sb {
+                if let Some(mut row) = self.scrollback.pop_newest() {
+                    row.resize(cols);
+                    restored.push(row);
+                }
+            }
+            restored.reverse();
+            self.resize_pushed = self.resize_pushed.saturating_sub(from_sb);
+            // Insert restored rows at top, shifting cursor down.
+            self.rows.splice(0..0, restored);
             self.cursor.set_line(self.cursor.line() + from_sb);
             for _ in 0..(delta - from_sb) {
                 self.rows.push(Row::new(self.cols));

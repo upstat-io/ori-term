@@ -3,6 +3,9 @@ section: 28
 title: Extensibility
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 7
 goal: Lua scripting, custom shaders, smart paste, undo close tab, session recording, workspaces
 sections:
@@ -23,6 +26,9 @@ sections:
     status: not-started
   - id: "28.6"
     title: Workspaces
+    status: not-started
+  - id: "28.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "28.7"
     title: Section Completion
@@ -371,6 +377,14 @@ Named groups of tabs/panes with layout persistence and quick switching.
 
 ---
 
+## 28.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 28.7 Section Completion
 
 - [ ] All 28.1-28.6 items complete
@@ -385,5 +399,7 @@ Named groups of tabs/panes with layout persistence and quick switching.
 - [ ] Ctrl+Shift+T reopens last closed tab in stored CWD
 - [ ] Undo-close stack holds last 10 tabs
 - [ ] All features documented and configurable
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** ori_term has a Lua scripting layer that enables user-created extensions, custom visual effects via WGSL shaders, and quality-of-life paste safety features.

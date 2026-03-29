@@ -202,13 +202,16 @@ impl TermWindow {
     ///
     /// Updates internal size tracking and reconfigures the wgpu surface.
     /// The caller should request a redraw after calling this.
+    ///
+    /// `size_px` stores the actual window dimensions (0×0 when minimized).
+    /// `surface_config` clamps to 1×1 because wgpu requires non-zero
+    /// dimensions. Use [`has_surface_area()`](Self::has_surface_area) to
+    /// check whether the window is renderable.
     pub(crate) fn resize_surface(&mut self, width: u32, height: u32, _gpu: &GpuState) {
-        let w = width.max(1);
-        let h = height.max(1);
-
-        self.size_px = (w, h);
-        self.surface_config.width = w;
-        self.surface_config.height = h;
+        self.size_px = (width, height);
+        // wgpu surfaces require non-zero dimensions.
+        self.surface_config.width = width.max(1);
+        self.surface_config.height = height.max(1);
         // Defer the actual DXGI ResizeBuffers call to just before the next
         // present. This minimizes the window between swap chain invalidation
         // and frame presentation, preventing the DWM from stretching stale

@@ -2,9 +2,13 @@
 
 use skrifa::color::{CompositeMode, Transform as ColrTransform};
 
-use super::super::{ClipBox, Rgba};
-use super::brush::{rgba_to_color, to_blend_mode};
-use super::{intersect_masks, to_bx, to_by};
+use skrifa::color::Extend;
+
+use super::super::{ClipBox, ResolvedColorStop, Rgba};
+use super::brush::{
+    fill_radial_direct, fill_sweep_direct, rgba_to_color, solve_radial_t, to_blend_mode,
+};
+use super::{intersect_masks, to_bx, to_by, transform_radius_scale, transform_rotation_degrees};
 
 const EPS: f32 = 0.01;
 
@@ -187,4 +191,261 @@ fn screen_maps_correctly() {
         to_blend_mode(CompositeMode::Screen),
         tiny_skia::BlendMode::Screen
     ));
+}
+
+// transform_radius_scale
+
+#[test]
+fn radius_scale_identity_transform() {
+    let t = ColrTransform::default();
+    let rs = transform_radius_scale(2.0, &t);
+    // Identity det = 1, so radius_scale = scale * 1 = 2.0.
+    assert!((rs - 2.0).abs() < EPS, "rs={rs}");
+}
+
+#[test]
+fn radius_scale_uniform_2x() {
+    let t = ColrTransform {
+        xx: 2.0,
+        yy: 2.0,
+        ..ColrTransform::default()
+    };
+    let rs = transform_radius_scale(1.0, &t);
+    // det = 4, sqrt(4) = 2.
+    assert!((rs - 2.0).abs() < EPS, "rs={rs}");
+}
+
+#[test]
+fn radius_scale_rotation_preserves_radius() {
+    // 45° rotation: cos=0.707, sin=0.707, det = cos²+sin² = 1.
+    let c = std::f32::consts::FRAC_PI_4.cos();
+    let s = std::f32::consts::FRAC_PI_4.sin();
+    let t = ColrTransform {
+        xx: c,
+        xy: -s,
+        yx: s,
+        yy: c,
+        ..ColrTransform::default()
+    };
+    let rs = transform_radius_scale(3.0, &t);
+    assert!((rs - 3.0).abs() < EPS, "rs={rs}");
+}
+
+#[test]
+fn radius_scale_non_uniform() {
+    // Scale X by 2, Y by 3 → det = 6, sqrt(6) ≈ 2.449.
+    let t = ColrTransform {
+        xx: 2.0,
+        yy: 3.0,
+        ..ColrTransform::default()
+    };
+    let rs = transform_radius_scale(1.0, &t);
+    let expected = 6.0_f32.sqrt();
+    assert!((rs - expected).abs() < EPS, "rs={rs}, expected={expected}");
+}
+
+// transform_rotation_degrees
+
+#[test]
+fn rotation_identity_is_zero() {
+    let t = ColrTransform::default();
+    let deg = transform_rotation_degrees(&t);
+    assert!(deg.abs() < EPS, "deg={deg}");
+}
+
+#[test]
+fn rotation_90_degrees() {
+    // 90° CCW: xx=0, yx=1.
+    let t = ColrTransform {
+        xx: 0.0,
+        xy: -1.0,
+        yx: 1.0,
+        yy: 0.0,
+        ..ColrTransform::default()
+    };
+    let deg = transform_rotation_degrees(&t);
+    assert!((deg - 90.0).abs() < EPS, "deg={deg}");
+}
+
+#[test]
+fn rotation_45_degrees() {
+    let c = std::f32::consts::FRAC_PI_4.cos();
+    let s = std::f32::consts::FRAC_PI_4.sin();
+    let t = ColrTransform {
+        xx: c,
+        xy: -s,
+        yx: s,
+        yy: c,
+        ..ColrTransform::default()
+    };
+    let deg = transform_rotation_degrees(&t);
+    assert!((deg - 45.0).abs() < EPS, "deg={deg}");
+}
+
+// solve_radial_t
+
+#[test]
+fn solve_radial_concentric_circles() {
+    // Concentric circles: c0==c1, r0=10, r1=50. Pixel at distance 30 from
+    // center → t = (30-10)/(50-10) = 0.5.
+    // With concentric circles: dx=dy=0, dr=40, a_coeff = -dr² = -1600.
+    // For pixel at (30, 0) from c0: sx=30, sy=0.
+    // b = -2*(0 + 0 + 10*40) = -800.
+    // c = 900 - 100 = 800.
+    let t = solve_radial_t(-1600.0, -800.0, 800.0, 10.0, 40.0);
+    assert!(t.is_some(), "expected solution");
+    assert!((t.unwrap() - 0.5).abs() < EPS, "t={}", t.unwrap());
+}
+
+#[test]
+fn solve_radial_no_solution_negative_radius() {
+    // Force both roots to yield r(t) < 0.
+    // r0=1, dr=-10 → r(t)=1-10t < 0 for t > 0.1.
+    // If both roots are > 0.1, no valid solution.
+    let t = solve_radial_t(1.0, -20.0, 100.0, 1.0, -10.0);
+    assert!(t.is_none(), "expected None, got {t:?}");
+}
+
+#[test]
+fn solve_radial_linear_case() {
+    // a ≈ 0 (linear): Bt + C = 0 → t = -C/B.
+    let t = solve_radial_t(0.0, -4.0, 2.0, 1.0, 1.0);
+    assert!(t.is_some());
+    assert!((t.unwrap() - 0.5).abs() < EPS, "t={}", t.unwrap());
+}
+
+// fill_sweep_direct — wraparound
+
+#[test]
+fn sweep_full_circle_covers_all_quadrants() {
+    // 4x4 pixmap, center at (2,2), full 360° sweep, 2 stops (red→blue).
+    let mut pixmap = tiny_skia::Pixmap::new(4, 4).unwrap();
+    let stops = vec![
+        ResolvedColorStop {
+            offset: 0.0,
+            color: Rgba {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+        },
+        ResolvedColorStop {
+            offset: 1.0,
+            color: Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            },
+        },
+    ];
+    fill_sweep_direct(&mut pixmap, 2.0, 2.0, 0.0, 360.0, &stops, Extend::Pad, None);
+
+    // Every pixel should be non-transparent (the gradient covers the full circle).
+    for y in 0..4 {
+        for x in 0..4 {
+            if x == 2 && y == 2 {
+                continue; // center pixel is degenerate (atan2(0,0))
+            }
+            let idx = ((y * 4 + x) * 4 + 3) as usize;
+            assert!(pixmap.data()[idx] > 0, "pixel ({x},{y}) is transparent");
+        }
+    }
+}
+
+// fill_radial_direct — basic two-circle
+
+#[test]
+fn radial_two_circle_midrange_pixel_colored() {
+    // Concentric circles at (4,4), r0=1, r1=4. Pixel at (6,4) is distance 2
+    // from center — within the gradient band [r0, r1].
+    let mut pixmap = tiny_skia::Pixmap::new(8, 8).unwrap();
+    let stops = vec![
+        ResolvedColorStop {
+            offset: 0.0,
+            color: Rgba {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+        },
+        ResolvedColorStop {
+            offset: 1.0,
+            color: Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            },
+        },
+    ];
+    fill_radial_direct(
+        &mut pixmap,
+        4.0,
+        4.0,
+        1.0,
+        4.0,
+        4.0,
+        4.0,
+        &stops,
+        Extend::Pad,
+        None,
+    );
+
+    // Pixel (6,4) at distance 2 from center should be colored (t ≈ 0.33).
+    let idx = ((4 * 8 + 6) * 4 + 3) as usize;
+    assert!(
+        pixmap.data()[idx] > 0,
+        "midrange pixel is transparent, alpha={}",
+        pixmap.data()[idx]
+    );
+}
+
+#[test]
+fn radial_two_circle_outside_is_padded() {
+    // Large outer circle: pixels well outside should still get the end-stop color
+    // due to Pad extend mode.
+    let mut pixmap = tiny_skia::Pixmap::new(8, 8).unwrap();
+    let stops = vec![
+        ResolvedColorStop {
+            offset: 0.0,
+            color: Rgba {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+        },
+        ResolvedColorStop {
+            offset: 1.0,
+            color: Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            },
+        },
+    ];
+    fill_radial_direct(
+        &mut pixmap,
+        4.0,
+        4.0,
+        0.5,
+        4.0,
+        4.0,
+        2.0,
+        &stops,
+        Extend::Pad,
+        None,
+    );
+
+    // Corner pixel (0,0) is far outside r1=2. With Pad, it gets end-stop (blue).
+    let idx = 2; // byte index for blue channel of pixel (0,0)
+    let alpha = pixmap.data()[3];
+    assert!(alpha > 0, "corner pixel is transparent");
+    // Blue channel should dominate.
+    let b = pixmap.data()[idx];
+    assert!(b > 200, "expected blue > 200, got {b}");
 }

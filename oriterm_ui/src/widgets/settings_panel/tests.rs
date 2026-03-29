@@ -1,54 +1,42 @@
-use crate::geometry::{Point, Rect};
-use crate::input::{Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::action::WidgetAction;
+use crate::geometry::Rect;
 use crate::layout::compute_layout;
+use crate::widget_id::WidgetId;
 use crate::widgets::form_layout::FormLayout;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction};
+use crate::widgets::{LayoutCtx, Widget};
 
 use super::SettingsPanel;
 
-fn make_panel() -> SettingsPanel {
-    SettingsPanel::new(FormLayout::new())
-}
-
-/// Creates a panel with a checkbox for click testing. Returns (panel, checkbox_id).
-fn make_panel_with_checkbox() -> (SettingsPanel, crate::widget_id::WidgetId) {
-    use crate::widgets::checkbox::CheckboxWidget;
-    use crate::widgets::form_row::FormRow;
-    use crate::widgets::form_section::FormSection;
-
-    let checkbox = CheckboxWidget::new("Test toggle");
-    let checkbox_id = checkbox.id();
-
-    let mut form = FormLayout::new().with_section(
-        FormSection::new("General").with_row(FormRow::new("My option", Box::new(checkbox))),
-    );
-    form.compute_label_widths(&MockMeasurer::STANDARD, &super::super::tests::TEST_THEME);
-
-    (SettingsPanel::new(form), checkbox_id)
+/// Creates a panel in overlay mode with dummy footer IDs.
+fn make_panel() -> (SettingsPanel, WidgetId, WidgetId, WidgetId) {
+    let reset_id = WidgetId::next();
+    let cancel_id = WidgetId::next();
+    let save_id = WidgetId::next();
+    let panel = SettingsPanel::new(Box::new(FormLayout::new()), (reset_id, cancel_id, save_id));
+    (panel, reset_id, cancel_id, save_id)
 }
 
 #[test]
 fn new_does_not_panic() {
-    let _panel = make_panel();
+    let (_panel, _, _, _) = make_panel();
 }
 
 #[test]
 fn id_returns_valid_widget_id() {
-    let panel = make_panel();
-    // IDs are monotonically increasing — just verify it's nonzero.
+    let (panel, _, _, _) = make_panel();
     assert_ne!(panel.id().raw(), 0);
 }
 
 #[test]
 fn close_id_differs_from_panel_id() {
-    let panel = make_panel();
+    let (panel, _, _, _) = make_panel();
     assert_ne!(panel.id(), panel.close_id());
 }
 
 #[test]
 fn focusable_children_includes_close_button() {
-    let panel = make_panel();
+    let (panel, _, _, _) = make_panel();
     let children = panel.focusable_children();
     assert!(
         children.contains(&panel.close_id()),
@@ -58,22 +46,22 @@ fn focusable_children_includes_close_button() {
 
 #[test]
 fn layout_has_fixed_width() {
-    let panel = make_panel();
+    let (panel, _, _, _) = make_panel();
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
         theme: &super::super::tests::TEST_THEME,
     };
     let lb = panel.layout(&ctx);
-    let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+    let viewport = Rect::new(0.0, 0.0, 1200.0, 800.0);
     let node = compute_layout(&lb, viewport);
 
-    // Panel should be 600px wide (PANEL_WIDTH).
-    assert_eq!(node.rect.width(), 600.0);
+    // Panel should be 860px wide (PANEL_WIDTH).
+    assert_eq!(node.rect.width(), 860.0);
 }
 
 #[test]
 fn layout_hugs_content_height() {
-    let panel = make_panel();
+    let (panel, _, _, _) = make_panel();
     let ctx = LayoutCtx {
         measurer: &MockMeasurer::STANDARD,
         theme: &super::super::tests::TEST_THEME,
@@ -82,7 +70,7 @@ fn layout_hugs_content_height() {
     let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
     let node = compute_layout(&lb, viewport);
 
-    // Panel hugs its content height (header + separator + form body).
+    // Panel hugs its content height (header + body).
     // With an empty form, height is at least the header bar (48px).
     assert!(
         node.rect.height() >= 48.0,
@@ -96,161 +84,90 @@ fn layout_hugs_content_height() {
 
 #[test]
 fn not_focusable() {
-    let panel = make_panel();
+    let (panel, _, _, _) = make_panel();
     assert!(!panel.is_focusable());
 }
 
 #[test]
-fn close_button_click_emits_dismiss() {
-    let mut panel = make_panel();
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // The close button is in the top-right of the header. Click at ~(575, 24)
-    // which is well within the header row area near the right side.
-    let click_pos = Point::new(575.0, 24.0);
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: click_pos,
-        modifiers: Modifiers::NONE,
-    };
-    let _ = panel.handle_mouse(&down, &ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: click_pos,
-        modifiers: Modifiers::NONE,
-    };
-    let resp = panel.handle_mouse(&up, &ctx);
-
-    assert_eq!(
-        resp.action,
-        Some(WidgetAction::CancelSettings),
-        "close button should emit CancelSettings"
-    );
-}
-
-#[test]
-fn close_button_key_emits_dismiss() {
-    use crate::input::{Key, KeyEvent};
-
-    let mut panel = make_panel();
-    let close_id = panel.close_id();
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: Some(close_id),
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
-        key: Key::Enter,
-        modifiers: Modifiers::NONE,
-    };
-    let resp = panel.handle_key(event, &ctx);
-
-    assert_eq!(
-        resp.action,
-        Some(WidgetAction::CancelSettings),
-        "close button Enter key should emit CancelSettings"
-    );
-}
-
-#[test]
 fn draws_without_panic() {
-    use crate::draw::DrawList;
+    use crate::draw::Scene;
 
-    let panel = make_panel();
+    let (panel, _, _, _) = make_panel();
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
-    let anim_flag = std::cell::Cell::new(false);
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 860.0, 620.0);
     let mut ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    panel.draw(&mut ctx);
+    panel.paint(&mut ctx);
 
-    // Should produce at least the PushLayer + background rect.
-    assert!(
-        draw_list.commands().len() >= 2,
-        "panel should produce draw commands"
-    );
+    // Should produce at least a background rect.
+    assert!(scene.len() >= 2, "panel should produce draw primitives");
+}
+
+// -- Regression: on_action maps Clicked(save/cancel/close) → semantic actions --
+
+#[test]
+fn on_action_maps_save_to_save_settings() {
+    let (mut panel, _, _, save_id) = make_panel();
+    let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
+    let result = panel.on_action(WidgetAction::Clicked(save_id), bounds);
+    assert_eq!(result, Some(WidgetAction::SaveSettings));
 }
 
 #[test]
-fn checkbox_click_emits_toggled() {
-    use crate::draw::DrawList;
-
-    let (mut panel, checkbox_id) = make_panel_with_checkbox();
-    let measurer = MockMeasurer::STANDARD;
+fn on_action_maps_cancel_to_cancel_settings() {
+    let (mut panel, _, cancel_id, _) = make_panel();
     let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
+    let result = panel.on_action(WidgetAction::Clicked(cancel_id), bounds);
+    assert_eq!(result, Some(WidgetAction::CancelSettings));
+}
 
-    // Draw first to populate layout caches throughout the widget tree.
-    let mut draw_list = DrawList::new();
-    let anim_flag = std::cell::Cell::new(false);
-    let mut draw_ctx = super::super::DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: None,
-        now: std::time::Instant::now(),
-        animations_running: &anim_flag,
-        theme: &super::super::tests::TEST_THEME,
-        icons: None,
-    };
-    panel.draw(&mut draw_ctx);
+#[test]
+fn on_action_maps_close_to_cancel_settings() {
+    let (mut panel, _, _, _) = make_panel();
+    let close_id = panel.close_id();
+    let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
+    let result = panel.on_action(WidgetAction::Clicked(close_id), bounds);
+    assert_eq!(result, Some(WidgetAction::CancelSettings));
+}
 
-    // Click in the checkbox area: past header (48) + separator (~2) +
-    // form padding top (16) + section header (28) + row gap (12) = 106,
-    // so y=112 is in the first row. x=150 is within the checkbox control
-    // (label column ~84px + padding 24px = 108, checkbox extends ~112px).
-    let click_pos = Point::new(150.0, 112.0);
+#[test]
+fn on_action_maps_reset_to_reset_defaults() {
+    let (mut panel, reset_id, _, _) = make_panel();
+    let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
+    let result = panel.on_action(WidgetAction::Clicked(reset_id), bounds);
+    assert_eq!(result, Some(WidgetAction::ResetDefaults));
+}
 
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
+#[test]
+fn on_action_passes_through_other_actions() {
+    let (mut panel, _, _, _) = make_panel();
+    let other_id = WidgetId::next();
+    let bounds = Rect::new(0.0, 0.0, 600.0, 600.0);
+    let action = WidgetAction::Clicked(other_id);
+    let result = panel.on_action(action.clone(), bounds);
+    assert_eq!(result, Some(action));
+}
 
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: click_pos,
-        modifiers: Modifiers::NONE,
-    };
-    let _ = panel.handle_mouse(&down, &ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: click_pos,
-        modifiers: Modifiers::NONE,
-    };
-    let resp = panel.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(WidgetAction::Toggled { id, value }) => {
-            assert_eq!(id, checkbox_id, "toggled ID should match checkbox");
-            assert!(value, "checkbox should toggle to true");
-        }
-        other => panic!("expected Toggled action, got {other:?}"),
-    }
+#[test]
+fn for_each_child_mut_yields_container_not_buttons() {
+    let (mut panel, _, _, _) = make_panel();
+    let mut child_count = 0;
+    panel.for_each_child_mut(&mut |_| {
+        child_count += 1;
+    });
+    // SettingsPanel yields exactly one child: its container.
+    assert_eq!(
+        child_count, 1,
+        "SettingsPanel should yield exactly its container"
+    );
 }

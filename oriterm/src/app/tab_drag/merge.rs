@@ -11,7 +11,7 @@ use winit::window::WindowId;
 use crate::session::TabId;
 use crate::window_manager::WindowKind;
 use oriterm_ui::platform_windows::{self, OsDragResult};
-use oriterm_ui::widgets::tab_bar::constants::{CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT};
+use oriterm_ui::widgets::tab_bar::constants::CONTROLS_ZONE_WIDTH;
 
 use super::{DragPhase, TabDragState};
 use crate::app::App;
@@ -104,7 +104,7 @@ impl App {
                 continue;
             };
             let scale = ctx.window.scale_factor().factor() as f32;
-            let tab_bar_h = (TAB_BAR_HEIGHT * scale).round() as i32;
+            let tab_bar_h = (ctx.tab_bar.metrics().height * scale).round() as i32;
             let controls_w = (CONTROLS_ZONE_WIDTH * scale).round() as i32;
             if let Some((l, t, r, _)) = platform_windows::visible_frame_bounds(ctx.window.window())
             {
@@ -130,11 +130,12 @@ impl App {
         cursor: (i32, i32),
         mouse_offset: f32,
     ) {
-        let (tab_index, logical_x, logical_y) = {
+        let (tab_index, logical_x, logical_y, tb_h) = {
             let Some(ctx) = self.windows.get(&target_wid) else {
                 return;
             };
             let scale = ctx.window.scale_factor().factor() as f32;
+            let tb_h = ctx.tab_bar.metrics().height;
 
             // Convert screen cursor to target window local coords.
             let (tgt_left, tgt_top) = platform_windows::visible_frame_bounds(ctx.window.window())
@@ -153,7 +154,7 @@ impl App {
                     .unwrap_or(0)
             };
 
-            (idx, lx, ly)
+            (idx, lx, ly, tb_h)
         };
 
         // Create drag state (suppress_next_release absorbs stale WM_LBUTTONUP).
@@ -166,7 +167,7 @@ impl App {
             phase: DragPhase::DraggingInBar,
             mouse_offset_in_tab: mouse_offset,
             tab_bar_y: 0.0,
-            tab_bar_bottom: TAB_BAR_HEIGHT,
+            tab_bar_bottom: tb_h,
             suppress_next_release: true,
         };
 
@@ -178,7 +179,7 @@ impl App {
             let max_x = (layout.tabs_end() - layout.base_tab_width()).max(0.0);
             let visual_x = (logical_x - mouse_offset).clamp(0.0, max_x);
             ctx.tab_bar.set_drag_visual(Some((tab_index, visual_x)));
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
 
         // Synthesize mouse-down (OS modal loop consumed the original).

@@ -11,8 +11,6 @@
 mod compose;
 pub(crate) mod rasterize;
 
-pub(crate) use rasterize::try_rasterize_colr_v1;
-
 use skrifa::GlyphId;
 use skrifa::color::{Brush, ColorPainter, ColorStop, CompositeMode, Extend, Transform};
 
@@ -305,7 +303,7 @@ impl ColorPainter for PaintCollector {
 /// Load CPAL palette 0 from a skrifa font as a `Vec<Rgba>`.
 ///
 /// Falls back to an empty palette if the font has no CPAL table.
-pub(crate) fn load_palette(font: &skrifa::FontRef<'_>) -> Vec<Rgba> {
+pub(super) fn load_palette(font: &skrifa::FontRef<'_>) -> Vec<Rgba> {
     use skrifa::MetadataProvider;
     let palettes = font.color_palettes();
     let Some(palette) = palettes.get(0) else {

@@ -3,6 +3,7 @@ section: 22
 title: Terminal Modes
 status: complete
 reviewed: true
+last_verified: "2026-03-29"
 tier: 5
 goal: Comprehensive DECSET/DECRST mode support, mode interactions, image protocol
 sections:
@@ -34,7 +35,7 @@ sections:
 
 # Section 22: Terminal Modes
 
-**Status:** Mostly Complete (22.7 Image Protocol deferred to Section 39)
+**Status:** Substantially Complete (verified 2026-03-29 -- DECALN not implemented (low severity), missing sync output test (trivial). 22.7 deferred to Section 39)
 **Goal:** Complete, correct DECSET/DECRST mode support with proper mode interactions, mouse reporting, cursor styles, hyperlinks, and image protocol. This section is the authoritative reference for every terminal mode ori_term must handle.
 
 **Crate:** `oriterm` (binary) and `oriterm_core` (mode flags, state)
@@ -142,7 +143,7 @@ Prevent partial frame rendering during rapid output.
   - [x] vte buffers handler calls between BSU and ESU, dispatching as one batch
 - [x] Explicit documentation in mode handler noting Mode 2026 is handled by vte
 - [x] **Tests:**
-  - [x] Verify that vte processes BSU/ESU sequences without error
+  - [ ] Verify that vte processes BSU/ESU sequences without error -- MISSING: no explicit BSU/ESU test exists; SyncUpdate flag only tested via `decset_decrst_flag_sync` comprehensive test (verified 2026-03-29, trivial severity -- vte handles internally)
 
 ---
 
@@ -211,9 +212,9 @@ Complete reference of every DECSET/DECRST private mode.
 - [x] `ESC >` (DECKPNM): Normal keypad mode
 - [x] Stored as `TermMode::APP_KEYPAD`
 
-### DECALN — Screen Alignment Test (`ESC # 8`)
+### DECALN -- Screen Alignment Test (`ESC # 8`)
 
-- [x] `ESC # 8` (DECALN): fill entire screen with 'E' characters
+- [ ] `ESC # 8` (DECALN): fill entire screen with 'E' characters -- NOT IMPLEMENTED (verified 2026-03-29: VTE handler trait provides `fn decaln()` with default no-op, ori_term does not override it. Alacritty implements at term/mod.rs:1141-1153. Low severity -- diagnostic tool only, no normal TUI apps use it)
 
 ### Mode Interactions
 
@@ -275,24 +276,28 @@ Complete reference of every DECSET/DECRST private mode.
 
 ## 22.8 Section Completion
 
-- [x] All 22.1-22.6 items complete
-- [x] 22.7 Image Protocol (deferred to Section 39 — functionally complete)
-- [x] Mouse reporting works with all encoding formats (SGR, URXVT, UTF-8, Normal)
-- [x] Mouse mode mutual exclusion enforced
-- [x] Mouse encoding mutual exclusion enforced
-- [x] SGR mouse encoding supported (no coordinate limits)
-- [x] Shift+click bypasses mouse reporting for selection
-- [x] Cursor shape changes work (block, underline, bar) with blinking
-- [x] Focus events sent when window gains/loses focus
-- [x] Synchronized output prevents flicker (vte handles internally)
-- [x] OSC 8 hyperlinks render and are clickable (Ctrl+click)
-- [x] Implicit URL detection works on plain-text URLs
-- [x] All modes in the comprehensive mode table are implemented (including X10 mode 9)
-- [x] Mode interactions (mutual exclusion, alt screen save/restore) are correct
-- [x] XTSAVE/XTRESTORE work for applicable modes
-- [x] Legacy alt screen modes (47, 1047, 1048) implemented
-- [x] Reverse wraparound (mode 45) implemented
-- [x] `cargo test` — all mode tests pass
-- [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+- [x] All 22.1-22.6 items complete (verified 2026-03-29 -- except DECALN, see 22.6)
+- [x] 22.7 Image Protocol (deferred to Section 39 -- functionally complete) (verified 2026-03-29)
+- [x] Mouse reporting works with all encoding formats (SGR, URXVT, UTF-8, Normal) (verified 2026-03-29: 101 mouse report tests pass)
+- [x] Mouse mode mutual exclusion enforced (verified 2026-03-29)
+- [x] Mouse encoding mutual exclusion enforced (verified 2026-03-29)
+- [x] SGR mouse encoding supported (no coordinate limits) (verified 2026-03-29)
+- [x] Shift+click bypasses mouse reporting for selection (verified 2026-03-29)
+- [x] Cursor shape changes work (block, underline, bar) with blinking (verified 2026-03-29: 9 DECSCUSR tests)
+- [x] Focus events sent when window gains/loses focus (verified 2026-03-29)
+- [x] Synchronized output prevents flicker (vte handles internally) (verified 2026-03-29)
+- [x] OSC 8 hyperlinks render and are clickable (Ctrl+click) (verified 2026-03-29: 6 OSC 8 tests)
+- [x] Implicit URL detection works on plain-text URLs (verified 2026-03-29: 23 URL detection tests)
+- [ ] All modes in the comprehensive mode table are implemented -- DECALN (`ESC # 8`) is NOT implemented (verified 2026-03-29, low severity)
+- [x] Mode interactions (mutual exclusion, alt screen save/restore) are correct (verified 2026-03-29)
+- [x] XTSAVE/XTRESTORE work for applicable modes (verified 2026-03-29 -- exceeds Alacritty and WezTerm)
+- [x] Legacy alt screen modes (47, 1047, 1048) implemented (verified 2026-03-29)
+- [x] Reverse wraparound (mode 45) implemented (verified 2026-03-29)
+- [x] `cargo test` -- all mode tests pass (verified 2026-03-29: ~220+ tests)
+- [x] `cargo clippy --target x86_64-pc-windows-gnu` -- no warnings (verified 2026-03-29)
+
+**Gaps identified (verified 2026-03-29):**
+- [ ] DECALN (`ESC # 8`): implement `fn decaln()` on Term to fill visible rows with 'E', add test feeding `\x1b#8`
+- [ ] Explicit BSU/ESU test: add test feeding `\x1b[?2026h` / `\x1b[?2026l` through VTE and verifying behavior
 
 **Exit Criteria:** Every mode in the comprehensive mode table is implemented and tested. tmux, vim, htop, and other TUI applications have fully working mode support including mouse, cursor styles, and focus events.

@@ -14,6 +14,7 @@ paths:
 - **Minimal boundary types**: Only pass what the next layer needs. Render params: `(&Grid, &Palette, &FontSet)`, not the entire `Tab`.
 - **Clean ownership transfer**: Move at boundaries, borrow within modules. No unnecessary `.clone()` at layer transitions.
 - **No layer bleeding**: Grid doesn't render, renderer doesn't parse VTE, input handler doesn't mutate grid directly.
+- **Crate-level boundaries**: Pure UI logic (testable without GPU/platform/terminal) belongs in `oriterm_ui`, not `oriterm`. See `.claude/rules/crate-boundaries.md` for full ownership rules and allowed dependency directions.
 
 ## Data Flow
 

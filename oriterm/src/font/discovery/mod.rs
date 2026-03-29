@@ -29,6 +29,22 @@ use families::{FALLBACK_FONTS, FamilySpec, UI_FONT_FAMILIES};
 pub(crate) const EMBEDDED_FONT_DATA: &[u8] =
     include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf");
 
+/// Embedded IBM Plex Mono — the fixed UI font for settings dialogs and chrome.
+///
+/// Three static weight files (Regular 400, Medium 500, Bold 700) matching the
+/// mockup's `font-family: 'IBM Plex Mono'`. Licensed under SIL OFL 1.1.
+pub(crate) const UI_FONT_REGULAR: &[u8] = include_bytes!("../../../fonts/IBMPlexMono-Regular.ttf");
+pub(crate) const UI_FONT_MEDIUM: &[u8] = include_bytes!("../../../fonts/IBMPlexMono-Medium.ttf");
+pub(crate) const UI_FONT_BOLD: &[u8] = include_bytes!("../../../fonts/IBMPlexMono-Bold.ttf");
+
+/// Noto Emoji Regular — monochrome emoji outlines for test fallback (~849 KB).
+///
+/// Covers all standard emoji codepoints. Used as a fallback in
+/// `FontSet::embedded()` so golden tests can verify emoji glyph resolution
+/// and rendering through the fallback chain.
+#[cfg(test)]
+pub(crate) const TEST_EMOJI_DATA: &[u8] = include_bytes!("../../../fonts/test-emoji.ttf");
+
 /// Where the font was discovered (for logging and diagnostics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontOrigin {

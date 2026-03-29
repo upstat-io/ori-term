@@ -6,15 +6,15 @@
 //! PTY reader thread.
 
 mod chrome;
+#[cfg(test)]
+pub(crate) use chrome::compute_window_layout;
 mod clipboard_ops;
 pub(crate) mod config_reload;
 mod constructors;
 mod context_menu;
-mod cursor_blink;
-mod cursor_hide;
 mod cursor_hover;
 pub(crate) mod dialog_context;
-mod dialog_management;
+pub(crate) mod dialog_management;
 mod dialog_rendering;
 mod divider_drag;
 mod event_loop;
@@ -38,6 +38,13 @@ pub(crate) mod snapshot_grid;
 mod tab_bar_input;
 mod tab_drag;
 mod tab_management;
+#[cfg(test)]
+pub(crate) mod test_support;
+#[allow(
+    dead_code,
+    reason = "incremental pipeline — delivery loop wired in OverlayManager migration"
+)]
+mod widget_pipeline;
 pub(crate) mod window_context;
 mod window_management;
 
@@ -54,8 +61,8 @@ use oriterm_mux::{MarkCursor, PaneId};
 use crate::session::{SessionRegistry, WindowId as SessionWindowId};
 use crate::window_manager::WindowManager;
 
-use self::cursor_blink::CursorBlink;
 use self::dialog_context::DialogWindowContext;
+use self::event_loop_helpers::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};
 use self::keyboard_input::ImeState;
 use self::mouse_selection::MouseState;
 use self::perf_stats::PerfStats;
@@ -69,6 +76,7 @@ use crate::gpu::{GpuPipelines, GpuState, WindowRenderer};
 use crate::keybindings::KeyBinding;
 use oriterm_mux::MuxNotification;
 use oriterm_mux::backend::MuxBackend;
+use oriterm_ui::animation::CursorBlink;
 
 use oriterm_ui::theme::UiTheme;
 
@@ -123,10 +131,8 @@ pub(crate) struct App {
     pipelines: Option<GpuPipelines>,
     /// Cached font set with user fallbacks pre-applied (cloned per new window).
     font_set: Option<FontSet>,
-    /// Cached UI font set (avoids re-discovery per window).
-    ui_font_set: Option<FontSet>,
-    /// Number of user-configured fallbacks loaded (for `apply_font_config`).
-    user_fb_count: usize,
+    /// Maps loaded fallback index → config index (for `apply_font_config`).
+    user_fallback_map: Vec<usize>,
 
     // Window manager: tracks window kinds, parent-child hierarchy, and focus.
     // Parallels `windows` HashMap — both keyed by winit WindowId.
@@ -205,16 +211,6 @@ pub(crate) struct App {
     // only this field and the theme-change handler need updating.
     ui_theme: UiTheme,
 
-    // Widget IDs for the currently-open settings overlay. Set when the
-    // overlay opens, cleared on dismiss. Used by overlay dispatch to
-    // match widget actions to config fields.
-    settings_ids: Option<settings_overlay::SettingsIds>,
-
-    // Working copy of the config being edited in the settings panel.
-    // Created when the panel opens, mutated by control changes, applied
-    // on Save, discarded on Cancel. `self.config` stays untouched until Save.
-    settings_pending: Option<Config>,
-
     // The dropdown widget ID whose popup is currently open. Set when
     // `OpenDropdown` creates a popup overlay, cleared on selection or
     // dismiss. Used to route `Selected` events to the correct dropdown.
@@ -228,6 +224,10 @@ pub(crate) struct App {
     // Pending tear-off state. Set by `tear_off_tab()`, consumed by
     // `check_torn_off_merge()` in `about_to_wait`.
     torn_off_pending: Option<tab_drag::TornOffPending>,
+
+    // Dialog windows pending destruction (Closing → Destroyed).
+    // Populated by close_dialog(), drained by drain_pending_destroy() in about_to_wait.
+    pending_destroy: Vec<WindowId>,
 
     // Scratch buffers reused per frame to avoid per-frame allocations.
     scratch_dirty_windows: Vec<WindowId>,
@@ -269,7 +269,7 @@ impl App {
     /// output in the unfocused window must still trigger a render.
     fn mark_all_windows_dirty(&mut self) {
         for ctx in self.windows.values_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -281,7 +281,7 @@ impl App {
         if let Some(session_wid) = self.session.window_for_pane(pane_id) {
             for ctx in self.windows.values_mut() {
                 if ctx.window.session_window_id() == session_wid {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                     return;
                 }
             }
@@ -315,13 +315,16 @@ impl App {
 
         // Update hinting and subpixel mode for the new scale factor.
         let hinting = config_reload::resolve_hinting(&self.config.font, scale_factor);
-        let format =
-            config_reload::resolve_subpixel_mode(&self.config.font, scale_factor).glyph_format();
+        let opacity = f64::from(self.config.window.effective_opacity());
+        let format = config_reload::resolve_subpixel_mode(&self.config.font, scale_factor, opacity)
+            .glyph_format();
         renderer.set_hinting_and_format(hinting, format, gpu);
 
         ctx.pane_cache.invalidate_all();
         ctx.text_cache.clear();
-        ctx.dirty = true;
+        ctx.root.invalidation_mut().invalidate_all();
+        ctx.root.damage_mut().reset();
+        ctx.root.mark_dirty();
 
         // Mark all grid lines dirty so the frame extraction re-reads every
         // cell with the new cell metrics. Without this, the terminal content
@@ -353,13 +356,16 @@ impl App {
             }
         }
 
-        // Update UI chrome theme (tab bar, window controls).
+        // Update UI chrome theme (tab bar, status bar, window controls).
         self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
         for ctx in self.windows.values_mut() {
             ctx.tab_bar.apply_theme(&self.ui_theme);
+            ctx.status_bar.apply_theme(&self.ui_theme);
             ctx.pane_cache.invalidate_all();
             ctx.text_cache.clear();
-            ctx.dirty = true;
+            ctx.root.invalidation_mut().invalidate_all();
+            ctx.root.damage_mut().reset();
+            ctx.root.mark_dirty();
         }
     }
 
@@ -465,13 +471,11 @@ impl App {
         if self.tab_width_lock().is_some() {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.tab_bar.set_tab_width_lock(None);
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }
 }
-
-use event_loop_helpers::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};
 
 #[cfg(test)]
 mod tests;

@@ -4,7 +4,6 @@ pub(crate) mod atlas;
 pub(crate) mod bind_groups;
 pub(crate) mod builtin_glyphs;
 pub(crate) mod compositor;
-pub(crate) mod draw_list_convert;
 pub(crate) mod extract;
 pub(crate) mod frame_input;
 pub(crate) mod icon_rasterizer;
@@ -16,8 +15,10 @@ pub(crate) mod pipelines;
 pub(crate) mod prepare;
 pub(crate) mod prepared_frame;
 pub(crate) mod render_target;
+pub(crate) mod scene_convert;
 pub(crate) mod state;
 pub(crate) mod transparency;
+pub(crate) mod ui_rect_writer;
 pub(crate) mod window_renderer;
 
 // Re-exports consumed by App and Window.
@@ -67,8 +68,10 @@ pub(crate) fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu-tests"))]
 mod pipeline_tests;
+#[cfg(test)]
+mod subpixel_blend_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(all(test, feature = "gpu-tests"))]

@@ -294,6 +294,24 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
+    fn set_unseen_output(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.set_unseen_output();
+        }
+    }
+
+    fn mark_output_seen(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.mark_output_seen();
+        }
+    }
+
+    fn has_unseen_output(&self, pane_id: PaneId) -> bool {
+        self.panes
+            .get(&pane_id)
+            .is_some_and(Pane::has_unseen_output)
+    }
+
     fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.remove(&pane_id) {
             self.snapshot_cache.remove(&pane_id);
@@ -368,6 +386,18 @@ impl MuxBackend for EmbeddedMux {
 
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {
         self.snapshot_dirty.remove(&pane_id);
+    }
+
+    fn is_selection_dirty(&self, pane_id: PaneId) -> bool {
+        self.panes
+            .get(&pane_id)
+            .is_some_and(|pane| pane.terminal().lock().is_selection_dirty())
+    }
+
+    fn clear_selection_dirty(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.terminal().lock().clear_selection_dirty();
+        }
     }
 
     fn maybe_shrink_renderable_caches(&mut self) {

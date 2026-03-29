@@ -27,13 +27,13 @@ use super::frame_input::{
 use super::prepared_frame::PreparedFrame;
 
 use crate::font::{GlyphStyle, RasterKey};
-use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
 use emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hover_underline};
 
 pub(crate) use shaped_frame::ShapedFrame;
 #[cfg(test)]
-pub use unshaped::{prepare_frame, prepare_frame_into};
+pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 
 /// Match highlight background: yellow-tinted for visibility.
 const SEARCH_MATCH_BG: Rgb = Rgb {
@@ -233,12 +233,12 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
     }
 
-    // Update selection range for next frame's damage tracking.
+    // Update selection snapshot for next frame's damage tracking.
     let num_rows = input.rows();
-    out.prev_selection_range = input
+    out.prev_selection_snapshot = input
         .selection
         .as_ref()
-        .and_then(|s| s.viewport_line_range(num_rows));
+        .and_then(|s| s.damage_snapshot(num_rows));
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.
@@ -415,7 +415,9 @@ pub(crate) fn fill_frame_shaped(
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                frame.glyphs.push_glyph(rect, uv, fg, fg_dim, entry.page);
+                frame
+                    .glyphs
+                    .push_glyph(rect, uv, fg, fg_dim, entry.page, CLIP_UNCLIPPED);
             }
             continue;
         }
@@ -436,7 +438,7 @@ pub(crate) fn fill_frame_shaped(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg);
+            .emit(row_glyphs, row_col_starts, start_idx, col, x, y, fg, bg);
         }
     }
 

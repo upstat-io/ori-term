@@ -4,111 +4,10 @@
 //! with a real GPU adapter and offscreen render targets. They verify that
 //! the pipeline produces correct pixel output without needing a window.
 //!
-//! Tests gracefully skip when no GPU adapter is available (e.g. CI without
-//! GPU, headless environments).
+//! Gated behind `feature = "gpu-tests"` because `GpuState::new_headless()`
+//! requires a GPU adapter; without one the tests cannot run.
 
 use oriterm_core::{Column, CursorShape, Rgb};
-
-// ── Subpixel blend formula (mirrors subpixel_fg.wgsl logic) ──
-
-/// Mirror of the WGSL `subpixel_fg.wgsl` per-channel blend formula.
-///
-/// `fg`/`bg` are `[r, g, b, a]` in 0..1. `mask` is `[r, g, b]` coverage.
-/// Returns premultiplied RGBA output.
-fn subpixel_blend(fg: [f32; 4], bg: [f32; 4], mask: [f32; 3]) -> [f32; 4] {
-    fn mix(a: f32, b: f32, t: f32) -> f32 {
-        a * (1.0 - t) + b * t
-    }
-    let r = mix(bg[0], fg[0], mask[0]);
-    let g = mix(bg[1], fg[1], mask[1]);
-    let b = mix(bg[2], fg[2], mask[2]);
-    if bg[3] > 0.001 {
-        return [r, g, b, 1.0];
-    }
-    let coverage = mask[0].max(mask[1]).max(mask[2]);
-    let a = coverage * fg[3];
-    [fg[0] * a, fg[1] * a, fg[2] * a, a]
-}
-
-#[test]
-fn subpixel_blend_full_mask_returns_fg() {
-    let fg = [1.0, 0.5, 0.0, 1.0];
-    let bg = [0.0, 0.0, 0.0, 1.0];
-    let out = subpixel_blend(fg, bg, [1.0, 1.0, 1.0]);
-    // mask=(1,1,1) → output equals fg (premultiplied by a=1.0).
-    assert!((out[0] - 1.0).abs() < 1e-6, "R should be fg.r");
-    assert!((out[1] - 0.5).abs() < 1e-6, "G should be fg.g");
-    assert!((out[2] - 0.0).abs() < 1e-6, "B should be fg.b");
-    assert!((out[3] - 1.0).abs() < 1e-6, "A should be 1.0");
-}
-
-#[test]
-fn subpixel_blend_zero_mask_returns_bg() {
-    let fg = [1.0, 1.0, 1.0, 1.0];
-    let bg = [0.2, 0.4, 0.6, 1.0];
-    let out = subpixel_blend(fg, bg, [0.0, 0.0, 0.0]);
-    // Known background branch: mask=(0,0,0) returns the background directly.
-    assert!((out[0] - 0.2).abs() < 1e-6, "R should be bg.r");
-    assert!((out[1] - 0.4).abs() < 1e-6, "G should be bg.g");
-    assert!((out[2] - 0.6).abs() < 1e-6, "B should be bg.b");
-    assert!((out[3] - 1.0).abs() < 1e-6, "A should be 1.0");
-}
-
-#[test]
-fn subpixel_blend_partial_mask_interpolates() {
-    let fg = [1.0, 1.0, 1.0, 1.0];
-    let bg = [0.0, 0.0, 0.0, 1.0];
-    let out = subpixel_blend(fg, bg, [0.5, 0.5, 0.5]);
-    // Known background branch returns the per-channel mix directly as opaque.
-    assert!((out[0] - 0.5).abs() < 1e-6, "R should be 0.5");
-    assert!((out[1] - 0.5).abs() < 1e-6, "G should be 0.5");
-    assert!((out[2] - 0.5).abs() < 1e-6, "B should be 0.5");
-    assert!((out[3] - 1.0).abs() < 1e-6, "A should be 1.0");
-}
-
-#[test]
-fn subpixel_blend_per_channel_independence() {
-    let fg = [1.0, 0.5, 0.8, 1.0];
-    let bg = [0.0, 1.0, 0.0, 1.0];
-    let out = subpixel_blend(fg, bg, [1.0, 0.0, 0.5]);
-    // R: mask=1 → mix(0, 1, 1) = 1.0 (fg.r)
-    // G: mask=0 → mix(1, 0.5, 0) = 1.0 (bg.g)
-    // B: mask=0.5 → mix(0, 0.8, 0.5) = 0.4
-    // a = max(1, 0, 0.5) * 1.0 = 1.0
-    assert!((out[0] - 1.0).abs() < 1e-6, "R: mask=1 → fg.r");
-    assert!((out[1] - 1.0).abs() < 1e-6, "G: mask=0 → bg.g");
-    assert!((out[2] - 0.4).abs() < 1e-6, "B: mask=0.5 → midpoint");
-    assert!((out[3] - 1.0).abs() < 1e-6, "A: max channel coverage");
-}
-
-#[test]
-fn subpixel_blend_semitransparent_fg() {
-    let fg = [1.0, 1.0, 1.0, 0.5]; // 50% opacity foreground
-    let bg = [0.0, 0.0, 0.0, 0.0];
-    let out = subpixel_blend(fg, bg, [1.0, 1.0, 1.0]);
-    // Unknown background branch: grayscale alpha fallback.
-    assert!((out[0] - 0.5).abs() < 1e-6);
-    assert!((out[1] - 0.5).abs() < 1e-6);
-    assert!((out[2] - 0.5).abs() < 1e-6);
-    assert!((out[3] - 0.5).abs() < 1e-6);
-}
-
-#[test]
-fn subpixel_blend_unknown_bg_falls_back_to_grayscale() {
-    let fg = [1.0, 0.5, 0.25, 1.0];
-    let bg = [0.0, 0.0, 0.0, 0.0];
-    let out = subpixel_blend(fg, bg, [1.0, 0.0, 0.5]);
-    // Unknown background branch should collapse to a single grayscale
-    // coverage value (max channel = 1.0), preserving fg color ratios
-    // without per-channel fringing.
-    assert!((out[0] - 1.0).abs() < 1e-6, "R should be fg.r * coverage");
-    assert!((out[1] - 0.5).abs() < 1e-6, "G should be fg.g * coverage");
-    assert!((out[2] - 0.25).abs() < 1e-6, "B should be fg.b * coverage");
-    assert!(
-        (out[3] - 1.0).abs() < 1e-6,
-        "A should be grayscale coverage"
-    );
-}
 
 use super::frame_input::{FrameInput, ViewportSize};
 use super::pipelines::GpuPipelines;
@@ -127,6 +26,13 @@ const TEST_DPI: f32 = 96.0;
 ///
 /// Returns `None` if no GPU adapter or fonts are available.
 fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    headless_env_with_format(GlyphFormat::Alpha)
+}
+
+/// Headless environment with a specific glyph format (Alpha, SubpixelRgb, etc).
+fn headless_env_with_format(
+    format: GlyphFormat,
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
     let pipelines = GpuPipelines::new(&gpu);
     let font_set = FontSet::load(None, TEST_FONT_WEIGHT).ok()?;
@@ -134,7 +40,7 @@ fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
         font_set,
         TEST_FONT_SIZE_PT,
         TEST_DPI,
-        GlyphFormat::Alpha,
+        format,
         TEST_FONT_WEIGHT,
         HintingMode::Full,
     )
@@ -143,7 +49,7 @@ fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     Some((gpu, pipelines, renderer))
 }
 
-// ── Pipeline smoke tests ──
+// Pipeline smoke tests
 
 #[test]
 fn headless_gpu_adapter_found() {
@@ -213,7 +119,7 @@ fn wgpu_validation_layer_enabled_in_tests() {
     // here confirms the validation layer accepted our API usage.
 }
 
-// ── Pixel readback tests ──
+// Pixel readback tests
 
 #[test]
 fn render_colored_cell_correct_bg_color() {
@@ -386,7 +292,7 @@ fn render_cursor_pixels_at_expected_position() {
     );
 }
 
-// ── Full pipeline round-trip ──
+// Full pipeline round-trip
 
 #[test]
 fn full_pipeline_extract_prepare_render_readback() {
@@ -433,5 +339,78 @@ fn full_pipeline_extract_prepare_render_readback() {
     assert!(
         !all_same,
         "rendered frame should have pixel variation (text was rendered)",
+    );
+}
+
+// Subpixel GPU readback tests
+
+#[test]
+fn subpixel_zero_coverage_pixel_equals_background() {
+    if std::env::var("NO_GPU_TESTS").is_ok() {
+        eprintln!("skipped: NO_GPU_TESTS is set");
+        return;
+    }
+    let Some((gpu, pipelines, mut renderer)) = headless_env_with_format(GlyphFormat::SubpixelRgb)
+    else {
+        eprintln!("skipped: no GPU adapter or fonts available");
+        return;
+    };
+
+    let cell_metrics = renderer.cell_metrics();
+    let cols = 5u32;
+    let rows = 1u32;
+    let w = (cell_metrics.width * cols as f32).ceil() as u32;
+    let h = (cell_metrics.height * rows as f32).ceil() as u32;
+
+    // White text in cell 0, blue background everywhere. Cells 3-4 are empty
+    // (space) — their pixels should be pure background with zero glyph
+    // contamination from subpixel overhang.
+    let bg = Rgb { r: 0, g: 0, b: 200 };
+    let fg = Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
+    let mut input = FrameInput::test_grid(cols as usize, rows as usize, "W    ");
+    input.viewport = ViewportSize::new(w, h);
+    input.cell_size = cell_metrics;
+    input.palette.background = bg;
+    input.content.cursor.visible = false;
+    for cell in &mut input.content.cells {
+        cell.bg = bg;
+        cell.fg = fg;
+    }
+
+    let target = gpu.create_render_target(w, h);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
+
+    let pixels = gpu
+        .read_render_target(&target)
+        .expect("pixel readback should succeed");
+
+    // Sample the center of cell 4 (last cell, far from glyph).
+    // It should be the background color (blue) with no subpixel fringing.
+    let sample_x = (4.0 * cell_metrics.width + cell_metrics.width / 2.0) as u32;
+    let sample_y = (cell_metrics.height / 2.0) as u32;
+    let idx = ((sample_y * w + sample_x) * 4) as usize;
+
+    let r = pixels[idx];
+    let g = pixels[idx + 1];
+    let b = pixels[idx + 2];
+
+    // Zero-coverage guard should prevent any fg bleed into this cell.
+    // Allow small tolerance for GPU floating-point.
+    assert!(
+        r < 10,
+        "zero-coverage cell should have no red channel bleed, got R={r}"
+    );
+    assert!(
+        g < 10,
+        "zero-coverage cell should have no green channel bleed, got G={g}"
+    );
+    assert!(
+        b > 150,
+        "zero-coverage cell should retain blue background, got B={b}"
     );
 }

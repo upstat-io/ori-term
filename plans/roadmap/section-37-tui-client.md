@@ -3,7 +3,11 @@ section: 37
 title: TUI Client
 status: not-started
 reviewed: false
+third_party_review:
+  status: none
+  updated: null
 tier: 7A
+last_verified: "2026-03-29"
 goal: Headless terminal-in-terminal client (`oriterm-tui`) that connects to a local or remote `oriterm-mux` daemon, rendering panes inside the host terminal — the tmux-replacement experience
 sections:
   - id: "37.1"
@@ -17,6 +21,9 @@ sections:
     status: not-started
   - id: "37.4"
     title: Attach / Detach / Session Management
+    status: not-started
+  - id: "37.R"
+    title: "Third Party Review Findings"
     status: not-started
   - id: "37.5"
     title: Section Completion
@@ -41,6 +48,12 @@ sections:
 **Key differentiator:** tmux and Zellij are both the server AND the client. ori_term separates them: `oriterm-mux` is the server (with session persistence, crash recovery, scrollback archiving from Section 35), and `oriterm-tui` is just one of two clients (the other being the GPU-rendered GUI). Attach from SSH with `oriterm-tui`, switch to the GUI when at your desk — same session, same panes, no disruption.
 
 **Why this matters:** You SSH into your dev server. No X11, no Wayland, no GPU. But your `oriterm-mux` daemon is running with 12 panes across 4 tabs. `oriterm-tui attach` gives you everything — splits, floating panes, tab bar — rendered right in your SSH terminal. Disconnect, walk to your desk, `oriterm connect dev-server` opens the GPU GUI with the same session. Seamless.
+
+> **Verification notes (2026-03-29):**
+> - Confirmed not-started. No `oriterm_tui` crate, directory, or dependencies exist. Workspace members are: `oriterm_core`, `oriterm`, `oriterm_ui`, `oriterm_ipc`, `oriterm_mux`.
+> - **Dependency correction**: Plan says "Dependencies: Section 36 (remote attach + network transport)". For *local* TUI client functionality, Section 36 is NOT required. The TUI client can connect to a local daemon using the existing IPC infrastructure from Section 44 (already complete). The true dependency is Section 44, not Section 36. Remote attach via Section 36 is a bonus feature, not a prerequisite.
+> - **Infrastructure ready from Section 44**: `MuxClient` (fully built IPC client), `MuxBackend` trait, `PaneSnapshot` wire types, push-based snapshot delivery, `ensure_daemon()` auto-start logic, `RenderableContent` cell model with resolved colors.
+> - Scope is realistic since the heavy lifting (wire protocol, daemon, push delivery) is already done via Section 44.
 
 ---
 
@@ -321,6 +334,14 @@ Connect to a running daemon, show its session, and cleanly detach. Handle multip
 
 ---
 
+## 37.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 37.5 Section Completion
 
 - [ ] All 37.1–37.4 items complete
@@ -340,5 +361,7 @@ Connect to a running daemon, show its session, and cleanly detach. Handle multip
 - [ ] **Remote test**: `oriterm-tui attach --ssh dev-server` connects and renders
 - [ ] **Multi-client test**: two `oriterm-tui` clients showing same session
 - [ ] **Interop test**: attach with `oriterm-tui`, detach, open same session with GUI `oriterm connect`
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** A user can SSH into a remote server and run `oriterm-tui attach` to get a full multiplexed terminal experience — splits, tabs, floating panes — all rendered in their SSH terminal. Detach, walk to their desk, open `oriterm connect` and see the exact same session in the GPU-rendered GUI. This is the tmux replacement: same sessions, two interfaces (TUI and GUI), seamless switching.

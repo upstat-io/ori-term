@@ -1,9 +1,10 @@
-use std::cell::Cell;
+//! Tests for overlay placement, lifecycle, event routing, and drawing.
+
 use std::time::{Duration, Instant};
 
 use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::{Point, Rect, Size};
 use crate::input::{Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::theme::UiTheme;
@@ -14,10 +15,10 @@ use crate::widgets::tests::MockMeasurer;
 use crate::widgets::{DrawCtx, Widget, WidgetAction};
 
 use super::OverlayManager;
-
-const TEST_THEME: UiTheme = UiTheme::dark();
 use super::manager::OverlayEventResult;
 use super::overlay_id::OverlayId;
+
+const TEST_THEME: UiTheme = UiTheme::dark();
 use super::placement::{Placement, compute_overlay_rect};
 
 fn viewport() -> Rect {
@@ -525,6 +526,88 @@ fn overlay_rect_unknown_id() {
     let mgr = OverlayManager::new(viewport());
     let fake_id = OverlayId::next();
     assert!(mgr.overlay_rect(fake_id).is_none());
+}
+
+// Cursor icon tests
+
+#[test]
+fn cursor_icon_at_returns_none_outside_overlays() {
+    let mgr = OverlayManager::new(viewport());
+    assert!(mgr.cursor_icon_at(Point::new(50.0, 50.0)).is_none());
+}
+
+#[test]
+fn cursor_icon_at_returns_default_for_non_interactive_overlay() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let id = mgr.push_overlay(
+        label_widget("Hello"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    let rect = mgr.overlay_rect(id).expect("overlay should exist");
+    let center = Point::new(
+        rect.x() + rect.width() / 2.0,
+        rect.y() + rect.height() / 2.0,
+    );
+    let cursor = mgr.cursor_icon_at(center);
+    assert_eq!(cursor, Some(winit::window::CursorIcon::Default));
+}
+
+#[test]
+fn cursor_icon_at_returns_pointer_for_button_overlay() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let id = mgr.push_overlay(
+        button_widget("Click me"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    let rect = mgr.overlay_rect(id).expect("overlay should exist");
+    let center = Point::new(
+        rect.x() + rect.width() / 2.0,
+        rect.y() + rect.height() / 2.0,
+    );
+    let cursor = mgr.cursor_icon_at(center);
+    assert_eq!(cursor, Some(winit::window::CursorIcon::Pointer));
+}
+
+#[test]
+fn cursor_icon_at_outside_overlay_rect() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    mgr.push_overlay(
+        button_widget("OK"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    // Point far from any overlay.
+    let cursor = mgr.cursor_icon_at(Point::new(700.0, 500.0));
+    assert!(cursor.is_none());
 }
 
 // Mouse routing tests
@@ -1146,28 +1229,27 @@ fn draw_non_modal_no_dimming() {
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
 
     assert_eq!(mgr.draw_count(), 1);
     let _opacity = mgr.draw_overlay_at(0, &mut ctx, &tree);
 
-    // Should have text command but no dim rect.
-    let has_rect = draw_list
-        .commands()
-        .iter()
-        .any(|c| matches!(c, DrawCommand::Rect { .. }));
-    assert!(!has_rect, "non-modal should not emit dim rect");
+    // Should have text run but no dim rect.
+    assert!(
+        scene.quads().is_empty(),
+        "non-modal should not emit dim rect"
+    );
 }
 
 #[test]
@@ -1192,34 +1274,29 @@ fn draw_modal_emits_dimming_rect() {
     animator.tick(&mut tree, future);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
-        focused_widget: None,
         now: future,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
 
     assert_eq!(mgr.draw_count(), 1);
     let _opacity = mgr.draw_overlay_at(0, &mut ctx, &tree);
 
-    // First command should be the dim rect covering the viewport.
-    let first = &draw_list.commands()[0];
-    match first {
-        DrawCommand::Rect { rect, style } => {
-            assert_eq!(*rect, viewport());
-            assert!(style.fill.is_some());
-            let fill = style.fill.unwrap();
-            assert!(fill.a < 1.0, "dim rect should be semi-transparent");
-            assert!(fill.a > 0.0, "dim rect should be visible");
-        }
-        other => panic!("expected Rect command for dimming, got {other:?}"),
-    }
+    // First quad should be the dim rect covering the viewport.
+    assert!(!scene.quads().is_empty(), "modal should emit dim rect");
+    let dim_quad = &scene.quads()[0];
+    assert_eq!(dim_quad.bounds, viewport());
+    let fill = dim_quad.style.fill.expect("dim rect should have fill");
+    assert!(fill.a < 1.0, "dim rect should be semi-transparent");
+    assert!(fill.a > 0.0, "dim rect should be visible");
 }
 
 #[test]
@@ -1249,31 +1326,28 @@ fn draw_overlays_in_painter_order() {
     mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
+    let mut scene = Scene::new();
 
     // Draw all overlays into the same draw list to verify order.
     for i in 0..mgr.draw_count() {
         let mut ctx = DrawCtx {
             measurer: &measurer,
-            draw_list: &mut draw_list,
+            scene: &mut scene,
             bounds: Rect::default(),
-            focused_widget: None,
             now,
-            animations_running: &anim_flag,
             theme: &TEST_THEME,
             icons: None,
+            interaction: None,
+            widget_id: None,
+            frame_requests: None,
         };
         mgr.draw_overlay_at(i, &mut ctx, &tree);
     }
 
-    let glyph_counts: Vec<usize> = draw_list
-        .commands()
+    let glyph_counts: Vec<usize> = scene
+        .text_runs()
         .iter()
-        .filter_map(|c| match c {
-            DrawCommand::Text { shaped, .. } => Some(shaped.glyph_count()),
-            _ => None,
-        })
+        .map(|t| t.shaped.glyph_count())
         .collect();
     // First overlay drawn first (back), second drawn last (front).
     assert_eq!(glyph_counts, vec![2, 5]);
@@ -1565,7 +1639,9 @@ fn multiple_escapes_dismiss_stack_one_at_a_time() {
 
 #[test]
 fn scroll_outside_overlay_does_not_dismiss() {
-    // Scroll events are not clicks — should not dismiss.
+    // Scroll events are not clicks — should not dismiss. When a popup is
+    // open, scroll is routed to the popup (so the dropdown menu scrolls
+    // instead of the modal below stealing the wheel event).
     let mut mgr = OverlayManager::new(viewport());
     let mut tree = test_tree();
     let mut animator = LayerAnimator::new();
@@ -1595,7 +1671,9 @@ fn scroll_outside_overlay_does_not_dismiss() {
         &mut animator,
         now,
     );
-    assert!(matches!(result, OverlayEventResult::PassThrough));
+    // Scroll is delivered to the popup (not PassThrough) so dropdown menus
+    // receive wheel events even when the cursor is over the modal below.
+    assert!(matches!(result, OverlayEventResult::Delivered { .. }));
     assert_eq!(mgr.count(), 1, "scroll should not dismiss overlay");
 }
 
@@ -1988,30 +2066,27 @@ fn draw_stacked_modals_emits_two_dim_rects() {
     animator.tick(&mut tree, future);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
+    let mut scene = Scene::new();
 
     for i in 0..mgr.draw_count() {
         let mut ctx = DrawCtx {
             measurer: &measurer,
-            draw_list: &mut draw_list,
+            scene: &mut scene,
             bounds: Rect::default(),
-            focused_widget: None,
             now: future,
-            animations_running: &anim_flag,
             theme: &TEST_THEME,
             icons: None,
+            interaction: None,
+            widget_id: None,
+            frame_requests: None,
         };
         mgr.draw_overlay_at(i, &mut ctx, &tree);
     }
 
-    let dim_rects: Vec<_> = draw_list
-        .commands()
+    let dim_rects: Vec<_> = scene
+        .quads()
         .iter()
-        .filter(|c| match c {
-            DrawCommand::Rect { style, .. } => style.fill.is_some_and(|f| f.a > 0.0 && f.a < 1.0),
-            _ => false,
-        })
+        .filter(|q| q.style.fill.is_some_and(|f| f.a > 0.0 && f.a < 1.0))
         .collect();
     assert_eq!(dim_rects.len(), 2, "each modal should emit a dim rect");
 }
@@ -2144,17 +2219,17 @@ fn popup_starts_at_full_opacity() {
 
     // Popups appear instantly at full opacity (no fade-in).
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
 
     let opacity = mgr.draw_overlay_at(0, &mut ctx, &tree);
@@ -2183,17 +2258,17 @@ fn modal_fades_in_from_zero() {
 
     // At t=0 (before tick), opacity is still 0.0 (the initial value).
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
 
     // Modal appears instantly — opacity is 1.0 at t=0 (no fade-in).
@@ -2223,32 +2298,27 @@ fn modal_dim_rect_opacity_tracks_dim_layer() {
 
     // Modal appears instantly — dim layer starts at opacity 1.0 (no fade-in).
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let anim_flag = Cell::new(false);
+    let mut scene = Scene::new();
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::default(),
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
 
     mgr.draw_overlay_at(0, &mut ctx, &tree);
 
-    // Dim rect is the first command — alpha should be 0.5 immediately.
-    let dim_cmd = &draw_list.commands()[0];
-    match dim_cmd {
-        DrawCommand::Rect { style, .. } => {
-            let fill = style.fill.expect("dim rect has fill");
-            assert!(
-                fill.a > 0.4,
-                "dim alpha at t=0 should be ~0.5 (instant), got {}",
-                fill.a,
-            );
-        }
-        other => panic!("expected dim Rect, got {other:?}"),
-    }
+    // Dim rect is the first quad — alpha should be 0.5 immediately.
+    assert!(!scene.quads().is_empty(), "should emit dim rect");
+    let fill = scene.quads()[0].style.fill.expect("dim rect has fill");
+    assert!(
+        fill.a > 0.4,
+        "dim alpha at t=0 should be ~0.5 (instant), got {}",
+        fill.a,
+    );
 }

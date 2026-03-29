@@ -14,7 +14,7 @@
 
 use super::constants::{
     CONTROLS_ZONE_WIDTH, DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_LEFT_MARGIN,
-    TAB_MAX_WIDTH, TAB_MIN_WIDTH,
+    TabBarMetrics,
 };
 
 /// Computed tab bar layout geometry.
@@ -35,34 +35,50 @@ pub struct TabBarLayout {
     tab_positions: Vec<f32>,
     /// Effective width of each tab (`tab_width * multiplier`).
     per_tab_widths: Vec<f32>,
+    /// Horizontal padding within each tab (from metrics).
+    tab_padding: f32,
 }
 
 impl TabBarLayout {
     /// Compute tab bar layout from tab count and window width.
     ///
-    /// `left_inset` reserves extra space on the left for platform chrome
-    /// (macOS traffic lights = 76px; Windows/Linux = 0). If `tab_width_lock`
-    /// is `Some(w)`, that width is used directly — prevents tab widths from
-    /// shifting during rapid close clicks or drag.
-    ///
-    /// `width_multipliers` provides per-tab width scaling (0.0 = collapsed,
-    /// 1.0 = full width). When `None`, all tabs use uniform width.
+    /// `metrics` controls style-dependent dimensions (min/max tab width,
+    /// padding). `left_inset` reserves extra space on the left for platform
+    /// chrome (macOS traffic lights = 76px; Windows/Linux = 0). If
+    /// `tab_width_lock` is `Some(w)`, that width is used directly — prevents
+    /// tab widths from shifting during rapid close clicks or drag.
     pub fn compute(
         tab_count: usize,
         window_width: f32,
         tab_width_lock: Option<f32>,
         left_inset: f32,
+        metrics: &TabBarMetrics,
     ) -> Self {
-        Self::compute_with_multipliers(tab_count, window_width, tab_width_lock, left_inset, None)
+        Self::compute_with_multipliers(
+            tab_count,
+            window_width,
+            tab_width_lock,
+            left_inset,
+            None,
+            metrics,
+        )
     }
 
     /// Compute layout with optional per-tab width multipliers.
+    ///
+    /// `width_multipliers` provides per-tab width scaling (0.0 = collapsed,
+    /// 1.0 = full width). When `None`, all tabs use uniform width.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "layout needs: tab_count, width, lock, inset, multipliers, metrics"
+    )]
     pub fn compute_with_multipliers(
         tab_count: usize,
         window_width: f32,
         tab_width_lock: Option<f32>,
         left_inset: f32,
         width_multipliers: Option<&[f32]>,
+        metrics: &TabBarMetrics,
     ) -> Self {
         let base_width = if let Some(locked) = tab_width_lock {
             locked
@@ -76,9 +92,9 @@ impl TabBarLayout {
                 .max(0.0);
 
             if tab_count == 0 {
-                TAB_MIN_WIDTH
+                metrics.min_width
             } else {
-                (available / tab_count as f32).clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH)
+                (available / tab_count as f32).clamp(metrics.min_width, metrics.max_width)
             }
         };
 
@@ -104,6 +120,7 @@ impl TabBarLayout {
             left_inset,
             tab_positions,
             per_tab_widths,
+            tab_padding: metrics.tab_padding,
         }
     }
 
@@ -168,8 +185,9 @@ impl TabBarLayout {
 
     /// Maximum text width within a tab (total width minus padding and close button).
     pub fn max_text_width(&self) -> f32 {
-        use super::constants::{CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, TAB_PADDING};
-        (self.tab_width - 2.0 * TAB_PADDING - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD).max(0.0)
+        use super::constants::{CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH};
+        (self.tab_width - 2.0 * self.tab_padding - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD)
+            .max(0.0)
     }
 
     /// Returns the tab index at `x` pixels, or `None` if outside the tab strip.

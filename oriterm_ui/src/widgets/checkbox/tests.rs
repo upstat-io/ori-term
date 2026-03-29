@@ -1,52 +1,16 @@
-use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use winit::window::CursorIcon;
+
 use crate::layout::BoxContent;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{CaptureRequest, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{LayoutCtx, Widget};
 
 use super::{CheckboxStyle, CheckboxWidget};
-
-static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
-
-fn event_ctx() -> EventCtx<'static> {
-    EventCtx {
-        measurer: &MEASURER,
-        bounds: Rect::new(0.0, 0.0, 200.0, 20.0),
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    }
-}
-
-fn left_down() -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(5.0, 5.0),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn left_up() -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(5.0, 5.0),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn space_key() -> KeyEvent {
-    KeyEvent {
-        key: Key::Space,
-        modifiers: Modifiers::NONE,
-    }
-}
 
 #[test]
 fn default_state() {
     let cb = CheckboxWidget::new("Accept");
     assert!(!cb.is_checked());
     assert!(!cb.is_disabled());
-    assert!(!cb.is_hovered());
     assert!(cb.is_focusable());
 }
 
@@ -82,86 +46,6 @@ fn layout_dimensions() {
 }
 
 #[test]
-fn click_toggles() {
-    let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
-
-    // Down acquires capture, Up inside bounds toggles.
-    let r = cb.handle_mouse(&left_down(), &ctx);
-    assert_eq!(r.capture, CaptureRequest::Acquire);
-    let r = cb.handle_mouse(&left_up(), &ctx);
-    assert!(cb.is_checked());
-    assert_eq!(r.capture, CaptureRequest::Release);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::Toggled {
-            id: cb.id(),
-            value: true,
-        })
-    );
-
-    let r = cb.handle_mouse(&left_down(), &ctx);
-    assert_eq!(r.capture, CaptureRequest::Acquire);
-    let r = cb.handle_mouse(&left_up(), &ctx);
-    assert!(!cb.is_checked());
-    assert_eq!(r.capture, CaptureRequest::Release);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::Toggled {
-            id: cb.id(),
-            value: false,
-        })
-    );
-}
-
-#[test]
-fn space_toggles() {
-    let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
-
-    let r = cb.handle_key(space_key(), &ctx);
-    assert!(cb.is_checked());
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::Toggled {
-            id: cb.id(),
-            value: true,
-        })
-    );
-}
-
-#[test]
-fn disabled_ignores_events() {
-    let mut cb = CheckboxWidget::new("X").with_disabled(true);
-    let ctx = event_ctx();
-
-    assert!(!cb.is_focusable());
-
-    let r = cb.handle_mouse(&left_down(), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-    let r = cb.handle_mouse(&left_up(), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = cb.handle_key(space_key(), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = cb.handle_hover(HoverEvent::Enter, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-}
-
-#[test]
-fn hover_transitions() {
-    let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
-
-    cb.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(cb.is_hovered());
-
-    cb.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!cb.is_hovered());
-}
-
-#[test]
 fn set_checked_programmatic() {
     let mut cb = CheckboxWidget::new("X");
     cb.set_checked(true);
@@ -171,76 +55,56 @@ fn set_checked_programmatic() {
 }
 
 #[test]
-fn enter_key_does_not_toggle() {
-    let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
-
-    // Only Space toggles a checkbox, not Enter.
-    let r = cb.handle_key(
-        KeyEvent {
-            key: Key::Enter,
-            modifiers: Modifiers::NONE,
-        },
-        &ctx,
-    );
-    assert_eq!(r, WidgetResponse::ignored());
-    assert!(!cb.is_checked());
-}
-
-#[test]
-fn right_click_ignored() {
-    let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
-
-    let right_click = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Right),
-        pos: Point::new(5.0, 5.0),
-        modifiers: Modifiers::NONE,
-    };
-    let r = cb.handle_mouse(&right_click, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-    assert!(!cb.is_checked());
-}
-
-#[test]
 fn rapid_toggle_sequence() {
     let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
 
-    // Toggle 4 times rapidly (each toggle is Down + Up).
+    // Toggle 4 times directly — verifies state consistency.
     for i in 0..4 {
-        cb.handle_mouse(&left_down(), &ctx);
-        cb.handle_mouse(&left_up(), &ctx);
+        cb.toggle();
         assert_eq!(cb.is_checked(), i % 2 == 0);
     }
 }
 
 #[test]
-fn release_outside_bounds_no_toggle() {
+fn set_disabled_affects_focusable() {
     let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
-
-    // Press inside, then release outside — should not toggle but release capture.
-    cb.handle_mouse(&left_down(), &ctx);
-    let outside_up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(300.0, 300.0),
-        modifiers: Modifiers::NONE,
-    };
-    let r = cb.handle_mouse(&outside_up, &ctx);
-    assert!(!cb.is_checked());
-    assert_eq!(r.capture, CaptureRequest::Release);
-    assert!(r.action.is_none());
+    assert!(cb.is_focusable());
+    cb.set_disabled(true);
+    assert!(!cb.is_focusable());
 }
 
 #[test]
-fn set_disabled_clears_hover() {
-    let mut cb = CheckboxWidget::new("X");
-    let ctx = event_ctx();
+fn sense_returns_click() {
+    let cb = CheckboxWidget::new("X");
+    assert_eq!(cb.sense(), crate::sense::Sense::click());
+}
 
-    cb.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(cb.is_hovered());
+#[test]
+fn has_two_controllers() {
+    let cb = CheckboxWidget::new("X");
+    assert_eq!(cb.controllers().len(), 2);
+}
 
-    cb.set_disabled(true);
-    assert!(!cb.is_hovered());
+#[test]
+fn has_visual_state_animator() {
+    let cb = CheckboxWidget::new("X");
+    assert!(cb.visual_states().is_some());
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let cb = CheckboxWidget::new("Accept");
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = cb.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "checkbox should declare Pointer cursor"
+    );
 }

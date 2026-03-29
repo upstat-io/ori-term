@@ -35,7 +35,16 @@ impl App {
             let (w, h) = ctx.window.size_px();
             let cell = renderer.cell_metrics();
             let scale = ctx.window.scale_factor().factor() as f32;
-            let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
+            let hidden =
+                self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+            let tb_h = ctx.tab_bar.metrics().height;
+            let sb_h = if self.config.window.show_status_bar {
+                oriterm_ui::widgets::status_bar::STATUS_BAR_HEIGHT
+            } else {
+                0.0
+            };
+            let wl =
+                super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h, sb_h, 0.0);
             (wl.cols, wl.rows)
         };
 
@@ -53,6 +62,7 @@ impl App {
         };
         let palette =
             crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
+        let clear_palette = palette.clone();
         let pane_id = match mux.spawn_pane(&spawn_config, theme) {
             Ok(pid) => {
                 mux.set_pane_theme(pid, theme, palette);
@@ -77,8 +87,7 @@ impl App {
         }
 
         // Clear frame and show.
-        let palette =
-            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
+        let palette = clear_palette;
         let opacity = self.config.window.effective_opacity();
         if let Some(gpu) = self.gpu.as_ref() {
             if let Some(ctx) = self.windows.get(&winit_id) {
@@ -125,6 +134,7 @@ impl App {
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
+            decoration: super::init::decoration_to_mode(self.config.window.decorations),
             ..WindowConfig::default()
         };
 
@@ -154,7 +164,14 @@ impl App {
         let (w, h) = window.size_px();
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
+        let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+        let tb_h = tab_bar_widget.metrics().height;
+        let sb_h = if self.config.window.show_status_bar {
+            oriterm_ui::widgets::status_bar::STATUS_BAR_HEIGHT
+        } else {
+            0.0
+        };
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h, sb_h, 0.0);
 
         // Terminal grid widget.
         let cols = wl.cols;
@@ -162,8 +179,18 @@ impl App {
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
         grid_widget.set_bounds(wl.grid_rect);
 
+        // Status bar widget (bottom metadata bar).
+        let status_bar_widget =
+            oriterm_ui::widgets::status_bar::StatusBarWidget::new(w as f32 / scale, &self.ui_theme);
+
         let winit_id = window.window_id();
-        let ctx = WindowContext::new(window, tab_bar_widget, grid_widget, Some(renderer));
+        let ctx = WindowContext::new(
+            window,
+            tab_bar_widget,
+            status_bar_widget,
+            grid_widget,
+            Some(renderer),
+        );
         self.windows.insert(winit_id, ctx);
 
         log::info!(
@@ -185,9 +212,13 @@ impl App {
         let scale = window.scale_factor().factor() as f32;
         let physical_dpi = super::DEFAULT_DPI * scale;
         let hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
-        let format =
-            super::config_reload::resolve_subpixel_mode(&self.config.font, f64::from(scale))
-                .glyph_format();
+        let opacity = f64::from(self.config.window.effective_opacity());
+        let format = super::config_reload::resolve_subpixel_mode(
+            &self.config.font,
+            f64::from(scale),
+            opacity,
+        )
+        .glyph_format();
         let weight = self.config.font.effective_weight();
 
         let mut font_collection = match crate::font::FontCollection::new(
@@ -207,20 +238,33 @@ impl App {
         super::config_reload::apply_font_config(
             &mut font_collection,
             &self.config.font,
-            self.user_fb_count,
+            &self.user_fallback_map,
         );
 
-        // UI font from cached FontSet (no re-discovery per window).
-        let ui_fc = self.ui_font_set.as_ref().and_then(|fs| {
-            crate::font::FontCollection::new(fs.clone(), 11.0, physical_dpi, format, 400, hinting)
-                .ok()
+        // UI font registry: embedded IBM Plex Mono with forced grayscale + no hinting.
+        let ui_sizes = crate::font::UiFontSizes::new(
+            crate::font::FontSet::ui_embedded(),
+            physical_dpi,
+            crate::font::GlyphFormat::Alpha,
+            crate::font::HintingMode::None,
+            400,
+            crate::font::ui_font_sizes::PRELOAD_SIZES,
+        )
+        .ok()
+        .map(|mut sizes| {
+            super::config_reload::apply_font_config_to_ui_sizes(
+                &mut sizes,
+                &self.config.font,
+                &self.user_fallback_map,
+            );
+            sizes
         });
 
         Some(crate::gpu::WindowRenderer::new(
             gpu,
             pipelines,
             font_collection,
-            ui_fc,
+            ui_sizes,
         ))
     }
 

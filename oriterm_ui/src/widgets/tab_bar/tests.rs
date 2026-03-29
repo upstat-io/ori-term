@@ -4,16 +4,18 @@ use super::colors::TabBarColors;
 use super::constants::{
     CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, CONTROLS_ZONE_WIDTH, DRAG_START_THRESHOLD,
     DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN, TAB_MAX_WIDTH,
-    TAB_MIN_WIDTH, TAB_PADDING, TEAR_OFF_THRESHOLD, TEAR_OFF_THRESHOLD_UP,
+    TAB_MIN_WIDTH, TAB_PADDING, TEAR_OFF_THRESHOLD, TEAR_OFF_THRESHOLD_UP, TabBarMetrics,
 };
 use super::layout::TabBarLayout;
 use crate::theme::UiTheme;
+
+const M: &TabBarMetrics = &TabBarMetrics::DEFAULT;
 
 // Layout computation
 
 #[test]
 fn single_tab_fills_available_space() {
-    let layout = TabBarLayout::compute(1, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(1, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_count, 1);
     // Single tab gets all available space, clamped to TAB_MAX_WIDTH.
     assert!(layout.tab_width <= TAB_MAX_WIDTH);
@@ -23,20 +25,20 @@ fn single_tab_fills_available_space() {
 #[test]
 fn single_tab_clamps_to_max() {
     // Very wide window — one tab should clamp to MAX.
-    let layout = TabBarLayout::compute(1, 2000.0, None, 0.0);
+    let layout = TabBarLayout::compute(1, 2000.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MAX_WIDTH).abs() < f32::EPSILON);
 }
 
 #[test]
 fn many_tabs_clamp_to_min() {
     // 50 tabs in 1200px — not enough room, clamp to min.
-    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
 
 #[test]
 fn zero_tabs_returns_min_width() {
-    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_count, 0);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
@@ -52,27 +54,27 @@ fn tabs_split_available_space_evenly() {
     let tab_count = 5;
     let expected = (available / tab_count as f32).clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
 
-    let layout = TabBarLayout::compute(tab_count, window_width, None, 0.0);
+    let layout = TabBarLayout::compute(tab_count, window_width, None, 0.0, M);
     assert!((layout.tab_width - expected).abs() < 0.01);
 }
 
 #[test]
 fn width_lock_overrides_computation() {
     let locked = 150.0;
-    let layout = TabBarLayout::compute(3, 1200.0, Some(locked), 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, Some(locked), 0.0, M);
     assert!((layout.tab_width - locked).abs() < f32::EPSILON);
 }
 
 #[test]
 fn narrow_window_clamps_to_min() {
     // Window so narrow that available space is negative.
-    let layout = TabBarLayout::compute(3, 100.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 100.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
 
 #[test]
 fn window_width_preserved() {
-    let layout = TabBarLayout::compute(2, 1500.0, None, 0.0);
+    let layout = TabBarLayout::compute(2, 1500.0, None, 0.0, M);
     assert!((layout.window_width - 1500.0).abs() < f32::EPSILON);
 }
 
@@ -80,7 +82,7 @@ fn window_width_preserved() {
 
 #[test]
 fn tab_x_positions_are_sequential() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     for i in 0..4 {
         let expected = TAB_LEFT_MARGIN + i as f32 * layout.tab_width;
         assert!((layout.tab_x(i) - expected).abs() < 0.01);
@@ -89,34 +91,34 @@ fn tab_x_positions_are_sequential() {
 
 #[test]
 fn tabs_end_after_last_tab() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let expected = TAB_LEFT_MARGIN + 3.0 * layout.tab_width;
     assert!((layout.tabs_end() - expected).abs() < 0.01);
 }
 
 #[test]
 fn new_tab_button_starts_at_tabs_end() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     assert!((layout.new_tab_x() - layout.tabs_end()).abs() < f32::EPSILON);
 }
 
 #[test]
 fn dropdown_follows_new_tab_button() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let expected = layout.new_tab_x() + NEW_TAB_BUTTON_WIDTH;
     assert!((layout.dropdown_x() - expected).abs() < f32::EPSILON);
 }
 
 #[test]
 fn controls_at_right_edge() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let expected = 1200.0 - CONTROLS_ZONE_WIDTH;
     assert!((layout.controls_x() - expected).abs() < f32::EPSILON);
 }
 
 #[test]
 fn max_text_width_accounts_for_padding() {
-    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let expected =
         layout.tab_width - 2.0 * TAB_PADDING - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD;
     assert!((layout.max_text_width() - expected).abs() < 0.01);
@@ -125,7 +127,7 @@ fn max_text_width_accounts_for_padding() {
 #[test]
 fn max_text_width_not_negative() {
     // Very narrow tabs — text width should floor at 0.
-    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0, M);
     assert!(layout.max_text_width() >= 0.0);
 }
 
@@ -135,18 +137,22 @@ fn max_text_width_not_negative() {
 fn colors_from_dark_theme() {
     let theme = UiTheme::dark();
     let colors = TabBarColors::from_theme(&theme);
-    assert_eq!(colors.bar_bg, theme.bg_secondary);
-    assert_eq!(colors.active_bg, theme.bg_primary);
+    assert_eq!(colors.bar_bg, theme.bg_primary);
+    assert_eq!(colors.active_bg, theme.bg_secondary);
+    assert_eq!(colors.inactive_bg, theme.bg_primary);
+    assert_eq!(colors.separator, theme.border);
     assert_eq!(colors.text_fg, theme.fg_primary);
     assert_eq!(colors.inactive_text, theme.fg_secondary);
+    assert_eq!(colors.accent_bar, theme.accent);
+    assert_eq!(colors.bar_border, theme.border);
 }
 
 #[test]
 fn colors_from_light_theme() {
     let theme = UiTheme::light();
     let colors = TabBarColors::from_theme(&theme);
-    assert_eq!(colors.bar_bg, theme.bg_secondary);
-    assert_eq!(colors.active_bg, theme.bg_primary);
+    assert_eq!(colors.bar_bg, theme.bg_primary);
+    assert_eq!(colors.active_bg, theme.bg_secondary);
 }
 
 #[test]
@@ -204,7 +210,7 @@ fn drag_thresholds_ordered() {
 
 #[test]
 fn hit_test_returns_correct_tab_index() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     // Middle of first tab.
     let mid0 = layout.tab_x(0) + layout.tab_width / 2.0;
     assert_eq!(layout.tab_index_at(mid0), Some(0));
@@ -218,7 +224,7 @@ fn hit_test_returns_correct_tab_index() {
 
 #[test]
 fn hit_test_boundary_between_tabs() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     // Previous representable f32 before tab_x(1) — must belong to tab 0.
     let just_before = f32::from_bits(layout.tab_x(1).to_bits() - 1);
     assert_eq!(layout.tab_index_at(just_before), Some(0));
@@ -228,21 +234,23 @@ fn hit_test_boundary_between_tabs() {
 
 #[test]
 fn hit_test_before_tabs_returns_none() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
-    assert_eq!(layout.tab_index_at(0.0), None);
-    assert_eq!(layout.tab_index_at(TAB_LEFT_MARGIN - 1.0), None);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
+    // Tabs start at TAB_LEFT_MARGIN (0.0). Origin hits tab 0.
+    assert_eq!(layout.tab_index_at(0.0), Some(0));
+    // Negative x is before tabs.
+    assert_eq!(layout.tab_index_at(-1.0), None);
 }
 
 #[test]
 fn hit_test_past_tabs_returns_none() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_index_at(layout.tabs_end()), None);
     assert_eq!(layout.tab_index_at(layout.tabs_end() + 100.0), None);
 }
 
 #[test]
 fn hit_test_zero_tabs_returns_none() {
-    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     assert_eq!(layout.tab_index_at(TAB_LEFT_MARGIN), None);
     assert_eq!(layout.tab_index_at(100.0), None);
 }
@@ -251,7 +259,7 @@ fn hit_test_zero_tabs_returns_none() {
 
 #[test]
 fn zero_width_window_does_not_panic() {
-    let layout = TabBarLayout::compute(3, 0.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 0.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
     assert_eq!(layout.tab_count, 3);
     // Helpers still return finite values.
@@ -263,7 +271,7 @@ fn zero_width_window_does_not_panic() {
 
 #[test]
 fn tab_x_past_end_equals_tabs_end() {
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     assert!((layout.tab_x(layout.tab_count) - layout.tabs_end()).abs() < f32::EPSILON);
 }
 
@@ -272,7 +280,7 @@ fn tab_x_past_end_equals_tabs_end() {
 #[test]
 fn width_lock_below_min_passes_through() {
     let tiny = 10.0;
-    let layout = TabBarLayout::compute(3, 1200.0, Some(tiny), 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, Some(tiny), 0.0, M);
     // Lock bypasses clamping — documents the contract.
     assert!((layout.tab_width - tiny).abs() < f32::EPSILON);
 }
@@ -280,7 +288,7 @@ fn width_lock_below_min_passes_through() {
 #[test]
 fn width_lock_above_max_passes_through() {
     let huge = 500.0;
-    let layout = TabBarLayout::compute(3, 1200.0, Some(huge), 0.0);
+    let layout = TabBarLayout::compute(3, 1200.0, Some(huge), 0.0, M);
     assert!((layout.tab_width - huge).abs() < f32::EPSILON);
 }
 
@@ -290,7 +298,7 @@ fn width_lock_above_max_passes_through() {
 fn buttons_do_not_overlap_controls() {
     // Verify ordering: tabs_end <= new_tab_x < dropdown_x < controls_x
     // for a reasonable window width.
-    let layout = TabBarLayout::compute(5, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(5, 1200.0, None, 0.0, M);
     assert!(layout.new_tab_x() <= layout.dropdown_x());
     assert!(layout.dropdown_x() + DROPDOWN_BUTTON_WIDTH <= layout.controls_x());
 }
@@ -300,7 +308,7 @@ fn tabs_end_within_controls_when_tabs_fit() {
     // Only check counts where tabs comfortably fit in a 1200px window.
     // At TAB_MIN_WIDTH=80, ~12 tabs fill the available space.
     for count in [1, 3, 5, 8] {
-        let layout = TabBarLayout::compute(count, 1200.0, None, 0.0);
+        let layout = TabBarLayout::compute(count, 1200.0, None, 0.0, M);
         let buttons_end = layout.dropdown_x() + DROPDOWN_BUTTON_WIDTH;
         assert!(
             buttons_end <= layout.controls_x() + 1.0,
@@ -315,7 +323,7 @@ fn tabs_end_within_controls_when_tabs_fit() {
 #[test]
 fn max_text_width_at_min_tab_width() {
     // Force tabs to minimum width with many tabs.
-    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(50, 1200.0, None, 0.0, M);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
     // Text width must be non-negative even at minimum tab size.
     assert!(layout.max_text_width() >= 0.0);
@@ -391,6 +399,13 @@ use std::time::{Duration, Instant};
 
 use super::widget::{TabBarWidget, TabEntry};
 
+/// Tick N frames on a `TabBarWidget` to advance all `AnimProperty` fields.
+fn tick_n(w: &mut TabBarWidget, n: usize) {
+    for _ in 0..n {
+        w.tick_animations();
+    }
+}
+
 #[test]
 fn widget_new_has_no_tabs() {
     let w = TabBarWidget::new(1200.0);
@@ -455,7 +470,7 @@ fn widget_set_active_index() {
 #[test]
 fn widget_set_hover_hit() {
     let mut w = TabBarWidget::new(1200.0);
-    w.set_hover_hit(TabBarHit::NewTab, Instant::now());
+    w.set_hover_hit(TabBarHit::NewTab);
     // No panic — hover state stored.
 }
 
@@ -503,6 +518,7 @@ fn bell_phase_positive_right_after_bell() {
         title: "test".into(),
         icon: None,
         bell_start: Some(now - Duration::from_millis(100)),
+        modified: false,
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     // Phase should be > 0 shortly after bell fires.
@@ -516,38 +532,43 @@ fn bell_phase_zero_after_duration() {
         title: "test".into(),
         icon: None,
         bell_start: Some(now - Duration::from_secs(5)),
+        modified: false,
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     assert!((phase - 0.0).abs() < f32::EPSILON);
 }
 
-// AnimatedValue<Color> smoke test
+// AnimProperty<Color> smoke test
 
-use crate::animation::{AnimatedValue, Easing};
+use crate::animation::{AnimBehavior, AnimProperty};
 use crate::color::Color;
 
 #[test]
-fn animated_value_color_interpolates() {
-    let now = Instant::now();
-    let mut av = AnimatedValue::new(Color::BLACK, Duration::from_millis(100), Easing::Linear);
-    av.set(Color::WHITE, now);
+fn anim_property_color_interpolates() {
+    // 100ms at 60fps = 6 frames.
+    let mut ap = AnimProperty::with_behavior(Color::BLACK, AnimBehavior::linear(100));
+    ap.set(Color::WHITE);
 
-    // At t=0, should be black (start).
-    let c0 = av.get(now);
+    // At frame 0, should be black (start).
+    let c0 = ap.get();
     assert!((c0.r - 0.0).abs() < 0.01);
     assert!((c0.g - 0.0).abs() < 0.01);
     assert!((c0.b - 0.0).abs() < 0.01);
 
-    // At t=50ms (50%), should be mid-gray.
-    let mid = now + Duration::from_millis(50);
-    let c50 = av.get(mid);
+    // At 3 frames (50%), should be mid-gray.
+    for _ in 0..3 {
+        ap.tick();
+    }
+    let c50 = ap.get();
     assert!((c50.r - 0.5).abs() < 0.05, "r at 50%: {}", c50.r);
     assert!((c50.g - 0.5).abs() < 0.05, "g at 50%: {}", c50.g);
     assert!((c50.b - 0.5).abs() < 0.05, "b at 50%: {}", c50.b);
 
-    // At t=100ms+, should be white (target).
-    let end = now + Duration::from_millis(100);
-    let c100 = av.get(end);
+    // At 6 frames (100%), should be white (target).
+    for _ in 0..3 {
+        ap.tick();
+    }
+    let c100 = ap.get();
     assert!((c100.r - 1.0).abs() < 0.01);
     assert!((c100.g - 1.0).abs() < 0.01);
     assert!((c100.b - 1.0).abs() < 0.01);
@@ -559,42 +580,39 @@ fn animated_value_color_interpolates() {
 fn hover_progress_starts_at_zero() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
-    assert!((w.test_hover_progress(0, now) - 0.0).abs() < f32::EPSILON);
-    assert!((w.test_hover_progress(1, now) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_hover_progress(0) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_hover_progress(1) - 0.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn hover_progress_reaches_one_after_duration() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
     // Hover tab 0.
-    w.set_hover_hit(TabBarHit::Tab(0), now);
+    w.set_hover_hit(TabBarHit::Tab(0));
 
-    // After 100ms+ (TAB_HOVER_DURATION), should be 1.0.
-    let after = now + Duration::from_millis(150);
+    // Tick 9 frames (150ms at 60fps) — past TAB_HOVER_DURATION.
+    tick_n(&mut w, 9);
     assert!(
-        (w.test_hover_progress(0, after) - 1.0).abs() < f32::EPSILON,
+        (w.test_hover_progress(0) - 1.0).abs() < f32::EPSILON,
         "hover progress should be 1.0, got {}",
-        w.test_hover_progress(0, after)
+        w.test_hover_progress(0)
     );
     // Tab 1 should still be 0.
-    assert!((w.test_hover_progress(1, after) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_hover_progress(1) - 0.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn hover_progress_mid_transition() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
 
-    w.set_hover_hit(TabBarHit::Tab(0), now);
+    w.set_hover_hit(TabBarHit::Tab(0));
 
-    // At ~50% of 100ms duration, should be mid-transition (not 0 and not 1).
-    let mid = now + Duration::from_millis(50);
-    let p = w.test_hover_progress(0, mid);
+    // Tick 3 frames (~50ms at 60fps, ~50% of 100ms duration).
+    tick_n(&mut w, 3);
+    let p = w.test_hover_progress(0);
     assert!(p > 0.1, "mid-transition should be > 0.1, got {p}");
     assert!(p < 0.99, "mid-transition should be < 0.99, got {p}");
 }
@@ -603,24 +621,23 @@ fn hover_progress_mid_transition() {
 fn hover_leave_starts_reverse_transition() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
 
     // Hover enter.
-    w.set_hover_hit(TabBarHit::Tab(0), now);
+    w.set_hover_hit(TabBarHit::Tab(0));
 
-    // Let animation complete.
-    let t1 = now + Duration::from_millis(150);
-    assert!((w.test_hover_progress(0, t1) - 1.0).abs() < f32::EPSILON);
+    // Let animation complete (9 frames = 150ms at 60fps).
+    tick_n(&mut w, 9);
+    assert!((w.test_hover_progress(0) - 1.0).abs() < f32::EPSILON);
 
     // Hover leave.
-    w.set_hover_hit(TabBarHit::None, t1);
+    w.set_hover_hit(TabBarHit::None);
 
-    // After leave animation completes, should be 0.
-    let t2 = t1 + Duration::from_millis(150);
+    // After leave animation completes (9 more frames), should be 0.
+    tick_n(&mut w, 9);
     assert!(
-        (w.test_hover_progress(0, t2) - 0.0).abs() < f32::EPSILON,
+        (w.test_hover_progress(0) - 0.0).abs() < f32::EPSILON,
         "after leave, hover progress should be 0.0, got {}",
-        w.test_hover_progress(0, t2)
+        w.test_hover_progress(0)
     );
 }
 
@@ -630,24 +647,22 @@ fn hover_leave_starts_reverse_transition() {
 fn close_btn_opacity_zero_by_default() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
-    assert!((w.test_close_btn_opacity(0, now) - 0.0).abs() < f32::EPSILON);
+    assert!((w.test_close_btn_opacity(0) - 0.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn close_btn_opacity_reaches_one_on_hover() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
 
-    w.set_hover_hit(TabBarHit::Tab(0), now);
+    w.set_hover_hit(TabBarHit::Tab(0));
 
-    // After 80ms+ (CLOSE_BTN_FADE_DURATION), should be 1.0.
-    let after = now + Duration::from_millis(100);
+    // Tick 6 frames (100ms at 60fps) — past CLOSE_BTN_FADE_DURATION.
+    tick_n(&mut w, 6);
     assert!(
-        (w.test_close_btn_opacity(0, after) - 1.0).abs() < f32::EPSILON,
+        (w.test_close_btn_opacity(0) - 1.0).abs() < f32::EPSILON,
         "close btn opacity should be 1.0, got {}",
-        w.test_close_btn_opacity(0, after)
+        w.test_close_btn_opacity(0)
     );
 }
 
@@ -655,22 +670,21 @@ fn close_btn_opacity_reaches_one_on_hover() {
 fn close_btn_opacity_fades_out_on_leave() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    let now = Instant::now();
 
-    // Hover enter, let animation complete.
-    w.set_hover_hit(TabBarHit::Tab(0), now);
-    let t1 = now + Duration::from_millis(100);
-    assert!((w.test_close_btn_opacity(0, t1) - 1.0).abs() < f32::EPSILON);
+    // Hover enter, let animation complete (6 frames).
+    w.set_hover_hit(TabBarHit::Tab(0));
+    tick_n(&mut w, 6);
+    assert!((w.test_close_btn_opacity(0) - 1.0).abs() < f32::EPSILON);
 
     // Hover leave.
-    w.set_hover_hit(TabBarHit::None, t1);
+    w.set_hover_hit(TabBarHit::None);
 
-    // After fade-out completes, should be 0.
-    let t2 = t1 + Duration::from_millis(100);
+    // After fade-out completes (6 more frames), should be 0.
+    tick_n(&mut w, 6);
     assert!(
-        (w.test_close_btn_opacity(0, t2) - 0.0).abs() < f32::EPSILON,
+        (w.test_close_btn_opacity(0) - 0.0).abs() < f32::EPSILON,
         "after leave, close btn opacity should be 0.0, got {}",
-        w.test_close_btn_opacity(0, t2)
+        w.test_close_btn_opacity(0)
     );
 }
 
@@ -720,18 +734,18 @@ fn dropdown_button_x_follows_drag() {
 
 /// Helper: standard 4-tab layout on a 1200px window.
 fn layout_4_tabs() -> TabBarLayout {
-    TabBarLayout::compute(4, 1200.0, None, 0.0)
+    TabBarLayout::compute(4, 1200.0, None, 0.0, M)
 }
 
 #[test]
 fn hit_below_tab_bar_returns_none() {
     let layout = layout_4_tabs();
     assert_eq!(
-        hit::hit_test(100.0, TAB_BAR_HEIGHT, &layout),
+        hit::hit_test_default(100.0, TAB_BAR_HEIGHT, &layout),
         TabBarHit::None
     );
     assert_eq!(
-        hit::hit_test(100.0, TAB_BAR_HEIGHT + 10.0, &layout),
+        hit::hit_test_default(100.0, TAB_BAR_HEIGHT + 10.0, &layout),
         TabBarHit::None
     );
 }
@@ -739,7 +753,7 @@ fn hit_below_tab_bar_returns_none() {
 #[test]
 fn hit_above_tab_bar_returns_none() {
     let layout = layout_4_tabs();
-    assert_eq!(hit::hit_test(100.0, -1.0, &layout), TabBarHit::None);
+    assert_eq!(hit::hit_test_default(100.0, -1.0, &layout), TabBarHit::None);
 }
 
 #[test]
@@ -748,10 +762,16 @@ fn hit_tab_body_returns_tab() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // Middle of tab 0.
     let mid_x = layout.tab_x(0) + layout.tab_width / 2.0;
-    assert_eq!(hit::hit_test(mid_x, mid_y, &layout), TabBarHit::Tab(0));
+    assert_eq!(
+        hit::hit_test_default(mid_x, mid_y, &layout),
+        TabBarHit::Tab(0)
+    );
     // Middle of tab 3.
     let mid_x = layout.tab_x(3) + layout.tab_width / 2.0;
-    assert_eq!(hit::hit_test(mid_x, mid_y, &layout), TabBarHit::Tab(3));
+    assert_eq!(
+        hit::hit_test_default(mid_x, mid_y, &layout),
+        TabBarHit::Tab(3)
+    );
 }
 
 #[test]
@@ -762,7 +782,7 @@ fn hit_close_button_returns_close_tab() {
     let tab_right = layout.tab_x(1) + layout.tab_width;
     let close_center = tab_right - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH / 2.0;
     assert_eq!(
-        hit::hit_test(close_center, mid_y, &layout),
+        hit::hit_test_default(close_center, mid_y, &layout),
         TabBarHit::CloseTab(1)
     );
 }
@@ -775,13 +795,13 @@ fn hit_close_button_left_boundary() {
     let close_left = tab_right - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD;
     // Exactly at close_left → CloseTab.
     assert_eq!(
-        hit::hit_test(close_left, mid_y, &layout),
+        hit::hit_test_default(close_left, mid_y, &layout),
         TabBarHit::CloseTab(2)
     );
     // Just before close_left → Tab body.
     let just_before = f32::from_bits(close_left.to_bits() - 1);
     assert_eq!(
-        hit::hit_test(just_before, mid_y, &layout),
+        hit::hit_test_default(just_before, mid_y, &layout),
         TabBarHit::Tab(2)
     );
 }
@@ -795,7 +815,7 @@ fn hit_close_button_right_boundary() {
     // Exactly at close_right → Tab body (half-open interval excludes right edge).
     // But close_right is within the tab, so it's either Tab(0) or Tab(1) depending
     // on whether it falls within the next tab's region.
-    let result = hit::hit_test(close_right, mid_y, &layout);
+    let result = hit::hit_test_default(close_right, mid_y, &layout);
     assert!(
         result == TabBarHit::Tab(0) || result == TabBarHit::Tab(1),
         "at close_right edge, expected Tab(0) or Tab(1), got {result:?}"
@@ -808,7 +828,7 @@ fn hit_new_tab_button() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     let new_tab_center = layout.new_tab_x() + NEW_TAB_BUTTON_WIDTH / 2.0;
     assert_eq!(
-        hit::hit_test(new_tab_center, mid_y, &layout),
+        hit::hit_test_default(new_tab_center, mid_y, &layout),
         TabBarHit::NewTab
     );
 }
@@ -819,7 +839,7 @@ fn hit_dropdown_button() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     let dropdown_center = layout.dropdown_x() + DROPDOWN_BUTTON_WIDTH / 2.0;
     assert_eq!(
-        hit::hit_test(dropdown_center, mid_y, &layout),
+        hit::hit_test_default(dropdown_center, mid_y, &layout),
         TabBarHit::Dropdown
     );
 }
@@ -830,7 +850,7 @@ fn hit_controls_zone_returns_window_control() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // Well into the controls zone.
     let x = layout.controls_x() + CONTROLS_ZONE_WIDTH / 2.0;
-    let result = hit::hit_test(x, mid_y, &layout);
+    let result = hit::hit_test_default(x, mid_y, &layout);
     assert!(
         result.is_window_control() || result == TabBarHit::DragArea,
         "expected a window control or DragArea in controls zone, got {result:?}"
@@ -841,10 +861,10 @@ fn hit_controls_zone_returns_window_control() {
 fn hit_controls_zone_has_priority_over_tabs() {
     // With many tabs, the tab strip might conceptually extend into the controls zone.
     // Controls must still win.
-    let layout = TabBarLayout::compute(50, 800.0, None, 0.0);
+    let layout = TabBarLayout::compute(50, 800.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     let x = layout.controls_x() + 10.0;
-    let result = hit::hit_test(x, mid_y, &layout);
+    let result = hit::hit_test_default(x, mid_y, &layout);
     assert_ne!(result, TabBarHit::Tab(0));
     assert_ne!(result, TabBarHit::None);
 }
@@ -856,38 +876,48 @@ fn hit_empty_area_returns_drag_area() {
     // Between dropdown end and controls start.
     let gap_x = layout.dropdown_x() + DROPDOWN_BUTTON_WIDTH + 10.0;
     if gap_x < layout.controls_x() {
-        assert_eq!(hit::hit_test(gap_x, mid_y, &layout), TabBarHit::DragArea);
+        assert_eq!(
+            hit::hit_test_default(gap_x, mid_y, &layout),
+            TabBarHit::DragArea
+        );
     }
 }
 
 #[test]
-fn hit_left_margin_returns_drag_area() {
+fn hit_left_edge_returns_tab() {
     let layout = layout_4_tabs();
     let mid_y = TAB_BAR_HEIGHT / 2.0;
-    // In the left margin before tabs start.
+    // With zero left margin, x=0 hits the first tab.
     assert_eq!(
-        hit::hit_test(TAB_LEFT_MARGIN / 2.0, mid_y, &layout),
-        TabBarHit::DragArea
+        hit::hit_test_default(0.0, mid_y, &layout),
+        TabBarHit::Tab(0)
     );
 }
 
 #[test]
 fn hit_zero_tabs_all_buttons_and_drag() {
-    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
-    // No tabs, so tab area returns NewTab/Dropdown/DragArea.
+    // No tabs: new-tab button starts at the left edge.
     let new_tab_x = layout.new_tab_x() + 1.0;
-    assert_eq!(hit::hit_test(new_tab_x, mid_y, &layout), TabBarHit::NewTab);
-    let drag_x = 5.0; // Before new-tab button.
-    assert_eq!(hit::hit_test(drag_x, mid_y, &layout), TabBarHit::DragArea);
+    assert_eq!(
+        hit::hit_test_default(new_tab_x, mid_y, &layout),
+        TabBarHit::NewTab
+    );
+    // Past the new-tab + dropdown buttons is drag area.
+    let past_buttons = layout.new_tab_x() + NEW_TAB_BUTTON_WIDTH + DROPDOWN_BUTTON_WIDTH + 5.0;
+    assert_eq!(
+        hit::hit_test_default(past_buttons, mid_y, &layout),
+        TabBarHit::DragArea
+    );
 }
 
 #[test]
 fn hit_narrow_window_does_not_panic() {
-    let layout = TabBarLayout::compute(3, 100.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, 100.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // Controls zone might overlap everything — should still return valid hits.
-    let result = hit::hit_test(50.0, mid_y, &layout);
+    let result = hit::hit_test_default(50.0, mid_y, &layout);
     assert_ne!(
         result,
         TabBarHit::None,
@@ -898,9 +928,9 @@ fn hit_narrow_window_does_not_panic() {
 #[test]
 fn hit_at_origin_within_tab_bar() {
     let layout = layout_4_tabs();
-    // (0, 0) is in the tab bar but in the left margin.
-    let result = hit::hit_test(0.0, 0.0, &layout);
-    assert_eq!(result, TabBarHit::DragArea);
+    // (0, 0) is inside the first tab (zero left margin, zero top margin).
+    let result = hit::hit_test_default(0.0, 0.0, &layout);
+    assert_eq!(result, TabBarHit::Tab(0));
 }
 
 #[test]
@@ -918,10 +948,16 @@ fn hit_top_and_bottom_y_edges() {
     let layout = layout_4_tabs();
     let mid_x = layout.tab_x(0) + layout.tab_width / 2.0;
     // y=0 is inside the tab bar.
-    assert_eq!(hit::hit_test(mid_x, 0.0, &layout), TabBarHit::Tab(0));
+    assert_eq!(
+        hit::hit_test_default(mid_x, 0.0, &layout),
+        TabBarHit::Tab(0)
+    );
     // y just below TAB_BAR_HEIGHT is outside.
     let just_below = f32::from_bits(TAB_BAR_HEIGHT.to_bits());
-    assert_eq!(hit::hit_test(mid_x, just_below, &layout), TabBarHit::None);
+    assert_eq!(
+        hit::hit_test_default(mid_x, just_below, &layout),
+        TabBarHit::None
+    );
 }
 
 #[test]
@@ -930,7 +966,7 @@ fn hit_each_tab_at_center() {
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     for i in 0..4 {
         let x = layout.tab_x(i) + layout.tab_width / 2.0;
-        assert_eq!(hit::hit_test(x, mid_y, &layout), TabBarHit::Tab(i));
+        assert_eq!(hit::hit_test_default(x, mid_y, &layout), TabBarHit::Tab(i));
     }
 }
 
@@ -942,7 +978,7 @@ fn hit_each_tab_close_button() {
         let tab_right = layout.tab_x(i) + layout.tab_width;
         let close_center = tab_right - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH / 2.0;
         assert_eq!(
-            hit::hit_test(close_center, mid_y, &layout),
+            hit::hit_test_default(close_center, mid_y, &layout),
             TabBarHit::CloseTab(i),
             "close button for tab {i}"
         );
@@ -985,7 +1021,7 @@ fn interleaved_mutations_do_not_corrupt_layout() {
         TabEntry::new("C"),
     ]);
     w.set_window_width(800.0);
-    w.set_hover_hit(TabBarHit::Tab(1), Instant::now());
+    w.set_hover_hit(TabBarHit::Tab(1));
     w.set_active_index(0);
     w.set_window_width(1200.0);
     // Layout should reflect final state: 3 tabs, 1200px window.
@@ -1025,7 +1061,7 @@ fn update_tab_title_out_of_bounds_is_noop() {
 #[test]
 fn layout_with_nan_window_width_does_not_panic() {
     // Degenerate input — verify no panic, not specific behavior.
-    let layout = TabBarLayout::compute(3, f32::NAN, None, 0.0);
+    let layout = TabBarLayout::compute(3, f32::NAN, None, 0.0, M);
     assert_eq!(layout.tab_count, 3);
     let _ = layout.tab_x(0);
     let _ = layout.tabs_end();
@@ -1033,7 +1069,7 @@ fn layout_with_nan_window_width_does_not_panic() {
 
 #[test]
 fn layout_with_infinity_window_width_clamps_to_max() {
-    let layout = TabBarLayout::compute(3, f32::INFINITY, None, 0.0);
+    let layout = TabBarLayout::compute(3, f32::INFINITY, None, 0.0, M);
     assert_eq!(layout.tab_count, 3);
     // Infinite available space → clamp to TAB_MAX_WIDTH.
     assert!((layout.tab_width - TAB_MAX_WIDTH).abs() < f32::EPSILON);
@@ -1041,7 +1077,7 @@ fn layout_with_infinity_window_width_clamps_to_max() {
 
 #[test]
 fn layout_with_negative_window_width_clamps_to_min() {
-    let layout = TabBarLayout::compute(3, -500.0, None, 0.0);
+    let layout = TabBarLayout::compute(3, -500.0, None, 0.0, M);
     assert_eq!(layout.tab_count, 3);
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
@@ -1061,12 +1097,12 @@ fn very_long_tab_title_does_not_panic() {
 
 #[test]
 fn hit_close_button_on_single_tab() {
-    let layout = TabBarLayout::compute(1, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(1, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     let tab_right = layout.tab_x(0) + layout.tab_width;
     let close_center = tab_right - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH / 2.0;
     assert_eq!(
-        hit::hit_test(close_center, mid_y, &layout),
+        hit::hit_test_default(close_center, mid_y, &layout),
         TabBarHit::CloseTab(0)
     );
 }
@@ -1086,7 +1122,7 @@ fn hit_each_control_button_found_by_scan() {
 
     let mut x = controls_x;
     while x < layout.window_width {
-        match hit::hit_test(x, mid_y, &layout) {
+        match hit::hit_test_default(x, mid_y, &layout) {
             TabBarHit::Minimize => found_min = true,
             TabBarHit::Maximize => found_max = true,
             TabBarHit::CloseWindow => found_close = true,
@@ -1106,7 +1142,7 @@ fn hit_controls_y_edges() {
     let controls_center_x = layout.controls_x() + CONTROLS_ZONE_WIDTH / 2.0;
 
     // y=0 is within the tab bar.
-    let top = hit::hit_test(controls_center_x, 0.0, &layout);
+    let top = hit::hit_test_default(controls_center_x, 0.0, &layout);
     assert_ne!(
         top,
         TabBarHit::None,
@@ -1114,7 +1150,7 @@ fn hit_controls_y_edges() {
     );
 
     // y just inside bottom edge.
-    let bottom = hit::hit_test(controls_center_x, TAB_BAR_HEIGHT - 0.1, &layout);
+    let bottom = hit::hit_test_default(controls_center_x, TAB_BAR_HEIGHT - 0.1, &layout);
     assert_ne!(bottom, TabBarHit::None, "y near bottom should still hit");
 }
 
@@ -1122,13 +1158,13 @@ fn hit_controls_y_edges() {
 
 #[test]
 fn zero_tabs_non_button_area_is_drag_area() {
-    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
 
     let mut found_drag = false;
     let mut x = 0.0;
     while x < layout.controls_x() {
-        let result = hit::hit_test(x, mid_y, &layout);
+        let result = hit::hit_test_default(x, mid_y, &layout);
         match result {
             TabBarHit::DragArea => found_drag = true,
             TabBarHit::NewTab | TabBarHit::Dropdown => {}
@@ -1191,13 +1227,16 @@ fn with_theme_light_produces_light_colors() {
     let colors = TabBarColors::from_theme(&light);
 
     // Verify all color fields correspond to the light theme.
-    assert_eq!(colors.bar_bg, light.bg_secondary);
-    assert_eq!(colors.active_bg, light.bg_primary);
+    assert_eq!(colors.bar_bg, light.bg_primary);
+    assert_eq!(colors.active_bg, light.bg_secondary);
+    assert_eq!(colors.inactive_bg, light.bg_primary);
     assert_eq!(colors.text_fg, light.fg_primary);
     assert_eq!(colors.inactive_text, light.fg_secondary);
-    assert_eq!(colors.separator, light.border.with_alpha(0.5));
+    assert_eq!(colors.separator, light.border);
     assert_eq!(colors.close_fg, light.fg_secondary);
     assert_eq!(colors.button_hover_bg, light.bg_hover);
+    assert_eq!(colors.accent_bar, light.accent);
+    assert_eq!(colors.bar_border, light.border);
 }
 
 #[test]
@@ -1366,8 +1405,8 @@ fn set_active_false_does_not_panic() {
 #[test]
 fn layout_with_left_inset_shifts_tabs_start() {
     let inset = 76.0;
-    let layout_no_inset = TabBarLayout::compute(3, 1200.0, None, 0.0);
-    let layout_inset = TabBarLayout::compute(3, 1200.0, None, inset);
+    let layout_no_inset = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
+    let layout_inset = TabBarLayout::compute(3, 1200.0, None, inset, M);
 
     // Tabs start shifted right by the inset.
     let shift = layout_inset.tab_x(0) - layout_no_inset.tab_x(0);
@@ -1382,8 +1421,8 @@ fn layout_with_left_inset_shifts_tabs_start() {
 
 #[test]
 fn layout_with_left_inset_controls_stay_right() {
-    let layout_no_inset = TabBarLayout::compute(3, 1200.0, None, 0.0);
-    let layout_inset = TabBarLayout::compute(3, 1200.0, None, 76.0);
+    let layout_no_inset = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
+    let layout_inset = TabBarLayout::compute(3, 1200.0, None, 76.0, M);
 
     // Controls zone is anchored to the right edge — unaffected by left_inset.
     assert!(
@@ -1392,56 +1431,129 @@ fn layout_with_left_inset_controls_stay_right() {
     );
 }
 
-// update_control_hover
-
-#[cfg(not(target_os = "macos"))]
-use crate::geometry::Rect;
-#[cfg(not(target_os = "macos"))]
-use crate::input::EventResponse;
-#[cfg(not(target_os = "macos"))]
-use crate::widgets::EventCtx;
-#[cfg(not(target_os = "macos"))]
-use crate::widgets::tests::MockMeasurer;
+// dispatch_control_input
 
 #[cfg(not(target_os = "macos"))]
 #[test]
-fn update_control_hover_enters_and_leaves() {
+fn dispatch_control_input_handles_click() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
 
-    let measurer = MockMeasurer::STANDARD;
-    let theme = UiTheme::dark();
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds: Rect::new(0.0, 0.0, 1200.0, TAB_BAR_HEIGHT),
-        is_focused: false,
-        focused_widget: None,
-        theme: &theme,
-    };
-
-    // Hover over the first control button (minimize).
+    // Click on the first control button (minimize).
     let ctrl_rect = w.interactive_rects()[w.tab_count() + 2]; // first control
     let center = crate::geometry::Point::new(
         ctrl_rect.x() + ctrl_rect.width() / 2.0,
         ctrl_rect.y() + ctrl_rect.height() / 2.0,
     );
-    let resp = w.update_control_hover(center, &ctx);
-    assert_eq!(
-        resp.response,
-        EventResponse::RequestPaint,
-        "entering a control should request paint"
-    );
+    let now = Instant::now();
 
-    // Hover same position again — no change.
-    let resp2 = w.update_control_hover(center, &ctx);
-    assert_eq!(
-        resp2.response,
-        EventResponse::Ignored,
-        "re-hovering same control should not request redraw"
-    );
+    let down = crate::input::InputEvent::MouseDown {
+        pos: center,
+        button: crate::input::MouseButton::Left,
+        modifiers: crate::input::Modifiers::NONE,
+    };
+    let result = w.dispatch_control_input(&down, now);
+    assert!(result.handled, "mouse down on control should be handled");
 
-    // Clear hover.
-    w.clear_control_hover(&ctx);
+    let up = crate::input::InputEvent::MouseUp {
+        pos: center,
+        button: crate::input::MouseButton::Left,
+        modifiers: crate::input::Modifiers::NONE,
+    };
+    let result = w.dispatch_control_input(&up, now);
+    assert!(
+        !result.actions.is_empty(),
+        "mouse up should emit a window action"
+    );
+}
+
+// -- Regression: action_for_control maps button IDs to window actions --
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn action_for_control_maps_minimize() {
+    let w = TabBarWidget::new(1200.0);
+    let rects = w.interactive_rects();
+    // Control buttons are the last 3 interactive rects.
+    // action_for_control uses widget IDs, so get the ID via control_widget_at_point.
+    let ctrl_rect = rects[rects.len() - 3]; // minimize
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    if let Some(id) = w.control_widget_at_point(center) {
+        let action = w.action_for_control(id);
+        assert_eq!(
+            action,
+            Some(crate::action::WidgetAction::WindowMinimize),
+            "first control button should map to WindowMinimize"
+        );
+    } else {
+        panic!("control_widget_at_point should find minimize button");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn action_for_control_maps_close() {
+    let w = TabBarWidget::new(1200.0);
+    let rects = w.interactive_rects();
+    let ctrl_rect = rects[rects.len() - 1]; // close (rightmost)
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    if let Some(id) = w.control_widget_at_point(center) {
+        let action = w.action_for_control(id);
+        assert_eq!(
+            action,
+            Some(crate::action::WidgetAction::WindowClose),
+            "last control button should map to WindowClose"
+        );
+    } else {
+        panic!("control_widget_at_point should find close button");
+    }
+}
+
+// -- Regression: update_control_hover_state drives animators --
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn update_control_hover_state_returns_animating() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+
+    let rects = w.interactive_rects();
+    let ctrl_rect = rects[rects.len() - 1]; // close button
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    let animating = w.update_control_hover_state(center);
+    // The animator should be mid-transition (Normal → Hovered).
+    assert!(
+        animating,
+        "hovering a control button should start an animation"
+    );
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn clear_control_hover_state_after_hover() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+
+    let rects = w.interactive_rects();
+    let ctrl_rect = rects[rects.len() - 1];
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    w.update_control_hover_state(center);
+
+    // Clear: should also animate (Hovered → Normal).
+    let animating = w.clear_control_hover_state();
+    assert!(animating, "clearing hover should start a reverse animation");
 }
 
 // cursor_in_tab_bar range
@@ -1449,14 +1561,14 @@ fn update_control_hover_enters_and_leaves() {
 #[test]
 fn hit_test_close_window_in_controls_zone() {
     // Verify that CloseWindow is reachable via hit_test in the controls zone.
-    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0);
+    let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
     // Close button is the rightmost control.
     // Scan from the right edge leftward to find CloseWindow.
     let mut found = false;
     let mut x = layout.window_width - 1.0;
     while x > layout.controls_x() {
-        if hit::hit_test(x, mid_y, &layout) == TabBarHit::CloseWindow {
+        if hit::hit_test_default(x, mid_y, &layout) == TabBarHit::CloseWindow {
             found = true;
             break;
         }
@@ -1471,87 +1583,81 @@ fn hit_test_close_window_in_controls_zone() {
 fn width_multiplier_defaults_to_one() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
     // No animation → multiplier is 1.0 (full width).
-    assert!(!w.has_width_animation(now));
+    assert!(!w.has_width_animation());
 }
 
 #[test]
 fn animate_tab_open_starts_at_zero() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_open(1, now);
+    w.animate_tab_open(1);
 
-    // Tab 1 width multiplier at t=0 should be 0.0.
-    assert!(w.has_width_animation(now));
-    // After animation (200ms+), should be 1.0.
-    let after = now + Duration::from_millis(250);
-    assert!(!w.has_width_animation(after));
+    // Tab 1 width multiplier at frame 0 should be animating.
+    assert!(w.has_width_animation());
+    // After 15 frames (250ms at 60fps), should be complete.
+    tick_n(&mut w, 15);
+    assert!(!w.has_width_animation());
 }
 
 #[test]
 fn animate_tab_close_starts_at_one() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_close(0, now);
+    w.animate_tab_close(0);
 
     assert!(w.is_closing(0));
     assert!(!w.is_closing(1));
-    assert!(w.has_width_animation(now));
+    assert!(w.has_width_animation());
 }
 
 #[test]
 fn closing_complete_returns_none_during_animation() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_close(0, now);
+    w.animate_tab_close(0);
 
-    // Mid-animation: no completion yet.
-    let mid = now + Duration::from_millis(50);
-    assert!(w.closing_complete(mid).is_none());
+    // Tick 3 frames (~50ms) — mid-animation, no completion yet.
+    tick_n(&mut w, 3);
+    assert!(w.closing_complete().is_none());
 }
 
 #[test]
 fn closing_complete_returns_index_after_animation() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_close(0, now);
+    w.animate_tab_close(0);
 
-    // After animation (150ms+), tab 0 should be complete.
-    let after = now + Duration::from_millis(200);
-    assert_eq!(w.closing_complete(after), Some(0));
+    // Tick 12 frames (~200ms at 60fps) — animation complete.
+    tick_n(&mut w, 12);
+    assert_eq!(w.closing_complete(), Some(0));
 }
 
 #[test]
 fn set_tabs_resets_closing_state() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A"), TabEntry::new("B")]);
-    let now = Instant::now();
 
-    w.animate_tab_close(0, now);
+    w.animate_tab_close(0);
     assert!(w.is_closing(0));
 
     // set_tabs resets all parallel vecs.
     w.set_tabs(vec![TabEntry::new("B")]);
     assert!(!w.is_closing(0));
-    assert!(!w.has_width_animation(Instant::now()));
+    assert!(!w.has_width_animation());
 }
 
 // Layout with width multipliers
 
 #[test]
 fn layout_with_uniform_multipliers_matches_default() {
-    let default = TabBarLayout::compute(3, 1200.0, None, 0.0);
+    let default = TabBarLayout::compute(3, 1200.0, None, 0.0, M);
     let with_ones =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 1.0, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 1.0, 1.0]), M);
 
     for i in 0..3 {
         assert!(
@@ -1569,7 +1675,7 @@ fn layout_with_uniform_multipliers_matches_default() {
 #[test]
 fn layout_half_multiplier_halves_tab_width() {
     let layout =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]), M);
 
     // Tab 1 should be half width.
     let base = layout.tab_width;
@@ -1589,7 +1695,7 @@ fn layout_half_multiplier_halves_tab_width() {
 #[test]
 fn layout_zero_multiplier_collapses_tab() {
     let layout =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.0, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.0, 1.0]), M);
 
     assert!(
         layout.tab_width_at(1) < f32::EPSILON,
@@ -1605,7 +1711,7 @@ fn layout_zero_multiplier_collapses_tab() {
 #[test]
 fn tab_index_at_with_non_uniform_widths() {
     let layout =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]), M);
 
     // Mid-point of tab 0 should hit tab 0.
     let mid0 = layout.tab_x(0) + layout.tab_width_at(0) / 2.0;
@@ -1623,7 +1729,7 @@ fn tab_index_at_with_non_uniform_widths() {
 #[test]
 fn tabs_end_with_multipliers() {
     let layout =
-        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]));
+        TabBarLayout::compute_with_multipliers(3, 1200.0, None, 0.0, Some(&[1.0, 0.5, 1.0]), M);
 
     // Total width = 1.0 + 0.5 + 1.0 = 2.5 tab widths.
     let base = layout.tab_width;
@@ -1632,4 +1738,313 @@ fn tabs_end_with_multipliers() {
         (layout.tabs_end() - expected).abs() < f32::EPSILON,
         "tabs_end should account for multipliers"
     );
+}
+
+// -- Regression: TPR-11-012 — draw_window_controls propagates frame_requests --
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn draw_window_controls_propagates_frame_requests() {
+    use std::time::Instant;
+
+    use crate::animation::FrameRequestFlags;
+    use crate::draw::Scene;
+    use crate::geometry::Rect;
+    use crate::testing::{MockMeasurer, TEST_THEME};
+    use crate::widgets::{DrawCtx, Widget};
+
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![TabEntry::new("A")]);
+
+    // Hover a control button to start its VisualStateAnimator transition.
+    let rects = w.interactive_rects();
+    let ctrl_rect = rects[rects.len() - 1]; // close button
+    let center = crate::geometry::Point::new(
+        ctrl_rect.x() + ctrl_rect.width() / 2.0,
+        ctrl_rect.y() + ctrl_rect.height() / 2.0,
+    );
+    let animating = w.update_control_hover_state(center);
+    assert!(
+        animating,
+        "precondition: control button should be animating"
+    );
+
+    // Paint with frame_requests wired — the animating control must propagate.
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let bounds = Rect::new(0.0, 0.0, 1200.0, TAB_BAR_HEIGHT);
+    let flags = FrameRequestFlags::new();
+    let now = Instant::now();
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds,
+        now,
+        theme: &TEST_THEME,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: Some(&flags),
+    };
+    w.paint(&mut ctx);
+
+    assert!(
+        flags.anim_frame_requested(),
+        "paint() should propagate anim frame request from animating control button"
+    );
+}
+
+// -- Compact metrics differ from default --
+
+#[test]
+fn compact_tab_bar_metrics_differ_from_default() {
+    let compact = &TabBarMetrics::COMPACT;
+
+    // Compact tab bar must be shorter.
+    assert!(
+        compact.height < TabBarMetrics::DEFAULT.height,
+        "compact height {} should be less than default {}",
+        compact.height,
+        TabBarMetrics::DEFAULT.height,
+    );
+
+    // Compact tab bar must have equal or smaller top margin.
+    assert!(
+        compact.top_margin <= TabBarMetrics::DEFAULT.top_margin,
+        "compact top_margin {} should be <= default {}",
+        compact.top_margin,
+        TabBarMetrics::DEFAULT.top_margin,
+    );
+
+    // Compact tabs must have tighter width bounds.
+    assert!(compact.min_width < TabBarMetrics::DEFAULT.min_width);
+    assert!(compact.max_width < TabBarMetrics::DEFAULT.max_width);
+
+    // Layout must produce different tab widths for the same input.
+    let default_layout = TabBarLayout::compute(3, 1200.0, None, 0.0, &TabBarMetrics::DEFAULT);
+    let compact_layout = TabBarLayout::compute(3, 1200.0, None, 0.0, compact);
+    assert!(
+        (compact_layout.tab_width - default_layout.tab_width).abs() > f32::EPSILON,
+        "compact tab width {} should differ from default {}",
+        compact_layout.tab_width,
+        default_layout.tab_width,
+    );
+}
+
+#[test]
+fn set_metrics_triggers_relayout() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![
+        TabEntry::new("A"),
+        TabEntry::new("B"),
+        TabEntry::new("C"),
+    ]);
+    let default_tab_w = w.layout().tab_width;
+
+    // Switch to compact metrics — must immediately recompute layout.
+    w.set_metrics(TabBarMetrics::COMPACT);
+    let compact_tab_w = w.layout().tab_width;
+
+    assert!(
+        (compact_tab_w - default_tab_w).abs() > f32::EPSILON,
+        "set_metrics() must trigger relayout: default tab_width={default_tab_w}, compact tab_width={compact_tab_w}",
+    );
+
+    // Switch back to default — layout must change again.
+    w.set_metrics(TabBarMetrics::DEFAULT);
+    let restored_tab_w = w.layout().tab_width;
+
+    assert!(
+        (restored_tab_w - default_tab_w).abs() < f32::EPSILON,
+        "restoring default metrics must restore original layout: expected={default_tab_w}, got={restored_tab_w}",
+    );
+}
+
+// Inline tab title editing
+
+fn editing_widget() -> TabBarWidget {
+    let theme = UiTheme::dark();
+    let mut w = TabBarWidget::with_theme(800.0, &theme);
+    w.set_tabs(vec![
+        TabEntry::new("Tab One"),
+        TabEntry::new("Tab Two"),
+        TabEntry::new("Tab Three"),
+    ]);
+    w
+}
+
+#[test]
+fn start_editing_sets_index_and_selects_all() {
+    let mut w = editing_widget();
+    w.start_editing(1);
+    assert_eq!(w.editing_tab_index(), Some(1));
+    assert!(w.is_editing());
+    // Select-all: selection covers entire title.
+    let state = w.editing_state();
+    assert_eq!(state.selection_range(), Some((0, "Tab Two".len())));
+    assert_eq!(state.text(), "Tab Two");
+}
+
+#[test]
+fn commit_editing_returns_trimmed_title() {
+    let mut w = editing_widget();
+    w.start_editing(1);
+    // Clear selection and type a new title with whitespace.
+    w.editing_select_all();
+    w.editing_backspace();
+    for ch in "  New Title  ".chars() {
+        w.editing_insert_char(ch);
+    }
+    let result = w.commit_editing();
+    assert_eq!(result, Some((1, "New Title".to_string())));
+    assert!(!w.is_editing());
+}
+
+#[test]
+fn commit_editing_empty_restores_original() {
+    let mut w = editing_widget();
+    w.start_editing(1);
+    // Delete everything.
+    w.editing_select_all();
+    w.editing_backspace();
+    let result = w.commit_editing();
+    // Empty edit restores original.
+    assert_eq!(result, Some((1, "Tab Two".to_string())));
+}
+
+#[test]
+fn cancel_editing_restores_original_title() {
+    let mut w = editing_widget();
+    w.start_editing(1);
+    // Type something different.
+    w.editing_select_all();
+    w.editing_backspace();
+    for ch in "Changed".chars() {
+        w.editing_insert_char(ch);
+    }
+    w.cancel_editing();
+    assert!(!w.is_editing());
+    // Editing index cleared — no longer editing.
+    assert_eq!(w.editing_tab_index(), None);
+}
+
+#[test]
+fn is_editing_false_after_commit() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    assert!(w.is_editing());
+    w.commit_editing();
+    assert!(!w.is_editing());
+}
+
+#[test]
+fn is_editing_false_after_cancel() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    assert!(w.is_editing());
+    w.cancel_editing();
+    assert!(!w.is_editing());
+}
+
+#[test]
+fn keyboard_typing_inserts_characters() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    // Select all and type replacement.
+    w.editing_select_all();
+    w.editing_insert_char('X');
+    assert_eq!(w.editing_state().text(), "X");
+    w.editing_insert_char('Y');
+    assert_eq!(w.editing_state().text(), "XY");
+}
+
+#[test]
+fn start_editing_out_of_bounds_is_noop() {
+    let mut w = editing_widget();
+    w.start_editing(99);
+    assert!(!w.is_editing());
+}
+
+#[test]
+fn editing_backspace_deletes_character() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    // Move to end (select_all then deselect by moving right).
+    w.editing_end(false);
+    w.editing_backspace();
+    assert_eq!(w.editing_state().text(), "Tab On");
+}
+
+#[test]
+fn editing_move_and_selection() {
+    let mut w = editing_widget();
+    w.start_editing(0);
+    // Deselect, go to start, select 3 chars.
+    w.editing_home(false);
+    w.editing_move_right(true);
+    w.editing_move_right(true);
+    w.editing_move_right(true);
+    assert_eq!(w.editing_state().selection_range(), Some((0, 3)));
+}
+
+// Modified indicator
+
+#[test]
+fn tab_entry_with_modified_builder() {
+    let entry = TabEntry::new("test").with_modified(true);
+    assert!(entry.modified);
+    let entry_default = TabEntry::new("test");
+    assert!(!entry_default.modified);
+}
+
+#[test]
+fn modified_dot_not_shown_when_hovered() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![
+        TabEntry::new("A").with_modified(true),
+        TabEntry::new("B"),
+    ]);
+    w.set_active_index(1);
+    // Simulate hover on modified tab.
+    w.set_hover_hit(TabBarHit::Tab(0));
+    // The is_tab_hovered check should suppress the modified dot.
+    assert!(w.is_tab_hovered(0));
+    assert!(!w.is_tab_hovered(1));
+}
+
+// Color mapping (brutal design)
+
+#[test]
+fn colors_from_theme_bar_bg_is_bg_primary() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.bar_bg, theme.bg_primary);
+}
+
+#[test]
+fn colors_from_theme_active_bg_is_bg_secondary() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.active_bg, theme.bg_secondary);
+}
+
+#[test]
+fn colors_from_theme_separator_full_opacity() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.separator, theme.border);
+}
+
+#[test]
+fn colors_from_theme_has_accent_bar() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.accent_bar, theme.accent);
+}
+
+#[test]
+fn colors_from_theme_has_bar_border() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.bar_border, theme.border);
 }

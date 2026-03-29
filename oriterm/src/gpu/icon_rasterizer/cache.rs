@@ -92,6 +92,7 @@ impl IconCache {
         let raster_key = RasterKey {
             glyph_id: id as u16,
             face_idx: ICON_FACE_IDX,
+            weight: 0,
             size_q6: (size_px as f32 * 64.0).round() as u32,
             synthetic: SyntheticFlags::NONE,
             hinted: false,

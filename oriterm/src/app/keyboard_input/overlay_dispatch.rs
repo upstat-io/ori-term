@@ -10,20 +10,18 @@ use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
 
 use crate::config::Config;
 
-use super::super::{App, context_menu, settings_overlay};
+use super::super::{App, context_menu};
 
 impl App {
     /// Clear all transient popup overlays in a terminal window.
     pub(in crate::app) fn clear_window_popups(&mut self, window_id: winit::window::WindowId) {
         let mut removed = 0;
         if let Some(ctx) = self.windows.get_mut(&window_id) {
-            removed = ctx
-                .overlays
-                .clear_popups(&mut ctx.layer_tree, &mut ctx.layer_animator);
+            removed = ctx.root.clear_popups();
             if removed > 0 {
                 ctx.context_menu = None;
-                ctx.dirty = true;
-                ctx.urgent_redraw = true;
+                ctx.root.mark_dirty();
+                ctx.root.set_urgent_redraw(true);
             }
         }
         if removed > 0 {
@@ -37,41 +35,29 @@ impl App {
             OverlayEventResult::Delivered { response, .. } => {
                 log::debug!("overlay Delivered: action={:?}", response.action);
 
-                if response.response.is_handled() {
+                if response.handled {
                     if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.urgent_redraw = true;
+                        ctx.root.set_urgent_redraw(true);
                     }
                 }
 
                 let Some(action) = response.action else {
-                    if response.response.is_handled() {
+                    if response.handled {
                         if let Some(ctx) = self.focused_ctx_mut() {
-                            ctx.dirty = true;
+                            ctx.root.mark_dirty();
                         }
                     }
                     return;
                 };
 
-                // Settings panel actions: try matching against known control IDs.
-                if self.try_dispatch_settings_action(&action) {
-                    return;
-                }
-
-                // Non-settings actions.
                 match action {
-                    WidgetAction::SaveSettings => {
-                        self.save_settings();
-                    }
-                    WidgetAction::CancelSettings => {
-                        self.cancel_settings();
-                    }
                     WidgetAction::DismissOverlay(_) => {
                         self.dismiss_topmost_overlay();
                     }
                     WidgetAction::MoveOverlay { delta_x, delta_y } => {
                         if let Some(ctx) = self.focused_ctx_mut() {
-                            ctx.overlays.offset_topmost(delta_x, delta_y);
-                            ctx.dirty = true;
+                            ctx.root.overlays_mut().offset_topmost(delta_x, delta_y);
+                            ctx.root.mark_dirty();
                         }
                     }
                     WidgetAction::OpenDropdown {
@@ -89,11 +75,12 @@ impl App {
                         log::info!("overlay Selected: index={index}");
                         self.dispatch_context_action(index);
                     }
+                    // All other actions: mark dirty if the event was handled (visual feedback).
                     _ => {
-                        if response.response.is_handled() {
+                        if response.handled {
                             if let Some(ctx) = self.focused_ctx_mut() {
-                                ctx.dirty = true;
-                                ctx.urgent_redraw = true;
+                                ctx.root.mark_dirty();
+                                ctx.root.set_urgent_redraw(true);
                             }
                         }
                     }
@@ -106,19 +93,16 @@ impl App {
                     // The settings panel beneath remains functional.
                     self.pending_dropdown_id = None;
                     if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.dirty = true;
-                        ctx.urgent_redraw = true;
+                        ctx.root.mark_dirty();
+                        ctx.root.set_urgent_redraw(true);
                     }
                 } else {
                     // Top-level overlay dismissed (Escape, click-outside).
-                    // Discard any pending settings changes.
-                    self.settings_pending = None;
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.context_menu = None;
-                        ctx.dirty = true;
-                        ctx.urgent_redraw = true;
+                        ctx.root.mark_dirty();
+                        ctx.root.set_urgent_redraw(true);
                     }
-                    self.settings_ids = None;
                 }
             }
             OverlayEventResult::Blocked => {
@@ -126,45 +110,6 @@ impl App {
             }
             OverlayEventResult::PassThrough => {}
         }
-    }
-
-    /// Try dispatching a widget action as a settings control change.
-    ///
-    /// Mutates the pending config copy — does NOT touch `self.config`.
-    /// Changes only take effect when the user clicks Save.
-    fn try_dispatch_settings_action(&mut self, action: &WidgetAction) -> bool {
-        let Some(ids) = &self.settings_ids else {
-            return false;
-        };
-        let Some(pending) = self.settings_pending.as_mut() else {
-            return false;
-        };
-        if !settings_overlay::action_handler::handle_settings_action(action, ids, pending) {
-            return false;
-        }
-
-        log::info!("settings: pending config updated (deferred until Save)");
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
-        }
-        true
-    }
-
-    /// Save settings: apply pending config, persist to disk, and dismiss.
-    fn save_settings(&mut self) {
-        if let Some(pending) = self.settings_pending.take() {
-            log::info!("settings: applying and saving to disk");
-            let old_config = std::mem::replace(&mut self.config, pending);
-            self.apply_settings_change(old_config);
-            self.config.save();
-        }
-        self.dismiss_topmost_overlay();
-    }
-
-    /// Cancel settings: discard pending changes and dismiss.
-    fn cancel_settings(&mut self) {
-        self.settings_pending = None;
-        self.dismiss_topmost_overlay();
     }
 
     /// Apply config changes after Save commits the pending config.
@@ -189,13 +134,14 @@ impl App {
             self.ui_theme = new_theme;
             for ctx in self.windows.values_mut() {
                 ctx.tab_bar.apply_theme(&self.ui_theme);
+                ctx.status_bar.apply_theme(&self.ui_theme);
             }
         }
 
         // Invalidate render caches and mark dirty.
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.invalidate_all();
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -203,10 +149,9 @@ impl App {
     fn dismiss_topmost_overlay(&mut self) {
         let now = Instant::now();
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays
-                .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root.dismiss_topmost(now);
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
         if self.pending_dropdown_id.is_some() {
             // Only the dropdown popup was dismissed.
@@ -216,7 +161,6 @@ impl App {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.context_menu = None;
             }
-            self.settings_ids = None;
         }
     }
 
@@ -273,7 +217,7 @@ impl App {
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -281,10 +225,9 @@ impl App {
     fn dismiss_context_menu(&mut self) {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = None;
-            ctx.overlays
-                .clear_popups(&mut ctx.layer_tree, &mut ctx.layer_animator);
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root.clear_popups();
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
     }
 
@@ -305,8 +248,7 @@ impl App {
         let mut style = MenuStyle::from_theme(&self.ui_theme);
         style.min_width = anchor.width();
         style.extra_width = 24.0;
-        style.corner_radius = 4.0;
-        style.shadow_color = self.ui_theme.shadow.with_alpha(0.15);
+        style.shadow_color = self.ui_theme.shadow;
         style.max_height = Some(300.0);
         style.selected_bg = self.ui_theme.accent.with_alpha(0.12);
 
@@ -321,23 +263,17 @@ impl App {
         self.pending_dropdown_id = Some(dropdown_id);
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays.replace_popup(
-                Box::new(widget),
-                anchor,
-                Placement::BelowFlush,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            );
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root
+                .replace_popup(Box::new(widget), anchor, Placement::BelowFlush, now);
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
     }
 
     /// Handle selection from a dropdown popup.
     ///
-    /// Routes the selection as a `WidgetAction::Selected` with the
-    /// dropdown's widget ID so the settings action handler can match it.
+    /// Dismisses the popup overlay and propagates the selection to the
+    /// overlay beneath so widgets can update their display.
     fn dispatch_dropdown_selection(&mut self, index: usize) {
         let dropdown_id = self.pending_dropdown_id.take();
         let Some(id) = dropdown_id else {
@@ -347,23 +283,16 @@ impl App {
         // Dismiss the popup overlay (topmost).
         let now = Instant::now();
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays
-                .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root.dismiss_topmost(now);
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
 
-        // Route the selection through the settings action handler.
+        // Propagate the selection to the overlay beneath.
         let action = WidgetAction::Selected { id, index };
-        if self.try_dispatch_settings_action(&action) {
-            // Propagate back to the dropdown widget so it updates its display.
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.overlays.accept_action_topmost(&action);
-                ctx.dirty = true;
-            }
-            return;
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.root.overlays_mut().accept_action_topmost(&action);
+            ctx.root.mark_dirty();
         }
-
-        log::info!("dropdown selection: id={id:?}, index={index}, no handler matched");
     }
 }

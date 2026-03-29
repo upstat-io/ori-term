@@ -6,8 +6,9 @@
 //! produces a [`PreparedFrame`](super::prepared_frame::PreparedFrame).
 
 use oriterm_core::grid::StableRowIndex;
+use oriterm_core::index::Side;
 use oriterm_core::search::MatchType;
-use oriterm_core::selection::{Selection, SelectionBounds};
+use oriterm_core::selection::{Selection, SelectionBounds, SelectionMode};
 use oriterm_core::{Column, CursorShape, RenderableContent, Rgb, SearchMatch};
 use oriterm_mux::PaneSnapshot;
 
@@ -77,6 +78,45 @@ impl FrameSelection {
 
         Some((start, end.min(num_rows - 1)))
     }
+
+    /// Snapshot the selection state for incremental damage tracking.
+    ///
+    /// Captures line range, column extents, and mode so the incremental
+    /// path detects intra-line selection changes (e.g. same-row drag).
+    pub fn damage_snapshot(&self, num_rows: usize) -> Option<SelectionDamageSnapshot> {
+        let (start_line, end_line) = self.viewport_line_range(num_rows)?;
+        Some(SelectionDamageSnapshot {
+            start_line,
+            end_line,
+            start_col: self.bounds.start.col,
+            start_side: self.bounds.start.side,
+            end_col: self.bounds.end.col,
+            end_side: self.bounds.end.side,
+            mode: self.bounds.mode,
+        })
+    }
+}
+
+/// Compact snapshot of selection state for incremental damage tracking.
+///
+/// Compared between frames to determine which rows need regeneration
+/// when the selection changes (including intra-line column changes).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectionDamageSnapshot {
+    /// First viewport line (inclusive).
+    pub start_line: usize,
+    /// Last viewport line (inclusive).
+    pub end_line: usize,
+    /// Column of the selection start point.
+    pub start_col: usize,
+    /// Side of the selection start point.
+    pub start_side: Side,
+    /// Column of the selection end point.
+    pub end_col: usize,
+    /// Side of the selection end point.
+    pub end_side: Side,
+    /// Selection mode (char/word/line/block affects damage scope).
+    pub mode: SelectionMode,
 }
 
 /// Search rendering snapshot for one frame.

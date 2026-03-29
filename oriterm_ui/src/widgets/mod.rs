@@ -5,232 +5,124 @@
 //! is a concrete struct implementing `Widget`. Trait objects (`Box<dyn Widget>`)
 //! are used for dynamic dispatch in overlay and container contexts.
 
+pub mod contexts;
 pub mod text_measurer;
 
 pub mod button;
 pub mod checkbox;
+pub mod code_preview;
+pub mod color_swatch;
 pub mod container;
+pub mod cursor_picker;
 pub mod dialog;
 pub mod dropdown;
 pub mod form_layout;
 pub mod form_row;
 pub mod form_section;
+pub mod icon_widget;
+pub mod keybind;
 pub mod label;
 pub mod menu;
+pub mod modifiers;
+pub mod number_input;
+pub mod page_container;
 pub mod panel;
+pub mod rich_label;
+pub mod scheme_card;
 pub mod scroll;
+pub mod scrollbar;
 pub mod separator;
+pub mod setting_row;
+pub mod settings_footer;
 pub mod settings_panel;
+pub mod sidebar_nav;
 pub mod slider;
 pub mod spacer;
 pub mod stack;
 pub mod status_badge;
+pub mod status_bar;
 pub mod tab_bar;
 pub mod text_input;
 pub mod toggle;
 pub mod window_chrome;
 
-use std::cell::Cell;
-use std::time::Instant;
-
-use crate::draw::DrawList;
-use crate::geometry::Rect;
-use crate::icons::ResolvedIcons;
-use crate::input::{EventResponse, HoverEvent, KeyEvent, MouseEvent};
+use crate::animation::anim_frame::AnimFrameEvent;
+use crate::controllers::{ControllerRequests, EventController};
+use crate::hit_test_behavior::HitTestBehavior;
+use crate::interaction::LifecycleEvent;
 use crate::layout::LayoutBox;
-use crate::theme::UiTheme;
+use crate::sense::Sense;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
+pub use contexts::{AnimCtx, DrawCtx, EventCtx, LayoutCtx, LifecycleCtx, PrepaintCtx};
 pub use text_measurer::TextMeasurer;
 
-/// Whether a widget wants to acquire or release mouse capture.
-///
-/// Capture is a routing directive: when a widget acquires capture, all
-/// subsequent mouse events (Move, Up) are routed to that widget regardless
-/// of cursor position, until capture is released.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CaptureRequest {
-    /// No capture change requested.
-    #[default]
-    None,
-    /// Request mouse capture for the responding widget.
-    Acquire,
-    /// Release any active mouse capture.
-    Release,
-}
+// `WidgetAction` lives in `crate::action` to avoid a circular dependency
+// (`controllers -> widgets`). Re-exported here for backward compatibility.
+pub use crate::action::WidgetAction;
 
-/// How a widget responded to an event, including an optional semantic action.
+/// Result of `Widget::on_input()` fallback handling.
 ///
-/// Widgets return this from event handlers. The `response` field tells the
-/// framework how to handle propagation; the `action` field carries semantic
-/// meaning for the application layer.
-#[derive(Debug, Clone, PartialEq)]
-pub struct WidgetResponse {
-    /// How the framework should handle this event.
-    pub response: EventResponse,
-    /// Optional semantic action for the application layer to interpret.
+/// Returned by widgets that handle input events directly (not via controllers).
+/// Carries an optional semantic action for the application layer.
+#[derive(Debug, Default)]
+pub struct OnInputResult {
+    /// Whether the event was handled.
+    pub handled: bool,
+    /// Semantic action emitted, if any.
     pub action: Option<WidgetAction>,
-    /// Whether the widget wants to acquire or release mouse capture.
-    pub capture: CaptureRequest,
+    /// Framework requests (e.g. capture/release pointer).
+    pub requests: ControllerRequests,
 }
 
-impl WidgetResponse {
-    /// Event handled, no action emitted.
+impl OnInputResult {
+    /// Event was handled, no action emitted.
     pub fn handled() -> Self {
         Self {
-            response: EventResponse::Handled,
+            handled: true,
             action: None,
-            capture: CaptureRequest::None,
+            requests: ControllerRequests::NONE,
         }
     }
 
-    /// Event ignored — propagate to parent.
+    /// Event was not handled.
     pub fn ignored() -> Self {
         Self {
-            response: EventResponse::Ignored,
+            handled: false,
             action: None,
-            capture: CaptureRequest::None,
+            requests: ControllerRequests::NONE,
         }
     }
 
-    /// Visual-only change (hover color, focus ring). Repaint needed, no relayout.
-    pub fn paint() -> Self {
-        Self {
-            response: EventResponse::RequestPaint,
-            action: None,
-            capture: CaptureRequest::None,
-        }
-    }
-
-    /// Structural change (text content, visibility). Relayout + repaint needed.
-    pub fn layout() -> Self {
-        Self {
-            response: EventResponse::RequestLayout,
-            action: None,
-            capture: CaptureRequest::None,
-        }
-    }
-
-    /// Event handled, focus requested, no action.
-    pub fn focus() -> Self {
-        Self {
-            response: EventResponse::RequestFocus,
-            action: None,
-            capture: CaptureRequest::None,
-        }
-    }
-
-    /// Attaches an action to this response.
+    /// Attaches a semantic action to this result.
     #[must_use]
     pub fn with_action(mut self, action: WidgetAction) -> Self {
         self.action = Some(action);
         self
     }
 
-    /// Requests mouse capture for the responding widget.
+    /// Requests pointer capture (the widget will receive `MouseMove`
+    /// and `MouseUp` even when the cursor is outside its bounds).
     #[must_use]
     pub fn with_capture(mut self) -> Self {
-        self.capture = CaptureRequest::Acquire;
+        self.requests.insert(ControllerRequests::SET_ACTIVE);
         self
     }
 
-    /// Requests release of any active mouse capture.
+    /// Requests release of pointer capture.
     #[must_use]
-    pub fn with_release_capture(mut self) -> Self {
-        self.capture = CaptureRequest::Release;
+    pub fn with_release(mut self) -> Self {
+        self.requests.insert(ControllerRequests::CLEAR_ACTIVE);
         self
     }
-}
 
-/// A semantic action emitted by a widget for the application layer.
-///
-/// No closures — the app layer matches on variants and interprets them.
-/// This keeps widgets stateless with respect to application logic.
-#[derive(Debug, Clone, PartialEq)]
-pub enum WidgetAction {
-    /// A button or clickable widget was activated.
-    Clicked(WidgetId),
-    /// A boolean value was toggled (checkbox, toggle switch).
-    Toggled { id: WidgetId, value: bool },
-    /// A numeric value changed (slider).
-    ValueChanged { id: WidgetId, value: f32 },
-    /// Text content changed (text input).
-    TextChanged { id: WidgetId, text: String },
-    /// An item was selected by index (dropdown, menu).
-    Selected { id: WidgetId, index: usize },
-    /// A dropdown trigger requests opening its popup list.
-    OpenDropdown {
-        /// The dropdown widget's ID (for routing selection back).
-        id: WidgetId,
-        /// Option labels.
-        options: Vec<String>,
-        /// Currently selected index.
-        selected: usize,
-        /// Screen-space anchor rect for popup placement.
-        anchor: Rect,
-    },
-    /// An overlay content widget requests its own dismissal.
-    DismissOverlay(WidgetId),
-    /// An overlay widget requests repositioning (e.g. header drag).
-    MoveOverlay { delta_x: f32, delta_y: f32 },
-    /// The settings panel Save button was clicked — persist and dismiss.
-    SaveSettings,
-    /// The settings panel Cancel button was clicked — revert and dismiss.
-    CancelSettings,
-    /// Minimize the window.
-    WindowMinimize,
-    /// Maximize or restore the window.
-    WindowMaximize,
-    /// Close the window.
-    WindowClose,
-}
-
-/// Context passed to [`Widget::layout`].
-pub struct LayoutCtx<'a> {
-    /// Text measurement provider.
-    pub measurer: &'a dyn TextMeasurer,
-    /// Active UI theme.
-    pub theme: &'a UiTheme,
-}
-
-/// Context passed to [`Widget::draw`].
-pub struct DrawCtx<'a> {
-    /// Text shaping provider.
-    pub measurer: &'a dyn TextMeasurer,
-    /// The draw command list to append to.
-    pub draw_list: &'a mut DrawList,
-    /// The widget's computed bounds (from layout).
-    pub bounds: Rect,
-    /// The currently focused widget, if any.
-    pub focused_widget: Option<WidgetId>,
-    /// Current frame timestamp for animation interpolation.
-    pub now: Instant,
-    /// Set to `true` by widgets with running animations to request redraw.
-    pub animations_running: &'a Cell<bool>,
-    /// Active UI theme.
-    pub theme: &'a UiTheme,
-    /// Pre-resolved icon atlas entries for this frame.
-    ///
-    /// `None` in tests or when the GPU renderer is not available.
-    /// Widgets fall back to `push_line()` when this is `None`.
-    pub icons: Option<&'a ResolvedIcons>,
-}
-
-/// Context passed to mouse and keyboard event handlers.
-pub struct EventCtx<'a> {
-    /// Text measurement provider.
-    pub measurer: &'a dyn TextMeasurer,
-    /// The widget's computed bounds (from layout).
-    pub bounds: Rect,
-    /// Whether this widget currently has keyboard focus.
-    pub is_focused: bool,
-    /// The currently focused widget, if any.
-    ///
-    /// Containers use this to set per-child `is_focused` correctly,
-    /// so only the focused child responds to key events.
-    pub focused_widget: Option<WidgetId>,
-    /// Active UI theme.
-    pub theme: &'a UiTheme,
+    /// Requests keyboard focus for this widget.
+    #[must_use]
+    pub fn with_focus_request(mut self) -> Self {
+        self.requests.insert(ControllerRequests::REQUEST_FOCUS);
+        self
+    }
 }
 
 /// The core widget trait.
@@ -238,27 +130,152 @@ pub struct EventCtx<'a> {
 /// Each widget is a concrete struct that implements this trait. Widgets
 /// own their visual state (hovered, pressed) and app state (checked, value),
 /// plus a style struct with `Default` dark-theme defaults.
+///
+/// Input is handled by event controllers (`controllers()`), with `on_input()`
+/// as a fallback for widget-internal logic. Visual state transitions are
+/// driven by `VisualStateAnimator` (`visual_states()`). Lifecycle events
+/// (`lifecycle()`) notify widgets of hot/active/focus changes.
 pub trait Widget {
     /// Returns this widget's unique identifier.
     fn id(&self) -> WidgetId;
 
     /// Whether this widget can receive keyboard focus.
-    fn is_focusable(&self) -> bool;
+    ///
+    /// Default derives from `sense().has_focus()`. Override only if focusability
+    /// depends on runtime state (e.g., disabled widgets).
+    fn is_focusable(&self) -> bool {
+        self.sense().has_focus()
+    }
 
     /// Builds a layout descriptor for the layout solver.
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox;
 
-    /// Draws the widget into the draw list.
-    fn draw(&self, ctx: &mut DrawCtx<'_>);
+    // --- New methods (Section 08.1) ---
 
-    /// Handles a mouse event. Returns a response with optional action.
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
+    /// Resolves visual states and caches interaction state queries.
+    ///
+    /// Called after layout, before paint. Widgets override this to read
+    /// interaction state (`ctx.is_hot()`, `ctx.is_active()`) and animator
+    /// values, storing resolved results on `self` for `paint()` to read.
+    /// Default is a no-op.
+    fn prepaint(&mut self, _ctx: &mut PrepaintCtx<'_>) {}
 
-    /// Handles a synthetic hover event (enter/leave).
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
+    /// Paints the widget into the scene.
+    ///
+    /// Use `ctx.is_hot()`, `ctx.is_active()`, `ctx.is_focused()` for
+    /// interaction-dependent rendering. Use `VisualStateAnimator` for
+    /// animated property interpolation.
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
 
-    /// Handles a keyboard event. Returns a response with optional action.
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
+    /// Handles lifecycle events (hot/active/focus changes, widget add/remove).
+    ///
+    /// Called by the framework when interaction state changes. Default is a no-op.
+    fn lifecycle(&mut self, _event: &LifecycleEvent, _ctx: &mut LifecycleCtx<'_>) {}
+
+    /// Handles animation frame ticks.
+    ///
+    /// Called only when the widget previously requested an animation frame
+    /// via `ctx.request_anim_frame()`. Default is a no-op.
+    fn anim_frame(&mut self, _event: &AnimFrameEvent, _ctx: &mut AnimCtx<'_>) {}
+
+    /// Event controllers attached to this widget.
+    ///
+    /// Controllers handle input events (hover, click, drag, scroll, focus)
+    /// via the event propagation pipeline. Default returns an empty slice.
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &[]
+    }
+
+    /// Mutable access to controllers (for event dispatch).
+    ///
+    /// The framework calls this during event propagation to deliver events
+    /// to each controller. Default returns an empty slice.
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut []
+    }
+
+    /// Visual state groups for automatic state resolution and animation.
+    ///
+    /// Returns `None` if this widget doesn't use visual state management.
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        None
+    }
+
+    /// Mutable access to the visual state animator.
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        None
+    }
+
+    /// Visits each mutable child widget for tree traversal.
+    ///
+    /// The framework calls this to walk the widget tree during the pre-paint
+    /// pipeline (lifecycle delivery, animation ticks, visual state updates).
+    /// Containers override to yield their children; leaf widgets use the
+    /// default (no children).
+    fn for_each_child_mut(&mut self, _visitor: &mut dyn FnMut(&mut dyn Widget)) {}
+
+    /// Visits ALL children including hidden/inactive ones.
+    ///
+    /// Override when `for_each_child_mut` skips children for performance
+    /// (e.g., `PageContainerWidget` visits only the active page). Pipeline
+    /// functions that must see every child (registration, key context
+    /// collection) call this instead of `for_each_child_mut`.
+    ///
+    /// Default: delegates to `for_each_child_mut()`.
+    fn for_each_child_mut_all(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        self.for_each_child_mut(visitor);
+    }
+
+    /// Handles input events not consumed by controllers.
+    ///
+    /// Called by the dispatch pipeline after controller dispatch when no
+    /// controller marked the event as handled. Used for widget-internal
+    /// interaction logic (e.g., menu item hover tracking) that doesn't fit
+    /// the generic controller model. Return `true` if the widget handled the
+    /// event.
+    fn on_input(
+        &mut self,
+        _event: &crate::input::InputEvent,
+        _bounds: crate::geometry::Rect,
+    ) -> OnInputResult {
+        OnInputResult::ignored()
+    }
+
+    /// Transforms a controller-emitted action into a widget-specific action.
+    ///
+    /// Called by the dispatch pipeline after a controller on this widget emits
+    /// an action. The widget can replace generic actions (e.g., `Clicked`) with
+    /// semantic actions (e.g., `OpenDropdown`, `Toggled`) using its own state,
+    /// and perform side effects (e.g., toggling internal state, starting
+    /// animations). The `bounds` parameter is the widget's layout bounds from
+    /// hit testing (used by dropdowns for popup anchor positioning).
+    ///
+    /// Return `Some(action)` to propagate (original or transformed), or `None`
+    /// to suppress the action.
+    fn on_action(
+        &mut self,
+        action: WidgetAction,
+        _bounds: crate::geometry::Rect,
+    ) -> Option<WidgetAction> {
+        Some(action)
+    }
+
+    /// Handles a keymap-resolved action.
+    ///
+    /// Called by the dispatch pipeline when a keystroke matched a keymap
+    /// binding. The widget maps the semantic `KeymapAction` to a
+    /// `WidgetAction` using its own state (e.g., `NavigateDown` + current
+    /// selection -> `Selected { id, index: current + 1 }`).
+    ///
+    /// Return `Some(action)` to emit a `WidgetAction`, or `None` to
+    /// suppress. Default returns `None` (widget does not handle keymap actions).
+    fn handle_keymap_action(
+        &mut self,
+        _action: &dyn crate::action::KeymapAction,
+        _bounds: crate::geometry::Rect,
+    ) -> Option<WidgetAction> {
+        None
+    }
 
     /// Propagates an externally-originated action to a descendant widget.
     ///
@@ -282,6 +299,42 @@ pub trait Widget {
             Vec::new()
         }
     }
+
+    /// Declares what interactions this widget cares about.
+    ///
+    /// Hit testing skips widgets with `Sense::none()`. All production widgets
+    /// provide explicit overrides. The default returns `Sense::none()`.
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
+    /// Controls how this widget participates in hit testing relative to
+    /// its children.
+    ///
+    /// The default is `DeferToChild`: children are tested first, and the
+    /// widget itself is only hit if no child handles the point.
+    fn hit_test_behavior(&self) -> HitTestBehavior {
+        HitTestBehavior::DeferToChild
+    }
+
+    /// Returns the key context tag for keymap scope gating.
+    ///
+    /// The keymap dispatch pipeline builds a context stack from the focus
+    /// path by collecting `key_context()` values from ancestor widgets.
+    /// Bindings with `context: Some("Button")` only fire when a widget
+    /// returning `Some("Button")` is in the focus ancestor chain.
+    ///
+    /// Default is `None` (no context tag — does not affect keymap scoping).
+    fn key_context(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Resets scroll state to the top.
+    ///
+    /// Called by container widgets (e.g. `PageContainerWidget`) when a child
+    /// becomes the active page. Default is a no-op; `ScrollWidget` overrides
+    /// to reset its scroll offset to zero.
+    fn reset_scroll(&mut self) {}
 }
 
 #[cfg(test)]

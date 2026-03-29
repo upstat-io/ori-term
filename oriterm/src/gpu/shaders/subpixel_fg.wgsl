@@ -4,6 +4,7 @@
 // subpixel coverage masks (from swash Format::Subpixel). Each color
 // channel is blended independently: mix(bg, fg, mask_channel). This
 // achieves ~3x effective horizontal resolution on LCD displays.
+// Per-instance clip rect discards out-of-bounds fragments.
 
 struct Uniform {
     screen_size: vec2<f32>,
@@ -27,6 +28,7 @@ struct InstanceInput {
     @location(4) bg_color: vec4<f32>,
     @location(5) kind: u32,
     @location(6) atlas_page: u32,
+    @location(7) clip: vec4<f32>,
 }
 
 struct VertexOutput {
@@ -35,6 +37,8 @@ struct VertexOutput {
     @location(1) bg_color: vec4<f32>,
     @location(2) tex_coord: vec2<f32>,
     @location(3) @interpolate(flat) atlas_page: u32,
+    @location(4) clip_min: vec2<f32>,
+    @location(5) clip_max: vec2<f32>,
 }
 
 @vertex
@@ -65,37 +69,60 @@ fn vs_main(
     out.bg_color = instance.bg_color;
     out.tex_coord = tex_coord;
     out.atlas_page = instance.atlas_page;
+    out.clip_min = instance.clip.xy;
+    out.clip_max = instance.clip.xy + instance.clip.zw;
     return out;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    // Per-instance clip rect test.
+    let frag_pos = input.position.xy;
+    if frag_pos.x < input.clip_min.x || frag_pos.x > input.clip_max.x
+        || frag_pos.y < input.clip_min.y || frag_pos.y > input.clip_max.y {
+        discard;
+    }
+
     // Sample per-channel coverage mask from the subpixel atlas.
-    // R/G/B contain independent subpixel coverage (0.0–1.0).
+    // R/G/B contain independent subpixel coverage (0.0-1.0).
     let mask = textureSample(subpixel_atlas_texture, subpixel_atlas_sampler, input.tex_coord, input.atlas_page);
 
     let fg = input.fg_color;
     let bg = input.bg_color;
 
-    // Per-channel compositing: each channel blended independently.
-    let r = mix(bg.r, fg.r, mask.r);
-    let g = mix(bg.g, fg.g, mask.g);
-    let b = mix(bg.b, fg.b, mask.b);
-
-    // When the background color is known (bg.a > 0), compositing is
-    // already complete — output the result directly as opaque. This
-    // avoids the "squared coverage" artifact that occurs when per-channel
-    // composited values are further multiplied by a single alpha channel.
+    // Known background — true per-channel LCD compositing.
+    //
+    // fg.a carries the dim factor (1.0 = normal, ~0.6 = dimmed pane).
+    // Scale coverage by dim so dimmed text appears lighter. When dim=0,
+    // all mask channels become 0, the zero-coverage guard fires, and the
+    // pixel passes through transparent — fully dimmed text is invisible.
+    //
+    // BlendState is PREMUL_ALPHA_BLEND: src*1 + dst*(1-src_alpha).
+    // - Opaque output vec4(r,g,b,1.0): src_alpha=1 -> dst*(1-1)=0, dst
+    //   fully replaced. Correct: shader already composited fg over bg.
+    // - Transparent output vec4(0,0,0,0): src_alpha=0 -> dst preserved.
+    //   Correct: zero-coverage pixel passes through to framebuffer.
     if bg.a > 0.001 {
+        let dim = fg.a;
+        let r = mix(bg.r, fg.r, mask.r * dim);
+        let g = mix(bg.g, fg.g, mask.g * dim);
+        let b = mix(bg.b, fg.b, mask.b * dim);
+        let coverage = max(mask.r, max(mask.g, mask.b)) * dim;
+        if coverage < 0.001 {
+            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        }
         return vec4<f32>(r, g, b, 1.0);
     }
 
-    // Unknown background — fall back to grayscale alpha blending.
+    // Unknown background — grayscale alpha fallback.
     // Without a real background hint, preserving independent RGB coverage
     // produces visible color fringing on non-default cell backgrounds.
     // Collapse the subpixel mask to a single coverage value so the glyph
     // blends like standard grayscale text over whatever background is
     // already in the framebuffer.
+    //
+    // BlendState: premultiplied vec4(fg.rgb*a, a) blends correctly over
+    // whatever is in the framebuffer.
     let coverage = max(mask.r, max(mask.g, mask.b));
     let a = coverage * fg.a;
     return vec4<f32>(fg.rgb * a, a);

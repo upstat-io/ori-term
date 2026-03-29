@@ -3,6 +3,7 @@ section: 21
 title: Context Menu & Window Controls
 status: in-progress
 reviewed: true
+last_verified: "2026-03-29"
 tier: 4
 goal: GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list
 sections:
@@ -20,7 +21,7 @@ sections:
     status: complete
   - id: "21.5"
     title: Taskbar Jump List & Dock Menu
-    status: complete
+    status: in-progress
   - id: "21.6"
     title: Section Completion
     status: not-started
@@ -28,7 +29,7 @@ sections:
 
 # Section 21: Context Menu & Window Controls
 
-**Status:** In Progress (4 of 6 sub-sections complete)
+**Status:** In Progress (4 of 6 sub-sections complete, 21.5 partial -- --new-tab gap found during verification 2026-03-29)
 **Goal:** GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list.
 
 **Crates:** `oriterm` (binary), `oriterm_ui` (widget library)
@@ -45,7 +46,7 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
 
 **Reference:** `_old/src/context_menu.rs`, `_old/src/gpu/render_overlay.rs`
 
-- [x] `MenuWidget` struct (plan called this `MenuOverlay` — position/size managed by overlay system):
+- [x] `MenuWidget` struct (plan called this `MenuOverlay` — position/size managed by overlay system): (verified 2026-03-29)
   - [x] `entries: Vec<MenuEntry>` — menu items
   - [x] Position managed by overlay anchoring (not stored on widget — cleaner separation)
   - [x] `hovered: Option<usize>` — currently hovered entry index (None if not hovering any item)
@@ -55,8 +56,8 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
   - [x] `Item { label: String }` — clickable item (action decoupled via `ContextMenuState`)
   - [x] `Check { label: String, checked: bool }` — item with checkmark indicator (action decoupled)
   - [x] `Separator` — horizontal line divider
-- [x] `ContextAction` enum + `ContextMenuState` — maps entry indices to actions (cleaner than embedding actions in entries)
-- [x] Three menu contexts:
+- [x] `ContextAction` enum + `ContextMenuState` — maps entry indices to actions (cleaner than embedding actions in entries) (verified 2026-03-29)
+- [x] Three menu contexts: (verified 2026-03-29 -- all 9 ContextAction variants dispatched in overlay_dispatch.rs)
   1. [x] **Tab context menu** (right-click on a tab):
      - [x] Close Tab
      - [x] Duplicate Tab
@@ -74,7 +75,7 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
      - [x] Settings (opens settings dialog)
      - [x] Separator
      - [x] About
-- [x] Layout calculation:
+- [x] Layout calculation: (verified 2026-03-29)
   - [x] Measure max label width using `TextMeasurer` (backed by `UiFontMeasurer`)
   - [x] If any `Check` entry exists: left margin includes checkmark width + gap
   - [x] `width = (left_margin + max_label_w + extra_width).max(min_width)`
@@ -111,7 +112,7 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
   - [x] `checkmark_gap: f32` — gap between check mark and label text
   - [x] Color fields: `bg`, `fg`, `hover_bg`, `separator_color`, `border_color`, `check_color`, `shadow_color`
   - [x] `border_width: f32`, `font_size: f32`
-- [x] Action dispatch chain (complete flow from click to effect):
+- [x] Action dispatch chain (complete flow from click to effect): (verified 2026-03-29)
   1. [x] User clicks menu item → `MenuWidget::handle_mouse` emits `WidgetAction::Selected { id, index }`
   2. [x] Overlay system delivers event → `handle_overlay_result()` in `overlay_dispatch.rs`
   3. [x] `dispatch_context_action(index)` resolves index via `ContextMenuState::resolve()`
@@ -119,20 +120,20 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
   5. [x] Each action delegates to existing `App` methods (`copy_selection`, `paste_from_clipboard`, `close_tab_at_index`, etc.)
 - [x] Edge case: Copy with no selection — handled at build time: `build_grid_context_menu(has_selection)` omits the Copy entry entirely when `has_selection` is false (tested in `grid_context_menu_without_selection`)
 - [x] Edge case: CloseTab from grid context menu uses placeholder index 0 — the dispatch in `overlay_dispatch.rs` calls `close_tab_at_index(0)` but this works because the grid context menu always applies to the active tab
-- [x] Keyboard navigation within open menu:
+- [x] Keyboard navigation within open menu: (verified 2026-03-29)
   - [x] Arrow Down/Up: navigate between clickable items (skips separators, wraps around)
   - [x] Enter/Space: activate hovered item (emit `Selected`)
   - [x] Escape: dismiss overlay (emit `DismissOverlay`)
   - [x] Requires focus — `is_focusable()` returns `true`, unfocused menu ignores keys
 
-**Tests (21.1):**
-- [x] `oriterm/src/app/context_menu/tests.rs`: dropdown menu builder (entries, actions, out-of-bounds resolve)
-- [x] `oriterm/src/app/context_menu/tests.rs`: tab context menu builder (entries, actions with tab index)
-- [x] `oriterm/src/app/context_menu/tests.rs`: grid context menu builder (with/without selection, action coverage)
-- [x] `oriterm_ui/src/widgets/menu/tests.rs`: layout (min width, height, empty menu, wide labels, check entries)
-- [x] `oriterm_ui/src/widgets/menu/tests.rs`: mouse interaction (click emits selected, separator not clickable, hover tracking, hover leave)
-- [x] `oriterm_ui/src/widgets/menu/tests.rs`: keyboard navigation (arrow down/up, enter, escape, space, wrapping, consecutive separators)
-- [x] `oriterm_ui/src/widgets/menu/tests.rs`: edge cases (single item, not focused ignores keys, right-click ignored, out-of-bounds Y)
+**Tests (21.1):** (verified 2026-03-29 -- 34 tests: 27 menu + 7 context)
+- [x] `oriterm/src/app/context_menu/tests.rs`: dropdown menu builder (entries, actions, out-of-bounds resolve) (verified 2026-03-29)
+- [x] `oriterm/src/app/context_menu/tests.rs`: tab context menu builder (entries, actions with tab index) (verified 2026-03-29)
+- [x] `oriterm/src/app/context_menu/tests.rs`: grid context menu builder (with/without selection, action coverage) (verified 2026-03-29)
+- [x] `oriterm_ui/src/widgets/menu/tests.rs`: layout (min width, height, empty menu, wide labels, check entries) (verified 2026-03-29)
+- [x] `oriterm_ui/src/widgets/menu/tests.rs`: mouse interaction (click emits selected, separator not clickable, hover tracking, hover leave) (verified 2026-03-29)
+- [x] `oriterm_ui/src/widgets/menu/tests.rs`: keyboard navigation (arrow down/up, enter, escape, space, wrapping, consecutive separators) (verified 2026-03-29)
+- [x] `oriterm_ui/src/widgets/menu/tests.rs`: edge cases (single item, not focused ignores keys, right-click ignored, out-of-bounds Y) (verified 2026-03-29)
 
 ---
 
@@ -144,7 +145,7 @@ When the config file changes (detected by `ConfigMonitor` file watcher in `orite
 
 **Reference:** `_old/src/app/config_reload.rs`
 
-- [x] `apply_config_reload(&mut self)`:
+- [x] `apply_config_reload(&mut self)`: (verified 2026-03-29 -- config_reload.rs:22, 490 lines)
   - [x] Load new config from disk via `Config::try_load()` — if parse fails, log warning and return (keep current config)
   - [x] **Color scheme changes** (`apply_color_changes`): if `new.colors != old.colors`:
     - [x] Resolve theme via `new.colors.resolve_theme()`
@@ -181,7 +182,7 @@ When the config file changes (detected by `ConfigMonitor` file watcher in `orite
   - `window.decorations` — frameless vs. native titlebar cannot be toggled at runtime on Windows (requires window recreation)
   - `window.resize_increments` — initial window hint only
   - `pane.divider_px`, `pane.min_cells`, `pane.dim_inactive`, `pane.inactive_opacity`, `pane.divider_color`, `pane.focus_border_color` — read from `self.config` at render/resize sites, so storing the new config is sufficient. No explicit broadcast step, but all panes pick up changes on next render.
-- [x] File watcher mechanism (`ConfigMonitor` in `oriterm/src/config/monitor/mod.rs`):
+- [x] File watcher mechanism (`ConfigMonitor` in `oriterm/src/config/monitor/mod.rs`): (verified 2026-03-29 -- 7 tests pass)
   - [x] Uses `notify` crate (`recommended_watcher`) to watch the config directory
   - [x] Also watches `themes/` subdirectory for `.toml` scheme files
   - [x] 200ms debounce: drains rapid-fire events from editors (write-tmp, rename, etc.)
@@ -215,7 +216,7 @@ Full-featured settings panel with form controls for font, color scheme, cursor, 
 
 ### App state changes
 
-- [x] Settings uses `settings_ids: Option<SettingsIds>` + `settings_pending: Option<Config>` on `App` — working copy of config, mutated by control changes, applied on Save
+- [x] Settings uses `settings_ids: Option<SettingsIds>` + `settings_pending: Option<Config>` on `App` (verified 2026-03-29) — working copy of config, mutated by control changes, applied on Save
 - [x] Dialog windows stored in `App.dialogs: HashMap<WindowId, DialogWindowContext>` (separate from `App.windows`)
 - [x] `DialogWindowContext` struct (in `dialog_context.rs`): window, surface, renderer, kind, content, scale, chrome
 - [x] `DialogContent::Settings { panel, ids, pending_config, original_config }` — settings-specific dialog content
@@ -224,7 +225,7 @@ Full-featured settings panel with form controls for font, color scheme, cursor, 
 
 ### Settings dialog lifecycle
 
-- [x] `open_settings_dialog(event_loop)` (in `dialog_management.rs`):
+- [x] `open_settings_dialog(event_loop)` (in `dialog_management.rs`): (verified 2026-03-29 -- 20 tests pass)
   - [x] Prevents duplicates: `has_dialog_of_kind(DialogKind::Settings)` — focuses existing dialog if open
   - [x] Creates frameless dialog window centered on parent via `create_dialog_window()`
   - [x] Sets `min_inner_size(600x400)` for settings dialog
@@ -265,9 +266,9 @@ Full-featured settings panel with form controls for font, color scheme, cursor, 
   - [x] Discards `settings_pending`, dismisses overlay/dialog
 - [x] `apply_settings_change()`: temporarily swaps old config back so delta-comparison methods work correctly, then restores new config
 
-**Tests (21.3):**
-- [x] `oriterm/src/app/settings_overlay/form_builder/tests.rs`: `SettingsIds` field uniqueness, form construction
-- [x] `oriterm/src/app/settings_overlay/action_handler/tests.rs`: action dispatch to pending config fields
+**Tests (21.3):** (verified 2026-03-29 -- 20 tests: 10 form + 10 action)
+- [x] `oriterm/src/app/settings_overlay/form_builder/tests.rs`: `SettingsIds` field uniqueness, form construction (verified 2026-03-29)
+- [x] `oriterm/src/app/settings_overlay/action_handler/tests.rs`: action dispatch to pending config fields (verified 2026-03-29)
 - [x] Note: `open_settings_dialog`, `close_dialog`, dialog rendering require GPU/winit — manual verification
 
 ---
@@ -280,7 +281,7 @@ Custom window controls for the frameless window, integrated into the tab bar. Pl
 
 **Reference:** `_old/src/gpu/render_tab_bar.rs`, `_old/src/tab_bar.rs`
 
-- [x] Three buttons in top-right corner of tab bar:
+- [x] Three buttons in top-right corner of tab bar: (verified 2026-03-29 -- 14 tests pass)
   - [x] Minimize (─): emits `WidgetAction::WindowMinimize`
   - [x] Maximize (□ / ⧉): emits `WidgetAction::WindowMaximize` — icon changes based on `is_maximized`
   - [x] Close (×): emits `WidgetAction::WindowClose`
@@ -297,7 +298,7 @@ Custom window controls for the frameless window, integrated into the tab bar. Pl
   - [x] Double-click on `DragArea` (empty tab bar space): toggle maximize
   - [x] Click + drag on `DragArea`: `window.drag_window()` — OS handles movement
   - [x] Aero Snap on Windows: handled by OS via `drag_window()` when custom WndProc subclass is installed
-- [x] Aero Snap subclass (Windows-specific, `oriterm_ui/src/platform_windows/`):
+- [x] Aero Snap subclass (Windows-specific, `oriterm_ui/src/platform_windows/`): (verified 2026-03-29)
   - [x] `enable_snap()` installs `SetWindowSubclass` handler with per-window `SnapData`
   - [x] Custom `WndProc` that handles `WM_NCHITTEST` — returns `HTCAPTION` for drag areas, `HTCLIENT` for interactive areas
   - [x] Also handles `WM_DPICHANGED` — stores new DPI via `AtomicU32`, queried via `get_current_dpi()`
@@ -350,13 +351,13 @@ Win32 COM API: `ICustomDestinationList` + `IShellLinkW`. Items appear in the tas
 
 ### Architecture: data model vs. COM submission
 
-- [x] `JumpListTask` struct (pure data, no COM dependency):
-  - [x] `label: String` — display name in the jump list
-  - [x] `arguments: String` — command-line arguments (e.g., `--new-window`)
-  - [x] `description: String` — tooltip text
-- [x] `build_jump_list_tasks() -> Vec<JumpListTask>` — pure function that builds the task list from config. This is unit-testable without COM.
-- [x] `exe_path() -> std::io::Result<std::path::PathBuf>` — helper to resolve the path to the running `oriterm` binary via `std::env::current_exe()`. Called inside `submit_jump_list` for `IShellLinkW::SetPath`. Must handle the case where `current_exe()` fails (e.g., `/proc/self/exe` unreadable) by returning an error that `submit_jump_list` propagates.
-- [x] `submit_jump_list(tasks: &[JumpListTask]) -> windows::core::Result<()>` — COM submission wrapper. Split into helpers to stay under 50 lines per function (code-hygiene.md). Recommended split:
+- [x] `JumpListTask` struct (pure data, no COM dependency): (verified 2026-03-29)
+  - [x] `label: String` — display name in the jump list (verified 2026-03-29)
+  - [x] `arguments: String` — command-line arguments (e.g., `--new-window`) (verified 2026-03-29)
+  - [x] `description: String` — tooltip text (verified 2026-03-29)
+- [x] `build_jump_list_tasks() -> Vec<JumpListTask>` — pure function that builds the task list from config. This is unit-testable without COM. (verified 2026-03-29 -- returns 1 task, not 2; see --new-tab gap below)
+- [x] `exe_path() -> std::io::Result<std::path::PathBuf>` — helper to resolve the path to the running `oriterm` binary via `std::env::current_exe()`. Called inside `submit_jump_list` for `IShellLinkW::SetPath`. Must handle the case where `current_exe()` fails (e.g., `/proc/self/exe` unreadable) by returning an error that `submit_jump_list` propagates. (verified 2026-03-29)
+- [x] `submit_jump_list(tasks: &[JumpListTask]) -> windows::core::Result<()>` — COM submission wrapper. (verified 2026-03-29) Split into helpers to stay under 50 lines per function (code-hygiene.md). Recommended split:
   - `submit_jump_list()` — orchestrates the COM transaction (< 30 lines)
   - `create_shell_link(exe: &Path, task: &JumpListTask) -> windows::core::Result<IShellLinkW>` — creates and configures one shell link (< 30 lines)
   Step-by-step COM transaction (across the helper functions):
@@ -376,7 +377,7 @@ Win32 COM API: `ICustomDestinationList` + `IShellLinkW`. Items appear in the tas
   6. `dest_list.CommitList()` — commit the jump list
 - [x] All string arguments to COM methods must be converted to wide strings (`HSTRING` or `PCWSTR`). The `windows` crate's `HSTRING` type handles this. For `PROPVARIANT`, use `PROPVARIANT::from(&HSTRING::from(label))` or construct manually with `VT_LPWSTR`.
 
-- [x] Jump list initialization on app startup:
+- [x] Jump list initialization on app startup: (verified 2026-03-29)
   - [x] Build tasks via `build_jump_list_tasks()`
   - [x] Submit via `submit_jump_list()`
   - [x] Log result (success or COM error)
@@ -384,15 +385,15 @@ Win32 COM API: `ICustomDestinationList` + `IShellLinkW`. Items appear in the tas
     - `SetCurrentProcessExplicitAppUserModelID` goes in `main()` after `init_logger()` and before `build_event_loop()` (flat Win32 API, no COM needed).
     - `submit_jump_list` goes in `main()` after `build_event_loop()` but before `event_loop.run_app()`, preceded by an explicit `CoInitializeEx(COINIT_APARTMENTTHREADED)` call. Winit does not initialize COM until window creation (inside `App::resumed`/`try_init`), so COM is not yet available at this point. The explicit init is harmless — winit's subsequent `OleInitialize` returns `S_FALSE` (already initialized). This is the pattern Windows Terminal uses.
 - [x] Built-in tasks (always present):
-  - [x] **New Window** — launches `oriterm.exe --new-window` (flag already exists in `Cli` struct)
-  - [x] **New Tab** — launches `oriterm.exe --new-tab` (flag does NOT exist yet — see dependency note below)
+  - [x] **New Window** — launches `oriterm.exe --new-window` (flag already exists in `Cli` struct) (verified 2026-03-29)
+  - [ ] **New Tab** — launches `oriterm.exe --new-tab` (REOPENED 2026-03-29: --new-tab CLI flag not implemented, jump list returns 1 task not 2)
 - [x] Error handling: Jump list APIs may fail (Explorer not running, COM init failure, `current_exe()` failure) — log and continue, never crash. The `submit_jump_list` return value is logged at `warn` level, not propagated to the caller.
-- [x] **Dependency:** Jump List entries launch `oriterm --new-tab` / `--new-window`. The `--new-window` flag already exists in `oriterm/src/cli/mod.rs` (clap-based `Cli` struct). However, `--new-tab` does not exist yet — it must be added to the CLI and dispatched in `main()`. This is a prerequisite for the "New Tab" jump list entry.
-- [x] **`--new-tab` CLI flag** — add to `Cli` struct in `oriterm/src/cli/mod.rs`:
-  - [x] `#[arg(long)] pub new_tab: bool` — mirrors the existing `new_window` flag pattern (see line 49 of `cli/mod.rs`)
-  - [x] In `main()`: add `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (line 45-47 of `main.rs`). The actual tab-in-existing-window behavior requires IPC (Section 34). For now, `--new-tab` launches a new window with one tab (same as default behavior). This is the same approach WezTerm takes before its mux daemon is running.
-  - [x] The `dead_code = "deny"` workspace lint will fire if `new_tab` is added to `Cli` but never read. The `log::info!` in `main()` satisfies this.
-  - [x] Add the `--new-tab` CLI flag FIRST (before jump list code), since `build_jump_list_tasks()` references `"--new-tab"` as an argument string. The flag must exist and be tested before the jump list code that refers to it.
+- [ ] **Dependency:** Jump List entries launch `oriterm --new-tab` / `--new-window`. The `--new-window` flag already exists in `oriterm/src/cli/mod.rs` (clap-based `Cli` struct). However, `--new-tab` does not exist yet — it must be added to the CLI and dispatched in `main()`. This is a prerequisite for the "New Tab" jump list entry. (REOPENED 2026-03-29: --new-tab not implemented in code)
+- [ ] **`--new-tab` CLI flag** — add to `Cli` struct in `oriterm/src/cli/mod.rs`: (REOPENED 2026-03-29: Cli struct has no new_tab field)
+  - [ ] `#[arg(long)] pub new_tab: bool` — mirrors the existing `new_window` flag pattern (see line 49 of `cli/mod.rs`) (REOPENED 2026-03-29: not present in cli/mod.rs)
+  - [ ] In `main()`: add `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (line 45-47 of `main.rs`). The actual tab-in-existing-window behavior requires IPC (Section 34). For now, `--new-tab` launches a new window with one tab (same as default behavior). This is the same approach WezTerm takes before its mux daemon is running. (REOPENED 2026-03-29: not present in main.rs)
+  - [ ] The `dead_code = "deny"` workspace lint will fire if `new_tab` is added to `Cli` but never read. The `log::info!` in `main()` satisfies this.
+  - [ ] Add the `--new-tab` CLI flag FIRST (before jump list code), since `build_jump_list_tasks()` references `"--new-tab"` as an argument string. The flag must exist and be tested before the jump list code that refers to it.
 
 ### Profile entries (FUTURE — no profile system yet)
 
@@ -437,10 +438,10 @@ Deferred to a future section. Requires macOS build/test infrastructure.
 Deferred to a future section. The `.desktop` file is an install-time packaging artifact, not runtime code.
 
 **Tests:** `oriterm/src/platform/jump_list/tests.rs`
-- [x] `build_jump_list_tasks` returns 2 built-in tasks ("New Window", "New Tab") with correct arguments (`--new-window`, `--new-tab`)
-- [x] `build_jump_list_tasks` returns tasks with correct labels and descriptions (human-readable, not empty)
-- [x] `JumpListTask` fields are correctly populated (label, arguments, description) — verify each field is non-empty
-- [x] Task argument strings match CLI flag names exactly (`--new-window` not `--new_window`, `--new-tab` not `--new_tab`) — the jump list launches a new process via CLI
+- [ ] `build_jump_list_tasks` returns 2 built-in tasks ("New Window", "New Tab") with correct arguments (`--new-window`, `--new-tab`) (REOPENED 2026-03-29: currently returns 1 task -- "New Window" only. Test asserts len()==1, not 2. "New Tab" not implemented.)
+- [x] `build_jump_list_tasks` returns tasks with correct labels and descriptions (human-readable, not empty) (verified 2026-03-29 -- 7 tests pass for the 1 task that exists)
+- [x] `JumpListTask` fields are correctly populated (label, arguments, description) — verify each field is non-empty (verified 2026-03-29)
+- [ ] Task argument strings match CLI flag names exactly (`--new-window` not `--new_window`, `--new-tab` not `--new_tab`) — the jump list launches a new process via CLI (REOPENED 2026-03-29: only --new-window verified; --new-tab does not exist)
 - [x] Note: `submit_jump_list` requires Windows COM runtime and cannot be unit tested. Cover via manual verification on Windows or a `#[cfg(target_os = "windows")] #[ignore]` integration test.
 - [x] Note: `exe_path()` cannot be meaningfully unit tested (depends on `/proc/self/exe` or equivalent). Tested indirectly via `submit_jump_list` integration test.
 - [x] Module structure: `mod.rs` ends with `#[cfg(test)] mod tests;` (sibling test file pattern per `test-organization.md`)
@@ -483,9 +484,9 @@ All sync points for 21.5 have been implemented:
 - [x] `oriterm/src/platform/mod.rs`: add `pub mod jump_list;` — unconditional module declaration (data model is cross-platform; COM code is `#[cfg(windows)]` inside the module)
 - [x] `oriterm/src/main.rs`: add `#[cfg(windows)]` block after `init_logger()` calling `SetCurrentProcessExplicitAppUserModelID` via `windows_sys` (existing dependency, no new crate needed for this call — `Win32_UI_Shell` feature already enabled)
 - [x] `oriterm/src/main.rs`: add `#[cfg(windows)]` block in `main()` with explicit `CoInitializeEx(COINIT_APARTMENTTHREADED)` + `submit_jump_list(build_jump_list_tasks())` call. Place after `init_logger()` and the `SetCurrentProcessExplicitAppUserModelID` call. Log result at `warn` level on failure, do not fail startup on error. The explicit COM init is needed because winit does not call `OleInitialize` until window creation (inside `App::resumed`).
-- [x] `oriterm/src/cli/mod.rs`: add `#[arg(long)] pub new_tab: bool` to `Cli` struct
-- [x] `oriterm/src/main.rs`: add `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (prevents `dead_code` lint)
-- [x] `oriterm/src/cli/tests.rs`: add tests mirroring the existing `--new-window` test pattern (see `new_window_flag_parses`, `new_window_flag_defaults_to_false` in `cli/tests.rs`): `new_tab_flag_parses`, `new_tab_flag_defaults_to_false`, `completions_contain_new_tab_flag`
+- [ ] `oriterm/src/cli/mod.rs`: add `#[arg(long)] pub new_tab: bool` to `Cli` struct (REOPENED 2026-03-29: not present in code)
+- [ ] `oriterm/src/main.rs`: add `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (prevents `dead_code` lint) (REOPENED 2026-03-29: not present in code)
+- [ ] `oriterm/src/cli/tests.rs`: add tests mirroring the existing `--new-window` test pattern (see `new_window_flag_parses`, `new_window_flag_defaults_to_false` in `cli/tests.rs`): `new_tab_flag_parses`, `new_tab_flag_defaults_to_false`, `completions_contain_new_tab_flag` (REOPENED 2026-03-29: no new_tab tests exist)
 
 ### Feature Checklist
 
@@ -495,7 +496,7 @@ All sync points for 21.5 have been implemented:
 - [x] Settings UI: dialog window with `DialogWindowContext`, form-based settings panel (font, color, cursor, window), Save/Cancel flow, persists to config via `Config::save()`
 - [x] Settings UI: `TermEvent::OpenSettings` wiring, `Action::OpenSettings` keybinding (Ctrl+,/Cmd+,), dialog event routing
 - [x] Window controls: platform-specific rendering, Aero Snap, frameless drag, keyboard accessibility (Alt+F4, Win+Arrow)
-- [x] Jump List (Windows): data model (`JumpListTask`) + COM submission via `windows` crate, app user model ID, `--new-tab` CLI flag
+- [ ] Jump List (Windows): data model (`JumpListTask`) + COM submission via `windows` crate, app user model ID -- partial: "New Window" works but `--new-tab` CLI flag and "New Tab" jump list entry NOT implemented (REOPENED 2026-03-29)
 - [ ] Dock Menu (macOS): DEFERRED — requires macOS build infrastructure
 - [ ] Desktop Actions (Linux): DEFERRED — install-time packaging artifact
 

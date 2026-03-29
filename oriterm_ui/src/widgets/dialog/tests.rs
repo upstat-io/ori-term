@@ -1,8 +1,9 @@
 //! Tests for the dialog widget.
 
-use crate::input::{EventResponse, Key, KeyEvent, Modifiers};
+use crate::geometry::Rect;
+use crate::input::{InputEvent, Key, Modifiers};
 use crate::theme::UiTheme;
-use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction};
+use crate::widgets::{LayoutCtx, Widget, WidgetAction};
 
 use super::{DialogButton, DialogButtons, DialogWidget, PREVIEW_CHAR_LIMIT};
 
@@ -34,27 +35,17 @@ impl crate::widgets::TextMeasurer for StubMeasurer {
             width: 100.0,
             height: 16.0,
             baseline: 12.0,
+            size_q6: 0,
+            weight: 400,
+            font_source: crate::text::FontSource::Ui,
         }
     }
 }
 
-fn key_event(key: Key) -> KeyEvent {
-    KeyEvent {
+fn key_down(key: Key) -> InputEvent {
+    InputEvent::KeyDown {
         key,
         modifiers: Modifiers::NONE,
-    }
-}
-
-fn event_ctx<'a>(
-    measurer: &'a dyn crate::widgets::TextMeasurer,
-    theme: &'a UiTheme,
-) -> EventCtx<'a> {
-    EventCtx {
-        measurer,
-        bounds: crate::geometry::Rect::new(0.0, 0.0, 400.0, 300.0),
-        is_focused: true,
-        focused_widget: None,
-        theme,
     }
 }
 
@@ -100,8 +91,8 @@ fn layout_produces_two_zone_children() {
                     // Title + message = 2 children (no content preview).
                     assert_eq!(content_children.len(), 2);
                 }
-                crate::layout::BoxContent::Leaf { .. } => {
-                    panic!("expected flex container for content zone, got leaf");
+                _ => {
+                    panic!("expected flex container for content zone, got non-flex");
                 }
             }
 
@@ -116,13 +107,13 @@ fn layout_produces_two_zone_children() {
                     // Cancel + OK = 2 children.
                     assert_eq!(footer_children.len(), 2);
                 }
-                crate::layout::BoxContent::Leaf { .. } => {
-                    panic!("expected flex container for footer zone, got leaf");
+                _ => {
+                    panic!("expected flex container for footer zone, got non-flex");
                 }
             }
         }
-        crate::layout::BoxContent::Leaf { .. } => {
-            panic!("expected flex container, got leaf");
+        _ => {
+            panic!("expected flex container, got non-flex");
         }
     }
 }
@@ -152,12 +143,12 @@ fn layout_with_content_adds_preview_child() {
                 } => {
                     assert_eq!(content_children.len(), 3);
                 }
-                crate::layout::BoxContent::Leaf { .. } => {
+                _ => {
                     panic!("expected flex container for content zone");
                 }
             }
         }
-        crate::layout::BoxContent::Leaf { .. } => {
+        _ => {
             panic!("expected flex container");
         }
     }
@@ -184,69 +175,21 @@ fn with_content_preserves_short_text() {
     assert_eq!(content.text, "echo hello");
 }
 
-#[test]
-fn enter_emits_clicked_for_ok_default() {
-    let mut dialog = DialogWidget::new("Test").with_default_button(DialogButton::Ok);
-    let ok_id = dialog.ok_button_id();
-
-    let measurer = StubMeasurer;
-    let theme = UiTheme::dark();
-    let ctx = event_ctx(&measurer, &theme);
-    let response = dialog.handle_key(key_event(Key::Enter), &ctx);
-
-    assert_eq!(response.action, Some(WidgetAction::Clicked(ok_id)));
-}
-
-#[test]
-fn enter_emits_dismiss_for_cancel_default() {
-    let mut dialog = DialogWidget::new("Test")
-        .with_buttons(DialogButtons::OkCancel)
-        .with_default_button(DialogButton::Cancel);
-    let dialog_id = dialog.id();
-
-    let measurer = StubMeasurer;
-    let theme = UiTheme::dark();
-    let ctx = event_ctx(&measurer, &theme);
-    let response = dialog.handle_key(key_event(Key::Enter), &ctx);
-
-    assert_eq!(
-        response.action,
-        Some(WidgetAction::DismissOverlay(dialog_id))
-    );
-}
-
-#[test]
-fn escape_emits_dismiss() {
-    let mut dialog = DialogWidget::new("Test");
-    let dialog_id = dialog.id();
-
-    let measurer = StubMeasurer;
-    let theme = UiTheme::dark();
-    let ctx = event_ctx(&measurer, &theme);
-    let response = dialog.handle_key(key_event(Key::Escape), &ctx);
-
-    assert_eq!(
-        response.action,
-        Some(WidgetAction::DismissOverlay(dialog_id))
-    );
-    assert_eq!(response.response, EventResponse::RequestLayout);
-}
+// -- on_input: Tab focus cycling --
 
 #[test]
 fn tab_toggles_focused_button() {
     let mut dialog = DialogWidget::new("Test")
         .with_buttons(DialogButtons::OkCancel)
         .with_default_button(DialogButton::Ok);
+    let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
 
     assert_eq!(dialog.focused_button, DialogButton::Ok);
 
-    let measurer = StubMeasurer;
-    let theme = UiTheme::dark();
-    let ctx = event_ctx(&measurer, &theme);
-    dialog.handle_key(key_event(Key::Tab), &ctx);
+    dialog.on_input(&key_down(Key::Tab), bounds);
     assert_eq!(dialog.focused_button, DialogButton::Cancel);
 
-    dialog.handle_key(key_event(Key::Tab), &ctx);
+    dialog.on_input(&key_down(Key::Tab), bounds);
     assert_eq!(dialog.focused_button, DialogButton::Ok);
 }
 
@@ -255,16 +198,45 @@ fn tab_is_noop_for_ok_only() {
     let mut dialog = DialogWidget::new("Test")
         .with_buttons(DialogButtons::OkOnly)
         .with_default_button(DialogButton::Ok);
+    let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
 
     assert_eq!(dialog.focused_button, DialogButton::Ok);
 
-    let measurer = StubMeasurer;
-    let theme = UiTheme::dark();
-    let ctx = event_ctx(&measurer, &theme);
-    dialog.handle_key(key_event(Key::Tab), &ctx);
-
-    // Should remain on Ok — no toggle target.
+    let result = dialog.on_input(&key_down(Key::Tab), bounds);
+    assert!(!result.handled);
     assert_eq!(dialog.focused_button, DialogButton::Ok);
+}
+
+#[test]
+fn escape_handled_by_on_input() {
+    let mut dialog = DialogWidget::new("Test");
+    let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
+
+    let result = dialog.on_input(&key_down(Key::Escape), bounds);
+    assert!(result.handled);
+}
+
+// -- on_action: button click mapping --
+
+#[test]
+fn on_action_maps_ok_button_click() {
+    let mut dialog = DialogWidget::new("Test").with_buttons(DialogButtons::OkCancel);
+    let ok_id = dialog.ok_button_id();
+    let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
+
+    let result = dialog.on_action(WidgetAction::Clicked(ok_id), bounds);
+    assert_eq!(result, Some(WidgetAction::Clicked(ok_id)));
+}
+
+#[test]
+fn on_action_maps_cancel_button_click_to_dismiss() {
+    let mut dialog = DialogWidget::new("Test").with_buttons(DialogButtons::OkCancel);
+    let dialog_id = dialog.id();
+    let cancel_id = dialog.cancel_button_id();
+    let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
+
+    let result = dialog.on_action(WidgetAction::Clicked(cancel_id), bounds);
+    assert_eq!(result, Some(WidgetAction::DismissOverlay(dialog_id)));
 }
 
 #[test]
@@ -284,19 +256,6 @@ fn ok_cancel_has_two_focusable_children() {
     assert_eq!(ids.len(), 2);
     assert_eq!(ids[0], dialog.cancel_button_id());
     assert_eq!(ids[1], dialog.ok_button_id());
-}
-
-#[test]
-fn space_activates_focused_button() {
-    let mut dialog = DialogWidget::new("Test").with_default_button(DialogButton::Ok);
-    let ok_id = dialog.ok_button_id();
-
-    let measurer = StubMeasurer;
-    let theme = UiTheme::dark();
-    let ctx = event_ctx(&measurer, &theme);
-    let response = dialog.handle_key(key_event(Key::Space), &ctx);
-
-    assert_eq!(response.action, Some(WidgetAction::Clicked(ok_id)));
 }
 
 #[test]

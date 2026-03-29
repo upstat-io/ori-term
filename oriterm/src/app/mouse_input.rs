@@ -21,7 +21,7 @@ impl App {
     /// `false` to indicate the event was not consumed).
     fn overlay_scale_if_active(&self) -> Option<f32> {
         match self.focused_ctx() {
-            Some(ctx) if !ctx.overlays.is_active_empty() => {
+            Some(ctx) if !ctx.root.overlays().is_active_empty() => {
                 Some(ctx.window.scale_factor().factor() as f32)
             }
             _ => None,
@@ -46,20 +46,13 @@ impl App {
                 return;
             };
             let measurer = crate::font::CachedTextMeasurer::new(
-                crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                renderer.ui_measurer(scale),
                 &ctx.text_cache,
                 scale,
             );
             let measurer: &dyn oriterm_ui::widgets::TextMeasurer = &measurer;
-            ctx.overlays.process_mouse_event(
-                ui_event,
-                measurer,
-                &self.ui_theme,
-                None,
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
-                now,
-            )
+            ctx.root
+                .process_overlay_mouse_event(ui_event, measurer, &self.ui_theme, None, now)
         };
         self.handle_overlay_result(result);
     }
@@ -116,7 +109,7 @@ impl App {
         // cursor handling so tab bar hover and terminal mouse handlers
         // don't interfere with menu interaction.
         self.focused_ctx()
-            .is_some_and(|ctx| !ctx.overlays.is_active_empty())
+            .is_some_and(|ctx| !ctx.root.overlays().is_active_empty())
     }
 
     /// Route a mouse scroll event through the overlay manager.
@@ -169,16 +162,14 @@ impl App {
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.context_menu = Some(state);
-            ctx.overlays.replace_popup(
+            ctx.root.replace_popup(
                 Box::new(widget),
                 Rect::default(),
                 Placement::AtPoint(logical),
-                &mut ctx.layer_tree,
-                &mut ctx.layer_animator,
                 now,
             );
-            ctx.dirty = true;
-            ctx.urgent_redraw = true;
+            ctx.root.mark_dirty();
+            ctx.root.set_urgent_redraw(true);
         }
     }
 
@@ -232,7 +223,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
@@ -277,7 +268,7 @@ impl App {
             mouse_selection::DragResult::Updated(endpoint) => {
                 self.update_pane_selection_end(pane_id, endpoint);
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
             mouse_selection::DragResult::NeedsAutoScroll {
@@ -303,7 +294,7 @@ impl App {
                     self.update_pane_selection_end(pane_id, endpoint);
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
         }
@@ -395,7 +386,7 @@ impl App {
                 } else if state == ElementState::Pressed {
                     self.paste_from_primary();
                     if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.dirty = true;
+                        ctx.root.mark_dirty();
                     }
                 } else {
                     // Release without reporting: no action needed.

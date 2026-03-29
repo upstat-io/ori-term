@@ -232,6 +232,10 @@ Each section file follows this structure. Sections range from focused (single su
 section: "{NN}"
 title: "{Title}"
 status: not-started
+reviewed: true/false             # true for Section 01; false for all others
+third_party_review:
+  status: none                   # none | findings | resolved
+  updated: null                  # YYYY-MM-DD when findings were last triaged
 goal: "{One-line measurable goal}"
 inspired_by:             # Reference implementations studied
   - "{Emulator} {pattern} ({file path})"
@@ -243,8 +247,11 @@ sections:
   - id: "{NN}.2"
     title: "{Subsection}"
     status: not-started
+  - id: "{NN}.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "{NN}.N"
-    title: "Completion Checklist"
+    title: "Build & Verify"
     status: not-started
 ---
 
@@ -254,6 +261,17 @@ sections:
 **Goal:** {Expanded goal — what must be true when this section is complete.
 Not "implement X" but "X works correctly under conditions A, B, C with
 no regressions in Y."}
+
+**Production code path:** {Which specific production code path does this
+section modify? Name the function, the file, the loop, the handler.
+E.g., "GpuRenderer::draw_frame() cell loop", "WindowRoot::dispatch_event()",
+"Grid::scroll_up()". If you can't name one, this section is too abstract —
+restructure it.}
+
+**Observable change:** {What will be different in the running terminal after
+this section lands? E.g., "Cursor blinks at the configured rate",
+"Wide characters render at 2-cell width", "Tab bar shows close buttons on
+hover". If the answer is "nothing visible yet", this section is wrong.}
 
 **Context:** {Why this section exists. What pain point, bug, or
 architectural gap motivated it. Cite specific debugging sessions,
@@ -341,19 +359,59 @@ What breaks if only one lands. Be specific about the failure mode.}
 
 ---
 
-## {NN}.N Completion Checklist
+## {NN}.R Third Party Review Findings
 
-- [ ] {Concrete, verifiable item — not "implement X" but "X passes test Y"}
-- [ ] {Item with specific command to verify: `cargo test --test test_name` passes}
-- [ ] {Behavioral verification: `test_name` passes without modification}
-- [ ] {Regression check: `./test-all.sh` green}
-- [ ] {No warnings in `./clippy-all.sh`}
+Track findings from independent review runs here. Leave the block in place even
+when empty so tooling has a stable anchor.
+
+- None.
+
+When findings exist, use this format:
+
+- [ ] `[TPR-{NN}-001][high]` `path/to/file.rs:123` — Concrete finding summary.
+  Validation: {How the reviewer proved it.}
+
+- [x] `[TPR-{NN}-002][medium]` `path/to/file.rs:456` — Concrete finding summary.
+  Resolved: Accepted and integrated into {NN}.2 on YYYY-MM-DD.
+
+- [x] `[TPR-{NN}-003][low]` `path/to/file.rs:789` — Concrete finding summary.
+  Resolved: Rejected on YYYY-MM-DD after validation. {Why the issue does not
+  actually exist.}
+
+Rules:
+- Only reject findings that are factually incorrect.
+- Do not delete historical findings; mark them resolved with rationale.
+- If unchecked findings exist, set `third_party_review.status: findings`.
+- If all findings are resolved, set `third_party_review.status: resolved`.
+- If the block contains only `- None.`, set `third_party_review.status: none`.
+
+---
+
+## {NN}.N Build & Verify
+
+Every section ends with this gate. No exceptions.
+
+- [ ] `./build-all.sh` passes
+- [ ] `./clippy-all.sh` passes
+- [ ] `./test-all.sh` passes
+- [ ] New tests exist proving this section's changes work
+- [ ] No `#[allow(dead_code)]` on new items — everything has a production caller
+- [ ] {Concrete, verifiable behavioral item — not "implement X" but "X is visible/measurable in the running terminal"}
 
 **Exit Criteria:** {Paragraph describing the measurable, testable condition
 that proves this section is complete. Include specific commands, test names,
 metric thresholds. Not "X works" but "X produces Y output when Z command
 is run, with 0 regressions in test suite."}
 ```
+
+### The `reviewed` Field
+
+- **Section 01**: Always `reviewed: true` — it's the plan's starting point, already vetted during creation.
+- **All other sections**: `reviewed: false` — they must be re-reviewed before implementation.
+
+**Why:** As you implement sections sequentially, reality diverges from the original plan. You discover new constraints, make architectural decisions, and deviate from assumptions that later sections depend on. A section written when the plan was first created may reference files that were renamed, assume types that were redesigned, or propose approaches that conflict with decisions made during earlier sections. The `reviewed: false` gate forces `/review-plan` to run on each section right before implementation, when the actual codebase state is known — catching stale assumptions before they waste work.
+
+**`/review-plan` marks only the reviewed section as `reviewed: true`**, not all sections. Each section gets its own review checkpoint.
 
 ---
 

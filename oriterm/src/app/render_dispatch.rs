@@ -17,7 +17,7 @@ impl App {
         self.scratch_dirty_windows.extend(
             self.windows
                 .iter()
-                .filter(|(_, ctx)| ctx.dirty)
+                .filter(|(_, ctx)| ctx.root.is_dirty())
                 .map(|(&id, _)| id),
         );
 
@@ -27,7 +27,7 @@ impl App {
         for i in 0..self.scratch_dirty_windows.len() {
             let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.windows.get_mut(&wid) {
-                ctx.dirty = false;
+                ctx.root.clear_dirty();
             }
             let mux_wid = self
                 .windows
@@ -36,6 +36,10 @@ impl App {
             self.focused_window_id = Some(wid);
             self.active_window = mux_wid;
             self.handle_redraw();
+            // Clear invalidation after render so build_scene sees dirty widgets.
+            if let Some(ctx) = self.windows.get_mut(&wid) {
+                ctx.root.invalidation_mut().clear();
+            }
         }
 
         self.focused_window_id = saved_focused;
@@ -46,15 +50,19 @@ impl App {
         self.scratch_dirty_windows.extend(
             self.dialogs
                 .iter()
-                .filter(|(_, ctx)| ctx.dirty)
+                .filter(|(_, ctx)| ctx.root.is_dirty())
                 .map(|(&id, _)| id),
         );
         for i in 0..self.scratch_dirty_windows.len() {
             let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.dialogs.get_mut(&wid) {
-                ctx.dirty = false;
+                ctx.root.clear_dirty();
             }
             self.render_dialog(wid);
+            // Clear invalidation after render so build_scene sees dirty widgets.
+            if let Some(ctx) = self.dialogs.get_mut(&wid) {
+                ctx.root.invalidation_mut().clear();
+            }
         }
 
         self.last_render = std::time::Instant::now();
@@ -65,11 +73,14 @@ impl App {
             if let Some(renderer) = ctx.renderer.as_mut() {
                 renderer.maybe_shrink_buffers();
             }
+            ctx.chrome_scene.maybe_shrink();
+            ctx.root.damage_mut().maybe_shrink();
         }
         for ctx in self.dialogs.values_mut() {
             if let Some(renderer) = ctx.renderer.as_mut() {
                 renderer.maybe_shrink_buffers();
             }
+            ctx.root.damage_mut().maybe_shrink();
         }
         if let Some(mux) = self.mux.as_mut() {
             mux.maybe_shrink_renderable_caches();

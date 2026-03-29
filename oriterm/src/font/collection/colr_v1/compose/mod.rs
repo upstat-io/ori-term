@@ -5,16 +5,17 @@
 //! via skrifa's [`OutlinePen`] and converted to tiny-skia paths.
 
 mod brush;
+mod pen;
 
 use skrifa::color::{CompositeMode, Transform as ColrTransform};
 use skrifa::instance::{LocationRef, Size};
-use skrifa::outline::OutlinePen;
 use skrifa::{FontRef as SkriFontRef, GlyphId, MetadataProvider};
 
 use super::{ClipBox, PaintCommand, ResolvedBrush};
 use crate::font::collection::FaceData;
 
 use brush::{make_paint, to_blend_mode};
+use pen::glyph_path;
 
 /// Shared compositing context passed to all rendering helpers.
 ///
@@ -23,9 +24,26 @@ use brush::{make_paint, to_blend_mode};
 pub(super) struct ComposeCtx<'a> {
     width: u32,
     height: u32,
-    pub(super) scale: f32,
-    pub(super) clip: &'a ClipBox,
-    pub(super) xf: ColrTransform,
+    scale: f32,
+    clip: &'a ClipBox,
+    xf: ColrTransform,
+}
+
+impl ComposeCtx<'_> {
+    /// Uniform scale factor (`size_px` / `units_per_em`).
+    pub(super) fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    /// COLR clip box in font units.
+    pub(super) fn clip(&self) -> &ClipBox {
+        self.clip
+    }
+
+    /// Accumulated COLR transform.
+    pub(super) fn transform(&self) -> &ColrTransform {
+        &self.xf
+    }
 }
 
 /// Composite all paint commands onto the RGBA bitmap using tiny-skia.
@@ -36,6 +54,10 @@ pub(super) struct ComposeCtx<'a> {
 #[expect(
     clippy::too_many_arguments,
     reason = "module entry point — all parameters are required by the compositor"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "linear command dispatch — splitting would obscure the sequential flow"
 )]
 pub(super) fn composite_commands(
     commands: &[PaintCommand],
@@ -113,6 +135,17 @@ pub(super) fn composite_commands(
                             tiny_skia::Transform::identity(),
                             current_mask.as_ref(),
                         );
+                    } else {
+                        // Direct pixel-by-pixel fill for gradients tiny-skia
+                        // can't handle: sweep and two-circle radial.
+                        let glyph_mask =
+                            make_glyph_mask(&outlines, *glyph_id, &ctx, current_mask.as_ref());
+                        let t = if let Some(bt) = brush_transform.as_ref() {
+                            *ctx.transform() * *bt
+                        } else {
+                            *ctx.transform()
+                        };
+                        fill_direct_on_glyph(&mut pixmap, brush, &ctx, &t, glyph_mask.as_ref());
                     }
                 }
             }
@@ -147,22 +180,6 @@ pub(super) fn composite_commands(
 
 fn accumulated(stack: &[ColrTransform]) -> ColrTransform {
     stack.last().copied().unwrap_or_default()
-}
-
-// Outline extraction
-
-/// Extract a glyph outline as a tiny-skia `Path` in bitmap coordinates.
-fn glyph_path(
-    outlines: &skrifa::outline::OutlineGlyphCollection<'_>,
-    glyph_id: GlyphId,
-    ctx: &ComposeCtx<'_>,
-) -> Option<tiny_skia::Path> {
-    let glyph = outlines.get(glyph_id)?;
-    let settings =
-        skrifa::outline::DrawSettings::unhinted(Size::unscaled(), LocationRef::default());
-    let mut pen = SkiaPen::new(ctx.scale, ctx.clip, &ctx.xf);
-    glyph.draw(settings, &mut pen).ok()?;
-    pen.finish()
 }
 
 /// Build a glyph clip mask.
@@ -245,86 +262,25 @@ pub(super) fn to_by(fx: f32, fy: f32, scale: f32, clip: &ClipBox, t: &ColrTransf
     clip.y_max - scale * (t.yx * fx + t.yy * fy + t.dy)
 }
 
-// Outline pen
-
-/// Converts skrifa outline commands to a tiny-skia `PathBuilder`.
+/// Effective radius scale factor for font-unit radii under an affine transform.
 ///
-/// Applies the combined COLR transform + scale + Y-flip + bitmap offset
-/// to each point during collection.
-struct SkiaPen {
-    builder: tiny_skia::PathBuilder,
-    scale: f32,
-    clip_x_min: f32,
-    clip_y_max: f32,
-    xx: f32,
-    xy: f32,
-    dx: f32,
-    yx: f32,
-    yy: f32,
-    dy: f32,
+/// Accounts for both the font-to-pixel `scale` and the COLR transform's
+/// area-preserving scale component. Uses `sqrt(|det(M)|)` (geometric mean
+/// of singular values) so that circles becoming ellipses under non-uniform
+/// transforms get a reasonable average radius.
+pub(super) fn transform_radius_scale(scale: f32, t: &ColrTransform) -> f32 {
+    let det = t.xx * t.yy - t.xy * t.yx;
+    scale * det.abs().sqrt()
 }
 
-impl SkiaPen {
-    fn new(scale: f32, clip: &ClipBox, xf: &ColrTransform) -> Self {
-        Self {
-            builder: tiny_skia::PathBuilder::new(),
-            scale,
-            clip_x_min: clip.x_min,
-            clip_y_max: clip.y_max,
-            xx: xf.xx,
-            xy: xf.xy,
-            dx: xf.dx,
-            yx: xf.yx,
-            yy: xf.yy,
-            dy: xf.dy,
-        }
-    }
-
-    fn bx(&self, fx: f32, fy: f32) -> f32 {
-        self.scale * (self.xx * fx + self.xy * fy + self.dx) - self.clip_x_min
-    }
-
-    fn by(&self, fx: f32, fy: f32) -> f32 {
-        self.clip_y_max - self.scale * (self.yx * fx + self.yy * fy + self.dy)
-    }
-
-    fn finish(self) -> Option<tiny_skia::Path> {
-        self.builder.finish()
-    }
-}
-
-impl OutlinePen for SkiaPen {
-    fn move_to(&mut self, x: f32, y: f32) {
-        self.builder.move_to(self.bx(x, y), self.by(x, y));
-    }
-
-    fn line_to(&mut self, x: f32, y: f32) {
-        self.builder.line_to(self.bx(x, y), self.by(x, y));
-    }
-
-    fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
-        self.builder.quad_to(
-            self.bx(cx0, cy0),
-            self.by(cx0, cy0),
-            self.bx(x, y),
-            self.by(x, y),
-        );
-    }
-
-    fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
-        self.builder.cubic_to(
-            self.bx(cx0, cy0),
-            self.by(cx0, cy0),
-            self.bx(cx1, cy1),
-            self.by(cx1, cy1),
-            self.bx(x, y),
-            self.by(x, y),
-        );
-    }
-
-    fn close(&mut self) {
-        self.builder.close();
-    }
+/// Rotation angle (in degrees) introduced by a COLR transform.
+///
+/// Returns the angle by which the font-space positive-X axis is rotated in
+/// the bitmap coordinate system used by the sweep gradient sampler (X-right,
+/// Y-up). Sweep gradient start/end angles should be offset by this value to
+/// account for any rotation in the transform stack.
+pub(super) fn transform_rotation_degrees(t: &ColrTransform) -> f32 {
+    t.yx.atan2(t.xx).to_degrees()
 }
 
 // Brush fill
@@ -337,6 +293,44 @@ fn fill_brush(
     brush_xf: Option<&ColrTransform>,
     mask: Option<&tiny_skia::Mask>,
 ) {
+    // Sweep gradients bypass the shader system — fill directly.
+    let t = if let Some(bt) = brush_xf {
+        *ctx.transform() * *bt
+    } else {
+        *ctx.transform()
+    };
+
+    // Direct pixel-by-pixel fills for gradients tiny-skia can't handle.
+    match brush {
+        ResolvedBrush::SweepGradient {
+            center,
+            start_angle,
+            end_angle,
+            stops,
+            extend,
+        } => {
+            let cx = to_bx(center[0], center[1], ctx.scale(), ctx.clip(), &t);
+            let cy = to_by(center[0], center[1], ctx.scale(), ctx.clip(), &t);
+            let rot = transform_rotation_degrees(&t);
+            brush::fill_sweep_direct(
+                pixmap,
+                cx,
+                cy,
+                *start_angle + rot,
+                *end_angle + rot,
+                stops,
+                *extend,
+                mask,
+            );
+            return;
+        }
+        ResolvedBrush::RadialGradient { r0, .. } if *r0 > 0.0 => {
+            fill_radial_brush(pixmap, brush, ctx, &t, mask);
+            return;
+        }
+        _ => {}
+    }
+
     let Some(paint) = make_paint(brush, ctx, brush_xf) else {
         return;
     };
@@ -346,6 +340,80 @@ fn fill_brush(
         return;
     };
     pixmap.fill_rect(rect, &paint, tiny_skia::Transform::identity(), mask);
+}
+
+/// Fill with a two-circle radial gradient via `fill_radial_direct`.
+fn fill_radial_brush(
+    pixmap: &mut tiny_skia::Pixmap,
+    brush: &ResolvedBrush,
+    ctx: &ComposeCtx<'_>,
+    t: &ColrTransform,
+    mask: Option<&tiny_skia::Mask>,
+) {
+    if let ResolvedBrush::RadialGradient {
+        c0,
+        r0,
+        c1,
+        r1,
+        stops,
+        extend,
+    } = brush
+    {
+        let bx0 = to_bx(c0[0], c0[1], ctx.scale(), ctx.clip(), t);
+        let by0 = to_by(c0[0], c0[1], ctx.scale(), ctx.clip(), t);
+        let bx1 = to_bx(c1[0], c1[1], ctx.scale(), ctx.clip(), t);
+        let by1 = to_by(c1[0], c1[1], ctx.scale(), ctx.clip(), t);
+        let rs = transform_radius_scale(ctx.scale(), t);
+        brush::fill_radial_direct(
+            pixmap,
+            bx0,
+            by0,
+            r0 * rs,
+            bx1,
+            by1,
+            r1 * rs,
+            stops,
+            *extend,
+            mask,
+        );
+    }
+}
+
+/// Direct pixel-by-pixel fill on a glyph (sweep or two-circle radial).
+fn fill_direct_on_glyph(
+    pixmap: &mut tiny_skia::Pixmap,
+    brush: &ResolvedBrush,
+    ctx: &ComposeCtx<'_>,
+    t: &ColrTransform,
+    mask: Option<&tiny_skia::Mask>,
+) {
+    match brush {
+        ResolvedBrush::SweepGradient {
+            center,
+            start_angle,
+            end_angle,
+            stops,
+            extend,
+        } => {
+            let cx = to_bx(center[0], center[1], ctx.scale(), ctx.clip(), t);
+            let cy = to_by(center[0], center[1], ctx.scale(), ctx.clip(), t);
+            let rot = transform_rotation_degrees(t);
+            brush::fill_sweep_direct(
+                pixmap,
+                cx,
+                cy,
+                *start_angle + rot,
+                *end_angle + rot,
+                stops,
+                *extend,
+                mask,
+            );
+        }
+        ResolvedBrush::RadialGradient { r0, .. } if *r0 > 0.0 => {
+            fill_radial_brush(pixmap, brush, ctx, t, mask);
+        }
+        _ => {}
+    }
 }
 
 // Mask helpers

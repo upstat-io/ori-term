@@ -137,6 +137,126 @@ pub(super) struct FaceVariationResult {
     pub suppress_synthetic: SyntheticFlags,
 }
 
+// UI weight resolution
+
+/// Result of resolving a UI text weight request against font capabilities.
+///
+/// Determines which face slot to use, whether the `wght` axis should be set,
+/// and whether synthetic bold is needed. UI-text only — the terminal grid
+/// uses face-slot-based bold selection via [`face_variations`].
+#[allow(
+    dead_code,
+    reason = "wght_value read in tests and useful for diagnostics"
+)]
+pub(crate) struct UiWeightResolution {
+    /// Which face slot to shape/rasterize from (0 = Regular, 1 = Bold).
+    pub face_slot: usize,
+    /// The `wght` axis value to set, or `None` if the font has no `wght` axis.
+    pub wght_value: Option<f32>,
+    /// Whether synthetic bold should be applied (700+ on static fonts without
+    /// a `wght` axis and without a real Bold face).
+    pub needs_synthetic_bold: bool,
+}
+
+/// Resolve a UI text weight request against font capabilities.
+///
+/// Implements the weight realization policy:
+/// - Variable font (has `wght` axis): always use Regular slot, set axis to
+///   exact requested value. No synthetic bold needed.
+/// - Static font with Bold face: use Bold slot for 700+, Regular otherwise.
+/// - Static font without Bold: synthetic bold for 700+, Regular otherwise.
+///
+/// For the 500–650 range on static fonts: Regular is the closest match
+/// (400 undershoots less than Bold at 700 overshoots).
+pub(super) fn resolve_ui_weight(
+    requested_weight: u16,
+    has_wght_axis: bool,
+    has_bold_face: bool,
+) -> UiWeightResolution {
+    if has_wght_axis {
+        UiWeightResolution {
+            face_slot: 0,
+            wght_value: Some(requested_weight as f32),
+            needs_synthetic_bold: false,
+        }
+    } else if requested_weight >= 700 && has_bold_face {
+        UiWeightResolution {
+            face_slot: 1,
+            wght_value: None,
+            needs_synthetic_bold: false,
+        }
+    } else if requested_weight >= 700 {
+        UiWeightResolution {
+            face_slot: 0,
+            wght_value: None,
+            needs_synthetic_bold: true,
+        }
+    } else {
+        UiWeightResolution {
+            face_slot: 0,
+            wght_value: None,
+            needs_synthetic_bold: false,
+        }
+    }
+}
+
+/// Compute variation axis settings for UI text at a specific requested weight.
+///
+/// Unlike [`face_variations`] (which uses face-slot-based bold detection with
+/// `weight + 300` arithmetic), this function sets `wght` to `requested_weight`
+/// directly. Italic/slant axes are handled identically to [`face_variations`].
+///
+/// Works for both primary and fallback faces — any face with a `wght` axis
+/// gets the exact requested weight applied. Faces without axes return empty
+/// settings.
+///
+/// `synthetic` should come from [`resolve_ui_weight`] — if the resolution
+/// determined synthetic bold is needed, the BOLD flag is passed here and
+/// suppressed if a real `wght` axis exists.
+pub(super) fn face_variations_for_ui_weight(
+    synthetic: SyntheticFlags,
+    requested_weight: u16,
+    axes: &[AxisInfo],
+) -> FaceVariationResult {
+    if axes.is_empty() {
+        return FaceVariationResult {
+            settings: VarSettings::new(),
+            suppress_synthetic: SyntheticFlags::NONE,
+        };
+    }
+
+    let mut settings = VarSettings::new();
+    let mut suppress = SyntheticFlags::NONE;
+
+    // Weight axis: set to exact requested value.
+    if has_axis(axes, *WGHT) {
+        settings.push("wght", clamp_to_axis(axes, *WGHT, requested_weight as f32));
+        if synthetic.contains(SyntheticFlags::BOLD) {
+            suppress |= SyntheticFlags::BOLD;
+        }
+    }
+
+    // Slant/Italic axes: same logic as face_variations.
+    if synthetic.contains(SyntheticFlags::ITALIC) {
+        if has_axis(axes, *SLNT) {
+            settings.push("slnt", clamp_to_axis(axes, *SLNT, -12.0));
+            suppress |= SyntheticFlags::ITALIC;
+        } else if has_axis(axes, *ITAL) {
+            settings.push("ital", clamp_to_axis(axes, *ITAL, 1.0));
+            suppress |= SyntheticFlags::ITALIC;
+        } else {
+            // No slant or italic axis — synthesis remains active.
+        }
+    }
+
+    FaceVariationResult {
+        settings,
+        suppress_synthetic: suppress,
+    }
+}
+
+// Terminal grid variations
+
 /// Compute variation axis settings and synthetic suppression for a face.
 ///
 /// Primary faces get weight/slant/italic axes set based on their style slot

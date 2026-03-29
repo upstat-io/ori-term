@@ -9,7 +9,6 @@ use winit::keyboard::ModifiersState;
 
 use oriterm_mux::backend::MuxBackend;
 
-use super::cursor_blink::CursorBlink;
 use super::event_loop_helpers::resolve_ui_theme;
 use super::keyboard_input::ImeState;
 use super::mouse_selection::MouseState;
@@ -22,6 +21,7 @@ use crate::event::TermEvent;
 use crate::keybindings;
 use crate::session::SessionRegistry;
 use crate::window_manager::WindowManager;
+use oriterm_ui::animation::CursorBlink;
 
 impl App {
     /// Create a new application instance in daemon mode.
@@ -115,8 +115,7 @@ impl App {
             gpu: None,
             pipelines: None,
             font_set: None,
-            ui_font_set: None,
-            user_fb_count: 0,
+            user_fallback_map: Vec::new(),
             window_manager: WindowManager::new(),
             windows: HashMap::new(),
             dialogs: HashMap::new(),
@@ -140,13 +139,12 @@ impl App {
             _config_monitor: monitor,
             ime: ImeState::new(),
             ui_theme,
-            settings_ids: None,
-            settings_pending: None,
             pending_dropdown_id: None,
             pending_focus_out: None,
 
             torn_off_pending: None,
 
+            pending_destroy: Vec::new(),
             scratch_dirty_windows: Vec::new(),
             scratch_pane_sels: HashMap::new(),
             scratch_pane_mcs: HashMap::new(),

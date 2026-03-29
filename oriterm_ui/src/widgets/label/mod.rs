@@ -5,24 +5,32 @@
 
 use crate::color::Color;
 use crate::geometry::Point;
-use crate::input::{HoverEvent, KeyEvent, MouseEvent};
 use crate::layout::LayoutBox;
-use crate::text::{TextOverflow, TextStyle};
+use crate::sense::Sense;
+use crate::text::{FontWeight, TextOverflow, TextStyle, TextTransform};
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Style for a [`LabelWidget`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct LabelStyle {
     /// Text color.
     pub color: Color,
-    /// Font size in points.
+    /// Font size in logical pixels.
     pub font_size: f32,
+    /// Font weight.
+    pub weight: FontWeight,
     /// Overflow behavior.
     pub overflow: TextOverflow,
+    /// Extra spacing between characters in pixels.
+    pub letter_spacing: f32,
+    /// Case transformation applied before shaping.
+    pub text_transform: TextTransform,
+    /// Line-height multiplier override. `None` uses natural font metrics.
+    pub line_height: Option<f32>,
 }
 
 impl LabelStyle {
@@ -31,7 +39,11 @@ impl LabelStyle {
         Self {
             color: theme.fg_primary,
             font_size: theme.font_size,
+            weight: FontWeight::NORMAL,
             overflow: TextOverflow::Clip,
+            letter_spacing: 0.0,
+            text_transform: TextTransform::None,
+            line_height: None,
         }
     }
 }
@@ -82,7 +94,13 @@ impl LabelWidget {
 
     /// Builds the `TextStyle` for measurement and shaping.
     fn text_style(&self) -> TextStyle {
-        TextStyle::new(self.style.font_size, self.style.color).with_overflow(self.style.overflow)
+        let mut ts = TextStyle::new(self.style.font_size, self.style.color)
+            .with_weight(self.style.weight)
+            .with_overflow(self.style.overflow)
+            .with_letter_spacing(self.style.letter_spacing)
+            .with_text_transform(self.style.text_transform);
+        ts.line_height = self.style.line_height;
+        ts
     }
 }
 
@@ -91,8 +109,8 @@ impl Widget for LabelWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -101,7 +119,7 @@ impl Widget for LabelWidget {
         LayoutBox::leaf(metrics.width, metrics.height).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         if self.text.is_empty() {
             return;
         }
@@ -109,19 +127,7 @@ impl Widget for LabelWidget {
         let max_width = ctx.bounds.width();
         let shaped = ctx.measurer.shape(&self.text, &style, max_width);
         let pos = Point::new(ctx.bounds.x(), ctx.bounds.y());
-        ctx.draw_list.push_text(pos, shaped, self.style.color);
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
+        ctx.scene.push_text(pos, shaped, self.style.color);
     }
 }
 

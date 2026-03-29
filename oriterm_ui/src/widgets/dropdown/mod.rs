@@ -3,20 +3,27 @@
 //! Displays the currently selected item and a dropdown indicator.
 //! On click or Enter/Space, emits `WidgetAction::OpenDropdown` for
 //! the app layer to open a popup overlay. Arrow keys cycle through
-//! items directly, emitting `WidgetAction::Selected`.
+//! items directly, emitting `WidgetAction::Selected`. Uses
+//! [`VisualStateAnimator`] with `common_states()` for smooth hover
+//! color transitions.
+
+use winit::window::CursorIcon;
 
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point, Rect};
 use crate::icons::IconId;
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::TextStyle;
+use crate::visual_state::common_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 /// Visual style for a [`DropdownWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -29,16 +36,22 @@ pub struct DropdownStyle {
     pub hover_bg: Color,
     /// Pressed background.
     pub pressed_bg: Color,
-    /// Border color.
+    /// Border color (normal state).
     pub border_color: Color,
+    /// Border color on hover.
+    pub hover_border_color: Color,
+    /// Border color when focused.
+    pub focus_border_color: Color,
     /// Border width.
     pub border_width: f32,
     /// Corner radius.
     pub corner_radius: f32,
     /// Inner padding.
     pub padding: Insets,
-    /// Font size in points.
+    /// Font size in logical pixels.
     pub font_size: f32,
+    /// Minimum width of the dropdown.
+    pub min_width: f32,
     /// Width reserved for the dropdown indicator arrow.
     pub indicator_width: f32,
     /// Indicator color.
@@ -56,16 +69,19 @@ impl DropdownStyle {
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
             fg: theme.fg_primary,
-            bg: theme.bg_primary,
-            hover_bg: theme.bg_hover,
-            pressed_bg: theme.bg_active,
+            bg: theme.bg_input,
+            hover_bg: theme.bg_input,
+            pressed_bg: theme.bg_input,
             border_color: theme.border,
-            border_width: 1.0,
+            hover_border_color: theme.fg_faint,
+            focus_border_color: theme.accent,
+            border_width: 2.0,
             corner_radius: theme.corner_radius,
-            padding: Insets::vh(6.0, 10.0),
-            font_size: theme.font_size,
+            padding: Insets::tlbr(6.0, 10.0, 6.0, 30.0),
+            font_size: 12.0,
+            min_width: 140.0,
             indicator_width: 20.0,
-            indicator_color: theme.fg_primary,
+            indicator_color: theme.fg_faint,
             disabled_fg: theme.fg_disabled,
             disabled_bg: theme.bg_secondary,
             focus_ring_color: theme.accent,
@@ -83,16 +99,17 @@ impl Default for DropdownStyle {
 ///
 /// Arrow Up/Down keys cycle through items directly. Enter/Space and
 /// mouse click emit `WidgetAction::OpenDropdown` for the app layer
-/// to open a popup overlay with the options list.
-#[derive(Debug, Clone)]
+/// to open a popup overlay with the options list. Hover transitions
+/// use [`VisualStateAnimator`] with `common_states()`.
 pub struct DropdownWidget {
     id: WidgetId,
     items: Vec<String>,
     selected: usize,
     disabled: bool,
-    hovered: bool,
-    pressed: bool,
     style: DropdownStyle,
+    controllers: Vec<Box<dyn EventController>>,
+    /// Animator for bg state transitions (Normal/Hovered/Pressed/Disabled).
+    animator: VisualStateAnimator,
 }
 
 impl DropdownWidget {
@@ -101,14 +118,23 @@ impl DropdownWidget {
     /// Panics if `items` is empty.
     pub fn new(items: Vec<String>) -> Self {
         assert!(!items.is_empty(), "dropdown requires at least one item");
+        let style = DropdownStyle::default();
         Self {
             id: WidgetId::next(),
             items,
             selected: 0,
             disabled: false,
-            hovered: false,
-            pressed: false,
-            style: DropdownStyle::default(),
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![common_states(
+                style.bg,
+                style.hover_bg,
+                style.pressed_bg,
+                style.disabled_bg,
+            )]),
+            style,
         }
     }
 
@@ -137,18 +163,9 @@ impl DropdownWidget {
         self.disabled
     }
 
-    /// Returns whether the dropdown is hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
-    }
-
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
-        if disabled {
-            self.hovered = false;
-            self.pressed = false;
-        }
     }
 
     /// Sets the selected index via builder.
@@ -165,28 +182,27 @@ impl DropdownWidget {
         self
     }
 
-    /// Sets the style.
+    /// Sets the style, rebuilding the animator.
     #[must_use]
     pub fn with_style(mut self, style: DropdownStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![common_states(
+            style.bg,
+            style.hover_bg,
+            style.pressed_bg,
+            style.disabled_bg,
+        )]);
         self.style = style;
         self
     }
 
-    /// Returns the current background color.
-    fn current_bg(&self) -> Color {
-        if self.disabled {
-            return self.style.disabled_bg;
-        }
-        if self.pressed {
-            return self.style.pressed_bg;
-        }
-        if self.hovered {
-            return self.style.hover_bg;
-        }
-        self.style.bg
+    /// Overrides the minimum width of the dropdown trigger.
+    #[must_use]
+    pub fn with_min_width(mut self, px: f32) -> Self {
+        self.style.min_width = px;
+        self
     }
 
-    /// Returns the current text color.
+    /// Returns the current text color based on state.
     fn current_fg(&self) -> Color {
         if self.disabled {
             self.style.disabled_fg
@@ -199,27 +215,19 @@ impl DropdownWidget {
     fn text_style(&self) -> TextStyle {
         TextStyle::new(self.style.font_size, self.current_fg())
     }
+}
 
-    /// Selects the next item, wrapping at the end.
-    fn select_next(&mut self) -> WidgetAction {
-        self.selected = (self.selected + 1) % self.items.len();
-        WidgetAction::Selected {
-            id: self.id,
-            index: self.selected,
-        }
-    }
-
-    /// Selects the previous item, wrapping at the start.
-    fn select_prev(&mut self) -> WidgetAction {
-        self.selected = if self.selected == 0 {
-            self.items.len() - 1
-        } else {
-            self.selected - 1
-        };
-        WidgetAction::Selected {
-            id: self.id,
-            index: self.selected,
-        }
+impl std::fmt::Debug for DropdownWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DropdownWidget")
+            .field("id", &self.id)
+            .field("items", &self.items)
+            .field("selected", &self.selected)
+            .field("disabled", &self.disabled)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
     }
 }
 
@@ -232,44 +240,69 @@ impl Widget for DropdownWidget {
         !self.disabled
     }
 
+    fn sense(&self) -> Sense {
+        Sense::click()
+    }
+
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        // Natural width accommodates the widest item + padding + indicator.
-        // Fill width lets the dropdown stretch in form rows.
+        // Natural width accommodates the widest item + padding + indicator,
+        // but never less than min_width.
         let style = self.text_style();
         let max_text_w = self
             .items
             .iter()
             .map(|item| ctx.measurer.measure(item, &style, f32::INFINITY).width)
             .fold(0.0_f32, f32::max);
-        let w = max_text_w + self.style.padding.width() + self.style.indicator_width;
+        let content_w = max_text_w + self.style.padding.width() + self.style.indicator_width;
+        let w = content_w.max(self.style.min_width);
         let metrics = ctx.measurer.measure(&self.items[0], &style, f32::INFINITY);
         let h = metrics.height + self.style.padding.height();
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        LayoutBox::leaf(w, h)
+            .with_widget_id(self.id)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.focused_widget == Some(self.id);
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let focused = ctx.is_interaction_focused();
+        let hovered = ctx.is_hot();
         let bounds = ctx.bounds;
         let s = &self.style;
 
-        // Focus ring (outside the layer).
-        if focused {
-            let ring = bounds.inset(Insets::all(-2.0));
-            let ring_style = RectStyle::filled(Color::TRANSPARENT)
-                .with_border(2.0, s.focus_ring_color)
-                .with_radius(s.corner_radius + 2.0);
-            ctx.draw_list.push_rect(ring, ring_style);
-        }
+        // Border color depends on interaction state.
+        let border_color = if focused {
+            s.focus_border_color
+        } else if hovered {
+            s.hover_border_color
+        } else {
+            s.border_color
+        };
 
-        // Layer captures the dropdown bg for subpixel text compositing.
-        let bg = self.current_bg();
-        ctx.draw_list.push_layer(bg);
+        // Background from visual state animator.
+        let bg = self.animator.get_bg_color();
+        ctx.scene.push_layer_bg(bg);
 
-        // Background.
+        // Background rect with state-dependent border.
         let bg_style = RectStyle::filled(bg)
-            .with_border(s.border_width, s.border_color)
+            .with_border(s.border_width, border_color)
             .with_radius(s.corner_radius);
-        ctx.draw_list.push_rect(bounds, bg_style);
+        ctx.scene.push_quad(bounds, bg_style);
 
         // Selected item text.
         let inner = bounds.inset(s.padding);
@@ -277,116 +310,48 @@ impl Widget for DropdownWidget {
         let style = self.text_style();
         let shaped = ctx.measurer.shape(self.selected_text(), &style, text_w);
         let y = inner.y() + (inner.height() - shaped.height) / 2.0;
-        ctx.draw_list
+        ctx.scene
             .push_text(Point::new(inner.x(), y), shaped, self.current_fg());
 
-        // Dropdown indicator (downward-pointing chevron).
-        let ind_x = bounds.right() - s.indicator_width;
-        let ind_center_x = ind_x + s.indicator_width / 2.0;
-        let ind_center_y = bounds.y() + bounds.height() / 2.0;
-        let arrow_half = 4.0;
+        // Dropdown indicator — filled downward triangle via icon atlas.
         let ind_color = if self.disabled {
             s.disabled_fg
         } else {
             s.indicator_color
         };
-
-        let icon_size = (arrow_half * 2.0_f32).round() as u32;
+        let icon_size: u32 = 10;
         if let Some(resolved) = ctx
             .icons
-            .and_then(|ic| ic.get(IconId::ChevronDown, icon_size))
+            .and_then(|ic| ic.get(IconId::DropdownArrow, icon_size))
         {
-            let icon_rect = Rect::new(
-                ind_center_x - arrow_half,
-                ind_center_y - arrow_half / 2.0,
-                arrow_half * 2.0,
-                arrow_half,
-            );
-            ctx.draw_list
+            let icon_f = icon_size as f32;
+            let ix = bounds.right() - s.padding.right + (s.padding.right - icon_f) / 2.0;
+            let iy = bounds.y() + (bounds.height() - icon_f) / 2.0;
+            let icon_rect = Rect::new(ix, iy, icon_f, icon_f);
+            ctx.scene
                 .push_icon(icon_rect, resolved.atlas_page, resolved.uv, ind_color);
-        } else {
-            // Text fallback when icon atlas is not available.
-            let chevron_style = TextStyle::new(s.font_size, ind_color);
-            let shaped = ctx
-                .measurer
-                .shape("\u{25BE}", &chevron_style, s.indicator_width);
-            let chevron_y = ind_center_y - shaped.height / 2.0;
-            let chevron_x = ind_center_x - shaped.width / 2.0;
-            ctx.draw_list
-                .push_text(Point::new(chevron_x, chevron_y), shaped, ind_color);
         }
 
-        ctx.draw_list.pop_layer();
-    }
+        ctx.scene.pop_layer_bg();
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.pressed = true;
-                WidgetResponse::focus()
-            }
-            MouseEventKind::Up(MouseButton::Left) => {
-                let was_pressed = self.pressed;
-                self.pressed = false;
-                if was_pressed && ctx.bounds.contains(event.pos) {
-                    let action = WidgetAction::OpenDropdown {
-                        id: self.id,
-                        options: self.items.clone(),
-                        selected: self.selected,
-                        anchor: ctx.bounds,
-                    };
-                    WidgetResponse::layout().with_action(action)
-                } else {
-                    WidgetResponse::paint()
-                }
-            }
-            _ => WidgetResponse::ignored(),
+        // Signal continued redraws while the animator is transitioning.
+        if self.animator.is_animating() {
+            ctx.request_anim_frame();
         }
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                WidgetResponse::paint()
-            }
-            HoverEvent::Leave => {
-                self.hovered = false;
-                self.pressed = false;
-                WidgetResponse::paint()
-            }
-        }
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled || !ctx.is_focused {
-            return WidgetResponse::ignored();
-        }
-        match event.key {
-            Key::ArrowDown => {
-                let action = self.select_next();
-                WidgetResponse::paint().with_action(action)
-            }
-            Key::ArrowUp => {
-                let action = self.select_prev();
-                WidgetResponse::paint().with_action(action)
-            }
-            Key::Enter | Key::Space => {
-                let action = WidgetAction::OpenDropdown {
+    fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::Clicked(_) => {
+                // Transform generic click into dropdown open with widget state.
+                Some(WidgetAction::OpenDropdown {
                     id: self.id,
                     options: self.items.clone(),
                     selected: self.selected,
-                    anchor: ctx.bounds,
-                };
-                WidgetResponse::layout().with_action(action)
+                    anchor: bounds,
+                })
             }
-            _ => WidgetResponse::ignored(),
+            other => Some(other),
         }
     }
 
@@ -398,6 +363,48 @@ impl Widget for DropdownWidget {
             }
         }
         false
+    }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Dropdown")
+    }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn crate::action::KeymapAction,
+        bounds: Rect,
+    ) -> Option<WidgetAction> {
+        match action.name() {
+            "widget::NavigateDown" => {
+                self.selected = (self.selected + 1) % self.items.len();
+                Some(WidgetAction::Selected {
+                    id: self.id,
+                    index: self.selected,
+                })
+            }
+            "widget::NavigateUp" => {
+                self.selected = if self.selected == 0 {
+                    self.items.len() - 1
+                } else {
+                    self.selected - 1
+                };
+                Some(WidgetAction::Selected {
+                    id: self.id,
+                    index: self.selected,
+                })
+            }
+            "widget::Confirm" => Some(WidgetAction::OpenDropdown {
+                id: self.id,
+                options: self.items.clone(),
+                selected: self.selected,
+                anchor: bounds,
+            }),
+            // Dismiss (Escape) intentionally falls through to the wildcard.
+            // When the popup is open, Escape is handled by the MenuWidget, not
+            // the trigger. When closed, Escape on the trigger is a no-op — it
+            // must NOT emit DismissOverlay (which would close the entire dialog).
+            _ => None,
+        }
     }
 }
 

@@ -322,8 +322,13 @@ fn interactive_reads_low_latency() {
     // naturally slower. But it should not be catastrophically slower —
     // allow up to 200x overhead (1x per byte). A real regression (e.g.
     // O(n^2) parsing or lock convoy) would blow past this easily.
+    //
+    // Floor the bulk baseline at 100µs to avoid noise-driven failures.
+    // When bulk finishes in single-digit microseconds (common on WSL
+    // under low load), scheduler jitter alone can inflate the ratio
+    // past any reasonable threshold.
     let max_ratio = 200u128;
-    let bulk_ns = bulk_time.as_nanos().max(1);
+    let bulk_ns = bulk_time.as_nanos().max(100_000);
     let byte_ns = byte_time.as_nanos();
     let ratio = byte_ns / bulk_ns;
     eprintln!("  ratio:                {ratio}x (max {max_ratio}x)");

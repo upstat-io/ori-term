@@ -1,11 +1,10 @@
-use crate::draw::DrawList;
-use crate::geometry::{Point, Rect};
-use crate::input::{Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::draw::Scene;
+use crate::geometry::Rect;
 use crate::layout::compute_layout;
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::FormRow;
 
@@ -65,111 +64,26 @@ fn focusable_children_returns_control_ids() {
 }
 
 #[test]
-fn mouse_on_label_is_ignored() {
-    let mut row = label_control("Label", "value");
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 400.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    // Click in label zone (x < 100).
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(10.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&event, &ctx);
-    assert_eq!(resp, crate::widgets::WidgetResponse::ignored());
-}
-
-#[test]
-fn mouse_on_control_delegates() {
-    let btn = ButtonWidget::new("Click");
-    let btn_id = btn.id();
-    let mut row = FormRow::new("Action", Box::new(btn));
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 400.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    // Click in control zone (x > 100).
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(150.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&down, &ctx);
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(150.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&up, &ctx);
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked, got {other:?}"),
-    }
-}
-
-#[test]
-fn key_delegates_to_control() {
-    let btn = ButtonWidget::new("OK");
-    let btn_id = btn.id();
-    let mut row = FormRow::new("Confirm", Box::new(btn));
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 400.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: Some(btn_id),
-        theme: &super::super::tests::TEST_THEME,
-    };
-    let event = KeyEvent {
-        key: Key::Enter,
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_key(event, &ctx);
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked, got {other:?}"),
-    }
-}
-
-#[test]
 fn draw_produces_text_commands() {
     let row = label_control("Name", "value");
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 400.0, 50.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, crate::draw::DrawCommand::Text { .. }))
-        .count();
-    // Label text + control label text = 2 text commands.
-    assert_eq!(text_cmds, 2);
+    // Label text + control label text = 2 text runs.
+    assert_eq!(scene.text_runs().len(), 2);
 }
 
 #[test]

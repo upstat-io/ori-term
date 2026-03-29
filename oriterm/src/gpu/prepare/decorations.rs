@@ -15,7 +15,7 @@ use crate::font::CellMetrics;
 use crate::gpu::builtin_glyphs::decorations::{
     CURLY_GLYPH_ID, DASHED_GLYPH_ID, DOTTED_GLYPH_ID, curly_amplitude, decoration_key,
 };
-use crate::gpu::instance_writer::{InstanceWriter, ScreenRect};
+use crate::gpu::instance_writer::{CLIP_UNCLIPPED, InstanceWriter, ScreenRect};
 
 use super::AtlasLookup;
 
@@ -166,7 +166,8 @@ impl DecorationContext<'_> {
                 w: entry.width as f32,
                 h: entry.height as f32,
             };
-            self.glyphs.push_glyph(rect, uv, color, 1.0, entry.page);
+            self.glyphs
+                .push_glyph(rect, uv, color, 1.0, entry.page, CLIP_UNCLIPPED);
             true
         } else {
             false

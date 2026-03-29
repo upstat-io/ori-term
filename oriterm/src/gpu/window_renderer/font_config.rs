@@ -3,11 +3,11 @@
 //! Each method delegates to [`FontCollection`] for metrics/cache invalidation,
 //! then clears GPU atlases and re-caches ASCII glyphs.
 
-use crate::font::{FontCollection, GlyphFormat, HintingMode};
+use crate::font::{FontCollection, FontRealm, GlyphFormat, HintingMode, UiFontSizes};
 use crate::gpu::state::GpuState;
 
 use super::WindowRenderer;
-use super::helpers::pre_cache_atlas;
+use super::helpers::{pre_cache_atlas, prewarm_ui_font_sizes};
 
 impl WindowRenderer {
     // ── Font configuration ──
@@ -15,10 +15,18 @@ impl WindowRenderer {
     /// Replace the entire font collection (family, weight, features changed).
     ///
     /// Clears all GPU atlases and re-caches ASCII glyphs with the new fonts.
-    /// Returns the old cell metrics so callers can detect size changes.
     pub fn replace_font_collection(&mut self, collection: FontCollection, gpu: &GpuState) {
         self.font_collection = collection;
         self.clear_and_recache(gpu);
+    }
+
+    /// Replace the UI font sizes registry (font family/weight/features changed).
+    ///
+    /// Stores the new registry without clearing atlases — call
+    /// [`replace_font_collection`] afterward to clear and re-prewarm both
+    /// terminal and UI atlases in one pass.
+    pub fn replace_ui_font_sizes(&mut self, sizes: UiFontSizes) {
+        self.ui_font_sizes = Some(sizes);
     }
 
     /// Change font size, recomputing metrics, clearing atlases, and re-caching.
@@ -26,14 +34,19 @@ impl WindowRenderer {
     /// Delegates to [`FontCollection::set_size`] for metrics + glyph cache,
     /// then clears all GPU atlases, re-populates the appropriate atlas with
     /// ASCII glyphs, and rebuilds bind groups for the new texture state.
+    ///
+    /// The `dpi` parameter is the physical DPI (encodes scale). If it changed
+    /// (window moved to a different-DPI monitor), the UI font registry is
+    /// rebuilt at the new physical sizes.
     pub fn set_font_size(&mut self, size_pt: f32, dpi: f32, gpu: &GpuState) {
         if let Err(e) = self.font_collection.set_size(size_pt, dpi) {
             log::error!("font set_size failed: {e}");
         }
-        // Resize UI font at the same physical DPI so overlay text matches.
-        if let Some(ui_fc) = &mut self.ui_font_collection {
-            if let Err(e) = ui_fc.set_size(11.0, dpi) {
-                log::error!("UI font set_size failed: {e}");
+        // UI font sizes are keyed by logical pixels, not terminal size.
+        // Only rebuild if DPI changed (physical sizes differ).
+        if let Some(sizes) = &mut self.ui_font_sizes {
+            if let Err(e) = sizes.set_dpi(dpi) {
+                log::error!("UI font registry DPI update failed: {e}");
             }
         }
         self.clear_and_recache(gpu);
@@ -92,10 +105,10 @@ impl WindowRenderer {
     ) {
         let hinting_changed = self.font_collection.set_hinting(mode);
         let format_changed = self.font_collection.set_format(format);
-        // Keep UI font in sync with the terminal font's rendering settings.
-        if let Some(ui_fc) = &mut self.ui_font_collection {
-            ui_fc.set_hinting(mode);
-            ui_fc.set_format(format);
+        // Keep UI font registry in sync with the terminal font's rendering settings.
+        if let Some(sizes) = &mut self.ui_font_sizes {
+            sizes.set_hinting(mode);
+            sizes.set_format(format);
         }
         if hinting_changed || format_changed {
             self.clear_and_recache(gpu);
@@ -108,6 +121,9 @@ impl WindowRenderer {
     /// persists at its current size. Bind group rebuild is handled lazily
     /// by `rebuild_stale_atlas_bind_groups()` at the next render if the
     /// atlas grows during re-caching.
+    ///
+    /// Prewarms both terminal and UI font atlases so neither has first-frame
+    /// atlas misses after a font configuration change.
     fn clear_and_recache(&mut self, gpu: &GpuState) {
         self.atlas.clear();
         self.subpixel_atlas.clear();
@@ -120,6 +136,7 @@ impl WindowRenderer {
             pre_cache_atlas(
                 &mut self.subpixel_atlas,
                 &mut self.font_collection,
+                FontRealm::Terminal,
                 &gpu.device,
                 &gpu.queue,
             );
@@ -127,6 +144,18 @@ impl WindowRenderer {
             pre_cache_atlas(
                 &mut self.atlas,
                 &mut self.font_collection,
+                FontRealm::Terminal,
+                &gpu.device,
+                &gpu.queue,
+            );
+        }
+
+        // Re-prewarm UI font sizes — the atlas was just cleared.
+        if let Some(ref mut sizes) = self.ui_font_sizes {
+            prewarm_ui_font_sizes(
+                sizes,
+                &mut self.atlas,
+                &mut self.subpixel_atlas,
                 &gpu.device,
                 &gpu.queue,
             );

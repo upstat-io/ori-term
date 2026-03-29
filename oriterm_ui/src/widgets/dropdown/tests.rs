@@ -1,49 +1,17 @@
-use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use winit::window::CursorIcon;
+
 use crate::layout::BoxContent;
+use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{LayoutCtx, Widget, WidgetAction};
 
 use super::{DropdownStyle, DropdownWidget};
-
-static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
 
 fn items() -> Vec<String> {
     vec!["Alpha".into(), "Beta".into(), "Gamma".into()]
 }
 
-fn event_ctx() -> EventCtx<'static> {
-    EventCtx {
-        measurer: &MEASURER,
-        bounds: Rect::new(0.0, 0.0, 200.0, 28.0),
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    }
-}
-
-fn key_event(key: Key) -> KeyEvent {
-    KeyEvent {
-        key,
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn mouse_down() -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn mouse_up() -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    }
-}
+// -- Construction and state --
 
 #[test]
 fn default_state() {
@@ -52,7 +20,6 @@ fn default_state() {
     assert_eq!(dd.selected_text(), "Alpha");
     assert_eq!(dd.items().len(), 3);
     assert!(!dd.is_disabled());
-    assert!(!dd.is_hovered());
     assert!(dd.is_focusable());
 }
 
@@ -69,6 +36,28 @@ fn selected_clamped() {
     assert_eq!(dd.selected(), 2); // Clamped to last index.
 }
 
+// -- Sense and controllers --
+
+#[test]
+fn sense_returns_click() {
+    let dd = DropdownWidget::new(items());
+    assert_eq!(dd.sense(), Sense::click());
+}
+
+#[test]
+fn has_two_controllers() {
+    let dd = DropdownWidget::new(items());
+    assert_eq!(dd.controllers().len(), 2);
+}
+
+#[test]
+fn has_visual_state_animator() {
+    let dd = DropdownWidget::new(items());
+    assert!(dd.visual_states().is_some());
+}
+
+// -- Layout --
+
 #[test]
 fn layout_accommodates_widest_item() {
     let dd = DropdownWidget::new(items());
@@ -84,119 +73,16 @@ fn layout_accommodates_widest_item() {
         intrinsic_width, ..
     } = &layout.content
     {
-        // "Gamma" = 5 chars * 8 = 40 (widest) + padding 20 + indicator 20 = 80.
-        assert_eq!(
-            *intrinsic_width,
-            40.0 + s.padding.width() + s.indicator_width
-        );
+        // "Gamma" = 5 chars * 8 = 40 (widest) + padding + indicator, clamped to min_width.
+        let content_w = 40.0 + s.padding.width() + s.indicator_width;
+        let expected = content_w.max(s.min_width);
+        assert_eq!(*intrinsic_width, expected);
     } else {
         panic!("expected leaf layout");
     }
 }
 
-#[test]
-fn arrow_down_cycles_forward() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    let r = dd.handle_key(key_event(Key::ArrowDown), &ctx);
-    assert_eq!(dd.selected(), 1);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::Selected {
-            id: dd.id(),
-            index: 1,
-        })
-    );
-
-    dd.handle_key(key_event(Key::ArrowDown), &ctx);
-    assert_eq!(dd.selected(), 2);
-
-    // Wraps to 0.
-    dd.handle_key(key_event(Key::ArrowDown), &ctx);
-    assert_eq!(dd.selected(), 0);
-}
-
-#[test]
-fn arrow_up_cycles_backward() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    // At 0, wraps to last.
-    let r = dd.handle_key(key_event(Key::ArrowUp), &ctx);
-    assert_eq!(dd.selected(), 2);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::Selected {
-            id: dd.id(),
-            index: 2,
-        })
-    );
-}
-
-#[test]
-fn click_emits_open_dropdown() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    dd.handle_mouse(&mouse_down(), &ctx);
-    let r = dd.handle_mouse(&mouse_up(), &ctx);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::OpenDropdown {
-            id: dd.id(),
-            options: items(),
-            selected: 0,
-            anchor: ctx.bounds,
-        })
-    );
-}
-
-#[test]
-fn enter_emits_open_dropdown() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    let r = dd.handle_key(key_event(Key::Enter), &ctx);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::OpenDropdown {
-            id: dd.id(),
-            options: items(),
-            selected: 0,
-            anchor: ctx.bounds,
-        })
-    );
-}
-
-#[test]
-fn disabled_ignores() {
-    let mut dd = DropdownWidget::new(items()).with_disabled(true);
-    let ctx = event_ctx();
-
-    assert!(!dd.is_focusable());
-
-    let r = dd.handle_mouse(&mouse_down(), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = dd.handle_key(key_event(Key::ArrowDown), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = dd.handle_hover(HoverEvent::Enter, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-}
-
-#[test]
-fn hover_transitions() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    dd.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(dd.is_hovered());
-
-    dd.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!dd.is_hovered());
-}
+// -- Programmatic selection --
 
 #[test]
 fn set_selected_programmatic() {
@@ -214,122 +100,153 @@ fn set_selected_clamped() {
 }
 
 #[test]
-fn space_emits_open_dropdown() {
+fn set_disabled_prevents_interaction() {
     let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
 
-    let r = dd.handle_key(key_event(Key::Space), &ctx);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::OpenDropdown {
-            id: dd.id(),
-            options: items(),
-            selected: 0,
-            anchor: ctx.bounds,
-        })
+    dd.set_disabled(true);
+    assert!(dd.is_disabled());
+    assert!(!dd.is_focusable());
+}
+
+// -- accept_action --
+
+#[test]
+fn accept_action_updates_selection() {
+    let mut dd = DropdownWidget::new(items());
+    let id = dd.id();
+
+    let action = WidgetAction::Selected { id, index: 2 };
+    assert!(dd.accept_action(&action));
+    assert_eq!(dd.selected(), 2);
+    assert_eq!(dd.selected_text(), "Gamma");
+}
+
+#[test]
+fn accept_action_ignores_wrong_id() {
+    let mut dd = DropdownWidget::new(items());
+    let other_id = crate::widget_id::WidgetId::next();
+
+    let action = WidgetAction::Selected {
+        id: other_id,
+        index: 1,
+    };
+    assert!(!dd.accept_action(&action));
+    assert_eq!(dd.selected(), 0);
+}
+
+// -- Keymap actions --
+
+#[test]
+fn confirm_emits_open_dropdown_not_selected() {
+    // Regression: TPR-13-009 — keyboard Confirm must open the popup, not
+    // silently cycle the selection.
+    use crate::action::keymap_action::Confirm;
+    use crate::geometry::Rect;
+    let mut dd = DropdownWidget::new(items());
+    let bounds = Rect::new(10.0, 20.0, 140.0, 30.0);
+
+    let result = dd.handle_keymap_action(&Confirm, bounds);
+    assert!(
+        matches!(result, Some(WidgetAction::OpenDropdown { .. })),
+        "Confirm should emit OpenDropdown, got: {result:?}"
     );
 }
 
 #[test]
-fn single_item_arrows_stay() {
-    let mut dd = DropdownWidget::new(vec!["Only".into()]);
-    let ctx = event_ctx();
+fn dismiss_does_not_emit_overlay_action() {
+    // Regression: TPR-13-008 — Escape on a closed dropdown trigger must NOT
+    // emit DismissOverlay (which would close the entire settings dialog).
+    use crate::action::keymap_action::Dismiss;
+    use crate::geometry::Rect;
+    let mut dd = DropdownWidget::new(items());
+    let bounds = Rect::new(10.0, 20.0, 140.0, 30.0);
 
-    dd.handle_key(key_event(Key::ArrowDown), &ctx);
-    assert_eq!(dd.selected(), 0);
-
-    dd.handle_key(key_event(Key::ArrowUp), &ctx);
-    assert_eq!(dd.selected(), 0);
+    let result = dd.handle_keymap_action(&Dismiss, bounds);
+    assert!(
+        result.is_none(),
+        "Dismiss on closed trigger should be no-op, got: {result:?}"
+    );
 }
 
-#[test]
-fn leave_clears_pressed() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    dd.handle_mouse(&mouse_down(), &ctx);
-    assert!(dd.pressed);
-
-    dd.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!dd.pressed);
-    assert!(!dd.is_hovered());
-}
+// -- Style --
 
 #[test]
-fn right_click_ignored() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
+fn with_style_rebuilds_animator() {
+    use crate::color::Color;
 
-    let right_down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Right),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
+    let style = DropdownStyle {
+        bg: Color::WHITE,
+        hover_bg: Color::rgb(0.9, 0.9, 0.9),
+        pressed_bg: Color::rgb(0.7, 0.7, 0.7),
+        disabled_bg: Color::rgb(0.3, 0.3, 0.3),
+        ..DropdownStyle::default()
     };
-    let r = dd.handle_mouse(&right_down, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
+    let dd = DropdownWidget::new(items()).with_style(style);
+
+    // The animator's initial bg should be the style's normal bg.
+    let animator = dd.visual_states().unwrap();
+    assert_eq!(animator.get_bg_color(), Color::WHITE);
 }
 
-#[test]
-fn release_without_press_no_clicked() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
+// -- Cursor icon --
 
-    // Mouse up without prior press.
-    let r = dd.handle_mouse(&mouse_up(), &ctx);
-    assert!(r.action.is_none());
+#[test]
+fn layout_cursor_icon_pointer() {
+    let dd = DropdownWidget::new(items());
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = dd.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "dropdown should declare Pointer cursor"
+    );
 }
 
+/// Repeated open/close cycles must not grow the scene primitive count.
+///
+/// Regression guard: dropdown trigger click → dismiss → repeat should not
+/// leak quads or text runs across cycles.
 #[test]
-fn set_disabled_clears_visual_state() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
+fn dropdown_open_close_cycle_stable_scene_size() {
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
 
-    dd.handle_hover(HoverEvent::Enter, &ctx);
-    dd.handle_mouse(&mouse_down(), &ctx);
-    assert!(dd.is_hovered());
-    assert!(dd.pressed);
+    let dd = DropdownWidget::new(items());
+    let dd_id = dd.id();
+    let mut h = WidgetTestHarness::with_size(dd, 300.0, 200.0);
+    let bounds = h.widget_bounds(dd_id);
+    let center = crate::geometry::Point::new(
+        bounds.x() + bounds.width() / 2.0,
+        bounds.y() + bounds.height() / 2.0,
+    );
 
-    dd.set_disabled(true);
-    assert!(!dd.is_hovered());
-    assert!(!dd.pressed);
-}
+    // Warmup: first render establishes baseline.
+    h.render();
 
-#[test]
-fn full_cycle_forward() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    // Cycle through all items and back to start.
-    for expected in [1, 2, 0, 1, 2, 0] {
-        dd.handle_key(key_event(Key::ArrowDown), &ctx);
-        assert_eq!(dd.selected(), expected);
+    let mut counts: Vec<usize> = Vec::new();
+    for _ in 0..10 {
+        // Click to trigger OpenDropdown action (actual overlay push
+        // requires parent container wiring, but the click + dismiss
+        // exercises the widget's internal state).
+        h.mouse_move(center);
+        h.mouse_down(MouseButton::Left);
+        h.mouse_up(MouseButton::Left);
+        if h.has_overlays() {
+            h.dismiss_overlays();
+        }
+        let scene = h.render();
+        counts.push(scene.quads().len() + scene.text_runs().len());
     }
-}
 
-#[test]
-fn release_outside_bounds_no_clicked() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    // Press inside bounds, release outside → no Clicked action.
-    dd.handle_mouse(&mouse_down(), &ctx);
-    assert!(dd.pressed);
-
-    let outside_up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(300.0, 300.0),
-        modifiers: Modifiers::NONE,
-    };
-    let r = dd.handle_mouse(&outside_up, &ctx);
-    assert!(r.action.is_none());
-    assert!(!dd.pressed);
-}
-
-#[test]
-fn escape_key_ignored() {
-    let mut dd = DropdownWidget::new(items());
-    let ctx = event_ctx();
-
-    let r = dd.handle_key(key_event(Key::Escape), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
+    // Verify no monotonic growth.
+    let first = counts[0];
+    let last = *counts.last().unwrap();
+    assert!(
+        last <= first + 5,
+        "scene primitive count grew from {first} to {last} over 10 cycles — possible leak"
+    );
 }

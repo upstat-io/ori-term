@@ -86,13 +86,34 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 ## Key Paths
 
-**oriterm (GUI binary):** `oriterm/src/app/` — App struct, winit event loop, input dispatch | `oriterm/src/session/` — GUI session model (tabs, windows, layouts) | `oriterm/src/session/split_tree/` — SplitTree pane tiling | `oriterm/src/session/floating/` — FloatingLayer pane overlay | `oriterm/src/session/compute/` — Layout computation (pixel-space) | `oriterm/src/session/nav/` — Directional pane navigation
+**oriterm (GUI binary — thin shell):** `oriterm/src/app/` — App struct, winit event loop, GPU init, input dispatch — thin shell delegating to WindowRoot | `oriterm/src/session/` — GUI session model (tabs, windows, layouts) | `oriterm/src/session/split_tree/` — SplitTree pane tiling | `oriterm/src/session/floating/` — FloatingLayer pane overlay | `oriterm/src/session/compute/` — Layout computation (pixel-space) | `oriterm/src/session/nav/` — Directional pane navigation
+
+**oriterm_ui (UI framework):** `oriterm_ui/src/widgets/` — Widget trait + all widget implementations | `oriterm_ui/src/window_root/` — WindowRoot (per-window UI composition unit) | `oriterm_ui/src/interaction/` — Pure interaction utilities (resize geometry, cursor hiding, mark mode motion) | `oriterm_ui/src/pipeline/` — Pipeline orchestration (layout → prepaint → paint → dispatch) | `oriterm_ui/src/testing/` — WidgetTestHarness (headless testing)
 
 **oriterm_mux (pane server):** `oriterm_mux/src/in_process/` — InProcessMux (pane CRUD, event pump) | `oriterm_mux/src/registry/` — PaneRegistry (flat pane storage) | `oriterm_mux/src/pane/` — Pane (terminal state, PTY I/O) | `oriterm_mux/src/backend/` — MuxBackend trait (embedded + daemon) | `oriterm_mux/src/server/` — Daemon server (IPC protocol) | `oriterm_mux/src/protocol/` — Wire protocol (PDU codec)
 
 **oriterm_core (terminal emulation):** `oriterm_core/src/grid/` — Grid (rows, cursor, scrollback, reflow) | `oriterm_core/src/term_handler.rs` — VTE Handler impl | `oriterm_core/src/cell.rs` — Rich Cell + CellFlags | `oriterm_core/src/palette.rs` — Color palette | `oriterm_core/src/selection.rs` — Selection model | `oriterm_core/src/search.rs` — Search (plain + regex)
 
 **oriterm_gpu (rendering):** `oriterm_gpu/src/renderer.rs` — GPU rendering (wgpu, draw_frame) | `oriterm_gpu/src/atlas.rs` — Glyph atlas | `oriterm_gpu/src/pipeline.rs` — WGSL shader pipelines
+
+## Crate Boundaries
+
+**`oriterm_core`** — Terminal emulation library (grid, VTE, selection, search). Standalone, no workspace deps.
+**`oriterm_ui`** — UI framework (widgets, WindowRoot, interaction, pipeline, animation, testing). Depends on `oriterm_core` only.
+**`oriterm_mux`** — Pane server (PTY I/O, pane lifecycle, mux backend). Depends on `oriterm_core` + `oriterm_ipc`.
+**`oriterm_ipc`** — Platform IPC transport (Unix sockets, Windows named pipes). Standalone, no workspace deps.
+**`oriterm`** — Application shell (winit event loop, GPU, font pipeline, session model). Consumes all other crates.
+
+**Allowed dependency direction:**
+```
+oriterm_ipc  (standalone)
+oriterm_core (standalone)
+oriterm_ui   → oriterm_core
+oriterm_mux  → oriterm_core, oriterm_ipc
+oriterm      → oriterm_core, oriterm_ui, oriterm_mux
+```
+
+**Litmus test:** Can this code be tested in a `#[test]` without a GPU, display server, or terminal? If yes → `oriterm_ui`. If no → `oriterm`. See `.claude/rules/crate-boundaries.md` for full ownership rules.
 
 ## Reference Repos (`~/projects/reference_repos/console_repos/`)
 
@@ -130,6 +151,59 @@ When the user says **"continue plan X"** or **"resume plan X"** or **"pick up pl
 Plans are the source of truth for multi-session work. Keep them in sync with reality.
 
 **Review Gate:** Every roadmap section has `reviewed: true/false` in its frontmatter. Sections with `reviewed: false` have NOT been vetted by `/review-plan` and must not be implemented without review. `/continue-roadmap` enforces this gate automatically — it will stop and warn before working on an unreviewed section.
+
+---
+
+## UI Framework — Zero Exceptions Rule
+
+Every single UI control — buttons, toggles, sliders, dropdowns, text inputs, window chrome buttons, tab bar tabs, close buttons, menu items, scroll thumbs, dialog headers — goes through the unified controller + animator + propagation pipeline. No special cases, no manual `hovered: bool` fields, no one-off `handle_mouse()` implementations. One system, one path, no exceptions.
+
+- **WindowRoot** is the per-window composition unit — owns widget tree, InteractionManager, FocusManager, OverlayManager, compositor, and pipeline. Both WidgetTestHarness and production windows wrap WindowRoot. No framework state should be owned outside WindowRoot.
+- **InteractionManager** is the single source of truth for all interaction state (hot, active, focused, disabled).
+- **VisualStateAnimator** drives all state-dependent visual transitions (hover colors, focus rings, pressed states).
+- **EventControllers** (HoverController, ClickController, DragController, etc.) handle all input — no widget implements raw event methods directly.
+- **The propagation pipeline** routes events through the widget tree — no container manually calls `child.handle_mouse()`.
+
+If you find a widget doing its own hover/press/focus tracking outside this system, that is a bug. Fix it.
+
+---
+
+## Widget Test Harness
+
+`WidgetTestHarness` (`oriterm_ui/src/testing/`) enables headless widget testing without GPU, display server, or platform dependencies. It wraps `WindowRoot` and provides input simulation, state inspection, and paint capture.
+
+**Running harness tests**: `cargo test -p oriterm_ui` runs all widget and harness tests. Architecture tests: `cargo test -p oriterm --test architecture`.
+
+**Writing new harness tests** (in any `tests.rs` file within `oriterm_ui`):
+```rust
+let mut h = WidgetTestHarness::new(ButtonWidget::new("OK"));
+h.mouse_move_to(center);      // Input simulation
+assert!(h.is_hot(button_id)); // State inspection
+h.click(center);              // Click helper (move + down + up)
+let scene = h.render();       // Paint capture (returns Scene)
+```
+
+Key APIs: `mouse_move()`, `mouse_down()`, `mouse_up()`, `click()`, `key_press()`, `tab()`, `shift_tab()`, `scroll()`, `drag()`, `type_text()`, `advance_time()`, `render()`, `is_hot()`, `is_active()`, `is_focused()`, `interaction_state()`, `get_widget()`, `all_widget_ids()`, `widgets_with_sense()`, `push_popup()`, `has_overlays()`, `dismiss_overlays()`.
+
+---
+
+## Action & Keymap System
+
+Actions are typed enums declared by widgets. Keybindings are data (not code) that map keystrokes to actions. Dispatch routes through context-scoped focus path.
+
+**Declaring an action** (in `oriterm_ui/src/action/keymap_action/mod.rs`):
+```rust
+actions!(widget, [Activate, Dismiss, NavigateDown, NavigateUp, Confirm]);
+```
+
+**Adding a keybinding** (in `oriterm_ui/src/action/keymap/defaults.rs`):
+```rust
+KeyBinding::new(Keystroke::new(Key::Enter), None, Box::new(widget::Activate))
+```
+
+**Context scoping**: Widgets return `key_context() -> Option<&'static str>` (e.g., `"Button"`, `"Dropdown"`). Bindings match only when the focused widget's context stack includes the binding's context.
+
+**Widget integration**: Implement `handle_keymap_action(&mut self, action: &dyn KeymapAction) -> Option<WidgetAction>` to receive dispatched actions.
 
 ---
 

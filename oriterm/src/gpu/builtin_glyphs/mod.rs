@@ -34,6 +34,7 @@ pub(crate) fn raster_key(ch: char, size_q6: u32) -> RasterKey {
     RasterKey {
         glyph_id: ch as u16,
         face_idx: FaceIdx::BUILTIN,
+        weight: 0,
         size_q6,
         synthetic: SyntheticFlags::NONE,
         hinted: false,

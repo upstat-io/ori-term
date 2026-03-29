@@ -54,18 +54,38 @@ impl App {
     fn handle_mux_notification(&mut self, notification: MuxNotification) {
         match notification {
             MuxNotification::PaneOutput(id) => {
-                // Invalidate client-side selection when terminal content changes.
-                // New output can shift scrollback, making selection coordinates stale.
-                self.clear_pane_selection(id);
+                // Invalidate client-side selection only when terminal content
+                // that affects selection coordinates has changed (scrolling,
+                // character printing, erasing, etc.). Non-content operations
+                // like cursor movement and SGR attribute changes do not
+                // invalidate. Without this precision, selections would be
+                // cleared on every prompt repaint or cursor blink output,
+                // making selection highlighting impossible.
+                if let Some(mux) = self.mux.as_mut() {
+                    if mux.is_selection_dirty(id) {
+                        mux.clear_selection_dirty(id);
+                        self.clear_pane_selection(id);
+                    }
+                }
 
                 // Only invalidate URL hover when the dirty pane is focused.
                 // Background shell output in other panes shouldn't kill the
                 // URL highlight under the cursor.
-                if self.active_pane_id() == Some(id) {
+                let is_focused = self.active_pane_id() == Some(id);
+                if is_focused {
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.url_cache.invalidate();
                         ctx.hovered_url = None;
                     }
+                }
+
+                // Background pane received output — mark as unseen so
+                // the tab bar shows the "modified" indicator dot.
+                if !is_focused {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.set_unseen_output(id);
+                    }
+                    self.sync_tab_bar_from_mux();
                 }
                 // Mark only the window containing this pane as dirty.
                 self.mark_pane_window_dirty(id);
@@ -141,7 +161,7 @@ impl App {
             if let Some(idx) = self.tab_index_for_pane(pane_id) {
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.ring_bell(idx, Instant::now());
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
         }
@@ -203,7 +223,7 @@ impl App {
         }
         for ctx in self.windows.values_mut() {
             ctx.pane_cache.remove(id);
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
 
         // Remove pane from local session (tree/floating/tab/window).

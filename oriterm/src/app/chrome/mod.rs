@@ -9,8 +9,6 @@
 
 mod resize;
 
-use std::time::Instant;
-
 #[cfg(not(target_os = "macos"))]
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
@@ -21,8 +19,6 @@ use oriterm_ui::widgets::WidgetAction;
 use oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH;
 
 use super::App;
-#[cfg(not(target_os = "macos"))]
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 use crate::window_manager::platform::{ChromeMode, chrome_ops};
 
 /// Install frameless window chrome via the platform trait.
@@ -97,9 +93,13 @@ pub(super) fn grid_origin_y(chrome_height_logical: f32, scale: f32) -> f32 {
 const GRID_PADDING: f32 = 8.0;
 
 /// Computed top-level window layout: chrome and terminal grid positions.
-pub(super) struct WindowLayout {
+pub(crate) struct WindowLayout {
+    /// Tab bar bounds in physical pixels.
+    pub tab_bar_rect: Rect,
     /// Grid bounds in physical pixels (origin + dimensions), inset by padding.
     pub grid_rect: Rect,
+    /// Status bar bounds in physical pixels.
+    pub status_bar_rect: Rect,
     /// Number of terminal columns that fit in the grid area.
     pub cols: usize,
     /// Number of terminal rows that fit in the grid area.
@@ -108,45 +108,73 @@ pub(super) struct WindowLayout {
 
 /// Compute the top-level window layout via the layout engine.
 ///
-/// Builds a `Column { TabBar(fixed), Grid(fill) }` descriptor and runs the
-/// two-pass flexbox solver to determine positions. The tab bar gets a fixed
-/// height (logical `TAB_BAR_HEIGHT` scaled to physical pixels, rounded to
+/// Builds a `Column { TabBar(fixed), Grid(fill), StatusBar(fixed) }` descriptor
+/// and runs the two-pass flexbox solver to determine positions. The tab bar and
+/// status bar get fixed heights (logical, scaled to physical pixels, rounded to
 /// prevent subpixel seams). The terminal grid fills the remaining space.
+///
+/// When `tab_bar_hidden` is true, the tab bar height is zero.
+/// When `status_bar_height` is 0.0, no status bar space is reserved.
+/// When `border_inset` is > 0.0, the entire layout is inset from the window
+/// edges by that many logical pixels (for the window border frame).
 ///
 /// All coordinates are in physical pixels — consistent with cell metrics,
 /// GPU renderer, and the winit viewport.
-pub(super) fn compute_window_layout(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "window layout: viewport size, cell metrics, scale, tab bar visibility + height, status bar height, border inset"
+)]
+pub(crate) fn compute_window_layout(
     viewport_w: u32,
     viewport_h: u32,
     cell: &crate::font::CellMetrics,
     scale: f32,
+    tab_bar_hidden: bool,
+    tab_bar_height: f32,
+    status_bar_height: f32,
+    border_inset: f32,
 ) -> WindowLayout {
     use oriterm_ui::layout::{Direction, LayoutBox, SizeSpec, compute_layout};
 
-    let tab_bar_h_px = grid_origin_y(
-        oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT,
-        scale,
+    let tab_bar_h_px = if tab_bar_hidden {
+        0.0
+    } else {
+        grid_origin_y(tab_bar_height, scale)
+    };
+    let status_bar_h_px = (status_bar_height * scale).round();
+    let inset_px = (border_inset * scale).round();
+
+    let viewport = Rect::new(
+        inset_px,
+        inset_px,
+        (viewport_w as f32 - 2.0 * inset_px).max(0.0),
+        (viewport_h as f32 - 2.0 * inset_px).max(0.0),
     );
 
     let root = LayoutBox::flex(
         Direction::Column,
         vec![
             // Tab bar: fixed height in physical pixels, fills width.
-            LayoutBox::leaf(viewport_w as f32, tab_bar_h_px)
+            LayoutBox::leaf(viewport.width(), tab_bar_h_px)
                 .with_width(SizeSpec::Fill)
                 .with_height(SizeSpec::Fixed(tab_bar_h_px)),
             // Terminal grid: fills remaining space.
             LayoutBox::leaf(0.0, 0.0)
                 .with_width(SizeSpec::Fill)
                 .with_height(SizeSpec::Fill),
+            // Status bar: fixed height at bottom.
+            LayoutBox::leaf(viewport.width(), status_bar_h_px)
+                .with_width(SizeSpec::Fill)
+                .with_height(SizeSpec::Fixed(status_bar_h_px)),
         ],
     )
     .with_width(SizeSpec::Fill)
     .with_height(SizeSpec::Fill);
 
-    let viewport = Rect::new(0.0, 0.0, viewport_w as f32, viewport_h as f32);
     let layout = compute_layout(&root, viewport);
+    let tab_bar_rect = layout.children[0].rect;
     let raw_grid = layout.children[1].rect;
+    let status_bar_rect = layout.children[2].rect;
 
     // Padding in physical pixels, rounded to integer to prevent subpixel
     // seams. Applied as a left/top origin shift on the grid rect.
@@ -169,7 +197,9 @@ pub(super) fn compute_window_layout(
     );
 
     WindowLayout {
+        tab_bar_rect,
         grid_rect,
+        status_bar_rect,
         cols,
         rows,
     }
@@ -218,20 +248,24 @@ impl App {
             ctx.window.set_maximized(maximized);
             #[cfg(not(target_os = "macos"))]
             ctx.tab_bar.set_maximized(maximized);
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 
     /// Returns `true` if the cursor position is within the tab bar zone.
     ///
-    /// The tab bar spans from y=0 to `TAB_BAR_HEIGHT` (logical pixels).
+    /// The tab bar spans from y=0 to the active tab bar height (logical pixels).
+    /// Returns `false` when the tab bar is hidden.
     pub(super) fn cursor_in_tab_bar(&self, position: winit::dpi::PhysicalPosition<f64>) -> bool {
+        if self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden {
+            return false;
+        }
         let Some(ctx) = self.focused_ctx() else {
             return false;
         };
         let scale = ctx.window.scale_factor().factor() as f32;
         let logical_y = position.y as f32 / scale;
-        logical_y < oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+        logical_y < ctx.tab_bar.metrics().height
     }
 
     /// Update tab bar hover state and width lock from cursor position.
@@ -240,7 +274,12 @@ impl App {
     /// targets via [`hit_test`](oriterm_ui::widgets::tab_bar::hit_test),
     /// updates the widget's hover hit (marking dirty on change), and manages
     /// the tab width lock (acquire on enter, release on leave).
+    ///
+    /// No-op when the tab bar is hidden.
     pub(super) fn update_tab_bar_hover(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
+        if self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden {
+            return;
+        }
         let in_tab_bar = self.cursor_in_tab_bar(position);
         let locked = self.tab_width_lock().is_some();
 
@@ -266,14 +305,15 @@ impl App {
                 (
                     ctx.window.scale_factor().factor() as f32,
                     ctx.tab_bar.layout().clone(),
+                    ctx.tab_bar.metrics().height,
                 )
             });
 
             match ctx_data {
-                Some((scale, layout)) => {
+                Some((scale, layout, bar_height)) => {
                     let x = position.x as f32 / scale;
                     let y = position.y as f32 / scale;
-                    oriterm_ui::widgets::tab_bar::hit_test(x, y, &layout)
+                    oriterm_ui::widgets::tab_bar::hit_test(x, y, &layout, bar_height)
                 }
                 _ => oriterm_ui::widgets::tab_bar::TabBarHit::None,
             }
@@ -288,8 +328,8 @@ impl App {
         // Apply hover hit, redraw on change.
         if let Some(ctx) = self.focused_ctx_mut() {
             if ctx.tab_bar.hover_hit() != hit {
-                ctx.tab_bar.set_hover_hit(hit, Instant::now());
-                ctx.dirty = true;
+                ctx.tab_bar.set_hover_hit(hit);
+                ctx.root.mark_dirty();
                 ctx.ui_stale = true;
             }
         }
@@ -297,9 +337,8 @@ impl App {
 
     /// Drive control button hover animation for the focused window.
     ///
-    /// Forwards the cursor position and hit result to the tab bar's
-    /// control hover handler, which manages fade-in/fade-out animations
-    /// on minimize, maximize, and close buttons.
+    /// Directly updates `VisualStateAnimator` on each control button based
+    /// on cursor position. The hovered button gets hot state, others normal.
     #[cfg(not(target_os = "macos"))]
     fn update_control_hover_animation(
         &mut self,
@@ -324,28 +363,9 @@ impl App {
         let scale = ctx.window.scale_factor().factor() as f32;
         let pos =
             oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-        let event_ctx = oriterm_ui::widgets::EventCtx {
-            measurer: &measurer,
-            bounds: Rect::default(),
-            is_focused: false,
-            focused_widget: None,
-            theme: &self.ui_theme,
-        };
-        let resp = ctx.tab_bar.update_control_hover(pos, &event_ctx);
-        if matches!(
-            resp.response,
-            oriterm_ui::input::EventResponse::RequestPaint
-                | oriterm_ui::input::EventResponse::RequestLayout
-        ) {
-            ctx.dirty = true;
+        let animating = ctx.tab_bar.update_control_hover_state(pos);
+        if animating || is_control_hit {
+            ctx.root.mark_dirty();
             ctx.ui_stale = true;
         }
     }
@@ -362,31 +382,19 @@ impl App {
         };
         let had_hover = ctx.tab_bar.hover_hit() != oriterm_ui::widgets::tab_bar::TabBarHit::None;
         if had_hover {
-            ctx.tab_bar.set_hover_hit(
-                oriterm_ui::widgets::tab_bar::TabBarHit::None,
-                Instant::now(),
-            );
+            ctx.tab_bar
+                .set_hover_hit(oriterm_ui::widgets::tab_bar::TabBarHit::None);
         }
-        // Clear control button hover animation (not on macOS — native traffic lights).
+        // Clear control button hover animations (not on macOS — native traffic lights).
         #[cfg(not(target_os = "macos"))]
-        if let Some(renderer) = ctx.renderer.as_ref() {
-            let scale = ctx.window.scale_factor().factor() as f32;
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                &ctx.text_cache,
-                scale,
-            );
-            let event_ctx = oriterm_ui::widgets::EventCtx {
-                measurer: &measurer,
-                bounds: Rect::default(),
-                is_focused: false,
-                focused_widget: None,
-                theme: &self.ui_theme,
-            };
-            ctx.tab_bar.clear_control_hover(&event_ctx);
+        {
+            if ctx.tab_bar.clear_control_hover_state() {
+                ctx.root.mark_dirty();
+                ctx.ui_stale = true;
+            }
         }
         if had_hover {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
             ctx.ui_stale = true;
         }
     }
