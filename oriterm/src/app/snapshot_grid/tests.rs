@@ -63,6 +63,7 @@ fn test_snapshot(cells: Vec<Vec<WireCell>>, cols: u16, stable_row_base: u64) -> 
         search_matches: Vec::new(),
         search_focused: None,
         search_total_matches: 0,
+        has_unseen_output: false,
     }
 }
 

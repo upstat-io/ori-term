@@ -195,6 +195,26 @@ pub trait MuxBackend {
     /// a no-op — the client manages bell state locally.
     fn clear_bell(&mut self, _pane_id: PaneId) {}
 
+    /// Mark a pane as having unseen output.
+    ///
+    /// Called when a non-active pane receives output. The tab bar reads this
+    /// via the snapshot to show a "modified" indicator dot.
+    fn set_unseen_output(&mut self, _pane_id: PaneId) {}
+
+    /// Clear the unseen output flag for a pane.
+    ///
+    /// Called when a pane becomes the active/focused tab.
+    fn mark_output_seen(&mut self, _pane_id: PaneId) {}
+
+    /// Whether a pane has output the user hasn't seen.
+    ///
+    /// In embedded mode, reads directly from the [`Pane`] (avoids snapshot
+    /// staleness). In daemon mode, reads from the cached pushed snapshot.
+    fn has_unseen_output(&self, pane_id: PaneId) -> bool {
+        self.pane_snapshot(pane_id)
+            .is_some_and(|s| s.has_unseen_output)
+    }
+
     /// Clean up a closed pane's resources.
     ///
     /// In embedded mode, removes the pane from storage and drops it on a

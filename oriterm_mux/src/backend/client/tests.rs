@@ -132,6 +132,7 @@ fn test_snapshot(title: &str) -> crate::PaneSnapshot {
         search_matches: Vec::new(),
         search_focused: None,
         search_total_matches: 0,
+        has_unseen_output: false,
     }
 }
 

@@ -413,6 +413,7 @@ fn sample_snapshot() -> PaneSnapshot {
         search_matches: Vec::new(),
         search_focused: None,
         search_total_matches: 0,
+        has_unseen_output: false,
     }
 }
 
@@ -500,6 +501,7 @@ fn snapshot_with_cjk_emoji_combining() {
         search_matches: Vec::new(),
         search_focused: None,
         search_total_matches: 0,
+        has_unseen_output: false,
     };
 
     roundtrip(32, MuxPdu::PaneSnapshotResp { snapshot });
@@ -943,6 +945,7 @@ fn roundtrip_large_pane_snapshot() {
         search_matches: Vec::new(),
         search_focused: None,
         search_total_matches: 0,
+        has_unseen_output: false,
     };
 
     let frame = roundtrip(

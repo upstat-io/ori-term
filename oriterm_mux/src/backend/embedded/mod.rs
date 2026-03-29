@@ -294,6 +294,24 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
+    fn set_unseen_output(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.set_unseen_output();
+        }
+    }
+
+    fn mark_output_seen(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.mark_output_seen();
+        }
+    }
+
+    fn has_unseen_output(&self, pane_id: PaneId) -> bool {
+        self.panes
+            .get(&pane_id)
+            .is_some_and(Pane::has_unseen_output)
+    }
+
     fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.remove(&pane_id) {
             self.snapshot_cache.remove(&pane_id);

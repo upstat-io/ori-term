@@ -214,6 +214,8 @@ pub struct PaneSnapshot {
     /// Matches `StableRowIndex` semantics: accounts for scrollback eviction,
     /// not just current buffer length.
     pub stable_row_base: u64,
+    /// Whether the pane has output the user hasn't seen (background tab).
+    pub has_unseen_output: bool,
     /// Grid column count.
     ///
     /// Explicit to avoid fragile `cells[0].len()` inference.

@@ -213,6 +213,7 @@ The GUI's connection to the mux daemon. `MuxClient` implements the same API as `
 - [ ] `MuxBackend` trait — unified API over `InProcessMux` and `MuxClient`:
   - [ ] Both implement the same trait
   - [ ] App uses `Box<dyn MuxBackend>` — transparent switching between modes
+  - [ ] Implement `set_unseen_output`/`mark_output_seen`/`has_unseen_output` for `MuxClient` — requires `FocusPane` PDU so server tracks per-client focused pane. Without this, the tab bar's modified indicator is always false in daemon mode. <!-- unblocks:main-window-brutal/01.R -->
 - [ ] Auto-start daemon:
   - [ ] On app launch: try to connect to existing daemon socket
   - [ ] If no daemon running: fork `oriterm-mux --daemon`, wait for socket, connect

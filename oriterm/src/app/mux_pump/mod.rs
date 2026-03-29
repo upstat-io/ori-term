@@ -71,11 +71,21 @@ impl App {
                 // Only invalidate URL hover when the dirty pane is focused.
                 // Background shell output in other panes shouldn't kill the
                 // URL highlight under the cursor.
-                if self.active_pane_id() == Some(id) {
+                let is_focused = self.active_pane_id() == Some(id);
+                if is_focused {
                     if let Some(ctx) = self.focused_ctx_mut() {
                         ctx.url_cache.invalidate();
                         ctx.hovered_url = None;
                     }
+                }
+
+                // Background pane received output — mark as unseen so
+                // the tab bar shows the "modified" indicator dot.
+                if !is_focused {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.set_unseen_output(id);
+                    }
+                    self.sync_tab_bar_from_mux();
                 }
                 // Mark only the window containing this pane as dirty.
                 self.mark_pane_window_dirty(id);
