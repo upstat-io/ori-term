@@ -357,20 +357,22 @@ fn sidebar_source_commands_match_runtime() {
             runtime_cmds.len(),
         );
 
-        let common = source_cmds.len().min(runtime_cmds.len());
-        for (idx, (src, rt)) in source_cmds[..common]
-            .iter()
-            .zip(runtime_cmds[..common].iter())
-            .enumerate()
-        {
-            let max_coord_diff = command_max_diff(src, rt);
-            // 6-decimal codegen truncation can introduce ~0.0000005 per coordinate.
-            assert!(
-                max_coord_diff < 0.001,
-                "{:?} command {idx}: coordinate diff {max_coord_diff:.8} — \
-                 source and runtime definitions have diverged",
-                fixture.id,
-            );
+        // Only compare coordinates when counts match exactly. When they
+        // differ by 1 (platform arc subdivision), commands are misaligned
+        // and pairwise comparison is meaningless. The raster fidelity tests
+        // in oriterm/src/gpu/icon_rasterizer/tests.rs verify visual
+        // equivalence via alpha-mask comparison.
+        if diff == 0 {
+            for (idx, (src, rt)) in source_cmds.iter().zip(runtime_cmds.iter()).enumerate() {
+                let max_coord_diff = command_max_diff(src, rt);
+                // 6-decimal codegen truncation can introduce ~0.0000005 per coordinate.
+                assert!(
+                    max_coord_diff < 0.001,
+                    "{:?} command {idx}: coordinate diff {max_coord_diff:.8} — \
+                     source and runtime definitions have diverged",
+                    fixture.id,
+                );
+            }
         }
     }
 }
