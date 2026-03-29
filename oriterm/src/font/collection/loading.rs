@@ -109,6 +109,21 @@ impl FontSet {
         }
     }
 
+    /// Replace emoji fallback with a system font file (test-only).
+    ///
+    /// Reads the font from `path` and sets it as the sole fallback.
+    /// Returns `self` unchanged if the file doesn't exist or can't be read.
+    #[cfg(all(test, feature = "gpu-tests"))]
+    pub fn with_system_emoji_fallback(mut self, path: &str) -> Self {
+        if let Ok(data) = std::fs::read(path) {
+            self.fallbacks = vec![FontData {
+                data: Arc::new(data),
+                index: 0,
+            }];
+        }
+        self
+    }
+
     /// Build a `FontSet` from embedded IBM Plex Mono (Regular + Medium + Bold).
     ///
     /// Fixed UI font for settings dialogs and chrome — independent of the
