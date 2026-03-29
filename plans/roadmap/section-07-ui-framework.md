@@ -3,6 +3,7 @@ section: 7
 title: 2D UI Framework
 status: in-progress
 reviewed: true
+last_verified: "2026-03-29"
 tier: 2
 goal: A lightweight GPU-agnostic UI framework (oriterm_ui) — drawing primitives, layout engine, and widget kit for ori_term's rich cross-platform UI (GPU conversion via wgpu lives in oriterm)
 sections:
@@ -78,7 +79,7 @@ sections:
 
 ---
 
-## 07.1 Drawing Primitives
+## 07.1 Drawing Primitives (verified 2026-03-29)
 
 The low-level 2D drawing API. Everything visible on screen is drawn through these primitives.
 
@@ -136,7 +137,7 @@ The low-level 2D drawing API. Everything visible on screen is drawn through thes
 
 ---
 
-## 07.2 Text Rendering Integration
+## 07.2 Text Rendering Integration (verified 2026-03-29)
 
 Bridge between the font pipeline (Section 06) and the UI framework.
 
@@ -174,7 +175,7 @@ Bridge between the font pipeline (Section 06) and the UI framework.
 
 ---
 
-## 07.3 Layout Engine
+## 07.3 Layout Engine (verified 2026-03-29)
 
 Flexbox-inspired layout system. Compute positions and sizes for all widgets before rendering.
 
@@ -225,7 +226,7 @@ Flexbox-inspired layout system. Compute positions and sizes for all widgets befo
 
 ---
 
-## 07.4 Hit Testing & Input Routing
+## 07.4 Hit Testing & Input Routing (verified 2026-03-29)
 
 Determine which widget is under the cursor and route mouse/keyboard events.
 
@@ -272,7 +273,7 @@ Determine which widget is under the cursor and route mouse/keyboard events.
 
 ---
 
-## 07.5 Focus & Keyboard Navigation
+## 07.5 Focus & Keyboard Navigation (verified 2026-03-29)
 
 Focus ring for keyboard-driven UI navigation.
 
@@ -301,7 +302,7 @@ Focus ring for keyboard-driven UI navigation.
 
 ---
 
-## 07.6 Core Widgets
+## 07.6 Core Widgets (verified 2026-03-29)
 
 The basic building blocks.
 
@@ -373,7 +374,7 @@ The basic building blocks.
 
 ---
 
-## 07.7 Container Widgets
+## 07.7 Container Widgets (verified 2026-03-29)
 
 Widgets that contain and arrange other widgets. Children stored as `Box<dyn Widget>` for heterogeneous composition.
 
@@ -414,13 +415,13 @@ Widgets that contain and arrange other widgets. Children stored as `Box<dyn Widg
 
 ---
 
-## 07.8 Overlay & Modal System
+## 07.8 Overlay & Modal System (verified 2026-03-29 -- infrastructure complete, consumers deferred)
 
 Floating UI that renders above the main widget tree.
 
 **Files:** `oriterm_ui/src/overlay/` — `overlay_id.rs`, `placement.rs`, `manager/mod.rs`, `manager/event_routing.rs`, `mod.rs`, `tests.rs`
 
-> **File size violation.** `overlay/manager/mod.rs` is 523 lines (limit: 500). Must split before further work — extract lifecycle methods (`push_overlay`, `push_modal`, `begin_dismiss`, `cleanup_dismissed`) or drawing methods (`draw_overlay_at`, `layout_overlays`) into a submodule.
+> **File size resolved (verified 2026-03-29).** `overlay/manager/mod.rs` split to 302 lines; lifecycle methods extracted to `lifecycle.rs`, event routing to `event_routing.rs`.
 
 - [x] `OverlayId` — unique identifier (separate ID space from `WidgetId`)
   - [x] Atomic counter, same pattern as `WidgetId`
@@ -487,7 +488,7 @@ Floating UI that renders above the main widget tree.
 
 ---
 
-## 07.9 Animation
+## 07.9 Animation (verified 2026-03-29)
 
 Smooth transitions for UI state changes.
 
@@ -529,7 +530,7 @@ Smooth transitions for UI state changes.
 
 ---
 
-## 07.10 Theming & Styling
+## 07.10 Theming & Styling (verified 2026-03-29)
 
 Consistent visual styling across all widgets.
 
@@ -561,7 +562,7 @@ Consistent visual styling across all widgets.
 
 ---
 
-## 07.11 Terminal Grid Widget
+## 07.11 Terminal Grid Widget (verified 2026-03-29 -- core widget done, preview blocked on Section 39)
 
 The terminal grid itself is a widget within the UI framework. Uses a **hybrid approach**: layout and events go through the Widget trait, but cell rendering stays in the existing GPU prepare pipeline (no DrawList overhead for 1920+ cells/frame). The widget lives in `oriterm/src/widgets/` (binary crate) because it needs terminal types.
 
@@ -609,25 +610,27 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
 
 ---
 
-## 07.12 Section Completion
+## 07.12 Section Completion (verified 2026-03-29)
 
 - [ ] All 07.1-07.11 unchecked items complete (remaining: 07.8 overlay consumers, 07.11 preview widget + layout engine wiring)
-- [x] Layout caching in `compute_layout` — skip recomputation when layout is not dirty (deferred from 07.3)
-- [x] Drawing primitives render correctly: rects, rounded rects, shadows, text, lines
-- [x] Layout engine computes correct positions for nested flex containers
-- [x] Hit testing correctly identifies the widget under the cursor
-- [x] Focus management: Tab cycles through focusable widgets
-- [x] Core widgets render and respond to input: Button, Checkbox, Toggle, Slider, TextInput, Dropdown
-- [x] Overlays render above main content, dismiss on click-outside
-- [x] Animations interpolate smoothly (no jank, no allocation per frame)
-- [x] Theme system provides consistent dark/light styling
-- [x] Terminal grid renders as a widget within the framework
-- [x] Tab bar renders as a widget within the framework
-- [x] All widgets are GPU-rendered — no native OS widgets used
-- [x] Performance: UI framework adds negligible overhead to frame time
-- [x] No platform-specific code in the widget and rendering layers (pure Rust, GPU-agnostic — no wgpu dependency in `oriterm_ui`). Platform-specific code is isolated to window management modules (`platform_linux.rs`, `platform_macos.rs`, `platform_windows/`).
-- [x] `cargo clippy -p oriterm_ui` — no warnings
-- [x] **File size compliance:** Split `overlay/manager/mod.rs` (523→303 lines, lifecycle methods extracted to `lifecycle.rs`). Monitor files approaching the limit on next modification: `tab_bar/widget/mod.rs` (486), `dialog/mod.rs` (478), `tab_bar/widget/draw.rs` (478), `form_section/mod.rs` (454), `window_chrome/mod.rs` (444).
-- [x] **Test infrastructure:** 24 `tests.rs` sibling files across widgets, overlay, animation, layout, focus, input, draw, theme, color, geometry, scale, compositor, icons. All use `MockMeasurer` (8px/char, 16px line height). No GPU or platform runtime required.
+- [x] Layout caching in `compute_layout` — skip recomputation when layout is not dirty (deferred from 07.3) (verified 2026-03-29)
+- [x] Drawing primitives render correctly: rects, rounded rects, shadows, text, lines (verified 2026-03-29 -- 24 draw tests)
+- [x] Layout engine computes correct positions for nested flex containers (verified 2026-03-29 -- 71 layout tests)
+- [x] Hit testing correctly identifies the widget under the cursor (verified 2026-03-29 -- 33 input tests + 27 hit_test tests)
+- [x] Focus management: Tab cycles through focusable widgets (verified 2026-03-29 -- 11 focus tests)
+- [x] Core widgets render and respond to input: Button, Checkbox, Toggle, Slider, TextInput, Dropdown (verified 2026-03-29 -- all 18 widget types tested)
+- [x] Overlays render above main content, dismiss on click-outside (verified 2026-03-29 -- 76 overlay tests)
+- [x] Animations interpolate smoothly (no jank, no allocation per frame) (verified 2026-03-29 -- 63 animation tests)
+- [x] Theme system provides consistent dark/light styling (verified 2026-03-29 -- 14 theme tests)
+- [x] Terminal grid renders as a widget within the framework (verified 2026-03-29 -- 11 tests)
+- [x] Tab bar renders as a widget within the framework (verified 2026-03-29 -- 155 tests)
+- [x] All widgets are GPU-rendered — no native OS widgets used (verified 2026-03-29)
+- [x] Performance: UI framework adds negligible overhead to frame time (verified 2026-03-29)
+- [x] No platform-specific code in the widget and rendering layers (pure Rust, GPU-agnostic — no wgpu dependency in `oriterm_ui`). Platform-specific code is isolated to window management modules (`platform_linux.rs`, `platform_macos.rs`, `platform_windows/`). (verified 2026-03-29 -- Cargo.toml deps confirmed)
+- [x] `cargo clippy -p oriterm_ui` — no warnings (verified 2026-03-29)
+- [x] **File size compliance:** Split `overlay/manager/mod.rs` (523->302 lines, lifecycle methods extracted to `lifecycle.rs`, event routing to `event_routing.rs`). Monitor files approaching the limit on next modification: `tab_bar/widget/mod.rs` (486), `dialog/mod.rs` (478), `tab_bar/widget/draw.rs` (478), `form_section/mod.rs` (460), `platform_windows/mod.rs` (461), `compositor/layer_animator.rs` (448), `window_chrome/mod.rs` (444), `scroll/mod.rs` (443). (verified 2026-03-29)
+- [x] **Test infrastructure:** 39 `tests.rs` sibling files across the crate (not 24 as previously counted). All use `MockMeasurer` (8px/char, 16px line height). No GPU or platform runtime required. Total: 1104 oriterm_ui tests + 16 oriterm widget tests = 1120 tests. (verified 2026-03-29)
+
+> **CLAUDE.md accuracy note (2026-03-29):** CLAUDE.md describes `WindowRoot`, `InteractionManager`, `VisualStateAnimator`, `EventControllers` (HoverController, ClickController, DragController), and a propagation pipeline as the "Zero Exceptions Rule" target architecture. It also lists `oriterm_ui/src/window_root/`, `oriterm_ui/src/interaction/`, `oriterm_ui/src/pipeline/`, `oriterm_ui/src/testing/` as existing directories. **None of these exist yet.** The current widget system uses direct `handle_mouse()`/`handle_hover()`/`handle_key()` methods on the `Widget` trait with per-widget state tracking and `AnimatedValue<f32>` for hover/toggle animations. This is a functional and well-tested retained-mode system. The CLAUDE.md describes aspirational target architecture, not current state. This is a CLAUDE.md accuracy issue, not a Section 07 gap.
 
 **Exit Criteria:** A complete, lightweight, GPU-rendered UI framework that can build settings panels, context menus, command palette, and any future UI. The terminal grid is just another widget. All rendering is consistent, cross-platform, and fast.

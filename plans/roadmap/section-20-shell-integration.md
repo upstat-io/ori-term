@@ -3,6 +3,7 @@ section: 20
 title: Shell Integration
 status: complete
 reviewed: true
+last_verified: "2026-03-29"
 tier: 4
 goal: Shell detection, injection, OSC 7/133 handling, two-parser strategy, prompt state machine
 sections:
@@ -69,8 +70,8 @@ Detect the user's shell from the program path so the correct injection mechanism
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] `Shell` enum: `Bash`, `Zsh`, `Fish`, `PowerShell`, `Wsl`
-- [x] `detect_shell(program: &str) -> Option<Shell>` — match basename (ignoring `.exe`), handle full paths
+- [x] `Shell` enum: `Bash`, `Zsh`, `Fish`, `PowerShell`, `Wsl` (verified 2026-03-29)
+- [x] `detect_shell(program: &str) -> Option<Shell>` — match basename (ignoring `.exe`), handle full paths (verified 2026-03-29)
 
 ---
 
@@ -82,7 +83,7 @@ Each shell requires a different injection strategy. WSL is a special case — it
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] Injection mechanisms (per shell):
+- [x] Injection mechanisms (per shell): (verified 2026-03-29)
   | Shell | Method | How |
   |-------|--------|-----|
   | Bash | `--posix` + `ENV` var | Set `ENV=path/to/oriterm.bash`, shell sources it on startup |
@@ -101,7 +102,7 @@ The shell integration scripts emit OSC sequences that the terminal intercepts fo
 
 **Reference:** `_old/shell-integration/`
 
-- [x] Integration scripts emit:
+- [x] Integration scripts emit: (verified 2026-03-29 -- all 4 scripts contain required OSC sequences)
   - [x] `OSC 7 ; file://hostname/path ST` — current working directory
   - [x] `OSC 133 ; A ST` — prompt start
   - [x] `OSC 133 ; B ST` — command start (user typing)
@@ -119,7 +120,7 @@ Prevent stale scripts from persisting after app updates by stamping a version fi
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] `shell-integration/.version` file contains app version string
+- [x] `shell-integration/.version` file contains app version string (verified 2026-03-29)
 - [x] On launch: if `.version` matches `env!("CARGO_PKG_VERSION")`, skip writing scripts
 - [x] Otherwise: overwrite all shell integration scripts and update `.version`
 - [x] Prevents stale scripts from persisting after app updates
@@ -134,10 +135,10 @@ The high-level VTE processor drops sequences it doesn't recognize. A two-parser 
 
 **Reference:** `_old/src/tab/interceptor.rs`
 
-- [x] The high-level VTE processor (`vte::ansi::Processor`) drops sequences it doesn't recognize (OSC 7, OSC 133, etc.)
-- [x] Solution: a raw `vte::Parser` with custom `Perform` trait impl runs on the **same bytes** before the high-level processor
-- [x] Raw interceptor catches: OSC 7 (CWD), OSC 133 (prompts), OSC 9/99/777 (notifications), CSI >q (XTVERSION response)
-- [x] Both parsers run within the same terminal lock
+- [x] The high-level VTE processor (`vte::ansi::Processor`) drops sequences it doesn't recognize (OSC 7, OSC 133, etc.) (verified 2026-03-29)
+- [x] Solution: a raw `vte::Parser` with custom `Perform` trait impl runs on the **same bytes** before the high-level processor (verified 2026-03-29)
+- [x] Raw interceptor catches: OSC 7 (CWD), OSC 133 (prompts), OSC 9/99/777 (notifications), CSI >q (XTVERSION response) (verified 2026-03-29)
+- [x] Both parsers run within the same terminal lock (verified 2026-03-29)
 - [x] Interceptor writes to mutable refs on TerminalState fields (no separate struct needed in rebuild — `Term<T>` handles these directly in the VTE handler)
 
 ---
@@ -150,7 +151,7 @@ Track the current working directory via OSC 7 so the tab bar can display it and 
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] When OSC 7 received: parse `file://hostname/path`, strip prefix, store in `Term.cwd`
+- [x] When OSC 7 received: parse `file://hostname/path`, strip prefix, store in `Term.cwd` (verified 2026-03-29 -- 10 tests including percent-encoding, Windows paths, edge cases)
 - [x] Mark `title_dirty = true` (CWD change may affect tab bar title)
 - [x] If no explicit title (OSC 0/2) was set: tab bar shows short path from CWD
 
@@ -164,7 +165,7 @@ Three sources for tab titles, with strict priority ordering.
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] Tab title resolution — three sources with priority:
+- [x] Tab title resolution — three sources with priority: (verified 2026-03-29)
   1. [x] Explicit title from OSC 0/2: `has_explicit_title = true`, show `title` field
   2. [x] CWD short path: if `cwd.is_some()` and `!has_explicit_title`, show last component(s) of path
   3. [x] Fallback: static title (e.g., "Tab N")
@@ -181,9 +182,9 @@ Track prompt lifecycle via OSC 133 sub-parameters. Prompt marking is deferred be
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] `PromptState` enum: `None`, `PromptStart`, `CommandStart`, `OutputStart`
-- [x] Transitions on OSC 133 sub-params (A → B → C → D → None)
-- [x] `prompt_mark_pending: bool` — when OSC 133;A arrives, set pending. Actual grid row marking happens **after both parsers finish** (deferred), because the cursor position is updated by the high-level processor, not the raw interceptor
+- [x] `PromptState` enum: `None`, `PromptStart`, `CommandStart`, `OutputStart` (verified 2026-03-29)
+- [x] Transitions on OSC 133 sub-params (A → B → C → D → None) (verified 2026-03-29)
+- [x] `prompt_mark_pending: bool` — when OSC 133;A arrives, set pending. Actual grid row marking happens **after both parsers finish** (deferred), because the cursor position is updated by the high-level processor, not the raw interceptor (verified 2026-03-29 -- uses `PendingMarks` bitflags)
 - [x] Prompt lines can be used for: smart selection (select full command), scroll-to-prompt navigation
 
 ---
@@ -196,9 +197,9 @@ When switching between primary and alt screen, the keyboard mode stack must be s
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] `keyboard_mode_stack: Vec<KeyboardModes>` — active screen's stack
-- [x] `inactive_keyboard_mode_stack: Vec<KeyboardModes>` — stashed stack
-- [x] When switching primary ↔ alt screen (`swap_alt()`): swap the two stacks
+- [x] `keyboard_mode_stack: Vec<KeyboardModes>` — active screen's stack (verified 2026-03-29)
+- [x] `inactive_keyboard_mode_stack: Vec<KeyboardModes>` — stashed stack (verified 2026-03-29)
+- [x] When switching primary ↔ alt screen (`swap_alt()`): swap the two stacks (verified 2026-03-29)
 - [x] Allows alt-screen apps (vim, less) to use different key encodings without affecting the primary shell
 
 ---
@@ -211,8 +212,8 @@ Respond to XTVERSION queries so that shell integration scripts and applications 
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] On CSI >q: generate `DCS > | oriterm(version build N) ST`
-- [x] Append to VTE response buffer for reader thread to flush outside the terminal lock
+- [x] On CSI >q: generate `DCS > | oriterm(version build N) ST` (verified 2026-03-29)
+- [x] Append to VTE response buffer for reader thread to flush outside the terminal lock (verified 2026-03-29 -- sends via `Event::PtyWrite`)
 
 ---
 
@@ -224,9 +225,9 @@ Collect notifications from OSC 9/99/777 sequences and forward them to the OS not
 
 **Reference:** `_old/src/shell_integration.rs`
 
-- [x] `pending_notifications: Vec<Notification>` — drained by main thread on each Wakeup
-- [x] `Notification { title: String, body: String }`
-- [x] OS notification dispatch (platform-specific, stretch goal)
+- [x] `pending_notifications: Vec<Notification>` — drained by main thread on each Wakeup (verified 2026-03-29)
+- [x] `Notification { title: String, body: String }` (verified 2026-03-29)
+- [x] OS notification dispatch (platform-specific, stretch goal) (verified 2026-03-29 -- Windows/Linux/macOS all implemented)
 
 ---
 
@@ -238,11 +239,11 @@ Expose prompt markers (OSC 133) as user-facing navigation features — jump betw
 
 **Reference:** WezTerm `ScrollToPrompt`, Ghostty `scroll-to-prompt`
 
-- [x] **Prompt line tracking:**
+- [x] **Prompt line tracking:** (verified 2026-03-29)
   - [x] Store prompt positions in grid: `prompt_markers: Vec<PromptMarker>` (absolute row indices for OSC 133 A/B/C)
   - [x] Updated by the prompt state machine (Section 20.8) — when markers received, record cursor row (deferred)
   - [x] Pruned on scrollback eviction (remove markers that fell off the top)
-- [x] **Jump to prompt:**
+- [x] **Jump to prompt:** (verified 2026-03-29)
   - [x] `PreviousPrompt` action (default: `Ctrl+Shift+ArrowUp`):
     - [x] Find nearest prompt row ABOVE current viewport top (or vi cursor if in vi mode)
     - [x] Scroll viewport to center that prompt row
@@ -250,7 +251,7 @@ Expose prompt markers (OSC 133) as user-facing navigation features — jump betw
     - [x] Find nearest prompt row BELOW current position
     - [x] Scroll viewport to center that prompt row
   - [x] Wrap: at first/last prompt, stop (don't wrap around)
-- [x] **Select command output:**
+- [x] **Select command output:** (verified 2026-03-29)
   - [x] `SelectCommandOutput` action (default: unbound, available via command palette):
     - [x] From current prompt row, find the next prompt row
     - [x] Select all rows between `OutputStart` (OSC 133;C) and next `PromptStart` (OSC 133;A)
@@ -258,7 +259,7 @@ Expose prompt markers (OSC 133) as user-facing navigation features — jump betw
   - [x] `SelectCommandInput` action:
     - [x] Select text between `CommandStart` (OSC 133;B) and `OutputStart` (OSC 133;C)
     - [x] Selects just the typed command (useful for copying commands)
-- [x] **Visual prompt markers** (optional):
+- [x] **Visual prompt markers** (optional): (verified 2026-03-29 -- 2px bar, GPU tests confirm emit)
   - [x] Subtle left-margin indicator at prompt lines (thin colored bar, 2px)
   - [x] Config: `behavior.prompt_markers = true | false` (default: false)
 - [x] Graceful fallback: if no shell integration / no OSC 133 data, navigation actions are no-ops
@@ -279,11 +280,11 @@ Desktop notification when a long-running command finishes in an unfocused tab/wi
 
 **Reference:** Ghostty `notify-on-command-finish`, iTerm2 shell integration
 
-- [x] **Command timing:**
+- [x] **Command timing:** (verified 2026-03-29)
   - [x] Track command start time: when OSC 133;C (output start) received, record `Instant::now()`
   - [x] Track command end: when OSC 133;D (command complete) received, compute elapsed duration
   - [x] Store: `last_command_duration: Option<Duration>` per pane
-- [x] **Notification trigger conditions:**
+- [x] **Notification trigger conditions:** (verified 2026-03-29)
   - [x] Command ran longer than threshold (default: 10 seconds)
   - [x] Pane is NOT focused (unfocused tab or unfocused window)
   - [x] Config: `behavior.notify_on_command_finish` enum:
@@ -291,12 +292,12 @@ Desktop notification when a long-running command finishes in an unfocused tab/wi
     - [x] `unfocused` — only when pane is not focused (default)
     - [x] `always` — always notify, even if focused
   - [x] Config: `behavior.notify_command_threshold_secs = 10` — minimum duration to trigger
-- [x] **Notification dispatch:**
+- [x] **Notification dispatch:** (verified 2026-03-29)
   - [x] Emit `Notification` (reuse Section 20.11 notification system)
   - [x] Title: `"Command finished"` or pane title
   - [x] Body: `"<command> completed in <duration>"` (command text from shell integration if available)
   - [x] Platform-specific: Windows toast, macOS NSUserNotification, Linux D-Bus notification
-- [x] **Tab bell integration:**
+- [x] **Tab bell integration:** (verified 2026-03-29)
   - [x] Optionally flash the tab bar for the completed tab (reuse bell pulse)
   - [x] Config: `behavior.notify_command_bell = true | false` (default: true)
 - [x] **Tests:**
@@ -310,7 +311,7 @@ Desktop notification when a long-running command finishes in an unfocused tab/wi
 
 ## 20.14 Section Completion
 
-- [x] All 20.1–20.13 items complete
+- [x] All 20.1–20.13 items complete (verified 2026-03-29 -- 230 tests, all passing)
 - [x] Shell detection identifies all five shell types correctly
 - [x] Injection mechanisms set correct environment variables per shell
 - [x] Integration scripts emit proper OSC 7, OSC 133, and notification sequences

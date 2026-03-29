@@ -4,6 +4,7 @@ title: Image Protocols
 status: in-progress
 reviewed: false
 tier: 5
+last_verified: "2026-03-29"
 goal: "Inline image display via Kitty Graphics Protocol, Sixel, and iTerm2 image protocol. Full GPU-accelerated compositing with text overlay, animation support, memory-managed image cache."
 sections:
   - id: "39.1"
@@ -28,7 +29,7 @@ sections:
 
 # Section 39: Image Protocols
 
-**Status:** Not Started
+**Status:** In Progress (39.1-39.4 complete, 39.5 in-progress with daemon items deferred)
 **Goal:** Display images inline in the terminal via Kitty Graphics Protocol, Sixel, and iTerm2 image protocol. GPU-accelerated compositing with configurable z-ordering (above or below text), animation support, and memory-managed image cache with eviction. This is a must-have feature — every modern terminal except Alacritty supports at least one image protocol.
 
 **Crate:** `oriterm_core` (image storage, protocol parsing, image decode), `oriterm` (GPU rendering in `oriterm/src/gpu/`, texture management)
@@ -43,6 +44,15 @@ sections:
 - Alacritty: deliberately omits image support (we go beyond)
 
 **Why this matters:** Image protocols are what make `viu`, `timg`, `imgcat`, `hologram`, `ranger` previews, Jupyter inline plots, and `kitty icat` work. Without image support, these tools fall back to ASCII art or don't work at all.
+
+> **Verification notes (2026-03-29):**
+> - 140 tests pass (126 oriterm_core + 8 GPU + 6 prepare). No hangs, no flaky tests.
+> - 39.1 (Image Storage + Cache): COMPLETE. 37 tests, exceeds plan. All 10 planned test categories present plus 27 additional.
+> - 39.2 (Kitty Graphics Protocol): COMPLETE. 30 tests, exceeds plan. VTE APC prerequisite verified. Animation support included.
+> - 39.3 (Sixel Graphics): COMPLETE. 13 tests, exceeds plan. VTE DCS dispatch verified. All decode paths working.
+> - 39.4 (iTerm2 Image Protocol): COMPLETE. 17 tests, exceeds plan. Real PNG decode paths tested.
+> - 39.5 (Image Rendering + GPU Compositing): IN-PROGRESS. 14 tests. Daemon-mode items (`PaneSnapshot` extension, `extract_frame_from_snapshot()`) correctly deferred.
+> - All source files under 500 lines with proactive splitting. All test files follow sibling pattern. No hygiene violations. Error handling thorough and non-fatal throughout.
 
 ---
 
