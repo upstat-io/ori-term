@@ -49,6 +49,8 @@ These principles govern the entire plan creation process. When in doubt, consult
 
 6. **Incremental design** — Every section must touch the real system. No section should build types, traits, abstractions, or infrastructure in isolation. Every section starts from the production code path, modifies it, and produces an observable, verifiable change in the running application.
 
+7. **Continuous third-party feedback** — Don't wait until the end to get outside eyes. Use `/tp-help` liberally throughout planning to get a second brain's perspective on research findings, architecture decisions, section designs, and plan coherence. Each consultation is a conversation, not a one-shot — if `/tp-help` raises concerns, address them and re-consult until the concern is resolved. The goal is a back-and-forth dialogue that stress-tests every major decision.
+
 ---
 
 ## Phase 1: Prerequisites
@@ -242,6 +244,27 @@ OUTPUT FORMAT:
 
 **This step cannot be parallelized.** Each file read may inform what to look for in the next file.
 
+### Step 4b: `/tp-help` Feedback — Research Completeness (ITERATE UNTIL RESOLVED)
+
+After Pass 2 completes, use `/tp-help` to get a second opinion on the research findings so far. Build a context package containing:
+
+- **The complete file inventory** from Pass 1 (all files found, types, functions, boundaries)
+- **The deep-read summaries** from Pass 2 (invariants, control flow, what would break)
+- **All UNCLEAR items** — things the research couldn't determine
+- **The plan's stated goal/scope**
+
+Ask Codex:
+1. "Does this inventory seem complete? Are there files/modules we're likely missing?"
+2. "Based on these invariants and control flow, what are the riskiest parts of this plan?"
+3. "What edge cases or failure modes should we investigate before designing the architecture?"
+
+**Iteration loop:**
+- If Codex identifies missing areas, run targeted follow-up research (Grep/Read) and re-consult.
+- If Codex flags risks, investigate them during Pass 3-4 and confirm they're addressed.
+- Continue until Codex confirms the research base looks solid or raises no new concerns.
+
+This step typically takes 1-3 rounds. Don't shortcut it — gaps found here prevent wrong architecture later.
+
 ### Step 5: Pass 3 — Pattern Study (single focused agent)
 
 Launch **one agent** to trace 2-3 analogous features end-to-end through the codebase. These are features that already exist and follow the same structural pattern that the new plan will need.
@@ -346,6 +369,27 @@ For each design decision:
 
 **Note**: Passes 3 and 4 CAN run in parallel with each other (they are independent), but both MUST wait for Passes 1-2 to complete (they depend on knowing what files and code are relevant).
 
+### Step 6b: `/tp-help` Feedback — Patterns & Design Decisions (ITERATE UNTIL RESOLVED)
+
+After Passes 3 and 4 complete, use `/tp-help` to stress-test the recommended patterns and design decisions. Build a context package containing:
+
+- **The analogous feature patterns** from Pass 3 (recommended implementation order, layer trace)
+- **The design decisions** from Pass 4 (options, recommendations, prior art evidence)
+- **Key constraints** from CLAUDE.md that apply (crate boundaries, performance invariants, no-workaround policy)
+
+Ask Codex:
+1. "Here are the patterns from analogous features. Does this recommended pattern make sense for {topic}, or are there structural differences that would make it break down?"
+2. "For each design decision, do you agree with the recommended approach? What would you do differently and why?"
+3. "Given these constraints (crate boundaries, performance invariants), what pitfalls do you see in this approach?"
+
+**Iteration loop:**
+- If Codex challenges a pattern recommendation, investigate the alternative — read the code it references, compare trade-offs, and re-consult with your analysis.
+- If Codex identifies a constraint conflict, verify against the actual codebase and adjust the recommendation.
+- If Codex proposes a better approach, evaluate it against the reference implementations and re-consult with your assessment.
+- Continue until all design decisions have been defended or revised. Every decision entering Phase 3 should have survived at least one round of challenge.
+
+This step typically takes 2-4 rounds. The architecture is the most consequential part of the plan — invest here.
+
 ---
 
 ## Phase 3: Architecture Design (REQUIRED BEFORE SECTION WRITING)
@@ -367,6 +411,30 @@ After ALL research passes complete, synthesize findings into a structured archit
 9. **Hygiene pre-scan** — files that need splitting or cleanup
 10. **Dependency chain** — what must be built first, what gates what, what can be parallelized
 
+### Step 7b: `/tp-help` Feedback — Architecture Synthesis (ITERATE UNTIL RESOLVED)
+
+Before writing the overview, use `/tp-help` to challenge the synthesized architecture. This is the most critical feedback point — the architecture drives everything downstream.
+
+Build a context package containing:
+- **The proposed architecture** — data flow, crate boundaries, key types, pipeline stages
+- **The dependency chain** — what must be built first, what gates what
+- **Design decisions with recommendations** — from Step 6b's validated decisions
+- **The proposed section breakdown** — rough section topics and ordering
+- **Key constraints** — performance invariants, crate boundaries, cross-platform requirements
+
+Ask Codex:
+1. "Here's the proposed architecture for {topic}. What are the weakest points? Where would this most likely break down during implementation?"
+2. "Does this dependency chain make sense? Are there hidden dependencies we're missing?"
+3. "Is this section breakdown right? Are any sections trying to do too much? Are any too thin to justify their own section?"
+4. "What's the biggest risk in this plan that we haven't addressed?"
+
+**Iteration loop — MINIMUM 2 rounds:**
+- **Round 1**: Present architecture, get initial critique.
+- **Round 2**: Address the critique (adjust architecture, add mitigations, restructure sections), re-present with changes highlighted. Ask: "We addressed X, Y, Z. Does this resolve your concerns? What else?"
+- **Round 3+ (if needed)**: Continue until Codex raises no new structural concerns. If a concern can't be resolved architecturally, flag it as a known risk in the overview.
+
+Do not shortcut this to a single round. The back-and-forth IS the value — it simulates the design review you'd get from a senior engineer.
+
 ### Step 8: Write `00-overview.md` FIRST
 
 The overview is the **load-bearing design document**. It is NOT boilerplate filled in after sections are written — it is the architectural blueprint that DRIVES section content.
@@ -383,6 +451,18 @@ Write `00-overview.md` following the template in `.claude/skills/create-plan/pla
 - **Metrics**: Use actual line counts from the hygiene pre-scan
 
 **Also create `index.md`** with keyword clusters using REAL keywords from the research (actual type names, function names, file names — not placeholders).
+
+### Step 8b: `/tp-help` Feedback — Overview Quality Check
+
+After writing the overview and index, use `/tp-help` for a concrete review of the written document.
+
+Send Codex the full text of `00-overview.md` and ask:
+1. "Read this overview. Is the architecture diagram accurate and complete? Does it miss any data flow paths?"
+2. "Are the design principles well-justified? Would you add or remove any?"
+3. "Is the implementation sequence correct? Would re-ordering any phases reduce risk?"
+4. "Are the exit criteria measurable and sufficient? Could a section pass its criteria without actually being done?"
+
+**Single round is acceptable here** if the architecture already survived Step 7b's multi-round challenge. Fix any issues raised before presenting to the user.
 
 ### Step 9: User Review of Architecture (MANDATORY — DO NOT SKIP)
 
@@ -449,7 +529,8 @@ For each section, in order from 01 to N:
 - `depends_on` based on actual crate dependency chain AND section content dependencies
 - `third_party_review: { status: none, updated: null }`
 - `## {NN}.R Third Party Review Findings` block (empty, with `- None.`) before the completion checklist
-- Completion checklist at the end
+- Completion checklist at the end (always includes final `/tpr-review`)
+- **Mid-section TPR checkpoints** on substantial subsections per `plan-schema.md` TPR Checkpoint Rules — catch issues early, not just at section end
 
 **`reviewed` field rules:**
 - **Section 01**: `reviewed: true` — validated during plan creation against the research findings.
@@ -460,6 +541,30 @@ For each section, in order from 01 to N:
 - Type/function names referenced exist
 - References to prior sections are accurate
 - No contradictions with prior sections
+
+### Step 11b: `/tp-help` Feedback During Section Writing (PERIODIC — EVERY 2-3 SECTIONS)
+
+Don't wait until all sections are written to get feedback. After every 2-3 sections (or after any particularly complex/risky section), use `/tp-help` for a mid-flight check.
+
+**After sections 1-2** (foundation sections), send Codex:
+- The full text of sections 1-2
+- The overview's architecture and section dependency graph
+- Ask: "Do these foundation sections properly set up what later sections need? Are the task breakdowns specific enough to implement without ambiguity? What's missing?"
+
+**After sections 3-5** (core implementation sections), send Codex:
+- The full text of sections 3-5 (and summaries of 1-2)
+- Ask: "Are these sections maintaining consistency with the architecture? Are the code examples realistic? Do the exit criteria actually prove the section is complete?"
+
+**After any section with complex design decisions**, send Codex:
+- That section's full text plus the relevant design decision from the overview
+- Ask: "Does this section's implementation approach match the design decision we made? Are there edge cases the checklist doesn't cover?"
+
+**Iteration loop for each checkpoint:**
+- If Codex identifies gaps, fix them in the already-written sections before continuing.
+- If Codex suggests restructuring, evaluate whether it's better to adjust now (cheap) or later (expensive). Default to adjusting now.
+- Re-consult after fixes: "We added X and restructured Y. Does this address your concerns?"
+
+**For plans with 6+ sections**, this means at least 2-3 feedback rounds during section writing. For plans with 3-4 sections, at least 1 round after writing 2 sections.
 
 Then proceed to the next section.
 
@@ -472,6 +577,25 @@ After all sections are written:
 ---
 
 ## Phase 5: Cohesion Review & Finalization
+
+### Step 12b: `/tp-help` Feedback — Full Plan Review (ITERATE UNTIL RESOLVED)
+
+Before running the automated cohesion check, get a holistic third-party review of the complete plan. This catches structural issues that per-section feedback misses — things like drift between the overview and later sections, or implicit assumptions that span multiple sections.
+
+Send Codex the **complete plan**: `00-overview.md` + all section files + `index.md`. Ask:
+
+1. "Read this entire plan front-to-back. Does the story hold together? Does each section logically follow from the previous one?"
+2. "Are there any implicit dependencies between sections that aren't declared in `depends_on`?"
+3. "Do the exit criteria accumulate correctly — would completing all sections in order actually achieve the mission stated in the overview?"
+4. "Is there any work that falls between sections — something no section owns but must happen?"
+5. "If you were implementing this plan, what would surprise you or trip you up?"
+
+**Iteration loop — MINIMUM 2 rounds:**
+- **Round 1**: Full plan review, get structural critique.
+- **Round 2**: Fix issues raised (update sections, add missing dependencies, close gaps), re-send the changed sections. Ask: "We fixed X, added Y, restructured Z. Does the plan hold together now? Anything else?"
+- **Round 3+ (if needed)**: Continue until Codex confirms the plan is coherent or only raises minor style concerns.
+
+This is the last major quality gate before automated review. Invest in getting it right.
 
 ### Step 13: Cohesion Check
 
@@ -555,14 +679,20 @@ If the user says **no**: do not add reroute frontmatter (plan is not a reroute).
 **Phase 2**:
 - *Pass 1*: Launch 2 parallel agents — (1) survey `oriterm_gpu`, `oriterm/src/app/` rendering code, all GPU-related files; (2) audit tests, hygiene state, performance invariants.
 - *Pass 2*: Deep-read the 12 most critical files. Understand how `GpuRenderer::draw_frame()` works, how the atlas manages glyphs, how damage tracking would integrate.
-- *Pass 3*: Trace how the existing cell rendering pipeline works end-to-end — from grid state through GPU submission to screen.
-- *Pass 4*: Study Alacritty's damage tracking (`alacritty/src/display/damage.rs`), Ghostty's multi-backend approach, WezTerm's texture atlas. Recommend approaches for ori_term.
+- *`/tp-help` Round 1*: "Here's our file inventory and deep-read findings. Are we missing any critical files? What are the riskiest parts?" → Codex flags that we didn't look at the buffer shrink discipline. Read those files, re-consult. → "Looks solid now."
+- *Pass 3*: Trace how the existing cell rendering pipeline works end-to-end.
+- *Pass 4*: Study Alacritty's damage tracking, Ghostty's multi-backend approach, WezTerm's texture atlas.
+- *`/tp-help` Round 2*: "We recommend Alacritty's damage tracking approach adapted for wgpu. Codex, do you agree or would you go a different direction?" → Codex suggests also looking at how Ghostty handles partial redraws. Investigate, re-consult with comparison. → "Alacritty's approach is better for ori_term because X."
 
-**Phase 3**: Design architecture. Write `00-overview.md` with data flow, design decisions. Present to user.
+**Phase 3**: Synthesize architecture.
+- *`/tp-help` Rounds 3-4*: Present architecture, get critique. "The weakest point is the atlas invalidation during damage tracking." Adjust architecture, re-consult. "That fixes it."
+- Write `00-overview.md`. `/tp-help` quick check on the written overview. Present to user.
 
 **Phase 4**: After user approves, write sections sequentially.
+- After sections 1-2: `/tp-help` — "Do these foundation sections set up later sections correctly?" → "Section 2 is missing the damage rect type that section 4 needs." Fix, re-consult.
+- After sections 4-5: `/tp-help` — "Are these core sections maintaining consistency?" → "Looks good."
 
-**Phase 5**: Cohesion check → self-check → report → run `/review-plan plans/gpu-refactor/`.
+**Phase 5**: `/tp-help` full plan review (2 rounds) → cohesion check → self-check → report → run `/review-plan plans/gpu-refactor/`.
 
 ---
 
@@ -574,6 +704,27 @@ If the user says **no**: do not add reroute frontmatter (plan is not a reroute).
 | Core Implementation | `section-02-core.md` |
 | Integration | `section-03-integration.md` |
 | Testing/Verification | `section-NN-verification.md` |
+
+---
+
+## `/tp-help` Feedback Cadence Summary
+
+The planning process includes **6 structured `/tp-help` checkpoints**, each with iterative follow-up. Here's the expected cadence for a typical plan:
+
+| Checkpoint | Phase | When | Min Rounds | Purpose |
+|------------|-------|------|------------|---------|
+| **Step 4b** | Research | After Pass 1+2 | 1-3 | Validate research completeness |
+| **Step 6b** | Research | After Pass 3+4 | 2-4 | Stress-test pattern & design decisions |
+| **Step 7b** | Architecture | Before writing overview | 2+ | Challenge architecture design |
+| **Step 8b** | Architecture | After writing overview | 1 | Quality check written document |
+| **Step 11b** | Sections | Every 2-3 sections | 1-2 per batch | Mid-flight course correction |
+| **Step 12b** | Finalization | Before cohesion check | 2+ | Full plan structural review |
+
+**Expected total**: 8-15+ `/tp-help` rounds across a full plan creation. For a simple 3-section plan, expect ~8. For a complex 10-section plan, expect ~15+.
+
+**The rule**: Every major decision point gets challenged by a second brain before it becomes load-bearing. No decision survives on the strength of a single perspective.
+
+**When `/tp-help` is unavailable** (Codex not installed, API errors, timeouts): Note which checkpoints were skipped and flag them in the plan's overview as `<!-- tp-help skipped: {checkpoint} — manual review recommended -->`. Continue without blocking — the feedback is valuable but not a hard gate.
 
 ---
 

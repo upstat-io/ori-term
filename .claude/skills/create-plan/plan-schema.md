@@ -258,6 +258,7 @@ architectural gap motivated it. 2-4 sentences.}
   - [ ] {Sub-task with specific file + function to modify}
 
 - [ ] {Validation task — how to verify this subsection works}
+- [ ] `/tpr-review` checkpoint {if subsection produces finished, testable code — see TPR Checkpoint Rules}
 
 ---
 
@@ -434,6 +435,35 @@ chain.
 Cite specific files from reference projects. Not "Alacritty does
 this" but "Alacritty's `alacritty/src/display/damage.rs` uses the
 damage tracking pattern where {description}."
+
+---
+
+## TPR Checkpoint Rules
+
+`/tpr-review` should not only run at the end of a section — it should run **mid-section after subsections that produce finished, testable code**. Catching issues early is far cheaper than catching them at the end of a large section.
+
+### When to insert a TPR checkpoint in a subsection
+
+A subsection gets a `- [ ] /tpr-review checkpoint` item when **any** of:
+
+1. **Substantial new code** — the subsection adds or modifies ~100+ lines of production code across multiple files.
+2. **New module or public API** — introduces a new module, trait, or public interface that later subsections build on. Catching design issues here prevents cascading rework.
+3. **Complex logic** — implements non-trivial algorithms, state machines, or cross-module coordination where subtle bugs hide.
+4. **Integration boundary** — wires together components from different crates or layers (e.g., connecting UI to GPU, mux to PTY).
+
+### When NOT to insert a TPR checkpoint
+
+- **Scaffolding-only subsections** — adding type stubs, config fields, or empty trait impls that aren't yet wired in.
+- **Small mechanical changes** — renaming, moving files, updating imports, adjusting constants.
+- **Test-only subsections** — adding tests for already-reviewed code.
+
+### Placement
+
+The TPR checkpoint is the **last item** in the subsection's task list, after validation tasks. It runs after the subsection's code is finished and tests pass.
+
+### Section completion checklist still required
+
+Mid-section TPR checkpoints do **not** replace the final `/tpr-review` in the `{NN}.N Completion Checklist`. The final TPR covers cross-subsection interactions and the section as a whole.
 
 ---
 
