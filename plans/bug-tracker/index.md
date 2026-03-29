@@ -47,6 +47,14 @@ framework, pipeline, layout, solver, min-height, padding, content-box,
 border-box, box-model, flex, hug, size-spec
 ```
 
+### Section 04: Fonts
+**File:** `section-04-fonts.md` | **Status:** In Progress
+
+```
+font, emoji, COLRv1, COLR, swash, skrifa, color glyph, bitmap, clip,
+rasterize, fallback, Segoe UI Emoji, NotoEmoji, atlas, bearing
+```
+
 ---
 
 ## Quick Reference
@@ -56,3 +64,4 @@ border-box, box-model, flex, hug, size-spec
 | 01 | UI Widgets | `section-01-ui-widgets.md` |
 | 02 | Settings Dialog | `section-02-settings-dialog.md` |
 | 03 | UI Framework | `section-03-ui-framework.md` |
+| 04 | Fonts | `section-04-fonts.md` |
