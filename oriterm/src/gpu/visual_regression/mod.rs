@@ -60,7 +60,7 @@ pub(super) fn reference_dir() -> PathBuf {
 ///
 /// Uses `FontSet::embedded()` for deterministic output regardless of system
 /// fonts. Returns `None` if no GPU adapter is available.
-pub(super) fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+pub(crate) fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     headless_env_with_config(TEST_FONT_SIZE_PT, TEST_DPI)
 }
 

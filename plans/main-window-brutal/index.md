@@ -50,7 +50,7 @@ from_theme, UiTheme, status_accent
 ---
 
 ### Section 03: Window Frame & Split Pane Styling
-**File:** `section-03-frame-panes.md` | **Status:** Not Started
+**File:** `section-03-frame-panes.md` | **Status:** Complete
 
 ```
 window border, border-strong, 2px frame, window frame

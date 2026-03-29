@@ -315,18 +315,20 @@ impl App {
 
             // Dividers between split panes.
             let divider_color = self.config.pane.effective_divider_color();
-            renderer.append_dividers(dividers, divider_color);
+            let accent_color = self.config.pane.effective_focus_border_color();
+            let hovered = ctx.hovering_divider;
+            renderer.append_dividers(dividers, divider_color, accent_color, hovered);
 
             // Floating pane decorations (shadow + border).
-            let accent_color = self.config.pane.effective_focus_border_color();
             for layout in layouts.iter().filter(|l| l.is_floating) {
                 renderer.append_floating_decoration(&layout.pixel_rect, accent_color);
             }
 
             // Focus border on active pane (only when multiple panes visible).
+            let scale = ctx.window.scale_factor().factor() as f32;
             if layouts.len() > 1 {
                 if let Some(rect) = &focused_rect {
-                    renderer.append_focus_border(rect, accent_color);
+                    renderer.append_focus_border(rect, accent_color, (2.0 * scale).round());
                 }
             }
 
@@ -463,15 +465,17 @@ impl App {
                 }
             }
 
-            // Full content render when any pane content changed or
-            // chrome/overlay visuals are stale. In multi-pane mode,
-            // `any_content_changed` is always true because the focused
-            // pane is always dirty (it needs cursor blink updates).
-            // Selection changes are handled per-pane during prepare — each
-            // pane's `FrameInput.selection` is set before `get_or_prepare`.
+            // Full content render when any pane changed or chrome is stale.
             let needs_full_render = any_content_changed || ctx.ui_stale;
 
             ctx.ui_stale = tab_bar_animating;
+
+            // Window border: 2px border-strong frame, skipped when maximized/fullscreen.
+            if !ctx.window.is_maximized() && !ctx.window.is_fullscreen() {
+                let border_color =
+                    crate::gpu::scene_convert::color_to_rgb(self.ui_theme.border_strong);
+                renderer.append_window_border(w, h, border_color, (2.0 * scale).round());
+            }
 
             ctx.window.apply_pending_surface_resize(gpu);
 

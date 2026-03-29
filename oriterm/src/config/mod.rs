@@ -287,23 +287,23 @@ pub(crate) struct PaneConfig {
     pub focus_border_color: Option<String>,
 }
 
-/// Default divider color: neutral gray (`#505050`).
+/// Default divider color: border (`#2a2a36`).
 const DEFAULT_DIVIDER_COLOR: Rgb = Rgb {
-    r: 80,
-    g: 80,
-    b: 80,
+    r: 42,
+    g: 42,
+    b: 54,
 };
-/// Default focus border accent: cornflower blue (`#6495ED`).
+/// Default focus border accent: accent (`#6d9be0`).
 const DEFAULT_FOCUS_BORDER_COLOR: Rgb = Rgb {
-    r: 100,
-    g: 149,
-    b: 237,
+    r: 109,
+    g: 155,
+    b: 224,
 };
 
 impl Default for PaneConfig {
     fn default() -> Self {
         Self {
-            divider_px: 1.0,
+            divider_px: 2.0,
             min_cells: (10, 3),
             dim_inactive: false,
             inactive_opacity: 0.7,
@@ -319,7 +319,7 @@ impl PaneConfig {
         clamp_or_default(self.inactive_opacity, 0.0, 1.0, 0.7)
     }
 
-    /// Resolved divider color, falling back to the default neutral gray.
+    /// Resolved divider color, falling back to the default border color.
     pub fn effective_divider_color(&self) -> Rgb {
         self.divider_color
             .as_deref()
@@ -327,7 +327,7 @@ impl PaneConfig {
             .unwrap_or(DEFAULT_DIVIDER_COLOR)
     }
 
-    /// Resolved focus border color, falling back to the default cornflower blue.
+    /// Resolved focus border color, falling back to the default accent color.
     pub fn effective_focus_border_color(&self) -> Rgb {
         self.focus_border_color
             .as_deref()

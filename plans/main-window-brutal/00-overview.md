@@ -159,12 +159,12 @@ Phase 3 - Verification
 | No status bar exists | Not yet implemented | Section 02 | Fixed (StatusBarWidget implemented) |
 | Tab bar height (46px) doesn't match mockup (36px) | Pre-brutal metrics | Section 01.1 | Will fix |
 | `bar_bg` and `active_bg` are swapped vs mockup | `bar_bg` maps to `bg_secondary` (bg-base) but mockup tab-bar bg is `bg-surface` (`bg_primary`); `active_bg` maps to `bg_primary` (bg-surface) but mockup active tab is `bg-base` (`bg_secondary`) | Section 01.3 + 01.4 | Will fix |
-| Default divider color (#505050) doesn't match mockup (#2a2a36) | Neutral gray default, not theme-derived | Section 03.1 | Will fix |
-| Default divider width (1px) doesn't match mockup (2px) | `PaneConfig::default().divider_px` is 1.0 | Section 03.1 | Will fix |
+| Default divider color (#505050) doesn't match mockup (#2a2a36) | Neutral gray default, not theme-derived | Section 03.1 | Fixed |
+| Default divider width (1px) doesn't match mockup (2px) | `PaneConfig::default().divider_px` is 1.0 | Section 03.1 | Fixed |
 | chrome/tests.rs hardcodes `46.0` | All `compute_window_layout` tests pass `46.0` as the tab bar height literal | Section 04.2 | Will fix |
 | Tab bar close button opacity has no `0.6` codepath for active | Active tab currently always shows close at `content_opacity` (1.0), not 0.6 | Section 01.5 | Will fix |
-| Focus border is hardcoded 2px physical, not DPI-scaled | `append_focus_border` uses `let border = 2.0_f32` in physical pixels. At 2x DPI this is only 1 logical pixel, not matching the mockup's 2 logical pixels | Section 03.2 | Will fix |
-| Default focus border color (#6495ED) doesn't match mockup (#6d9be0) | `DEFAULT_FOCUS_BORDER_COLOR` is cornflower blue, mockup uses `--accent` | Section 03.1 | Will fix |
+| Focus border is hardcoded 2px physical, not DPI-scaled | `append_focus_border` uses `let border = 2.0_f32` in physical pixels. At 2x DPI this is only 1 logical pixel, not matching the mockup's 2 logical pixels | Section 03.2 | Fixed |
+| Default focus border color (#6495ED) doesn't match mockup (#6d9be0) | `DEFAULT_FOCUS_BORDER_COLOR` is cornflower blue, mockup uses `--accent` | Section 03.1 | Fixed |
 
 ## Quick Reference
 
@@ -172,6 +172,6 @@ Phase 3 - Verification
 |----|-------|------|--------|
 | 01 | Tab Bar Brutal Styling | `section-01-tab-bar.md` | Complete |
 | 02 | Status Bar Widget | `section-02-status-bar.md` | Complete |
-| 03 | Window Frame & Split Pane Styling | `section-03-frame-panes.md` | Not Started |
+| 03 | Window Frame & Split Pane Styling | `section-03-frame-panes.md` | Complete |
 | 04 | Production Wiring & Composed Tests | `section-04-wiring.md` | Not Started |
 | 05 | Verification | `section-05-verification.md` | Not Started |

@@ -1971,7 +1971,7 @@ fn parse_hex_color_rejects_too_short() {
 #[test]
 fn pane_config_defaults() {
     let cfg = PaneConfig::default();
-    assert!((cfg.divider_px - 1.0).abs() < f32::EPSILON);
+    assert!((cfg.divider_px - 2.0).abs() < f32::EPSILON);
     assert_eq!(cfg.min_cells, (10, 3));
     assert!(!cfg.dim_inactive);
     assert!((cfg.inactive_opacity - 0.7).abs() < f32::EPSILON);
@@ -1999,7 +1999,7 @@ fn pane_config_roundtrip() {
     let cfg = Config::default();
     let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
     let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
-    assert!((parsed.pane.divider_px - 1.0).abs() < f32::EPSILON);
+    assert!((parsed.pane.divider_px - 2.0).abs() < f32::EPSILON);
     assert_eq!(parsed.pane.min_cells, (10, 3));
     assert!(!parsed.pane.dim_inactive);
 }
@@ -2015,7 +2015,7 @@ inactive_opacity = 0.5
     assert!(cfg.pane.dim_inactive);
     assert!((cfg.pane.inactive_opacity - 0.5).abs() < f32::EPSILON);
     // Defaults for unspecified fields.
-    assert!((cfg.pane.divider_px - 1.0).abs() < f32::EPSILON);
+    assert!((cfg.pane.divider_px - 2.0).abs() < f32::EPSILON);
     assert_eq!(cfg.pane.min_cells, (10, 3));
 }
 
@@ -2025,17 +2025,17 @@ fn pane_config_color_defaults() {
     assert_eq!(
         cfg.effective_divider_color(),
         Rgb {
-            r: 80,
-            g: 80,
-            b: 80
+            r: 42,
+            g: 42,
+            b: 54
         }
     );
     assert_eq!(
         cfg.effective_focus_border_color(),
         Rgb {
-            r: 100,
-            g: 149,
-            b: 237
+            r: 109,
+            g: 155,
+            b: 224
         }
     );
 }
@@ -2060,9 +2060,9 @@ fn pane_config_invalid_color_falls_back() {
     assert_eq!(
         cfg.effective_divider_color(),
         Rgb {
-            r: 80,
-            g: 80,
-            b: 80
+            r: 42,
+            g: 42,
+            b: 54
         }
     );
 }

@@ -185,7 +185,7 @@ pub(super) fn convert_icon(
 }
 
 /// Convert an [`oriterm_ui::color::Color`] (f32 RGBA) to [`oriterm_core::Rgb`] (u8 RGB).
-pub(super) fn color_to_rgb(c: Color) -> oriterm_core::Rgb {
+pub(crate) fn color_to_rgb(c: Color) -> oriterm_core::Rgb {
     oriterm_core::Rgb {
         r: (c.r * 255.0).round() as u8,
         g: (c.g * 255.0).round() as u8,
