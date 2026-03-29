@@ -234,55 +234,6 @@ pub(super) fn rasterize_from_face(
         Content::SubpixelMask | Content::Mask => format,
     };
 
-    // Color emoji: swash produces correct colors but clips the bitmap to
-    // the base glyph outline bounds. The COLR clip box (from skrifa) is
-    // larger. Get the clip box and expand the swash bitmap if it's smaller.
-    if out_format == GlyphFormat::Color {
-        if let Some(colr_clip) = super::colr_v1::rasterize::colr_clip_box(fd, glyph_id, size_px) {
-            let cw = (colr_clip.width().ceil() as u32).max(image.placement.width);
-            let ch = (colr_clip.height().ceil() as u32).max(image.placement.height);
-            if cw > image.placement.width || ch > image.placement.height {
-                // Expand: place swash bitmap inside the larger COLR clip box canvas.
-                let sw = image.placement.width as usize;
-                let sh = image.placement.height as usize;
-                let nw = cw as usize;
-                let nh = ch as usize;
-                // Offset: how many pixels the swash origin shifted from COLR origin.
-                let ox = (image.placement.left as f32 - colr_clip.x_min.floor())
-                    .round()
-                    .max(0.0) as usize;
-                let oy = (colr_clip.y_max.ceil() - image.placement.top as f32)
-                    .round()
-                    .max(0.0) as usize;
-                let mut expanded = vec![0u8; nw * nh * 4];
-                for row in 0..sh {
-                    let dst_row = row + oy;
-                    if dst_row >= nh {
-                        break;
-                    }
-                    let src = row * sw * 4;
-                    let dst = dst_row * nw * 4 + ox * 4;
-                    let copy_w = sw.min(nw.saturating_sub(ox));
-                    if src + copy_w * 4 <= image.data.len() && dst + copy_w * 4 <= expanded.len() {
-                        expanded[dst..dst + copy_w * 4]
-                            .copy_from_slice(&image.data[src..src + copy_w * 4]);
-                    }
-                }
-                let bearing_x = colr_clip.x_min.floor() as i32;
-                let bearing_y = colr_clip.y_max.ceil() as i32;
-                return Some(RasterizedGlyph {
-                    width: nw as u32,
-                    height: nh as u32,
-                    bearing_x,
-                    bearing_y,
-                    advance,
-                    format: GlyphFormat::Color,
-                    bitmap: expanded,
-                });
-            }
-        }
-    }
-
     Some(RasterizedGlyph {
         width: image.placement.width,
         height: image.placement.height,
