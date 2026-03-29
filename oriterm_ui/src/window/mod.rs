@@ -155,6 +155,7 @@ pub fn resolve_winit_decorations(mode: DecorationMode) -> bool {
         // titlebar transparency + fullsize content view, not by
         // disabling decorations. Disabling decorations on macOS removes
         // the traffic lights AND breaks the titlebar area entirely.
+        let _ = mode;
         true
     }
     #[cfg(not(target_os = "macos"))]
