@@ -1,0 +1,215 @@
+name: Auto Release
+
+# Automatically version-bump, tag, and release on every merge to main.
+# CI is guaranteed to have passed via branch protection (required status check).
+# Uses CalVer prerelease: v0.2.0-alpha.YYYYMMDD
+#
+# Flow: bump-build.sh → sync-version.sh → commit → tag → release.yml builds binaries
+#
+# REQUIRES: The oriterm-release-bot GitHub App must be a bypass actor in the
+# main branch ruleset, so this workflow can push version-bump commits directly.
+# Secrets: RELEASE_APP_ID, RELEASE_APP_PRIVATE_KEY (from the GitHub App)
+#
+# If the GitHub App is not set up, set ORITERM_RELEASE_TOKEN (PAT) instead.
+
+on:
+  push:
+    branches: [main]
+
+# Queue releases — don't cancel in-progress ones.
+# Each merge gets its own tag, processed sequentially.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  auto-release:
+    name: Tag & Release
+    # Skip our own version-bump commits to avoid infinite loop.
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Generate token
+        id: token
+        run: |
+          # Prefer GitHub App token; fall back to PAT; fall back to GITHUB_TOKEN
+          if [[ -n "${{ secrets.RELEASE_APP_ID }}" && -n "${{ secrets.RELEASE_APP_PRIVATE_KEY }}" ]]; then
+            echo "method=app" >> $GITHUB_OUTPUT
+          elif [[ -n "${{ secrets.ORITERM_RELEASE_TOKEN }}" ]]; then
+            echo "method=pat" >> $GITHUB_OUTPUT
+          else
+            echo "method=default" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate App token
+        if: steps.token.outputs.method == 'app'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Resolve token
+        id: resolve
+        run: |
+          if [[ "${{ steps.token.outputs.method }}" == "app" ]]; then
+            echo "token=${{ steps.app-token.outputs.token }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.token.outputs.method }}" == "pat" ]]; then
+            echo "token=${{ secrets.ORITERM_RELEASE_TOKEN }}" >> $GITHUB_OUTPUT
+          else
+            echo "token=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.resolve.outputs.token }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Derive release tag
+        id: tag
+        run: |
+          ./scripts/bump-build.sh
+
+          if [[ ! -f BUILD_NUMBER ]]; then
+            echo "::error::BUILD_NUMBER file not found"
+            exit 1
+          fi
+
+          BUILD_CONTENT=$(tr -d '[:space:]' < BUILD_NUMBER)
+          if [[ -z "$BUILD_CONTENT" ]]; then
+            echo "::error::BUILD_NUMBER file is empty"
+            exit 1
+          fi
+
+          TAG="v${BUILD_CONTENT}"
+
+          # Safety: skip if this exact tag already exists
+          if git rev-parse "refs/tags/${TAG}" &>/dev/null; then
+            echo "::warning::Tag ${TAG} already exists — skipping release"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "Release tag: $TAG"
+
+      - name: Sync versions and commit
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          ./scripts/sync-version.sh
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add BUILD_NUMBER Cargo.toml Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Versions already in sync — no commit needed"
+          else
+            git commit -m "chore: release ${{ steps.tag.outputs.tag }}"
+          fi
+
+      - name: Detect source changes
+        if: steps.tag.outputs.skip != 'true'
+        id: changes
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | head -1)
+
+          if [[ -z "$PREV_TAG" ]]; then
+            echo "No previous tag — first release"
+            echo "source_changes=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if any source files changed since last release.
+          if git diff --name-only "$PREV_TAG"..HEAD \
+              | grep -qE '^(oriterm.*\.(rs|wgsl)|crates/.*\.rs|Cargo\.lock$)'; then
+            echo "Source changes detected — full release with binaries"
+            echo "source_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "Housekeeping only — release without binaries"
+            echo "source_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push version commit and tag
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if [[ "${{ steps.changes.outputs.source_changes }}" == "true" ]]; then
+            # Push commit + tag — tag push triggers the binary Release workflow
+            git tag "$TAG"
+            git push origin main "$TAG"
+          else
+            # Push commit only — tag via API (no binary build triggered)
+            git push origin main
+          fi
+
+      - name: Generate release notes
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" | grep '^v' | head -1)
+
+          if [[ -n "$PREV_TAG" ]]; then
+            LOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
+          else
+            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges -50)
+          fi
+
+          BODY=""
+          FEATURES=""
+          FIXES=""
+          PERF=""
+          HOUSEKEEPING=""
+          OTHER=""
+          while IFS= read -r line; do
+            line=$(echo "$line" | xargs)
+            [[ -z "$line" || "$line" != -\ * ]] && continue
+            subject="${line:2}"
+            if [[ "$subject" == feat* ]]; then
+              FEATURES="${FEATURES}${line}\n"
+            elif [[ "$subject" == fix* ]]; then
+              FIXES="${FIXES}${line}\n"
+            elif [[ "$subject" == perf* ]]; then
+              PERF="${PERF}${line}\n"
+            elif [[ "$subject" == refactor* || "$subject" == chore* || "$subject" == build* || "$subject" == ci* || "$subject" == test* || "$subject" == style* || "$subject" == docs* ]]; then
+              HOUSEKEEPING="${HOUSEKEEPING}${line}\n"
+            else
+              OTHER="${OTHER}${line}\n"
+            fi
+          done <<< "$LOG"
+          [[ -n "$FEATURES" ]] && BODY="${BODY}### Features\n\n${FEATURES}\n"
+          [[ -n "$FIXES" ]] && BODY="${BODY}### Bug Fixes\n\n${FIXES}\n"
+          [[ -n "$PERF" ]] && BODY="${BODY}### Performance\n\n${PERF}\n"
+          [[ -n "$HOUSEKEEPING" ]] && BODY="${BODY}### Housekeeping\n\n${HOUSEKEEPING}\n"
+          [[ -n "$OTHER" ]] && BODY="${BODY}### Other\n\n${OTHER}\n"
+          [[ -z "$BODY" ]] && BODY="See commit history for changes."
+          printf '%b' "$BODY" > /tmp/release-notes.txt
+
+      - name: Create release
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ steps.resolve.outputs.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+
+          if [[ "${{ steps.changes.outputs.source_changes }}" == "true" ]]; then
+            # Full release — binaries will be attached by the Release workflow
+            gh release create "$TAG" \
+              --title "oriterm ${TAG#v}" \
+              --notes-file /tmp/release-notes.txt \
+              --prerelease
+          else
+            # Housekeeping release — no binaries
+            gh release create "$TAG" \
+              --target "$(git rev-parse HEAD)" \
+              --title "oriterm ${TAG#v} (No Source Changes)" \
+              --notes-file /tmp/release-notes.txt \
+              --prerelease
+          fi
