@@ -60,6 +60,10 @@ pub(super) fn convert_text(
         }
 
         let subpx = subpx_bin(cursor_x + glyph.x_offset);
+        let realm = match shaped.font_source {
+            oriterm_ui::text::FontSource::Terminal => FontRealm::Terminal,
+            oriterm_ui::text::FontSource::Ui => FontRealm::Ui,
+        };
         let key = RasterKey {
             glyph_id: glyph.glyph_id,
             face_idx: FaceIdx(glyph.face_index),
@@ -68,7 +72,7 @@ pub(super) fn convert_text(
             synthetic: SyntheticFlags::from_bits_truncate(glyph.synthetic),
             hinted: ctx.hinted,
             subpx_x: subpx,
-            font_realm: FontRealm::Ui,
+            font_realm: realm,
         };
 
         if let Some(entry) = ctx.atlas.lookup_key(key) {
