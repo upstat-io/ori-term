@@ -1741,11 +1741,15 @@ fn codepoint_map_overrides_emoji_resolve() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     // Map an emoji codepoint to Regular.
     fc.add_codepoint_mapping(0x1F600, 0x1F64F, FaceIdx::REGULAR);
-    // Resolve via emoji path — should still check codepoint map first.
+    // Resolve via emoji path — checks codepoint map first, but the Regular
+    // face (JetBrains Mono) doesn't have emoji, so it falls through to
+    // the emoji fallback font (NotoEmoji-Regular).
     let resolved = fc.resolve_prefer_emoji('\u{1F600}', GlyphStyle::Regular);
-    // The embedded font doesn't have emoji, so it falls through to normal.
-    // But the map is checked first in resolve_prefer_emoji.
-    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
+    assert_ne!(resolved.glyph_id, 0, "emoji should resolve via fallback");
+    assert!(
+        resolved.face_idx.is_fallback(),
+        "emoji resolves through NotoEmoji fallback, not Regular"
+    );
 }
 
 #[test]

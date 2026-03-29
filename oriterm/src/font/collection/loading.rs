@@ -102,7 +102,10 @@ impl FontSet {
             bold_italic: None,
             medium: None,
             has_variant: [true, false, false, false],
-            fallbacks: Vec::new(),
+            fallbacks: vec![FontData {
+                data: Arc::new(discovery::TEST_EMOJI_DATA.to_vec()),
+                index: 0,
+            }],
         }
     }
 
