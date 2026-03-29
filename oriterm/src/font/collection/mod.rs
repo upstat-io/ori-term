@@ -5,6 +5,11 @@
 //! and rasterizes glyphs into bitmaps ready for GPU atlas upload.
 
 mod codepoint_map;
+#[allow(
+    dead_code,
+    clippy::all,
+    reason = "COLRv1 compositor bypassed — swash handles COLR rendering"
+)]
 pub(crate) mod colr_v1;
 mod face;
 mod loading;

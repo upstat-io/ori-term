@@ -8,10 +8,12 @@
 //! resolved at collection time so the compositing path receives ready-to-use
 //! RGBA values.
 
+// COLRv1 compositor disabled — swash handles COLR rendering with
+// correct colors. Kept in tree for future reference but not compiled.
+#[cfg(any())]
 mod compose;
+#[cfg(any())]
 pub(crate) mod rasterize;
-
-pub(crate) use rasterize::try_rasterize_colr_v1;
 
 use skrifa::GlyphId;
 use skrifa::color::{Brush, ColorPainter, ColorStop, CompositeMode, Extend, Transform};
