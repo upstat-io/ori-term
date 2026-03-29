@@ -97,9 +97,10 @@ impl TabBarWidget {
             .map_or(1.0, AnimProperty::get);
         let content_opacity = (width_t * 2.0).min(1.0);
 
-        // Clip tab content horizontally (prevents overflow into adjacent tabs)
-        // but extend vertically to avoid clipping emoji that exceed font metrics.
-        let clip_rect = Rect::new(x, 0.0, self.layout.tab_width_at(index), ctx.bounds.height());
+        // Clip tab content horizontally (prevents overflow into adjacent tabs).
+        // No vertical clip — emoji may exceed font metrics and extend below
+        // the tab strip. The tab bar background quad provides the visual bound.
+        let clip_rect = Rect::new(x, 0.0, self.layout.tab_width_at(index), f32::MAX);
         ctx.scene.push_clip(clip_rect);
         ctx.scene.push_layer_bg(bg);
         ctx.scene.push_quad(tab_rect, style);

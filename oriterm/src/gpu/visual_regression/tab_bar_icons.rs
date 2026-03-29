@@ -23,7 +23,7 @@ use crate::gpu::window_renderer::WindowRenderer;
 use super::compare_with_reference;
 
 const WIDTH: u32 = 600;
-const HEIGHT: u32 = 50;
+const HEIGHT: u32 = 60;
 
 /// Path to Segoe UI Emoji on Windows (accessible from WSL via /mnt/c).
 const SEGOE_EMOJI_PATH: &str = "/mnt/c/Windows/Fonts/seguiemj.ttf";
