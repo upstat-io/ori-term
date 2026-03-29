@@ -33,13 +33,13 @@ sections:
     status: complete
   - id: "01.7"
     title: "Golden Tests"
-    status: not-started
+    status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
     status: not-started
   - id: "01.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 01: Tab Bar Brutal Styling
@@ -273,28 +273,28 @@ The mockup adds `border-left: 1px solid var(--border)` on each tab action button
 **File(s):** `oriterm/src/gpu/visual_regression/tab_bar_brutal.rs` (NEW), `oriterm/src/gpu/visual_regression/mod.rs`
 
 Write golden tests proving every visual change. These tests render the tab bar through the real GPU pipeline and compare against reference PNGs.
-- [ ] Create `oriterm/src/gpu/visual_regression/tab_bar_brutal.rs` module with `#![cfg(all(test, feature = "gpu-tests"))]` at the top (same gate as `tab_bar_icons.rs`)
-- [ ] Add `mod tab_bar_brutal;` to `visual_regression/mod.rs` (currently at line 26, after `mod tab_bar_icons;`)
-- [ ] Fix the hardcoded `46.0` in `tab_bar_icons.rs` line 89: change `bounds: Rect::new(0.0, 0.0, WIDTH as f32, 46.0)` to `bounds: Rect::new(0.0, 0.0, WIDTH as f32, tab_bar.metrics().height)`. This requires moving the bounds computation after `tab_bar` construction (already the case — `tab_bar` is constructed at line 74). This fix is needed BEFORE writing new tests, since the existing `tab_bar_emoji_golden` test uses this helper.
-- [ ] Create `render_tab_bar_brutal()` helper in the new test file (or reuse the fixed `render_tab_bar()` from `tab_bar_icons.rs` — but since the tab bar icons test file uses `headless_tab_bar_env()` with emoji fonts and the brutal tests don't need emoji, prefer creating a separate helper that uses `headless_env()` from `super` plus `UiFontSizes` setup matching `headless_tab_bar_env()`).
-- [ ] **Test: `tab_bar_brutal_3tabs_96dpi`** — 3 tabs (1 active, 1 modified, 1 plain), 600x36px at 96 DPI
+- [x] Create `oriterm/src/gpu/visual_regression/tab_bar_brutal.rs` module with `#![cfg(all(test, feature = "gpu-tests"))]` at the top (same gate as `tab_bar_icons.rs`)
+- [x] Add `mod tab_bar_brutal;` to `visual_regression/mod.rs` (currently at line 26, after `mod tab_bar_icons;`)
+- [x] Fix the hardcoded `46.0` in `tab_bar_icons.rs` line 89: already uses `TAB_BAR_HEIGHT` constant — no fix needed.
+- [x] Create `render_tab_bar_brutal()` helper in new test file with `headless_brutal_env()` (uses `FontSet::embedded()` without emoji, includes `UiFontSizes` and `resolve_icons`)
+- [x] **Test: `tab_bar_brutal_3tabs_96dpi`** — 3 tabs (1 active, 1 modified, 1 plain), 600x36px at 96 DPI
   - Construct tabs: `TabEntry::new("zsh")`, `TabEntry::new("nvim config.toml").with_modified(true)`, `TabEntry::new("cargo build")`
   - Active index: 0
   - Verifies: flat tabs, accent bar on active, bottom border, modified dot, separators
   - Active tab should show: bg-base background, text-bright color, 2px accent bar on top, bottom bleed
   - Modified tab should show: 6px square accent dot
   - All tabs: no rounded corners
-- [ ] **Test: `tab_bar_brutal_active_close_default_96dpi`** — Active tab with close at 0.6 opacity (default state, no hover). Uses `render_tab_bar` pattern with `tab_bar.set_hover_hit(TabBarHit::None)` (or leave default). Active tab's close button should render at 0.6 opacity per the new logic in 01.5.
-- [ ] **Test: `tab_bar_brutal_hover_close_96dpi`** — Active tab with close hovered (1.0 opacity + danger highlight). Uses `render_tab_bar` pattern, then call `tab_bar.set_hover_hit(TabBarHit::CloseTab(0))` before painting (this is a pub method on TabBarWidget per animation.rs line 20). Close button should render at full opacity with danger color background.
-- [ ] **Test: `tab_bar_brutal_actions_96dpi`** — Tab bar with new-tab and dropdown buttons visible
+- [x] **Test: `tab_bar_brutal_active_close_default_96dpi`** — Active tab with close at 0.6 opacity (default state, no hover). Uses `render_tab_bar_brutal` with `TabBarHit::None`.
+- [x] **Test: `tab_bar_brutal_hover_close_96dpi`** — Active tab with close hovered (1.0 opacity + danger highlight). Uses `render_tab_bar_brutal` with `TabBarHit::CloseTab(0)`.
+- [x] **Test: `tab_bar_brutal_actions_96dpi`** — Tab bar with new-tab and dropdown buttons visible
   - Verifies: border-left on action buttons, correct icon placement at 36px height
-- [ ] **Test: `tab_bar_brutal_single_tab_96dpi`** — Single tab (no separators, active by default)
+- [x] **Test: `tab_bar_brutal_single_tab_96dpi`** — Single tab (no separators, active by default)
   - Edge case: verify accent bar and bottom bleed render correctly with only one tab
-- [ ] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- tab_bar_brutal` to generate initial references
-- [ ] Visually inspect all generated reference PNGs against the mockup
-- [ ] Commit reference PNGs to `oriterm/tests/references/`
-- [ ] **Update existing golden**: `tab_bar_emoji` golden will change due to new 36px height and new colors — regenerate with `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- tab_bar_emoji` and visually inspect
-- [ ] **Add unit tests in `oriterm_ui/src/widgets/tab_bar/tests.rs`** for the rendering changes:
+- [x] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- tab_bar_brutal` to generate initial references
+- [x] Visually inspect all generated reference PNGs against the mockup — flat tabs, accent bar, bottom border, modified dot, separators, close opacity all correct
+- [x] Commit reference PNGs to `oriterm/tests/references/`
+- [x] **Update existing golden**: `tab_bar_emoji` golden regenerated — 36px height and new colors applied, emoji rendering intact
+- [x] **Add unit tests in `oriterm_ui/src/widgets/tab_bar/tests.rs`** for the rendering changes:
   - **Test: `colors_from_theme_bar_bg_is_bg_primary`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).bar_bg == UiTheme::dark().bg_primary` (after the fix in 01.4). This locks the color swap fix.
   - **Test: `colors_from_theme_active_bg_is_bg_secondary`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).active_bg == UiTheme::dark().bg_secondary` (after the fix in 01.3). This locks the color swap fix.
   - **Test: `colors_from_theme_separator_full_opacity`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).separator == UiTheme::dark().border` (no `.with_alpha(0.5)` after the fix in 01.4).
@@ -316,21 +316,21 @@ Write golden tests proving every visual change. These tests render the tab bar t
 
 ## 01.N Completion Checklist
 
-- [ ] `draw.rs` under 500 lines (helpers extracted to `draw_helpers.rs`)
-- [ ] Tab bar renders at 36px height with 0 top margin and 14px padding
-- [ ] Active tab: zero radius, 2px accent bar on top, bottom border bleed into content
-- [ ] Inactive tabs: flat background, 1px right-border separator (full height)
-- [ ] Tab bar: 2px bottom border visible across full width
-- [ ] Modified indicator: 6px square accent dot visible on modified tabs
-- [ ] Close button: opacity 0 by default, 1.0 on hover, 0.6 on active tab
-- [ ] Tab action buttons: 1px left border visible
-- [ ] Window control close hover: uses danger color (#c87878)
-- [ ] All `tab_bar_brutal_*` golden tests pass
-- [ ] Existing `tab_bar_emoji` golden updated and passing
-- [ ] Color mapping unit tests pass (bar_bg, active_bg, separator, accent_bar, bar_border)
-- [ ] Modified indicator unit tests pass (builder, suppression on hover)
-- [ ] `cargo test -p oriterm_ui` green (no regressions in tab bar unit tests)
-- [ ] `./build-all.sh` green, `./clippy-all.sh` green
+- [x] `draw.rs` under 500 lines (helpers extracted to `draw_helpers.rs`) — 404 lines
+- [x] Tab bar renders at 36px height with 0 top margin and 14px padding
+- [x] Active tab: zero radius, 2px accent bar on top, bottom border bleed into content
+- [x] Inactive tabs: flat background, 1px right-border separator (full height)
+- [x] Tab bar: 2px bottom border visible across full width
+- [x] Modified indicator: 6px square accent dot visible on modified tabs
+- [x] Close button: opacity 0 by default, 1.0 on hover, 0.6 on active tab
+- [x] Tab action buttons: 1px left border visible
+- [x] Window control close hover: uses danger color (#c87878)
+- [x] All `tab_bar_brutal_*` golden tests pass (5/5)
+- [x] Existing `tab_bar_emoji` golden updated and passing
+- [x] Color mapping unit tests pass (bar_bg, active_bg, separator, accent_bar, bar_border)
+- [x] Modified indicator unit tests pass (builder, suppression on hover)
+- [x] `cargo test -p oriterm_ui` green (no regressions in tab bar unit tests)
+- [x] `./build-all.sh` green, `./clippy-all.sh` green
 - [ ] `/tpr-review` passed — independent review found no critical or major issues
 
 **Exit Criteria:** The tab bar renders identically to the `.tab-bar` section of `mockups/main-window-brutal.html` at 96 DPI. All golden tests pass with committed reference PNGs. No visual regressions in existing tests.
