@@ -163,6 +163,15 @@ impl WindowRenderer {
         let (mut atlas, mut subpixel_atlas, color_atlas) =
             create_atlases(device, queue, &mut font_collection);
 
+        // Inject terminal font's emoji fallback into UI font collections
+        // so emoji renders at the correct UI text size (not the terminal's).
+        if let Some(ref mut sizes) = ui_font_sizes {
+            let emoji_data = font_collection.fallback_font_data();
+            if !emoji_data.is_empty() {
+                sizes.inject_fallbacks(&emoji_data);
+            }
+        }
+
         // Pre-cache common UI font sizes so the first dialog/tab-bar frame
         // doesn't hitch on glyph rasterization.
         if let Some(ref mut sizes) = ui_font_sizes {

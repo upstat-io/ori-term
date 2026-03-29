@@ -12,7 +12,7 @@ mod codepoint_map;
 )]
 pub(crate) mod colr_v1;
 mod face;
-mod loading;
+pub(crate) mod loading;
 mod metadata;
 mod rasterize;
 mod resolve;
@@ -229,6 +229,35 @@ impl FontCollection {
     /// Family name of the primary font.
     pub fn family_name(&self) -> &str {
         &self.family_name
+    }
+
+    /// Export fallback font data (bytes + face index) for injection into
+    /// another font set (e.g., adding emoji fallback to the UI font).
+    pub fn fallback_font_data(&self) -> Vec<loading::FontData> {
+        self.fallbacks
+            .iter()
+            .map(|fd| loading::FontData {
+                data: Arc::clone(&fd.bytes),
+                index: fd.face_index,
+            })
+            .collect()
+    }
+
+    /// Append fallback fonts from another collection's exported data.
+    ///
+    /// Used to inject the terminal font's emoji fallback into UI font
+    /// collections so emoji renders at the correct UI text size.
+    pub fn append_fallback_data(&mut self, data: &[loading::FontData]) {
+        for fd in data {
+            if let Some(face) = build_face(Arc::clone(&fd.data), fd.index) {
+                self.fallback_meta.push(FallbackMeta {
+                    scale_factor: 1.0,
+                    size_offset: 0.0,
+                    features: None,
+                });
+                self.fallbacks.push(face);
+            }
+        }
     }
 
     /// Rasterization format.

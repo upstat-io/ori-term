@@ -97,8 +97,10 @@ impl TabBarWidget {
             .map_or(1.0, AnimProperty::get);
         let content_opacity = (width_t * 2.0).min(1.0);
 
-        // Clip tab content to its bounds — prevents overflow into adjacent tabs.
-        ctx.scene.push_clip(tab_rect);
+        // Clip tab content horizontally (prevents overflow into adjacent tabs)
+        // but extend vertically to avoid clipping emoji that exceed font metrics.
+        let clip_rect = Rect::new(x, 0.0, self.layout.tab_width_at(index), ctx.bounds.height());
+        ctx.scene.push_clip(clip_rect);
         ctx.scene.push_layer_bg(bg);
         ctx.scene.push_quad(tab_rect, style);
 
@@ -162,16 +164,21 @@ impl TabBarWidget {
         let color = strip.text_color;
 
         // Icon rendering: shape and draw emoji before the title.
-        // Uses the terminal font (with emoji fallback) so color emoji render.
+        // Emoji fallback is injected into UI font collections from the terminal
+        // font at renderer init, so emoji renders at the correct UI text size.
+        // Emoji sized ~30% larger than text for visual prominence.
         let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
-            let icon_style = TextStyle::new(ctx.theme.font_size_small, color).with_terminal_font();
+            let icon_size = ctx.theme.font_size_small * 1.3;
+            let icon_style = TextStyle::new(icon_size, color);
             let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
+            // Use the icon height as width — color emoji are square bitmaps
+            // but the font advance is often narrower than the actual bitmap.
+            let icon_extent = icon_shaped.height;
             let icon_x = x + self.metrics.tab_padding;
-            let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;
-            let icon_w = icon_shaped.width;
+            let icon_y = strip.y + (strip.h - icon_extent) / 2.0;
             ctx.scene
                 .push_text(Point::new(icon_x, icon_y), icon_shaped, color);
-            icon_w + ICON_TEXT_GAP
+            icon_extent + ICON_TEXT_GAP
         } else {
             0.0
         };
